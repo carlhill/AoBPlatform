@@ -1,0 +1,27 @@
+{
+  "name": "@aobplatform/vault-client",
+  "version": "0.1.0",
+  "description": "Client for the Evidence Vault service + the mandatory outbox writer/relay (FR-11.2). Every consent-relevant domain write enqueues a vault event in the same DB transaction; the relay publishes with exponential backoff and no permanent give-up.",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src --max-warnings=0",
+    "test": "jest",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@aobplatform/contracts": "*",
+    "@aobplatform/domain": "*"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "^20.16.11",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.4.12",
+    "typescript": "^5.6.3"
+  }
+}
