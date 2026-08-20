@@ -80,6 +80,90 @@ services:
       - '21025:1025'
       - '21026:8025'
 
+  # ---------------------------------------------------------------------------
+  # Application services (containerised runs; day-to-day dev uses the
+  # npm start:dev servers via .claude/launch.json instead)
+  # ---------------------------------------------------------------------------
+
+  vault:
+    build: { context: ., dockerfile: apps/vault/Dockerfile }
+    container_name: aobplatform-vault
+    restart: unless-stopped
+    environment:
+      PORT: 3003
+      CHAIN_STORE: memory # DEV ONLY — production requires the human-authored immudb store
+      DATABASE_URL: postgresql://aob_app:aob_app@postgres:5432/aobplatform?schema=vault
+      IMMUDB_HOST: immudb
+      IMMUDB_PORT: 3322
+    ports:
+      - '21003:3003'
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3003/health || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  rules:
+    build: { context: ., dockerfile: apps/rules/Dockerfile }
+    container_name: aobplatform-rules
+    restart: unless-stopped
+    environment:
+      PORT: 3002
+      DATABASE_URL: postgresql://aob_app:aob_app@postgres:5432/aobplatform?schema=rules
+    ports:
+      - '21002:3002'
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3002/health || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # One-shot: applies core migrations with the ADMIN role, then exits.
+  # Dev convenience only — production migrations are a deploy step.
+  core-migrate:
+    build: { context: ., dockerfile: apps/core/Dockerfile }
+    container_name: aobplatform-core-migrate
+    environment:
+      DATABASE_URL: postgresql://aobplatform:aobplatform@postgres:5432/aobplatform?schema=core
+    command: ['npm', 'run', 'prisma:deploy', '-w', 'apps/core']
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: 'no'
+
+  core:
+    build: { context: ., dockerfile: apps/core/Dockerfile }
+    container_name: aobplatform-core
+    restart: unless-stopped
+    environment:
+      PORT: 3001
+      # Runtime uses the NON-SUPERUSER role — superusers bypass RLS.
+      DATABASE_URL: postgresql://aob_app:aob_app@postgres:5432/aobplatform?schema=core
+      REDIS_URL: redis://redis:6379
+      RULES_SERVICE_URL: http://rules:3002
+      VAULT_SERVICE_URL: http://vault:3003
+      SMS_GATEWAY_MODE: sandbox
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
+    ports:
+      - '21001:3001'
+    depends_on:
+      postgres: { condition: service_healthy }
+      core-migrate: { condition: service_completed_successfully }
+      vault: { condition: service_healthy }
+      rules: { condition: service_healthy }
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3001/health || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
 volumes:
   aobplatform-postgres-data:
   aobplatform-immudb-data:
