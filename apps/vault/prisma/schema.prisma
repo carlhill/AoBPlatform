@@ -1,0 +1,40 @@
+// Vault service bookkeeping (Postgres schema `vault`).
+//
+// THE INDEX IS NOT THE EVIDENCE. Chain entries live in immudb (tamper-evident,
+// verified writes); these rows only LOCATE them — the pattern proven in
+// ReferralPlatform's audit-log. It exists because immudb-node@1.1.1 poisons
+// its verification state on any missing-key lookup (verified by probe,
+// 2026-08-21): with a relational index, the store never looks up a key that
+// might not exist. Deleting index rows is truncation, which the chain +
+// external anchoring (TODO HUMAN) are designed to catch.
+
+generator client {
+  provider = "prisma-client-js"
+  // Workspace-local output: the default shared node_modules/.prisma/client
+  // is core's — two schemas generating into one path clobber each other.
+  output   = "../src/generated/prisma-client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("VAULT_DATABASE_URL")
+}
+
+model ChainEntryIndex {
+  id             String   @id @default(uuid()) @db.Uuid
+  namespace      String
+  seq            Int
+  eventId        String   @db.Uuid
+  eventType      String
+  subjectType    String
+  subjectId      String
+  recordedAt     DateTime
+  hash           String
+  artefactSha256 String?
+  immudbTxId     String
+
+  @@unique([namespace, seq])
+  @@index([namespace, subjectId])
+  @@index([namespace, artefactSha256])
+  @@map("chain_entry_index")
+}

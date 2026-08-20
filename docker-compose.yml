@@ -61,16 +61,17 @@ services:
       retries: 5
 
   immudb:
-    image: codenotary/immudb:1.9.5
+    # 1.1.0, not latest: the immudb-node@1.1.1 client is proven against this
+    # server version (ReferralPlatform ran the same pair in production-shaped
+    # dev). Upgrading the pair together is a deliberate later step.
+    image: codenotary/immudb:1.1.0
     container_name: aobplatform-immudb
     restart: unless-stopped
-    environment:
-      IMMUDB_ADDRESS: 0.0.0.0
     ports:
       - '21022:3322'
       - '21023:9497'
     volumes:
-      - aobplatform-immudb-data:/var/lib/immudb
+      - aobplatform-immudb-data-v1:/var/lib/immudb
 
   mailhog:
     image: mailhog/mailhog:v1.0.1
@@ -91,14 +92,18 @@ services:
     restart: unless-stopped
     environment:
       PORT: 3003
-      CHAIN_STORE: memory # DEV ONLY — production requires the human-authored immudb store
-      DATABASE_URL: postgresql://aob_app:aob_app@postgres:5432/aobplatform?schema=vault
+      CHAIN_STORE: immudb # index in Postgres, evidence in immudb (DRAFT store pending review)
+      VAULT_DATABASE_URL: postgresql://aob_app:aob_app@postgres:5432/aobplatform?schema=vault
       IMMUDB_HOST: immudb
       IMMUDB_PORT: 3322
+      IMMUDB_PASSWORD: immudb
+      IMMUDB_NAMESPACE: aobvault
+      IMMUDB_STATE_PATH: /workspace/.immudb-state/root
     ports:
       - '21003:3003'
     depends_on:
       postgres: { condition: service_healthy }
+      immudb: { condition: service_started }
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3003/health || exit 1']
       interval: 15s
@@ -166,4 +171,4 @@ services:
 
 volumes:
   aobplatform-postgres-data:
-  aobplatform-immudb-data:
+  aobplatform-immudb-data-v1:

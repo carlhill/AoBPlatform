@@ -24,9 +24,17 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      immudb:
+        # Pinned pair: immudb-node@1.1.1 client ↔ immudb 1.1.0 server.
+        image: codenotary/immudb:1.1.0
+        ports:
+          - 21022:3322
     env:
       DATABASE_URL: postgresql://aob_app:aob_app@localhost:21020/aobplatform?schema=core
       ADMIN_DATABASE_URL: postgresql://aobplatform:aobplatform@localhost:21020/aobplatform?schema=core
+      IMMUDB_HOST: localhost
+      IMMUDB_PORT: '21022'
+      VAULT_DATABASE_URL: postgresql://aob_app:aob_app@localhost:21020/aobplatform?schema=vault
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -39,7 +47,9 @@ jobs:
           PGPASSWORD=aobplatform psql -h localhost -p 21020 -U aobplatform -d aobplatform -f infra/postgres/init-schemas.sql
           PGPASSWORD=aobplatform psql -h localhost -p 21020 -U aobplatform -d aobplatform -f infra/postgres/init-roles.sql
           npm run prisma:generate -w apps/core
+          npm run prisma:generate -w apps/vault
           DATABASE_URL="$ADMIN_DATABASE_URL" npm run prisma:deploy -w apps/core
+          VAULT_DATABASE_URL="postgresql://aobplatform:aobplatform@localhost:21020/aobplatform?schema=vault" npm run prisma:deploy -w apps/vault
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build

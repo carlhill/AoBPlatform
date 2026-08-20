@@ -12,6 +12,7 @@ export default tseslint.config(
       '**/build/**',
       '**/.next/**',
       '**/coverage/**',
+      '**/src/generated/**',
       '**/*.config.js',
       '**/*.config.mjs',
       'infra/**',

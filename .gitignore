@@ -54,3 +54,10 @@ infra/data/
 
 # OneDrive noise
 ~$*
+
+# Vault's workspace-local Prisma client (generated)
+apps/vault/src/generated/
+
+# immudb-node client Merkle state (machine-local)
+.immudb-state/
+root
