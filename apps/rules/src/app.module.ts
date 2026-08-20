@@ -13,7 +13,9 @@ import { HealthModule } from './health/health.module';
  * them wholesale. The evaluation contract callers use is
  * @aobplatform/contracts (rules-engine.ts).
  */
+import { RulesModule } from './rules/rules.module';
+
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), HealthModule],
+  imports: [ConfigModule.forRoot({ isGlobal: true }), HealthModule, RulesModule],
 })
 export class AppModule {}
