@@ -4,3 +4,4 @@ export * from './parties';
 export * from './agreement';
 export * from './guards';
 export * from './lifecycle';
+export * from './chase';

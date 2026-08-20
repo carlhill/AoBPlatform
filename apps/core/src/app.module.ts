@@ -10,6 +10,7 @@ import { VerificationModule } from './verification/verification.module';
 import { CaptureModule } from './capture/capture.module';
 import { PracticesModule } from './practices/practices.module';
 import { PmsModule } from './pms/pms.module';
+import { ReconciliationModule } from './reconciliation/reconciliation.module';
 
 /**
  * Thin wiring only. Feature modules (M1 onboarding, M2 capture, M3
@@ -29,6 +30,7 @@ import { PmsModule } from './pms/pms.module';
     CaptureModule,
     PracticesModule,
     PmsModule,
+    ReconciliationModule,
     DevSeedModule,
     HealthModule,
   ],
