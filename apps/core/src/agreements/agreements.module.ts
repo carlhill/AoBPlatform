@@ -3,12 +3,13 @@ import { AgreementsController } from './agreements.controller';
 import { AgreementsService } from './agreements.service';
 import { RulesClientModule } from '../rules-client/rules-client.module';
 import { CaptureModule } from '../capture/capture.module';
-import { AGREEMENT_RENDERER, CanonicalJsonRenderer } from '../render/renderer';
+import { RenderModule } from '../render/render.module';
+import { PmsModule } from '../pms/pms.module';
 
 @Module({
-  imports: [RulesClientModule, CaptureModule],
+  imports: [RulesClientModule, CaptureModule, RenderModule, PmsModule],
   controllers: [AgreementsController],
-  providers: [AgreementsService, { provide: AGREEMENT_RENDERER, useClass: CanonicalJsonRenderer }],
+  providers: [AgreementsService],
   exports: [AgreementsService],
 })
 export class AgreementsModule {}

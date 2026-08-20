@@ -10,6 +10,7 @@ import type { Agreement as DbAgreement, Prisma } from '@prisma/client';
 import type { RulesEngineClient } from '@aobplatform/contracts';
 import { AGREEMENT_RENDERER, type AgreementRenderer } from '../render/renderer';
 import { CaptureService } from '../capture/capture.service';
+import { WriteBackService } from '../pms/write-back.service';
 import {
   assertNoForbiddenAgreementFields,
   assertSignatureAllowed,
@@ -35,6 +36,7 @@ export class AgreementsService {
     @Inject(RULES_CLIENT) private readonly rules: RulesEngineClient,
     @Inject(AGREEMENT_RENDERER) private readonly renderer: AgreementRenderer,
     private readonly capture: CaptureService,
+    private readonly writeBack: WriteBackService,
   ) {}
 
   /**
@@ -219,7 +221,7 @@ export class AgreementsService {
       );
     }
 
-    const signed = await this.prisma.withPractice(practiceId, async (tx) => {
+    await this.prisma.withPractice(practiceId, async (tx) => {
       const signatureEvent = await tx.signatureEvent.create({
         data: {
           practiceId,
@@ -275,7 +277,10 @@ export class AgreementsService {
     if (dto.captureRequestId) {
       await this.capture.complete(practiceId, dto.captureRequestId);
     }
-    return signed;
+    // Write-back is the product (REQ-INT-02) — attempted immediately; the
+    // sweep retries on failure, so a PMS outage slows evidence, never care.
+    await this.writeBack.attempt(practiceId, agreementId);
+    return this.get(practiceId, agreementId);
   }
 
   /** Status changes route through the domain transition map — nothing else. */

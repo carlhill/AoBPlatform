@@ -83,6 +83,7 @@ model Provider {
   placeOfPracticeAddress String?
   providerNumber         String?  // optional by design — s 65C(5)(a) OR (b), REQ-REG-02
   ahpraNumber            String?
+  pmsLinkageKey          String?
   active                 Boolean @default(true)
 
   agreements Agreement[]
@@ -164,6 +165,11 @@ model Agreement {
   supersedesAgreementId String?   @db.Uuid // HARD-02: corrections supersede
   retentionExpiryDate   DateTime? @db.Date
   legalHold             Boolean   @default(false)
+  // FR-9.3 write-back tracking: the artefact lands in the PMS patient record
+  // (REQ-INT-02); unwritten stored agreements are retried by the sweep and
+  // alerted when stale.
+  pmsDocumentKey        String?
+  writtenBackAt         DateTime?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
@@ -257,6 +263,30 @@ model SignatureEvent {
   @@index([practiceId])
   @@index([agreementId])
   @@map("signature_events")
+}
+
+// M7/M9 — a service (rendered item) observed from the PMS. The reconciliation
+// queue (REQ-REC-01) is "service records without a stored agreement, ranked by
+// days remaining on the 12-month lodgement window". The retention/lodgement
+// clock defaults conservatively to the service date where claim events are
+// unobservable (REQ-INT-04) — recorded explicitly, never inferred.
+
+model ServiceRecord {
+  id                   String    @id @default(uuid()) @db.Uuid
+  practiceId           String    @db.Uuid
+  pmsInvoiceKey        String
+  patientId            String?   @db.Uuid
+  providerId           String?   @db.Uuid
+  serviceDate          DateTime  @db.Date
+  mbsItemNumbers       String[]
+  agreementId          String?   @db.Uuid
+  retentionClockSource String    @default("conservative_default") // observed_claim | practice_asserted | conservative_default
+  createdAt            DateTime  @default(now())
+
+  @@unique([practiceId, pmsInvoiceKey])
+  @@index([practiceId])
+  @@index([serviceDate])
+  @@map("service_records")
 }
 
 // FR-11.2 — the vault outbox. Rows are inserted in the SAME transaction as

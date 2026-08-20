@@ -4,6 +4,8 @@
   "description": "Site-installed PMS connector for Windows hosts (Medtech Evolution sites) — outbound-only mTLS, practice-scoped credentials, signed builds, staged auto-update, remote kill. Ships the FR-9.1 adapter; the ONLY implementation until D-01 resolves is the mock.",
   "private": true,
   "license": "UNLICENSED",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",

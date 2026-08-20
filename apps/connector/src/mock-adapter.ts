@@ -83,8 +83,38 @@ export class MockPmsAdapter implements PmsAdapter {
     ];
   }
 
+  /**
+   * Fixture invoices spanning the chase bands (REQ-CHASE-05): one recent
+   * (standard band), one ~10 months old (urgent), one just inside the last
+   * seven days of the 12-month lodgement window (last chance). Dates are
+   * derived from "now" so the fixtures stay in-band forever.
+   */
   async readInvoices(_since: IsoDate): Promise<readonly PmsInvoice[]> {
-    return [];
+    const daysAgo = (days: number): IsoDate =>
+      new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10) as IsoDate;
+    return [
+      {
+        pmsInvoiceKey: 'mock-inv-001',
+        patientLinkageKey: 'mock-pat-001',
+        providerLinkageKey: 'mock-prov-001',
+        serviceDate: daysAgo(14),
+        mbsItemNumbers: ['23'],
+      },
+      {
+        pmsInvoiceKey: 'mock-inv-002',
+        patientLinkageKey: 'mock-pat-001',
+        providerLinkageKey: 'mock-prov-001',
+        serviceDate: daysAgo(300),
+        mbsItemNumbers: ['36'],
+      },
+      {
+        pmsInvoiceKey: 'mock-inv-003',
+        patientLinkageKey: 'mock-pat-001',
+        providerLinkageKey: 'mock-prov-001',
+        serviceDate: daysAgo(360),
+        mbsItemNumbers: ['23', '10990'],
+      },
+    ];
   }
 
   /** Idempotent by artefact hash (FR-9.3). */

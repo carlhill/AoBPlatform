@@ -29,6 +29,7 @@ export const VAULT_EVENT_TYPES = [
   'agreement.signed',
   'agreement.validated',
   'agreement.stored',
+  'agreement.written_back',
   'agreement.status_changed',
   'agreement.superseded',
   'agreement.ceased',

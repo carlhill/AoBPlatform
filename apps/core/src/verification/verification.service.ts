@@ -1,12 +1,14 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
   assertValidIdentifierSet,
   IdentifierSetError,
   type ApprovedIdentifierType,
 } from '@aobplatform/domain';
+import type { PmsAdapter } from '@aobplatform/contracts';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
-import { evaluateChallenge } from './identifier-matching';
+import { evaluateChallenge, type PatientIdentityRecord } from './identifier-matching';
+import { PMS_ADAPTER } from '../pms/pms.tokens';
 
 /** D-06 default until a practice-config surface exists: lockout after 5 failed attempts. */
 export const LOCKOUT_AFTER_ATTEMPTS = 5;
@@ -18,7 +20,49 @@ const SYSTEM_ACTOR = { principalType: 'system', id: 'core' } as const;
 
 @Injectable()
 export class VerificationService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(VerificationService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(PMS_ADAPTER) private readonly adapter: PmsAdapter,
+  ) {}
+
+  /**
+   * ADR A-08: verification compares against PMS-held values fetched at
+   * challenge time where the adapter allows — the PMS stays the source of
+   * truth and our mirror stays minimal. Falls back to the mirror when the
+   * PMS is unreachable (an outage slows nothing; REQ-REC-04).
+   */
+  private async identityRecordFor(patient: {
+    pmsLinkageKey: string | null;
+    familyName: string;
+    givenNames: string;
+    dateOfBirth: Date;
+    genderAsIdentified: string | null;
+    address: string | null;
+    patientRecordNumber: string | null;
+    ihi: string | null;
+  }): Promise<PatientIdentityRecord> {
+    if (patient.pmsLinkageKey && this.adapter.capabilities.readPatient) {
+      try {
+        const live = await this.adapter.readPatient(patient.pmsLinkageKey);
+        if (live) {
+          return {
+            familyName: live.familyName,
+            givenNames: live.givenNames,
+            dateOfBirth: new Date(live.dateOfBirth),
+            genderAsIdentified: live.genderAsIdentified ?? null,
+            address: live.address ?? null,
+            patientRecordNumber: live.patientRecordNumber ?? null,
+            ihi: live.ihi ?? null,
+          };
+        }
+      } catch (err) {
+        this.logger.warn(`PMS unavailable at challenge time, using mirror: ${(err as Error).message}`);
+      }
+    }
+    return patient;
+  }
 
   /**
    * Starts a challenge: the identifier types to state, from the approved six
@@ -70,11 +114,12 @@ export class VerificationService {
 
       const patient = await tx.patient.findFirst({ where: { id: challenge.patientId } });
       if (!patient) throw new NotFoundException('Patient record unavailable.');
+      const identity = await this.identityRecordFor(patient);
 
       const passed = evaluateChallenge(
         challenge.identifierTypes as ApprovedIdentifierType[],
         input.stated,
-        patient,
+        identity,
       );
       const attempts = challenge.attempts + 1;
       const lockout = !passed && attempts >= LOCKOUT_AFTER_ATTEMPTS;
