@@ -4,6 +4,16 @@ import type { RulesEngineClient, ValidationRequest, ValidationResponse } from '@
 
 export const RULES_CLIENT = Symbol('RULES_CLIENT');
 
+export class RulesClientError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = 'RulesClientError';
+  }
+}
+
 export class HttpRulesEngineClient implements RulesEngineClient {
   constructor(
     private readonly baseUrl: string,
@@ -18,7 +28,7 @@ export class HttpRulesEngineClient implements RulesEngineClient {
     });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      throw new Error(`Rules service returned ${res.status}: ${body.slice(0, 300)}`);
+      throw new RulesClientError(`Rules service returned ${res.status}: ${body.slice(0, 300)}`, res.status);
     }
     return (await res.json()) as ValidationResponse;
   }

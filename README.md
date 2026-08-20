@@ -39,13 +39,29 @@ npm run typecheck
 docker compose up -d        # postgres / redis / immudb / mailhog (ports 21020+)
 ```
 
-## Build status (20 Aug 2026)
+## Build status (20 Aug 2026, evening)
 
-Scaffold stage. What exists: workspace skeleton, domain model with the
-CLAUDE.md §2 hard rules encoded and tested, service contracts, mock PMS
-adapter, health-only NestJS services, infra shells. What does not exist yet:
-any real module logic, persistence, identity flows, or the human-authored
-rules/vault internals.
+Working vertical slice, verified live and in CI:
+
+- **Domain + contracts**: hard rules encoded with named tests; FR-9.1 adapter
+  interface; vault event contract (closed union, no update/delete).
+- **Vault service**: chain hashing/verification, dev in-memory store,
+  property tests proving tamper evidence (immudb store + anchoring:
+  `TODO(HUMAN)`, contract suite ready).
+- **Rules service**: validate API + versioned registry; returns 501 until the
+  human-authored C1–C14 rule set registers (34-test conformance suite ready
+  and waiting).
+- **Core**: Prisma with fail-closed RLS (non-superuser runtime role),
+  HARD-01/02 DB triggers, agreements (draft → lock w/ render-and-hash → sign
+  w/ full REQ-SIG-02 binding → stored), M3 verification (constant-time,
+  types-only evidence, lockout), M2 capture (hashed single-use tokens,
+  content-blind landing, channel dedup, expiry sweep), outbox → vault relay.
+- **Web**: dev console driving the whole journey against live services.
+- **Infra**: docker-compose full stack incl. containerised services
+  (21001–21003); CI runs unit + Postgres-backed e2e on every push.
+
+Next up: practice onboarding (M1.A) to replace dev-seed, the PDF/A render
+pipeline, reconciliation queue (M7), and the human-authored zones.
 
 **Open blockers (do not build around them — CLAUDE.md §5):**
 

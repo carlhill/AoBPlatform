@@ -1,4 +1,11 @@
-import { BadRequestException, Inject, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+  NotImplementedException,
+} from '@nestjs/common';
 import type { Agreement as DbAgreement, Prisma } from '@prisma/client';
 import type { RulesEngineClient } from '@aobplatform/contracts';
 import { AGREEMENT_RENDERER, type AgreementRenderer } from '../render/renderer';
@@ -15,7 +22,7 @@ import {
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
-import { RULES_CLIENT } from '../rules-client/rules-client.module';
+import { RULES_CLIENT, RulesClientError } from '../rules-client/rules-client.module';
 import { assertEnduringAllowed } from '@aobplatform/domain';
 import type { CreateAgreementDto, LockParticularsDto } from './agreements.dto';
 
@@ -104,7 +111,17 @@ export class AgreementsService {
       throw err;
     }
 
-    const validation = await this.rules.validate({ payload: dto.particulars });
+    const validation = await this.rules.validate({ payload: dto.particulars }).catch((err) => {
+      // Surface the rules service's own status honestly — a 501 means the
+      // human-authored rule set is not registered yet; a lock is impossible,
+      // not broken (blocked states stay unreachable).
+      if (err instanceof RulesClientError && err.status === 501) {
+        throw new NotImplementedException(
+          'The s 65C rule set is not registered yet (human-authored zone) — particulars cannot be locked.',
+        );
+      }
+      throw err;
+    });
     if (!validation.valid) {
       const failures = validation.results.filter((r) => r.outcome === 'fail').map((r) => `${r.rule}: ${r.message}`);
       throw new BadRequestException({ message: 's 65C validation failed', failures });

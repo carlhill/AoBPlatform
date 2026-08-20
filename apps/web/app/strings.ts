@@ -24,5 +24,10 @@ export const strings = {
     typeLabel: 'Type',
     createdLabel: 'Created',
     errorPrefix: 'Something went wrong:',
+    journeyButton: 'Run capture journey',
+    journeyLog: 'Journey log',
+    chainLabel: 'Vault chain',
+    chainValid: 'verified',
+    chainInvalid: 'BROKEN',
   },
 } as const;
