@@ -14,7 +14,9 @@ import { HealthModule } from './health/health.module';
  * not author them wholesale. The event contract callers use is
  * @aobplatform/contracts (vault.ts).
  */
+import { EventsModule } from './events/events.module';
+
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), HealthModule],
+  imports: [ConfigModule.forRoot({ isGlobal: true }), HealthModule, EventsModule],
 })
 export class AppModule {}

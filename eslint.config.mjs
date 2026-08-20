@@ -40,9 +40,9 @@ export default tseslint.config(
     },
   },
   {
-    // The hard-rule tests must name the forbidden field in order to prove it is
-    // rejected — the one legitimate place the word may appear.
-    files: ['packages/domain/src/**/*.test.ts'],
+    // Hard-rule tests must name the forbidden field in order to prove it is
+    // rejected — the only legitimate places the word may appear.
+    files: ['packages/domain/src/**/*.test.ts', 'apps/vault/test/**/*.e2e-spec.ts'],
     rules: { 'no-restricted-syntax': 'off' },
   },
 );
