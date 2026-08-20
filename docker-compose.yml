@@ -39,7 +39,8 @@ services:
     ports:
       - '21020:5432'
     volumes:
-      - ./infra/postgres/init-schemas.sql:/docker-entrypoint-initdb.d/init-schemas.sql:ro
+      - ./infra/postgres/init-schemas.sql:/docker-entrypoint-initdb.d/01-init-schemas.sql:ro
+      - ./infra/postgres/init-roles.sql:/docker-entrypoint-initdb.d/02-init-roles.sql:ro
       - aobplatform-postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U aobplatform']

@@ -1,0 +1,156 @@
+// Core application schema (Postgres schema `core`).
+//
+// Rules encoded at this layer, with matching DB constraints/triggers in the
+// migrations:
+//  - There is NO Medicare-number column anywhere (HARD-03).
+//  - Agreement anchor columns are immutable via trigger (HARD-01).
+//  - Practice-scoped tables carry practiceId and are protected by RLS
+//    policies with FORCE ROW LEVEL SECURITY (fail closed) — see the
+//    enable_rls migration.
+//  - Particulars are a snapshot (JSON) taken at lock time; the person is
+//    cached, the agreement is snapshotted (REQ-DATA-10/-11).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Practice {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  abn       String?
+  pms       String   @default("medtech_evolution")
+  createdAt DateTime @default(now())
+
+  providers  Provider[]
+  patients   Patient[]
+  assignors  Assignor[]
+  agreements Agreement[]
+
+  @@map("practices")
+}
+
+model Provider {
+  id                     String  @id @default(uuid()) @db.Uuid
+  practiceId             String  @db.Uuid
+  practice               Practice @relation(fields: [practiceId], references: [id])
+  name                   String
+  providerType           String   // general_practitioner | specialist | allied_health | nurse_practitioner | optometrist | other
+  placeOfPracticeAddress String?
+  providerNumber         String?  // optional by design — s 65C(5)(a) OR (b), REQ-REG-02
+  ahpraNumber            String?
+  active                 Boolean @default(true)
+
+  agreements Agreement[]
+
+  @@index([practiceId])
+  @@map("providers")
+}
+
+model Patient {
+  id                  String    @id @default(uuid()) @db.Uuid
+  practiceId          String    @db.Uuid
+  practice            Practice  @relation(fields: [practiceId], references: [id])
+  familyName          String
+  givenNames          String
+  dateOfBirth         DateTime  @db.Date
+  genderAsIdentified  String?
+  address             String?
+  patientRecordNumber String?
+  ihi                 String?
+  preferredLanguage   String?
+  mobile              String?
+  email               String?
+  confidentialityFlag Boolean   @default(false) // REQ-CHILD-01; fail closed (REQ-CHILD-07)
+  myMedicareRegistered Boolean?
+  pmsLinkageKey       String?
+
+  agreements Agreement[]
+
+  @@index([practiceId])
+  @@map("patients")
+}
+
+model Assignor {
+  id                    String   @id @default(uuid()) @db.Uuid
+  practiceId            String   @db.Uuid
+  practice              Practice @relation(fields: [practiceId], references: [id])
+  name                  String
+  dateOfBirth           DateTime? @db.Date // needed for the 18+ rule (REQ-AGE-01/-04)
+  relationshipToPatient String?
+  authorityBasis        String   // self | parent | spouse | co_resident_relative_18_plus | guardian | health_epoa | other_with_note
+  authorityNote         String?
+  contactMobile         String?
+  contactEmail          String?
+  preferredLanguage     String?
+
+  agreements Agreement[]
+
+  @@index([practiceId])
+  @@map("assignors")
+}
+
+model Agreement {
+  id                    String    @id @default(uuid()) @db.Uuid
+  practiceId            String    @db.Uuid
+  practice              Practice  @relation(fields: [practiceId], references: [id])
+  type                  String    // episodic_pre | episodic_post | treatment_plan | enduring
+  // Polymorphic immutable anchor (HARD-01): provider for everything except
+  // the ACCHO/AMS enduring pathway, which anchors to an organisation.
+  anchorKind            String    // provider | organisation
+  providerId            String?   @db.Uuid
+  provider              Provider? @relation(fields: [providerId], references: [id])
+  organisationId        String?   @db.Uuid
+  patientId             String    @db.Uuid
+  patient               Patient   @relation(fields: [patientId], references: [id])
+  assignorId            String    @db.Uuid
+  assignor              Assignor  @relation(fields: [assignorId], references: [id])
+  assignorIsPatient     Boolean   // D7 — explicit, never inferred
+  enduringPathway       String?   // mymedicare | residential_aged_care | accho_ams
+  status                String    @default("draft")
+  // Snapshot of the s 65C particulars as rendered and locked (REQ-DATA-11).
+  particulars           Json?
+  particularsLockedAt   DateTime?
+  ruleSetVersion        String?   // rule 14 / REQ-65C-02
+  mappingVersion        String?
+  renderedLanguages     String[]  @default([])
+  renderedArtefactHash  String?   // SHA-256 at render (REQ-VAULT-02)
+  verificationEventId   String?   @db.Uuid
+  signatureEventId      String?   @db.Uuid
+  supersedesAgreementId String?   @db.Uuid // HARD-02: corrections supersede
+  retentionExpiryDate   DateTime? @db.Date
+  legalHold             Boolean   @default(false)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([practiceId])
+  @@index([patientId])
+  @@index([status])
+  @@map("agreements")
+}
+
+// FR-11.2 — the vault outbox. Rows are inserted in the SAME transaction as
+// the domain write they evidence; the relay publishes them to the Evidence
+// Vault with backoff and no permanent give-up (packages/vault-client).
+// Deliberately NOT practice-scoped by RLS: the relay runs as a system job
+// across all practices, and rows carry IDs only, never content (REQ-LOG-08).
+model VaultOutbox {
+  id            String    @id @default(uuid()) @db.Uuid
+  type          String
+  actor         Json
+  subjectType   String
+  subjectId     String
+  payload       Json
+  occurredAt    DateTime  @default(now())
+  publishedAt   DateTime?
+  attempts      Int       @default(0)
+  lastError     String?
+  nextAttemptAt DateTime?
+
+  @@index([publishedAt, nextAttemptAt])
+  @@map("vault_outbox")
+}

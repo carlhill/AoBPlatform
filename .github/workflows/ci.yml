@@ -1,6 +1,6 @@
-# CI — lint, typecheck, build, test every workspace. Gates are release-blocking,
-# not advisory (CLAUDE.md §7). SAST + dependency scanning jobs are added before
-# the first real merge to main once the repo has a remote.
+# CI — lint, typecheck, build, unit tests, and the database-backed e2e suite
+# (RLS fail-closed proofs, HARD-01/02 triggers) against a real Postgres.
+# Gates are release-blocking, not advisory (CLAUDE.md §7).
 name: CI
 
 on:
@@ -10,6 +10,23 @@ on:
 jobs:
   node:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: aobplatform
+          POSTGRES_PASSWORD: aobplatform
+          POSTGRES_DB: aobplatform
+        ports:
+          - 21020:5432
+        options: >-
+          --health-cmd "pg_isready -U aobplatform"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://aob_app:aob_app@localhost:21020/aobplatform?schema=core
+      ADMIN_DATABASE_URL: postgresql://aobplatform:aobplatform@localhost:21020/aobplatform?schema=core
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -17,7 +34,15 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - name: Initialise database (schemas, app role, migrations)
+        run: |
+          PGPASSWORD=aobplatform psql -h localhost -p 21020 -U aobplatform -d aobplatform -f infra/postgres/init-schemas.sql
+          PGPASSWORD=aobplatform psql -h localhost -p 21020 -U aobplatform -d aobplatform -f infra/postgres/init-roles.sql
+          npm run prisma:generate -w apps/core
+          DATABASE_URL="$ADMIN_DATABASE_URL" npm run prisma:deploy -w apps/core
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
       - run: npm run test
+      - name: e2e (real Nest apps; core against real Postgres)
+        run: npm run test:e2e

@@ -1,6 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { HealthModule } from './health/health.module';
+import { PrismaModule } from './prisma/prisma.module';
+import { VaultModule } from './vault/vault.module';
+import { AgreementsModule } from './agreements/agreements.module';
 
 /**
  * Thin wiring only. Feature modules (M1 onboarding, M2 capture, M3
@@ -10,6 +14,13 @@ import { HealthModule } from './health/health.module';
  * access (CLAUDE.md §4).
  */
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), HealthModule],
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
+    PrismaModule,
+    VaultModule,
+    AgreementsModule,
+    HealthModule,
+  ],
 })
 export class AppModule {}
