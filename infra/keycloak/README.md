@@ -32,11 +32,47 @@ node infra/keycloak/transform-realm.mjs
 - **No social/broker identity providers** — deliberately absent given the
   AoB phishing exposure; adding one is a decision, not a default.
 
+## ⚠ A false claim, found and fixed (21 Aug 2026)
+
+The first version of this file said the clinician flow had "passkey REQUIRED
+with no password/OTP fallback". **That was inherited from ReferralPlatform's
+README and was not true of the actual config.** Reading the executions through
+the Keycloak admin API showed:
+
+```
+clinician-browser Credential            REQUIRED
+  WebAuthn Passwordless Authenticator   ALTERNATIVE   ← either would do
+  Password Form                         ALTERNATIVE   ← including this one
+```
+
+A password would have authenticated a practitioner — a rule 15 violation. The
+login page only *looked* passkey-only because the test user had no password
+set. Now enforced in `transform-realm.mjs` and verified:
+
+```
+  WebAuthn Passwordless Authenticator   REQUIRED
+  Password Form                         DISABLED
+```
+
+`npm run validate:realm` asserts this on every CI run, so the claim cannot
+quietly become false again. **Lesson: read the config, not the prose.**
+
 ## Verified (21 Aug 2026)
 
-Realm imports and boots; OIDC discovery serves; `core-service` obtains a real
-client-credentials token; `@aobplatform/auth-client`'s `TokenVerifier`
-verifies it against the realm JWKS end to end.
+- Realm imports and boots; OIDC discovery serves.
+- `core-service` obtains a real client-credentials token, and
+  `@aobplatform/auth-client`'s `TokenVerifier` verifies it against the realm
+  JWKS end to end.
+- The console's sign-in redirects with PKCE `S256`; the Keycloak login page
+  renders **zero password inputs** and no "forgot password" link.
+- A practitioner with no registered passkey **cannot sign in at all** — there
+  is no fallback to fall back to.
+
+**Not yet verifiable here:** completing the passkey ceremony needs a real
+authenticator (or a CDP virtual authenticator, which the headless browser used
+in this build does not expose). The redirect, PKCE exchange, callback handling
+and token verification are all proven; the biometric tap itself is not.
+Worth doing manually on a real device before the design partner sees it.
 
 ## Staged next (not yet wired)
 

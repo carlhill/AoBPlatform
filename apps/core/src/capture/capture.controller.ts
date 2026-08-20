@@ -1,6 +1,7 @@
 import { BadRequestException, Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { IsIn, IsObject, IsUUID } from 'class-validator';
 import { CaptureService } from './capture.service';
+import { Public } from '../auth/public.decorator';
 
 export class OpenCaptureDto {
   @IsUUID()
@@ -41,11 +42,13 @@ export class CaptureController {
    * Content-blind: the response names nobody (REQ-CHILD-04). Bot/velocity
    * controls (REQ-BOT-*) attach here when the bot-defence slice lands.
    */
+  @Public()
   @Get('link/:token')
   openLink(@Param('token') token: string) {
     return this.capture.openLink(token);
   }
 
+  @Public()
   @Post('link/:token/verify')
   verifyLink(@Param('token') token: string, @Body() dto: LinkVerifyDto) {
     return this.capture.verifyLink(token, dto.stated);

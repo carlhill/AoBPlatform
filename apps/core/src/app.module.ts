@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { AuthModule } from './auth/auth.module';
 import { VaultModule } from './vault/vault.module';
 import { AgreementsModule } from './agreements/agreements.module';
 import { DevSeedModule } from './dev-seed/dev-seed.module';
@@ -26,6 +27,7 @@ import { NoticesModule } from './notices/notices.module';
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
     PrismaModule,
+    AuthModule,
     VaultModule,
     AgreementsModule,
     VerificationModule,

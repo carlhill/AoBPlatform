@@ -61,6 +61,38 @@ realm.clients = [
   serviceClient('vault-service', 'Evidence Vault service (service account)'),
 ];
 
+/**
+ * RULE 15 ENFORCEMENT — verified, not inherited.
+ *
+ * ReferralPlatform's README described its clinician flow as "passkey REQUIRED
+ * with no password/OTP fallback". Reading the actual executions via the
+ * Keycloak admin API (21 Aug 2026) showed otherwise: inside the credential
+ * subflow, `WebAuthn Passwordless Authenticator` and `Password Form` were
+ * BOTH `ALTERNATIVE` — i.e. a password was an accepted way in. The login page
+ * merely *looked* passkey-only because the test user had no password set.
+ *
+ * CLAUDE.md rule 15 (REQ-VAULT-04) says practitioner and admin auth is
+ * WebAuthn passkeys with NO password-only paths. So: passkey becomes
+ * REQUIRED and the password form is DISABLED in the clinician flow. With
+ * both changes, a password cannot authenticate a practitioner even if one
+ * exists on the account.
+ */
+const clinicianCredential = (realm.authenticationFlows ?? []).find((f) => f.alias === 'clinician-browser Credential');
+if (!clinicianCredential) throw new Error('clinician-browser Credential subflow not found — cannot enforce rule 15.');
+for (const execution of clinicianCredential.authenticationExecutions ?? []) {
+  if (execution.authenticator === 'webauthn-authenticator-passwordless') {
+    execution.requirement = 'REQUIRED';
+  } else if (execution.authenticator === 'auth-username-password-form' || execution.authenticator === 'auth-password-form') {
+    execution.requirement = 'DISABLED';
+  }
+}
+const passkeyExecution = (clinicianCredential.authenticationExecutions ?? []).find(
+  (e) => e.authenticator === 'webauthn-authenticator-passwordless',
+);
+if (passkeyExecution?.requirement !== 'REQUIRED') {
+  throw new Error('Rule 15 not enforced: the passkey execution is not REQUIRED in the clinician flow.');
+}
+
 // Service-account users and scope mappings reference clients that no longer
 // exist — Keycloak refuses to boot on the dangling link. It recreates
 // service-account users automatically for serviceAccountsEnabled clients.

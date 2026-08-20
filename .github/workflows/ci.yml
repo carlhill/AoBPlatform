@@ -52,6 +52,8 @@ jobs:
           VAULT_DATABASE_URL="postgresql://aobplatform:aobplatform@localhost:21020/aobplatform?schema=vault" npm run prisma:deploy -w apps/vault
       - run: npm run lint
       - run: npm run typecheck
+      - name: Realm guard (rule 15 — passkey required, no password path)
+        run: npm run validate:realm
       - run: npm run build
       - run: npm run test
       - name: e2e (real Nest apps; core against real Postgres)

@@ -377,14 +377,14 @@
       "authenticationExecutions": [
         {
           "authenticator": "webauthn-authenticator-passwordless",
-          "requirement": "ALTERNATIVE",
+          "requirement": "REQUIRED",
           "priority": 10,
           "userSetupAllowed": false,
           "autheticatorFlow": false
         },
         {
           "authenticator": "auth-password-form",
-          "requirement": "ALTERNATIVE",
+          "requirement": "DISABLED",
           "priority": 20,
           "userSetupAllowed": false,
           "autheticatorFlow": false

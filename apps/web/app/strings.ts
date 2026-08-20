@@ -7,6 +7,17 @@
  */
 export const strings = {
   appName: 'AoBPlatform',
+  auth: {
+    signIn: 'Sign in with your passkey',
+    signOut: 'Sign out',
+    signedInAs: 'Signed in as',
+    signedOut: 'Not signed in — the console is running in development mode.',
+    passkeyNote:
+      'Practitioner and admin sign-in requires a passkey. There is no password option, by design (REQ-VAULT-04).',
+    completing: 'Completing sign-in…',
+    failed: 'Sign-in failed:',
+    noCode: 'No authorisation code in this response.',
+  },
   console: {
     title: 'Development console',
     subtitle: 'Scaffold status view — the real practice console (M12) replaces this.',

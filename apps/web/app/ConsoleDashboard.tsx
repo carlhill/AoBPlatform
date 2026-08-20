@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { strings } from './strings';
+import { apiHeaders, beginLogin, clearSession, currentSession, type Session } from './auth';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:3001';
 const RULES_URL = process.env.NEXT_PUBLIC_RULES_URL ?? 'http://localhost:3002';
@@ -64,6 +65,11 @@ export function ConsoleDashboard() {
   const [journey, setJourney] = useState<string[]>([]);
   const [chain, setChain] = useState<{ valid: boolean; length: number } | null>(null);
   const [outstanding, setOutstanding] = useState<OutstandingRow[]>([]);
+  const [session, setSession] = useState<Session | null>(null);
+
+  useEffect(() => {
+    setSession(currentSession());
+  }, []);
 
   const checkHealth = useCallback(async () => {
     const next: HealthState = {};
@@ -82,7 +88,7 @@ export function ConsoleDashboard() {
 
   const loadAgreements = useCallback(async (practiceId: string) => {
     const res = await fetch(`${CORE_URL}/agreements`, {
-      headers: { 'x-practice-id': practiceId },
+      headers: apiHeaders(practiceId),
       cache: 'no-store',
     });
     if (res.ok) setAgreements((await res.json()) as AgreementRow[]);
@@ -136,7 +142,7 @@ export function ConsoleDashboard() {
       log.push(line);
       setJourney([...log]);
     };
-    const headers = { 'Content-Type': 'application/json', 'x-practice-id': seed.practiceId };
+    const headers = apiHeaders(seed.practiceId);
     try {
       const draftRes = await fetch(`${CORE_URL}/agreements`, {
         method: 'POST',
@@ -215,7 +221,7 @@ export function ConsoleDashboard() {
 
   const loadOutstanding = useCallback(async (practiceId: string) => {
     const res = await fetch(`${CORE_URL}/reconciliation/outstanding`, {
-      headers: { 'x-practice-id': practiceId },
+      headers: apiHeaders(practiceId),
       cache: 'no-store',
     });
     if (res.ok) setOutstanding((await res.json()) as OutstandingRow[]);
@@ -227,7 +233,7 @@ export function ConsoleDashboard() {
     try {
       const res = await fetch(`${CORE_URL}/pms/sync`, {
         method: 'POST',
-        headers: { 'x-practice-id': seed.practiceId },
+        headers: apiHeaders(seed.practiceId),
       });
       if (!res.ok) throw new Error(`sync returned ${res.status}`);
       await loadOutstanding(seed.practiceId);
@@ -241,7 +247,7 @@ export function ConsoleDashboard() {
     setError(null);
     const res = await fetch(`${CORE_URL}/reconciliation/${serviceRecordId}/resend`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-practice-id': seed.practiceId },
+      headers: apiHeaders(seed.practiceId),
       body: JSON.stringify({ channel: 'sms_link' }),
     });
     if (!res.ok) {
@@ -257,7 +263,7 @@ export function ConsoleDashboard() {
     try {
       const res = await fetch(`${CORE_URL}/agreements`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-practice-id': seed.practiceId },
+        headers: apiHeaders(seed.practiceId),
         body: JSON.stringify({
           type: 'episodic_pre',
           providerId: seed.providerId,
@@ -275,6 +281,29 @@ export function ConsoleDashboard() {
 
   return (
     <div>
+      <section aria-label="Sign in" style={{ marginBottom: '1.5rem' }}>
+        {session ? (
+          <p>
+            {strings.auth.signedInAs} <strong data-testid="signed-in-as">{session.username}</strong>{' '}
+            <button
+              onClick={() => {
+                clearSession();
+                setSession(null);
+              }}
+            >
+              {strings.auth.signOut}
+            </button>
+          </p>
+        ) : (
+          <p>
+            <button onClick={() => void beginLogin()} data-testid="sign-in">
+              {strings.auth.signIn}
+            </button>{' '}
+            <span style={{ color: '#57606a' }}>{strings.auth.passkeyNote}</span>
+          </p>
+        )}
+      </section>
+
       <section aria-label={strings.console.services}>
         <h2>{strings.console.services}</h2>
         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
