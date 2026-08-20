@@ -47,6 +47,7 @@ export const VAULT_EVENT_TYPES = [
   'notice.delivered',
   'notice.failed',
   'notice.corrected',
+  'agreement.terminated',
   'artefact.accessed',
   'artefact.exported',
   'retention.expiry_scheduled',

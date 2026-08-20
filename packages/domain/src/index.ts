@@ -5,3 +5,5 @@ export * from './agreement';
 export * from './guards';
 export * from './lifecycle';
 export * from './chase';
+export * from './enduring';
+export * from './notice';

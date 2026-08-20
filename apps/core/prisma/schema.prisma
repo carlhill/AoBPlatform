@@ -266,6 +266,104 @@ model SignatureEvent {
   @@map("signature_events")
 }
 
+// M5 — enduring agreement detail (reg 65CB content set, REQ-END-02). One row
+// per Agreement where type = 'enduring'. Kept separate from Agreement so the
+// episodic path carries none of it.
+//
+// notificationMethod is REQUIRED: reg 89AA obliges notice by the method named
+// IN THE AGREEMENT, so a notice cannot be composed without it (REQ-DEL-02).
+
+model EnduringDetail {
+  id                     String    @id @default(uuid()) @db.Uuid
+  practiceId             String    @db.Uuid
+  agreementId            String    @unique @db.Uuid
+  /** How reg 89AA notices must be delivered. Method fidelity is checked against this. */
+  notificationMethod     String // sms | email | post | portal
+  notificationAlternate  String? // REQ-DEL-04 fallback within the window
+  terminationMethod      String
+  responsiblePersonBasis String?
+  /** Patient (14+) written declaration where the patient is not the assignor (REQ-END-02). */
+  patientDeclarationAt   DateTime?
+  /** MBS Category | Group | Subgroup | Item, or a combination (REQ-END-06a). */
+  scopeType              String
+  scopeValues            String[]
+  /** The date the agreement was entered into — the anniversary fuse anchor (65CA(8)(e)). */
+  enteredIntoAt          DateTime
+  /** D-11: no registration mechanism is published. Tracked, never speculated on. */
+  registeredAt           DateTime?
+  registrationReference  String?
+  /** Termination (REQ-END-06): notice, then 2 BUSINESS days. */
+  terminationNoticeAt    DateTime?
+  terminationEffectiveAt DateTime?
+  /** Which state's public-holiday calendar produced terminationEffectiveAt (REQ-OFF-03). */
+  terminationCalendarState String?
+  ceasedAt               DateTime?
+  cessationReason        String?
+  createdAt              DateTime  @default(now())
+
+  @@index([practiceId])
+  @@index([ceasedAt])
+  @@map("enduring_details")
+}
+
+// M6 — reg 89AA post-claim notices. MyMedicare pathway ONLY (REQ-END-05).
+//
+// THE ONE PLACE A BENEFIT AMOUNT LIVES (CLAUDE.md rule 4): agreements never
+// carry one; this notice must, by regulation. Corrections SUPERSEDE via
+// supersedesNoticeId — nothing edits a dispatched notice (REQ-DEL-06).
+
+model Notice {
+  id                 String    @id @default(uuid()) @db.Uuid
+  practiceId         String    @db.Uuid
+  agreementId        String    @db.Uuid
+  serviceRecordId    String?   @db.Uuid
+  claimReference     String
+  /** The 24-hour clock starts here — at claim lodgement, not the service. */
+  claimLodgedAt      DateTime
+  // The four mandatory elements, snapshotted at compose time.
+  practitionerName   String
+  patientName        String
+  serviceDate        DateTime  @db.Date
+  benefitAmountCents Int
+  /** Method named in the agreement; dispatch channel must equal it (REQ-DEL-02). */
+  agreementMethod    String
+  dispatchChannel    String?
+  payloadHash        String
+  // The five states, each independently timestamped (REQ-DEL-01). Never
+  // collapsed to a boolean; `readAt` is evidential colour only (REQ-DEL-07).
+  composedAt         DateTime  @default(now())
+  dispatchedAt       DateTime?
+  deliveredAt        DateTime?
+  readAt             DateTime?
+  failedAt           DateTime?
+  failureCode        String?
+  failureReason      String?
+  attempts           Int       @default(0)
+  gatewayMessageId   String?
+  supersedesNoticeId String?   @db.Uuid
+  correctionReason   String?
+
+  @@index([practiceId])
+  @@index([agreementId])
+  @@index([claimLodgedAt])
+  @@map("notices")
+}
+
+/** Append-only delivery evidence — one row per state transition (REQ-DEL-01). */
+model NoticeDeliveryEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  practiceId String   @db.Uuid
+  noticeId   String   @db.Uuid
+  state      String // composed | dispatched | delivered | read | failed
+  channel    String?
+  detail     Json?
+  occurredAt DateTime @default(now())
+
+  @@index([practiceId])
+  @@index([noticeId])
+  @@map("notice_delivery_events")
+}
+
 // M7/M9 — a service (rendered item) observed from the PMS. The reconciliation
 // queue (REQ-REC-01) is "service records without a stored agreement, ranked by
 // days remaining on the 12-month lodgement window". The retention/lodgement
