@@ -32,6 +32,8 @@ export class CaptureService {
       if (!['draft', 'verification_pending'].includes(agreement.status)) {
         throw new BadRequestException(`Cannot open capture for an agreement in status ${agreement.status}.`);
       }
+      const practice = await tx.practice.findFirst({});
+      const expiryHours = practice?.linkExpiryHours ?? DEFAULT_LINK_EXPIRY_HOURS;
       const duplicate = await tx.captureRequest.findFirst({
         where: { agreementId: input.agreementId, channel: input.channel, status: 'open' },
       });
@@ -44,7 +46,7 @@ export class CaptureService {
           agreementId: input.agreementId,
           channel: input.channel,
           tokenHash: minted?.tokenHash ?? null,
-          expiresAt: remote ? new Date(Date.now() + DEFAULT_LINK_EXPIRY_HOURS * 3600 * 1000) : null,
+          expiresAt: remote ? new Date(Date.now() + expiryHours * 3600 * 1000) : null,
         },
       });
       if (agreement.status === 'draft') {
@@ -87,6 +89,9 @@ export class CaptureService {
         throw new GoneException('This link has expired. Contact the practice for a new one.');
       }
 
+      const practice = await tx.practice.findFirst({});
+      const challengeTypes = practice?.identifierTypes?.length ? practice.identifierTypes : DEFAULT_CHALLENGE_TYPES;
+
       let challengeId = request.verificationChallengeId;
       if (!challengeId) {
         const agreement = await tx.agreement.findFirst({ where: { id: request.agreementId } });
@@ -96,7 +101,7 @@ export class CaptureService {
             practiceId: parsed.practiceId,
             patientId: agreement.patientId,
             channel: request.channel,
-            identifierTypes: DEFAULT_CHALLENGE_TYPES,
+            identifierTypes: challengeTypes,
           },
         });
         challengeId = challenge.id;
@@ -111,7 +116,7 @@ export class CaptureService {
         subject: { type: 'CaptureRequest', id: request.id },
         payload: { channel: request.channel },
       });
-      return { captureRequestId: request.id, challengeId, identifierTypes: DEFAULT_CHALLENGE_TYPES };
+      return { captureRequestId: request.id, challengeId, identifierTypes: challengeTypes };
     });
   }
 

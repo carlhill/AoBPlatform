@@ -24,14 +24,54 @@ model Practice {
   name      String
   abn       String?
   pms       String   @default("medtech_evolution")
+  rails     String[] @default([]) // tyro | hicaps
+  // FR-1.4 configuration (defaults stand until the console exposes them)
+  identifierTypes  String[] @default(["name", "date_of_birth", "address"]) // floor 3, Medicare excluded non-configurably
+  linkExpiryHours  Int      @default(48) // D-05 default
+  channelsEnabled  String[] @default(["in_practice", "sms_link", "email_link", "paper"])
+  // Go-live gates (FR-1.7). Both flip via real integrations later; explicit
+  // booleans so the checklist is honest, never inferred.
+  writeBackProven    Boolean @default(false)
+  senderIdRegistered Boolean @default(false)
   createdAt DateTime @default(now())
 
+  locations  PracticeLocation[]
+  staff      StaffMember[]
   providers  Provider[]
   patients   Patient[]
   assignors  Assignor[]
   agreements Agreement[]
 
   @@map("practices")
+}
+
+model PracticeLocation {
+  id         String   @id @default(uuid()) @db.Uuid
+  practiceId String   @db.Uuid
+  practice   Practice @relation(fields: [practiceId], references: [id])
+  /** s 65C(5)(a) depends on it (FR-1.1). */
+  address    String
+
+  @@index([practiceId])
+  @@map("practice_locations")
+}
+
+/**
+ * FR-1.5 — the staff list. Feeds the practitioner-employee assignor hard
+ * block (REQ-VUL-04): practice staff cannot be assignors. Identity/passkey
+ * enrolment attaches when Keycloak lands.
+ */
+model StaffMember {
+  id          String    @id @default(uuid()) @db.Uuid
+  practiceId  String    @db.Uuid
+  practice    Practice  @relation(fields: [practiceId], references: [id])
+  name        String
+  dateOfBirth DateTime? @db.Date
+  role        String // front_desk | practice_manager | principal
+  active      Boolean   @default(true)
+
+  @@index([practiceId])
+  @@map("staff_members")
 }
 
 model Provider {

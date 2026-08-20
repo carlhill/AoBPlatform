@@ -8,6 +8,7 @@ import { AgreementsModule } from './agreements/agreements.module';
 import { DevSeedModule } from './dev-seed/dev-seed.module';
 import { VerificationModule } from './verification/verification.module';
 import { CaptureModule } from './capture/capture.module';
+import { PracticesModule } from './practices/practices.module';
 
 /**
  * Thin wiring only. Feature modules (M1 onboarding, M2 capture, M3
@@ -25,6 +26,7 @@ import { CaptureModule } from './capture/capture.module';
     AgreementsModule,
     VerificationModule,
     CaptureModule,
+    PracticesModule,
     DevSeedModule,
     HealthModule,
   ],
