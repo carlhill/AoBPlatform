@@ -13,7 +13,7 @@
   ],
   "scripts": {
     "build": "npm run build:packages && npm run build:apps",
-    "build:packages": "npm run build -w packages/domain && npm run build -w packages/contracts && npm run build -w packages/vault-client",
+    "build:packages": "npm run build -w packages/domain && npm run build -w packages/contracts && npm run build -w packages/vault-client && npm run build -w packages/auth-client",
     "build:apps": "npm run build -w apps/connector -w apps/core -w apps/rules -w apps/vault -w apps/web --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",

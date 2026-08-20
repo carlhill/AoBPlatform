@@ -19,6 +19,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@aobplatform/auth-client": "*",
     "@aobplatform/connector": "*",
     "@aobplatform/contracts": "*",
     "@aobplatform/domain": "*",

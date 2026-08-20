@@ -73,6 +73,23 @@ services:
     volumes:
       - aobplatform-immudb-data-v1:/var/lib/immudb
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: aobplatform-keycloak
+    restart: unless-stopped
+    command: ['start-dev', '--import-realm', '--http-port', '8080']
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # Tokens carry this as `iss` regardless of which host the request hit —
+      # validate browser tokens against the PUBLIC issuer (ReferralPlatform
+      # lesson: issuer mismatch 401'd every browser call).
+      KC_HOSTNAME: http://localhost:21024
+    ports:
+      - '21024:8080'
+    volumes:
+      - ./infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+
   mailhog:
     image: mailhog/mailhog:v1.0.1
     container_name: aobplatform-mailhog

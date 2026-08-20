@@ -25,7 +25,8 @@
       "@aobplatform/domain": ["../../packages/domain/src"],
       "@aobplatform/contracts": ["../../packages/contracts/src"],
       "@aobplatform/vault-client": ["../../packages/vault-client/src"],
-      "@aobplatform/connector": ["../../apps/connector/src"]
+      "@aobplatform/connector": ["../../apps/connector/src"],
+      "@aobplatform/auth-client": ["../../packages/auth-client/src"]
     }
   },
   "exclude": ["node_modules", "dist", "build", ".next"]
