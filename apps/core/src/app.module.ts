@@ -6,6 +6,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { VaultModule } from './vault/vault.module';
 import { AgreementsModule } from './agreements/agreements.module';
 import { DevSeedModule } from './dev-seed/dev-seed.module';
+import { VerificationModule } from './verification/verification.module';
 
 /**
  * Thin wiring only. Feature modules (M1 onboarding, M2 capture, M3
@@ -21,6 +22,7 @@ import { DevSeedModule } from './dev-seed/dev-seed.module';
     PrismaModule,
     VaultModule,
     AgreementsModule,
+    VerificationModule,
     DevSeedModule,
     HealthModule,
   ],

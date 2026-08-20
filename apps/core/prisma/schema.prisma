@@ -133,6 +133,44 @@ model Agreement {
   @@map("agreements")
 }
 
+// M3 — verification (REQ-VER-01..04, FR-3.1..3.4).
+// THE STRUCTURAL RULE OF THESE TWO TABLES: identifier VALUES never land in
+// them. Types and outcomes only (REQ-VER-04, HARD-04). There is no column
+// capable of carrying a stated value, and the service discards values after
+// the constant-time comparison.
+
+model VerificationChallenge {
+  id              String    @id @default(uuid()) @db.Uuid
+  practiceId      String    @db.Uuid
+  patientId       String    @db.Uuid
+  channel         String    // in_practice | sms_link | email_link | portal | paper
+  identifierTypes String[]  // the types challenged — from the approved six only
+  attempts        Int       @default(0)
+  lockedAt        DateTime?
+  passedAt        DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([practiceId])
+  @@index([patientId])
+  @@map("verification_challenges")
+}
+
+model VerificationEvent {
+  id              String   @id @default(uuid()) @db.Uuid
+  practiceId      String   @db.Uuid
+  patientId       String   @db.Uuid
+  challengeId     String   @db.Uuid
+  identifierTypes String[]
+  outcome         String   // passed | failed | locked_out
+  channel         String
+  /** Staff member identity for staff-verified in-practice capture. */
+  verifiedByStaffId String?
+  createdAt       DateTime @default(now())
+
+  @@index([practiceId])
+  @@map("verification_events")
+}
+
 // FR-11.2 — the vault outbox. Rows are inserted in the SAME transaction as
 // the domain write they evidence; the relay publishes them to the Evidence
 // Vault with backoff and no permanent give-up (packages/vault-client).
