@@ -1,6 +1,6 @@
-import { BadRequestException, Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, Ip, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { AgreementsService } from './agreements.service';
-import { CreateAgreementDto, LockParticularsDto, TransitionDto } from './agreements.dto';
+import { CreateAgreementDto, LockParticularsDto, SignDto, TransitionDto } from './agreements.dto';
 
 /**
  * Practice scope currently arrives via the x-practice-id header.
@@ -39,6 +39,16 @@ export class AgreementsController {
     @Body() dto: LockParticularsDto,
   ) {
     return this.agreements.lockParticulars(requirePractice(practiceId), id, dto);
+  }
+
+  @Post(':id/sign')
+  sign(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SignDto,
+    @Ip() ip: string,
+  ) {
+    return this.agreements.sign(requirePractice(practiceId), id, { ...dto, ipAddress: ip });
   }
 
   @Post(':id/transition')

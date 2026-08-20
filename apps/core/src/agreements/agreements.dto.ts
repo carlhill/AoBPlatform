@@ -37,3 +37,19 @@ export class TransitionDto {
   @IsString()
   to!: string;
 }
+
+export class SignDto {
+  @IsIn(['drawn', 'tap_to_approve', 'typed_name', 'wet_ink_scan', 'verbal_recorded'])
+  method!: string;
+
+  @IsIn(['in_practice', 'sms_link', 'email_link', 'portal', 'paper'])
+  channel!: string;
+
+  @IsOptional()
+  @IsUUID()
+  captureRequestId?: string;
+
+  @IsOptional()
+  @IsString()
+  deviceFingerprint?: string;
+}

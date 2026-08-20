@@ -193,6 +193,32 @@ model CaptureRequest {
   @@map("capture_requests")
 }
 
+// REQ-SIG-02 — the signature event binds the hash of the exact rendered
+// agreement, the rule-set + mapping versions, the preceding verification
+// event, timestamp, channel, device and IP, and the assignor's authority
+// basis. Append-only evidence, like verification events.
+
+model SignatureEvent {
+  id                  String   @id @default(uuid()) @db.Uuid
+  practiceId          String   @db.Uuid
+  agreementId         String   @db.Uuid
+  captureRequestId    String?  @db.Uuid
+  method              String   // drawn | tap_to_approve | typed_name | wet_ink_scan | verbal_recorded
+  channel             String
+  artefactHash        String   // SHA-256 of the exact rendered artefact
+  rendererVersion     String
+  ruleSetVersion      String?
+  mappingVersion      String?
+  verificationEventId String?  @db.Uuid
+  deviceFingerprint   String?
+  ipAddress           String?
+  createdAt           DateTime @default(now())
+
+  @@index([practiceId])
+  @@index([agreementId])
+  @@map("signature_events")
+}
+
 // FR-11.2 — the vault outbox. Rows are inserted in the SAME transaction as
 // the domain write they evidence; the relay publishes them to the Evidence
 // Vault with backoff and no permanent give-up (packages/vault-client).

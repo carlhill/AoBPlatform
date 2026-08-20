@@ -1,6 +1,8 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import type { Agreement as DbAgreement, Prisma } from '@prisma/client';
 import type { RulesEngineClient } from '@aobplatform/contracts';
+import { AGREEMENT_RENDERER, type AgreementRenderer } from '../render/renderer';
+import { CaptureService } from '../capture/capture.service';
 import {
   assertNoForbiddenAgreementFields,
   assertSignatureAllowed,
@@ -24,6 +26,8 @@ export class AgreementsService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(RULES_CLIENT) private readonly rules: RulesEngineClient,
+    @Inject(AGREEMENT_RENDERER) private readonly renderer: AgreementRenderer,
+    private readonly capture: CaptureService,
   ) {}
 
   /**
@@ -106,6 +110,12 @@ export class AgreementsService {
       throw new BadRequestException({ message: 's 65C validation failed', failures });
     }
 
+    // Rule 13 / REQ-VAULT-02: one deterministic render path — the artefact is
+    // rendered and hashed at lock time, and the hash is evidenced BEFORE the
+    // signature control can enable.
+    const languages = ['en'] as const; // bilingual rendering (REQ-LANG-02) arrives with M14
+    const rendered = this.renderer.render(dto.particulars, languages);
+
     return this.prisma.withPractice(practiceId, async (tx) => {
       const agreement = await tx.agreement.findFirst({ where: { id: agreementId } });
       if (!agreement) throw new NotFoundException('Agreement not found.');
@@ -119,6 +129,8 @@ export class AgreementsService {
           particularsLockedAt: new Date(),
           ruleSetVersion: validation.ruleSetVersion,
           mappingVersion: validation.mappingVersion,
+          renderedArtefactHash: rendered.sha256,
+          renderedLanguages: [...languages],
         },
       });
       await enqueueVaultEvent(tx, {
@@ -127,8 +139,126 @@ export class AgreementsService {
         subject: { type: 'Agreement', id: agreementId },
         payload: { ruleSetVersion: validation.ruleSetVersion, mappingVersion: validation.mappingVersion },
       });
+      await enqueueVaultEvent(tx, {
+        type: 'agreement.rendered',
+        actor: SYSTEM_ACTOR,
+        subject: { type: 'Agreement', id: agreementId },
+        payload: { artefactSha256: rendered.sha256, rendererVersion: rendered.rendererVersion },
+      });
       return updated;
     });
+  }
+
+  /**
+   * Signature capture (REQ-SIG-01/-02): binds the hash of the exact rendered
+   * artefact, the rule-set + mapping versions, the preceding verification
+   * event, timestamp, channel, device and IP into an append-only signature
+   * event — then validates at storage and completes the capture request
+   * (closing every other open channel, FR-2.7).
+   */
+  async sign(
+    practiceId: string,
+    agreementId: string,
+    dto: {
+      method: string;
+      channel: string;
+      captureRequestId?: string;
+      deviceFingerprint?: string;
+      ipAddress?: string;
+    },
+  ): Promise<DbAgreement> {
+    // Storage-time re-validation (REQ-65C-01: "and again at storage").
+    const agreementBefore = await this.get(practiceId, agreementId);
+    if (agreementBefore.status !== 'awaiting_signature') {
+      throw new BadRequestException(`Cannot sign an agreement in status ${agreementBefore.status}.`);
+    }
+    try {
+      assertSignatureAllowed({
+        particularsPresent: agreementBefore.particulars !== null,
+        particularsLocked: agreementBefore.particularsLockedAt !== null,
+        validationPassed: agreementBefore.ruleSetVersion !== null,
+      });
+    } catch (err) {
+      if (err instanceof HardRuleViolation) throw new BadRequestException(err.message);
+      throw err;
+    }
+    const revalidation = await this.rules.validate({
+      payload: agreementBefore.particulars,
+      ruleSetVersion: agreementBefore.ruleSetVersion ?? undefined,
+    });
+    if (!revalidation.valid) {
+      throw new BadRequestException('Storage-time s 65C validation failed — the agreement cannot be stored.');
+    }
+
+    // Rule 13: any later use re-verifies the hash — re-render and compare.
+    const rerendered = this.renderer.render(
+      agreementBefore.particulars as Record<string, unknown>,
+      agreementBefore.renderedLanguages,
+    );
+    if (rerendered.sha256 !== agreementBefore.renderedArtefactHash) {
+      throw new InternalServerErrorException(
+        'Render determinism violation: re-rendered artefact hash differs from the hash recorded at lock. ' +
+          'Signing is refused (rule 13).',
+      );
+    }
+
+    const signed = await this.prisma.withPractice(practiceId, async (tx) => {
+      const signatureEvent = await tx.signatureEvent.create({
+        data: {
+          practiceId,
+          agreementId,
+          captureRequestId: dto.captureRequestId ?? null,
+          method: dto.method,
+          channel: dto.channel,
+          artefactHash: rerendered.sha256,
+          rendererVersion: rerendered.rendererVersion,
+          ruleSetVersion: agreementBefore.ruleSetVersion,
+          mappingVersion: agreementBefore.mappingVersion,
+          verificationEventId: agreementBefore.verificationEventId,
+          deviceFingerprint: dto.deviceFingerprint ?? null,
+          ipAddress: dto.ipAddress ?? null,
+        },
+      });
+      await enqueueVaultEvent(tx, {
+        type: 'signature.captured',
+        actor: SYSTEM_ACTOR,
+        subject: { type: 'SignatureEvent', id: signatureEvent.id },
+        payload: {
+          agreementId,
+          method: dto.method,
+          channel: dto.channel,
+          artefactSha256: rerendered.sha256,
+          hasVerificationEvent: agreementBefore.verificationEventId !== null,
+        },
+      });
+
+      let current = await tx.agreement.update({
+        where: { id: agreementId },
+        data: { status: 'signed', signatureEventId: signatureEvent.id },
+      });
+      await enqueueVaultEvent(tx, {
+        type: 'agreement.signed',
+        actor: SYSTEM_ACTOR,
+        subject: { type: 'Agreement', id: agreementId },
+        payload: { signatureEventId: signatureEvent.id },
+      });
+
+      for (const to of ['validated', 'stored'] as const) {
+        current = await tx.agreement.update({ where: { id: agreementId }, data: { status: to } });
+        await enqueueVaultEvent(tx, {
+          type: to === 'validated' ? 'agreement.validated' : 'agreement.stored',
+          actor: SYSTEM_ACTOR,
+          subject: { type: 'Agreement', id: agreementId },
+          payload: { ruleSetVersion: agreementBefore.ruleSetVersion ?? '' },
+        });
+      }
+      return current;
+    });
+
+    if (dto.captureRequestId) {
+      await this.capture.complete(practiceId, dto.captureRequestId);
+    }
+    return signed;
   }
 
   /** Status changes route through the domain transition map — nothing else. */
