@@ -6,7 +6,6 @@ import type { ValidationResponse } from '@aobplatform/contracts';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { RULES_CLIENT } from '../src/rules-client/rules-client.module';
-import { CanonicalJsonRenderer } from '../src/render/renderer';
 
 const passingRules = {
   validate: async (): Promise<ValidationResponse> => ({
@@ -162,15 +161,7 @@ describe('signature capture — the full journey (e2e, real Postgres)', () => {
     );
   });
 
-  it('render_determinism — the same particulars always hash identically (rule 13)', () => {
-    const renderer = new CanonicalJsonRenderer();
-    const first = renderer.render(PARTICULARS, ['en']);
-    const second = renderer.render({ ...PARTICULARS }, ['en']);
-    expect(first.sha256).toBe(second.sha256);
-    expect(first.bytes.equals(second.bytes)).toBe(true);
-    const different = renderer.render({ ...PARTICULARS, serviceDate: '2026-09-02' }, ['en']);
-    expect(different.sha256).not.toBe(first.sha256);
-  });
+  // Renderer determinism is covered per-renderer in src/render/renderer.spec.ts.
 
   it('signing_requires_awaiting_signature_state — a draft cannot be signed', async () => {
     const draft = await request(app.getHttpServer())

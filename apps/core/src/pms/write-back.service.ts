@@ -4,7 +4,7 @@ import type { PmsAdapter } from '@aobplatform/contracts';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PMS_ADAPTER } from './pms.tokens';
-import { AGREEMENT_RENDERER, type AgreementRenderer } from '../render/renderer';
+import { RendererRegistry } from '../render/renderer-registry';
 
 const SYSTEM_ACTOR = { principalType: 'system', id: 'core' } as const;
 /** FR-9.3: alert on any stored artefact not in the PMS after this long. */
@@ -24,7 +24,7 @@ export class WriteBackService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(PMS_ADAPTER) private readonly adapter: PmsAdapter,
-    @Inject(AGREEMENT_RENDERER) private readonly renderer: AgreementRenderer,
+    private readonly renderers: RendererRegistry,
   ) {}
 
   /** Attempts write-back for one stored agreement. Failure is non-fatal — the sweep retries. */
@@ -41,8 +41,13 @@ export class WriteBackService {
           // an auditor looks. Left unwritten; surfaced by the staleness alert.
           return false;
         }
-        // Rule 13: re-render deterministically; refuse on hash mismatch.
-        const rendered = this.renderer.render(
+        // Rule 13: re-render with the version that produced the artefact; refuse on hash mismatch.
+        const renderer = this.renderers.get(agreement.rendererVersion);
+        if (!renderer) {
+          this.logger.error(`Renderer ${agreement.rendererVersion} not registered — write-back refused.`);
+          return false;
+        }
+        const rendered = await renderer.render(
           agreement.particulars as Record<string, unknown>,
           agreement.renderedLanguages,
         );
@@ -54,7 +59,7 @@ export class WriteBackService {
           patientLinkageKey: patient.pmsLinkageKey,
           artefact: new Uint8Array(rendered.bytes),
           artefactSha256: rendered.sha256,
-          filename: `aob-agreement-${agreementId}.json`,
+          filename: `aob-agreement-${agreementId}${rendered.mediaType === 'application/pdf' ? '.pdf' : '.json'}`,
           description: 'Signed Assignment of Benefit agreement (AoBPlatform)',
         });
         await tx.agreement.update({

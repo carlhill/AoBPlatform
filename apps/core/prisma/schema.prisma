@@ -160,6 +160,7 @@ model Agreement {
   mappingVersion        String?
   renderedLanguages     String[]  @default([])
   renderedArtefactHash  String?   // SHA-256 at render (REQ-VAULT-02)
+  rendererVersion       String?   // renderers are versioned content — re-verify with THIS version (rule 13/14)
   verificationEventId   String?   @db.Uuid
   signatureEventId      String?   @db.Uuid
   supersedesAgreementId String?   @db.Uuid // HARD-02: corrections supersede

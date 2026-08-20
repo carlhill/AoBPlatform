@@ -5,9 +5,11 @@ import { createHash } from 'node:crypto';
  * are hashed at render, and any later display re-verifies the hash. Two
  * renders of the same agreement must be byte-identical.
  *
- * The renderer is a versioned artefact of its own (tech stack §3.1): the
- * rendererVersion is recorded on every signature event so an artefact always
- * verifies against the renderer that produced it.
+ * Renderers are VERSIONED CONTENT, like rule sets (rule 14): every agreement
+ * records the rendererVersion that produced its artefact, and re-rendering
+ * for verification always uses THAT version — a new renderer is a new
+ * version, never an in-place edit, or every previously stored hash would
+ * stop verifying.
  */
 export interface RenderedArtefact {
   readonly bytes: Buffer;
@@ -17,23 +19,20 @@ export interface RenderedArtefact {
 }
 
 export interface AgreementRenderer {
-  render(particulars: Record<string, unknown>, languages: readonly string[]): RenderedArtefact;
+  render(particulars: Record<string, unknown>, languages: readonly string[]): Promise<RenderedArtefact>;
 }
 
 export const AGREEMENT_RENDERER = Symbol('AGREEMENT_RENDERER');
 
 /**
- * ⚠ DEV PLACEHOLDER — deterministic, but NOT the production renderer.
- * Production is a pinned-font, server-side PDF/A pipeline (rule 13, tech
- * stack §3.1) and is its own build slice. This placeholder preserves the
- * semantics everything downstream depends on — stable canonical bytes,
- * hash-at-render, versioned renderer — so the signature-binding and
- * re-verification machinery is real even while the visual artefact is not.
+ * DEV reference renderer — deterministic canonical JSON. Retained as a
+ * registered version forever: agreements locked under it must keep
+ * re-verifying against it (rule 13 + rule 14 together).
  */
 export class CanonicalJsonRenderer implements AgreementRenderer {
   static readonly VERSION = 'dev-canonical-json-1';
 
-  render(particulars: Record<string, unknown>, languages: readonly string[]): RenderedArtefact {
+  async render(particulars: Record<string, unknown>, languages: readonly string[]): Promise<RenderedArtefact> {
     const canonical = canonicalJson({ particulars, languages, renderer: CanonicalJsonRenderer.VERSION });
     const bytes = Buffer.from(canonical, 'utf8');
     return {
@@ -45,7 +44,7 @@ export class CanonicalJsonRenderer implements AgreementRenderer {
   }
 }
 
-function canonicalJson(value: unknown): string {
+export function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
   const keys = Object.keys(value as Record<string, unknown>).sort();

@@ -1,0 +1,124 @@
+Noted — once the services are built and tested, I'll boot the stack and verify the web UI in the browser. Continuing with the rules service wiring:
+
+Rules slice green — 5 passing, 34 conformance tests visibly skipped awaiting the human rule set, 4 e2e. Committing, then the big one: core foundation with Prisma + RLS:
+
+Client generated for real (v6.19.3). Creating and applying the initial migration against the running Postgres:
+
+Now the hand-authored RLS + immutability-trigger migration:
+
+Migrations applied. Now the core service code — Prisma service with practice scoping, vault relay wiring, and the agreements module:
+
+Now the integration e2e proving RLS fails closed, the DB triggers fire, and the full draft→lock→sign flow emits outbox events:
+
+Jest resolves the workspace package to its unbuilt `dist`. Building packages:
+
+Circular import — `VaultRelayService` pulls the token from `vault.module` which imports it back. Moving the token to its own file:
+
+The unscoped query fails closed with an *error* (empty-string GUC can't cast to uuid) rather than returning zero rows. Hardening the policies with `NULLIF` via a follow-up migration:
+
+All 12 pass. Updating CI to provision Postgres so these integration tests run on every push, then committing the slice:
+
+All green — the earlier -1 was a PowerShell pipeline artifact. Committing and pushing, then watching CI with the new Postgres-backed job:
+
+While CI runs, moving to the UI step you asked for. First a small guarded dev-seed endpoint in core (so the UI has data to show), then a real console status page:
+
+Now wiring up the launch config and starting the full stack for the UI test:
+
+Wrong server — it picked up a launch.json from the session's working directory (`C:\Users\carl\claude`), not the AoBPlatform one. Stopping it and checking:
+
+CI is green on GitHub (1m46s, including the Postgres e2e job). Now fixing the session launch.json — adding the AoBPlatform entries alongside the existing one:
+
+All three services show **Running** in the console UI. Now exercising the flow — create sample practice, then a draft agreement:
+
+The full UI flow works. Now the deeper proof — the outbox relay should have published `agreement.created` to the running vault service. Checking the vault's chain directly:
+
+Pane isn't displayed on your side so a screenshot can't composite — but the UI is verified via the page content above. Committing the console + dev-seed slice:
+
+Slice 6 — the M3 Verification module: schema, migration, service with constant-time matching, lockout, and types-only evidence:
+
+The running core service locks the query-engine DLL. Stopping it, regenerating, restarting:
+
+Now the verification module code:
+
+Now the verification tests — unit for matching, e2e for the named hard rules:
+
+Cleanup bug — the blocked delete aborts the whole cleanup transaction. Restructuring (append-only events legitimately stay):
+
+All green — 28 tests in core now. Committing and pushing slice 6:
+
+While CI runs, slice 7 — the M2 capture cascade core: capture requests with non-enumerable single-use tokens, content-blind landing, and cross-channel dedup. First the event types and schema:
+
+Now the capture e2e — full remote-link journey plus token security properties:
+
+All 26 core e2e green. Lint, commit, push:
+
+While CI runs — restarting the core dev server (stopped earlier for the Prisma regen), and checking the audit findings:
+
+Two findings: `@grpc/grpc-js` (via immudb-node, not yet exercised at runtime) and `deepmerge-ts` (via the Prisma CLI, dev-only). Fixing both with npm overrides rather than breaking downgrades:
+
+Overrides didn't take — npm kept the locked resolutions. Forcing a full re-resolve:
+
+CI passed for the capture slice. For the overrides, npm reused the existing tree — doing a clean reinstall in the background:
+
+`npm audit: found 0 vulnerabilities` — overrides applied (@grpc/grpc-js 1.14.4, deepmerge-ts 8.0.1). Approving Prisma's install scripts for Carl's npm wrapper and reverifying everything:
+
+CI is queued for that push. Now slice 8 — Dockerfiles. First checking how ReferralPlatform handled the TLS-inspecting proxy in its images:
+
+Now the three Dockerfiles following the proven pattern, plus certs dir and compose wiring:
+
+Building the vault image first (one at a time, per your incremental rule):
+
+Vault image built clean. Building rules and core:
+
+All three images built. Booting the containerised stack and verifying:
+
+Full containerised stack healthy on first boot. Quick smoke test through the host ports:
+
+CI watch for that push in the background, and continuing with the next slice — signature events + deterministic render hashing, completing the capture flow end-to-end:
+
+Now the end-to-end journey e2e — draft → link → verify → lock → sign → stored, with the signature binding assertions:
+
+All 30 e2e green. Committing and pushing the signature slice:
+
+While CI runs — extending the console UI to drive the full capture journey (it will honestly surface the 501 at the lock step until the human-authored rule set lands):
+
+The journey works to `awaiting_signature` and the live vault chain shows 5 verified events. One wart: the rules service's 501 surfaces as a bare 500. Propagating it properly:
+
+The UI now shows the honest guard: lock blocked with 501 until your rule set lands. Committing this, updating the README status, and pushing:
+
+The embedded double quotes broke PS 5.1's native-arg quoting. Retrying without them:
+
+While that CI runs, one more slice — M1.A practice onboarding: locations, staff list (which activates the REQ-VUL-04 staff-assignor hard block), practice config, and the go-live checklist:
+
+Wiring the capture flow to the new practice config (expiry + challenge set):
+
+Cross-suite interference: Jest runs e2e suites in parallel workers and one suite's outbox cleanup deleted another's rows mid-flight. DB-backed e2e should be serial:
+
+## Checkpoint — 8 slices built, all green, all pushed
+
+Today's autonomous run delivered a working vertical slice of AoBPlatform, every commit CI-verified on GitHub against a real Postgres. **10 commits on `main`, 100+ tests (37 core e2e + 33 unit + vault/rules suites), zero lint warnings, zero npm audit findings.**
+
+### What got built, in build-plan order
+
+| Slice | What it does |
+|---|---|
+| **vault-client + outbox** | Typed client (no update/delete method exists — ADR A-02), outbox enqueue in the same DB transaction as every domain write, relay with exponential backoff and no permanent give-up |
+| **Vault service** | Canonical hashing, chain verification, dev in-memory store; property tests prove tampering/reordering/insertion/deletion break the chain — and document that tail-truncation is only caught by external anchoring (REQ-LOG-03). immudb store is `TODO(HUMAN)` with a ready contract suite |
+| **Rules service** | Validate API + versioned immutable rule-set registry. Returns **501, never a silent pass**, until your human-authored C1–C14 set registers — the 34-test conformance suite is written and waiting |
+| **Core: RLS foundation** | Fail-closed row-level security (found and fixed the real trap: the superuser bypasses RLS, so runtime connects as `aob_app`); HARD-01/02 enforced as DB triggers |
+| **Core: M3 verification** | Constant-time matching, generic mismatch message, lockout after 5, evidence stores identifier **types never values** — all proven by named e2e tests |
+| **Core: M2 capture** | Single-use tokens (hash-only at rest), content-blind landing, first-completed-channel-wins, config-driven expiry swept by a narrow SECURITY DEFINER function |
+| **Core: signatures + render** | Lock renders-and-hashes before signature can enable; signing re-renders, refuses on hash mismatch, binds hash + versions + verification event + device/IP (REQ-SIG-02), revalidates at storage |
+| **Core: M1.A onboarding** | Practices, locations, staff list (which **activates the REQ-VUL-04 staff-assignor hard block**), config with the non-configurable Medicare exclusion, honest go-live checklist |
+
+Plus: Dockerfiles for all three services (full containerised stack boots healthy, ports 21001–21003), CI now runs the Postgres-backed e2e suite on every push, and the **dev console at localhost:3100** drives the whole journey live — I verified it in the browser: draft → minted link → content-blind landing → verification passed → *"Lock blocked (501): no s 65C rule set registered — human-authored zone. Signature stays unreachable."* That last line is the product refusing to let anyone near the criminal-offence path until the rules exist.
+
+### What only you can unblock (the human-authored zones)
+
+1. **The s 65C rule set** — implement `RuleSet` in [apps/rules/src/rules/rule-set.ts](C:\Users\carl\OneDrive\Documents\2026\AoBPlatform\apps\rules\src\rules\rule-set.ts); the 34-test suite verifies it with zero new test code, and the whole capture journey completes the moment it registers.
+2. **The immudb chain store + anchoring + keys** — [apps/vault/src/chain/immudb-chain-store.ts](C:\Users\carl\OneDrive\Documents\2026\AoBPlatform\apps\vault\src\chain\immudb-chain-store.ts), same drop-in contract-suite arrangement.
+3. **Phase 0 blockers** — D-01 Medtech write-back spike and the Department/Developer Liaison emails (D-11, D-10). I can draft the emails and spike plan any time.
+
+### Next in my queue when you say continue
+
+Reconciliation queue (M7) with the lodgement-window bands, PMS adapter registry wiring the mock connector into verification (ADR A-08), Keycloak realm + auth replacing the `x-practice-id` header, and the PDF/A render pipeline to replace the dev renderer.

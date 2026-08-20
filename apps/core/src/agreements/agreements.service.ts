@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import type { Agreement as DbAgreement, Prisma } from '@prisma/client';
 import type { RulesEngineClient } from '@aobplatform/contracts';
-import { AGREEMENT_RENDERER, type AgreementRenderer } from '../render/renderer';
+import { RendererRegistry } from '../render/renderer-registry';
 import { CaptureService } from '../capture/capture.service';
 import { WriteBackService } from '../pms/write-back.service';
 import {
@@ -34,7 +34,7 @@ export class AgreementsService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(RULES_CLIENT) private readonly rules: RulesEngineClient,
-    @Inject(AGREEMENT_RENDERER) private readonly renderer: AgreementRenderer,
+    private readonly renderers: RendererRegistry,
     private readonly capture: CaptureService,
     private readonly writeBack: WriteBackService,
   ) {}
@@ -133,7 +133,7 @@ export class AgreementsService {
     // rendered and hashed at lock time, and the hash is evidenced BEFORE the
     // signature control can enable.
     const languages = ['en'] as const; // bilingual rendering (REQ-LANG-02) arrives with M14
-    const rendered = this.renderer.render(dto.particulars, languages);
+    const rendered = await this.renderers.current().render(dto.particulars, languages);
 
     return this.prisma.withPractice(practiceId, async (tx) => {
       const agreement = await tx.agreement.findFirst({ where: { id: agreementId } });
@@ -149,6 +149,7 @@ export class AgreementsService {
           ruleSetVersion: validation.ruleSetVersion,
           mappingVersion: validation.mappingVersion,
           renderedArtefactHash: rendered.sha256,
+          rendererVersion: rendered.rendererVersion,
           renderedLanguages: [...languages],
         },
       });
@@ -209,8 +210,15 @@ export class AgreementsService {
       throw new BadRequestException('Storage-time s 65C validation failed — the agreement cannot be stored.');
     }
 
-    // Rule 13: any later use re-verifies the hash — re-render and compare.
-    const rerendered = this.renderer.render(
+    // Rule 13: any later use re-verifies the hash — re-render with the SAME
+    // renderer version that produced the artefact, and compare.
+    const renderer = this.renderers.get(agreementBefore.rendererVersion);
+    if (!renderer) {
+      throw new InternalServerErrorException(
+        `Renderer version ${agreementBefore.rendererVersion} is not registered — the artefact cannot be re-verified.`,
+      );
+    }
+    const rerendered = await renderer.render(
       agreementBefore.particulars as Record<string, unknown>,
       agreementBefore.renderedLanguages,
     );

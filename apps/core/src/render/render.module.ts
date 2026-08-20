@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
-import { AGREEMENT_RENDERER, CanonicalJsonRenderer } from './renderer';
+import { RendererRegistry } from './renderer-registry';
 
 @Module({
-  providers: [{ provide: AGREEMENT_RENDERER, useClass: CanonicalJsonRenderer }],
-  exports: [AGREEMENT_RENDERER],
+  providers: [RendererRegistry],
+  exports: [RendererRegistry],
 })
 export class RenderModule {}
