@@ -1,0 +1,31 @@
+{
+  "name": "aobplatform",
+  "private": true,
+  "version": "0.1.0",
+  "description": "AoBPlatform monorepo root. Read CLAUDE.md and CONVENTIONS.md before adding anything here.",
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build:packages && npm run build:apps",
+    "build:packages": "npm run build -w packages/domain && npm run build -w packages/contracts",
+    "build:apps": "npm run build -w apps/core -w apps/rules -w apps/vault -w apps/connector -w apps/web --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\""
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.8.1",
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.67.0"
+  }
+}

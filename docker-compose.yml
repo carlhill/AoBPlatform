@@ -1,0 +1,84 @@
+# AoBPlatform — local development stack.
+#
+# Port map (host:container). Host side uses a clean sequential 21000+ range so
+# nothing collides with default ports OR with ReferralPlatform's 20000-range
+# stack if both run at once. Container-internal ports are untouched;
+# inter-service traffic on the Docker network uses service DNS names
+# (postgres:5432, vault:3003, ...).
+#
+#   21020 postgres          (psql / GUI client)
+#   21021 redis
+#   21022 immudb (gRPC)     21023 immudb (metrics)
+#   21024 keycloak          (added when identity work starts — see infra/keycloak)
+#   21025 mailhog (SMTP)    21026 mailhog (web UI)
+#   21001 core              21002 rules              21003 vault
+#   21100 web
+#
+# Windows note (lesson from ReferralPlatform, 2026-08-15): if a host-mapped
+# port "works" per `docker ps` but a host client can't connect, check for a
+# stale duplicate listener (orphaned wslrelay.exe) on that exact port before
+# blaming the app:
+#   Get-NetTCPConnection -LocalPort <port> | Select LocalAddress,State,OwningProcess
+#
+# Healthchecks target 127.0.0.1, never `localhost` (inside containers
+# localhost resolves to ::1 while Node listens IPv4-only).
+#
+# App services are added to this file as they gain a Dockerfile (build order:
+# vault → rules → core). Every Node service Dockerfile will use the MONOREPO
+# ROOT as build context (it needs packages/*) — see CONVENTIONS.md §8.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: aobplatform-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aobplatform
+      POSTGRES_PASSWORD: aobplatform
+      POSTGRES_DB: aobplatform
+    ports:
+      - '21020:5432'
+    volumes:
+      - ./infra/postgres/init-schemas.sql:/docker-entrypoint-initdb.d/init-schemas.sql:ro
+      - aobplatform-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U aobplatform']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: aobplatform-redis
+    restart: unless-stopped
+    ports:
+      - '21021:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  immudb:
+    image: codenotary/immudb:1.9.5
+    container_name: aobplatform-immudb
+    restart: unless-stopped
+    environment:
+      IMMUDB_ADDRESS: 0.0.0.0
+    ports:
+      - '21022:3322'
+      - '21023:9497'
+    volumes:
+      - aobplatform-immudb-data:/var/lib/immudb
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: aobplatform-mailhog
+    restart: unless-stopped
+    ports:
+      - '21025:1025'
+      - '21026:8025'
+
+volumes:
+  aobplatform-postgres-data:
+  aobplatform-immudb-data:

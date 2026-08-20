@@ -1,0 +1,23 @@
+{
+  "name": "@aobplatform/domain",
+  "version": "0.1.0",
+  "description": "Pure TypeScript domain model for AoBPlatform — entities, branded IDs, status lifecycle, and the structural hard-rule guards from CLAUDE.md §2. Zero runtime dependencies.",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src --max-warnings=0",
+    "test": "jest",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "^20.16.11",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.4.12",
+    "typescript": "^5.6.3"
+  }
+}

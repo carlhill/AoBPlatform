@@ -1,0 +1,43 @@
+{
+  "name": "@aobplatform/core",
+  "version": "0.1.0",
+  "description": "Core application — NestJS modular monolith hosting modules M1-M8, M12-M14 (onboarding, capture cascade, verification, enduring lifecycle, 89AA notices, reconciliation, portal, console, campaigns, language). Module boundaries enforced in code; no cross-module table access.",
+  "private": true,
+  "license": "UNLICENSED",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "start:dev": "ts-node -T src/main.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src test --max-warnings=0",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:e2e": "jest --config jest.e2e.config.js",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@aobplatform/contracts": "*",
+    "@aobplatform/domain": "*",
+    "@nestjs/common": "^11.1.0",
+    "@nestjs/config": "^4.0.4",
+    "@nestjs/core": "^11.1.0",
+    "@nestjs/platform-express": "^11.1.0",
+    "@nestjs/schedule": "^6.0.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "^11.1.0",
+    "@types/express": "^5.0.0",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^20.16.11",
+    "@types/supertest": "^7.0.2",
+    "jest": "^29.7.0",
+    "supertest": "^7.2.2",
+    "ts-jest": "^29.4.12",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.3"
+  }
+}

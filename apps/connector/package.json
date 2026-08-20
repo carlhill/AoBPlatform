@@ -1,0 +1,25 @@
+{
+  "name": "@aobplatform/connector",
+  "version": "0.1.0",
+  "description": "Site-installed PMS connector for Windows hosts (Medtech Evolution sites) — outbound-only mTLS, practice-scoped credentials, signed builds, staged auto-update, remote kill. Ships the FR-9.1 adapter; the ONLY implementation until D-01 resolves is the mock.",
+  "private": true,
+  "license": "UNLICENSED",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src --max-warnings=0",
+    "test": "jest",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@aobplatform/contracts": "*",
+    "@aobplatform/domain": "*"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "^20.16.11",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.4.12",
+    "typescript": "^5.6.3"
+  }
+}

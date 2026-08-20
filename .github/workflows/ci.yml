@@ -1,0 +1,23 @@
+# CI — lint, typecheck, build, test every workspace. Gates are release-blocking,
+# not advisory (CLAUDE.md §7). SAST + dependency scanning jobs are added before
+# the first real merge to main once the repo has a remote.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  node:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run test

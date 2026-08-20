@@ -1,0 +1,27 @@
+{
+  "name": "@aobplatform/web",
+  "version": "0.1.0",
+  "description": "Web surfaces — practice console (M12), patient/assignor portal (M8), and public tester front end (M4). Next.js + Radix, WCAG 2.2 AA on all patient-facing pages, every user-facing string in the string table (REQ-LANG-01).",
+  "private": true,
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev": "next dev -p 3100",
+    "build": "next build",
+    "start": "next start -p 3100",
+    "lint": "eslint app --max-warnings=0",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@aobplatform/contracts": "*",
+    "@aobplatform/domain": "*",
+    "next": "^16.3.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.11",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "typescript": "^5.6.3"
+  }
+}

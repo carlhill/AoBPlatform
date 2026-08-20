@@ -1,0 +1,43 @@
+{
+  "name": "@aobplatform/vault",
+  "version": "0.1.0",
+  "description": "Evidence Vault service — append-only hash-chained event log (immudb), artefact store bindings, RFC 3161 anchoring, crypto-shredding, auditor bundle export. NO update or delete endpoint exists (ADR A-02). Chain, anchoring and key management are HUMAN-AUTHORED (CLAUDE.md §7).",
+  "private": true,
+  "license": "UNLICENSED",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "start:dev": "ts-node -T src/main.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src test --max-warnings=0",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:e2e": "jest --config jest.e2e.config.js",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@aobplatform/contracts": "*",
+    "@aobplatform/domain": "*",
+    "@nestjs/common": "^11.1.0",
+    "@nestjs/config": "^4.0.4",
+    "@nestjs/core": "^11.1.0",
+    "@nestjs/platform-express": "^11.1.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1",
+    "immudb-node": "^1.1.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "^11.1.0",
+    "@types/express": "^5.0.0",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^20.16.11",
+    "@types/supertest": "^7.0.2",
+    "jest": "^29.7.0",
+    "supertest": "^7.2.2",
+    "ts-jest": "^29.4.12",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.3"
+  }
+}

@@ -1,0 +1,8 @@
+node_modules/
+dist/
+build/
+.next/
+coverage/
+package-lock.json
+.claude/docs/
+infra/terraform/

@@ -1,0 +1,22 @@
+{
+  "name": "@aobplatform/contracts",
+  "version": "0.1.0",
+  "description": "Service contracts: the FR-9.1 PMS adapter interface, the rules-engine evaluation contract, and the vault event API contract. Types only — implementations live in apps/*.",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src --max-warnings=0",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@aobplatform/domain": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.11",
+    "typescript": "^5.6.3"
+  }
+}
