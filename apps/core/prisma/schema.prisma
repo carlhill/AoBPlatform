@@ -171,6 +171,28 @@ model VerificationEvent {
   @@map("verification_events")
 }
 
+// M2 — capture cascade (FR-2.1, FR-2.3, FR-2.7).
+// The remote-link token is NEVER stored: the row holds sha256(secret) only,
+// so a database read cannot mint working links. Tokens are single-use and
+// expire per practice config (default below until D-05 closes).
+
+model CaptureRequest {
+  id                      String    @id @default(uuid()) @db.Uuid
+  practiceId              String    @db.Uuid
+  agreementId             String    @db.Uuid
+  channel                 String    // in_practice | sms_link | email_link | paper
+  tokenHash               String?   @unique // remote channels only
+  expiresAt               DateTime?
+  status                  String    @default("open") // open | completed | cancelled | expired
+  verificationChallengeId String?   @db.Uuid
+  completedAt             DateTime?
+  createdAt               DateTime  @default(now())
+
+  @@index([practiceId])
+  @@index([agreementId])
+  @@map("capture_requests")
+}
+
 // FR-11.2 — the vault outbox. Rows are inserted in the SAME transaction as
 // the domain write they evidence; the relay publishes them to the Evidence
 // Vault with backoff and no permanent give-up (packages/vault-client).
