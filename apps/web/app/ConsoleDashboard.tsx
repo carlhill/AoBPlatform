@@ -27,6 +27,26 @@ interface AgreementRow {
   createdAt: string;
 }
 
+interface OutstandingRow {
+  serviceRecordId: string;
+  serviceDate: string;
+  mbsItemNumbers: string[];
+  daysRemaining: number;
+  band: string;
+  agreementId: string | null;
+  needsAgreement: boolean;
+  outboundChaseSuppressed: boolean;
+  revenueForgone: boolean;
+}
+
+const BAND_COLOURS: Record<string, string> = {
+  standard: '#1a7f37',
+  compressed: '#9a6700',
+  urgent: '#bc4c00',
+  last_chance: '#cf222e',
+  expired: '#57606a',
+};
+
 type HealthState = Record<string, boolean>;
 
 const card: React.CSSProperties = {
@@ -43,6 +63,7 @@ export function ConsoleDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [journey, setJourney] = useState<string[]>([]);
   const [chain, setChain] = useState<{ valid: boolean; length: number } | null>(null);
+  const [outstanding, setOutstanding] = useState<OutstandingRow[]>([]);
 
   const checkHealth = useCallback(async () => {
     const next: HealthState = {};
@@ -196,6 +217,44 @@ export function ConsoleDashboard() {
     }
   };
 
+  const loadOutstanding = useCallback(async (practiceId: string) => {
+    const res = await fetch(`${CORE_URL}/reconciliation/outstanding`, {
+      headers: { 'x-practice-id': practiceId },
+      cache: 'no-store',
+    });
+    if (res.ok) setOutstanding((await res.json()) as OutstandingRow[]);
+  }, []);
+
+  const syncPms = async () => {
+    if (!seed) return;
+    setError(null);
+    try {
+      const res = await fetch(`${CORE_URL}/pms/sync`, {
+        method: 'POST',
+        headers: { 'x-practice-id': seed.practiceId },
+      });
+      if (!res.ok) throw new Error(`sync returned ${res.status}`);
+      await loadOutstanding(seed.practiceId);
+    } catch (err) {
+      setError(String(err));
+    }
+  };
+
+  const resend = async (serviceRecordId: string) => {
+    if (!seed) return;
+    setError(null);
+    const res = await fetch(`${CORE_URL}/reconciliation/${serviceRecordId}/resend`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-practice-id': seed.practiceId },
+      body: JSON.stringify({ channel: 'sms_link' }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setError(String(body.message ?? `resend returned ${res.status}`));
+    }
+    await loadOutstanding(seed.practiceId);
+  };
+
   const createDraft = async () => {
     if (!seed) return;
     setError(null);
@@ -247,7 +306,17 @@ export function ConsoleDashboard() {
           <button onClick={() => void runJourney()} disabled={!seed}>
             {strings.console.journeyButton}
           </button>
-          <button onClick={() => seed && void loadAgreements(seed.practiceId)} disabled={!seed}>
+          <button onClick={() => void syncPms()} disabled={!seed}>
+            {strings.console.syncButton}
+          </button>
+          <button
+            onClick={() => {
+              if (!seed) return;
+              void loadAgreements(seed.practiceId);
+              void loadOutstanding(seed.practiceId);
+            }}
+            disabled={!seed}
+          >
             {strings.console.refresh}
           </button>
         </div>
@@ -297,6 +366,53 @@ export function ConsoleDashboard() {
                   <td style={{ padding: '0.25rem 1rem 0.25rem 0' }}>{a.type}</td>
                   <td style={{ padding: '0.25rem 1rem 0.25rem 0' }}>{a.status}</td>
                   <td style={{ padding: '0.25rem 1rem 0.25rem 0' }}>{new Date(a.createdAt).toLocaleString('en-AU')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      <section aria-label={strings.console.outstanding} style={{ marginTop: '1.5rem' }}>
+        <h2>{strings.console.outstanding}</h2>
+        {outstanding.length === 0 ? (
+          <p>{strings.console.noOutstanding}</p>
+        ) : (
+          <table style={{ borderCollapse: 'collapse' }} data-testid="outstanding-table">
+            <thead>
+              <tr>
+                {[
+                  strings.console.serviceDateLabel,
+                  strings.console.itemsLabel,
+                  strings.console.daysRemainingLabel,
+                  strings.console.bandLabel,
+                  '',
+                ].map((h, i) => (
+                  <th key={i} style={{ textAlign: 'left', padding: '0.25rem 1rem 0.25rem 0' }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {outstanding.map((row) => (
+                <tr key={row.serviceRecordId}>
+                  <td style={{ padding: '0.25rem 1rem 0.25rem 0' }}>{row.serviceDate}</td>
+                  <td style={{ padding: '0.25rem 1rem 0.25rem 0' }}>{row.mbsItemNumbers.join(', ')}</td>
+                  <td style={{ padding: '0.25rem 1rem 0.25rem 0' }}>{row.daysRemaining}</td>
+                  <td style={{ padding: '0.25rem 1rem 0.25rem 0', color: BAND_COLOURS[row.band] ?? 'inherit' }}>
+                    {row.band}
+                    {row.revenueForgone ? ` — ${strings.console.revenueForgoneLabel}` : ''}
+                    {row.outboundChaseSuppressed ? ` — ${strings.console.chaseSuppressedLabel}` : ''}
+                  </td>
+                  <td style={{ padding: '0.25rem 0' }}>
+                    <button
+                      onClick={() => void resend(row.serviceRecordId)}
+                      disabled={row.revenueForgone || row.outboundChaseSuppressed || row.needsAgreement}
+                    >
+                      {strings.console.resendLabel}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
