@@ -212,6 +212,33 @@ export function ruleSetConformanceTests(makeRuleSet: () => RuleSet): void {
     });
   });
 
+  describe('stage awareness (REQ-65C-01: pre-signature blocking pass, storage assert pass)', () => {
+    it('pre_signature passes a payload that has no signature or lock yet — those are what the lock creates', () => {
+      const payload = { ...validPre() };
+      delete payload.signaturePresent;
+      delete payload.signatureMethod;
+      delete payload.signatureTimestamp;
+      delete payload.particularsLockedAt;
+      const results = ruleSet.evaluate(payload, 'pre_signature');
+      expect(results.filter((r) => r.outcome === 'fail')).toEqual([]);
+    });
+
+    it('pre_signature still blocks genuine data-set defects', () => {
+      const payload = { ...validPre(), patientName: '' };
+      delete payload.signaturePresent;
+      delete payload.particularsLockedAt;
+      expect(outcomeOf(ruleSet.evaluate(payload, 'pre_signature'), 'C1')).toBe('fail');
+    });
+
+    it('storage (the default) enforces the signature and lock obligations', () => {
+      const payload = { ...validPre() };
+      delete payload.signaturePresent;
+      delete payload.particularsLockedAt;
+      expect(outcomeOf(ruleSet.evaluate(payload), 'C9')).toBe('fail');
+      expect(outcomeOf(ruleSet.evaluate(payload), 'C12')).toBe('fail');
+    });
+  });
+
   describe('versioning (rule 14 / REQ-65C-02)', () => {
     it('exposes non-empty rule-set and mapping versions', () => {
       expect(ruleSet.version.length).toBeGreaterThan(0);

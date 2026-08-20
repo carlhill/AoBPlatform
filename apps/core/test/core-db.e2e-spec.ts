@@ -165,29 +165,32 @@ describe('core database layer (e2e, real Postgres)', () => {
       const res = await request(app.getHttpServer())
         .post(`/agreements/${agreementId}/particulars`)
         .set('x-practice-id', practiceA)
-        .send({
-          particulars: {
-            patientName: 'Alex Testpatient',
-            agreementDate: '2026-09-01',
-            agreementType: 'episodic_pre',
-            serviceDate: '2026-09-01',
-            basicServiceDescription: 'General practitioner attendance',
-            assignorIsPatient: true,
-          },
-        })
+        .send({ serviceDate: '2026-09-01', basicServiceDescription: 'General practitioner attendance' })
         .expect(201);
       expect(res.body.ruleSetVersion).toBe('test-rules-1');
       expect(res.body.mappingVersion).toBe('test-mapping-1');
       expect(res.body.particularsLockedAt).toBeDefined();
     });
 
-    it('benefit_amount_rejected_on_agreement_artefact — forbidden fields never reach the lock', async () => {
-      const res = await request(app.getHttpServer())
-        .post(`/agreements/${agreementId}/particulars`)
+    it('benefit_amount_rejected_on_agreement_artefact — a client cannot smuggle fields into the snapshot', async () => {
+      // Particulars are assembled server-side from platform records
+      // (REQ-DATA-11); the DTO whitelist strips anything else. A smuggled
+      // benefit amount never reaches the artefact — structurally.
+      const fresh = await request(app.getHttpServer())
+        .post('/agreements')
         .set('x-practice-id', practiceA)
-        .send({ particulars: { benefitAmount: 65.7 } })
-        .expect(400);
-      expect(JSON.stringify(res.body)).toContain('REQ-REG-04');
+        .send({ type: 'episodic_pre', providerId: gpId, patientId: patientAId, assignorId: assignorAId, assignorIsPatient: true })
+        .expect(201);
+      const locked = await request(app.getHttpServer())
+        .post(`/agreements/${fresh.body.id}/particulars`)
+        .set('x-practice-id', practiceA)
+        .send({
+          serviceDate: '2026-09-01',
+          basicServiceDescription: 'General practitioner attendance',
+          benefitAmount: 65.7, // stripped by the DTO whitelist — never assembled
+        })
+        .expect(201);
+      expect(JSON.stringify(locked.body.particulars)).not.toMatch(/benefit/i);
     });
 
     it('signs once locked and validated, emitting agreement.signed', async () => {

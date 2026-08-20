@@ -1,4 +1,4 @@
-import { IsBoolean, IsIn, IsObject, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateAgreementDto {
   @IsIn(['episodic_pre', 'episodic_post', 'treatment_plan', 'enduring'])
@@ -28,9 +28,30 @@ export class CreateAgreementDto {
 }
 
 export class LockParticularsDto {
-  /** The s 65C particulars payload — validated by the rules service before locking. */
-  @IsObject()
-  particulars!: Record<string, unknown>;
+  /**
+   * The client supplies ONLY what the server cannot know; every other
+   * particular (patient name, provider details, D7, verification state) is
+   * snapshotted from the platform's own records at lock time (REQ-DATA-11:
+   * cache the person, snapshot the agreement) — a client can never assert a
+   * fact the server owns.
+   */
+  @IsString()
+  serviceDate!: string;
+
+  @IsOptional()
+  @IsString()
+  agreementDate?: string;
+
+  /** D6a — pre-agreements. */
+  @IsOptional()
+  @IsString()
+  basicServiceDescription?: string;
+
+  /** D6b — post-agreements. */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  mbsItemNumbers?: string[];
 }
 
 export class TransitionDto {

@@ -1,4 +1,4 @@
-import type { RuleResult } from '@aobplatform/contracts';
+import type { RuleResult, ValidationStage } from '@aobplatform/contracts';
 import type { ValidationPayload } from './rules-payload';
 
 /**
@@ -23,7 +23,8 @@ import type { ValidationPayload } from './rules-payload';
 export interface RuleSet {
   readonly version: string;
   readonly mappingVersion: string;
-  evaluate(payload: ValidationPayload): RuleResult[];
+  /** stage defaults to 'storage' — the stricter of the two REQ-65C-01 passes. */
+  evaluate(payload: ValidationPayload, stage?: ValidationStage): RuleResult[];
 }
 
 export class RuleSetRegistry {

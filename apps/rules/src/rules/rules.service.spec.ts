@@ -2,6 +2,7 @@ import { NotImplementedException } from '@nestjs/common';
 import { RulesService } from './rules.service';
 import { RuleSetRegistry, type RuleSet } from './rule-set';
 import { ruleSetConformanceTests } from './rule-set.contract';
+import { createDraftRuleSet2026_08 } from './rule-set-2026-08.draft';
 
 const fakeRuleSet: RuleSet = {
   version: 'test-1',
@@ -52,16 +53,10 @@ describe('RuleSetRegistry', () => {
 });
 
 /**
- * The C1–C14 conformance suite runs against the human-authored rule set once
- * it is registered in rules.module.ts. Until then it runs against nothing and
- * is skipped — visibly, so the gap stays on the scoreboard.
- *
- * TODO(HUMAN): when the first rule set lands, replace `describe.skip` with
- * `describe` and pass a factory for the real implementation:
- *   describe('s 65C rule set 2026-07', () => ruleSetConformanceTests(() => new RuleSet_2026_07(mapping)));
+ * The C1–C14 conformance suite (written first, from the REQ-65C-01 table)
+ * running against the DRAFT rule set — agent-authored at Carl's instruction,
+ * pending line-by-line human review before it registers anywhere real.
  */
-describe.skip('s 65C rule set conformance (awaiting human-authored implementation)', () => {
-  ruleSetConformanceTests(() => {
-    throw new Error('no rule set implemented yet');
-  });
+describe('s 65C DRAFT rule set draft-2026-08 conformance', () => {
+  ruleSetConformanceTests(() => createDraftRuleSet2026_08());
 });

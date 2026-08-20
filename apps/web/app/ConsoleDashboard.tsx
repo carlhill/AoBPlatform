@@ -177,18 +177,14 @@ export function ConsoleDashboard() {
       const verify = await verifyRes.json();
       push(`Verification: ${verify.outcome} (three stated identifiers, constant-time match)`);
 
+      // The client supplies only what the server cannot know — every other
+      // particular is snapshotted server-side from platform records.
       const lockRes = await fetch(`${CORE_URL}/agreements/${draft.id}/particulars`, {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          particulars: {
-            patientName: 'Alex Testpatient',
-            agreementDate: new Date().toISOString().slice(0, 10),
-            agreementType: 'episodic_pre',
-            serviceDate: new Date().toISOString().slice(0, 10),
-            basicServiceDescription: 'General practitioner attendance',
-            assignorIsPatient: true,
-          },
+          serviceDate: new Date().toISOString().slice(0, 10),
+          basicServiceDescription: 'General practitioner attendance',
         }),
       });
       if (lockRes.status === 501) {

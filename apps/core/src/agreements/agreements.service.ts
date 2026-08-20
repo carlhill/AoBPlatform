@@ -29,6 +29,10 @@ import type { CreateAgreementDto, LockParticularsDto } from './agreements.dto';
 
 const SYSTEM_ACTOR = { principalType: 'system', id: 'core' } as const;
 
+function prune(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined));
+}
+
 @Injectable()
 export class AgreementsService {
   constructor(
@@ -106,14 +110,50 @@ export class AgreementsService {
    * returns 501 and locking is impossible — blocked states stay unreachable.
    */
   async lockParticulars(practiceId: string, agreementId: string, dto: LockParticularsDto): Promise<DbAgreement> {
+    // Assemble the particulars from the platform's OWN records (REQ-DATA-11:
+    // cache the person, snapshot the agreement) — the client supplies only
+    // what the server cannot know; it can never assert a fact the server owns.
+    const particulars = await this.prisma.withPractice(practiceId, async (tx) => {
+      const agreement = await tx.agreement.findFirst({ where: { id: agreementId } });
+      if (!agreement) throw new NotFoundException('Agreement not found.');
+      if (agreement.particularsLockedAt) {
+        throw new BadRequestException('Particulars are already locked — corrections supersede (HARD-02).');
+      }
+      const patient = await tx.patient.findFirst({ where: { id: agreement.patientId } });
+      if (!patient) throw new NotFoundException('Patient not found.');
+      const provider = agreement.providerId
+        ? await tx.provider.findFirst({ where: { id: agreement.providerId } })
+        : null;
+      const assignor = await tx.assignor.findFirst({ where: { id: agreement.assignorId } });
+
+      // undefined values are pruned: they vanish in the JSON round-trip
+      // through Postgres, and rule 13 requires the stored snapshot to
+      // re-render byte-identically to what was hashed at lock.
+      return prune({
+        patientName: `${patient.givenNames} ${patient.familyName}`,
+        agreementDate: dto.agreementDate ?? new Date().toISOString().slice(0, 10),
+        agreementType: agreement.type,
+        providerName: provider?.name,
+        providerAddress: provider?.placeOfPracticeAddress ?? undefined,
+        providerNumber: provider?.providerNumber ?? undefined,
+        serviceDate: dto.serviceDate,
+        basicServiceDescription: dto.basicServiceDescription,
+        mbsItemNumbers: dto.mbsItemNumbers,
+        assignorIsPatient: agreement.assignorIsPatient,
+        assignorName: agreement.assignorIsPatient ? undefined : assignor?.name,
+        assignorRelationship: agreement.assignorIsPatient ? undefined : (assignor?.relationshipToPatient ?? undefined),
+        verificationPassed: agreement.verificationEventId !== null ? true : undefined,
+      });
+    });
+
     try {
-      assertNoForbiddenAgreementFields(dto.particulars);
+      assertNoForbiddenAgreementFields(particulars);
     } catch (err) {
       if (err instanceof HardRuleViolation) throw new BadRequestException(err.message);
       throw err;
     }
 
-    const validation = await this.rules.validate({ payload: dto.particulars }).catch((err) => {
+    const validation = await this.rules.validate({ payload: particulars, stage: 'pre_signature' }).catch((err) => {
       // Surface the rules service's own status honestly — a 501 means the
       // human-authored rule set is not registered yet; a lock is impossible,
       // not broken (blocked states stay unreachable).
@@ -133,7 +173,7 @@ export class AgreementsService {
     // rendered and hashed at lock time, and the hash is evidenced BEFORE the
     // signature control can enable.
     const languages = ['en'] as const; // bilingual rendering (REQ-LANG-02) arrives with M14
-    const rendered = await this.renderers.current().render(dto.particulars, languages);
+    const rendered = await this.renderers.current().render(particulars, languages);
 
     return this.prisma.withPractice(practiceId, async (tx) => {
       const agreement = await tx.agreement.findFirst({ where: { id: agreementId } });
@@ -144,7 +184,7 @@ export class AgreementsService {
       const updated = await tx.agreement.update({
         where: { id: agreementId },
         data: {
-          particulars: dto.particulars as Prisma.InputJsonValue,
+          particulars: particulars as Prisma.InputJsonValue,
           particularsLockedAt: new Date(),
           ruleSetVersion: validation.ruleSetVersion,
           mappingVersion: validation.mappingVersion,
@@ -202,9 +242,20 @@ export class AgreementsService {
       if (err instanceof HardRuleViolation) throw new BadRequestException(err.message);
       throw err;
     }
+    // Storage pass (REQ-65C-01 "and again at storage"): the stored snapshot
+    // plus the signature and lock facts, against the SAME rule-set version
+    // that validated the lock (rule 14).
     const revalidation = await this.rules.validate({
-      payload: agreementBefore.particulars,
+      payload: {
+        ...(agreementBefore.particulars as Record<string, unknown>),
+        signaturePresent: true,
+        signatureMethod: dto.method,
+        signatureTimestamp: new Date().toISOString(),
+        particularsLockedAt: agreementBefore.particularsLockedAt?.toISOString(),
+        verificationPassed: agreementBefore.verificationEventId !== null ? true : undefined,
+      },
       ruleSetVersion: agreementBefore.ruleSetVersion ?? undefined,
+      stage: 'storage',
     });
     if (!revalidation.valid) {
       throw new BadRequestException('Storage-time s 65C validation failed — the agreement cannot be stored.');

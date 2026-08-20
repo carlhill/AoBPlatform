@@ -4,6 +4,16 @@ import type { RelayLogger, VaultOutboxRelayClient } from './outbox';
 export const DEFAULT_BATCH_SIZE = 25;
 
 /**
+ * Claim lease: before publishing, a relay atomically claims the row by
+ * pushing nextAttemptAt into the future WHERE it is still unclaimed. A
+ * second relay (another instance, a container beside a dev server) loses the
+ * conditional update and skips the row — observed double-publishing in dev
+ * on 2026-08-21 (two cores, one outbox, duplicate chain events), not
+ * theorised. The chain tolerates at-least-once, but exactly-once is cheap.
+ */
+export const CLAIM_LEASE_MS = 30_000;
+
+/**
  * Retry policy constants — exported so callers test against the real numbers
  * rather than hard-coding copies (copies drift; that is how ReferralPlatform
  * ended up with two different broken relay policies).
@@ -58,6 +68,16 @@ export async function relayPendingVaultEvents(options: RelayOptions): Promise<vo
   });
 
   for (const row of pending) {
+    // Atomic claim — loses gracefully against a concurrent relay.
+    const claimed = await prisma.vaultOutbox.updateMany({
+      where: {
+        id: row.id,
+        publishedAt: null,
+        OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+      },
+      data: { nextAttemptAt: new Date(Date.now() + CLAIM_LEASE_MS) },
+    });
+    if (claimed.count === 0) continue;
     try {
       const event: VaultEventInput = {
         type: row.type as VaultEventType,

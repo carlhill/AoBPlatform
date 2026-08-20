@@ -26,11 +26,22 @@ export interface RuleResult {
   readonly citation?: string;
 }
 
+/**
+ * REQ-65C-01 runs the validator twice: BEFORE the signature control enables
+ * (blocking) and again AT STORAGE (assert). Signature-dependent rules
+ * (C9 signature present, C12 locked-before-signature) cannot be satisfied at
+ * the pre-signature stage by definition — the stage tells the rule set which
+ * obligations apply now and which are deferred to storage.
+ */
+export type ValidationStage = 'pre_signature' | 'storage';
+
 export interface ValidationRequest {
   /** The agreement payload — s 65C particulars shape, defined in @aobplatform/domain. */
   readonly payload: unknown;
   /** Omit to validate against the current rule-set version. */
   readonly ruleSetVersion?: string;
+  /** Defaults to 'storage' — the stricter stage. */
+  readonly stage?: ValidationStage;
 }
 
 export interface ValidationResponse {

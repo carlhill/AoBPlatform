@@ -110,7 +110,7 @@ describe('signature capture — the full journey (e2e, real Postgres)', () => {
     const locked = await request(app.getHttpServer())
       .post(`/agreements/${agreementId}/particulars`)
       .set('x-practice-id', practiceId)
-      .send({ particulars: PARTICULARS })
+      .send({ serviceDate: PARTICULARS.serviceDate, basicServiceDescription: PARTICULARS.basicServiceDescription })
       .expect(201);
     expect(locked.body.renderedArtefactHash).toMatch(/^[0-9a-f]{64}$/);
 

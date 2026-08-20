@@ -7,6 +7,10 @@ describe('Rules & Conformance API (e2e)', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
+    // This suite tests the PRODUCTION DEFAULT: no rule set registered. The
+    // dev .env sets the draft flag (and ConfigModule loads it into
+    // process.env), so pin it off explicitly here.
+    process.env.RULES_REGISTER_DRAFT_SET = 'false';
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
@@ -14,6 +18,7 @@ describe('Rules & Conformance API (e2e)', () => {
   });
 
   afterAll(async () => {
+    delete process.env.RULES_REGISTER_DRAFT_SET;
     await app.close();
   });
 

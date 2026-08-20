@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpCode, Post } from '@nestjs/common';
-import { IsObject, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsObject, IsOptional, IsString } from 'class-validator';
 import type { ValidationResponse } from '@aobplatform/contracts';
 import { RulesService } from './rules.service';
 import type { ValidationPayload } from './rules-payload';
@@ -11,6 +11,10 @@ export class ValidateRequestDto {
   @IsOptional()
   @IsString()
   ruleSetVersion?: string;
+
+  @IsOptional()
+  @IsIn(['pre_signature', 'storage'])
+  stage?: 'pre_signature' | 'storage';
 }
 
 /**
@@ -26,7 +30,7 @@ export class RulesController {
   @Post('validate')
   @HttpCode(200)
   validate(@Body() dto: ValidateRequestDto): ValidationResponse {
-    return this.rules.validate(dto.payload, dto.ruleSetVersion);
+    return this.rules.validate(dto.payload, dto.ruleSetVersion, dto.stage ?? 'storage');
   }
 
   @Get('rule-sets')

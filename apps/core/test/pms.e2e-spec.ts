@@ -132,16 +132,7 @@ describe('M9 PMS wiring (e2e, real Postgres + mock adapter)', () => {
     await request(app.getHttpServer())
       .post(`/agreements/${agreementId}/particulars`)
       .set('x-practice-id', practiceId)
-      .send({
-        particulars: {
-          patientName: 'Alex Testpatient',
-          agreementDate: '2026-08-21',
-          agreementType: 'episodic_pre',
-          serviceDate: '2026-08-21',
-          basicServiceDescription: 'General practitioner attendance',
-          assignorIsPatient: true,
-        },
-      })
+      .send({ serviceDate: '2026-08-21', basicServiceDescription: 'General practitioner attendance' })
       .expect(201);
     const signed = await request(app.getHttpServer())
       .post(`/agreements/${agreementId}/sign`)

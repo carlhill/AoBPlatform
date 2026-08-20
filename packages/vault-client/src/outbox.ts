@@ -22,6 +22,7 @@ export interface VaultOutboxRelayClient {
   vaultOutbox: {
     findMany: (args: any) => Promise<VaultOutboxDbRow[]>;
     update: (args: any) => Promise<unknown>;
+    updateMany: (args: any) => Promise<{ count: number }>;
   };
 }
 

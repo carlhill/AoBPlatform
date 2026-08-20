@@ -30,7 +30,10 @@ function makeVaultClient(appendImpl: () => Promise<VaultEventRecord>): VaultClie
   } as unknown as VaultClient;
 }
 
-function makePrisma(rows: VaultOutboxDbRow[]): VaultOutboxRelayClient & { updates: any[] } {
+function makePrisma(
+  rows: VaultOutboxDbRow[],
+  options: { claimSucceeds?: boolean } = {},
+): VaultOutboxRelayClient & { updates: any[] } {
   const updates: any[] = [];
   return {
     updates,
@@ -40,6 +43,7 @@ function makePrisma(rows: VaultOutboxDbRow[]): VaultOutboxRelayClient & { update
         updates.push(args);
         return {};
       }),
+      updateMany: jest.fn(async () => ({ count: options.claimSucceeds === false ? 0 : 1 })),
     },
   };
 }
@@ -98,6 +102,16 @@ describe('relayPendingVaultEvents', () => {
 
     expect(logger.error).toHaveBeenCalled();
     expect(prisma.updates[0].data.publishedAt).toBeUndefined();
+  });
+
+  it('skips a row another relay instance has already claimed — no double publish', async () => {
+    const prisma = makePrisma([makeRow()], { claimSucceeds: false });
+    const vaultClient = makeVaultClient(async () => ({}) as VaultEventRecord);
+
+    await relayPendingVaultEvents({ prisma, vaultClient, logger: silentLogger });
+
+    expect(vaultClient.append).not.toHaveBeenCalled();
+    expect(prisma.updates).toHaveLength(0);
   });
 
   it('selects only unpublished rows whose backoff window has elapsed, oldest first', async () => {
