@@ -64,6 +64,49 @@ Open the console. In order:
 
 ---
 
+## 2a. The practice onboarding console
+
+**http://localhost:21100** — the top half of the page. Work down it; each step
+unlocks the next.
+
+1. **Register the practice.** The form is pre-filled with a fixture ABN. Only
+   three resolve, because the ABR runs offline here:
+   `53004085616` (company trading under another name), `51824753556` (sole
+   trader, no ACN), `13824753558` (CANCELLED). Your real ABN will be refused —
+   that is the deliberate refuse-rather-than-wave-through behaviour.
+2. **Put your name in "Your name"** in step 2. Every approval, activation,
+   invitation and notice records who did it, so several buttons stay disabled
+   until you do.
+3. **Approve** the application. It leaves the queue and becomes the practice
+   you are working on (remembered across reloads; paste an id to resume a
+   different one).
+4. **Add a location.** It appears **INACTIVE** in amber with the reason
+   printed — G-NAF is not ingested, so a human confirms the address. Click
+   *Confirm address and activate*.
+5. **Pre-register a practitioner**, then **invite** them at step 5.
+6. The affiliation row reads **Capture closed**, with the sentence *"The
+   practitioner has not yet accepted…"* underneath.
+7. In the dashed panel, **Accept**. It flips to **Capture open**.
+
+### Things worth breaking
+
+| Try | What should happen |
+|---|---|
+| Register with `53004085617` | Refused on the **check digits**, offline, before any lookup |
+| Register with `13824753558` | Refused: **CANCELLED on the ABR, not ACTIVE** |
+| Register `Smith Medical` against a `Pty Ltd` | Amber — matched only after ignoring the entity suffix |
+| Type a **name** into the directory lookup | Refused: AHPRA number only, so the directory cannot be enumerated |
+| Invite against an **inactive** location | Refused, citing s 65C(5)(a) |
+| Give notice with an end date **in the past** | Refused: notice must precede the end date; backdating does not un-cease agreements |
+| *Record AHPRA deregistration* | Every affiliation ends **immediately**, no notice period |
+
+The panel for accepting an invitation is dashed and labelled a **development
+shortcut** on purpose: in production a practice cannot accept on a
+practitioner's behalf at all — it happens in their own session, from a link
+sent to their own email.
+
+---
+
 ## 2b. Onboarding a doctor so you can set up a passkey
 
 The console's **Invite practitioner to enrol a passkey** button does all of
