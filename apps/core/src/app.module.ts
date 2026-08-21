@@ -19,6 +19,8 @@ import { NoticesModule } from './notices/notices.module';
 import { OrganisationsModule } from './organisations/organisations.module';
 import { AffiliationsModule } from './affiliations/affiliations.module';
 import { DomainExceptionFilter } from './common/domain-exception.filter';
+import { DatabaseExceptionFilter } from './common/database-exception.filter';
+import { MessagingModule } from './messaging/messaging.module';
 
 /**
  * Thin wiring only. Feature modules (M1 onboarding, M2 capture, M3
@@ -32,6 +34,7 @@ import { DomainExceptionFilter } from './common/domain-exception.filter';
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
     PrismaModule,
+    MessagingModule,
     AuthModule,
     IdentityModule,
     VaultModule,
@@ -50,6 +53,9 @@ import { DomainExceptionFilter } from './common/domain-exception.filter';
   ],
   // Registered as a provider rather than in main.ts so it applies in tests
   // too — a filter that only exists in production is a filter nothing proves.
-  providers: [{ provide: APP_FILTER, useClass: DomainExceptionFilter }],
+  providers: [
+    { provide: APP_FILTER, useClass: DomainExceptionFilter },
+    { provide: APP_FILTER, useClass: DatabaseExceptionFilter },
+  ],
 })
 export class AppModule {}

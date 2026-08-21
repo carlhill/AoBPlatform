@@ -1,4 +1,5 @@
 import { Logger, Module } from '@nestjs/common';
+import { IdentityModule } from '../identity/identity.module';
 import { ConfigService } from '@nestjs/config';
 import { OrganisationsController } from './organisations.controller';
 import { OrganisationsService } from './organisations.service';
@@ -17,6 +18,7 @@ import { createAddressValidator } from './address-validator';
  *           than none, because it writes addressValidated = true.
  */
 @Module({
+  imports: [IdentityModule],
   controllers: [OrganisationsController],
   providers: [
     OrganisationsService,

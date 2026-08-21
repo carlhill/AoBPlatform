@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Inject, Injectable, Logger, Not
 import { AbnError, assertOrganisationApplicationValid, isValidAbnChecksum, normaliseAbn } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PracticeAdminService } from '../identity/practice-admin.service';
 import { ABR_CLIENT, ADDRESS_VALIDATOR } from './organisations.tokens';
 import type { AbrClient } from './abr';
 import type { AddressValidator } from './address-validator';
@@ -27,6 +28,7 @@ export class OrganisationsService {
     private readonly prisma: PrismaService,
     @Inject(ABR_CLIENT) private readonly abr: AbrClient,
     @Inject(ADDRESS_VALIDATOR) private readonly addresses: AddressValidator,
+    private readonly practiceAdmin: PracticeAdminService,
   ) {}
 
   /**
@@ -251,6 +253,20 @@ export class OrganisationsService {
     if (!input.reviewerName?.trim()) {
       throw new BadRequestException('A validation decision must name the human who made it.');
     }
+    // INPUT VALIDATION RUNS FIRST, before the organisation is even looked up.
+    // These checks were originally below the state lookup, so a malformed
+    // rejection reason on an already-decided organisation reported "already
+    // rejected" and the reason was never examined at all — the guard looked
+    // like it worked because the wrong error happened to fire.
+    if (input.decision === 'rejected' && !input.note?.trim()) {
+      throw new BadRequestException('A rejection must record why, so the applicant can be told something useful.');
+    }
+    if (input.decision === 'rejected' && /already registered/i.test(input.note ?? '')) {
+      throw new BadRequestException(
+        'A rejection reason must not disclose whether an ABN is already registered here — that turns a ' +
+          'rejection into a way to enumerate our customers. Say that the application could not be verified.',
+      );
+    }
     const [organisation] = await this.prisma.$queryRaw<Array<{ validationState: string }>>`
       SELECT * FROM get_organisation_validation(${organisationId}::uuid)`;
     if (!organisation) throw new NotFoundException('Organisation not found.');
@@ -259,9 +275,6 @@ export class OrganisationsService {
         `This organisation is already ${organisation.validationState}. Re-deciding would overwrite the ` +
           'record of who approved it and when.',
       );
-    }
-    if (input.decision === 'rejected' && !input.note?.trim()) {
-      throw new BadRequestException('A rejection must record why, so the applicant can be told something useful.');
     }
 
     // The function re-checks 'pending' itself, so two reviewers racing cannot
@@ -297,11 +310,33 @@ export class OrganisationsService {
       },
     });
 
+    // Step 3 begins here. Deliberately AFTER the decision is committed: an
+    // approval must not be rolled back because an email bounced, and the
+    // outcome of the invitation is returned rather than swallowed.
+    const followUp =
+      input.decision === 'validated'
+        ? await this.practiceAdmin.onApproved({
+            organisationId: organisationId,
+            organisationName: updated.name,
+            adminName: updated.adminName,
+            adminEmail: updated.adminEmail,
+            approvedByName: input.reviewerName.trim(),
+            entitlementMethod: input.entitlementMethod,
+          })
+        : await this.practiceAdmin.onRejected({
+            organisationName: updated.name,
+            adminEmail: updated.adminEmail,
+            reason: input.note ?? 'The application could not be verified.',
+            rejectedByName: input.reviewerName.trim(),
+          });
+
     return {
       id: updated.id,
       validationState: updated.validationState,
       validatedBy: updated.validatedByName,
       validatedAt: updated.validatedAt,
+      adminEmail: updated.adminEmail,
+      followUp,
     };
   }
 

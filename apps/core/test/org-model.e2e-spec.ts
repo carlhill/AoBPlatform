@@ -70,7 +70,12 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
     // through the same pre-tenant function the service uses, and then each
     // one deleted inside its own scope. This is the RLS-returns-zero trap in
     // miniature — the naive version passes and silently cleans nothing.
-    for (const abn of [COMPANY_ABN, SOLE_ABN]) {
+    // Every ABN this suite touches, cleaned at the START as well as the end.
+    // Cleaning only in afterAll makes the suite pass in isolation and fail the
+    // moment anything else — a manual curl, an interrupted run — has left a
+    // row behind. A suite that only works on a pristine database is a suite
+    // that will fail at the least convenient moment.
+    for (const abn of [COMPANY_ABN, SOLE_ABN, '29002589460', '11000372193', '11001670909', '11001686747']) {
       const stale = await prisma.$queryRaw<Array<{ id: string }>>`
         SELECT id FROM find_organisation_by_abn(${abn})`;
       for (const org of stale) {

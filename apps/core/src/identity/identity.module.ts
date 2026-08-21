@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { KeycloakAdminClient } from '@aobplatform/auth-client';
 import { IdentityController } from './identity.controller';
 import { IdentityService } from './identity.service';
+import { PracticeAdminService } from './practice-admin.service';
 import { KEYCLOAK_ADMIN } from './identity.tokens';
 
 /**
@@ -14,6 +15,7 @@ import { KEYCLOAK_ADMIN } from './identity.tokens';
   controllers: [IdentityController],
   providers: [
     IdentityService,
+    PracticeAdminService,
     {
       provide: KEYCLOAK_ADMIN,
       inject: [ConfigService],
@@ -30,6 +32,6 @@ import { KEYCLOAK_ADMIN } from './identity.tokens';
       },
     },
   ],
-  exports: [IdentityService, KEYCLOAK_ADMIN],
+  exports: [IdentityService, PracticeAdminService, KEYCLOAK_ADMIN],
 })
 export class IdentityModule {}

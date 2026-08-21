@@ -210,6 +210,13 @@ services:
       # (§9). Setting this to `gnaf` before the ingest exists makes the service
       # refuse to start, on purpose.
       ADDRESS_VALIDATION_MODE: ${ADDRESS_VALIDATION_MODE:-manual}
+      # Email goes to the LOCAL SINK. Mailhog accepts everything and delivers
+      # nothing, so the approval and rejection messages can be read at
+      # http://localhost:21026 without a single one leaving this machine.
+      # Unset this and the sandbox gateway takes over, which records but does
+      # not even connect. Real sending is a separate decision (CLAUDE.md §7).
+      MAIL_SANDBOX_SMTP_HOST: mailhog
+      MAIL_SANDBOX_SMTP_PORT: '1025'
       # Staged: the guard verifies tokens when present. Turning enforcement on
       # is a release gate, not a dev default (see apps/core/src/auth).
       AUTH_ENFORCE: 'false'
