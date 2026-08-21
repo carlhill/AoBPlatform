@@ -1,6 +1,44 @@
 import { BadRequestException, Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
-import { IsIn, IsOptional, IsString, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsArray, IsBoolean, IsIn, IsOptional, IsString, MinLength, ValidateNested } from 'class-validator';
 import { OrganisationsService } from './organisations.service';
+
+/**
+ * What a named human read off abr.business.gov.au, when the platform has no
+ * ABR GUID to call the API with.
+ *
+ * This is NOT a way to skip verification — every gate still runs against
+ * these values: the ABN must be ACTIVE, the typed practice name must match one
+ * of these registered names, and a company must still yield an ACN. What
+ * changes is only WHO looked, and that is recorded.
+ */
+export class AbrAttestationDto {
+  /** Exactly as the ABR shows it — this is what the name gate matches against. */
+  @IsString()
+  @MinLength(2)
+  legalName!: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  businessNames?: string[];
+
+  /** ACTIVE or CANCELLED, as shown. Typing ACTIVE for a cancelled ABN is fraud, not a shortcut. */
+  @IsString()
+  abnStatus!: string;
+
+  @IsString()
+  entityType!: string;
+
+  @IsOptional()
+  @IsBoolean()
+  gstRegistered?: boolean;
+
+  /** The human who sighted the register. Never blank, never "system". */
+  @IsString()
+  @MinLength(1)
+  sightedByName!: string;
+}
 
 export class RegisterOrganisationDto {
   /** The practice name as the operator knows it — legal OR trading name. */
@@ -23,6 +61,16 @@ export class RegisterOrganisationDto {
   @IsOptional()
   @IsString()
   hpiO?: string;
+
+  /**
+   * Supplied ONLY when the ABR API is unavailable in this environment. If the
+   * API is configured, it wins and this is ignored — a human cannot overrule
+   * the register when the register can be asked.
+   */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AbrAttestationDto)
+  abrAttestation?: AbrAttestationDto;
 
   // NOTE: there is no banking field here, and there never will be (§8).
 }

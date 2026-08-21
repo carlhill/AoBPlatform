@@ -58,7 +58,24 @@ realm.components['org.keycloak.userprofile.UserProfileProvider'] = [
 ];
 
 // Roles — the AoB cast (CLAUDE.md §3 terminology: provider, not GP).
-const roleNames = ['provider', 'practice_principal', 'practice_manager', 'front_desk', 'patient', 'assignor', 'system'];
+//
+// `platform_operator` is the odd one out and deliberately so: it is US, not a
+// practice. It holds exactly one power — approving or rejecting an
+// organisation's application to join the platform. That decision cannot belong
+// to a practice role, because the whole point of the human validation queue is
+// that somebody outside the applicant vouches for them. It is granted to
+// Hills Empire staff and to nobody else, and it carries no practice scope, so
+// it can read no patient data, no agreements and no evidence.
+const roleNames = [
+  'provider',
+  'practice_principal',
+  'practice_manager',
+  'front_desk',
+  'patient',
+  'assignor',
+  'system',
+  'platform_operator',
+];
 realm.roles = {
   realm: roleNames.map((name) => ({ name, composite: false, clientRole: false, containerId: 'aobplatform' })),
   client: {},

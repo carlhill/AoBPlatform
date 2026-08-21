@@ -36,6 +36,22 @@ export const strings = {
     offlineNote:
       'ABN lookup runs offline against fixtures in this environment, so only these resolve: 53004085616 ' +
       '(company, trades under another name), 51824753556 (sole trader, no ACN), 13824753558 (CANCELLED).',
+    attestHeading: 'The ABR could not be reached — record what you saw instead',
+    attestNote:
+      'Open abr.business.gov.au in another tab, search this ABN, and type in what the register shows. Every ' +
+      'gate still runs against these values: the ABN must be ACTIVE, the practice name must match one of the ' +
+      'registered names, and a company must still yield an ACN. What changes is only who looked — and the ' +
+      'record says it was you, so the reviewer approving this practice can weigh it accordingly.',
+    attestLegalName: 'Entity name, exactly as the ABR shows it',
+    attestTradingNames: 'Registered business names (comma separated, optional)',
+    attestStatus: 'ABN status',
+    attestEntityType: 'Entity type',
+    attestGst: 'Registered for GST',
+    attestSightedBy: 'Your name — you are attesting you sighted the register',
+    attestOpenAbr: 'Open ABN Lookup',
+    attestApiWins: 'Once ABR_API_GUID is configured the API answers and this panel is ignored — a person cannot overrule the register when the register can be asked.',
+    verificationSourceApi: 'Verified against the ABR',
+    verificationSourceManual: 'Attested by a person, not the ABR API — sighted by',
     legalNameLabel: 'Legal entity name',
     tradingNamesLabel: 'Registered business names',
     acnLabel: 'ACN (derived from the ABN, never asked for)',

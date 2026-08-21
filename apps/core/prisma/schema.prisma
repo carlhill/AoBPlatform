@@ -44,35 +44,50 @@ model Practice {
   // entity that owns locations. It keeps the name `Practice` because it is
   // also the RLS tenant key (app.practice_id) on sixteen tables.
   /**
+   * /**
+   * /**
    * /** The ABR legal entity name. Often NOT what the practice trades as.
    */
-  legalName            String?
+  legalName             String?
   /**
    * Registered business names from the ABR. Practices trade under these.
    */
-  tradingNames         String[]  @default([])
+  tradingNames          String[]  @default([])
   /**
    * Derived from the ABN, never asked for — for a company they cannot differ.
    */
-  acn                  String?
-  entityType           String? // PTY_LTD | INDIVIDUAL_SOLE_TRADER | TRUST | PARTNERSHIP | ...
-  abnStatus            String? // must have been ACTIVE at validation time
-  abnVerifiedAt        DateTime?
-  gstRegistered        Boolean?
+  acn                   String?
+  entityType            String? // PTY_LTD | INDIVIDUAL_SOLE_TRADER | TRUST | PARTNERSHIP | ...
+  abnStatus             String? // must have been ACTIVE at validation time
+  abnVerifiedAt         DateTime?
+  /**
+   * HOW the ABR details were obtained. `abr_api` means the platform called the
+   * ABR and got this back. `manual_attestation` means a named human looked the
+   * ABN up on abr.business.gov.au and typed in what they saw.
+   * Recorded rather than smoothed over: a manually attested ABN is a person's
+   * word, and the reviewer approving the practice is entitled to know that
+   * before they approve it.
+   */
+  abnVerificationSource String? // abr_api | manual_attestation
+  /**
+   * Who sighted the register, when the source is manual_attestation.
+   */
+  abnSightedByName      String?
+  gstRegistered         Boolean?
   /**
    * Which registered name the operator's typed name matched, and how closely.
    */
-  nameMatchTier        String? // exact | entity_suffix_insensitive
-  nameMatchedOn        String?
-  hpiO                 String?
+  nameMatchTier         String? // exact | entity_suffix_insensitive
+  nameMatchedOn         String?
+  hpiO                  String?
   /**
    * BBPIP is all-or-nothing across the practice — one private item forfeits the quarter.
    */
-  bbpipParticipant     Boolean?
+  bbpipParticipant      Boolean?
   /**
    * Gates the enduring MyMedicare pathway entirely.
    */
-  myMedicareRegistered Boolean?
+  myMedicareRegistered  Boolean?
 
   // --- Human validation queue (ORG-MODEL-PROPOSAL.md §4) ---
   // An ACTIVE ABN with a matching name is necessary, not sufficient. A named
@@ -260,6 +275,8 @@ model Affiliation {
 
   // --- Offboarding: notice runs BEFORE the end date (§6) ---
   /**
+   * /**
+   * /**
    * /** Must be <= endsAt. Enforced by a CHECK constraint, not just in code.
    */
   noticeGivenAt DateTime?

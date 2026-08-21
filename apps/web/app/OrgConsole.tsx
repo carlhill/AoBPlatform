@@ -20,6 +20,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { strings } from './strings';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
+/** Deep link into the public ABN Lookup, so the attester can see the register. */
+const ABR_VIEW = 'https://abr.business.gov.au/ABN/View?abn=';
 
 const card: React.CSSProperties = {
   border: '1px solid #d0d7de',
@@ -51,6 +53,8 @@ interface Organisation {
   entityType: string | null;
   validationState: string;
   nameMatch?: NameMatch;
+  abnVerificationSource?: string | null;
+  abnSightedByName?: string | null;
 }
 interface PendingRow {
   id: string;
@@ -59,6 +63,8 @@ interface PendingRow {
   legalName: string;
   nameMatchTier: string;
   nameMatchedOn: string | null;
+  abnVerificationSource: string | null;
+  abnSightedByName: string | null;
 }
 interface LocationRow {
   id: string;
@@ -124,6 +130,14 @@ export function OrgConsole() {
   const [regName, setRegName] = useState('Jo Example Medical');
   const [regAbn, setRegAbn] = useState('51 824 753 556');
   const [registered, setRegistered] = useState<Organisation | null>(null);
+  /** Shown only after the ABR has actually failed — never offered up front. */
+  const [needsAttestation, setNeedsAttestation] = useState(false);
+  const [attLegalName, setAttLegalName] = useState('');
+  const [attTradingNames, setAttTradingNames] = useState('');
+  const [attStatus, setAttStatus] = useState('ACTIVE');
+  const [attEntityType, setAttEntityType] = useState('PTY_LTD');
+  const [attGst, setAttGst] = useState(true);
+  const [attSightedBy, setAttSightedBy] = useState('');
 
   // Step 2 — the queue
   const [pending, setPending] = useState<PendingRow[]>([]);
@@ -239,17 +253,101 @@ export function OrgConsole() {
           data-testid="reg-submit"
           onClick={() =>
             void run(async () => {
-              const result = await call<Organisation>('/organisations', {
-                method: 'POST',
-                body: JSON.stringify({ name: regName, abn: regAbn }),
-              });
-              setRegistered(result);
-              await loadQueue();
+              const attestation =
+                needsAttestation && attLegalName.trim() && attSightedBy.trim()
+                  ? {
+                      legalName: attLegalName.trim(),
+                      businessNames: attTradingNames
+                        .split(',')
+                        .map((n) => n.trim())
+                        .filter(Boolean),
+                      abnStatus: attStatus,
+                      entityType: attEntityType,
+                      gstRegistered: attGst,
+                      sightedByName: attSightedBy.trim(),
+                    }
+                  : undefined;
+              try {
+                const result = await call<Organisation>('/organisations', {
+                  method: 'POST',
+                  body: JSON.stringify({ name: regName, abn: regAbn, abrAttestation: attestation }),
+                });
+                setRegistered(result);
+                setNeedsAttestation(false);
+                await loadQueue();
+              } catch (err) {
+                // ONLY an ABR-unavailable failure opens the manual panel. A
+                // cancelled ABN or a name mismatch must never be re-typeable
+                // around, so those stay plain errors.
+                if ((err as Error).message.includes('no ABN lookup is configured')) setNeedsAttestation(true);
+                throw err;
+              }
             })
           }
         >
           {strings.org.registerButton}
         </button>
+
+        {needsAttestation && (
+          <div style={{ ...card, borderStyle: 'dashed', background: '#fff8f0' }} data-testid="attestation-panel">
+            <strong>{strings.org.attestHeading}</strong>
+            <p style={note}>{strings.org.attestNote}</p>
+            <p>
+              <a
+                href={ABR_VIEW + encodeURIComponent(regAbn.replace(/[^0-9]/g, ''))}
+                target="_blank"
+                rel="noreferrer noopener"
+              >
+                {strings.org.attestOpenAbr}
+              </a>
+            </p>
+            <label style={field}>
+              {strings.org.attestLegalName}
+              <input
+                style={input}
+                value={attLegalName}
+                onChange={(e) => setAttLegalName(e.target.value)}
+                data-testid="att-legal-name"
+              />
+            </label>
+            <label style={field}>
+              {strings.org.attestTradingNames}
+              <input style={input} value={attTradingNames} onChange={(e) => setAttTradingNames(e.target.value)} />
+            </label>
+            <label style={field}>
+              {strings.org.attestStatus}
+              <select style={input} value={attStatus} onChange={(e) => setAttStatus(e.target.value)} data-testid="att-status">
+                <option value="ACTIVE">ACTIVE</option>
+                <option value="CANCELLED">CANCELLED</option>
+              </select>
+            </label>
+            <label style={field}>
+              {strings.org.attestEntityType}
+              <select style={input} value={attEntityType} onChange={(e) => setAttEntityType(e.target.value)}>
+                <option value="PTY_LTD">PTY_LTD</option>
+                <option value="PUBLIC_COMPANY">PUBLIC_COMPANY</option>
+                <option value="INDIVIDUAL_SOLE_TRADER">INDIVIDUAL_SOLE_TRADER</option>
+                <option value="TRUST">TRUST</option>
+                <option value="PARTNERSHIP">PARTNERSHIP</option>
+                <option value="OTHER">OTHER</option>
+              </select>
+            </label>
+            <label style={{ ...field, display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+              <input type="checkbox" checked={attGst} onChange={(e) => setAttGst(e.target.checked)} />
+              {strings.org.attestGst}
+            </label>
+            <label style={field}>
+              {strings.org.attestSightedBy}
+              <input
+                style={input}
+                value={attSightedBy}
+                onChange={(e) => setAttSightedBy(e.target.value)}
+                data-testid="att-sighted-by"
+              />
+            </label>
+            <p style={note}>{strings.org.attestApiWins}</p>
+          </div>
+        )}
 
         {registered && (
           <div style={{ ...card, background: '#f6f8fa' }} data-testid="reg-result">
@@ -274,6 +372,14 @@ export function OrgConsole() {
                 {strings.org.matchedOn} <code>{registered.nameMatch.matched}</code> ({registered.nameMatch.source})
               </p>
             )}
+            <p
+              style={{ color: registered.abnVerificationSource === 'abr_api' ? GREEN : AMBER }}
+              data-testid="verification-source"
+            >
+              {registered.abnVerificationSource === 'abr_api'
+                ? strings.org.verificationSourceApi
+                : strings.org.verificationSourceManual + ' ' + registered.abnSightedByName}
+            </p>
             <p style={note}>{strings.org.noBanking}</p>
           </div>
         )}
@@ -311,7 +417,14 @@ export function OrgConsole() {
                   <td style={td}>
                     <code>{row.abn}</code>
                   </td>
-                  <td style={{ ...td, color: row.nameMatchTier === 'exact' ? GREEN : AMBER }}>{row.nameMatchTier}</td>
+                  <td style={{ ...td, color: row.nameMatchTier === 'exact' ? GREEN : AMBER }}>
+                    {row.nameMatchTier}
+                    <div style={{ ...note, color: row.abnVerificationSource === 'abr_api' ? GREEN : AMBER }}>
+                      {row.abnVerificationSource === 'abr_api'
+                        ? strings.org.verificationSourceApi
+                        : strings.org.verificationSourceManual + ' ' + row.abnSightedByName}
+                    </div>
+                  </td>
                   <td style={td}>
                     <button
                       disabled={busy || !reviewer.trim()}

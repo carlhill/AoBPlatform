@@ -198,6 +198,18 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: admin
       KEYCLOAK_WEB_CLIENT_ID: web
       CONSOLE_URL: http://localhost:21100
+      # ABN Lookup (ORG-MODEL-PROPOSAL.md §4). EMPTY BY DEFAULT: with no GUID
+      # the ABR client runs offline against fixtures and makes no network
+      # call, so an unverifiable ABN is refused rather than waved through.
+      # Register for a GUID at abr.business.gov.au, then either export
+      # ABR_API_GUID before `docker compose up`, or put it in a .env beside
+      # this file. The live client is written but UNEXERCISED — expect to
+      # confirm its response shape the first time it runs for real.
+      ABR_API_GUID: ${ABR_API_GUID:-}
+      # G-NAF is not ingested yet, so addresses are confirmed by a named human
+      # (§9). Setting this to `gnaf` before the ingest exists makes the service
+      # refuse to start, on purpose.
+      ADDRESS_VALIDATION_MODE: ${ADDRESS_VALIDATION_MODE:-manual}
       # Staged: the guard verifies tokens when present. Turning enforcement on
       # is a release gate, not a dev default (see apps/core/src/auth).
       AUTH_ENFORCE: 'false'

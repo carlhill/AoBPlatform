@@ -135,9 +135,98 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
       expect(res.body.message).toMatch(/already registered/);
     });
 
+    it('records that the fixture client stood in for the ABR API', async () => {
+      const org = await prisma.withPractice(orgId, (tx) => tx.practice.findFirst({ where: { id: orgId } }));
+      expect(org?.abnVerificationSource).toBe('abr_api');
+      expect(org?.abnSightedByName).toBeNull();
+    });
+
     it('starts PENDING — an ACTIVE ABN is necessary, not sufficient', async () => {
       const res = await api().get('/organisations/pending').expect(200);
       expect(res.body.organisations.map((o: { id: string }) => o.id)).toContain(orgId);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  describe('ABR attestation, when no GUID is configured', () => {
+    // A real ABN belonging to nobody, absent from the fixtures, so the offline
+    // client genuinely cannot answer for it.
+    const UNKNOWN_ABN = '29002589460';
+    const attestation = (over: Record<string, unknown> = {}) => ({
+      name: 'Attested Example Practice',
+      abn: UNKNOWN_ABN,
+      abrAttestation: {
+        legalName: 'Attested Example Practice',
+        businessNames: [],
+        abnStatus: 'ACTIVE',
+        entityType: 'PTY_LTD',
+        gstRegistered: true,
+        sightedByName: 'Carl Hill',
+        ...over,
+      },
+    });
+
+    afterAll(async () => {
+      for (const abn of [UNKNOWN_ABN, '11000372193', '11001670909']) {
+        const stale = await prisma.$queryRaw<Array<{ id: string }>>`
+          SELECT id FROM find_organisation_by_abn(${abn})`;
+        for (const o of stale) {
+          await prisma.withPractice(o.id, (tx) => tx.practice.deleteMany({}));
+        }
+      }
+    });
+
+    it('refuses outright when no attestation is offered, and says how to fix it', async () => {
+      const res = await api().post('/organisations').send({ name: 'Attested Example Practice', abn: UNKNOWN_ABN }).expect(400);
+      expect(res.body.message).toMatch(/abr\.business\.gov\.au/);
+      expect(res.body.message).toMatch(/ABR_API_GUID/);
+    });
+
+    it('accepts an attestation, and records WHO said so', async () => {
+      const res = await api().post('/organisations').send(attestation()).expect(201);
+      expect(res.body.abnVerificationSource).toBe('manual_attestation');
+      expect(res.body.abnSightedByName).toBe('Carl Hill');
+    });
+
+    it('surfaces the provenance in the reviewer queue, where the decision is made', async () => {
+      const res = await api().get('/organisations/pending').expect(200);
+      const row = res.body.organisations.find((o: { abn: string }) => o.abn === UNKNOWN_ABN);
+      expect(row.abnVerificationSource).toBe('manual_attestation');
+      expect(row.abnSightedByName).toBe('Carl Hill');
+    });
+
+    it('ATTESTATION_IS_NOT_A_BYPASS — the ACTIVE gate still runs against it', async () => {
+      // A fresh ABN, so this is genuinely the ACTIVE gate refusing and not a
+      // duplicate-registration conflict standing in for it.
+      const res = await api()
+        .post('/organisations')
+        .send({ ...attestation({ abnStatus: 'CANCELLED' }), abn: '11001670909' })
+        .expect(400);
+      expect(res.body.message).toMatch(/not ACTIVE/);
+    });
+
+    it('and the name gate still runs against it', async () => {
+      const res = await api()
+        .post('/organisations')
+        .send({
+          name: 'A Name That Does Not Match',
+          abn: '11000372193',
+          abrAttestation: {
+            legalName: 'Something Else Entirely',
+            abnStatus: 'ACTIVE',
+            entityType: 'PTY_LTD',
+            sightedByName: 'Carl Hill',
+          },
+        })
+        .expect(400);
+      expect(res.body.message).toMatch(/does not match any name registered/);
+    });
+
+    it('refuses an unnamed attestation — that is not an attestation', async () => {
+      await api()
+        .post('/organisations')
+        .send({ ...attestation({ sightedByName: '' }), abn: '11000372193' })
+        .expect(400);
     });
   });
 

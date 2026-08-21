@@ -39,6 +39,14 @@ export class OrganisationsService {
     acn?: string;
     pms?: string;
     hpiO?: string;
+    abrAttestation?: {
+      legalName: string;
+      businessNames?: string[];
+      abnStatus: string;
+      entityType: string;
+      gstRegistered?: boolean;
+      sightedByName: string;
+    };
   }) {
     const abn = normaliseAbn(input.abn);
 
@@ -49,12 +57,36 @@ export class OrganisationsService {
       throw new BadRequestException(`"${input.abn}" is not a valid ABN — the check digits do not agree.`);
     }
 
-    const lookup = await this.abr.lookup(abn);
+    // The API wins whenever it can answer. A human attestation is a FALLBACK
+    // for environments with no GUID, never an override — otherwise "the ABR
+    // says CANCELLED" could be talked around by retyping it.
+    let lookup = await this.abr.lookup(abn);
+    let source: 'abr_api' | 'manual_attestation' = 'abr_api';
+
+    if (!lookup && input.abrAttestation) {
+      const attested = input.abrAttestation;
+      lookup = {
+        abn,
+        abnStatus: attested.abnStatus,
+        legalName: attested.legalName,
+        businessNames: attested.businessNames ?? [],
+        entityType: attested.entityType,
+        gstRegistered: attested.gstRegistered,
+      };
+      source = 'manual_attestation';
+      this.logger.warn(
+        `ABN ${abn} was verified by ATTESTATION, not by the ABR API: ${attested.sightedByName} sighted the ` +
+          'register and typed these details. The reviewer approving this practice will see that.',
+      );
+    }
+
     if (!lookup) {
       throw new BadRequestException(
         this.abr.kind === 'offline'
-          ? 'The ABR could not be reached (no ABN lookup is configured in this environment), so this ABN ' +
-            'cannot be verified. An organisation is never created on an unverified ABN.'
+          ? `ABN ${abn} passed its check digits, but no ABN lookup is configured in this environment, so it ` +
+            'cannot be verified against the ABR — and an organisation is never created on an unverified ABN. ' +
+            'Either register for an ABN Lookup GUID at abr.business.gov.au and set ABR_API_GUID, or use one ' +
+            'of the offline fixtures: 53004085616, 51824753556, 13824753558.'
           : `The ABR returned no record for ABN ${abn}. Check the number, or refer to human validation.`,
       );
     }
@@ -91,7 +123,8 @@ export class OrganisationsService {
         ${gate.businessNames as string[]}, ${gate.entityType},
         ${lookup.abnStatus.toUpperCase()}, ${gate.gstRegistered},
         ${gate.nameMatch.tier}, ${gate.nameMatch.matched ?? null},
-        ${input.hpiO ?? null}, ${input.pms ?? 'medtech_evolution'})`;
+        ${input.hpiO ?? null}, ${input.pms ?? 'medtech_evolution'},
+        ${source}, ${input.abrAttestation?.sightedByName ?? null})`;
 
     const organisation = await this.prisma.withPractice(organisationId, (tx) =>
       tx.practice.findFirstOrThrow({ where: { id: organisationId } }),
@@ -106,7 +139,10 @@ export class OrganisationsService {
         entityType: gate.entityType,
         nameMatchTier: gate.nameMatch.tier,
         acnDerived: Boolean(gate.acn),
-        lookupSource: this.abr.kind,
+        // Provenance is evidence: "the register said so" and "a colleague
+        // said the register said so" are different claims.
+        verificationSource: source,
+        sightedBy: input.abrAttestation?.sightedByName ?? 'n/a',
       },
     });
 
@@ -119,6 +155,8 @@ export class OrganisationsService {
       tradingNames: organisation.tradingNames,
       entityType: organisation.entityType,
       validationState: organisation.validationState,
+      abnVerificationSource: organisation.abnVerificationSource,
+      abnSightedByName: organisation.abnSightedByName,
       /** Shown to the operator so an inexact match is visible, not silent. */
       nameMatch: { tier: gate.nameMatch.tier, matched: gate.nameMatch.matched, source: gate.nameMatch.source },
       next: 'This organisation is queued for human validation. It cannot add locations or practitioners until approved.',
