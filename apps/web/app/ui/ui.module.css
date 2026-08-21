@@ -547,3 +547,44 @@
   flex-direction: column;
   gap: var(--s2);
 }
+
+/* --- Collapsible sections ------------------------------------------------- */
+
+.sectionToggle {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.sectionToggle:hover {
+  background: var(--line);
+}
+
+.sectionChevron {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius);
+  border: 1px solid var(--line-strong);
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+  line-height: 1;
+  flex: none;
+}
+
+/*
+ * The stand-in shown while collapsed. Folding a section must not cost the
+ * reader information — only detail. A section that collapses to nothing at all
+ * is one nobody will remember to open.
+ */
+.sectionSummary {
+  padding: var(--s3) var(--s4);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}

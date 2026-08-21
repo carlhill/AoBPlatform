@@ -19,3 +19,6 @@ export * from './checks';
 export * from './contacts';
 export * from './review';
 export * from './amendment';
+export * from './audit';
+export * from './evidence';
+export * from './setup';

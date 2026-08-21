@@ -60,6 +60,24 @@ interface Attached {
   filename: string;
 }
 
+interface EvidenceWarning {
+  kind: 'duplicate' | 'identifier_absent' | 'unreadable';
+  message: string;
+}
+
+/**
+ * Which identifier a check's evidence ought to contain.
+ *
+ * Only the checks where there IS a right answer. Asking whether a phone-call
+ * note contains the ABN would produce a warning on every legitimate file, and a
+ * warning that cries wolf is one reviewers learn to click past — which costs
+ * more than the check gains.
+ */
+const IDENTIFIER_FOR_CHECK: Record<string, { field: 'abn'; label: string }> = {
+  'entity.abn_active': { field: 'abn', label: 'ABN' },
+  'entity.abn_age': { field: 'abn', label: 'ABN' },
+};
+
 /** "24.6 MB", not "25783512". A limit is only useful if it can be compared to. */
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} bytes`;
@@ -90,6 +108,7 @@ export function CheckRecorder({
   evidenceRequired,
   requiredFields,
   practiceId,
+  abn,
   onCancel,
   onSave,
 }: {
@@ -118,6 +137,8 @@ export function CheckRecorder({
    */
   requiredFields: readonly string[];
   practiceId: string;
+  /** The application's ABN, so evidence for an ABN check can be checked against it. */
+  abn?: string | null;
   onCancel: () => void;
   /** Rejects on refusal, so the reason can be shown HERE rather than off-screen. */
   onSave: (input: RecordCheckInput) => Promise<void>;
@@ -140,6 +161,8 @@ export function CheckRecorder({
   const [attached, setAttached] = useState<Attached[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [warnings, setWarnings] = useState<EvidenceWarning[]>([]);
+  const [inspecting, setInspecting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Which list of reasons applies is decided by the outcome, because the two
@@ -180,6 +203,39 @@ export function CheckRecorder({
    * something to hang on — would put an unevidenced check in an append-only
    * register the moment somebody opened a file dialog. Untidy beats wrong.
    */
+  /**
+   * Ask whether the file actually evidences what it is about to be cited for.
+   *
+   * Runs AFTER the upload rather than as part of it, because the check being
+   * evidenced is not known at upload time — a file is uploaded, then cited.
+   *
+   * Failure here is silent on purpose: this is an advisory second opinion, and
+   * an error banner about a corroboration service would obscure the upload that
+   * actually succeeded.
+   */
+  async function inspect(artefactId: string) {
+    const wanted = IDENTIFIER_FOR_CHECK[checkKey];
+    setInspecting(true);
+    try {
+      const params = new URLSearchParams({ checkKey });
+      if (wanted && abn) {
+        params.set('identifier', abn);
+        params.set('identifierLabel', wanted.label);
+      }
+      const response = await fetch(
+        CORE_URL + '/artefacts/' + artefactId + '/inspect?' + params.toString(),
+        { headers: { 'x-practice-id': practiceId } },
+      );
+      if (!response.ok) return;
+      const data = (await response.json()) as { warnings: EvidenceWarning[] };
+      setWarnings((current) => [...current, ...(data.warnings ?? [])]);
+    } catch {
+      // Advisory only.
+    } finally {
+      setInspecting(false);
+    }
+  }
+
   async function upload(file: File) {
     setUploading(true);
     setUploadError(null);
@@ -221,6 +277,7 @@ export function CheckRecorder({
       }
       const created = (await response.json()) as { id: string; filename?: string };
       setAttached((list) => [...list, { id: created.id, filename: created.filename ?? file.name }]);
+      void inspect(created.id);
     } catch (e) {
       setUploadError(e instanceof TypeError ? strings.review.unreachableBody : (e as Error).message);
     } finally {
@@ -385,7 +442,14 @@ export function CheckRecorder({
               <li className={styles.evidenceItem} key={file.id}>
                 <Paperclip size={13} aria-hidden="true" />
                 <span className={styles.evidenceName}>{file.filename}</span>
-                <Button variant="subtle" onClick={() => setAttached((list) => list.filter((f) => f.id !== file.id))}>
+                <Button
+                  variant="subtle"
+                  onClick={() => {
+                    setAttached((list) => list.filter((f) => f.id !== file.id));
+                    // The warnings were about the file being removed.
+                    setWarnings([]);
+                  }}
+                >
                   {strings.review.evidenceRemove}
                 </Button>
               </li>
@@ -417,6 +481,29 @@ export function CheckRecorder({
             <Notice tone="stop" title={strings.review.evidenceRejected}>
               {uploadError}
             </Notice>
+          )}
+
+          {inspecting && <p className={ui.hint}>{strings.review.evidenceChecking}</p>}
+
+          {/*
+            Warnings, never refusals. Both tests are defeatable by anyone
+            actually trying — a hash changes when a file is re-exported, and a
+            fabricated screenshot contains the right number. What they do is put
+            a specific, checkable statement in front of the person deciding.
+          */}
+          {warnings.length > 0 && (
+            <div data-testid={'evidence-warnings-' + checkKey}>
+              <Notice tone="warn" title={strings.review.evidenceWarnHeading}>
+                <span>
+                  {warnings.map((w, i) => (
+                    <span key={w.kind + i} style={{ display: 'block', marginBottom: 'var(--s2)' }}>
+                      {w.message}
+                    </span>
+                  ))}
+                  <span style={{ display: 'block', opacity: 0.85 }}>{strings.review.evidenceWarnAck}</span>
+                </span>
+              </Notice>
+            </div>
           )}
         </div>
       ) : (

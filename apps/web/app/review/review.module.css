@@ -525,3 +525,136 @@
   padding-left: var(--s3);
   margin-bottom: var(--s4);
 }
+
+/* --- The audit trail ------------------------------------------------------ */
+
+/*
+ * A vertical timeline. The rule down the left is what makes a list of events
+ * read as a SEQUENCE rather than as a set — which is the whole difference
+ * between an audit trail and a table of rows.
+ */
+.trail {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.trailItem {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: var(--s3);
+  position: relative;
+  padding-bottom: var(--s5);
+}
+
+/* The connecting rule, drawn from each dot down to the next. */
+.trailItem::before {
+  content: "";
+  position: absolute;
+  left: 14px;
+  top: 26px;
+  bottom: 0;
+  width: 2px;
+  background: var(--line);
+}
+
+.trailItem:last-child::before {
+  display: none;
+}
+
+.trailDot {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  display: grid;
+  place-items: center;
+  color: var(--ink-muted);
+  position: relative;
+  z-index: 1;
+  flex: none;
+}
+
+.trailDotFaded {
+  opacity: 0.5;
+}
+
+.trailBody {
+  min-width: 0;
+  padding-top: 3px;
+}
+
+/*
+ * The summary line is a BUTTON, because it discloses the detail. A div with an
+ * onClick is unreachable by keyboard and announces nothing.
+ */
+.trailHead {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.trailHead:disabled {
+  cursor: default;
+}
+
+.trailSummary {
+  font-weight: 500;
+  font-size: var(--text-sm);
+}
+
+/* Faded, never hidden. */
+.trailFaded {
+  color: var(--ink-muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.trailMeta {
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+  margin-top: 2px;
+}
+
+.trailDetail {
+  margin: var(--s3) 0 0;
+  padding: var(--s3);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+}
+
+.trailDetail > div {
+  display: grid;
+  grid-template-columns: minmax(120px, max-content) 1fr;
+  gap: var(--s2) var(--s4);
+  padding: 2px 0;
+}
+
+.trailDetail dt {
+  color: var(--ink-muted);
+}
+
+.trailDetail dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+@media (max-width: 620px) {
+  .trailDetail > div {
+    grid-template-columns: 1fr;
+    gap: 0;
+    margin-bottom: var(--s2);
+  }
+}

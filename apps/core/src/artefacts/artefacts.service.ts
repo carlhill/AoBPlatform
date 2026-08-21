@@ -1,7 +1,16 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { ArtefactError, assertUploadAcceptable, downloadHeaders } from '@aobplatform/domain';
+import {
+  ArtefactError,
+  CHECK_CATALOGUE,
+  assertUploadAcceptable,
+  downloadHeaders,
+  duplicateWarning,
+  identifierWarning,
+  type EvidenceWarning,
+} from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
+import { extractText } from './extract-text';
 import { ARTEFACT_STORE, sha256Hex, type ArtefactStore } from './artefact-store';
 
 /**
@@ -211,4 +220,83 @@ export class ArtefactsService {
       return { id: updated.id, removedAt: updated.deletedAt, reason: updated.deletedReason };
     });
   }
+
+  /**
+   * Does this file actually evidence what it is about to be cited for?
+   *
+   * Two questions, both answered as WARNINGS and never as a refusal:
+   *
+   *   1. Are these bytes already cited for a different check? Compared on the
+   *      SHA-256 that already exists so a file read in a dispute can be shown to
+   *      be the file uploaded now — duplicate detection is a free second use of
+   *      it.
+   *   2. Does the file contain the identifier it is supposed to prove? Only
+   *      answerable for text-bearing files; an image says so rather than
+   *      passing silently.
+   *
+   * WHY NOT REFUSE. A hash block is beaten by re-exporting the file, which
+   * changes the bytes and nothing else — it would stop the honest mistake and
+   * wave through anyone actually trying, which is the worst combination. And a
+   * content match cannot prove authenticity: a fabricated screenshot contains
+   * the right number just as reliably. Refusing on either would make the
+   * platform easier to fool, because a reviewer would read a green tick as
+   * verification.
+   */
+  async inspect(
+    practiceId: string,
+    artefactId: string,
+    context: { checkKey?: string; identifier?: string; identifierLabel?: string },
+  ): Promise<{ warnings: EvidenceWarning[]; extractedChars: number | null }> {
+    const artefact = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.artefact.findFirst({ where: { id: artefactId } }),
+    );
+    if (!artefact) throw new NotFoundException('Artefact not found in this practice.');
+
+    const warnings: EvidenceWarning[] = [];
+
+    // 1. The same bytes, cited elsewhere.
+    const siblings = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.artefact.findMany({
+        where: { sha256: artefact.sha256, id: { not: artefactId }, deletedAt: null },
+      }),
+    );
+    const citedFor = [
+      ...new Set(
+        siblings
+          .filter((a) => a.subjectType === 'PracticeCheck' && a.subjectId)
+          .map((a) => a.subjectId as string),
+      ),
+    ];
+    if (citedFor.length > 0) {
+      const checks = await this.prisma.withPractice(practiceId, (tx) =>
+        tx.practiceCheck.findMany({ where: { id: { in: citedFor } } }),
+      );
+      const labels = [...new Set(checks.map((c) => CHECK_CATALOGUE.find((definition) => definition.key === c.checkKey)?.label ?? c.checkKey))];
+      const warning = duplicateWarning({
+        sha256: artefact.sha256,
+        filename: artefact.filename,
+        alreadyCitedFor: labels,
+      });
+      if (warning) warnings.push(warning);
+    }
+
+    // 2. Does it contain what it is meant to prove?
+    let extractedChars: number | null = null;
+    if (context.identifier) {
+      const bytes = await this.store.get(artefact.storageKey);
+      const text = extractText(bytes, artefact.detectedContentType);
+      extractedChars = text === null ? null : text.length;
+
+      const warning = identifierWarning({
+        extracted: text,
+        identifier: context.identifier,
+        identifierLabel: context.identifierLabel ?? 'identifier',
+        filename: artefact.filename,
+      });
+      if (warning) warnings.push(warning);
+    }
+
+    return { warnings, extractedChars };
+  }
+
 }

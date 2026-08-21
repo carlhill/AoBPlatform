@@ -95,6 +95,33 @@ export class ArtefactsController {
    * always nosniff — the headers come from the domain layer so there is one
    * definition of how an artefact is served.
    */
+  /**
+   * Does this file actually evidence what it is about to be cited for?
+   *
+   * Called after upload and before the check is saved, because the check being
+   * evidenced is not known at upload time — a file is uploaded, then cited.
+   *
+   * Returns WARNINGS, never a refusal. Both of the things it looks for are
+   * defeatable by anyone actually trying: a hash match is beaten by re-exporting
+   * the file, and a content match is satisfied by a fabricated screenshot. What
+   * a warning does that a block cannot is put a specific, checkable statement in
+   * front of the person deciding, at the moment they can still act on it.
+   */
+  @Get(':artefactId/inspect')
+  inspect(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('artefactId', ParseUUIDPipe) artefactId: string,
+    @Query('checkKey') checkKey?: string,
+    @Query('identifier') identifier?: string,
+    @Query('identifierLabel') identifierLabel?: string,
+  ) {
+    return this.artefacts.inspect(requirePractice(practiceId), artefactId, {
+      checkKey,
+      identifier,
+      identifierLabel,
+    });
+  }
+
   @Get(':artefactId/content')
   async download(
     @Headers('x-practice-id') practiceId: string | undefined,

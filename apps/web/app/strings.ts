@@ -215,6 +215,28 @@ export const strings = {
     historyHide: 'Hide',
     historyEmpty: 'Nothing has been recorded against this check yet.',
     historyBy: 'by',
+
+    auditHeading: 'Everything that has happened',
+    auditLead:
+      'Oldest first, because this answers how the application got here rather than what happened lately. ' +
+      'Nothing is ever removed: a superseded check stays on the page, marked, because a reviewer changing ' +
+      'their mind is itself part of the record.',
+    auditChecks: 'checks recorded',
+    auditAmendments: 'corrections by the applicant',
+    auditEvidence: 'files attached',
+    auditPeople: 'People involved:',
+    auditSuperseded: 'Superseded',
+    auditCollapsed: 'Every check, correction, file and decision on this application — open to read it.',
+    auditKinds: {
+      submitted: 'Applied',
+      email_verified: 'Email confirmed',
+      correction_requested: 'Correction asked',
+      amended: 'Corrected',
+      check: 'Check',
+      evidence: 'Evidence',
+      ceremony: 'Ceremony',
+      decision: 'Decision',
+    } as Record<string, string>,
     historyAt: 'on',
     historyReason: 'Reason',
     historyNote: 'Note',
@@ -372,6 +394,12 @@ export const strings = {
       'That file is {size}. The limit is {max} — large enough for a scanned document or a screenshot, and ' +
       'small enough that the evidence store stays something anyone can audit. A long call recording usually ' +
       'needs to be a transcript plus a reference to where the recording is held.',
+    evidenceChecking: 'Looking at that file…',
+    evidenceWarnHeading: 'Worth a look before you save',
+    evidenceWarnAck:
+      'These do not stop you saving. Neither test can prove a document is genuine — a hash is changed by ' +
+      're-exporting the file, and a fabricated screenshot contains the right number just as reliably. They ' +
+      'rule out the wrong file, and nothing more.',
     evidenceOnlyOnPass: 'Evidence is attached when a check passes; a failure is explained in the reason and the note.',
 
     // The reviewer's identity. Not a text box — see identityUnverifiedBody.

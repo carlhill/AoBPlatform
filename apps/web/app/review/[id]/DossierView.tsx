@@ -36,6 +36,7 @@ import {
   ClipboardList,
   FileCheck2,
   Gauge,
+  History,
   Link2,
   Mail,
   MailWarning,
@@ -55,6 +56,7 @@ import { strings } from '../../strings';
 import { currentSession } from '../../auth';
 import { flagLabel, flagWhy } from '../flags';
 import { CheckRecorder, type RecordCheckInput } from '../CheckRecorder';
+import { AuditTrail } from '../AuditTrail';
 import { formatAbn, type QueueRow } from '../QueueView';
 import styles from '../review.module.css';
 
@@ -247,6 +249,9 @@ export function DossierView({ id }: { id: string }) {
   // Which check is being recorded. One at a time — a screen of twelve open
   // forms is a screen nobody fills in carefully.
   const [recording, setRecording] = useState<string | null>(null);
+  // Bumped after anything is recorded, so the trail below re-reads rather than
+  // sitting stale against the checklist immediately above it.
+  const [trailVersion, setTrailVersion] = useState(0);
   const [checks, setChecks] = useState<ChecksPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [decided, setDecided] = useState<'validated' | 'rejected' | null>(null);
@@ -407,6 +412,7 @@ export function DossierView({ id }: { id: string }) {
       // SCORE and the admission reasons, and computing those here would be a
       // second implementation of the scoring rules.
       loadChecks();
+      setTrailVersion((v) => v + 1);
     } catch (e) {
       // RETHROWN, so the recorder shows it beside the button that was pressed.
       // Setting the page-level error here put the message two thousand pixels
@@ -764,6 +770,7 @@ export function DossierView({ id }: { id: string }) {
                     evidenceRequired={check.evidenceRequired ?? false}
                     requiredFields={check.requiredFields ?? []}
                     practiceId={id}
+                    abn={row.abn}
                     onCancel={() => setRecording(null)}
                     onSave={recordCheck}
                   />
@@ -772,6 +779,23 @@ export function DossierView({ id }: { id: string }) {
             );
           })}
         </ul>
+      </Section>
+
+      {/*
+        Collapsed by default. It is the longest thing on the page and the least
+        often needed — a reviewer comes here to decide, and an open trail pushes
+        the decision below the fold. The stand-in line keeps the fact that
+        something happened visible even when folded.
+      */}
+      <Section
+        number={next()}
+        title={strings.review.auditHeading}
+        aside={<History size={16} aria-hidden="true" />}
+        collapsible
+        defaultOpen={false}
+        summary={strings.review.auditCollapsed}
+      >
+        <AuditTrail practiceId={id} reloadKey={trailVersion} />
       </Section>
 
       <Section number={next()} title={strings.review.decideHeading} aside={<Stamp size={16} aria-hidden="true" />}>

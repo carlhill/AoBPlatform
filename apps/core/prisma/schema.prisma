@@ -236,6 +236,31 @@ model Practice {
    */
   statusToken     String    @unique @default(dbgenerated("encode(gen_random_bytes(32), 'hex')"))
 
+  /// Email confirmation, two-phase: the token addresses the page, the CODE
+  /// confirms. A link alone is consumed by a GET, and mail scanners, link
+  /// previews and antivirus gateways all issue GETs — so a link-only scheme
+  /// confirms addresses with no human involved. See the migration for why the
+  /// attempt cap matters more than the code length.
+  adminEmailVerifiedAt            DateTime?
+  adminEmailVerificationToken     String?   @unique
+  adminEmailVerificationCode      String?
+  adminEmailVerificationSentAt    DateTime?
+  adminEmailVerificationExpiresAt DateTime?
+  adminEmailVerificationAttempts  Int       @default(0)
+
+  /// The correction window. Opened by a reviewer rather than at submission, so
+  /// the clock does not run down while an application waits in a queue nobody
+  /// has reached.
+  correctionRequestedAt     DateTime?
+  correctionExpiresAt       DateTime?
+  correctionRequestedByName String?
+  correctionReason          String?
+
+  /// Applicant amendments. The trail itself is in application_amendments; these
+  /// are markers so the queue can flag an amended application without a join.
+  amendedAt      DateTime?
+  amendmentCount Int       @default(0)
+
   // NOTE: there is deliberately NO banking column here, and there never will
   // be. AoBPlatform holds the consent record, not the money — the payee
   // arrangement is registered directly with Services Australia, with us not

@@ -6,6 +6,7 @@ import { OrganisationsService } from './organisations.service';
 import { ChecksService } from './checks.service';
 import { ApplicantController } from './applicant.controller';
 import { ApplicantService } from './applicant.service';
+import { AuditService } from './audit.service';
 import { ABR_CLIENT, ADDRESS_VALIDATOR } from './organisations.tokens';
 import { AbrWebServicesClient, OfflineAbrClient } from './abr';
 import { createAddressValidator } from './address-validator';
@@ -27,6 +28,7 @@ import { createAddressValidator } from './address-validator';
     OrganisationsService,
     ChecksService,
     ApplicantService,
+    AuditService,
     {
       provide: ABR_CLIENT,
       inject: [ConfigService],

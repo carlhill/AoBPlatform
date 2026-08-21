@@ -23,7 +23,7 @@
 import * as RadixLabel from '@radix-ui/react-label';
 import * as RadixCheckbox from '@radix-ui/react-checkbox';
 import * as RadixDialog from '@radix-ui/react-dialog';
-import { useId } from 'react';
+import { useId, useState } from 'react';
 import styles from './ui.module.css';
 
 export { styles as ui };
@@ -59,24 +59,69 @@ export function Section({
   number,
   title,
   aside,
+  collapsible = false,
+  defaultOpen = true,
+  summary,
   children,
 }: {
   number: number;
   title: string;
   aside?: React.ReactNode;
+  /**
+   * Whether the whole section folds away.
+   *
+   * For sections that are CONSULTED rather than acted on. An audit trail is the
+   * clearest case: it is long, it is the least often needed thing on the page,
+   * and left open it pushes the decision — the thing the reviewer actually came
+   * to do — below the fold.
+   */
+  collapsible?: boolean;
+  defaultOpen?: boolean;
+  /** A one-line stand-in shown while collapsed, so folding costs no information. */
+  summary?: React.ReactNode;
   children: React.ReactNode;
 }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const bodyId = useId();
+  const shown = !collapsible || open;
+
+  const heading = (
+    <>
+      {/* Decorative: the heading already carries the name. */}
+      <span className={styles.sectionNumber} aria-hidden="true">
+        {number}
+      </span>
+      <h2 className={styles.sectionTitle}>{title}</h2>
+      {aside && <span style={{ marginLeft: 'auto' }}>{aside}</span>}
+    </>
+  );
+
   return (
     <section className={styles.section} aria-label={title}>
-      <div className={styles.sectionHead}>
-        {/* Decorative: the heading already carries the name. */}
-        <span className={styles.sectionNumber} aria-hidden="true">
-          {number}
-        </span>
-        <h2 className={styles.sectionTitle}>{title}</h2>
-        {aside && <span style={{ marginLeft: 'auto' }}>{aside}</span>}
+      {collapsible ? (
+        // A real button, so it is reachable by keyboard and announces its state.
+        // A div with an onClick is neither.
+        <button
+          type="button"
+          className={`${styles.sectionHead} ${styles.sectionToggle}`}
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-controls={bodyId}
+        >
+          <span className={styles.sectionChevron} aria-hidden="true">
+            {open ? '−' : '+'}
+          </span>
+          {heading}
+        </button>
+      ) : (
+        <div className={styles.sectionHead}>{heading}</div>
+      )}
+
+      {collapsible && !open && summary && <div className={styles.sectionSummary}>{summary}</div>}
+
+      <div className={styles.sectionBody} id={bodyId} hidden={!shown}>
+        {children}
       </div>
-      <div className={styles.sectionBody}>{children}</div>
     </section>
   );
 }

@@ -15,6 +15,7 @@ import {
 } from 'class-validator';
 import { OrganisationsService } from './organisations.service';
 import { ChecksService } from './checks.service';
+import { AuditService } from './audit.service';
 
 /**
  * What a named human read off abr.business.gov.au, when the platform has no
@@ -379,6 +380,7 @@ export class OrganisationsController {
   constructor(
     private readonly organisations: OrganisationsService,
     private readonly checks: ChecksService,
+    private readonly auditService: AuditService,
   ) {}
 
   /**
@@ -392,6 +394,18 @@ export class OrganisationsController {
   }
 
   /** Everything performed for this practice, plus what hard mode would decide. */
+  /**
+   * Everything that has happened to this application, in one ordered trail.
+   *
+   * Practice-scoped through the header like the rest of the check surface, so
+   * RLS confines it — this is a reviewer looking at one application, not a
+   * platform-wide feed.
+   */
+  @Get('audit')
+  auditTrail(@Headers('x-practice-id') practiceId: string | undefined) {
+    return this.auditService.trail(requirePractice(practiceId));
+  }
+
   @Get('checks')
   checkSummary(@Headers('x-practice-id') practiceId: string | undefined) {
     return this.checks.summary(requirePractice(practiceId));

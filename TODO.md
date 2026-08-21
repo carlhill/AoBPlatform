@@ -81,6 +81,63 @@ identity. Do not rely on the check history as evidence of who did what.
 
 ---
 
+## Capture
+
+### Telehealth: the call IS the acceptance
+**Status:** not started.
+**Decided:** 2026-08-22, Carl.
+
+For a telehealth consultation the practitioner calls the patient through the
+app, the patient accepts the call, and that acceptance is the consent
+ceremony — no separate link, no SMS, no second device.
+
+**Why this is attractive:** it removes the weakest step in remote capture. A
+link sent to a phone proves somebody holds that phone; a patient answering a
+call they were expecting, in a consultation they booked, with a practitioner
+they can see, is a materially stronger act — and it happens inside the
+appointment rather than beside it.
+
+**What has to be worked out before it is built,** because each of these
+changes what the record means:
+
+- **What exactly is captured.** Accepting a call is consent to the CALL. The
+  s 65C data set and the assignment of benefit are a different agreement, and
+  the ceremony has to present them, not assume them. A patient who thinks they
+  answered the phone has not assigned a benefit.
+- **What the evidence is.** A signature is an artefact; an accepted call is an
+  event. The record needs something durable — the call metadata, the
+  timestamps, what was displayed and read, and whether the patient was told
+  what they were agreeing to. Whether that includes a recording is a separate
+  decision with its own consent question.
+- **Identity.** The call proves the patient answered, not who they are. The
+  identifier check (FR-1.4, minimum three, never Medicare) still has to happen
+  and probably has to happen visually, on the call.
+- **Failure modes.** Dropped calls, the patient handing the phone to somebody
+  else, a call accepted while the patient is driving. A ceremony that cannot
+  be safely abandoned mid-way is not safe.
+
+**Depends on:** the capture channel work, and a decision on whether telehealth
+calls run in our app at all or through a PMS-provided channel.
+
+---
+
+## Testing
+
+### The e2e suite is flaky across suites
+**Status:** observed 2026-08-22, not diagnosed.
+
+`org-model.e2e-spec.ts` failed four tests in a full run and passed all
+fifty-five in isolation, then passed in a repeat full run. Suites share one
+database and Jest runs them in parallel, so this is almost certainly fixture
+interference rather than a product bug.
+
+**Why it matters more than it looks:** a suite that fails intermittently is one
+people learn to re-run rather than read, and the day it catches something real
+it gets re-run too. Either give each suite its own schema, or run the e2e
+suites serially (`--runInBand`) and accept the wall-clock cost.
+
+---
+
 ## Identity
 
 ### The two identity-strength dashboards
