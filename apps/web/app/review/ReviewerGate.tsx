@@ -1,0 +1,164 @@
+'use client';
+
+/**
+ * The reviewer's sign-in gate.
+ *
+ * WHY A SEPARATE GATE FROM AuthGate. The console gate asks "are you signed
+ * in"; this asks "are you a platform administrator". Those are different
+ * questions, and the second one matters more here than anywhere else in the
+ * product: a platform admin approves practices, and approving a practice is
+ * what opens consent capture. It is the most privileged act in the system.
+ *
+ * WHAT THIS GATE DOES AND DOES NOT DO, stated rather than implied — a gate that
+ * looks stronger than it is, is worse than no gate, because people plan around
+ * the appearance:
+ *
+ *   - It stops a person BROWSING to the reviewer screens without the role.
+ *   - It does NOT stop a request. Until AUTH_ENFORCE is on, the core API still
+ *     accepts an x-practice-id header from anyone who can reach it. The server
+ *     guard is a separate release gate.
+ *
+ * Both facts are on the screen, because the honest version of "we are not
+ * finished" is more useful to whoever reads this next than a reassuring one.
+ */
+
+import { useCallback, useEffect, useState } from 'react';
+import { ShieldCheck, ShieldAlert, LogOut } from 'lucide-react';
+import { beginLogin, clearSession, currentSession, type Session } from '../auth';
+import { Button, Notice, Shell, ui } from '../ui';
+import { strings } from '../strings';
+
+const REQUIRED_ROLE = 'platform_admin';
+
+/**
+ * The development escape hatch, OFF unless switched on at build time.
+ *
+ * It exists because the platform-admin realm client is new and unproven on real
+ * hardware, and without it a browser that cannot complete WebAuthn locks the
+ * reviewer screens away entirely — including the screens used to approve the
+ * practice whose admin would enrol the first passkey.
+ */
+const DEV_BYPASS_ALLOWED = process.env.NEXT_PUBLIC_DEV_UNAUTHENTICATED_CONSOLE === 'true';
+const BYPASS_KEY = 'aob.reviewerBypass';
+
+export function ReviewerGate({ children }: { children: React.ReactNode }) {
+  const [session, setSession] = useState<Session | null>(null);
+  const [bypassed, setBypassed] = useState(false);
+  const [checked, setChecked] = useState(false);
+
+  useEffect(() => {
+    setSession(currentSession());
+    setBypassed(window.sessionStorage.getItem(BYPASS_KEY) === 'true');
+    setChecked(true);
+  }, []);
+
+  const signOut = useCallback(() => {
+    clearSession();
+    window.sessionStorage.removeItem(BYPASS_KEY);
+    setSession(null);
+    setBypassed(false);
+  }, []);
+
+  // Avoids flashing the sign-in card before the in-memory session is read.
+  if (!checked) return null;
+
+  if (session) {
+    // Signed in, but as WHAT. A practice admin reaching these screens is a
+    // wrong turn, not an attack, and is told so plainly.
+    if (!session.roles.includes(REQUIRED_ROLE)) {
+      return (
+        <Shell right={strings.review.audience}>
+          <h1 className={ui.pageTitle}>{strings.reviewerGate.wrongRoleTitle}</h1>
+          <p className={ui.pageLead}>{strings.reviewerGate.wrongRoleBody}</p>
+          <p className={ui.hint}>
+            {strings.reviewerGate.signedInAs} <strong>{session.username}</strong>
+            {session.roles.length > 0 && <> · {session.roles.join(', ')}</>}
+          </p>
+          <div className={ui.rowActions}>
+            <Button onClick={signOut}>
+              <LogOut size={15} aria-hidden="true" />
+              {strings.auth.signOut}
+            </Button>
+          </div>
+        </Shell>
+      );
+    }
+
+    return (
+      <>
+        <div className={ui.reviewerBanner}>
+          <ShieldCheck size={15} aria-hidden="true" />
+          {strings.reviewerGate.signedInAs} <strong>{session.username}</strong>
+          <button type="button" className={ui.bannerButton} onClick={signOut} data-testid="reviewer-sign-out">
+            {strings.auth.signOut}
+          </button>
+        </div>
+        {children}
+      </>
+    );
+  }
+
+  if (bypassed) {
+    return (
+      <>
+        {/*
+          Loud, dashed and red, and it names itself. A development bypass that
+          looks like a normal signed-in state is how one reaches production.
+        */}
+        <div className={`${ui.reviewerBanner} ${ui.reviewerBannerBypass}`}>
+          <ShieldAlert size={15} aria-hidden="true" />
+          <strong>{strings.reviewerGate.bypassActive}</strong>
+          <span>{strings.reviewerGate.bypassNote}</span>
+          <button type="button" className={ui.bannerButton} onClick={signOut} data-testid="reviewer-end-bypass">
+            {strings.reviewerGate.endBypass}
+          </button>
+        </div>
+        {children}
+      </>
+    );
+  }
+
+  return (
+    <Shell right={strings.review.audience}>
+      <div className={ui.signInCard} data-testid="reviewer-gate">
+        <div className={ui.signInMark}>
+          <ShieldCheck size={20} aria-hidden="true" />
+          {strings.appName}
+        </div>
+        <h1 className={ui.pageTitle}>{strings.reviewerGate.heading}</h1>
+        <p className={ui.pageLead}>{strings.reviewerGate.body}</p>
+
+        <div className={ui.rowActions}>
+          <Button variant="primary" onClick={() => void beginLogin()} data-testid="reviewer-sign-in">
+            {strings.auth.signIn}
+          </Button>
+        </div>
+
+        <p className={ui.hint} style={{ marginTop: 'var(--s4)' }}>
+          {strings.auth.passkeyNote}
+        </p>
+
+        {/* The limit of what this gate does. Said, not implied. */}
+        <Notice tone="warn" title={strings.reviewerGate.scopeHeading}>
+          {strings.reviewerGate.scopeBody}
+        </Notice>
+
+        {DEV_BYPASS_ALLOWED && (
+          <div className={ui.rowActions}>
+            <Button
+              variant="subtle"
+              data-testid="reviewer-bypass"
+              onClick={() => {
+                window.sessionStorage.setItem(BYPASS_KEY, 'true');
+                setBypassed(true);
+              }}
+            >
+              {strings.reviewerGate.bypass}
+            </Button>
+            <span className={ui.hint}>{strings.reviewerGate.bypassOnlyHere}</span>
+          </div>
+        )}
+      </div>
+    </Shell>
+  );
+}

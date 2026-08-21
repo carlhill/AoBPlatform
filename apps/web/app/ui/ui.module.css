@@ -588,3 +588,63 @@
   font-size: var(--text-sm);
   color: var(--ink-muted);
 }
+
+/* --- Reviewer identity banner --------------------------------------------- */
+
+/*
+ * A persistent strip, not a one-off confirmation. Whose name is going on every
+ * approval should be visible while approving, not only at sign-in.
+ */
+.reviewerBanner {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  padding: var(--s2) var(--s5);
+  background: var(--ok-wash);
+  border-bottom: 1px solid var(--ok);
+  font-size: var(--text-sm);
+  color: var(--ink);
+}
+
+/*
+ * Loud, dashed and red. A development bypass that looks like a normal
+ * signed-in state is how one reaches production.
+ */
+.reviewerBannerBypass {
+  background: var(--stop-wash);
+  border-bottom: 2px dashed var(--stop);
+  color: var(--stop);
+}
+
+.bannerButton {
+  margin-left: auto;
+  font: inherit;
+  font-size: var(--text-xs);
+  background: none;
+  border: 1px solid currentColor;
+  border-radius: var(--radius);
+  padding: 2px var(--s2);
+  color: inherit;
+  cursor: pointer;
+}
+
+.signInCard {
+  max-width: 560px;
+  margin: var(--s6) auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: var(--s6);
+  box-shadow: 0 1px 2px rgba(22, 24, 26, 0.04), 0 8px 24px rgba(22, 24, 26, 0.06);
+}
+
+.signInMark {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  color: var(--accent);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  margin-bottom: var(--s4);
+}

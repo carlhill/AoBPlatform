@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { QueueView } from './QueueView';
+import { ReviewerGate } from './ReviewerGate';
 import { strings } from '../strings';
 
 export const metadata: Metadata = {
@@ -7,5 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function ReviewQueuePage() {
-  return <QueueView />;
+  return (
+    <ReviewerGate>
+      <QueueView />
+    </ReviewerGate>
+  );
 }

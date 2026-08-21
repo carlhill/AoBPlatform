@@ -165,6 +165,36 @@ export const strings = {
       'to do now.',
     sentReference: 'Reference',
   },
+  reviewerGate: {
+    heading: 'Sign in to review applications',
+    body:
+      'These screens approve practices, and approving a practice is what opens consent capture. It is the ' +
+      'most privileged act in the system, so it is done by a named person with a passkey \u2014 there is no ' +
+      'password, and no way to set one.',
+
+    signedInAs: 'Reviewing as',
+
+    wrongRoleTitle: 'This account cannot review applications',
+    wrongRoleBody:
+      'You are signed in, but not as a platform administrator. These screens are for AoBPlatform staff who ' +
+      'read applications and approve practices; a practice account is a different role with a different job. ' +
+      'If you believe you should have access, ask whoever administers the platform \u2014 the role is granted ' +
+      'by invitation, never by request from this screen.',
+
+    // The limit of the gate, said rather than implied. A gate that looks
+    // stronger than it is, is worse than no gate.
+    scopeHeading: 'What this gate does, and does not do',
+    scopeBody:
+      'It stops a person browsing to these screens. It does not yet stop a REQUEST: while the core service ' +
+      'runs with AUTH_ENFORCE=false it still accepts a practice header from anyone who can reach it. Turning ' +
+      'that on is a release gate, and it comes after the passkey ceremony has been proven on real hardware.',
+
+    bypass: 'Continue without signing in (development only)',
+    bypassOnlyHere: 'Present only in the local build, and never in a production one.',
+    bypassActive: 'Development bypass active',
+    bypassNote: 'Nothing has been authenticated. Every name recorded from here identifies nobody.',
+    endBypass: 'End the bypass',
+  },
   review: {
     navQueue: 'Queue',
     audience: 'Reviewer',
@@ -516,10 +546,54 @@ export const strings = {
       'It may be incomplete — these links are long and email clients sometimes break them across lines. Try ' +
       'copying the whole thing into the address bar. If it still does not work, reply to the email we sent you.',
   },
+  practices: {
+    title: 'Your practices',
+    lead:
+      'A practice administrator can hold more than one \u2014 a group with several clinics, or a trust ' +
+      'operating two sites under separate ABNs. The one needing attention is first.',
+    notLoaded: 'Your practices could not be loaded',
+    open: 'Open',
+    capturing: 'Capturing',
+    needsWork: 'Needs work',
+    unknown: 'Unknown',
+    /*
+     * Written from the READER'S seat, not ours.
+     *
+     * "Waiting on us" and "somebody here is reading it" were both written in
+     * AoBPlatform's voice and then placed on a page belonging to the practice,
+     * where "us" reads as the clinic and "here" reads as the surgery. Both said
+     * the opposite of what they meant: that the practice owed us something.
+     *
+     * On a page addressed to somebody else, name yourself.
+     */
+    pending: 'Being reviewed',
+    pendingBody:
+      'AoBPlatform is reviewing this application. Nothing is needed from you \u2014 you will hear either way, ' +
+      'at the email on the application.',
+    openStatus: 'See where it is up to',
+    openPending: 'See where it is up to',
+    rejected: 'Not approved',
+    rejectedBody:
+      'AoBPlatform did not approve this application. The reasons were sent to the email on the application.',
+    switch: 'Switch practice',
+
+    emptyTitle: 'No practice yet',
+    emptyBody:
+      'A practice appears here once it has been approved. If you have applied and are waiting, the link in ' +
+      'your acknowledgement email shows where the application has got to.',
+
+    // Honest about the scoping that does not exist yet, rather than presenting
+    // a list that looks authoritative and is not scoped to anybody.
+    scopeHeading: 'This list is not yet scoped to you',
+    scopeBody:
+      'Until platform sign-in exists there is no session to say which practices you administer, so this shows ' +
+      'every practice, in every state. Once sign-in is in place it shows only yours.',
+  },
   setup: {
     audience: 'Practice admin',
     title: 'Set up',
     approvedBy: 'Approved by',
+    backToPractices: 'All your practices',
     notLoaded: 'The setup hub could not be loaded',
     nothingYet: 'Nothing here yet.',
     andMore: '+ {n} more',
@@ -545,6 +619,24 @@ export const strings = {
     pickerEmpty:
       'No approved practice to show. A practice appears here once a reviewer has approved it — check the ' +
       'review queue.',
+
+    reviewTitle: 'This practice is still being reviewed',
+    reviewLead:
+      'The setup hub opens once AoBPlatform approves the practice \u2014 approval is what makes consent ' +
+      'capture possible, so there is nothing here to set up until then.',
+    reviewGateHuman:
+      'A person at AoBPlatform reads the application and checks that whoever applied is entitled to act for ' +
+      'this entity. That usually means a phone call to the practice, on a number they find themselves. How ' +
+      'long it takes is not something we will guess at.',
+    reviewRejectedTitle: 'This application was not approved',
+    reviewRejectedLead:
+      'AoBPlatform did not approve it. The reasons were sent to the email on the application. Applying again ' +
+      'starts a new application with its own review.',
+    reviewCorrect: 'Correct the application',
+    reviewCorrectHint:
+      'Opens the applicant\u2019s own correction page. It works without a sign-in, because whoever applied has ' +
+      'no account here until the practice is approved.',
+    reviewReference: 'Reference',
 
     pmsTitle: 'PMS connection',
     pmsBody:

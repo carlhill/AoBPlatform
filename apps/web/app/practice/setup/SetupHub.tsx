@@ -32,12 +32,14 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
+  ArrowLeft,
   ArrowRight,
   Building2,
   CheckCircle2,
   Circle,
   Download,
   MapPin,
+  PencilLine,
   Radio,
   Users,
   UserSquare,
@@ -82,6 +84,11 @@ interface Hub {
   cards: Card[];
 }
 
+interface Links {
+  statusUrl?: string;
+  amendUrl?: string;
+}
+
 const CARD_ICONS: Record<string, typeof Building2> = {
   entity: Building2,
   locations: MapPin,
@@ -99,6 +106,7 @@ const STATE_TONE: Record<CardState, Tone> = {
 
 export function SetupHub({ practiceId }: { practiceId: string }) {
   const [hub, setHub] = useState<Hub | null>(null);
+  const [links, setLinks] = useState<Links | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -113,6 +121,20 @@ export function SetupHub({ practiceId }: { practiceId: string }) {
       live = false;
     };
   }, [practiceId]);
+
+  // Only wanted while an application is still open — it is the applicant's own
+  // correction link, and there is nothing to correct once a decision is made.
+  useEffect(() => {
+    if (!hub || hub.practice.validationState !== 'pending') return;
+    let live = true;
+    fetch(`${CORE_URL}/organisations/${practiceId}/status-link`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((data: Links) => live && setLinks(data))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [hub, practiceId]);
 
   if (error) {
     return (
@@ -132,8 +154,67 @@ export function SetupHub({ practiceId }: { practiceId: string }) {
     );
   }
 
+  /*
+   * NOT YET APPROVED. The hub is what approval opens, so there is nothing to
+   * set up — and rendering the cards with everything "not started" would imply
+   * work the practice could be getting on with. It cannot.
+   *
+   * Shown in the CONSOLE rather than by sending the reader to the applicant's
+   * token page: a signed-in administrator bounced to a bearer-token URL
+   * addressed to somebody with no account looks like being logged out.
+   */
+  if (hub.practice.validationState !== 'validated') {
+    const refused = hub.practice.validationState === 'rejected';
+    return (
+      <Shell right={strings.setup.audience}>
+        <Link href="/practice" className={ui.backLink} data-testid="hub-to-list">
+          <ArrowLeft size={15} aria-hidden="true" />
+          {strings.setup.backToPractices}
+        </Link>
+        <h1 className={ui.pageTitle}>{hub.practice.name}</h1>
+        <p className={ui.pageLead}>
+          {refused ? strings.setup.reviewRejectedLead : strings.setup.reviewLead}
+        </p>
+
+        <Notice tone={refused ? 'stop' : 'warn'} title={refused ? strings.setup.reviewRejectedTitle : strings.setup.reviewTitle}>
+          {refused ? strings.practices.rejectedBody : strings.setup.reviewGateHuman}
+        </Notice>
+
+        <dl className={ui.facts}>
+          <dt>ABN</dt>
+          <dd className={ui.mono}>{hub.practice.abn ?? '—'}</dd>
+          {hub.practice.legalName && (
+            <>
+              <dt>{strings.review.legalName}</dt>
+              <dd>{hub.practice.legalName}</dd>
+            </>
+          )}
+          <dt>{strings.setup.reviewReference}</dt>
+          <dd className={ui.mono}>{hub.practice.id}</dd>
+        </dl>
+
+        {!refused && links?.amendUrl && (
+          <div style={{ marginTop: 'var(--s5)' }}>
+            <a href={links.amendUrl} className={ui.buttonLink} data-testid="hub-correct">
+              <PencilLine size={15} aria-hidden="true" />
+              {strings.setup.reviewCorrect}
+            </a>
+            <p className={ui.hint} style={{ marginTop: 'var(--s2)' }}>
+              {strings.setup.reviewCorrectHint}
+            </p>
+          </div>
+        )}
+      </Shell>
+    );
+  }
+
   return (
     <Shell right={strings.setup.audience}>
+      {/* A group manager must never be stranded on one practice. */}
+      <Link href="/practice" className={ui.backLink} data-testid="hub-to-list">
+        <ArrowLeft size={15} aria-hidden="true" />
+        {strings.setup.backToPractices}
+      </Link>
       <h1 className={ui.pageTitle}>
         {strings.setup.title} {hub.practice.name}
       </h1>

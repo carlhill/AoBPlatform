@@ -120,28 +120,37 @@
   flex: 1;
 }
 
+/*
+ * Label on top, note beneath — STACKED, not side by side.
+ *
+ * Side by side was tried twice and failed both ways. With `nowrap` the note was
+ * clipped at the card edge, losing the half of "unregistered — patients see
+ * Unverified, alongside scams" that explains why it matters. With wrapping, a
+ * long note collapsed into a four-word-wide column down the right.
+ *
+ * The notes here are SENTENCES, not statuses, so they need a line rather than a
+ * column. Stacking also puts them in reading order: what the row is, then what
+ * is wrong with it.
+ */
 .cardRow {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--s3);
   padding: var(--s2) 0;
   border-top: 1px solid var(--line);
   font-size: var(--text-sm);
 }
 
 .rowLabel {
-  min-width: 0;
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .rowNote {
+  display: block;
   color: var(--ink-muted);
   font-size: var(--text-xs);
-  white-space: nowrap;
-  flex: none;
+  line-height: 1.5;
+  margin-top: 1px;
 }
 
 /*
@@ -150,11 +159,12 @@
  * greyscale and a screen reader.
  */
 .rowNoteWork {
+  display: block;
   color: var(--warn);
   font-size: var(--text-xs);
   font-weight: 600;
-  flex: none;
-  text-align: right;
+  line-height: 1.5;
+  margin-top: 1px;
 }
 
 .cardLink {

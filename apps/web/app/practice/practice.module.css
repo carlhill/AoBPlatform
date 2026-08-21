@@ -1,0 +1,125 @@
+/*
+ * The practice list.
+ *
+ * Worst first, like every list in this product. A group manager opening this
+ * wants to know which of their practices cannot capture consent, not which one
+ * comes first alphabetically.
+ */
+
+.list {
+  list-style: none;
+  margin: 0 0 var(--s6);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s4);
+  padding: var(--s4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: inherit;
+}
+
+.row:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-sunken);
+}
+
+.rowMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.rowName {
+  font-weight: 600;
+  font-size: var(--text-base);
+}
+
+.rowSub {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  margin-top: 2px;
+}
+
+/*
+ * The readiness SENTENCE, not a count. A count reads as readiness and is not,
+ * which is the same trap the hub itself is built to avoid.
+ */
+.rowHeadline {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  margin: var(--s2) 0 0;
+  max-width: 62ch;
+  line-height: 1.55;
+}
+
+.rowAside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--s2);
+  flex: none;
+}
+
+.rowOpen {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--accent);
+}
+
+@media (max-width: 640px) {
+  .row {
+    flex-direction: column;
+  }
+
+  .rowAside {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s8) var(--s5);
+  color: var(--ink-muted);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  text-align: center;
+  margin-bottom: var(--s6);
+}
+
+.emptyTitle {
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+
+/*
+ * A refused application. Presented, because hiding it would leave somebody
+ * wondering where their application went — and inert, because there is nothing
+ * on this page they can do about it.
+ */
+.rowInert {
+  opacity: 0.75;
+  cursor: default;
+}
+
+.rowInert:hover {
+  border-color: var(--line);
+  background: var(--surface);
+}

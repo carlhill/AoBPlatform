@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { DossierView } from './DossierView';
+import { ReviewerGate } from '../ReviewerGate';
 import { strings } from '../../strings';
 
 export const metadata: Metadata = {
@@ -8,5 +9,9 @@ export const metadata: Metadata = {
 
 export default async function ReviewDossierPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  return <DossierView id={id} />;
+  return (
+    <ReviewerGate>
+      <DossierView id={id} />
+    </ReviewerGate>
+  );
 }
