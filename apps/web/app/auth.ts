@@ -1,3 +1,19 @@
+'use client';
+
+/*
+ * THE DIRECTIVE IS LOAD-BEARING. This module holds the access token in a
+ * module-level variable, and seven client components across different route
+ * segments import it. Without an explicit client boundary, Next is free to
+ * place it in more than one chunk — and then the session written by the
+ * callback is simply not the session the sign-in gate reads.
+ *
+ * The symptom was: "signed in as carl@hillsempire.com" flashes, the browser
+ * moves on, and the gate asks again. The token exchange had succeeded every
+ * time; it was being written into a different copy of this module.
+ */
+
+import { safeReturnPath } from '@aobplatform/domain';
+
 /**
  * OIDC authorization-code + PKCE against the aobplatform realm.
  *
@@ -23,6 +39,7 @@ const ISSUER = process.env.NEXT_PUBLIC_KEYCLOAK_ISSUER ?? 'http://localhost:2102
  */
 const CLIENT_ID = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID ?? 'web';
 const CLIENT_KEY = 'aob.pkce.client';
+const RETURN_KEY = 'aob.pkce.return';
 
 const VERIFIER_KEY = 'aob.pkce.verifier';
 const STATE_KEY = 'aob.pkce.state';
@@ -76,6 +93,10 @@ export async function beginLogin(clientId: string = CLIENT_ID): Promise<void> {
   // client that requested it, and exchanging it under a different one fails
   // with an error that says nothing useful about why.
   sessionStorage.setItem(CLIENT_KEY, clientId);
+  // Where to come back to. Sign-in used to land everyone on the console root
+  // regardless of where they started, so a reviewer opening a dossier link
+  // signed in and then had to find the application again.
+  sessionStorage.setItem(RETURN_KEY, window.location.pathname + window.location.search);
 
   const params = new URLSearchParams({
     client_id: clientId,
@@ -126,6 +147,20 @@ export async function completeLogin(code: string, state: string): Promise<Sessio
     roles: ((claims.realm_access as { roles?: string[] } | undefined)?.roles ?? []) as string[],
   };
   return session;
+}
+
+/**
+ * Where to send the browser after a successful exchange.
+ *
+ * The RULE lives in the domain and has tests, because it is a security control
+ * rather than a convenience: a stored destination followed without validation
+ * is an open redirect, and a rule with tests does not get quietly relaxed by
+ * somebody adding a feature. This only reads it out of storage and consumes it.
+ */
+export function returnPath(): string {
+  const stored = sessionStorage.getItem(RETURN_KEY);
+  sessionStorage.removeItem(RETURN_KEY);
+  return safeReturnPath(stored);
 }
 
 /**

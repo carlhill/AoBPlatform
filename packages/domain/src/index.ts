@@ -23,3 +23,4 @@ export * from './audit';
 export * from './evidence';
 export * from './setup';
 export * from './search';
+export * from './redirect';

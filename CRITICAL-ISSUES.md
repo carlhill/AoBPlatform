@@ -184,14 +184,65 @@ What genuinely addresses the underlying fear — *being locked out* — is:
    authenticator cannot produce a UV assertion. That preserves the property; a
    password does not.
 
-### Still open
+### Confirmed working 2026-08-22
 
-- Confirm a Windows Hello enrolment produces UV and signs in.
-- **Practitioners will hit this too.** They are not going to know which passkey
-  provider captured their enrolment, and "Passkey authentication result is
-  invalid" tells them nothing. Onboarding needs to detect a credential whose
-  AAGUID belongs to a provider known not to set UV, and say so AT ENROLMENT —
-  when it can still be redone — rather than at the first sign-in afterwards.
+Re-enrolled with Microsoft Password Manager switched off in Settings →
+Accounts → Passkeys → Advanced options. The credential now reports:
+
+```
+aaguid     : 08987058-cadc-4b81-b6e1-30de50dcbe96   (Windows Hello Hardware)
+transports : ['internal']
+```
+
+Hardware-backed, platform-only, and sign-in succeeds.
+
+### TO DO — practitioners will hit exactly this, and it needs a decision
+
+Windows makes Password Manager the default. A practitioner enrols, sees "your
+account has been updated", and discovers at their FIRST SIGN-IN — possibly days
+later, possibly mid-clinic — that it does not work, with a message that
+explains nothing.
+
+The gap between the two moments is what makes this serious. At enrolment the
+problem takes thirty seconds to fix. At first sign-in the person is somewhere
+else, doing something else, with a patient waiting.
+
+**Three ways to go. Carl's call.**
+
+**1. Keep `required`, detect it at enrolment.** Read the AAGUID as the
+credential is registered; if it belongs to a provider known not to set UV,
+refuse THEN and say why, while it can still be redone in thirty seconds.
+
+*Recommended.* It puts the failure where it is cheap, keeps the security
+property, and needs a list of AAGUIDs we already have to maintain anyway. The
+cost is that the list needs upkeep as providers change behaviour.
+
+**2. Keep `required`, document it.** Cheaper to build and moves the cost onto
+every practitioner and the support line. Every one of them meets the dialog
+once, alone, with nobody to ask.
+
+**3. Drop to `preferred` for practitioners.** Makes the problem vanish, and
+weakens the signature that binds a consent record — "the key was used" and "the
+person was present and verified" stop being the same claim, and the second is
+the one this platform exists to record. Keycloak policies are per-realm, so it
+also means administrators and practitioners in separate realms, which is a
+standing source of drift.
+
+### Why this happens at all: we are stricter than the web
+
+WebAuthn lets a site request `userVerification` as `required`, `preferred` or
+`discouraged`. The overwhelming default on consumer sites is `preferred` —
+"verify if you can, proceed either way" — so an assertion with UV unset sails
+through and Password Manager passkeys work everywhere else.
+
+|  | Most sites | Here |
+|---|---|---|
+| A passkey replaces | the password | the password **and** the second factor |
+| It proves | you hold the device | you hold the device **and** you were verified |
+| UV unset is | accepted | refused |
+
+Password Manager is not broken for the web at large. We are one of the few
+relying parties strict enough to notice.
 
 ---
 
