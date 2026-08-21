@@ -49,35 +49,64 @@ random token, revocable independently, is a column and a migration.
 
 ## Access
 
-### Platform-admin sign-in
-**Status:** not started. **This is the most serious gap on the list.**
-**Found:** 2026-08-22, by Carl, while reviewing an application.
+### ~~Platform-admin sign-in~~ — BUILT, 2026-08-22
+**Status:** done. Passkey-only, via Keycloak, on the `console` client.
 
-There is no sign-in for the platform operator — the person who reads
-applications and approves practices. The Keycloak `web` client is the
-clinician-browser flow, bound to practice admins and practitioners; a reviewer
-is a different principal entirely and has no realm role, no flow and no
-account.
+A platform administrator is minted by CLI invitation
+(`infra/keycloak/invite-platform-admin.mjs`), enrols a passkey at a link, and
+the reviewer screens take the name from the session. The typed-name fallback is
+gone from those screens.
 
-**Why this matters more than it looks.** Every check and every approval records
-the name of the human who performed it, and that is the entire basis on which
-this system claims a decision was made by somebody rather than by a machine.
-Today that name is TYPED. It identifies nobody, cannot be checked, and could be
-anyone's — including the name of a real colleague who did not make the
-decision. For a product whose premise is non-repudiable records, an
-unverifiable signature on the approval is the wrong thing to be missing.
+**What it cost, and what was learnt:** most of an afternoon and six wrong
+theories, all of them recorded in PASSKEYS.md. Read that first next time; the
+decision tree at the bottom is the useful part.
 
-The reviewer screens are already wired to take the name from the session the
-moment one exists (`currentSession()?.username`), and fall back to a typed name
-only when there is none — shown against a notice that says plainly it is
-unverified. That fallback is the honest shape of the gap. It is not a fix.
+**Still open, and tracked in CRITICAL-ISSUES.md:**
 
-**Why deferred:** it is a Keycloak realm change (a client, a role, and a flow),
-not a code change, and it belongs with the AUTH_ENFORCE=true release gate
-rather than ahead of it.
+- **§2 — the Windows Password Manager trap.** Windows 11 registers Microsoft
+  Password Manager as the default passkey handler, and its credentials do not
+  set the user-verification flag, so a realm requiring UV refuses them. Every
+  practitioner will hit what Carl hit. Recommendation is to read the AAGUID at
+  enrolment and refuse a non-UV provider THEN, while it takes thirty seconds to
+  fix, rather than at a first sign-in days later mid-clinic. Carl's call.
+- **Nothing backs up the `keycloak` database.** It survives a container rebuild
+  now; it does not survive a lost volume, and a passkey cannot be re-derived —
+  the private half never leaves the device.
+- **`admin/admin` is still in `docker-compose.yml`,** and is now the most
+  valuable credential in the system: it is the last resort for admin recovery.
 
-**Until it exists:** treat every recorded reviewer name as an assertion, not an
-identity. Do not rely on the check history as evidence of who did what.
+### Practitioner sign-in, and what an acceptance is worth
+**Status:** not started. **The affiliation flow is built and works without it.**
+**Found:** 2026-08-22, while building the invitation.
+
+A practitioner accepts an affiliation today by opening a link emailed to their
+own address and typing a six-digit code from the same message. That is recorded
+honestly — `acceptanceMethod = 'email_link_and_code'`, and the evidence says in
+words that it proves access to an inbox and not who was at the keyboard.
+
+**What it is good enough for.** The ordinary failure it prevents is not fraud:
+it is a practice adding a doctor who never agreed, through haste or a locum
+arrangement that fell through, and then capturing consent in that doctor's
+name. It stops that completely.
+
+**What it is not good enough for.** It is one factor, and the practice chose
+which address to invite. A practice willing to commit fraud can invite an
+address it controls — what makes that expensive is CONVENTIONS.md §8b (creating
+a practitioner at all requires a validated practice), not this ceremony.
+
+**The fix is the practitioner passkey (FR-1.9),** and the pieces are already
+there: `Practitioner` carries `keycloakUserId`, `invitedAt` and
+`passkeyEnrolledAt`, and the platform-admin work proved the ceremony on real
+hardware. `ACCEPTANCE_STRENGTH` in the domain already ranks passkey above an
+emailed code above the practice's own word, so both can coexist and stay
+distinguishable in evidence for ever.
+
+**Do NOT retrofit the strength of the old records when it lands.** An
+affiliation accepted by email was accepted by email. Upgrading the label later
+would be rewriting evidence.
+
+**Depends on:** the §2 decision above, because practitioners are a much larger
+population than platform admins and will hit the same provider trap harder.
 
 ---
 
@@ -180,5 +209,9 @@ These block work and need Carl, not code.
   is collected.
 - **Retention conflict** — 7-year practitioner report vs 2-year stated
   retention. These cannot both be true; one has to give.
+- **The Windows passkey provider trap** — every practitioner will hit it, and
+  Windows defaults them into it. Three ways to go, recorded in full in
+  CRITICAL-ISSUES.md §2; the recommendation is to detect the AAGUID at
+  enrolment and refuse a non-UV provider there and then.
 - **Can a sole trader reach 6 points?** If not, the identity threshold quietly
   excludes them, which is a policy decision and not a scoring detail.

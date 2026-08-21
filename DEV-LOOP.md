@@ -96,6 +96,43 @@ This cost an afternoon and was misdiagnosed as flaky tests. When a connection
 test passes and a client says "cannot reach", suspect the address family before
 suspecting the service.
 
+## `node --watch` forks a child, and killing the parent orphans it
+
+The watcher is not the server. `node --watch` runs the application in a **child
+process** and restarts that child on a file change. Kill the watcher — or the
+`npm` process above it — and the child keeps running: still bound to port 3001,
+still answering requests, still executing **the code it started with**.
+
+It is a genuinely nasty failure because everything looks correct:
+
+| What you see | What is happening |
+|---|---|
+| `curl localhost:3001/health` returns 200 | The orphan is answering |
+| A new endpoint 404s | The orphan predates it |
+| A new watcher logs `EADDRINUSE` | It never bound, and you may not be watching its log |
+| `prisma generate` fails **EPERM** on `query_engine-windows.dll.node` | The orphan holds the engine open |
+
+That last one is the tell, and it was blamed on OneDrive for several minutes.
+Nothing but a running Prisma client holds that file.
+
+Kill by what it runs, not by the process tree:
+
+```bash
+powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object { \$_.CommandLine -like '*src/main.ts*' } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }"
+```
+
+And confirm nothing is left holding the port before starting again:
+
+```bash
+powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort 3001 -State Listen | Select-Object OwningProcess"
+```
+
+**Regenerate the Prisma client whenever the schema gains a column**, or the
+generated types will not have it and `tx.affiliation.inviteToken` is a compile
+error that reads like a schema mistake. The generated `index.d.ts` is written
+before the engine is copied, so an EPERM on the engine does **not** necessarily
+mean the types are stale — check the timestamp before assuming the worst.
+
 ## Tests
 
 Run the package you touched, not everything:
