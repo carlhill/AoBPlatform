@@ -143,7 +143,16 @@ async function main() {
    * username at enrolment time, so an account created before this keeps showing
    * its old name until the passkey is re-enrolled.
    */
-  const username = email.trim().toLowerCase();
+  /*
+   * --username overrides the default, for a deliberately-named account.
+   *
+   * A break-glass or service-shaped administrator is easier to recognise in an
+   * audit trail as `admin.carl` than as another address. The trade is that the
+   * chosen name is also what the operating system's passkey chooser will show,
+   * so it has to be something the holder will recognise there — which is the
+   * whole reason the default is the email.
+   */
+  const username = (arg('--username') ?? email).trim().toLowerCase();
   const [firstName, ...rest] = name.trim().split(/\s+/);
 
   const existing = await (await api(token, `/users?email=${encodeURIComponent(email)}&exact=true`)).json();

@@ -67,9 +67,15 @@ was already running beside it.
 - **`admin/admin` is in `docker-compose.yml`.** Correct for a local sink,
   catastrophic anywhere else — and it is now the last resort for administrator
   recovery, which makes it the most valuable credential in the system.
-- **There is one platform administrator.** The recovery tool warns about this
-  every time it runs. Two is the minimum that survives one lost device without
-  depending on the Keycloak admin credential.
+- **~~There is one platform administrator.~~** A second (`admin.carl`) was
+  invited 2026-08-22, so the recovery tool no longer warns.
+
+  This is only a PARTIAL mitigation and the limit is worth stating: both
+  accounts belong to the same person and, at present, the same machine. That
+  protects against losing one credential; it does not protect against losing
+  the device, which would take both. A genuinely independent second
+  administrator is a different person, or at minimum a passkey on separate
+  hardware.
 
 ---
 
