@@ -135,6 +135,18 @@ export class OrganisationsController {
     return this.organisations.register(dto);
   }
 
+  /**
+   * Every organisation that has applied. `?state=validated` answers "which
+   * practice did I approve, and what is its id" — which was previously
+   * unanswerable without reading the database by hand.
+   */
+  @Get()
+  list(@Query('state') state?: string) {
+    const allowed = ['pending', 'validated', 'rejected', 'all'] as const;
+    const chosen = (allowed as readonly string[]).includes(state ?? '') ? state : 'all';
+    return this.organisations.listOrganisations(chosen as (typeof allowed)[number]);
+  }
+
   /** The human validation queue (§4). */
   @Get('pending')
   pending() {

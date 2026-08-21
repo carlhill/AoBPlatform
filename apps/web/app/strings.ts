@@ -23,6 +23,30 @@ export const strings = {
     noAccount: 'no account yet',
     accountReady: 'account created — passkey pending',
   },
+  gate: {
+    heading: 'Sign in to the practice console',
+    body:
+      'The console holds practice configuration, practitioner identities and provider numbers. Signing in ' +
+      'binds every approval, activation, invitation and notice to a named person.',
+    scopeWarningHeading: 'What this gate does not do:',
+    scopeWarning:
+      'the core API is running with AUTH_ENFORCE=false, so it still accepts an x-practice-id header from ' +
+      'anyone who can reach it. This stops a person browsing the console; it does not stop a request. ' +
+      'Enforcing the API is a release gate, and it comes after the passkey ceremony has been proven on real ' +
+      'hardware — otherwise it locks you out of the screens used to enrol a passkey.',
+    scopedTo: 'Scoped to practice',
+    tokenWins: 'the token’s practice claim overrides anything typed in the console.',
+    noPracticeClaim:
+      'This account carries no practice claim, so practice-scoped screens will use whatever id you select. ' +
+      'A platform operator is expected to have none; a practice user is not.',
+    bypassButton: 'Continue without signing in (development only)',
+    bypassWhy: 'Present only in the local build, and never in a production one.',
+    bypassActive: 'UNAUTHENTICATED — development bypass is active',
+    bypassNote:
+      'Nothing you do here is attributed to a signed-in person. Names typed into the console are recorded as ' +
+      'given, but nothing has verified who typed them.',
+    endBypass: 'End bypass',
+  },
   org: {
     heading: 'Practice onboarding',
     intro:
@@ -45,7 +69,11 @@ export const strings = {
     attestLegalName: 'Entity name, exactly as the ABR shows it',
     attestTradingNames: 'Registered business names (comma separated, optional)',
     attestStatus: 'ABN status',
-    attestEntityType: 'Entity type',
+    attestEntityType: 'Entity type — copy what the ABR shows, do not guess',
+    attestEntityTypePick: 'Select the entity type…',
+    attestEntityTypeHint:
+      'The ABR wording is on the right of each option. "The trustee for … Family Trust" is a TRUST, not a ' +
+      'company — a trust has no ACN of its own, and choosing a company type will be refused.',
     attestGst: 'Registered for GST',
     attestSightedBy: 'Your name — you are attesting you sighted the register',
     attestOpenAbr: 'Open ABN Lookup',
@@ -68,16 +96,34 @@ export const strings = {
     rejectButton: 'Reject',
     rejectNoteLabel: 'Reason (required to reject)',
     validatedBy: 'Validated by',
-    resumeHeading: 'Or resume a practice you have already approved',
-    resumeNote:
-      'A validated practice leaves the queue, so it cannot be picked from there again. Paste its id — there is ' +
-      'deliberately no "list every practice" endpoint, because that is the same enumeration risk the ' +
-      'practitioner directory refuses.',
+    findHeading: 'Find a practice',
+    findNote:
+      'Search by name, trading name or ABN. An approved practice leaves the queue, so this is how you get ' +
+      'back to one. This lists OUR customers and is platform-operator territory — unlike the practitioner ' +
+      'directory, which refuses name search because a practitioner is a private individual any practice ' +
+      'admin could otherwise enumerate.',
+    findLabel: 'Practice name, trading name, or ABN',
+    findPlaceholder: 'e.g. XLEVELUP, or 27 734 610 304',
+    findNoMatches: 'Nothing matches. Only practices that applied through onboarding are listed — dev-seed practices never did.',
+    findLoading: 'Loading practices…',
+    staleSelection:
+      'The practice this console was working on no longer exists, so the selection has been cleared. That ' +
+      'happens if it was deleted, or if a test run removed it — the e2e suite clears practices using the ' +
+      'three fixture ABNs every time it runs.',
+    workOnThis: 'Work on this',
+    locationsCol: 'Locations',
+    resumeHeading: 'Or paste a practice id directly',
+    resumeNote: 'If you already have the id, this skips the search.',
     resumeLabel: 'Practice id',
     resumeButton: 'Resume',
     clearButton: 'Clear selection',
     // Step 3
-    locationsHeading: '3. Locations',
+    locationsHeading: '3. Locations — the practice’s sites',
+    locationsOwnership:
+      'Addresses always belong to the PRACTICE, never to a person. A practitioner has no address of their own ' +
+      'here: their “place of practice” for s 65C(5)(a) is whichever location you affiliate them to in step 5. ' +
+      'That is exactly why the provider number lives on the affiliation rather than on the practitioner — a ' +
+      'Medicare provider number is a property of a doctor AT A PLACE (FR-1.8).',
     addressLabel: 'Address',
     codeLabel: 'Site code (optional)',
     addLocationButton: 'Add location',
@@ -89,7 +135,10 @@ export const strings = {
     departmentNameLabel: 'Department name',
     addDepartmentButton: 'Add department',
     // Step 4
-    practitionersHeading: '4. Practitioners',
+    practitionersHeading: '4. Practitioners — the people',
+    practitionersNoAddress:
+      'No address is collected here, deliberately. The practitioner is one person across every practice they ' +
+      'work at; where they practise is the affiliation in step 5.',
     ahpraLabel: 'AHPRA registration number',
     familyNameLabel: 'Family name',
     givenNamesLabel: 'Given names',
@@ -104,7 +153,7 @@ export const strings = {
     // Step 5
     affiliationsHeading: '5. Affiliations',
     providerNumberLabel: 'Provider number AT THIS LOCATION',
-    locationSelectLabel: 'Location',
+    locationSelectLabel: 'Location — this becomes their place of practice for s 65C(5)(a)',
     inviteButton: 'Invite to this location',
     affiliationsEmpty: 'No affiliations yet.',
     canCaptureYes: 'Capture open',

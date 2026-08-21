@@ -254,10 +254,19 @@ export function assertOrganisationApplicationValid(
   }
 
   if ((COMPANY_ENTITY_TYPES as readonly string[]).includes(lookup.entityType) && !derivedAcn) {
+    // The overwhelmingly common cause is the entity type being wrong rather
+    // than the ABN being wrong, and a trust is the case that trips people:
+    // "The trustee for X Family Trust" is a TRUST, and a trust has no ACN of
+    // its own. Saying so beats restating the rule.
+    const looksLikeTrust = /\btrust(ee)?\b/i.test(lookup.legalName);
     throw new AbnError(
       'FR-1.1',
-      `The ABR reports this entity as ${lookup.entityType}, which must have an ACN, but none could be derived ` +
-        'from the ABN. Refer to human validation.',
+      `This entity is recorded as ${lookup.entityType}, which must have an ACN, but none could be derived ` +
+        `from ABN ${abn}. ` +
+        (looksLikeTrust
+          ? `The registered name "${lookup.legalName}" reads like a TRUST — a trust has no ACN of its own, so ` +
+            'choose TRUST rather than a company type.'
+          : 'Check the entity type against what the ABR actually shows, or refer to human validation.'),
     );
   }
 

@@ -174,6 +174,27 @@ export class OrganisationsService {
     return { count: pending.length, organisations: pending };
   }
 
+  /**
+   * Every organisation that has applied, in any state.
+   *
+   * Platform-operator territory: the person who approves practices needs to
+   * find one afterwards, and an approved organisation leaves the pending
+   * queue. Carries no patient data, no agreements and no provider numbers.
+   */
+  async listOrganisations(state: 'pending' | 'validated' | 'rejected' | 'all' = 'all') {
+    const rows = await this.prisma.$queryRaw<Array<Record<string, unknown>>>`
+      SELECT * FROM list_organisations(${state})`;
+    return {
+      count: rows.length,
+      organisations: rows.map((r) => ({
+        ...r,
+        // bigint does not survive JSON.
+        locationCount: Number(r.locationCount ?? 0),
+        activeLocationCount: Number(r.activeLocationCount ?? 0),
+      })),
+    };
+  }
+
   /** Gate 3. The reviewer is NAMED — "approved by the system" is not a thing. */
   async decideValidation(organisationId: string, input: { decision: 'validated' | 'rejected'; reviewerName: string; note?: string }) {
     if (!input.reviewerName?.trim()) {

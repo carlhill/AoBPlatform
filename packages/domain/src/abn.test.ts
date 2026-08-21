@@ -176,6 +176,32 @@ describe('the organisation onboarding gate', () => {
     ).toThrow(/human validation/);
   });
 
+  it('points at the ENTITY TYPE when the name reads like a trust', () => {
+    // The real-world trap: "The trustee for X Family Trust" picked as PTY_LTD.
+    // The ABN is fine; the entity type is not. The message must say so.
+    expect(() =>
+      assertOrganisationApplicationValid({ typedName: 'XLEVELUP', abn: '27734610304' }, {
+        abn: '27734610304',
+        abnStatus: 'ACTIVE',
+        legalName: 'The trustee for Example Family Trust',
+        businessNames: ['XLEVELUP'],
+        entityType: 'PTY_LTD',
+      }),
+    ).toThrow(/reads like a TRUST/);
+  });
+
+  it('registers that same entity happily once TRUST is chosen', () => {
+    const result = assertOrganisationApplicationValid({ typedName: 'XLEVELUP', abn: '27734610304' }, {
+      abn: '27734610304',
+      abnStatus: 'ACTIVE',
+      legalName: 'The trustee for Example Family Trust',
+      businessNames: ['XLEVELUP'],
+      entityType: 'TRUST',
+    });
+    expect(result.acn).toBeNull();
+    expect(result.nameMatch.source).toBe('business_name');
+  });
+
   it('does NOT demand an ACN of a sole trader', () => {
     const result = assertOrganisationApplicationValid({ typedName: 'Jo Example', abn: '51824753556' }, {
       abn: '51824753556',

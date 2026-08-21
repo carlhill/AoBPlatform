@@ -157,6 +157,30 @@ stale-`wslrelay.exe` port-conflict note).
   flow exists. k6 priority scenarios: the 8–10 am check-in burst and the 89AA
   dispatch batch.
 
+## 9b. Client-side persistence is a claim, not a fact
+
+**Anything persisted outside the server must be revalidated when it is loaded,
+and cleared visibly when it is stale.** That covers `localStorage`,
+`sessionStorage`, cookies, IndexedDB, URL parameters, and any remembered id in
+a CLI or config file.
+
+This is a rule because we got it wrong. The console persisted the selected
+practice id so a reload would not strand the user. The practice was later
+deleted, the browser still held the id, and the UI confidently displayed
+**"Working on: XLEVELUP"** while every practice-scoped call silently returned
+nothing. A dangling reference does not announce itself — it degrades into
+*wrong but plausible*, which is worse than an error, because the user plans
+around it.
+
+- Verify persisted ids still exist before acting on them. Prefer validating
+  against data the page already fetches over adding a round trip.
+- When a stored value proves stale, **clear it and say so on screen**. Never
+  drop it silently, and never keep displaying it.
+- Persist the minimum needed to restore context (an id) — never a snapshot of
+  server data, which drifts.
+- Never persist tokens or credentials. `apps/web/app/auth.ts` keeps the access
+  token in memory for exactly this reason, and that is not to be "improved".
+
 ## 10. Lint/format
 
 One root ESLint flat config, zero-warning tolerance (`--max-warnings=0`);

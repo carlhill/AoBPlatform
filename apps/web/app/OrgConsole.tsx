@@ -18,6 +18,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { strings } from './strings';
+import { apiHeaders } from './auth';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 /** Deep link into the public ABN Lookup, so the attester can see the register. */
@@ -55,6 +56,19 @@ interface Organisation {
   nameMatch?: NameMatch;
   abnVerificationSource?: string | null;
   abnSightedByName?: string | null;
+}
+interface OrganisationRow {
+  id: string;
+  name: string;
+  abn: string;
+  legalName: string | null;
+  tradingNames: string[];
+  validationState: string;
+  validatedByName: string | null;
+  abnVerificationSource: string | null;
+  abnSightedByName: string | null;
+  locationCount: number;
+  activeLocationCount: number;
 }
 interface PendingRow {
   id: string;
@@ -97,10 +111,17 @@ interface AffiliationRow {
   blockReason: string | null;
 }
 
-/** Every call funnels through here so a refusal is never swallowed. */
+/**
+ * Every call funnels through here so a refusal is never swallowed.
+ *
+ * Headers come from apiHeaders(), which attaches the bearer token when there
+ * is a session — and, importantly, prefers the TOKEN'S practice claim over the
+ * id passed in. The console can ask for a practice; the token decides whether
+ * it gets it. While AUTH_ENFORCE=false the server does not yet insist on the
+ * token, which is exactly what the sign-in gate says on screen.
+ */
 async function call<T>(path: string, init?: RequestInit & { practiceId?: string }): Promise<T> {
-  const headers: Record<string, string> = { 'content-type': 'application/json' };
-  if (init?.practiceId) headers['x-practice-id'] = init.practiceId;
+  const headers = apiHeaders(init?.practiceId);
   const response = await fetch(`${CORE_URL}${path}`, { ...init, headers });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -127,15 +148,21 @@ export function OrgConsole() {
   }, []);
 
   // Step 1 — registration
-  const [regName, setRegName] = useState('Jo Example Medical');
-  const [regAbn, setRegAbn] = useState('51 824 753 556');
+  // Every field starts EMPTY, with the worked example moved to a
+  // placeholder. Pre-filled values read as demo data you must clear before
+  // entering anything real.
+  const [regName, setRegName] = useState('');
+  const [regAbn, setRegAbn] = useState('');
   const [registered, setRegistered] = useState<Organisation | null>(null);
   /** Shown only after the ABR has actually failed — never offered up front. */
   const [needsAttestation, setNeedsAttestation] = useState(false);
   const [attLegalName, setAttLegalName] = useState('');
   const [attTradingNames, setAttTradingNames] = useState('');
   const [attStatus, setAttStatus] = useState('ACTIVE');
-  const [attEntityType, setAttEntityType] = useState('PTY_LTD');
+  // NO DEFAULT. Defaulting to PTY_LTD made the wrong answer the path of least
+  // resistance for anyone whose entity is a trust — which then failed on the
+  // ACN rule, pointing at the ABN rather than at the actual mistake.
+  const [attEntityType, setAttEntityType] = useState('');
   const [attGst, setAttGst] = useState(true);
   const [attSightedBy, setAttSightedBy] = useState('');
 
@@ -153,6 +180,9 @@ export function OrgConsole() {
   // refuses, so it is not on offer; you can paste an id instead.
   const [org, setOrg] = useState<{ id: string; name: string } | null>(null);
   const [resumeId, setResumeId] = useState('');
+  const [allOrgs, setAllOrgs] = useState<OrganisationRow[] | null>(null);
+  const [orgQuery, setOrgQuery] = useState('');
+  const [staleCleared, setStaleCleared] = useState(false);
 
   useEffect(() => {
     const saved = window.localStorage.getItem('aob.org');
@@ -166,6 +196,7 @@ export function OrgConsole() {
   }, []);
 
   const selectOrg = useCallback((next: { id: string; name: string } | null) => {
+    setStaleCleared(false);
     setOrg(next);
     if (next) window.localStorage.setItem('aob.org', JSON.stringify(next));
     else window.localStorage.removeItem('aob.org');
@@ -173,30 +204,35 @@ export function OrgConsole() {
 
   // Step 3
   const [locations, setLocations] = useState<LocationRow[]>([]);
-  const [address, setAddress] = useState('1 Example Street, Sampletown NSW 2000');
-  const [code, setCode] = useState('Main St');
+  const [address, setAddress] = useState('');
+  const [code, setCode] = useState('');
   const [lastAdded, setLastAdded] = useState<LocationRow | null>(null);
-  const [deptName, setDeptName] = useState('General Practice');
+  const [deptName, setDeptName] = useState('');
   const [departments, setDepartments] = useState<Array<{ id: string; name: string; locationId: string }>>([]);
 
   // Step 4
-  const [ahpra, setAhpra] = useState('MED0009876543');
-  const [familyName, setFamilyName] = useState('Chen');
-  const [givenNames, setGivenNames] = useState('Alex');
-  const [email, setEmail] = useState('alex.chen@example.invalid');
+  const [ahpra, setAhpra] = useState('');
+  const [familyName, setFamilyName] = useState('');
+  const [givenNames, setGivenNames] = useState('');
+  const [email, setEmail] = useState('');
   const [lookup, setLookup] = useState('');
   const [found, setFound] = useState<DirectoryEntry | null | 'miss'>(null);
 
   // Step 5
   const [affiliations, setAffiliations] = useState<AffiliationRow[]>([]);
-  const [inviteAhpra, setInviteAhpra] = useState('MED0009876543');
+  const [inviteAhpra, setInviteAhpra] = useState('');
   const [inviteLocation, setInviteLocation] = useState('');
-  const [providerNumber, setProviderNumber] = useState('1234567A');
+  const [providerNumber, setProviderNumber] = useState('');
   const [endsAt, setEndsAt] = useState('');
 
   const loadQueue = useCallback(async () => {
     const result = await call<{ organisations: PendingRow[] }>('/organisations/pending');
     setPending(result.organisations);
+  }, []);
+
+  const loadAllOrgs = useCallback(async () => {
+    const result = await call<{ organisations: OrganisationRow[] }>('/organisations?state=all');
+    setAllOrgs(result.organisations);
   }, []);
 
   const loadOrgData = useCallback(async (practiceId: string) => {
@@ -212,8 +248,23 @@ export function OrgConsole() {
   }, [inviteLocation]);
 
   useEffect(() => {
-    void run(loadQueue);
-  }, [run, loadQueue]);
+    void run(async () => {
+      await loadQueue();
+      await loadAllOrgs();
+    });
+  }, [run, loadQueue, loadAllOrgs]);
+
+  // A remembered selection is a CLAIM, not a fact. Once the real list has
+  // loaded, an id that is not in it points at a practice that has been
+  // deleted — and leaving it selected shows "Working on: X" while every
+  // practice-scoped call quietly returns nothing.
+  useEffect(() => {
+    if (!org || allOrgs === null) return;
+    if (allOrgs.some((o) => o.id === org.id)) return;
+    setOrg(null);
+    window.localStorage.removeItem('aob.org');
+    setStaleCleared(true);
+  }, [org, allOrgs]);
 
   useEffect(() => {
     if (org) void run(() => loadOrgData(org.id));
@@ -230,6 +281,14 @@ export function OrgConsole() {
     <div>
       <h2>{strings.org.heading}</h2>
       <p style={note}>{strings.org.intro}</p>
+      {staleCleared && (
+        <p
+          data-testid="stale-cleared"
+          style={{ color: AMBER, border: '1px solid ' + AMBER, borderRadius: 8, padding: '0.5rem 0.75rem' }}
+        >
+          {strings.org.staleSelection}
+        </p>
+      )}
       {error && (
         <p data-testid="org-error" style={{ color: RED, border: `1px solid ${RED}`, borderRadius: 8, padding: '0.5rem 0.75rem' }}>
           {error}
@@ -242,19 +301,21 @@ export function OrgConsole() {
         <p style={note}>{strings.org.offlineNote}</p>
         <label style={field}>
           {strings.org.nameLabel}
-          <input style={input} value={regName} onChange={(e) => setRegName(e.target.value)} data-testid="reg-name" />
+          <input style={input} value={regName} onChange={(e) => setRegName(e.target.value)} placeholder="e.g. Sampletown Family Practice"
+                data-testid="reg-name" />
         </label>
         <label style={field}>
           {strings.org.abnLabel}
-          <input style={input} value={regAbn} onChange={(e) => setRegAbn(e.target.value)} data-testid="reg-abn" />
+          <input style={input} value={regAbn} onChange={(e) => setRegAbn(e.target.value)} placeholder="e.g. 51 824 753 556"
+                data-testid="reg-abn" />
         </label>
         <button
-          disabled={busy}
+          disabled={busy || !regName.trim() || !regAbn.trim()}
           data-testid="reg-submit"
           onClick={() =>
             void run(async () => {
               const attestation =
-                needsAttestation && attLegalName.trim() && attSightedBy.trim()
+                needsAttestation && attLegalName.trim() && attSightedBy.trim() && attEntityType
                   ? {
                       legalName: attLegalName.trim(),
                       businessNames: attTradingNames
@@ -263,6 +324,10 @@ export function OrgConsole() {
                         .filter(Boolean),
                       abnStatus: attStatus,
                       entityType: attEntityType,
+                      // '' is filtered out below rather than sent — the server
+                      // would reject it, but with a validation message about a
+                      // missing field rather than about the choice not made.
+
                       gstRegistered: attGst,
                       sightedByName: attSightedBy.trim(),
                     }
@@ -275,6 +340,7 @@ export function OrgConsole() {
                 setRegistered(result);
                 setNeedsAttestation(false);
                 await loadQueue();
+                await loadAllOrgs();
               } catch (err) {
                 // ONLY an ABR-unavailable failure opens the manual panel. A
                 // cancelled ABN or a name mismatch must never be re-typeable
@@ -307,12 +373,13 @@ export function OrgConsole() {
                 style={input}
                 value={attLegalName}
                 onChange={(e) => setAttLegalName(e.target.value)}
+                placeholder="exactly as the ABR shows it"
                 data-testid="att-legal-name"
               />
             </label>
             <label style={field}>
               {strings.org.attestTradingNames}
-              <input style={input} value={attTradingNames} onChange={(e) => setAttTradingNames(e.target.value)} />
+              <input style={input} value={attTradingNames} placeholder="comma separated" onChange={(e) => setAttTradingNames(e.target.value)} />
             </label>
             <label style={field}>
               {strings.org.attestStatus}
@@ -323,15 +390,22 @@ export function OrgConsole() {
             </label>
             <label style={field}>
               {strings.org.attestEntityType}
-              <select style={input} value={attEntityType} onChange={(e) => setAttEntityType(e.target.value)}>
-                <option value="PTY_LTD">PTY_LTD</option>
-                <option value="PUBLIC_COMPANY">PUBLIC_COMPANY</option>
-                <option value="INDIVIDUAL_SOLE_TRADER">INDIVIDUAL_SOLE_TRADER</option>
-                <option value="TRUST">TRUST</option>
-                <option value="PARTNERSHIP">PARTNERSHIP</option>
-                <option value="OTHER">OTHER</option>
+              <select
+                style={input}
+                value={attEntityType}
+                onChange={(e) => setAttEntityType(e.target.value)}
+                data-testid="att-entity-type"
+              >
+                <option value="">{strings.org.attestEntityTypePick}</option>
+                <option value="PTY_LTD">PTY_LTD — “Australian Private Company”</option>
+                <option value="PUBLIC_COMPANY">PUBLIC_COMPANY — “Australian Public Company”</option>
+                <option value="INDIVIDUAL_SOLE_TRADER">INDIVIDUAL_SOLE_TRADER — “Individual/Sole Trader”</option>
+                <option value="TRUST">TRUST — “The trustee for …”, “Discretionary … Trust”</option>
+                <option value="PARTNERSHIP">PARTNERSHIP — “… Partnership”</option>
+                <option value="OTHER">OTHER — anything else</option>
               </select>
             </label>
+            <p style={note}>{strings.org.attestEntityTypeHint}</p>
             <label style={{ ...field, display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
               <input type="checkbox" checked={attGst} onChange={(e) => setAttGst(e.target.checked)} />
               {strings.org.attestGst}
@@ -342,6 +416,7 @@ export function OrgConsole() {
                 style={input}
                 value={attSightedBy}
                 onChange={(e) => setAttSightedBy(e.target.value)}
+                placeholder="your full name"
                 data-testid="att-sighted-by"
               />
             </label>
@@ -390,11 +465,12 @@ export function OrgConsole() {
         <h3>{strings.org.queueHeading}</h3>
         <label style={field}>
           {strings.org.reviewerLabel}
-          <input style={input} value={reviewer} onChange={(e) => setReviewer(e.target.value)} data-testid="reviewer" />
+          <input style={input} value={reviewer} onChange={(e) => setReviewer(e.target.value)} placeholder="your full name"
+                data-testid="reviewer" />
         </label>
         <label style={field}>
           {strings.org.rejectNoteLabel}
-          <input style={input} value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} data-testid="reject-note" />
+          <input style={input} value={rejectNote} placeholder="only needed to reject" onChange={(e) => setRejectNote(e.target.value)} data-testid="reject-note" />
         </label>
         {pending.length === 0 ? (
           <p style={note}>{strings.org.queueEmpty}</p>
@@ -437,6 +513,7 @@ export function OrgConsole() {
                           });
                           selectOrg({ id: row.id, name: row.name });
                           await loadQueue();
+                          await loadAllOrgs();
                         })
                       }
                     >
@@ -462,11 +539,86 @@ export function OrgConsole() {
             </tbody>
           </table>
         )}
+        <h4>{strings.org.findHeading}</h4>
+        <p style={note}>{strings.org.findNote}</p>
+        <label style={field}>
+          {strings.org.findLabel}
+          <input
+            style={input}
+            value={orgQuery}
+            placeholder={strings.org.findPlaceholder}
+            onChange={(e) => setOrgQuery(e.target.value)}
+            data-testid="org-search"
+          />
+        </label>
+        {allOrgs === null ? (
+          <p style={note}>{strings.org.findLoading}</p>
+        ) : (
+          (() => {
+            const q = orgQuery.trim().toLowerCase().replace(/\s+/g, '');
+            const matches = allOrgs.filter((o) => {
+              if (!q) return true;
+              const haystack = [o.name, o.legalName ?? '', ...(o.tradingNames ?? []), o.abn]
+                .join(' ')
+                .toLowerCase()
+                .replace(/\s+/g, '');
+              return haystack.includes(q);
+            });
+            if (matches.length === 0) return <p style={note}>{strings.org.findNoMatches}</p>;
+            return (
+              <table style={{ borderCollapse: 'collapse' }} data-testid="org-search-results">
+                <thead>
+                  <tr>
+                    <th style={th}>Name</th>
+                    <th style={th}>ABN</th>
+                    <th style={th}>{strings.org.statusLabel}</th>
+                    <th style={th}>{strings.org.locationsCol}</th>
+                    <th style={th} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {matches.map((o) => (
+                    <tr key={o.id}>
+                      <td style={td}>
+                        {o.name}
+                        {o.legalName && o.legalName !== o.name && (
+                          <div style={{ ...note, margin: 0 }}>{o.legalName}</div>
+                        )}
+                        <code style={{ fontSize: '0.75rem' }}>{o.id}</code>
+                      </td>
+                      <td style={td}>
+                        <code>{o.abn}</code>
+                      </td>
+                      <td style={{ ...td, color: o.validationState === 'validated' ? GREEN : AMBER }}>
+                        {o.validationState}
+                        {o.validatedByName && <div style={{ ...note, margin: 0 }}>by {o.validatedByName}</div>}
+                      </td>
+                      <td style={td}>
+                        {o.activeLocationCount}/{o.locationCount} active
+                      </td>
+                      <td style={td}>
+                        <button
+                          disabled={busy || o.validationState !== 'validated'}
+                          data-testid={'work-on-' + o.id}
+                          onClick={() => selectOrg({ id: o.id, name: o.name })}
+                        >
+                          {strings.org.workOnThis}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            );
+          })()
+        )}
+
         <h4>{strings.org.resumeHeading}</h4>
         <p style={note}>{strings.org.resumeNote}</p>
         <label style={field}>
           {strings.org.resumeLabel}
-          <input style={input} value={resumeId} onChange={(e) => setResumeId(e.target.value)} data-testid="resume-id" />
+          <input style={input} value={resumeId} onChange={(e) => setResumeId(e.target.value)} placeholder="practice uuid"
+                data-testid="resume-id" />
         </label>
         <button
           disabled={busy || !resumeId.trim()}
@@ -500,13 +652,15 @@ export function OrgConsole() {
           {/* -------------------------------------------------------------- */}
           <section aria-label={strings.org.locationsHeading} style={card}>
             <h3>{strings.org.locationsHeading}</h3>
+            <p style={note}>{strings.org.locationsOwnership}</p>
             <label style={field}>
               {strings.org.addressLabel}
-              <input style={input} value={address} onChange={(e) => setAddress(e.target.value)} data-testid="address" />
+              <input style={input} value={address} onChange={(e) => setAddress(e.target.value)} placeholder="e.g. 1 Example Street, Sampletown NSW 2000"
+                data-testid="address" />
             </label>
             <label style={field}>
               {strings.org.codeLabel}
-              <input style={input} value={code} onChange={(e) => setCode(e.target.value)} />
+              <input style={input} value={code} placeholder="e.g. Main St" onChange={(e) => setCode(e.target.value)} />
             </label>
             <button
               disabled={busy}
@@ -585,7 +739,7 @@ export function OrgConsole() {
             <h4>{strings.org.departmentsHeading}</h4>
             <label style={field}>
               {strings.org.departmentNameLabel}
-              <input style={input} value={deptName} onChange={(e) => setDeptName(e.target.value)} />
+              <input style={input} value={deptName} placeholder="e.g. General Practice" onChange={(e) => setDeptName(e.target.value)} />
             </label>
             <button
               disabled={busy || locations.length === 0}
@@ -610,21 +764,23 @@ export function OrgConsole() {
           {/* -------------------------------------------------------------- */}
           <section aria-label={strings.org.practitionersHeading} style={card}>
             <h3>{strings.org.practitionersHeading}</h3>
+            <p style={note}>{strings.org.practitionersNoAddress}</p>
             <label style={field}>
               {strings.org.ahpraLabel}
-              <input style={input} value={ahpra} onChange={(e) => setAhpra(e.target.value)} data-testid="ahpra" />
+              <input style={input} value={ahpra} onChange={(e) => setAhpra(e.target.value)} placeholder="e.g. MED0001234567"
+                data-testid="ahpra" />
             </label>
             <label style={field}>
               {strings.org.familyNameLabel}
-              <input style={input} value={familyName} onChange={(e) => setFamilyName(e.target.value)} />
+              <input style={input} value={familyName} placeholder="family name" onChange={(e) => setFamilyName(e.target.value)} />
             </label>
             <label style={field}>
               {strings.org.givenNamesLabel}
-              <input style={input} value={givenNames} onChange={(e) => setGivenNames(e.target.value)} />
+              <input style={input} value={givenNames} placeholder="given names" onChange={(e) => setGivenNames(e.target.value)} />
             </label>
             <label style={field}>
               {strings.org.emailLabel}
-              <input style={input} value={email} onChange={(e) => setEmail(e.target.value)} />
+              <input style={input} value={email} placeholder="the practitioner’s own email" onChange={(e) => setEmail(e.target.value)} />
             </label>
             <button
               disabled={busy}
@@ -652,7 +808,8 @@ export function OrgConsole() {
             <p style={note}>{strings.org.directoryNote}</p>
             <label style={field}>
               {strings.org.ahpraLabel}
-              <input style={input} value={lookup} onChange={(e) => setLookup(e.target.value)} data-testid="lookup" />
+              <input style={input} value={lookup} onChange={(e) => setLookup(e.target.value)} placeholder="e.g. MED0001234567"
+                data-testid="lookup" />
             </label>
             <button
               disabled={busy}
@@ -682,7 +839,7 @@ export function OrgConsole() {
             <h3>{strings.org.affiliationsHeading}</h3>
             <label style={field}>
               {strings.org.ahpraLabel}
-              <input style={input} value={inviteAhpra} onChange={(e) => setInviteAhpra(e.target.value)} />
+              <input style={input} value={inviteAhpra} placeholder="e.g. MED0001234567" onChange={(e) => setInviteAhpra(e.target.value)} />
             </label>
             <label style={field}>
               {strings.org.locationSelectLabel}
@@ -696,7 +853,7 @@ export function OrgConsole() {
             </label>
             <label style={field}>
               {strings.org.providerNumberLabel}
-              <input style={input} value={providerNumber} onChange={(e) => setProviderNumber(e.target.value)} />
+              <input style={input} value={providerNumber} placeholder="e.g. 1234567A" onChange={(e) => setProviderNumber(e.target.value)} />
             </label>
             <button
               disabled={busy || !reviewer.trim() || !inviteLocation}
