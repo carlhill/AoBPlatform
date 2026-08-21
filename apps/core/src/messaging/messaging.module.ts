@@ -2,6 +2,7 @@ import { Global, Logger, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MESSAGING_GATEWAY, SandboxGateway } from './gateway';
 import { MailhogGateway } from './mailhog.gateway';
+import { EmailComposer } from './composer.service';
 
 /**
  * Outbound messaging (CLAUDE.md §7).
@@ -16,6 +17,7 @@ import { MailhogGateway } from './mailhog.gateway';
 @Global()
 @Module({
   providers: [
+    EmailComposer,
     {
       provide: MESSAGING_GATEWAY,
       inject: [ConfigService],
@@ -28,6 +30,6 @@ import { MailhogGateway } from './mailhog.gateway';
       },
     },
   ],
-  exports: [MESSAGING_GATEWAY],
+  exports: [MESSAGING_GATEWAY, EmailComposer],
 })
 export class MessagingModule {}

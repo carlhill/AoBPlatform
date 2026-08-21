@@ -44,6 +44,7 @@ model Practice {
   // entity that owns locations. It keeps the name `Practice` because it is
   // also the RLS tenant key (app.practice_id) on sixteen tables.
   /**
+   * /**
    * The ABR legal entity name. Often NOT what the practice trades as.
    */
   legalName             String?
@@ -662,17 +663,42 @@ model Affiliation {
    */
   pmsLinkageKey  String?
 
-  status        String    @default("invited") // invited | active | ending | ended | rejected
-  invitedAt     DateTime  @default(now())
-  invitedByName String?
+  status    String   @default("invited") // invited | active | ending | ended | rejected
+  invitedAt DateTime @default(now())
+
+  /// The invitation itself: a link to a page, and a CODE to type into it.
+  ///
+  /// Two-phase for the same reason email verification is (see that migration):
+  /// a bare link is consumed by a GET, and scanners, preview bots and "safe
+  /// links" rewriting all issue GETs.
+  ///
+  /// Cleared on ANY answer, accept or decline, so neither a forwarded link nor
+  /// a screenshot of the email can be replayed.
+  inviteToken     String?   @unique
+  inviteCode      String?
+  inviteSentAt    DateTime?
+  inviteExpiresAt DateTime?
+  inviteAttempts  Int       @default(0)
+
+  /// HOW they answered: email_link_and_code | passkey | console.
+  ///
+  /// A token and a code in the SAME email prove somebody read that email. They
+  /// do not prove WHO — that is proof of access to an inbox, and it is recorded
+  /// as exactly that rather than as "the practitioner signed". This column
+  /// exists so that when passkey acceptance lands (FR-1.9) the two remain
+  /// distinguishable in evidence, instead of blurring into one
+  /// undifferentiated "accepted".
+  acceptanceMethod String?
+  invitedByName    String?
   /**
    * Set on acceptance BY THE PRACTITIONER — a practice cannot self-accept.
    */
-  startedAt     DateTime?
-  rejectedAt    DateTime?
+  startedAt        DateTime?
+  rejectedAt       DateTime?
 
   // --- Offboarding: notice runs BEFORE the end date (§6) ---
   /**
+   * /**
    * Must be <= endsAt. Enforced by a CHECK constraint, not just in code.
    */
   noticeGivenAt DateTime?

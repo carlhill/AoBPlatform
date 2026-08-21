@@ -79,12 +79,29 @@ export interface EmailBlock {
 /** The plain-text alternative, derived from the same blocks so they cannot drift. */
 export function renderText(blocks: readonly EmailBlock[], footer: EmailFooter): string {
   const lines: string[] = [];
+  /*
+   * The URL most recently printed, so a `url` block that merely repeats the
+   * button beside it is not printed twice.
+   *
+   * The two blocks are NOT redundant in HTML — the button is the action and
+   * the bare URL is there because people forward, paste and print, and because
+   * a naked "click here" is the exact shape of a phishing message. But the text
+   * part already prints the button's URL in full, so emitting both gave the
+   * same forty-character token twice in a row, which reads as a mistake.
+   */
+  let lastUrl: string | null = null;
   for (const block of blocks) {
     if (block.heading) lines.push(block.heading.toUpperCase(), '');
     if (block.text) lines.push(block.text, '');
     if (block.code) lines.push(`    ${block.code}`, '');
-    if (block.button) lines.push(`${block.button.label}:`, `  ${block.button.url}`, '');
-    if (block.url) lines.push(`  ${block.url}`, '');
+    if (block.button) {
+      lines.push(`${block.button.label}:`, `  ${block.button.url}`, '');
+      lastUrl = block.button.url;
+    }
+    if (block.url && block.url !== lastUrl) {
+      lines.push(`  ${block.url}`, '');
+      lastUrl = block.url;
+    }
     if (block.small) lines.push(block.small, '');
     if (block.rule) lines.push('---', '');
   }

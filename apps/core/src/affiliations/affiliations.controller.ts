@@ -12,6 +12,7 @@ import {
 import { Type } from 'class-transformer';
 import { IsArray, IsDate, IsEmail, IsIn, IsOptional, IsString, IsUUID, MinLength, ValidateNested } from 'class-validator';
 import { AffiliationsService } from './affiliations.service';
+import { InvitationService } from './invitation.service';
 
 export class PreRegisterDto {
   @IsString()
@@ -53,6 +54,15 @@ export class InviteAffiliationDto {
   @IsString()
   @MinLength(1)
   invitedByName!: string;
+}
+
+export class AnswerInvitationDto {
+  @IsString()
+  @MinLength(6)
+  code!: string;
+
+  @IsIn(['accept', 'decline'])
+  decision!: 'accept' | 'decline';
 }
 
 export class RespondDto {
@@ -186,7 +196,10 @@ function requirePractice(practiceId: string | undefined): string {
  */
 @Controller()
 export class AffiliationsController {
-  constructor(private readonly affiliations: AffiliationsService) {}
+  constructor(
+    private readonly affiliations: AffiliationsService,
+    private readonly invitations: InvitationService,
+  ) {}
 
   // --- Practitioner-owned ---------------------------------------------------
 
@@ -257,6 +270,28 @@ export class AffiliationsController {
     return this.affiliations.recordDeregistration(practitionerId, dto.reason);
   }
 
+  // --- The invitation, answered by the practitioner -------------------------
+  //
+  // UNSCOPED AND UNAUTHENTICATED, by necessity: the practitioner has no
+  // account here yet. The token IS the authorisation, and everything behind
+  // these two routes goes through SECURITY DEFINER functions keyed on it.
+  //
+  // Note there is no route by which a PRACTICE can answer. That is the rule
+  // this whole flow exists to hold, and a convenience endpoint for the case
+  // where the practitioner is standing right there would quietly dissolve it.
+
+  /** What the page may show before a code is entered. Names the practice. */
+  @Get('invitations/:token')
+  invitationState(@Param('token') token: string) {
+    return this.invitations.state(token);
+  }
+
+  /** Accept or decline. The CODE answers it; the link only addresses the page. */
+  @Post('invitations/:token/answer')
+  answerInvitation(@Param('token') token: string, @Body() dto: AnswerInvitationDto) {
+    return this.invitations.answer(token, dto.code, dto.decision);
+  }
+
   // --- Practice-scoped ------------------------------------------------------
 
   @Get('affiliations')
@@ -267,6 +302,21 @@ export class AffiliationsController {
   @Post('affiliations')
   invite(@Headers('x-practice-id') practiceId: string | undefined, @Body() dto: InviteAffiliationDto) {
     return this.affiliations.invite(requirePractice(practiceId), dto);
+  }
+
+  /**
+   * Send (or re-send) the invitation email.
+   *
+   * Re-sending REPLACES the previous token, so an old link stops working the
+   * moment a new one goes out — otherwise every re-send would leave another
+   * live credential behind in an inbox.
+   */
+  @Post('affiliations/:affiliationId/invitation')
+  sendInvitation(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('affiliationId', ParseUUIDPipe) affiliationId: string,
+  ) {
+    return this.invitations.send(requirePractice(practiceId), affiliationId);
   }
 
   /** Offboarding. Notice runs BEFORE the end date (§6). */

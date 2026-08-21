@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AffiliationsController } from './affiliations.controller';
 import { AffiliationsService } from './affiliations.service';
 import { AffiliationSweepService } from './affiliation-sweep.service';
+import { InvitationService } from './invitation.service';
 import { OrganisationsModule } from '../organisations/organisations.module';
 
 /**
@@ -12,7 +13,7 @@ import { OrganisationsModule } from '../organisations/organisations.module';
 @Module({
   imports: [OrganisationsModule],
   controllers: [AffiliationsController],
-  providers: [AffiliationsService, AffiliationSweepService],
+  providers: [AffiliationsService, AffiliationSweepService, InvitationService],
   exports: [AffiliationsService],
 })
 export class AffiliationsModule {}
