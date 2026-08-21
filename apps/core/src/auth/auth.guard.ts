@@ -1,8 +1,16 @@
-import { CanActivate, ExecutionContext, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { TokenVerifier, type AuthenticatedPrincipal } from '@aobplatform/auth-client';
 import { PUBLIC_ENDPOINT } from './public.decorator';
+import { REQUIRED_ROLES } from './roles.decorator';
 
 declare module 'express' {
   interface Request {
@@ -77,8 +85,43 @@ export class AuthGuard implements CanActivate {
       request.principal = principal;
       // The token's practice claim wins over the dev header when present.
       if (principal.practiceId) request.headers['x-practice-id'] = principal.practiceId;
+
+      /*
+       * ROLE CHECK, and note the asymmetry with the token check above.
+       *
+       * A request with NO token still passes while AUTH_ENFORCE is false —
+       * that is the staging, and it exists because the passkey ceremony is
+       * unproven on real hardware. But a request that DOES carry a token is
+       * checked against the required roles either way, enforcement flag or not.
+       *
+       * "No token" is an unfinished deployment. "The wrong token" is an
+       * answer — and deferring it would ship a window in which a perfectly
+       * valid practice-admin token could approve practices, which is the single
+       * most privileged act in the system.
+       */
+      const required = this.reflector.getAllAndOverride<string[]>(REQUIRED_ROLES, [
+        context.getHandler(),
+        context.getClass(),
+      ]);
+      if (required?.length) {
+        const held = principal.roles ?? [];
+        if (!required.some((role) => held.includes(role))) {
+          this.logger.warn(
+            `Refused ${request.method} ${request.url} for ${principal.sub}: holds [${held.join(', ')}], ` +
+              `needs one of [${required.join(', ')}].`,
+          );
+          throw new ForbiddenException(
+            `This endpoint requires one of: ${required.join(', ')}. Your account does not hold it.`,
+          );
+        }
+      }
+
       return true;
     } catch (err) {
+      // A role refusal is an ANSWER, not a broken token — rethrowing it as
+      // "invalid or expired" would send somebody off checking their passkey
+      // when the real problem is that they hold the wrong role.
+      if (err instanceof ForbiddenException) throw err;
       this.logger.warn(`Bearer token rejected: ${(err as Error).message}`);
       throw new UnauthorizedException('Invalid or expired token.');
     }

@@ -594,6 +594,7 @@ export const strings = {
     title: 'Set up',
     approvedBy: 'Approved by',
     backToPractices: 'All your practices',
+    backToApplication: 'Back to the application',
     notLoaded: 'The setup hub could not be loaded',
     nothingYet: 'Nothing here yet.',
     andMore: '+ {n} more',

@@ -84,10 +84,6 @@ interface Hub {
   cards: Card[];
 }
 
-interface Links {
-  statusUrl?: string;
-  amendUrl?: string;
-}
 
 const CARD_ICONS: Record<string, typeof Building2> = {
   entity: Building2,
@@ -106,7 +102,6 @@ const STATE_TONE: Record<CardState, Tone> = {
 
 export function SetupHub({ practiceId }: { practiceId: string }) {
   const [hub, setHub] = useState<Hub | null>(null);
-  const [links, setLinks] = useState<Links | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -121,20 +116,6 @@ export function SetupHub({ practiceId }: { practiceId: string }) {
       live = false;
     };
   }, [practiceId]);
-
-  // Only wanted while an application is still open — it is the applicant's own
-  // correction link, and there is nothing to correct once a decision is made.
-  useEffect(() => {
-    if (!hub || hub.practice.validationState !== 'pending') return;
-    let live = true;
-    fetch(`${CORE_URL}/organisations/${practiceId}/status-link`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((data: Links) => live && setLinks(data))
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [hub, practiceId]);
 
   if (error) {
     return (
@@ -193,12 +174,17 @@ export function SetupHub({ practiceId }: { practiceId: string }) {
           <dd className={ui.mono}>{hub.practice.id}</dd>
         </dl>
 
-        {!refused && links?.amendUrl && (
+        {/*
+          The CONSOLE's correction page, not the applicant's token link.
+          Sending a signed-in administrator to a bearer-token URL addressed to
+          somebody with no account looks like being logged out.
+        */}
+        {!refused && (
           <div style={{ marginTop: 'var(--s5)' }}>
-            <a href={links.amendUrl} className={ui.buttonLink} data-testid="hub-correct">
+            <Link href="/practice/setup/correct" className={ui.buttonLink} data-testid="hub-correct">
               <PencilLine size={15} aria-hidden="true" />
               {strings.setup.reviewCorrect}
-            </a>
+            </Link>
             <p className={ui.hint} style={{ marginTop: 'var(--s2)' }}>
               {strings.setup.reviewCorrectHint}
             </p>

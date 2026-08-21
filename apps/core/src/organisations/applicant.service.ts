@@ -159,7 +159,17 @@ export class ApplicantService {
 
   /** The applicant's own values, for the correction form. */
   async amendableApplication(token: string) {
-    const row = await this.find(token);
+    return this.presentApplication(await this.find(token));
+  }
+
+  /**
+   * One projection, used by both the token route and the console route.
+   *
+   * Two functions returning different subsets of the same row is how one of
+   * them quietly becomes the one that leaks — so there is one, and both callers
+   * get exactly what an applicant may see.
+   */
+  private presentApplication(row: Record<string, unknown>) {
     return {
       reference: row.id,
       state: row.validationState,
@@ -217,12 +227,16 @@ export class ApplicantService {
    */
   async amend(token: string, input: Record<string, unknown>) {
     const row = await this.find(token);
-    const practiceId = String(row.id);
 
-    // The window, before anything else. An expired link must not get as far as
-    // computing a diff — and the message has to say it EXPIRED rather than that
-    // the application cannot be amended, because those are different problems
-    // with different remedies.
+    /*
+     * THE WINDOW APPLIES TO THE LINK, NOT TO THE RIGHT TO CORRECT.
+     *
+     * This path is reached with a bearer token from an email, so the window is
+     * the whole point: a correction link with no expiry is a standing
+     * credential sitting in an inbox indefinitely. The console path
+     * (amendByPractice) has no window, because there the authorisation is a
+     * session rather than a link, and a session has its own lifetime.
+     */
     const expiresAt = row.correctionExpiresAt ? new Date(String(row.correctionExpiresAt)) : null;
     if (!expiresAt) {
       throw new BadRequestException(
@@ -236,6 +250,39 @@ export class ApplicantService {
           'you and we will send another.',
       );
     }
+
+    return this.applyAmendment(row, input);
+  }
+
+  /**
+   * The same correction, made from the console by a practice administrator.
+   *
+   * No window, deliberately. The five-day expiry exists to stop an emailed
+   * bearer link living forever in an inbox; it is a property of the LINK, not
+   * of the right to correct. Someone signed in to the console is authorised by
+   * their session, which has its own lifetime and its own revocation.
+   *
+   * Every other rule is identical and comes from the same function: the ABN
+   * cannot move, amendments are appended rather than applied over the top, and
+   * a correction that would leave two contacts sharing a handset is refused.
+   */
+  /** The console's read of its own application, for the correction form. */
+  async applicationByPractice(practiceId: string) {
+    const [row] = await this.prisma.$queryRaw<Array<Record<string, unknown>>>`
+      SELECT * FROM find_application_by_id(${practiceId}::uuid)`;
+    if (!row) throw new NotFoundException('No such application.');
+    return this.presentApplication(row);
+  }
+
+  async amendByPractice(practiceId: string, input: Record<string, unknown>) {
+    const [row] = await this.prisma.$queryRaw<Array<Record<string, unknown>>>`
+      SELECT * FROM find_application_by_id(${practiceId}::uuid)`;
+    if (!row) throw new NotFoundException('No such application.');
+    return this.applyAmendment(row, input);
+  }
+
+  private async applyAmendment(row: Record<string, unknown>, input: Record<string, unknown>) {
+    const practiceId = String(row.id);
 
     const changes = diffApplication(row, input);
 
