@@ -1152,4 +1152,137 @@ export const strings = {
     activeCount: '{n} confirmed',
     inactiveCount: '{n} awaiting confirmation',
   },
+  /**
+   * The practice's roster of practitioners.
+   *
+   * THE ONE FACT THIS PAGE IS ABOUT: has a human actually looked at the AHPRA
+   * public register for this person, or are we repeating what somebody typed?
+   * Entering a registration number proves nothing — it is the check that
+   * carries weight, which is the same rule the credential score rests on
+   * (IDENTITY-STRENGTH-DESIGN.md §1).
+   */
+  practitioners: {
+    audience: 'Practice admin',
+    title: 'Practitioners',
+    lead:
+      'The practitioners your practice works with. Adding someone here creates their identity on the ' +
+      'platform; it does not put them at one of your locations — that is an affiliation, and only they can ' +
+      'accept it.',
+    backToSetup: 'Back to set up',
+    notLoaded: 'The practitioners could not be loaded',
+    loading: 'Loading…',
+
+    emptyTitle: 'No practitioners yet',
+    emptyBody:
+      'Add the practitioners your practice works with. You will need each person’s AHPRA registration ' +
+      'number — it is on their registration certificate, and it is what makes them one identity across ' +
+      'every practice they work at.',
+
+    countOne: '1 practitioner',
+    countMany: '{n} practitioners',
+    checkedCount: '{n} register checked',
+    uncheckedCount: '{n} not checked',
+
+    // --- Status on a card ---
+    registerChecked: 'Register checked',
+    registerNotChecked: 'Register not checked',
+    registerNotCheckedNote:
+      'Nobody has looked this person up on the AHPRA public register yet. Until somebody does, all we hold ' +
+      'is what was typed in — and a registration number that has never been checked is worth nothing.',
+    checkedBy: 'Checked by {who} on {when}',
+    sourceApi: 'Checked automatically',
+    deregistered: 'Not registered',
+    deregisteredNote:
+      'AHPRA no longer registers this practitioner. Every affiliation ended immediately — there is no notice ' +
+      'period for deregistration, and nothing further can be captured in their name.',
+    notAffiliated: 'Not at any of your locations yet',
+    notAffiliatedNote:
+      'This person exists on the platform but has not been invited to one of your locations. Nothing can be ' +
+      'captured in their name until they accept an invitation.',
+    affiliationSummary: '{active} active · {invited} awaiting acceptance',
+    emailWithheld:
+      'Another practice added this practitioner, so we do not show you their email address. Invitations are ' +
+      'sent by us, and inviting is done by AHPRA number — you do not need it.',
+    noEmail:
+      'No email address on record, so we have nowhere to send an invitation. They would have to accept in ' +
+      'the console instead.',
+    invite: 'Invite to a location',
+
+    // --- Recording the register check ---
+    checkTitle: 'Record what the register says',
+    checkOpen: 'Record a register check',
+    checkLead:
+      'Search the AHPRA public register for this practitioner and record what it says. Your name is kept ' +
+      'with it: this is our evidence that somebody looked, and evidence needs an author.',
+    checkRegisterLink: 'Open the AHPRA register',
+    checkStatus: 'Registration status',
+    checkStatusHint: 'As the register words it. Only “Registered” permits practice.',
+    checkProfession: 'Profession',
+    checkProfessionHint: 'e.g. Medical Practitioner, Nurse, Physiotherapist.',
+    checkDivision: 'Division',
+    checkConditions: 'Conditions, undertakings or reprimands',
+    checkConditionsHint:
+      'Copy them across verbatim. Someone can be fully registered and still restricted in what they may do, ' +
+      'and that is the thing most easily skimmed past.',
+    checkSuburb: 'Principal place of practice — suburb',
+    checkSuburbHint:
+      'The register publishes suburb and postcode only, never a street address. If it matches the location ' +
+      'you affiliate them to, a regulator has independently placed this person there.',
+    checkPostcode: 'Postcode',
+    checkState: 'State',
+    checkTypeHeading: 'Registration held',
+    checkTypeHint:
+      'A practitioner commonly holds more than one at once, each with its own expiry. Record the one that ' +
+      'covers the work they do here.',
+    checkType: 'Type',
+    checkTypeOptions: 'General | Specialist | Limited | Provisional | Non-practising',
+    checkSpecialty: 'Specialty',
+    checkSpecialtyHint: 'On a specialist registration, e.g. General practice.',
+    checkExpiry: 'Expiry date',
+    checkExpiryHint:
+      'A date in the past does not necessarily mean anything is wrong — AHPRA allows a late period while a ' +
+      'renewal is finalised. It is recorded as a warning, never a refusal.',
+    checkSightedBy: 'Your name',
+    checkSightedByHint: 'Recorded permanently against this check.',
+    checkAction: 'Record this check',
+    checking: 'Recording…',
+    checkFailed: 'The check could not be recorded',
+    checkCancel: 'Cancel',
+    checkDone: 'Recorded',
+    checkRefused: 'This status does not permit practice',
+
+    // --- Adding a practitioner ---
+    addTitle: 'Add a practitioner',
+    addLead:
+      'This creates the practitioner’s identity on AoBPlatform. One person, one record, however many ' +
+      'practices they work at — which is what lets a deregistration stop them everywhere at once.',
+    addAhpra: 'AHPRA registration number',
+    addAhpraHint: 'Three profession letters then ten digits, e.g. MED0001234567.',
+    addFamilyName: 'Family name',
+    addGivenNames: 'Given names',
+    addProviderType: 'Role at your practice',
+    addProviderTypeHint:
+      'Checked against the profession on the register. A mismatch is usually a slip, and is surfaced rather ' +
+      'than blocked.',
+    addEmail: 'Their email address',
+    addEmailHint:
+      'THEIRS, not the practice’s. Invitations go here, and that is what stops a practice accepting an ' +
+      'affiliation on a practitioner’s behalf.',
+    addAction: 'Add this practitioner',
+    adding: 'Adding…',
+    addFailed: 'The practitioner could not be added',
+    addedTitle: 'Practitioner added',
+    addedBody:
+      'They now exist on the platform. Next, invite them to one of your locations — and then only they can ' +
+      'accept it.',
+
+    providerTypes: {
+      general_practitioner: 'General practitioner',
+      specialist: 'Specialist',
+      nurse_practitioner: 'Nurse practitioner',
+      optometrist: 'Optometrist',
+      allied_health: 'Allied health',
+      other: 'Other',
+    } as Record<string, string>,
+  },
 } as const;

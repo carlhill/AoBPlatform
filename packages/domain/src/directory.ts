@@ -109,3 +109,88 @@ export function assertNoProviderNumber(payload: unknown, context: string): void 
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// The practice's own roster
+// ---------------------------------------------------------------------------
+
+/**
+ * What a practice may see about a practitioner IT HAS A RELATIONSHIP WITH.
+ *
+ * Distinct from `DirectoryEntry`, which answers a different question: what may
+ * one practice see about a practitioner who is not theirs. That answer is
+ * deliberately almost nothing. This one is larger, and the enlargement has to
+ * be argued field by field rather than assumed from the relationship:
+ *
+ *   - REGISTRATION STATUS, PROFESSION, CONDITIONS — from the AHPRA public
+ *     register, which anybody may search. Echoing what a regulator publishes
+ *     costs nothing, and a practice that cannot see "Suspended" cannot act on
+ *     it.
+ *
+ *   - WHO CHECKED THE REGISTER, AND WHEN — our own record of our own work. It
+ *     is the difference between a claim and evidence, and it is the whole
+ *     content of the practitioners card on the setup hub.
+ *
+ *   - THE EMAIL, BUT ONLY TO THE PRACTICE THAT SUPPLIED IT. A practitioner's
+ *     address is theirs, not a shared contact record. The practice that
+ *     pre-registered them typed it in and can reasonably see what it typed;
+ *     a second practice affiliating the same person later has no claim on it
+ *     and does not need one — invitations are sent by us, and inviting is
+ *     keyed on the AHPRA number. So the second practice is told an address
+ *     EXISTS, which is what it actually needs to know, and not what it is.
+ *
+ * WHAT IS STILL ABSENT, and must stay absent: the provider number, and any
+ * hint of which other practices this person works at. Neither becomes
+ * shareable because somebody employed them.
+ */
+export interface RosterEntry extends DirectoryEntry {
+  /** Present ONLY to the practice that created this practitioner record. */
+  readonly email?: string | null;
+  /** Always present, so a practice can tell an invitation has somewhere to go. */
+  readonly hasEmail: boolean;
+  /** True when this practice pre-registered them, which is what unlocks `email`. */
+  readonly invitedByThisPractice: boolean;
+
+  // --- What the AHPRA public register says ---
+  readonly registrationStatus?: string | null;
+  readonly profession?: string | null;
+  readonly division?: string | null;
+  readonly conditions?: string | null;
+
+  // --- Our record of checking it ---
+  readonly registrationSightedByName?: string | null;
+  readonly registrationSightedAt?: Date | null;
+  readonly registrationSource?: string | null;
+  /** The single fact the setup hub's practitioners card is about. */
+  readonly registerChecked: boolean;
+
+  /** REQ-XFER-08 — set means an immediate hard stop across every affiliation. */
+  readonly deregisteredAt?: Date | null;
+}
+
+/**
+ * Project a practitioner down to the roster shape.
+ *
+ * Field-by-field, never a spread — the same discipline as `toDirectoryEntry`
+ * and for the same reason: a spread starts leaking any column added to the
+ * practitioner table later, silently, and the column that eventually gets added
+ * is the one that mattered.
+ */
+export function toRosterEntry(practitioner: PractitionerRecord, viewingPracticeId: string): RosterEntry {
+  const invitedByThisPractice = practitioner.invitedByPracticeId === viewingPracticeId;
+  return {
+    ...toDirectoryEntry(practitioner),
+    email: invitedByThisPractice ? ((practitioner.email as string | null) ?? null) : undefined,
+    hasEmail: Boolean(practitioner.email),
+    invitedByThisPractice,
+    registrationStatus: (practitioner.registrationStatus as string | null) ?? null,
+    profession: (practitioner.profession as string | null) ?? null,
+    division: (practitioner.division as string | null) ?? null,
+    conditions: (practitioner.conditions as string | null) ?? null,
+    registrationSightedByName: (practitioner.registrationSightedByName as string | null) ?? null,
+    registrationSightedAt: (practitioner.registrationSightedAt as Date | null) ?? null,
+    registrationSource: (practitioner.registrationSource as string | null) ?? null,
+    registerChecked: Boolean(practitioner.registrationSightedAt),
+    deregisteredAt: (practitioner.deregisteredAt as Date | null) ?? null,
+  };
+}

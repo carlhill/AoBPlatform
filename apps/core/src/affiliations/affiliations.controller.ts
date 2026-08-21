@@ -200,6 +200,21 @@ export class AffiliationsController {
     return this.affiliations.preRegister(requirePractice(practiceId), dto);
   }
 
+  /**
+   * The practice's own roster — everyone it pre-registered or is affiliated
+   * with, including the ones not yet invited anywhere.
+   *
+   * PRACTICE-SCOPED, and note it sits above the directory route rather than
+   * below it: `/practitioners` and `/practitioners/directory` are distinct
+   * paths, but keeping the narrower-scoped one first makes it obvious that
+   * this endpoint answers "who is mine" and the other answers "does this AHPRA
+   * number exist here", which are questions with very different answers.
+   */
+  @Get('practitioners')
+  roster(@Headers('x-practice-id') practiceId: string | undefined) {
+    return this.affiliations.listRoster(requirePractice(practiceId));
+  }
+
   /** AHPRA number only, exact match. Name browse is refused by design. */
   @Get('practitioners/directory')
   directory(@Query('ahpraNumber') ahpraNumber: string) {

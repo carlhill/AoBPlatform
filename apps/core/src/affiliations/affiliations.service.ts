@@ -25,6 +25,7 @@ import {
   captureBlockReason,
   isValidAhpraNumberFormat,
   toDirectoryEntry,
+  toRosterEntry,
   AFFILIATION_VELOCITY_THRESHOLD,
   AFFILIATION_VELOCITY_WINDOW_DAYS,
   isAffiliationVelocityAnomalous,
@@ -715,6 +716,64 @@ export class AffiliationsService {
   // -------------------------------------------------------------------------
   // Views
   // -------------------------------------------------------------------------
+
+  /**
+   * THE PRACTICE'S OWN ROSTER — every practitioner it has a relationship with.
+   *
+   * WHY THIS ENDPOINT HAD TO EXIST. Until it did, practitioners were only ever
+   * derived from affiliations, so a practitioner who had been pre-registered
+   * and not yet invited anywhere was invisible on every screen. The workflow is
+   * pre-register, THEN invite; a first step whose result cannot be seen is a
+   * first step people redo, and redoing it collides with the unique AHPRA
+   * number and looks like a broken platform.
+   *
+   * THE PRACTITIONER TABLE IS NOT RLS-SCOPED, deliberately (see schema.prisma):
+   * a doctor at three practices is one person. So the boundary here is the
+   * WHERE clause, and it is narrow on purpose. A row qualifies only if:
+   *
+   *   - this practice created it (`invitedByPracticeId`), or
+   *   - its id came out of this practice's own affiliation rows, which WERE
+   *     read under RLS and therefore cannot name anybody else's practitioners.
+   *
+   * There is no third branch, and adding one would need the same argument in
+   * writing (CONVENTIONS.md 6). What comes back is `toRosterEntry`, which is
+   * built field-by-field and carries no provider number.
+   */
+  async listRoster(practiceId: string) {
+    const affiliations = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.affiliation.findMany({
+        select: { practitionerId: true, status: true, locationId: true },
+      }),
+    );
+    const affiliatedIds = [...new Set(affiliations.map((a) => a.practitionerId))];
+
+    const practitioners = await this.prisma.practitioner.findMany({
+      where: {
+        OR: [{ invitedByPracticeId: practiceId }, { id: { in: affiliatedIds } }],
+      },
+      orderBy: [{ familyName: 'asc' }, { givenNames: 'asc' }],
+    });
+
+    const roster = practitioners.map((p) => {
+      const theirs = affiliations.filter((a) => a.practitionerId === p.id);
+      return {
+        ...toRosterEntry(p, practiceId),
+        /**
+         * Counts, not rows. The affiliations themselves have their own screen;
+         * what this page needs is whether this person is anywhere yet, because
+         * "pre-registered and never invited" is the state that gets lost.
+         */
+        affiliationCount: theirs.length,
+        activeAffiliationCount: theirs.filter((a) => a.status === 'active' || a.status === 'ending').length,
+        invitedAffiliationCount: theirs.filter((a) => a.status === 'invited').length,
+      };
+    });
+
+    // Cheap, and it turns a future copy-paste mistake into a failure here
+    // rather than a disclosure at the boundary.
+    assertNoProviderNumber(roster, 'practice roster');
+    return roster;
+  }
 
   /** What a practice sees: its own affiliations, provider numbers included. */
   async listForPractice(practiceId: string) {

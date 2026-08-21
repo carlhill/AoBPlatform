@@ -3,6 +3,7 @@ import {
   assertDirectoryQueryAllowed,
   assertNoProviderNumber,
   toDirectoryEntry,
+  toRosterEntry,
   type PractitionerRecord,
 } from './directory';
 
@@ -103,5 +104,85 @@ describe('the boundary guard', () => {
   it('handles null and undefined without throwing', () => {
     expect(() => assertNoProviderNumber(null, 'x')).not.toThrow();
     expect(() => assertNoProviderNumber(undefined, 'x')).not.toThrow();
+  });
+});
+
+describe('toRosterEntry', () => {
+  const practitioner = {
+    id: 'p1',
+    familyName: 'Nguyen',
+    givenNames: 'Mai',
+    ahpraNumber: 'MED0001234567',
+    providerType: 'general_practitioner',
+    email: 'mai@example.com',
+    invitedByPracticeId: 'practice-a',
+    verifiedAt: null,
+    registrationStatus: 'Registered',
+    profession: 'Medical Practitioner',
+    division: null,
+    conditions: null,
+    registrationSightedByName: 'A Reviewer',
+    registrationSightedAt: new Date('2026-01-05T00:00:00Z'),
+    registrationSource: 'ahpra_manual',
+    deregisteredAt: null,
+    /** A column that must never appear in the projection. */
+    providerNumber: '1234567A',
+  };
+
+  it('gives the practice that created the record the email it typed in', () => {
+    const entry = toRosterEntry(practitioner, 'practice-a');
+    expect(entry.invitedByThisPractice).toBe(true);
+    expect(entry.email).toBe('mai@example.com');
+    expect(entry.hasEmail).toBe(true);
+  });
+
+  /*
+   * The load-bearing case. A practitioner's address is theirs, not a shared
+   * contact record — and a second practice does not need it, because
+   * invitations are sent by us and inviting is keyed on the AHPRA number.
+   */
+  it('WITHHOLDS the email from a practice that did not supply it', () => {
+    const entry = toRosterEntry(practitioner, 'practice-b');
+    expect(entry.invitedByThisPractice).toBe(false);
+    expect(entry.email).toBeUndefined();
+    // But it still says an address EXISTS, which is what a practice needs to
+    // know: an invitation has somewhere to go.
+    expect(entry.hasEmail).toBe(true);
+  });
+
+  it('says so when there is no address at all', () => {
+    const entry = toRosterEntry({ ...practitioner, email: null }, 'practice-a');
+    expect(entry.hasEmail).toBe(false);
+    expect(entry.email).toBeNull();
+  });
+
+  it('NEVER carries a provider number, whoever is asking', () => {
+    for (const viewer of ['practice-a', 'practice-b']) {
+      // The same guard the boundary itself uses, so this test fails the way a
+      // real disclosure would.
+      expect(() => assertNoProviderNumber(toRosterEntry(practitioner, viewer), 'roster')).not.toThrow();
+    }
+  });
+
+  it('carries what the register said, because AHPRA publishes it anyway', () => {
+    const entry = toRosterEntry(practitioner, 'practice-b');
+    expect(entry.registrationStatus).toBe('Registered');
+    expect(entry.profession).toBe('Medical Practitioner');
+  });
+
+  /*
+   * The single fact the setup hub's practitioners card is about: has anybody
+   * actually looked at the register, or are we repeating what we were told?
+   */
+  it('reports whether the register was checked, not merely what it said', () => {
+    expect(toRosterEntry(practitioner, 'practice-a').registerChecked).toBe(true);
+    expect(toRosterEntry({ ...practitioner, registrationSightedAt: null }, 'practice-a').registerChecked).toBe(
+      false,
+    );
+  });
+
+  it('surfaces deregistration, which is an immediate hard stop', () => {
+    const entry = toRosterEntry({ ...practitioner, deregisteredAt: new Date('2026-02-01') }, 'practice-a');
+    expect(entry.deregisteredAt).toEqual(new Date('2026-02-01'));
   });
 });
