@@ -11,7 +11,7 @@
   "bruteForceProtected": true,
   "accessTokenLifespan": 300,
   "webAuthnPolicyRpEntityName": "AoBPlatform",
-  "webAuthnPolicyRpId": "",
+  "webAuthnPolicyRpId": "localhost",
   "webAuthnPolicySignatureAlgorithms": [
     "ES256",
     "RS256"
@@ -19,12 +19,12 @@
   "webAuthnPolicyAttestationConveyancePreference": "none",
   "webAuthnPolicyAuthenticatorAttachment": "not specified",
   "webAuthnPolicyRequireResidentKey": "not specified",
-  "webAuthnPolicyUserVerificationRequirement": "preferred",
+  "webAuthnPolicyUserVerificationRequirement": "required",
   "webAuthnPolicyCreateTimeout": 60,
   "webAuthnPolicyAvoidSameAuthenticatorRegister": false,
   "webAuthnPolicyAcceptableAaguids": [],
   "webAuthnPolicyPasswordlessRpEntityName": "AoBPlatform",
-  "webAuthnPolicyPasswordlessRpId": "",
+  "webAuthnPolicyPasswordlessRpId": "localhost",
   "webAuthnPolicyPasswordlessSignatureAlgorithms": [
     "ES256",
     "RS256"

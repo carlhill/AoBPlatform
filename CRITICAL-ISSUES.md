@@ -79,7 +79,7 @@ was already running beside it.
 
 ---
 
-## 2. Passkey sign-in refused: UV flag absent — OPEN
+## 2. Passkey sign-in refused: UV flag absent — CAUSE IDENTIFIED 2026-08-22
 
 ### What happened
 
@@ -90,26 +90,74 @@ Validator is configured to check user verified,
 but UV flag in authenticatorData is not set
 ```
 
-The realm requires `userVerification: required` for passwordless. The
-assertions came back proving possession of the device but carrying no flag
-saying the device had verified the person — no PIN, no biometric.
+### The cause: Microsoft Password Manager, not Windows Hello
 
-Windows Hello IS configured with a PIN on the machine in question, so the
-obvious explanation is wrong. The credentials carried AAGUID
-`d3452668-01fd-4c12-926c-83a4204853aa`, which is not any published Windows
-Hello identifier, and `transports: ['internal', 'ble']` — consistent with a
-credential provider other than Hello serving them.
+Windows 11 (24H2 and later) ships a **second passkey provider** alongside
+Windows Hello, and it registers itself as the default handler. Passkeys created
+through it live in Microsoft Password Manager's own vault.
 
-### Why the policy is not being relaxed
+It gave itself away by its own dialog: **"Enter your Microsoft Password Manager
+PIN — confirm your identity by entering the PIN you previously set up."** That
+PIN unlocks the PASSWORD MANAGER'S VAULT. It is not Windows Hello verifying the
+person, and the assertion comes back with the UV flag unset.
 
-Setting `userVerification` to `preferred` would make this go away immediately,
-and it is the wrong answer.
+This is why the diagnosis took several passes. A PIN prompt appeared, which
+looked exactly like user verification succeeding, and the theory that a
+non-Hello provider was responsible was dropped on that evidence. It was the
+right theory; the PIN belonged to the wrong thing.
+
+The tell was there the whole time in the credential itself:
+
+```
+aaguid     : d3452668-01fd-4c12-926c-83a4204853aa   (Microsoft Password Manager)
+transports : ['internal', 'ble']  /  ['internal', 'hybrid']
+```
+
+None of the published Windows Hello AAGUIDs — `08987058-…`, `9ddd1817-…`,
+`6028b017-…` — appeared on any credential this account ever held.
+
+### The fix
+
+Enrol against **Windows Hello**, not Microsoft Password Manager:
+
+1. Settings → Accounts → **Passkeys** → remove the `localhost` entries.
+2. Settings → Accounts → Passkeys → **Advanced options** → stop Microsoft
+   Password Manager acting as the passkey provider, or
+3. In Chrome's "Create a passkey" dialog, choose **Windows Hello or external
+   security key** rather than the default provider.
+
+Confirm it worked by the prompt: Windows Hello says **"Making sure it's you"**
+or asks for the device PIN under a **Windows Security** header. If the dialog
+says "Microsoft Password Manager", it is the wrong provider again.
+
+### Why the policy was not relaxed
+
+Setting `userVerification` to `preferred` would have made this disappear in
+seconds, and would have been the wrong answer.
 
 `required` is what makes a passkey **two factors**: something you have, and
 something you are or know. At `preferred`, an unlocked stolen laptop approves
-practices. For the role that opens consent capture, that is not a trade worth
+practices. For the role that opens consent capture that is not a trade worth
 making — and it would gut REQ-VAULT-04 while appearing to satisfy it, which is
 worse than not having the requirement at all.
+
+Note what the failure actually protected against: a credential that could be
+used without verifying the holder was refused, exactly as intended. The control
+worked. The problem was that the wrong provider had captured the enrolment.
+
+### What was tightened along the way
+
+- `webAuthnPolicyUserVerificationRequirement` (the plain, two-factor policy)
+  was `preferred` while its passwordless counterpart was `required`. Both are
+  now `required` — a non-verified WebAuthn assertion should not be acceptable
+  on any path in this realm.
+- `webAuthnPolicyRpId` and its passwordless counterpart were **blank**, meaning
+  "whatever host the request arrived on". This stack answers to both
+  `localhost` and `127.0.0.1`, so a credential enrolled via one would silently
+  never match an assertion offered via the other. Both are now pinned to
+  `localhost`.
+
+Neither change fixed this issue. Both were latent traps found while looking.
 
 ### On adding a password fallback
 
@@ -127,24 +175,23 @@ must not be "then use the thing passkeys replaced".
 What genuinely addresses the underlying fear — *being locked out* — is:
 
 1. **Durable storage.** Done, issue 1.
-2. **At least two administrators**, so one lost device is never a lockout.
+2. **At least two administrators**, so one lost device is never a lockout. Done.
 3. **A recovery path with a real root of trust**, which exists:
    `reset-platform-admin-passkey.mjs`, restricted to whoever holds the Keycloak
    administrator credential, revoking every old credential before issuing a new
    enrolment.
-4. **A hardware security key with a PIN** as the second factor for anyone whose
-   platform authenticator cannot produce a UV assertion. That preserves the
-   property; a password does not.
+4. **A hardware security key with a PIN** for anyone whose platform
+   authenticator cannot produce a UV assertion. That preserves the property; a
+   password does not.
 
-### Next steps
+### Still open
 
-- Identify AAGUID `d3452668-…` against the FIDO Metadata Service and determine
-  which provider served it.
-- Re-enrol with the Windows Hello provider explicitly selected, and confirm the
-  PIN prompt appears — if enrolment completes without one, the credential
-  cannot produce UV and the provider is the fault.
-- If the platform authenticator cannot be made to produce UV, use a hardware
-  key with a PIN rather than changing the policy.
+- Confirm a Windows Hello enrolment produces UV and signs in.
+- **Practitioners will hit this too.** They are not going to know which passkey
+  provider captured their enrolment, and "Passkey authentication result is
+  invalid" tells them nothing. Onboarding needs to detect a credential whose
+  AAGUID belongs to a provider known not to set UV, and say so AT ENROLMENT —
+  when it can still be redone — rather than at the first sign-in afterwards.
 
 ---
 

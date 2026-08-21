@@ -133,3 +133,23 @@ reporting it usually cannot tell which it was — a phone left in a taxi is
 
 Neither command sets a password. There is no password path in this realm for
 these clients, and these commands do not create one.
+
+## Which passkey provider captured the enrolment
+
+Windows 11 ships more than one, and the wrong one silently breaks sign-in.
+
+| AAGUID | Provider | Sets UV? |
+|---|---|---|
+| `08987058-cadc-4b81-b6e1-30de50dcbe96` | Windows Hello Hardware | yes |
+| `9ddd1817-af5a-4672-a2b9-3e3dd95000a9` | Windows Hello Software | yes |
+| `6028b017-b1d4-4c02-b4b3-afcdafc96bb2` | Windows Hello VBS | yes |
+| `d3452668-01fd-4c12-926c-83a4204853aa` | **Microsoft Password Manager** | **no** — see CRITICAL-ISSUES.md §2 |
+
+Microsoft Password Manager prompts for a PIN, which looks exactly like user
+verification and is not: it unlocks the manager's own vault. The realm requires
+UV, the assertion arrives without it, and sign-in is refused with a message
+that explains none of this.
+
+To read the AAGUID on an account's credentials, use the Admin REST API:
+`/admin/realms/aobplatform/users/{id}/credentials` — the `credentialData`
+field carries it.
