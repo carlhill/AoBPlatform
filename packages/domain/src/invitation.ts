@@ -208,9 +208,20 @@ export function invitationSummary(input: {
 export const INVITATION_CONSEQUENCES = [
   'This practice can record patient consent naming you as the practitioner at that location.',
   'Your Medicare provider number for that location, if the practice holds one, becomes part of those records.',
-  'It does NOT consent to anything on a patient’s behalf, and it does not sign any agreement.',
   'You can end it at any time by telling the practice, and they must record the date you leave.',
 ] as const;
+
+/**
+ * The caveat, held apart from the list ON PURPOSE.
+ *
+ * It is the sentence most likely to be skimmed and the one most costly to
+ * misunderstand, so every surface gives it its own weight rather than letting
+ * it sit as the third bullet of four. Keeping it here, rather than as page
+ * copy, is what stops the page and the email drifting into saying two slightly
+ * different things about the same limit.
+ */
+export const INVITATION_NOT_CONSENT =
+  'This is not consent on any patient’s behalf, and you are not signing an agreement here.';
 
 export function assertCanAnswer(state: InvitationState): void {
   if (!canAnswerInvitation(state)) {

@@ -5,6 +5,7 @@ import {
   INVITATION_ATTEMPT_CAP,
   INVITATION_CONSEQUENCES,
   INVITATION_DAYS,
+  INVITATION_NOT_CONSENT,
   InvitationError,
   assertCanAnswer,
   canAnswerInvitation,
@@ -127,7 +128,17 @@ describe('what is being agreed to', () => {
    * something for a patient will not read the next thing we send them.
    */
   it('says plainly that this is NOT consent on a patient’s behalf', () => {
-    expect(INVITATION_CONSEQUENCES.join(' ')).toMatch(/does NOT consent to anything on a patient/i);
+    expect(INVITATION_NOT_CONSENT).toMatch(/not consent on any patient/i);
+    expect(INVITATION_NOT_CONSENT).toMatch(/not signing an agreement/i);
+  });
+
+  /*
+   * Held apart from the list so every surface can give it its own weight. It
+   * was briefly in both, and the page then said nearly the same sentence twice
+   * in a row, which reads as padding rather than as emphasis.
+   */
+  it('keeps the caveat OUT of the consequences list, so nothing says it twice', () => {
+    expect(INVITATION_CONSEQUENCES.join(' ')).not.toMatch(/not consent on any patient/i);
   });
 
   it('says how to end it, because a relationship with no exit is a trap', () => {

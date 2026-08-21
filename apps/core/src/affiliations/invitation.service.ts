@@ -4,6 +4,7 @@ import {
   INVITATION_ATTEMPT_CAP,
   INVITATION_CONSEQUENCES,
   INVITATION_DAYS,
+  INVITATION_NOT_CONSENT,
   canAnswerInvitation,
   invitationMessage,
   invitationSummary,
@@ -137,6 +138,9 @@ export class InvitationService {
       { rule: true },
       { heading: 'What accepting means' },
       ...INVITATION_CONSEQUENCES.map((line) => ({ text: line })),
+      // Its own block, not the last bullet of a list. It is the sentence most
+      // likely to be skimmed and the most costly to misunderstand.
+      { text: INVITATION_NOT_CONSENT },
       {
         small:
           `This invitation works until ${issued.expiresAt.toISOString().slice(0, 10)}. After ` +
@@ -212,6 +216,7 @@ export class InvitationService {
         departmentName: row.departmentName,
       }),
       consequences: INVITATION_CONSEQUENCES,
+      notConsent: INVITATION_NOT_CONSENT,
       practiceName: row.practiceName,
       locationAddress: row.locationAddress,
       locationCode: row.locationCode,

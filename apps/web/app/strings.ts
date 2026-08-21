@@ -1285,4 +1285,66 @@ export const strings = {
       other: 'Other',
     } as Record<string, string>,
   },
+  /**
+   * The practitioner's invitation page.
+   *
+   * DECLINING IS AS PROMINENT AS ACCEPTING. Not a link in the small print — a
+   * button of the same size beside it. A page where declining is hard is a page
+   * that manufactures consent, and consent is the only thing this platform
+   * sells.
+   */
+  invitation: {
+    audience: 'Your invitation',
+    checking: 'Opening your invitation…',
+
+    title: 'You have been invited',
+    invitedBy: 'Invited by {who}',
+    on: 'on {when}',
+
+    meansTitle: 'What accepting means',
+    // The caveat is NOT here. It comes from the domain, through the API, so the
+    // page and the invitation email cannot drift into saying two slightly
+    // different things about the same limit (see invitation.ts).
+
+    codeTitle: 'Enter the code from your invitation email',
+    codeLead:
+      'Six digits. The code is what answers this, not the link — so an automated scanner that opened the ' +
+      'link on your behalf cannot answer for you.',
+    codeLabel: 'Six-digit code',
+    // An INSTRUCTION, not a restatement. The message underneath already says
+    // the code was wrong and how many attempts remain -- it has to, because
+    // it is the API's own error text and stands alone for callers with no
+    // heading above it. A title repeating it just said the same sentence twice.
+    wrongCode: 'Check the code and try again',
+
+    accept: 'Accept — I practise here',
+    decline: 'Decline this invitation',
+    answering: 'Sending your answer…',
+
+    acceptedTitle: 'Accepted',
+    acceptedBody:
+      '{practice} can now record patient consent naming you as the practitioner at that location. You can ' +
+      'end this at any time by telling them, and they must record the date you leave.',
+    acceptedProves:
+      'For the record, we have written down exactly how you accepted: by opening the invitation sent to ' +
+      'your email address and typing the code from it. That proves access to your inbox, not who was at ' +
+      'the keyboard — and we would rather say so than overstate it.',
+
+    declinedTitle: 'Declined',
+    declinedBody:
+      'We have told {practice} that you declined. Nothing has been recorded in your name, and nothing ' +
+      'further will be.',
+    declinedMistake:
+      'If that was a mistake, ask the practice to invite you again. A declined invitation cannot be ' +
+      'reopened from this link — deliberately, because a decline that anybody holding the link could undo ' +
+      'would not be worth much.',
+
+    deadTitle: 'This invitation cannot be answered',
+    unexpectedTitle: 'Not expecting this?',
+    unexpectedBody:
+      'You can decline it, or simply ignore it — it expires on its own. Nothing is recorded in your name ' +
+      'unless you accept. If you think it was sent to you in error, tell the practice.',
+
+    notLoaded: 'This invitation could not be loaded',
+  },
 } as const;
