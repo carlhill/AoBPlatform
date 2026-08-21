@@ -183,15 +183,33 @@ suspecting the service.
 
 ## Identity
 
-### The two identity-strength dashboards
-**Status:** designed, not built. See IDENTITY-STRENGTH-DESIGN.md.
+### ~~The two identity-strength dashboards~~ — BUILT, 2026-08-22
+**Status:** done. `/review/identity`, platform-admin only, linked from the
+review queue.
 
-Practice identity strength and practitioner identity strength, each filterable
-by practitioner name and practice.
+Two tabs, each answering one operational question, because a dashboard without
+a question is a report nobody opens twice:
 
-**Why deferred:** scoring is captured and stored already; the dashboards are a
-reporting surface over data that is accumulating correctly in the meantime, so
-delay costs nothing.
+- **Practices** — which applications are stuck, and on what. Score, the checks
+  behind it, time in queue, and the weakest link stated in words rather than
+  left for the reader to infer from a number.
+- **Practitioners** — whose verification is going stale, and who is moving
+  unusually. Blocked first, then weakest, then stalest.
+
+**Practitioner strength DECAYS**, which is the part that needed a new domain
+module (`practitioner-strength.ts`). Practice identity is mostly stable facts;
+a registration is a snapshot, and "Registered, verified in January" says very
+little in December. Each row also shows what one fresh check would restore.
+
+**The "would fail" count is the point of soft mode.** It is on the page: how
+many real practices hard enforcement would be turning away today. That is the
+number that decides when the threshold is safe to switch on, and it cannot be
+seen once you are already enforcing it.
+
+**Still open from §10 of the design**, unchanged and still needing Carl: the
+PIE data-usage question, the §7 sign-off for the website fetch, the collection
+notice, the retention conflict, and whether a sole trader can reach six points
+at all.
 
 ---
 

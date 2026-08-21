@@ -196,6 +196,11 @@ export const strings = {
     endBypass: 'End the bypass',
   },
   review: {
+    toIdentity: 'Identity strength',
+    toIdentityHint:
+      '— what is known about every practice and practitioner on the platform, and what hard enforcement ' +
+      'would cost today.',
+
     navQueue: 'Queue',
     audience: 'Reviewer',
 

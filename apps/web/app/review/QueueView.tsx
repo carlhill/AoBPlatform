@@ -119,6 +119,19 @@ export function QueueView() {
       <h1 className={ui.pageTitle}>{strings.review.queueTitle}</h1>
       <p className={ui.pageLead}>{strings.review.queueLead}</p>
 
+      {/*
+        The queue answers "what is in front of me today". The dashboard answers
+        "what is going wrong across everything", which is a different question
+        and a different rhythm — so it is a link from here rather than another
+        panel on this page competing with the work.
+      */}
+      <p className={ui.hint}>
+        <Link href="/review/identity" data-testid="queue-to-identity">
+          {strings.review.toIdentity}
+        </Link>{' '}
+        {strings.review.toIdentityHint}
+      </p>
+
       {error && (
         <Notice
           tone="stop"

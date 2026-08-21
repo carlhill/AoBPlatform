@@ -835,4 +835,101 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
       expect(res.body.alreadyRecorded).toBe(true);
     });
   });
+  // ---------------------------------------------------------------------------
+  describe('the identity dashboards are cross-tenant and narrow (design §7)', () => {
+    it('scores a practice from its recorded checks, and says what hard mode would decide', async () => {
+      const res = await api().get('/identity/practices').expect(200);
+      const row = res.body.find((r: { id: string }) => r.id === orgId);
+      expect(row).toBeDefined();
+      // The checks recorded earlier in this suite are what produce the score;
+      // the arithmetic itself is the domain's and is tested there.
+      expect(typeof row.score).toBe('number');
+      expect(typeof row.wouldPass).toBe('boolean');
+      expect(Array.isArray(row.wouldFailBecause)).toBe(true);
+    });
+
+    /*
+     * The operational answer, not just the number. A dashboard that shows a
+     * score and leaves the reader to work out what to do about it has moved
+     * the work rather than done it.
+     */
+    it('says what is missing, not merely how much', async () => {
+      const res = await api().get('/identity/practices').expect(200);
+      const failing = res.body.find((r: { wouldPass: boolean }) => !r.wouldPass);
+      if (failing) expect(failing.weakestLink).toBeTruthy();
+    });
+
+    it('never reports a negative time in queue', async () => {
+      const res = await api().get('/identity/practices').expect(200);
+      for (const row of res.body) expect(row.daysInQueue).toBeGreaterThanOrEqual(0);
+    });
+
+    /*
+     * The provider number is the artefact the REQ-PKI family exists to protect,
+     * and a cross-practice view is precisely where it must not appear. It is
+     * also not needed to answer "how well do we know this person".
+     */
+    it('NEVER_CARRIES_A_PROVIDER_NUMBER_ACROSS_PRACTICES', async () => {
+      const res = await api().get('/identity/practitioners').expect(200);
+      const serialised = JSON.stringify(res.body);
+      expect(serialised).not.toContain('1234567A');
+      expect(serialised).not.toContain('9999999Z');
+      expect(serialised).not.toMatch(/"provider_?[Nn]umber"/);
+    });
+
+    it('carries no email address either — only whether one is proven', async () => {
+      const res = await api().get('/identity/practitioners').expect(200);
+      expect(JSON.stringify(res.body)).not.toContain('sam.other@example.invalid');
+    });
+
+    /*
+     * SELF-CONTAINED, on purpose. The first version looked for the practitioner
+     * the deregistration block creates -- and that block deletes them in its
+     * afterAll, so this ran against a row that no longer existed. Reaching into
+     * another describe's fixtures couples two blocks to each other's execution
+     * order, which is a bug waiting for somebody to reorder the file.
+     */
+    it('reports deregistration as BLOCKING rather than as a low score', async () => {
+      const struck = await prisma.practitioner.create({
+        data: {
+          ahpraNumber: 'MED0008181818',
+          familyName: 'Dashboard',
+          givenNames: 'Dee',
+          providerType: 'general_practitioner',
+          deregisteredAt: new Date(),
+          deregisteredReason: 'AHPRA registration cancelled',
+        },
+      });
+      try {
+        const res = await api().get('/identity/practitioners').expect(200);
+        const row = res.body.find((r: { id: string }) => r.id === struck.id);
+        expect(row).toBeDefined();
+        expect(row.blocking.join(' ')).toMatch(/REQ-XFER-08/);
+        // And it is a STOP, not a number to be made up elsewhere.
+        expect(row.blocking.length).toBeGreaterThan(0);
+      } finally {
+        await prisma.practitioner.deleteMany({ where: { id: struck.id } });
+      }
+    });
+
+    it('shows what one fresh register check would restore', async () => {
+      const res = await api().get('/identity/practitioners').expect(200);
+      for (const row of res.body) {
+        expect(row.potentialScore).toBeGreaterThanOrEqual(row.score);
+      }
+    });
+
+    /*
+     * The fact only a cross-practice view can see. No single practice can tell
+     * that every one of a practitioner's affiliations rests on one inbox,
+     * because each sees only its own.
+     */
+    it('counts how each affiliation was accepted, across every practice', async () => {
+      const res = await api().get('/identity/practitioners').expect(200);
+      const other = res.body.find((r: { ahpraNumber: string }) => r.ahpraNumber === AHPRA_OTHER);
+      expect(other.acceptedByEmail).toBe(1);
+      expect(other.acceptedByPasskey).toBe(0);
+    });
+  });
+
 });
