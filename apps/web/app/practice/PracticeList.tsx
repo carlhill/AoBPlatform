@@ -29,10 +29,11 @@
  * scoped to anybody.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, ArrowRight, Building2, CheckCircle2, Clock } from 'lucide-react';
-import { Chip, Notice, Shell, ui } from '../ui';
+import { AlertTriangle, ArrowRight, Building2, CheckCircle2, Clock, Search, X } from 'lucide-react';
+import { matchesFilter, matchesPractice, type PracticeFilter } from '@aobplatform/domain';
+import { Button, Chip, Field, Notice, Shell, TextInput, ui } from '../ui';
 import { strings } from '../strings';
 import styles from './practice.module.css';
 
@@ -43,9 +44,19 @@ interface Practice {
   id: string;
   name: string;
   legalName: string | null;
+  tradingNames?: string[] | null;
   abn: string | null;
+  acn?: string | null;
   abnStatus: string | null;
   validationState: string;
+  // Searched on, because these are what somebody actually has to hand when
+  // looking for a clinic: a number from a missed call, an address off a thread.
+  adminName?: string | null;
+  adminEmail?: string | null;
+  adminPhone?: string | null;
+  managerName?: string | null;
+  managerEmail?: string | null;
+  managerPhone?: string | null;
   locationCount?: number;
   activeLocationCount?: number;
 }
@@ -60,6 +71,8 @@ interface WithReadiness extends Practice {
 export function PracticeList() {
   const [practices, setPractices] = useState<WithReadiness[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<PracticeFilter>('all');
 
   useEffect(() => {
     let live = true;
@@ -134,6 +147,22 @@ export function PracticeList() {
     };
   }, []);
 
+  /*
+   * Filtered here rather than on the server. With a handful of practices a
+   * round trip per keystroke buys nothing and costs the instant feedback that
+   * makes a search box worth having. When a group is large enough for this to
+   * matter, the query moves to the API — the matching rules already live in the
+   * domain, so both ends would use the same ones.
+   */
+  const shown = useMemo(() => {
+    if (!practices) return [];
+    return practices.filter(
+      (p) => matchesFilter(filter, p) && matchesPractice(query, p),
+    );
+  }, [practices, query, filter]);
+
+  const filters: PracticeFilter[] = ['all', 'needs_work', 'capturing', 'being_reviewed', 'not_approved'];
+
   if (error) {
     return (
       <Shell right={strings.setup.audience}>
@@ -149,7 +178,78 @@ export function PracticeList() {
       <h1 className={ui.pageTitle}>{strings.practices.title}</h1>
       <p className={ui.pageLead}>{strings.practices.lead}</p>
 
+      {practices !== null && practices.length > 0 && (
+        <div className={styles.controls}>
+          <div className={styles.searchField}>
+            <Field label={strings.practices.search} hint={strings.practices.searchHint}>
+              {(props) => (
+                <div className={styles.searchWrap}>
+                  <Search size={16} aria-hidden="true" className={styles.searchIcon} />
+                  <TextInput
+                    {...props}
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder={strings.practices.searchPlaceholder}
+                    data-testid="practice-search"
+                  />
+                </div>
+              )}
+            </Field>
+          </div>
+
+          <div className={styles.filterRow} role="group" aria-label={strings.practices.search}>
+            {filters.map((f) => {
+              // The COUNT per filter, so a reader can see there is nothing
+              // under a tab before pressing it and finding an empty list.
+              const count = practices.filter((p) => matchesFilter(f, p)).length;
+              return (
+                <button
+                  key={f}
+                  type="button"
+                  className={`${styles.filterChip} ${filter === f ? styles.filterChipOn : ''}`}
+                  aria-pressed={filter === f}
+                  onClick={() => setFilter(f)}
+                  data-testid={`filter-${f}`}
+                >
+                  {strings.practices.filters[f]}
+                  <span className={styles.filterCount}>{count}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <p className={ui.hint}>
+            {strings.practices.showing} <strong>{shown.length}</strong> {strings.practices.of}{' '}
+            {practices.length}
+            {(query || filter !== 'all') && (
+              <>
+                {' '}
+                <Button
+                  variant="subtle"
+                  onClick={() => {
+                    setQuery('');
+                    setFilter('all');
+                  }}
+                  data-testid="practice-clear"
+                >
+                  <X size={13} aria-hidden="true" />
+                  {strings.practices.clear}
+                </Button>
+              </>
+            )}
+          </p>
+        </div>
+      )}
+
       {practices === null && <p className={ui.hint}>{strings.review.loading}</p>}
+
+      {practices !== null && practices.length > 0 && shown.length === 0 && (
+        <div className={styles.empty}>
+          <Search size={26} aria-hidden="true" />
+          <p className={styles.emptyTitle}>{strings.practices.noMatch}</p>
+          <p className={ui.hint}>{strings.practices.noMatchHint}</p>
+        </div>
+      )}
 
       {practices !== null && practices.length === 0 && (
         <div className={styles.empty}>
@@ -160,7 +260,7 @@ export function PracticeList() {
       )}
 
       <ul className={styles.list}>
-        {(practices ?? []).map((p) => {
+        {shown.map((p) => {
           const pending = p.validationState === 'pending';
           const rejected = p.validationState === 'rejected';
           /*

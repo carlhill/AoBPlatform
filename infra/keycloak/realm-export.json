@@ -102,7 +102,7 @@
       },
       {
         "name": "platform_admin",
-        "description": "AoBPlatform staff who read applications and approve practices. NOT a practice role: a platform admin belongs to no practice and must never carry a practice_id claim, because everything they do is cross-tenant by definition. The most privileged role in the system -- approving a practice is what opens consent capture -- so it is granted by invitation and never by self-service."
+        "description": "AoBPlatform staff who read applications and approve practices. Cross-tenant: belongs to no practice and carries no practice_id. Granted by invitation only, never self-service."
       }
     ],
     "client": {}
@@ -226,7 +226,7 @@
     {
       "clientId": "console",
       "name": "Platform operator console (reviewer)",
-      "description": "Separate from `web` deliberately. The two audiences are different principals with different lifetimes and different blast radius: a practice admin acts within one practice, a platform admin acts across all of them. One client for both would mean one token audience for both, and a practice-admin token would be indistinguishable from a reviewer token at the API.",
+      "description": "Reviewer console. Separate from `web` so a practice-admin token is not indistinguishable from a platform-admin one at the API. Passkey required; direct grants off.",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": true,
@@ -234,8 +234,8 @@
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
       "redirectUris": [
-        "http://localhost:3100/callback",
-        "http://localhost:21100/callback"
+        "http://localhost:3100/*",
+        "http://localhost:21100/*"
       ],
       "webOrigins": [
         "http://localhost:3100",

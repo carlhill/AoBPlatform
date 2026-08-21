@@ -123,3 +123,77 @@
   border-color: var(--line);
   background: var(--surface);
 }
+
+/* --- Search and filters --------------------------------------------------- */
+
+.controls {
+  margin-bottom: var(--s5);
+}
+
+.searchField {
+  max-width: 520px;
+}
+
+.searchWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.searchIcon {
+  position: absolute;
+  left: var(--s3);
+  color: var(--ink-faint);
+  pointer-events: none;
+}
+
+.searchWrap input {
+  padding-left: calc(var(--s3) * 2 + 16px);
+}
+
+.filterRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-bottom: var(--s2);
+}
+
+/*
+ * Toggle buttons, not links. Each carries its COUNT, so a reader can see there
+ * is nothing under a tab before pressing it and finding an empty list — the
+ * commonest small frustration in a filtered view.
+ */
+.filterChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  font: inherit;
+  font-size: var(--text-sm);
+  padding: var(--s1) var(--s3);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.filterChip:hover {
+  background: var(--surface-sunken);
+}
+
+/*
+ * The selected chip is filled AND its count inverts. A border-only selected
+ * state is nearly invisible in a row of six, and aria-pressed carries the fact
+ * for anyone not seeing the fill at all.
+ */
+.filterChipOn {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.filterCount {
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}

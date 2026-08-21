@@ -577,6 +577,24 @@ export const strings = {
       'AoBPlatform did not approve this application. The reasons were sent to the email on the application.',
     switch: 'Switch practice',
 
+    search: 'Find a practice',
+    searchHint:
+      'Name, ABN, or the email or phone of either named contact. Type whichever you have \u2014 spacing and ' +
+      '+61 do not matter.',
+    searchPlaceholder: 'Riverbank, 27 734 610 304, carl@\u2026, 0408\u2026',
+    filters: {
+      all: 'All',
+      needs_work: 'Needs work',
+      capturing: 'Capturing',
+      being_reviewed: 'Being reviewed',
+      not_approved: 'Not approved',
+    } as Record<string, string>,
+    showing: 'Showing',
+    of: 'of',
+    noMatch: 'Nothing matches that.',
+    noMatchHint: 'Try a shorter fragment \u2014 part of a name, or the first few digits of an ABN.',
+    clear: 'Clear',
+
     emptyTitle: 'No practice yet',
     emptyBody:
       'A practice appears here once it has been approved. If you have applied and are waiting, the link in ' +
@@ -635,8 +653,9 @@ export const strings = {
       'starts a new application with its own review.',
     reviewCorrect: 'Correct the application',
     reviewCorrectHint:
-      'Opens the applicant\u2019s own correction page. It works without a sign-in, because whoever applied has ' +
-      'no account here until the practice is approved.',
+      'Contact details and the address can be corrected while the application is open. The ABN cannot: ' +
+      'every check runs against one legal entity, so a different ABN is a different application rather ' +
+      'than a correction to this one.',
     reviewReference: 'Reference',
 
     pmsTitle: 'PMS connection',
