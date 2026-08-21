@@ -221,6 +221,28 @@ into an empty database):
 node infra/keycloak/apply-realm-additions.mjs
 ```
 
+Back up the credential store, and restore-test the backup:
+
+```bash
+node infra/keycloak/backup-keycloak.mjs
+```
+
+```bash
+node infra/keycloak/backup-keycloak.mjs --verify backups/keycloak/<file>.sql
+```
+
+The verify step matters more than it looks. Realms and clients come back from
+the realm import on every start, so a restore that produced only those would
+look healthy and contain **nobody** — which is exactly the shape of the failure
+that destroyed the H2 store. The check is therefore on the USER count, not on
+whether the file loaded.
+
+Add another device to an account, without revoking the first:
+
+```bash
+node infra/keycloak/add-passkey-device.mjs --email <address>
+```
+
 Read the enrolment link out of MailHog in development:
 
 ```bash

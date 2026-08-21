@@ -63,3 +63,9 @@ apps/vault/prisma-client/
 root
 apps/web/.env.local
 .artefacts/
+
+# Database backups. NEVER COMMITTED — a Keycloak dump names every administrator
+# you have and holds the public half of every passkey. It is a map of the
+# identity system, and a repository is the wrong place to keep one.
+backups/
+*.sql.gz

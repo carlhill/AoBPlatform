@@ -69,9 +69,14 @@ decision tree at the bottom is the useful part.
   practitioner will hit what Carl hit. Recommendation is to read the AAGUID at
   enrolment and refuse a non-UV provider THEN, while it takes thirty seconds to
   fix, rather than at a first sign-in days later mid-clinic. Carl's call.
-- **Nothing backs up the `keycloak` database.** It survives a container rebuild
-  now; it does not survive a lost volume, and a passkey cannot be re-derived —
-  the private half never leaves the device.
+- ~~**Nothing backs up the `keycloak` database.**~~ — `backup-keycloak.mjs`,
+  2026-08-22. Dumps it, prunes to the last fourteen, and will restore-test the
+  file into a throwaway database on request. The verify checks the USER count
+  rather than whether the file loaded, because realms and clients come back
+  from the realm import on every start — a backup holding only those looks
+  healthy and contains nobody, which is exactly how the H2 store was lost.
+  **Still to decide:** where the files go. On the same disk as the database
+  they survive a mistake and not a disk, and they name every administrator.
 - **`admin/admin` is still in `docker-compose.yml`,** and is now the most
   valuable credential in the system: it is the last resort for admin recovery.
 
