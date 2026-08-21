@@ -63,12 +63,13 @@ decision tree at the bottom is the useful part.
 
 **Still open, and tracked in CRITICAL-ISSUES.md:**
 
-- **§2 — the Windows Password Manager trap.** Windows 11 registers Microsoft
-  Password Manager as the default passkey handler, and its credentials do not
-  set the user-verification flag, so a realm requiring UV refuses them. Every
-  practitioner will hit what Carl hit. Recommendation is to read the AAGUID at
-  enrolment and refuse a non-UV provider THEN, while it takes thirty seconds to
-  fix, rather than at a first sign-in days later mid-clinic. Carl's call.
+- **§2 — the Windows Password Manager trap.** DECIDED 2026-08-22: leave the
+  rules as they are, revisit later. `userVerification` stays `required`, no
+  password fallback, and the enrolment-time AAGUID check is not being built
+  yet. Reasonable while the affected population is two administrators who both
+  know about it; **stops being reasonable the moment practitioner sign-in is
+  built**, because Windows makes the wrong provider the default and every
+  practitioner would meet it alone, at first sign-in, with nobody to ask.
 - ~~**Nothing backs up the `keycloak` database.**~~ — `backup-keycloak.mjs`,
   2026-08-22. Dumps it, prunes to the last fourteen, and will restore-test the
   file into a throwaway database on request. The verify checks the USER count
@@ -110,8 +111,10 @@ distinguishable in evidence for ever.
 affiliation accepted by email was accepted by email. Upgrading the label later
 would be rewriting evidence.
 
-**Depends on:** the §2 decision above, because practitioners are a much larger
-population than platform admins and will hit the same provider trap harder.
+**Depends on:** re-opening the §2 decision, which was deliberately deferred on
+2026-08-22 on the grounds that only two administrators were affected. Building
+practitioner sign-in is precisely the event that invalidates that reasoning, so
+the two have to be picked up together.
 
 ---
 

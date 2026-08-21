@@ -196,7 +196,32 @@ transports : ['internal']
 
 Hardware-backed, platform-only, and sign-in succeeds.
 
-### TO DO — practitioners will hit exactly this, and it needs a decision
+### DECISION 2026-08-22 (Carl): leave the rules as they are, revisit later
+
+**No change.** `userVerification` stays `required` on both policies, there is
+no password fallback, and the enrolment-time AAGUID check is NOT being built
+yet. Revisit before practitioner onboarding goes anywhere near a real clinic.
+
+**What that means in practice, stated plainly so it is not a surprise later:**
+
+- Nothing is weakened. The security property is intact and this is not a
+  workaround — it is a deferral of the *ergonomics* fix, not of the control.
+- Every practitioner on Windows 11 will meet this, because Windows makes
+  Password Manager the default. They will meet it ALONE, at first sign-in,
+  with nobody to ask.
+- Until the check exists, the mitigation is documentation and a support
+  answer: `PASSKEYS.md` names the AAGUIDs and the fix, and
+  `reset-platform-admin-passkey.mjs` re-issues an enrolment link.
+
+**What would change the urgency:** the first practitioner invited to enrol.
+Today the affected population is two platform administrators, both of whom
+know about it. That is why deferring is reasonable now and stops being
+reasonable the moment practitioner sign-in is built — which is tracked in
+TODO.md under *Practitioner sign-in*, and which depends on this.
+
+The three options below are kept intact for that conversation.
+
+### The options, when it is time — practitioners will hit exactly this
 
 Windows makes Password Manager the default. A practitioner enrols, sees "your
 account has been updated", and discovers at their FIRST SIGN-IN — possibly days
@@ -207,7 +232,7 @@ The gap between the two moments is what makes this serious. At enrolment the
 problem takes thirty seconds to fix. At first sign-in the person is somewhere
 else, doing something else, with a patient waiting.
 
-**Three ways to go. Carl's call.**
+**Three ways to go, when it is picked up again.**
 
 **1. Keep `required`, detect it at enrolment.** Read the AAGUID as the
 credential is registered; if it belongs to a provider known not to set UV,
