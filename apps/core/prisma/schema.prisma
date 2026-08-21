@@ -50,6 +50,9 @@ model Practice {
    * /**
    * /**
    * /**
+   * /**
+   * /**
+   * /**
    * /** The ABR legal entity name. Often NOT what the practice trades as.
    */
   legalName             String?
@@ -105,6 +108,18 @@ model Practice {
   // selectable as a place of practice — a practitioner's provider number could
   // end up attached to an address they have never attended. When the head
   // office IS also a clinic, the flag creates a Location as well.
+  // Structured, because a single line cannot be matched. AHPRA publishes a
+  // practitioner's principal place of practice as SUBURB + POSTCODE, G-NAF
+  // matches on components, and the ABR reports a locality — none of which can
+  // be compared against a sentence.
+  headOfficeLine1             String?
+  headOfficeLine2             String?
+  headOfficeSuburb            String?
+  headOfficePostcode          String?
+  headOfficeCountry           String? @default("Australia")
+  /**
+   * What was actually typed. Evidence of the input; never matched on.
+   */
   headOfficeAddress           String?
   headOfficeState             String?
   headOfficeIsPlaceOfPractice Boolean @default(false)
@@ -183,21 +198,28 @@ model Practice {
 }
 
 model PracticeLocation {
-  id         String   @id @default(uuid()) @db.Uuid
-  practiceId String   @db.Uuid
-  practice   Practice @relation(fields: [practiceId], references: [id])
+  id           String   @id @default(uuid()) @db.Uuid
+  practiceId   String   @db.Uuid
+  practice     Practice @relation(fields: [practiceId], references: [id])
   /**
-   * s 65C(5)(a) depends on it (FR-1.1).
+   * What was typed. RETAINED as evidence of the input; the structured fields
+   * below are what anything matches on, and s 65C(5)(a) renders from those
+   * (FR-1.1).
    */
-  address    String
+  address      String
+  addressLine1 String?
+  addressLine2 String?
+  suburb       String?
+  postcode     String?
+  country      String?  @default("Australia")
   /**
    * The practice's own label for the site ("Main St", "After Hours").
    */
-  code       String?
+  code         String?
   /**
    * Per-LOCATION, because a multi-state practice needs per-site holidays (REQ-OFF-03).
    */
-  state      String?
+  state        String?
 
   // --- Address validation (ORG-MODEL-PROPOSAL.md §9) ---
   // Validated against a locally-held G-NAF extract: no runtime network
@@ -399,6 +421,9 @@ model Affiliation {
 
   // --- Offboarding: notice runs BEFORE the end date (§6) ---
   /**
+   * /**
+   * /**
+   * /**
    * /**
    * /**
    * /**

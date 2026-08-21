@@ -82,6 +82,18 @@ export const strings = {
       'practitioner’s provider number must never end up attached to an address they have never attended. ' +
       'Tick the box only if patients are actually seen here.',
     headOfficeLabel: 'Head-office address',
+    line1Label: 'Address line 1',
+    line2Label: 'Address line 2 (unit, level, building)',
+    suburbLabel: 'Suburb',
+    stateLabel: 'State',
+    statePick: 'Select…',
+    postcodeLabel: 'Postcode',
+    countryLabel: 'Country',
+    addressStructuredNote:
+      'Six fields rather than one line, because one line cannot be matched. The AHPRA register publishes a ' +
+      'practitioner’s principal place of practice as SUBURB and POSTCODE, G-NAF matches on components, and ' +
+      'the ABR reports a locality — comparing any of those against a sentence is impossible. When the G-NAF ' +
+      'ingest lands, a single autocompleted line will replace these.',
     headOfficeIsPopLabel: 'Patients are also seen at this address (creates a location)',
     websiteLabel: 'Practice website (optional)',
     credentialHeading: 'Proof this is a health practice',

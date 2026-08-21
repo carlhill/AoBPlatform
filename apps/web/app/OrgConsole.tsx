@@ -145,6 +145,89 @@ async function call<T>(path: string, init?: RequestInit & { practiceId?: string 
   return body as T;
 }
 
+const AU_STATES = ['NSW', 'VIC', 'QLD', 'SA', 'WA', 'TAS', 'NT', 'ACT'] as const;
+
+interface AddressFields {
+  line1: string;
+  line2: string;
+  suburb: string;
+  state: string;
+  postcode: string;
+  country: string;
+}
+
+const emptyAddress = (): AddressFields => ({
+  line1: '',
+  line2: '',
+  suburb: '',
+  state: '',
+  postcode: '',
+  country: 'Australia',
+});
+
+/**
+ * The six fields, declared once rather than twice.
+ *
+ * `idPrefix` keeps the test ids distinct between the head office and a
+ * location — without it both blocks would answer to the same selector and a
+ * test could pass while filling in the wrong form.
+ */
+function AddressFieldset({
+  value,
+  onChange,
+  idPrefix,
+}: {
+  value: AddressFields;
+  onChange: (next: AddressFields) => void;
+  idPrefix: string;
+}) {
+  const set = (key: keyof AddressFields) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    onChange({ ...value, [key]: e.target.value });
+
+  return (
+    <>
+      <label style={field}>
+        {strings.org.line1Label}
+        <input style={input} value={value.line1} onChange={set('line1')} data-testid={idPrefix + '-line1'} />
+      </label>
+      <label style={field}>
+        {strings.org.line2Label}
+        <input style={input} value={value.line2} onChange={set('line2')} data-testid={idPrefix + '-line2'} />
+      </label>
+      <label style={field}>
+        {strings.org.suburbLabel}
+        <input style={input} value={value.suburb} onChange={set('suburb')} data-testid={idPrefix + '-suburb'} />
+      </label>
+      <label style={field}>
+        {strings.org.stateLabel}
+        <select style={input} value={value.state} onChange={set('state')} data-testid={idPrefix + '-state'}>
+          <option value="">{strings.org.statePick}</option>
+          {AU_STATES.map((st) => (
+            <option key={st} value={st}>
+              {st}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label style={field}>
+        {strings.org.postcodeLabel}
+        <input
+          style={input}
+          value={value.postcode}
+          onChange={set('postcode')}
+          inputMode="numeric"
+          maxLength={4}
+          data-testid={idPrefix + '-postcode'}
+        />
+      </label>
+      <label style={field}>
+        {strings.org.countryLabel}
+        <input style={input} value={value.country} onChange={set('country')} data-testid={idPrefix + '-country'} />
+      </label>
+    </>
+  );
+}
+
 export function OrgConsole() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -191,7 +274,7 @@ export function OrgConsole() {
   const [managerPhone, setManagerPhone] = useState('');
   const [managerPosition, setManagerPosition] = useState('');
   const [website, setWebsite] = useState('');
-  const [headOffice, setHeadOffice] = useState('');
+  const [headOffice, setHeadOffice] = useState<AddressFields>(emptyAddress());
   const [headOfficeIsPop, setHeadOfficeIsPop] = useState(false);
   const [credentialType, setCredentialType] = useState('');
   const [credentialValue, setCredentialValue] = useState('');
@@ -263,7 +346,7 @@ export function OrgConsole() {
 
   // Step 3
   const [locations, setLocations] = useState<LocationRow[]>([]);
-  const [address, setAddress] = useState('');
+  const [address, setAddress] = useState<AddressFields>(emptyAddress());
   const [code, setCode] = useState('');
   const [lastAdded, setLastAdded] = useState<LocationRow | null>(null);
   const [deptName, setDeptName] = useState('');
@@ -424,10 +507,8 @@ export function OrgConsole() {
 
         <h4>{strings.org.headOfficeHeading}</h4>
         <p style={note}>{strings.org.headOfficeNote}</p>
-        <label style={field}>
-          {strings.org.headOfficeLabel}
-          <input style={input} value={headOffice} onChange={(e) => setHeadOffice(e.target.value)} data-testid="head-office" />
-        </label>
+        <p style={note}>{strings.org.addressStructuredNote}</p>
+        <AddressFieldset value={headOffice} onChange={setHeadOffice} idPrefix="head-office" />
         <label style={{ ...field, display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
           <input
             type="checkbox"
@@ -471,7 +552,10 @@ export function OrgConsole() {
             !adminName.trim() ||
             !adminEmail.trim() ||
             !adminPhone.trim() ||
-            !headOffice.trim() ||
+            !headOffice.line1.trim() ||
+            !headOffice.suburb.trim() ||
+            !headOffice.state ||
+            !headOffice.postcode.trim() ||
             managerEmailClashes
           }
           data-testid="reg-submit"
@@ -510,7 +594,12 @@ export function OrgConsole() {
                     managerPhone: managerPhone || undefined,
                     managerPosition: managerPosition || undefined,
                     website: website || undefined,
-                    headOfficeAddress: headOffice,
+                    headOfficeLine1: headOffice.line1,
+                    headOfficeLine2: headOffice.line2 || undefined,
+                    headOfficeSuburb: headOffice.suburb,
+                    headOfficeState: headOffice.state,
+                    headOfficePostcode: headOffice.postcode,
+                    headOfficeCountry: headOffice.country || undefined,
                     headOfficeIsPlaceOfPractice: headOfficeIsPop,
                     credentialType: credentialType || undefined,
                     credentialValue: credentialValue || undefined,
@@ -933,24 +1022,29 @@ export function OrgConsole() {
           <section aria-label={strings.org.locationsHeading} style={card}>
             <h3>{strings.org.locationsHeading}</h3>
             <p style={note}>{strings.org.locationsOwnership}</p>
-            <label style={field}>
-              {strings.org.addressLabel}
-              <input style={input} value={address} onChange={(e) => setAddress(e.target.value)} placeholder="e.g. 1 Example Street, Sampletown NSW 2000"
-                data-testid="address" />
-            </label>
+            <p style={note}>{strings.org.addressStructuredNote}</p>
+            <AddressFieldset value={address} onChange={setAddress} idPrefix="location" />
             <label style={field}>
               {strings.org.codeLabel}
               <input style={input} value={code} placeholder="e.g. Main St" onChange={(e) => setCode(e.target.value)} />
             </label>
             <button
-              disabled={busy}
+              disabled={busy || !address.line1.trim() || !address.suburb.trim() || !address.state || !address.postcode.trim()}
               data-testid="add-location"
               onClick={() =>
                 void run(async () => {
                   const created = await call<LocationRow>('/organisations/locations', {
                     method: 'POST',
                     practiceId: org.id,
-                    body: JSON.stringify({ address, code: code || undefined }),
+                    body: JSON.stringify({
+                      addressLine1: address.line1,
+                      addressLine2: address.line2 || undefined,
+                      suburb: address.suburb,
+                      state: address.state,
+                      postcode: address.postcode,
+                      country: address.country || undefined,
+                      code: code || undefined,
+                    }),
                   });
                   setLastAdded(created);
                   await loadOrgData(org.id);

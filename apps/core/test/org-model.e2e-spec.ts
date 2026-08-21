@@ -330,12 +330,32 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
       expect(locations.body[0].state).toBe('NSW');
     });
 
-    it('refuses an address with no readable state', async () => {
+    it('REFUSES an address it cannot structure, rather than storing half of one', async () => {
+      // Behaviour changed deliberately when addresses became structured. It
+      // used to be stored and deactivated, which deferred the problem and left
+      // a row nothing could match. An address with no state cannot select a
+      // holiday calendar (REQ-OFF-03), cannot be compared to the AHPRA
+      // locality, and cannot be rendered into a s 65C(5)(a) particulars block
+      // — so it is refused at the door, with instructions.
       const res = await scoped('post', '/organisations/locations')
         .send({ address: '99 Nowhere Road, Somewhereville' })
+        .expect(400);
+      expect(res.body.message).toMatch(/separate fields/);
+      expect(res.body.message).toMatch(/AHPRA register, G-NAF and the ABR/);
+    });
+
+    it('accepts the same address entered as six fields', async () => {
+      const res = await scoped('post', '/organisations/locations')
+        .send({
+          addressLine1: '99 Nowhere Road',
+          suburb: 'Somewhereville',
+          state: 'NSW',
+          postcode: '2999',
+          code: 'Annexe',
+        })
         .expect(201);
-      expect(res.body.active).toBe(false);
-      expect(res.body.reason).toMatch(/state or territory/);
+      expect(res.body.address).toBe('99 Nowhere Road, Somewhereville NSW 2999');
+      expect(res.body.state).toBe('NSW');
     });
 
     it('an inactive location cannot host a practitioner', async () => {

@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import {
   AhpraError,
+  compareLocality,
   assertRegistrationPermitsPractice,
   assertSightingAttributable,
   registrationWarnings,
@@ -377,6 +378,30 @@ export class AffiliationsService {
     // REQ-ANOM-01 — surfaced, never blocking. There is no cap.
     await this.checkVelocity(practitioner.id);
 
+    // THE PAYOFF FOR STRUCTURED ADDRESSES.
+    //
+    // AHPRA publishes a practitioner's principal place of practice as suburb +
+    // postcode. Comparing it to the location they are being affiliated to is
+    // free, and it is the only check we hold that ties a PERSON to a PLACE —
+    // which is exactly the entitlement gap (ORG-MODEL-PROPOSAL.md §11).
+    //
+    // A SIGNAL, NEVER A GATE. Practitioners legitimately work at several
+    // locations and the register names only the principal one, so a mismatch
+    // is common and innocent. The value is the other direction: a match means
+    // an independent regulator has placed this person in this locality.
+    const locality =
+      practitioner.principalSuburb || practitioner.principalPostcode
+        ? compareLocality(
+            { suburb: location.suburb ?? '', postcode: location.postcode ?? '' },
+            { suburb: practitioner.principalSuburb, postcode: practitioner.principalPostcode },
+          )
+        : null;
+    if (locality && locality.result === 'mismatch') {
+      this.logger.warn(
+        `Locality signal for practitioner ${practitioner.id} at location ${input.locationId}: ${locality.message}`,
+      );
+    }
+
     try {
       const affiliation = await this.prisma.withPractice(practiceId, async (tx) => {
         const created = await tx.affiliation.create({
@@ -394,7 +419,11 @@ export class AffiliationsService {
           type: 'affiliation.invited',
           actor: { principalType: 'staff', id: practiceId },
           subject: { type: 'Affiliation', id: created.id },
-          payload: { hasProviderNumber: Boolean(input.providerNumber), invitedBy: input.invitedByName },
+          payload: {
+            hasProviderNumber: Boolean(input.providerNumber),
+            invitedBy: input.invitedByName,
+            localitySignal: locality?.result ?? 'not_checked',
+          },
         });
         return created;
       });
@@ -403,6 +432,8 @@ export class AffiliationsService {
         id: affiliation.id,
         status: affiliation.status,
         practitioner: toDirectoryEntry(practitioner),
+        /** Null when the register has not been checked for this practitioner. */
+        localitySignal: locality,
         next: practitioner.email
           ? `An invitation goes to the practitioner's own email. Only they can accept it.`
           : 'This practitioner has no email on record, so they must accept in the console. A practice cannot accept for them.',

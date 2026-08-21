@@ -1,5 +1,16 @@
 import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { AbnError, assertOrganisationApplicationValid, isValidAbnChecksum, normaliseAbn } from '@aobplatform/domain';
+import {
+  AbnError,
+  AddressError,
+  addressWarnings,
+  assertAddressUsable,
+  assertOrganisationApplicationValid,
+  formatAddress,
+  isValidAbnChecksum,
+  normaliseAbn,
+  parseSingleLine,
+  type StructuredAddress,
+} from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PracticeAdminService } from '../identity/practice-admin.service';
@@ -32,6 +43,55 @@ export class OrganisationsService {
   ) {}
 
   /**
+   * Accept an address as SIX FIELDS, or fall back to parsing one line.
+   *
+   * The single line is a compatibility path, not the preferred one: it is
+   * lossy, and when it cannot be parsed the caller gets nothing rather than a
+   * guess. Structured input is what every downstream check matches on.
+   */
+  private structureAddress(input: {
+    addressLine1?: string;
+    addressLine2?: string;
+    suburb?: string;
+    state?: string;
+    postcode?: string;
+    country?: string;
+    singleLine?: string;
+  }): { address: StructuredAddress; canonical: string; warnings: ReturnType<typeof addressWarnings> } {
+    let candidate: Partial<StructuredAddress>;
+
+    if (input.addressLine1?.trim()) {
+      candidate = {
+        addressLine1: input.addressLine1,
+        addressLine2: input.addressLine2 ?? null,
+        suburb: input.suburb ?? '',
+        state: (input.state ?? '').toUpperCase(),
+        postcode: input.postcode ?? '',
+        country: input.country ?? 'Australia',
+      };
+    } else {
+      const parsed = parseSingleLine(input.singleLine ?? '');
+      if (!parsed.parsed) {
+        throw new BadRequestException(
+          'This address could not be read as an Australian address. Enter it as separate fields: address ' +
+            'line 1, suburb, state and postcode. Those are what the AHPRA register, G-NAF and the ABR are ' +
+            'matched against, so a single line cannot be used.',
+        );
+      }
+      candidate = parsed;
+    }
+
+    const address = candidate as StructuredAddress;
+    try {
+      assertAddressUsable(address);
+    } catch (err) {
+      if (err instanceof AddressError) throw new BadRequestException(err.message);
+      throw err;
+    }
+    return { address, canonical: formatAddress(address), warnings: addressWarnings(address) };
+  }
+
+  /**
    * Gate 1 + 2. Creates the organisation in `pending`, which can do nothing
    * until a human validates it.
    */
@@ -50,7 +110,13 @@ export class OrganisationsService {
     managerPhone?: string;
     managerPosition?: string;
     website?: string;
-    headOfficeAddress: string;
+    headOfficeAddress?: string;
+    headOfficeLine1?: string;
+    headOfficeLine2?: string;
+    headOfficeSuburb?: string;
+    headOfficeState?: string;
+    headOfficePostcode?: string;
+    headOfficeCountry?: string;
     headOfficeIsPlaceOfPractice?: boolean;
     credentialType?: string;
     credentialValue?: string;
@@ -131,6 +197,16 @@ export class OrganisationsService {
       );
     }
 
+    const headOffice = this.structureAddress({
+      addressLine1: input.headOfficeLine1,
+      addressLine2: input.headOfficeLine2,
+      suburb: input.headOfficeSuburb,
+      state: input.headOfficeState,
+      postcode: input.headOfficePostcode,
+      country: input.headOfficeCountry,
+      singleLine: input.headOfficeAddress,
+    });
+
     const [{ register_organisation: organisationId }] = await this.prisma.$queryRaw<
       Array<{ register_organisation: string }>
     >`SELECT register_organisation(
@@ -141,7 +217,7 @@ export class OrganisationsService {
         ${input.hpiO ?? null}, ${input.pms ?? 'medtech_evolution'},
         ${source}, ${input.abrAttestation?.sightedByName ?? null},
         ${input.adminName}, ${input.adminEmail}, ${input.adminPhone}, ${input.website ?? null},
-        ${input.headOfficeAddress}, ${extractState(input.headOfficeAddress) ?? null},
+        ${headOffice.canonical}, ${headOffice.address.state},
         ${input.headOfficeIsPlaceOfPractice ?? false},
         ${input.credentialType ?? null}, ${input.credentialValue ?? null},
         ${input.adminPosition ?? null}, ${input.managerName ?? null}, ${input.managerEmail ?? null},
@@ -167,15 +243,33 @@ export class OrganisationsService {
       },
     });
 
+    await this.prisma.withPractice(organisationId, (tx) =>
+      tx.practice.update({
+        where: { id: organisationId },
+        data: {
+          headOfficeLine1: headOffice.address.addressLine1,
+          headOfficeLine2: headOffice.address.addressLine2,
+          headOfficeSuburb: headOffice.address.suburb,
+          headOfficePostcode: headOffice.address.postcode,
+          headOfficeCountry: headOffice.address.country ?? 'Australia',
+        },
+      }),
+    );
+
     if (input.headOfficeIsPlaceOfPractice) {
-      const result = await this.addresses.validate(input.headOfficeAddress);
+      const result = await this.addresses.validate(headOffice.canonical);
       await this.prisma.withPractice(organisationId, (tx) =>
         tx.practiceLocation.create({
           data: {
             practiceId: organisationId,
-            address: input.headOfficeAddress,
+            address: headOffice.canonical,
+            addressLine1: headOffice.address.addressLine1,
+            addressLine2: headOffice.address.addressLine2,
+            suburb: headOffice.address.suburb,
+            postcode: headOffice.address.postcode,
+            country: headOffice.address.country ?? 'Australia',
             code: 'Head office',
-            state: result.state ?? extractState(input.headOfficeAddress),
+            state: headOffice.address.state,
             addressValidated: result.validated,
             addressCanonical: result.canonical,
             active: result.validated,
@@ -197,6 +291,7 @@ export class OrganisationsService {
       abnSightedByName: organisation.abnSightedByName,
       adminEmail: organisation.adminEmail,
       headOfficeAddress: organisation.headOfficeAddress,
+      addressWarnings: headOffice.warnings,
       headOfficeIsPlaceOfPractice: organisation.headOfficeIsPlaceOfPractice,
       /** Shown to the operator so an inexact match is visible, not silent. */
       nameMatch: { tier: gate.nameMatch.tier, matched: gate.nameMatch.matched, source: gate.nameMatch.source },
@@ -369,18 +464,36 @@ export class OrganisationsService {
    * address validates, because an unconfirmed address must not appear in a
    * s 65C(5)(a) particulars block.
    */
-  async addLocation(practiceId: string, input: { address: string; code?: string }) {
+  async addLocation(
+    practiceId: string,
+    input: {
+      address?: string;
+      addressLine1?: string;
+      addressLine2?: string;
+      suburb?: string;
+      state?: string;
+      postcode?: string;
+      country?: string;
+      code?: string;
+    },
+  ) {
     await this.assertValidated(practiceId);
 
-    const result = await this.addresses.validate(input.address);
+    const structured = this.structureAddress({ ...input, singleLine: input.address });
+    const result = await this.addresses.validate(structured.canonical);
 
     return this.prisma.withPractice(practiceId, async (tx) => {
       const location = await tx.practiceLocation.create({
         data: {
           practiceId,
-          address: input.address,
+          address: structured.canonical,
+          addressLine1: structured.address.addressLine1,
+          addressLine2: structured.address.addressLine2,
+          suburb: structured.address.suburb,
+          postcode: structured.address.postcode,
+          country: structured.address.country ?? 'Australia',
           code: input.code,
-          state: result.state ?? extractState(input.address),
+          state: structured.address.state,
           addressValidated: result.validated,
           addressCanonical: result.canonical,
           gnafPid: result.gnafPid,
@@ -406,6 +519,7 @@ export class OrganisationsService {
         validator: this.addresses.kind,
         reason: result.reason,
         suggestions: result.suggestions,
+        warnings: structured.warnings,
       };
     });
   }
@@ -451,6 +565,11 @@ export class OrganisationsService {
         id: l.id,
         code: l.code,
         address: l.addressCanonical ?? l.address,
+        addressLine1: l.addressLine1,
+        addressLine2: l.addressLine2,
+        suburb: l.suburb,
+        postcode: l.postcode,
+        country: l.country,
         state: l.state,
         active: l.active,
         addressValidated: l.addressValidated,

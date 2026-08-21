@@ -104,10 +104,37 @@ export class RegisterOrganisationDto {
   @IsString()
   website?: string;
 
-  /** NOT a Location. See the schema comment — a head office is often not a place of practice. */
+  // The head office, as SIX FIELDS. `headOfficeAddress` remains as a
+  // compatibility path for a single line, which is parsed — lossily, and with
+  // a refusal rather than a guess when it cannot be read.
+  @IsOptional()
   @IsString()
-  @MinLength(5)
-  headOfficeAddress!: string;
+  headOfficeAddress?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  headOfficeLine1?: string;
+
+  @IsOptional()
+  @IsString()
+  headOfficeLine2?: string;
+
+  @IsOptional()
+  @IsString()
+  headOfficeSuburb?: string;
+
+  @IsOptional()
+  @IsIn(['NSW', 'VIC', 'QLD', 'SA', 'WA', 'TAS', 'NT', 'ACT'])
+  headOfficeState?: string;
+
+  @IsOptional()
+  @IsString()
+  headOfficePostcode?: string;
+
+  @IsOptional()
+  @IsString()
+  headOfficeCountry?: string;
 
   @IsOptional()
   @IsBoolean()
@@ -172,9 +199,35 @@ export class ValidationDecisionDto {
 }
 
 export class AddLocationDto {
+  /** Compatibility path for a single line. Parsed, and refused if unreadable. */
+  @IsOptional()
   @IsString()
-  @MinLength(5)
-  address!: string;
+  address?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  addressLine1?: string;
+
+  @IsOptional()
+  @IsString()
+  addressLine2?: string;
+
+  @IsOptional()
+  @IsString()
+  suburb?: string;
+
+  @IsOptional()
+  @IsIn(['NSW', 'VIC', 'QLD', 'SA', 'WA', 'TAS', 'NT', 'ACT'])
+  state?: string;
+
+  @IsOptional()
+  @IsString()
+  postcode?: string;
+
+  @IsOptional()
+  @IsString()
+  country?: string;
 
   @IsOptional()
   @IsString()
