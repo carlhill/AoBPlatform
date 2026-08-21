@@ -31,7 +31,19 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const BASE = process.env.KEYCLOAK_BASE_URL ?? 'http://localhost:21024';
+/*
+ * 127.0.0.1 for the SERVER call, `localhost` for anything the BROWSER follows.
+ *
+ * They are not interchangeable and the distinction bites in both directions.
+ * Node on Windows resolves `localhost` to ::1 first, where Docker's IPv6
+ * forwarding accepts the connection and then fails the handshake — so a
+ * server-side fetch to `localhost` dies with a bare "fetch failed".
+ *
+ * But the redirect URL is validated against the client's REGISTERED redirect
+ * URIs, which say `localhost` because that is what a person types. Sending
+ * 127.0.0.1 there gets a 400 with no explanation.
+ */
+const BASE = process.env.KEYCLOAK_BASE_URL ?? 'http://127.0.0.1:21024';
 const REALM = process.env.KEYCLOAK_REALM ?? 'aobplatform';
 const ADMIN_USER = process.env.KEYCLOAK_ADMIN_USER ?? 'admin';
 const ADMIN_PASSWORD = process.env.KEYCLOAK_ADMIN_PASSWORD ?? 'admin';
