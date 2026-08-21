@@ -47,6 +47,40 @@ random token, revocable independently, is a column and a migration.
 
 ---
 
+## Access
+
+### Platform-admin sign-in
+**Status:** not started. **This is the most serious gap on the list.**
+**Found:** 2026-08-22, by Carl, while reviewing an application.
+
+There is no sign-in for the platform operator — the person who reads
+applications and approves practices. The Keycloak `web` client is the
+clinician-browser flow, bound to practice admins and practitioners; a reviewer
+is a different principal entirely and has no realm role, no flow and no
+account.
+
+**Why this matters more than it looks.** Every check and every approval records
+the name of the human who performed it, and that is the entire basis on which
+this system claims a decision was made by somebody rather than by a machine.
+Today that name is TYPED. It identifies nobody, cannot be checked, and could be
+anyone's — including the name of a real colleague who did not make the
+decision. For a product whose premise is non-repudiable records, an
+unverifiable signature on the approval is the wrong thing to be missing.
+
+The reviewer screens are already wired to take the name from the session the
+moment one exists (`currentSession()?.username`), and fall back to a typed name
+only when there is none — shown against a notice that says plainly it is
+unverified. That fallback is the honest shape of the gap. It is not a fix.
+
+**Why deferred:** it is a Keycloak realm change (a client, a role, and a flow),
+not a code change, and it belongs with the AUTH_ENFORCE=true release gate
+rather than ahead of it.
+
+**Until it exists:** treat every recorded reviewer name as an assertion, not an
+identity. Do not rely on the check history as evidence of who did what.
+
+---
+
 ## Identity
 
 ### The two identity-strength dashboards

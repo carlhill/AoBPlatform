@@ -217,6 +217,37 @@ Checklist before calling a field done:
 - [ ] A test asserts it **round-trips**: entered, stored, and read back.
 - [ ] Anything that lists or projects the record shows it, where the reader needs it.
 
+### 9a(i). The same rule applies to a SURFACE, not only to a field
+
+**A screen that reads a thing must also write it, or say plainly why it
+cannot.** A read-only rendering of something the user is being told to act on
+is the same defect as a half-wired field, wearing different clothes.
+
+This cost us a second time, and the second time was more embarrassing than the
+first. The reviewer dossier rendered the twelve-check catalogue, headed it
+*"Record what you actually did"*, and had no way to record anything. The
+strings for the recording form were written. The API endpoint existed. The
+domain rules existed and were tested. The button did not. Carl opened the
+screen, read the instruction, and asked how he was supposed to follow it.
+
+A read-only surface fails in the same silent way a half-wired field does: it
+**looks like the feature**. Nobody files a bug against a missing button as
+readily as against an error, because the screen appears finished — so the gap
+survives review, survives a demo, and is found by the person trying to do the
+job.
+
+The trap here is specific and worth naming: it is easiest to build the display
+first, because the display is what you can see. The display then *looks* like
+progress, and the write path gets deferred to a next pass that the checklist
+above was written to prevent.
+
+Checklist before calling a surface done:
+
+- [ ] Every instruction the screen gives the user can actually be carried out **on that screen**.
+- [ ] Every list of things-to-do has an action per row, or a written reason it is read-only.
+- [ ] The write path is exercised against a running stack, not only typechecked.
+- [ ] A failure from that write path is displayed in words the user can act on.
+
 ## 9c. Patch scripts: replace everything, then write everything
 
 **A script that edits several files must perform every replacement first and

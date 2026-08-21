@@ -209,6 +209,15 @@ export const strings = {
       'waiting.',
 
     entityHeading: 'What the register says',
+    // Asked directly: "how do I edit any of these blocks". The answer is a
+    // design position, so the screen states it rather than leaving a reviewer
+    // hunting for a button that must not exist.
+    asSubmitted: 'As submitted. Not editable here.',
+    asSubmittedWhy:
+      'These are the applicant’s own words and the ABR values the checks ran against — they are the evidence ' +
+      'under review, and a reviewer editing them would destroy the thing being reviewed. If something here ' +
+      'is wrong, that is a finding: record it on the checklist below, with the outcome and the reason. If the ' +
+      'applicant needs to correct it, they resubmit.',
     appliedAs: 'Applied as',
     legalName: 'Legal name',
     tradingNames: 'Registered business names',
@@ -245,6 +254,55 @@ export const strings = {
     checkSave: 'Save this check',
     checkSaved: 'Recorded',
     checkAppendOnly: 'Checks are append-only. A correction is a new entry, never an edit.',
+    checkRecordThis: 'Record what you did',
+    checkCancel: 'Cancel',
+    checkOutcomeChoose: '—',
+    checkOutcomes: {
+      passed: 'Passed',
+      failed: 'Failed',
+      not_applicable: 'Not applicable',
+      could_not_complete: 'Could not complete',
+    },
+    checkReasonRequired: 'Pick the reason. “Failed” with no reason cannot be counted and tells the next person nothing.',
+    checkNoteRequiredFailed: 'A failed check must also say what happened, in words.',
+    checkNoteRequiredNa: 'Not applicable must say why — it is excluded from the score, so an unexplained one is indistinguishable from skipping it.',
+    checkReasons: {
+      identity_not_confirmed: 'Identity not confirmed',
+      contact_denied_association: 'The contact denied knowing them',
+      details_did_not_match: 'Details did not match',
+      applicant_uncooperative: 'The applicant was uncooperative',
+      evidence_appeared_altered: 'The evidence appeared altered',
+      no_answer: 'No answer',
+      source_unavailable: 'The source was unavailable',
+      applicant_unresponsive: 'The applicant did not respond',
+      outside_our_capability: 'Outside what we can check',
+      other: 'Other — say what in the note',
+    },
+    checkHistory: 'Recorded',
+    checkWillBeRecordedAs: 'This will be recorded as performed by',
+    checkRefused: 'That check was not recorded',
+    checkVerifyAt: 'Check it at',
+
+    // The reviewer's identity. Not a text box — see identityUnverifiedBody.
+    identityHeading: 'Who is reviewing',
+    identityAs: 'Reviewing as',
+    identityUnverified: 'This name is typed, not verified',
+    identityUnverifiedBody:
+      'There is no platform-admin sign-in yet, so this name is whatever is entered here — it identifies ' +
+      'nobody. Every check and every decision recorded now carries an unverified name. It is asked for once ' +
+      'and applied to everything on this screen, and it becomes the signed-in identity as soon as ' +
+      'platform-admin sign-in exists.',
+    identityName: 'Your name',
+    identityNeeded: 'Enter your name above before recording anything — a check that names nobody is not a check.',
+    checkBySuffix: 'by',
+    // A network failure, said in terms of what happened rather than what the
+    // browser called it. "Failed to fetch" is a DOM exception, not an answer.
+    unreachable: 'The service could not be reached',
+    unreachableBody:
+      'Nothing was sent and nothing has changed. This is a connection problem between this screen and the ' +
+      'core service — not a refusal, and not something wrong with the application you are looking at. Try ' +
+      'again in a moment; if it persists, the core service is probably not running.',
+    retry: 'Try again',
 
     scoreHeading: 'Identity strength',
     scoreOf: 'of',

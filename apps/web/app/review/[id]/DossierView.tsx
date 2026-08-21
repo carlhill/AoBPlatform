@@ -38,16 +38,20 @@ import {
   Gauge,
   Mail,
   Phone,
+  PenLine,
   ShieldAlert,
   ShieldCheck,
   Stamp,
   Users,
+  UserX,
   XCircle,
 } from 'lucide-react';
 import { reviewFlags, type ReviewFlag } from '@aobplatform/domain';
 import { Button, Chip, Field, Notice, Section, SelectInput, Shell, TextInput, ui } from '../../ui';
 import { strings } from '../../strings';
+import { currentSession } from '../../auth';
 import { flagLabel, flagWhy } from '../flags';
+import { CheckRecorder, type RecordCheckInput } from '../CheckRecorder';
 import { formatAbn, type QueueRow } from '../QueueView';
 import styles from '../review.module.css';
 
@@ -63,6 +67,14 @@ interface CatalogueCheck {
   weight: string;
   whatItProves: string;
   evidenceGuidance?: string;
+  verifyAt?: { label: string; url: string };
+}
+
+interface CataloguePayload {
+  checklistVersion: string;
+  checks: CatalogueCheck[];
+  failureReasons: string[];
+  incompleteReasons: string[];
 }
 
 interface ChecksPayload {
@@ -85,11 +97,33 @@ export function DossierView({ id }: { id: string }) {
   const [row, setRow] = useState<QueueRow | null>(null);
   const [missing, setMissing] = useState(false);
   const [catalogue, setCatalogue] = useState<CatalogueCheck[]>([]);
+  const [failureReasons, setFailureReasons] = useState<string[]>([]);
+  const [incompleteReasons, setIncompleteReasons] = useState<string[]>([]);
+  // Which check is being recorded. One at a time — a screen of twelve open
+  // forms is a screen nobody fills in carefully.
+  const [recording, setRecording] = useState<string | null>(null);
   const [checks, setChecks] = useState<ChecksPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [decided, setDecided] = useState<'validated' | 'rejected' | null>(null);
 
-  const [reviewerName, setReviewerName] = useState('');
+  /**
+   * The reviewer.
+   *
+   * Taken from the session when there is one. There is NOT one today: the
+   * Keycloak `web` client is the clinician-browser flow for practice admins
+   * and practitioners, and no platform-admin sign-in exists yet. So this falls
+   * back to a typed name — asked ONCE, at the top, next to a notice saying
+   * plainly that it identifies nobody.
+   *
+   * That fallback is the honest shape of the gap, not a solution to it. The
+   * moment platform-admin sign-in exists, the useState below becomes dead code
+   * and the session value is the only source. Until then, every check and
+   * every approval in this system carries an unverified name, and the screen
+   * says so rather than implying otherwise.
+   */
+  const signedInAs = currentSession()?.username ?? null;
+  const [typedName, setTypedName] = useState('');
+  const reviewerName = signedInAs ?? typedName;
   const [note, setNote] = useState('');
   const [entitlementMethod, setEntitlementMethod] = useState('');
   const [entitlementPhoneNumber, setEntitlementPhoneNumber] = useState('');
@@ -115,11 +149,20 @@ export function DossierView({ id }: { id: string }) {
         if (found) setRow(found);
         else setMissing(true);
       })
-      .catch((e: Error) => setError(e.message));
+      // A dead connection throws a TypeError whose message is "Failed to
+      // fetch" — a DOM exception string, not an answer. Say what happened.
+      .catch(() => setError(strings.review.unreachableBody));
 
     fetch(`${CORE_URL}/organisations/checks/catalogue`)
       .then((r) => r.json())
-      .then((data) => setCatalogue(data.checks ?? []))
+      .then((data: CataloguePayload) => {
+        setCatalogue(data.checks ?? []);
+        // The reason lists come from the catalogue, not from a constant here.
+        // They are versioned with the checklist, and a hard-coded copy would
+        // silently diverge the moment the catalogue version moves.
+        setFailureReasons(data.failureReasons ?? []);
+        setIncompleteReasons(data.incompleteReasons ?? []);
+      })
       .catch(() => undefined);
 
     loadChecks();
@@ -163,6 +206,42 @@ export function DossierView({ id }: { id: string }) {
   const canApprove = reviewerName.trim().length > 0 && entitlementComplete && !busy;
   const canReject = reviewerName.trim().length > 0 && note.trim().length > 0 && !busy;
 
+  /**
+   * Append one check.
+   *
+   * Append-only: this never edits. A correction is a new entry, which is why
+   * the history below shows every attempt and not just the latest — the record
+   * of a reviewer changing their mind IS evidence, and overwriting it would
+   * destroy the thing the checklist exists to produce.
+   */
+  async function recordCheck(input: RecordCheckInput) {
+    setError(null);
+    try {
+      const response = await fetch(`${CORE_URL}/organisations/checks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-practice-id': id },
+        body: JSON.stringify(input),
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { message?: string };
+        throw new Error(body.message ?? `That check was refused (${response.status}).`);
+      }
+      setRecording(null);
+      // Re-read rather than patching local state: recording a check moves the
+      // SCORE and the admission reasons, and computing those here would be a
+      // second implementation of the scoring rules.
+      loadChecks();
+    } catch (e) {
+      // RETHROWN, so the recorder shows it beside the button that was pressed.
+      // Setting the page-level error here put the message two thousand pixels
+      // above the form, where a reviewer reasonably concluded nothing had
+      // happened at all.
+      throw new Error(e instanceof TypeError ? strings.review.unreachableBody : (e as Error).message, {
+        cause: e,
+      });
+    }
+  }
+
   async function decide(decision: 'validated' | 'rejected') {
     setBusy(true);
     setError(null);
@@ -190,7 +269,10 @@ export function DossierView({ id }: { id: string }) {
       }
       setDecided(decision);
     } catch (e) {
-      setError((e as Error).message);
+      // A TypeError here means the request never reached the service at all,
+      // so nothing was decided. That is a different thing from a refusal and
+      // must not read like one.
+      setError(e instanceof TypeError ? strings.review.unreachableBody : (e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -228,9 +310,40 @@ export function DossierView({ id }: { id: string }) {
       </p>
 
       {error && (
-        <Notice tone="stop" title="That did not go through">
+        <Notice tone="stop" title={error === strings.review.unreachableBody ? strings.review.unreachable : 'That did not go through'}>
           {error}
         </Notice>
+      )}
+
+      {/*
+        Identity first — before the flags, because everything below is recorded
+        against it and a reviewer should know whose name is going on the record
+        before they start putting things there.
+      */}
+      {signedInAs ? (
+        <p className={ui.hint} style={{ marginBottom: 'var(--s5)' }}>
+          {strings.review.identityAs} <strong>{signedInAs}</strong>
+        </p>
+      ) : (
+        <div className={styles.identity} data-testid="review-identity">
+          <div className={styles.identityHead}>
+            <UserX size={16} aria-hidden="true" />
+            {strings.review.identityUnverified}
+          </div>
+          <p className={styles.identityBody}>{strings.review.identityUnverifiedBody}</p>
+          <div className={styles.identityField}>
+            <Field label={strings.review.identityName} required>
+              {(props) => (
+                <TextInput
+                  {...props}
+                  value={typedName}
+                  onChange={(e) => setTypedName(e.target.value)}
+                  data-testid="review-reviewer-name"
+                />
+              )}
+            </Field>
+          </div>
+        </div>
       )}
 
       {/* Worst first, ahead of every tidy fact below. */}
@@ -268,6 +381,9 @@ export function DossierView({ id }: { id: string }) {
           </Chip>
         }
       >
+        <p className={ui.hint} style={{ marginBottom: 'var(--s4)' }} data-testid="review-as-submitted">
+          <strong>{strings.review.asSubmitted}</strong> {strings.review.asSubmittedWhy}
+        </p>
         <dl className={styles.facts}>
           <Fact term={strings.review.appliedAs}>
             <span className={styles.factStrong}>{row.name}</span>
@@ -379,23 +495,69 @@ export function DossierView({ id }: { id: string }) {
           {catalogue.map((check) => {
             const done = checks?.history.filter((h) => h.checkKey === check.key) ?? [];
             const latest = done[done.length - 1];
+            const open = recording === check.key;
             return (
               <li className={styles.checkItem} key={check.key}>
                 <div className={styles.checkHead}>
                   <div className={styles.checkLabel}>
                     {check.label}
                     <p className={styles.checkProves}>{check.whatItProves}</p>
+                    {check.evidenceGuidance && open && (
+                      <p className={styles.checkProves}>{check.evidenceGuidance}</p>
+                    )}
                   </div>
                   <Chip tone={check.weight === 'STRONG' ? 'ok' : 'neutral'}>{check.weight}</Chip>
                   {latest ? (
                     <Chip tone={latest.outcome === 'passed' ? 'ok' : latest.outcome === 'failed' ? 'stop' : 'warn'}>
                       <FileCheck2 size={13} aria-hidden="true" />
-                      {latest.outcome}
+                      {strings.review.checkOutcomes[latest.outcome as keyof typeof strings.review.checkOutcomes] ??
+                        latest.outcome}
                     </Chip>
                   ) : (
                     <Chip tone="neutral">{strings.gates.marks.not_run}</Chip>
                   )}
+                  {!open && (
+                    <Button
+                      variant="subtle"
+                      // Dead until the reviewer is named. A check that names
+                      // nobody is not a check, so the form does not open.
+                      disabled={reviewerName.trim().length === 0}
+                      title={reviewerName.trim().length === 0 ? strings.review.identityNeeded : undefined}
+                      onClick={() => setRecording(check.key)}
+                      data-testid={`check-open-${check.key}`}
+                    >
+                      <PenLine size={14} aria-hidden="true" />
+                      {latest ? strings.review.checkRecordThis : strings.review.checkRun}
+                    </Button>
+                  )}
                 </div>
+
+                {/* Every attempt, oldest first — a correction is a new entry, so
+                    the trail of them is part of the evidence. */}
+                {done.length > 0 && (
+                  <ul className={styles.checkHistory}>
+                    {done.map((entry, i) => (
+                      <li key={`${entry.checkKey}-${entry.performedAt}-${i}`}>
+                        {strings.review.checkHistory}{' '}
+                        {strings.review.checkOutcomes[entry.outcome as keyof typeof strings.review.checkOutcomes] ??
+                          entry.outcome}{' '}
+                        {strings.review.checkBySuffix} {entry.performedByName}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {open && (
+                  <CheckRecorder
+                    checkKey={check.key}
+                    performedByName={reviewerName.trim()}
+                    failureReasons={failureReasons}
+                    incompleteReasons={incompleteReasons}
+                    verifyAt={check.verifyAt}
+                    onCancel={() => setRecording(null)}
+                    onSave={recordCheck}
+                  />
+                )}
               </li>
             );
           })}
@@ -407,16 +569,12 @@ export function DossierView({ id }: { id: string }) {
           {strings.review.decideLead}
         </p>
 
-        <Field label={strings.review.reviewerName} required>
-          {(props) => (
-            <TextInput
-              {...props}
-              value={reviewerName}
-              onChange={(e) => setReviewerName(e.target.value)}
-              data-testid="review-reviewer-name"
-            />
-          )}
-        </Field>
+        {/* The name is asked once, at the top. Asking again here would imply
+            two separate attestations where there is one person. */}
+        <p className={ui.hint} style={{ marginBottom: 'var(--s4)' }}>
+          {strings.review.checkWillBeRecordedAs}{' '}
+          <strong>{reviewerName.trim() || '—'}</strong>
+        </p>
 
         <Field label={strings.review.entitlementMethod} hint={strings.review.approveNeedsEntitlement}>
           {(props) => (

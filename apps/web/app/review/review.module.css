@@ -358,3 +358,67 @@
 .buttonStop:hover:not(:disabled) {
   background: var(--stop-wash);
 }
+
+/*
+ * The trail of attempts on one check. Append-only means a correction is a new
+ * entry, so this is deliberately a LIST and not a single latest value — a
+ * reviewer changing their mind is itself evidence.
+ */
+.checkHistory {
+  list-style: none;
+  margin: var(--s2) 0 0;
+  padding: 0 0 0 var(--s3);
+  border-left: 2px solid var(--line);
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+}
+
+.checkHistory li {
+  margin-bottom: 2px;
+}
+
+/* Where the reviewer actually goes to run this check. */
+.verifyAt {
+  margin: 0 0 var(--s3);
+  font-size: var(--text-sm);
+}
+
+.verifyLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  color: var(--accent);
+}
+
+/*
+ * The reviewer's identity, at the TOP of the dossier and asked once.
+ *
+ * It used to be a text box repeated inside all twelve check forms, which made
+ * a typed name look like twelve separate attestations instead of one.
+ */
+.identity {
+  border: 1px solid var(--warn);
+  background: var(--warn-wash);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  padding: var(--s3) var(--s4);
+  margin-bottom: var(--s5);
+}
+
+.identityHead {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-weight: 600;
+  margin-bottom: var(--s1);
+}
+
+.identityBody {
+  font-size: var(--text-sm);
+  margin: 0 0 var(--s3);
+  max-width: 78ch;
+}
+
+.identityField {
+  max-width: 380px;
+}

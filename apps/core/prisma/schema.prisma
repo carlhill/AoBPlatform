@@ -222,6 +222,20 @@ model Practice {
   validatedAt     DateTime?
   validationNote  String?
 
+  /**
+   * Bearer token for the public application-status page.
+   *
+   * Deliberately NOT the id. A primary key ends up in logs, Referer headers
+   * and pasted support tickets, and a primary key that doubles as a credential
+   * is a credential that leaks — and one that cannot be rotated without
+   * breaking every foreign key pointing at it. This can be reissued on its own.
+   *
+   * Read only to compose the acknowledgement link. The status lookup itself
+   * goes through find_application_by_status_token(), whose narrow projection is
+   * the actual security boundary.
+   */
+  statusToken     String    @unique @default(dbgenerated("encode(gen_random_bytes(32), 'hex')"))
+
   // NOTE: there is deliberately NO banking column here, and there never will
   // be. AoBPlatform holds the consent record, not the money — the payee
   // arrangement is registered directly with Services Australia, with us not
