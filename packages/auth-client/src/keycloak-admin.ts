@@ -72,13 +72,18 @@ export class KeycloakAdminClient {
     return body.access_token;
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<{ status: number; body?: T }> {
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    allowConflict = false,
+  ): Promise<{ status: number; body?: T }> {
     const res = await this.fetchImpl(`${this.config.baseUrl}/admin/realms/${this.config.realm}${path}`, {
       method,
       headers: { Authorization: `Bearer ${await this.token()}`, 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-    if (!res.ok && res.status !== 409) {
+    if (!res.ok && !(allowConflict && res.status === 409)) {
       throw new KeycloakAdminError(
         `Keycloak admin ${method} ${path} failed: ${res.status} ${(await res.text()).slice(0, 200)}`,
         res.status,
@@ -86,6 +91,14 @@ export class KeycloakAdminClient {
     }
     const text = await res.text();
     return { status: res.status, body: text ? (JSON.parse(text) as T) : undefined };
+  }
+
+  async findByEmail(email: string): Promise<KeycloakUserSummary | null> {
+    const { body } = await this.request<KeycloakUserSummary[]>(
+      'GET',
+      `/users?email=${encodeURIComponent(email)}&exact=true`,
+    );
+    return body?.[0] ?? null;
   }
 
   async findByUsername(username: string): Promise<KeycloakUserSummary | null> {
@@ -112,7 +125,15 @@ export class KeycloakAdminClient {
     const existing = await this.findByUsername(input.username);
     if (existing) return existing;
 
-    await this.request('POST', '/users', {
+    /**
+     * Keycloak enforces a UNIQUE EMAIL PER REALM. A practitioner working at
+     * two practices gets a different username at each (username carries the
+     * practice) but the same email — so the second invitation 409s. Swallowing
+     * that produced a baffling "created but could not be read back"; surfacing
+     * it names the real situation, which needs a human decision (is this the
+     * same human, and should the accounts be linked?) rather than a duplicate.
+     */
+    const create = await this.request('POST', '/users', {
       username: input.username,
       email: input.email,
       firstName: input.firstName,
@@ -123,7 +144,19 @@ export class KeycloakAdminClient {
       requiredActions: ['webauthn-register-passwordless'],
       credentials: [],
       attributes: input.attributes,
-    });
+    }, true);
+
+    if (create.status === 409) {
+      const byEmail = input.email ? await this.findByEmail(input.email) : null;
+      throw new KeycloakAdminError(
+        byEmail
+          ? `An account already exists with the email ${input.email} (username "${byEmail.username}"). ` +
+            'Keycloak enforces one email per realm — the same practitioner at a second practice needs a ' +
+            'different address, or the existing account linked rather than duplicated.'
+          : `Keycloak rejected the account for "${input.username}" as a conflict.`,
+        409,
+      );
+    }
 
     const created = await this.findByUsername(input.username);
     if (!created) throw new KeycloakAdminError('User was created but could not be read back.');

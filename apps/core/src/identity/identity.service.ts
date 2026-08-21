@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -8,7 +9,7 @@ import {
   NotImplementedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { KeycloakAdminClient } from '@aobplatform/auth-client';
+import { KeycloakAdminError, type KeycloakAdminClient } from '@aobplatform/auth-client';
 import {
   assertCeremonySufficient,
   CeremonyError,
@@ -247,6 +248,24 @@ export class IdentityService {
     });
   }
 
+  /**
+   * Keycloak's own failures must reach the caller as themselves. A realm-level
+   * conflict (unique email) is a 409 the operator can act on, not a 500 that
+   * says "internal server error" about somebody else's constraint.
+   */
+  private async createAccount(
+    admin: KeycloakAdminClient,
+    input: Parameters<KeycloakAdminClient['createPasskeyOnlyUser']>[0],
+  ) {
+    try {
+      return await admin.createPasskeyOnlyUser(input);
+    } catch (err) {
+      if (err instanceof KeycloakAdminError && err.status === 409) throw new ConflictException(err.message);
+      if (err instanceof KeycloakAdminError) throw new BadRequestException(err.message);
+      throw err;
+    }
+  }
+
   /** FR-1.9 — invite a practitioner to enrol a passkey. */
   async inviteProvider(practiceId: string, providerId: string, email?: string): Promise<InvitationResult> {
     const admin = this.admin();
@@ -263,7 +282,7 @@ export class IdentityService {
 
     const username = this.usernameFor(provider.name, practiceId);
     const { firstName, lastName } = this.splitName(provider.name);
-    const user = await admin.createPasskeyOnlyUser({
+    const user = await this.createAccount(admin, {
       username,
       email,
       firstName,
@@ -345,7 +364,7 @@ export class IdentityService {
     const username = this.usernameFor(staff.name, practiceId);
     const address = email ?? staff.email ?? undefined;
     const { firstName, lastName } = this.splitName(staff.name);
-    const user = await admin.createPasskeyOnlyUser({
+    const user = await this.createAccount(admin, {
       username,
       email: address,
       firstName,
