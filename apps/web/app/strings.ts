@@ -231,7 +231,7 @@ export const strings = {
     navQueue: 'Queue',
     audience: 'Reviewer',
 
-    queueTitle: 'Applications waiting on a person',
+    queueTitle: 'Applications waiting for approval from the Platform',
     queueLead:
       'Gate 3. Every application here has already passed its check digits and the register — those two are ' +
       'necessary and not sufficient. What is left is the question neither can answer: is this applicant ' +
