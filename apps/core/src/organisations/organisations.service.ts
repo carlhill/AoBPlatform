@@ -15,6 +15,8 @@ import {
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PracticeAdminService } from '../identity/practice-admin.service';
+import { ChecksService } from './checks.service';
+import { ConfigService } from '@nestjs/config';
 import { ABR_CLIENT, ADDRESS_VALIDATOR } from './organisations.tokens';
 import type { AbrClient } from './abr';
 import type { AddressValidator } from './address-validator';
@@ -41,7 +43,23 @@ export class OrganisationsService {
     @Inject(ABR_CLIENT) private readonly abr: AbrClient,
     @Inject(ADDRESS_VALIDATOR) private readonly addresses: AddressValidator,
     private readonly practiceAdmin: PracticeAdminService,
+    private readonly checks: ChecksService,
+    private readonly config: ConfigService,
   ) {}
+
+  /**
+   * `soft` (default) records everything and refuses nothing on score alone.
+   * `hard` blocks an approval the score would not admit, unless the reviewer
+   * overrides with a stated reason.
+   *
+   * Soft is not caution. You cannot calibrate a threshold you are already
+   * enforcing, because you never learn what would have happened to the
+   * applications you rejected — so running soft first is the only way to end
+   * up with a number that is defensible rather than invented.
+   */
+  private enforcement(): 'soft' | 'hard' {
+    return this.config.get<string>('IDENTITY_ENFORCEMENT', 'soft') === 'hard' ? 'hard' : 'soft';
+  }
 
   /**
    * Accept an address as SIX FIELDS, or fall back to parsing one line.
@@ -362,6 +380,8 @@ export class OrganisationsService {
       entitlementPhoneNumber?: string;
       entitlementNumberSource?: string;
       entitlementSpokeWithName?: string;
+      /** Required to approve against the score's advice when enforcement is hard. */
+      identityOverrideReason?: string;
     },
   ) {
     if (!input.reviewerName?.trim()) {
@@ -388,6 +408,26 @@ export class OrganisationsService {
       throw new ConflictException(
         `This organisation is already ${organisation.validationState}. Re-deciding would overwrite the ` +
           'record of who approved it and when.',
+      );
+    }
+
+    // Score the practice as it stands, BEFORE the decision is written, so what
+    // is stored is what the reviewer was actually looking at.
+    const assessment = await this.checks.summary(organisationId);
+    const mode = this.enforcement();
+
+    if (input.decision === 'validated' && mode === 'hard' && !assessment.admission.wouldPass) {
+      if (!input.identityOverrideReason?.trim()) {
+        throw new BadRequestException(
+          'Identity enforcement is HARD and this practice does not meet the threshold: ' +
+            assessment.admission.reasons.join(' ') +
+            ' Approving anyway is possible, but it must carry a reason — an override with no explanation is ' +
+            'indistinguishable from the threshold not existing.',
+        );
+      }
+      this.logger.warn(
+        `Practice ${organisationId} approved by ${input.reviewerName.trim()} against the identity threshold ` +
+          `(score ${assessment.summary.score}): ${input.identityOverrideReason.trim()}`,
       );
     }
 
@@ -421,8 +461,28 @@ export class OrganisationsService {
         // evidence rather than incidental detail.
         entitlementMethod: input.entitlementMethod ?? 'none',
         entitlementNumberSource: input.entitlementNumberSource ?? 'n/a',
+        // The score is part of the decision record, not a side calculation.
+        identityScore: assessment.summary.score,
+        identityScoringVersion: assessment.checklistVersion,
+        identityWouldPassUnderHard: assessment.admission.wouldPass,
+        identityEnforcement: mode,
       },
     });
+
+    // Stamped with the scoring version, because a re-weighting must never
+    // rewrite what a past reviewer was shown.
+    await this.prisma.withPractice(organisationId, (tx) =>
+      tx.practice.update({
+        where: { id: organisationId },
+        data: {
+          identityScoreAtDecision: assessment.summary.score,
+          identityScoringVersion: assessment.checklistVersion,
+          identityWouldPassAtDecision: assessment.admission.wouldPass,
+          identityEnforcementAtDecision: mode,
+          identityOverrideReason: input.identityOverrideReason?.trim() || null,
+        },
+      }),
+    );
 
     // Step 3 begins here. Deliberately AFTER the decision is committed: an
     // approval must not be rolled back because an email bounced, and the
@@ -450,6 +510,14 @@ export class OrganisationsService {
       validatedBy: updated.validatedByName,
       validatedAt: updated.validatedAt,
       adminEmail: updated.adminEmail,
+      identity: {
+        score: assessment.summary.score,
+        scoringVersion: assessment.checklistVersion,
+        enforcement: mode,
+        wouldPassUnderHard: assessment.admission.wouldPass,
+        reasons: assessment.admission.reasons,
+        overrideReason: input.identityOverrideReason?.trim() || null,
+      },
       followUp,
     };
   }

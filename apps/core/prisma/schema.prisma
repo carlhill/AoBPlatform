@@ -59,6 +59,8 @@ model Practice {
    * /**
    * /**
    * /**
+   * /**
+   * /**
    * /** The ABR legal entity name. Often NOT what the practice trades as.
    */
   legalName             String?
@@ -106,6 +108,27 @@ model Practice {
   //
   // contractedInvitationCap overrides it for hospitals and larger groups, and
   // is set by us, never by them.
+  // --- Identity strength, AS AT THE DECISION (IDENTITY-STRENGTH-DESIGN.md §2) ---
+  //
+  // Stored AND recomputed, deliberately. Stored because this is evidence of
+  // what the reviewer was actually shown; recomputed live because that is
+  // current risk. Changing a weight next year must never silently rewrite what
+  // somebody decided last year.
+  //
+  // identityWouldPassAtDecision is the whole point of running soft: it records,
+  // at every decision, whether HARD enforcement would have admitted this
+  // practice. Summed across a year that is the number that says whether the
+  // threshold is safe to switch on — and it is unobtainable once you are
+  // already enforcing, because you never see what you rejected.
+  identityScoreAtDecision       Int?
+  identityScoringVersion        String?
+  identityWouldPassAtDecision   Boolean?
+  identityEnforcementAtDecision String? // soft | hard
+  /**
+   * Set when a reviewer approved despite hard enforcement saying no.
+   */
+  identityOverrideReason        String?
+
   statedPractitionerCount Int?
   contractedInvitationCap Int?
   // A SECOND named person, independently reachable. The reviewer's useful call
@@ -630,6 +653,8 @@ model Affiliation {
 
   // --- Offboarding: notice runs BEFORE the end date (§6) ---
   /**
+   * /**
+   * /**
    * /**
    * /**
    * /**

@@ -219,6 +219,15 @@ export class ValidationDecisionDto {
   @IsOptional()
   @IsString()
   entitlementSpokeWithName?: string;
+
+  /**
+   * Required to approve against the score when enforcement is HARD. An
+   * override with no explanation is indistinguishable from the threshold not
+   * existing at all.
+   */
+  @IsOptional()
+  @IsString()
+  identityOverrideReason?: string;
 }
 
 export class AddLocationDto {

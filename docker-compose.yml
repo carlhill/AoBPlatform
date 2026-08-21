@@ -220,6 +220,11 @@ services:
       # Evidence artefacts. A named volume rather than the container filesystem,
       # so a rebuild does not silently discard evidence. Production is object
       # storage in an Australian region, encrypted at rest (REQ-NFR-01).
+      # Identity strength: soft records everything and refuses nothing on score
+      # alone; hard blocks an approval the score would not admit unless the
+      # reviewer overrides with a reason. Soft first, always — you cannot
+      # calibrate a threshold you are already enforcing.
+      IDENTITY_ENFORCEMENT: ${IDENTITY_ENFORCEMENT:-soft}
       ARTEFACT_STORE_ROOT: /var/lib/aobplatform/artefacts
       MAIL_SANDBOX_SMTP_HOST: mailhog
       MAIL_SANDBOX_SMTP_PORT: '1025'
