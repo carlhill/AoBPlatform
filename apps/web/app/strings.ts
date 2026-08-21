@@ -108,6 +108,39 @@ export const strings = {
       'answer their own phone. AHPRA cannot help either — the public register publishes suburb and postcode ' +
       'only, never a phone number.',
     contactCol: 'Contacts',
+    followUpHeading: 'What happened next',
+    ahpraHeading: 'AHPRA register check',
+    ahpraNote:
+      'There is no free AHPRA API — PIE costs $4,000 to install plus $1 per practitioner per year, and ' +
+      'scraping the register routes around the licence the regulator sells for exactly this. So open the ' +
+      'register, read the record, and type what it says. Your name is recorded against it.',
+    ahpraOpen: 'Open the AHPRA register',
+    ahpraStatusLabel: 'Registration status',
+    ahpraStatusPick: 'Select…',
+    ahpraProfessionLabel: 'Profession',
+    ahpraDivisionLabel: 'Division',
+    ahpraConditionsLabel: 'Conditions (type “None” if none)',
+    ahpraUndertakingsLabel: 'Undertakings',
+    ahpraReprimandsLabel: 'Reprimands',
+    ahpraSuburbLabel: 'Principal place of practice — suburb',
+    ahpraStateLabel: 'State',
+    ahpraPostcodeLabel: 'Postcode',
+    ahpraCountryLabel: 'Country',
+    ahpraSightedByLabel: 'Your name — you are attesting you read the register',
+    ahpraTypesHeading: 'Registration types (a practitioner commonly holds more than one)',
+    ahpraTypeLabel: 'Type',
+    ahpraSpecialtyLabel: 'Specialty',
+    ahpraExpiryLabel: 'Expiry date',
+    ahpraAddType: 'Add another registration type',
+    ahpraSubmit: 'Record what the register says',
+    ahpraNoAddressNote:
+      'The register publishes the principal place of practice as SUBURB and POSTCODE only — never a street ' +
+      'address, never an email, never a phone number. There is no field here for those because there is no ' +
+      'field there.',
+    ahpraNotChecked: 'The register has not been checked for this practitioner.',
+    ahpraPermitted: 'Registered — may practise',
+    ahpraRefused: 'Not permitted to practise',
+    ahpraWarningsHeading: 'Worth reading',
     attestHeading: 'The ABR could not be reached — record what you saw instead',
     attestNote:
       'Open abr.business.gov.au in another tab, search this ABN, and type in what the register shows. Every ' +

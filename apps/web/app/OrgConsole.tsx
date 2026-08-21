@@ -22,6 +22,8 @@ import { apiHeaders } from './auth';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 /** Deep link into the public ABN Lookup, so the attester can see the register. */
+/** Deep link into the AHPRA public register search. */
+const AHPRA_SEARCH = 'https://www.ahpra.gov.au/Registration/Registers-of-Practitioners.aspx';
 const ABR_VIEW = 'https://abr.business.gov.au/ABN/View?abn=';
 
 const card: React.CSSProperties = {
@@ -199,6 +201,29 @@ export function OrgConsole() {
   const [entPhone, setEntPhone] = useState('');
   const [entSource, setEntSource] = useState('');
   const [entSpokeWith, setEntSpokeWith] = useState('');
+  /** What the approval actually did — account created, invited, notified. */
+  const [followUp, setFollowUp] = useState<string | null>(null);
+
+  // The AHPRA register check (step 4).
+  const [ahStatus, setAhStatus] = useState('');
+  const [ahProfession, setAhProfession] = useState('');
+  const [ahDivision, setAhDivision] = useState('');
+  const [ahConditions, setAhConditions] = useState('None');
+  const [ahUndertakings, setAhUndertakings] = useState('None');
+  const [ahReprimands, setAhReprimands] = useState('None');
+  const [ahSuburb, setAhSuburb] = useState('');
+  const [ahState, setAhState] = useState('');
+  const [ahPostcode, setAhPostcode] = useState('');
+  const [ahCountry, setAhCountry] = useState('Australia');
+  const [ahSightedBy, setAhSightedBy] = useState('');
+  const [ahTypes, setAhTypes] = useState<Array<{ registrationType: string; specialty: string; expiryDate: string }>>([
+    { registrationType: 'General', specialty: '', expiryDate: '' },
+  ]);
+  const [ahResult, setAhResult] = useState<{
+    permitted: boolean;
+    refusal: string | null;
+    warnings: Array<{ code: string; message: string }>;
+  } | null>(null);
 
   // Step 2 — the queue
   const [pending, setPending] = useState<PendingRow[]>([]);
@@ -739,7 +764,7 @@ export function OrgConsole() {
                       data-testid={`approve-${row.id}`}
                       onClick={() =>
                         void run(async () => {
-                          await call(`/organisations/${row.id}/validate`, {
+                          const result = await call<{ followUp?: { detail: string } }>(`/organisations/${row.id}/validate`, {
                             method: 'POST',
                             body: JSON.stringify({
                               decision: 'validated',
@@ -751,6 +776,7 @@ export function OrgConsole() {
                               entitlementSpokeWithName: entSpokeWith || undefined,
                             }),
                           });
+                          setFollowUp(result?.followUp?.detail ?? null);
                           selectOrg({ id: row.id, name: row.name });
                           await loadQueue();
                           await loadAllOrgs();
@@ -763,11 +789,16 @@ export function OrgConsole() {
                       disabled={busy || !reviewer.trim() || !rejectNote.trim()}
                       onClick={() =>
                         void run(async () => {
-                          await call(`/organisations/${row.id}/validate`, {
-                            method: 'POST',
-                            body: JSON.stringify({ decision: 'rejected', reviewerName: reviewer, note: rejectNote }),
-                          });
+                          const rejected = await call<{ followUp?: { detail: string } }>(
+                            `/organisations/${row.id}/validate`,
+                            {
+                              method: 'POST',
+                              body: JSON.stringify({ decision: 'rejected', reviewerName: reviewer, note: rejectNote }),
+                            },
+                          );
+                          setFollowUp(rejected?.followUp?.detail ?? null);
                           await loadQueue();
+                          await loadAllOrgs();
                         })
                       }
                     >
@@ -873,6 +904,15 @@ export function OrgConsole() {
         >
           {strings.org.resumeButton}
         </button>
+
+        {followUp && (
+          <p
+            data-testid="follow-up"
+            style={{ border: '1px solid ' + GREEN, borderRadius: 8, padding: '0.5rem 0.75rem', color: GREEN }}
+          >
+            <strong>{strings.org.followUpHeading}:</strong> {followUp}
+          </p>
+        )}
 
         {org && (
           <p data-testid="selected-org">
@@ -1034,7 +1074,11 @@ export function OrgConsole() {
                       familyName,
                       givenNames,
                       providerType: 'general_practitioner',
-                      email,
+                      // `|| undefined`, not the raw value: an empty string is
+                      // not "absent" to class-validator, it is a value that
+                      // fails @IsEmail. Sending '' for an optional field turns
+                      // "I left this blank" into "email must be an email".
+                      email: email.trim() || undefined,
                     }),
                   });
                   setInviteAhpra(ahpra);
@@ -1071,6 +1115,170 @@ export function OrgConsole() {
                 {found.givenNames} {found.familyName} · <code>{found.ahpraNumber}</code> · {found.providerType} ·{' '}
                 {found.verified ? 'ceremony complete' : 'not yet verified'}
               </p>
+            )}
+
+            {found && found !== 'miss' && (
+              <div style={{ ...card, background: '#f6f8fa' }} data-testid="ahpra-panel">
+                <h4 style={{ marginTop: 0 }}>{strings.org.ahpraHeading}</h4>
+                <p style={note}>{strings.org.ahpraNote}</p>
+                <p>
+                  <a href={AHPRA_SEARCH} target="_blank" rel="noreferrer noopener">
+                    {strings.org.ahpraOpen}
+                  </a>{' '}
+                  — search <code>{found.ahpraNumber}</code>
+                </p>
+
+                <label style={field}>
+                  {strings.org.ahpraStatusLabel}
+                  <select style={input} value={ahStatus} onChange={(e) => setAhStatus(e.target.value)} data-testid="ah-status">
+                    <option value="">{strings.org.ahpraStatusPick}</option>
+                    <option value="Registered">Registered</option>
+                    <option value="Suspended">Suspended</option>
+                    <option value="Cancelled">Cancelled</option>
+                    <option value="Surrendered">Surrendered</option>
+                    <option value="Lapsed">Lapsed</option>
+                    <option value="Not currently registered">Not currently registered</option>
+                  </select>
+                </label>
+                <label style={field}>
+                  {strings.org.ahpraProfessionLabel}
+                  <input style={input} value={ahProfession} onChange={(e) => setAhProfession(e.target.value)} placeholder="e.g. Medical Practitioner" />
+                </label>
+                <label style={field}>
+                  {strings.org.ahpraDivisionLabel}
+                  <input style={input} value={ahDivision} onChange={(e) => setAhDivision(e.target.value)} placeholder="e.g. General" />
+                </label>
+                <label style={field}>
+                  {strings.org.ahpraConditionsLabel}
+                  <input style={input} value={ahConditions} onChange={(e) => setAhConditions(e.target.value)} data-testid="ah-conditions" />
+                </label>
+                <label style={field}>
+                  {strings.org.ahpraUndertakingsLabel}
+                  <input style={input} value={ahUndertakings} onChange={(e) => setAhUndertakings(e.target.value)} />
+                </label>
+                <label style={field}>
+                  {strings.org.ahpraReprimandsLabel}
+                  <input style={input} value={ahReprimands} onChange={(e) => setAhReprimands(e.target.value)} />
+                </label>
+
+                <p style={note}>{strings.org.ahpraNoAddressNote}</p>
+                <label style={field}>
+                  {strings.org.ahpraSuburbLabel}
+                  <input style={input} value={ahSuburb} onChange={(e) => setAhSuburb(e.target.value)} />
+                </label>
+                <label style={field}>
+                  {strings.org.ahpraStateLabel}
+                  <input style={input} value={ahState} onChange={(e) => setAhState(e.target.value)} />
+                </label>
+                <label style={field}>
+                  {strings.org.ahpraPostcodeLabel}
+                  <input style={input} value={ahPostcode} onChange={(e) => setAhPostcode(e.target.value)} />
+                </label>
+                <label style={field}>
+                  {strings.org.ahpraCountryLabel}
+                  <input style={input} value={ahCountry} onChange={(e) => setAhCountry(e.target.value)} />
+                </label>
+
+                <h5>{strings.org.ahpraTypesHeading}</h5>
+                {ahTypes.map((t, i) => (
+                  <div key={i} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.4rem', flexWrap: 'wrap' }}>
+                    <input
+                      style={{ ...input, maxWidth: 160 }}
+                      value={t.registrationType}
+                      placeholder={strings.org.ahpraTypeLabel}
+                      data-testid={'ah-type-' + i}
+                      onChange={(e) =>
+                        setAhTypes(ahTypes.map((x, j) => (i === j ? { ...x, registrationType: e.target.value } : x)))
+                      }
+                    />
+                    <input
+                      style={{ ...input, maxWidth: 180 }}
+                      value={t.specialty}
+                      placeholder={strings.org.ahpraSpecialtyLabel}
+                      onChange={(e) => setAhTypes(ahTypes.map((x, j) => (i === j ? { ...x, specialty: e.target.value } : x)))}
+                    />
+                    <input
+                      type="date"
+                      style={{ ...input, maxWidth: 170 }}
+                      value={t.expiryDate}
+                      data-testid={'ah-expiry-' + i}
+                      onChange={(e) => setAhTypes(ahTypes.map((x, j) => (i === j ? { ...x, expiryDate: e.target.value } : x)))}
+                    />
+                  </div>
+                ))}
+                <button
+                  onClick={() => setAhTypes([...ahTypes, { registrationType: '', specialty: '', expiryDate: '' }])}
+                  disabled={busy}
+                >
+                  {strings.org.ahpraAddType}
+                </button>
+
+                <label style={field}>
+                  {strings.org.ahpraSightedByLabel}
+                  <input style={input} value={ahSightedBy} onChange={(e) => setAhSightedBy(e.target.value)} data-testid="ah-sighted-by" />
+                </label>
+                <button
+                  disabled={busy || !ahStatus || !ahSightedBy.trim()}
+                  data-testid="ah-submit"
+                  onClick={() =>
+                    void run(async () => {
+                      const result = await call<{
+                        permitted: boolean;
+                        refusal: string | null;
+                        warnings: Array<{ code: string; message: string }>;
+                      }>(`/practitioners/${found.practitionerId}/registration`, {
+                        method: 'POST',
+                        body: JSON.stringify({
+                          registrationStatus: ahStatus,
+                          profession: ahProfession || undefined,
+                          division: ahDivision || undefined,
+                          conditions: ahConditions || undefined,
+                          undertakings: ahUndertakings || undefined,
+                          reprimands: ahReprimands || undefined,
+                          principalSuburb: ahSuburb || undefined,
+                          principalState: ahState || undefined,
+                          principalPostcode: ahPostcode || undefined,
+                          principalCountry: ahCountry || undefined,
+                          source: 'ahpra_manual',
+                          sightedByName: ahSightedBy,
+                          registrationTypes: ahTypes
+                            .filter((t) => t.registrationType.trim())
+                            .map((t) => ({
+                              registrationType: t.registrationType,
+                              specialty: t.specialty || undefined,
+                              expiryDate: t.expiryDate ? new Date(t.expiryDate + 'T00:00:00Z').toISOString() : undefined,
+                            })),
+                        }),
+                      });
+                      setAhResult(result);
+                      if (org) await loadOrgData(org.id);
+                    })
+                  }
+                >
+                  {strings.org.ahpraSubmit}
+                </button>
+
+                {ahResult && (
+                  <div style={{ marginTop: '0.75rem' }} data-testid="ah-result">
+                    <p style={{ color: ahResult.permitted ? GREEN : RED }}>
+                      <strong>{ahResult.permitted ? strings.org.ahpraPermitted : strings.org.ahpraRefused}</strong>
+                    </p>
+                    {ahResult.refusal && <p style={{ color: RED }}>{ahResult.refusal}</p>}
+                    {ahResult.warnings.length > 0 && (
+                      <>
+                        <strong>{strings.org.ahpraWarningsHeading}</strong>
+                        <ul style={{ margin: '0.4rem 0 0 1.1rem' }}>
+                          {ahResult.warnings.map((w) => (
+                            <li key={w.code} style={{ color: AMBER, fontSize: '0.85rem' }}>
+                              {w.message}
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
           </section>
 
