@@ -1049,4 +1049,107 @@ export const strings = {
     chainValid: 'verified',
     chainInvalid: 'BROKEN',
   },
+  /**
+   * Locations and the departments inside them.
+   *
+   * THE SENTENCE THIS PAGE EXISTS TO MAKE TRUE: a location's address is what
+   * prints in the s 65C(5)(a) particulars block on every agreement captured
+   * there. So "is this address right" is not administrative tidiness — it is
+   * the difference between a valid record and one naming a place that does not
+   * exist. That is why a location arrives inactive and why activating it names
+   * a human.
+   */
+  locations: {
+    audience: 'Practice admin',
+    title: 'Locations',
+    lead:
+      'Every place your practice works from. A location’s address is printed on each agreement captured ' +
+      'there, so an address nobody has confirmed cannot host practitioners yet.',
+    backToSetup: 'Back to set up',
+
+    notLoaded: 'The locations could not be loaded',
+    loading: 'Loading…',
+
+    emptyTitle: 'No locations yet',
+    emptyBody:
+      'A practice needs at least one confirmed location before any practitioner can be affiliated to it, ' +
+      'and therefore before any consent can be recorded. Add the first one below.',
+
+    // --- Status ---
+    active: 'Confirmed',
+    inactive: 'Not confirmed',
+    activeNote: 'Practitioners can be affiliated here.',
+    inactiveNote:
+      'No practitioner can be affiliated here, because the address has not been confirmed. It would ' +
+      'otherwise appear on an agreement unchecked.',
+    validatedBy: 'Confirmed by',
+    noState:
+      'This location has no state, so we cannot pick the right public-holiday calendar for it. Terminations ' +
+      'are counted in business days, and those differ by state — fix the address before confirming.',
+
+    // --- Adding ---
+    addTitle: 'Add a location',
+    addLead:
+      'The street address of a place your practice works from. Type it as it appears on the building, not as ' +
+      'a postal address — this is where patients are seen.',
+    addressLine1: 'Street address',
+    addressLine1Hint: 'Number and street, e.g. 14 Wickham Terrace',
+    addressLine2: 'Suite, level or unit',
+    addressLine2Hint: 'Optional.',
+    suburb: 'Suburb',
+    state: 'State or territory',
+    statePick: 'Choose…',
+    stateHint:
+      'Sets the public-holiday calendar used to count business days for terminations, which differs by state.',
+    postcode: 'Postcode',
+    code: 'Your name for this site',
+    codeHint:
+      'Optional, and only for your staff — “Main St”, “After Hours”. It is never ' +
+      'printed on an agreement.',
+    addAction: 'Add this location',
+    adding: 'Adding…',
+    addFailed: 'The location could not be added',
+
+    // --- Address checking ---
+    checkedTitle: 'Address confirmed automatically',
+    checkedBody: 'It matched the national address file, so this location is ready to use.',
+    unconfirmedTitle: 'The address could not be confirmed automatically',
+    unconfirmedBody:
+      'That is common and does not mean it is wrong — new developments and consulting suites are often ' +
+      'missing from the national file. Someone here can confirm it by hand instead.',
+    suggestionsTitle: 'Did you mean',
+
+    // --- Confirming by hand ---
+    confirmTitle: 'Confirm this address',
+    confirmBody:
+      'Confirm only if you have checked the address itself — on the building, on the practice’s own ' +
+      'letterhead, or with the practice by phone. Your name is recorded against it permanently, because this ' +
+      'address goes on to appear on legal records of consent.',
+    confirmName: 'Your name',
+    confirmNameHint: 'Recorded with the confirmation. Not the practice name — yours.',
+    confirmAction: 'Confirm the address',
+    confirming: 'Confirming…',
+    confirmFailed: 'The address could not be confirmed',
+    confirmCancel: 'Cancel',
+
+    // --- Departments ---
+    departments: 'Departments',
+    departmentsNone: 'No departments. Practitioners can be affiliated to the location itself.',
+    departmentsLead:
+      'An optional subdivision — “Emergency”, “Oncology”, “Allied Health”. ' +
+      'Nothing in the legislation turns on it; it is there because large sites need it to find people.',
+    departmentAdd: 'Add a department',
+    departmentName: 'Department name',
+    departmentAction: 'Add',
+    departmentAdding: 'Adding…',
+    departmentFailed: 'The department could not be added',
+    departmentNeedsActive:
+      'Departments can be added once the address is confirmed. Confirming is the step that makes this ' +
+      'location real.',
+
+    countOne: '1 location',
+    countMany: '{n} locations',
+    activeCount: '{n} confirmed',
+    inactiveCount: '{n} awaiting confirmation',
+  },
 } as const;

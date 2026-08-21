@@ -1,0 +1,71 @@
+'use client';
+
+/**
+ * Which practice is this page about?
+ *
+ * EXTRACTED RATHER THAN COPIED. Four pages now need this answer and the logic
+ * is not one line: prefer the session, fall back to a stored selection,
+ * REVALIDATE that selection against the server, and clear it visibly if it no
+ * longer resolves. Copied four times it would drift, and the drift would be a
+ * page that trusts a stale id while its neighbour does not.
+ *
+ * THE REVALIDATION IS THE POINT (CONVENTIONS.md §9b). A value in localStorage
+ * is a CLAIM, not a fact: it can name a practice that has since been deleted,
+ * rejected, or that this person was never entitled to. This codebase has
+ * already been bitten by trusting one. So the stored id is checked on every
+ * load, and a failed check clears it rather than leaving a page to fail later
+ * in some less legible way.
+ *
+ * Once platform sign-in covers practice accounts there is nothing to choose:
+ * the token says which practice, and the stored-selection branch goes away.
+ */
+
+import { useEffect, useState } from 'react';
+import { currentSession } from '../auth';
+
+const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
+const SELECTION_KEY = 'aob.practiceId';
+
+export interface PracticeSelection {
+  /** Null once `checked` is true means: nothing selected, or what was selected is gone. */
+  practiceId: string | null;
+  /** False while the revalidation round trip is in flight. */
+  checked: boolean;
+}
+
+export function usePractice(): PracticeSelection {
+  const [practiceId, setPracticeId] = useState<string | null>(null);
+  const [checked, setChecked] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+
+    const fromSession = currentSession()?.practiceId;
+    const stored = fromSession ?? window.localStorage.getItem(SELECTION_KEY);
+    if (!stored) {
+      setChecked(true);
+      return;
+    }
+
+    // The setup hub is the cheapest endpoint that answers "does this practice
+    // exist AND is it mine": it is practice-scoped, so RLS refuses it for
+    // anything the header does not entitle us to.
+    fetch(`${CORE_URL}/organisations/setup`, { headers: { 'x-practice-id': stored } })
+      .then((r) => {
+        if (!live) return;
+        if (r.ok) {
+          setPracticeId(stored);
+        } else {
+          window.localStorage.removeItem(SELECTION_KEY);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => live && setChecked(true));
+
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  return { practiceId, checked };
+}

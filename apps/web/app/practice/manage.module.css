@@ -1,0 +1,235 @@
+/*
+ * Shared appearance for the three practice-management pages — locations,
+ * practitioners, affiliations.
+ *
+ * ONE FILE RATHER THAN THREE because these pages are the same page with
+ * different nouns: a list of things, each with a state, each expanding to the
+ * work you can do on it. Three copies would drift, and the drift would show up
+ * as three subtly different ideas of what "not ready" looks like.
+ */
+
+.crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  text-decoration: none;
+  margin-bottom: var(--s4);
+}
+
+.crumb:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* The count line under the page title: how many, and how many are a problem. */
+.tally {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s3);
+  margin: var(--s4) 0 var(--s5);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+.list {
+  list-style: none;
+  margin: 0 0 var(--s6);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+/*
+ * A LEFT EDGE, not a background wash.
+ *
+ * Something needing attention has to be findable while scrolling past a dozen
+ * that do not. A tinted card fights the text on it; a 3px edge is visible at a
+ * glance and costs the content nothing. Never the only signal — every card
+ * carries a chip with a word on it too.
+ */
+.cardNeedsWork {
+  border-left: 3px solid var(--warn);
+}
+
+.cardOk {
+  border-left: 3px solid var(--ok);
+}
+
+.cardStopped {
+  border-left: 3px solid var(--stop);
+}
+
+.cardHead {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s3);
+  padding: var(--s4);
+}
+
+.cardIcon {
+  color: var(--ink-faint);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.cardMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.cardTitle {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.cardSub {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  margin: var(--s1) 0 0;
+  overflow-wrap: anywhere;
+}
+
+/* The consequence sentence — what can or cannot happen because of this state. */
+.cardNote {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  margin: var(--s2) 0 0;
+  line-height: 1.5;
+}
+
+.cardAside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--s2);
+  flex-shrink: 0;
+}
+
+.cardBody {
+  border-top: 1px solid var(--line);
+  padding: var(--s4);
+  background: var(--surface-sunken);
+}
+
+.cardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  padding: 0 var(--s4) var(--s4);
+}
+
+/* A sub-list inside a card: departments under a location. */
+.subList {
+  list-style: none;
+  margin: var(--s2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+.subItem {
+  font-size: var(--text-sm);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--s1) var(--s3);
+  color: var(--ink);
+}
+
+.subHeading {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+
+/* A form that appears inside a card — adding a department, confirming an address. */
+.inlineForm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s3);
+  margin-top: var(--s3);
+}
+
+.inlineForm > div {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.empty {
+  text-align: center;
+  padding: var(--s7) var(--s4);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  color: var(--ink-faint);
+  background: var(--surface);
+  margin-bottom: var(--s5);
+}
+
+.emptyTitle {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--ink);
+  margin: var(--s3) 0 var(--s2);
+}
+
+/*
+ * The add form at the foot of the page, not the head.
+ *
+ * What already exists is what the reader came to check; the form is what they
+ * do next. Putting it first pushes the list below the fold on every visit for
+ * the benefit of the rarer act.
+ */
+.addPanel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--s5);
+}
+
+.addGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--s3) var(--s4);
+  margin-top: var(--s4);
+}
+
+/* Fields that should not stretch to a full column: state, postcode. */
+.narrow {
+  max-width: 220px;
+}
+
+.formActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s3);
+  margin-top: var(--s5);
+}
+
+.suggestions {
+  list-style: none;
+  margin: var(--s2) 0 0;
+  padding: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+.suggestions li {
+  padding: var(--s1) 0;
+}
