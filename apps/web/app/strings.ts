@@ -1689,6 +1689,75 @@ export const strings = {
     notLoaded: 'The entity could not be loaded',
     loading: 'Loading…',
 
+    scoreAtDecision: 'Identity strength {n} at approval',
+    contactsTitle: 'Who we contact',
+    contactsLead:
+      'The only part of this page that can be changed here. A contact detail is not evidence — it is how we ' +
+      'reach you, and the commonest thing wrong with an approved practice is a mistyped address.',
+    adminContact: 'Practice administrator',
+    managerContact: 'Second contact',
+    contactsEdit: 'Correct these details',
+    contactsEditLead:
+      'Your name and a reason are recorded with the change. This is the record of who was approved, and a ' +
+      'change to it with no stated reason is indistinguishable from a mistake.',
+    contactsSaved: 'Contact details updated.',
+    adminName: 'Name',
+    adminEmail: 'Email',
+    adminEmailHint: 'Everything we send about this practice goes here, including sign-in invitations.',
+    adminPhone: 'Phone',
+    managerName: 'Name',
+    managerEmail: 'Email',
+    managerEmailHint:
+      'Must reach a different inbox from the administrator. One inbox is not two contacts — the second ' +
+      'contact exists so a reviewer has somebody to call who is not the applicant.',
+    managerPhone: 'Phone',
+    recordedAs: 'This will be recorded as changed by',
+    changedBy: 'Your name',
+    changedByHint:
+      'Asked only because practice sign-in does not exist yet. It identifies nobody and is recorded as an ' +
+      'assertion.',
+    noSessionName:
+      'Nobody is signed in, so the name below is typed rather than known. It is recorded as an assertion, ' +
+      'not as an identity — and it stops being asked for the moment practice sign-in exists.',
+    changeReason: 'Why',
+    changeReasonHint: 'One line. It is kept with the change and shown in the trail below.',
+    emailWillUnverify:
+      'The administrator email is changing, so it stops being confirmed. The old address had been proved to ' +
+      'reach somebody; the new one has not, and carrying that across would claim a round trip that never ' +
+      'happened. Send the sign-in invitation again afterwards.',
+    save: 'Save the change',
+    saving: 'Saving…',
+    saveFailed: 'That could not be saved',
+    cancel: 'Cancel',
+    resendInvitation: 'Send the sign-in invitation again',
+    resending: 'Sending…',
+
+    checksTitle: 'What has been checked',
+    checksLead:
+      'Every check performed on this practice, oldest first. Append-only: performing one again adds an ' +
+      'entry rather than replacing it, so a correction never hides what it corrected.',
+    checksSummary: 'Score {score} · {passed} of {performed} passed',
+    checksNone: 'No checks have been recorded.',
+
+    credentialsTitle: 'Credentials',
+    credentialsLead:
+      'Entering a credential is worth nothing on its own — anybody can type a number. It counts once ' +
+      'somebody has actually checked it, and the record says who.',
+    credentialsSummary: '{verified} of {total} verified',
+    credentialsNone: 'No credentials recorded.',
+    credentialVerifiedBy: 'Checked by {who} — {how}.',
+    credentialUnverified: 'Not checked yet, so it counts for nothing.',
+    verified: 'Checked',
+    unverified: 'Not checked',
+
+    locationsTitle: 'Locations',
+    locationsSummary: '{active} of {total} confirmed',
+    confirmed: 'Confirmed',
+    unconfirmed: 'Not confirmed',
+    manageLocations: 'Manage locations',
+
+    auditTitle: 'Everything that has happened',
+    auditSummary: 'Every change, check and file, oldest first.',
     legalName: 'Legal name',
     tradingAs: 'Trading as',
     abn: 'ABN',
