@@ -442,7 +442,10 @@ export const strings = {
       'The message we sent contains a six-digit code. Type it below to confirm you can read mail at this ' +
       'address.',
     codeLabel: 'Six-digit code',
-    codeHint: 'Exactly as it appears in the email.',
+    codeHint: 'Six digits, exactly as they appear in the email.',
+    whyHeading: 'Why a code as well as a link?',
+    assurance:
+      'We will never ask you for a password, a Medicare number, or bank details — on this page or by email.',
     attemptsLeft: '{n} attempt(s) left before this link locks.',
     confirm: 'Confirm',
     confirming: 'Confirming…',
@@ -450,9 +453,9 @@ export const strings = {
 
     // Explains the extra step rather than leaving it feeling like friction.
     whyCode:
-      'Why a code and not just a link? Because a link on its own proves nothing — mail scanners, link ' +
-      'previews and antivirus gateways open links automatically, so one could have been opened without you ' +
-      'ever seeing this message. Typing the code is what shows a person read it.',
+      'A link on its own proves nothing. Mail scanners, link previews and antivirus gateways open links ' +
+      'automatically, so the one in your email may already have been opened by a machine before you saw it. ' +
+      'Typing the code is what shows a person read the message.',
 
     okTitle: 'Thank you — that address is confirmed',
     okBody:

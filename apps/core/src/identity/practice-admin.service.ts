@@ -5,6 +5,7 @@ import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { KEYCLOAK_ADMIN } from './identity.tokens';
 import { MESSAGING_GATEWAY, type MessagingGateway } from '../messaging/gateway';
+import { renderHtml, renderText, type EmailBlock, type EmailFooter } from '../messaging/template';
 
 /**
  * Step 3 of the onboarding sequence: the approved practice admin gets an
@@ -55,25 +56,46 @@ export class PracticeAdminService {
    * The "we will never ask" line is the important one: it gives the recipient a
    * rule they can apply to the NEXT message, including one we did not send.
    */
-  private footer(): string[] {
-    const org = this.config.get<string>('ORGANISATION_NAME', 'AoBPlatform');
-    const support = this.config.get<string>('SUPPORT_EMAIL', '');
-    const phone = this.config.get<string>('SUPPORT_PHONE', '');
-    const site = this.config.get<string>('PUBLIC_WEB_URL', '');
+  private footerData(): EmailFooter {
+    const organisation = this.config.get<string>('ORGANISATION_NAME', 'AoBPlatform');
+    return {
+      organisation,
+      tagline: 'Consent and compliance records for Medicare assignment of benefit.',
+      whyReceived: `You received this because this address was given on an application to ${organisation}.`,
+      neverAsk: 'We will never ask you for a password, a Medicare number, or bank details by email.',
+      supportEmail: this.config.get<string>('SUPPORT_EMAIL') || undefined,
+      supportPhone: this.config.get<string>('SUPPORT_PHONE') || undefined,
+      website: this.config.get<string>('PUBLIC_WEB_URL') || undefined,
+    };
+  }
 
-    const lines = [
-      '',
-      '—',
-      org,
-      'Consent and compliance records for Medicare assignment of benefit.',
-      '',
-      'You received this because this address was given on an application to ' + org + '.',
-      'We will never ask you for a password, a Medicare number, or bank details by email.',
-    ];
-    if (support) lines.push(`Reply to this message, or write to ${support}.`);
-    if (phone) lines.push(`Telephone ${phone}.`);
-    if (site) lines.push(site);
+  /**
+   * The footer, as plain-text lines, for messages not yet converted to blocks.
+   *
+   * Not decoration. A message about somebody's Medicare-related application
+   * that arrives with no sender identity, no reason-you-got-this and no reply
+   * route is indistinguishable from a phishing attempt — and we ask people to
+   * open links and type codes, which is exactly what phishing asks for. Saying
+   * who we are, why they received it, and what we will never ask for is what
+   * separates the two.
+   *
+   * The "we will never ask" line is the one that does real work: it hands the
+   * reader a rule they can apply to the NEXT message, including one we did not
+   * send.
+   */
+  private footer(): string[] {
+    const f = this.footerData();
+    const lines = ['', '—', f.organisation, f.tagline, '', f.whyReceived, f.neverAsk];
+    if (f.supportEmail) lines.push(`Reply to this message, or write to ${f.supportEmail}.`);
+    if (f.supportPhone) lines.push(`Telephone ${f.supportPhone}.`);
+    if (f.website) lines.push(f.website);
     return lines;
+  }
+
+  /** Render one message in both parts, from a single set of blocks. */
+  private compose(subject: string, blocks: readonly EmailBlock[]) {
+    const footer = this.footerData();
+    return { body: renderText(blocks, footer), html: renderHtml(subject, blocks, footer) };
   }
 
   /**
@@ -205,28 +227,50 @@ export class PracticeAdminService {
     code: string;
     expiresAt: Date;
   }): Promise<{ notified: boolean; detail: string }> {
+    const subject = `Confirm your email address — ${input.organisationName}`;
+    const closes = input.expiresAt.toISOString().slice(0, 10);
+
+    /*
+     * The CODE is the centrepiece, because it is the reason the message exists.
+     * The link is a step towards it, not the point — which is also the security
+     * story: opening the link does nothing at all.
+     */
+    const { body, html } = this.compose(subject, [
+      { text: input.adminName ? `${input.adminName},` : 'Hello,' },
+      {
+        text:
+          `Please confirm we can reach you at this address for the ${input.organisationName} application. ` +
+          'It takes two steps.',
+      },
+      { heading: 'Step 1 — open this page' },
+      { button: { label: 'Open the confirmation page', url: input.verifyUrl } },
+      { url: input.verifyUrl },
+      { heading: 'Step 2 — enter this code' },
+      { code: input.code },
+      {
+        small:
+          `Both work until ${closes}, and once only. The code is what confirms it — a scanner opening the ` +
+          'link cannot confirm it on your behalf.',
+      },
+      { rule: true },
+      {
+        text:
+          'This does not move your application along by itself; a person still reads it. What it does is make ' +
+          'sure that when we have something to tell you, it reaches you.',
+      },
+      {
+        small:
+          'If you did not apply to AoBPlatform you can ignore this message. Nothing happens unless the code ' +
+          'is entered.',
+      },
+    ]);
+
     const result = await this.messaging.dispatch({
       channel: 'email',
       to: input.adminEmail,
-      subject: `Confirm your email for the ${input.organisationName} application`,
-      body: [
-        input.adminName ? `${input.adminName},` : 'Hello,',
-        '',
-        `Please confirm we can reach you at this address for the ${input.organisationName} application.`,
-        '',
-        `  1. Open  ${input.verifyUrl}`,
-        `  2. Enter this code:  ${input.code}`,
-        '',
-        `Both work until ${input.expiresAt.toISOString().slice(0, 10)}, and once only. The code is what ` +
-          'confirms it, so a scanner opening the link cannot confirm it on your behalf.',
-        '',
-        'This does not move your application along by itself — a person still reads it. What it does is make ' +
-          'sure that when we do have something to tell you, it reaches you.',
-        '',
-        'If you did not apply to AoBPlatform, you can ignore this message. Nothing happens unless the code is ' +
-          'entered — opening the link alone does nothing at all.',
-        ...this.footer(),
-      ].join('\n'),
+      subject,
+      body,
+      html,
     });
 
     return {
