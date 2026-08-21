@@ -20,29 +20,81 @@ datasource db {
 }
 
 model Practice {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String
-  abn       String?
-  pms       String   @default("medtech_evolution")
-  rails     String[] @default([]) // tyro | hicaps
-  /** Drives the public-holiday calendar for 2-business-day terminations (REQ-OFF-03). */
-  state     String   @default("NSW")
+  id                 String   @id @default(uuid()) @db.Uuid
+  name               String
+  abn                String?
+  pms                String   @default("medtech_evolution")
+  rails              String[] @default([]) // tyro | hicaps
+  /**
+   * Drives the public-holiday calendar for 2-business-day terminations (REQ-OFF-03).
+   */
+  state              String   @default("NSW")
   // FR-1.4 configuration (defaults stand until the console exposes them)
-  identifierTypes  String[] @default(["name", "date_of_birth", "address"]) // floor 3, Medicare excluded non-configurably
-  linkExpiryHours  Int      @default(48) // D-05 default
-  channelsEnabled  String[] @default(["in_practice", "sms_link", "email_link", "paper"])
+  identifierTypes    String[] @default(["name", "date_of_birth", "address"]) // floor 3, Medicare excluded non-configurably
+  linkExpiryHours    Int      @default(48) // D-05 default
+  channelsEnabled    String[] @default(["in_practice", "sms_link", "email_link", "paper"])
   // Go-live gates (FR-1.7). Both flip via real integrations later; explicit
   // booleans so the checklist is honest, never inferred.
-  writeBackProven    Boolean @default(false)
-  senderIdRegistered Boolean @default(false)
-  createdAt DateTime @default(now())
+  writeBackProven    Boolean  @default(false)
+  senderIdRegistered Boolean  @default(false)
+  createdAt          DateTime @default(now())
 
-  locations  PracticeLocation[]
-  staff      StaffMember[]
-  providers  Provider[]
-  patients   Patient[]
-  assignors  Assignor[]
-  agreements Agreement[]
+  // --- Organisation registration (FR-1.1, ORG-MODEL-PROPOSAL.md §4) ---
+  // Practice IS the "organisation" of that model: the ABN-bearing registered
+  // entity that owns locations. It keeps the name `Practice` because it is
+  // also the RLS tenant key (app.practice_id) on sixteen tables.
+  /**
+   * /** The ABR legal entity name. Often NOT what the practice trades as.
+   */
+  legalName            String?
+  /**
+   * Registered business names from the ABR. Practices trade under these.
+   */
+  tradingNames         String[]  @default([])
+  /**
+   * Derived from the ABN, never asked for — for a company they cannot differ.
+   */
+  acn                  String?
+  entityType           String? // PTY_LTD | INDIVIDUAL_SOLE_TRADER | TRUST | PARTNERSHIP | ...
+  abnStatus            String? // must have been ACTIVE at validation time
+  abnVerifiedAt        DateTime?
+  gstRegistered        Boolean?
+  /**
+   * Which registered name the operator's typed name matched, and how closely.
+   */
+  nameMatchTier        String? // exact | entity_suffix_insensitive
+  nameMatchedOn        String?
+  hpiO                 String?
+  /**
+   * BBPIP is all-or-nothing across the practice — one private item forfeits the quarter.
+   */
+  bbpipParticipant     Boolean?
+  /**
+   * Gates the enduring MyMedicare pathway entirely.
+   */
+  myMedicareRegistered Boolean?
+
+  // --- Human validation queue (ORG-MODEL-PROPOSAL.md §4) ---
+  // An ACTIVE ABN with a matching name is necessary, not sufficient. A named
+  // human approves before the practice can operate.
+  validationState String    @default("pending") // pending | validated | rejected
+  validatedByName String?
+  validatedAt     DateTime?
+  validationNote  String?
+
+  // NOTE: there is deliberately NO banking column here, and there never will
+  // be. AoBPlatform holds the consent record, not the money — the payee
+  // arrangement is registered directly with Services Australia, with us not
+  // in the path. (ORG-MODEL-PROPOSAL.md §8.)
+
+  locations    PracticeLocation[]
+  staff        StaffMember[]
+  providers    Provider[]
+  patients     Patient[]
+  assignors    Assignor[]
+  agreements   Agreement[]
+  departments  Department[]
+  affiliations Affiliation[]
 
   @@map("practices")
 }
@@ -51,11 +103,183 @@ model PracticeLocation {
   id         String   @id @default(uuid()) @db.Uuid
   practiceId String   @db.Uuid
   practice   Practice @relation(fields: [practiceId], references: [id])
-  /** s 65C(5)(a) depends on it (FR-1.1). */
+  /**
+   * s 65C(5)(a) depends on it (FR-1.1).
+   */
   address    String
+  /**
+   * The practice's own label for the site ("Main St", "After Hours").
+   */
+  code       String?
+  /**
+   * Per-LOCATION, because a multi-state practice needs per-site holidays (REQ-OFF-03).
+   */
+  state      String?
+
+  // --- Address validation (ORG-MODEL-PROPOSAL.md §9) ---
+  // Validated against a locally-held G-NAF extract: no runtime network
+  // dependency, and no address ever leaves our infrastructure — which matters
+  // because address is one of the six approved patient identifiers.
+  addressValidated Boolean @default(false)
+  /**
+   * The canonical G-NAF form. What renders on the agreement, not what was typed.
+   */
+  addressCanonical String?
+  gnafPid          String?
+  gnafVersion      String?
+
+  /**
+   * A location cannot host affiliations until its address validates. Defaults
+   * FALSE: a site nobody has confirmed exists must not appear on a s 65C(5)(a)
+   * particulars block.
+   */
+  active    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  departments  Department[]
+  affiliations Affiliation[]
 
   @@index([practiceId])
   @@map("practice_locations")
+}
+
+/**
+ * An optional subdivision of a location — "Emergency", "Oncology", "Allied
+ * Health". Purely organisational: nothing in s 65C turns on it, and an
+ * affiliation may name one or not.
+ */
+model Department {
+  id         String           @id @default(uuid()) @db.Uuid
+  practiceId String           @db.Uuid
+  practice   Practice         @relation(fields: [practiceId], references: [id])
+  locationId String           @db.Uuid
+  location   PracticeLocation @relation(fields: [locationId], references: [id])
+  name       String
+  active     Boolean          @default(true)
+  createdAt  DateTime         @default(now())
+
+  affiliations Affiliation[]
+
+  @@unique([locationId, name])
+  @@index([practiceId])
+  @@map("departments")
+}
+
+/**
+ * A human practitioner — ONE ROW PER PERSON, ACROSS THE WHOLE PLATFORM.
+ * DELIBERATELY NOT PRACTICE-SCOPED, and therefore deliberately not covered by
+ * an RLS practice_isolation policy. That is the entire point: a doctor working
+ * at three practices is ONE person, and modelling them as three unrelated rows
+ * (which is what `providers` does today) makes it impossible to enforce a
+ * deregistration hard-stop across all three, to detect anomalous affiliation
+ * velocity, or to show the practitioner what has been signed in their name.
+ * Because RLS cannot scope this table, the boundary is enforced in code: a
+ * practitioner crosses a practice boundary ONLY through
+ * `toDirectoryEntry()` (packages/domain/src/directory.ts), which is built
+ * field-by-field and carries the AHPRA number, never the provider number.
+ */
+model Practitioner {
+  id           String  @id @default(uuid()) @db.Uuid
+  /**
+   * National, public, and unique — the one identifier safe to key on.
+   */
+  ahpraNumber  String  @unique
+  familyName   String
+  givenNames   String
+  providerType String // general_practitioner | specialist | allied_health | nurse_practitioner | optometrist | other
+  /**
+   * PRACTITIONER-owned, not practice-owned. Invitations go here so a practice
+   * cannot accept an affiliation on the practitioner's behalf.
+   */
+  email        String?
+
+  /**
+   * FR-1.9 — passkey identity. Practitioner-level: you verify a person once.
+   */
+  keycloakUserId    String?
+  invitedAt         DateTime?
+  passkeyEnrolledAt DateTime?
+  /**
+   * Set when a sufficient REQ-PKI-01 ceremony has been performed.
+   */
+  verifiedAt        DateTime?
+
+  /**
+   * REQ-XFER-08 — an immediate hard stop across EVERY affiliation. No notice
+   * period, no waiting for a practice to tell us.
+   */
+  deregisteredAt     DateTime?
+  deregisteredReason String?
+
+  createdAt DateTime @default(now())
+
+  affiliations Affiliation[]
+
+  @@map("practitioners")
+}
+
+/**
+ * The practitioner-to-location edge, and the thing that carries the provider
+ * number.
+ * FR-1.8: "provider number PER LOCATION (a practitioner has one per place of
+ * practice)". REQ-REG-02 identifies a provider by name + the address of the
+ * place of practice, OR by the provider number FOR THAT PLACE OF PRACTICE. So
+ * the number is a property of a doctor AT A PLACE, and this is that place.
+ * Agreements anchor here, which makes REQ-XFER-01 fall out for free: a
+ * practitioner who moves gets a NEW affiliation and therefore a NEW agreement.
+ * There is no transfer path because there is nothing to transfer.
+ */
+model Affiliation {
+  id             String           @id @default(uuid()) @db.Uuid
+  practiceId     String           @db.Uuid
+  practice       Practice         @relation(fields: [practiceId], references: [id])
+  practitionerId String           @db.Uuid
+  practitioner   Practitioner     @relation(fields: [practitionerId], references: [id])
+  locationId     String           @db.Uuid
+  location       PracticeLocation @relation(fields: [locationId], references: [id])
+  departmentId   String?          @db.Uuid
+  department     Department?      @relation(fields: [departmentId], references: [id])
+
+  /**
+   * Optional by design — s 65C(5)(a) name+address OR (b) provider number.
+   */
+  providerNumber String?
+  /**
+   * PMS linkage for this practitioner at this site.
+   */
+  pmsLinkageKey  String?
+
+  status        String    @default("invited") // invited | active | ending | ended | rejected
+  invitedAt     DateTime  @default(now())
+  invitedByName String?
+  /**
+   * Set on acceptance BY THE PRACTITIONER — a practice cannot self-accept.
+   */
+  startedAt     DateTime?
+  rejectedAt    DateTime?
+
+  // --- Offboarding: notice runs BEFORE the end date (§6) ---
+  /**
+   * /** Must be <= endsAt. Enforced by a CHECK constraint, not just in code.
+   */
+  noticeGivenAt DateTime?
+  noticeGivenBy String?
+  endsAt        DateTime?
+  endedAt       DateTime?
+  endReason     String? // practitioner_left_location | deregistered | rejected
+
+  createdAt DateTime @default(now())
+
+  agreements Agreement[]
+
+  /**
+   * One provider number per practitioner per location — the FR-1.8 shape.
+   */
+  @@unique([practitionerId, locationId])
+  @@index([practiceId])
+  @@index([practitionerId])
+  @@index([status])
+  @@map("affiliations")
 }
 
 /**
@@ -64,15 +288,17 @@ model PracticeLocation {
  * enrolment attaches when Keycloak lands.
  */
 model StaffMember {
-  id          String    @id @default(uuid()) @db.Uuid
-  practiceId  String    @db.Uuid
-  practice    Practice  @relation(fields: [practiceId], references: [id])
-  name        String
-  dateOfBirth DateTime? @db.Date
-  role        String // front_desk | practice_manager | principal
-  active      Boolean   @default(true)
-  email       String?
-  /** FR-1.5 — passkey enrolment is mandatory for admin roles at first login. */
+  id                String    @id @default(uuid()) @db.Uuid
+  practiceId        String    @db.Uuid
+  practice          Practice  @relation(fields: [practiceId], references: [id])
+  name              String
+  dateOfBirth       DateTime? @db.Date
+  role              String // front_desk | practice_manager | principal
+  active            Boolean   @default(true)
+  email             String?
+  /**
+   * FR-1.5 — passkey enrolment is mandatory for admin roles at first login.
+   */
   keycloakUserId    String?
   invitedAt         DateTime?
   passkeyEnrolledAt DateTime?
@@ -82,17 +308,19 @@ model StaffMember {
 }
 
 model Provider {
-  id                     String  @id @default(uuid()) @db.Uuid
-  practiceId             String  @db.Uuid
-  practice               Practice @relation(fields: [practiceId], references: [id])
+  id                     String    @id @default(uuid()) @db.Uuid
+  practiceId             String    @db.Uuid
+  practice               Practice  @relation(fields: [practiceId], references: [id])
   name                   String
-  providerType           String   // general_practitioner | specialist | allied_health | nurse_practitioner | optometrist | other
+  providerType           String // general_practitioner | specialist | allied_health | nurse_practitioner | optometrist | other
   placeOfPracticeAddress String?
-  providerNumber         String?  // optional by design — s 65C(5)(a) OR (b), REQ-REG-02
+  providerNumber         String? // optional by design — s 65C(5)(a) OR (b), REQ-REG-02
   ahpraNumber            String?
   pmsLinkageKey          String?
-  active                 Boolean @default(true)
-  /** FR-1.9 — link to the Keycloak account. Null until invited. */
+  active                 Boolean   @default(true)
+  /**
+   * FR-1.9 — link to the Keycloak account. Null until invited.
+   */
   keycloakUserId         String?
   invitedAt              DateTime?
   passkeyEnrolledAt      DateTime?
@@ -104,22 +332,22 @@ model Provider {
 }
 
 model Patient {
-  id                  String    @id @default(uuid()) @db.Uuid
-  practiceId          String    @db.Uuid
-  practice            Practice  @relation(fields: [practiceId], references: [id])
-  familyName          String
-  givenNames          String
-  dateOfBirth         DateTime  @db.Date
-  genderAsIdentified  String?
-  address             String?
-  patientRecordNumber String?
-  ihi                 String?
-  preferredLanguage   String?
-  mobile              String?
-  email               String?
-  confidentialityFlag Boolean   @default(false) // REQ-CHILD-01; fail closed (REQ-CHILD-07)
+  id                   String   @id @default(uuid()) @db.Uuid
+  practiceId           String   @db.Uuid
+  practice             Practice @relation(fields: [practiceId], references: [id])
+  familyName           String
+  givenNames           String
+  dateOfBirth          DateTime @db.Date
+  genderAsIdentified   String?
+  address              String?
+  patientRecordNumber  String?
+  ihi                  String?
+  preferredLanguage    String?
+  mobile               String?
+  email                String?
+  confidentialityFlag  Boolean  @default(false) // REQ-CHILD-01; fail closed (REQ-CHILD-07)
   myMedicareRegistered Boolean?
-  pmsLinkageKey       String?
+  pmsLinkageKey        String?
 
   agreements Agreement[]
 
@@ -128,13 +356,13 @@ model Patient {
 }
 
 model Assignor {
-  id                    String   @id @default(uuid()) @db.Uuid
-  practiceId            String   @db.Uuid
-  practice              Practice @relation(fields: [practiceId], references: [id])
+  id                    String    @id @default(uuid()) @db.Uuid
+  practiceId            String    @db.Uuid
+  practice              Practice  @relation(fields: [practiceId], references: [id])
   name                  String
   dateOfBirth           DateTime? @db.Date // needed for the 18+ rule (REQ-AGE-01/-04)
   relationshipToPatient String?
-  authorityBasis        String   // self | parent | spouse | co_resident_relative_18_plus | guardian | health_epoa | other_with_note
+  authorityBasis        String // self | parent | spouse | co_resident_relative_18_plus | guardian | health_epoa | other_with_note
   authorityNote         String?
   contactMobile         String?
   contactEmail          String?
@@ -147,87 +375,110 @@ model Assignor {
 }
 
 model Agreement {
-  id                    String    @id @default(uuid()) @db.Uuid
-  practiceId            String    @db.Uuid
-  practice              Practice  @relation(fields: [practiceId], references: [id])
-  type                  String    // episodic_pre | episodic_post | treatment_plan | enduring
+  id                    String       @id @default(uuid()) @db.Uuid
+  practiceId            String       @db.Uuid
+  practice              Practice     @relation(fields: [practiceId], references: [id])
+  type                  String // episodic_pre | episodic_post | treatment_plan | enduring
   // Polymorphic immutable anchor (HARD-01): provider for everything except
   // the ACCHO/AMS enduring pathway, which anchors to an organisation.
-  anchorKind            String    // provider | organisation
-  providerId            String?   @db.Uuid
-  provider              Provider? @relation(fields: [providerId], references: [id])
-  organisationId        String?   @db.Uuid
-  patientId             String    @db.Uuid
-  patient               Patient   @relation(fields: [patientId], references: [id])
-  assignorId            String    @db.Uuid
-  assignor              Assignor  @relation(fields: [assignorId], references: [id])
-  assignorIsPatient     Boolean   // D7 — explicit, never inferred
-  enduringPathway       String?   // mymedicare | residential_aged_care | accho_ams
-  status                String    @default("draft")
+  anchorKind            String // provider | organisation
+  providerId            String?      @db.Uuid
+  provider              Provider?    @relation(fields: [providerId], references: [id])
+  /**
+   * The new anchor. `providerId` above is the legacy one and is being retired:
+   * both are covered by the HARD-01 immutability trigger meanwhile, so neither
+   * can be edited on a live agreement.
+   */
+  affiliationId         String?      @db.Uuid
+  affiliation           Affiliation? @relation(fields: [affiliationId], references: [id])
+  organisationId        String?      @db.Uuid
+  patientId             String       @db.Uuid
+  patient               Patient      @relation(fields: [patientId], references: [id])
+  assignorId            String       @db.Uuid
+  assignor              Assignor     @relation(fields: [assignorId], references: [id])
+  assignorIsPatient     Boolean // D7 — explicit, never inferred
+  enduringPathway       String? // mymedicare | residential_aged_care | accho_ams
+  status                String       @default("draft")
   // Snapshot of the s 65C particulars as rendered and locked (REQ-DATA-11).
   particulars           Json?
   particularsLockedAt   DateTime?
-  ruleSetVersion        String?   // rule 14 / REQ-65C-02
+  ruleSetVersion        String? // rule 14 / REQ-65C-02
   mappingVersion        String?
-  renderedLanguages     String[]  @default([])
-  renderedArtefactHash  String?   // SHA-256 at render (REQ-VAULT-02)
-  rendererVersion       String?   // renderers are versioned content — re-verify with THIS version (rule 13/14)
-  verificationEventId   String?   @db.Uuid
-  signatureEventId      String?   @db.Uuid
-  supersedesAgreementId String?   @db.Uuid // HARD-02: corrections supersede
-  retentionExpiryDate   DateTime? @db.Date
-  legalHold             Boolean   @default(false)
+  renderedLanguages     String[]     @default([])
+  renderedArtefactHash  String? // SHA-256 at render (REQ-VAULT-02)
+  rendererVersion       String? // renderers are versioned content — re-verify with THIS version (rule 13/14)
+  verificationEventId   String?      @db.Uuid
+  signatureEventId      String?      @db.Uuid
+  supersedesAgreementId String?      @db.Uuid // HARD-02: corrections supersede
+  retentionExpiryDate   DateTime?    @db.Date
+  legalHold             Boolean      @default(false)
   // FR-9.3 write-back tracking: the artefact lands in the PMS patient record
   // (REQ-INT-02); unwritten stored agreements are retried by the sweep and
   // alerted when stale.
   pmsDocumentKey        String?
   writtenBackAt         DateTime?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
 
   @@index([practiceId])
   @@index([patientId])
   @@index([status])
+  @@index([affiliationId])
   @@map("agreements")
 }
 
 /**
  * REQ-PKI-01 — the practitioner enrolment ceremony that must precede binding a
  * passkey. "The key is only as good as the ceremony that bound it."
- *
  * APPEND-ONLY EVIDENCE. Nothing edits a ceremony: if the facts were wrong, a
  * fresh ceremony is performed. The record answers, permanently, WHO attested
  * that these three checks were done and HOW.
  */
 model EnrolmentCeremony {
-  id                      String   @id @default(uuid()) @db.Uuid
-  practiceId              String   @db.Uuid
-  /** Exactly one of these. Staff with admin roles need passkeys too (rule 15). */
-  providerId              String?  @db.Uuid
-  staffId                 String?  @db.Uuid
+  id                       String    @id @default(uuid()) @db.Uuid
+  practiceId               String    @db.Uuid
+  /**
+   * Exactly one of these. Staff with admin roles need passkeys too (rule 15).
+   */
+  providerId               String?   @db.Uuid
+  staffId                  String?   @db.Uuid
+  /**
+   * The ceremony verifies a HUMAN, so it belongs on the practitioner, not on
+   * an affiliation: a doctor verified by video for practice A does not need
+   * re-verifying for practice B. The provider-number check is the part that is
+   * location-specific, and that lives on the affiliation.
+   */
+  practitionerId           String?   @db.Uuid
   // Check 1 — current AHPRA registration.
-  ahpraNumber             String
+  ahpraNumber              String
   ahpraRegistrationCurrent Boolean
   // Check 2 — the provider number AND the place of practice it is valid for.
-  providerNumber          String
-  providerNumberLocation  String
-  providerNumberVerified  Boolean
+  providerNumber           String
+  providerNumberLocation   String
+  providerNumberVerified   Boolean
   // Check 3 — the person.
   personVerificationMethod String // video | in_person
-  /** The named human who performed the checks. Never "system". */
-  verifiedByName          String
-  verifiedByStaffId       String?  @db.Uuid
-  evidenceNote            String?
-  /** REQ-PKI-05 — re-enrolment (recovery) must be explicitly stepped up. */
-  steppedUp               Boolean  @default(false)
-  performedAt             DateTime
-  /** Set when this ceremony was actually used to authorise a key binding. */
-  consumedAt              DateTime?
-  createdAt               DateTime @default(now())
+  /**
+   * The named human who performed the checks. Never "system".
+   */
+  verifiedByName           String
+  verifiedByStaffId        String?   @db.Uuid
+  evidenceNote             String?
+  /**
+   * REQ-PKI-05 — re-enrolment (recovery) must be explicitly stepped up.
+   */
+  steppedUp                Boolean   @default(false)
+  performedAt              DateTime
+  /**
+   * Set when this ceremony was actually used to authorise a key binding.
+   */
+  consumedAt               DateTime?
+  createdAt                DateTime  @default(now())
 
   @@index([practiceId])
   @@index([providerId])
   @@index([staffId])
+  @@index([practitionerId])
   @@map("enrolment_ceremonies")
 }
 
@@ -241,8 +492,8 @@ model VerificationChallenge {
   id              String    @id @default(uuid()) @db.Uuid
   practiceId      String    @db.Uuid
   patientId       String    @db.Uuid
-  channel         String    // in_practice | sms_link | email_link | portal | paper
-  identifierTypes String[]  // the types challenged — from the approved six only
+  channel         String // in_practice | sms_link | email_link | portal | paper
+  identifierTypes String[] // the types challenged — from the approved six only
   attempts        Int       @default(0)
   lockedAt        DateTime?
   passedAt        DateTime?
@@ -254,16 +505,18 @@ model VerificationChallenge {
 }
 
 model VerificationEvent {
-  id              String   @id @default(uuid()) @db.Uuid
-  practiceId      String   @db.Uuid
-  patientId       String   @db.Uuid
-  challengeId     String   @db.Uuid
-  identifierTypes String[]
-  outcome         String   // passed | failed | locked_out
-  channel         String
-  /** Staff member identity for staff-verified in-practice capture. */
+  id                String   @id @default(uuid()) @db.Uuid
+  practiceId        String   @db.Uuid
+  patientId         String   @db.Uuid
+  challengeId       String   @db.Uuid
+  identifierTypes   String[]
+  outcome           String // passed | failed | locked_out
+  channel           String
+  /**
+   * Staff member identity for staff-verified in-practice capture.
+   */
   verifiedByStaffId String?
-  createdAt       DateTime @default(now())
+  createdAt         DateTime @default(now())
 
   @@index([practiceId])
   @@map("verification_events")
@@ -278,7 +531,7 @@ model CaptureRequest {
   id                      String    @id @default(uuid()) @db.Uuid
   practiceId              String    @db.Uuid
   agreementId             String    @db.Uuid
-  channel                 String    // in_practice | sms_link | email_link | paper
+  channel                 String // in_practice | sms_link | email_link | paper
   tokenHash               String?   @unique // remote channels only
   expiresAt               DateTime?
   status                  String    @default("open") // open | completed | cancelled | expired
@@ -301,9 +554,9 @@ model SignatureEvent {
   practiceId          String   @db.Uuid
   agreementId         String   @db.Uuid
   captureRequestId    String?  @db.Uuid
-  method              String   // drawn | tap_to_approve | typed_name | wet_ink_scan | verbal_recorded
+  method              String // drawn | tap_to_approve | typed_name | wet_ink_scan | verbal_recorded
   channel             String
-  artefactHash        String   // SHA-256 of the exact rendered artefact
+  artefactHash        String // SHA-256 of the exact rendered artefact
   rendererVersion     String
   ruleSetVersion      String?
   mappingVersion      String?
@@ -325,32 +578,46 @@ model SignatureEvent {
 // IN THE AGREEMENT, so a notice cannot be composed without it (REQ-DEL-02).
 
 model EnduringDetail {
-  id                     String    @id @default(uuid()) @db.Uuid
-  practiceId             String    @db.Uuid
-  agreementId            String    @unique @db.Uuid
-  /** How reg 89AA notices must be delivered. Method fidelity is checked against this. */
-  notificationMethod     String // sms | email | post | portal
-  notificationAlternate  String? // REQ-DEL-04 fallback within the window
-  terminationMethod      String
-  responsiblePersonBasis String?
-  /** Patient (14+) written declaration where the patient is not the assignor (REQ-END-02). */
-  patientDeclarationAt   DateTime?
-  /** MBS Category | Group | Subgroup | Item, or a combination (REQ-END-06a). */
-  scopeType              String
-  scopeValues            String[]
-  /** The date the agreement was entered into — the anniversary fuse anchor (65CA(8)(e)). */
-  enteredIntoAt          DateTime
-  /** D-11: no registration mechanism is published. Tracked, never speculated on. */
-  registeredAt           DateTime?
-  registrationReference  String?
-  /** Termination (REQ-END-06): notice, then 2 BUSINESS days. */
-  terminationNoticeAt    DateTime?
-  terminationEffectiveAt DateTime?
-  /** Which state's public-holiday calendar produced terminationEffectiveAt (REQ-OFF-03). */
+  id                       String    @id @default(uuid()) @db.Uuid
+  practiceId               String    @db.Uuid
+  agreementId              String    @unique @db.Uuid
+  /**
+   * How reg 89AA notices must be delivered. Method fidelity is checked against this.
+   */
+  notificationMethod       String // sms | email | post | portal
+  notificationAlternate    String? // REQ-DEL-04 fallback within the window
+  terminationMethod        String
+  responsiblePersonBasis   String?
+  /**
+   * Patient (14+) written declaration where the patient is not the assignor (REQ-END-02).
+   */
+  patientDeclarationAt     DateTime?
+  /**
+   * MBS Category | Group | Subgroup | Item, or a combination (REQ-END-06a).
+   */
+  scopeType                String
+  scopeValues              String[]
+  /**
+   * The date the agreement was entered into — the anniversary fuse anchor (65CA(8)(e)).
+   */
+  enteredIntoAt            DateTime
+  /**
+   * D-11: no registration mechanism is published. Tracked, never speculated on.
+   */
+  registeredAt             DateTime?
+  registrationReference    String?
+  /**
+   * Termination (REQ-END-06): notice, then 2 BUSINESS days.
+   */
+  terminationNoticeAt      DateTime?
+  terminationEffectiveAt   DateTime?
+  /**
+   * Which state's public-holiday calendar produced terminationEffectiveAt (REQ-OFF-03).
+   */
   terminationCalendarState String?
-  ceasedAt               DateTime?
-  cessationReason        String?
-  createdAt              DateTime  @default(now())
+  ceasedAt                 DateTime?
+  cessationReason          String?
+  createdAt                DateTime  @default(now())
 
   @@index([practiceId])
   @@index([ceasedAt])
@@ -369,14 +636,18 @@ model Notice {
   agreementId        String    @db.Uuid
   serviceRecordId    String?   @db.Uuid
   claimReference     String
-  /** The 24-hour clock starts here — at claim lodgement, not the service. */
+  /**
+   * The 24-hour clock starts here — at claim lodgement, not the service.
+   */
   claimLodgedAt      DateTime
   // The four mandatory elements, snapshotted at compose time.
   practitionerName   String
   patientName        String
   serviceDate        DateTime  @db.Date
   benefitAmountCents Int
-  /** Method named in the agreement; dispatch channel must equal it (REQ-DEL-02). */
+  /**
+   * Method named in the agreement; dispatch channel must equal it (REQ-DEL-02).
+   */
   agreementMethod    String
   dispatchChannel    String?
   payloadHash        String
@@ -400,7 +671,9 @@ model Notice {
   @@map("notices")
 }
 
-/** Append-only delivery evidence — one row per state transition (REQ-DEL-01). */
+/**
+ * Append-only delivery evidence — one row per state transition (REQ-DEL-01).
+ */
 model NoticeDeliveryEvent {
   id         String   @id @default(uuid()) @db.Uuid
   practiceId String   @db.Uuid
@@ -422,16 +695,16 @@ model NoticeDeliveryEvent {
 // unobservable (REQ-INT-04) — recorded explicitly, never inferred.
 
 model ServiceRecord {
-  id                   String    @id @default(uuid()) @db.Uuid
-  practiceId           String    @db.Uuid
+  id                   String   @id @default(uuid()) @db.Uuid
+  practiceId           String   @db.Uuid
   pmsInvoiceKey        String
-  patientId            String?   @db.Uuid
-  providerId           String?   @db.Uuid
-  serviceDate          DateTime  @db.Date
+  patientId            String?  @db.Uuid
+  providerId           String?  @db.Uuid
+  serviceDate          DateTime @db.Date
   mbsItemNumbers       String[]
-  agreementId          String?   @db.Uuid
-  retentionClockSource String    @default("conservative_default") // observed_claim | practice_asserted | conservative_default
-  createdAt            DateTime  @default(now())
+  agreementId          String?  @db.Uuid
+  retentionClockSource String   @default("conservative_default") // observed_claim | practice_asserted | conservative_default
+  createdAt            DateTime @default(now())
 
   @@unique([practiceId, pmsInvoiceKey])
   @@index([practiceId])

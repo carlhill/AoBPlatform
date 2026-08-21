@@ -92,6 +92,35 @@ immudb. No role ever holds DELETE on evidence stores (rule 11).
 ORM is Prisma (when persistence is added), migrations hand-reviewed and always
 committed; never `prisma db push` outside local scratch.
 
+**RLS exceptions are documented in the migration that creates the table**, in
+full, with the reasoning. There are three: `vault_outbox` (a relay that spans
+practices, carrying IDs only), the rules service (zero PII), and
+`practitioners` (one human across the platform — scoping it would reinstate
+the exact limitation it exists to remove). Any table without a
+`practice_isolation` policy must carry that justification, or it is a bug.
+
+**Authoring a migration that needs SQL Prisma cannot express** (RLS policies,
+CHECK constraints, triggers, SECURITY DEFINER functions) — generate the
+mechanical half, then append the hand-authored half under a marked divider:
+
+```bash
+npx prisma migrate diff --from-migrations apps/core/prisma/migrations --to-schema-datamodel apps/core/prisma/schema.prisma --shadow-database-url "$SHADOW_URL" --script > migration.sql
+```
+
+Then verify each constraint fires, in `psql`, using `SAVEPOINT` per case — a
+single transaction aborts on the first error and every later check silently
+reports "current transaction is aborted" rather than actually running.
+
+**Windows: `prisma generate` fails with `EPERM ... query_engine-windows.dll.node`.**
+Something (a dev server, a stray node process, OneDrive) holds the engine
+open. Stopping the container is not enough. Rename the target out of the way
+first — Windows permits renaming an open file even though it forbids
+overwriting one — then generate and delete the old copy:
+
+```bash
+mv node_modules/.prisma/client/query_engine-windows.dll.node{,.old} && npx prisma generate --schema apps/core/prisma/schema.prisma && rm -f node_modules/.prisma/client/query_engine-windows.dll.node.old
+```
+
 ## 7. Vault events: the outbox pattern is structural
 
 Every write to an agreement/consent-relevant record inserts a
