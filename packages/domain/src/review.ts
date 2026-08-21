@@ -63,6 +63,14 @@ export interface ReviewableApplication {
    * this module must not grow a second implementation of it.
    */
   readonly wouldPassIdentity?: boolean;
+  /**
+   * Check keys a reviewer has recorded as PASSED.
+   *
+   * Some flags are calls to action with a named remedy, and a remedy that has
+   * been performed should retire the flag that asked for it. Supplied by the
+   * caller because the check history lives outside this module.
+   */
+  readonly passedCheckKeys?: readonly string[];
 }
 
 const SEVERITY_RANK: Record<FlagSeverity, number> = { blocking: 0, high: 1, medium: 2, low: 3 };
@@ -77,10 +85,25 @@ const SEVERITY_RANK: Record<FlagSeverity, number> = { blocking: 0, high: 1, medi
 export function reviewFlags(application: ReviewableApplication): ReviewFlag[] {
   const flags: ReviewFlag[] = [];
 
-  // HIGH. The register gate passed on the applicant's own transcription. Every
-  // rule still ran — but against words the applicant typed, so this is the one
-  // case where "the ABR says ACTIVE" means "the applicant says the ABR says".
-  if (application.abnVerificationSource === 'manual_attestation') {
+  /*
+   * HIGH. The register gate passed on the applicant's own transcription. Every
+   * rule still ran — but against words the applicant typed, so this is the one
+   * case where "the ABR says ACTIVE" means "the applicant says the ABR says".
+   *
+   * IT RETIRES once a reviewer has recorded entity.abn_active as passed. The
+   * flag's own remedy is "re-read the register before approving", and that
+   * check IS the re-reading: a named human, against the register, with evidence
+   * attached. A flag whose remedy has been performed and still stands teaches
+   * reviewers that flags are decoration.
+   *
+   * The PROVENANCE does not retire and must not. "Verified via applicant
+   * attestation" stays on the dossier for the life of the record, because it is
+   * a permanent fact about how the value got there. The distinction is the
+   * point: a flag is a call to action and can be satisfied; provenance is
+   * history and cannot.
+   */
+  const reReadTheRegister = (application.passedCheckKeys ?? []).includes('entity.abn_active');
+  if (application.abnVerificationSource === 'manual_attestation' && !reReadTheRegister) {
     flags.push({ key: 'attested', severity: 'high' });
   }
 

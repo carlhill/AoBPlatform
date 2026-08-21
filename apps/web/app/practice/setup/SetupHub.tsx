@@ -1,0 +1,239 @@
+'use client';
+
+/**
+ * The practice setup hub.
+ *
+ * NOT A WIZARD, and that is the load-bearing decision. A wizard implies a
+ * finish; a practice adds locations and practitioners for years after it
+ * onboards. So: cards, worked in any order, each carrying its own state,
+ * revisited indefinitely.
+ *
+ * IT LEADS WITH WHAT IS NOT YET POSSIBLE. This is the rule everything else
+ * serves. Card counts alone let a practice believe capture is live when in fact
+ * no practitioner has accepted an affiliation — "3 practitioners, 2 locations"
+ * reads as readiness and is not. So the first thing on the page is not a count
+ * but a statement of what can and cannot happen right now.
+ *
+ * And it says what is NOT affected: a practice reading "capture is not
+ * available" on a clinical morning must not think their clinic has stopped.
+ * Patients can be seen and billed throughout. What is missing is our record of
+ * their consent.
+ *
+ * WORST ROW FIRST inside every card, and worst CARD first on the page. A card
+ * that lists rows alphabetically asks the reader to scan for the problem; one
+ * that promotes it has already answered.
+ *
+ * CARDS SUMMARISE; THE PAGE HOLDS THE LIST. Every card caps at a roll-up plus
+ * two rows and opens a full table. The card never scrolls — a scrolling card
+ * hides exactly the row the promotion rule just surfaced.
+ */
+
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import {
+  AlertTriangle,
+  ArrowRight,
+  Building2,
+  CheckCircle2,
+  Circle,
+  Download,
+  MapPin,
+  Radio,
+  Users,
+  UserSquare,
+} from 'lucide-react';
+import type { CardState } from '@aobplatform/domain';
+import { Chip, Notice, Shell, ui, type Tone } from '../../ui';
+import { strings } from '../../strings';
+import styles from './setup.module.css';
+
+const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
+
+interface Row {
+  label: string;
+  note: string;
+  needsWork: boolean;
+}
+
+interface Card {
+  key: string;
+  title: string;
+  state: CardState;
+  rollup: string;
+  rows: Row[];
+  more: number;
+  href: string | null;
+}
+
+interface Hub {
+  practice: {
+    id: string;
+    name: string;
+    legalName: string | null;
+    abn: string | null;
+    abnStatus: string | null;
+    validationState: string;
+    validatedByName: string | null;
+    validatedAt: string | null;
+    pms: string;
+    credentialCount: number;
+  };
+  readiness: { ready: boolean; readyCount: number; blockers: string[]; headline: string };
+  cards: Card[];
+}
+
+const CARD_ICONS: Record<string, typeof Building2> = {
+  entity: Building2,
+  locations: MapPin,
+  practitioners: UserSquare,
+  affiliations: Users,
+  channels: Radio,
+};
+
+const STATE_TONE: Record<CardState, Tone> = {
+  blocked: 'stop',
+  attention: 'warn',
+  not_started: 'neutral',
+  done: 'ok',
+};
+
+export function SetupHub({ practiceId }: { practiceId: string }) {
+  const [hub, setHub] = useState<Hub | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    fetch(`${CORE_URL}/organisations/setup`, { headers: { 'x-practice-id': practiceId } })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((data: Hub) => live && setHub(data))
+      .catch((e: Error) =>
+        live && setError(e instanceof TypeError ? strings.review.unreachableBody : e.message),
+      );
+    return () => {
+      live = false;
+    };
+  }, [practiceId]);
+
+  if (error) {
+    return (
+      <Shell right={strings.setup.audience}>
+        <Notice tone="stop" title={strings.setup.notLoaded}>
+          {error}
+        </Notice>
+      </Shell>
+    );
+  }
+
+  if (!hub) {
+    return (
+      <Shell right={strings.setup.audience}>
+        <p className={ui.hint}>{strings.review.loading}</p>
+      </Shell>
+    );
+  }
+
+  return (
+    <Shell right={strings.setup.audience}>
+      <h1 className={ui.pageTitle}>
+        {strings.setup.title} {hub.practice.name}
+      </h1>
+      <p className={ui.pageLead}>
+        {hub.practice.validationState === 'validated' && hub.practice.validatedByName ? (
+          <>
+            {strings.setup.approvedBy} {hub.practice.validatedByName}
+            {hub.practice.validatedAt && <> · {new Date(hub.practice.validatedAt).toLocaleDateString('en-AU')}</>}
+            {' · '}
+          </>
+        ) : null}
+        ABN {hub.practice.abn ?? '—'} · {hub.practice.abnStatus ?? '—'}
+      </p>
+
+      {/*
+        THE FIRST THING ON THE PAGE, and never a count. Counts read as readiness
+        and are not: a practice with three practitioners and two locations can
+        still be unable to capture a single consent.
+      */}
+      <div
+        className={`${styles.readiness} ${hub.readiness.ready ? styles.readinessOk : styles.readinessBlocked}`}
+        data-testid="setup-readiness"
+      >
+        <div className={styles.readinessHead}>
+          {hub.readiness.ready ? (
+            <CheckCircle2 size={20} aria-hidden="true" />
+          ) : (
+            <AlertTriangle size={20} aria-hidden="true" />
+          )}
+          {hub.readiness.headline}
+        </div>
+        {hub.readiness.blockers.length > 0 && (
+          <ol className={styles.blockers}>
+            {/* In the order they must be fixed, not the order they were found. */}
+            {hub.readiness.blockers.map((b) => (
+              <li key={b}>{b}</li>
+            ))}
+          </ol>
+        )}
+      </div>
+
+      <div className={styles.cards}>
+        {hub.cards.map((card) => {
+          const Icon = CARD_ICONS[card.key] ?? Circle;
+          return (
+            <section className={styles.card} key={card.key} aria-label={card.title} data-testid={`card-${card.key}`}>
+              <div className={styles.cardHead}>
+                <span className={styles.cardIcon}>
+                  <Icon size={16} aria-hidden="true" />
+                </span>
+                <h2 className={styles.cardTitle}>{card.title}</h2>
+                <Chip tone={STATE_TONE[card.state]}>{strings.setup.states[card.state]}</Chip>
+              </div>
+
+              <p className={styles.cardRollup}>{card.rollup}</p>
+
+              <ul className={styles.cardRows}>
+                {card.rows.length === 0 && <li className={ui.hint}>{strings.setup.nothingYet}</li>}
+                {card.rows.map((row) => (
+                  <li className={styles.cardRow} key={row.label + row.note}>
+                    <span className={styles.rowLabel}>{row.label}</span>
+                    {/* The note carries the state in WORDS — the colour of the
+                        dot is reinforcement, never the message. */}
+                    <span className={row.needsWork ? styles.rowNoteWork : styles.rowNote}>{row.note}</span>
+                  </li>
+                ))}
+                {card.more > 0 && (
+                  <li className={ui.hint}>{strings.setup.andMore.replace('{n}', String(card.more))}</li>
+                )}
+              </ul>
+
+              {card.href && (
+                <Link href={card.href} className={styles.cardLink}>
+                  {strings.setup.open} {card.title.toLowerCase()}
+                  <ArrowRight size={14} aria-hidden="true" />
+                </Link>
+              )}
+            </section>
+          );
+        })}
+
+        {/*
+          The sixth panel, and DASHED because we do not control it yet. The
+          write-back mechanism is an open decision (D-01), so this promises a
+          download and nothing more. A solid card here would imply a working
+          integration that does not exist.
+        */}
+        <section className={`${styles.card} ${styles.cardUnsettled}`} aria-label={strings.setup.pmsTitle}>
+          <div className={styles.cardHead}>
+            <span className={styles.cardIcon}>
+              <Download size={16} aria-hidden="true" />
+            </span>
+            <h2 className={styles.cardTitle}>{strings.setup.pmsTitle}</h2>
+            <Chip tone="neutral">{strings.setup.states.not_started}</Chip>
+          </div>
+          <p className={styles.cardRollup}>{hub.practice.pms}</p>
+          <p className={ui.hint}>{strings.setup.pmsBody}</p>
+          <p className={ui.hint}>{strings.setup.pmsUnsettled}</p>
+        </section>
+      </div>
+    </Shell>
+  );
+}

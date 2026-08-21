@@ -509,6 +509,37 @@ export const strings = {
       'It may be incomplete — these links are long and email clients sometimes break them across lines. Try ' +
       'copying the whole thing into the address bar. If it still does not work, reply to the email we sent you.',
   },
+  setup: {
+    audience: 'Practice admin',
+    title: 'Set up',
+    approvedBy: 'Approved by',
+    notLoaded: 'The setup hub could not be loaded',
+    nothingYet: 'Nothing here yet.',
+    andMore: '+ {n} more',
+    open: 'Open the',
+    states: {
+      blocked: 'Blocked',
+      attention: 'Needs work',
+      not_started: 'Not started',
+      done: 'Done',
+    } as Record<string, string>,
+
+    noPracticeTitle: 'No practice is selected',
+    noPracticeBody:
+      'This page shows the setup for one practice, and none is currently selected \u2014 or the one that was ' +
+      'selected no longer exists. Once platform sign-in is in place the practice comes from your session and ' +
+      'this will not happen.',
+
+    pmsTitle: 'PMS connection',
+    pmsBody:
+      'The site connector runs on a practice Windows machine and dials out only. Nothing listens for an ' +
+      'inbound connection, so it opens no port on the practice network.',
+    // Dashed, and honest about why: how results are written back to the PMS is
+    // an open decision (D-01), so this promises a download and nothing more.
+    pmsUnsettled:
+      'How results are written back to the PMS is not settled yet, so this promises a download and nothing ' +
+      'more. Better an unfinished card than a finished-looking one that does not work.',
+  },
   status: {
     audience: 'Your application',
 

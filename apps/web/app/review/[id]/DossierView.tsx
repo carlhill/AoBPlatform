@@ -362,7 +362,13 @@ export function DossierView({ id }: { id: string }) {
   // The score is passed in so the thin-proof note can retire once the recorded
   // checks would clear the threshold — otherwise it sits there contradicting a
   // passing score two sections below it.
-  const flags = reviewFlags({ ...row, wouldPassIdentity: checks?.admission.wouldPass }) as ReviewFlag[];
+  const flags = reviewFlags({
+    ...row,
+    wouldPassIdentity: checks?.admission.wouldPass,
+    // So a flag whose remedy has been performed retires rather than standing
+    // next to the check that satisfied it.
+    passedCheckKeys: (checks?.history ?? []).filter((h) => h.outcome === 'passed').map((h) => h.checkKey),
+  }) as ReviewFlag[];
   const blocked = blockingFlags(flags);
   const attested = row.abnVerificationSource === 'manual_attestation';
 

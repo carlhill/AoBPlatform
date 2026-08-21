@@ -24,6 +24,27 @@ describe('reviewFlags', () => {
 
   // BLOCKING, not merely high: without an independent second contact there is
   // nobody to call who is not the applicant, so the approval is refused.
+  /*
+   * The flag says "re-read the register before approving". Recording
+   * entity.abn_active as passed IS that — a named human, against the register,
+   * with evidence. A flag whose remedy has been performed and still stands
+   * teaches reviewers that flags are decoration.
+   */
+  it('retires the attested flag once the register has been re-read', () => {
+    const attested = { ...clean, abnVerificationSource: 'manual_attestation' };
+    expect(reviewFlags(attested).map((f) => f.key)).toContain('attested');
+    expect(
+      reviewFlags({ ...attested, passedCheckKeys: ['entity.abn_active'] }).map((f) => f.key),
+    ).not.toContain('attested');
+  });
+
+  it('does not retire it on some OTHER check passing', () => {
+    const attested = { ...clean, abnVerificationSource: 'manual_attestation' };
+    expect(
+      reviewFlags({ ...attested, passedCheckKeys: ['entitlement.phone_call'] }).map((f) => f.key),
+    ).toContain('attested');
+  });
+
   it('flags contacts that share a handset as BLOCKING, and says which channel', () => {
     const flags = reviewFlags({ ...clean, managerPhone: '0298765432' });
     expect(flags).toContainEqual({ key: 'contacts_clash', severity: 'blocking', detail: 'phone' });

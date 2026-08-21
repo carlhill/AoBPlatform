@@ -16,6 +16,7 @@ import {
 import { OrganisationsService } from './organisations.service';
 import { ChecksService } from './checks.service';
 import { AuditService } from './audit.service';
+import { SetupService } from './setup.service';
 
 /**
  * What a named human read off abr.business.gov.au, when the platform has no
@@ -381,6 +382,7 @@ export class OrganisationsController {
     private readonly organisations: OrganisationsService,
     private readonly checks: ChecksService,
     private readonly auditService: AuditService,
+    private readonly setup: SetupService,
   ) {}
 
   /**
@@ -401,6 +403,19 @@ export class OrganisationsController {
    * RLS confines it — this is a reviewer looking at one application, not a
    * platform-wide feed.
    */
+  /**
+   * The practice setup hub — every card, in one call.
+   *
+   * Assembled server-side rather than by the page, because capture readiness is
+   * a claim about whether a practice can lawfully record consent and a claim
+   * like that gets one implementation, with tests, not a fragment of component
+   * logic that quietly disagrees.
+   */
+  @Get('setup')
+  setupHub(@Headers('x-practice-id') practiceId: string | undefined) {
+    return this.setup.hub(requirePractice(practiceId));
+  }
+
   @Get('audit')
   auditTrail(@Headers('x-practice-id') practiceId: string | undefined) {
     return this.auditService.trail(requirePractice(practiceId));
