@@ -240,6 +240,37 @@ export class ActivateLocationDto {
   reviewerName!: string;
 }
 
+export class AddCredentialDto {
+  @IsIn(['ahpra', 'hpio', 'accreditation', 'nash', 'other'])
+  credentialType!: string;
+
+  @IsString()
+  @MinLength(2)
+  credentialValue!: string;
+
+  @IsOptional()
+  @IsString()
+  label?: string;
+
+  @IsOptional()
+  @IsString()
+  addedByName?: string;
+}
+
+export class VerifyCredentialDto {
+  /** Never blank. A verification with nobody attached is a free point for typing. */
+  @IsString()
+  @MinLength(1)
+  verifiedByName!: string;
+
+  @IsIn(['ahpra_register', 'hi_service', 'accrediting_body', 'document_sighted'])
+  verificationMethod!: string;
+
+  @IsOptional()
+  @IsString()
+  note?: string;
+}
+
 export class AddDepartmentDto {
   @IsString()
   locationId!: string;
@@ -314,6 +345,35 @@ export class OrganisationsController {
     @Body() dto: ActivateLocationDto,
   ) {
     return this.organisations.activateLocation(requirePractice(practiceId), locationId, dto.reviewerName);
+  }
+
+  @Get('credentials')
+  listCredentials(@Headers('x-practice-id') practiceId: string | undefined) {
+    return this.organisations.listCredentials(requirePractice(practiceId));
+  }
+
+  /** As many as they want. Each is an independent signal, and entry scores nothing. */
+  @Post('credentials')
+  addCredential(@Headers('x-practice-id') practiceId: string | undefined, @Body() dto: AddCredentialDto) {
+    return this.organisations.addCredential(requirePractice(practiceId), dto);
+  }
+
+  /** Recording an actual check. THIS is what carries weight. */
+  @Post('credentials/:credentialId/verify')
+  verifyCredential(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('credentialId', ParseUUIDPipe) credentialId: string,
+    @Body() dto: VerifyCredentialDto,
+  ) {
+    return this.organisations.verifyCredential(requirePractice(practiceId), credentialId, dto);
+  }
+
+  @Post('credentials/:credentialId/remove')
+  removeCredential(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('credentialId', ParseUUIDPipe) credentialId: string,
+  ) {
+    return this.organisations.removeCredential(requirePractice(practiceId), credentialId);
   }
 
   @Get('departments')

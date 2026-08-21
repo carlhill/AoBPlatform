@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Inject, Injectable, Logger, Not
 import {
   AbnError,
   AddressError,
+  isValidAhpraNumberFormat,
   addressWarnings,
   assertAddressUsable,
   assertOrganisationApplicationValid,
@@ -255,6 +256,22 @@ export class OrganisationsService {
         },
       }),
     );
+
+    // The first credential goes into the table too, so there is one place to
+    // read them from. The legacy columns stay for now and are the compatibility
+    // path, not the source of truth.
+    if (input.credentialType && input.credentialValue?.trim()) {
+      await this.prisma.withPractice(organisationId, (tx) =>
+        tx.practiceCredential.create({
+          data: {
+            practiceId: organisationId,
+            credentialType: input.credentialType!,
+            credentialValue: input.credentialValue!.trim(),
+            addedByName: input.adminName,
+          },
+        }),
+      );
+    }
 
     if (input.headOfficeIsPlaceOfPractice) {
       const result = await this.addresses.validate(headOffice.canonical);
@@ -575,6 +592,123 @@ export class OrganisationsService {
         addressValidated: l.addressValidated,
       }));
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // Credentials — many per practice, and entry is worth nothing
+  // -------------------------------------------------------------------------
+
+  /**
+   * Add a credential. It arrives UNVERIFIED and therefore worth zero.
+   *
+   * That is the rule the whole strength score rests on
+   * (IDENTITY-STRENGTH-DESIGN.md §1): points attach to verified checks, never
+   * to entered data. If typing an HPI-O scored, a fraudster would type ten
+   * invented ones and clear any threshold, and the score would be measuring
+   * effort at the keyboard.
+   */
+  async addCredential(
+    practiceId: string,
+    input: { credentialType: string; credentialValue: string; label?: string; addedByName?: string },
+  ) {
+    const value = input.credentialValue.trim();
+    if (!value) throw new BadRequestException('A credential needs a number or reference.');
+
+    // Format-check what we can. An AHPRA number has a shape, and catching a
+    // typo now saves a reviewer chasing a number that never existed.
+    if (input.credentialType === 'ahpra' && !isValidAhpraNumberFormat(value)) {
+      throw new BadRequestException(
+        `"${value}" is not a valid AHPRA registration number. Three profession letters then ten digits, ` +
+          'e.g. MED0001234567.',
+      );
+    }
+
+    try {
+      return await this.prisma.withPractice(practiceId, (tx) =>
+        tx.practiceCredential.create({
+          data: {
+            practiceId,
+            credentialType: input.credentialType,
+            credentialValue: value,
+            label: input.label,
+            addedByName: input.addedByName,
+          },
+        }),
+      );
+    } catch (err) {
+      if ((err as { code?: string }).code === 'P2002') {
+        throw new ConflictException(
+          'That credential is already recorded for this practice. The same number twice is a duplicate, not a ' +
+            'second signal.',
+        );
+      }
+      throw err;
+    }
+  }
+
+  async listCredentials(practiceId: string) {
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const rows = await tx.practiceCredential.findMany({ orderBy: { addedAt: 'asc' } });
+      return rows.map((c) => ({
+        id: c.id,
+        credentialType: c.credentialType,
+        credentialValue: c.credentialValue,
+        label: c.label,
+        verified: Boolean(c.verifiedAt),
+        verifiedAt: c.verifiedAt,
+        verifiedByName: c.verifiedByName,
+        verificationMethod: c.verificationMethod,
+        addedAt: c.addedAt,
+        addedByName: c.addedByName,
+      }));
+    });
+  }
+
+  /**
+   * Record that a credential was actually checked. THIS is what carries weight.
+   * A named human and a method are both required — enforced by CHECK
+   * constraint as well as here, because a "verified" flag with nobody attached
+   * would be a free point for typing.
+   */
+  async verifyCredential(
+    practiceId: string,
+    credentialId: string,
+    input: { verifiedByName: string; verificationMethod: string; note?: string },
+  ) {
+    if (!input.verifiedByName?.trim()) {
+      throw new BadRequestException('Verifying a credential must name the human who checked it.');
+    }
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const existing = await tx.practiceCredential.findFirst({ where: { id: credentialId } });
+      if (!existing) throw new NotFoundException('Credential not found in this practice.');
+      const updated = await tx.practiceCredential.update({
+        where: { id: credentialId },
+        data: {
+          verifiedAt: new Date(),
+          verifiedByName: input.verifiedByName.trim(),
+          verificationMethod: input.verificationMethod,
+          verificationNote: input.note,
+        },
+      });
+      await enqueueVaultEvent(tx, {
+        type: 'organisation.validated',
+        actor: { principalType: 'staff', id: practiceId },
+        subject: { type: 'PracticeCredential', id: credentialId },
+        payload: {
+          action: 'credential_verified',
+          credentialType: updated.credentialType,
+          method: input.verificationMethod,
+          verifiedBy: input.verifiedByName.trim(),
+        },
+      });
+      return updated;
+    });
+  }
+
+  async removeCredential(practiceId: string, credentialId: string) {
+    return this.prisma.withPractice(practiceId, (tx) =>
+      tx.practiceCredential.deleteMany({ where: { id: credentialId } }),
+    );
   }
 
   // -------------------------------------------------------------------------

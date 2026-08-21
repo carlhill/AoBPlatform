@@ -104,6 +104,22 @@ export const strings = {
     credentialTypeLabel: 'Credential type',
     credentialTypePick: 'Select…',
     credentialValueLabel: 'Number / reference',
+    credentialAdd: 'Add this credential',
+    credentialAddAnother: 'Add as many as you have — each one is a separate signal',
+    credentialsHeading: 'Credentials on record',
+    credentialsEmpty: 'None yet.',
+    credentialUnverified: 'Entered, not verified — worth nothing yet',
+    credentialVerified: 'Verified by',
+    credentialVerifyHeading: 'Record that you checked one',
+    credentialVerifyNote:
+      'Strength comes from VERIFIED credentials, never from entered ones. If typing a number scored, ten ' +
+      'invented ones would clear any threshold and the score would be measuring typing. So a credential ' +
+      'arrives worth nothing, and only a check by a named person gives it weight.',
+    credentialVerifyMethod: 'How did you check it?',
+    credentialVerifyBy: 'Your name',
+    credentialVerifyButton: 'Record the check',
+    credentialRemove: 'Remove',
+    credentialLabelLabel: 'Label (for “other”, or the accrediting body)',
     entitlementHeading: 'How did you verify this applicant represents this entity?',
     entitlementNote:
       'Required to approve. The ABN gate proves the ENTITY exists — it does not prove this person speaks ' +

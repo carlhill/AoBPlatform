@@ -94,6 +94,15 @@ interface PendingRow {
   credentialType: string | null;
   credentialValue: string | null;
 }
+interface CredentialRow {
+  id: string;
+  credentialType: string;
+  credentialValue: string;
+  label: string | null;
+  verified: boolean;
+  verifiedByName: string | null;
+  verificationMethod: string | null;
+}
 interface LocationRow {
   id: string;
   code: string | null;
@@ -278,6 +287,10 @@ export function OrgConsole() {
   const [headOfficeIsPop, setHeadOfficeIsPop] = useState(false);
   const [credentialType, setCredentialType] = useState('');
   const [credentialValue, setCredentialValue] = useState('');
+  const [credentialLabel, setCredentialLabel] = useState('');
+  const [credentials, setCredentials] = useState<CredentialRow[]>([]);
+  const [credVerifyBy, setCredVerifyBy] = useState('');
+  const [credVerifyMethod, setCredVerifyMethod] = useState('');
 
   // The entitlement check (§11), recorded at approval.
   const [entMethod, setEntMethod] = useState('');
@@ -382,11 +395,13 @@ export function OrgConsole() {
   }, []);
 
   const loadOrgData = useCallback(async (practiceId: string) => {
-    const [locs, affs, depts] = await Promise.all([
+    const [locs, affs, depts, creds] = await Promise.all([
       call<LocationRow[]>('/organisations/locations', { practiceId }),
       call<AffiliationRow[]>('/affiliations', { practiceId }),
       call<Array<{ id: string; name: string; locationId: string }>>('/organisations/departments', { practiceId }),
+      call<CredentialRow[]>('/organisations/credentials', { practiceId }),
     ]);
+    setCredentials(creds);
     setLocations(locs);
     setAffiliations(affs);
     setDepartments(depts);
@@ -1109,6 +1124,163 @@ export function OrgConsole() {
                 </tbody>
               </table>
             )}
+
+            <h4>{strings.org.credentialsHeading}</h4>
+            <p style={note}>{strings.org.credentialVerifyNote}</p>
+            {credentials.length === 0 ? (
+              <p style={note}>{strings.org.credentialsEmpty}</p>
+            ) : (
+              <table style={{ borderCollapse: 'collapse', marginBottom: '0.75rem' }} data-testid="credentials-table">
+                <thead>
+                  <tr>
+                    <th style={th}>Type</th>
+                    <th style={th}>Number / reference</th>
+                    <th style={th}>Status</th>
+                    <th style={th} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {credentials.map((c) => (
+                    <tr key={c.id}>
+                      <td style={td}>
+                        {c.credentialType}
+                        {c.label && <div style={{ ...note, margin: 0 }}>{c.label}</div>}
+                      </td>
+                      <td style={td}>
+                        <code>{c.credentialValue}</code>
+                      </td>
+                      <td style={{ ...td, color: c.verified ? GREEN : AMBER }}>
+                        {c.verified ? (
+                          <>
+                            {strings.org.credentialVerified} {c.verifiedByName}
+                            <div style={{ ...note, margin: 0 }}>{c.verificationMethod}</div>
+                          </>
+                        ) : (
+                          strings.org.credentialUnverified
+                        )}
+                      </td>
+                      <td style={td}>
+                        {!c.verified && (
+                          <button
+                            disabled={busy || !credVerifyBy.trim() || !credVerifyMethod}
+                            data-testid={'verify-cred-' + c.id}
+                            onClick={() =>
+                              void run(async () => {
+                                await call(`/organisations/credentials/${c.id}/verify`, {
+                                  method: 'POST',
+                                  practiceId: org.id,
+                                  body: JSON.stringify({
+                                    verifiedByName: credVerifyBy,
+                                    verificationMethod: credVerifyMethod,
+                                  }),
+                                });
+                                await loadOrgData(org.id);
+                              })
+                            }
+                          >
+                            {strings.org.credentialVerifyButton}
+                          </button>
+                        )}{' '}
+                        <button
+                          disabled={busy}
+                          onClick={() =>
+                            void run(async () => {
+                              await call(`/organisations/credentials/${c.id}/remove`, {
+                                method: 'POST',
+                                practiceId: org.id,
+                              });
+                              await loadOrgData(org.id);
+                            })
+                          }
+                        >
+                          {strings.org.credentialRemove}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            <h5>{strings.org.credentialVerifyHeading}</h5>
+            <label style={field}>
+              {strings.org.credentialVerifyBy}
+              <input
+                style={input}
+                value={credVerifyBy}
+                onChange={(e) => setCredVerifyBy(e.target.value)}
+                data-testid="cred-verify-by"
+              />
+            </label>
+            <label style={field}>
+              {strings.org.credentialVerifyMethod}
+              <select
+                style={input}
+                value={credVerifyMethod}
+                onChange={(e) => setCredVerifyMethod(e.target.value)}
+                data-testid="cred-verify-method"
+              >
+                <option value="">{strings.org.credentialTypePick}</option>
+                <option value="ahpra_register">Looked it up on the AHPRA public register</option>
+                <option value="hi_service">Confirmed with the Healthcare Identifiers Service</option>
+                <option value="accrediting_body">Confirmed with the accrediting body</option>
+                <option value="document_sighted">Sighted a document</option>
+              </select>
+            </label>
+
+            <h5>{strings.org.credentialAddAnother}</h5>
+            <label style={field}>
+              {strings.org.credentialTypeLabel}
+              <select
+                style={input}
+                value={credentialType}
+                onChange={(e) => setCredentialType(e.target.value)}
+                data-testid="add-cred-type"
+              >
+                <option value="">{strings.org.credentialTypePick}</option>
+                <option value="ahpra">AHPRA number of a responsible practitioner</option>
+                <option value="hpio">HPI-O</option>
+                <option value="accreditation">Practice accreditation reference</option>
+                <option value="nash">NASH certificate</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <label style={field}>
+              {strings.org.credentialValueLabel}
+              <input
+                style={input}
+                value={credentialValue}
+                onChange={(e) => setCredentialValue(e.target.value)}
+                data-testid="add-cred-value"
+              />
+            </label>
+            <label style={field}>
+              {strings.org.credentialLabelLabel}
+              <input style={input} value={credentialLabel} onChange={(e) => setCredentialLabel(e.target.value)} />
+            </label>
+            <button
+              disabled={busy || !credentialType || !credentialValue.trim()}
+              data-testid="add-cred"
+              onClick={() =>
+                void run(async () => {
+                  await call('/organisations/credentials', {
+                    method: 'POST',
+                    practiceId: org.id,
+                    body: JSON.stringify({
+                      credentialType,
+                      credentialValue,
+                      label: credentialLabel || undefined,
+                      addedByName: reviewer || undefined,
+                    }),
+                  });
+                  setCredentialValue('');
+                  setCredentialLabel('');
+                  await loadOrgData(org.id);
+                })
+              }
+            >
+              {strings.org.credentialAdd}
+            </button>
 
             <h4>{strings.org.departmentsHeading}</h4>
             <label style={field}>
