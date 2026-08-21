@@ -190,6 +190,66 @@ export interface AffiliationVelocity {
   readonly windowDays: number;
 }
 
+// ---------------------------------------------------------------------------
+// How many practitioners a practice may invite
+// ---------------------------------------------------------------------------
+
+/**
+ * A practice states its headcount at onboarding; the cap is that plus room to
+ * grow, bounded by a default ceiling.
+ *
+ * WHAT THIS STOPS: a practice that passes validation and then invites hundreds
+ * of practitioners. Validation is a point-in-time check on the ENTITY; nothing
+ * in it limits what the entity does afterwards, and inviting is how a rogue
+ * practice would manufacture identities at scale.
+ *
+ * WHAT IT MUST NOT DO IS FAIL SILENTLY. Keeping the arithmetic private is
+ * right — telling an applicant "four invitations remaining" hands an attacker
+ * their budget. But a practice that hits the ceiling has to be told one exists
+ * and how to lift it. A silent refusal is indistinguishable from a broken
+ * platform, and the people who hit it first will overwhelmingly be legitimate
+ * practices that grew.
+ *
+ * So: hide the arithmetic, surface the wall.
+ */
+export const INVITATION_HEADROOM = 0.2;
+export const DEFAULT_INVITATION_CEILING = 50;
+
+export interface InvitationCap {
+  /** Headcount the practice stated at onboarding. */
+  readonly statedPractitionerCount?: number | null;
+  /** A contracted figure, for hospitals and larger groups. Overrides everything. */
+  readonly contractedCap?: number | null;
+  /** Active plus invited. Lifetime churn does not consume the cap. */
+  readonly currentCount: number;
+}
+
+export function invitationLimitFor(cap: InvitationCap): number {
+  if (cap.contractedCap && cap.contractedCap > 0) return cap.contractedCap;
+  const stated = cap.statedPractitionerCount ?? 0;
+  if (stated <= 0) return DEFAULT_INVITATION_CEILING;
+  const withHeadroom = Math.ceil(stated * (1 + INVITATION_HEADROOM));
+  return Math.min(withHeadroom, DEFAULT_INVITATION_CEILING);
+}
+
+export function hasInvitationCapacity(cap: InvitationCap): boolean {
+  return cap.currentCount < invitationLimitFor(cap);
+}
+
+/**
+ * The message shown when the wall is hit.
+ *
+ * Deliberately says nothing about the limit's value or how it was derived —
+ * only that one exists and how to have it raised.
+ */
+export function invitationCapMessage(): string {
+  return (
+    'This practice has reached the number of practitioners it can invite. This is a limit we apply to every ' +
+    'practice; it is not a judgement about yours. If your practice has grown, or you are a hospital or larger ' +
+    'group, contact us and we will raise it.'
+  );
+}
+
 /** ⚠ DRAFT PARAMETER — the threshold wants a look at real data before GA. */
 export const AFFILIATION_VELOCITY_THRESHOLD = 5;
 export const AFFILIATION_VELOCITY_WINDOW_DAYS = 7;

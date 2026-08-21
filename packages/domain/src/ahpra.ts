@@ -193,6 +193,88 @@ export function registrationWarnings(
   return warnings;
 }
 
+/**
+ * Does the AHPRA profession support the provider type a practice is asserting?
+ *
+ * THE SCENARIO THIS ANSWERS: a practice affiliates somebody as a GP whose
+ * register entry says Nurse. On its own that is a data-entry error most of the
+ * time — but it is also the shape of a practice using a real registration
+ * number for a role its holder cannot fill, and it is free to detect because
+ * the register publishes the profession.
+ *
+ * A SIGNAL, NOT A GATE. Profession names vary, scopes overlap, and a nurse
+ * practitioner genuinely can render some items a registered nurse cannot.
+ * Refusing on a string comparison would block legitimate affiliations; the
+ * mismatch is surfaced for a human instead.
+ *
+ * Note also what this does NOT do: it does not stop anyone billing Medicare.
+ * MBS item eligibility is tied to provider type and Services Australia applies
+ * those edits. This catches the misuse EARLIER, at the point somebody claims a
+ * role, and only within this platform.
+ */
+export const PROVIDER_TYPE_PROFESSIONS: Record<string, readonly string[]> = {
+  general_practitioner: ['medical practitioner'],
+  specialist: ['medical practitioner'],
+  nurse_practitioner: ['nurse', 'nurse and midwife', 'midwife'],
+  optometrist: ['optometrist'],
+  allied_health: [
+    'physiotherapist',
+    'psychologist',
+    'occupational therapist',
+    'chiropractor',
+    'osteopath',
+    'podiatrist',
+    'pharmacist',
+    'dental practitioner',
+    'chinese medicine practitioner',
+    'aboriginal and torres strait islander health practitioner',
+    'medical radiation practitioner',
+    'paramedic',
+  ],
+  other: [],
+};
+
+export type ProfessionMatch = 'consistent' | 'mismatch' | 'unknown';
+
+export interface ProfessionComparison {
+  readonly result: ProfessionMatch;
+  readonly message: string;
+}
+
+export function compareProfession(providerType: string, registerProfession?: string | null): ProfessionComparison {
+  const profession = (registerProfession ?? '').trim().toLowerCase();
+  if (!profession) {
+    return {
+      result: 'unknown',
+      message: 'The register has not been checked for this practitioner, so their profession is unknown.',
+    };
+  }
+
+  const expected = PROVIDER_TYPE_PROFESSIONS[providerType];
+  if (!expected || expected.length === 0) {
+    return {
+      result: 'unknown',
+      message: `No profession expectation is defined for provider type "${providerType}".`,
+    };
+  }
+
+  if (expected.some((allowed) => profession.includes(allowed) || allowed.includes(profession))) {
+    return {
+      result: 'consistent',
+      message: `AHPRA records this practitioner as "${registerProfession}", which fits ${providerType}.`,
+    };
+  }
+
+  return {
+    result: 'mismatch',
+    message:
+      `AHPRA records this practitioner as "${registerProfession}", but this practice is affiliating them as ` +
+      `${providerType}. NOT A BLOCK — profession names vary and scopes overlap — but if this is right, the ` +
+      'provider type is wrong; and if the provider type is right, the registration number belongs to somebody ' +
+      'else.',
+  };
+}
+
 /** How the registration details were obtained. Recorded, never assumed. */
 export const REGISTRATION_SOURCES = ['ahpra_manual', 'pie_api'] as const;
 export type RegistrationSource = (typeof REGISTRATION_SOURCES)[number];

@@ -57,6 +57,8 @@ model Practice {
    * /**
    * /**
    * /**
+   * /**
+   * /**
    * /** The ABR legal entity name. Often NOT what the practice trades as.
    */
   legalName             String?
@@ -89,21 +91,34 @@ model Practice {
   // --- The applicant (ORG-MODEL-PROPOSAL.md §10, step 1) ---
   // Where the passkey invitation goes. Without an email there is nobody to
   // invite and the sequence stalls at step 3.
-  adminName       String?
-  adminEmail      String?
-  adminPhone      String?
-  adminPosition   String?
+  adminName     String?
+  adminEmail    String?
+  adminPhone    String?
+  adminPosition String?
+
+  // How many practitioners the practice says it has, and the cap that follows.
+  //
+  // Validation is a point-in-time check on the ENTITY; nothing in it limits
+  // what that entity does afterwards, and inviting practitioners is how a
+  // rogue practice would manufacture identities at scale. The cap is the
+  // stated headcount plus room to grow, bounded by a default ceiling — a
+  // practice claiming 500 practitioners does not get 600 by saying so.
+  //
+  // contractedInvitationCap overrides it for hospitals and larger groups, and
+  // is set by us, never by them.
+  statedPractitionerCount Int?
+  contractedInvitationCap Int?
   // A SECOND named person, independently reachable. The reviewer's useful call
   // is to the contact who did NOT apply — a callback whose subject chose the
   // number verifies only that they answer their own phone.
-  managerName     String?
-  managerEmail    String?
-  managerPhone    String?
-  managerPosition String?
+  managerName             String?
+  managerEmail            String?
+  managerPhone            String?
+  managerPosition         String?
   /**
    * Optional. Also a weak entitlement signal when its domain matches adminEmail.
    */
-  website         String?
+  website                 String?
 
   // HEAD OFFICE IS NOT A LOCATION, deliberately. A PracticeLocation is a PLACE
   // OF PRACTICE: its address feeds the s 65C(5)(a) particulars and it hosts
@@ -615,6 +630,8 @@ model Affiliation {
 
   // --- Offboarding: notice runs BEFORE the end date (§6) ---
   /**
+   * /**
+   * /**
    * /**
    * /**
    * /**

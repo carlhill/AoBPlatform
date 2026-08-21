@@ -9,6 +9,10 @@ import {
 import {
   AhpraError,
   compareLocality,
+  compareProfession,
+  hasInvitationCapacity,
+  invitationCapMessage,
+  invitationLimitFor,
   assertRegistrationPermitsPractice,
   assertSightingAttributable,
   registrationWarnings,
@@ -380,7 +384,15 @@ export class AffiliationsService {
   /** The practice invites. It cannot accept on the practitioner's behalf. */
   async invite(
     practiceId: string,
-    input: { ahpraNumber: string; locationId: string; departmentId?: string; providerNumber?: string; invitedByName: string },
+    input: {
+      ahpraNumber: string;
+      locationId: string;
+      departmentId?: string;
+      providerNumber?: string;
+      invitedByName: string;
+      /** The role this practice is asserting, if different from the profile. */
+      providerType?: string;
+    },
   ) {
     await this.organisations.assertValidated(practiceId);
     const ahpraNumber = assertDirectoryQueryAllowed(input.ahpraNumber);
@@ -409,6 +421,44 @@ export class AffiliationsService {
       );
     }
 
+    // THE INVITATION CAP. Validation is a point-in-time check on the ENTITY;
+    // nothing in it limits what that entity does afterwards, and inviting is
+    // how a rogue practice would manufacture identities at scale.
+    //
+    // Checked BEFORE the practitioner is looked up, so a practice at its
+    // ceiling cannot use this endpoint to probe which AHPRA numbers exist here.
+    const practice = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.practice.findFirstOrThrow({
+        where: { id: practiceId },
+        select: { statedPractitionerCount: true, contractedInvitationCap: true },
+      }),
+    );
+    // INSIDE withPractice. Counted unscoped this returns ZERO — RLS filters it
+    // rather than erroring — and the cap silently never fires. That is the
+    // third time this class of bug has appeared here; it is why CONVENTIONS.md
+    // §6 says an RLS exception must be justified in writing, and why anything
+    // that must see rows had better be scoped or go through a SECURITY DEFINER
+    // function on purpose.
+    const currentCount = await this.prisma.withPractice(practiceId, (tx) =>
+      // Active plus invited. Ordinary churn does not consume the cap.
+      tx.affiliation.count({ where: { status: { in: ['invited', 'active', 'ending'] } } }),
+    );
+    const cap = {
+      statedPractitionerCount: practice.statedPractitionerCount,
+      contractedCap: practice.contractedInvitationCap,
+      currentCount,
+    };
+    if (!hasInvitationCapacity(cap)) {
+      // The message says a limit exists and how to lift it, and deliberately
+      // reveals neither its value nor its arithmetic — "four remaining" would
+      // hand an attacker their budget.
+      this.logger.warn(
+        `Practice ${practiceId} hit its invitation cap at ${currentCount} of ${invitationLimitFor(cap)}. ` +
+          'Repeated attempts are worth a look (REQ-ANOM-01).',
+      );
+      throw new ForbiddenException(invitationCapMessage());
+    }
+
     // REQ-ANOM-01 — surfaced, never blocking. There is no cap.
     await this.checkVelocity(practitioner.id);
 
@@ -430,6 +480,15 @@ export class AffiliationsService {
             { suburb: practitioner.principalSuburb, postcode: practitioner.principalPostcode },
           )
         : null;
+    // Does the register's PROFESSION support the role this practice is
+    // asserting? A nurse affiliated as a GP is usually a data-entry slip — and
+    // is also the shape of a real registration number being used for a role
+    // its holder cannot fill. Free to detect, because the register publishes it.
+    const profession = compareProfession(input.providerType ?? practitioner.providerType, practitioner.profession);
+    if (profession.result === 'mismatch') {
+      this.logger.warn(`Profession signal for practitioner ${practitioner.id}: ${profession.message}`);
+    }
+
     if (locality && locality.result === 'mismatch') {
       this.logger.warn(
         `Locality signal for practitioner ${practitioner.id} at location ${input.locationId}: ${locality.message}`,
@@ -457,6 +516,7 @@ export class AffiliationsService {
             hasProviderNumber: Boolean(input.providerNumber),
             invitedBy: input.invitedByName,
             localitySignal: locality?.result ?? 'not_checked',
+            professionSignal: profession.result,
           },
         });
         return created;
@@ -468,6 +528,8 @@ export class AffiliationsService {
         practitioner: toDirectoryEntry(practitioner),
         /** Null when the register has not been checked for this practitioner. */
         localitySignal: locality,
+        /** `unknown` until the register has been checked — silence is not consent. */
+        professionSignal: profession,
         next: practitioner.email
           ? `An invitation goes to the practitioner's own email. Only they can accept it.`
           : 'This practitioner has no email on record, so they must accept in the console. A practice cannot accept for them.',

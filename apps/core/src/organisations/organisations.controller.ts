@@ -1,6 +1,18 @@
 import { BadRequestException, Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsEmail, IsIn, IsOptional, IsString, MinLength, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsEmail,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+  MinLength,
+  ValidateNested,
+} from 'class-validator';
 import { OrganisationsService } from './organisations.service';
 import { ChecksService } from './checks.service';
 
@@ -104,6 +116,16 @@ export class RegisterOrganisationDto {
   @IsOptional()
   @IsString()
   website?: string;
+
+  /**
+   * How many practitioners the practice has. Sets the invitation cap, with
+   * room to grow — a practice that says 500 does not thereby get 600.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(5000)
+  statedPractitionerCount?: number;
 
   // The head office, as SIX FIELDS. `headOfficeAddress` remains as a
   // compatibility path for a single line, which is parsed — lossily, and with

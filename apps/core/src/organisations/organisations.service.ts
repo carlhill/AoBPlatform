@@ -111,6 +111,7 @@ export class OrganisationsService {
     managerPhone?: string;
     managerPosition?: string;
     website?: string;
+    statedPractitionerCount?: number;
     headOfficeAddress?: string;
     headOfficeLine1?: string;
     headOfficeLine2?: string;
@@ -253,6 +254,7 @@ export class OrganisationsService {
           headOfficeSuburb: headOffice.address.suburb,
           headOfficePostcode: headOffice.address.postcode,
           headOfficeCountry: headOffice.address.country ?? 'Australia',
+          statedPractitionerCount: input.statedPractitionerCount ?? null,
         },
       }),
     );
