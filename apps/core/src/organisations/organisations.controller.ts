@@ -17,8 +17,6 @@ import { OrganisationsService } from './organisations.service';
 import { ChecksService } from './checks.service';
 import { AuditService } from './audit.service';
 import { SetupService } from './setup.service';
-import { ApplicantService } from './applicant.service';
-import { AmendApplicationDto } from './applicant.controller';
 
 /**
  * What a named human read off abr.business.gov.au, when the platform has no
@@ -385,7 +383,6 @@ export class OrganisationsController {
     private readonly checks: ChecksService,
     private readonly auditService: AuditService,
     private readonly setup: SetupService,
-    private readonly applicant: ApplicantService,
   ) {}
 
   /**
@@ -426,17 +423,6 @@ export class OrganisationsController {
    * The window time-boxes an emailed link; a session is authorised on its own
    * terms and expires on its own terms.
    */
-  /** The console's read of its own application, for the correction form. */
-  @Get('application')
-  application(@Headers('x-practice-id') practiceId: string | undefined) {
-    return this.applicant.applicationByPractice(requirePractice(practiceId));
-  }
-
-  @Post('correct')
-  correct(@Headers('x-practice-id') practiceId: string | undefined, @Body() dto: AmendApplicationDto) {
-    return this.applicant.amendByPractice(requirePractice(practiceId), { ...dto });
-  }
-
   @Get('audit')
   auditTrail(@Headers('x-practice-id') practiceId: string | undefined) {
     return this.auditService.trail(requirePractice(practiceId));

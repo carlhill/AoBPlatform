@@ -38,8 +38,8 @@ import {
   CheckCircle2,
   Circle,
   Download,
+  ClipboardList,
   MapPin,
-  PencilLine,
   Radio,
   Users,
   UserSquare,
@@ -175,18 +175,27 @@ export function SetupHub({ practiceId }: { practiceId: string }) {
         </dl>
 
         {/*
-          The CONSOLE's correction page, not the applicant's token link.
-          Sending a signed-in administrator to a bearer-token URL addressed to
-          somebody with no account looks like being logged out.
+          Straight to the reviewer's dossier for this practice.
+          
+          The console does NOT carry its own correction surface. Three would be
+          two too many: the applicant corrects through the time-boxed link they
+          were emailed, and the reviewer works in the dossier. A third copy of
+          the same form in the practice console is a third place for the rules
+          to drift.
+
+          /review is gated to platform_admin, so a practice administrator
+          clicking this is refused by name rather than shown a reviewer's
+          checklist — which is the correct answer, and the reason this can be a
+          plain link.
         */}
         {!refused && (
           <div style={{ marginTop: 'var(--s5)' }}>
-            <Link href="/practice/setup/correct" className={ui.buttonLink} data-testid="hub-correct">
-              <PencilLine size={15} aria-hidden="true" />
-              {strings.setup.reviewCorrect}
+            <Link href={`/review/${hub.practice.id}`} className={ui.buttonLink} data-testid="hub-review">
+              <ClipboardList size={15} aria-hidden="true" />
+              {strings.setup.openReview}
             </Link>
             <p className={ui.hint} style={{ marginTop: 'var(--s2)' }}>
-              {strings.setup.reviewCorrectHint}
+              {strings.setup.openReviewHint}
             </p>
           </div>
         )}

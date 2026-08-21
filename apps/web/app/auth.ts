@@ -12,7 +12,17 @@
  * session is live.
  */
 const ISSUER = process.env.NEXT_PUBLIC_KEYCLOAK_ISSUER ?? 'http://localhost:21024/realms/aobplatform';
+/**
+ * The default client: the practice console and portal.
+ *
+ * The REVIEWER signs in against a different one. That separation is the whole
+ * reason two clients exist — a practice-admin token and a platform-admin token
+ * must not be interchangeable at the API — so the client id travels with the
+ * login rather than being a module-level constant that silently applies to
+ * both.
+ */
 const CLIENT_ID = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID ?? 'web';
+const CLIENT_KEY = 'aob.pkce.client';
 
 const VERIFIER_KEY = 'aob.pkce.verifier';
 const STATE_KEY = 'aob.pkce.state';
@@ -57,14 +67,18 @@ export function redirectUri(): string {
 }
 
 /** Sends the browser to Keycloak. The passkey ceremony happens there. */
-export async function beginLogin(): Promise<void> {
+export async function beginLogin(clientId: string = CLIENT_ID): Promise<void> {
   const verifier = randomString();
   const state = randomString();
   sessionStorage.setItem(VERIFIER_KEY, verifier);
   sessionStorage.setItem(STATE_KEY, state);
+  // Remembered for the token exchange: an authorization code is bound to the
+  // client that requested it, and exchanging it under a different one fails
+  // with an error that says nothing useful about why.
+  sessionStorage.setItem(CLIENT_KEY, clientId);
 
   const params = new URLSearchParams({
-    client_id: CLIENT_ID,
+    client_id: clientId,
     response_type: 'code',
     scope: 'openid profile',
     redirect_uri: redirectUri(),
@@ -86,12 +100,15 @@ export async function completeLogin(code: string, state: string): Promise<Sessio
   // CSRF: a code arriving with the wrong state is not ours.
   if (!expectedState || state !== expectedState) throw new Error('State mismatch — this login response is not ours.');
 
+  const clientId = sessionStorage.getItem(CLIENT_KEY) ?? CLIENT_ID;
+  sessionStorage.removeItem(CLIENT_KEY);
+
   const res = await fetch(`${ISSUER}/protocol/openid-connect/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       grant_type: 'authorization_code',
-      client_id: CLIENT_ID,
+      client_id: clientId,
       code,
       redirect_uri: redirectUri(),
       code_verifier: verifier,

@@ -266,21 +266,6 @@ export class ApplicantService {
    * cannot move, amendments are appended rather than applied over the top, and
    * a correction that would leave two contacts sharing a handset is refused.
    */
-  /** The console's read of its own application, for the correction form. */
-  async applicationByPractice(practiceId: string) {
-    const [row] = await this.prisma.$queryRaw<Array<Record<string, unknown>>>`
-      SELECT * FROM find_application_by_id(${practiceId}::uuid)`;
-    if (!row) throw new NotFoundException('No such application.');
-    return this.presentApplication(row);
-  }
-
-  async amendByPractice(practiceId: string, input: Record<string, unknown>) {
-    const [row] = await this.prisma.$queryRaw<Array<Record<string, unknown>>>`
-      SELECT * FROM find_application_by_id(${practiceId}::uuid)`;
-    if (!row) throw new NotFoundException('No such application.');
-    return this.applyAmendment(row, input);
-  }
-
   private async applyAmendment(row: Record<string, unknown>, input: Record<string, unknown>) {
     const practiceId = String(row.id);
 

@@ -75,6 +75,27 @@ Two Postgres traps worth knowing, both hit in one afternoon:
   restart core or the next call fails with *"cached plan must not change result
   type"* — which looks like a code bug and is not one.
 
+## 127.0.0.1, never `localhost`
+
+`apps/core/.env` uses `127.0.0.1` for every service, and that is not a style
+preference. On Windows `localhost` resolves to `::1` first; Docker Desktop
+publishes on both stacks but its IPv6 forwarding accepts the TCP connection and
+then fails the protocol handshake.
+
+The symptom is the worst kind — everything looks up, and only the things that
+speak a protocol fail:
+
+| What you see | What is happening |
+|---|---|
+| A socket test says the port is **open** | The TCP connection really does succeed |
+| Prisma says **"can't reach database server"** | The Postgres handshake never completes |
+| An SMTP send **hangs** until timeout | Same, without even the courtesy of a refusal |
+| Tests fail intermittently | Whichever address the resolver returned first |
+
+This cost an afternoon and was misdiagnosed as flaky tests. When a connection
+test passes and a client says "cannot reach", suspect the address family before
+suspecting the service.
+
 ## Tests
 
 Run the package you touched, not everything:

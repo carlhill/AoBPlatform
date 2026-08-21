@@ -31,6 +31,15 @@ import { strings } from '../strings';
 const REQUIRED_ROLE = 'platform_admin';
 
 /**
+ * The reviewer's own Keycloak client, NOT `web`.
+ *
+ * `web` is the practice console and portal. Signing a reviewer in through it
+ * would produce a token indistinguishable from a practice administrator's at
+ * the API — which is precisely what the second client exists to prevent.
+ */
+const CONSOLE_CLIENT_ID = process.env.NEXT_PUBLIC_KEYCLOAK_CONSOLE_CLIENT_ID ?? 'console';
+
+/**
  * The development escape hatch, OFF unless switched on at build time.
  *
  * It exists because the platform-admin realm client is new and unproven on real
@@ -129,7 +138,7 @@ export function ReviewerGate({ children }: { children: React.ReactNode }) {
         <p className={ui.pageLead}>{strings.reviewerGate.body}</p>
 
         <div className={ui.rowActions}>
-          <Button variant="primary" onClick={() => void beginLogin()} data-testid="reviewer-sign-in">
+          <Button variant="primary" onClick={() => void beginLogin(CONSOLE_CLIENT_ID)} data-testid="reviewer-sign-in">
             {strings.auth.signIn}
           </Button>
         </div>

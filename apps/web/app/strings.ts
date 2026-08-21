@@ -651,11 +651,11 @@ export const strings = {
     reviewRejectedLead:
       'AoBPlatform did not approve it. The reasons were sent to the email on the application. Applying again ' +
       'starts a new application with its own review.',
-    reviewCorrect: 'Correct the application',
-    reviewCorrectHint:
-      'Contact details and the address can be corrected while the application is open. The ABN cannot: ' +
-      'every check runs against one legal entity, so a different ABN is a different application rather ' +
-      'than a correction to this one.',
+    openReview: 'Open in the review queue',
+    openReviewHint:
+      'The reviewer’s view of this application — the checks, the evidence and the decision. It ' +
+      'requires a platform administrator; a practice account is refused. To correct the application, use ' +
+      'the link in the email, or ask the reviewer to send a new one.',
     reviewReference: 'Reference',
 
     pmsTitle: 'PMS connection',

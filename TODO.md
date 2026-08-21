@@ -123,18 +123,32 @@ calls run in our app at all or through a PMS-provided channel.
 
 ## Testing
 
-### The e2e suite is flaky across suites
-**Status:** observed 2026-08-22, not diagnosed.
+### ~~The e2e suite is flaky across suites~~ — SOLVED, and it was not flakiness
+**Diagnosed 2026-08-22.**
 
 `org-model.e2e-spec.ts` failed four tests in a full run and passed all
-fifty-five in isolation, then passed in a repeat full run. Suites share one
-database and Jest runs them in parallel, so this is almost certainly fixture
-interference rather than a product bug.
+fifty-five alone, which read exactly like fixture interference. It was not.
 
-**Why it matters more than it looks:** a suite that fails intermittently is one
-people learn to re-run rather than read, and the day it catches something real
-it gets re-run too. Either give each suite its own schema, or run the e2e
-suites serially (`--runInBand`) and accept the wall-clock cost.
+**The cause: `localhost` resolves to `::1` first on Windows.** Docker Desktop
+publishes a port on both stacks, but its IPv6 forwarding accepts the TCP
+connection and then fails the protocol handshake. So:
+
+- a raw socket test reports the port **OPEN**
+- Prisma reports **"can't reach database server"**
+- an SMTP send **hangs** until it times out rather than refusing
+
+The intermittency came from whichever address the resolver returned first,
+which is why it looked like a race between suites. It got dramatically worse
+the moment registration started sending an acknowledgement email — a second
+protocol, over a second port, with the same fault.
+
+**The fix: 127.0.0.1 everywhere in `apps/core/.env`, never `localhost`.** All
+150 e2e tests pass.
+
+**The lesson worth keeping:** the symptom is the worst kind — everything looks
+up, and only the things that speak a protocol fail. When a connection test
+passes and a client says "cannot reach", suspect the address family before
+suspecting the service.
 
 ---
 
