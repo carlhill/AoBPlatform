@@ -44,24 +44,7 @@ model Practice {
   // entity that owns locations. It keeps the name `Practice` because it is
   // also the RLS tenant key (app.practice_id) on sixteen tables.
   /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /** The ABR legal entity name. Often NOT what the practice trades as.
+   * The ABR legal entity name. Often NOT what the practice trades as.
    */
   legalName             String?
   /**
@@ -224,17 +207,15 @@ model Practice {
 
   /**
    * Bearer token for the public application-status page.
-   *
    * Deliberately NOT the id. A primary key ends up in logs, Referer headers
    * and pasted support tickets, and a primary key that doubles as a credential
    * is a credential that leaks — and one that cannot be rotated without
    * breaking every foreign key pointing at it. This can be reissued on its own.
-   *
    * Read only to compose the acknowledgement link. The status lookup itself
    * goes through find_application_by_status_token(), whose narrow projection is
    * the actual security boundary.
    */
-  statusToken     String    @unique @default(dbgenerated("encode(gen_random_bytes(32), 'hex')"))
+  statusToken String @unique @default(dbgenerated("encode(gen_random_bytes(32), 'hex')"))
 
   /// Email confirmation, two-phase: the token addresses the page, the CODE
   /// confirms. A link alone is consumed by a GET, and mail scanners, link
@@ -692,24 +673,7 @@ model Affiliation {
 
   // --- Offboarding: notice runs BEFORE the end date (§6) ---
   /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /** Must be <= endsAt. Enforced by a CHECK constraint, not just in code.
+   * Must be <= endsAt. Enforced by a CHECK constraint, not just in code.
    */
   noticeGivenAt DateTime?
   noticeGivenBy String?

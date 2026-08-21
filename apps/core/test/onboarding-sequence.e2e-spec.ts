@@ -192,8 +192,8 @@ describe('practice onboarding sequence (e2e)', () => {
        */
       expect(ack!.body).not.toMatch(/congratul|success|has been approved|we have approved|you are approved/i);
       expect(ack!.body).not.toMatch(/your application (has been |was )?(accepted|approved)/i);
-      for (const match of ack!.body.match(/[^.]*approv\w*/gi) ?? []) {
-        expect(match).toMatch(/if/i);
+      for (const match of ack!.body.match(/[^.]*\bapprov\w*/gi) ?? []) {
+        expect(match).toMatch(/\bif\b/i);
       }
       // And it must not confirm anything about the entity: email is not an
       // authenticated channel, so this may reveal nothing the applicant did not

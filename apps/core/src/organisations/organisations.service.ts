@@ -39,7 +39,6 @@ import { ConfigService } from '@nestjs/config';
 import { ABR_CLIENT, ADDRESS_VALIDATOR } from './organisations.tokens';
 import type { AbrClient } from './abr';
 import type { AddressValidator } from './address-validator';
-import { extractState } from './address-validator';
 
 /**
  * Organisation onboarding (ORG-MODEL-PROPOSAL.md §4).

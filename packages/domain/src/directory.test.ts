@@ -29,7 +29,7 @@ describe('the directory projection', () => {
 
   it('NEVER_CARRIES_THE_PROVIDER_NUMBER', () => {
     expect(JSON.stringify(entry)).not.toContain('1234567A');
-    expect(entry as Record<string, unknown>).not.toHaveProperty('providerNumber');
+    expect(Object.keys(entry)).not.toContain('providerNumber');
   });
 
   it('does not leak contact details or address either', () => {
@@ -40,7 +40,7 @@ describe('the directory projection', () => {
 
   it('exposes only that a ceremony happened, not who attested it', () => {
     expect(entry.verified).toBe(true);
-    expect(entry as Record<string, unknown>).not.toHaveProperty('verifiedAt');
+    expect(Object.keys(entry)).not.toContain('verifiedAt');
   });
 
   it('reports an unverified practitioner as unverified rather than omitting them', () => {
