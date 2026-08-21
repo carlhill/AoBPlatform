@@ -169,6 +169,8 @@ services:
     build: { context: ., dockerfile: apps/core/Dockerfile }
     container_name: aobplatform-core
     restart: unless-stopped
+    volumes:
+      - aobplatform-artefacts:/var/lib/aobplatform/artefacts
     environment:
       # This stack is the LOCAL DEV environment (sandbox messaging, draft rule
       # set, dev seeding), even though the image is a production build. Saying
@@ -215,6 +217,10 @@ services:
       # http://localhost:21026 without a single one leaving this machine.
       # Unset this and the sandbox gateway takes over, which records but does
       # not even connect. Real sending is a separate decision (CLAUDE.md §7).
+      # Evidence artefacts. A named volume rather than the container filesystem,
+      # so a rebuild does not silently discard evidence. Production is object
+      # storage in an Australian region, encrypted at rest (REQ-NFR-01).
+      ARTEFACT_STORE_ROOT: /var/lib/aobplatform/artefacts
       MAIL_SANDBOX_SMTP_HOST: mailhog
       MAIL_SANDBOX_SMTP_PORT: '1025'
       # Staged: the guard verifies tokens when present. Turning enforcement on
@@ -253,5 +259,6 @@ services:
       start_period: 25s
 
 volumes:
+  aobplatform-artefacts:
   aobplatform-postgres-data:
   aobplatform-immudb-data-v1:

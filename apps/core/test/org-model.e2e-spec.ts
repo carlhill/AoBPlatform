@@ -83,6 +83,9 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
           await tx.affiliation.deleteMany({});
           await tx.department.deleteMany({});
           await tx.practiceLocation.deleteMany({});
+          // Credentials DO have a foreign key: they are current state, not
+          // evidence, and have no meaning without the practice.
+          await tx.practiceCredential.deleteMany({});
           await tx.practice.deleteMany({});
         });
       }

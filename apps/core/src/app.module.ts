@@ -21,6 +21,7 @@ import { AffiliationsModule } from './affiliations/affiliations.module';
 import { DomainExceptionFilter } from './common/domain-exception.filter';
 import { DatabaseExceptionFilter } from './common/database-exception.filter';
 import { MessagingModule } from './messaging/messaging.module';
+import { ArtefactsModule } from './artefacts/artefacts.module';
 
 /**
  * Thin wiring only. Feature modules (M1 onboarding, M2 capture, M3
@@ -44,6 +45,7 @@ import { MessagingModule } from './messaging/messaging.module';
     PracticesModule,
     OrganisationsModule,
     AffiliationsModule,
+    ArtefactsModule,
     PmsModule,
     ReconciliationModule,
     EnduringModule,

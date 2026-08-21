@@ -53,6 +53,8 @@ model Practice {
    * /**
    * /**
    * /**
+   * /**
+   * /**
    * /** The ABR legal entity name. Often NOT what the practice trades as.
    */
   legalName             String?
@@ -193,8 +195,135 @@ model Practice {
   agreements   Agreement[]
   departments  Department[]
   affiliations Affiliation[]
+  credentials  PracticeCredential[]
 
   @@map("practices")
+}
+
+/**
+ * A credential a practice offers as proof it is a health practice. MANY per
+ * practice, deliberately — each one is an independent signal, and the more
+ * that verify, the harder the whole is to fabricate.
+ * THE POINT OF THE VERIFICATION COLUMNS: strength scores attach to VERIFIED
+ * credentials, never to entered ones (IDENTITY-STRENGTH-DESIGN.md §1). If
+ * typing a number scored, a fraudster would type ten invented ones and clear
+ * any threshold — the score would measure effort at the keyboard. So a
+ * credential arrives unverified and worth nothing, and only a recorded check
+ * by a named human or an API gives it weight.
+ */
+model PracticeCredential {
+  id              String   @id @default(uuid()) @db.Uuid
+  practiceId      String   @db.Uuid
+  practice        Practice @relation(fields: [practiceId], references: [id])
+  /**
+   * ahpra | hpio | accreditation | nash | other
+   */
+  credentialType  String
+  credentialValue String
+  /**
+   * Free text for `other`, and for an accreditation body's name.
+   */
+  label           String?
+
+  // --- Verification. Absent means worth zero, not "probably fine". ---
+  verifiedAt         DateTime?
+  verifiedByName     String?
+  /**
+   * ahpra_register | hi_service | accrediting_body | document_sighted
+   */
+  verificationMethod String?
+  verificationNote   String?
+
+  addedAt     DateTime @default(now())
+  addedByName String?
+
+  /**
+   * The same number twice is a duplicate, not a second signal.
+   */
+  @@unique([practiceId, credentialType, credentialValue])
+  @@index([practiceId])
+  @@map("practice_credentials")
+}
+
+/**
+ * Evidence supporting a validation check: screenshots, PDFs, emails.
+ * THE BYTES ARE NOT HERE. This row is metadata and a SHA-256; the content
+ * lives in the artefact store, and the hash goes into the evidence chain —
+ * the same division already used for rendered agreements
+ * (`renderedArtefactHash`). immudb holds hashes and events, never blobs.
+ * NO CROSS-TENANT DEDUPLICATION, ever, however tempting the storage saving.
+ * If identical bytes shared one object, a practice could learn whether another
+ * practice had uploaded a given file by observing whether their own upload
+ * deduplicated — a side channel that leaks the existence of another customer's
+ * evidence. Storage is cheaper than that.
+ */
+model Artefact {
+  id         String @id @default(uuid()) @db.Uuid
+  /**
+   * Scoping only — there is deliberately NO foreign key.
+   * An artefact is append-only evidence: it can be tombstoned, never deleted.
+   * A foreign key would therefore make the PRACTICE undeletable forever, since
+   * a child row exists that by construction cannot be removed. Evidence
+   * outlives its subject on purpose; a foreign key inverts that and makes the
+   * subject a hostage to its own evidence. `enrolment_ceremonies` is built the
+   * same way, for the same reason.
+   */
+  practiceId String @db.Uuid
+
+  /**
+   * Content address. Also what is published to the vault.
+   */
+  sha256    String
+  sizeBytes Int
+
+  /**
+   * What the UPLOADER claimed. Recorded, never acted on.
+   */
+  declaredContentType  String?
+  /**
+   * What the bytes actually are. This is what serving uses.
+   */
+  detectedContentType  String
+  /**
+   * True when those two disagreed. Innocent usually; a probe sometimes.
+   */
+  declaredTypeMismatch Boolean @default(false)
+
+  /**
+   * Sanitised. Never used to build a storage path — that comes from the hash.
+   */
+  filename String
+  /**
+   * entitlement_call | domain_check | website_capture | credential | identity_document | other
+   */
+  purpose  String
+
+  /**
+   * What this is evidence about, once checks exist to attach it to.
+   */
+  subjectType String?
+  subjectId   String? @db.Uuid
+
+  uploadedByName String
+  uploadedAt     DateTime @default(now())
+
+  /**
+   * Where the store put the bytes. Opaque to everything but the store.
+   */
+  storageKey String
+
+  // Retention, on the same footing as every other record here.
+  retentionExpiryDate DateTime? @db.Date
+  legalHold           Boolean   @default(false)
+  /**
+   * Tombstone: the bytes are gone, the record and its hash remain.
+   */
+  deletedAt           DateTime?
+  deletedReason       String?
+
+  @@index([practiceId])
+  @@index([subjectType, subjectId])
+  @@map("artefacts")
 }
 
 model PracticeLocation {
@@ -421,6 +550,8 @@ model Affiliation {
 
   // --- Offboarding: notice runs BEFORE the end date (§6) ---
   /**
+   * /**
+   * /**
    * /**
    * /**
    * /**

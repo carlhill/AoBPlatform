@@ -183,6 +183,38 @@ Checklist before calling a field done:
 - [ ] A test asserts it **round-trips**: entered, stored, and read back.
 - [ ] Anything that lists or projects the record shows it, where the reader needs it.
 
+## 9c. Patch scripts: replace everything, then write everything
+
+**A script that edits several files must perform every replacement first and
+write all files at the end.** Never write file A and then assert against file B.
+
+This has now bitten us twice, the same way both times. A patch script updated
+`strings.ts`, wrote it, then failed an assertion against `OrgConsole.tsx`
+because an anchor had been reformatted. The script aborted — but `strings.ts`
+was already on disk. Re-running it applied the strings block a **second** time,
+and the build failed with a wall of "object literal cannot have multiple
+properties with the same name". The fix then costs more than the original edit,
+because the file has to be de-duplicated by hand without eating the first copy.
+
+The failure mode is worth naming: **a half-applied patch is not a failed patch,
+it is a corrupted file that looks like a failed patch.** The script reports an
+error, so it reads as "nothing happened", and the natural response — run it
+again — is exactly the wrong one.
+
+```python
+# Right: every replacement, then every write.
+a = io.open('a.ts').read()
+b = io.open('b.ts').read()
+assert anchor_a in a; a = a.replace(anchor_a, new_a, 1)
+assert anchor_b in b; b = b.replace(anchor_b, new_b, 1)   # fails here → nothing written
+io.open('a.ts', 'w').write(a)
+io.open('b.ts', 'w').write(b)
+```
+
+Related: prefer anchors that survive formatting. `prisma format` and Prettier
+rewrite comments and indentation, so anchor on a distinctive line of code, not
+on a comment block or on leading whitespace.
+
 ## 9b. Client-side persistence is a claim, not a fact
 
 **Anything persisted outside the server must be revalidated when it is loaded,

@@ -69,6 +69,9 @@ describe('practice onboarding sequence (e2e)', () => {
           await tx.affiliation.deleteMany({});
           await tx.department.deleteMany({});
           await tx.practiceLocation.deleteMany({});
+          // Credentials DO have a foreign key: they are current state, not
+          // evidence, and have no meaning without the practice.
+          await tx.practiceCredential.deleteMany({});
           // NOT enrolmentCeremony: it is append-only evidence and the trigger
           // refuses to delete it — correctly, including for a test suite.
           // Attempting it aborted the whole cleanup and left every fixture in
