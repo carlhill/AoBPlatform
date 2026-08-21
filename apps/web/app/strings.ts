@@ -47,6 +47,111 @@ export const strings = {
       'given, but nothing has verified who typed them.',
     endBypass: 'End bypass',
   },
+  gates: {
+    heading: 'Three checks run on this application',
+    checksum: 'The ABN itself',
+    checksumIdle: 'Arithmetic, run here before anything is sent. Catches a mistyped digit in a moment.',
+    register: 'The Australian Business Register',
+    registerIdle: 'Must be ACTIVE, and the name you give must match a name registered against it.',
+    human: 'A person reads it',
+    humanIdle:
+      'An active ABN and a matching name are necessary and not sufficient. Somebody here checks that you are ' +
+      'entitled to act for this practice.',
+    marks: {
+      not_run: 'Not run',
+      passed: 'Passed',
+      failed: 'Failed',
+      waiting: 'Waiting',
+    },
+  },
+  apply: {
+    navApply: 'Apply',
+    navHelp: 'Help',
+    audience: 'Practice admin',
+    title: 'Register your practice',
+    lead:
+      'Three checks run on what you enter: the ABN itself, the Australian Business Register, and then a person ' +
+      'here reads the application. Nothing is approved by this form.',
+
+    entityHeading: 'The entity',
+    practiceName: 'Practice name — legal or trading name',
+    practiceNameHint:
+      'Either will do. Practices routinely trade under a name that is not their registered entity name, and we ' +
+      'match against both.',
+    abn: 'ABN',
+    abnHint: 'Checked here before anything is sent.',
+    abnInvalid: 'The check digits do not agree. This is arithmetic, so it is almost always a mistyped digit.',
+    website: 'Practice website (optional)',
+    websiteHint:
+      'Fetched once, over https, with the certificate recorded. The page content is nearly worthless as ' +
+      'evidence; the certificate is not.',
+    headOfficeHeading: 'Head-office address',
+    headOfficeHint:
+      'Structured, not one line — every locality match downstream depends on it. Registered or administrative ' +
+      'address; not a place of practice.',
+    headOfficeIsPop: 'Patients are also seen at this address',
+    headOfficeIsPopHint: 'Creates a location. Leave unticked and this address is recorded but cannot host a practitioner.',
+    practitionerCount: 'How many practitioners does the practice have?',
+    practitionerCountHint: 'Sets the invitation allowance. Tell us if the practice grows.',
+
+    proofHeading: 'Proof this is a health practice',
+    proofLead: 'Add as many as you hold. More proofs make the review faster; one is enough to apply.',
+    proofNone:
+      'There is no general practice licence for an Australian GP clinic. AHPRA registers INDIVIDUALS; practices ' +
+      'are accredited and identified by HPI-O.',
+    credentialType: 'Credential type',
+    credentialValue: 'Number / reference',
+    addProof: 'Add another proof',
+    removeProof: 'Remove',
+
+    contactsHeading: 'Who is applying',
+    contactsLead:
+      'Two named people, each reachable independently. This is what makes an application expensive to fake — ' +
+      'and it gives the reviewer somebody to call who is not the person who applied.',
+    you: 'You',
+    yourManager: 'Your manager',
+    soleTraderHint: 'Leave blank if you are a sole trader.',
+    fullName: 'Full name',
+    emailLabel: 'Email',
+    adminEmailHint: 'The passkey invitation goes here. There is no password to choose.',
+    phone: 'Direct phone',
+    position: 'Position at the practice',
+    managerSameEmail: 'The manager must be a different person — a second contact with your own email verifies nothing.',
+
+    submit: 'Send the application',
+    submitDisabled: 'Complete the required fields to send.',
+    submitting: 'Sending…',
+
+    cancelledTitle: 'This ABN is cancelled',
+    cancelledBody:
+      'The Australian Business Register records this ABN as cancelled, not active. A practice cannot be ' +
+      'onboarded against a cancelled ABN, because the entity that would be assigning benefits does not ' +
+      'currently exist.',
+    cancelledFixOne: 'Check the number — a cancelled ABN is often a superseded one.',
+    cancelledFixTwo: 'If the ABN was reinstated recently, the register may not have caught up. Try again tomorrow.',
+    cancelledClose: 'Change the ABN',
+
+    nameMismatchTitle: 'That name is not registered against this ABN',
+    attestHeading: 'The register cannot be reached',
+    attestLead:
+      'Open the ABN Lookup and type in what it shows. Every check still runs against these values — the ABN ' +
+      'must be ACTIVE, and the name must match. What changes is only who looked, and the record says it was you.',
+    attestOpen: 'Open ABN Lookup',
+    attestLegalName: 'Entity name, exactly as the register shows it',
+    attestTradingNames: 'Registered business names (comma separated)',
+    attestStatus: 'ABN status',
+    attestEntityType: 'Entity type',
+    attestEntityTypeHint:
+      'Copy what the register shows. "The trustee for … Family Trust" is a TRUST, not a company — a trust has ' +
+      'no ACN of its own, and choosing a company type will be refused.',
+    attestSightedBy: 'Your name — you are attesting that you read the register',
+
+    sentTitle: 'Application sent',
+    sentBody:
+      'A person reads it next. You will hear from us either way, at the email above. There is nothing further ' +
+      'to do now.',
+    sentReference: 'Reference',
+  },
   org: {
     heading: 'Practice onboarding',
     intro:
