@@ -311,6 +311,25 @@
   background: var(--surface-sunken);
 }
 
+/*
+ * A barrier, not a warning. Filled rather than washed, so it separates from the
+ * red-on-wash chips beside it by weight — which survives greyscale, a bad
+ * monitor, and the roughly one man in twelve for whom the hue does nothing.
+ */
+.chipSolid {
+  background: currentColor;
+  border-color: currentColor;
+}
+
+.chipSolid > * {
+  color: var(--surface);
+}
+
+.chipSolid {
+  color: var(--stop);
+  -webkit-text-fill-color: var(--surface);
+}
+
 /* --- Notices -------------------------------------------------------------- */
 
 .notice {
@@ -455,4 +474,76 @@
   gap: var(--s2);
   align-items: center;
   margin-top: var(--s5);
+}
+
+/* --- Shapes shared with the applicant surfaces ---------------------------- */
+
+/*
+ * A link that carries an action. Styled as a button because it BEHAVES like
+ * one to the reader — but it stays an anchor, so it opens in a new tab, gets a
+ * context menu, and works with the keyboard the way every other link does.
+ */
+.buttonLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--text-base);
+  padding: var(--s2) var(--s4);
+  border-radius: var(--radius);
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.buttonLink:hover {
+  background: var(--accent-hover);
+}
+
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  text-decoration: none;
+  margin-bottom: var(--s3);
+}
+
+.backLink:hover {
+  color: var(--ink);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--s2) var(--s4);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.facts dt {
+  color: var(--ink-muted);
+}
+
+.facts dd {
+  margin: 0;
+}
+
+@media (max-width: 560px) {
+  .facts {
+    grid-template-columns: 1fr;
+    gap: var(--s1);
+  }
+}
+
+.plainList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: var(--text-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
 }

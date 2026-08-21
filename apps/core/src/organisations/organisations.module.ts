@@ -4,6 +4,8 @@ import { ConfigService } from '@nestjs/config';
 import { OrganisationsController } from './organisations.controller';
 import { OrganisationsService } from './organisations.service';
 import { ChecksService } from './checks.service';
+import { ApplicantController } from './applicant.controller';
+import { ApplicantService } from './applicant.service';
 import { ABR_CLIENT, ADDRESS_VALIDATOR } from './organisations.tokens';
 import { AbrWebServicesClient, OfflineAbrClient } from './abr';
 import { createAddressValidator } from './address-validator';
@@ -20,10 +22,11 @@ import { createAddressValidator } from './address-validator';
  */
 @Module({
   imports: [IdentityModule],
-  controllers: [OrganisationsController],
+  controllers: [OrganisationsController, ApplicantController],
   providers: [
     OrganisationsService,
     ChecksService,
+    ApplicantService,
     {
       provide: ABR_CLIENT,
       inject: [ConfigService],

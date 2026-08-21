@@ -1,7 +1,7 @@
 {
   "name": "@aobplatform/core",
   "version": "0.1.0",
-  "description": "Core application — NestJS modular monolith hosting modules M1-M8, M12-M14 (onboarding, capture cascade, verification, enduring lifecycle, 89AA notices, reconciliation, portal, console, campaigns, language). Module boundaries enforced in code; no cross-module table access.",
+  "description": "Core application \u2014 NestJS modular monolith hosting modules M1-M8, M12-M14 (onboarding, capture cascade, verification, enduring lifecycle, 89AA notices, reconciliation, portal, console, campaigns, language). Module boundaries enforced in code; no cross-module table access.",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
@@ -16,7 +16,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "start:watch": "node --watch --require ts-node/register/transpile-only src/main.ts"
   },
   "dependencies": {
     "@aobplatform/auth-client": "*",

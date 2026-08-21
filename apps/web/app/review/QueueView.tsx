@@ -92,7 +92,9 @@ export function QueueView() {
     fetch(`${CORE_URL}/organisations/pending`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`${r.status}`))))
       .then((data) => setRows(data.organisations ?? []))
-      .catch((e: Error) => setError(e.message));
+      // A dead connection throws a TypeError reading "Failed to fetch" — a DOM
+      // exception string, not an answer. Say what happened instead.
+      .catch((e: Error) => setError(e instanceof TypeError ? strings.review.unreachableBody : e.message));
   }, []);
 
   const ordered = useMemo(() => {
@@ -118,7 +120,10 @@ export function QueueView() {
       <p className={ui.pageLead}>{strings.review.queueLead}</p>
 
       {error && (
-        <Notice tone="stop" title="The queue could not be loaded">
+        <Notice
+          tone="stop"
+          title={error === strings.review.unreachableBody ? strings.review.unreachable : 'The queue could not be loaded'}
+        >
           {error}
         </Notice>
       )}

@@ -214,9 +214,24 @@ const chipTone: Record<Tone, string> = {
   neutral: styles.chipNeutral,
 };
 
-/** The text IS the status. Colour only reinforces it. */
-export function Chip({ tone = 'neutral', children }: { tone?: Tone; children: React.ReactNode }) {
-  return <span className={`${styles.chip} ${chipTone[tone]}`}>{children}</span>;
+/**
+ * The text IS the status. Colour only reinforces it.
+ *
+ * `solid` inverts the chip for the one case that is different in KIND rather
+ * than degree — something that stops an action, as against something that
+ * merits attention. Weight, not hue: adding a fifth colour would not have made
+ * a fifth distinguishable meaning.
+ */
+export function Chip({
+  tone = 'neutral',
+  solid = false,
+  children,
+}: {
+  tone?: Tone;
+  solid?: boolean;
+  children: React.ReactNode;
+}) {
+  return <span className={`${styles.chip} ${chipTone[tone]} ${solid ? styles.chipSolid : ''}`}>{children}</span>;
 }
 
 const noticeTone: Record<Exclude<Tone, 'neutral'>, string> = {

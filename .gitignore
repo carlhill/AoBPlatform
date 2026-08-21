@@ -61,3 +61,5 @@ apps/vault/prisma-client/
 # immudb-node client Merkle state (machine-local)
 .immudb-state/
 root
+apps/web/.env.local
+.artefacts/

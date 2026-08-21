@@ -246,6 +246,16 @@
   margin-bottom: var(--s2);
 }
 
+/*
+ * A barrier reads heavier than a warning: a solid rule down the side rather
+ * than a tint, so the two separate without a fifth colour.
+ */
+.flagDetailBlocking {
+  border-color: var(--stop);
+  border-left-width: 6px;
+  background: var(--stop-wash);
+}
+
 .flagDetailHigh {
   border-color: var(--stop);
   background: var(--stop-wash);
@@ -421,4 +431,97 @@
 
 .identityField {
   max-width: 380px;
+}
+
+/* --- Evidence ------------------------------------------------------------- */
+
+.evidence {
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  padding: var(--s3);
+  margin-bottom: var(--s4);
+  background: var(--surface-sunken);
+}
+
+.evidenceHead {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  margin-bottom: var(--s1);
+}
+
+.evidenceList {
+  list-style: none;
+  margin: var(--s2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+.evidenceItem {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--text-sm);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--s1) var(--s2);
+}
+
+.evidenceName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * The real file input is hidden but NOT display:none — a display:none input is
+ * unreachable by keyboard and invisible to assistive technology. Clipping it
+ * keeps it focusable, and the label is the visible control.
+ */
+.fileInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.fileLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  font-size: var(--text-sm);
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.fileLabel:hover {
+  background: var(--surface-sunken);
+}
+
+/* The input is clipped, so its focus ring has to be borrowed by the label. */
+.fileInput:focus-visible + .fileLabel {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* What a check records as structured values, not prose. */
+.requiredFields {
+  border-left: 2px solid var(--accent);
+  padding-left: var(--s3);
+  margin-bottom: var(--s4);
 }

@@ -184,6 +184,24 @@ export class RegisterOrganisationDto {
   // NOTE: there is no banking field here, and there never will be (§8).
 }
 
+/**
+ * Asking an applicant to correct something.
+ *
+ * The reason is REQUIRED and is sent to the applicant verbatim, so it has to be
+ * something a person outside this building can act on. "Details did not match"
+ * tells them nothing; "the second contact's phone is the same as yours" tells
+ * them exactly what to do.
+ */
+export class RequestCorrectionDto {
+  @IsString()
+  @MinLength(10)
+  reason!: string;
+
+  @IsString()
+  @MinLength(1)
+  requestedByName!: string;
+}
+
 export class ValidationDecisionDto {
   @IsIn(['validated', 'rejected'])
   decision!: 'validated' | 'rejected';
@@ -406,6 +424,37 @@ export class OrganisationsController {
   @Get('pending')
   pending() {
     return this.organisations.pendingValidation();
+  }
+
+  /**
+   * The applicant's own links, for a reviewer to send them.
+   *
+   * Returns the STATUS TOKEN, never the id. The id is a primary key: it lands
+   * in logs, in Referer headers and in pasted support tickets, and a primary
+   * key that doubles as a credential is a credential that leaks — and one that
+   * cannot be rotated without breaking every foreign key pointing at it.
+   *
+   * Reviewer-facing, so it is not itself token-guarded; it sits behind the same
+   * console gate as the rest of the review surface.
+   */
+  @Get(':organisationId/status-link')
+  statusLink(@Param('organisationId', ParseUUIDPipe) organisationId: string) {
+    return this.organisations.statusLinks(organisationId);
+  }
+
+  /** Ask the applicant to fix something, and open a five-day window. */
+  @Post(':organisationId/request-correction')
+  requestCorrection(
+    @Param('organisationId', ParseUUIDPipe) organisationId: string,
+    @Body() dto: RequestCorrectionDto,
+  ) {
+    return this.organisations.requestCorrection(organisationId, dto);
+  }
+
+  /** Send the applicant a link to confirm they can read mail at their address. */
+  @Post(':organisationId/request-email-verification')
+  requestEmailVerification(@Param('organisationId', ParseUUIDPipe) organisationId: string) {
+    return this.organisations.requestEmailVerification(organisationId);
   }
 
   @Post(':organisationId/validate')

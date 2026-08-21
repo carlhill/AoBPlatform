@@ -13,12 +13,25 @@
  * a screen reader. Neither is sufficient alone, which is why both are here.
  */
 
-import { AlertTriangle, Info, Phone, ShieldAlert, User } from 'lucide-react';
+import { AlertTriangle, Ban, Info, MailWarning, Phone, ShieldAlert, User } from 'lucide-react';
 import type { FlagSeverity, ReviewFlag } from '@aobplatform/domain';
 import { Chip, type Tone } from '../ui';
 import { strings } from '../strings';
 
+/**
+ * BLOCKING and HIGH are both red, and that is not an oversight — they are both
+ * serious. What separates them on screen is not hue but WEIGHT: a blocking chip
+ * is filled and carries a Ban icon, so it reads as a barrier rather than a
+ * warning, and it is the only one that also disables the approve button.
+ *
+ * Reaching for a fifth colour would have been the obvious move and the wrong
+ * one. Five status colours are not five distinguishable meanings, and the
+ * distinction that actually matters here — "weigh this" versus "you cannot
+ * proceed" — is carried by the words and by the disabled action, which work
+ * for a reader who sees no colour at all.
+ */
 const severityTone: Record<FlagSeverity, Tone> = {
+  blocking: 'stop',
   high: 'stop',
   medium: 'warn',
   low: 'neutral',
@@ -26,6 +39,7 @@ const severityTone: Record<FlagSeverity, Tone> = {
 
 const ICONS: Record<string, typeof Info> = {
   attested: ShieldAlert,
+  email_unverified: MailWarning,
   contacts_clash: Phone,
   no_manager: User,
   sole_trader: Info,
@@ -41,6 +55,8 @@ export function flagLabel(flag: ReviewFlag): string {
       // "Both contacts share a phone" / "… an email" — the channel matters,
       // because it changes what the reviewer should do about it.
       return `${strings.review.flagContactsClash} ${flag.detail === 'email' ? 'inbox' : 'phone'}`;
+    case 'email_unverified':
+      return strings.review.flagEmailUnverified;
     case 'no_manager':
       return strings.review.flagNoManager;
     case 'sole_trader':
@@ -58,6 +74,8 @@ export function flagWhy(flag: ReviewFlag): string | null {
       return strings.review.flagAttestedWhy;
     case 'contacts_clash':
       return strings.review.flagContactsClashWhy;
+    case 'email_unverified':
+      return strings.review.flagEmailUnverifiedWhy;
     case 'no_manager':
       return strings.review.flagNoManagerWhy;
     case 'weak_proof':
@@ -70,11 +88,14 @@ export function flagWhy(flag: ReviewFlag): string | null {
 }
 
 export function FlagChip({ flag }: { flag: ReviewFlag }) {
-  const Icon = ICONS[flag.key] ?? Info;
+  const blocking = flag.severity === 'blocking';
+  const Icon = blocking ? Ban : (ICONS[flag.key] ?? Info);
   return (
-    <Chip tone={severityTone[flag.severity]}>
+    <Chip tone={severityTone[flag.severity]} solid={blocking}>
       <Icon size={13} aria-hidden="true" strokeWidth={2.25} />
       {flagLabel(flag)}
+      {/* The word "blocks", so the barrier survives without colour. */}
+      {blocking && <span> — {strings.review.blockingMark}</span>}
     </Chip>
   );
 }

@@ -180,9 +180,21 @@ describe('practice onboarding sequence (e2e)', () => {
       expect(ack!.to).toBe('robin@sampletown.invalid');
       // The reference, so a follow-up call has something to quote.
       expect(ack!.body).toContain(res.body.id);
-      // It must not imply an outcome — an acknowledgement that reads as
-      // encouragement is the beginning of "but your email said".
-      expect(ack!.body).not.toMatch(/approv|accept|congratul|success/i);
+      /*
+       * It must not imply an outcome — an acknowledgement that reads as
+       * encouragement is the beginning of "but your email said".
+       *
+       * The guard is on the CLAIM, not on the vocabulary. Banning the word
+       * "approved" outright also bans "your sign-in invitation, if it is
+       * approved", which is a conditional and is exactly the honest way to
+       * describe what happens next. So: no congratulation, no assertion that it
+       * has been accepted, and any mention of approval must be conditional.
+       */
+      expect(ack!.body).not.toMatch(/congratul|success|has been approved|we have approved|you are approved/i);
+      expect(ack!.body).not.toMatch(/your application (has been |was )?(accepted|approved)/i);
+      for (const match of ack!.body.match(/[^.]*approv\w*/gi) ?? []) {
+        expect(match).toMatch(/if/i);
+      }
       // And it must not confirm anything about the entity: email is not an
       // authenticated channel, so this may reveal nothing the applicant did not
       // already see on their own screen.

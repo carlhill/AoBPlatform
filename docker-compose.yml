@@ -200,6 +200,22 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: admin
       KEYCLOAK_WEB_CLIENT_ID: web
       CONSOLE_URL: http://localhost:21100
+      # Where an APPLICANT is sent. Separate from CONSOLE_URL on purpose: in a
+      # real deployment the console is internal and this is public, and an
+      # acknowledgement email that pointed at the reviewer's console would be a
+      # rather direct invitation.
+      APPLICATION_STATUS_BASE_URL: ${APPLICATION_STATUS_BASE_URL:-http://localhost:21100}
+      # Printed in the acknowledgement so an applicant has a human route as
+      # well as a link. Empty means the email simply does not offer a phone
+      # number, rather than offering one nobody answers.
+      SUPPORT_PHONE: ${SUPPORT_PHONE:-}
+      # Identity in every outbound message. A message about somebody's
+      # Medicare-related application with no sender, no reason-you-got-this and
+      # no reply route is indistinguishable from phishing — and we ask people to
+      # open links and type codes, which is exactly what phishing asks for.
+      ORGANISATION_NAME: ${ORGANISATION_NAME:-AoBPlatform}
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL:-}
+      PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-}
       # ABN Lookup (ORG-MODEL-PROPOSAL.md §4). EMPTY BY DEFAULT: with no GUID
       # the ABR client runs offline against fixtures and makes no network
       # call, so an unverifiable ABN is refused rather than waved through.

@@ -186,6 +186,44 @@ export const strings = {
 
     // The flags. Each names ONE thing a reviewer must not miss, in the words
     // they would use to describe it to a colleague.
+    blockingHeading: 'This cannot be approved as it stands',
+    blockingLead:
+      'Approval is refused while this is true. It is not a judgement about the applicant — it is a fact the ' +
+      'approval would depend on, which is not currently established. Every one of these can be fixed by the ' +
+      'applicant, and the link below sends them to do it.',
+    blockingMark: 'Blocks approval',
+    blockedApprove: 'Approval is blocked — see the top of this page. Rejecting is still available.',
+    sendAmendLink: 'Email the applicant a correction link',
+    sendingAmendLink: 'Sending…',
+    amendLinkExplain:
+      'This emails the applicant a link to correct their own details and resubmit. It needs no sign-in — they ' +
+      'have no account here until the practice is approved — it cannot change the ABN, and it cannot decide ' +
+      'anything. The link stops working after five days.',
+    amendReason: 'What do they need to correct?',
+    amendReasonHint:
+      'Sent to them word for word, so write it for somebody outside this building. “Details did not match” ' +
+      'tells them nothing; “the second contact’s phone is the same as yours” tells them exactly what to do. ' +
+      'Do not say whether the ABN is already registered here.',
+    amendSent: 'Correction request sent',
+    amendSentBody:
+      'The applicant has been emailed. The link works for five days; if it expires, send another from here.',
+    amendFailed: 'That was not sent',
+
+    // The audit trail for one check.
+    historyHeading: 'Everything recorded against this check',
+    historyShow: 'Show what was recorded',
+    historyHide: 'Hide',
+    historyEmpty: 'Nothing has been recorded against this check yet.',
+    historyBy: 'by',
+    historyAt: 'on',
+    historyReason: 'Reason',
+    historyNote: 'Note',
+    historyEvidence: 'Evidence',
+    historySuperseded:
+      'Superseded by a later entry. Nothing is ever edited or removed — a correction is a new entry, so both ' +
+      'stand and the change of mind is itself part of the record.',
+    historyLatest: 'Current',
+
     flagAttested: 'ABN typed by applicant',
     flagAttestedWhy:
       'The register could not be reached, so the applicant read it and typed what it said. The rules ran ' +
@@ -194,6 +232,15 @@ export const strings = {
     flagContactsClashWhy:
       'The second contact exists to give you somebody to call who is not the applicant. These two reach the ' +
       'same place, so there is only one contact here.',
+    flagEmailUnverified: 'Email not confirmed',
+    flagEmailUnverifiedWhy:
+      'The applicant has not clicked the link confirming they can read mail at that address. So every message ' +
+      'sent about this application may have gone nowhere — including any you are assuming landed. It proves ' +
+      'only that somebody can read that mailbox; it is not evidence of entitlement and never was.',
+    sendVerification: 'Email them a confirmation link',
+    sendingVerification: 'Sending…',
+    verificationSent: 'Confirmation link sent. It works for seven days and can be used once.',
+    verificationFailed: 'That was not sent',
     flagNoManager: 'No second contact',
     flagNoManagerWhy:
       'Permitted — a sole trader has no manager — but it removes the cheapest check you have. Weigh it.',
@@ -283,6 +330,50 @@ export const strings = {
     checkRefused: 'That check was not recorded',
     checkVerifyAt: 'Check it at',
 
+    // Evidence.
+    evidenceHeading: 'Evidence',
+    evidenceAdd: 'Attach a file',
+    evidenceRequiredHere:
+      'This check cannot be recorded as PASSED without a file. A check with no evidence is somebody’s memory, ' +
+      'and the point of the record is that it outlives the person who made it.',
+    evidenceOptionalHere: 'Optional for this check, and it makes the record far stronger.',
+    evidenceUploading: 'Uploading…',
+    evidenceRemove: 'Remove',
+    evidenceNone: 'Nothing attached yet.',
+    evidenceRejected: 'That file was not accepted',
+    evidenceTypes:
+      'Images and PDFs. Not SVG, HTML or ZIP — each of those can carry something that runs when opened, and ' +
+      'evidence is not worth that risk.',
+    evidenceMax: 'Up to',
+
+    /*
+     * Labels for the structured fields a check demands when it passes.
+     *
+     * Keyed by the field name from the catalogue, so adding a requiredField in
+     * the domain surfaces an input here automatically — an unlabelled key
+     * renders with its own name rather than silently disappearing, which is the
+     * failure mode worth engineering against.
+     */
+    checkFields: {
+      phoneNumber: 'The number you called',
+      numberSource: 'Where you got that number',
+      spokeWithName: 'Who you spoke to',
+      reference: 'Reference given',
+      documentType: 'Type of document',
+    } as Record<string, string>,
+    checkFieldHints: {
+      numberSource:
+        'A number off the application form proves nothing — the applicant supplied it. An independently ' +
+        'obtained number is what makes the call evidence.',
+      spokeWithName: 'The person who answered, and their role if they gave it.',
+    } as Record<string, string>,
+    checkFieldsNeeded: 'This check records these when it passes. They are what make it evidence rather than a note.',
+    evidenceTooLarge:
+      'That file is {size}. The limit is {max} — large enough for a scanned document or a screenshot, and ' +
+      'small enough that the evidence store stays something anyone can audit. A long call recording usually ' +
+      'needs to be a transcript plus a reference to where the recording is held.',
+    evidenceOnlyOnPass: 'Evidence is attached when a check passes; a failure is explained in the reason and the note.',
+
     // The reviewer's identity. Not a text box — see identityUnverifiedBody.
     identityHeading: 'Who is reviewing',
     identityAs: 'Reviewing as',
@@ -303,6 +394,8 @@ export const strings = {
       'core service — not a refusal, and not something wrong with the application you are looking at. Try ' +
       'again in a moment; if it persists, the core service is probably not running.',
     retry: 'Try again',
+    loading: 'Loading…',
+    loadFailed: 'This application could not be loaded',
 
     scoreHeading: 'Identity strength',
     scoreOf: 'of',
@@ -339,6 +432,134 @@ export const strings = {
     decidedApproved: 'Approved',
     decidedRejected: 'Rejected',
     decidedBody: 'The applicant has been told. This application has left the queue.',
+  },
+  verify: {
+    audience: 'Confirm your email',
+    checking: 'Loading…',
+
+    enterTitle: 'Enter the code from your email',
+    enterLead:
+      'The message we sent contains a six-digit code. Type it below to confirm you can read mail at this ' +
+      'address.',
+    codeLabel: 'Six-digit code',
+    codeHint: 'Exactly as it appears in the email.',
+    attemptsLeft: '{n} attempt(s) left before this link locks.',
+    confirm: 'Confirm',
+    confirming: 'Confirming…',
+    wrongCode: 'That code was not accepted',
+
+    // Explains the extra step rather than leaving it feeling like friction.
+    whyCode:
+      'Why a code and not just a link? Because a link on its own proves nothing — mail scanners, link ' +
+      'previews and antivirus gateways open links automatically, so one could have been opened without you ' +
+      'ever seeing this message. Typing the code is what shows a person read it.',
+
+    okTitle: 'Thank you — that address is confirmed',
+    okBody:
+      'We know we can reach you. Everything about this application from here — any question, the decision ' +
+      'itself, and your sign-in invitation if it is approved — comes to this address.',
+    nothingElse: 'There is nothing else to do.',
+
+    alreadyTitle: 'That address is already confirmed',
+    alreadyBody: 'Nothing further is needed. You can close this page.',
+
+    lockedTitle: 'This link is locked',
+    lockedBody:
+      'Too many wrong codes were entered, so it has stopped accepting them. Reply to the email we sent you ' +
+      'and we will issue a new code. Your application is unaffected.',
+
+    expiredTitle: 'That code has expired',
+    expiredBody:
+      'Confirmation codes do not last indefinitely, so that a copy in an old inbox cannot be used later. ' +
+      'Reply to the email we sent you and we will issue a new one. Your application is unaffected.',
+
+    failTitle: 'That link is not valid',
+    failBody:
+      'It may be incomplete — these links are long and email clients sometimes break them across lines. Try ' +
+      'copying the whole thing into the address bar. If it still does not work, reply to the email we sent you.',
+  },
+  status: {
+    audience: 'Your application',
+
+    leadPending:
+      'Your application is with us. The first two checks are arithmetic and a register lookup, and both have ' +
+      'passed. The third is a person, and that is where it is now.',
+    leadApproved: 'Your application has been approved. Look for the email with your sign-in invitation.',
+    leadDecided: 'A decision has been made on this application, and it was sent to you by email.',
+
+    humanWaiting:
+      'Somebody here reads the application and checks that you are entitled to act for this practice. That ' +
+      'usually means a phone call to the practice, on a number we find ourselves. We cannot say how long it ' +
+      'will take, and we would rather say that than guess.',
+    humanDecided: 'This has been decided. The reasons were sent to the email on the application.',
+
+    reference: 'Reference',
+    amendedTimes: 'Corrected {n} time(s) since it was submitted.',
+
+    correct: 'Correct a mistake',
+    correctHint:
+      'You can fix your own details while the application is waiting. It does not restart the review and it ' +
+      'does not need a sign-in — you have no account here yet.',
+
+    correctTitle: 'Correct your application',
+    correctLead:
+      'Change what is wrong and send it. Only what you actually change is recorded, and the previous value is ' +
+      'kept — the person reviewing needs to see what moved.',
+
+    lockedHeading: 'What cannot be changed',
+    lockedWhy:
+      'Every check runs against one legal entity, so the ABN is fixed once an application is submitted. If ' +
+      'this is the wrong entity, that is a new application rather than a correction — apply again and it gets ' +
+      'its own review. The legal name and entity type come from the Australian Business Register, not from you.',
+
+    correctableHeading: 'What you can correct',
+    whatChanges: 'What you are about to change',
+    nothingChanged: 'Nothing has been changed yet.',
+    amendmentIsRecorded:
+      'Both the old and the new value are kept. This does not restart the review, and it does not undo a check ' +
+      'that has already been done — it tells the reviewer what moved.',
+    send: 'Send the correction',
+    sending: 'Sending…',
+
+    correctedTitle: 'Correction received',
+    correctedBody:
+      'Your application has been updated and the person reviewing it can see what changed. There is nothing ' +
+      'further to do.',
+
+    backToStatus: 'Back to your application',
+    // THREE distinct states, deliberately not collapsed into one message.
+    // "Closed", "not open yet" and "expired" have different causes and
+    // different remedies, and telling somebody their application is closed when
+    // it is merely waiting is both wrong and alarming.
+    closedTitle: 'This application is closed',
+    closedBody:
+      'It has already been decided, so it can no longer be corrected. If you believe the decision was wrong, ' +
+      'reply to the email we sent you.',
+
+    notOpenTitle: 'Nothing needs correcting right now',
+    notOpenBody:
+      'Your application is still with us and has not been decided. Corrections open when somebody here reads ' +
+      'it and finds something you need to fix — you will get an email if that happens. If you have spotted a ' +
+      'mistake yourself, reply to the email we sent when you applied and we will open it for you.',
+
+    expiredTitle: 'This correction link has expired',
+    expiredBody:
+      'Correction links work for five days, so that a copy sitting in an old inbox cannot be used later. Your ' +
+      'application is unaffected and still with us. Reply to the email we sent you and we will send a new link.',
+    expiredOn: 'It expired on',
+
+    correctionAsked: 'What we asked you to correct',
+    correctionAskedBy: 'Asked by',
+    correctionCloses: 'This link stops working on',
+
+    notFound: 'That link does not match an application',
+    notFoundBody:
+      'The link may be incomplete — they are long and email clients sometimes break them across lines. Try ' +
+      'copying the whole thing into the address bar.',
+    notLoaded: 'This could not be loaded',
+    notSaved: 'That correction was not saved',
+    unreachable:
+      'We could not reach the service. Nothing was sent and nothing has changed. Please try again in a moment.',
   },
   org: {
     heading: 'Practice onboarding',

@@ -16,6 +16,23 @@ import {
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
+
+/**
+ * How long an applicant has to act on a correction request.
+ *
+ * Long enough to cover a weekend and a day off; short enough that a copy
+ * forwarded, archived or left in a shared inbox is worthless within a week.
+ */
+const CORRECTION_WINDOW_DAYS = 5;
+
+/**
+ * How long an email-verification link lives.
+ *
+ * Longer than the correction window because it is not urgent: nothing is
+ * waiting on it, and an applicant who opens their mail on Monday should not
+ * find it dead.
+ */
+const EMAIL_VERIFICATION_DAYS = 7;
 import { PracticeAdminService } from '../identity/practice-admin.service';
 import { ChecksService } from './checks.service';
 import { ConfigService } from '@nestjs/config';
@@ -334,6 +351,13 @@ export class OrganisationsService {
       );
     }
 
+    // Issue the email-verification token before acknowledging, so the
+    // acknowledgement can carry the link. Seven days rather than the
+    // correction window's five: this one is not urgent, and an applicant who
+    // let it lapse should not be chased twice in a week.
+    const [verification] = await this.prisma.$queryRaw<Array<{ token: string; code: string; expiresAt: Date }>>`
+      SELECT * FROM issue_email_verification(${organisation.id}::uuid, ${EMAIL_VERIFICATION_DAYS}::integer)`;
+
     // Acknowledge, LAST, and never let it fail the registration. Everything
     // above is committed by this point; an application lost because a mail
     // server hiccuped would be a far worse outcome than an applicant who does
@@ -344,8 +368,20 @@ export class OrganisationsService {
         organisationName: organisation.name,
         adminName: input.adminName,
         adminEmail: input.adminEmail,
-        statusUrl: this.config.get<string>('APPLICATION_STATUS_URL'),
+        statusUrl: `${this.config.get<string>('APPLICATION_STATUS_BASE_URL', 'http://localhost:21100')}/status/${
+          (
+            await this.prisma.$queryRaw<Array<{ statusToken: string }>>`
+              SELECT * FROM find_status_token(${organisation.id}::uuid)`
+          )[0]?.statusToken ?? ''
+        }`,
         supportPhone: this.config.get<string>('SUPPORT_PHONE'),
+        verifyUrl: verification
+          ? `${this.config.get<string>('APPLICATION_STATUS_BASE_URL', 'http://localhost:21100')}/verify/${
+              verification.token
+            }`
+          : undefined,
+        verifyCode: verification?.code,
+        verifyExpiresAt: verification?.expiresAt,
       })
       .catch((err: Error) => {
         this.logger.error(`The acknowledgement for ${organisation.id} threw: ${err.message}`);
@@ -404,6 +440,124 @@ export class OrganisationsService {
         activeLocationCount: Number(r.activeLocationCount ?? 0),
       })),
     };
+  }
+
+  /**
+   * The applicant's status and amendment links.
+   *
+   * Read through a SECURITY DEFINER function because a reviewer has no practice
+   * context either — the console is cross-tenant by definition.
+   */
+  async statusLinks(organisationId: string) {
+    const [row] = await this.prisma.$queryRaw<Array<{ statusToken: string }>>`
+      SELECT * FROM find_status_token(${organisationId}::uuid)`;
+    if (!row) throw new NotFoundException('No such application.');
+
+    const base = this.config.get<string>('APPLICATION_STATUS_BASE_URL', 'http://localhost:21100');
+    return {
+      statusUrl: `${base}/status/${row.statusToken}`,
+      amendUrl: `${base}/status/${row.statusToken}/correct`,
+    };
+  }
+
+  /**
+   * Ask the applicant to correct the application, and open a time-boxed window.
+   *
+   * Reviewer-initiated on purpose. Opening the window at submission would start
+   * the clock while the application sits in a queue nobody has reached, so it
+   * could expire before anyone had read it. Opening it here makes it an
+   * attributable act: a named person looked, found something fixable, and said
+   * so.
+   */
+  async requestCorrection(
+    organisationId: string,
+    input: { reason: string; requestedByName: string; windowDays?: number },
+  ) {
+    const days = input.windowDays ?? CORRECTION_WINDOW_DAYS;
+
+    const [opened] = await this.prisma.$queryRaw<Array<{ statusToken: string; correctionExpiresAt: Date }>>`
+      SELECT * FROM open_correction_window(
+        ${organisationId}::uuid, ${days}::integer, ${input.requestedByName}, ${input.reason})`;
+
+    if (!opened) {
+      // The function only touches a PENDING application, so no row back means
+      // it has already been decided.
+      throw new BadRequestException(
+        'This application has already been decided, so there is nothing for the applicant to correct.',
+      );
+    }
+
+    const organisation = await this.prisma.withPractice(organisationId, (tx) =>
+      tx.practice.findFirstOrThrow({ where: { id: organisationId } }),
+    );
+
+    const base = this.config.get<string>('APPLICATION_STATUS_BASE_URL', 'http://localhost:21100');
+    const correctUrl = `${base}/status/${opened.statusToken}/correct`;
+
+    const notified = await this.practiceAdmin.onCorrectionRequested({
+      organisationName: organisation.name,
+      adminName: organisation.adminName,
+      adminEmail: organisation.adminEmail,
+      reason: input.reason,
+      requestedByName: input.requestedByName,
+      correctUrl,
+      expiresAt: opened.correctionExpiresAt,
+      windowDays: days,
+    });
+
+    return {
+      requested: true,
+      expiresAt: opened.correctionExpiresAt,
+      windowDays: days,
+      correctUrl,
+      notified: notified.notified,
+      detail: notified.detail,
+    };
+  }
+
+  /**
+   * Send (or re-send) the email-confirmation link.
+   *
+   * New applications get one automatically at submission. This exists for the
+   * two cases that automation cannot cover: an applicant whose link expired or
+   * never arrived, and an application that predates the feature entirely.
+   *
+   * Reviewer-initiated rather than self-serve, because the applicant's route to
+   * ask for one is to reply to the email — and if they cannot receive our email,
+   * a self-serve button on a page they reach by email helps nobody.
+   */
+  async requestEmailVerification(organisationId: string) {
+    const [issued] = await this.prisma.$queryRaw<
+      Array<{
+        token: string;
+        code: string;
+        expiresAt: Date;
+        adminEmail: string | null;
+        adminName: string | null;
+        name: string;
+      }>
+    >`SELECT * FROM issue_email_verification(${organisationId}::uuid, ${EMAIL_VERIFICATION_DAYS}::integer)`;
+
+    if (!issued) {
+      // The function skips an already-verified address, so no row back means
+      // there was nothing to do — which is a success, not a failure.
+      return { sent: false, detail: 'That address has already been confirmed, so no new link was sent.' };
+    }
+    if (!issued.adminEmail) {
+      return { sent: false, detail: 'No admin email is on record, so there is nowhere to send it.' };
+    }
+
+    const base = this.config.get<string>('APPLICATION_STATUS_BASE_URL', 'http://localhost:21100');
+    const result = await this.practiceAdmin.onEmailVerificationRequested({
+      organisationName: issued.name,
+      adminName: issued.adminName,
+      adminEmail: issued.adminEmail,
+      verifyUrl: `${base}/verify/${issued.token}`,
+      code: issued.code,
+      expiresAt: issued.expiresAt,
+    });
+
+    return { sent: result.notified, expiresAt: issued.expiresAt, detail: result.detail };
   }
 
   /** Gate 3. The reviewer is NAMED — "approved by the system" is not a thing. */

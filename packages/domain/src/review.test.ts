@@ -1,4 +1,4 @@
-import { compareForReview, reviewFlags, worstSeverity } from './review';
+import { blockingFlags, compareForReview, reviewFlags, worstSeverity } from './review';
 
 const clean = {
   abnVerificationSource: 'abr_api',
@@ -9,6 +9,7 @@ const clean = {
   managerPhone: '0298765433',
   entityType: 'PTY_LTD',
   credentialCount: 3,
+  adminEmailVerifiedAt: '2026-08-22T00:00:00.000Z',
 };
 
 describe('reviewFlags', () => {
@@ -21,14 +22,27 @@ describe('reviewFlags', () => {
     expect(flags[0]).toEqual({ key: 'attested', severity: 'high' });
   });
 
-  it('flags contacts that share a handset, and says which channel', () => {
+  // BLOCKING, not merely high: without an independent second contact there is
+  // nobody to call who is not the applicant, so the approval is refused.
+  it('flags contacts that share a handset as BLOCKING, and says which channel', () => {
     const flags = reviewFlags({ ...clean, managerPhone: '0298765432' });
-    expect(flags).toContainEqual({ key: 'contacts_clash', severity: 'high', detail: 'phone' });
+    expect(flags).toContainEqual({ key: 'contacts_clash', severity: 'blocking', detail: 'phone' });
   });
 
-  it('flags contacts that share an inbox', () => {
+  it('flags contacts that share an inbox as BLOCKING', () => {
     const flags = reviewFlags({ ...clean, managerEmail: 'ROBIN@practice.invalid' });
-    expect(flags).toContainEqual({ key: 'contacts_clash', severity: 'high', detail: 'email' });
+    expect(flags).toContainEqual({ key: 'contacts_clash', severity: 'blocking', detail: 'email' });
+  });
+
+  // An address nobody has confirmed means every message about this application
+  // may have gone nowhere — including the ones the reviewer assumes landed.
+  it('flags an unconfirmed admin email as MEDIUM', () => {
+    const flags = reviewFlags({ ...clean, adminEmailVerifiedAt: null });
+    expect(flags).toContainEqual({ key: 'email_unverified', severity: 'medium' });
+  });
+
+  it('does not flag a confirmed one', () => {
+    expect(reviewFlags(clean).map((f) => f.key)).not.toContain('email_unverified');
   });
 
   it('flags a missing second contact as MEDIUM, not high — it is permitted', () => {
@@ -39,6 +53,15 @@ describe('reviewFlags', () => {
   it('notes a sole trader as LOW — context, not concern', () => {
     const flags = reviewFlags({ ...clean, entityType: 'INDIVIDUAL_SOLE_TRADER' });
     expect(flags).toContainEqual({ key: 'sole_trader', severity: 'low' });
+  });
+
+  // Asked directly: "we have a 7, so why more proofs required". The two count
+  // different things, but the flag's own reasoning expires once the recorded
+  // checks would clear the threshold.
+  it('drops the thin-proof note once the recorded checks would clear the threshold', () => {
+    const thin = { ...clean, credentialCount: 1 };
+    expect(reviewFlags(thin).map((f) => f.key)).toContain('weak_proof');
+    expect(reviewFlags({ ...thin, wouldPassIdentity: true }).map((f) => f.key)).not.toContain('weak_proof');
   });
 
   it('notes a single proof, and does not note three', () => {
@@ -80,7 +103,13 @@ describe('reviewFlags', () => {
       entityType: 'TRUST',
       credentialCount: 1,
     });
-    expect(flags.map((f) => f.key)).toEqual(['attested', 'contacts_clash', 'weak_proof']);
+    expect(flags.map((f) => f.key)).toEqual(['contacts_clash', 'attested', 'email_unverified', 'weak_proof']);
+    // And it cannot be approved as it stands.
+    expect(blockingFlags(flags).map((f) => f.key)).toEqual(['contacts_clash']);
+  });
+
+  it('reports no blocking flag on a clean application', () => {
+    expect(blockingFlags(reviewFlags(clean))).toEqual([]);
   });
 });
 

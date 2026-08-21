@@ -27,8 +27,17 @@ import { contactClash } from './contacts';
 /**
  * Severity orders the queue. It is not a probability of fraud — it is how much
  * of the decision the reviewer is being asked to carry personally.
+ *
+ * BLOCKING is different in kind from the rest, not merely worse. High, medium
+ * and low all say "weigh this". Blocking says the application CANNOT be
+ * approved as it stands, because something it depends on is not true — and the
+ * approve action is refused while one stands, rather than merely discouraged.
+ *
+ * The bar for blocking is deliberately high: it must be a defect the applicant
+ * can FIX. A blocking flag with no remedy is just a rejection with extra steps,
+ * and would push reviewers to approve around it.
  */
-export type FlagSeverity = 'high' | 'medium' | 'low';
+export type FlagSeverity = 'blocking' | 'high' | 'medium' | 'low';
 
 export interface ReviewFlag {
   readonly key: string;
@@ -47,9 +56,16 @@ export interface ReviewableApplication {
   readonly entityType?: string | null;
   readonly credentialValue?: string | null;
   readonly credentialCount?: number;
+  readonly adminEmailVerifiedAt?: string | Date | null;
+  /**
+   * Whether the checks a reviewer has already recorded would clear the identity
+   * threshold. Supplied by the caller because scoring lives in checks.ts and
+   * this module must not grow a second implementation of it.
+   */
+  readonly wouldPassIdentity?: boolean;
 }
 
-const SEVERITY_RANK: Record<FlagSeverity, number> = { high: 0, medium: 1, low: 2 };
+const SEVERITY_RANK: Record<FlagSeverity, number> = { blocking: 0, high: 1, medium: 2, low: 3 };
 
 /**
  * The flags for one application, worst first.
@@ -68,10 +84,15 @@ export function reviewFlags(application: ReviewableApplication): ReviewFlag[] {
     flags.push({ key: 'attested', severity: 'high' });
   }
 
-  // HIGH. Two contacts reaching one place is one contact. This should now be
-  // impossible on new applications — the service and the database both refuse
-  // it — but the constraint went on NOT VALID, so applications submitted before
-  // the rule existed are still in the queue and must still be caught.
+  // BLOCKING. Two contacts reaching one place is one contact, and the second
+  // contact is the entire reason a reviewer has somebody to call who is not the
+  // applicant. Approving without it is approving on the applicant's own
+  // say-so — so this refuses the approval rather than merely warning about it.
+  //
+  // It qualifies as blocking precisely because it is FIXABLE: the applicant
+  // amends the application with a real second contact and it clears. New
+  // applications cannot reach this state at all — the service and a trigger
+  // both refuse it — so what appears here is history, from before the rule.
   const clash = contactClash({
     adminEmail: application.adminEmail ?? '',
     adminPhone: application.adminPhone ?? '',
@@ -79,7 +100,15 @@ export function reviewFlags(application: ReviewableApplication): ReviewFlag[] {
     managerPhone: application.managerPhone,
   });
   if (clash) {
-    flags.push({ key: 'contacts_clash', severity: 'high', detail: clash });
+    flags.push({ key: 'contacts_clash', severity: 'blocking', detail: clash });
+  }
+
+  // MEDIUM. Not blocking — plenty of people never click the link, and refusing
+  // an otherwise sound application on that would be absurd. But an unconfirmed
+  // address means every message we have sent about this application may have
+  // gone nowhere, including the ones the reviewer is relying on having landed.
+  if (!application.adminEmailVerifiedAt) {
+    flags.push({ key: 'email_unverified', severity: 'medium' });
   }
 
   // MEDIUM. Permitted, and it removes the cheapest control there is.
@@ -95,12 +124,46 @@ export function reviewFlags(application: ReviewableApplication): ReviewFlag[] {
     flags.push({ key: 'sole_trader', severity: 'low' });
   }
 
+  /*
+   * A thin credential list, but ONLY while it still matters.
+   *
+   * The flag's own justification is "fewer proofs means more of the decision
+   * rests on you". Once the reviewer's recorded checks would clear the identity
+   * threshold, that is no longer true — the decision is resting on the checks,
+   * which is exactly where it should rest. Leaving the flag up at that point
+   * reads as a contradiction against a passing score, and a flag that appears
+   * to contradict the screen it is on is a flag people learn to ignore.
+   *
+   * Note the two are counting different things and neither is the other's
+   * proxy: proofs are IDENTIFIERS THE APPLICANT SUPPLIED, the score is CHECKS
+   * SOMEBODY HERE PERFORMED. A stack of self-declared numbers is not evidence;
+   * that asymmetry is the whole design.
+   */
   const proofs = application.credentialCount ?? (application.credentialValue ? 1 : 0);
-  if (proofs <= 1) {
+  if (proofs <= 1 && !application.wouldPassIdentity) {
     flags.push({ key: 'weak_proof', severity: 'low' });
   }
 
-  return flags;
+  // Worst first WITHIN an application, not merely between them. The dossier
+  // renders these in order and promises the reader that the top one matters
+  // most; returning them in the order they happen to be written above would
+  // quietly break that promise the moment a severity changed.
+  //
+  // Stable, so the deliberate ordering within a severity — ABN provenance
+  // before the rest, because it is the only flag saying a gate reported as
+  // PASSED was not machine-verified — survives the sort.
+  return flags.sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
+}
+
+/**
+ * Whether any flag refuses the approval outright.
+ *
+ * Separate from severity ordering because the two questions are different: one
+ * asks what to look at first, this asks whether the decision may be made at
+ * all.
+ */
+export function blockingFlags(flags: readonly ReviewFlag[]): ReviewFlag[] {
+  return flags.filter((flag) => flag.severity === 'blocking');
 }
 
 /** The worst flag present, or null. Drives the queue row's mark. */

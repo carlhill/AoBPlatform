@@ -36,9 +36,12 @@ import {
   ClipboardList,
   FileCheck2,
   Gauge,
+  Link2,
   Mail,
+  MailWarning,
   Phone,
   PenLine,
+  Ban,
   ShieldAlert,
   ShieldCheck,
   Stamp,
@@ -46,7 +49,7 @@ import {
   UserX,
   XCircle,
 } from 'lucide-react';
-import { reviewFlags, type ReviewFlag } from '@aobplatform/domain';
+import { blockingFlags, reviewFlags, type ReviewFlag } from '@aobplatform/domain';
 import { Button, Chip, Field, Notice, Section, SelectInput, Shell, TextInput, ui } from '../../ui';
 import { strings } from '../../strings';
 import { currentSession } from '../../auth';
@@ -67,6 +70,8 @@ interface CatalogueCheck {
   weight: string;
   whatItProves: string;
   evidenceGuidance?: string;
+  evidenceRequired?: boolean;
+  requiredFields?: string[];
   verifyAt?: { label: string; url: string };
 }
 
@@ -82,6 +87,146 @@ interface ChecksPayload {
   summary: { score: number; passed: number; strongPassed: number; entitlementPassed: number };
   admission: { wouldPass: boolean; reasons: string[] };
   history: Array<{ checkKey: string; outcome: string; performedByName: string; performedAt: string }>;
+}
+
+/**
+ * Ask the applicant to correct something.
+ *
+ * A blocking flag has to come with a way through, or it teaches reviewers to
+ * find a way around. This emails the applicant a link to fix their own details.
+ *
+ * Three things about that link, all deliberate:
+ *
+ *   - It needs NO sign-in. The practice admin has no account here until the
+ *     practice is approved, so requiring one would deadlock: no passkey until
+ *     approval, no approval until the correction is made.
+ *   - It is the application's status TOKEN, never its id. A primary key that
+ *     doubles as a credential is a credential that leaks — and this one is
+ *     going into an email.
+ *   - It expires in five days. A correction link with no expiry is a standing
+ *     credential sitting in an inbox indefinitely.
+ *
+ * The reason is REQUIRED and is sent verbatim, which is why it is a field here
+ * rather than a canned message: only the reviewer knows what is actually wrong.
+ */
+function RequestCorrection({ id, reviewerName }: { id: string; reviewerName: string }) {
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function send() {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(`${CORE_URL}/organisations/${id}/request-correction`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: reason.trim(), requestedByName: reviewerName.trim() }),
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { message?: string };
+        throw new Error(body.message ?? `That was refused (${response.status}).`);
+      }
+      setSent(true);
+    } catch (e) {
+      setError(e instanceof TypeError ? strings.review.unreachableBody : (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (sent) {
+    return (
+      <Notice tone="ok" title={strings.review.amendSent}>
+        {strings.review.amendSentBody}
+      </Notice>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 'var(--s4)' }}>
+      <p className={ui.hint} style={{ marginBottom: 'var(--s3)' }}>
+        {strings.review.amendLinkExplain}
+      </p>
+      <Field label={strings.review.amendReason} hint={strings.review.amendReasonHint} required>
+        {(props) => (
+          <TextInput
+            {...props}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            data-testid="review-amend-reason"
+          />
+        )}
+      </Field>
+      {error && (
+        <Notice tone="stop" title={strings.review.amendFailed}>
+          {error}
+        </Notice>
+      )}
+      <div className={styles.decideActions}>
+        <Button
+          // Dead until there is both a reason to send and a name to send it
+          // under. An unattributed request to change an application is not
+          // something an applicant should ever receive.
+          disabled={reason.trim().length < 10 || reviewerName.trim().length === 0 || busy}
+          onClick={send}
+          data-testid="review-amend-link"
+        >
+          <Link2 size={15} aria-hidden="true" />
+          {busy ? strings.review.sendingAmendLink : strings.review.sendAmendLink}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Send the applicant a link to confirm their email address.
+ *
+ * New applications get one automatically at submission, so this covers the two
+ * cases automation cannot: a link that expired or never arrived, and an
+ * application that predates the feature. Sitting next to the flag it answers
+ * means the reviewer does not have to go looking for the remedy.
+ */
+function SendVerification({ id }: { id: string }) {
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function send() {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(`${CORE_URL}/organisations/${id}/request-email-verification`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const body = (await response.json().catch(() => ({}))) as { message?: string; detail?: string };
+      if (!response.ok) throw new Error(body.message ?? `That was refused (${response.status}).`);
+      setSent(body.detail ?? strings.review.verificationSent);
+    } catch (e) {
+      setError(e instanceof TypeError ? strings.review.unreachableBody : (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (sent) return <p className={ui.hint}>{sent}</p>;
+
+  return (
+    <>
+      {error && (
+        <Notice tone="stop" title={strings.review.verificationFailed}>
+          {error}
+        </Notice>
+      )}
+      <Button onClick={send} disabled={busy} data-testid="review-send-verification">
+        <MailWarning size={15} aria-hidden="true" />
+        {busy ? strings.review.sendingVerification : strings.review.sendVerification}
+      </Button>
+    </>
+  );
 }
 
 function Fact({ term, children }: { term: string; children: React.ReactNode }) {
@@ -184,12 +329,36 @@ export function DossierView({ id }: { id: string }) {
   if (!row) {
     return (
       <Shell right={strings.review.audience}>
-        <p className={ui.hint}>Loading…</p>
+        <Link href="/review" className={styles.backLink}>
+          <ArrowLeft size={15} aria-hidden="true" />
+          {strings.review.back}
+        </Link>
+        {/*
+          The error MUST be checked before falling back to "Loading…".
+          Previously this branch returned unconditionally, so a failed fetch
+          left the page saying "Loading…" for ever — the one state that tells
+          the reader to keep waiting, in the one situation where waiting will
+          never help.
+        */}
+        {error ? (
+          <Notice
+            tone="stop"
+            title={error === strings.review.unreachableBody ? strings.review.unreachable : strings.review.loadFailed}
+          >
+            {error}
+          </Notice>
+        ) : (
+          <p className={ui.hint}>{strings.review.loading}</p>
+        )}
       </Shell>
     );
   }
 
-  const flags = reviewFlags(row) as ReviewFlag[];
+  // The score is passed in so the thin-proof note can retire once the recorded
+  // checks would clear the threshold — otherwise it sits there contradicting a
+  // passing score two sections below it.
+  const flags = reviewFlags({ ...row, wouldPassIdentity: checks?.admission.wouldPass }) as ReviewFlag[];
+  const blocked = blockingFlags(flags);
   const attested = row.abnVerificationSource === 'manual_attestation';
 
   // An approval needs an entitlement check; a rejection does not. Refusing an
@@ -203,7 +372,14 @@ export function DossierView({ id }: { id: string }) {
         entitlementNumberSource !== '' &&
         entitlementSpokeWithName.trim() !== ''));
 
-  const canApprove = reviewerName.trim().length > 0 && entitlementComplete && !busy;
+  // A blocking flag REFUSES the approval, it does not merely warn about it.
+  // The distinction matters: a warning that can be clicked past is a warning
+  // that will be, on the twenty-first tidy application of the afternoon.
+  //
+  // Rejection stays available. A blocked application is one that cannot be
+  // approved as it stands — not one that must be refused, and certainly not one
+  // the reviewer should be unable to act on at all.
+  const canApprove = reviewerName.trim().length > 0 && entitlementComplete && blocked.length === 0 && !busy;
   const canReject = reviewerName.trim().length > 0 && note.trim().length > 0 && !busy;
 
   /**
@@ -346,10 +522,35 @@ export function DossierView({ id }: { id: string }) {
         </div>
       )}
 
+      {/*
+        Blocking first, in its own section, because it answers a different
+        question from the rest. The flags below say "weigh this"; these say the
+        decision cannot be made — and each carries the remedy, since a barrier
+        with no way through just teaches people to go around it.
+      */}
+      {blocked.length > 0 && (
+        <Section number={next()} title={strings.review.blockingHeading} aside={<Ban size={16} aria-hidden="true" />}>
+          <p className={ui.hint} style={{ marginBottom: 'var(--s4)' }}>
+            {strings.review.blockingLead}
+          </p>
+          {blocked.map((flag) => (
+            <div className={`${styles.flagDetail} ${styles.flagDetailBlocking}`} key={flag.key}>
+              <div>
+                <div className={styles.flagDetailWhat}>{flagLabel(flag)}</div>
+                {flagWhy(flag) && <p className={styles.flagDetailWhy}>{flagWhy(flag)}</p>}
+              </div>
+            </div>
+          ))}
+          <RequestCorrection id={id} reviewerName={reviewerName} />
+        </Section>
+      )}
+
       {/* Worst first, ahead of every tidy fact below. */}
-      {flags.length > 0 && (
+      {flags.filter((f) => f.severity !== 'blocking').length > 0 && (
         <Section number={next()} title="Look at these first" aside={<ShieldAlert size={16} aria-hidden="true" />}>
-          {flags.map((flag) => {
+          {flags
+            .filter((f) => f.severity !== 'blocking')
+            .map((flag) => {
             const why = flagWhy(flag);
             const toneClass =
               flag.severity === 'high'
@@ -362,6 +563,12 @@ export function DossierView({ id }: { id: string }) {
                 <div>
                   <div className={styles.flagDetailWhat}>{flagLabel(flag)}</div>
                   {why && <p className={styles.flagDetailWhy}>{why}</p>}
+                  {/* The remedy beside the problem, so it is not somewhere else. */}
+                  {flag.key === 'email_unverified' && (
+                    <div style={{ marginTop: 'var(--s3)' }}>
+                      <SendVerification id={id} />
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -554,6 +761,9 @@ export function DossierView({ id }: { id: string }) {
                     failureReasons={failureReasons}
                     incompleteReasons={incompleteReasons}
                     verifyAt={check.verifyAt}
+                    evidenceRequired={check.evidenceRequired ?? false}
+                    requiredFields={check.requiredFields ?? []}
+                    practiceId={id}
                     onCancel={() => setRecording(null)}
                     onSave={recordCheck}
                   />
@@ -666,7 +876,11 @@ export function DossierView({ id }: { id: string }) {
             <XCircle size={15} aria-hidden="true" />
             {strings.review.reject}
           </Button>
-          {!canApprove && <span className={ui.hint}>{strings.review.approveNeedsEntitlement}</span>}
+          {!canApprove && (
+            <span className={ui.hint}>
+              {blocked.length > 0 ? strings.review.blockedApprove : strings.review.approveNeedsEntitlement}
+            </span>
+          )}
         </div>
       </Section>
     </Shell>
