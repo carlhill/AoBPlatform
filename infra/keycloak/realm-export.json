@@ -99,6 +99,10 @@
         "composite": false,
         "clientRole": false,
         "containerId": "aobplatform"
+      },
+      {
+        "name": "platform_admin",
+        "description": "AoBPlatform staff who read applications and approve practices. NOT a practice role: a platform admin belongs to no practice and must never carry a practice_id claim, because everything they do is cross-tenant by definition. The most privileged role in the system -- approving a practice is what opens consent capture -- so it is granted by invitation and never by self-service."
       }
     ],
     "client": {}
@@ -218,6 +222,56 @@
         "email"
       ],
       "name": "Evidence Vault service (service account)"
+    },
+    {
+      "clientId": "console",
+      "name": "Platform operator console (reviewer)",
+      "description": "Separate from `web` deliberately. The two audiences are different principals with different lifetimes and different blast radius: a practice admin acts within one practice, a platform admin acts across all of them. One client for both would mean one token audience for both, and a practice-admin token would be indistinguishable from a reviewer token at the API.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:3100/callback",
+        "http://localhost:21100/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:3100",
+        "http://localhost:21100"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "authenticationFlowBindingOverrides": {
+        "browser": "b6f10000-0000-4000-8000-0000000000c1"
+      },
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "roles",
+        "profile",
+        "backend-services-audience",
+        "basic",
+        "email"
+      ],
+      "protocolMappers": [
+        {
+          "name": "principal-type",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "principal_type",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "principal_type",
+            "jsonType.label": "String"
+          }
+        }
+      ]
     }
   ],
   "identityProviders": [],

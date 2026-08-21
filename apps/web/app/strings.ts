@@ -226,6 +226,13 @@ export const strings = {
     auditEvidence: 'files attached',
     auditPeople: 'People involved:',
     auditSuperseded: 'Superseded',
+    evidenceOpen: 'Open the file',
+    evidenceOpening: 'Opening…',
+    evidenceOpenFailed: 'That file could not be opened',
+    evidenceReadLogged: 'Opening it is recorded, with your name.',
+    evidenceRemoved:
+      'The file itself has been removed. Its hash and provenance remain — ceasing to hold a document is not ' +
+      'the same as it never having existed.',
     auditCollapsed: 'Every check, correction, file and decision on this application — open to read it.',
     auditKinds: {
       submitted: 'Applied',
@@ -529,6 +536,15 @@ export const strings = {
       'This page shows the setup for one practice, and none is currently selected \u2014 or the one that was ' +
       'selected no longer exists. Once platform sign-in is in place the practice comes from your session and ' +
       'this will not happen.',
+
+    pickerDevTitle: 'Development only — this list does not belong here',
+    pickerDevBody:
+      'A practice admin must never see a list of other practices. This exists only because platform sign-in ' +
+      'does not yet, so there is no session to say which practice you belong to. It disappears the moment ' +
+      'there is one.',
+    pickerEmpty:
+      'No approved practice to show. A practice appears here once a reviewer has approved it — check the ' +
+      'review queue.',
 
     pmsTitle: 'PMS connection',
     pmsBody:

@@ -205,12 +205,26 @@ export class AuditService {
         });
       }
 
+      // Which check each file is cited for, so the trail says what a document
+      // was attached AS rather than merely that it was attached.
+      const checkById = new Map(checks.map((c) => [c.id, c]));
+
       for (const artefact of artefacts) {
+        const citedFor =
+          artefact.subjectType === 'PracticeCheck' && artefact.subjectId
+            ? checkById.get(artefact.subjectId)
+            : undefined;
+
         entries.push({
           kind: 'evidence',
           at: artefact.uploadedAt.toISOString(),
           who: artefact.uploadedByName,
-          summary: `Attached ${artefact.filename ?? 'a file'}`,
+          // The id travels with the entry so the reader can OPEN it. A trail
+          // that names a document nobody can read is a list of filenames.
+          artefactId: artefact.deletedAt ? null : artefact.id,
+          summary: citedFor
+            ? `Attached ${artefact.filename ?? 'a file'} — ${AuditService.label(citedFor.checkKey)}`
+            : `Attached ${artefact.filename ?? 'a file'}`,
           detail: {
             Purpose: artefact.purpose.replace(/_/g, ' '),
             Type: artefact.detectedContentType,

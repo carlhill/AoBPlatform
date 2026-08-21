@@ -54,6 +54,12 @@ export interface AuditEntry {
    * because it is a statement about the sequence, not about the entry.
    */
   readonly supersedes?: boolean;
+  /**
+   * For an evidence entry, the artefact to open. Null when the bytes have been
+   * removed — the tombstone stays in the trail, because ceasing to hold a file
+   * is not the same as it never having existed (REQ-OFF-07).
+   */
+  readonly artefactId?: string | null;
 }
 
 /**

@@ -26,6 +26,7 @@ import { useEffect, useState } from 'react';
 import {
   ChevronDown,
   ChevronRight,
+  ExternalLink,
   ClipboardCheck,
   FileText,
   History,
@@ -36,7 +37,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 import type { AuditEntry, AuditKind } from '@aobplatform/domain';
-import { Chip, ui, type Tone } from '../ui';
+import { Button, Chip, Notice, ui, type Tone } from '../ui';
 import { strings } from '../strings';
 import styles from './review.module.css';
 
@@ -66,7 +67,7 @@ const TONES: Record<AuditKind, Tone> = {
 };
 
 interface Trail {
-  entries: Array<AuditEntry & { detail?: Record<string, string> }>;
+  entries: Array<AuditEntry & { detail?: Record<string, string>; artefactId?: string | null }>;
   summary: { checks: number; amendments: number; evidence: number; people: string[] };
 }
 
@@ -82,9 +83,24 @@ function when(iso: string): string {
   });
 }
 
-export function AuditTrail({ practiceId, reloadKey }: { practiceId: string; reloadKey: number }) {
+export function AuditTrail({
+  practiceId,
+  reloadKey,
+  readByName,
+}: {
+  practiceId: string;
+  reloadKey: number;
+  /**
+   * Who is opening the evidence. Sent as x-read-by, because reading a file IS
+   * an act on the record: the download endpoint logs it, and an unnamed read
+   * would be a hole in the very trail this component exists to show.
+   */
+  readByName: string;
+}) {
   const [trail, setTrail] = useState<Trail | null>(null);
   const [open, setOpen] = useState<Set<number>>(new Set());
+  const [opening, setOpening] = useState<string | null>(null);
+  const [openError, setOpenError] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -98,6 +114,43 @@ export function AuditTrail({ practiceId, reloadKey }: { practiceId: string; relo
     // reloadKey re-reads after a check is recorded, so the trail is never stale
     // against the checklist immediately above it.
   }, [practiceId, reloadKey]);
+
+  /**
+   * Open an attached file.
+   *
+   * Fetched rather than linked, because the download needs headers — the
+   * practice scope and the name of whoever is reading. A plain <a href> cannot
+   * carry either, and dropping them into the query string would put a reader's
+   * name in server logs and browser history.
+   *
+   * The blob URL is revoked after handing it to the tab: it is a handle to
+   * memory, and leaving it live keeps the whole file resident for the life of
+   * the page.
+   */
+  async function openArtefact(artefactId: string) {
+    setOpening(artefactId);
+    setOpenError(null);
+    try {
+      const response = await fetch(`${CORE_URL}/artefacts/${artefactId}/content`, {
+        headers: {
+          'x-practice-id': practiceId,
+          'x-read-by': readByName.trim() || 'unnamed reviewer',
+        },
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { message?: string };
+        throw new Error(body.message ?? `That file could not be opened (${response.status}).`);
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener');
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) {
+      setOpenError(e instanceof TypeError ? strings.review.unreachableBody : (e as Error).message);
+    } finally {
+      setOpening(null);
+    }
+  }
 
   if (!trail) return <p className={ui.hint}>{strings.review.loading}</p>;
 
@@ -126,6 +179,12 @@ export function AuditTrail({ practiceId, reloadKey }: { practiceId: string; relo
           </>
         )}
       </p>
+
+      {openError && (
+        <Notice tone="stop" title={strings.review.evidenceOpenFailed}>
+          {openError}
+        </Notice>
+      )}
 
       <ol className={styles.trail} data-testid="audit-trail">
         {trail.entries.map((entry, i) => {
@@ -171,6 +230,30 @@ export function AuditTrail({ practiceId, reloadKey }: { practiceId: string; relo
                     </>
                   )}
                 </div>
+
+                {/*
+                  The file itself, next to the line that names it. Reading is
+                  RECORDED — the endpoint logs who opened it — so this is an
+                  action button rather than a link.
+                */}
+                {entry.kind === 'evidence' && entry.artefactId && (
+                  <div className={styles.trailActions}>
+                    <Button
+                      variant="subtle"
+                      disabled={opening === entry.artefactId}
+                      onClick={() => openArtefact(entry.artefactId as string)}
+                      data-testid={`audit-open-${entry.artefactId}`}
+                    >
+                      <ExternalLink size={14} aria-hidden="true" />
+                      {opening === entry.artefactId ? strings.review.evidenceOpening : strings.review.evidenceOpen}
+                    </Button>
+                    <span className={ui.hint}>{strings.review.evidenceReadLogged}</span>
+                  </div>
+                )}
+
+                {entry.kind === 'evidence' && entry.artefactId === null && (
+                  <p className={ui.hint}>{strings.review.evidenceRemoved}</p>
+                )}
 
                 {isOpen && details.length > 0 && (
                   <dl className={styles.trailDetail}>

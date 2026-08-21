@@ -801,7 +801,7 @@ export function DossierView({ id }: { id: string }) {
         defaultOpen={false}
         summary={strings.review.auditCollapsed}
       >
-        <AuditTrail practiceId={id} reloadKey={trailVersion} />
+        <AuditTrail practiceId={id} reloadKey={trailVersion} readByName={reviewerName} />
       </Section>
 
       <Section number={next()} title={strings.review.decideHeading} aside={<Stamp size={16} aria-hidden="true" />}>
