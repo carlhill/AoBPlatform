@@ -27,6 +27,22 @@
 # vault → rules → core). Every Node service Dockerfile will use the MONOREPO
 # ROOT as build context (it needs packages/*) — see CONVENTIONS.md §8.
 
+# PORTS ARE BOUND TO 127.0.0.1 EXPLICITLY, and that is not tidiness.
+#
+# A bare "21024:8080" publishes on BOTH stacks. On Windows, `localhost`
+# resolves to ::1 first, and Docker Desktop's IPv6 forwarder ACCEPTS the TCP
+# connection and then never answers. Because the connection was accepted, the
+# client never falls back to IPv4 — so a browser spins, Prisma reports "can't
+# reach database server", and an SMTP send hangs instead of refusing. The
+# service is running perfectly throughout.
+#
+# Binding IPv4 only removes the ::1 listener. `localhost` then fails to connect
+# on IPv6, falls straight through to 127.0.0.1, and everything works — including
+# for anyone who types `localhost` out of habit.
+#
+# It also stops the stack listening on every interface, which for a development
+# database holding health data is worth having anyway.
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -37,10 +53,11 @@ services:
       POSTGRES_PASSWORD: aobplatform
       POSTGRES_DB: aobplatform
     ports:
-      - '21020:5432'
+      - '127.0.0.1:21020:5432'
     volumes:
       - ./infra/postgres/init-schemas.sql:/docker-entrypoint-initdb.d/01-init-schemas.sql:ro
       - ./infra/postgres/init-roles.sql:/docker-entrypoint-initdb.d/02-init-roles.sql:ro
+      - ./infra/postgres/init-keycloak.sql:/docker-entrypoint-initdb.d/03-init-keycloak.sql:ro
       - aobplatform-postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U aobplatform']
@@ -53,7 +70,7 @@ services:
     container_name: aobplatform-redis
     restart: unless-stopped
     ports:
-      - '21021:6379'
+      - '127.0.0.1:21021:6379'
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 15s
@@ -68,8 +85,8 @@ services:
     container_name: aobplatform-immudb
     restart: unless-stopped
     ports:
-      - '21022:3322'
-      - '21023:9497'
+      - '127.0.0.1:21022:3322'
+      - '127.0.0.1:21023:9497'
     volumes:
       - aobplatform-immudb-data-v1:/var/lib/immudb
 
@@ -78,15 +95,27 @@ services:
     container_name: aobplatform-keycloak
     restart: unless-stopped
     command: ['start-dev', '--import-realm', '--http-port', '8080']
+    depends_on:
+      postgres: { condition: service_healthy }
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # POSTGRES, NOT H2 — see infra/postgres/init-keycloak.sql for why.
+      #
+      # `start-dev` defaults to an H2 file inside the container's writable
+      # layer, so recreating the container destroys every enrolled passkey. A
+      # password can be reset; a passkey cannot be re-derived. This puts the
+      # credential store on the same volume-backed Postgres as everything else.
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
       # Tokens carry this as `iss` regardless of which host the request hit —
       # validate browser tokens against the PUBLIC issuer (ReferralPlatform
       # lesson: issuer mismatch 401'd every browser call).
       KC_HOSTNAME: http://localhost:21024
     ports:
-      - '21024:8080'
+      - '127.0.0.1:21024:8080'
     volumes:
       - ./infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
 
@@ -95,8 +124,8 @@ services:
     container_name: aobplatform-mailhog
     restart: unless-stopped
     ports:
-      - '21025:1025'
-      - '21026:8025'
+      - '127.0.0.1:21025:1025'
+      - '127.0.0.1:21026:8025'
 
   # ---------------------------------------------------------------------------
   # Application services (containerised runs; day-to-day dev uses the
@@ -117,7 +146,7 @@ services:
       IMMUDB_NAMESPACE: aobvault
       IMMUDB_STATE_PATH: /workspace/.immudb-state/root
     ports:
-      - '21003:3003'
+      - '127.0.0.1:21003:3003'
     depends_on:
       postgres: { condition: service_healthy }
       immudb: { condition: service_started }
@@ -141,7 +170,7 @@ services:
       # default is the honest 501.
       RULES_REGISTER_DRAFT_SET: 'true'
     ports:
-      - '21002:3002'
+      - '127.0.0.1:21002:3002'
     depends_on:
       postgres: { condition: service_healthy }
     healthcheck:
@@ -251,7 +280,7 @@ services:
       SMTP_HOST: mailhog
       SMTP_PORT: 1025
     ports:
-      - '21001:3001'
+      - '127.0.0.1:21001:3001'
     depends_on:
       postgres: { condition: service_healthy }
       core-migrate: { condition: service_completed_successfully }
@@ -269,7 +298,7 @@ services:
     container_name: aobplatform-web
     restart: unless-stopped
     ports:
-      - '21100:3100'
+      - '127.0.0.1:21100:3100'
     depends_on:
       core: { condition: service_healthy }
     healthcheck:
