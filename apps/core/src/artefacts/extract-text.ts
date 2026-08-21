@@ -7,26 +7,42 @@ import { inflateSync } from 'node:zlib';
  * WHY THIS IS HAND-ROLLED. A PDF library would do it better, and CLAUDE.md §7
  * requires asking before adding a dependency. But the stronger argument is
  * security rather than process: PDF parsers are a long-standing source of
- * remote-code-execution CVEs, and this code runs against files uploaded by
- * people we are in the middle of deciding whether to trust. A deliberately
- * small reader that only inflates streams and scrapes string literals has far
- * less to go wrong than a full parser, and the failure mode when it cannot cope
- * is "returns null", not "executes something".
+ * remote-code-execution CVEs, and this runs against files uploaded by people we
+ * are in the middle of deciding whether to trust. A deliberately small reader
+ * that inflates streams and scrapes string literals has far less to go wrong
+ * than a full parser, and when it cannot cope it returns null rather than
+ * executing something.
  *
- * WHAT IT HANDLES:
- *   - text/plain and message/rfc822, directly
- *   - PDFs whose content streams are FlateDecode or uncompressed, which covers
- *     print-to-PDF and browser "save as PDF" — exactly how somebody captures an
- *     ABN Lookup page
+ * THE HARD PART, learned the hard way. The first real file this met was an ABN
+ * Lookup page saved from a browser, and it reported the ABN absent when the ABN
+ * was plainly there. Two reasons, both now handled:
  *
- * WHAT IT DOES NOT, and says so rather than guessing:
- *   - images. A screenshot is pixels; reading it needs OCR, which is a large
- *     dependency and a separate decision
- *   - PDFs using other filters, encryption, or fonts with custom encodings
+ *   1. IT WAS SCRAPING FONT BINARIES. A PDF stores embedded fonts in streams
+ *      too, so inflating every stream and pulling bracketed runs out of it
+ *      yields the innards of a TrueType file — `glyf`, `hmtx`, `loca` — as
+ *      "text". Only streams carrying text operators are scraped now.
+ *
+ *   2. THE TEXT WAS NOT ASCII. Browser-generated PDFs embed SUBSET fonts, where
+ *      character codes are glyph indices private to that font: the code for "2"
+ *      might be 0x03. The page is readable on screen because the viewer follows
+ *      the font's ToUnicode map, and unreadable to a naive scraper because
+ *      nothing in the content stream resembles a digit.
+ *
+ *      So the ToUnicode CMaps are parsed and applied. They are merged into one
+ *      map rather than tracked per font, which is a deliberate simplification:
+ *      following `Tf` operators to know which font is active is real parser
+ *      territory, and for the question actually being asked — does this string
+ *      of digits appear — a union is close enough. Where two subset fonts
+ *      disagree on a code the result is a wrong character, not a crash.
+ *
+ * WHAT IT STILL DOES NOT HANDLE, and says so rather than guessing:
+ *   - images. A screenshot is pixels; reading it needs OCR, a large dependency
+ *     and a separate decision
+ *   - encrypted PDFs, and filters other than Flate
  *
  * A null return means WE COULD NOT READ IT — never "it was empty". The caller
- * must keep those apart, because "we could not check" and "we checked and it
- * was fine" are different facts and must never look the same on screen.
+ * must keep those apart: "we could not check" and "we checked and it was fine"
+ * are different facts and must never look the same on screen.
  */
 
 /** Guard against a decompression bomb: a small stream inflating to gigabytes. */
@@ -45,35 +61,29 @@ export function extractText(bytes: Uint8Array, contentType: string): string | nu
   return null;
 }
 
-/**
- * Scrape text from a PDF's content streams.
- *
- * A PDF's page text lives inside `stream ... endstream` blocks, usually
- * Flate-compressed. Inside, text-showing operators carry string literals in
- * round brackets — `(Some text) Tj` — or arrays of them for kerned runs,
- * `[(Som) -20 (e text)] TJ`. Scraping the bracketed literals recovers the
- * words, in roughly the right order, which is all that is needed to search for
- * a number.
- *
- * It does NOT reconstruct layout, reading order, tables or columns, and it is
- * not trying to. Anything that needs those needs a real parser.
- */
-function extractPdfText(bytes: Uint8Array): string | null {
-  const buffer = Buffer.from(bytes);
-  const pieces: string[] = [];
+interface RawStream {
+  readonly inflated: string;
+  /** The object dictionary preceding it, which says what the stream IS. */
+  readonly dict: string;
+}
 
+function readStreams(buffer: Buffer): RawStream[] {
   // Latin-1 so byte offsets and string indices stay in step — a multi-byte
   // decode would shift every position and break the stream boundaries.
   const raw = buffer.toString('latin1');
+  const out: RawStream[] = [];
 
   let cursor = 0;
-  while (cursor < raw.length && pieces.join('').length < MAX_TEXT_CHARS) {
+  while (cursor < raw.length) {
     const start = raw.indexOf('stream', cursor);
     if (start === -1) break;
     const end = raw.indexOf('endstream', start);
     if (end === -1) break;
 
-    // Skip the EOL after the `stream` keyword: CRLF or a bare LF, per the spec.
+    // The dictionary immediately before the keyword tells us the stream's type.
+    const dictStart = raw.lastIndexOf('<<', start);
+    const dict = dictStart === -1 ? '' : raw.slice(dictStart, start);
+
     let from = start + 'stream'.length;
     if (raw[from] === '\r') from += 1;
     if (raw[from] === '\n') from += 1;
@@ -81,18 +91,101 @@ function extractPdfText(bytes: Uint8Array): string | null {
     const slice = buffer.subarray(from, end);
     cursor = end + 'endstream'.length;
 
-    let text: string;
     try {
-      // Flate streams begin 0x78. Anything else is tried as-is, which covers
-      // the uncompressed case and harmlessly produces noise otherwise.
-      text = slice[0] === 0x78 ? inflateBounded(slice) : slice.toString('latin1');
+      const inflated =
+        slice[0] === 0x78
+          ? inflateSync(slice, { maxOutputLength: MAX_INFLATED_BYTES }).toString('latin1')
+          : slice.toString('latin1');
+      out.push({ inflated, dict });
     } catch {
-      // A stream we cannot inflate is skipped, not fatal: a PDF has many
-      // streams and the ones we want may well be readable.
-      continue;
+      // A stream we cannot inflate is skipped, not fatal: a PDF has many and
+      // the ones that matter may well be readable.
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Merge every ToUnicode CMap in the document into one code → text map.
+ *
+ * A CMap declares mappings in two forms:
+ *
+ *   beginbfchar  <0003> <0032>            endbfchar
+ *   beginbfrange <0003> <0005> <0032>     endbfrange
+ *   beginbfrange <0003> <0004> [<0032> <0041>] endbfrange
+ *
+ * All three appear in browser-generated PDFs and all three are handled. The
+ * destination may be several UTF-16 code units — a ligature maps one code to
+ * "fi" — so it is decoded as a string rather than a single character.
+ */
+function buildToUnicode(streams: readonly RawStream[]): Map<number, string> {
+  const map = new Map<number, string>();
+
+  for (const stream of streams) {
+    if (!stream.inflated.includes('beginbfchar') && !stream.inflated.includes('beginbfrange')) continue;
+    const text = stream.inflated;
+
+    for (const block of text.match(/beginbfchar([\s\S]*?)endbfchar/g) ?? []) {
+      for (const pair of block.match(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g) ?? []) {
+        const m = /<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/.exec(pair);
+        if (!m) continue;
+        map.set(parseInt(m[1], 16), hexToUtf16(m[2]));
+      }
     }
 
-    pieces.push(scrapeLiterals(text));
+    for (const block of text.match(/beginbfrange([\s\S]*?)endbfrange/g) ?? []) {
+      // Form A: <lo> <hi> <dstStart>
+      for (const m of block.matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g)) {
+        const lo = parseInt(m[1], 16);
+        const hi = parseInt(m[2], 16);
+        const dst = parseInt(m[3], 16);
+        // A malformed range could otherwise spin for a very long time.
+        if (hi < lo || hi - lo > 0xffff) continue;
+        for (let code = lo; code <= hi; code += 1) {
+          map.set(code, String.fromCharCode(dst + (code - lo)));
+        }
+      }
+      // Form B: <lo> <hi> [<d0> <d1> ...]
+      for (const m of block.matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*\[([\s\S]*?)\]/g)) {
+        const lo = parseInt(m[1], 16);
+        const items = m[3].match(/<([0-9A-Fa-f]+)>/g) ?? [];
+        items.forEach((item, i) => {
+          const hex = item.slice(1, -1);
+          map.set(lo + i, hexToUtf16(hex));
+        });
+      }
+    }
+  }
+
+  return map;
+}
+
+function hexToUtf16(hex: string): string {
+  let out = '';
+  for (let i = 0; i + 3 < hex.length + 1; i += 4) {
+    const unit = parseInt(hex.slice(i, i + 4), 16);
+    if (!Number.isNaN(unit)) out += String.fromCharCode(unit);
+  }
+  return out;
+}
+
+function extractPdfText(bytes: Uint8Array): string | null {
+  const streams = readStreams(Buffer.from(bytes));
+  if (streams.length === 0) return null;
+
+  const toUnicode = buildToUnicode(streams);
+
+  const pieces: string[] = [];
+  for (const stream of streams) {
+    // ONLY content streams. A font or image stream inflates happily and yields
+    // its own binary as "text" — which is how this reported an ABN missing
+    // from a document that showed it in 24-point type.
+    if (!/\b(Tj|TJ)\b/.test(stream.inflated)) continue;
+    if (/\/Subtype\s*\/(Image|Type1C|TrueType|CIDFontType\d)/.test(stream.dict)) continue;
+
+    pieces.push(scrapeText(stream.inflated, toUnicode));
+    if (pieces.join('').length > MAX_TEXT_CHARS) break;
   }
 
   const joined = pieces.join(' ').replace(/\s+/g, ' ').trim();
@@ -100,24 +193,38 @@ function extractPdfText(bytes: Uint8Array): string | null {
   return joined.length === 0 ? null : joined.slice(0, MAX_TEXT_CHARS);
 }
 
-function inflateBounded(slice: Buffer): string {
-  const out = inflateSync(slice, { maxOutputLength: MAX_INFLATED_BYTES });
-  return out.toString('latin1');
-}
-
 /**
- * Pull the bracketed string literals out of a content stream.
+ * Pull the shown text out of a content stream.
  *
- * PDF string escapes are honoured for the ones that matter — \( \) \\ and the
- * octal form — because an unescaped bracket would otherwise truncate a run at
- * the wrong place and could hide the very digits being searched for.
+ * Two literal forms carry it, and browser PDFs use the second almost
+ * exclusively:
+ *
+ *   (Some text) Tj              — bracketed, one byte per code
+ *   <0003000400> Tj             — hex, two bytes per code for a CID font
+ *
+ * Both are decoded through the ToUnicode map when it has an entry, and left
+ * alone when it does not — an ASCII-encoded PDF has no map and needs none.
  */
-function scrapeLiterals(stream: string): string {
+function scrapeText(stream: string, toUnicode: Map<number, string>): string {
   const out: string[] = [];
+
+  // Hex strings first: <hhhh...>. Two-byte codes when the map is two-byte,
+  // which is the usual case for the subset fonts browsers embed.
+  for (const m of stream.matchAll(/<([0-9A-Fa-f\s]{2,})>\s*(?:Tj|TJ|\])/g)) {
+    const hex = m[1].replace(/\s/g, '');
+    let decoded = '';
+    const width = toUnicode.size > 0 ? 4 : 2;
+    for (let i = 0; i + width <= hex.length; i += width) {
+      const code = parseInt(hex.slice(i, i + width), 16);
+      decoded += toUnicode.get(code) ?? (code >= 32 && code < 127 ? String.fromCharCode(code) : '');
+    }
+    if (decoded) out.push(decoded);
+  }
+
+  // Bracketed literals.
   let inString = false;
   let depth = 0;
   let current = '';
-
   for (let i = 0; i < stream.length; i += 1) {
     const ch = stream[i];
 
@@ -134,7 +241,6 @@ function scrapeLiterals(stream: string): string {
       const next = stream[i + 1];
       if (next === undefined) break;
       if (next >= '0' && next <= '7') {
-        // Octal escape: up to three digits.
         let octal = '';
         let j = i + 1;
         while (j < stream.length && octal.length < 3 && stream[j] >= '0' && stream[j] <= '7') {
@@ -160,7 +266,12 @@ function scrapeLiterals(stream: string): string {
     if (ch === ')') {
       depth -= 1;
       if (depth === 0) {
-        out.push(current);
+        // Map single-byte codes through ToUnicode where the font is a subset.
+        const decoded =
+          toUnicode.size > 0
+            ? [...current].map((c) => toUnicode.get(c.charCodeAt(0)) ?? c).join('')
+            : current;
+        out.push(decoded);
         inString = false;
         current = '';
       } else {
