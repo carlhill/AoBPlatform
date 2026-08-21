@@ -7,6 +7,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  AhpraError,
+  assertRegistrationPermitsPractice,
+  assertSightingAttributable,
+  registrationWarnings,
   AffiliationError,
   assertDirectoryQueryAllowed,
   assertNoProviderNumber,
@@ -100,6 +104,180 @@ export class AffiliationsService {
     const entry = toDirectoryEntry(practitioner);
     assertNoProviderNumber(entry, 'directory response');
     return { found: true as const, practitioner: entry };
+  }
+
+  /**
+   * Record what the AHPRA public register says about this practitioner.
+   *
+   * Manual by default, because there is no free API: PIE is a paid service
+   * ($4,000 to install the API, $1,000/yr support, $1 per practitioner per
+   * year) and scraping the register would be routing around the commercial
+   * licence the regulator sells for exactly this. So a named human reads the
+   * register and types what it says — the same shape as the ABR attestation,
+   * and swappable for PIE later without changing anything above this line.
+   */
+  async recordRegistration(
+    practitionerId: string,
+    input: {
+      registrationStatus: string;
+      profession?: string;
+      division?: string;
+      conditions?: string;
+      undertakings?: string;
+      reprimands?: string;
+      dateOfFirstRegistration?: Date;
+      principalSuburb?: string;
+      principalState?: string;
+      principalPostcode?: string;
+      principalCountry?: string;
+      source: string;
+      sightedByName?: string;
+      registrationTypes: Array<{
+        registrationType: string;
+        specialty?: string;
+        expiryDate?: Date;
+        conditions?: string;
+        endorsements?: string;
+        notations?: string;
+      }>;
+    },
+  ) {
+    const practitioner = await this.prisma.practitioner.findUnique({ where: { id: practitionerId } });
+    if (!practitioner) throw new NotFoundException('Practitioner not found.');
+
+    try {
+      assertSightingAttributable(input.source, input.sightedByName);
+    } catch (err) {
+      if (err instanceof AhpraError) throw new BadRequestException(err.message);
+      throw err;
+    }
+
+    const record = {
+      registrationNumber: practitioner.ahpraNumber,
+      familyName: practitioner.familyName,
+      givenNames: practitioner.givenNames,
+      profession: input.profession ?? '',
+      division: input.division,
+      registrationStatus: input.registrationStatus,
+      conditions: input.conditions,
+      undertakings: input.undertakings,
+      reprimands: input.reprimands,
+      dateOfFirstRegistration: input.dateOfFirstRegistration,
+      registrationTypes: input.registrationTypes,
+    };
+
+    const sightedAt = new Date();
+    const warnings = registrationWarnings(record, { sightedAt });
+
+    // The STATUS decides. Everything else warns — a past expiry in particular
+    // must never refuse, because AHPRA says such a practitioner may still be
+    // practising while a renewal is finalised.
+    let permitted = true;
+    let refusal: string | null = null;
+    try {
+      assertRegistrationPermitsPractice(record);
+    } catch (err) {
+      if (!(err instanceof AhpraError)) throw err;
+      permitted = false;
+      refusal = err.message;
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.practitioner.update({
+        where: { id: practitionerId },
+        data: {
+          registrationStatus: input.registrationStatus,
+          profession: input.profession,
+          division: input.division,
+          conditions: input.conditions,
+          undertakings: input.undertakings,
+          reprimands: input.reprimands,
+          dateOfFirstRegistration: input.dateOfFirstRegistration,
+          principalSuburb: input.principalSuburb,
+          principalState: input.principalState,
+          principalPostcode: input.principalPostcode,
+          principalCountry: input.principalCountry,
+          registrationSource: input.source,
+          registrationSightedByName: input.sightedByName,
+          registrationSightedAt: sightedAt,
+        },
+      }),
+      this.prisma.practitionerRegistration.deleteMany({ where: { practitionerId } }),
+      this.prisma.practitionerRegistration.createMany({
+        data: input.registrationTypes.map((t) => ({
+          practitionerId,
+          registrationType: t.registrationType,
+          specialty: t.specialty,
+          expiryDate: t.expiryDate,
+          conditions: t.conditions,
+          endorsements: t.endorsements,
+          notations: t.notations,
+        })),
+      }),
+    ]);
+
+    // A status that forbids practice is REQ-XFER-08 territory: it ends every
+    // affiliation immediately, without waiting for anyone to tell us.
+    if (!permitted && !practitioner.deregisteredAt) {
+      await this.recordDeregistration(practitionerId, `AHPRA status: ${input.registrationStatus}`);
+    }
+
+    return {
+      practitionerId,
+      registrationStatus: input.registrationStatus,
+      permitted,
+      refusal,
+      source: input.source,
+      sightedBy: input.sightedByName ?? null,
+      sightedAt,
+      warnings,
+    };
+  }
+
+  /** What the register said, for a console to show. */
+  async registrationFor(practitionerId: string) {
+    const practitioner = await this.prisma.practitioner.findUnique({
+      where: { id: practitionerId },
+      include: { registrations: true },
+    });
+    if (!practitioner) throw new NotFoundException('Practitioner not found.');
+    if (!practitioner.registrationStatus) {
+      return { practitionerId, checked: false as const };
+    }
+    const record = {
+      registrationNumber: practitioner.ahpraNumber,
+      familyName: practitioner.familyName,
+      givenNames: practitioner.givenNames,
+      profession: practitioner.profession ?? '',
+      registrationStatus: practitioner.registrationStatus,
+      conditions: practitioner.conditions,
+      undertakings: practitioner.undertakings,
+      reprimands: practitioner.reprimands,
+      registrationTypes: practitioner.registrations.map((r) => ({
+        registrationType: r.registrationType,
+        specialty: r.specialty,
+        expiryDate: r.expiryDate,
+        conditions: r.conditions,
+        endorsements: r.endorsements,
+        notations: r.notations,
+      })),
+    };
+    return {
+      practitionerId,
+      checked: true as const,
+      registrationStatus: practitioner.registrationStatus,
+      profession: practitioner.profession,
+      division: practitioner.division,
+      principalSuburb: practitioner.principalSuburb,
+      principalState: practitioner.principalState,
+      principalPostcode: practitioner.principalPostcode,
+      principalCountry: practitioner.principalCountry,
+      source: practitioner.registrationSource,
+      sightedBy: practitioner.registrationSightedByName,
+      sightedAt: practitioner.registrationSightedAt,
+      registrations: record.registrationTypes,
+      warnings: registrationWarnings(record, { sightedAt: practitioner.registrationSightedAt }),
+    };
   }
 
   /**

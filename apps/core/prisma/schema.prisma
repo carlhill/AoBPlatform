@@ -49,6 +49,7 @@ model Practice {
    * /**
    * /**
    * /**
+   * /**
    * /** The ABR legal entity name. Often NOT what the practice trades as.
    */
   legalName             String?
@@ -286,6 +287,33 @@ model Practitioner {
    */
   verifiedAt        DateTime?
 
+  // --- What the AHPRA public register said, and who looked ---
+  //
+  // Captured rather than inferred. The register is the authority on whether a
+  // practitioner may practise; nothing else here is.
+  registrationStatus        String? // Registered | Suspended | Cancelled | ...
+  profession                String?
+  division                  String?
+  /**
+   * Practitioner-level restrictions, distinct from per-registration-type ones.
+   */
+  conditions                String?
+  undertakings              String?
+  reprimands                String?
+  dateOfFirstRegistration   DateTime? @db.Date
+  // The register publishes the principal place of practice as SUBURB and
+  // POSTCODE only — never a street address, never an email, never a phone.
+  principalSuburb           String?
+  principalState            String?
+  principalPostcode         String?
+  principalCountry          String?
+  /**
+   * ahpra_manual (a named human read the register) | pie_api (paid service).
+   */
+  registrationSource        String?
+  registrationSightedByName String?
+  registrationSightedAt     DateTime?
+
   /**
    * REQ-XFER-08 — an immediate hard stop across EVERY affiliation. No notice
    * period, no waiting for a practice to tell us.
@@ -295,9 +323,38 @@ model Practitioner {
 
   createdAt DateTime @default(now())
 
-  affiliations Affiliation[]
+  affiliations  Affiliation[]
+  registrations PractitionerRegistration[]
 
   @@map("practitioners")
+}
+
+/**
+ * ONE ROW PER REGISTRATION TYPE HELD.
+ * A practitioner commonly holds several at once — the record we checked held
+ * General AND Specialist (General practice), each with its own expiry date,
+ * conditions, endorsements and notations. Modelling expiry as a single column
+ * on the practitioner would silently pick one of them and call it the answer.
+ */
+model PractitionerRegistration {
+  id               String       @id @default(uuid()) @db.Uuid
+  practitionerId   String       @db.Uuid
+  practitioner     Practitioner @relation(fields: [practitionerId], references: [id])
+  registrationType String // General | Specialist | Limited | Provisional | Non-practising
+  specialty        String?
+  /**
+   * MAY BE IN THE PAST WITHOUT MEANING ANYTHING IS WRONG. AHPRA: a past expiry
+   * may mean a renewal is still being finalised, or the one-month late period
+   * — "they are still able to practise". Warn, never block.
+   */
+  expiryDate       DateTime?    @db.Date
+  conditions       String?
+  endorsements     String?
+  notations        String?
+  createdAt        DateTime     @default(now())
+
+  @@index([practitionerId])
+  @@map("practitioner_registrations")
 }
 
 /**
@@ -342,6 +399,7 @@ model Affiliation {
 
   // --- Offboarding: notice runs BEFORE the end date (§6) ---
   /**
+   * /**
    * /**
    * /**
    * /**

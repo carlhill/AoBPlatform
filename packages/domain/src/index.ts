@@ -12,3 +12,4 @@ export * from './enrolment-ceremony';
 export * from './abn';
 export * from './affiliation';
 export * from './directory';
+export * from './ahpra';

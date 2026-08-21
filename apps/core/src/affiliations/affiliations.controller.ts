@@ -10,7 +10,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { Type } from 'class-transformer';
-import { IsDate, IsEmail, IsIn, IsOptional, IsString, IsUUID, MinLength } from 'class-validator';
+import { IsArray, IsDate, IsEmail, IsIn, IsOptional, IsString, IsUUID, MinLength, ValidateNested } from 'class-validator';
 import { AffiliationsService } from './affiliations.service';
 
 export class PreRegisterDto {
@@ -74,6 +74,97 @@ export class GiveNoticeDto {
   reason?: string;
 }
 
+export class RegistrationTypeDto {
+  @IsString()
+  @MinLength(1)
+  registrationType!: string;
+
+  @IsOptional()
+  @IsString()
+  specialty?: string;
+
+  /** MAY be in the past. That is a warning, never a refusal — see ahpra.ts. */
+  @IsOptional()
+  @Type(() => Date)
+  @IsDate()
+  expiryDate?: Date;
+
+  @IsOptional()
+  @IsString()
+  conditions?: string;
+
+  @IsOptional()
+  @IsString()
+  endorsements?: string;
+
+  @IsOptional()
+  @IsString()
+  notations?: string;
+}
+
+/** What a named human read off the AHPRA public register. */
+export class RecordRegistrationDto {
+  @IsString()
+  @MinLength(1)
+  registrationStatus!: string;
+
+  @IsOptional()
+  @IsString()
+  profession?: string;
+
+  @IsOptional()
+  @IsString()
+  division?: string;
+
+  @IsOptional()
+  @IsString()
+  conditions?: string;
+
+  @IsOptional()
+  @IsString()
+  undertakings?: string;
+
+  @IsOptional()
+  @IsString()
+  reprimands?: string;
+
+  @IsOptional()
+  @Type(() => Date)
+  @IsDate()
+  dateOfFirstRegistration?: Date;
+
+  // The register publishes the principal place of practice as suburb and
+  // postcode only. There is deliberately no street-address field here.
+  @IsOptional()
+  @IsString()
+  principalSuburb?: string;
+
+  @IsOptional()
+  @IsString()
+  principalState?: string;
+
+  @IsOptional()
+  @IsString()
+  principalPostcode?: string;
+
+  @IsOptional()
+  @IsString()
+  principalCountry?: string;
+
+  @IsIn(['ahpra_manual', 'pie_api'])
+  source!: string;
+
+  /** Required when the source is a person rather than an API. */
+  @IsOptional()
+  @IsString()
+  sightedByName?: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RegistrationTypeDto)
+  registrationTypes!: RegistrationTypeDto[];
+}
+
 export class DeregisterDto {
   @IsString()
   @MinLength(1)
@@ -125,6 +216,20 @@ export class AffiliationsController {
     @Body() dto: RespondDto,
   ) {
     return this.affiliations.respond(affiliationId, practitionerId, dto.decision);
+  }
+
+  /** Record what the AHPRA public register says. Manual until PIE is bought. */
+  @Post('practitioners/:practitionerId/registration')
+  recordRegistration(
+    @Param('practitionerId', ParseUUIDPipe) practitionerId: string,
+    @Body() dto: RecordRegistrationDto,
+  ) {
+    return this.affiliations.recordRegistration(practitionerId, dto);
+  }
+
+  @Get('practitioners/:practitionerId/registration')
+  registration(@Param('practitionerId', ParseUUIDPipe) practitionerId: string) {
+    return this.affiliations.registrationFor(practitionerId);
   }
 
   /** REQ-XFER-08 — immediate, across every affiliation, no notice period. */
