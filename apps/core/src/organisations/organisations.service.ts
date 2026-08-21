@@ -1025,14 +1025,30 @@ export class OrganisationsService {
           active: result.validated,
         },
       });
-      if (result.validated) {
-        await enqueueVaultEvent(tx, {
-          type: 'location.activated',
-          actor: { principalType: 'system', id: 'address_validation' },
-          subject: { type: 'PracticeLocation', id: location.id },
-          payload: { validator: this.addresses.kind, state: location.state ?? 'unknown' },
-        });
-      }
+      /*
+       * ALWAYS, not only when the address happened to validate.
+       *
+       * The event used to fire under `if (result.validated)`, so a location
+       * added with an address the national file did not recognise — which is
+       * the ordinary case for new developments and consulting suites — entered
+       * the system leaving no trace at all. A location's address prints in the
+       * s 65C(5)(a) particulars block of every agreement captured there, so
+       * "who added this place, and when" is not administrative trivia.
+       */
+      await enqueueVaultEvent(tx, {
+        type: result.validated ? 'location.activated' : 'location.added',
+        actor: result.validated
+          ? { principalType: 'system', id: 'address_validation' }
+          : { principalType: 'staff', id: practiceId },
+        subject: { type: 'PracticeLocation', id: location.id },
+        payload: {
+          validator: this.addresses.kind,
+          state: location.state ?? 'unknown',
+          // The distinction that matters later: was this confirmed by the
+          // address file, or is it waiting on a human?
+          addressValidated: result.validated,
+        },
+      });
       return {
         id: location.id,
         address: location.addressCanonical ?? location.address,
@@ -1131,8 +1147,8 @@ export class OrganisationsService {
     }
 
     try {
-      return await this.prisma.withPractice(practiceId, (tx) =>
-        tx.practiceCredential.create({
+      return await this.prisma.withPractice(practiceId, async (tx) => {
+        const credential = await tx.practiceCredential.create({
           data: {
             practiceId,
             credentialType: input.credentialType,
@@ -1140,8 +1156,22 @@ export class OrganisationsService {
             label: input.label,
             addedByName: input.addedByName,
           },
-        }),
-      );
+        });
+        await enqueueVaultEvent(tx, {
+          type: 'credential.added',
+          actor: { principalType: 'staff', id: practiceId },
+          subject: { type: 'PracticeCredential', id: credential.id },
+          payload: {
+            credentialType: credential.credentialType,
+            addedBy: input.addedByName ?? 'unnamed',
+            // Entry scores NOTHING; only a recorded check does
+            // (IDENTITY-STRENGTH-DESIGN 1). Saying so in the event keeps that
+            // true for anybody reading the chain rather than the code.
+            verified: false,
+          },
+        });
+        return credential;
+      });
     } catch (err) {
       if ((err as { code?: string }).code === 'P2002') {
         throw new ConflictException(
@@ -1155,7 +1185,13 @@ export class OrganisationsService {
 
   async listCredentials(practiceId: string) {
     return this.prisma.withPractice(practiceId, async (tx) => {
-      const rows = await tx.practiceCredential.findMany({ orderBy: { addedAt: 'asc' } });
+      // Removed ones are retained but not LISTED. They are evidence of what
+      // happened, not part of what the practice currently offers — and the
+      // score counts what is offered.
+      const rows = await tx.practiceCredential.findMany({
+        where: { removedAt: null },
+        orderBy: { addedAt: 'asc' },
+      });
       return rows.map((c) => ({
         id: c.id,
         credentialType: c.credentialType,
@@ -1212,10 +1248,72 @@ export class OrganisationsService {
     });
   }
 
-  async removeCredential(practiceId: string, credentialId: string) {
-    return this.prisma.withPractice(practiceId, (tx) =>
-      tx.practiceCredential.deleteMany({ where: { id: credentialId } }),
-    );
+  /**
+   * Remove a credential. IT IS NOT DELETED.
+   *
+   * A credential is identity evidence — an HPI-O, an accreditation, a number
+   * offered as proof this is a real health practice. It used to be a hard
+   * `deleteMany` with no event, so it could vanish leaving no record that it
+   * had existed and none that anybody had removed it. Nothing else here works
+   * that way: agreements CEASE and are retained, checks are append-only,
+   * affiliations end rather than disappear.
+   *
+   * It also moved the identity score with no trace of why. The score counts
+   * VERIFIED credentials, so deleting one silently lowered a practice's
+   * standing between two reviews and nothing could explain the drop.
+   *
+   * A REASON IS REQUIRED. "Removed" answers nothing on its own: entered twice,
+   * belonged to a different practice, and turned out to be false are three very
+   * different findings, and only the third says anything about the applicant.
+   */
+  async removeCredential(
+    practiceId: string,
+    credentialId: string,
+    input: { removedByName: string; reason: string },
+  ) {
+    if (!input.removedByName?.trim()) {
+      throw new BadRequestException('Removing a credential must name the person doing it.');
+    }
+    if (!input.reason?.trim()) {
+      throw new BadRequestException(
+        'Removing a credential must record why. "Entered twice", "belongs to another practice" and "turned ' +
+          'out to be false" are very different findings, and only the last says anything about the applicant.',
+      );
+    }
+
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const credential = await tx.practiceCredential.findFirst({
+        where: { id: credentialId, removedAt: null },
+      });
+      if (!credential) {
+        throw new NotFoundException('That credential is not in this practice, or has already been removed.');
+      }
+
+      const updated = await tx.practiceCredential.update({
+        where: { id: credentialId },
+        data: {
+          removedAt: new Date(),
+          removedByName: input.removedByName.trim(),
+          removedReason: input.reason.trim(),
+        },
+      });
+
+      await enqueueVaultEvent(tx, {
+        type: 'credential.removed',
+        actor: { principalType: 'staff', id: practiceId },
+        subject: { type: 'PracticeCredential', id: credentialId },
+        payload: {
+          credentialType: updated.credentialType,
+          removedBy: input.removedByName.trim(),
+          reason: input.reason.trim(),
+          // Whether the score just moved, which is the consequence somebody
+          // reading this later will be trying to explain.
+          wasVerified: Boolean(credential.verifiedAt),
+        },
+      });
+
+      return { id: updated.id, removedAt: updated.removedAt, wasVerified: Boolean(credential.verifiedAt) };
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -1228,9 +1326,16 @@ export class OrganisationsService {
       const location = await tx.practiceLocation.findFirst({ where: { id: input.locationId } });
       if (!location) throw new NotFoundException('Location not found in this practice.');
       try {
-        return await tx.department.create({
+        const department = await tx.department.create({
           data: { practiceId, locationId: input.locationId, name: input.name },
         });
+        await enqueueVaultEvent(tx, {
+          type: 'department.added',
+          actor: { principalType: 'staff', id: practiceId },
+          subject: { type: 'Department', id: department.id },
+          payload: { name: department.name, locationId: input.locationId },
+        });
+        return department;
       } catch (err) {
         if ((err as { code?: string }).code === 'P2002') {
           throw new ConflictException(`"${input.name}" already exists at this location.`);

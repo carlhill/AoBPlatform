@@ -215,6 +215,22 @@ export class RequestCorrectionDto {
   requestedByName!: string;
 }
 
+export class RemoveCredentialDto {
+  /** Never "the system". Removing evidence has an author. */
+  @IsString()
+  @MinLength(1)
+  removedByName!: string;
+
+  /**
+   * "Entered twice", "belongs to another practice" and "turned out to be
+   * false" are very different findings, and only the last says anything about
+   * the applicant. "Removed" on its own answers none of it.
+   */
+  @IsString()
+  @MinLength(1)
+  reason!: string;
+}
+
 export class ResendInvitationDto {
   @IsString()
   @MinLength(1)
@@ -616,8 +632,9 @@ export class OrganisationsController {
   removeCredential(
     @Headers('x-practice-id') practiceId: string | undefined,
     @Param('credentialId', ParseUUIDPipe) credentialId: string,
+    @Body() dto: RemoveCredentialDto,
   ) {
-    return this.organisations.removeCredential(requirePractice(practiceId), credentialId);
+    return this.organisations.removeCredential(requirePractice(practiceId), credentialId, dto);
   }
 
   @Get('departments')

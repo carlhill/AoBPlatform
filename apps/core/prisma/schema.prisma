@@ -45,6 +45,7 @@ model Practice {
   // also the RLS tenant key (app.practice_id) on sixteen tables.
   /**
    * /**
+   * /**
    * The ABR legal entity name. Often NOT what the practice trades as.
    */
   legalName             String?
@@ -298,10 +299,22 @@ model PracticeCredential {
   addedAt     DateTime @default(now())
   addedByName String?
 
+  /// SOFT DELETE. A credential is identity evidence and is never destroyed —
+  /// removing one records who and why, exactly as ceasing an agreement does.
+  /// The score counts only credentials still offered, so a removal moves it,
+  /// and the reason is what explains the movement to somebody reading later.
+  removedAt     DateTime?
+  removedByName String?
+  removedReason String?
+
   /**
    * The same number twice is a duplicate, not a second signal.
    */
-  @@unique([practiceId, credentialType, credentialValue])
+  /// NOT a Prisma @@unique. Uniqueness applies to LIVE rows only, which needs a
+  /// PARTIAL index (WHERE "removedAt" IS NULL) that Prisma cannot express — a
+  /// removed row would otherwise hold the slot for ever and block re-adding a
+  /// credential that was removed by mistake. It is created in the migration
+  /// 20260822250000_credentials_soft_delete and enforced by the database.
   @@index([practiceId])
   @@map("practice_credentials")
 }
@@ -698,6 +711,7 @@ model Affiliation {
 
   // --- Offboarding: notice runs BEFORE the end date (§6) ---
   /**
+   * /**
    * /**
    * Must be <= endsAt. Enforced by a CHECK constraint, not just in code.
    */

@@ -70,6 +70,15 @@ export const VAULT_EVENT_TYPES = [
   'organisation.contacts_changed',
   /** The sign-in invitation sent again, after the one at approval failed. */
   'organisation.invitation_resent',
+  /**
+   * Practice structure and evidence. Every one of these used to happen
+   * silently: a location added with an unrecognised address, a department, a
+   * credential offered, and a credential REMOVED — the last by hard delete.
+   */
+  'location.added',
+  'department.added',
+  'credential.added',
+  'credential.removed',
   'location.activated',
   'affiliation.invited',
   'affiliation.accepted',
