@@ -430,6 +430,28 @@ the **writes still go through `withPractice()`** — the escape hatch finds out
 | Affiliation velocity | ✅ surfaced in logs, never blocks |
 | `Agreement.affiliationId` | ✅ added, immutable under HARD-01 |
 
+### The onboarding sequence (agreed 21 Aug 2026, not yet built)
+
+1. **Practice admin applies** — practice name, ABN, **head-office address**,
+   **admin email**. The last two do not exist yet.
+2. **Human approval** — ABN valid and ACTIVE, address valid, *and the applicant
+   is entitled to act for that entity* (see §11). On approval, an email invites
+   the admin to enrol a passkey; on rejection, an email carries the reason.
+3. **Practice admin enrols a passkey and signs in.**
+4. **Only then** do locations, departments and practitioners become reachable.
+
+### TODO — auto-rejection rules
+
+Spam applications should be auto-rejected and cleaned up rather than filling a
+human queue. Worth noting *what* the spam actually is: the ABN gate already
+makes junk expensive, because an ABN must be real, ACTIVE, and match a
+registered name. So the realistic abuse is **valid ABNs harvested from the
+public register** and applied for by someone with no connection to them — which
+is the same problem as §11 entitlement, seen from the other end. Rules should
+therefore key on applicant behaviour (velocity per IP/email, disposable email
+domains, repeated failures, an email domain unrelated to the entity), not on
+ABN validity, which is already checked.
+
 ### Deferred, deliberately
 
 - **G-NAF ingest.** `ADDRESS_VALIDATION_MODE=manual` until the dataset lands;
@@ -443,3 +465,33 @@ the **writes still go through `withPractice()`** — the escape hatch finds out
 - **Invitation emails.** The affiliation invite records the intent; dispatch
   lands with the notification work (CLAUDE.md §7 — nothing sends a real
   email without sign-off).
+
+---
+
+## 11. The question the approver is really answering
+
+The ABN gate proves an entity **exists**. It does not prove the applicant
+**represents it** — and the ABN, the legal name and the trading names are all
+public. Anyone can read XLEVELUP's ABN off the register and apply as XLEVELUP
+with their own email address. If the reviewer approves it, they have handed a
+stranger the admin account of somebody else's practice: the ability to add
+practitioners, attach provider numbers, and have consent captured in that
+practice's name.
+
+**So entitlement, not ABN validity, is the real security boundary of
+onboarding**, and it deserves to be named on the reviewer's screen rather than
+left implicit behind "check the ABN is valid". Candidate checks, none of which
+are free:
+
+| Check | Strength | Cost |
+|---|---|---|
+| Call the practice on a number obtained independently (not from the application) | Strong | A phone call |
+| Require the admin email domain to match the practice's own domain | Medium | Excludes gmail-using small practices |
+| Require an HPI-O, cross-checked | Strong for those who have one | Not every practice does |
+| Sight a document tying the person to the entity (letterhead, ASIC extract) | Medium | Manual, forgeable |
+| Approve on ABN + address alone | **Weak — this is what we have today** | Free |
+
+⚠ **Unresolved, and it gates GA rather than the next sprint.** With one design
+partner the answer can be "Carl phones them", and that is genuinely sufficient
+at this scale — but it must be a recorded decision with a named caller, not an
+accident of low volume.
