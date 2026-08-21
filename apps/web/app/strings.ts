@@ -1541,4 +1541,99 @@ export const strings = {
       'A tablet at reception for patients who are already in the building. Nothing to pair yet — this is ' +
       'listed so the card is honest about what exists, rather than quietly leaving it out.',
   },
+  /**
+   * The two identity dashboards (IDENTITY-STRENGTH-DESIGN.md §7).
+   *
+   * PLATFORM OPERATOR ONLY. Each answers one operational question, and the copy
+   * keeps saying which: "which applications are stuck, and on what" and "whose
+   * verification is going stale, and who is moving unusually". A dashboard that
+   * shows numbers without an operational question is a report nobody opens.
+   */
+  identity: {
+    audience: 'Platform admin',
+    title: 'Identity strength',
+    lead:
+      'What we actually know about the practices and practitioners on the platform — and, while enforcement ' +
+      'is soft, what turning it on would have cost.',
+    notLoaded: 'The dashboard could not be loaded',
+    loading: 'Loading…',
+    backToQueue: 'Back to the review queue',
+
+    tabPractices: 'Practices',
+    tabPractitioners: 'Practitioners',
+
+    // --- Soft mode ---
+    softTitle: 'Enforcement is soft',
+    softBody:
+      'Nothing here refuses anybody. The “would fail” count is what hard enforcement would have cost today — ' +
+      'how many real practices we would have turned away. That is the number that decides when the ' +
+      'threshold is safe to switch on, and it is invisible unless soft mode runs first: you cannot ' +
+      'calibrate a threshold you are already enforcing, because you never see the outcomes of the ' +
+      'applications you rejected.',
+    wouldFail: '{n} would fail under hard enforcement',
+    wouldPass: '{n} would pass',
+
+    // --- Practices ---
+    practicesQuestion: 'Which applications are stuck, and on what?',
+    practiceScore: 'Score',
+    practiceChecks: '{passed} passed · {failed} failed · {incomplete} could not complete',
+    // Singular and plural kept as separate strings rather than assembled from
+    // a pluralisation rule. "1 days" is the kind of thing that makes a screen
+    // look unfinished, and en-AU only needs two forms -- a rule engine here
+    // would be more machinery than the problem.
+    practiceQueue: 'Waiting {n} days',
+    practiceQueueOne: 'Waiting 1 day',
+    practiceDecided: 'Decided after {n} days',
+    practiceDecidedOne: 'Decided after 1 day',
+    practiceQueueToday: 'Decided the same day',
+    practiceWaitingToday: 'Arrived today',
+    practiceNoChecks: 'No checks have been recorded at all. Nothing is known about this applicant beyond what they typed.',
+    practiceWouldPass: 'Would pass',
+    practiceWouldFail: 'Would fail',
+    practiceArtefacts: '{n} artefacts',
+    practiceCredentials: '{verified} of {total} credentials verified',
+    practiceOpen: 'Open the dossier',
+
+    // --- Practitioners ---
+    practitionersQuestion: 'Whose verification is going stale, and who is moving unusually?',
+    strengthScore: 'Strength',
+    ofPotential: 'of {n} if checked today',
+    sightedDays: 'Register checked {n} days ago',
+    sightedOne: 'Register checked yesterday',
+    sightedToday: 'Register checked today',
+    sightedNever: 'Register never checked',
+    stale: 'Stale',
+    decaying: 'Decaying',
+    fresh: 'Fresh',
+    blocked: 'Blocked',
+    restricted: 'Restricted',
+    moving: 'Moving unusually',
+    affiliations: '{active} active of {total}',
+    acceptedBy: 'Accepted by: {passkey} passkey · {email} emailed code',
+    // The fact only a cross-practice view can see.
+    allOnOneInbox:
+      'Every one of this practitioner’s affiliations rests on access to a single email inbox. That is a fact ' +
+      'about the whole set, not about any one of them, and it is only visible from here.',
+    nothingOutstanding: 'Nothing outstanding.',
+
+    // --- Filters ---
+    search: 'Search',
+    searchHintPractices: 'Name, legal name or ABN.',
+    searchHintPractitioners: 'Name or AHPRA number.',
+    showing: 'Showing',
+    of: 'of',
+    clear: 'Clear',
+    noMatch: 'Nothing matches that',
+    filters: {
+      all: 'All',
+      would_fail: 'Would fail',
+      waiting: 'Still waiting',
+      no_checks: 'No checks',
+      blocked: 'Blocked',
+      never_checked: 'Never checked',
+      stale: 'Going stale',
+      restricted: 'Restricted',
+      moving: 'Moving unusually',
+    } as Record<string, string>,
+  },
 } as const;

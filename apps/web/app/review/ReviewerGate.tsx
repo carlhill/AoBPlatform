@@ -57,7 +57,30 @@ export function ReviewerGate({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setSession(currentSession());
-    setBypassed(window.sessionStorage.getItem(BYPASS_KEY) === 'true');
+    /*
+     * THE FLAG DECIDES, NOT THE STORAGE. Hiding the bypass button when
+     * NEXT_PUBLIC_DEV_UNAUTHENTICATED_CONSOLE is unset hides a control; it does
+     * not remove one. Anybody with a developer console could set the key by
+     * hand and the gate would open, which is the same class of mistake as
+     * trusting a stored practice id: client-side state is a CLAIM, not a fact
+     * (CONVENTIONS.md 9b).
+     *
+     * It matters more the moment AUTH_ENFORCE goes true. The API would refuse
+     * the requests, so the console would be a shell of failing panels rather
+     * than a leak -- but a screen that looks signed-in to somebody who is not
+     * is the wrong thing to be shipping from a product whose premise is knowing
+     * who did what.
+     *
+     * A stale key is also CLEARED rather than ignored, so switching the flag
+     * off actually revokes an open bypass instead of leaving it dormant until
+     * somebody switches the flag back on.
+     */
+    if (DEV_BYPASS_ALLOWED) {
+      setBypassed(window.sessionStorage.getItem(BYPASS_KEY) === 'true');
+    } else {
+      window.sessionStorage.removeItem(BYPASS_KEY);
+      setBypassed(false);
+    }
     setChecked(true);
   }, []);
 

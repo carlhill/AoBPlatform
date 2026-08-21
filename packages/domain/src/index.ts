@@ -25,3 +25,4 @@ export * from './setup';
 export * from './search';
 export * from './redirect';
 export * from './invitation';
+export * from './practitioner-strength';
