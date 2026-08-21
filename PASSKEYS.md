@@ -200,6 +200,36 @@ whose platform authenticator cannot produce UV.
 
 ---
 
+## The enrolment email is OURS, not Keycloak's
+
+`infra/keycloak/themes/aobplatform/` is a Keycloak email theme, mounted into
+the container and set as the realm's `emailTheme`.
+
+Keycloak's stock message said:
+
+> Your administrator has just requested that you update your AoBPlatform
+> account by performing the following action(s):
+> **requiredAction.webauthn-register-passwordless**
+
+Three faults, worst first: it leaks an untranslated message key; it addresses a
+newly approved practice as though they have "an administrator"; and it carries
+no sender identity and no anti-phishing footer **while asking somebody to click
+a link and enrol a credential**, which is exactly what a phishing message asks
+for.
+
+**The link mechanism is still Keycloak's.** The action token is what actually
+enrols the passkey — only the words around it are ours. Changing the theme
+cannot weaken the ceremony.
+
+If the theme stops applying, check in this order: the realm's `emailTheme` is
+`aobplatform`, the volume is mounted (`docker exec aobplatform-keycloak ls
+/opt/keycloak/themes/aobplatform/email`), and the container was recreated
+rather than merely restarted.
+
+⚠ `${msg("key","fallback")}` returns the KEY, not the fallback, in these
+templates. Anything that is ours and untranslated — the product name — should
+be written literally.
+
 ## Commands worth having to hand
 
 Invite an administrator:

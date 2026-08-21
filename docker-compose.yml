@@ -118,6 +118,13 @@ services:
       - '127.0.0.1:21024:8080'
     volumes:
       - ./infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+      # Our email theme. Keycloak's stock enrolment message leaks a raw message
+      # key ("requiredAction.webauthn-register-passwordless"), addresses the
+      # reader as though they have an administrator, and carries no sender
+      # identity or anti-phishing footer -- while asking them to click a link
+      # and enrol a credential. The LINK mechanism stays Keycloak's; only the
+      # words around it are ours.
+      - ./infra/keycloak/themes/aobplatform:/opt/keycloak/themes/aobplatform:ro
 
   mailhog:
     image: mailhog/mailhog:v1.0.1
