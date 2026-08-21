@@ -514,6 +514,202 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
   });
 
   // ---------------------------------------------------------------------------
+  describe('the invitation: a link, a code, and only the practitioner (FR-1.8)', () => {
+    let inviteLocationId: string;
+    let inviteAffiliationId: string;
+    let token: string;
+    let code: string;
+
+    beforeAll(async () => {
+      // A second site, so this block does not disturb the affiliation the
+      // offboarding tests below depend on.
+      const location = await scoped('post', '/organisations/locations')
+        .send({ addressLine1: '7 Invitation Way', suburb: 'Sampletown', state: 'NSW', postcode: '2000', code: 'Annexe' })
+        .expect(201);
+      inviteLocationId = location.body.id;
+      await scoped('post', `/organisations/locations/${inviteLocationId}/activate`)
+        .send({ reviewerName: 'Robin Reviewer' })
+        .expect(201);
+
+      // The second practitioner exists but has no address; an invitation needs
+      // somewhere to go.
+      await prisma.practitioner.update({
+        where: { ahpraNumber: AHPRA_OTHER },
+        data: { email: 'sam.other@example.invalid' },
+      });
+
+      const affiliation = await scoped('post', '/affiliations')
+        .send({
+          ahpraNumber: AHPRA_OTHER,
+          locationId: inviteLocationId,
+          providerNumber: '9999999Z',
+          invitedByName: 'Robin Practicemanager',
+        })
+        .expect(201);
+      inviteAffiliationId = affiliation.body.id;
+    });
+
+    /*
+     * The state that used to be invisible. "Invited" covers both "we have told
+     * them" and "nobody has told them anything", and only one of those is
+     * waiting on the practitioner.
+     */
+    it('starts with nothing sent, and says so', async () => {
+      const res = await scoped('get', '/affiliations').expect(200);
+      const row = res.body.find((a: { id: string }) => a.id === inviteAffiliationId);
+      expect(row.status).toBe('invited');
+      expect(row.invitationSentAt).toBeNull();
+      expect(row.acceptanceMethod).toBeNull();
+    });
+
+    it('sends it to the PRACTITIONER’S address, not the practice’s', async () => {
+      const res = await scoped('post', `/affiliations/${inviteAffiliationId}/invitation`).expect(201);
+      expect(res.body.notified).toBe(true);
+
+      /*
+       * INSIDE withPractice. Affiliations are RLS-scoped, so an unscoped read
+       * returns NOTHING -- it does not error, it just finds no rows, which is
+       * the exact failure mode CONVENTIONS.md 6 warns about and which this
+       * test hit on its first run.
+       *
+       * Reading the token from the database is the test standing in for the
+       * practitioner's inbox. Nothing in the API hands it to a practice, which
+       * is what the next test asserts.
+       */
+      const row = await prisma.withPractice(orgId, (tx) =>
+        tx.affiliation.findFirstOrThrow({ where: { id: inviteAffiliationId } }),
+      );
+      token = row.inviteToken!;
+      code = row.inviteCode!;
+      expect(token).toHaveLength(64);
+      expect(code).toMatch(/^\d{6}$/);
+    });
+
+    /*
+     * The practice-facing view must never carry either half. A practice that
+     * could read them could accept on the practitioner's behalf, which is the
+     * one thing this entire flow exists to prevent.
+     */
+    it('NEVER_SHOWS_THE_PRACTICE_THE_TOKEN_OR_THE_CODE', async () => {
+      const res = await scoped('get', '/affiliations').expect(200);
+      const serialised = JSON.stringify(res.body);
+      expect(serialised).not.toContain(token);
+      expect(serialised).not.toContain(code);
+      // But it does say the invitation went out, and when it dies.
+      const row = res.body.find((a: { id: string }) => a.id === inviteAffiliationId);
+      expect(row.invitationSentAt).not.toBeNull();
+      expect(row.invitationExpiresAt).not.toBeNull();
+    });
+
+    /*
+     * The deliberate difference from email verification, which reveals nothing
+     * until the code is right. Nobody can consent to an unnamed thing.
+     */
+    it('names the practice and the site BEFORE any code is entered', async () => {
+      const res = await api().get(`/invitations/${token}`).expect(200);
+      expect(res.body.state).toBe('live');
+      expect(res.body.canAnswer).toBe(true);
+      expect(res.body.practiceName).toBe('Sampletown Family Practice');
+      expect(res.body.summary).toContain('Annexe');
+      expect(res.body.invitedByName).toBe('Robin Practicemanager');
+    });
+
+    it('still withholds the provider number, which is not needed to decide', async () => {
+      const res = await api().get(`/invitations/${token}`).expect(200);
+      expect(JSON.stringify(res.body)).not.toContain('9999999Z');
+    });
+
+    it('says what accepting does NOT do, which is the half people skip', async () => {
+      const res = await api().get(`/invitations/${token}`).expect(200);
+      expect(res.body.notConsent).toMatch(/not consent on any patient/i);
+      // And the caveat is not ALSO in the list, or every surface says it twice.
+      expect(JSON.stringify(res.body.consequences)).not.toMatch(/not consent on any patient/i);
+    });
+
+    /*
+     * The cap is what makes six digits safe, not the length. A million
+     * combinations falls to an unthrottled endpoint in minutes.
+     */
+    it('counts a wrong code against the cap, and says how many are left', async () => {
+      const res = await api()
+        .post(`/invitations/${token}/answer`)
+        .send({ code: '000000', decision: 'accept' })
+        .expect(400);
+      expect(res.body.message).toMatch(/4 attempts left/);
+
+      const state = await api().get(`/invitations/${token}`).expect(200);
+      expect(state.body.attemptsLeft).toBe(4);
+    });
+
+    /*
+     * A five-digit typo is not a guess at the code. Spending one of five
+     * attempts on it would lock people out for being clumsy rather than for
+     * being an attacker, so the shape is checked before the cap is touched.
+     */
+    it('A_TYPO_DOES_NOT_COST_AN_ATTEMPT', async () => {
+      await api().post(`/invitations/${token}/answer`).send({ code: '12345x', decision: 'accept' }).expect(400);
+      const state = await api().get(`/invitations/${token}`).expect(200);
+      expect(state.body.attemptsLeft).toBe(4);
+    });
+
+    it('accepts, and records HOW rather than merely that', async () => {
+      const res = await api()
+        .post(`/invitations/${token}/answer`)
+        .send({ code, decision: 'accept' })
+        .expect(201);
+      expect(res.body.status).toBe('active');
+      expect(res.body.acceptanceMethod).toBe('email_link_and_code');
+
+      const row = await scoped('get', '/affiliations').expect(200);
+      const affiliation = row.body.find((a: { id: string }) => a.id === inviteAffiliationId);
+      expect(affiliation.canCapture).toBe(true);
+      expect(affiliation.acceptanceMethod).toBe('email_link_and_code');
+      // The evidence says what it proves, in words, so nobody reading it in two
+      // years mistakes an emailed code for a signature.
+      expect(affiliation.acceptanceMeans).toMatch(/does not prove who/i);
+    });
+
+    it('records the PRACTITIONER as the actor, not the practice', async () => {
+      const events = await prisma.vaultOutbox.findMany({ where: { subjectId: inviteAffiliationId } });
+      const accepted = events.find((e) => e.type === 'affiliation.accepted');
+      expect((accepted?.actor as Record<string, unknown>).principalType).toBe('provider');
+      expect((accepted?.payload as Record<string, unknown>).acceptanceMethod).toBe('email_link_and_code');
+    });
+
+    /*
+     * Single use. A forwarded link or a screenshot of the email must not be
+     * replayable, and the answer to a spent token is the same as to one that
+     * never existed — otherwise this endpoint is an oracle for which
+     * invitations are real.
+     */
+    it('CANNOT_BE_REPLAYED — the token is spent either way', async () => {
+      const state = await api().get(`/invitations/${token}`).expect(200);
+      expect(state.body.state).toBe('not_found');
+      await api().post(`/invitations/${token}/answer`).send({ code, decision: 'accept' }).expect(400);
+    });
+
+    it('answers an invented token exactly as it answers a spent one', async () => {
+      const res = await api().get(`/invitations/${'f'.repeat(64)}`).expect(200);
+      expect(res.body.state).toBe('not_found');
+      expect(res.body.message).toMatch(/not valid/i);
+    });
+
+    it('will not send an invitation for another practice’s affiliation', async () => {
+      const res = await api()
+        .post(`/affiliations/${inviteAffiliationId}/invitation`)
+        .set('x-practice-id', '00000000-0000-0000-0000-000000000000')
+        .expect(404);
+      expect(res.body.message).toMatch(/not in this practice/i);
+    });
+
+    it('will not send one for an affiliation that has already been answered', async () => {
+      const res = await scoped('post', `/affiliations/${inviteAffiliationId}/invitation`).expect(400);
+      expect(res.body.message).toMatch(/nothing to invite/i);
+    });
+  });
+
+
+  // ---------------------------------------------------------------------------
   describe('offboarding: notice BEFORE the end date (§6)', () => {
     it('NO_COOL_OFF_AFTER_DEPARTURE — an end date in the past is refused', async () => {
       const res = await scoped('post', `/affiliations/${affiliationId}/notice`)
