@@ -196,6 +196,15 @@ export const strings = {
     endBypass: 'End the bypass',
   },
   review: {
+    // --- The score, restated at the decision ---
+    decideScore: 'Identity strength {n}',
+    decideScorePasses:
+      '— above the threshold, and every part of it has been met. Enforcement is soft, so this informs the ' +
+      'decision rather than making it; the person approving is still the person deciding.',
+    decideScoreBelow:
+      '— below the threshold. {why} Enforcement is soft, so this does not refuse the approval. It is ' +
+      'recorded against the decision, and it is the number that will say later whether this was a good call.',
+
     // --- Entitlement, taken from the recorded check rather than retyped ---
     entitlementEstablished: 'Entitlement has already been established',
     entitlementEstablishedBy: '“{label}” — recorded by {who} on {when}.',

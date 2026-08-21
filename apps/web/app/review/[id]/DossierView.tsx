@@ -856,6 +856,34 @@ export function DossierView({ id }: { id: string }) {
         </p>
 
         {/*
+          THE SCORE, RESTATED WHERE THE DECISION IS MADE.
+          
+          It was already on the page — in the checks section above — and on a
+          dossier this long that means it is off-screen at the moment somebody
+          reaches for Approve. The number they are deciding against should be
+          in front of them when they decide, not several screens up.
+          
+          It INFORMS and does not gate. Enforcement is soft by design
+          (IDENTITY-STRENGTH-DESIGN §2): the score refuses nobody yet, because
+          a threshold you are already enforcing is one you can never calibrate —
+          you never see the outcomes of the applications you turned away. What
+          turns it into a refusal is IDENTITY_ENFORCEMENT=hard, deliberately,
+          in one place, and then the SERVER refuses rather than a button.
+        */}
+        {checks && (
+          <p className={styles.decideScore}>
+            <Chip tone={checks.admission.wouldPass ? 'ok' : 'warn'}>
+              {strings.review.decideScore.replace('{n}', String(checks.summary.score))}
+            </Chip>{' '}
+            <span className={ui.hint}>
+              {checks.admission.wouldPass
+                ? strings.review.decideScorePasses
+                : strings.review.decideScoreBelow.replace('{why}', checks.admission.reasons.join(' '))}
+            </span>
+          </p>
+        )}
+
+        {/*
           WHAT THE APPROVAL WILL REST ON, when a check has already established
           it. Shown instead of an empty form, and it names the person who
           actually performed it — which is frequently not the person approving.

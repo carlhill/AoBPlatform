@@ -666,3 +666,24 @@
   flex-wrap: wrap;
   margin-top: var(--s2);
 }
+
+/*
+ * The identity score, restated beside the Approve button.
+ *
+ * It already appears in the checks section, but a dossier runs to several
+ * screens and that puts it out of view at the exact moment somebody decides.
+ * Boxed rather than italicised: it is a fact about the application, not an
+ * aside about the page.
+ */
+.decideScore {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: 0 0 var(--s5);
+  padding: var(--s3) var(--s4);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  line-height: 1.6;
+}
