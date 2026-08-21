@@ -191,6 +191,46 @@ model Agreement {
   @@map("agreements")
 }
 
+/**
+ * REQ-PKI-01 — the practitioner enrolment ceremony that must precede binding a
+ * passkey. "The key is only as good as the ceremony that bound it."
+ *
+ * APPEND-ONLY EVIDENCE. Nothing edits a ceremony: if the facts were wrong, a
+ * fresh ceremony is performed. The record answers, permanently, WHO attested
+ * that these three checks were done and HOW.
+ */
+model EnrolmentCeremony {
+  id                      String   @id @default(uuid()) @db.Uuid
+  practiceId              String   @db.Uuid
+  /** Exactly one of these. Staff with admin roles need passkeys too (rule 15). */
+  providerId              String?  @db.Uuid
+  staffId                 String?  @db.Uuid
+  // Check 1 — current AHPRA registration.
+  ahpraNumber             String
+  ahpraRegistrationCurrent Boolean
+  // Check 2 — the provider number AND the place of practice it is valid for.
+  providerNumber          String
+  providerNumberLocation  String
+  providerNumberVerified  Boolean
+  // Check 3 — the person.
+  personVerificationMethod String // video | in_person
+  /** The named human who performed the checks. Never "system". */
+  verifiedByName          String
+  verifiedByStaffId       String?  @db.Uuid
+  evidenceNote            String?
+  /** REQ-PKI-05 — re-enrolment (recovery) must be explicitly stepped up. */
+  steppedUp               Boolean  @default(false)
+  performedAt             DateTime
+  /** Set when this ceremony was actually used to authorise a key binding. */
+  consumedAt              DateTime?
+  createdAt               DateTime @default(now())
+
+  @@index([practiceId])
+  @@index([providerId])
+  @@index([staffId])
+  @@map("enrolment_ceremonies")
+}
+
 // M3 — verification (REQ-VER-01..04, FR-3.1..3.4).
 // THE STRUCTURAL RULE OF THESE TWO TABLES: identifier VALUES never land in
 // them. Types and outcomes only (REQ-VER-04, HARD-04). There is no column

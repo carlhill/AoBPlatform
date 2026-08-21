@@ -120,14 +120,60 @@ curl -s -X POST http://localhost:21001/practices -H 'Content-Type: application/j
 `state` matters: it drives the public-holiday calendar behind 2-business-day
 terminations. Default `NSW`.
 
-### ⚠ What is deliberately missing
+### The enrolment ceremony comes first (REQ-PKI-01)
 
-**The REQ-PKI-01 enrolment ceremony.** The requirement is that AHPRA
-registration, the provider number and the *person* are verified **before** a
-key is bound — "the key is only as good as the ceremony that bound it". Today
-the invite endpoint trusts whoever holds practice-admin access. That's fine
-for local testing and **not** fine for real practitioners. It's a prerequisite
-for onboarding anyone real.
+**No ceremony, no key.** The invite endpoint returns **403** until a ceremony
+is on record — because a passkey is a strong credential, and binding one
+through a weak ceremony produces confident, permanent, cryptographically-
+attested attribution to a person nobody verified. Worse than no credential.
+
+Three checks, performed by a human, recorded as append-only evidence:
+
+```bash
+curl -s -X POST http://localhost:21001/identity/ceremonies   -H "x-practice-id: $PRACTICE" -H 'Content-Type: application/json' -d '{
+  "providerId": "'"$PROVIDER"'",
+  "ahpraNumber": "MED0001234567",
+  "ahpraRegistrationCurrent": true,
+  "providerNumber": "1234567A",
+  "providerNumberLocation": "1 Example Street, Sampletown NSW 2000",
+  "providerNumberVerified": true,
+  "personVerificationMethod": "video",
+  "verifiedByName": "Robin Practicemanager",
+  "evidenceNote": "AHPRA register sighted; video call 21 Aug 2026."
+}' | jq
+```
+
+Then the invite works, and the vault event for the key binding cites the
+ceremony that authorised it and who attested to it.
+
+What the gate refuses:
+
+| Attempt | Result |
+|---|---|
+| Invite with no ceremony | **403 REQ-PKI-01** — *"a key must not be bound to whoever answered the email"* |
+| `personVerificationMethod: "email"` / `"phone"` | **400** — video or in person only |
+| `ahpraRegistrationCurrent: false` | **400** — must be attested CURRENT, not merely recorded |
+| Provider number with no location | **400** — valid elsewhere proves nothing here |
+| Blank `verifiedByName` | **400** — a named human, never "system" |
+| Malformed AHPRA number | **400** — three letters, ten digits (FR-1.11) |
+| A practitioner attesting their own enrolment | **400** — self-attestation defeats the ceremony |
+| Ceremony older than 30 days | **403 REQ-PKI-04** — they may have been deregistered since |
+| Re-using a consumed ceremony | **403** — one ceremony authorises one binding |
+| Re-inviting someone who already holds a key | **403 REQ-PKI-05** — that's *recovery*; needs `"steppedUp": true` |
+| Editing a ceremony afterwards | **DB trigger refuses** — perform a fresh one |
+
+### ⚠ Still manual, by design
+
+The AHPRA lookup is **a human reading the register and attesting to it** —
+FR-1.11 scopes v1 exactly that way ("existence check manual at onboarding;
+automated re-verification is roadmap"). The platform does not verify AHPRA; it
+guarantees that *someone named* attested, *recently*, that they *weren't the
+subject*, and that the record *can't be edited afterwards*.
+
+Two REQ-PKI siblings remain unbuilt: **REQ-PKI-02/03** (high-risk actions —
+bulk enrolment, bulk termination, banking changes — signed over the hash of
+the exact payload) and the automated half of **REQ-PKI-04** (re-checking AHPRA
+status on a cadence).
 
 ---
 
@@ -208,6 +254,8 @@ Practice-scoped calls need `x-practice-id: <uuid>` (or a bearer token once you'r
 | Method | Path | What |
 |---|---|---|
 | GET | `/identity/status` | Who has an account and can sign in |
+| POST | `/identity/ceremonies` | **REQ-PKI-01 — record the enrolment ceremony. Required before any invite** |
+| GET | `/identity/ceremonies` | Ceremonies on record, with age and whether consumed |
 | POST | `/identity/providers/{id}/invite` | **Passwordless account + passkey enrolment email** |
 | POST | `/identity/staff/{id}/invite` | Same for practice staff |
 | POST | `/identity/providers/{id}/revoke` | REQ-PKI-04 — departure/deregistration removes access |

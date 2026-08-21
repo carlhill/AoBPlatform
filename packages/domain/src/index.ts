@@ -8,3 +8,4 @@ export * from './chase';
 export * from './public-holidays';
 export * from './enduring';
 export * from './notice';
+export * from './enrolment-ceremony';

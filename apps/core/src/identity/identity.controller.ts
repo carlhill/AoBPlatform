@@ -1,6 +1,7 @@
 import { BadRequestException, Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { IsEmail, IsOptional } from 'class-validator';
 import { IdentityService } from './identity.service';
+import { RecordCeremonyDto } from './ceremony.dto';
 
 export class InviteDto {
   /** Where the passkey-enrolment link is sent. Without it the account is created but nobody is invited. */
@@ -27,6 +28,20 @@ export class IdentityController {
   @Get('status')
   status(@Headers('x-practice-id') practiceId: string | undefined) {
     return this.identity.status(requirePractice(practiceId));
+  }
+
+  /**
+   * REQ-PKI-01 — record the enrolment ceremony. This must exist before an
+   * invitation can be sent, and therefore before any key can be bound.
+   */
+  @Post('ceremonies')
+  recordCeremony(@Headers('x-practice-id') practiceId: string | undefined, @Body() dto: RecordCeremonyDto) {
+    return this.identity.recordCeremony(requirePractice(practiceId), dto);
+  }
+
+  @Get('ceremonies')
+  ceremonyStatus(@Headers('x-practice-id') practiceId: string | undefined) {
+    return this.identity.ceremonyStatus(requirePractice(practiceId));
   }
 
   @Post('providers/:providerId/invite')
