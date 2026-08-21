@@ -53,12 +53,12 @@ const TRANSITIONS: Record<AffiliationStatus, readonly AffiliationStatus[]> = {
   rejected: [],
 };
 
-export function canTransition(from: AffiliationStatus, to: AffiliationStatus): boolean {
+export function canAffiliationTransition(from: AffiliationStatus, to: AffiliationStatus): boolean {
   return TRANSITIONS[from].includes(to);
 }
 
-export function assertTransition(from: AffiliationStatus, to: AffiliationStatus): void {
-  if (!canTransition(from, to)) {
+export function assertAffiliationTransition(from: AffiliationStatus, to: AffiliationStatus): void {
+  if (!canAffiliationTransition(from, to)) {
     throw new AffiliationError('FR-1.8', `An affiliation cannot go from ${from} to ${to}.`);
   }
 }

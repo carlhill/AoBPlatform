@@ -1,9 +1,9 @@
 import {
   AffiliationError,
   assertNoticeValid,
-  assertTransition,
+  assertAffiliationTransition,
   canCaptureUnder,
-  canTransition,
+  canAffiliationTransition,
   captureBlockReason,
   deregistrationTakesEffect,
   endOfAffiliationEffects,
@@ -24,24 +24,24 @@ const affiliation = (over: Partial<Affiliation> = {}): Affiliation => ({
 
 describe('affiliation transitions', () => {
   it('invited goes to active on acceptance, or rejected on refusal', () => {
-    expect(canTransition('invited', 'active')).toBe(true);
-    expect(canTransition('invited', 'rejected')).toBe(true);
+    expect(canAffiliationTransition('invited', 'active')).toBe(true);
+    expect(canAffiliationTransition('invited', 'rejected')).toBe(true);
   });
 
   it('an invitation cannot skip straight to ending', () => {
-    expect(canTransition('invited', 'ending')).toBe(false);
-    expect(() => assertTransition('invited', 'ending')).toThrow(AffiliationError);
+    expect(canAffiliationTransition('invited', 'ending')).toBe(false);
+    expect(() => assertAffiliationTransition('invited', 'ending')).toThrow(AffiliationError);
   });
 
   it('ended and rejected are terminal — nothing reopens them', () => {
     for (const to of ['active', 'ending', 'invited', 'rejected'] as const) {
-      expect(canTransition('ended', to)).toBe(false);
+      expect(canAffiliationTransition('ended', to)).toBe(false);
     }
-    expect(canTransition('rejected', 'active')).toBe(false);
+    expect(canAffiliationTransition('rejected', 'active')).toBe(false);
   });
 
   it('notice can be withdrawn while it is still running', () => {
-    expect(canTransition('ending', 'active')).toBe(true);
+    expect(canAffiliationTransition('ending', 'active')).toBe(true);
   });
 });
 

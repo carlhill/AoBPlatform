@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_FILTER } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { HealthModule } from './health/health.module';
@@ -15,6 +16,9 @@ import { PmsModule } from './pms/pms.module';
 import { ReconciliationModule } from './reconciliation/reconciliation.module';
 import { EnduringModule } from './enduring/enduring.module';
 import { NoticesModule } from './notices/notices.module';
+import { OrganisationsModule } from './organisations/organisations.module';
+import { AffiliationsModule } from './affiliations/affiliations.module';
+import { DomainExceptionFilter } from './common/domain-exception.filter';
 
 /**
  * Thin wiring only. Feature modules (M1 onboarding, M2 capture, M3
@@ -35,6 +39,8 @@ import { NoticesModule } from './notices/notices.module';
     VerificationModule,
     CaptureModule,
     PracticesModule,
+    OrganisationsModule,
+    AffiliationsModule,
     PmsModule,
     ReconciliationModule,
     EnduringModule,
@@ -42,5 +48,8 @@ import { NoticesModule } from './notices/notices.module';
     DevSeedModule,
     HealthModule,
   ],
+  // Registered as a provider rather than in main.ts so it applies in tests
+  // too — a filter that only exists in production is a filter nothing proves.
+  providers: [{ provide: APP_FILTER, useClass: DomainExceptionFilter }],
 })
 export class AppModule {}

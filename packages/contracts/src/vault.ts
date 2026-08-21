@@ -55,6 +55,19 @@ export const VAULT_EVENT_TYPES = [
   'legal_hold.applied',
   'legal_hold.released',
   'nomination.changed',
+  // Organisation and affiliation lifecycle. An affiliation ending is a
+  // consent-relevant event — enduring agreements cease with it (65CA(8)) — so
+  // it is evidence, not merely an admin action.
+  'organisation.registered',
+  'organisation.validated',
+  'organisation.rejected',
+  'location.activated',
+  'affiliation.invited',
+  'affiliation.accepted',
+  'affiliation.rejected',
+  'affiliation.notice_given',
+  'affiliation.ended',
+  'practitioner.deregistered',
   'campaign.declared',
   'key.used',
   'access.read', // REQ-LOG-07: reads are logged, not only writes
