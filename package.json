@@ -21,7 +21,8 @@
     "validate:realm": "node infra/keycloak/realm-export.test.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
-    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\""
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "invite:link": "node infra/keycloak/latest-invite-link.mjs"
   },
   "allowScripts": {
     "@prisma/engines@6.19.3": true,

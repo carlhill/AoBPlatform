@@ -190,6 +190,14 @@ services:
       KEYCLOAK_ISSUER: http://keycloak:8080/realms/aobplatform
       KEYCLOAK_CLIENT_ID: core-service
       KEYCLOAK_CLIENT_SECRET: change-me-in-local-env
+      # Identity onboarding (FR-1.9/FR-1.5). In a real deployment this is a
+      # service account holding only realm-management roles, never admin/admin.
+      KEYCLOAK_BASE_URL: http://keycloak:8080
+      KEYCLOAK_REALM: aobplatform
+      KEYCLOAK_ADMIN_USER: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KEYCLOAK_WEB_CLIENT_ID: web
+      CONSOLE_URL: http://localhost:21100
       # Staged: the guard verifies tokens when present. Turning enforcement on
       # is a release gate, not a dev default (see apps/core/src/auth).
       AUTH_ENFORCE: 'false'

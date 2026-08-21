@@ -4,6 +4,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
+import { IdentityModule } from './identity/identity.module';
 import { VaultModule } from './vault/vault.module';
 import { AgreementsModule } from './agreements/agreements.module';
 import { DevSeedModule } from './dev-seed/dev-seed.module';
@@ -28,6 +29,7 @@ import { NoticesModule } from './notices/notices.module';
     ScheduleModule.forRoot(),
     PrismaModule,
     AuthModule,
+    IdentityModule,
     VaultModule,
     AgreementsModule,
     VerificationModule,

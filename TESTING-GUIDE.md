@@ -48,7 +48,7 @@ Open the console. In order:
 | # | Click | What to look for |
 |---|---|---|
 | 1 | — | **Platform services**: core / rules / vault all "Running". The **Vault chain** line shows `verified · N events` — that's a live hash-chain verification, not a status flag. |
-| 2 | **Sign in with your passkey** | You land on Keycloak. **Count the password fields: there are none.** No "forgot password" link either. That's rule 15 enforced at the identity layer. Enter `dr.example` and you'll be refused — that user has no passkey registered, and there is no fallback. (Completing a real passkey login needs a device authenticator; see §6.) |
+| 2 | **Sign in with your passkey** | You land on Keycloak. **Count the password fields: there are none.** No "forgot password" link either. That's rule 15 enforced at the identity layer. Any username with no passkey enrolled is refused outright — there is no fallback to fall back to. To get an account that *can* sign in, do §2b first. |
 | 3 | **Create sample practice** | Seeds a practice, a GP, a patient and a self-assignor. The practice ID appears below. |
 | 4 | **Run capture journey** | The whole thing, live, against real services. Watch the journey log: draft → single-use link minted → content-blind landing → three-identifier verification → particulars locked & artefact hashed → **signed → validated → stored**. |
 | 5 | — | The **Vault chain** counter jumps. Every step you just watched left immutable evidence. |
@@ -61,6 +61,73 @@ Open the console. In order:
 - Stop the rules service (`docker compose stop rules`) and re-run the journey: the lock step reports a clean failure instead of pretending.
 - Set `RULES_REGISTER_DRAFT_SET: 'false'` on the `rules` service in `docker-compose.yml`, `docker compose up -d rules`, re-run the journey: lock now returns **501 — the honest "no rule set registered"** state, and signature stays unreachable.
 - Set `NODE_ENV: production` on the `core` service and restart it: **it refuses to boot**, because the committed placeholder Keycloak secret is not allowed in production. (That guard genuinely blocked this stack's first build — it isn't decorative.)
+
+---
+
+## 2b. Onboarding a doctor so you can set up a passkey
+
+The console's **Invite practitioner to enrol a passkey** button does all of
+this. What it does under the covers, and why:
+
+1. Creates a Keycloak account for that provider holding **no password at all**
+   (verified: the credentials list comes back empty) and carrying the
+   `webauthn-register-passwordless` required action.
+2. Assigns the `provider` realm role and stamps `practice_id` / `provider_id`
+   as attributes — that claim is what replaces the dev `x-practice-id` header
+   once `AUTH_ENFORCE` is on.
+3. Emails an enrolment link. Locally that lands in **Mailhog**.
+
+Then: open http://localhost:21026, open *"Update Your Account"*, click
+**"Click here to proceed"**, and register the passkey on your device.
+After that the practitioner can sign in through the console.
+
+### Why an emailed link rather than "log in and add a passkey"
+
+The login flow **requires** a passkey (rule 15), so a practitioner who doesn't
+have one yet can't log in to create one. Keycloak's action token resolves that
+chicken-and-egg: it authenticates the holder for the duration of that one
+required action, and nothing else. This is also exactly the model FR-1.9
+specifies — *admin-attested invitation, not self-service reset*.
+
+### By API
+
+```bash
+SEED=$(curl -s -X POST http://localhost:21001/dev/seed)
+PRACTICE=$(echo $SEED | jq -r .practiceId); PROVIDER=$(echo $SEED | jq -r .providerId)
+
+# Who can sign in right now
+curl -s http://localhost:21001/identity/status -H "x-practice-id: $PRACTICE" | jq
+
+# Invite — creates a passwordless account and emails the enrolment link
+curl -s -X POST "http://localhost:21001/identity/providers/$PROVIDER/invite"   -H "x-practice-id: $PRACTICE" -H 'Content-Type: application/json'   -d '{"email":"dr.example@example.invalid"}' | jq
+
+# Grab the enrolment link straight out of Mailhog
+npm run invite:link
+```
+
+Staff work the same way: `POST /identity/staff/{staffId}/invite`. Practice
+admins get passkeys too — rule 15 covers admin roles, not just clinicians.
+
+### Onboarding a whole practice
+
+```bash
+curl -s -X POST http://localhost:21001/practices -H 'Content-Type: application/json' -d '{
+  "name":"Sampletown Family Practice","pms":"medtech_evolution","state":"NSW",
+  "locations":[{"address":"1 Example Street, Sampletown NSW 2000"}]}' | jq
+# then POST /practices/{id}/providers, /staff, then invite each of them
+```
+
+`state` matters: it drives the public-holiday calendar behind 2-business-day
+terminations. Default `NSW`.
+
+### ⚠ What is deliberately missing
+
+**The REQ-PKI-01 enrolment ceremony.** The requirement is that AHPRA
+registration, the provider number and the *person* are verified **before** a
+key is bound — "the key is only as good as the ceremony that bound it". Today
+the invite endpoint trusts whoever holds practice-admin access. That's fine
+for local testing and **not** fine for real practitioners. It's a prerequisite
+for onboarding anyone real.
 
 ---
 
@@ -136,6 +203,14 @@ Practice-scoped calls need `x-practice-id: <uuid>` (or a bearer token once you'r
 | POST | `/notices/{id}/read` | Open signal — **evidential colour only** |
 | POST | `/notices/{id}/correct` | Superseding correction (original never edited) |
 | GET | `/notices/compliance-pack` | **The auditor artefact** — `?from=&to=` |
+
+### Core — identity onboarding (FR-1.9, FR-1.5)
+| Method | Path | What |
+|---|---|---|
+| GET | `/identity/status` | Who has an account and can sign in |
+| POST | `/identity/providers/{id}/invite` | **Passwordless account + passkey enrolment email** |
+| POST | `/identity/staff/{id}/invite` | Same for practice staff |
+| POST | `/identity/providers/{id}/revoke` | REQ-PKI-04 — departure/deregistration removes access |
 
 ### Core — dev & health
 | Method | Path | What |

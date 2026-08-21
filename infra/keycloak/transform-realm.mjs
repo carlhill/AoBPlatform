@@ -20,6 +20,43 @@ realm.displayName = 'AoBPlatform';
 realm.webAuthnPolicyRpEntityName = 'AoBPlatform';
 realm.webAuthnPolicyPasswordlessRpEntityName = 'AoBPlatform';
 
+// Inherited SMTP pointed at ReferralPlatform's sender identity. Local dev
+// delivers to the Mailhog container either way; the FROM address should still
+// say who it is.
+if (realm.smtpServer) {
+  realm.smtpServer.from = 'noreply@aobplatform.local';
+  realm.smtpServer.fromDisplayName = 'AoBPlatform (local dev)';
+}
+
+/**
+ * Keycloak 24+ ships the declarative user profile with unmanaged attributes
+ * DISABLED, which silently drops any attribute the admin API sets — observed
+ * 21 Aug 2026: practitioner accounts were created successfully but their
+ * `practice_id` vanished. That claim is what replaces the dev x-practice-id
+ * header once AUTH_ENFORCE is on, so silently losing it would have surfaced
+ * much later as "the guard scopes everyone to nothing".
+ *
+ * ADMIN_EDIT: attributes are settable through the admin API (our onboarding
+ * path) but NOT self-editable by the account holder — a practitioner must not
+ * be able to move themselves to another practice.
+ */
+realm.components = realm.components ?? {};
+realm.components['org.keycloak.userprofile.UserProfileProvider'] = [
+  {
+    providerId: 'declarative-user-profile',
+    subComponents: {},
+    config: { 'kc.user.profile.config': [JSON.stringify({
+      attributes: [
+        { name: 'username', displayName: '${username}', permissions: { view: ['admin', 'user'], edit: ['admin'] } },
+        { name: 'email', displayName: '${email}', permissions: { view: ['admin', 'user'], edit: ['admin'] } },
+        { name: 'firstName', displayName: '${firstName}', permissions: { view: ['admin', 'user'], edit: ['admin'] } },
+        { name: 'lastName', displayName: '${lastName}', permissions: { view: ['admin', 'user'], edit: ['admin'] } },
+      ],
+      unmanagedAttributePolicy: 'ADMIN_EDIT',
+    })] },
+  },
+];
+
 // Roles — the AoB cast (CLAUDE.md §3 terminology: provider, not GP).
 const roleNames = ['provider', 'practice_principal', 'practice_manager', 'front_desk', 'patient', 'assignor', 'system'];
 realm.roles = {

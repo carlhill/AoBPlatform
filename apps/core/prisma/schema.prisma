@@ -71,6 +71,11 @@ model StaffMember {
   dateOfBirth DateTime? @db.Date
   role        String // front_desk | practice_manager | principal
   active      Boolean   @default(true)
+  email       String?
+  /** FR-1.5 — passkey enrolment is mandatory for admin roles at first login. */
+  keycloakUserId    String?
+  invitedAt         DateTime?
+  passkeyEnrolledAt DateTime?
 
   @@index([practiceId])
   @@map("staff_members")
@@ -87,6 +92,10 @@ model Provider {
   ahpraNumber            String?
   pmsLinkageKey          String?
   active                 Boolean @default(true)
+  /** FR-1.9 — link to the Keycloak account. Null until invited. */
+  keycloakUserId         String?
+  invitedAt              DateTime?
+  passkeyEnrolledAt      DateTime?
 
   agreements Agreement[]
 

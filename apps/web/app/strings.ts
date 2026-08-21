@@ -17,6 +17,11 @@ export const strings = {
     completing: 'Completing sign-in…',
     failed: 'Sign-in failed:',
     noCode: 'No authorisation code in this response.',
+    onboarding: 'Practitioner onboarding',
+    inviteButton: 'Invite practitioner to enrol a passkey',
+    inviteSent: 'Invitation sent — open Mailhog to follow the link:',
+    noAccount: 'no account yet',
+    accountReady: 'account created — passkey pending',
   },
   console: {
     title: 'Development console',

@@ -66,6 +66,7 @@ export function ConsoleDashboard() {
   const [chain, setChain] = useState<{ valid: boolean; length: number } | null>(null);
   const [outstanding, setOutstanding] = useState<OutstandingRow[]>([]);
   const [session, setSession] = useState<Session | null>(null);
+  const [invite, setInvite] = useState<string | null>(null);
 
   useEffect(() => {
     setSession(currentSession());
@@ -257,6 +258,28 @@ export function ConsoleDashboard() {
     await loadOutstanding(seed.practiceId);
   };
 
+  /**
+   * FR-1.9 — invite the practitioner to enrol a passkey. The account is
+   * created holding no password; the emailed action link is the only way in,
+   * because the login flow requires a passkey they do not have yet.
+   */
+  const inviteProvider = async () => {
+    if (!seed) return;
+    setError(null);
+    try {
+      const res = await fetch(`${CORE_URL}/identity/providers/${seed.providerId}/invite`, {
+        method: 'POST',
+        headers: apiHeaders(seed.practiceId),
+        body: JSON.stringify({ email: 'dr.example@example.invalid' }),
+      });
+      if (!res.ok) throw new Error(`invite returned ${res.status}`);
+      const body = await res.json();
+      setInvite(body.username);
+    } catch (err) {
+      setError(String(err));
+    }
+  };
+
   const createDraft = async () => {
     if (!seed) return;
     setError(null);
@@ -300,6 +323,21 @@ export function ConsoleDashboard() {
               {strings.auth.signIn}
             </button>{' '}
             <span style={{ color: '#57606a' }}>{strings.auth.passkeyNote}</span>
+          </p>
+        )}
+      </section>
+
+      <section aria-label={strings.auth.onboarding} style={{ marginBottom: '1.5rem' }}>
+        <h2>{strings.auth.onboarding}</h2>
+        <button onClick={() => void inviteProvider()} disabled={!seed} data-testid="invite-provider">
+          {strings.auth.inviteButton}
+        </button>
+        {invite && (
+          <p data-testid="invite-result">
+            {strings.auth.inviteSent} <code>{invite}</code> —{' '}
+            <a href="http://localhost:21026" target="_blank" rel="noreferrer">
+              open Mailhog
+            </a>
           </p>
         )}
       </section>
