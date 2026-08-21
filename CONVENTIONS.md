@@ -157,6 +157,32 @@ stale-`wslrelay.exe` port-conflict note).
   flow exists. k6 priority scenarios: the 8–10 am check-in burst and the 89AA
   dispatch batch.
 
+## 9a. A new field is not done until it reaches the screen
+
+**When a field is added, take it the whole way in one pass: UI → API/DTO →
+service → SQL function → column → migration → test.** Not one layer per pass.
+
+This is a rule because it cost us. The applicant and manager contact fields
+were added to the schema, the SQL function, the service and the DTO — and not
+to the console. From the outside the feature simply did not exist, and Carl
+had to say so. Every layer then had to be re-opened, re-read and re-reasoned
+about, which costs far more than doing it once: the context has to be rebuilt,
+the migration is already applied so it needs a follow-up, and the tests get
+written twice.
+
+Worse than the cost, a half-wired field **fails silently**. The DTO accepted
+`managerName` for a while and the service dropped it on the floor: the API
+returned 201, the operator saw success, and nothing was stored. A field that
+accepts input and discards it is worse than a missing field.
+
+Checklist before calling a field done:
+
+- [ ] It can be entered or seen in the UI (or there is a written reason it cannot).
+- [ ] The DTO validates it, and the service actually passes it on — trace the value, do not assume.
+- [ ] The column exists, with any CHECK constraint that makes it meaningful.
+- [ ] A test asserts it **round-trips**: entered, stored, and read back.
+- [ ] Anything that lists or projects the record shows it, where the reader needs it.
+
 ## 9b. Client-side persistence is a claim, not a fact
 
 **Anything persisted outside the server must be revalidated when it is loaded,

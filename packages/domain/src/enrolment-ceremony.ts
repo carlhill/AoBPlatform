@@ -21,9 +21,39 @@
  * why it pairs with anomaly detection rather than replacing it.
  */
 
-/** Only these prove a person. An emailed link and a phone call do not. */
+/**
+ * Only these prove a PRACTITIONER. An emailed link and a phone call do not.
+ */
 export const PERSON_VERIFICATION_METHODS = ['video', 'in_person'] as const;
 export type PersonVerificationMethod = (typeof PERSON_VERIFICATION_METHODS)[number];
+
+/**
+ * A ceremony verifies one of two quite different kinds of person, and the
+ * checks that mean anything differ completely between them.
+ *
+ * `practitioner`   — the REQ-PKI-01 three checks below.
+ *
+ * `practice_admin` — an administrator has NO AHPRA number and NO provider
+ *   number. Demanding them would force someone to invent one, which would put
+ *   a fabricated registration number into permanent evidence — a worse outcome
+ *   than the gap it papered over. What verifies an admin is the ORGANISATION
+ *   APPROVAL: a named human checked the ABN, the registered name, the address,
+ *   and (the part that actually matters) that this applicant is entitled to
+ *   act for that entity. The ceremony cites that approval rather than
+ *   restating it.
+ */
+export const CEREMONY_SUBJECT_KINDS = ['practitioner', 'practice_admin'] as const;
+export type CeremonySubjectKind = (typeof CEREMONY_SUBJECT_KINDS)[number];
+
+/**
+ * For a practice ADMIN, a callback on a number obtained INDEPENDENTLY of the
+ * application is a genuine person check — the applicant did not choose the
+ * number, so answering it is evidence. That reasoning does not transfer to a
+ * practitioner, where the thing being defended is a provider number and the
+ * bar stays at video or in person.
+ */
+export const ADMIN_VERIFICATION_METHODS = ['video', 'in_person', 'independent_callback'] as const;
+export type AdminVerificationMethod = (typeof ADMIN_VERIFICATION_METHODS)[number];
 
 /**
  * ⚠ DRAFT PARAMETER pending Carl's decision (like the C2 tolerance).
@@ -62,15 +92,19 @@ export class CeremonyError extends Error {
 }
 
 export interface CeremonyRecord {
-  /** Check 1 — current AHPRA registration. */
-  readonly ahpraNumber: string;
-  readonly ahpraRegistrationCurrent: boolean;
+  /** Which set of checks applies. Defaults to practitioner when absent. */
+  readonly subjectKind?: CeremonySubjectKind;
+  /** Check 1 — current AHPRA registration. Practitioner ceremonies only. */
+  readonly ahpraNumber?: string | null;
+  readonly ahpraRegistrationCurrent?: boolean;
   /** Check 2 — the provider number AND the place of practice it is valid for. */
-  readonly providerNumber: string;
-  readonly providerNumberLocation: string;
-  readonly providerNumberVerified: boolean;
+  readonly providerNumber?: string | null;
+  readonly providerNumberLocation?: string | null;
+  readonly providerNumberVerified?: boolean;
+  /** The approval an admin ceremony rests on. Admin ceremonies only. */
+  readonly approvedOrganisationId?: string | null;
   /** Check 3 — the person. */
-  readonly personVerificationMethod: PersonVerificationMethod;
+  readonly personVerificationMethod: string;
   /** The named human who performed the checks. Never "system". */
   readonly verifiedByName: string;
   /** Their platform identity, where they have one — self-attestation is blocked on this. */
@@ -98,39 +132,69 @@ export interface CeremonyContext {
 export function assertCeremonySufficient(record: CeremonyRecord, context: CeremonyContext): void {
   const now = context.now ?? new Date();
   const freshnessDays = context.freshnessDays ?? CEREMONY_FRESHNESS_DAYS;
+  const kind: CeremonySubjectKind = record.subjectKind ?? 'practitioner';
 
-  // Check 1 — AHPRA.
-  if (!isValidAhpraNumberFormat(record.ahpraNumber)) {
-    throw new CeremonyError('REQ-PKI-01', `"${record.ahpraNumber}" is not a valid AHPRA registration number format.`);
-  }
-  if (!record.ahpraRegistrationCurrent) {
-    throw new CeremonyError(
-      'REQ-PKI-01',
-      'AHPRA registration was not verified as CURRENT. A key must not be bound to an unregistered practitioner.',
-    );
-  }
+  if (kind === 'practitioner') {
+    // Check 1 — AHPRA.
+    if (!record.ahpraNumber || !isValidAhpraNumberFormat(record.ahpraNumber)) {
+      throw new CeremonyError('REQ-PKI-01', `"${record.ahpraNumber}" is not a valid AHPRA registration number format.`);
+    }
+    if (!record.ahpraRegistrationCurrent) {
+      throw new CeremonyError(
+        'REQ-PKI-01',
+        'AHPRA registration was not verified as CURRENT. A key must not be bound to an unregistered practitioner.',
+      );
+    }
 
-  // Check 2 — provider number and its location.
-  if (!record.providerNumber?.trim()) {
-    throw new CeremonyError('REQ-PKI-01', 'The provider number must be recorded and verified before a key is bound.');
-  }
-  if (!record.providerNumberLocation?.trim()) {
-    throw new CeremonyError(
-      'REQ-PKI-01',
-      'The provider number must be verified AT A LOCATION — a number valid elsewhere proves nothing here.',
-    );
-  }
-  if (!record.providerNumberVerified) {
-    throw new CeremonyError('REQ-PKI-01', 'The provider number was recorded but not verified.');
-  }
+    // Check 2 — provider number and its location.
+    if (!record.providerNumber?.trim()) {
+      throw new CeremonyError('REQ-PKI-01', 'The provider number must be recorded and verified before a key is bound.');
+    }
+    if (!record.providerNumberLocation?.trim()) {
+      throw new CeremonyError(
+        'REQ-PKI-01',
+        'The provider number must be verified AT A LOCATION — a number valid elsewhere proves nothing here.',
+      );
+    }
+    if (!record.providerNumberVerified) {
+      throw new CeremonyError('REQ-PKI-01', 'The provider number was recorded but not verified.');
+    }
 
-  // Check 3 — the person.
-  if (!PERSON_VERIFICATION_METHODS.includes(record.personVerificationMethod)) {
-    throw new CeremonyError(
-      'REQ-PKI-01',
-      `"${record.personVerificationMethod}" does not verify a person. Video or in person only — ` +
-        'a key issued to whoever answered the email proves nothing.',
-    );
+    // Check 3 — the person.
+    if (!(PERSON_VERIFICATION_METHODS as readonly string[]).includes(record.personVerificationMethod)) {
+      throw new CeremonyError(
+        'REQ-PKI-01',
+        `"${record.personVerificationMethod}" does not verify a person. Video or in person only — ` +
+          'a key issued to whoever answered the email proves nothing.',
+      );
+    }
+  } else {
+    // A practice admin. The organisation approval IS the verification, so the
+    // ceremony must cite it — an admin ceremony with nothing behind it is the
+    // "whoever answered the email" failure wearing a different hat.
+    if (!record.approvedOrganisationId) {
+      throw new CeremonyError(
+        'REQ-PKI-01',
+        'A practice-admin ceremony must cite the approved organisation it rests on. The approval is what ' +
+          'verified this person — without it, nothing has.',
+      );
+    }
+    if (!(ADMIN_VERIFICATION_METHODS as readonly string[]).includes(record.personVerificationMethod)) {
+      throw new CeremonyError(
+        'REQ-PKI-01',
+        `"${record.personVerificationMethod}" does not verify a practice administrator. Video, in person, or ` +
+          'a callback on a number obtained INDEPENDENTLY of the application — a number the applicant supplied ' +
+          'proves only that they answer their own phone.',
+      );
+    }
+    if (record.ahpraNumber) {
+      throw new CeremonyError(
+        'REQ-PKI-01',
+        'A practice-admin ceremony must not carry an AHPRA number. If this person is a practitioner, verify ' +
+          'them as one; inventing a registration number to satisfy a form puts a fabricated identifier into ' +
+          'permanent evidence.',
+      );
+    }
   }
 
   // A named human, and not the subject.

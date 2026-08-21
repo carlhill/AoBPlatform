@@ -46,6 +46,9 @@ model Practice {
   /**
    * /**
    * /**
+   * /**
+   * /**
+   * /**
    * /** The ABR legal entity name. Often NOT what the practice trades as.
    */
   legalName             String?
@@ -74,20 +77,84 @@ model Practice {
    */
   abnSightedByName      String?
   gstRegistered         Boolean?
+
+  // --- The applicant (ORG-MODEL-PROPOSAL.md §10, step 1) ---
+  // Where the passkey invitation goes. Without an email there is nobody to
+  // invite and the sequence stalls at step 3.
+  adminName       String?
+  adminEmail      String?
+  adminPhone      String?
+  adminPosition   String?
+  // A SECOND named person, independently reachable. The reviewer's useful call
+  // is to the contact who did NOT apply — a callback whose subject chose the
+  // number verifies only that they answer their own phone.
+  managerName     String?
+  managerEmail    String?
+  managerPhone    String?
+  managerPosition String?
+  /**
+   * Optional. Also a weak entitlement signal when its domain matches adminEmail.
+   */
+  website         String?
+
+  // HEAD OFFICE IS NOT A LOCATION, deliberately. A PracticeLocation is a PLACE
+  // OF PRACTICE: its address feeds the s 65C(5)(a) particulars and it hosts
+  // affiliations. A head office is often a registered or corporate address
+  // where nobody practises, and modelling it as a Location would make it
+  // selectable as a place of practice — a practitioner's provider number could
+  // end up attached to an address they have never attended. When the head
+  // office IS also a clinic, the flag creates a Location as well.
+  headOfficeAddress           String?
+  headOfficeState             String?
+  headOfficeIsPlaceOfPractice Boolean @default(false)
+
+  // What the practice offers as proof it is a health practice.
+  //
+  // There is no general "practice licence" for an Australian GP clinic. AHPRA
+  // registers INDIVIDUALS; practices are accredited (RACGP Standards, via
+  // AGPAL/QPA/GPA) and identified by HPI-O. So this is a discriminated pair
+  // rather than one field pretending to be a licence number.
+  //   ahpra         — a responsible practitioner's registration number. The
+  //                   only one of the three that is publicly checkable.
+  //   hpio          — organisation identifier.
+  //   accreditation — verified with the accrediting body, not a public register.
+  credentialType  String? // ahpra | hpio | accreditation
+  credentialValue String?
+
+  // --- What the approver actually decided (§11) ---
+  // The ABN gate proves the ENTITY exists. These record that the APPLICANT was
+  // verified to represent it — the real security boundary, which nothing else
+  // in this table captures.
+  entitlementMethod        String? // phone_call | domain_match | hpio | document | none
+  entitlementPhoneNumber   String?
+  // WHERE THAT NUMBER CAME FROM. Load-bearing: a number supplied on the
+  // application form verifies nothing, because an impersonator supplies their
+  // own. AHPRA cannot help — the public register publishes suburb and postcode
+  // only, never a phone number or an email.
+  entitlementNumberSource  String? // nhsd | practice_website | public_directory | application_form | other
+  entitlementSpokeWithName String?
+  entitlementCheckedByName String?
+  entitlementCheckedAt     DateTime?
+  entitlementNote          String?
+
+  // --- The practice admin's account (step 3) ---
+  adminKeycloakUserId    String?
+  adminInvitedAt         DateTime?
+  adminPasskeyEnrolledAt DateTime?
   /**
    * Which registered name the operator's typed name matched, and how closely.
    */
-  nameMatchTier         String? // exact | entity_suffix_insensitive
-  nameMatchedOn         String?
-  hpiO                  String?
+  nameMatchTier          String? // exact | entity_suffix_insensitive
+  nameMatchedOn          String?
+  hpiO                   String?
   /**
    * BBPIP is all-or-nothing across the practice — one private item forfeits the quarter.
    */
-  bbpipParticipant      Boolean?
+  bbpipParticipant       Boolean?
   /**
    * Gates the enduring MyMedicare pathway entirely.
    */
-  myMedicareRegistered  Boolean?
+  myMedicareRegistered   Boolean?
 
   // --- Human validation queue (ORG-MODEL-PROPOSAL.md §4) ---
   // An ACTIVE ABN with a matching name is necessary, not sufficient. A named
@@ -275,6 +342,9 @@ model Affiliation {
 
   // --- Offboarding: notice runs BEFORE the end date (§6) ---
   /**
+   * /**
+   * /**
+   * /**
    * /**
    * /**
    * /** Must be <= endsAt. Enforced by a CHECK constraint, not just in code.
@@ -466,13 +536,30 @@ model EnrolmentCeremony {
    * location-specific, and that lives on the affiliation.
    */
   practitionerId           String?   @db.Uuid
-  // Check 1 — current AHPRA registration.
-  ahpraNumber              String
-  ahpraRegistrationCurrent Boolean
+  // WHAT KIND OF PERSON this ceremony verified.
+  //
+  // `practitioner`   — the REQ-PKI-01 three checks: AHPRA registration, the
+  //   provider number at its location, and the person by video or in person.
+  //
+  // `practice_admin` — an administrator has no AHPRA number and no provider
+  //   number. Demanding those fields would force someone to invent one,
+  //   putting a fabricated registration number into permanent evidence. What
+  //   verifies an admin is the ORGANISATION APPROVAL: a named human checked
+  //   the ABN, the name, the address, and the applicant's entitlement to act
+  //   for the entity. A stronger attestation, of different facts — referenced
+  //   here rather than restated.
+  subjectKind              String    @default("practitioner")
+  // Check 1 — current AHPRA registration. Practitioner ceremonies only.
+  ahpraNumber              String?
+  ahpraRegistrationCurrent Boolean   @default(false)
   // Check 2 — the provider number AND the place of practice it is valid for.
-  providerNumber           String
-  providerNumberLocation   String
-  providerNumberVerified   Boolean
+  providerNumber           String?
+  providerNumberLocation   String?
+  providerNumberVerified   Boolean   @default(false)
+  /**
+   * For a practice_admin ceremony: the organisation whose approval stands in.
+   */
+  approvedOrganisationId   String?   @db.Uuid
   // Check 3 — the person.
   personVerificationMethod String // video | in_person
   /**

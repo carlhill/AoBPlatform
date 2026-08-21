@@ -1,6 +1,6 @@
 import { BadRequestException, Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsIn, IsOptional, IsString, MinLength, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsEmail, IsIn, IsOptional, IsString, MinLength, ValidateNested } from 'class-validator';
 import { OrganisationsService } from './organisations.service';
 
 /**
@@ -62,6 +62,65 @@ export class RegisterOrganisationDto {
   @IsString()
   hpiO?: string;
 
+  // --- The applicant, and their manager ---
+  //
+  // BOTH people are captured, with a position and personal contact details for
+  // each. This is the anti-fraud surface: a lone applicant with one throwaway
+  // email is cheap; two named people in stated positions, each reachable
+  // independently, is a much harder thing to fabricate — and gives the
+  // reviewer a second person to call who was not the one who applied.
+  @IsString()
+  @MinLength(2)
+  adminName!: string;
+
+  @IsEmail()
+  adminEmail!: string;
+
+  @IsString()
+  @MinLength(6)
+  adminPhone!: string;
+
+  @IsOptional()
+  @IsString()
+  adminPosition?: string;
+
+  @IsOptional()
+  @IsString()
+  managerName?: string;
+
+  @IsOptional()
+  @IsEmail()
+  managerEmail?: string;
+
+  @IsOptional()
+  @IsString()
+  managerPhone?: string;
+
+  @IsOptional()
+  @IsString()
+  managerPosition?: string;
+
+  @IsOptional()
+  @IsString()
+  website?: string;
+
+  /** NOT a Location. See the schema comment — a head office is often not a place of practice. */
+  @IsString()
+  @MinLength(5)
+  headOfficeAddress!: string;
+
+  @IsOptional()
+  @IsBoolean()
+  headOfficeIsPlaceOfPractice?: boolean;
+
+  @IsOptional()
+  @IsIn(['ahpra', 'hpio', 'accreditation'])
+  credentialType?: string;
+
+  @IsOptional()
+  @IsString()
+  credentialValue?: string;
+
   /**
    * Supplied ONLY when the ABR API is unavailable in this environment. If the
    * API is configured, it wins and this is ignored — a human cannot overrule
@@ -87,6 +146,29 @@ export class ValidationDecisionDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  /**
+   * §11 — how the applicant was verified to represent this entity. Required to
+   * APPROVE; not required to reject, because refusing an application you could
+   * not verify is the right outcome and demanding a completed check first
+   * would be backwards.
+   */
+  @IsOptional()
+  @IsIn(['phone_call', 'domain_match', 'hpio', 'document', 'none'])
+  entitlementMethod?: string;
+
+  @IsOptional()
+  @IsString()
+  entitlementPhoneNumber?: string;
+
+  /** Where the number came from. A number off the application form proves nothing. */
+  @IsOptional()
+  @IsIn(['nhsd', 'practice_website', 'public_directory', 'application_form', 'other'])
+  entitlementNumberSource?: string;
+
+  @IsOptional()
+  @IsString()
+  entitlementSpokeWithName?: string;
 }
 
 export class AddLocationDto {

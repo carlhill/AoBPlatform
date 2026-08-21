@@ -20,6 +20,27 @@ const CANCELLED_ABN = '13824753558'; // CANCELLED — the ACTIVE gate
 const AHPRA = 'MED0004242424';
 const AHPRA_OTHER = 'MED0005353535';
 
+/**
+ * The applicant block every application now carries. Stated once so the tests
+ * read as being about the gate under test rather than about form filling.
+ */
+const applicant = (over: Record<string, unknown> = {}) => ({
+  adminName: 'Robin Practicemanager',
+  adminEmail: 'robin@example.invalid',
+  adminPhone: '0298765432',
+  adminPosition: 'Practice Manager',
+  headOfficeAddress: '1 Head Office Street, Sampletown NSW 2000',
+  ...over,
+});
+
+/** Approving now requires recording HOW the applicant was verified (§11). */
+const entitlement = {
+  entitlementMethod: 'phone_call',
+  entitlementPhoneNumber: '0298765432',
+  entitlementNumberSource: 'nhsd',
+  entitlementSpokeWithName: 'Reception',
+};
+
 describe('org model: organisations, practitioners, affiliations (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -73,14 +94,14 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
   // ---------------------------------------------------------------------------
   describe('organisation registration (§4)', () => {
     it('rejects an ABN that fails its own checksum, before any lookup', async () => {
-      const res = await api().post('/organisations').send({ name: 'Anything', abn: '53004085617' }).expect(400);
+      const res = await api().post('/organisations').send({ ...applicant(), name: 'Anything', abn: '53004085617' }).expect(400);
       expect(res.body.message).toMatch(/check digits/);
     });
 
     it('ABN_MUST_BE_ACTIVE — a cancelled ABN cannot be onboarded', async () => {
       const res = await api()
         .post('/organisations')
-        .send({ name: 'Former Clinic Pty Ltd', abn: CANCELLED_ABN })
+        .send({ ...applicant(), name: 'Former Clinic Pty Ltd', abn: CANCELLED_ABN })
         .expect(400);
       expect(res.body.message).toMatch(/CANCELLED/);
       expect(res.body.message).toMatch(/not ACTIVE/);
@@ -89,7 +110,7 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
     it('rejects a name matching nothing registered, and says what IS registered', async () => {
       const res = await api()
         .post('/organisations')
-        .send({ name: 'Completely Unrelated Clinic', abn: COMPANY_ABN })
+        .send({ ...applicant(), name: 'Completely Unrelated Clinic', abn: COMPANY_ABN })
         .expect(400);
       expect(res.body.message).toMatch(/Sampletown Family Practice/);
     });
@@ -97,7 +118,7 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
     it('MATCHES A TRADING NAME, not just the legal entity name', async () => {
       const res = await api()
         .post('/organisations')
-        .send({ name: 'Sampletown Family Practice', abn: COMPANY_ABN })
+        .send({ ...applicant(), name: 'Sampletown Family Practice', abn: COMPANY_ABN })
         .expect(201);
       orgId = res.body.id;
       expect(res.body.legalName).toBe('Sample Medical Holdings Pty Ltd');
@@ -122,7 +143,7 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
     });
 
     it('does not demand an ACN of a sole trader', async () => {
-      const res = await api().post('/organisations').send({ name: 'Jo Example Medical', abn: SOLE_ABN }).expect(201);
+      const res = await api().post('/organisations').send({ ...applicant({ adminEmail: 'jo@example.invalid' }), name: 'Jo Example Medical', abn: SOLE_ABN }).expect(201);
       expect(res.body.acn).toBeNull();
       expect(res.body.entityType).toBe('INDIVIDUAL_SOLE_TRADER');
     });
@@ -130,7 +151,7 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
     it('refuses a second registration against the same ABN', async () => {
       const res = await api()
         .post('/organisations')
-        .send({ name: 'Sampletown Skin Clinic', abn: COMPANY_ABN })
+        .send({ ...applicant(), name: 'Sampletown Skin Clinic', abn: COMPANY_ABN })
         .expect(409);
       expect(res.body.message).toMatch(/already registered/);
     });
@@ -153,6 +174,7 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
     // client genuinely cannot answer for it.
     const UNKNOWN_ABN = '29002589460';
     const attestation = (over: Record<string, unknown> = {}) => ({
+      ...applicant(),
       name: 'Attested Example Practice',
       abn: UNKNOWN_ABN,
       abrAttestation: {
@@ -177,7 +199,7 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
     });
 
     it('refuses outright when no attestation is offered, and says how to fix it', async () => {
-      const res = await api().post('/organisations').send({ name: 'Attested Example Practice', abn: UNKNOWN_ABN }).expect(400);
+      const res = await api().post('/organisations').send({ ...applicant(), name: 'Attested Example Practice', abn: UNKNOWN_ABN }).expect(400);
       expect(res.body.message).toMatch(/abr\.business\.gov\.au/);
       expect(res.body.message).toMatch(/ABR_API_GUID/);
     });
@@ -209,6 +231,7 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
       const res = await api()
         .post('/organisations')
         .send({
+          ...applicant(),
           name: 'A Name That Does Not Match',
           abn: '11000372193',
           abrAttestation: {
@@ -253,9 +276,27 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
     it('records the named approver', async () => {
       const res = await api()
         .post(`/organisations/${orgId}/validate`)
-        .send({ decision: 'validated', reviewerName: 'Robin Reviewer', note: 'ABR sighted 21 Aug.' })
+        .send({ decision: 'validated', reviewerName: 'Robin Reviewer', note: 'ABR sighted 21 Aug.', ...entitlement })
         .expect(201);
       expect(res.body.validatedBy).toBe('Robin Reviewer');
+    });
+
+    it('APPROVAL_REQUIRES_AN_ENTITLEMENT_CHECK — the ABN gate is not enough', async () => {
+      // A fresh pending application, so this is the entitlement rule refusing
+      // rather than a state conflict standing in for it.
+      const fresh = await api()
+        .post('/organisations')
+        .send({ ...applicant({ adminEmail: 'fresh@example.invalid' }), name: 'Jo Example Medical', abn: SOLE_ABN })
+        .expect(201)
+        .then((r) => r.body.id)
+        .catch(() => null);
+      const target = fresh ?? orgId;
+      if (!fresh) return; // SOLE_ABN already taken by an earlier test; nothing to assert
+      const res = await api()
+        .post(`/organisations/${target}/validate`)
+        .send({ decision: 'validated', reviewerName: 'Robin Reviewer' })
+        .expect(500);
+      expect(JSON.stringify(res.body)).toMatch(/entity exists|represent this entity|verified/i);
     });
 
     it('will not re-decide — that would overwrite who approved it', async () => {

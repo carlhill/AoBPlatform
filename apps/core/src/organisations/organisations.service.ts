@@ -39,6 +39,19 @@ export class OrganisationsService {
     acn?: string;
     pms?: string;
     hpiO?: string;
+    adminName: string;
+    adminEmail: string;
+    adminPhone: string;
+    adminPosition?: string;
+    managerName?: string;
+    managerEmail?: string;
+    managerPhone?: string;
+    managerPosition?: string;
+    website?: string;
+    headOfficeAddress: string;
+    headOfficeIsPlaceOfPractice?: boolean;
+    credentialType?: string;
+    credentialValue?: string;
     abrAttestation?: {
       legalName: string;
       businessNames?: string[];
@@ -124,7 +137,13 @@ export class OrganisationsService {
         ${lookup.abnStatus.toUpperCase()}, ${gate.gstRegistered},
         ${gate.nameMatch.tier}, ${gate.nameMatch.matched ?? null},
         ${input.hpiO ?? null}, ${input.pms ?? 'medtech_evolution'},
-        ${source}, ${input.abrAttestation?.sightedByName ?? null})`;
+        ${source}, ${input.abrAttestation?.sightedByName ?? null},
+        ${input.adminName}, ${input.adminEmail}, ${input.adminPhone}, ${input.website ?? null},
+        ${input.headOfficeAddress}, ${extractState(input.headOfficeAddress) ?? null},
+        ${input.headOfficeIsPlaceOfPractice ?? false},
+        ${input.credentialType ?? null}, ${input.credentialValue ?? null},
+        ${input.adminPosition ?? null}, ${input.managerName ?? null}, ${input.managerEmail ?? null},
+        ${input.managerPhone ?? null}, ${input.managerPosition ?? null})`;
 
     const organisation = await this.prisma.withPractice(organisationId, (tx) =>
       tx.practice.findFirstOrThrow({ where: { id: organisationId } }),
@@ -146,6 +165,23 @@ export class OrganisationsService {
       },
     });
 
+    if (input.headOfficeIsPlaceOfPractice) {
+      const result = await this.addresses.validate(input.headOfficeAddress);
+      await this.prisma.withPractice(organisationId, (tx) =>
+        tx.practiceLocation.create({
+          data: {
+            practiceId: organisationId,
+            address: input.headOfficeAddress,
+            code: 'Head office',
+            state: result.state ?? extractState(input.headOfficeAddress),
+            addressValidated: result.validated,
+            addressCanonical: result.canonical,
+            active: result.validated,
+          },
+        }),
+      );
+    }
+
     return {
       id: organisation.id,
       name: organisation.name,
@@ -157,6 +193,9 @@ export class OrganisationsService {
       validationState: organisation.validationState,
       abnVerificationSource: organisation.abnVerificationSource,
       abnSightedByName: organisation.abnSightedByName,
+      adminEmail: organisation.adminEmail,
+      headOfficeAddress: organisation.headOfficeAddress,
+      headOfficeIsPlaceOfPractice: organisation.headOfficeIsPlaceOfPractice,
       /** Shown to the operator so an inexact match is visible, not silent. */
       nameMatch: { tier: gate.nameMatch.tier, matched: gate.nameMatch.matched, source: gate.nameMatch.source },
       next: 'This organisation is queued for human validation. It cannot add locations or practitioners until approved.',
@@ -196,7 +235,19 @@ export class OrganisationsService {
   }
 
   /** Gate 3. The reviewer is NAMED — "approved by the system" is not a thing. */
-  async decideValidation(organisationId: string, input: { decision: 'validated' | 'rejected'; reviewerName: string; note?: string }) {
+  async decideValidation(
+    organisationId: string,
+    input: {
+      decision: 'validated' | 'rejected';
+      reviewerName: string;
+      note?: string;
+      /** §11 — HOW the applicant was verified to represent this entity. */
+      entitlementMethod?: string;
+      entitlementPhoneNumber?: string;
+      entitlementNumberSource?: string;
+      entitlementSpokeWithName?: string;
+    },
+  ) {
     if (!input.reviewerName?.trim()) {
       throw new BadRequestException('A validation decision must name the human who made it.');
     }
@@ -216,9 +267,19 @@ export class OrganisationsService {
     // The function re-checks 'pending' itself, so two reviewers racing cannot
     // both write a decision.
     const [updated] = await this.prisma.$queryRaw<
-      Array<{ id: string; validationState: string; validatedByName: string; validatedAt: Date }>
+      Array<{
+        id: string;
+        name: string;
+        validationState: string;
+        validatedByName: string;
+        validatedAt: Date;
+        adminName: string | null;
+        adminEmail: string | null;
+      }>
     >`SELECT * FROM decide_organisation_validation(
-        ${organisationId}::uuid, ${input.decision}, ${input.reviewerName.trim()}, ${input.note ?? null})`;
+        ${organisationId}::uuid, ${input.decision}, ${input.reviewerName.trim()}, ${input.note ?? null},
+        ${input.entitlementMethod ?? null}, ${input.entitlementPhoneNumber ?? null},
+        ${input.entitlementNumberSource ?? null}, ${input.entitlementSpokeWithName ?? null})`;
 
     await enqueueVaultEvent(this.prisma, {
       type: input.decision === 'validated' ? 'organisation.validated' : 'organisation.rejected',
@@ -226,7 +287,14 @@ export class OrganisationsService {
       subject: { type: 'Organisation', id: organisationId },
       // The reviewer's NAME is evidence here, not PII incidental to a payload:
       // "who approved this practice" is the whole point of the queue.
-      payload: { decision: input.decision, reviewedBy: input.reviewerName.trim() },
+      payload: {
+        decision: input.decision,
+        reviewedBy: input.reviewerName.trim(),
+        // The entitlement decision is the substance of the approval, so it is
+        // evidence rather than incidental detail.
+        entitlementMethod: input.entitlementMethod ?? 'none',
+        entitlementNumberSource: input.entitlementNumberSource ?? 'n/a',
+      },
     });
 
     return {

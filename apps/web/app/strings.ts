@@ -56,10 +56,58 @@ export const strings = {
     registerHeading: '1. Register the practice',
     nameLabel: 'Practice name (legal OR trading name)',
     abnLabel: 'ABN',
-    registerButton: 'Register',
     offlineNote:
       'ABN lookup runs offline against fixtures in this environment, so only these resolve: 53004085616 ' +
       '(company, trades under another name), 51824753556 (sole trader, no ACN), 13824753558 (CANCELLED).',
+    registerButton: 'Register',
+    applicantHeading: 'Who is applying',
+    applicantNote:
+      'Two named people, each independently reachable. This is the anti-fraud surface: one applicant with one ' +
+      'throwaway email is cheap to fake; a second contact in a stated position is not — and it gives the ' +
+      'reviewer somebody to call who is NOT the person who applied.',
+    adminNameLabel: 'Your full name',
+    adminEmailLabel: 'Your email — the passkey invitation goes here',
+    adminPhoneLabel: 'Your direct phone',
+    adminPositionLabel: 'Your position at the practice',
+    managerHeading: 'Your manager (leave blank if you are a sole trader)',
+    managerNameLabel: 'Manager’s full name',
+    managerEmailLabel: 'Manager’s email',
+    managerPhoneLabel: 'Manager’s phone',
+    managerPositionLabel: 'Manager’s position',
+    managerMustDiffer:
+      'The manager must be a different person — a second contact with your own email verifies nothing.',
+    headOfficeHeading: 'Head office',
+    headOfficeNote:
+      'This is the registered or administrative address. It is NOT automatically a place of practice — a ' +
+      'practitioner’s provider number must never end up attached to an address they have never attended. ' +
+      'Tick the box only if patients are actually seen here.',
+    headOfficeLabel: 'Head-office address',
+    headOfficeIsPopLabel: 'Patients are also seen at this address (creates a location)',
+    websiteLabel: 'Practice website (optional)',
+    credentialHeading: 'Proof this is a health practice',
+    credentialNote:
+      'There is no general "practice licence" for an Australian GP clinic. AHPRA registers INDIVIDUALS; ' +
+      'practices are accredited against the RACGP Standards and identified by HPI-O. The AHPRA number of a ' +
+      'responsible practitioner is the only one of the three that is publicly checkable.',
+    credentialTypeLabel: 'Credential type',
+    credentialTypePick: 'Select…',
+    credentialValueLabel: 'Number / reference',
+    entitlementHeading: 'How did you verify this applicant represents this entity?',
+    entitlementNote:
+      'Required to approve. The ABN gate proves the ENTITY exists — it does not prove this person speaks ' +
+      'for it, and the ABN and trading names are public. Rejecting needs no check: refusing an application ' +
+      'you could not verify is the right outcome.',
+    entitlementMethodLabel: 'Method',
+    entitlementMethodPick: 'Select…',
+    entitlementPhoneLabel: 'Number you dialled',
+    entitlementSourceLabel: 'Where did that number come from?',
+    entitlementSourcePick: 'Select…',
+    entitlementSpokeWithLabel: 'Who you spoke to',
+    entitlementSourceWarning:
+      'A number off the application form is chosen by the applicant, so calling it proves only that they ' +
+      'answer their own phone. AHPRA cannot help either — the public register publishes suburb and postcode ' +
+      'only, never a phone number.',
+    contactCol: 'Contacts',
     attestHeading: 'The ABR could not be reached — record what you saw instead',
     attestNote:
       'Open abr.business.gov.au in another tab, search this ABN, and type in what the register shows. Every ' +

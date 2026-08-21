@@ -200,11 +200,13 @@ export class IdentityService {
     try {
       assertCeremonySufficient(
         {
+          subjectKind: ceremony.subjectKind as never,
           ahpraNumber: ceremony.ahpraNumber,
           ahpraRegistrationCurrent: ceremony.ahpraRegistrationCurrent,
           providerNumber: ceremony.providerNumber,
           providerNumberLocation: ceremony.providerNumberLocation,
           providerNumberVerified: ceremony.providerNumberVerified,
+          approvedOrganisationId: ceremony.approvedOrganisationId,
           personVerificationMethod: ceremony.personVerificationMethod as never,
           verifiedByName: ceremony.verifiedByName,
           verifiedByStaffId: ceremony.verifiedByStaffId ?? undefined,

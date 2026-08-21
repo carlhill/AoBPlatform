@@ -79,6 +79,18 @@ interface PendingRow {
   nameMatchedOn: string | null;
   abnVerificationSource: string | null;
   abnSightedByName: string | null;
+  adminName: string | null;
+  adminEmail: string | null;
+  adminPhone: string | null;
+  adminPosition: string | null;
+  managerName: string | null;
+  managerEmail: string | null;
+  managerPhone: string | null;
+  managerPosition: string | null;
+  website: string | null;
+  headOfficeAddress: string | null;
+  credentialType: string | null;
+  credentialValue: string | null;
 }
 interface LocationRow {
   id: string;
@@ -166,6 +178,28 @@ export function OrgConsole() {
   const [attGst, setAttGst] = useState(true);
   const [attSightedBy, setAttSightedBy] = useState('');
 
+  // The applicant block. Every one of these reaches a column — see
+  // CONVENTIONS.md §9a: a field is not done until it reaches the screen.
+  const [adminName, setAdminName] = useState('');
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPhone, setAdminPhone] = useState('');
+  const [adminPosition, setAdminPosition] = useState('');
+  const [managerName, setManagerName] = useState('');
+  const [managerEmail, setManagerEmail] = useState('');
+  const [managerPhone, setManagerPhone] = useState('');
+  const [managerPosition, setManagerPosition] = useState('');
+  const [website, setWebsite] = useState('');
+  const [headOffice, setHeadOffice] = useState('');
+  const [headOfficeIsPop, setHeadOfficeIsPop] = useState(false);
+  const [credentialType, setCredentialType] = useState('');
+  const [credentialValue, setCredentialValue] = useState('');
+
+  // The entitlement check (§11), recorded at approval.
+  const [entMethod, setEntMethod] = useState('');
+  const [entPhone, setEntPhone] = useState('');
+  const [entSource, setEntSource] = useState('');
+  const [entSpokeWith, setEntSpokeWith] = useState('');
+
   // Step 2 — the queue
   const [pending, setPending] = useState<PendingRow[]>([]);
   const [reviewer, setReviewer] = useState('');
@@ -224,6 +258,10 @@ export function OrgConsole() {
   const [inviteLocation, setInviteLocation] = useState('');
   const [providerNumber, setProviderNumber] = useState('');
   const [endsAt, setEndsAt] = useState('');
+
+  // Enforced in the database too; surfaced here so it is caught before submit.
+  const managerEmailClashes =
+    managerEmail.trim().length > 0 && managerEmail.trim().toLowerCase() === adminEmail.trim().toLowerCase();
 
   const loadQueue = useCallback(async () => {
     const result = await call<{ organisations: PendingRow[] }>('/organisations/pending');
@@ -309,8 +347,108 @@ export function OrgConsole() {
           <input style={input} value={regAbn} onChange={(e) => setRegAbn(e.target.value)} placeholder="e.g. 51 824 753 556"
                 data-testid="reg-abn" />
         </label>
+        <h4>{strings.org.applicantHeading}</h4>
+        <p style={note}>{strings.org.applicantNote}</p>
+        <label style={field}>
+          {strings.org.adminNameLabel}
+          <input style={input} value={adminName} onChange={(e) => setAdminName(e.target.value)} data-testid="admin-name" />
+        </label>
+        <label style={field}>
+          {strings.org.adminEmailLabel}
+          <input
+            style={input}
+            type="email"
+            value={adminEmail}
+            onChange={(e) => setAdminEmail(e.target.value)}
+            data-testid="admin-email"
+          />
+        </label>
+        <label style={field}>
+          {strings.org.adminPhoneLabel}
+          <input style={input} value={adminPhone} onChange={(e) => setAdminPhone(e.target.value)} data-testid="admin-phone" />
+        </label>
+        <label style={field}>
+          {strings.org.adminPositionLabel}
+          <input style={input} value={adminPosition} onChange={(e) => setAdminPosition(e.target.value)} />
+        </label>
+
+        <h4>{strings.org.managerHeading}</h4>
+        <label style={field}>
+          {strings.org.managerNameLabel}
+          <input style={input} value={managerName} onChange={(e) => setManagerName(e.target.value)} data-testid="manager-name" />
+        </label>
+        <label style={field}>
+          {strings.org.managerEmailLabel}
+          <input
+            style={input}
+            type="email"
+            value={managerEmail}
+            onChange={(e) => setManagerEmail(e.target.value)}
+            data-testid="manager-email"
+          />
+        </label>
+        {managerEmailClashes && <p style={{ color: RED }} data-testid="manager-clash">{strings.org.managerMustDiffer}</p>}
+        <label style={field}>
+          {strings.org.managerPhoneLabel}
+          <input style={input} value={managerPhone} onChange={(e) => setManagerPhone(e.target.value)} />
+        </label>
+        <label style={field}>
+          {strings.org.managerPositionLabel}
+          <input style={input} value={managerPosition} onChange={(e) => setManagerPosition(e.target.value)} />
+        </label>
+
+        <h4>{strings.org.headOfficeHeading}</h4>
+        <p style={note}>{strings.org.headOfficeNote}</p>
+        <label style={field}>
+          {strings.org.headOfficeLabel}
+          <input style={input} value={headOffice} onChange={(e) => setHeadOffice(e.target.value)} data-testid="head-office" />
+        </label>
+        <label style={{ ...field, display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+          <input
+            type="checkbox"
+            checked={headOfficeIsPop}
+            onChange={(e) => setHeadOfficeIsPop(e.target.checked)}
+            data-testid="head-office-is-pop"
+          />
+          {strings.org.headOfficeIsPopLabel}
+        </label>
+        <label style={field}>
+          {strings.org.websiteLabel}
+          <input style={input} value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://" />
+        </label>
+
+        <h4>{strings.org.credentialHeading}</h4>
+        <p style={note}>{strings.org.credentialNote}</p>
+        <label style={field}>
+          {strings.org.credentialTypeLabel}
+          <select style={input} value={credentialType} onChange={(e) => setCredentialType(e.target.value)} data-testid="credential-type">
+            <option value="">{strings.org.credentialTypePick}</option>
+            <option value="ahpra">AHPRA number of a responsible practitioner — publicly checkable</option>
+            <option value="hpio">HPI-O — organisation identifier</option>
+            <option value="accreditation">Practice accreditation reference — verified with the accrediting body</option>
+          </select>
+        </label>
+        <label style={field}>
+          {strings.org.credentialValueLabel}
+          <input
+            style={input}
+            value={credentialValue}
+            onChange={(e) => setCredentialValue(e.target.value)}
+            data-testid="credential-value"
+          />
+        </label>
+
         <button
-          disabled={busy || !regName.trim() || !regAbn.trim()}
+          disabled={
+            busy ||
+            !regName.trim() ||
+            !regAbn.trim() ||
+            !adminName.trim() ||
+            !adminEmail.trim() ||
+            !adminPhone.trim() ||
+            !headOffice.trim() ||
+            managerEmailClashes
+          }
           data-testid="reg-submit"
           onClick={() =>
             void run(async () => {
@@ -335,7 +473,24 @@ export function OrgConsole() {
               try {
                 const result = await call<Organisation>('/organisations', {
                   method: 'POST',
-                  body: JSON.stringify({ name: regName, abn: regAbn, abrAttestation: attestation }),
+                  body: JSON.stringify({
+                    name: regName,
+                    abn: regAbn,
+                    adminName,
+                    adminEmail,
+                    adminPhone,
+                    adminPosition: adminPosition || undefined,
+                    managerName: managerName || undefined,
+                    managerEmail: managerEmail || undefined,
+                    managerPhone: managerPhone || undefined,
+                    managerPosition: managerPosition || undefined,
+                    website: website || undefined,
+                    headOfficeAddress: headOffice,
+                    headOfficeIsPlaceOfPractice: headOfficeIsPop,
+                    credentialType: credentialType || undefined,
+                    credentialValue: credentialValue || undefined,
+                    abrAttestation: attestation,
+                  }),
                 });
                 setRegistered(result);
                 setNeedsAttestation(false);
@@ -472,6 +627,52 @@ export function OrgConsole() {
           {strings.org.rejectNoteLabel}
           <input style={input} value={rejectNote} placeholder="only needed to reject" onChange={(e) => setRejectNote(e.target.value)} data-testid="reject-note" />
         </label>
+        <h4>{strings.org.entitlementHeading}</h4>
+        <p style={note}>{strings.org.entitlementNote}</p>
+        <label style={field}>
+          {strings.org.entitlementMethodLabel}
+          <select style={input} value={entMethod} onChange={(e) => setEntMethod(e.target.value)} data-testid="ent-method">
+            <option value="">{strings.org.entitlementMethodPick}</option>
+            <option value="phone_call">Called the practice on an independently obtained number</option>
+            <option value="domain_match">Admin email domain matches the practice domain</option>
+            <option value="hpio">HPI-O cross-checked</option>
+            <option value="document">Sighted a document tying the person to the entity</option>
+          </select>
+        </label>
+        {entMethod === 'phone_call' && (
+          <>
+            <label style={field}>
+              {strings.org.entitlementPhoneLabel}
+              <input style={input} value={entPhone} onChange={(e) => setEntPhone(e.target.value)} data-testid="ent-phone" />
+            </label>
+            <label style={field}>
+              {strings.org.entitlementSourceLabel}
+              <select style={input} value={entSource} onChange={(e) => setEntSource(e.target.value)} data-testid="ent-source">
+                <option value="">{strings.org.entitlementSourcePick}</option>
+                <option value="nhsd">National Health Services Directory</option>
+                <option value="public_directory">Public directory listing</option>
+                <option value="practice_website">Practice website found independently</option>
+                <option value="application_form">The application form itself</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            {entSource === 'application_form' && (
+              <p style={{ color: RED }} data-testid="ent-source-warning">
+                {strings.org.entitlementSourceWarning}
+              </p>
+            )}
+            <label style={field}>
+              {strings.org.entitlementSpokeWithLabel}
+              <input
+                style={input}
+                value={entSpokeWith}
+                onChange={(e) => setEntSpokeWith(e.target.value)}
+                data-testid="ent-spoke-with"
+              />
+            </label>
+          </>
+        )}
+
         {pending.length === 0 ? (
           <p style={note}>{strings.org.queueEmpty}</p>
         ) : (
@@ -481,6 +682,7 @@ export function OrgConsole() {
                 <th style={th}>Applied as</th>
                 <th style={th}>{strings.org.legalNameLabel}</th>
                 <th style={th}>ABN</th>
+                <th style={th}>{strings.org.contactCol}</th>
                 <th style={th}>Match</th>
                 <th style={th} />
               </tr>
@@ -493,6 +695,31 @@ export function OrgConsole() {
                   <td style={td}>
                     <code>{row.abn}</code>
                   </td>
+                  <td style={td}>
+                    {row.adminName} ({row.adminPosition ?? '—'})
+                    <div style={{ ...note, margin: 0 }}>
+                      {row.adminEmail} · {row.adminPhone}
+                    </div>
+                    {row.managerName ? (
+                      <>
+                        <div style={{ marginTop: '0.35rem' }}>
+                          {row.managerName} ({row.managerPosition ?? '—'})
+                        </div>
+                        <div style={{ ...note, margin: 0 }}>
+                          {row.managerEmail ?? '—'} · {row.managerPhone ?? '—'}
+                        </div>
+                      </>
+                    ) : (
+                      <div style={{ ...note, margin: 0, color: AMBER }}>No second contact given</div>
+                    )}
+                    {row.headOfficeAddress && <div style={{ ...note, margin: 0 }}>{row.headOfficeAddress}</div>}
+                    {row.website && <div style={{ ...note, margin: 0 }}>{row.website}</div>}
+                    {row.credentialType && (
+                      <div style={{ ...note, margin: 0 }}>
+                        {row.credentialType}: {row.credentialValue}
+                      </div>
+                    )}
+                  </td>
                   <td style={{ ...td, color: row.nameMatchTier === 'exact' ? GREEN : AMBER }}>
                     {row.nameMatchTier}
                     <div style={{ ...note, color: row.abnVerificationSource === 'abr_api' ? GREEN : AMBER }}>
@@ -503,13 +730,26 @@ export function OrgConsole() {
                   </td>
                   <td style={td}>
                     <button
-                      disabled={busy || !reviewer.trim()}
+                      disabled={
+                        busy ||
+                        !reviewer.trim() ||
+                        !entMethod ||
+                        (entMethod === 'phone_call' && (!entPhone.trim() || !entSource || !entSpokeWith.trim()))
+                      }
                       data-testid={`approve-${row.id}`}
                       onClick={() =>
                         void run(async () => {
                           await call(`/organisations/${row.id}/validate`, {
                             method: 'POST',
-                            body: JSON.stringify({ decision: 'validated', reviewerName: reviewer, note: rejectNote || undefined }),
+                            body: JSON.stringify({
+                              decision: 'validated',
+                              reviewerName: reviewer,
+                              note: rejectNote || undefined,
+                              entitlementMethod: entMethod,
+                              entitlementPhoneNumber: entPhone || undefined,
+                              entitlementNumberSource: entSource || undefined,
+                              entitlementSpokeWithName: entSpokeWith || undefined,
+                            }),
                           });
                           selectOrg({ id: row.id, name: row.name });
                           await loadQueue();
