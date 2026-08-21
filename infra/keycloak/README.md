@@ -87,3 +87,49 @@ Issuer note (ReferralPlatform lesson): tokens carry the PUBLIC issuer
 (`http://localhost:21024/...`) regardless of which host the request hit —
 containers must validate against that while fetching JWKS via their internal
 route (`TokenVerifier`'s `jwksUri` override exists for exactly this).
+
+## Passkeys have TWO names, and they never match
+
+This confuses everybody once, so it is written down.
+
+| Where | What it shows | Set by |
+|---|---|---|
+| Keycloak's enrolment prompt | the label the person types, e.g. `AoBPasskey1` | the person, at enrolment |
+| Windows / macOS chooser | the WebAuthn **username**, e.g. `carl@hillsempire.com` | us, when the account is created |
+
+Neither system shows the other's name. Somebody who carefully labels their
+credential `AoBPasskey1` is later offered a chooser that says something else
+entirely, does not recognise it, and concludes the passkey did not save.
+
+That is why the username is the person's **email address** — it is the one
+identifier they will recognise in an operating-system dialog they were not
+expecting. It was `admin.<localpart>` first, which recognisably belonged to
+nobody.
+
+To check what the server actually holds, rather than guessing from a dialog:
+
+```bash
+node infra/keycloak/apply-realm-additions.mjs
+```
+
+and for one account, the Admin REST API under
+`/admin/realms/aobplatform/users/{id}/credentials` reports the credential type
+and its Keycloak label.
+
+## Platform administrators
+
+```bash
+node infra/keycloak/invite-platform-admin.mjs --email <address> --name "<full name>"
+```
+
+```bash
+node infra/keycloak/reset-platform-admin-passkey.mjs --email <address> --reason "<why>"
+```
+
+The reset REVOKES every existing passkey before issuing a new enrolment, and
+ends live sessions. Lost and stolen are treated identically because the person
+reporting it usually cannot tell which it was — a phone left in a taxi is
+"lost" until it is not.
+
+Neither command sets a password. There is no password path in this realm for
+these clients, and these commands do not create one.

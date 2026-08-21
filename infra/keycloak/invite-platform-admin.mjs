@@ -113,7 +113,25 @@ async function main() {
   }
   const role = await roleRes.json();
 
-  const username = `admin.${email.split('@')[0]}`.toLowerCase().replace(/[^a-z0-9._-]/g, '');
+  /*
+   * THE USERNAME IS THE EMAIL, and that is a decision about what Windows shows.
+   *
+   * When somebody enrols a passkey, Windows lists it by the WebAuthn username —
+   * NOT by the label they typed into Keycloak's own prompt. So an admin who
+   * carefully names their credential "AoBPasskey1" is later shown a chooser
+   * offering "admin.carl", recognises neither the name nor the account, and
+   * reasonably concludes their passkey is missing. That happened on the first
+   * real enrolment and cost the best part of an hour.
+   *
+   * An email address is the one identifier a person will recognise in an
+   * operating-system dialog they did not expect. Keycloak permits it as a
+   * username, and nothing else here depends on the shape.
+   *
+   * Note this does NOT rename an existing credential: Windows recorded the
+   * username at enrolment time, so an account created before this keeps showing
+   * its old name until the passkey is re-enrolled.
+   */
+  const username = email.trim().toLowerCase();
   const [firstName, ...rest] = name.trim().split(/\s+/);
 
   const existing = await (await api(token, `/users?email=${encodeURIComponent(email)}&exact=true`)).json();
