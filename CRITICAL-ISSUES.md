@@ -309,3 +309,92 @@ suite interference, which it never was.
   for anything the **browser** follows — the redirect is validated against the
   client's registered redirect URIs, and "being consistent" there produces a
   bare 400 with no explanation.
+
+---
+
+## 4. Every browser token was refused: issuer mismatch — RESOLVED 2026-08-22
+
+### What happened
+
+A signed-in platform administrator opened `/review/identity` and got **401**,
+with the banner still reading "signed in as carl@hillsempire.com".
+
+```
+[AuthGuard] Bearer token rejected: unexpected "iss" claim value
+```
+
+### Why nothing had caught it
+
+**Nothing had ever verified a token before.** The reviewer queue fetches with
+no `Authorization` header at all, and `AUTH_ENFORCE=false` lets a request with
+no token straight through. So the guard's verification path had never once run
+against a real browser-issued token, in any environment, ever.
+
+The identity dashboard was the first endpoint to carry `@RequireRoles`, and
+therefore the first request that actually presented one.
+
+### The cause
+
+The token's `iss` claim is minted from **the URL the browser used**:
+
+```
+http://localhost:21024/realms/aobplatform
+```
+
+`apps/core/.env` told core to expect:
+
+```
+http://127.0.0.1:21024/realms/aobplatform
+```
+
+Compared as strings. Never equal. Every browser token refused.
+
+**It was introduced by the ::1 fix.** When every address in that file was
+switched to `127.0.0.1` to stop Docker's IPv6 forwarder hanging, the issuer
+went with them — and the issuer is the one value in the file that is not an
+address to connect to. It is a **string compared against a claim**.
+
+`docker-compose.yml` has had this right since the containers were set up. The
+local `.env` did not, because it was written when core ran in Docker and split
+from it when core moved to the watch loop.
+
+### Why this was more serious than a 401
+
+**`AUTH_ENFORCE=true` would have locked every user out of everything.** With
+enforcement on, a rejected token is not a fall-through — it is the end of the
+request. The release gate was aimed at a system in which no token could pass,
+and the only reason nobody knew is that no endpoint had asked for one.
+
+### The fix
+
+Three URLs, and they are not interchangeable:
+
+| Setting | Value | Why |
+|---|---|---|
+| `KEYCLOAK_PUBLIC_ISSUER` | `localhost` | What the token SAYS. A string, never fetched. |
+| `KEYCLOAK_JWKS_URI` | `127.0.0.1` | Where WE fetch signing keys. Server-to-server. |
+| `KEYCLOAK_ISSUER` | `127.0.0.1` | Where WE mint service tokens. Server-to-server. |
+
+Both `apps/core/.env` and `.env.example` now set all three, with the reasoning
+beside them.
+
+The split was already designed for — `TokenVerifier` documents `issuer` as
+"the PUBLIC issuer" and offers `jwksUri` precisely "when the network path to
+Keycloak differs from the public issuer (the ReferralPlatform issuer-mismatch
+lesson)". The mechanism was there; the config never used it.
+
+### The lesson, and it is the same one as trap 3 in PASSKEYS.md
+
+**"127.0.0.1 everywhere" is not the rule.** The rule is:
+
+- an address something CONNECTS to → `127.0.0.1`
+- a string compared against a token claim, or a URL the BROWSER follows →
+  `localhost`
+
+Getting it backwards produces a bare 401 or a bare 400 with no explanation.
+
+### What would have caught it earlier
+
+An endpoint that required a role, reached by a real browser session — which is
+exactly what found it. Worth remembering when the next auth surface is built:
+**a guard that has never refused anything has never run.**

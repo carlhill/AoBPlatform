@@ -96,6 +96,23 @@ This cost an afternoon and was misdiagnosed as flaky tests. When a connection
 test passes and a client says "cannot reach", suspect the address family before
 suspecting the service.
 
+### But "127.0.0.1 everywhere" is NOT the rule
+
+Two values in `apps/core/.env` are not addresses to connect to, and setting
+them to `127.0.0.1` breaks authentication silently:
+
+| Setting | Value | Why |
+|---|---|---|
+| `KEYCLOAK_PUBLIC_ISSUER` | `localhost` | It is compared against the token's `iss` claim as a STRING. Never fetched. |
+| `KEYCLOAK_JWKS_URI` | `127.0.0.1` | We fetch it. Server-to-server. |
+| `KEYCLOAK_ISSUER` | `127.0.0.1` | We mint service tokens against it. Server-to-server. |
+
+The issuer is minted from the URL **the browser** used. Get it wrong and every
+browser-issued token is refused with `unexpected "iss" claim value` — and it
+stays invisible until an endpoint actually verifies one. See CRITICAL-ISSUES.md
+§4; this was live for weeks and would have made `AUTH_ENFORCE=true` lock
+everybody out.
+
 ## `node --watch` forks a child, and killing the parent orphans it
 
 The watcher is not the server. `node --watch` runs the application in a **child
