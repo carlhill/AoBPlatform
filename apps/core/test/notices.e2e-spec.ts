@@ -154,8 +154,11 @@ describe('M5 enduring lifecycle + M6 reg 89AA notices (e2e, real Postgres)', () 
       expect(effective.getTime()).toBeGreaterThan(notice.getTime());
       // Never a weekend.
       expect([0, 6]).not.toContain(effective.getUTCDay());
-      // The holiday-data gap is recorded in the evidence, not hidden.
-      expect(res.body.terminationCalendarState).toContain('weekend_only');
+      // Provenance recorded in the evidence: state, dataset version, and the
+      // fact that the dataset is not yet human-verified.
+      expect(res.body.terminationCalendarState).toContain('NSW');
+      expect(res.body.terminationCalendarState).toContain('holidays-');
+      expect(res.body.terminationCalendarState).toContain('UNVERIFIED');
     });
 
     it('hospital_admission_is_not_a_cessation_trigger (65CA(9))', async () => {

@@ -6,6 +6,7 @@
  * after cessation produces a claim that was never validly assigned.
  */
 import type { EnduringPathway } from './agreement';
+import { DATASET, holidaySetFor, type AustralianState, type HolidayDataset } from './public-holidays';
 
 /**
  * The six automatic cessation triggers (65CA(8), Addendum v2 §3.3).
@@ -65,25 +66,44 @@ export function requiresPostClaimNotice(pathway: EnduringPathway): boolean {
 export const TERMINATION_BUSINESS_DAYS = 2;
 
 /**
- * Public holidays are STATE-SPECIFIC and must be supplied by the caller: a
- * Friday notice before a long weekend lands differently in each state
- * (REQ-OFF-03). This function will not guess.
- *
- * ⚠ The holiday data source is a real, unbuilt dependency — data.gov.au
- * publishes an Australian public holidays dataset. Until it is wired in,
- * callers pass an empty set and the calculation is weekend-only, which is
- * WRONG NEAR EVERY PUBLIC HOLIDAY. Callers must record which holiday set
- * they used.
+ * Public holidays are STATE-SPECIFIC: a Friday notice before a long weekend
+ * lands differently in each state (REQ-OFF-03). Build one with
+ * `calendarFor(state, years)` from ./public-holidays — and note the dataset
+ * there is DERIVED, not authoritative, until a human verifies it. Every
+ * termination records which calendar produced its date so the provenance is
+ * in the evidence.
  */
 export interface BusinessDayCalendar {
   /** ISO dates (YYYY-MM-DD) that are public holidays in the relevant state. */
   readonly publicHolidays: ReadonlySet<string>;
   /** The state whose calendar this is, recorded on the termination for audit. */
   readonly state: string;
+  /** Dataset version + verification status, recorded alongside the state. */
+  readonly datasetVersion?: string;
+  readonly datasetVerified?: boolean;
 }
 
 function isoDate(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Builds the calendar for a state, covering the year of the notice and the
+ * next (a late-December notice crosses into January, where the substituted
+ * New Year holidays live).
+ */
+export function calendarFor(
+  state: AustralianState,
+  around: Date = new Date(),
+  dataset: HolidayDataset = DATASET,
+): BusinessDayCalendar {
+  const year = around.getUTCFullYear();
+  return {
+    publicHolidays: holidaySetFor(state, [year, year + 1], dataset),
+    state,
+    datasetVersion: dataset.version,
+    datasetVerified: dataset.verified,
+  };
 }
 
 export function isBusinessDay(date: Date, calendar: BusinessDayCalendar): boolean {

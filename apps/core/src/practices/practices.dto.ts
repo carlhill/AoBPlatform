@@ -29,6 +29,11 @@ export class CreatePracticeDto {
   @IsIn(['medtech_evolution', 'other'])
   pms!: string;
 
+  /** Drives the public-holiday calendar for 2-business-day terminations (REQ-OFF-03). */
+  @IsOptional()
+  @IsIn(['NSW', 'VIC', 'QLD', 'SA', 'WA', 'TAS', 'NT', 'ACT'])
+  state?: string;
+
   @IsOptional()
   @IsArray()
   @IsIn(['tyro', 'hicaps'], { each: true })

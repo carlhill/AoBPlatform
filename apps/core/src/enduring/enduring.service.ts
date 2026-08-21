@@ -4,14 +4,16 @@ import type { EnduringDetail } from '@prisma/client';
 import {
   anniversaryWarningBand,
   assertEnduringAllowed,
+  calendarFor,
   daysUntilAnniversary,
   hasAnniversaryFuse,
   HardRuleViolation,
+  isAustralianState,
   needsFourteenthBirthdayAction,
   terminationEffectiveDate,
   triggerAppliesTo,
+  type AustralianState,
   type AutomaticCessationTrigger,
-  type BusinessDayCalendar,
   type CessationReason,
   type EnduringPathway,
   type ProviderType,
@@ -21,19 +23,10 @@ import { PrismaService } from '../prisma/prisma.service';
 
 const SYSTEM_ACTOR = { principalType: 'system', id: 'core' } as const;
 
-/**
- * ⚠ PUBLIC HOLIDAYS ARE NOT WIRED IN. Termination is 2 BUSINESS days
- * (REQ-OFF-03) and business days depend on STATE public holidays — a Friday
- * notice before a long weekend lands differently in each state. data.gov.au
- * publishes the dataset; ingesting it is an unbuilt job. Until then the
- * calculation is weekend-only, which is WRONG NEAR EVERY PUBLIC HOLIDAY, and
- * every termination records which calendar produced its date so the gap is
- * visible in the evidence rather than hidden.
- */
-const WEEKEND_ONLY_CALENDAR: BusinessDayCalendar = {
-  publicHolidays: new Set(),
-  state: 'UNKNOWN_weekend_only_no_holiday_data',
-};
+// Public holidays come from the versioned dataset in @aobplatform/domain,
+// keyed on the PRACTICE'S STATE (REQ-OFF-03). The dataset reports itself as
+// unverified until a human checks it against each state's official list, and
+// that status is recorded on every termination alongside the state.
 
 export interface CreateEnduringInput {
   agreementId: string;
@@ -142,7 +135,6 @@ export class EnduringService {
     input: { initiatedBy: 'patient' | 'assignor' | 'provider' | 'practice'; reason?: CessationReason },
   ): Promise<EnduringDetail> {
     const noticeAt = new Date();
-    const effectiveAt = terminationEffectiveDate(noticeAt, WEEKEND_ONLY_CALENDAR);
 
     return this.prisma.withPractice(practiceId, async (tx) => {
       const detail = await tx.enduringDetail.findFirst({ where: { agreementId } });
@@ -150,12 +142,24 @@ export class EnduringService {
       if (detail.ceasedAt) throw new BadRequestException('This agreement has already ceased.');
       if (detail.terminationNoticeAt) throw new BadRequestException('Termination notice has already been given.');
 
+      const practice = await tx.practice.findFirst({});
+      const state = (practice?.state ?? 'NSW') as string;
+      if (!isAustralianState(state)) {
+        throw new BadRequestException(
+          `Practice state "${state}" is not a recognised Australian jurisdiction — the business-day calendar cannot be built.`,
+        );
+      }
+      const calendar = calendarFor(state as AustralianState, noticeAt);
+      const effectiveAt = terminationEffectiveDate(noticeAt, calendar);
+
       const updated = await tx.enduringDetail.update({
         where: { id: detail.id },
         data: {
           terminationNoticeAt: noticeAt,
           terminationEffectiveAt: effectiveAt,
-          terminationCalendarState: WEEKEND_ONLY_CALENDAR.state,
+          // Provenance in the evidence: which state's calendar, which dataset
+          // version, and whether that dataset has been human-verified.
+          terminationCalendarState: `${calendar.state} (${calendar.datasetVersion}${calendar.datasetVerified ? '' : ', UNVERIFIED'})`,
           cessationReason:
             input.reason ??
             (input.initiatedBy === 'patient'
@@ -173,7 +177,9 @@ export class EnduringService {
           initiatedBy: input.initiatedBy,
           noticeAt: noticeAt.toISOString(),
           effectiveAt: effectiveAt.toISOString(),
-          businessDayCalendar: WEEKEND_ONLY_CALENDAR.state,
+          businessDayCalendarState: calendar.state,
+          holidayDatasetVersion: calendar.datasetVersion ?? '',
+          holidayDatasetVerified: calendar.datasetVerified ?? false,
         },
       });
       return updated;

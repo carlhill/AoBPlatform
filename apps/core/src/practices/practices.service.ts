@@ -31,6 +31,7 @@ export class PracticesService {
           name: dto.name,
           abn: dto.abn,
           pms: dto.pms,
+          state: dto.state ?? 'NSW',
           rails: dto.rails ?? [],
           locations: { create: dto.locations.map((l) => ({ address: l.address })) },
         },

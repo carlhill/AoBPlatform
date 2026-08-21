@@ -25,6 +25,8 @@ model Practice {
   abn       String?
   pms       String   @default("medtech_evolution")
   rails     String[] @default([]) // tyro | hicaps
+  /** Drives the public-holiday calendar for 2-business-day terminations (REQ-OFF-03). */
+  state     String   @default("NSW")
   // FR-1.4 configuration (defaults stand until the console exposes them)
   identifierTypes  String[] @default(["name", "date_of_birth", "address"]) // floor 3, Medicare excluded non-configurably
   linkExpiryHours  Int      @default(48) // D-05 default

@@ -5,5 +5,6 @@ export * from './agreement';
 export * from './guards';
 export * from './lifecycle';
 export * from './chase';
+export * from './public-holidays';
 export * from './enduring';
 export * from './notice';
