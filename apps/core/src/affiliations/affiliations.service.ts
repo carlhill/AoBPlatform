@@ -26,6 +26,8 @@ import {
   isValidAhpraNumberFormat,
   toDirectoryEntry,
   toRosterEntry,
+  ACCEPTANCE_MEANS,
+  type AcceptanceMethod,
   AFFILIATION_VELOCITY_THRESHOLD,
   AFFILIATION_VELOCITY_WINDOW_DAYS,
   isAffiliationVelocityAnomalous,
@@ -795,6 +797,28 @@ export class AffiliationsService {
         startedAt: a.startedAt,
         noticeGivenAt: a.noticeGivenAt,
         endsAt: a.endsAt,
+
+        /*
+         * WHERE THE INVITATION ITSELF HAS GOT TO.
+         *
+         * Without this the console can say "invited" and nothing more, and
+         * "invited" covers two states a practice must not confuse: one where
+         * we have emailed the practitioner and are waiting on them, and one
+         * where nobody has told them anything at all. The second looks
+         * identical and is entirely the practice's move.
+         *
+         * The token and the code are NOT here and never will be. They are
+         * addressed to the practitioner; a practice that could read them could
+         * accept on their behalf, which is the one thing this whole flow
+         * exists to prevent.
+         */
+        invitationSentAt: a.inviteSentAt,
+        invitationExpiresAt: a.inviteExpiresAt,
+        /** email_link_and_code | passkey | console. Null until answered. */
+        acceptanceMethod: a.acceptanceMethod,
+        acceptanceMeans: a.acceptanceMethod
+          ? (ACCEPTANCE_MEANS[a.acceptanceMethod as AcceptanceMethod] ?? null)
+          : null,
         canCapture: canCaptureUnder({ ...a, status: a.status as never }, now),
         blockReason: captureBlockReason({ ...a, status: a.status as never }, now),
       }));

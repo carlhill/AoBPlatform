@@ -1347,4 +1347,117 @@ export const strings = {
 
     notLoaded: 'This invitation could not be loaded',
   },
+  /**
+   * Affiliations — the edge between a practitioner and a place.
+   *
+   * THE DISTINCTION THIS PAGE EXISTS TO KEEP VISIBLE: invited is not accepted.
+   * A practice looking at "four practitioners" will read that as four
+   * practitioners who can have consent captured in their name, and it is not —
+   * an invitation nobody has answered is worth nothing. So every row says where
+   * it has got to, and says whether capture is actually open.
+   */
+  affiliations: {
+    audience: 'Practice admin',
+    title: 'Affiliations',
+    lead:
+      'Which practitioners work at which of your locations. A practitioner’s Medicare provider number ' +
+      'belongs to a place, not to a person, so this is where it lives — and only the practitioner can ' +
+      'accept one of these.',
+    backToSetup: 'Back to set up',
+    notLoaded: 'The affiliations could not be loaded',
+    loading: 'Loading…',
+
+    emptyTitle: 'No affiliations yet',
+    emptyBody:
+      'Nothing can be captured until at least one practitioner has accepted an affiliation at a confirmed ' +
+      'location. Invite one below.',
+
+    countOne: '1 affiliation',
+    countMany: '{n} affiliations',
+    captureOpen: '{n} capture open',
+    awaiting: '{n} awaiting an answer',
+
+    // --- Status ---
+    statusInvited: 'Awaiting their answer',
+    statusNotSent: 'Not sent yet',
+    statusActive: 'Accepted',
+    statusEnding: 'Ending',
+    statusEnded: 'Ended',
+    statusRejected: 'Declined',
+
+    notSentNote:
+      'Nobody has told this practitioner they have been invited. Until an invitation goes out, this is ' +
+      'waiting on you and not on them.',
+    sentNote: 'Invitation sent {when}. Only the practitioner can answer it.',
+    expiresNote: 'It stops working on {when}.',
+    acceptedNote: 'Accepted {when}.',
+    endingNote: 'Notice given. This ends on {when}, and capture continues until then.',
+    endedNote: 'Ended {when}. Enduring agreements at this location ceased on that date.',
+    rejectedNote: 'The practitioner declined this invitation.',
+    howAccepted: 'How it was accepted',
+
+    providerNumber: 'Provider number',
+    noProviderNumber: 'No provider number',
+    noProviderNumberNote:
+      'Not a problem in itself — the law identifies a practitioner by name and the address of the place of ' +
+      'practice, OR by the provider number for that place. The confirmed address covers it.',
+
+    // --- Actions ---
+    send: 'Send the invitation',
+    resend: 'Send it again',
+    sending: 'Sending…',
+    sendFailed: 'The invitation could not be sent',
+    sentTitle: 'Invitation sent',
+    resendNote:
+      'Sending again replaces the previous link, so the old one stops working immediately. That is ' +
+      'deliberate: every re-send would otherwise leave another live invitation in an inbox.',
+
+    notice: 'Record their departure',
+    noticeLead:
+      'The date they actually leave, as agreed with them. Enduring agreements at this location cease on ' +
+      'that date — they do not lapse quietly, they cease, and the evidence is kept in full.',
+    noticeDate: 'Last day at this location',
+    noticeBy: 'Your name',
+    noticeReason: 'Reason',
+    noticeReasonHint: 'Optional. Kept with the record.',
+    noticeAction: 'Record it',
+    noticing: 'Recording…',
+    noticeFailed: 'That could not be recorded',
+    withdraw: 'Withdraw the notice',
+    withdrawing: 'Withdrawing…',
+    cancel: 'Cancel',
+
+    // --- Inviting ---
+    inviteTitle: 'Invite a practitioner to a location',
+    inviteLead:
+      'This creates the invitation. It does not make them active — only they can do that, from a link sent ' +
+      'to their own email address.',
+    invitePractitioner: 'Practitioner',
+    invitePractitionerHint: 'Somebody already on your list. Add them there first if they are not.',
+    invitePractitionerPick: 'Choose…',
+    inviteLocation: 'Location',
+    inviteLocationHint: 'Only confirmed locations can host a practitioner.',
+    inviteLocationPick: 'Choose…',
+    inviteNoLocations:
+      'None of your locations has a confirmed address yet, so there is nowhere to affiliate anybody. ' +
+      'Confirm one first.',
+    inviteNoPractitioners:
+      'You have no practitioners on your list yet. Add one before inviting them anywhere.',
+    inviteDepartment: 'Department',
+    inviteDepartmentNone: 'None',
+    inviteProviderNumber: 'Their provider number here',
+    inviteProviderNumberHint:
+      'Optional, and it belongs to this location specifically — a practitioner has one per place of ' +
+      'practice. It is never shown to another practice.',
+    inviteBy: 'Your name',
+    inviteByHint: 'Recorded as the person who invited them.',
+    inviteAction: 'Invite them',
+    inviting: 'Inviting…',
+    inviteFailed: 'The invitation could not be created',
+    invitedTitle: 'Invited',
+    invitedBody: 'Now send them the invitation, using the button on their row above.',
+
+    toPractitioners: 'Manage practitioners',
+    toLocations: 'Manage locations',
+  },
 } as const;
