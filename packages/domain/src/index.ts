@@ -16,3 +16,5 @@ export * from './ahpra';
 export * from './address';
 export * from './artefact';
 export * from './checks';
+export * from './contacts';
+export * from './review';

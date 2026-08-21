@@ -5,6 +5,8 @@ import {
   isValidAhpraNumberFormat,
   addressWarnings,
   assertAddressUsable,
+  ContactError,
+  assertContactsIndependent,
   assertOrganisationApplicationValid,
   formatAddress,
   isValidAbnChecksum,
@@ -156,6 +158,23 @@ export class OrganisationsService {
     // says about a number that was never going to resolve.
     if (!isValidAbnChecksum(abn)) {
       throw new BadRequestException(`"${input.abn}" is not a valid ABN — the check digits do not agree.`);
+    }
+
+    // Contact independence, also before any lookup, for the same reason: it is
+    // offline and certain. The second contact exists to give the reviewer
+    // somebody to call who is not the applicant, so two contacts sharing an
+    // inbox or a handset is one contact wearing a hat. The form refuses this
+    // too, but the form is not the boundary — this endpoint is.
+    try {
+      assertContactsIndependent({
+        adminEmail: input.adminEmail,
+        adminPhone: input.adminPhone,
+        managerEmail: input.managerEmail,
+        managerPhone: input.managerPhone,
+      });
+    } catch (err) {
+      if (err instanceof ContactError) throw new BadRequestException(err.message);
+      throw err;
     }
 
     // The API wins whenever it can answer. A human attestation is a FALLBACK
@@ -315,7 +334,26 @@ export class OrganisationsService {
       );
     }
 
+    // Acknowledge, LAST, and never let it fail the registration. Everything
+    // above is committed by this point; an application lost because a mail
+    // server hiccuped would be a far worse outcome than an applicant who does
+    // not receive a receipt.
+    const acknowledgement = await this.practiceAdmin
+      .onApplicationReceived({
+        organisationId: organisation.id,
+        organisationName: organisation.name,
+        adminName: input.adminName,
+        adminEmail: input.adminEmail,
+        statusUrl: this.config.get<string>('APPLICATION_STATUS_URL'),
+        supportPhone: this.config.get<string>('SUPPORT_PHONE'),
+      })
+      .catch((err: Error) => {
+        this.logger.error(`The acknowledgement for ${organisation.id} threw: ${err.message}`);
+        return { notified: false, detail: 'The acknowledgement could not be sent.' };
+      });
+
     return {
+      acknowledgement,
       id: organisation.id,
       name: organisation.name,
       abn: organisation.abn,

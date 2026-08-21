@@ -197,4 +197,87 @@ export class PracticeAdminService {
         : `The applicant could NOT be notified: ${result.failureReason ?? 'unknown error'}.`,
     };
   }
+
+  /**
+   * Acknowledge an application the moment it arrives.
+   *
+   * Until this existed, an applicant submitted a form that promised "you will
+   * hear from us either way" and then heard nothing at all until a decision.
+   * The wait is genuinely open-ended — gate 3 is a person ringing a practice —
+   * so silence reads as a form that went nowhere, and the predictable response
+   * is to submit again, which is how one practice becomes three applications.
+   *
+   * Three deliberate constraints on what this may say:
+   *
+   *   1. It gives a REFERENCE and a route to ask, never an estimate. We do not
+   *      control how long a phone call takes to return, and a missed estimate
+   *      is worse than none.
+   *   2. It never states or implies an outcome. An acknowledgement that reads
+   *      as encouragement is the beginning of "but your email said".
+   *   3. It reveals nothing that was not already on the applicant's own screen.
+   *      Email is not an authenticated channel, and an acknowledgement that
+   *      confirmed anything about the entity would be a disclosure to whoever
+   *      received it — including whoever received it by mistake.
+   *
+   * A failure to send is REPORTED, never thrown: the application has already
+   * been accepted and recorded, and losing it because a mail server hiccuped
+   * would be the wrong trade entirely.
+   */
+  async onApplicationReceived(input: {
+    organisationId: string;
+    organisationName: string;
+    adminName: string | null;
+    adminEmail: string | null;
+    statusUrl?: string;
+    supportPhone?: string;
+  }): Promise<{ notified: boolean; detail: string }> {
+    if (!input.adminEmail) {
+      return { notified: false, detail: 'No admin email was given, so no acknowledgement could be sent.' };
+    }
+
+    const lines = [
+      input.adminName ? `${input.adminName},` : 'Hello,',
+      '',
+      `We have your application for ${input.organisationName}. Nothing further is needed from you now.`,
+      '',
+      `Your reference is ${input.organisationId}.`,
+      '',
+      'What happens next: a person reads the application. An active ABN and a matching name are necessary ' +
+        'and not sufficient, so somebody here checks that you are entitled to act for this practice. That ' +
+        'usually means a phone call to the practice on a number we find ourselves.',
+      '',
+      'If you want to check where it has got to, or if anything has changed:',
+    ];
+
+    if (input.statusUrl) {
+      lines.push(`  · Check the status: ${input.statusUrl}`);
+    }
+    if (input.supportPhone) {
+      lines.push(`  · Call us: ${input.supportPhone}`);
+    }
+    lines.push('  · Or reply to this message, quoting the reference above.');
+    lines.push('');
+    lines.push('You will hear from us either way.');
+
+    const result = await this.messaging.dispatch({
+      channel: 'email',
+      to: input.adminEmail,
+      subject: `We have your application for ${input.organisationName} — reference ${input.organisationId}`,
+      body: lines.join('\n'),
+    });
+
+    if (!result.accepted) {
+      this.logger.warn(
+        `The acknowledgement for ${input.organisationId} was NOT sent: ` +
+          `${result.failureReason ?? 'unknown error'}. The application itself is recorded and unaffected.`,
+      );
+    }
+
+    return {
+      notified: result.accepted,
+      detail: result.accepted
+        ? `The applicant was acknowledged (${this.messaging.mode}).`
+        : `The acknowledgement could NOT be sent: ${result.failureReason ?? 'unknown error'}.`,
+    };
+  }
 }

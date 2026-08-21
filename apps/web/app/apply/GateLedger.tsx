@@ -20,7 +20,17 @@
 import { Chip, ui, type Tone } from '../ui';
 import { strings } from '../strings';
 
-export type GateState = 'not_run' | 'passed' | 'failed' | 'waiting';
+/**
+ * ATTESTED is deliberately its own state, not a flavour of `passed`.
+ *
+ * When the ABR cannot be reached, an applicant reads the register themselves
+ * and types what it shows. Every rule still runs against those values — the ABN
+ * must be ACTIVE and the name must match — so the CHECK genuinely passed. What
+ * changed is who looked, and that is a difference in evidence quality that the
+ * reviewer downstream has to be able to see. Painting it as PASSED would hide
+ * the one fact most worth knowing: this line was typed by the applicant.
+ */
+export type GateState = 'not_run' | 'passed' | 'failed' | 'waiting' | 'attested';
 
 export interface GateLedgerState {
   readonly checksum: GateState;
@@ -35,6 +45,8 @@ const toneFor: Record<GateState, Tone> = {
   passed: 'ok',
   failed: 'stop',
   waiting: 'warn',
+  // Warn, not ok. The check passed; the SOURCE is weaker, and the colour says so.
+  attested: 'warn',
   not_run: 'neutral',
 };
 

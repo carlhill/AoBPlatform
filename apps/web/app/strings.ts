@@ -4,7 +4,16 @@
  * replaces this module with the real string-table architecture — keeping the
  * discipline from the first screen means no inline-string hunt later.
  * UK/AU spelling throughout (CLAUDE.md §3).
+ *
+ * A refusal message that the SERVER also emits is imported from the domain
+ * rather than retyped here. The rule and its wording are one thing: if the form
+ * says "same handset" and the API says something else, the applicant has been
+ * told two different stories about one refusal. Importing keeps REQ-LANG-01
+ * true — this module is still the only place a component reads text from — and
+ * keeps the wording single-sourced with the rule that produces it.
  */
+import { CONTACT_CLASH_MESSAGES } from '@aobplatform/domain';
+
 export const strings = {
   appName: 'AoBPlatform',
   auth: {
@@ -62,7 +71,11 @@ export const strings = {
       passed: 'Passed',
       failed: 'Failed',
       waiting: 'Waiting',
+      attested: 'Attested',
     },
+    registerAttested:
+      'The register could not be reached, so these details were read from the ABN Lookup and typed by ' +
+      'the applicant. The same rules ran against them. A reviewer will re-read the register.',
   },
   apply: {
     navApply: 'Apply',
@@ -116,7 +129,7 @@ export const strings = {
     adminEmailHint: 'The passkey invitation goes here. There is no password to choose.',
     phone: 'Direct phone',
     position: 'Position at the practice',
-    managerSameEmail: 'The manager must be a different person — a second contact with your own email verifies nothing.',
+    contactClash: CONTACT_CLASH_MESSAGES,
 
     submit: 'Send the application',
     submitDisabled: 'Complete the required fields to send.',
@@ -151,6 +164,123 @@ export const strings = {
       'A person reads it next. You will hear from us either way, at the email above. There is nothing further ' +
       'to do now.',
     sentReference: 'Reference',
+  },
+  review: {
+    navQueue: 'Queue',
+    audience: 'Reviewer',
+
+    queueTitle: 'Applications waiting on a person',
+    queueLead:
+      'Gate 3. Every application here has already passed its check digits and the register — those two are ' +
+      'necessary and not sufficient. What is left is the question neither can answer: is this applicant ' +
+      'entitled to act for this entity.',
+    queueEmpty: 'Nothing is waiting. When an application arrives it appears here.',
+    queueEmptyTitle: 'The queue is empty',
+    queueCount: 'waiting',
+    queueSearch: 'Filter by name or ABN',
+    queueSearchHint: 'Matches on practice name, legal name or ABN. Leave blank to see everything waiting.',
+    queueNoMatch: 'No waiting application matches that.',
+    queueOpen: 'Review',
+    queueWaiting: 'Waiting',
+    queueSortNote: 'Ordered by what needs the most attention, not by arrival.',
+
+    // The flags. Each names ONE thing a reviewer must not miss, in the words
+    // they would use to describe it to a colleague.
+    flagAttested: 'ABN typed by applicant',
+    flagAttestedWhy:
+      'The register could not be reached, so the applicant read it and typed what it said. The rules ran ' +
+      'against their transcription, not against the ABR. Re-read the register before approving.',
+    flagContactsClash: 'Both contacts share a',
+    flagContactsClashWhy:
+      'The second contact exists to give you somebody to call who is not the applicant. These two reach the ' +
+      'same place, so there is only one contact here.',
+    flagNoManager: 'No second contact',
+    flagNoManagerWhy:
+      'Permitted — a sole trader has no manager — but it removes the cheapest check you have. Weigh it.',
+    flagSoleTrader: 'Sole trader',
+    flagWeakProof: 'One proof only',
+    flagWeakProofWhy: 'More proofs are not required. Fewer proofs means more of the decision rests on you.',
+
+    dossierTitle: 'Application',
+    back: 'Back to the queue',
+    notFound: 'No application with that reference is waiting.',
+    notFoundBody:
+      'It may already have been decided, or the reference may be wrong. The queue shows everything still ' +
+      'waiting.',
+
+    entityHeading: 'What the register says',
+    appliedAs: 'Applied as',
+    legalName: 'Legal name',
+    tradingNames: 'Registered business names',
+    entityType: 'Entity type',
+    abnStatus: 'ABN status',
+    nameMatch: 'Name match',
+    verifiedVia: 'Verified via',
+    viaApi: 'ABR API',
+    viaAttestation: 'Applicant attestation',
+    sightedBy: 'Sighted by',
+    noneRecorded: 'None recorded',
+
+    contactsHeading: 'Who is applying',
+    contactAdmin: 'Applicant',
+    contactManager: 'Second contact',
+    contactNone: 'No second contact was given.',
+
+    detailsHeading: 'What they told us',
+    headOffice: 'Head office',
+    websiteLabel: 'Website',
+    proofsHeading: 'Proof offered',
+    proofNone: 'No proof was offered. That is not disqualifying, and it is not nothing.',
+
+    checksHeading: 'The checklist',
+    checksLead:
+      'Record what you actually did. A check you did not run is INCOMPLETE, not a failure — the two mean ' +
+      'different things and the difference is the whole point of the record.',
+    checkRun: 'Record',
+    checkOutcome: 'Outcome',
+    checkReason: 'Reason',
+    checkNote: 'What happened, in your words',
+    checkEvidence: 'Link to evidence (optional)',
+    checkBy: 'Your name',
+    checkSave: 'Save this check',
+    checkSaved: 'Recorded',
+    checkAppendOnly: 'Checks are append-only. A correction is a new entry, never an edit.',
+
+    scoreHeading: 'Identity strength',
+    scoreOf: 'of',
+    scorePoints: 'points',
+    scoreSoft:
+      'Not enforced yet. The score is recorded against the decision either way, so the threshold can be ' +
+      'turned on later against real history rather than a guess.',
+    scoreWouldPass: 'Would meet the threshold',
+    scoreWouldNotPass: 'Would not meet the threshold',
+
+    decideHeading: 'The decision',
+    decideLead:
+      'Your name goes on this. There is no "approved by the system" — an approval is somebody deciding, and ' +
+      'the record says who.',
+    reviewerName: 'Your name',
+    decideNote: 'Note',
+    entitlementHeading: 'How you verified they represent this entity',
+    entitlementMethod: 'Method',
+    entitlementNumber: 'Number you called',
+    entitlementNumberSource: 'Where you got that number',
+    entitlementNumberSourceHint:
+      'A number off the application form proves nothing — the applicant supplied it. An independently ' +
+      'obtained number is what makes the call evidence.',
+    entitlementSpokeWith: 'Who you spoke to',
+    approve: 'Approve',
+    reject: 'Reject',
+    approveNeedsEntitlement:
+      'An approval needs an entitlement check. Rejecting does not — refusing what you could not verify is ' +
+      'the correct outcome, and demanding a completed check first would be backwards.',
+    rejectReason: 'Reason the applicant will be told',
+    rejectDisclosure:
+      'The applicant reads this. It must not say whether an ABN is already registered here — that turns a ' +
+      'rejection into a way to enumerate our customers.',
+    decidedApproved: 'Approved',
+    decidedRejected: 'Rejected',
+    decidedBody: 'The applicant has been told. This application has left the queue.',
   },
   org: {
     heading: 'Practice onboarding',

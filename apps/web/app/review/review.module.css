@@ -1,0 +1,360 @@
+/* Reviewer surfaces. Shapes that only the queue and the dossier use. */
+
+/* --- Queue ---------------------------------------------------------------- */
+
+.queueControls {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s5);
+  flex-wrap: wrap;
+  margin-bottom: var(--s4);
+}
+
+.queueControls > :first-child {
+  flex: 1 1 320px;
+  margin-bottom: 0;
+}
+
+.queueMeta {
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+  margin: 0;
+  padding-top: var(--s6);
+}
+
+.searchWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.searchIcon {
+  position: absolute;
+  left: var(--s3);
+  color: var(--ink-faint);
+  pointer-events: none;
+}
+
+.searchWrap input {
+  padding-left: calc(var(--s3) * 2 + 16px);
+}
+
+.queue {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.queueRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s4);
+  padding: var(--s4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: inherit;
+}
+
+.queueRow:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-sunken);
+}
+
+.queueMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.queueName {
+  font-weight: 600;
+  font-size: var(--text-base);
+}
+
+.queueSub {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  margin-top: 2px;
+}
+
+/*
+ * The flags sit UNDER the name, not beside it. Beside, they compete with the
+ * practice name for the same glance and the eye resolves the larger text first;
+ * under, they are the second thing read, which is the order a reviewer needs.
+ */
+.flagRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-top: var(--s3);
+}
+
+.queueAside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--s2);
+  flex: none;
+  text-align: right;
+}
+
+.queueOpen {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--accent);
+}
+
+@media (max-width: 640px) {
+  .queueRow {
+    flex-direction: column;
+  }
+
+  .queueAside {
+    align-items: flex-start;
+    text-align: left;
+    flex-direction: row;
+    justify-content: space-between;
+    width: 100%;
+  }
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s8) var(--s5);
+  color: var(--ink-muted);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  text-align: center;
+}
+
+.emptyTitle {
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+
+/* --- Dossier -------------------------------------------------------------- */
+
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  text-decoration: none;
+  margin-bottom: var(--s3);
+}
+
+.backLink:hover {
+  color: var(--ink);
+}
+
+/*
+ * A description list, because that is what this is: a term and its value. A
+ * table would imply rows that relate to each other across columns, and these
+ * do not.
+ */
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--s2) var(--s4);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.facts dt {
+  color: var(--ink-muted);
+}
+
+.facts dd {
+  margin: 0;
+}
+
+@media (max-width: 560px) {
+  .facts {
+    grid-template-columns: 1fr;
+    gap: var(--s1);
+  }
+
+  .facts dd {
+    margin-bottom: var(--s2);
+  }
+}
+
+.factStrong {
+  font-weight: 600;
+}
+
+.contactPair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s4);
+}
+
+@media (max-width: 700px) {
+  .contactPair {
+    grid-template-columns: 1fr;
+  }
+}
+
+.contactCard {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--s3);
+  background: var(--surface-sunken);
+}
+
+.contactRole {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-muted);
+  margin: 0 0 var(--s2);
+}
+
+.contactName {
+  font-weight: 600;
+}
+
+.contactLine {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  margin-top: var(--s1);
+}
+
+/* A flag explained in full, where there is room to explain it. */
+.flagDetail {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s3);
+  padding: var(--s3);
+  border-left: 3px solid;
+  border-radius: var(--radius);
+  margin-bottom: var(--s2);
+}
+
+.flagDetailHigh {
+  border-color: var(--stop);
+  background: var(--stop-wash);
+}
+
+.flagDetailMedium {
+  border-color: var(--warn);
+  background: var(--warn-wash);
+}
+
+.flagDetailLow {
+  border-color: var(--line-strong);
+  background: var(--surface-sunken);
+}
+
+.flagDetailWhat {
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+
+.flagDetailWhy {
+  font-size: var(--text-sm);
+  margin: var(--s1) 0 0;
+}
+
+/* --- Score ---------------------------------------------------------------- */
+
+.score {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+}
+
+.scoreValue {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.scoreOf {
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+
+.scoreReasons {
+  margin: var(--s3) 0 0;
+  padding-left: var(--s4);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+.scoreReasons li {
+  margin-bottom: var(--s1);
+}
+
+/* --- Checklist ------------------------------------------------------------ */
+
+.checkList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.checkItem {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--s3);
+}
+
+.checkHead {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s3);
+}
+
+.checkLabel {
+  font-weight: 500;
+  font-size: var(--text-sm);
+  flex: 1;
+}
+
+.checkProves {
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+  margin: var(--s1) 0 0;
+}
+
+.checkForm {
+  margin-top: var(--s3);
+  padding-top: var(--s3);
+  border-top: 1px dashed var(--line);
+}
+
+.decideActions {
+  display: flex;
+  gap: var(--s3);
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: var(--s4);
+}
+
+.buttonStop {
+  border-color: var(--stop);
+  color: var(--stop);
+}
+
+.buttonStop:hover:not(:disabled) {
+  background: var(--stop-wash);
+}

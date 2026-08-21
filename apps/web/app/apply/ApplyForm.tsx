@@ -18,7 +18,12 @@
  */
 
 import { useMemo, useState } from 'react';
-import { isValidAbnChecksum, normaliseAbn, AU_STATES } from '@aobplatform/domain';
+import {
+  AU_STATES,
+  contactClash,
+  isValidAbnChecksum,
+  normaliseAbn,
+} from '@aobplatform/domain';
 import { strings } from '../strings';
 import { Button, Checkbox, Chip, Field, Notice, Section, SelectInput, Shell, TextInput, ui, BlockingRefusal } from '../ui';
 import { GateLedger, type GateLedgerState } from './GateLedger';
@@ -90,15 +95,29 @@ export function ApplyForm() {
   const abnValid = abnTouched && isValidAbnChecksum(abnDigits);
   const abnError = abnTouched && !abnValid ? strings.apply.abnInvalid : null;
 
-  const managerClash =
-    managerEmail.trim().length > 0 && managerEmail.trim().toLowerCase() === adminEmail.trim().toLowerCase();
+  // The SAME function the server calls. Two implementations of one rule drift,
+  // and the pair that drifts here is "the form said fine, the API said no".
+  const clash = contactClash({ adminEmail, adminPhone, managerEmail, managerPhone });
+  const managerClash = clash !== null;
 
   const gates: GateLedgerState = useMemo(
     () => ({
       checksum: !abnTouched ? 'not_run' : abnValid ? 'passed' : 'failed',
-      register: sentReference ? 'passed' : needsAttestation ? 'waiting' : 'not_run',
+      register: sentReference
+        ? needsAttestation
+          ? 'attested'
+          : 'passed'
+        : needsAttestation
+          ? 'waiting'
+          : 'not_run',
       human: sentReference ? 'waiting' : 'not_run',
-      registerDetail: needsAttestation ? strings.apply.attestLead : undefined,
+      // Before sending, the panel tells the applicant what to do; after sending,
+      // the row must state what actually happened, which is not the same text.
+      registerDetail: !needsAttestation
+        ? undefined
+        : sentReference
+          ? strings.gates.registerAttested
+          : strings.apply.attestLead,
     }),
     [abnTouched, abnValid, needsAttestation, sentReference],
   );
@@ -414,7 +433,7 @@ export function ApplyForm() {
           </Field>
           <Field
             label={strings.apply.emailLabel}
-            error={managerClash ? strings.apply.managerSameEmail : null}
+            error={clash === 'email' ? strings.apply.contactClash.email : null}
           >
             {(props) => (
               <TextInput
@@ -426,8 +445,18 @@ export function ApplyForm() {
               />
             )}
           </Field>
-          <Field label={strings.apply.phone}>
-            {(props) => <TextInput {...props} value={managerPhone} onChange={(e) => setManagerPhone(e.target.value)} />}
+          <Field
+            label={strings.apply.phone}
+            error={clash === 'phone' ? strings.apply.contactClash.phone : null}
+          >
+            {(props) => (
+              <TextInput
+                {...props}
+                value={managerPhone}
+                onChange={(e) => setManagerPhone(e.target.value)}
+                data-testid="apply-manager-phone"
+              />
+            )}
           </Field>
           <Field label={strings.apply.position}>
             {(props) => (
