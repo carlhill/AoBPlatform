@@ -529,6 +529,10 @@ export const strings = {
     decidedApproved: 'Approved',
     decidedRejected: 'Rejected',
     decidedBody: 'The applicant has been told. This application has left the queue.',
+    decidedNotTold:
+      'The decision is recorded and this application has left the queue — but the message to the applicant ' +
+      'did NOT go, so they do not know and cannot sign in yet.',
+    decidedNotToldTitle: 'The applicant has NOT been told',
   },
   verify: {
     audience: 'Confirm your email',
@@ -1667,5 +1671,87 @@ export const strings = {
       restricted: 'Restricted',
       moving: 'Moving unusually',
     } as Record<string, string>,
+  },
+  /**
+   * The entity, read-only — and read-only is the point.
+   *
+   * The ABN is a LOCKED field (amendment.ts). A different ABN is a different
+   * legal entity, and a different legal entity is a different application, not
+   * an edit. Showing a form here would imply otherwise.
+   */
+  entity: {
+    audience: 'Practice admin',
+    title: 'The entity',
+    lead:
+      'What the register says about the entity behind this practice, and how we checked it. Held as the ' +
+      'record of who was approved — none of it can be edited here.',
+    backToSetup: 'Back to set up',
+    notLoaded: 'The entity could not be loaded',
+    loading: 'Loading…',
+
+    legalName: 'Legal name',
+    tradingAs: 'Trading as',
+    abn: 'ABN',
+    acn: 'ACN',
+    entityType: 'Entity type',
+    abnStatus: 'ABN status',
+    headOffice: 'Head office',
+    approvedBy: 'Approved by',
+    approvedOn: 'on',
+    notApproved: 'Not yet approved',
+
+    verifiedHow: 'How the ABN was checked',
+    verifiedAbr: 'Checked against the Australian Business Register.',
+    verifiedAttested:
+      'ATTESTED, not checked. {who} stated these details and a reviewer accepted them; the register itself ' +
+      'was not reachable at the time. That is weaker than a lookup and is recorded as such.',
+
+    lockedTitle: 'Why none of this can be edited',
+    lockedBody:
+      'The ABN identifies the legal entity that was approved. A different ABN is a different entity, so it ' +
+      'is a new application rather than a correction — and every consent record captured here names this ' +
+      'entity. If something is genuinely wrong, tell us and it is handled as a correction with its own trail.',
+
+    emailVerified: 'Practice-admin email confirmed',
+    emailUnverified: 'Practice-admin email NOT confirmed',
+    emailUnverifiedBody:
+      'Nobody has proved they can read mail at that address. Everything we send about this practice goes ' +
+      'there, including sign-in invitations.',
+  },
+  /**
+   * The PMS connection.
+   *
+   * DELIBERATELY UNFINISHED, and says so. How results are written back is an
+   * open decision (D-01), and a card that looked complete would be promising
+   * something that does not exist.
+   */
+  pms: {
+    audience: 'Practice admin',
+    title: 'PMS connection',
+    lead: 'How AoBPlatform exchanges data with your practice management system.',
+    backToSetup: 'Back to set up',
+    notLoaded: 'The connection could not be loaded',
+
+    systemLabel: 'Your system',
+    stateLabel: 'Connector',
+    stateUnpaired: 'Not connected',
+    stateUnpairedBody:
+      'The site connector has not been paired with this practice yet. Nothing is exchanged until it is.',
+
+    howTitle: 'How the connector works',
+    howBody:
+      'It runs on a Windows machine inside your practice and dials OUT only. Nothing listens for an inbound ' +
+      'connection, so it opens no port on your network and there is nothing for anyone outside to connect to.',
+
+    unsettledTitle: 'What is not settled yet',
+    unsettledBody:
+      'How results are written back into your PMS is an open decision. Until it is made, this promises a ' +
+      'download and nothing more — an unfinished page is better than a finished-looking one that does not ' +
+      'work. It is tracked as D-01.',
+
+    downloadTitle: 'What you can rely on today',
+    downloadBody:
+      'Consent records can be exported from AoBPlatform and kept alongside your own records. Nothing is ' +
+      'written into your PMS automatically, and nothing will be until that decision is made and told to you.',
   },
 } as const;

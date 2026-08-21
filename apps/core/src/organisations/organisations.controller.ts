@@ -1,4 +1,15 @@
-import { BadRequestException, Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Headers,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { Type } from 'class-transformer';
 import {
   IsArray,
@@ -202,6 +213,32 @@ export class RequestCorrectionDto {
   @IsString()
   @MinLength(1)
   requestedByName!: string;
+}
+
+export class ResendInvitationDto {
+  @IsString()
+  @MinLength(1)
+  requestedByName!: string;
+}
+
+export class UpdateContactsDto {
+  @IsOptional() @IsString() adminName?: string;
+  @IsOptional() @IsEmail() adminEmail?: string;
+  @IsOptional() @IsString() adminPhone?: string;
+  @IsOptional() @IsString() adminPosition?: string;
+  @IsOptional() @IsString() managerName?: string;
+  @IsOptional() @IsEmail() managerEmail?: string;
+  @IsOptional() @IsString() managerPhone?: string;
+
+  /** Never "the system". A change to an approved record has an author. */
+  @IsString()
+  @MinLength(1)
+  changedByName!: string;
+
+  /** A change with no stated reason is indistinguishable from a mistake. */
+  @IsString()
+  @MinLength(1)
+  reason!: string;
 }
 
 export class ValidationDecisionDto {
@@ -491,6 +528,39 @@ export class OrganisationsController {
   @Post(':organisationId/request-email-verification')
   requestEmailVerification(@Param('organisationId', ParseUUIDPipe) organisationId: string) {
     return this.organisations.requestEmailVerification(organisationId);
+  }
+
+  /**
+   * Correct the contact details of a practice that has ALREADY been approved.
+   *
+   * The domain refuses a post-approval amendment through the applicant link
+   * with "changes are made in the console, by a named admin" — this is that
+   * console path, which did not exist. The entity itself is untouchable here:
+   * a different ABN is a different legal entity and therefore a new
+   * application, not an edit.
+   */
+  /**
+   * Send the practice-admin sign-in invitation again.
+   *
+   * The one at approval can fail for ordinary reasons — most commonly because
+   * Keycloak enforces one email per realm and the address already belongs to
+   * another account. Without this, an approved practice whose invitation failed
+   * had no route in at all.
+   */
+  @Post(':organisationId/resend-invitation')
+  resendInvitation(
+    @Param('organisationId', ParseUUIDPipe) organisationId: string,
+    @Body() dto: ResendInvitationDto,
+  ) {
+    return this.organisations.resendAdminInvitation(organisationId, dto.requestedByName);
+  }
+
+  @Patch(':organisationId/contacts')
+  updateContacts(
+    @Param('organisationId', ParseUUIDPipe) organisationId: string,
+    @Body() dto: UpdateContactsDto,
+  ) {
+    return this.organisations.updateContacts(organisationId, dto);
   }
 
   @Post(':organisationId/validate')

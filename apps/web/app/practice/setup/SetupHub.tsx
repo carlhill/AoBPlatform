@@ -308,6 +308,10 @@ export function SetupHub({ practiceId }: { practiceId: string }) {
           <p className={styles.cardRollup}>{hub.practice.pms}</p>
           <p className={ui.hint}>{strings.setup.pmsBody}</p>
           <p className={ui.hint}>{strings.setup.pmsUnsettled}</p>
+          <Link href="/practice/pms" className={styles.cardLink}>
+            {strings.setup.open} {strings.pms.title.toLowerCase()}
+            <ArrowRight size={14} aria-hidden="true" />
+          </Link>
         </section>
       </div>
     </Shell>

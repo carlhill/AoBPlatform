@@ -791,6 +791,203 @@ export class OrganisationsService {
    * address validates, because an unconfirmed address must not appear in a
    * s 65C(5)(a) particulars block.
    */
+  /**
+   * Change the CONTACT DETAILS of a practice that has already been approved.
+   *
+   * WHY THIS HAD TO EXIST. `assertAmendmentAllowed` refuses a post-approval
+   * amendment with "changes are made in the console, by a named admin, not
+   * through the application link" — and that console path did not exist. So the
+   * only way to correct a mistyped practice-admin email on an approved practice
+   * was to edit the database by hand, and the commonest reason to need it is
+   * that the address is wrong, which is exactly the state in which nobody can
+   * be told anything.
+   *
+   * WHAT IT WILL NOT TOUCH: the entity. Name, ABN, ACN and entity type are
+   * LOCKED (amendment.ts). A different ABN is a different legal entity, and
+   * every consent record captured here names this one — a correction that
+   * re-pointed the entity would silently re-attribute evidence.
+   *
+   * CHANGING THE ADMIN EMAIL UNVERIFIES IT. The old address was confirmed; the
+   * new one has not been, and carrying the tick across would assert a
+   * round-trip that never happened against an address nobody has proved anybody
+   * reads. A fresh verification is issued instead.
+   */
+  async updateContacts(
+    practiceId: string,
+    input: {
+      adminName?: string;
+      adminEmail?: string;
+      adminPhone?: string;
+      adminPosition?: string;
+      managerName?: string;
+      managerEmail?: string;
+      managerPhone?: string;
+      changedByName: string;
+      reason: string;
+    },
+  ) {
+    if (!input.changedByName?.trim()) {
+      throw new BadRequestException('A change to an approved practice must name the person making it.');
+    }
+    if (!input.reason?.trim()) {
+      throw new BadRequestException(
+        'A change to an approved practice must record why. This is the record of who was approved, and a ' +
+          'change to it with no stated reason is indistinguishable from a mistake.',
+      );
+    }
+
+    const current = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.practice.findFirst({ where: { id: practiceId } }),
+    );
+    if (!current) throw new NotFoundException('Practice not found.');
+
+    const next = {
+      adminName: input.adminName?.trim() || current.adminName,
+      adminEmail: input.adminEmail?.trim() || current.adminEmail,
+      adminPhone: input.adminPhone?.trim() || current.adminPhone,
+      adminPosition: input.adminPosition?.trim() || current.adminPosition,
+      managerName: input.managerName?.trim() || current.managerName,
+      managerEmail: input.managerEmail?.trim() || current.managerEmail,
+      managerPhone: input.managerPhone?.trim() || current.managerPhone,
+    };
+
+    /*
+     * FR-1.9 STILL APPLIES AFTER APPROVAL. The second contact exists to give a
+     * reviewer somebody to call who is not the applicant, and an edit that
+     * quietly collapsed the two into one inbox or one handset would defeat that
+     * without anybody noticing — which is precisely the shape of a takeover.
+     */
+    try {
+      assertContactsIndependent({
+        // Empty string rather than undefined: contactClash() treats a blank as
+        // "no channel to clash on", which is the right reading of a contact
+        // detail nobody has supplied.
+        adminEmail: next.adminEmail ?? '',
+        adminPhone: next.adminPhone ?? '',
+        managerEmail: next.managerEmail,
+        managerPhone: next.managerPhone,
+      });
+    } catch (err) {
+      if (err instanceof Error) throw new BadRequestException(err.message);
+      throw err;
+    }
+
+    const emailChanged = next.adminEmail !== current.adminEmail;
+
+    const updated = await this.prisma.withPractice(practiceId, async (tx) => {
+      const row = await tx.practice.update({
+        where: { id: practiceId },
+        data: {
+          ...next,
+          // A new address is an unproven address.
+          ...(emailChanged
+            ? { adminEmailVerifiedAt: null, adminEmailVerificationToken: null, adminEmailVerificationCode: null }
+            : {}),
+        },
+      });
+
+      await enqueueVaultEvent(tx, {
+        type: 'organisation.contacts_changed',
+        actor: { principalType: 'staff', id: practiceId },
+        subject: { type: 'Organisation', id: practiceId },
+        payload: {
+          changedBy: input.changedByName.trim(),
+          reason: input.reason.trim(),
+          // WHICH FIELDS, never the values. An audit event is not a second copy
+          // of the contact book, and a phone number in an event payload is a
+          // phone number in the evidence chain for ever.
+          // Joined, because the payload accepts scalars only. Which fields,
+          // never the values — an audit event is not a second copy of the
+          // contact book, and a phone number in the evidence chain is there
+          // for ever.
+          fieldsChanged: Object.keys(next)
+            .filter((k) => (next as Record<string, unknown>)[k] !== (current as unknown as Record<string, unknown>)[k])
+            .join(', '),
+          adminEmailUnverifiedByThisChange: emailChanged,
+        },
+      });
+      return row;
+    });
+
+    return {
+      id: updated.id,
+      adminName: updated.adminName,
+      adminEmail: updated.adminEmail,
+      adminPhone: updated.adminPhone,
+      managerName: updated.managerName,
+      managerEmail: updated.managerEmail,
+      managerPhone: updated.managerPhone,
+      adminEmailVerified: Boolean(updated.adminEmailVerifiedAt),
+      emailChanged,
+      next: emailChanged
+        ? 'The admin email changed, so it is no longer confirmed. Send the sign-in invitation again to ' +
+          'reach the new address.'
+        : 'Contact details updated.',
+    };
+  }
+
+  /**
+   * Send the practice-admin sign-in invitation again.
+   *
+   * WHY THIS HAD TO EXIST. The invitation is created once, at the moment of
+   * approval, and its failure is deliberately non-fatal — an approval must not
+   * be rolled back because a mail server hiccuped. But there was then no way to
+   * try again, so an approved practice whose invitation failed had no route in
+   * at all, for ever.
+   *
+   * And it failed for an entirely ordinary reason: Keycloak enforces one email
+   * per realm, so a practice admin whose address already belongs to another
+   * account — a platform administrator, or the same person at a second
+   * practice — could not be created. The approval succeeded, the invitation did
+   * not, and nothing surfaced it.
+   *
+   * SAFE TO CALL REPEATEDLY. It creates the account if it does not exist and
+   * re-issues the enrolment link either way, which is what somebody chasing a
+   * lost email actually needs.
+   */
+  async resendAdminInvitation(practiceId: string, requestedByName: string) {
+    if (!requestedByName?.trim()) {
+      throw new BadRequestException('Re-sending an invitation must name the person asking for it.');
+    }
+
+    const practice = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.practice.findFirst({ where: { id: practiceId } }),
+    );
+    if (!practice) throw new NotFoundException('Practice not found.');
+
+    if (practice.validationState !== 'validated') {
+      throw new BadRequestException(
+        `This practice is ${practice.validationState}, so there is no sign-in to invite anybody to. ` +
+          'Approval is what opens consent capture, and the invitation goes out with it.',
+      );
+    }
+
+    const result = await this.practiceAdmin.onApproved({
+      organisationId: practiceId,
+      organisationName: practice.name,
+      adminName: practice.adminName,
+      adminEmail: practice.adminEmail,
+      approvedByName: practice.validatedByName ?? requestedByName.trim(),
+      entitlementMethod: practice.entitlementMethod,
+    });
+
+    await this.prisma.withPractice(practiceId, (tx) =>
+      enqueueVaultEvent(tx, {
+        type: 'organisation.invitation_resent',
+        actor: { principalType: 'staff', id: practiceId },
+        subject: { type: 'Organisation', id: practiceId },
+        payload: {
+          requestedBy: requestedByName.trim(),
+          // WHETHER it reached them, not the address itself.
+          invited: result.invited,
+          accountCreated: result.accountCreated,
+        },
+      }),
+    );
+
+    return { ...result, requestedBy: requestedByName.trim() };
+  }
+
   async addLocation(
     practiceId: string,
     input: {

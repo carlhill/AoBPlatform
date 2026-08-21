@@ -83,7 +83,10 @@ export class SetupService {
           },
         ],
         more: 0,
-        href: null,
+        // The entity is READ-ONLY, but it still has a page. A card with facts
+        // on it and no way through reads as a dead end, and the page is where
+        // the locked fields explain themselves.
+        href: '/practice/entity',
       };
 
       // --- 2. Locations ----------------------------------------------------

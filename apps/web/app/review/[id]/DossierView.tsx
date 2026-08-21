@@ -275,6 +275,8 @@ export function DossierView({ id }: { id: string }) {
   const [checks, setChecks] = useState<ChecksPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [decided, setDecided] = useState<'validated' | 'rejected' | null>(null);
+  /** What actually happened to the message, as the API reported it. */
+  const [followUp, setFollowUp] = useState<{ notified: boolean; detail?: string } | null>(null);
 
   /**
    * The reviewer.
@@ -506,6 +508,19 @@ export function DossierView({ id }: { id: string }) {
         const body = (await response.json().catch(() => ({}))) as { message?: string };
         throw new Error(body.message ?? `The decision was refused (${response.status}).`);
       }
+      /*
+       * WHAT ACTUALLY HAPPENED TO THE MESSAGE.
+       *
+       * The decision is committed by this point and must not be rolled back
+       * because an email failed — but the screen used to assert "the applicant
+       * has been told" unconditionally, which was simply false when it had not
+       * gone. An approved practice with no invitation is a practice that cannot
+       * get in, and the only person who could notice was being told otherwise.
+       */
+      const decidedBody = (await response.json().catch(() => ({}))) as {
+        followUp?: { notified: boolean; detail?: string };
+      };
+      setFollowUp(decidedBody.followUp ?? null);
       setDecided(decision);
     } catch (e) {
       // A TypeError here means the request never reached the service at all,
@@ -523,7 +538,20 @@ export function DossierView({ id }: { id: string }) {
         <h1 className={ui.pageTitle}>
           {decided === 'validated' ? strings.review.decidedApproved : strings.review.decidedRejected}: {row.name}
         </h1>
-        <p className={ui.pageLead}>{strings.review.decidedBody}</p>
+        <p className={ui.pageLead}>
+          {followUp && !followUp.notified ? strings.review.decidedNotTold : strings.review.decidedBody}
+        </p>
+
+        {/*
+          The failure, in full, and it is a REFUSAL to move on quietly. An
+          approved practice whose invitation never went is one that cannot sign
+          in at all, and nothing else in the system will notice.
+        */}
+        {followUp && !followUp.notified && (
+          <Notice tone="stop" title={strings.review.decidedNotToldTitle}>
+            {followUp.detail ?? strings.review.decidedNotTold}
+          </Notice>
+        )}
         <Link href="/review" className={styles.backLink}>
           <ArrowLeft size={15} aria-hidden="true" />
           {strings.review.back}

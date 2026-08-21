@@ -61,6 +61,15 @@ export const VAULT_EVENT_TYPES = [
   'organisation.registered',
   'organisation.validated',
   'organisation.rejected',
+  /**
+   * Contact details corrected AFTER approval. A separate event from
+   * `organisation.registered` on purpose: this changes the record of who was
+   * approved, and it has an author and a stated reason that the original
+   * registration does not.
+   */
+  'organisation.contacts_changed',
+  /** The sign-in invitation sent again, after the one at approval failed. */
+  'organisation.invitation_resent',
   'location.activated',
   'affiliation.invited',
   'affiliation.accepted',
