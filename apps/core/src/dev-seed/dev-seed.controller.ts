@@ -15,7 +15,16 @@ export class DevSeedController {
     const practiceId = randomUUID();
     return this.prisma.withPractice(practiceId, async (tx) => {
       const practice = await tx.practice.create({
-        data: { id: practiceId, name: `Sample Practice ${practiceId.slice(0, 8)}` },
+        data: {
+          id: practiceId,
+          name: `Sample Practice ${practiceId.slice(0, 8)}`,
+          // Marked validated by the seed itself, so the org/affiliation
+          // endpoints work against a seeded practice. Named honestly: the
+          // record says a seed did this, not that a reviewer did.
+          validationState: 'validated',
+          validatedByName: 'dev seed (not a human review)',
+          validatedAt: new Date(),
+        },
       });
       const provider = await tx.provider.create({
         data: {

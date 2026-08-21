@@ -183,6 +183,13 @@ export class OrganisationsService {
     const [organisation] = await this.prisma.$queryRaw<Array<{ name: string; validationState: string }>>`
       SELECT * FROM get_organisation_validation(${organisationId}::uuid)`;
     if (!organisation) throw new NotFoundException('Organisation not found.');
+    if (organisation.validationState === 'not_applicable') {
+      throw new BadRequestException(
+        `"${organisation.name}" was not created through organisation onboarding — it has no verified ABN, so ` +
+          'there is nothing to validate. Register it via POST /organisations to use the location, ' +
+          'department and affiliation endpoints.',
+      );
+    }
     if (organisation.validationState !== 'validated') {
       throw new BadRequestException(
         `"${organisation.name}" is ${organisation.validationState}, not validated. An ACTIVE ABN with a ` +
