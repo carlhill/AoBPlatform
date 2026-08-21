@@ -193,6 +193,33 @@ Practice-scoped calls need `x-practice-id: <uuid>` (or a bearer token once you'r
 | POST | `/practices/{id}/assignors` | Assignor — **refuses anyone on the staff list** |
 | GET | `/practices/{id}/go-live-checklist` | Honest checklist; blocked until write-back + sender ID + rule set exist |
 
+### Core — organisation onboarding (ORG-MODEL-PROPOSAL.md §4, §9)
+Pre-tenant: `/organisations` and `/organisations/{id}/validate` take **no**
+`x-practice-id` — the organisation *is* the tenant, and it does not exist yet.
+
+| Method | Path | What |
+|---|---|---|
+| POST | `/organisations` | Register with an ABN. **Checksum, then ABR ACTIVE, then name match** against legal OR trading name. ACN derived, never asked for |
+| GET | `/organisations/pending` | The human validation queue |
+| POST | `/organisations/{id}/validate` | Approve or reject. **Named reviewer required**; a rejection needs a reason; no re-deciding |
+| GET | `/organisations/locations` | Locations, with `active` and `addressValidated` |
+| POST | `/organisations/locations` | Add a site. Created **INACTIVE** until the address is confirmed |
+| POST | `/organisations/locations/{id}/activate` | Manual address confirmation, **named human** (until the G-NAF ingest lands) |
+| GET·POST | `/organisations/departments` | Optional subdivisions of a location |
+
+### Core — practitioners & affiliations (§5, §6)
+| Method | Path | What |
+|---|---|---|
+| POST | `/practitioners` | Practitioner pre-registers themselves. **AHPRA format validated** |
+| GET | `/practitioners/directory?ahpraNumber=` | **Exact match only.** Never returns a provider number or an email. A name is refused |
+| GET | `/practitioners/{id}/affiliations` | The practitioner's own view, **across every practice**, with no provider numbers |
+| POST | `/practitioners/{id}/affiliations/{affId}/respond` | Accept or reject. **Only the practitioner** — anyone else gets an indistinguishable 404 |
+| POST | `/practitioners/{id}/deregister` | REQ-XFER-08 — **immediate**, every affiliation, no notice period |
+| GET | `/affiliations` | The practice's own list, with `canCapture` and `blockReason` |
+| POST | `/affiliations` | Invite by AHPRA number. Needs a **validated** org and an **active** location |
+| POST | `/affiliations/{id}/notice` | Give notice. **`endsAt` must not precede the notice** |
+| POST | `/affiliations/{id}/notice/withdraw` | The practitioner stayed |
+
 ### Core — agreements
 | Method | Path | What |
 |---|---|---|
@@ -285,6 +312,46 @@ Practice-scoped calls need `x-practice-id: <uuid>` (or a bearer token once you'r
 
 ---
 
+## 3b. Walking the org model end to end
+
+```bash
+B=http://localhost:21001
+```
+
+```bash
+curl -s -X POST $B/organisations -H 'content-type: application/json' -d '{"name":"Sampletown Family Practice","abn":"53004085616"}'
+```
+
+That ABN is an offline fixture and belongs to nobody. Note the response: the
+legal entity is *Sample Medical Holdings Pty Ltd*, you typed a **trading
+name**, and it matched — which is the case strict legal-name matching gets
+wrong. The ACN comes back derived, and `validationState` is `pending`.
+
+Things worth trying that should FAIL:
+
+```bash
+curl -s -X POST $B/organisations -H 'content-type: application/json' -d '{"name":"Anything","abn":"53004085617"}'
+```
+
+```bash
+curl -s -X POST $B/organisations -H 'content-type: application/json' -d '{"name":"Former Clinic Pty Ltd","abn":"13824753558"}'
+```
+
+```bash
+curl -s "$B/practitioners/directory?ahpraNumber=Smith"
+```
+
+The first is a one-digit typo caught offline before any lookup; the second is a
+CANCELLED ABN; the third is a name search, refused so the directory cannot be
+enumerated.
+
+Then: `POST /organisations/{id}/validate` with a `reviewerName`, add a
+location, activate it with a `reviewerName`, `POST /practitioners`, and
+`POST /affiliations`. The invitation sits at `invited` until the practitioner
+themselves responds — a practice cannot accept on their behalf.
+
+---
+
 ## 4. Copy-paste API walkthrough
 
 ```bash
@@ -352,14 +419,18 @@ curl -s "http://localhost:21001/notices/compliance-pack" -H "$H" | jq '{dispatch
 | **Auth enforcement staged** | `AUTH_ENFORCE=false` by default so the console isn't locked out before every surface has a login. Flipping it on is a release gate. |
 | **Real sends disabled** | Sandbox gateway only. Real SMS/email needs your sign-off and a registered ACMA sender ID. |
 | **No anchoring / HSM signing yet** | The chain is tamper-*evident*; RFC 3161 anchoring (what makes it non-*repudiable* against us) is still `TODO(HUMAN)`. |
+| **Address validation is MANUAL** | `ADDRESS_VALIDATION_MODE=manual`. The G-NAF ingest is unbuilt, and the G-NAF validator **throws on construction** rather than marking every address validated — a validator that always says yes is worse than none. |
+| **ABR lookup runs on fixtures** | No `ABR_API_GUID` means no network call. The live client is written but **unexercised** — its response shape is a hypothesis until run with a real GUID. |
+| **Affiliation invitations do not email** | The invite is recorded; dispatch lands with the notification work. |
+| **Capture still anchors to `Provider`** | `Agreement.affiliationId` exists and is immutable, but the capture path has not been cut over. Both anchors are immutable meanwhile, so nothing drifts. |
 
 ---
 
 ## 7. Running the tests
 
 ```bash
-npm test                      # ~180 unit tests
-npm run test:e2e -w apps/core # 63 e2e against real Postgres
+npm test                      # 259 unit tests
+npm run test:e2e -w apps/core # 121 e2e against real Postgres
 npm run test:e2e -w apps/vault# 14, incl. the immudb contract suite
 npm run validate:realm        # rule 15 guard — passkey required, no password path
 ```

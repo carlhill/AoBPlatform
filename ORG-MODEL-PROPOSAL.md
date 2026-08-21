@@ -1,9 +1,12 @@
 # Organisation / location / practitioner model
 
-### 21 August 2026 · **Signed off by Carl — building this**
+### 21 August 2026 · **Signed off by Carl — BUILT**
 
-All four proposed changes accepted. Banking: **never held.** Migration:
-approved. Diagrams below are validated and render on GitHub.
+All four proposed changes accepted. Banking: **never held.** Migration: done.
+
+**Status: implemented and tested.** 46 e2e tests over the flows below, plus 61
+domain tests. See §10 for what is built, what is deferred, and the one naming
+decision taken during the build.
 
 ---
 
@@ -376,3 +379,67 @@ policy prohibits this kind of use).
 its canonical form. It does not tell you the practice is actually at it. For
 gating location activation, "exists and canonicalises" is the right bar — the
 human validation queue in §4 is what covers the rest.
+
+---
+
+## 10. Build notes — what was actually implemented
+
+### One naming decision, taken during the build
+
+**`Practice` keeps its name and plays the ORGANISATION role.** It is the
+ABN-bearing registered entity that owns locations — structurally exactly the
+ORGANISATION of §3 — and it gained every field that model calls for.
+
+It was not renamed because `practiceId` is the RLS tenant key on **sixteen
+tables**, each with its own `practice_isolation` policy. Renaming it would
+have meant rewriting all sixteen policies for a cosmetic gain, in the one part
+of the system where a mistake is a cross-tenant data leak rather than a bug.
+The functional model is unchanged; only the label is.
+
+### A bug worth recording
+
+Several operations here are legitimately **outside any one tenant**:
+registering an organisation (the tenant does not exist yet), the validation
+queue, a practitioner answering an invitation, and the sweep that ends due
+affiliations.
+
+Written the obvious way, **RLS does not reject those — it filters them to zero
+rows.** The sweep would have reported "0 ended" indefinitely while
+affiliations quietly outlived their end dates, and deregistration would have
+reported "0 affiliations ended" while the practitioner kept working. Silent
+invalidation, arriving through the mechanism meant to prevent it.
+
+Each is now a narrow, individually justified `SECURITY DEFINER` function, and
+the **writes still go through `withPractice()`** — the escape hatch finds out
+*which* tenant to scope to; it never writes across tenants.
+
+### Built
+
+| Area | State |
+|---|---|
+| ABN checksum, ACN derivation, name matching | ✅ offline, no network |
+| ABR lookup | ✅ behind an interface; **offline fixtures by default** |
+| Human validation queue | ✅ named reviewer, rejection needs a reason, no re-deciding |
+| Locations, `active` gated on address | ✅ inactive until confirmed |
+| Departments | ✅ |
+| Practitioner pre-registration | ✅ |
+| AHPRA-only directory | ✅ exact match, no provider number, no email |
+| Affiliation invite / accept / reject | ✅ only the practitioner can accept |
+| Notice before end date | ✅ CHECK constraint + trigger + service + sweep |
+| Deregistration hard stop | ✅ immediate, across every affiliation |
+| Affiliation velocity | ✅ surfaced in logs, never blocks |
+| `Agreement.affiliationId` | ✅ added, immutable under HARD-01 |
+
+### Deferred, deliberately
+
+- **G-NAF ingest.** `ADDRESS_VALIDATION_MODE=manual` until the dataset lands;
+  the G-NAF validator **throws on construction** rather than marking every
+  address validated. A validator that always says yes is worse than none.
+- **Cutting the capture path over from `Provider` to `Affiliation`.**
+  `Provider` still anchors existing agreements. Both anchors are immutable
+  meanwhile, so nothing can drift.
+- **The live ABR client** is written but unexercised — its response shape is a
+  hypothesis until someone runs it with a real GUID.
+- **Invitation emails.** The affiliation invite records the intent; dispatch
+  lands with the notification work (CLAUDE.md §7 — nothing sends a real
+  email without sign-off).
