@@ -2,6 +2,7 @@ import { BadRequestException, Body, Controller, Get, Headers, Param, ParseUUIDPi
 import { Type } from 'class-transformer';
 import { IsArray, IsBoolean, IsEmail, IsIn, IsOptional, IsString, MinLength, ValidateNested } from 'class-validator';
 import { OrganisationsService } from './organisations.service';
+import { ChecksService } from './checks.service';
 
 /**
  * What a named human read off abr.business.gov.au, when the platform has no
@@ -271,6 +272,38 @@ export class VerifyCredentialDto {
   note?: string;
 }
 
+export class RecordCheckDto {
+  @IsString()
+  @MinLength(3)
+  checkKey!: string;
+
+  @IsIn(['passed', 'failed', 'not_applicable', 'could_not_complete'])
+  outcome!: string;
+
+  @IsString()
+  @MinLength(1)
+  performedByName!: string;
+
+  /** Required on failed and could_not_complete, from that outcome's own list. */
+  @IsOptional()
+  @IsString()
+  reasonCode?: string;
+
+  @IsOptional()
+  @IsString()
+  note?: string;
+
+  /** Structured detail a check requires — a number and where it came from. */
+  @IsOptional()
+  fields?: Record<string, string>;
+
+  /** Evidence already uploaded to this practice. */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  artefactIds?: string[];
+}
+
 export class AddDepartmentDto {
   @IsString()
   locationId!: string;
@@ -294,7 +327,32 @@ function requirePractice(practiceId: string | undefined): string {
  */
 @Controller('organisations')
 export class OrganisationsController {
-  constructor(private readonly organisations: OrganisationsService) {}
+  constructor(
+    private readonly organisations: OrganisationsService,
+    private readonly checks: ChecksService,
+  ) {}
+
+  /**
+   * The catalogue a reviewer works from. Public: it is the definition of the
+   * process, not a secret — what stays private is the SCORING, because "you
+   * need six points and here is what scores" is a fraud playbook.
+   */
+  @Get('checks/catalogue')
+  catalogue() {
+    return this.checks.catalogue();
+  }
+
+  /** Everything performed for this practice, plus what hard mode would decide. */
+  @Get('checks')
+  checkSummary(@Headers('x-practice-id') practiceId: string | undefined) {
+    return this.checks.summary(requirePractice(practiceId));
+  }
+
+  /** Append-only: performing a check again writes a new row and keeps both. */
+  @Post('checks')
+  recordCheck(@Headers('x-practice-id') practiceId: string | undefined, @Body() dto: RecordCheckDto) {
+    return this.checks.record(requirePractice(practiceId), dto);
+  }
 
   @Post()
   register(@Body() dto: RegisterOrganisationDto) {

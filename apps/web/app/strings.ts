@@ -136,6 +136,30 @@ export const strings = {
       'answer their own phone. AHPRA cannot help either — the public register publishes suburb and postcode ' +
       'only, never a phone number.',
     contactCol: 'Contacts',
+    checklistHeading: 'The checklist',
+    checklistNote:
+      'Work down it. Each check can be done more than once — a call nobody answered on Tuesday and a call ' +
+      'that succeeded on Thursday are both kept, because how many attempts it took is part of the picture.',
+    checkOutcomeLabel: 'Outcome',
+    checkOutcomePick: 'Not yet performed',
+    checkPerformedBy: 'Your name',
+    checkReasonLabel: 'Reason',
+    checkReasonPick: 'Select…',
+    checkNoteLabel: 'What happened',
+    checkRecord: 'Record this check',
+    checkEvidenceHeading: 'Evidence',
+    checkAttach: 'Attach a file',
+    checkAttached: 'Attached',
+    checkNoEvidence: 'Nothing attached yet',
+    checkHistoryHeading: 'Performed so far',
+    checkNever: 'Not performed',
+    checkWouldPassYes: 'Would be admitted under hard enforcement',
+    checkWouldPassNo: 'Would NOT be admitted under hard enforcement',
+    checkSoftNote:
+      'Enforcement is SOFT: this is advice, and the decision is yours. It is recorded either way, so we can ' +
+      'see how many real practices a threshold would have turned away before switching one on.',
+    checkScoreLabel: 'Score',
+    checkNotShownToApplicant: 'Never shown to the applicant — a threshold and its weights are a fraud playbook.',
     followUpHeading: 'What happened next',
     ahpraHeading: 'AHPRA register check',
     ahpraNote:

@@ -3,6 +3,7 @@ import { IdentityModule } from '../identity/identity.module';
 import { ConfigService } from '@nestjs/config';
 import { OrganisationsController } from './organisations.controller';
 import { OrganisationsService } from './organisations.service';
+import { ChecksService } from './checks.service';
 import { ABR_CLIENT, ADDRESS_VALIDATOR } from './organisations.tokens';
 import { AbrWebServicesClient, OfflineAbrClient } from './abr';
 import { createAddressValidator } from './address-validator';
@@ -22,6 +23,7 @@ import { createAddressValidator } from './address-validator';
   controllers: [OrganisationsController],
   providers: [
     OrganisationsService,
+    ChecksService,
     {
       provide: ABR_CLIENT,
       inject: [ConfigService],
@@ -46,6 +48,6 @@ import { createAddressValidator } from './address-validator';
         ),
     },
   ],
-  exports: [OrganisationsService],
+  exports: [OrganisationsService, ChecksService],
 })
 export class OrganisationsModule {}

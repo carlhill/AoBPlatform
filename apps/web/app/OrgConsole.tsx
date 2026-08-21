@@ -94,6 +94,32 @@ interface PendingRow {
   credentialType: string | null;
   credentialValue: string | null;
 }
+interface CheckDefinition {
+  key: string;
+  category: string;
+  label: string;
+  weight: string;
+  whatItProves: string;
+  evidenceGuidance: string;
+  evidenceRequired: boolean;
+  requiredFields?: string[];
+}
+interface CheckHistoryRow {
+  id: string;
+  checkKey: string;
+  outcome: string;
+  reasonCode: string | null;
+  note: string | null;
+  performedByName: string;
+  performedAt: string;
+  artefacts: Array<{ id: string; filename: string }>;
+}
+interface CheckSummaryResponse {
+  checklistVersion: string;
+  summary: { score: number; passed: number; failed: number; notApplicable: number; incomplete: number };
+  admission: { wouldPass: boolean; reasons: string[] };
+  history: CheckHistoryRow[];
+}
 interface CredentialRow {
   id: string;
   credentialType: string;
@@ -292,6 +318,21 @@ export function OrgConsole() {
   const [credVerifyBy, setCredVerifyBy] = useState('');
   const [credVerifyMethod, setCredVerifyMethod] = useState('');
 
+  // The checklist.
+  const [catalogue, setCatalogue] = useState<{
+    checks: CheckDefinition[];
+    failureReasons: string[];
+    incompleteReasons: string[];
+  } | null>(null);
+  const [checkState, setCheckState] = useState<CheckSummaryResponse | null>(null);
+  const [openCheck, setOpenCheck] = useState<string | null>(null);
+  const [checkOutcome, setCheckOutcome] = useState('');
+  const [checkReason, setCheckReason] = useState('');
+  const [checkNote, setCheckNote] = useState('');
+  const [checkBy, setCheckBy] = useState('');
+  const [checkFields, setCheckFields] = useState<Record<string, string>>({});
+  const [pendingArtefacts, setPendingArtefacts] = useState<Array<{ id: string; filename: string }>>([]);
+
   // The entitlement check (§11), recorded at approval.
   const [entMethod, setEntMethod] = useState('');
   const [entPhone, setEntPhone] = useState('');
@@ -389,19 +430,28 @@ export function OrgConsole() {
     setPending(result.organisations);
   }, []);
 
+  const loadCatalogue = useCallback(async () => {
+    const result = await call<{ checks: CheckDefinition[]; failureReasons: string[]; incompleteReasons: string[] }>(
+      '/organisations/checks/catalogue',
+    );
+    setCatalogue(result);
+  }, []);
+
   const loadAllOrgs = useCallback(async () => {
     const result = await call<{ organisations: OrganisationRow[] }>('/organisations?state=all');
     setAllOrgs(result.organisations);
   }, []);
 
   const loadOrgData = useCallback(async (practiceId: string) => {
-    const [locs, affs, depts, creds] = await Promise.all([
+    const [locs, affs, depts, creds, checkSummary] = await Promise.all([
       call<LocationRow[]>('/organisations/locations', { practiceId }),
       call<AffiliationRow[]>('/affiliations', { practiceId }),
       call<Array<{ id: string; name: string; locationId: string }>>('/organisations/departments', { practiceId }),
       call<CredentialRow[]>('/organisations/credentials', { practiceId }),
+      call<CheckSummaryResponse>('/organisations/checks', { practiceId }),
     ]);
     setCredentials(creds);
+    setCheckState(checkSummary);
     setLocations(locs);
     setAffiliations(affs);
     setDepartments(depts);
@@ -412,8 +462,9 @@ export function OrgConsole() {
     void run(async () => {
       await loadQueue();
       await loadAllOrgs();
+      await loadCatalogue();
     });
-  }, [run, loadQueue, loadAllOrgs]);
+  }, [run, loadQueue, loadAllOrgs, loadCatalogue]);
 
   // A remembered selection is a CLAIM, not a fact. Once the real list has
   // loaded, an id that is not in it points at a practice that has been
@@ -1124,6 +1175,231 @@ export function OrgConsole() {
                 </tbody>
               </table>
             )}
+
+            <h4>{strings.org.checklistHeading}</h4>
+            <p style={note}>{strings.org.checklistNote}</p>
+
+            {checkState && (
+              <div
+                style={{
+                  ...card,
+                  borderColor: checkState.admission.wouldPass ? GREEN : AMBER,
+                  background: '#f6f8fa',
+                }}
+                data-testid="check-summary"
+              >
+                <p style={{ margin: 0, color: checkState.admission.wouldPass ? GREEN : AMBER }}>
+                  <strong>
+                    {checkState.admission.wouldPass ? strings.org.checkWouldPassYes : strings.org.checkWouldPassNo}
+                  </strong>{' '}
+                  · {strings.org.checkScoreLabel} {checkState.summary.score}
+                </p>
+                {checkState.admission.reasons.length > 0 && (
+                  <ul style={{ margin: '0.4rem 0 0 1.1rem' }}>
+                    {checkState.admission.reasons.map((reason) => (
+                      <li key={reason} style={{ fontSize: '0.85rem', color: AMBER }}>
+                        {reason}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p style={note}>{strings.org.checkSoftNote}</p>
+                <p style={{ ...note, margin: 0 }}>{strings.org.checkNotShownToApplicant}</p>
+              </div>
+            )}
+
+            {catalogue?.checks.map((definition) => {
+              const history = (checkState?.history ?? []).filter((h) => h.checkKey === definition.key);
+              const latest = history[history.length - 1];
+              const isOpen = openCheck === definition.key;
+              const outcomeColour =
+                latest?.outcome === 'passed'
+                  ? GREEN
+                  : latest?.outcome === 'failed'
+                    ? RED
+                    : latest
+                      ? AMBER
+                      : '#57606a';
+              return (
+                <div key={definition.key} style={{ ...card, margin: '0.5rem 0' }} data-testid={'check-' + definition.key}>
+                  <p style={{ margin: 0 }}>
+                    <strong>{definition.label}</strong>{' '}
+                    <span style={{ ...note, margin: 0 }}>
+                      {definition.weight}
+                      {definition.evidenceRequired ? ' · evidence required to pass' : ''}
+                    </span>
+                  </p>
+                  <p style={{ ...note, margin: '0.25rem 0' }}>{definition.whatItProves}</p>
+                  <p style={{ margin: '0.25rem 0', color: outcomeColour }}>
+                    {latest ? (
+                      <>
+                        {latest.outcome} — {latest.performedByName},{' '}
+                        {new Date(latest.performedAt).toLocaleDateString('en-AU')}
+                        {history.length > 1 && ` (${history.length} attempts)`}
+                        {latest.artefacts.length > 0 && ` · ${latest.artefacts.length} attached`}
+                      </>
+                    ) : (
+                      strings.org.checkNever
+                    )}
+                  </p>
+                  <button
+                    disabled={busy}
+                    data-testid={'open-' + definition.key}
+                    onClick={() => {
+                      setOpenCheck(isOpen ? null : definition.key);
+                      setCheckOutcome('');
+                      setCheckReason('');
+                      setCheckNote('');
+                      setCheckFields({});
+                      setPendingArtefacts([]);
+                    }}
+                  >
+                    {isOpen ? 'Close' : 'Perform this check'}
+                  </button>
+
+                  {isOpen && (
+                    <div style={{ marginTop: '0.75rem' }}>
+                      <p style={{ ...note, color: AMBER }}>
+                        <strong>{strings.org.checkEvidenceHeading}:</strong> {definition.evidenceGuidance}
+                      </p>
+
+                      <label style={field}>
+                        {strings.org.checkOutcomeLabel}
+                        <select
+                          style={input}
+                          value={checkOutcome}
+                          onChange={(e) => {
+                            setCheckOutcome(e.target.value);
+                            setCheckReason('');
+                          }}
+                          data-testid="check-outcome"
+                        >
+                          <option value="">{strings.org.checkOutcomePick}</option>
+                          <option value="passed">Passed</option>
+                          <option value="failed">Failed</option>
+                          <option value="not_applicable">Not applicable here</option>
+                          <option value="could_not_complete">Could not complete</option>
+                        </select>
+                      </label>
+
+                      {(checkOutcome === 'failed' || checkOutcome === 'could_not_complete') && (
+                        <label style={field}>
+                          {strings.org.checkReasonLabel}
+                          <select
+                            style={input}
+                            value={checkReason}
+                            onChange={(e) => setCheckReason(e.target.value)}
+                            data-testid="check-reason"
+                          >
+                            <option value="">{strings.org.checkReasonPick}</option>
+                            {(checkOutcome === 'failed' ? catalogue.failureReasons : catalogue.incompleteReasons).map(
+                              (reason) => (
+                                <option key={reason} value={reason}>
+                                  {reason.replace(/_/g, ' ')}
+                                </option>
+                              ),
+                            )}
+                          </select>
+                        </label>
+                      )}
+
+                      {(definition.requiredFields ?? []).map((fieldName) => (
+                        <label style={field} key={fieldName}>
+                          {fieldName}
+                          <input
+                            style={input}
+                            value={checkFields[fieldName] ?? ''}
+                            onChange={(e) => setCheckFields({ ...checkFields, [fieldName]: e.target.value })}
+                            data-testid={'check-field-' + fieldName}
+                          />
+                        </label>
+                      ))}
+
+                      <label style={field}>
+                        {strings.org.checkNoteLabel}
+                        <input
+                          style={input}
+                          value={checkNote}
+                          onChange={(e) => setCheckNote(e.target.value)}
+                          data-testid="check-note"
+                        />
+                      </label>
+                      <label style={field}>
+                        {strings.org.checkPerformedBy}
+                        <input
+                          style={input}
+                          value={checkBy}
+                          onChange={(e) => setCheckBy(e.target.value)}
+                          data-testid="check-by"
+                        />
+                      </label>
+
+                      <p style={{ margin: '0.25rem 0' }}>
+                        {pendingArtefacts.length === 0
+                          ? strings.org.checkNoEvidence
+                          : `${strings.org.checkAttached}: ${pendingArtefacts.map((a) => a.filename).join(', ')}`}
+                      </p>
+                      <input
+                        type="file"
+                        data-testid="check-file"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          void run(async () => {
+                            const buffer = await file.arrayBuffer();
+                            let binary = '';
+                            const view = new Uint8Array(buffer);
+                            for (let i = 0; i < view.length; i += 1) binary += String.fromCharCode(view[i]);
+                            const uploaded = await call<{ id: string; filename: string }>('/artefacts', {
+                              method: 'POST',
+                              practiceId: org.id,
+                              body: JSON.stringify({
+                                contentBase64: btoa(binary),
+                                declaredContentType: file.type,
+                                filename: file.name,
+                                purpose:
+                                  definition.category === 'entitlement' ? 'entitlement_call' : 'credential',
+                                uploadedByName: checkBy || 'unattributed',
+                              }),
+                            });
+                            setPendingArtefacts((current) => [...current, uploaded]);
+                          });
+                        }}
+                      />
+
+                      <p style={{ marginTop: '0.5rem' }}>
+                        <button
+                          disabled={busy || !checkOutcome || !checkBy.trim()}
+                          data-testid="record-check"
+                          onClick={() =>
+                            void run(async () => {
+                              await call('/organisations/checks', {
+                                method: 'POST',
+                                practiceId: org.id,
+                                body: JSON.stringify({
+                                  checkKey: definition.key,
+                                  outcome: checkOutcome,
+                                  performedByName: checkBy,
+                                  reasonCode: checkReason || undefined,
+                                  note: checkNote || undefined,
+                                  fields: checkFields,
+                                  artefactIds: pendingArtefacts.map((a) => a.id),
+                                }),
+                              });
+                              setOpenCheck(null);
+                              setPendingArtefacts([]);
+                              await loadOrgData(org.id);
+                            })
+                          }
+                        >
+                          {strings.org.checkRecord}
+                        </button>
+                      </p>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
 
             <h4>{strings.org.credentialsHeading}</h4>
             <p style={note}>{strings.org.credentialVerifyNote}</p>
