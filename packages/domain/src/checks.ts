@@ -434,3 +434,102 @@ export function assessAdmission(summary: CheckSummary): AdmissionAssessment {
   }
   return { wouldPass: reasons.length === 0, reasons };
 }
+
+// ---------------------------------------------------------------------------
+// Which check an approval actually rests on
+// ---------------------------------------------------------------------------
+
+/**
+ * A recorded check, as the console holds it — richer than `CheckRecord`,
+ * because this is the one place the FIELDS and the AUTHOR matter.
+ */
+export interface PerformedCheck {
+  readonly id?: string;
+  readonly checkKey: string;
+  readonly category: string;
+  readonly outcome: string;
+  readonly performedByName: string;
+  readonly performedAt: Date | string;
+  readonly fields?: Record<string, unknown> | null;
+  readonly artefacts?: ReadonlyArray<{ id: string; filename: string }>;
+}
+
+export interface EstablishedEntitlement {
+  /** The load-bearing check — what the approval rests on. */
+  readonly check: PerformedCheck;
+  /** `phone_call`, `domain_match`, … derived from the key, never retyped. */
+  readonly method: string;
+  /** Whoever actually performed it. NOT whoever approves. */
+  readonly performedByName: string;
+  readonly performedAt: Date | string;
+  /** Straight off the check, so the decision cannot disagree with the evidence. */
+  readonly phoneNumber?: string;
+  readonly numberSource?: string;
+  readonly spokeWithName?: string;
+  readonly hasEvidence: boolean;
+  /** Other entitlement checks that also passed. They contributed to the score. */
+  readonly alsoPassed: readonly PerformedCheck[];
+}
+
+/**
+ * Which recorded check establishes that this applicant speaks for this entity.
+ *
+ * WHY THIS EXISTS. The reviewer records an entitlement check — the number, where
+ * the number came from, who answered, and the evidence — and then, at the
+ * decision, was asked to type the same facts again. That is not merely
+ * duplication:
+ *
+ *   1. TWO RECORDS OF ONE EVENT CAN DISAGREE. If the check says one number and
+ *      the decision form says another, which is the evidence? The check has an
+ *      artefact attached and the decision form does not, so the retyped copy is
+ *      the weaker record and the one more likely to be wrong.
+ *
+ *   2. IT MISATTRIBUTES THE CHECK. One person rings the practice and another
+ *      approves the application — which is ordinary, and arguably better
+ *      practice. Retyping John's phone call into Carl's decision makes the
+ *      record say Carl made the call. For a platform whose premise is
+ *      non-repudiable records, a false attribution on the most privileged act
+ *      in the system is the wrong thing to be generating.
+ *
+ * So the decision READS the check rather than asking anybody to restate it.
+ *
+ * THE STRONGEST WINS, then the most recent. If a practice has a phone call
+ * (STRONG) and a sighted document (MODERATE), the approval rests on the call —
+ * that is the honest answer to "on what basis was this approved". The others
+ * are returned too, because they contributed to the score and a reviewer
+ * reading this later should see the whole picture.
+ */
+export function establishingEntitlementCheck(
+  checks: readonly PerformedCheck[],
+): EstablishedEntitlement | null {
+  const passed = checks.filter((c) => c.category === 'entitlement' && c.outcome === 'passed');
+  if (passed.length === 0) return null;
+
+  const rank = (c: PerformedCheck) => {
+    const definition = findCheck(c.checkKey);
+    return definition ? CHECK_WEIGHTS[definition.weight] : 0;
+  };
+  const at = (c: PerformedCheck) => new Date(c.performedAt).getTime();
+
+  const ordered = [...passed].sort((a, b) => rank(b) - rank(a) || at(b) - at(a));
+  const [best, ...rest] = ordered;
+  const fields = (best.fields ?? {}) as Record<string, unknown>;
+  const text = (key: string) => {
+    const value = fields[key];
+    return typeof value === 'string' && value.trim() !== '' ? value : undefined;
+  };
+
+  return {
+    check: best,
+    // Derived from the KEY. A method typed by hand could contradict the check
+    // it is supposed to describe; a derived one cannot.
+    method: best.checkKey.replace(/^entitlement\./, ''),
+    performedByName: best.performedByName,
+    performedAt: best.performedAt,
+    phoneNumber: text('phoneNumber'),
+    numberSource: text('numberSource'),
+    spokeWithName: text('spokeWithName'),
+    hasEvidence: (best.artefacts?.length ?? 0) > 0,
+    alsoPassed: rest,
+  };
+}

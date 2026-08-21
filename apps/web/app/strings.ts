@@ -196,6 +196,18 @@ export const strings = {
     endBypass: 'End the bypass',
   },
   review: {
+    // --- Entitlement, taken from the recorded check rather than retyped ---
+    entitlementEstablished: 'Entitlement has already been established',
+    entitlementEstablishedBy: '“{label}” — recorded by {who} on {when}.',
+    entitlementEstablishedSpokeWith: 'Spoke with {who}.',
+    entitlementHasEvidence: 'Evidence is attached.',
+    entitlementNoEvidence: 'NO evidence is attached to it.',
+    entitlementAlsoPassed: '{n} other entitlement check(s) also passed.',
+    entitlementNotRetyped:
+      'The decision will record this check, and the person who performed it. You are not asked to retype ' +
+      'it — a second copy without the evidence attached could disagree with the first, and it would ' +
+      'attribute their check to you.',
+
     toIdentity: 'Identity strength',
     toIdentityHint:
       '— what is known about every practice and practitioner on the platform, and what hard enforcement ' +

@@ -1,5 +1,7 @@
 import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
+  establishingEntitlementCheck,
+  type PerformedCheck,
   AbnError,
   AddressError,
   isValidAhpraNumberFormat,
@@ -607,6 +609,44 @@ export class OrganisationsService {
     const assessment = await this.checks.summary(organisationId);
     const mode = this.enforcement();
 
+    /*
+     * THE ENTITLEMENT COMES OFF THE RECORDED CHECK, not off the request.
+     *
+     * A reviewer who has already recorded a phone call — with the number, where
+     * the number came from, who answered, and an artefact attached — should not
+     * be asked to type it again at the decision, and what they typed should
+     * certainly not outrank what was recorded. Two records of one event can
+     * disagree, and the retyped one is the copy without evidence attached.
+     *
+     * It also fixes an attribution that was quietly wrong: one person rings the
+     * practice and another approves, which is ordinary and arguably better
+     * practice, and the decision used to record the APPROVER as the person who
+     * made the call.
+     *
+     * The inline fields survive as a fallback for the case where no check was
+     * recorded at all. They are used only then.
+     */
+    const established = establishingEntitlementCheck(assessment.history as PerformedCheck[]);
+    const entitlement = established
+      ? {
+          method: established.method,
+          phoneNumber: established.phoneNumber,
+          numberSource: established.numberSource,
+          spokeWithName: established.spokeWithName,
+          checkedByName: established.performedByName,
+          checkedAt: new Date(established.performedAt),
+        }
+      : {
+          method: input.entitlementMethod,
+          phoneNumber: input.entitlementPhoneNumber,
+          numberSource: input.entitlementNumberSource,
+          spokeWithName: input.entitlementSpokeWithName,
+          // Null, so the function falls back to the reviewer — which is right
+          // only here, where reviewer and checker really are the same person.
+          checkedByName: undefined,
+          checkedAt: undefined,
+        };
+
     if (input.decision === 'validated' && mode === 'hard' && !assessment.admission.wouldPass) {
       if (!input.identityOverrideReason?.trim()) {
         throw new BadRequestException(
@@ -636,8 +676,9 @@ export class OrganisationsService {
       }>
     >`SELECT * FROM decide_organisation_validation(
         ${organisationId}::uuid, ${input.decision}, ${input.reviewerName.trim()}, ${input.note ?? null},
-        ${input.entitlementMethod ?? null}, ${input.entitlementPhoneNumber ?? null},
-        ${input.entitlementNumberSource ?? null}, ${input.entitlementSpokeWithName ?? null})`;
+        ${entitlement.method ?? null}, ${entitlement.phoneNumber ?? null},
+        ${entitlement.numberSource ?? null}, ${entitlement.spokeWithName ?? null},
+        ${entitlement.checkedByName ?? null}, ${entitlement.checkedAt ?? null})`;
 
     await enqueueVaultEvent(this.prisma, {
       type: input.decision === 'validated' ? 'organisation.validated' : 'organisation.rejected',
@@ -650,8 +691,16 @@ export class OrganisationsService {
         reviewedBy: input.reviewerName.trim(),
         // The entitlement decision is the substance of the approval, so it is
         // evidence rather than incidental detail.
-        entitlementMethod: input.entitlementMethod ?? 'none',
-        entitlementNumberSource: input.entitlementNumberSource ?? 'n/a',
+        entitlementMethod: entitlement.method ?? 'none',
+        entitlementNumberSource: entitlement.numberSource ?? 'n/a',
+        /*
+         * WHO ESTABLISHED ENTITLEMENT, recorded separately from who approved.
+         * They are often different people and the evidence should say so —
+         * conflating them is how a record comes to assert something nobody did.
+         */
+        entitlementCheckedBy: entitlement.checkedByName ?? input.reviewerName.trim(),
+        entitlementFromRecordedCheck: Boolean(established),
+        entitlementCheckHadEvidence: established?.hasEvidence ?? false,
         // The score is part of the decision record, not a side calculation.
         identityScore: assessment.summary.score,
         identityScoringVersion: assessment.checklistVersion,
@@ -686,7 +735,7 @@ export class OrganisationsService {
             adminName: updated.adminName,
             adminEmail: updated.adminEmail,
             approvedByName: input.reviewerName.trim(),
-            entitlementMethod: input.entitlementMethod,
+            entitlementMethod: entitlement.method,
           })
         : await this.practiceAdmin.onRejected({
             organisationName: updated.name,

@@ -50,7 +50,14 @@ import {
   UserX,
   XCircle,
 } from 'lucide-react';
-import { blockingFlags, reviewFlags, type ReviewFlag } from '@aobplatform/domain';
+import {
+  CHECK_CATALOGUE,
+  blockingFlags,
+  establishingEntitlementCheck,
+  reviewFlags,
+  type PerformedCheck,
+  type ReviewFlag,
+} from '@aobplatform/domain';
 import { Button, Chip, Field, Notice, Section, SelectInput, Shell, TextInput, ui } from '../../ui';
 import { strings } from '../../strings';
 import { currentSession } from '../../auth';
@@ -88,7 +95,15 @@ interface ChecksPayload {
   checklistVersion: string;
   summary: { score: number; passed: number; strongPassed: number; entitlementPassed: number };
   admission: { wouldPass: boolean; reasons: string[] };
-  history: Array<{ checkKey: string; outcome: string; performedByName: string; performedAt: string }>;
+  history: Array<{
+    checkKey: string;
+    category: string;
+    outcome: string;
+    performedByName: string;
+    performedAt: string;
+    fields?: Record<string, unknown> | null;
+    artefacts?: Array<{ id: string; filename: string }>;
+  }>;
 }
 
 /**
@@ -240,6 +255,11 @@ function Fact({ term, children }: { term: string; children: React.ReactNode }) {
   );
 }
 
+/** The catalogue's own words for a check, so the decision names it as the checklist does. */
+function checkLabel(key: string): string {
+  return CHECK_CATALOGUE.find((c) => c.key === key)?.label ?? key;
+}
+
 export function DossierView({ id }: { id: string }) {
   const [row, setRow] = useState<QueueRow | null>(null);
   const [missing, setMissing] = useState(false);
@@ -372,16 +392,35 @@ export function DossierView({ id }: { id: string }) {
   const blocked = blockingFlags(flags);
   const attested = row.abnVerificationSource === 'manual_attestation';
 
+  /*
+   * IF ENTITLEMENT HAS ALREADY BEEN ESTABLISHED, THE DECISION USES IT.
+   *
+   * The reviewer records the check in section 4 — the number, where the number
+   * came from, who answered, and the evidence — and was then asked to type the
+   * same facts again down here. Beyond the obvious duplication, that produced
+   * two records of one event that could disagree, and the retyped one was the
+   * copy with no artefact attached.
+   *
+   * It also misattributed the check. One person rings the practice and another
+   * approves; retyping John's call into Carl's decision made the record say
+   * Carl made the call.
+   *
+   * Same rule as the server uses, from the domain, so the button and the API
+   * cannot disagree about whether this application can be approved.
+   */
+  const established = establishingEntitlementCheck((checks?.history ?? []) as PerformedCheck[]);
+
   // An approval needs an entitlement check; a rejection does not. Refusing an
   // application you could not verify is the CORRECT outcome, and requiring a
   // completed check before allowing that would have it exactly backwards.
   const entitlementComplete =
-    entitlementMethod !== '' &&
-    entitlementMethod !== 'none' &&
-    (entitlementMethod !== 'phone_call' ||
-      (entitlementPhoneNumber.trim() !== '' &&
-        entitlementNumberSource !== '' &&
-        entitlementSpokeWithName.trim() !== ''));
+    established !== null ||
+    (entitlementMethod !== '' &&
+      entitlementMethod !== 'none' &&
+      (entitlementMethod !== 'phone_call' ||
+        (entitlementPhoneNumber.trim() !== '' &&
+          entitlementNumberSource !== '' &&
+          entitlementSpokeWithName.trim() !== '')));
 
   // A blocking flag REFUSES the approval, it does not merely warn about it.
   // The distinction matters: a warning that can be clicked past is a warning
@@ -816,6 +855,33 @@ export function DossierView({ id }: { id: string }) {
           <strong>{reviewerName.trim() || '—'}</strong>
         </p>
 
+        {/*
+          WHAT THE APPROVAL WILL REST ON, when a check has already established
+          it. Shown instead of an empty form, and it names the person who
+          actually performed it — which is frequently not the person approving.
+        */}
+        {established && (
+          <Notice tone="ok" title={strings.review.entitlementEstablished}>
+            {strings.review.entitlementEstablishedBy
+              .replace('{label}', checkLabel(established.check.checkKey))
+              .replace('{who}', established.performedByName)
+              .replace('{when}', new Date(established.performedAt).toLocaleDateString('en-AU', {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+              }))}
+            {established.spokeWithName ? ` ${strings.review.entitlementEstablishedSpokeWith.replace('{who}', established.spokeWithName)}` : ''}
+            {established.hasEvidence ? ` ${strings.review.entitlementHasEvidence}` : ` ${strings.review.entitlementNoEvidence}`}
+            {established.alsoPassed.length > 0
+              ? ` ${strings.review.entitlementAlsoPassed.replace('{n}', String(established.alsoPassed.length))}`
+              : ''}
+            <br />
+            {strings.review.entitlementNotRetyped}
+          </Notice>
+        )}
+
+        {!established && (
+        <>
         <Field label={strings.review.entitlementMethod} hint={strings.review.approveNeedsEntitlement}>
           {(props) => (
             <SelectInput
@@ -879,6 +945,8 @@ export function DossierView({ id }: { id: string }) {
               )}
             </Field>
           </>
+        )}
+        </>
         )}
 
         <Field label={strings.review.rejectReason} hint={strings.review.rejectDisclosure}>
