@@ -1,29 +1,24 @@
-# Organisation / location / practitioner model — proposal and assessment
+# Organisation / location / practitioner model
 
-### 21 August 2026 · Response to Carl's on/offboarding design · **Not built — decisions needed first**
+### 21 August 2026 · **Signed off by Carl — building this**
 
-Diagrams below render on GitHub.
+All four proposed changes accepted. Banking: **never held.** Migration:
+approved. Diagrams below are validated and render on GitHub.
 
 ---
 
-## 1. Verdict up front
+## 1. Decisions, settled
 
-**The core structure is right**, and it matches every relevant Australian
-precedent. Four changes I'd make, one of which is a genuine liability rather
-than a design preference.
-
-| Your proposal | Verdict |
+| Decision | Outcome |
 |---|---|
-| Org → Location → Department (dept optional) | ✅ **Keep.** Matches HPI-O's seed/network organisation shape and PRODA's org model. |
-| Practitioner is an independent entity who pre-registers | ✅ **Keep.** This is how AHPRA, HPI-I and PRODA all work — identity is national and practitioner-level. |
-| Practice must exist before a practitioner can be added | ✅ **Keep**, with a sole-trader path (see §6). |
-| Practice invites → practitioner accepts/rejects | ✅ **Keep.** Matches REQ-XFER-05 "both-sides approval". |
-| Practitioner can work at multiple practices | ✅ **Keep** — and it's not optional, it's how the provider-number system works. |
-| ABN lookup, must be ACTIVE | ✅ **Keep.** |
-| Org name must match ABN lookup **exactly** | ⚠️ **Change** — this will reject most legitimate practices (§4). |
-| 5–10 practice cap | ⚠️ **Change** — no cap; anomaly-detect instead (§5). |
-| "Do you contract to many practices?" flag | 🛑 **Don't build.** Payroll-tax liability (§5). |
-| 10-business-day cool-off, then block | 🛑 **Change the mechanism.** As described it would manufacture invalid claims (§7). |
+| ABN name matching | ✅ Match legal name **or any registered business name**; store both. ABN must be ACTIVE. |
+| Employment-status flag | ✅ **Never collected.** Payroll-tax liability, no functional need. |
+| Practice cap | ✅ **No cap.** Anomaly-detect instead (REQ-ANOM-01). |
+| Directory identifier | ✅ **AHPRA number only.** The Medicare provider number never appears in a directory. |
+| Offboarding | ✅ Notice runs **before** the end date. At the end date the affiliation ends and agreements cease. No post-departure processing. |
+| **Banking details** | ✅ **NEVER HELD — see §8.** |
+| Address validation | ✅ **G-NAF, self-hosted** — see §9. |
+| Migration | ✅ Approved. `Provider` becomes `Practitioner` + `Affiliation`. |
 
 ---
 
@@ -36,32 +31,29 @@ than a design preference.
 > practice**, OR the provider number **for that place of practice**
 
 A Medicare provider number is not a property of a doctor. It is a property of
-**a doctor at a place**. That single fact forces the model: the practitioner
-and the location are separate entities, and the provider number lives on the
-**edge between them**.
+**a doctor at a place**. That forces the model: practitioner and location are
+separate entities, and the provider number lives on the **edge between them**.
 
-This is also why "a practitioner can work at two practices" isn't a feature
-request — it's the default state of Australian medicine, and any model that
+This is also why "a practitioner can work at two practices" is not a feature
+request — it is the default state of Australian medicine, and any model that
 puts `providerNumber` on the practitioner is already wrong.
 
-### What we have today (the honest limitation)
+### The limitation being fixed
 
-```
-Practice ──< Provider { name, providerNumber, placeOfPracticeAddress }
-```
-
-`Provider` is really "practitioner as known by this one practice". A doctor at
-three practices is **three unrelated rows**, with no way to know they're the
-same human. That's the thing your proposal fixes.
+Today `Provider` is really "practitioner as known by this one practice". A
+doctor at three practices is **three unrelated rows** with no way to know they
+are the same human — which breaks anomaly detection, deregistration
+hard-stops, and the practitioner's own view of what has been signed in their
+name.
 
 ---
 
-## 3. Proposed model
+## 3. The model
 
 ```mermaid
 erDiagram
-    ORGANISATION ||--|{ LOCATION : "has (>= 1)"
-    LOCATION ||--o{ DEPARTMENT : "has (0..n, optional)"
+    ORGANISATION ||--|{ LOCATION : "has one or more"
+    LOCATION ||--o{ DEPARTMENT : "has none or many"
     ORGANISATION ||--o{ ORG_ADMIN : "administered by"
     PRACTITIONER ||--o{ AFFILIATION : "holds"
     LOCATION ||--o{ AFFILIATION : "hosts"
@@ -70,57 +62,57 @@ erDiagram
     PRACTITIONER ||--o{ ENROLMENT_CEREMONY : "verified by"
 
     ORGANISATION {
-        uuid id
+        uuid id PK
         string legalName "from ABR"
-        string_array tradingNames "from ABR business names"
-        string abn "ACTIVE required"
-        string acn "derivable from ABN for companies"
-        string entityType "PTY_LTD, TRUST, PARTNERSHIP, SOLE_TRADER..."
+        string tradingNames "ABR business names"
+        string abn "must be ACTIVE"
+        string acn "derived from ABN for companies"
+        string entityType "PTY_LTD TRUST PARTNERSHIP SOLE_TRADER"
         string hpiO "optional"
-        string validationState "pending, validated, rejected"
+        string validationState "pending validated rejected"
     }
     LOCATION {
-        uuid id
-        string code "practice's own label"
-        string address
+        uuid id PK
+        string code "the practice own label"
+        string address "G-NAF validated"
         string state "drives the holiday calendar"
-        bool addressValidated
-        bool active "false until address validates"
+        boolean addressValidated
+        boolean active "false until address validates"
     }
     DEPARTMENT {
-        uuid id
-        string name "Emergency, Oncology, Allied Health"
+        uuid id PK
+        string name "Emergency Oncology Allied Health"
     }
     PRACTITIONER {
-        uuid id
-        string ahpraNumber "national, public"
+        uuid id PK
+        string ahpraNumber "national and public"
         string familyName
         string givenNames
-        string providerType "GP, specialist, allied..."
-        string email "practitioner-owned default"
+        string providerType "GP specialist allied"
+        string email "practitioner owned default"
     }
     AFFILIATION {
-        uuid id
-        string providerNumber "THE POINT: per practitioner x location"
-        string status "invited, active, ending, ended, rejected"
+        uuid id PK
+        string providerNumber "one per practitioner per location"
+        string status "invited active ending ended rejected"
         date startedAt
         date noticeGivenAt
         date endsAt
     }
 ```
 
-### Why the agreement anchors to the **affiliation**, not the practitioner
+### Why the agreement anchors to the **affiliation**
 
-`REQ-XFER-01` says the agreement's practitioner is **immutable** — there is no
-transfer path, by design (and I've enforced that with a DB trigger). Anchoring
-to the affiliation makes that fall out for free:
+`REQ-XFER-01` says the agreement's practitioner is **immutable** — no transfer
+path exists, by design, enforced by a DB trigger. Anchoring to the affiliation
+makes that fall out for free:
 
-- The affiliation *is* the (practitioner × location) pair that owns the
-  provider number — which is exactly what s 65C(5) asks you to record.
-- Practitioner moves to a new location ⇒ **new affiliation ⇒ new agreement**.
-  Not an edit. Which is the rule.
-- Practitioner leaves ⇒ the affiliation ends ⇒ their enduring agreements at
-  that location cease under 65CA(8), automatically, with no transfer.
+- The affiliation *is* the (practitioner × location) pair holding the provider
+  number — exactly what s 65C(5) asks you to record.
+- Practitioner moves location ⇒ **new affiliation ⇒ new agreement.** Not an
+  edit. Which is the rule.
+- Practitioner leaves ⇒ affiliation ends ⇒ enduring agreements at that
+  location cease under 65CA(8), with no transfer.
 
 ---
 
@@ -131,66 +123,60 @@ sequenceDiagram
     autonumber
     actor Admin as Practice owner
     participant P as AoBPlatform
-    participant ABR as ABN Lookup (ABR)
+    participant ABR as ABN Lookup, the ABR
     actor Ops as Human validation queue
 
-    Admin->>P: email, practice name, ABN, ACN?, entity type
-    P->>ABR: lookup ABN
+    Admin->>P: email, practice name, ABN, optional ACN, entity type
+    P->>ABR: look up the ABN
     ABR-->>P: legal name, business names, ABN status, entity type, GST
-    P->>P: ABN ACTIVE? name matches legal OR any trading name?
-    P->>P: company? ACN == ABN digits 3-11
-    alt checks fail
-        P-->>Admin: rejected, with which check failed
-    else checks pass
+    P->>P: is the ABN ACTIVE
+    P->>P: does the typed name match the legal name or any trading name
+    P->>P: if a company, does the ACN match the last 9 digits of the ABN
+    alt any check fails
+        P-->>Admin: rejected, naming which check failed
+    else all checks pass
         P->>Ops: queue for HUMAN validation
-        Ops->>P: approve / reject (named reviewer, recorded)
+        Ops->>P: approve or reject, named reviewer recorded
         P->>Admin: passkey enrolment invitation
-        Admin->>P: enrol passkey, sign in
-        Admin->>P: add location (code + address)
-        P->>P: validate address
-        alt address invalid
-            P-->>Admin: location cannot be activated
-        else valid
-            P->>P: activate location -> practitioners may now be added
+        Admin->>P: enrol passkey and sign in
+        Admin->>P: add a location with a code and an address
+        P->>P: validate the address against G-NAF
+        alt address not found
+            P-->>Admin: the location cannot be activated
+        else address canonical
+            P->>P: activate the location
+            P->>P: practitioners may now be affiliated here
         end
     end
 ```
 
-### Change 1 — exact name match will reject most real practices
+**Name matching.** ABR returns the *legal entity name*. Practices trade under
+a different one constantly — legal entity *"Smith Medical Pty Ltd"* trading as
+*"Sampletown Family Practice"*. We match the typed name against the legal name
+**or any registered business name**, store both, and show the operator which
+one matched. ABN-ACTIVE stays strict; that one is binary.
 
-An ABR lookup returns the **legal entity name**. Practices trade under a
-different name constantly: legal entity *"Smith Medical Pty Ltd"* trading as
-*"Sampletown Family Practice"*. Requiring the typed name to equal the ABR
-entity name exactly fails that — legitimately, and often.
+**ACN is derived, not asked.** For a company the ABN is the ACN with two check
+digits prefixed, so the last nine digits of the ABN *are* the ACN. If an
+operator supplies one that disagrees, that is a hard fail worth surfacing.
+*(Verify against ABR documentation before relying on it.)*
 
-**Instead:** accept a match against the legal entity name **or any registered
-business name** on the ABN, store both, and show the operator what matched.
-Keep the ABN-ACTIVE check strict — that one is binary and worth being rigid
-about.
+### Organisation fields
 
-### Change 2 — ACN is free
-
-For a company, the ABN is the ACN with two check digits prefixed, so the last
-nine digits of the ABN *are* the ACN. Don't ask for it separately and hope
-they match — derive it, and if the operator supplies one that disagrees, that
-is a hard fail worth surfacing. *(Verify this relationship before relying on
-it; I'm confident but it should be checked against the ABR's own
-documentation.)*
-
-### What else to collect for an organisation
-
-FR-1.1 already specifies most of it. Additions worth making:
+Extends FR-1.1 rather than replacing it.
 
 | Field | Why |
 |---|---|
+| Legal name + trading names | See above |
+| ABN (ACTIVE) | Gate |
+| ACN (derived for companies) | Cross-check |
 | Entity type from ABR | Drives who can sign — a trust signs differently from a Pty Ltd |
-| Trading/business names | See Change 1 |
-| GST registration | Our own invoicing, not AoB (bulk billing is GST-free) |
-| **State per location** | Already built — drives the public-holiday calendar for 2-business-day terminations |
-| HPI-O | Already in FR-1.1 (optional; supports future rails) |
-| BBPIP participation | All-or-nothing across the practice; a single privately-billed item forfeits the quarter |
+| GST registration | Our own invoicing; bulk billing itself is GST-free |
+| **State, per location** | Already built — drives the 2-business-day holiday calendar |
+| HPI-O | Already in FR-1.1, optional, supports future rails |
+| BBPIP participation | All-or-nothing across the practice; one privately-billed item forfeits the quarter |
 | MyMedicare registration | Gates the enduring MyMedicare pathway entirely |
-| **Payee arrangement** | ⚠️ Open question — see §8 |
+| ~~Banking~~ | **Never. See §8.** |
 
 ---
 
@@ -206,109 +192,61 @@ sequenceDiagram
     rect rgb(240, 246, 252)
     note over Doc,P: Path A - practitioner pre-registers themselves
     Doc->>P: email, name, AHPRA number
-    P->>P: format-validate AHPRA number
+    P->>P: format-validate the AHPRA number
     P->>Doc: verify email
-    P->>P: status = pre-registered (NO passkey yet, NO affiliation)
+    P->>P: status is pre-registered. No passkey yet, no affiliation.
     end
 
-    rect rgb(240, 246, 252)
-    note over Admin,Doc: Path B - practice adds them
+    rect rgb(255, 245, 235)
+    note over Admin,Doc: Path B - a practice adds them
     Admin->>P: search by AHPRA number
-    P-->>Admin: full name + AHPRA number ONLY (never provider number)
-    Admin->>P: add to location (+ department?), provider number at that location
+    P-->>Admin: full name and AHPRA number ONLY, never the provider number
+    Admin->>P: add to a location, plus department, plus provider number there
     P->>P: REQ-PKI-01 ceremony required before any key is bound
     P->>Doc: invitation to the practitioner-owned email
     alt Practitioner ACCEPTS
         Doc->>P: accept
-        P->>P: affiliation = active
-        P->>P: agreements for this practitioner AT THIS LOCATION now process
+        P->>P: affiliation becomes active
+        P->>P: agreements for this practitioner at this location now process
     else Practitioner REJECTS
         Doc->>P: reject
-        P->>P: affiliation = rejected; capture blocked; practice notified
+        P->>P: affiliation rejected, capture blocked, practice notified
     end
     end
 ```
 
-### Change 3 — show the AHPRA number, never the provider number
+**The directory shows the AHPRA number, never the provider number.** AHPRA
+registration is national and genuinely public — AHPRA publishes a searchable
+register with name, profession, status and conditions. The Medicare provider
+number is **not** public and is the exact artefact the PKI family protects
+(Addendum v5 PART C cites a $7.5m prosecution involving impersonation of twenty
+doctors).
 
-You asked which ID the health department provides. It's the **AHPRA
-registration number**: national, practitioner-level, and genuinely public —
-AHPRA publishes a searchable register showing name, profession, registration
-status and conditions.
+Search is **exact-match on AHPRA number**, not fuzzy name browse. Even against
+a public register, letting any admin enumerate everyone on our platform tells
+an attacker who our customers are. Rate-limited and logged.
 
-The **Medicare provider number is not public and must never appear in a
-directory.** Provider-number misuse is the documented fraud vector this whole
-PKI family exists to close (Addendum v5 PART C cites a $7.5m prosecution
-involving impersonation of twenty doctors). A directory that exposes provider
-numbers hands an attacker the exact artefact.
+**No employment-status question.** The system supports N affiliations because
+the provider-number model forces it; nothing in the AoB workflow branches on
+whether someone is an employee or a contractor. Asking would create a
+discoverable record in a live payroll-tax controversy for our customers, for
+no functional benefit.
 
-Also worth adding: the search should be **exact-match on AHPRA number**, not
-fuzzy name browse. Even though the AHPRA register is public, letting any
-practice admin enumerate everyone on our platform tells an attacker who our
-customers are. Rate-limit and log it.
+**No cap on affiliations.** An arbitrary limit generates support tickets and
+stops nothing (an attacker stops at 9). A practitioner going from 2 to 30
+affiliations in a week is a signal to surface under REQ-ANOM-01, not a
+threshold to block at.
 
-### Change 4 — do not ask "do you contract to many practices?" 🛑
+### Sole practitioners
 
-This is the one I'd push back on hardest, and it's not a design objection.
-
-Whether Australian practitioners are employees or contractors of their
-practice is a **live payroll-tax controversy**. State revenue offices have
-pursued medical practices over exactly this question, several states have run
-amnesty programs, and the leading case (*Thomas and Naaz*, NSW) turned on
-whether service agreements between a practice and its doctors were "relevant
-contracts". *(Verify current state-by-state status before acting — this moves.)*
-
-A platform that asks a practice to declare its doctors' engagement status, and
-stores the answer with a timestamp, has created a **discoverable record in a
-live tax dispute**. That's a liability we'd be manufacturing for our customers,
-for no functional benefit.
-
-**We don't need the answer.** The system must support N affiliations regardless
-— that's forced by the provider-number model. Nothing in the AoB workflow
-branches on employment status.
-
-**And drop the 5–10 cap.** Arbitrary caps generate support tickets and don't
-stop fraud (an attacker stops at 9). What you actually want is already
-specified: `REQ-ANOM-01` anomaly detection. A practitioner going from 2 to 30
-affiliations in a week is a *signal to surface*, not a threshold to block at.
+A solo GP is simultaneously the organisation and the only practitioner. The
+ABR entity type gives this away — `Individual/Sole Trader` — so the flow
+collapses: one identity, one ceremony, organisation and first affiliation
+created together. No emailing yourself an invitation.
 
 ---
 
-## 6. Sole practitioners — don't make the common case awkward
-
-A solo GP is simultaneously the organisation and the only practitioner. If
-onboarding demands a separate "practice owner" who invites a "practitioner",
-the most common small-practice shape becomes a confusing two-step where one
-person emails themselves.
-
-The ABR entity type gives you this for free — `Individual/Sole Trader`. Detect
-it and collapse the flow: one identity, one ceremony, org + first affiliation
-created together.
-
----
-
-## 7. Offboarding — the change that matters most 🛑
-
-Your proposal: notice → 10 business days cool-off → practitioner removed →
-AoBs blocked.
-
-**Two problems.**
-
-**(a) There is no cool-off in the regulation, and a delay may manufacture
-invalid claims.** Under 65CA(8) an enduring agreement ceases when *"the
-practitioner leaves the nominated practice location"*. It ceases **on that
-event**, not ten days later. If we keep processing AoBs for a departed
-practitioner during a cool-off, we are producing claims against agreements
-that have already ceased — the exact silent-invalidation failure mode the
-design docs call out. `REQ-XFER-08` is even blunter about the deregistration
-case: *"immediately cease all that practitioner's agreements… Do not wait for
-the practice to tell you."*
-
-**(b) "Blocked" is the wrong verb.** Agreements don't get blocked, they
-**cease** — and the evidence is retained for the full 2-year period.
-Termination ends an agreement; it does not delete the record (`REQ-OFF-07`).
-
-### What I'd build instead
+## 6. Offboarding — notice **before** the end date
 
 ```mermaid
 sequenceDiagram
@@ -318,90 +256,123 @@ sequenceDiagram
     actor Other as The other party
 
     Any->>P: give notice to end the affiliation
-    P->>P: set endsAt (commercial notice period, per THEIR contract)
-    P->>Other: notify (never silent, either direction)
-    note over P: Between now and endsAt: affiliation still ACTIVE.<br/>Capture proceeds. Claims are valid. Nothing is blocked.
-    P->>P: at endsAt -> affiliation ENDED
-    P->>P: enduring agreements at that location CEASE (65CA(8))
+    P->>P: set endsAt from the commercial notice period
+    P->>Other: notify, never silent in either direction
+
+    note over P: Until endsAt the affiliation is ACTIVE. Capture proceeds, claims are valid, nothing is blocked.
+
+    P->>P: at endsAt the affiliation ENDS
+    P->>P: enduring agreements at that location CEASE per 65CA(8)
     P->>P: new capture blocked for that affiliation
-    P->>P: evidence retained in full; in-flight claims for services<br/>rendered BEFORE endsAt remain valid
-    P->>Other: cessation surfaced before a claim relies on it
+    P->>P: evidence retained in full for the 2 year period
+    P->>P: claims for services rendered BEFORE endsAt remain valid
+    P->>Other: cessation surfaced before any claim relies on it
 ```
 
-The distinction: the notice period is **before** the end date, not after it.
-Your ten days is a perfectly reasonable *commercial* notice period — it just
-belongs in the practice's service agreement with the practitioner, with the
-platform recording the agreed end date. What the platform must not do is keep
-processing after the practitioner has actually gone.
+**Why not a cool-off after departure.** Under 65CA(8) an enduring agreement
+ceases when *"the practitioner leaves the nominated practice location"* — on
+that event, not ten days later. Processing AoBs during a post-departure
+cool-off would produce claims against agreements that have already ceased: the
+silent-invalidation failure mode the design docs warn about repeatedly.
 
-**And deregistration bypasses all of it** — `REQ-XFER-08`, immediate hard stop,
-no notice period, don't wait to be told.
+A ten-day notice period is perfectly sensible **commercially** — it belongs in
+the practice's service agreement with the practitioner, and the platform
+records the agreed end date. What the platform must not do is keep processing
+after the practitioner has actually gone.
 
----
+**"Blocked" is the wrong verb.** Agreements **cease**; they are not blocked,
+and the record survives the full 2-year retention (REQ-OFF-07).
 
-## 8. Open questions I can't answer from the docs
-
-1. **Who is the payee?** You said "the Practice does all the billing on behalf
-   of the practitioner." Legally the AoB assigns the benefit to the
-   **practitioner**; Medicare separately supports a payee arrangement so the
-   money lands with the practice. We should confirm how that's registered
-   (Services Australia banking forms HW027/029/052 are in the glossary) and
-   whether we need to hold it. **This affects whether Organisation needs
-   banking fields at all** — and I'd rather it didn't (`REQ-PKI-02` treats
-   changing banking configuration as a high-risk action requiring a
-   practitioner signature, which implies we hold it; worth confirming).
-2. **Address validation service.** You said "any free webservice". Candidates
-   need checking for licence terms and whether they're a runtime network
-   dependency (which needs your sign-off per CLAUDE.md §7). The ABR's own data
-   isn't an address validator.
-3. **Notice period.** Whatever the practice's service agreement says — is
-   there a house default we impose, or is it per-organisation config?
-4. **Department semantics for billing.** Does a hospital department ever change
-   the provider number, or is that always location-level? If location-level,
-   Department is purely organisational and never touches an agreement.
+**Deregistration bypasses all of it.** REQ-XFER-08: immediate hard stop, no
+notice period, *"Do not wait for the practice to tell you."*
 
 ---
 
-## 9. Is this good industry practice? — the honest answer
+## 7. Migration plan
 
-**Yes, and it's the shape the Australian ecosystem already uses.** Three
-precedents, all pointing the same way *(verify specifics before customer-facing
-claims — this is my knowledge, not sourced from the project docs)*:
+No production data, so this is free now and expensive later.
 
-- **PRODA** (Services Australia): individuals register once and own their
-  identity; organisations register separately against an ABN; individuals are
-  then *linked* to organisations with delegated roles. Organisations support a
-  hierarchy.
-- **HPI-O** (Healthcare Identifiers Service): a **seed** organisation (the
-  legal entity, ABN-anchored) with **network** organisations beneath it for
-  sites and departments. That is your Org → Location → Department, already
-  standardised.
-- **AHPRA / HPI-I**: practitioner identity is national, public, and completely
-  independent of who currently employs them.
+| Step | Change |
+|---|---|
+| 1 | New tables: `Organisation`, `Location`, `Department`, `Practitioner`, `Affiliation` |
+| 2 | `Practice` becomes `Organisation` + its first `Location` |
+| 3 | `Provider` splits: identity → `Practitioner`, provider number + practice link → `Affiliation` |
+| 4 | `Agreement.providerId` → `Agreement.affiliationId`, anchor trigger updated (HARD-01 still immutable) |
+| 5 | ABN validation + human validation queue |
+| 6 | G-NAF address validation gating location activation |
+| 7 | Invitation / accept / reject for affiliations |
+| 8 | Offboarding with notice-before-end, wired to the existing 65CA(8) cessation |
+| 9 | Enrolment ceremony re-pointed at `Practitioner` (it is practitioner-level, not affiliation-level — you verify a person once, not once per practice) |
 
-The consistent pattern: **identity is practitioner-level and national;
-affiliation is a separate, revocable, time-bounded edge.** Your instinct to let
-a practitioner pre-register independently and carry that identity between
-practices is not just good practice — it's the only model that interoperates
-with the systems we'll eventually have to talk to.
-
-Where your design is *better* than the common implementation: most PMS and
-engagement products model the practitioner as a child of the practice (which is
-what we do today, and it's wrong). Duplicating a doctor across three practices
-loses the fact that they're one person — which matters enormously for anomaly
-detection, for deregistration hard-stops, and for the practitioner's own view
-of what's been signed in their name.
+Point 9 is worth stating plainly: **the REQ-PKI-01 ceremony verifies a human,
+so it belongs on the practitioner.** A doctor verified by video for practice A
+does not need re-verifying for practice B — but each *affiliation* still needs
+its own provider-number check, which is the part that is location-specific.
 
 ---
 
-## 10. What I need from you before building
+## 8. Banking: never held ✅
 
-1. **Sign off the four changes** (§4 name matching, §5 no contractor flag / no
-   cap, §5 AHPRA-number-only directory, §7 notice-before-end).
-2. **Answer the payee question** (§8.1) — it decides whether we hold banking
-   details at all.
-3. **Pick an address validation service**, or confirm you're happy with a
-   runtime network dependency and I'll propose one.
-4. **Confirm the migration appetite.** This restructures `Provider` into
-   `Practitioner` + `Affiliation` and re-anchors agreements. There's no
-   production data, so now is free; in six months it isn't.
+**Decision: AoBPlatform never stores banking details, for anyone, ever.**
+
+This is a good decision and it simplifies several things:
+
+- **REQ-PKI-02** lists "changing a practice's banking or contact
+  configuration" among the high-risk actions needing a practitioner signature.
+  With no banking fields, that clause reduces to contact configuration only.
+- It removes an entire category from every security questionnaire and pen
+  test.
+- It reinforces the product's actual claim: we hold the **consent record**, not
+  the money. Payment flows are the PMS's and the rails' problem — and the
+  architecture doc already puts claim lodgement and payments "out of frame by
+  design".
+
+The legal position it rests on: the AoB assigns the benefit to the
+**practitioner**; Medicare separately supports a payee arrangement so funds
+reach the practice. That arrangement is registered directly with Services
+Australia (the HW027/029/052 forms in the glossary) — **between the practice
+and Services Australia, with us not in the path.** Confirm the specifics before
+any customer-facing claim, but nothing about it requires us to hold an account
+number.
+
+---
+
+## 9. Address validation: G-NAF, self-hosted ✅
+
+**Recommendation: ingest the Geocoded National Address File and validate
+locally. No runtime network dependency.**
+
+G-NAF is the authoritative Australian address dataset, published by Geoscape
+and distributed through data.gov.au under an open licence. *(Verify current
+licence terms and publication cadence before relying on it.)*
+
+**Why self-hosted rather than an API:**
+
+1. **CLAUDE.md §7** requires your sign-off for a runtime network dependency.
+   Self-hosting sidesteps it — location activation never depends on a third
+   party being up.
+2. **Address is one of the six approved patient identifiers** (REQ-VER-02).
+   Whatever validator we build for practice locations, someone will eventually
+   point at patient addresses. At that moment, "we send addresses to a US
+   API" becomes a data-residency breach of REQ-NFR-01 (*"Australian data
+   residency, no offshore processing"*). Setting the posture now costs nothing;
+   retrofitting it costs a rebuild.
+3. **It fits the pattern already used three times** — rule sets, the Basic
+   Service Description mapping, and public holidays are all versioned content
+   with a refresh job and a human-reviewed diff. G-NAF is the fourth.
+
+**Cost:** a large dataset (millions of records) needing ingest, indexing and a
+quarterly refresh. It does canonical-match well and fuzzy "did you mean"
+less well than a commercial API — acceptable, because the gate is *"does this
+address exist and canonicalise"*, not autocomplete.
+
+**Alternatives considered and rejected:** Australia Post PAF (licensed,
+commercial); Geoscape's own API (commercial, runtime dependency); Google
+Address Validation (offshore processing — disqualifying for the patient-address
+case); Nominatim/OSM (not authoritative for Australian addresses, and its usage
+policy prohibits this kind of use).
+
+**What validation means here:** G-NAF tells you an address exists and gives you
+its canonical form. It does not tell you the practice is actually at it. For
+gating location activation, "exists and canonicalises" is the right bar — the
+human validation queue in §4 is what covers the rest.
