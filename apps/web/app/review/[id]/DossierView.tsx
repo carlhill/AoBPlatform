@@ -58,7 +58,7 @@ import {
   type PerformedCheck,
   type ReviewFlag,
 } from '@aobplatform/domain';
-import { Button, Chip, Field, Notice, Section, SelectInput, Shell, TextInput, ui } from '../../ui';
+import { Button, Chip, Field, Notice, Section, Shell, TextInput, ui } from '../../ui';
 import { strings } from '../../strings';
 import { currentSession } from '../../auth';
 import { flagLabel, flagWhy } from '../flags';
@@ -295,10 +295,6 @@ export function DossierView({ id }: { id: string }) {
   const [typedName, setTypedName] = useState('');
   const reviewerName = signedInAs ?? typedName;
   const [note, setNote] = useState('');
-  const [entitlementMethod, setEntitlementMethod] = useState('');
-  const [entitlementPhoneNumber, setEntitlementPhoneNumber] = useState('');
-  const [entitlementNumberSource, setEntitlementNumberSource] = useState('');
-  const [entitlementSpokeWithName, setEntitlementSpokeWithName] = useState('');
   const [busy, setBusy] = useState(false);
 
   const loadChecks = useCallback(() => {
@@ -410,17 +406,28 @@ export function DossierView({ id }: { id: string }) {
    */
   const established = establishingEntitlementCheck((checks?.history ?? []) as PerformedCheck[]);
 
-  // An approval needs an entitlement check; a rejection does not. Refusing an
-  // application you could not verify is the CORRECT outcome, and requiring a
-  // completed check before allowing that would have it exactly backwards.
-  const entitlementComplete =
-    established !== null ||
-    (entitlementMethod !== '' &&
-      entitlementMethod !== 'none' &&
-      (entitlementMethod !== 'phone_call' ||
-        (entitlementPhoneNumber.trim() !== '' &&
-          entitlementNumberSource !== '' &&
-          entitlementSpokeWithName.trim() !== '')));
+  /*
+   * THE GATE IS THE IDENTITY ASSESSMENT, not a second form.
+   *
+   * assessAdmission() already requires all three of: a score at or above the
+   * threshold, at least one STRONG check passed, and at least one ENTITLEMENT
+   * check passed. So the old separate "entitlementMethod is filled in" test was
+   * a weaker restatement of a condition the assessment already covers — and it
+   * refused applications the assessment was perfectly happy with, which is what
+   * XLEVELUP hit at score 9.
+   *
+   * A rejection is NOT gated on any of this. Refusing an application you could
+   * not verify is the correct outcome, and requiring a completed check before
+   * allowing a refusal would have it exactly backwards.
+   *
+   * NOTE WHAT THIS MEANS. The button now reflects the threshold, so a practice
+   * below it cannot be approved from this screen. The SERVER still runs in
+   * whatever IDENTITY_ENFORCEMENT says — soft by default — so the two can
+   * differ, and when they do it is the screen that is stricter. Making the
+   * server refuse as well, with the written-override path, is
+   * IDENTITY_ENFORCEMENT=hard, in one place.
+   */
+  const identitySufficient = checks?.admission.wouldPass === true;
 
   // A blocking flag REFUSES the approval, it does not merely warn about it.
   // The distinction matters: a warning that can be clicked past is a warning
@@ -429,7 +436,7 @@ export function DossierView({ id }: { id: string }) {
   // Rejection stays available. A blocked application is one that cannot be
   // approved as it stands — not one that must be refused, and certainly not one
   // the reviewer should be unable to act on at all.
-  const canApprove = reviewerName.trim().length > 0 && entitlementComplete && blocked.length === 0 && !busy;
+  const canApprove = reviewerName.trim().length > 0 && identitySufficient && blocked.length === 0 && !busy;
   const canReject = reviewerName.trim().length > 0 && note.trim().length > 0 && !busy;
 
   /**
@@ -482,10 +489,15 @@ export function DossierView({ id }: { id: string }) {
           note: note.trim() || undefined,
           ...(decision === 'validated'
             ? {
-                entitlementMethod,
-                entitlementPhoneNumber: entitlementPhoneNumber.trim() || undefined,
-                entitlementNumberSource: entitlementNumberSource || undefined,
-                entitlementSpokeWithName: entitlementSpokeWithName.trim() || undefined,
+                /*
+                 * NOTHING ABOUT ENTITLEMENT IS SENT FROM HERE ANY MORE. The
+                 * server reads it off the recorded check, which carries the
+                 * evidence and the person who performed it. Sending a second
+                 * copy would only give it something to disagree with.
+                 *
+                 * The API still accepts these fields for a caller with no
+                 * recorded check; this screen is simply never that caller.
+                 */
               }
             : {}),
         }),
@@ -908,73 +920,23 @@ export function DossierView({ id }: { id: string }) {
           </Notice>
         )}
 
+        {/*
+          NO INLINE ENTITLEMENT FORM ANY MORE.
+          
+          It used to sit here so a reviewer could state the entitlement at the
+          moment of deciding. That made sense when it was what unlocked the
+          button. It no longer is — the gate is the identity assessment, which
+          counts RECORDED checks — so a form here could be filled in completely
+          and change nothing, which is worse than not offering it.
+          
+          Entitlement belongs in the checklist above, where a check carries an
+          author, an outcome, and its evidence. This says so rather than
+          leaving somebody to wonder where the field went.
+        */}
         {!established && (
-        <>
-        <Field label={strings.review.entitlementMethod} hint={strings.review.approveNeedsEntitlement}>
-          {(props) => (
-            <SelectInput
-              {...props}
-              value={entitlementMethod}
-              onChange={(e) => setEntitlementMethod(e.target.value)}
-              data-testid="review-entitlement-method"
-            >
-              <option value="">—</option>
-              <option value="phone_call">Called the practice</option>
-              <option value="domain_match">Email domain matches the practice website</option>
-              <option value="hpio">HPI-O</option>
-              <option value="document">Document sighted</option>
-            </SelectInput>
-          )}
-        </Field>
-
-        {/* A phone call is only evidence if the reviewer did not get the number
-            from the applicant. These three fields are what make it evidence. */}
-        {entitlementMethod === 'phone_call' && (
-          <>
-            <Field label={strings.review.entitlementNumber} required>
-              {(props) => (
-                <TextInput
-                  {...props}
-                  value={entitlementPhoneNumber}
-                  onChange={(e) => setEntitlementPhoneNumber(e.target.value)}
-                  data-testid="review-entitlement-number"
-                />
-              )}
-            </Field>
-            <Field
-              label={strings.review.entitlementNumberSource}
-              hint={strings.review.entitlementNumberSourceHint}
-              required
-            >
-              {(props) => (
-                <SelectInput
-                  {...props}
-                  value={entitlementNumberSource}
-                  onChange={(e) => setEntitlementNumberSource(e.target.value)}
-                  data-testid="review-entitlement-source"
-                >
-                  <option value="">—</option>
-                  <option value="nhsd">National Health Services Directory</option>
-                  <option value="practice_website">The practice website</option>
-                  <option value="public_directory">Another public directory</option>
-                  <option value="application_form">The application form</option>
-                  <option value="other">Other</option>
-                </SelectInput>
-              )}
-            </Field>
-            <Field label={strings.review.entitlementSpokeWith} required>
-              {(props) => (
-                <TextInput
-                  {...props}
-                  value={entitlementSpokeWithName}
-                  onChange={(e) => setEntitlementSpokeWithName(e.target.value)}
-                  data-testid="review-entitlement-spoke-with"
-                />
-              )}
-            </Field>
-          </>
-        )}
-        </>
+          <Notice tone="warn" title={strings.review.entitlementNoneYet}>
+            {strings.review.entitlementRecordItAbove}
+          </Notice>
         )}
 
         <Field label={strings.review.rejectReason} hint={strings.review.rejectDisclosure}>

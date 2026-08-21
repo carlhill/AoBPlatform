@@ -205,6 +205,12 @@ export const strings = {
       '— below the threshold. {why} Enforcement is soft, so this does not refuse the approval. It is ' +
       'recorded against the decision, and it is the number that will say later whether this was a good call.',
 
+    entitlementNoneYet: 'No entitlement check has passed yet',
+    entitlementRecordItAbove:
+      'Record it in the checklist above, not here — a check carries who performed it, its outcome and its ' +
+      'evidence, and those are what the approval rests on. The ABN gate proves the entity exists; it does ' +
+      'not prove this person speaks for it.',
+
     // --- Entitlement, taken from the recorded check rather than retyped ---
     entitlementEstablished: 'Entitlement has already been established',
     entitlementEstablishedBy: '“{label}” — recorded by {who} on {when}.',
