@@ -170,7 +170,7 @@ export function holidaysFor(state: AustralianState, year: number, dataset: Holid
     const date = resolve(rule, year);
     if (!date) continue;
 
-    let observed = new Date(date.getTime());
+    const observed = new Date(date.getTime());
     let substituted = false;
     if (rule.substituteIfWeekend && (observed.getUTCDay() === 0 || observed.getUTCDay() === 6)) {
       // Move to the next weekday not already claimed by another holiday —
