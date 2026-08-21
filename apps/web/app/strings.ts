@@ -1460,4 +1460,85 @@ export const strings = {
     toPractitioners: 'Manage practitioners',
     toLocations: 'Manage locations',
   },
+  /**
+   * How a practice reaches a patient, and what it asks them.
+   *
+   * THE SENDER ID IS ONBOARDING, NOT SETTINGS. Registering one with ACMA has a
+   * lead time measured in weeks, and until it is done every message shows to
+   * patients as "Unverified" and is grouped by the handset alongside scams. A
+   * practice that discovers that after going live has already trained its
+   * patients to ignore it.
+   */
+  channels: {
+    audience: 'Practice admin',
+    title: 'Capture channels',
+    lead:
+      'How consent requests reach your patients, and what they are asked to confirm. These settings decide ' +
+      'whether a request is trusted, read, and answered.',
+    backToSetup: 'Back to set up',
+    notLoaded: 'The channel settings could not be loaded',
+    loading: 'Loading…',
+    saved: 'Saved',
+    saveFailed: 'That could not be saved',
+    save: 'Save',
+    saving: 'Saving…',
+
+    // --- SMS sender ID ---
+    smsTitle: 'SMS sender ID',
+    smsLead:
+      'The name patients see a message from. Registering one with ACMA takes weeks, and it is not something ' +
+      'that can be hurried later.',
+    smsUnregistered: 'Not registered',
+    smsRegistered: 'Registered',
+    smsWhy:
+      'Until a sender ID is registered, Australian carriers show your messages as coming from an ' +
+      '“Unverified” sender, and handsets group those with scams. Patients do not open them. That does not ' +
+      'stop you capturing consent — it quietly destroys how often anyone answers.',
+    smsMark: 'ACMA has registered our sender ID',
+    smsMarkHint:
+      'Tick this only once ACMA has confirmed it. It is an assertion by your practice, recorded as such — ' +
+      'we cannot check it for you.',
+
+    // --- Link expiry ---
+    expiryTitle: 'How long a consent link lives',
+    expiryLead:
+      'A request sent to a patient stops working after this. Shorter is safer; too short and a patient who ' +
+      'reads their messages in the evening finds a dead link and rings the practice instead.',
+    expiryLabel: 'Hours',
+    expiryHint: 'Between 1 and 168 (a week).',
+
+    // --- Identifiers ---
+    identifiersTitle: 'What a patient is asked to confirm',
+    identifiersLead:
+      'Before consent is recorded, a patient confirms who they are. Choose which details are asked for — ' +
+      'at least three.',
+    identifiersFloor: 'At least three must be chosen.',
+    identifiersNever:
+      'The Medicare card number is NOT on this list and never will be. Cards are shared between family ' +
+      'members, so the number identifies a household rather than a person — and we do not store it ' +
+      'anywhere, at all.',
+    identifierNames: {
+      name: 'Name',
+      date_of_birth: 'Date of birth',
+      gender: 'Gender',
+      address: 'Address',
+      patient_record_number: 'Patient record number',
+      ihi: 'Individual Healthcare Identifier',
+    } as Record<string, string>,
+    identifierNotes: {
+      name: 'Family and given names together count as one.',
+      date_of_birth: '',
+      gender: 'As the patient identifies it, not as recorded elsewhere.',
+      address: '',
+      patient_record_number: 'Your own number for them, from your PMS.',
+      ihi: 'The 16-digit national identifier. Not everyone knows theirs.',
+    } as Record<string, string>,
+
+    // --- Kiosk ---
+    kioskTitle: 'Kiosk',
+    kioskState: 'Not built yet',
+    kioskBody:
+      'A tablet at reception for patients who are already in the building. Nothing to pair yet — this is ' +
+      'listed so the card is honest about what exists, rather than quietly leaving it out.',
+  },
 } as const;
