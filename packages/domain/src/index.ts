@@ -9,3 +9,6 @@ export * from './public-holidays';
 export * from './enduring';
 export * from './notice';
 export * from './enrolment-ceremony';
+export * from './abn';
+export * from './affiliation';
+export * from './directory';
