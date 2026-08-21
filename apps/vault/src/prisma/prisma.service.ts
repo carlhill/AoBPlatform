@@ -1,5 +1,6 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { PrismaClient } from '../generated/prisma-client';
+// Resolves from src/prisma/ AND dist/prisma/ — same depth, same path.
+import { PrismaClient } from '../../prisma-client';
 
 /**
  * Vault bookkeeping store (schema `vault`). Holds the chain-entry INDEX only

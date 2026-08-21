@@ -19,6 +19,9 @@ ENV NODE_EXTRA_CA_CERTS=/workspace/certs/local-ca.pem
 RUN npm install -g npm@11 && \
     npm install --workspaces --include-workspace-root
 COPY . .
+# The vault has its OWN Prisma client (workspace-local output) for the
+# chain-entry index — generate it before tsc.
+RUN npm run prisma:generate -w apps/vault
 RUN npm run build -w packages/domain -w packages/contracts -w apps/vault
 
 FROM node:20-alpine AS runtime

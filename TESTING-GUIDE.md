@@ -1,0 +1,242 @@
+# AoBPlatform — what's built, and how to poke it
+
+### 21 August 2026 · Everything below is running code, verified in CI
+
+---
+
+## 1. Start everything
+
+```bash
+cd C:\Users\carl\OneDrive\Documents\2026\AoBPlatform
+docker compose up -d
+```
+
+That's everything: Postgres, Redis, immudb, Keycloak, Mailhog, the three app
+services **and the console**. First run builds images (~3 min); after that it's
+seconds. Then check all nine are healthy:
+
+```bash
+docker compose ps
+```
+
+**⚠ One rule:** run *either* the containers *or* the `npm run start:dev`
+servers — never both. They share one database, so two copies of the outbox
+relay split the evidence between two vaults. (Learned the hard way; the relay
+now has a claim lease, but the topology is still confusing.)
+
+| Surface | URL |
+|---|---|
+| **▶ Practice console — start here** | **http://localhost:21100** |
+| Core API explorer | http://localhost:21001/openapi |
+| Rules API explorer | http://localhost:21002/openapi |
+| Vault API explorer | http://localhost:21003/openapi |
+| Vault chain verification | http://localhost:21003/chain/verify |
+| Keycloak admin console | http://localhost:21024 — `admin` / `admin` |
+| Mailhog (sent mail) | http://localhost:21026 |
+| Postgres | `localhost:21020` — `aobplatform` / `aobplatform` |
+| immudb | `localhost:21022` — `immudb` / `immudb` |
+
+*(Running the dev servers instead? The console is on **3100** and the services
+on 3001/3002/3003 — same paths, different ports.)*
+
+---
+
+## 2. The five-minute UI walkthrough
+
+Open the console. In order:
+
+| # | Click | What to look for |
+|---|---|---|
+| 1 | — | **Platform services**: core / rules / vault all "Running". The **Vault chain** line shows `verified · N events` — that's a live hash-chain verification, not a status flag. |
+| 2 | **Sign in with your passkey** | You land on Keycloak. **Count the password fields: there are none.** No "forgot password" link either. That's rule 15 enforced at the identity layer. Enter `dr.example` and you'll be refused — that user has no passkey registered, and there is no fallback. (Completing a real passkey login needs a device authenticator; see §6.) |
+| 3 | **Create sample practice** | Seeds a practice, a GP, a patient and a self-assignor. The practice ID appears below. |
+| 4 | **Run capture journey** | The whole thing, live, against real services. Watch the journey log: draft → single-use link minted → content-blind landing → three-identifier verification → particulars locked & artefact hashed → **signed → validated → stored**. |
+| 5 | — | The **Vault chain** counter jumps. Every step you just watched left immutable evidence. |
+| 6 | **Sync PMS invoices** | Pulls three fixture invoices from the mock Medtech adapter into the **Outstanding agreements** table. |
+| 7 | — | Read the table: three rows at ~351, ~65 and ~5 days remaining, colour-banded **standard / urgent / expired**. The expired row says *revenue forgone* and its **Resend button is disabled** — the twelve-month window has closed, so contacting the patient is cost with no possible return. |
+
+### Things worth trying because they should fail
+
+- Click **Resend** on the expired row (it's disabled — that's the point).
+- Stop the rules service (`docker compose stop rules`) and re-run the journey: the lock step reports a clean failure instead of pretending.
+- Set `RULES_REGISTER_DRAFT_SET: 'false'` on the `rules` service in `docker-compose.yml`, `docker compose up -d rules`, re-run the journey: lock now returns **501 — the honest "no rule set registered"** state, and signature stays unreachable.
+- Set `NODE_ENV: production` on the `core` service and restart it: **it refuses to boot**, because the committed placeholder Keycloak secret is not allowed in production. (That guard genuinely blocked this stack's first build — it isn't decorative.)
+
+---
+
+## 3. Every endpoint
+
+Base URLs: **core** `http://localhost:21001` · **rules** `http://localhost:21002` · **vault** `http://localhost:21003`
+Practice-scoped calls need `x-practice-id: <uuid>` (or a bearer token once you're signed in).
+
+### Core — practices & onboarding (M1.A)
+| Method | Path | What |
+|---|---|---|
+| POST | `/practices` | Create a practice with locations + **state** (drives the holiday calendar) |
+| GET | `/practices/{id}` | Read one |
+| PATCH | `/practices/{id}/config` | Identifier set (floor 3, Medicare non-configurable), link expiry, go-live flags |
+| POST | `/practices/{id}/staff` | Staff list — **activates the REQ-VUL-04 assignor block** |
+| POST | `/practices/{id}/providers` | Provider (provider number optional — s 65C(5)(a) or (b)) |
+| POST | `/practices/{id}/assignors` | Assignor — **refuses anyone on the staff list** |
+| GET | `/practices/{id}/go-live-checklist` | Honest checklist; blocked until write-back + sender ID + rule set exist |
+
+### Core — agreements
+| Method | Path | What |
+|---|---|---|
+| POST | `/agreements` | Create draft (enforces GP-only enduring, polymorphic anchor) |
+| GET | `/agreements` | List (filter `?status=`) |
+| GET | `/agreements/{id}` | Read one |
+| POST | `/agreements/{id}/particulars` | **Lock**: server assembles the s 65C data set, validates, renders, hashes |
+| POST | `/agreements/{id}/sign` | Sign → validated → stored, binds REQ-SIG-02 evidence, writes back to PMS |
+| POST | `/agreements/{id}/transition` | Status move via the domain transition map |
+
+### Core — verification (M3)
+| Method | Path | What |
+|---|---|---|
+| POST | `/verification/challenges` | Start — approved identifiers only, minimum 3 |
+| POST | `/verification/challenges/{id}/attempt` | Constant-time match; generic failure message; lockout at 5 |
+
+### Core — capture cascade (M2)
+| Method | Path | What |
+|---|---|---|
+| POST | `/capture` | Open a capture request; returns the single-use token **once** |
+| POST | `/capture/{id}/complete` | Complete; cancels every other open channel |
+| GET | `/capture/link/{token}` | 🌐 **Public** — content-blind landing |
+| POST | `/capture/link/{token}/verify` | 🌐 **Public** — verify and advance |
+
+### Core — PMS integration (M9)
+| Method | Path | What |
+|---|---|---|
+| POST | `/pms/sync` | Pull invoices → service records (mock adapter until D-01) |
+
+### Core — reconciliation (M7)
+| Method | Path | What |
+|---|---|---|
+| GET | `/reconciliation/outstanding` | Ranked queue with chase bands |
+| POST | `/reconciliation/{serviceRecordId}/resend` | One-click resend; hard-stops on expired + confidentiality |
+| GET | `/reconciliation/metrics` | Band counts, capture rate, verbal countdown |
+
+### Core — enduring lifecycle (M5)
+| Method | Path | What |
+|---|---|---|
+| POST | `/enduring` | Create reg 65CB detail (notification method required) |
+| GET | `/enduring/{agreementId}/scope-preview` | **The bulk-bill commitment, stated before signature** |
+| POST | `/enduring/{agreementId}/terminate` | 2 **business** days, state holidays applied |
+| POST | `/enduring/{agreementId}/cease` | Automatic cessation, pathway-checked |
+| GET | `/enduring/coverage` | `?patientId=&providerId=` — is this covered? |
+| GET | `/enduring/anniversary-pipeline` | The 65CA(8)(e) fuse nobody else tracks |
+| GET | `/enduring/fourteenth-birthday-due` | 30-day lead on the 14th-birthday cessation |
+
+### Core — reg 89AA notices (M6)
+| Method | Path | What |
+|---|---|---|
+| POST | `/notices/claims` | Claim intake → notice (**MyMedicare only**) |
+| POST | `/notices/{id}/dispatch` | Dispatch with method-fidelity check |
+| POST | `/notices/{id}/delivered` | Carrier receipt |
+| POST | `/notices/{id}/read` | Open signal — **evidential colour only** |
+| POST | `/notices/{id}/correct` | Superseding correction (original never edited) |
+| GET | `/notices/compliance-pack` | **The auditor artefact** — `?from=&to=` |
+
+### Core — dev & health
+| Method | Path | What |
+|---|---|---|
+| GET | `/health` | 🌐 Public |
+| POST | `/dev/seed` | Sample practice — refuses to run in production |
+| GET | `/openapi.json` | Machine contract (24+ paths) |
+
+### Rules service
+| Method | Path | What |
+|---|---|---|
+| POST | `/validate` | C1–C14 with citations; `stage: pre_signature\|storage` |
+| GET | `/rule-sets` | Registered versions |
+| GET | `/health` · `/openapi` | |
+
+### Vault service
+| Method | Path | What |
+|---|---|---|
+| POST | `/events` | Append (whitelist-validated; **no update/delete exists**) |
+| GET | `/events` | `?subjectId=&from=&to=` |
+| GET | `/artefacts/{sha256}/verify` | Existence + timestamp, **no content** |
+| GET | `/chain/verify` | Full-chain verification |
+| GET | `/health` · `/openapi` | |
+
+---
+
+## 4. Copy-paste API walkthrough
+
+```bash
+# 1. Seed and capture the IDs
+SEED=$(curl -s -X POST http://localhost:21001/dev/seed)
+PRACTICE=$(echo $SEED | jq -r .practiceId); H="x-practice-id: $PRACTICE"
+
+# 2. Draft an agreement
+AGR=$(curl -s -X POST http://localhost:21001/agreements -H "$H" -H 'Content-Type: application/json' \
+  -d "{\"type\":\"episodic_pre\",\"providerId\":\"$(echo $SEED|jq -r .providerId)\",\"patientId\":\"$(echo $SEED|jq -r .patientId)\",\"assignorId\":\"$(echo $SEED|jq -r .assignorId)\",\"assignorIsPatient\":true}" | jq -r .id)
+
+# 3. Open a capture link — the token appears exactly once
+TOKEN=$(curl -s -X POST http://localhost:21001/capture -H "$H" -H 'Content-Type: application/json' \
+  -d "{\"agreementId\":\"$AGR\",\"channel\":\"sms_link\"}" | jq -r .token)
+
+# 4. The patient's view: content-blind, names nobody
+curl -s "http://localhost:21001/capture/link/$TOKEN" | jq
+
+# 5. Verify, lock, sign
+curl -s -X POST "http://localhost:21001/capture/link/$TOKEN/verify" -H 'Content-Type: application/json' \
+  -d '{"stated":{"name":"Testpatient Alex","date_of_birth":"1957-03-14","address":"1 Example Street, Sampletown NSW 2000"}}' | jq
+curl -s -X POST "http://localhost:21001/agreements/$AGR/particulars" -H "$H" -H 'Content-Type: application/json' \
+  -d '{"serviceDate":"2026-08-21","basicServiceDescription":"General practitioner attendance"}' | jq '{ruleSetVersion,renderedArtefactHash}'
+curl -s -X POST "http://localhost:21001/agreements/$AGR/sign" -H "$H" -H 'Content-Type: application/json' \
+  -d '{"method":"tap_to_approve","channel":"sms_link"}' | jq '{status,writtenBackAt,pmsDocumentKey}'
+
+# 6. The evidence
+sleep 6 && curl -s http://localhost:21003/chain/verify | jq
+curl -s "http://localhost:21003/events?subjectId=$AGR" | jq '[.[].type]'
+```
+
+### The compliance pack (the demo that sells it)
+
+```bash
+curl -s "http://localhost:21001/notices/compliance-pack" -H "$H" | jq '{dispatchedWithinWindowRate, noticeCount, breaches}'
+```
+
+---
+
+## 5. What each hard rule looks like from outside
+
+| Try this | Expect |
+|---|---|
+| `PATCH /practices/{id}/config` with `identifierTypes: ["name","date_of_birth","medicare_number"]` | **400** — Medicare number is not an approved identifier, non-configurably |
+| `POST /practices/{id}/assignors` naming someone on the staff list | **400 REQ-VUL-04** |
+| `POST /agreements` with `type: enduring` + a specialist | **400 REQ-END-01a** — enduring is GP-only |
+| Sign before locking particulars | **400 REQ-REG-06** — the criminal-offence guard |
+| A failed verification attempt | Generic *"Some of those details do not match"* — never which one |
+| `PUT`/`DELETE` on `/events` | **404** — no such route exists on the vault |
+| Dispatch a notice for an aged-care agreement | `noticeRequired: false` — MyMedicare only |
+| Edit a dispatched notice in the DB | **REQ-DEL-06** — issue a superseding correction |
+
+---
+
+## 6. Known limits — read before judging
+
+| Limit | Status |
+|---|---|
+| **Two DRAFT files await your review** | [REVIEW-REQUIRED.md](REVIEW-REQUIRED.md) — the s 65C rule set and the immudb store |
+| **Passkey ceremony unproven** | Login redirect, PKCE, callback and token verification all work; the biometric tap needs a real device. Worth doing manually. |
+| **Public holidays derived, not authoritative** | Calendar is real and per-state, but `DATASET.verified === false`. Every termination records `UNVERIFIED` in its evidence until someone checks the official lists. |
+| **Basic Service Description mapping is a stub** | Five hand-typed strings. The real quarterly MBS Online ingest is unbuilt — a Phase 0/1 job. |
+| **D-01 unresolved** | The Medtech adapter is a mock. Write-back works against it, not against Medtech. |
+| **D-11 unresolved** | Anniversary fuse tracked and warned on; no registration mechanism has been published to integrate with. |
+| **Auth enforcement staged** | `AUTH_ENFORCE=false` by default so the console isn't locked out before every surface has a login. Flipping it on is a release gate. |
+| **Real sends disabled** | Sandbox gateway only. Real SMS/email needs your sign-off and a registered ACMA sender ID. |
+| **No anchoring / HSM signing yet** | The chain is tamper-*evident*; RFC 3161 anchoring (what makes it non-*repudiable* against us) is still `TODO(HUMAN)`. |
+
+---
+
+## 7. Running the tests
+
+```bash
+npm test                      # ~180 unit tests
+npm run test:e2e -w apps/core # 63 e2e against real Postgres
+npm run test:e2e -w apps/vault# 14, incl. the immudb contract suite
+npm run validate:realm        # rule 15 guard — passkey required, no password path
+```

@@ -56,7 +56,7 @@ infra/data/
 ~$*
 
 # Vault's workspace-local Prisma client (generated)
-apps/vault/src/generated/
+apps/vault/prisma-client/
 
 # immudb-node client Merkle state (machine-local)
 .immudb-state/

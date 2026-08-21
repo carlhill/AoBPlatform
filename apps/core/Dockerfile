@@ -8,6 +8,8 @@ COPY package.json package-lock.json ./
 COPY packages/domain/package.json packages/domain/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
 COPY packages/vault-client/package.json packages/vault-client/package.json
+COPY packages/auth-client/package.json packages/auth-client/package.json
+COPY apps/connector/package.json apps/connector/package.json
 COPY apps/core/package.json apps/core/package.json
 COPY certs ./certs
 ENV NODE_EXTRA_CA_CERTS=/workspace/certs/local-ca.pem
@@ -18,7 +20,10 @@ COPY . .
 # checklist item 2 — package.json has prisma:generate, so the Dockerfile
 # MUST run it).
 RUN npm run prisma:generate -w apps/core
-RUN npm run build -w packages/domain -w packages/contracts -w packages/vault-client -w apps/core
+# Order matters: the connector must build before core, which imports it.
+RUN npm run build -w packages/domain -w packages/contracts -w packages/vault-client -w packages/auth-client && \
+    npm run build -w apps/connector && \
+    npm run build -w apps/core
 
 FROM node:20-alpine AS runtime
 ENV NODE_ENV=production

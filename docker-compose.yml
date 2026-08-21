@@ -121,6 +121,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       immudb: { condition: service_started }
+      core-migrate: { condition: service_completed_successfully }
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3003/health || exit 1']
       interval: 15s
@@ -135,6 +136,10 @@ services:
     environment:
       PORT: 3002
       DATABASE_URL: postgresql://aob_app:aob_app@postgres:5432/aobplatform?schema=rules
+      # DEV ONLY: registers the DRAFT s 65C rule set pending Carl's review
+      # (REVIEW-REQUIRED.md). Unset in any real environment — production
+      # default is the honest 501.
+      RULES_REGISTER_DRAFT_SET: 'true'
     ports:
       - '21002:3002'
     depends_on:
@@ -146,14 +151,16 @@ services:
       retries: 5
       start_period: 20s
 
-  # One-shot: applies core migrations with the ADMIN role, then exits.
-  # Dev convenience only — production migrations are a deploy step.
+  # One-shot: applies core AND vault migrations with the ADMIN role, then
+  # exits. Dev convenience only — production migrations are a deploy step.
   core-migrate:
     build: { context: ., dockerfile: apps/core/Dockerfile }
     container_name: aobplatform-core-migrate
     environment:
       DATABASE_URL: postgresql://aobplatform:aobplatform@postgres:5432/aobplatform?schema=core
-    command: ['npm', 'run', 'prisma:deploy', '-w', 'apps/core']
+      VAULT_DATABASE_URL: postgresql://aobplatform:aobplatform@postgres:5432/aobplatform?schema=vault
+    command:
+      ['sh', '-c', 'npm run prisma:deploy -w apps/core && npm run prisma:deploy -w apps/vault']
     depends_on:
       postgres: { condition: service_healthy }
     restart: 'no'
@@ -163,12 +170,29 @@ services:
     container_name: aobplatform-core
     restart: unless-stopped
     environment:
+      # This stack is the LOCAL DEV environment (sandbox messaging, draft rule
+      # set, dev seeding), even though the image is a production build. Saying
+      # so explicitly matters: auth-client refuses to start in production with
+      # a committed placeholder secret — which it correctly did here until this
+      # line existed. A real deployment sets NODE_ENV=production and a real
+      # secret, and the guard then enforces that.
+      NODE_ENV: development
       PORT: 3001
       # Runtime uses the NON-SUPERUSER role — superusers bypass RLS.
       DATABASE_URL: postgresql://aob_app:aob_app@postgres:5432/aobplatform?schema=core
       REDIS_URL: redis://redis:6379
       RULES_SERVICE_URL: http://rules:3002
       VAULT_SERVICE_URL: http://vault:3003
+      # Tokens carry the PUBLIC issuer regardless of which host the request
+      # hit, but the container must fetch JWKS by its internal route.
+      KEYCLOAK_PUBLIC_ISSUER: http://localhost:21024/realms/aobplatform
+      KEYCLOAK_JWKS_URI: http://keycloak:8080/realms/aobplatform/protocol/openid-connect/certs
+      KEYCLOAK_ISSUER: http://keycloak:8080/realms/aobplatform
+      KEYCLOAK_CLIENT_ID: core-service
+      KEYCLOAK_CLIENT_SECRET: change-me-in-local-env
+      # Staged: the guard verifies tokens when present. Turning enforcement on
+      # is a release gate, not a dev default (see apps/core/src/auth).
+      AUTH_ENFORCE: 'false'
       SMS_GATEWAY_MODE: sandbox
       SMTP_HOST: mailhog
       SMTP_PORT: 1025
@@ -185,6 +209,21 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+
+  web:
+    build: { context: ., dockerfile: apps/web/Dockerfile }
+    container_name: aobplatform-web
+    restart: unless-stopped
+    ports:
+      - '21100:3100'
+    depends_on:
+      core: { condition: service_healthy }
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3100 || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
 
 volumes:
   aobplatform-postgres-data:

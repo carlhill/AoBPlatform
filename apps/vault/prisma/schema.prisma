@@ -10,9 +10,15 @@
 
 generator client {
   provider = "prisma-client-js"
-  // Workspace-local output: the default shared node_modules/.prisma/client
-  // is core's — two schemas generating into one path clobber each other.
-  output   = "../src/generated/prisma-client"
+  // Workspace-local output: the default shared node_modules/.prisma/client is
+  // core's, and two schemas generating into one path clobber each other.
+  //
+  // It sits BESIDE src/ and dist/, not inside src/: tsc does not copy
+  // non-TS files, so a client under src/ compiles fine and then
+  // MODULE_NOT_FOUNDs at runtime from dist (found in the container build).
+  // Because src/ and dist/ are the same depth, `../../prisma-client`
+  // resolves correctly from both.
+  output   = "../prisma-client"
 }
 
 datasource db {
