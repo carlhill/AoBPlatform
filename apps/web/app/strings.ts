@@ -23,6 +23,96 @@ export const strings = {
     noAccount: 'no account yet',
     accountReady: 'account created — passkey pending',
   },
+  org: {
+    heading: 'Practice onboarding',
+    intro:
+      'Three gates, in order: the ABN checksum (offline), the ABR (must be ACTIVE, and the name must match), ' +
+      'then a named human. The first two are necessary and not sufficient.',
+    // Step 1
+    registerHeading: '1. Register the practice',
+    nameLabel: 'Practice name (legal OR trading name)',
+    abnLabel: 'ABN',
+    registerButton: 'Register',
+    offlineNote:
+      'ABN lookup runs offline against fixtures in this environment, so only these resolve: 53004085616 ' +
+      '(company, trades under another name), 51824753556 (sole trader, no ACN), 13824753558 (CANCELLED).',
+    legalNameLabel: 'Legal entity name',
+    tradingNamesLabel: 'Registered business names',
+    acnLabel: 'ACN (derived from the ABN, never asked for)',
+    entityTypeLabel: 'Entity type',
+    matchExact: 'Matched exactly',
+    matchLoose: 'Matched only after ignoring the entity suffix — check this is the right entity',
+    matchedOn: 'matched on',
+    noBanking: 'No banking details are held, for anyone, ever.',
+    // Step 2
+    queueHeading: '2. Human validation queue',
+    queueEmpty: 'No applications waiting. Practices created by the dev seed never applied, so they are not listed here.',
+    reviewerLabel: 'Your name (recorded against the decision)',
+    approveButton: 'Approve',
+    rejectButton: 'Reject',
+    rejectNoteLabel: 'Reason (required to reject)',
+    validatedBy: 'Validated by',
+    resumeHeading: 'Or resume a practice you have already approved',
+    resumeNote:
+      'A validated practice leaves the queue, so it cannot be picked from there again. Paste its id — there is ' +
+      'deliberately no "list every practice" endpoint, because that is the same enumeration risk the ' +
+      'practitioner directory refuses.',
+    resumeLabel: 'Practice id',
+    resumeButton: 'Resume',
+    clearButton: 'Clear selection',
+    // Step 3
+    locationsHeading: '3. Locations',
+    addressLabel: 'Address',
+    codeLabel: 'Site code (optional)',
+    addLocationButton: 'Add location',
+    activateButton: 'Confirm address and activate',
+    locationInactive: 'INACTIVE',
+    locationActive: 'Active',
+    locationsEmpty: 'No locations yet.',
+    departmentsHeading: 'Departments',
+    departmentNameLabel: 'Department name',
+    addDepartmentButton: 'Add department',
+    // Step 4
+    practitionersHeading: '4. Practitioners',
+    ahpraLabel: 'AHPRA registration number',
+    familyNameLabel: 'Family name',
+    givenNamesLabel: 'Given names',
+    emailLabel: 'Practitioner-owned email',
+    preRegisterButton: 'Pre-register practitioner',
+    directoryHeading: 'Directory lookup',
+    directorySearchButton: 'Look up',
+    directoryNote:
+      'Exact AHPRA number only. A name is refused — it would let any practice enumerate every practitioner ' +
+      'on the platform. The provider number is never returned.',
+    directoryMiss: 'No practitioner with that AHPRA number is registered here.',
+    // Step 5
+    affiliationsHeading: '5. Affiliations',
+    providerNumberLabel: 'Provider number AT THIS LOCATION',
+    locationSelectLabel: 'Location',
+    inviteButton: 'Invite to this location',
+    affiliationsEmpty: 'No affiliations yet.',
+    canCaptureYes: 'Capture open',
+    canCaptureNo: 'Capture closed',
+    actAsPractitioner: 'Acting as the practitioner (development shortcut)',
+    actAsNote:
+      'In production this happens in the practitioner’s own session, from a link sent to their own email. ' +
+      'A practice can never accept on their behalf.',
+    acceptButton: 'Accept',
+    rejectInviteButton: 'Reject',
+    noticeHeading: 'Give notice',
+    endsAtLabel: 'End date',
+    giveNoticeButton: 'Give notice',
+    withdrawNoticeButton: 'Withdraw notice',
+    noticeNote:
+      'Notice runs BEFORE the end date. The affiliation stays active and capture continues until then — at ' +
+      'the end date enduring agreements cease under reg 65CA(8).',
+    deregisterButton: 'Record AHPRA deregistration',
+    deregisterNote: 'REQ-XFER-08 — immediate, across every affiliation, with no notice period.',
+    needReviewer: 'Enter your name in step 2 first — every invitation, activation and notice records who did it.',
+    statusLabel: 'Status',
+    practitionerLabel: 'Practitioner',
+    locationLabel: 'Location',
+  },
   console: {
     title: 'Development console',
     subtitle: 'Scaffold status view — the real practice console (M12) replaces this.',

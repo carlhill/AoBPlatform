@@ -1,0 +1,777 @@
+'use client';
+
+/**
+ * The organisation / location / practitioner / affiliation console
+ * (ORG-MODEL-PROPOSAL.md).
+ *
+ * This screen is deliberately shaped like the RULES rather than like a CRUD
+ * form. The things worth seeing on screen are the refusals:
+ *
+ *   - a name that matched only after ignoring "Pty Ltd" is flagged, not
+ *     silently accepted
+ *   - a location is INACTIVE until a human confirms the address, and says why
+ *   - an affiliation shows `blockReason` verbatim, so "capture is closed"
+ *     always comes with the sentence explaining it
+ *   - accepting an invitation sits behind a panel labelled as a development
+ *     shortcut, because in production a practice cannot do it at all
+ */
+
+import { useCallback, useEffect, useState } from 'react';
+import { strings } from './strings';
+
+const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
+
+const card: React.CSSProperties = {
+  border: '1px solid #d0d7de',
+  borderRadius: 8,
+  padding: '0.75rem 1rem',
+  margin: '0.75rem 0',
+};
+const field: React.CSSProperties = { display: 'block', marginBottom: '0.5rem' };
+const input: React.CSSProperties = { display: 'block', width: '100%', maxWidth: 420, padding: '0.3rem' };
+const th: React.CSSProperties = { textAlign: 'left', padding: '0.25rem 1rem 0.25rem 0' };
+const td: React.CSSProperties = { padding: '0.25rem 1rem 0.25rem 0', verticalAlign: 'top' };
+const note: React.CSSProperties = { color: '#57606a', fontSize: '0.85rem', margin: '0.25rem 0 0.75rem' };
+const GREEN = '#1a7f37';
+const RED = '#cf222e';
+const AMBER = '#9a6700';
+
+interface NameMatch {
+  tier: 'exact' | 'entity_suffix_insensitive';
+  matched?: string;
+  source?: string;
+}
+interface Organisation {
+  id: string;
+  name: string;
+  abn: string;
+  acn: string | null;
+  legalName: string | null;
+  tradingNames: string[];
+  entityType: string | null;
+  validationState: string;
+  nameMatch?: NameMatch;
+}
+interface PendingRow {
+  id: string;
+  name: string;
+  abn: string;
+  legalName: string;
+  nameMatchTier: string;
+  nameMatchedOn: string | null;
+}
+interface LocationRow {
+  id: string;
+  code: string | null;
+  address: string;
+  state: string | null;
+  active: boolean;
+  addressValidated: boolean;
+  reason?: string;
+}
+interface DirectoryEntry {
+  practitionerId: string;
+  familyName: string;
+  givenNames: string;
+  ahpraNumber: string;
+  providerType: string;
+  verified: boolean;
+}
+interface AffiliationRow {
+  id: string;
+  status: string;
+  practitioner: DirectoryEntry;
+  location: { id: string; address: string; code: string | null };
+  department: string | null;
+  providerNumber: string | null;
+  startedAt: string | null;
+  noticeGivenAt: string | null;
+  endsAt: string | null;
+  canCapture: boolean;
+  blockReason: string | null;
+}
+
+/** Every call funnels through here so a refusal is never swallowed. */
+async function call<T>(path: string, init?: RequestInit & { practiceId?: string }): Promise<T> {
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (init?.practiceId) headers['x-practice-id'] = init.practiceId;
+  const response = await fetch(`${CORE_URL}${path}`, { ...init, headers });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = Array.isArray(body.message) ? body.message.join('; ') : (body.message ?? response.statusText);
+    throw new Error(message);
+  }
+  return body as T;
+}
+
+export function OrgConsole() {
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const run = useCallback(async (fn: () => Promise<void>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await fn();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  // Step 1 — registration
+  const [regName, setRegName] = useState('Jo Example Medical');
+  const [regAbn, setRegAbn] = useState('51 824 753 556');
+  const [registered, setRegistered] = useState<Organisation | null>(null);
+
+  // Step 2 — the queue
+  const [pending, setPending] = useState<PendingRow[]>([]);
+  const [reviewer, setReviewer] = useState('');
+  const [rejectNote, setRejectNote] = useState('');
+
+  // The organisation being worked on.
+  //
+  // Persisted, because a VALIDATED practice leaves the queue — so without this
+  // a page reload strands you: the practice you just approved is no longer
+  // listed anywhere you can click. The alternative (an endpoint listing every
+  // organisation) is the same enumeration risk the practitioner directory
+  // refuses, so it is not on offer; you can paste an id instead.
+  const [org, setOrg] = useState<{ id: string; name: string } | null>(null);
+  const [resumeId, setResumeId] = useState('');
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem('aob.org');
+    if (saved) {
+      try {
+        setOrg(JSON.parse(saved) as { id: string; name: string });
+      } catch {
+        window.localStorage.removeItem('aob.org');
+      }
+    }
+  }, []);
+
+  const selectOrg = useCallback((next: { id: string; name: string } | null) => {
+    setOrg(next);
+    if (next) window.localStorage.setItem('aob.org', JSON.stringify(next));
+    else window.localStorage.removeItem('aob.org');
+  }, []);
+
+  // Step 3
+  const [locations, setLocations] = useState<LocationRow[]>([]);
+  const [address, setAddress] = useState('1 Example Street, Sampletown NSW 2000');
+  const [code, setCode] = useState('Main St');
+  const [lastAdded, setLastAdded] = useState<LocationRow | null>(null);
+  const [deptName, setDeptName] = useState('General Practice');
+  const [departments, setDepartments] = useState<Array<{ id: string; name: string; locationId: string }>>([]);
+
+  // Step 4
+  const [ahpra, setAhpra] = useState('MED0009876543');
+  const [familyName, setFamilyName] = useState('Chen');
+  const [givenNames, setGivenNames] = useState('Alex');
+  const [email, setEmail] = useState('alex.chen@example.invalid');
+  const [lookup, setLookup] = useState('');
+  const [found, setFound] = useState<DirectoryEntry | null | 'miss'>(null);
+
+  // Step 5
+  const [affiliations, setAffiliations] = useState<AffiliationRow[]>([]);
+  const [inviteAhpra, setInviteAhpra] = useState('MED0009876543');
+  const [inviteLocation, setInviteLocation] = useState('');
+  const [providerNumber, setProviderNumber] = useState('1234567A');
+  const [endsAt, setEndsAt] = useState('');
+
+  const loadQueue = useCallback(async () => {
+    const result = await call<{ organisations: PendingRow[] }>('/organisations/pending');
+    setPending(result.organisations);
+  }, []);
+
+  const loadOrgData = useCallback(async (practiceId: string) => {
+    const [locs, affs, depts] = await Promise.all([
+      call<LocationRow[]>('/organisations/locations', { practiceId }),
+      call<AffiliationRow[]>('/affiliations', { practiceId }),
+      call<Array<{ id: string; name: string; locationId: string }>>('/organisations/departments', { practiceId }),
+    ]);
+    setLocations(locs);
+    setAffiliations(affs);
+    setDepartments(depts);
+    if (!inviteLocation && locs.length > 0) setInviteLocation(locs.find((l) => l.active)?.id ?? locs[0].id);
+  }, [inviteLocation]);
+
+  useEffect(() => {
+    void run(loadQueue);
+  }, [run, loadQueue]);
+
+  useEffect(() => {
+    if (org) void run(() => loadOrgData(org.id));
+  }, [org, run, loadOrgData]);
+
+  const refresh = () => {
+    void run(async () => {
+      await loadQueue();
+      if (org) await loadOrgData(org.id);
+    });
+  };
+
+  return (
+    <div>
+      <h2>{strings.org.heading}</h2>
+      <p style={note}>{strings.org.intro}</p>
+      {error && (
+        <p data-testid="org-error" style={{ color: RED, border: `1px solid ${RED}`, borderRadius: 8, padding: '0.5rem 0.75rem' }}>
+          {error}
+        </p>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      <section aria-label={strings.org.registerHeading} style={card}>
+        <h3>{strings.org.registerHeading}</h3>
+        <p style={note}>{strings.org.offlineNote}</p>
+        <label style={field}>
+          {strings.org.nameLabel}
+          <input style={input} value={regName} onChange={(e) => setRegName(e.target.value)} data-testid="reg-name" />
+        </label>
+        <label style={field}>
+          {strings.org.abnLabel}
+          <input style={input} value={regAbn} onChange={(e) => setRegAbn(e.target.value)} data-testid="reg-abn" />
+        </label>
+        <button
+          disabled={busy}
+          data-testid="reg-submit"
+          onClick={() =>
+            void run(async () => {
+              const result = await call<Organisation>('/organisations', {
+                method: 'POST',
+                body: JSON.stringify({ name: regName, abn: regAbn }),
+              });
+              setRegistered(result);
+              await loadQueue();
+            })
+          }
+        >
+          {strings.org.registerButton}
+        </button>
+
+        {registered && (
+          <div style={{ ...card, background: '#f6f8fa' }} data-testid="reg-result">
+            <p>
+              <strong>{registered.name}</strong> — {registered.validationState}
+            </p>
+            <p>
+              {strings.org.legalNameLabel}: <code>{registered.legalName}</code>
+            </p>
+            <p>
+              {strings.org.tradingNamesLabel}: <code>{registered.tradingNames.join(', ') || '—'}</code>
+            </p>
+            <p>
+              {strings.org.acnLabel}: <code>{registered.acn ?? '—'}</code>
+            </p>
+            <p>
+              {strings.org.entityTypeLabel}: <code>{registered.entityType}</code>
+            </p>
+            {registered.nameMatch && (
+              <p style={{ color: registered.nameMatch.tier === 'exact' ? GREEN : AMBER }} data-testid="name-match">
+                {registered.nameMatch.tier === 'exact' ? strings.org.matchExact : strings.org.matchLoose} —{' '}
+                {strings.org.matchedOn} <code>{registered.nameMatch.matched}</code> ({registered.nameMatch.source})
+              </p>
+            )}
+            <p style={note}>{strings.org.noBanking}</p>
+          </div>
+        )}
+      </section>
+
+      {/* ------------------------------------------------------------------ */}
+      <section aria-label={strings.org.queueHeading} style={card}>
+        <h3>{strings.org.queueHeading}</h3>
+        <label style={field}>
+          {strings.org.reviewerLabel}
+          <input style={input} value={reviewer} onChange={(e) => setReviewer(e.target.value)} data-testid="reviewer" />
+        </label>
+        <label style={field}>
+          {strings.org.rejectNoteLabel}
+          <input style={input} value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} data-testid="reject-note" />
+        </label>
+        {pending.length === 0 ? (
+          <p style={note}>{strings.org.queueEmpty}</p>
+        ) : (
+          <table style={{ borderCollapse: 'collapse' }} data-testid="queue-table">
+            <thead>
+              <tr>
+                <th style={th}>Applied as</th>
+                <th style={th}>{strings.org.legalNameLabel}</th>
+                <th style={th}>ABN</th>
+                <th style={th}>Match</th>
+                <th style={th} />
+              </tr>
+            </thead>
+            <tbody>
+              {pending.map((row) => (
+                <tr key={row.id}>
+                  <td style={td}>{row.name}</td>
+                  <td style={td}>{row.legalName}</td>
+                  <td style={td}>
+                    <code>{row.abn}</code>
+                  </td>
+                  <td style={{ ...td, color: row.nameMatchTier === 'exact' ? GREEN : AMBER }}>{row.nameMatchTier}</td>
+                  <td style={td}>
+                    <button
+                      disabled={busy || !reviewer.trim()}
+                      data-testid={`approve-${row.id}`}
+                      onClick={() =>
+                        void run(async () => {
+                          await call(`/organisations/${row.id}/validate`, {
+                            method: 'POST',
+                            body: JSON.stringify({ decision: 'validated', reviewerName: reviewer, note: rejectNote || undefined }),
+                          });
+                          selectOrg({ id: row.id, name: row.name });
+                          await loadQueue();
+                        })
+                      }
+                    >
+                      {strings.org.approveButton}
+                    </button>{' '}
+                    <button
+                      disabled={busy || !reviewer.trim() || !rejectNote.trim()}
+                      onClick={() =>
+                        void run(async () => {
+                          await call(`/organisations/${row.id}/validate`, {
+                            method: 'POST',
+                            body: JSON.stringify({ decision: 'rejected', reviewerName: reviewer, note: rejectNote }),
+                          });
+                          await loadQueue();
+                        })
+                      }
+                    >
+                      {strings.org.rejectButton}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <h4>{strings.org.resumeHeading}</h4>
+        <p style={note}>{strings.org.resumeNote}</p>
+        <label style={field}>
+          {strings.org.resumeLabel}
+          <input style={input} value={resumeId} onChange={(e) => setResumeId(e.target.value)} data-testid="resume-id" />
+        </label>
+        <button
+          disabled={busy || !resumeId.trim()}
+          data-testid="resume"
+          onClick={() =>
+            void run(async () => {
+              // Proves the id is real and reachable before it is stored.
+              await call<LocationRow[]>('/organisations/locations', { practiceId: resumeId.trim() });
+              selectOrg({ id: resumeId.trim(), name: resumeId.trim().slice(0, 8) });
+            })
+          }
+        >
+          {strings.org.resumeButton}
+        </button>
+
+        {org && (
+          <p data-testid="selected-org">
+            Working on: <strong>{org.name}</strong> <code>{org.id}</code>{' '}
+            <button onClick={refresh} disabled={busy}>
+              {strings.console.refresh}
+            </button>{' '}
+            <button onClick={() => selectOrg(null)} disabled={busy}>
+              {strings.org.clearButton}
+            </button>
+          </p>
+        )}
+      </section>
+
+      {org && (
+        <>
+          {/* -------------------------------------------------------------- */}
+          <section aria-label={strings.org.locationsHeading} style={card}>
+            <h3>{strings.org.locationsHeading}</h3>
+            <label style={field}>
+              {strings.org.addressLabel}
+              <input style={input} value={address} onChange={(e) => setAddress(e.target.value)} data-testid="address" />
+            </label>
+            <label style={field}>
+              {strings.org.codeLabel}
+              <input style={input} value={code} onChange={(e) => setCode(e.target.value)} />
+            </label>
+            <button
+              disabled={busy}
+              data-testid="add-location"
+              onClick={() =>
+                void run(async () => {
+                  const created = await call<LocationRow>('/organisations/locations', {
+                    method: 'POST',
+                    practiceId: org.id,
+                    body: JSON.stringify({ address, code: code || undefined }),
+                  });
+                  setLastAdded(created);
+                  await loadOrgData(org.id);
+                })
+              }
+            >
+              {strings.org.addLocationButton}
+            </button>
+            {lastAdded?.reason && (
+              <p style={{ color: AMBER, marginTop: '0.5rem' }} data-testid="location-reason">
+                {lastAdded.reason}
+              </p>
+            )}
+
+            {!reviewer.trim() && <p style={{ ...note, color: AMBER }}>{strings.org.needReviewer}</p>}
+
+            {locations.length === 0 ? (
+              <p style={note}>{strings.org.locationsEmpty}</p>
+            ) : (
+              <table style={{ borderCollapse: 'collapse', marginTop: '0.75rem' }} data-testid="locations-table">
+                <thead>
+                  <tr>
+                    <th style={th}>Code</th>
+                    <th style={th}>{strings.org.addressLabel}</th>
+                    <th style={th}>State</th>
+                    <th style={th}>{strings.org.statusLabel}</th>
+                    <th style={th} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {locations.map((l) => (
+                    <tr key={l.id}>
+                      <td style={td}>{l.code ?? '—'}</td>
+                      <td style={td}>{l.address}</td>
+                      <td style={td}>{l.state ?? '—'}</td>
+                      <td style={{ ...td, color: l.active ? GREEN : AMBER }}>
+                        {l.active ? strings.org.locationActive : strings.org.locationInactive}
+                      </td>
+                      <td style={td}>
+                        {!l.active && (
+                          <button
+                            disabled={busy || !reviewer.trim()}
+                            data-testid={`activate-${l.id}`}
+                            onClick={() =>
+                              void run(async () => {
+                                await call(`/organisations/locations/${l.id}/activate`, {
+                                  method: 'POST',
+                                  practiceId: org.id,
+                                  body: JSON.stringify({ reviewerName: reviewer }),
+                                });
+                                setLastAdded(null);
+                                await loadOrgData(org.id);
+                              })
+                            }
+                          >
+                            {strings.org.activateButton}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            <h4>{strings.org.departmentsHeading}</h4>
+            <label style={field}>
+              {strings.org.departmentNameLabel}
+              <input style={input} value={deptName} onChange={(e) => setDeptName(e.target.value)} />
+            </label>
+            <button
+              disabled={busy || locations.length === 0}
+              onClick={() =>
+                void run(async () => {
+                  await call('/organisations/departments', {
+                    method: 'POST',
+                    practiceId: org.id,
+                    body: JSON.stringify({ locationId: inviteLocation || locations[0].id, name: deptName }),
+                  });
+                  await loadOrgData(org.id);
+                })
+              }
+            >
+              {strings.org.addDepartmentButton}
+            </button>
+            {departments.length > 0 && (
+              <p style={note}>{departments.map((d) => d.name).join(' · ')}</p>
+            )}
+          </section>
+
+          {/* -------------------------------------------------------------- */}
+          <section aria-label={strings.org.practitionersHeading} style={card}>
+            <h3>{strings.org.practitionersHeading}</h3>
+            <label style={field}>
+              {strings.org.ahpraLabel}
+              <input style={input} value={ahpra} onChange={(e) => setAhpra(e.target.value)} data-testid="ahpra" />
+            </label>
+            <label style={field}>
+              {strings.org.familyNameLabel}
+              <input style={input} value={familyName} onChange={(e) => setFamilyName(e.target.value)} />
+            </label>
+            <label style={field}>
+              {strings.org.givenNamesLabel}
+              <input style={input} value={givenNames} onChange={(e) => setGivenNames(e.target.value)} />
+            </label>
+            <label style={field}>
+              {strings.org.emailLabel}
+              <input style={input} value={email} onChange={(e) => setEmail(e.target.value)} />
+            </label>
+            <button
+              disabled={busy}
+              data-testid="pre-register"
+              onClick={() =>
+                void run(async () => {
+                  await call('/practitioners', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                      ahpraNumber: ahpra,
+                      familyName,
+                      givenNames,
+                      providerType: 'general_practitioner',
+                      email,
+                    }),
+                  });
+                  setInviteAhpra(ahpra);
+                })
+              }
+            >
+              {strings.org.preRegisterButton}
+            </button>
+
+            <h4>{strings.org.directoryHeading}</h4>
+            <p style={note}>{strings.org.directoryNote}</p>
+            <label style={field}>
+              {strings.org.ahpraLabel}
+              <input style={input} value={lookup} onChange={(e) => setLookup(e.target.value)} data-testid="lookup" />
+            </label>
+            <button
+              disabled={busy}
+              data-testid="lookup-submit"
+              onClick={() =>
+                void run(async () => {
+                  const result = await call<{ found: boolean; practitioner?: DirectoryEntry }>(
+                    `/practitioners/directory?ahpraNumber=${encodeURIComponent(lookup)}`,
+                  );
+                  setFound(result.found && result.practitioner ? result.practitioner : 'miss');
+                })
+              }
+            >
+              {strings.org.directorySearchButton}
+            </button>
+            {found === 'miss' && <p style={note}>{strings.org.directoryMiss}</p>}
+            {found && found !== 'miss' && (
+              <p data-testid="directory-hit">
+                {found.givenNames} {found.familyName} · <code>{found.ahpraNumber}</code> · {found.providerType} ·{' '}
+                {found.verified ? 'ceremony complete' : 'not yet verified'}
+              </p>
+            )}
+          </section>
+
+          {/* -------------------------------------------------------------- */}
+          <section aria-label={strings.org.affiliationsHeading} style={card}>
+            <h3>{strings.org.affiliationsHeading}</h3>
+            <label style={field}>
+              {strings.org.ahpraLabel}
+              <input style={input} value={inviteAhpra} onChange={(e) => setInviteAhpra(e.target.value)} />
+            </label>
+            <label style={field}>
+              {strings.org.locationSelectLabel}
+              <select style={input} value={inviteLocation} onChange={(e) => setInviteLocation(e.target.value)} data-testid="location-select">
+                {locations.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.code ?? l.address} {l.active ? '' : `(${strings.org.locationInactive})`}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label style={field}>
+              {strings.org.providerNumberLabel}
+              <input style={input} value={providerNumber} onChange={(e) => setProviderNumber(e.target.value)} />
+            </label>
+            <button
+              disabled={busy || !reviewer.trim() || !inviteLocation}
+              data-testid="invite"
+              onClick={() =>
+                void run(async () => {
+                  await call('/affiliations', {
+                    method: 'POST',
+                    practiceId: org.id,
+                    body: JSON.stringify({
+                      ahpraNumber: inviteAhpra,
+                      locationId: inviteLocation,
+                      providerNumber: providerNumber || undefined,
+                      invitedByName: reviewer,
+                    }),
+                  });
+                  await loadOrgData(org.id);
+                })
+              }
+            >
+              {strings.org.inviteButton}
+            </button>
+
+            {!reviewer.trim() && <p style={{ ...note, color: AMBER }}>{strings.org.needReviewer}</p>}
+
+            {affiliations.length === 0 ? (
+              <p style={note}>{strings.org.affiliationsEmpty}</p>
+            ) : (
+              <table style={{ borderCollapse: 'collapse', marginTop: '0.75rem' }} data-testid="affiliations-table">
+                <thead>
+                  <tr>
+                    <th style={th}>{strings.org.practitionerLabel}</th>
+                    <th style={th}>{strings.org.locationLabel}</th>
+                    <th style={th}>Provider no.</th>
+                    <th style={th}>{strings.org.statusLabel}</th>
+                    <th style={th}>Capture</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {affiliations.map((a) => (
+                    <tr key={a.id}>
+                      <td style={td}>
+                        {a.practitioner.givenNames} {a.practitioner.familyName}
+                        <br />
+                        <code style={{ fontSize: '0.8rem' }}>{a.practitioner.ahpraNumber}</code>
+                      </td>
+                      <td style={td}>{a.location.code ?? a.location.address}</td>
+                      <td style={td}>
+                        <code>{a.providerNumber ?? '—'}</code>
+                      </td>
+                      <td style={td}>
+                        {a.status}
+                        {a.endsAt && (
+                          <>
+                            <br />
+                            <span style={{ fontSize: '0.8rem', color: AMBER }}>
+                              ends {new Date(a.endsAt).toLocaleDateString('en-AU')}
+                            </span>
+                          </>
+                        )}
+                      </td>
+                      <td style={{ ...td, maxWidth: 380 }}>
+                        <span style={{ color: a.canCapture ? GREEN : RED }} data-testid={`capture-${a.id}`}>
+                          {a.canCapture ? strings.org.canCaptureYes : strings.org.canCaptureNo}
+                        </span>
+                        {a.blockReason && <div style={note}>{a.blockReason}</div>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {/* The practitioner's own actions, fenced off and labelled. */}
+            {affiliations.length > 0 && (
+              <div style={{ ...card, borderStyle: 'dashed', background: '#fff8f0' }}>
+                <strong>{strings.org.actAsPractitioner}</strong>
+                <p style={note}>{strings.org.actAsNote}</p>
+                {affiliations
+                  .filter((a) => a.status === 'invited')
+                  .map((a) => (
+                    <p key={a.id}>
+                      {a.practitioner.givenNames} {a.practitioner.familyName} at {a.location.code ?? a.location.address}:{' '}
+                      <button
+                        disabled={busy}
+                        data-testid={`accept-${a.id}`}
+                        onClick={() =>
+                          void run(async () => {
+                            await call(`/practitioners/${a.practitioner.practitionerId}/affiliations/${a.id}/respond`, {
+                              method: 'POST',
+                              body: JSON.stringify({ decision: 'accept' }),
+                            });
+                            await loadOrgData(org.id);
+                          })
+                        }
+                      >
+                        {strings.org.acceptButton}
+                      </button>{' '}
+                      <button
+                        disabled={busy}
+                        onClick={() =>
+                          void run(async () => {
+                            await call(`/practitioners/${a.practitioner.practitionerId}/affiliations/${a.id}/respond`, {
+                              method: 'POST',
+                              body: JSON.stringify({ decision: 'reject' }),
+                            });
+                            await loadOrgData(org.id);
+                          })
+                        }
+                      >
+                        {strings.org.rejectInviteButton}
+                      </button>
+                    </p>
+                  ))}
+
+                <h4>{strings.org.noticeHeading}</h4>
+                <p style={note}>{strings.org.noticeNote}</p>
+                <label style={field}>
+                  {strings.org.endsAtLabel}
+                  <input
+                    type="date"
+                    style={input}
+                    value={endsAt}
+                    onChange={(e) => setEndsAt(e.target.value)}
+                    data-testid="ends-at"
+                  />
+                </label>
+                {affiliations
+                  .filter((a) => a.status === 'active' || a.status === 'ending')
+                  .map((a) => (
+                    <p key={a.id}>
+                      {a.practitioner.givenNames} {a.practitioner.familyName}:{' '}
+                      {a.status === 'ending' ? (
+                        <button
+                          disabled={busy}
+                          onClick={() =>
+                            void run(async () => {
+                              await call(`/affiliations/${a.id}/notice/withdraw`, { method: 'POST', practiceId: org.id });
+                              await loadOrgData(org.id);
+                            })
+                          }
+                        >
+                          {strings.org.withdrawNoticeButton}
+                        </button>
+                      ) : (
+                        <button
+                          disabled={busy || !endsAt || !reviewer.trim()}
+                          data-testid={`notice-${a.id}`}
+                          onClick={() =>
+                            void run(async () => {
+                              await call(`/affiliations/${a.id}/notice`, {
+                                method: 'POST',
+                                practiceId: org.id,
+                                body: JSON.stringify({
+                                  endsAt: new Date(`${endsAt}T00:00:00.000Z`).toISOString(),
+                                  givenByName: reviewer,
+                                }),
+                              });
+                              await loadOrgData(org.id);
+                            })
+                          }
+                        >
+                          {strings.org.giveNoticeButton}
+                        </button>
+                      )}{' '}
+                      <button
+                        disabled={busy}
+                        data-testid={`deregister-${a.id}`}
+                        onClick={() =>
+                          void run(async () => {
+                            await call(`/practitioners/${a.practitioner.practitionerId}/deregister`, {
+                              method: 'POST',
+                              body: JSON.stringify({ reason: 'AHPRA registration lapsed' }),
+                            });
+                            await loadOrgData(org.id);
+                          })
+                        }
+                      >
+                        {strings.org.deregisterButton}
+                      </button>
+                    </p>
+                  ))}
+                <p style={note}>{strings.org.deregisterNote}</p>
+              </div>
+            )}
+          </section>
+        </>
+      )}
+    </div>
+  );
+}
