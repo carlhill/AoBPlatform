@@ -57,11 +57,27 @@ export class AffiliationsService {
   // -------------------------------------------------------------------------
 
   /**
-   * Path A — the practitioner pre-registers themselves. No passkey and no
-   * affiliation yet: this only establishes that the person exists here, so a
-   * practice can find them by AHPRA number.
+   * Create a practitioner stub — BY INVITATION FROM A VALIDATED PRACTICE ONLY.
+   *
+   * There is deliberately no self-registration path (CONVENTIONS.md §8b). To
+   * mint a fake practitioner an attacker would first have to obtain a
+   * validated practice, which costs a real ACTIVE ABN, a matching registered
+   * name, a passed entitlement check and a named human's approval. That turns
+   * identity creation from free into expensive.
+   *
+   * WHAT THE PRACTICE MAY DO IS NARROW, and stays narrow: it supplies the
+   * AHPRA number, the name, and the practitioner's OWN email. It does not set
+   * a passkey, does not complete the profile, and cannot accept anything on
+   * their behalf. A practice that could create AND control an identity in a
+   * doctor's name would be the impersonation REQ-PKI-01 exists to prevent.
    */
-  async preRegister(input: { ahpraNumber: string; familyName: string; givenNames: string; providerType: string; email?: string }) {
+  async preRegister(
+    practiceId: string,
+    input: { ahpraNumber: string; familyName: string; givenNames: string; providerType: string; email?: string },
+  ) {
+    // The invitation is only worth anything if the inviter is real.
+    await this.organisations.assertValidated(practiceId);
+
     const ahpraNumber = input.ahpraNumber.trim().toUpperCase();
     if (!isValidAhpraNumberFormat(ahpraNumber)) {
       throw new BadRequestException(
@@ -73,8 +89,9 @@ export class AffiliationsService {
     const existing = await this.prisma.practitioner.findUnique({ where: { ahpraNumber } });
     if (existing) {
       throw new ConflictException(
-        `AHPRA number ${ahpraNumber} is already registered on this platform. If this is you and you have ` +
-          'lost access, that is an account recovery — it is not a second registration.',
+        `AHPRA number ${ahpraNumber} is already on this platform. Invite them to your practice instead — a ` +
+          'practitioner is one identity across every practice they work at, and a second record would break ' +
+          'the deregistration hard-stop and the anomaly detection that depend on that.',
       );
     }
 
@@ -85,8 +102,25 @@ export class AffiliationsService {
         givenNames: input.givenNames.trim(),
         providerType: input.providerType,
         email: input.email,
+        invitedByPracticeId: practiceId,
       },
     });
+
+    await this.prisma.withPractice(practiceId, (tx) =>
+      enqueueVaultEvent(tx, {
+        type: 'nomination.changed',
+        actor: { principalType: 'staff', id: practiceId },
+        subject: { type: 'Practitioner', id: practitioner.id },
+        payload: {
+          action: 'practitioner_stub_created_by_invitation',
+          // Which practice vouched for this identity existing at all. There is
+          // always an answer to "who invited them", by construction.
+          invitedByPracticeId: practiceId,
+          hasEmail: Boolean(input.email),
+        },
+      }),
+    );
+
     return toDirectoryEntry(practitioner);
   }
 

@@ -190,10 +190,14 @@ export class AffiliationsController {
 
   // --- Practitioner-owned ---------------------------------------------------
 
-  /** Path A — the practitioner registers themselves. */
+  /**
+   * INVITATION ONLY (CONVENTIONS.md §8b). Practice-scoped, and the practice
+   * must be validated — there is no unauthenticated path that creates a
+   * practitioner identity, because that path is how spam gets in.
+   */
   @Post('practitioners')
-  preRegister(@Body() dto: PreRegisterDto) {
-    return this.affiliations.preRegister(dto);
+  preRegister(@Headers('x-practice-id') practiceId: string | undefined, @Body() dto: PreRegisterDto) {
+    return this.affiliations.preRegister(requirePractice(practiceId), dto);
   }
 
   /** AHPRA number only, exact match. Name browse is refused by design. */

@@ -55,6 +55,8 @@ model Practice {
    * /**
    * /**
    * /**
+   * /**
+   * /**
    * /** The ABR legal entity name. Often NOT what the practice trades as.
    */
   legalName             String?
@@ -326,6 +328,60 @@ model Artefact {
   @@map("artefacts")
 }
 
+/**
+ * ONE ROW PER CHECK PERFORMED. Append-only.
+ * A check is never edited — if the facts were wrong, or an unanswered call is
+ * tried again, a NEW row is written and both survive. The summary reads the
+ * latest per check key; the history stays because "we called twice and nobody
+ * answered, then somebody did" is a different story from "we called once".
+ * Deliberately NOT foreign-keyed to the practice, for the reason artefacts are
+ * not: append-only evidence pinned by referential integrity makes its own
+ * parent undeletable forever. `practiceId` is the RLS scoping column.
+ */
+model PracticeCheck {
+  id         String @id @default(uuid()) @db.Uuid
+  practiceId String @db.Uuid
+
+  /**
+   * From the versioned catalogue in packages/domain/src/checks.ts.
+   */
+  checkKey         String
+  /**
+   * Which catalogue version defined it. A v1 check must read as v1 forever.
+   */
+  checklistVersion String
+  category         String
+  /**
+   * The weight AT THE TIME. Re-weighting later must not rewrite history.
+   */
+  weight           String
+
+  /**
+   * passed | failed | not_applicable | could_not_complete
+   */
+  outcome    String
+  /**
+   * Required on failed and could_not_complete, from that outcome's own list.
+   */
+  reasonCode String?
+  /**
+   * Required on failed and not_applicable. Always allowed.
+   */
+  note       String?
+
+  /**
+   * Structured detail the check requires — a phone number and its source.
+   */
+  fields Json?
+
+  performedByName String
+  performedAt     DateTime @default(now())
+
+  @@index([practiceId])
+  @@index([practiceId, checkKey])
+  @@map("practice_checks")
+}
+
 model PracticeLocation {
   id           String   @id @default(uuid()) @db.Uuid
   practiceId   String   @db.Uuid
@@ -426,6 +482,15 @@ model Practitioner {
    * cannot accept an affiliation on the practitioner's behalf.
    */
   email        String?
+
+  /**
+   * Which validated practice created this identity (CONVENTIONS.md §8b).
+   * There is no self-registration path, so this always has an answer: "who
+   * vouched for this practitioner existing at all" is never unanswerable. No
+   * foreign key — the identity outlives the practice that introduced it, and
+   * being between jobs is not a reason to cease existing.
+   */
+  invitedByPracticeId String? @db.Uuid
 
   /**
    * FR-1.9 — passkey identity. Practitioner-level: you verify a person once.
@@ -550,6 +615,8 @@ model Affiliation {
 
   // --- Offboarding: notice runs BEFORE the end date (§6) ---
   /**
+   * /**
+   * /**
    * /**
    * /**
    * /**

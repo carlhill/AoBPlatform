@@ -15,3 +15,4 @@ export * from './directory';
 export * from './ahpra';
 export * from './address';
 export * from './artefact';
+export * from './checks';

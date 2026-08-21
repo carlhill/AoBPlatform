@@ -362,7 +362,7 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
     });
 
     it('an inactive location cannot host a practitioner', async () => {
-      await api().post('/practitioners').send({
+      await scoped('post', '/practitioners').send({
         ahpraNumber: AHPRA,
         familyName: 'Example',
         givenNames: 'Jo',
@@ -406,15 +406,13 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
     });
 
     it('refuses a malformed AHPRA number at pre-registration', async () => {
-      await api()
-        .post('/practitioners')
+      await scoped('post', '/practitioners')
         .send({ ahpraNumber: 'NOPE', familyName: 'X', givenNames: 'Y', providerType: 'general_practitioner' })
         .expect(400);
     });
 
     it('refuses a second registration of the same AHPRA number', async () => {
-      await api()
-        .post('/practitioners')
+      await scoped('post', '/practitioners')
         .send({ ahpraNumber: AHPRA, familyName: 'Example', givenNames: 'Jo', providerType: 'general_practitioner' })
         .expect(409);
     });

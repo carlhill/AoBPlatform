@@ -157,6 +157,40 @@ stale-`wslrelay.exe` port-conflict note).
   flow exists. k6 priority scenarios: the 8–10 am check-in burst and the 89AA
   dispatch batch.
 
+## 8b. A practitioner identity is created by INVITATION only
+
+**MANDATORY (Carl, 21 August 2026).** No self-registration path may ever create
+a practitioner identity or lead to a passkey. A practitioner exists on this
+platform because a **validated practice invited them**, and for no other reason.
+
+Why it is worth the friction: to mint a fake practitioner an attacker must
+first obtain a validated practice — which costs a real ACTIVE ABN, a name that
+matches the register, a passed entitlement check and a named human's approval.
+That turns identity creation from free into expensive, which is the whole game.
+
+Three clarifications the rule needs, or it does the wrong thing:
+
+1. **The practice INITIATES; the practitioner COMPLETES.** A practice may
+   create the stub — AHPRA number, name, email — and send the invitation. It
+   must never set the passkey, accept on their behalf, or complete their
+   profile. A rule that let a practice create *and control* an identity in a
+   doctor's name would build the impersonation REQ-PKI-01 exists to prevent.
+2. **It governs identity CREATION, not affiliation.** A practitioner already on
+   the platform joining a second practice already has a passkey; what they need
+   there is an affiliation invitation, which is a different thing.
+3. **An identity outlives its affiliations.** A practitioner whose last
+   affiliation ends keeps their identity and their key — they are one human
+   across the platform, and being between jobs is not a reason to cease
+   existing.
+
+**Owning the practice does not make you a practitioner here.** The same human
+may be both, and the two are granted separately because they are verified by
+*different evidence*: the admin role rests on the organisation approval (ABN,
+name, address, entitlement), the practitioner role on AHPRA registration, a
+provider number at a location, and a REQ-PKI-01 ceremony. Nobody checked AHPRA
+during the organisation approval, so letting it confer a clinical identity
+would be one attestation quietly standing in for another.
+
 ## 9a. A new field is not done until it reaches the screen
 
 **When a field is added, take it the whole way in one pass: UI → API/DTO →
