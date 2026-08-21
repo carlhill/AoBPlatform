@@ -1161,6 +1161,7 @@ export function OrgConsole() {
                   <input style={input} value={ahReprimands} onChange={(e) => setAhReprimands(e.target.value)} />
                 </label>
 
+                <h5 style={{ marginBottom: '0.25rem' }}>{strings.org.ahpraPrincipalHeading}</h5>
                 <p style={note}>{strings.org.ahpraNoAddressNote}</p>
                 <label style={field}>
                   {strings.org.ahpraSuburbLabel}
