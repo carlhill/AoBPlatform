@@ -44,9 +44,10 @@ import {
   Users,
   UserSquare,
 } from 'lucide-react';
-import type { CardState } from '@aobplatform/domain';
+import { mayChoosePractice, type CardState } from '@aobplatform/domain';
 import { Chip, Notice, Shell, ui, type Tone } from '../../ui';
 import { strings } from '../../strings';
+import { currentSession } from '../../auth';
 import styles from './setup.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
@@ -101,6 +102,14 @@ const STATE_TONE: Record<CardState, Tone> = {
 };
 
 export function SetupHub({ practiceId }: { practiceId: string }) {
+  /*
+   * Whether this person may look at any OTHER practice. A token claim fixes it
+   * to one, so the chooser is not merely unnecessary for them — it is a page
+   * that redirects them back here.
+   */
+  const session = currentSession();
+  const scoped = session ? !mayChoosePractice({ roles: session.roles, practiceId: session.practiceId }) : false;
+
   const [hub, setHub] = useState<Hub | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -205,11 +214,18 @@ export function SetupHub({ practiceId }: { practiceId: string }) {
 
   return (
     <Shell right={strings.setup.audience}>
-      {/* A group manager must never be stranded on one practice. */}
-      <Link href="/practice" className={ui.backLink} data-testid="hub-to-list">
-        <ArrowLeft size={15} aria-hidden="true" />
-        {strings.setup.backToPractices}
-      </Link>
+      {/*
+        A group manager must never be stranded on one practice — but a SCOPED
+        user has exactly one and the list would bounce them straight back here.
+        Offering a link that returns you to where you started is worse than
+        offering none.
+      */}
+      {!scoped && (
+        <Link href="/practice" className={ui.backLink} data-testid="hub-to-list">
+          <ArrowLeft size={15} aria-hidden="true" />
+          {strings.setup.backToPractices}
+        </Link>
+      )}
       <h1 className={ui.pageTitle}>
         {strings.setup.title} {hub.practice.name}
       </h1>
@@ -283,7 +299,11 @@ export function SetupHub({ practiceId }: { practiceId: string }) {
 
               {card.href && (
                 <Link href={card.href} className={styles.cardLink}>
-                  {strings.setup.open} {card.title.toLowerCase()}
+                  {/*
+                    The article is stripped, not the title edited: "The entity"
+                    is right as a heading and wrong after "Open the".
+                  */}
+                  {strings.setup.open} {card.title.toLowerCase().replace(/^the /, '')}
                   <ArrowRight size={14} aria-hidden="true" />
                 </Link>
               )}
