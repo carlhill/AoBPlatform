@@ -36,7 +36,7 @@ import { AlertTriangle, ArrowRight, Building2, CheckCircle2, Clock, Search, X } 
 import { matchesFilter, matchesPractice, mayChoosePractice, type PracticeFilter } from '@aobplatform/domain';
 import { Button, Chip, Field, Notice, Shell, TextInput, ui } from '../ui';
 import { strings } from '../strings';
-import { currentSession } from '../auth';
+import { attemptSilentLogin, currentSession } from '../auth';
 import styles from './practice.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
@@ -88,9 +88,25 @@ export function PracticeList() {
   const session = currentSession();
   const scoped = session ? !mayChoosePractice({ roles: session.roles, practiceId: session.practiceId }) : false;
 
+  /*
+   * A COLD LOAD HAS NO SESSION, because the token is held in memory only. That
+   * is exactly how somebody navigating straight here was shown every practice
+   * on the platform: with no session there was no claim to scope them by, and
+   * this page enumerates by design.
+   *
+   * A browser that has signed in before restores silently first, and nothing is
+   * fetched or painted until it has. Only a browser that has never signed in
+   * falls through to the list.
+   */
+  const restoring = !session;
+
   useEffect(() => {
-    if (scoped) router.replace('/practice/setup');
-  }, [scoped, router]);
+    if (scoped) {
+      router.replace('/practice/setup');
+      return;
+    }
+    if (restoring) void attemptSilentLogin();
+  }, [scoped, restoring, router]);
 
   const [practices, setPractices] = useState<WithReadiness[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -98,7 +114,7 @@ export function PracticeList() {
   const [filter, setFilter] = useState<PracticeFilter>('all');
 
   useEffect(() => {
-    if (scoped) return;
+    if (scoped || restoring) return;
     let live = true;
 
     fetch(`${CORE_URL}/organisations?state=all`)
@@ -189,7 +205,7 @@ export function PracticeList() {
 
   // Nothing at all while the redirect runs. A flash of other practices' names
   // is still a disclosure of other practices' names.
-  if (scoped) return null;
+  if (scoped || restoring) return null;
 
   if (error) {
     return (

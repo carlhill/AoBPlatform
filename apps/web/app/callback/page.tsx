@@ -24,7 +24,7 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { landingPath } from '@aobplatform/domain';
-import { completeLogin, returnPath } from '../auth';
+import { completeLogin, returnPath, silentLoginFailed } from '../auth';
 import { strings } from '../strings';
 
 function CallbackInner() {
@@ -35,6 +35,18 @@ function CallbackInner() {
     const params = new URLSearchParams(window.location.search);
     const error = params.get('error');
     if (error) {
+      /*
+       * `login_required` is not a failure. It is the ANSWER to a silent
+       * attempt: Keycloak was asked to restore an existing session without
+       * prompting, and there was not one. Showing it as an error would put
+       * "Sign-in failed: login_required" in front of somebody who had simply
+       * not signed in yet.
+       */
+      if (error === 'login_required' || error === 'interaction_required') {
+        silentLoginFailed();
+        router.replace(returnPath());
+        return;
+      }
       setMessage(`${strings.auth.failed} ${params.get('error_description') ?? error}`);
       return;
     }

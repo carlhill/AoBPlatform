@@ -110,6 +110,96 @@ export async function beginLogin(clientId: string = CLIENT_ID): Promise<void> {
   window.location.assign(`${ISSUER}/protocol/openid-connect/auth?${params.toString()}`);
 }
 
+/**
+ * A hint that this browser has signed in before. NOT a credential.
+ *
+ * It holds no token and grants nothing — it exists so a cold page load knows
+ * whether a silent restore is worth attempting. Getting it wrong costs one
+ * redirect, in either direction.
+ */
+const SEEN_KEY = 'aob.hasSignedIn';
+const SILENT_TRIED_KEY = 'aob.silentTried';
+
+export function rememberSignedIn(clientId: string): void {
+  try {
+    window.localStorage.setItem(SEEN_KEY, clientId);
+  } catch {
+    // Private browsing. The cost is a visible sign-in instead of a silent one.
+  }
+}
+
+export function hasSignedInBefore(): string | null {
+  try {
+    return window.localStorage.getItem(SEEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Restore a session WITHOUT asking the person for anything.
+ *
+ * WHY THIS HAD TO EXIST, and it is not merely a convenience. The access token
+ * is held in a module-level variable and deliberately nowhere else, so a full
+ * page load destroys it. `auth.ts` has claimed since it was written that "a
+ * reload means a fresh redirect, which is silent when the Keycloak session is
+ * live" — and that redirect was never implemented.
+ *
+ * The consequence was worse than the annoyance of signing in again. With no
+ * session, nothing scopes a practice screen: `mayChoosePractice` has no claim
+ * to read, the page falls back to a stored selection, and a practice user who
+ * navigated straight to /practice/locations was offered a list of every
+ * practice on the platform. A missing session became a disclosure.
+ *
+ * `prompt=none` asks Keycloak to answer from its EXISTING SSO session or not at
+ * all. If the session is live the browser comes straight back with a code and
+ * nobody is asked for a passkey; if it is not, Keycloak returns
+ * `login_required` and the gate does its normal job.
+ *
+ * ONE ATTEMPT PER PAGE LOAD, tracked in sessionStorage. Without that, a
+ * `login_required` answer would send us round the same loop for ever.
+ */
+export async function attemptSilentLogin(clientId: string = CLIENT_ID): Promise<boolean> {
+  if (currentSession()) return false;
+  // NOT gated on the hint. The hint is only written by a NEW sign-in, so
+  // gating on it means anybody already signed in when it shipped keeps getting
+  // the chooser — which was the whole bug. A browser that has never signed in
+  // pays one fast redirect and gets `login_required`, once per page load.
+  if (sessionStorage.getItem(SILENT_TRIED_KEY) === 'true') return false;
+
+  sessionStorage.setItem(SILENT_TRIED_KEY, 'true');
+
+  const verifier = randomString();
+  const state = randomString();
+  sessionStorage.setItem(VERIFIER_KEY, verifier);
+  sessionStorage.setItem(STATE_KEY, state);
+  sessionStorage.setItem(CLIENT_KEY, clientId);
+  sessionStorage.setItem(RETURN_KEY, window.location.pathname + window.location.search);
+
+  const params = new URLSearchParams({
+    client_id: clientId,
+    response_type: 'code',
+    scope: 'openid profile',
+    redirect_uri: redirectUri(),
+    state,
+    code_challenge: await challengeFor(verifier),
+    code_challenge_method: 'S256',
+    // The whole point: answer from the existing session, or refuse.
+    prompt: 'none',
+  });
+  window.location.assign(`${ISSUER}/protocol/openid-connect/auth?${params.toString()}`);
+  return true;
+}
+
+/** Called by the callback when Keycloak answers `login_required`. */
+export function silentLoginFailed(): void {
+  try {
+    window.localStorage.removeItem(SEEN_KEY);
+  } catch {
+    // Nothing to clear.
+  }
+}
+
 /** Completes the code exchange on /callback. */
 export async function completeLogin(code: string, state: string): Promise<Session> {
   const verifier = sessionStorage.getItem(VERIFIER_KEY);
@@ -146,6 +236,9 @@ export async function completeLogin(code: string, state: string): Promise<Sessio
     practiceId: claims.practice_id as string | undefined,
     roles: ((claims.realm_access as { roles?: string[] } | undefined)?.roles ?? []) as string[],
   };
+  // Remember that this browser has a live Keycloak session, so the NEXT cold
+  // page load can restore silently instead of falling back to a chooser.
+  rememberSignedIn(clientId);
   return session;
 }
 

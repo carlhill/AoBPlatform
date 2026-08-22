@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import { LOCKED_FIELDS } from '@aobplatform/domain';
+import { PLATFORM_ADMIN, RequireRoles } from '../auth/roles.decorator';
 import {
   Equals,
   IsArray,
@@ -665,7 +666,20 @@ export class OrganisationsController {
     return this.organisations.addLocation(requirePractice(practiceId), dto);
   }
 
-  /** Manual address confirmation, until the G-NAF ingest lands (§9). */
+  /**
+   * Confirm a location's address. PLATFORM OPERATOR ONLY.
+   *
+   * NOT THE PRACTICE'S OWN ACT, and this was wrong until Carl caught it. The
+   * address prints in the s 65C(5)(a) particulars block of every agreement
+   * captured at that location, so confirming it is VERIFYING EVIDENCE — and
+   * the practice supplying the evidence cannot be the party that verifies it.
+   *
+   * It is the same rule the credential score already rests on: entering a thing
+   * scores nothing, and only a recorded check by somebody independent gives it
+   * weight. A practice confirming its own address is a practice awarding itself
+   * the check.
+   */
+  @RequireRoles(PLATFORM_ADMIN)
   @Post('locations/:locationId/activate')
   activateLocation(
     @Headers('x-practice-id') practiceId: string | undefined,

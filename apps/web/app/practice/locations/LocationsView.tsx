@@ -28,7 +28,9 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, ArrowLeft, Building2, CheckCircle2, MapPin, Plus } from 'lucide-react';
 import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui } from '../../ui';
+import { isPlatformOperator } from '@aobplatform/domain';
 import { strings } from '../../strings';
+import { currentSession } from '../../auth';
 import styles from '../manage.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
@@ -73,6 +75,13 @@ async function refusalMessage(res: Response): Promise<string> {
 }
 
 export function LocationsView({ practiceId }: { practiceId: string }) {
+  /*
+   * Only a platform operator verifies an address. A practice admin sees the
+   * state and is told who resolves it; the server refuses them regardless, so
+   * this decides what is OFFERED rather than what is allowed.
+   */
+  const canConfirm = isPlatformOperator({ roles: currentSession()?.roles ?? [] });
+
   const [locations, setLocations] = useState<Location[] | null>(null);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -162,6 +171,7 @@ export function LocationsView({ practiceId }: { practiceId: string }) {
             location={location}
             departments={departments.filter((d) => d.locationId === location.id)}
             headers={headers}
+            canConfirm={canConfirm}
             onChanged={load}
           />
         ))}
@@ -187,15 +197,26 @@ function LocationCard({
   location,
   departments,
   headers,
+  canConfirm,
   onChanged,
 }: {
   location: Location;
   departments: Department[];
   headers: Record<string, string>;
+  /** Whether the viewer may verify the address. A practice may not verify its own. */
+  canConfirm: boolean;
   onChanged: () => Promise<void>;
 }) {
   const [confirming, setConfirming] = useState(false);
-  const [confirmName, setConfirmName] = useState('');
+  /*
+   * FROM THE SESSION. Asking somebody to type their own name asks them to
+   * assert an identity we already hold, and the answer is worth whatever they
+   * type. Same rule as the reviewer screens, which Carl has now had to give
+   * twice.
+   */
+  const signedInAs = currentSession()?.username ?? '';
+  const [typedName, setTypedName] = useState('');
+  const confirmName = signedInAs || typedName;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -214,7 +235,7 @@ function LocationCard({
       });
       if (!res.ok) throw new Error(await refusalMessage(res));
       setConfirming(false);
-      setConfirmName('');
+      setTypedName('');
       await onChanged();
     } catch (e) {
       setError((e as Error).message);
@@ -331,22 +352,49 @@ function LocationCard({
         )}
       </div>
 
-      {!location.active && (
+      {/*
+        THE PRACTICE DOES NOT CONFIRM ITS OWN ADDRESS.
+        
+        The address prints in the s 65C(5)(a) particulars block of every
+        agreement captured here, so confirming it is VERIFYING EVIDENCE — and
+        the party supplying the evidence cannot be the party that verifies it.
+        Same rule the credential score rests on: entering a thing scores
+        nothing, and only an independent recorded check gives it weight.
+        
+        So a practice is told the state and who resolves it, and the form is
+        shown only to somebody who may actually use it. The server refuses the
+        rest either way.
+      */}
+      {!location.active && !canConfirm && (
+        <div className={styles.cardActions}>
+          <Notice tone="warn" title={strings.locations.confirmedByUsTitle}>
+            {strings.locations.confirmedByUsBody}
+          </Notice>
+        </div>
+      )}
+
+      {!location.active && canConfirm && (
         <div className={styles.cardActions}>
           {confirming ? (
             <div style={{ width: '100%' }}>
               <p className={styles.cardNote}>{strings.locations.confirmBody}</p>
               <div className={styles.inlineForm}>
-                <Field label={strings.locations.confirmName} hint={strings.locations.confirmNameHint} required>
-                  {(props) => (
-                    <TextInput
-                      {...props}
-                      value={confirmName}
-                      onChange={(e) => setConfirmName(e.target.value)}
-                      data-testid={`confirm-name-${location.id}`}
-                    />
-                  )}
-                </Field>
+                {signedInAs ? (
+                  <p className={styles.cardNote}>
+                    {strings.locations.confirmAs} <strong>{signedInAs}</strong>
+                  </p>
+                ) : (
+                  <Field label={strings.locations.confirmName} hint={strings.locations.confirmNameHint} required>
+                    {(props) => (
+                      <TextInput
+                        {...props}
+                        value={typedName}
+                        onChange={(e) => setTypedName(e.target.value)}
+                        data-testid={`confirm-name-${location.id}`}
+                      />
+                    )}
+                  </Field>
+                )}
                 <Button
                   variant="primary"
                   onClick={() => void confirm()}

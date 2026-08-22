@@ -1218,11 +1218,18 @@ export const strings = {
     suggestionsTitle: 'Did you mean',
 
     // --- Confirming by hand ---
+    confirmedByUsTitle: 'AoBPlatform confirms this address, not you',
+    confirmedByUsBody:
+      'This address is printed on every agreement captured here, so confirming it is us CHECKING your ' +
+      'evidence — and a practice cannot check its own. Somebody here verifies it against the building, your ' +
+      'letterhead, or a call to you, and their name is recorded against it. Nothing is needed from you ' +
+      'unless we ask.',
     confirmTitle: 'Confirm this address',
     confirmBody:
       'Confirm only if you have checked the address itself — on the building, on the practice’s own ' +
       'letterhead, or with the practice by phone. Your name is recorded against it permanently, because this ' +
       'address goes on to appear on legal records of consent.',
+    confirmAs: 'This will be recorded as confirmed by',
     confirmName: 'Your name',
     confirmNameHint: 'Recorded with the confirmation. Not the practice name — yours.',
     confirmAction: 'Confirm the address',

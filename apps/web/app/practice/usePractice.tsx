@@ -22,7 +22,7 @@
 
 import { useEffect, useState } from 'react';
 import { mayChoosePractice } from '@aobplatform/domain';
-import { currentSession } from '../auth';
+import { attemptSilentLogin, currentSession } from '../auth';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 const SELECTION_KEY = 'aob.practiceId';
@@ -48,6 +48,27 @@ export function usePractice(): PracticeSelection {
     let live = true;
 
     const session = currentSession();
+
+    /*
+     * NO SESSION ON A COLD LOAD IS THE NORMAL CASE, not an anomaly.
+     *
+     * The token lives in a module variable and nowhere else, so any full page
+     * load destroys it. Falling straight through to a stored selection here is
+     * what let somebody who navigated directly to /practice/locations be shown
+     * a chooser listing every practice on the platform: with no session there
+     * was no claim to scope them by.
+     *
+     * So a browser that has signed in before tries to restore SILENTLY first.
+     * If Keycloak's session is live this returns having started a redirect and
+     * nothing below runs; if it is not, it returns false and the normal gate
+     * takes over.
+     */
+    if (!session) {
+      void attemptSilentLogin().then((started) => {
+        if (!started && live) setChecked(true);
+      });
+      return;
+    }
 
     /*
      * A TOKEN CLAIM IS AUTHORITATIVE AND ENDS THE QUESTION.
