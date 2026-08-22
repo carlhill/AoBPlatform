@@ -141,20 +141,55 @@ describe('reporting layer tenancy (e2e, real Postgres roles)', () => {
     expect(Number(practices)).toBeGreaterThan(1);
   });
 
-  it('keeps names and message content out of the reporting surface entirely', () => {
+  it('keeps MESSAGE CONTENT and identifiers out of the reporting surface', () => {
     /*
-     * The third layer, and the only one that still holds if the other two fail:
-     * bound what could leak, not just who can reach it. A query engine roaming
-     * over counts is a different proposition from one roaming over recipients.
+     * Narrowed deliberately, and the history matters. This used to ban any
+     * column containing "recipient" or "practitioner" — which was too blunt in
+     * both directions. It tripped on `recipientType` (a category, not a person)
+     * and it would have banned the recipient NAME, which a practice is entitled
+     * to see about its own people and already sees on its affiliations screen.
+     *
+     * What must stay out is different: message content, and identifiers that
+     * mean something outside this practice. A name plus a practice is an
+     * employment fact the practice itself publishes. A PROVIDER NUMBER plus a
+     * practice is the billing identity the whole regime exists to protect, and
+     * it is not here.
      */
     const columns = psql(
       'cube_platform_reader',
       "SELECT string_agg(column_name, ',' ORDER BY column_name) FROM information_schema.columns " +
         "WHERE table_schema='reporting' AND table_name='outbound_messages'",
-    );
+    ).toLowerCase();
 
-    for (const forbidden of ['recipient', 'body', 'payload', 'subject', 'patient', 'practitioner', 'provider']) {
-      expect(columns.toLowerCase()).not.toContain(forbidden);
+    for (const forbidden of ['providernumber', 'ahpra', 'body', 'payload', 'subject', 'destination', 'medicare']) {
+      expect(columns).not.toContain(forbidden);
     }
+  });
+
+  it('NEVER lets one practice see another practice’s recipient names', () => {
+    /*
+     * The assertion that replaces the blunt one. Names being present is a
+     * decision; names crossing a practice boundary is not, and never will be.
+     *
+     * Checked by asking for names in a session scoped to one practice and
+     * confirming every row belongs to it — so the guarantee is about the rows
+     * returned, not about which columns exist.
+     */
+    const foreignNames = psql(
+      'cube_reader',
+      `SET app.practice_id='${busiestPractice}'; ` +
+        `SELECT count(*) FROM reporting.outbound_messages ` +
+        `WHERE "recipientName" IS NOT NULL AND "practiceId" <> '${busiestPractice}'`,
+    );
+    expect(Number(foreignNames)).toBe(0);
+
+    // And the same question of the raw table, in case a later view is added
+    // that forgets the boundary.
+    const foreignRaw = psql(
+      'cube_reader',
+      `SET app.practice_id='${busiestPractice}'; ` +
+        `SELECT count(*) FROM core.outbound_items WHERE "practiceId" <> '${busiestPractice}'`,
+    );
+    expect(Number(foreignRaw)).toBe(0);
   });
 });

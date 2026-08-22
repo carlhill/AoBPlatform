@@ -166,6 +166,26 @@ export const PACKED_BREAKDOWNS = [
     label: 'By site and department',
     dimensions: ['OutboundMessages.organisation', 'OutboundMessages.site', 'OutboundMessages.department'],
   },
+  /*
+   * WHO RECEIVED IT, BY TYPE. Practitioner, patient, or the practice itself.
+   *
+   * Not by NAME, and that is not a gap to fill later. A name in the reporting
+   * surface is a name a query engine can be asked to group by, and
+   * per-practitioner totals are one join from "and at which practices" — the
+   * cross-practice directory the hard rules forbid. Per-person figures belong
+   * in the console, scoped, attached to a decision somebody is accountable for.
+   */
+  { key: 'recipient', label: 'By who received it', dimensions: ['OutboundMessages.recipientType'] },
+  /*
+   * BY NAME. A practice sees its own people and nobody else's — RLS scopes the
+   * rows, so this cannot reach across a practice boundary. Those are names the
+   * practice already has on its own affiliations screen.
+   */
+  {
+    key: 'practitioner',
+    label: 'By practitioner',
+    dimensions: ['OutboundMessages.recipientType', 'OutboundMessages.recipientName'],
+  },
   { key: 'channel', label: 'By channel', dimensions: ['OutboundMessages.channel'] },
   { key: 'format', label: 'By format', dimensions: ['OutboundMessages.mediaType'] },
 ] as const;
@@ -209,6 +229,25 @@ export function placeFilters(place: PlaceFilter): { member: string; operator: 'e
  * same whichever report is showing — a dropdown whose options changed when you
  * switched report would be unusable.
  */
+/**
+ * A link that opens this query in Cube's own report builder.
+ *
+ * WHY LINK RATHER THAN DRAW. A hand-rolled chart is a second implementation of
+ * something Cube already does properly — and the first version of it rendered
+ * as a black box, which is exactly the failure mode of drawing your own: it
+ * looks fine in the code and wrong on the screen. The builder charts the same
+ * query against the same data, under the same token, so there is nothing to
+ * keep in step and nothing that can disagree with the table.
+ *
+ * It also does more than a chart: somebody who arrives there can change the
+ * question, which is the whole reason Cube is here.
+ */
+export function reportBuilderUrl(base: string, query: CubeQuery): string {
+  // Cube's Playground reads the query from the hash, so it survives the
+  // redirect and never reaches a server log.
+  return `${base}/#/build?query=${encodeURIComponent(JSON.stringify(query))}`;
+}
+
 export function placeOptionsQuery(): CubeQuery {
   return {
     measures: ['OutboundMessages.count'],

@@ -32,8 +32,8 @@ import {
   packedQuery,
   packedReport,
   placeOptionsQuery,
+  reportBuilderUrl,
 } from '@aobplatform/domain';
-import { BarChart, type Bar } from './BarChart';
 import { Button, Field, Notice, SelectInput, Shell, ui } from '../../ui';
 import { SessionControl } from '../../SessionControl';
 import { currentSession } from '../../auth';
@@ -49,6 +49,25 @@ const MEASURES = [
 ];
 
 const TIME_KEYS = ['OutboundMessages.occurredAt', 'OutboundMessages.occurredAt.day'];
+
+/*
+ * Column headings, because `d.split('.').pop()` gives "recipientName" — which
+ * is the field's name, not the reader's word for it. Cube carries titles in its
+ * meta, but fetching meta to label three columns is a request to save a map.
+ */
+const DIMENSION_LABELS: Record<string, string> = {
+  'OutboundMessages.organisation': 'Organisation',
+  'OutboundMessages.site': 'Site',
+  'OutboundMessages.department': 'Department',
+  'OutboundMessages.channel': 'Channel',
+  'OutboundMessages.mediaType': 'Format',
+  'OutboundMessages.recipientType': 'Sent to',
+  'OutboundMessages.recipientName': 'Name',
+};
+
+function labelFor(dimension: string): string {
+  return DIMENSION_LABELS[dimension] ?? (dimension.split('.').pop() ?? dimension);
+}
 
 type Row = Record<string, string | number | null>;
 
@@ -198,35 +217,22 @@ export function ReportsView() {
   }, [rows, report.shape, dimensions]);
 
   /*
-   * THE SAME ROWS THE TABLE IS BUILT FROM. A chart that fetched its own data is
-   * a chart that can disagree with the numbers beside it, and the reader has no
-   * way to tell which one is wrong.
+   * CHARTING IS CUBE'S JOB, not ours.
+   *
+   * The first version of this drew its own SVG bar chart, and it rendered as a
+   * black box — which is the failure mode of hand-rolling a chart: it looks
+   * fine in the code and wrong on the screen, and then you own it. Cube's
+   * report builder charts the same query, against the same data, under the same
+   * token. Nothing to keep in step, and nothing that can disagree with the
+   * table above.
+   *
+   * It also does more than draw: somebody who follows it can change the
+   * question, which is the entire reason Cube is here.
    */
-  const bars = useMemo<Bar[]>(() => {
-    if (!rows || rows.length === 0) return [];
-
-    if (built) {
-      // For a matrix, one bar per month across every group — the chart answers
-      // "how is this trending", which the grouped tables do not.
-      const perMonth = new Map<string, number>();
-      for (const group of built) {
-        for (const row of group.matrix.rows) {
-          perMonth.set(row.label, (perMonth.get(row.label) ?? 0) + row.total);
-        }
-      }
-      return [...perMonth.entries()].map(([label, value]) => ({ label, value }));
-    }
-
-    if (report.shape === 'total') return [];
-
-    const perPeriod = new Map<string, number>();
-    for (const row of rows) {
-      const at = (timeOf(row) ?? '').slice(0, 10);
-      if (!at) continue;
-      perPeriod.set(at, (perPeriod.get(at) ?? 0) + num(row, 'OutboundMessages.count'));
-    }
-    return [...perPeriod.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([label, value]) => ({ label, value }));
-  }, [rows, built, report.shape]);
+  const chartUrl = useMemo(
+    () => reportBuilderUrl(CUBE_URL, packedQuery(report, breakdown, place)),
+    [report, breakdown, place],
+  );
 
   const totals = useMemo(() => {
     if (!rows) return null;
@@ -384,7 +390,7 @@ export function ReportsView() {
                 <th scope="col">{strings.report.period}</th>
                 {dimensions.map((d) => (
                   <th key={d} scope="col">
-                    {d.split('.').pop()}
+                    {labelFor(d)}
                   </th>
                 ))}
                 {MEASURES.map((m) => (
@@ -476,9 +482,19 @@ export function ReportsView() {
           </div>
         ))}
 
-      {/* Below the table, deliberately: the numbers are the answer and the
-          chart is the shape of them. */}
-      {bars.length > 0 && <BarChart bars={bars} caption={strings.reports.chartCaption} />}
+      {/*
+        Below the table, deliberately: the numbers are the answer and the chart
+        is the shape of them. It opens THIS query — report, breakdown and place
+        already applied — so it is a continuation rather than a fresh start.
+      */}
+      {rows && rows.length > 0 && (
+        <Notice title={strings.reports.chartTitle}>
+          {strings.reports.chartBody}{' '}
+          <a href={chartUrl} target="_blank" rel="noreferrer" data-testid="chart-link">
+            <BarChart3 size={13} aria-hidden="true" /> {strings.reports.chartLink}
+          </a>
+        </Notice>
+      )}
 
       <Notice title={strings.reports.moreTitle}>
         {strings.reports.moreBody}{' '}

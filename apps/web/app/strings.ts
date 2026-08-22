@@ -1310,8 +1310,10 @@ export const strings = {
     allOrganisations: 'All organisations',
     allSites: 'All sites',
     allDepartments: 'All departments',
-    chartCaption: 'Messages over time',
-    chartPeak: 'tallest bar is {n}',
+    chartTitle: 'See this as a chart',
+    chartBody:
+      'Opens this exact report — same period, same breakdown, same place — in the report builder, which draws it and lets you change the question from there.',
+    chartLink: 'Chart this report',
     emptyTitle: 'Nothing to show for this period',
     emptyBody:
       'A real answer rather than a missing one — the query ran and found nothing. Try a wider report, or check '

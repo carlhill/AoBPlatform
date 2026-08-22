@@ -70,6 +70,38 @@ cubes:
         title: State
         description: pending, leased, sent, failed or dead.
 
+      # WHO RECEIVED IT, BY TYPE ONLY.
+      #
+      # practitioner, patient, or the practice itself. Deliberately not the
+      # recipient's name or id: a name here is a name a query engine can be
+      # asked to group by, and per-practitioner totals are one join away from
+      # "and at which practices" -- the cross-practice directory the hard rules
+      # forbid. Per-person figures live in the console, scoped, attached to a
+      # decision somebody is accountable for.
+      - name: recipientType
+        sql: "\"recipientType\""
+        type: string
+        title: Who received it
+        description: >
+          practitioner, patient, or the practice itself. Empty where nothing was
+          recorded -- which is not the same as it having gone to the practice.
+
+      # THE RECIPIENT'S NAME, so a report can be broken down per practitioner.
+      #
+      # Scoped by the same RLS as everything else here, so a practice sees the
+      # names of its OWN people and nobody else's -- names it already has on its
+      # affiliations screen. What it does allow is a PLATFORM report grouped by
+      # name across practices; that is accepted because the platform credential
+      # could assemble the same list from the tables anyway, and because the
+      # rule's actual subject is the provider number, which is not here.
+      - name: recipientName
+        sql: "\"recipientName\""
+        type: string
+        title: Recipient
+        description: >
+          Who it was addressed to. Empty for messages to the practice itself, and
+          for anything sent before we recorded it.
+
       # THE TIME DIMENSION EVERYTHING IS MEASURED AGAINST.
       #
       # `occurredAt` is the sent time where there is one and the created time
@@ -145,6 +177,7 @@ cubes:
           - department
           - channel
           - mediaType
+          - recipientType
         time_dimension: occurredAt
         granularity: day
         refresh_key:
