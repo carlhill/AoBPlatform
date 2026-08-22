@@ -28,3 +28,4 @@ export * from './invitation';
 export * from './practitioner-strength';
 export * from './landing';
 export * from './address-check';
+export * from './practice-users';

@@ -92,6 +92,14 @@ export const VAULT_EVENT_TYPES = [
   'location.address_rejected',
   // The practice answered, by correcting the address itself.
   'location.address_corrected',
+  // Console access at a practice: who was given it, what changed, and when
+  // it was withdrawn. Deactivation is recorded and DELETION IS NOT POSSIBLE —
+  // somebody who approved or confirmed something must stay identifiable for
+  // as long as that record matters, which outlasts their employment.
+  'practice_user.granted',
+  'practice_user.role_changed',
+  'practice_user.deactivated',
+  'practice_user.reactivated',
   'affiliation.invited',
   'affiliation.accepted',
   'affiliation.rejected',

@@ -311,7 +311,17 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
         .post(`/organisations/${orgId}/validate`)
         .send({ decision: 'validated', reviewerName: 'Robin Reviewer', note: 'ABR sighted 21 Aug.', ...entitlement })
         .expect(201);
-      expect(res.body.validatedBy).toBe('Robin Reviewer');
+      /*
+       * THE SESSION, NOT THE BODY. The request said "Robin Reviewer" and the
+       * record says `robin.reviewer`, which is the verified token subject.
+       *
+       * A name in a request body is an assertion by the sender: unverified,
+       * trivially false, and once written into an append-only vault event
+       * indistinguishable from one that was checked. AttributionInterceptor
+       * overwrites every attribution field before the handler sees it.
+       */
+      expect(res.body.validatedBy).toBe('robin.reviewer');
+      expect(res.body.validatedBy).not.toBe('Robin Reviewer');
     });
 
     it('APPROVAL_REQUIRES_AN_ENTITLEMENT_CHECK — the ABN gate is not enough', async () => {
@@ -729,7 +739,9 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
       expect(res.body.canAnswer).toBe(true);
       expect(res.body.practiceName).toBe('Sampletown Family Practice');
       expect(res.body.summary).toContain('Annexe');
-      expect(res.body.invitedByName).toBe('Robin Practicemanager');
+      // Same rule: the practice typed one name, the token carried another,
+      // and the token wins. See AttributionInterceptor.
+      expect(res.body.invitedByName).toBe('robin.reviewer');
     });
 
     it('still withholds the provider number, which is not needed to decide', async () => {

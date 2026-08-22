@@ -38,7 +38,7 @@ import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui, type To
 import { strings } from '../../strings';
 import styles from '../manage.module.css';
 import { SessionControl } from '../../SessionControl';
-import { apiHeaders } from '../../auth';
+import { currentSession, apiHeaders } from '../../auth';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -526,7 +526,9 @@ function InviteForm({
   const [locationId, setLocationId] = useState('');
   const [departmentId, setDepartmentId] = useState('');
   const [providerNumber, setProviderNumber] = useState('');
-  const [invitedBy, setInvitedBy] = useState('');
+  // From the session. The server overwrites it from the verified token
+  // anyway (AttributionInterceptor); asking was theatre.
+  const invitedBy = currentSession()?.username ?? '';
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -539,7 +541,7 @@ function InviteForm({
   const invitable = roster.filter((p) => !p.deregisteredAt);
   const forLocation = departments.filter((d) => d.locationId === locationId);
 
-  const ready = ahpra.length > 0 && locationId.length > 0 && invitedBy.trim().length > 0;
+  const ready = ahpra.length > 0 && locationId.length > 0;
 
   async function submit() {
     setBusy(true);
@@ -671,16 +673,6 @@ function InviteForm({
           )}
         </Field>
 
-        <Field label={strings.affiliations.inviteBy} hint={strings.affiliations.inviteByHint} required>
-          {(props) => (
-            <TextInput
-              {...props}
-              value={invitedBy}
-              onChange={(e) => setInvitedBy(e.target.value)}
-              data-testid="aff-by"
-            />
-          )}
-        </Field>
       </div>
 
       <div className={styles.formActions}>

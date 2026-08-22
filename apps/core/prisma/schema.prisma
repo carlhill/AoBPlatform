@@ -610,6 +610,7 @@ model Practitioner {
    */
   keycloakUserId    String?
   invitedAt         DateTime?
+
   passkeyEnrolledAt DateTime?
   /**
    * Set when a sufficient REQ-PKI-01 ceremony has been performed.
@@ -798,7 +799,40 @@ model StaffMember {
   invitedAt         DateTime?
   passkeyEnrolledAt DateTime?
 
+  // --- Console access (packages/domain/src/practice-users.ts) ---
+  //
+  // SEPARATE FROM `role` ON PURPOSE. `role` says what somebody does at the
+  // practice and feeds the assignor block (REQ-VUL-04). This says what they
+  // may do in AoBPlatform. A principal may have no console access at all and
+  // a receptionist may run every report — collapsing the two would grant
+  // access as a side effect of describing a job.
+  //
+  // NULL means no sign-in access. A staff record is not an account until
+  // somebody deliberately makes it one.
+  /// admin | other
+  consoleRole       String?
+
+  // WHERE their access reaches. Both null = the whole practice. No foreign
+  // keys: a location can be closed while the person who worked there must
+  // stay identifiable on records they touched.
+  locationId        String?   @db.Uuid
+  departmentId      String?   @db.Uuid
+
+  // --- Inactivity lifecycle ---
+  //
+  // 6 months quiet -> warn. 3 more -> deactivate. NEVER DELETE: somebody who
+  // approved or confirmed something must stay identifiable for as long as
+  // that record matters, which outlasts their employment.
+  lastSignInAt      DateTime?
+  inactivityWarnedAt DateTime?
+  deactivatedAt     DateTime?
+  deactivatedReason String?
+  /// Who withdrew it. From the verified token, never a typed name.
+  deactivatedByName String?
+
   @@index([practiceId])
+  /// The console-user list, and the cap count.
+  @@index([practiceId, consoleRole])
   @@map("staff_members")
 }
 

@@ -38,7 +38,7 @@ import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui } from '
 import { strings } from '../../strings';
 import styles from '../manage.module.css';
 import { SessionControl } from '../../SessionControl';
-import { apiHeaders } from '../../auth';
+import { currentSession, apiHeaders } from '../../auth';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -359,14 +359,24 @@ function RegisterCheck({
   const [regType, setRegType] = useState<string>('General');
   const [specialty, setSpecialty] = useState('');
   const [expiry, setExpiry] = useState('');
-  const [sightedBy, setSightedBy] = useState('');
+  /*
+   * WHO LOOKED comes from the session, not from a field.
+   *
+   * This is evidence that a person read the AHPRA register, and evidence
+   * needs an author — but an author who types their own name is asserting
+   * an identity we already hold, and the answer is worth whatever they
+   * typed. The server overwrites it from the verified token regardless
+   * (AttributionInterceptor), so the field was asking for something that
+   * could not affect the record.
+   */
+  const sightedBy = currentSession()?.username ?? '';
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CheckResult | null>(null);
 
   // A sighting has to be attributable to a person — that is the difference
   // between evidence and an assertion, and the server refuses it too.
-  const ready = status.length > 0 && sightedBy.trim().length > 0;
+  const ready = status.length > 0;
 
   async function submit() {
     setBusy(true);
@@ -507,20 +517,6 @@ function RegisterCheck({
           )}
         </Field>
 
-        <Field
-          label={strings.practitioners.checkSightedBy}
-          hint={strings.practitioners.checkSightedByHint}
-          required
-        >
-          {(props) => (
-            <TextInput
-              {...props}
-              value={sightedBy}
-              onChange={(e) => setSightedBy(e.target.value)}
-              data-testid={`check-by-${entry.practitionerId}`}
-            />
-          )}
-        </Field>
       </div>
 
       <div className={styles.formActions}>
