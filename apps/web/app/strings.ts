@@ -1165,6 +1165,26 @@ export const strings = {
    * exist. That is why a location arrives inactive and why activating it names
    * a human.
    */
+  application: {
+    title: 'Your application',
+    lead:
+      'What this practice told us, in the order it was asked. Contact details and the head office can be ' +
+      'changed here; what the ABR said cannot.',
+    notLoaded: 'Your application could not be loaded',
+    save: 'Save the changes',
+    saving: 'Saving…',
+    nothingChanged: 'Nothing has changed',
+    savedTitle: 'Saved',
+    savedBody: 'The change is recorded against your name, with what it was before and what it is now.',
+    lockedHint: 'Recorded when your application was checked. Not editable here.',
+    notRecorded: 'Not recorded',
+    lockedTitle: 'Why some of this is locked',
+    lockedBody:
+      'The ABN, legal name and entity type are identity evidence — somebody looked them up against the ' +
+      'ABR and their name is recorded against that check. If we let you edit them afterwards, a practice ' +
+      'could change what was verified while keeping the verification. If any of it is wrong, tell us and ' +
+      'we will check it again properly.',
+  },
   queue: {
     // On the setup hub, pointing at this screen.
     hubTitle: 'Messages',

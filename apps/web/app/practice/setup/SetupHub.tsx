@@ -349,6 +349,15 @@ export function SetupHub({ practiceId }: { practiceId: string }) {
             <h2 className={styles.cardTitle}>{strings.queue.hubTitle}</h2>
           </div>
           <p className={ui.hint}>{strings.queue.hubBody}</p>
+          {/*
+            The application, filled in. Different question from the entity
+            dossier: that one is for reading, this is "what did we submit,
+            and what can I change".
+          */}
+          <Link href="/practice/application" className={styles.cardLink} data-testid="hub-to-application">
+            {strings.setup.open} {strings.application.title.toLowerCase()}
+            <ArrowRight size={14} aria-hidden="true" />
+          </Link>
           <Link href="/practice/queue" className={styles.cardLink} data-testid="hub-to-queue">
             {strings.setup.open} {strings.queue.title.toLowerCase()}
             <ArrowRight size={14} aria-hidden="true" />

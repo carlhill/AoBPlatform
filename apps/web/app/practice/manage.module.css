@@ -540,3 +540,35 @@
   border-bottom: 1px solid var(--line);
   margin-bottom: var(--s2);
 }
+
+/* --- The application, in the shape it was filled in ---------------------- */
+
+.applicationSection {
+  padding: var(--s5) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.applicationHeading {
+  margin: 0 0 var(--s2);
+  font-size: var(--text-lg);
+}
+
+.applicationFields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--s4);
+  margin-top: var(--s3);
+}
+
+/*
+ * A locked value is TEXT with a padlock, not a disabled input. A greyed-out
+ * box invites somebody to keep clicking it; this says the answer is no, once.
+ */
+.applicationLocked {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+  padding: var(--s2) 0;
+  color: var(--ink-muted);
+}
