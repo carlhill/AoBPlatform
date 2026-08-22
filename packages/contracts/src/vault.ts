@@ -100,6 +100,11 @@ export const VAULT_EVENT_TYPES = [
   'practice_user.role_changed',
   'practice_user.deactivated',
   'practice_user.reactivated',
+  // A platform operator wearing a practice's face, and stepping out of it.
+  // Every event caused inside a session also carries actingAsSessionId, added
+  // ambiently so no call site can forget it.
+  'acting_as.started',
+  'acting_as.ended',
   'affiliation.invited',
   'affiliation.accepted',
   'affiliation.rejected',

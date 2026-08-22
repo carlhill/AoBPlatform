@@ -26,6 +26,7 @@ import {
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
+import { ActingAsService } from '../acting-as/acting-as.service';
 
 /**
  * How long an applicant has to act on a correction request.
@@ -74,6 +75,7 @@ export class OrganisationsService {
     private readonly practiceAdmin: PracticeAdminService,
     private readonly checks: ChecksService,
     private readonly config: ConfigService,
+    private readonly actingAs: ActingAsService,
   ) {}
 
   /**
@@ -585,7 +587,27 @@ export class OrganisationsService {
       /** Required to approve against the score's advice when enforcement is hard. */
       identityOverrideReason?: string;
     },
+    /** The real person deciding. Needed for the separation-of-duties check. */
+    approver?: Actor,
   ) {
+    /*
+     * RULE 7, AND IT RUNS FIRST.
+     *
+     * Somebody who acted as this practice cannot be the person who approves
+     * it. Checked before anything else because it is the control that survives
+     * every other one failing: even if the scoring exclusion for impersonated
+     * evidence were removed by mistake, one individual still could not
+     * manufacture evidence and then bless it.
+     *
+     * Before the state lookup, deliberately. After it, a self-approval on an
+     * already-decided practice would report "already validated" and the
+     * separation check would never run — the same shape of bug the comment
+     * below records about rejection reasons.
+     */
+    if (input.decision === 'validated') {
+      await this.actingAs.assertMayApprove(organisationId, approver);
+    }
+
     if (!input.reviewerName?.trim()) {
       throw new BadRequestException('A validation decision must name the human who made it.');
     }
@@ -752,6 +774,15 @@ export class OrganisationsService {
             reason: input.note ?? 'The application could not be verified.',
             rejectedByName: input.reviewerName.trim(),
           });
+
+    /*
+     * ANSWERED. Marked cleared by this approval, so the next one starts from
+     * a clean list — and so the log still shows the sessions happened.
+     * Cleared, never deleted.
+     */
+    if (input.decision === 'validated') {
+      await this.actingAs.clearAfterApproval(organisationId, updated.id);
+    }
 
     return {
       id: updated.id,

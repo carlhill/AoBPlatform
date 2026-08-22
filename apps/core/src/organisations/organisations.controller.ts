@@ -717,8 +717,9 @@ export class OrganisationsController {
   decide(
     @Param('organisationId', ParseUUIDPipe) organisationId: string,
     @Body() dto: ValidationDecisionDto,
+    @SessionActor() actor: Actor | undefined,
   ) {
-    return this.organisations.decideValidation(organisationId, dto);
+    return this.organisations.decideValidation(organisationId, dto, actor);
   }
 
   @Get('locations')

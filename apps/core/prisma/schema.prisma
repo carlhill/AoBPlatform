@@ -1396,3 +1396,49 @@ model OutboundItem {
   @@index([practiceId])
   @@map("outbound_items")
 }
+
+/**
+ * A platform operator acting as a practice.
+ *
+ * NO RLS, deliberately — the one table where that is correct. A session
+ * belongs to the PLATFORM, not to the practice being acted for, and the
+ * separation-of-duties check reads across practices. Nothing here is patient
+ * data; it is who did what, which is the opposite of a thing to hide.
+ *
+ * APPEND-ONLY, enforced by triggers rather than convention: this is the record
+ * of impersonation, so it is precisely the table somebody would want to edit
+ * their way out of. Deletes are refused outright, and who/for whom/why/when
+ * cannot be changed after the fact.
+ */
+model ActingAsSession {
+  id         String @id @default(uuid()) @db.Uuid
+  practiceId String @db.Uuid
+
+  /// The REAL person, from the verified token. Never the practice.
+  operatorSub  String
+  operatorName String
+
+  /// From ACTING_AS_REASONS. Chosen, so "how often, and why" is answerable.
+  reason String
+  note   String?
+
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+  /// expired | ended_by_operator. A session that always expires is somebody
+  /// who never closes them, which is worth being able to see.
+  endedHow  String?
+
+  /// Rule 3: no OTP before, notified after. This is the proof the after happened.
+  practiceNotifiedAt DateTime?
+
+  /// Rule 6: impersonation forces re-approval. Cleared when somebody OTHER
+  /// than the operator approves — see assertMayApproveAfterActingAs.
+  forcedReapproval  Boolean @default(true)
+  clearedByApproval String? @db.Uuid
+
+  createdAt DateTime @default(now())
+
+  @@index([operatorSub, startedAt])
+  @@index([practiceId, startedAt])
+  @@map("acting_as_sessions")
+}
