@@ -7,6 +7,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { OutboundModule } from './outbound/outbound.module';
 import { ActingAsModule } from './acting-as/acting-as.module';
+import { ReviewTasksModule } from './review-tasks/review-tasks.module';
 import { IdentityDashboardModule } from './identity-dashboard/identity-dashboard.module';
 import { IdentityModule } from './identity/identity.module';
 import { VaultModule } from './vault/vault.module';
@@ -42,6 +43,7 @@ import { ArtefactsModule } from './artefacts/artefacts.module';
     AuthModule,
     OutboundModule,
     ActingAsModule,
+    ReviewTasksModule,
     IdentityModule,
     VaultModule,
     AgreementsModule,

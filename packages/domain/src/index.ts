@@ -32,3 +32,4 @@ export * from './practice-users';
 export * from './departure-notice';
 export * from './outbound-queue';
 export * from './acting-as';
+export * from './review-tasks';

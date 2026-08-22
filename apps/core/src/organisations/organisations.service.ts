@@ -19,6 +19,7 @@ import {
   parseSingleLine,
   type StructuredAddress,
   ADDRESS_CHECK_VERSION,
+  kindForAmendment,
   AddressCheckError,
   assertRecordableCheck,
   assertSendableRejection,
@@ -27,6 +28,7 @@ import {
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingAsService } from '../acting-as/acting-as.service';
+import { ReviewTasksService } from '../review-tasks/review-tasks.service';
 
 /**
  * How long an applicant has to act on a correction request.
@@ -76,6 +78,7 @@ export class OrganisationsService {
     private readonly checks: ChecksService,
     private readonly config: ConfigService,
     private readonly actingAs: ActingAsService,
+    private readonly reviewTasks: ReviewTasksService,
   ) {}
 
   /**
@@ -929,6 +932,37 @@ export class OrganisationsService {
               }
             : {}),
         },
+      });
+
+      /*
+       * RAISE A REVIEW TASK, in this transaction.
+       *
+       * These fields are amendable precisely because they are not identity
+       * evidence — but "not identity evidence" is not the same as "nobody
+       * should look". An administrator email changing the week before a
+       * payment run is not suspicious on its own and is worth somebody seeing.
+       *
+       * The KIND depends on what moved: changing where our messages go is the
+       * single most useful step for somebody taking over a practice account,
+       * so it raises a high-stakes task that no automated check may close.
+       */
+      const changedFields = changes.map((c) => c.field);
+      await this.reviewTasks.raise(tx, {
+        practiceId,
+        kind: kindForAmendment(changedFields),
+        subjectType: 'Organisation',
+        subjectId: practiceId,
+        summary: 'The practice changed ' + changedFields.join(', '),
+        detail: {
+          reason: meta.reason.trim(),
+          // BEFORE and AFTER, because a reviewer deciding whether a change is
+          // ordinary needs both. This is a work item rather than the evidence
+          // chain, so the values may live here — the vault event still
+          // records only which fields moved.
+          changes: changes.map((c) => ({ field: c.field, from: c.from ?? null, to: c.to ?? null })),
+          handover,
+        },
+        raisedBy: meta.changedByName!.trim(),
       });
 
       await enqueueVaultEvent(tx, {

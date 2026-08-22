@@ -1479,3 +1479,64 @@ model ActingAsSession {
   @@index([practiceId, startedAt])
   @@map("acting_as_sessions")
 }
+
+/**
+ * Work arriving INTO the platform that needs a second look.
+ *
+ * Separate from OutboundItem on purpose: that carries things LEAVING, this
+ * carries work coming in. One table would mean "queue" meaning two things in
+ * one schema.
+ *
+ * THE TASK IS NOT THE EVIDENCE. The amendment record already holds what
+ * changed, who changed it and why. What IS evidence is the RESOLUTION —
+ * "somebody looked at this and accepted it" — and that goes to the vault, so a
+ * task row can be pruned while the decision cannot.
+ */
+model ReviewTask {
+  id         String @id @default(uuid()) @db.Uuid
+  practiceId String @db.Uuid
+
+  /// From REVIEW_TASK_KINDS. The kind carries the stakes, and the stakes
+  /// decide whether an automated check may close it.
+  kind        String
+  subjectType String
+  subjectId   String @db.Uuid
+
+  /// What a reviewer reads first. Written when the task is raised, because
+  /// the raiser knows what changed and a reviewer opening it later should not
+  /// have to reconstruct it.
+  summary String
+  detail  Json   @default("{}")
+
+  state    String   @default("open")
+  raisedBy String
+  raisedAt DateTime @default(now())
+
+  /// Leasing, so a person and a checker cannot both work the same task.
+  claimedBy      String?
+  claimExpiresAt DateTime?
+
+  /// What an automated check thought. ADVICE, recorded whether or not it was
+  /// allowed to act on it — a model that flagged something a person then
+  /// dismissed is worth being able to find later.
+  autoVerdict    String?
+  autoConfidence Float?
+  autoReasoning  String?
+  autoCheckedBy  String?
+  autoCheckedAt  DateTime?
+
+  resolution   String?
+  resolvedBy   String?
+  resolvedAt   DateTime?
+  resolvedNote String?
+  /// TRUE when no person looked. Its own column rather than inferred from
+  /// resolvedBy, because "was this reviewed by a human" is a question somebody
+  /// will ask of the whole table at once.
+  resolvedAutomatically Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([practiceId, raisedAt])
+  @@index([kind, raisedAt])
+  @@map("review_tasks")
+}

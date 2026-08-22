@@ -83,10 +83,19 @@ export class SetupService {
           },
         ],
         more: 0,
-        // The entity is READ-ONLY, but it still has a page. A card with facts
-        // on it and no way through reads as a dead end, and the page is where
-        // the locked fields explain themselves.
-        href: '/practice/entity',
+        /*
+         * TO THE APPLICATION, not the read-only dossier.
+         *
+         * Both show the same facts. The application shows them in the shape
+         * the practice filled them in, and lets the amendable ones be
+         * corrected — so from this card it is strictly the more useful of the
+         * two, and a practice reaching a dead end on its own record was the
+         * complaint that changed this.
+         *
+         * The dossier still exists at /practice/entity for reading, and the
+         * application explains what is locked and why.
+         */
+        href: '/practice/application',
       };
 
       // --- 2. Locations ----------------------------------------------------

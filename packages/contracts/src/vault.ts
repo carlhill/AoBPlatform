@@ -105,6 +105,10 @@ export const VAULT_EVENT_TYPES = [
   // ambiently so no call site can forget it.
   'acting_as.started',
   'acting_as.ended',
+  // Somebody -- or something -- decided about a change that needed a second
+  // look. The payload always says WHICH, because "a person accepted this" and
+  // "a model scored it and nobody looked" are different claims.
+  'review_task.resolved',
   'affiliation.invited',
   'affiliation.accepted',
   'affiliation.rejected',
