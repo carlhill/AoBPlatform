@@ -379,6 +379,24 @@ function AffiliationCard({
     }
   }
 
+  /*
+   * EMPTIES THE FORM after anything that resolves the notice.
+   *
+   * The server clears endsAt and endReason on withdrawal — verified — but
+   * the inputs kept whatever had been typed, so the practice withdrew a
+   * notice and went on looking at the date and reason they had just
+   * cancelled. Nothing was wrong with the record; the screen was telling
+   * them it was.
+   */
+  function clearNoticeForm() {
+    setEndsAt('');
+    setReason('');
+    setAttestExternal(false);
+    setExternalMeans('');
+    setExternalGivenAt('');
+    setExternalNote('');
+  }
+
   async function giveNotice() {
     try {
       await post(`/affiliations/${a.id}/notice`, {
@@ -396,6 +414,7 @@ function AffiliationCard({
             : undefined,
       });
       setNoticing(false);
+      clearNoticeForm();
       await onChanged();
     } catch (e) {
       setError((e as Error).message);
@@ -620,7 +639,13 @@ function AffiliationCard({
                 >
                   {busy ? strings.affiliations.noticing : strings.affiliations.noticeAction}
                 </Button>
-                <Button variant="subtle" onClick={() => setNoticing(false)}>
+                <Button
+                  variant="subtle"
+                  onClick={() => {
+                    setNoticing(false);
+                    clearNoticeForm();
+                  }}
+                >
                   {strings.affiliations.cancel}
                 </Button>
               </div>
@@ -654,7 +679,10 @@ function AffiliationCard({
                 <Button
                   onClick={() =>
                     void post(`/affiliations/${a.id}/notice/withdraw`)
-                      .then(onChanged)
+                      .then(() => {
+                        clearNoticeForm();
+                        return onChanged();
+                      })
                       .catch((e: Error) => setError(e.message))
                   }
                   disabled={busy}

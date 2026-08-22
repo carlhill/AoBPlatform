@@ -43,6 +43,7 @@ import {
   Radio,
   Users,
   UserSquare,
+  Send,
 } from 'lucide-react';
 import { mayChoosePractice, type CardState } from '@aobplatform/domain';
 import { Chip, Notice, Shell, ui, type Tone } from '../../ui';
@@ -331,6 +332,25 @@ export function SetupHub({ practiceId }: { practiceId: string }) {
           <p className={ui.hint}>{strings.setup.pmsUnsettled}</p>
           <Link href="/practice/pms" className={styles.cardLink}>
             {strings.setup.open} {strings.pms.title.toLowerCase()}
+            <ArrowRight size={14} aria-hidden="true" />
+          </Link>
+        </section>
+
+        {/*
+          The queue. Last, because it is the one card nobody opens until
+          something has gone wrong — "they say they never got it" is the
+          question it answers.
+        */}
+        <section className={styles.card} aria-label={strings.queue.hubTitle}>
+          <div className={styles.cardHead}>
+            <span className={styles.cardIcon}>
+              <Send size={16} aria-hidden="true" />
+            </span>
+            <h2 className={styles.cardTitle}>{strings.queue.hubTitle}</h2>
+          </div>
+          <p className={ui.hint}>{strings.queue.hubBody}</p>
+          <Link href="/practice/queue" className={styles.cardLink} data-testid="hub-to-queue">
+            {strings.setup.open} {strings.queue.title.toLowerCase()}
             <ArrowRight size={14} aria-hidden="true" />
           </Link>
         </section>

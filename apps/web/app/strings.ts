@@ -1166,6 +1166,11 @@ export const strings = {
    * a human.
    */
   queue: {
+    // On the setup hub, pointing at this screen.
+    hubTitle: 'Messages',
+    hubBody:
+      'Everything this practice has sent, and anything still waiting to go. The card nobody opens until ' +
+      'somebody says they never received a notice.',
     title: 'Outbound queue',
     lead:
       'Everything waiting to leave the platform, and everything that has. This is transport: what was sent, and what happened to it, lives with the record it belongs to and is kept far longer.',
