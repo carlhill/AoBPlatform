@@ -625,3 +625,110 @@
 .totalCol {
   font-weight: 600;
 }
+
+/* --- The review queue ---------------------------------------------------- */
+
+.reviewList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s4);
+}
+
+.reviewCard {
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+/*
+ * A high-stakes task is marked on the CARD, not only in a chip. These are the
+ * ones no automated check may close, and a reviewer scanning a long queue
+ * should be able to see which they are without reading.
+ */
+.reviewHigh {
+  border-left: 3px solid var(--stop);
+}
+
+.reviewHead {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  margin-bottom: var(--s2);
+}
+
+.reviewKind {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  font-weight: 600;
+}
+
+/* The question, not the title — it is what the reviewer is deciding. */
+.reviewQuestion {
+  margin: 0 0 var(--s3);
+  font-size: var(--text-base);
+  color: var(--ink);
+}
+
+.diffTable {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--s3) 0;
+  font-size: var(--text-sm);
+}
+
+.diffTable th,
+.diffTable td {
+  padding: var(--s2);
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+  word-break: break-word;
+}
+
+.diffTable thead th {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+
+/* Old struck through, new emphasised: the eye should land on what it became. */
+.diffFrom {
+  color: var(--ink-muted);
+  text-decoration: line-through;
+}
+
+.diffTo {
+  font-weight: 600;
+}
+
+.autoVerdict {
+  padding: var(--s3);
+  margin: var(--s3) 0;
+  background: var(--surface-sunken);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+}
+
+.autoHead {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  margin: 0 0 var(--s1);
+}
+
+.reviewActions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  align-items: end;
+  gap: var(--s3);
+  margin-top: var(--s3);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--line);
+}
