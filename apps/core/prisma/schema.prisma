@@ -1303,3 +1303,83 @@ model VaultOutbox {
   @@index([publishedAt, nextAttemptAt])
   @@map("vault_outbox")
 }
+
+/**
+ * The outbound queue — TRANSPORT, not evidence.
+ *
+ * `Notice` and `NoticeDeliveryEvent` remain the delivery record (REQ-DEL-01).
+ * This table carries a payload to a destination and records attempts. The
+ * distinction is what makes this table PRUNABLE: once an item is sent and the
+ * evidence layer has been told, the row has no further job, while the notice
+ * it carried must survive two years.
+ *
+ * That matters at the modelled volume. 750,000 notices a day is 274 million
+ * rows a year — fine as a working queue that is pruned, ruinous as a permanent
+ * one.
+ *
+ * WHY POSTGRES RATHER THAN A BROKER. The enqueue happens in the SAME
+ * TRANSACTION as the evidence write, which makes two failures impossible: a
+ * notice with no send, and a send with no notice. Any out-of-process broker
+ * reintroduces both and then needs an outbox to fix them — which is this
+ * table. `FOR UPDATE SKIP LOCKED` handles the ~21/second average and its peaks
+ * without breathing hard.
+ */
+model OutboundItem {
+  id         String @id @default(uuid()) @db.Uuid
+  practiceId String @db.Uuid
+
+  /// email | sms | webhook | device
+  channel String
+  /**
+   * Where it goes. NULL is legal only for `device`: a kiosk item is addressed
+   * to whichever tablet at that practice comes for it, and demanding a device
+   * id up front would mean knowing which screen a patient will walk up to.
+   */
+  destination String?
+
+  /// What this is about, so the evidence layer can be told what happened.
+  subjectType String
+  subjectId   String @db.Uuid
+
+  /**
+   * The body. JSON so a kiosk payload, an email envelope and a webhook body
+   * share one table. Capped in the domain at 256KB — large content belongs in
+   * the artefact store with a reference queued instead, because this table
+   * shares a database with the consent records.
+   */
+  payload Json
+
+  /// pending | leased | sent | failed | dead
+  state    String @default("pending")
+  attempts Int    @default(0)
+
+  /// When it may next be attempted. Drives both scheduling and backoff.
+  availableAt DateTime @default(now())
+
+  /**
+   * Who holds it, and until when. A lease that expires IS the recovery
+   * mechanism for a worker that died — nothing has to detect the death, the
+   * lease simply stops being true.
+   */
+  leasedBy       String?
+  leaseExpiresAt DateTime?
+
+  /**
+   * One logical send. Built from what the send IS, never from a timestamp, so
+   * a retry after a crash produces the same key and cannot become a duplicate.
+   * Re-sending a statutory notice is not a duplicate email — it is a second
+   * assertion that notice was given.
+   */
+  idempotencyKey String
+
+  lastError   String?
+  /// Set when the provider gave us an id we can reconcile against later.
+  providerRef String?
+
+  createdAt DateTime  @default(now())
+  sentAt    DateTime?
+
+  @@unique([practiceId, idempotencyKey])
+  @@index([practiceId])
+  @@map("outbound_items")
+}

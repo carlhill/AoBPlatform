@@ -5,6 +5,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
+import { OutboundModule } from './outbound/outbound.module';
 import { IdentityDashboardModule } from './identity-dashboard/identity-dashboard.module';
 import { IdentityModule } from './identity/identity.module';
 import { VaultModule } from './vault/vault.module';
@@ -38,6 +39,7 @@ import { ArtefactsModule } from './artefacts/artefacts.module';
     PrismaModule,
     MessagingModule,
     AuthModule,
+    OutboundModule,
     IdentityModule,
     VaultModule,
     AgreementsModule,

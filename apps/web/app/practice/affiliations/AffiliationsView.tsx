@@ -635,9 +635,20 @@ function AffiliationCard({
               {!canActForPractice ? (
                 <span className={ui.hint}>{strings.affiliations.practiceOnlyTitle}</span>
               ) : (
-                <Button onClick={() => setNoticing(true)} data-testid={`notice-${a.id}`}>
-                  {strings.affiliations.notice}
-                </Button>
+                /*
+                 * ONLY WHILE THERE IS NO NOTICE. Offering "record their
+                 * departure" beside "withdraw the notice" asked the practice to
+                 * record a departure that is already recorded, and the two
+                 * buttons contradicted each other. To change an end date,
+                 * withdraw and give notice again — which is one act with a
+                 * trail, rather than a silent overwrite of a date that has
+                 * already been communicated.
+                 */
+                a.status === 'active' && (
+                  <Button onClick={() => setNoticing(true)} data-testid={`notice-${a.id}`}>
+                    {strings.affiliations.notice}
+                  </Button>
+                )
               )}
               {a.status === 'ending' && canActForPractice && (
                 <Button

@@ -36,6 +36,8 @@ import {
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
+import { OutboundService } from '../outbound/outbound.service';
+import { EmailComposer } from '../messaging/composer.service';
 import { OrganisationsService } from '../organisations/organisations.service';
 
 /**
@@ -59,6 +61,9 @@ export class AffiliationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly organisations: OrganisationsService,
+  
+    private readonly outbound: OutboundService,
+    private readonly composer: EmailComposer,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -664,6 +669,87 @@ export class AffiliationsService {
           noticeAnomaly: assessment.anomaly ?? null,
         },
       });
+      /*
+       * TELL THE PRACTITIONER, and do it IN THIS TRANSACTION.
+       *
+       * Nothing was being sent at all: the practice recorded a departure and
+       * the person leaving found out from their employer or not at all. For
+       * an affiliation that governs whether consent may be captured in their
+       * name, that is not an oversight to fix later.
+       *
+       * Enqueued rather than sent inline, and enqueued HERE rather than after
+       * the commit, so it is impossible to end up with a recorded departure
+       * nobody was told about, or a notice sent for a departure that rolled
+       * back. See OutboundService — that atomicity is the entire reason the
+       * queue lives in Postgres.
+       */
+      const practitioner = await tx.practitioner.findFirst({ where: { id: affiliation.practitionerId } });
+      if (practitioner?.email) {
+        /*
+         * COMPOSED HERE, not in the worker. This is where we know what the
+         * message is about; the worker moves bytes and should never acquire
+         * opinions about wording.
+         */
+        const who = [practitioner.familyName, practitioner.givenNames].filter(Boolean).join(", ");
+        const lastDay = input.endsAt.toLocaleDateString("en-AU", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+          timeZone: "UTC",
+        });
+        const practice = await tx.practice.findFirst({ where: { id: practiceId } });
+        const practiceName = practice?.tradingNames?.[0] ?? practice?.legalName ?? "the practice";
+
+        const subject = `Your last day at ${practiceName} is recorded as ${lastDay}`;
+        const composed = {
+          subject,
+          ...this.composer.compose(subject, [
+            { text: `${who || "Doctor"}, ${practiceName} has recorded that you are leaving this location.` },
+            { heading: "What has been recorded" },
+            { text: `Your last day at this location: ${lastDay}.` },
+            ...(input.reason ? [{ text: `Reason given: ${input.reason}` }] : []),
+            { rule: true },
+            { heading: "What this means" },
+            {
+              text:
+                "Until that date nothing changes — patients can still sign agreements naming you at this " +
+                "location, and those remain valid.",
+            },
+            {
+              text:
+                "From that date, enduring agreements at this location cease under reg 65CA(8). They do not " +
+                "lapse quietly; they cease, and the evidence is kept in full. Claims for services you " +
+                "provided before that date remain valid.",
+            },
+            { rule: true },
+            { heading: "If this is wrong" },
+            {
+              text:
+                `Tell ${practiceName} directly. They recorded this and only they can change or withdraw it. ` +
+                "We have sent this so that you know what has been recorded about you, not to ask you to " +
+                "approve it.",
+            },
+            {
+              small:
+                assessment.basis === "external_attested"
+                  ? "The practice has told us that notice was given to you outside AoBPlatform."
+                  : "This was recorded in AoBPlatform on the date shown above.",
+            },
+          ]),
+        };
+
+        await this.outbound.enqueue(tx, {
+          practiceId,
+          channel: 'email',
+          destination: practitioner.email,
+          subjectType: 'Affiliation',
+          subjectId: affiliationId,
+          payload: composed as unknown as Record<string, unknown>,
+          // A withdraw-and-re-notice is a NEW notice, not a retry of the old
+          // one, so it must not collapse onto the same key.
+          attemptGroup: noticeGivenAt.toISOString(),
+        });
+      }
       await enqueueVaultEvent(tx, {
         type: 'affiliation.notice_given',
         actor: { principalType: 'staff', id: practiceId },

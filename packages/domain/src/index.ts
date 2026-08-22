@@ -30,3 +30,4 @@ export * from './landing';
 export * from './address-check';
 export * from './practice-users';
 export * from './departure-notice';
+export * from './outbound-queue';
