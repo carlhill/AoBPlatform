@@ -17,7 +17,7 @@ import { strings } from '../strings';
 import { usePractice } from './usePractice';
 
 export function PracticeGate({ children }: { children: (practiceId: string) => React.ReactNode }) {
-  const { practiceId, checked } = usePractice();
+  const { practiceId, checked, scoped } = usePractice();
 
   if (!checked) {
     return (
@@ -31,11 +31,18 @@ export function PracticeGate({ children }: { children: (practiceId: string) => R
     return (
       <Shell right={strings.setup.audience}>
         <h1 className={ui.pageTitle}>{strings.setup.noPracticeTitle}</h1>
-        <p className={ui.pageLead}>{strings.setup.noPracticeBody}</p>
-        <Link href="/practice" className={ui.buttonLink} data-testid="gate-to-list">
-          {strings.practices.title}
-          <ArrowRight size={15} aria-hidden="true" />
-        </Link>
+        <p className={ui.pageLead}>{scoped ? strings.setup.noPracticeScoped : strings.setup.noPracticeBody}</p>
+        {/*
+          The way out is a LIST, and only somebody entitled to a list is offered
+          one. A scoped user has exactly one practice and cannot choose another,
+          so pointing them at a chooser would be pointing them at a refusal.
+        */}
+        {!scoped && (
+          <Link href="/practice" className={ui.buttonLink} data-testid="gate-to-list">
+            {strings.practices.title}
+            <ArrowRight size={15} aria-hidden="true" />
+          </Link>
+        )}
       </Shell>
     );
   }

@@ -23,6 +23,7 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { landingPath } from '@aobplatform/domain';
 import { completeLogin, returnPath } from '../auth';
 import { strings } from '../strings';
 
@@ -51,7 +52,20 @@ function CallbackInner() {
         // in-memory session survives. `returnPath` refuses anything that is not
         // a same-origin path — a stored destination followed without checking
         // is an open redirect.
-        router.replace(returnPath());
+        /*
+         * WHERE THEY LAND is a rule, not a line here — the same one the root
+         * page and the practice gate use. A practice administrator who signed
+         * in with a passkey used to arrive on the developer scaffold, because
+         * nothing decided anything: `returnPath()` answers '/' when there is
+         * nowhere stored, and '/' was taken literally.
+         */
+        router.replace(
+          landingPath({
+            roles: session.roles,
+            practiceId: session.practiceId,
+            intended: returnPath(),
+          }),
+        );
       })
       .catch((err) => setMessage(`${strings.auth.failed} ${String(err)}`));
     // `router` is stable across renders, so this runs once — which matters,

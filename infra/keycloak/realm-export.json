@@ -144,6 +144,20 @@
             "claim.name": "principal_type",
             "jsonType.label": "String"
           }
+        },
+        {
+          "name": "practice-id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "practice_id",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "practice_id",
+            "jsonType.label": "String"
+          }
         }
       ],
       "defaultClientScopes": [
@@ -268,6 +282,20 @@
             "id.token.claim": "true",
             "access.token.claim": "true",
             "claim.name": "principal_type",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "practice-id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "practice_id",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "practice_id",
             "jsonType.label": "String"
           }
         }

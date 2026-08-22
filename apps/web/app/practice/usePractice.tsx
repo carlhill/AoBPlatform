@@ -21,12 +21,18 @@
  */
 
 import { useEffect, useState } from 'react';
+import { mayChoosePractice } from '@aobplatform/domain';
 import { currentSession } from '../auth';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 const SELECTION_KEY = 'aob.practiceId';
 
 export interface PracticeSelection {
+  /**
+   * True when the TOKEN fixed the practice, so nothing may change it.
+   * Screens use this to hide choosers rather than offer a refusal.
+   */
+  scoped: boolean;
   /** Null once `checked` is true means: nothing selected, or what was selected is gone. */
   practiceId: string | null;
   /** False while the revalidation round trip is in flight. */
@@ -36,12 +42,35 @@ export interface PracticeSelection {
 export function usePractice(): PracticeSelection {
   const [practiceId, setPracticeId] = useState<string | null>(null);
   const [checked, setChecked] = useState(false);
+  const [scoped, setScoped] = useState(false);
 
   useEffect(() => {
     let live = true;
 
-    const fromSession = currentSession()?.practiceId;
-    const stored = fromSession ?? window.localStorage.getItem(SELECTION_KEY);
+    const session = currentSession();
+
+    /*
+     * A TOKEN CLAIM IS AUTHORITATIVE AND ENDS THE QUESTION.
+     *
+     * A practice user has exactly one practice and the server put it in their
+     * token. Falling back to a stored selection for them would let a value any
+     * script can write override a value the server issued — and the stored one
+     * names somebody else's practice, because that is the only reason it would
+     * differ.
+     *
+     * So the claim is not merely preferred: when it exists, any stored
+     * selection is REMOVED, so a practice user who once had one cannot carry it
+     * around.
+     */
+    if (session && mayChoosePractice({ roles: session.roles, practiceId: session.practiceId }) === false) {
+      window.localStorage.removeItem(SELECTION_KEY);
+      setPracticeId(session.practiceId ?? null);
+      setScoped(true);
+      setChecked(true);
+      return;
+    }
+
+    const stored = window.localStorage.getItem(SELECTION_KEY);
     if (!stored) {
       setChecked(true);
       return;
@@ -67,5 +96,5 @@ export function usePractice(): PracticeSelection {
     };
   }, []);
 
-  return { practiceId, checked };
+  return { practiceId, checked, scoped };
 }

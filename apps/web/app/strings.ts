@@ -719,6 +719,10 @@ export const strings = {
     } as Record<string, string>,
 
     noPracticeTitle: 'No practice is selected',
+    noPracticeScoped:
+      'Your sign-in is tied to one practice, and we could not load it. That usually means the approval has ' +
+      'not finished, or the practice was changed after your invitation was sent. Nothing is wrong with your ' +
+      'passkey — tell us and we will look.',
     noPracticeBody:
       'This page shows the setup for one practice, and none is currently selected \u2014 or the one that was ' +
       'selected no longer exists. Once platform sign-in is in place the practice comes from your session and ' +

@@ -30,11 +30,13 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { AlertTriangle, ArrowRight, Building2, CheckCircle2, Clock, Search, X } from 'lucide-react';
-import { matchesFilter, matchesPractice, type PracticeFilter } from '@aobplatform/domain';
+import { matchesFilter, matchesPractice, mayChoosePractice, type PracticeFilter } from '@aobplatform/domain';
 import { Button, Chip, Field, Notice, Shell, TextInput, ui } from '../ui';
 import { strings } from '../strings';
+import { currentSession } from '../auth';
 import styles from './practice.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
@@ -69,12 +71,34 @@ interface WithReadiness extends Practice {
 }
 
 export function PracticeList() {
+  const router = useRouter();
+
+  /*
+   * A PRACTICE USER NEVER SEES THIS PAGE.
+   *
+   * It lists every organisation on the platform. That is right for an operator
+   * choosing which one to work on, and quite wrong for somebody who has exactly
+   * one and whose token says which — they would be looking at other people's
+   * practices, including their names and ABNs.
+   *
+   * Sent to their own hub instead of shown an empty list, because the empty
+   * list would be a lie about what exists rather than a statement about what is
+   * theirs.
+   */
+  const session = currentSession();
+  const scoped = session ? !mayChoosePractice({ roles: session.roles, practiceId: session.practiceId }) : false;
+
+  useEffect(() => {
+    if (scoped) router.replace('/practice/setup');
+  }, [scoped, router]);
+
   const [practices, setPractices] = useState<WithReadiness[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<PracticeFilter>('all');
 
   useEffect(() => {
+    if (scoped) return;
     let live = true;
 
     fetch(`${CORE_URL}/organisations?state=all`)
@@ -162,6 +186,10 @@ export function PracticeList() {
   }, [practices, query, filter]);
 
   const filters: PracticeFilter[] = ['all', 'needs_work', 'capturing', 'being_reviewed', 'not_approved'];
+
+  // Nothing at all while the redirect runs. A flash of other practices' names
+  // is still a disclosure of other practices' names.
+  if (scoped) return null;
 
   if (error) {
     return (

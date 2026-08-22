@@ -26,3 +26,4 @@ export * from './search';
 export * from './redirect';
 export * from './invitation';
 export * from './practitioner-strength';
+export * from './landing';
