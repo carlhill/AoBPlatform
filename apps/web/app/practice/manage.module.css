@@ -732,3 +732,30 @@
   padding-top: var(--s3);
   border-top: 1px solid var(--line);
 }
+
+/* --- The practice's own people ------------------------------------------- */
+
+/*
+ * The caps, shown as REMAINING rather than used. "Two places left" is the
+ * number somebody about to add a person actually wants; "3 of 5" makes them
+ * do the subtraction.
+ */
+.scopeBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-bottom: var(--s5);
+}
+
+/*
+ * The administrator account, set apart. It is the practice's account rather
+ * than a person's, and that is the thing people misunderstand first — so it
+ * does not sit in the list looking like everybody else.
+ */
+.adminPanel {
+  padding: var(--s4);
+  margin-bottom: var(--s5);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}

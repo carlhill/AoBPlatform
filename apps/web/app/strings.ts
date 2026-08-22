@@ -1207,6 +1207,52 @@ export const strings = {
     colTotal: 'Total',
     wholePractice: 'The practice itself',
   },
+  users: {
+    title: 'Your people',
+    lead:
+      'Who at this practice can sign in, and what they may do. Everything anybody does here is recorded against their own name — which is the point of giving people their own account rather than sharing one.',
+    notLoaded: 'Your people could not be listed',
+    placesLeft: 'left',
+    adminTitle: 'The administrator account',
+    adminBody:
+      'There is exactly one, and it belongs to the PRACTICE rather than to a person. That is what makes handover work when an administrator leaves suddenly: the account stays and its passkeys are reset, instead of the practice losing access with them.',
+    managePasskeys: 'Manage passkeys',
+    passkeyNote:
+      'Up to {n} devices. Add them from a session you have already signed in to — only the FIRST passkey comes from an emailed link, and every one after it is stronger for that.',
+    withAccess: 'Can sign in',
+    nobodyYet: 'Nobody else has access yet. Add somebody below.',
+    onStaffNoAccess: 'On staff, no sign-in',
+    onStaffNote:
+      'On the practice’s staff list but with no console access. Being on staff does not grant access — that is deliberate, so nobody gets a login as a side effect of being described.',
+    withdrawn: 'Access withdrawn',
+    withdrawnNote:
+      'Kept, never deleted. Somebody who approved or confirmed something has to stay identifiable for as long as that record matters, which is longer than their employment.',
+    withdrawnBy: 'Withdrawn by',
+    restore: 'Give access back',
+    withdraw: 'Withdraw access',
+    confirmWithdraw: 'Withdraw it',
+    withdrawing: 'Withdrawing…',
+    whyWithdraw: 'Why?',
+    whyWithdrawHint: 'The practice reads this when deciding whether to restore them.',
+    actionFailed: 'That could not be done',
+    addTitle: 'Give somebody access',
+    addBody:
+      'They get their own account, so what they do is recorded against their name rather than the practice’s.',
+    addName: 'Their name',
+    addEmail: 'Their email',
+    addEmailHint: 'Their own address, not a shared one — this is how they will be identified.',
+    addRole: 'What they may do',
+    addRoleHint: 'Deliberately thin for now. More roles arrive as we learn which pages each needs.',
+    roleOther: 'Ordinary access',
+    roleAdmin: 'Administrator',
+    addScope: 'Where',
+    addScopeHint: 'The whole practice, one site, or one department within a site.',
+    add: 'Add them',
+    adding: 'Adding…',
+    addFailed: 'They could not be added',
+    addThenInvite:
+      'This creates the record. Sending them an enrolment link is a separate step, so adding several people does not fire several credential links by accident.',
+  },
   reviews: {
     title: 'Changes to look at',
     lead:
