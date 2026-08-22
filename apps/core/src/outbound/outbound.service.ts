@@ -14,6 +14,7 @@ import {
   REPORT_TIMEZONE,
   ReportingError,
   type ReportScope,
+  bucketKey,
   isReportGrain,
   matrix,
   mayGroupByOrganisation,
@@ -600,6 +601,7 @@ export class OutboundService {
     principal: { roles?: string[]; practiceId?: string | null },
     options: {
       grain?: string;
+      groupBy?: string;
       matrix?: string;
       practiceId?: string;
       locationId?: string;
@@ -634,13 +636,74 @@ export class OutboundService {
     const window = reportWindow(now, options.from ? new Date(options.from) : null);
 
     const rows = await this.prisma.$queryRaw<
-      Array<{ at: Date; count: bigint; practiceId: string; mediaType: string; state: string }>
+      Array<{
+        at: Date;
+        count: bigint;
+        practiceId: string;
+        practiceName: string;
+        locationId: string | null;
+        locationName: string | null;
+        departmentId: string | null;
+        departmentName: string | null;
+        mediaType: string;
+        state: string;
+      }>
     >`SELECT * FROM core.outbound_timeseries(
         ${scope}, ${practiceId ?? null}::uuid, ${options.locationId ?? null}::uuid,
         ${options.departmentId ?? null}::uuid, ${window.from}, ${window.to})`;
 
     const counted = rows.map((r) => ({ at: r.at, count: Number(r.count) }));
     const grain = options.grain && isReportGrain(options.grain) ? options.grain : 'month';
+
+    /*
+     * THE SAME NUMBERS, BROKEN DOWN BY WHERE THEY WENT.
+     *
+     * Without this a page showed "165 messages" beside a table saying "10" --
+     * one answering across every practice, the other about this one, and
+     * nothing on screen saying which was which. Two totals that look like they
+     * should agree are worse than one, because the reader assumes one of them
+     * is wrong rather than that they are answering different questions.
+     *
+     * `org` groups by practice; `site` groups by practice, site and department
+     * together, because a department only means anything inside its site.
+     */
+    const groupBy = options.groupBy === 'site' ? 'site' : 'org';
+    const periods = [...new Set(counted.map((r) => bucketKey(r.at, grain)))].sort();
+
+    const lines = new Map<
+      string,
+      { organisation: string; site: string | null; department: string | null; byPeriod: Record<string, number>; total: number }
+    >();
+
+    for (const row of rows) {
+      const key =
+        groupBy === 'org'
+          ? row.practiceId
+          : `${row.practiceId}|${row.locationId ?? ''}|${row.departmentId ?? ''}`;
+
+      const line = lines.get(key) ?? {
+        organisation: row.practiceName,
+        // NULL is a real answer, not missing data: a message addressed to the
+        // practice itself has no site. The screen says so in words.
+        site: groupBy === 'site' ? row.locationName : null,
+        department: groupBy === 'site' ? row.departmentName : null,
+        byPeriod: {} as Record<string, number>,
+        total: 0,
+      };
+
+      const bucket = bucketKey(row.at, grain);
+      const n = Number(row.count);
+      line.byPeriod[bucket] = (line.byPeriod[bucket] ?? 0) + n;
+      line.total += n;
+      lines.set(key, line);
+    }
+
+    const breakdown = [...lines.values()].sort(
+      (a, b) =>
+        a.organisation.localeCompare(b.organisation) ||
+        (a.site ?? '').localeCompare(b.site ?? '') ||
+        (a.department ?? '').localeCompare(b.department ?? ''),
+    );
 
     return {
       scope,
@@ -655,6 +718,9 @@ export class OutboundService {
       capped: window.capped,
       maxYears: REPORT_MAX_YEARS,
       total: counted.reduce((sum, r) => sum + r.count, 0),
+      groupBy,
+      periods,
+      breakdown,
       series: summarise(counted, grain),
       matrices: {
         month_by_week: matrix(counted, 'month_by_week'),

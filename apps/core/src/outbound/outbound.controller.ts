@@ -55,6 +55,7 @@ export class OutboundController {
   report(
     @SessionActor() actor: Actor | undefined,
     @Query('grain') grain?: string,
+    @Query('groupBy') groupBy?: string,
     @Query('practiceId') practiceId?: string,
     @Query('locationId') locationId?: string,
     @Query('departmentId') departmentId?: string,
@@ -62,7 +63,7 @@ export class OutboundController {
   ) {
     return this.outbound.timeseries(
       { roles: actor?.roles, practiceId: actor?.practiceId },
-      { grain, practiceId, locationId, departmentId, from },
+      { grain, groupBy, practiceId, locationId, departmentId, from },
     );
   }
 

@@ -193,7 +193,10 @@ export function SummaryView({ groupBy }: { groupBy: 'org' | 'site' }) {
         how much"; this answers "is that growing, and when". Sharing a page
         because the second question is always the next one asked.
       */}
-      <ReportView />
+      <ReportView
+        groupBy={groupBy === 'org' ? 'org' : 'site'}
+        practiceId={groupBy === 'site' ? (practiceId ?? undefined) : undefined}
+      />
     </Shell>
   );
 }

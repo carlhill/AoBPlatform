@@ -36,9 +36,20 @@ type MatrixShape = {
   grandTotal: number;
 };
 
+type Line = {
+  organisation: string;
+  site: string | null;
+  department: string | null;
+  byPeriod: Record<string, number>;
+  total: number;
+};
+
 type Report = {
   scope: string;
   grain: string;
+  groupBy: 'org' | 'site';
+  periods: string[];
+  breakdown: Line[];
   timezone: string;
   from: string;
   to: string;
@@ -51,10 +62,17 @@ type Report = {
   matrixKinds: { key: string; label: string; detail: string }[];
 };
 
-export function ReportView({ practiceId, locationId, departmentId }: {
+export function ReportView({
+  practiceId,
+  locationId,
+  departmentId,
+  groupBy = 'org',
+}: {
   practiceId?: string;
   locationId?: string;
   departmentId?: string;
+  /** `org` gives one row per practice; `site` splits by site and department. */
+  groupBy?: 'org' | 'site';
 }) {
   const [report, setReport] = useState<Report | null>(null);
   const [grain, setGrain] = useState('month');
@@ -66,7 +84,7 @@ export function ReportView({ practiceId, locationId, departmentId }: {
     setBusy(true);
     setError(null);
     try {
-      const q = new URLSearchParams({ grain });
+      const q = new URLSearchParams({ grain, groupBy });
       if (practiceId) q.set('practiceId', practiceId);
       if (locationId) q.set('locationId', locationId);
       if (departmentId) q.set('departmentId', departmentId);
@@ -80,7 +98,7 @@ export function ReportView({ practiceId, locationId, departmentId }: {
     } finally {
       setBusy(false);
     }
-  }, [grain, practiceId, locationId, departmentId]);
+  }, [grain, groupBy, practiceId, locationId, departmentId]);
 
   useEffect(() => {
     void load();
@@ -162,29 +180,62 @@ export function ReportView({ practiceId, locationId, departmentId }: {
         <Notice title={strings.report.emptyTitle}>{strings.report.emptyBody}</Notice>
       )}
 
-      {/* The plain series: one bucket per row, oldest first. */}
+      {/*
+        ONE ROW PER PLACE, ONE COLUMN PER PERIOD.
+        
+        A flat list of periods answered "how much, and when" but not "from
+        where" — so this table sat beside another one showing a different total
+        and neither said which question it was answering. Naming the site and
+        department on every row is what makes the two agree, or makes it
+        obvious why they do not.
+      */}
       {shown === 'series' && report && report.total > 0 && (
         <div className={styles.tableScroll}>
           <table className={styles.totalsTable}>
             <thead>
               <tr>
-                <th scope="col">{strings.report.period}</th>
+                <th scope="col">{strings.report.organisation}</th>
+                {report.groupBy === 'site' && <th scope="col">{strings.report.site}</th>}
+                {report.groupBy === 'site' && <th scope="col">{strings.report.department}</th>}
+                {report.periods.map((p) => (
+                  <th key={p} scope="col" className={styles.stateCol}>
+                    {p}
+                  </th>
+                ))}
                 <th scope="col" className={styles.totalCol}>
-                  {strings.report.count}
+                  {strings.report.total}
                 </th>
               </tr>
             </thead>
             <tbody>
-              {report.series.map((row) => (
-                <tr key={row.key}>
-                  <th scope="row">{row.key === 'all' ? strings.report.everything : row.key}</th>
-                  <td className={styles.totalCol}>{row.count}</td>
+              {report.breakdown.map((line, i) => (
+                <tr key={i}>
+                  <th scope="row">{line.organisation}</th>
+                  {report.groupBy === 'site' && (
+                    <td>{line.site ?? <span className={ui.hint}>{strings.report.wholePractice}</span>}</td>
+                  )}
+                  {report.groupBy === 'site' && (
+                    <td>{line.department ?? <span className={ui.hint}>{strings.report.noDepartment}</span>}</td>
+                  )}
+                  {report.periods.map((p) => (
+                    <td key={p} className={styles.stateCol}>
+                      {line.byPeriod[p] ?? 0}
+                    </td>
+                  ))}
+                  <td className={styles.totalCol}>{line.total}</td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr>
                 <th scope="row">{strings.report.total}</th>
+                {report.groupBy === 'site' && <td />}
+                {report.groupBy === 'site' && <td />}
+                {report.periods.map((p) => (
+                  <td key={p} className={styles.stateCol}>
+                    {report.breakdown.reduce((sum, l) => sum + (l.byPeriod[p] ?? 0), 0)}
+                  </td>
+                ))}
                 <td className={styles.totalCol}>{report.total}</td>
               </tr>
             </tfoot>

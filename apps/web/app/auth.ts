@@ -56,13 +56,41 @@ export interface Session {
 
 let session: Session | null = null;
 
+/*
+ * THE LOGOUT HINT OUTLIVES THE ACCESS TOKEN, and it has to.
+ *
+ * Dropping the whole session the moment the access token expired also threw
+ * away the id_token — so pressing Sign out in that window produced a logout
+ * with no `id_token_hint`, Keycloak could not tell which session was ending,
+ * and it fell back to the "Do you want to log out?" page. The person is still
+ * signed in as far as Keycloak is concerned; we had simply forgotten which
+ * session to name.
+ *
+ * An expired access token means "you cannot call APIs any more". It does not
+ * mean "we no longer know who was here". Keeping the assertion is safe by the
+ * same reasoning that makes it safe to hold at all: it authorises nothing, and
+ * it is still memory-only.
+ */
+let lastIdToken: string | undefined;
+
 export function currentSession(): Session | null {
-  if (session && session.expiresAt <= Date.now()) session = null;
+  if (session && session.expiresAt <= Date.now()) {
+    lastIdToken = session.idToken ?? lastIdToken;
+    session = null;
+  }
   return session;
+}
+
+/** The assertion to name at logout, whether or not the session is still live. */
+export function logoutHint(): string | undefined {
+  return currentSession()?.idToken ?? lastIdToken;
 }
 
 export function clearSession(): void {
   session = null;
+  // Cleared HERE and not on expiry: this is somebody actually leaving, so
+  // there is no logout still to perform and nothing left to name.
+  lastIdToken = undefined;
 }
 
 function base64url(bytes: Uint8Array): string {
@@ -217,7 +245,7 @@ export async function attemptSilentLogin(clientId: string = CLIENT_ID): Promise<
 export function signOut(): void {
   const clientId = sessionStorage.getItem(CLIENT_KEY) ?? hasSignedInBefore() ?? CLIENT_ID;
   // Read BEFORE clearing — clearSession() is what drops it.
-  const idToken = currentSession()?.idToken;
+  const idToken = logoutHint();
   clearSession();
   try {
     window.localStorage.removeItem(SEEN_KEY);
@@ -299,7 +327,9 @@ export async function completeLogin(code: string, state: string): Promise<Sessio
     username: claims.preferred_username as string | undefined,
     practiceId: claims.practice_id as string | undefined,
     roles: ((claims.realm_access as { roles?: string[] } | undefined)?.roles ?? []) as string[],
-  };
+  };  // Remembered separately, so a later expiry cannot take it with it.
+  lastIdToken = body.id_token ?? lastIdToken;
+
   // Remember that this browser has a live Keycloak session, so the NEXT cold
   // page load can restore silently instead of falling back to a chooser.
   rememberSignedIn(clientId);
