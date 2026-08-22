@@ -1544,3 +1544,49 @@ model ReviewTask {
   @@index([kind, raisedAt])
   @@map("review_tasks")
 }
+
+/// A change to the administrator's email address, held until it is confirmed.
+///
+/// The rules are in `@aobplatform/domain/pending-email-change` and the reasons
+/// are in the migration. The short version: changing this address redirects the
+/// channel by which a practice finds out anything -- including that its address
+/// was redirected -- so it is proved before it takes effect, and BOTH ends are
+/// told while it waits.
+model PendingEmailChange {
+  id         String @id @default(uuid()) @db.Uuid
+  practiceId String @db.Uuid
+
+  requestedEmail String
+  /// What it was AT THE TIME. `practices` moves on; a reviewer reading history
+  /// needs the value this request was actually about.
+  previousEmail  String?
+  /// The group address BEFORE the save. If the group address is changed in the
+  /// same save, the warning must still go where the practice could read it.
+  previousGroupEmail String?
+
+  requestedAt     DateTime @default(now())
+  requestedByName String
+  expiresAt       DateTime
+
+  /// The link carries the token; the human carries the code. A link alone is
+  /// consumed by a GET, and mail scanners issue GETs.
+  confirmToken String  @unique
+  confirmCode  String
+  attempts     Int     @default(0)
+
+  /// Separate from confirmToken, so holding one never implies the other:
+  /// whoever can confirm the change must not thereby be able to cancel the
+  /// warning about it.
+  stopToken String @unique
+
+  /// NULL while waiting. confirmed | stopped | expired | superseded.
+  outcome   String?
+  outcomeAt DateTime?
+  /// The ADDRESS that answered, never free text from whoever answered it.
+  outcomeBy String?
+
+  createdAt DateTime @default(now())
+
+  @@index([practiceId, requestedAt])
+  @@map("pending_email_changes")
+}

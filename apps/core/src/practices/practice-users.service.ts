@@ -59,16 +59,34 @@ export class PracticeUsersService {
       const locations = await tx.practiceLocation.findMany({ where: { practiceId } });
       const departments = await tx.department.findMany({ where: { practiceId } });
 
+      /*
+       * THE ADMINISTRATOR'S ADDRESS HAS ONE HOME, and it is not here.
+       *
+       * `practices.adminEmail` is the authoritative one: it is what the
+       * application record holds, what verification proves, and what a handover
+       * moves. The staff row carries a copy only so the administrator appears
+       * in this list at all, and a copy of a fact that something else owns is a
+       * cache — which drifts. It did: the list showed the address from before a
+       * change while the application form showed the address after it, and both
+       * were reporting honestly from different sources.
+       *
+       * So the copy is not trusted at read time. Kept in the row rather than
+       * dropped, because the invite path needs somewhere to write to when the
+       * practice has no admin yet, but never preferred over the practice.
+       */
+      const practice = await tx.practice.findFirst({ where: { id: practiceId } });
+
       const users = staff.map((s) => ({
         id: s.id,
         name: s.name,
-        email: s.email,
+        email: s.consoleRole === 'admin' ? (practice?.adminEmail ?? s.email) : s.email,
         role: s.role,
         consoleRole: s.consoleRole,
         locationId: s.locationId,
         departmentId: s.departmentId,
         scope: scopeOf(s),
         invitedAt: s.invitedAt,
+        invitationsSent: s.invitationsSent,
         lastSignInAt: s.lastSignInAt,
         inactivityWarnedAt: s.inactivityWarnedAt,
         deactivatedAt: s.deactivatedAt,
@@ -376,6 +394,46 @@ export class PracticeUsersService {
    * to sign in — and the place they occupied against the cap, so the practice
    * can immediately give it to somebody else.
    */
+  /**
+   * Switch the Keycloak account off, or back on.
+   *
+   * DISABLE, NEVER REVOKE. Withdrawing access is reversible by design -- the
+   * practice can give it back, and the screen offers exactly that -- so the
+   * credential must survive it. Revoking the passkey would make "restore" mean
+   * "enrol again from a fresh emailed link", which is a different and much
+   * worse operation wearing the same button.
+   *
+   * The handover case is the opposite and revokes deliberately: there the
+   * account is passing to a DIFFERENT person, and the previous holder keeping
+   * a working passkey is the whole thing being prevented. Reversible when the
+   * same person may return; irreversible when somebody else takes over.
+   *
+   * Never a platform operator. A practice whose staff email happens to match
+   * an account here must not be able to switch us off, and a shared address is
+   * the ordinary way that would happen.
+   */
+  private async setAccountEnabled(keycloakUserId: string | null, enabled: boolean): Promise<string> {
+    if (!keycloakUserId) {
+      return 'They have no sign-in account yet, so there was nothing to switch.';
+    }
+    if (!this.keycloak) {
+      return 'Keycloak is not configured here, so the account itself was not switched.';
+    }
+
+    const roles = await this.keycloak.realmRolesOf(keycloakUserId);
+    if (roles.includes('platform_admin')) {
+      throw new BadRequestException(
+        'That account belongs to AoBPlatform rather than to this practice, so it cannot be changed from ' +
+          'here. Tell us if you think this is wrong.',
+      );
+    }
+
+    await this.keycloak.setEnabled(keycloakUserId, enabled);
+    return enabled
+      ? 'Their sign-in works again, with the passkey they already have.'
+      : 'Their sign-in has been switched off. The passkey is kept, so restoring access does not need a new one.';
+  }
+
   async deactivate(practiceId: string, staffId: string, reason: string, actor?: Actor) {
     if (!reason?.trim()) {
       throw new BadRequestException('Say why access is being withdrawn — the practice will read this later.');
@@ -384,6 +442,17 @@ export class PracticeUsersService {
       const member = await tx.staffMember.findFirst({ where: { id: staffId } });
       if (!member) throw new NotFoundException('That person is not on this practice.');
       if (member.deactivatedAt) return { id: member.id, deactivatedAt: member.deactivatedAt };
+
+      /*
+       * THE ACCOUNT IS SWITCHED OFF, not just the row.
+       *
+       * This used to write these columns and stop. Nothing read them -- not the
+       * guard, not Keycloak, nothing -- so "Withdraw access" withdrew nothing:
+       * the person kept their passkey and could sign in and act exactly as
+       * before, while the screen said their access had been withdrawn. A false
+       * statement about who can reach a practice's records.
+       */
+      const accountNote = await this.setAccountEnabled(member.keycloakUserId, false);
 
       const updated = await tx.staffMember.update({
         where: { id: staffId },
@@ -404,9 +473,12 @@ export class PracticeUsersService {
           deactivatedBy: actor?.name ?? 'practice',
           hadConsoleRole: member.consoleRole ?? 'none',
           onBehalfOfPractice: practiceId,
+          // Whether the sign-in itself was stopped, not merely recorded as
+          // stopped. A reader in two years needs to know which happened.
+          accountDisabled: Boolean(member.keycloakUserId),
         },
       });
-      return { id: updated.id, deactivatedAt: updated.deactivatedAt };
+      return { id: updated.id, deactivatedAt: updated.deactivatedAt, detail: accountNote };
     });
   }
 
@@ -435,6 +507,16 @@ export class PracticeUsersService {
         }
       }
 
+      /*
+       * SWITCHED BACK ON, WITH THE PASSKEY THEY ALREADY HAVE.
+       *
+       * No new enrolment link, and that is the point of disabling rather than
+       * revoking: the credential was never destroyed, so restoring access is
+       * one click here rather than an email, a link, and the person finding a
+       * device to enrol on.
+       */
+      const accountNote = await this.setAccountEnabled(member.keycloakUserId, true);
+
       const updated = await tx.staffMember.update({
         where: { id: staffId },
         data: {
@@ -452,9 +534,13 @@ export class PracticeUsersService {
         type: 'practice_user.reactivated',
         actor: { principalType: 'staff', id: actor?.id ?? practiceId },
         subject: { type: 'StaffMember', id: staffId },
-        payload: { reactivatedBy: actor?.name ?? 'practice', onBehalfOfPractice: practiceId },
+        payload: {
+          reactivatedBy: actor?.name ?? 'practice',
+          onBehalfOfPractice: practiceId,
+          accountReEnabled: Boolean(member.keycloakUserId),
+        },
       });
-      return { id: updated.id, deactivatedAt: null };
+      return { id: updated.id, deactivatedAt: null, detail: accountNote };
     });
   }
 
@@ -481,6 +567,11 @@ export class PracticeUsersService {
           await tx.staffMember.update({ where: { id: member.id }, data: { inactivityWarnedAt: now } });
           toWarn.push({ id: member.id, name: member.name, email: member.email });
         } else if (action === 'deactivate') {
+          // The same switch as a withdrawal the practice makes by hand. A lapse
+          // that only writes a column leaves the person able to sign in, which
+          // would make this sweep a record of enforcement rather than the
+          // enforcement itself.
+          await this.setAccountEnabled(member.keycloakUserId, false);
           await tx.staffMember.update({
             where: { id: member.id },
             data: {

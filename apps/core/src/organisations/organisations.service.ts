@@ -29,6 +29,7 @@ import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingAsService } from '../acting-as/acting-as.service';
 import { ReviewTasksService } from '../review-tasks/review-tasks.service';
+import { PendingEmailService } from './pending-email.service';
 
 /**
  * How long an applicant has to act on a correction request.
@@ -79,6 +80,7 @@ export class OrganisationsService {
     private readonly config: ConfigService,
     private readonly actingAs: ActingAsService,
     private readonly reviewTasks: ReviewTasksService,
+    private readonly pendingEmail: PendingEmailService,
   ) {}
 
   /**
@@ -905,11 +907,35 @@ export class OrganisationsService {
       throw err;
     }
 
-    const handover = changes.some((c) => c.field === 'adminEmail');
-    const revoked = handover
-      ? await this.handOverAdminAccount(current, {
-          email: (next.adminEmail as string | undefined) ?? current.adminEmail,
-          name: (next.adminName as string | undefined) ?? current.adminName,
+    /*
+     * THE ADMINISTRATOR ADDRESS IS HELD, NOT APPLIED.
+     *
+     * It used to change here and revoke every passkey in the same transaction,
+     * on the reasoning that a handover should not leave the previous holder
+     * signed in. The reasoning is right and the timing was wrong: one console
+     * session was enough to redirect where a practice's mail goes AND lock the
+     * real administrator out, with nothing sent to anybody.
+     *
+     * So it is lifted out of `next` -- every other field on the same save still
+     * applies immediately -- and parked until the new address answers. The old
+     * address keeps working throughout, which is what gives the person being
+     * displaced a way to notice and object.
+     */
+    const emailChange = changes.find((c) => c.field === 'adminEmail');
+    const handover = Boolean(emailChange);
+    if (emailChange) delete next.adminEmail;
+
+
+    const pending = emailChange
+      ? await this.pendingEmail.request(practiceId, {
+          requestedEmail: String(emailChange.to),
+          // BEFORE-values, deliberately. Called with the after-state this would
+          // write to the new address twice and the old one never, which is the
+          // exact failure the whole mechanism exists to prevent.
+          previousAdminEmail: current.adminEmail,
+          previousGroupEmail: current.groupEmail,
+          requestedByName: meta.changedByName!.trim(),
+          otherContactEmails: [current.managerEmail],
         })
       : null;
 
@@ -918,19 +944,16 @@ export class OrganisationsService {
         where: { id: practiceId },
         data: {
           ...next,
-          ...(handover
-            ? {
-                // The new address is unproven, and the account belonging to the
-                // old one is no longer this practice's admin account.
-                // The address is unproven again, and nobody has enrolled a
-                // passkey against it yet. The ACCOUNT ID STAYS: the account
-                // belongs to the practice, not to whoever last held it.
-                adminEmailVerifiedAt: null,
-                adminEmailVerificationToken: null,
-                adminEmailVerificationCode: null,
-                adminPasskeyEnrolledAt: null,
-              }
-            : {}),
+          /*
+           * NOTHING IS CLEARED HERE ANY MORE. The address in force has not
+           * changed yet, so its verification still stands and the passkey
+           * enrolled against it is still the right one. Clearing them at
+           * request time was what locked the administrator out of an account
+           * whose address had not actually moved.
+           *
+           * `confirmEmailChange` does all of it, once somebody has proved they
+           * hold the new address.
+           */
         },
       });
 
@@ -978,9 +1001,13 @@ export class OrganisationsService {
           // there for ever.
           fieldsChanged: changes.map((c) => c.field).join(', '),
           // The consequential half, spelled out: a reader in two years needs to
-          // know whether somebody lost access here.
-          passkeysRevoked: revoked?.passkeysRevoked ?? 0,
-          handoverNote: revoked?.note ?? 'n/a',
+          // know whether somebody lost access here. NOTHING is revoked at this
+          // point any more -- the address has not moved yet. The revocation is
+          // recorded against the confirmation, which is where it now happens.
+          passkeysRevoked: 0,
+          handoverNote: handover
+            ? 'The address change is held pending confirmation from the new address. Nothing was revoked.'
+            : 'n/a',
         },
       });
       return row;
@@ -1000,12 +1027,15 @@ export class OrganisationsService {
       id: updated.id,
       changed: changes.map((c) => c.field),
       handover,
-      previousAdminAccount: revoked,
+      // What is WAITING, so the screen can say so rather than implying the
+      // save did everything asked of it.
+      pending,
       affectedChecks,
-      next: handover
-        ? 'The practice administrator has changed. The previous passkey has been revoked, the address is ' +
-          'unconfirmed, and nobody has enrolled yet — send the sign-in invitation so the new administrator ' +
-          'can set up their own passkey.'
+      next: pending
+        ? `Everything else was saved. The administrator address has NOT changed yet: we have written to ` +
+          `${pending.requestedEmail} to confirm it, and told ${current.adminEmail ?? 'the previous address'}` +
+          `${current.groupEmail ? ' and ' + current.groupEmail : ''} that it was asked for. It takes effect ` +
+          'when the new address confirms, and until then the current one keeps working.'
         : 'The details were updated.',
     };
   }

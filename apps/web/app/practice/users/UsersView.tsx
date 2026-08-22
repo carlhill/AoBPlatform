@@ -26,7 +26,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, KeyRound, RotateCcw, UserMinus, UserPlus } from 'lucide-react';
+import { ArrowLeft, KeyRound, RotateCcw, Send, UserMinus, UserPlus } from 'lucide-react';
 import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui } from '../../ui';
 import { isPlatformOperator } from '@aobplatform/domain';
 import { SessionControl } from '../../SessionControl';
@@ -51,6 +51,7 @@ interface User {
   departmentId: string | null;
   scope: string;
   invitedAt: string | null;
+  invitationsSent?: number;
   lastSignInAt: string | null;
   deactivatedAt: string | null;
   deactivatedReason: string | null;
@@ -248,6 +249,18 @@ function UserRow({ user, practiceId, onDone }: { user: User; practiceId: string;
         <span className={styles.queueWhen}>{user.email}</span>
       </div>
 
+      {/*
+        Shown only once it is telling you something. "Written to four times,
+        never signed in" is the situation worth acting on -- the address is
+        wrong, the mail is not arriving, or the person has left -- and it is
+        invisible if all you keep is the date of the last attempt.
+      */}
+      {(user.invitationsSent ?? 0) > 1 && !user.lastSignInAt && (
+        <p className={styles.cardNote}>
+          {strings.users.sentTimes.replace('{n}', String(user.invitationsSent))}
+        </p>
+      )}
+
       {user.deactivatedAt ? (
         <>
           <p className={styles.cardNote}>
@@ -286,10 +299,28 @@ function UserRow({ user, practiceId, onDone }: { user: User; practiceId: string;
                 </Button>
               </>
             ) : (
-              <Button onClick={() => setConfirming(true)} data-testid={`withdraw-${user.id}`}>
-                <UserMinus size={14} aria-hidden="true" />
-                {strings.users.withdraw}
-              </Button>
+              <>
+                {/*
+                  SENDING IS ITS OWN STEP, and now it has its own button.
+                  Adding somebody records them; this is what reaches them. The
+                  list used to show "Invited" for people nobody had written to,
+                  so a practice would go chasing someone who was waiting on an
+                  email that had never been sent.
+                */}
+                <Button
+                  variant={user.status.key === 'added' ? 'primary' : undefined}
+                  onClick={() => void act('invite')}
+                  disabled={busy}
+                  data-testid={`invite-${user.id}`}
+                >
+                  <Send size={14} aria-hidden="true" />
+                  {user.invitedAt ? strings.users.inviteAgain : strings.users.invite}
+                </Button>
+                <Button onClick={() => setConfirming(true)} data-testid={`withdraw-${user.id}`}>
+                  <UserMinus size={14} aria-hidden="true" />
+                  {strings.users.withdraw}
+                </Button>
+              </>
             )}
           </div>
         )

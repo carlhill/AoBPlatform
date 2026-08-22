@@ -13,6 +13,15 @@
         Your practice has been approved
       </td></tr>
 
+      <#-- ADDRESSED TO A PERSON. A message that asks somebody to enrol a
+           credential and does not use their name reads exactly like the
+           bulk mail it is trying not to be mistaken for. `firstName` can be
+           empty -- Keycloak does not require it -- so there is a fallback
+           rather than a stray comma. -->
+      <tr><td style="padding:0 32px 12px;font-family:ui-sans-serif,system-ui,'Segoe UI',Roboto,sans-serif;font-size:15px;line-height:1.65;color:#16181a;">
+        <#if user.firstName?? && user.firstName?has_content>Hi ${user.firstName},<#else>Hi,</#if>
+      </td></tr>
+
       <tr><td style="padding:0 32px 16px;font-family:ui-sans-serif,system-ui,'Segoe UI',Roboto,sans-serif;font-size:15px;line-height:1.65;color:#16181a;">
         AoBPlatform records patient consent to bulk billing. Your account is protected by a
         <strong>passkey</strong> &mdash; your device plus your fingerprint, face or PIN. There is no password

@@ -1218,7 +1218,9 @@ export const strings = {
     hint: 'This screen shows one practice at a time.',
     choose: 'Choose a practice…',
     loading: 'Loading the list…',
-    listFailed: 'The practice list could not be read. You can still reach a practice from the practice list.',
+    unreachableTitle: 'We cannot reach the server',
+    unreachableBody:
+      'Nothing is wrong with your account and nothing has been lost — this screen simply cannot load while the server is unreachable. Try again in a moment. If it keeps happening, tell us.',
     noPracticeTitle: 'We could not tell which practice you belong to',
     noPracticeBody:
       'Your session should say which practice you are with, and it does not. Sign out and in again. If that does not fix it, tell us — we are not going to offer you a list of other people’s practices.',
@@ -1245,6 +1247,10 @@ export const strings = {
       'Kept, never deleted. Somebody who approved or confirmed something has to stay identifiable for as long as that record matters, which is longer than their employment.',
     withdrawnBy: 'Withdrawn by',
     restore: 'Give access back',
+    invite: 'Send invite',
+    inviteAgain: 'Send it again',
+    sentTimes: 'Written to {n} times, never signed in. Worth checking the address is right.',
+    inviteFailed: 'That invitation could not be sent',
     withdraw: 'Withdraw access',
     confirmWithdraw: 'Withdraw it',
     withdrawing: 'Withdrawing…',

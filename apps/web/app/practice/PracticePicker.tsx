@@ -39,6 +39,8 @@ export function PracticePicker({
     fetch(`${CORE_URL}/outbound/practices`, { headers: apiHeaders() })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((b) => setPractices(b.practices ?? []))
+      // Both branches land here: a refused connection and a 5xx are the same
+      // fact to somebody looking at this screen.
       .catch(() => setFailed(true));
   }, [isOperator]);
 
@@ -52,6 +54,26 @@ export function PracticePicker({
     return (
       <Notice tone="warn" title={strings.picker.noPracticeTitle}>
         {strings.picker.noPracticeBody}
+      </Notice>
+    );
+  }
+
+  /*
+   * A CHOOSER WITH NOTHING IN IT IS NOT A CHOOSER.
+   *
+   * When the server cannot be reached this used to render the dropdown anyway,
+   * empty, under a line suggesting you "reach a practice from the practice
+   * list" — a list served by the same server that just failed. Three controls,
+   * none of which could work, and no statement of the one fact that mattered.
+   *
+   * Not being able to reach the server is a different situation from there
+   * being nothing to show, and showing the same furniture for both is what
+   * makes an outage look like an empty account.
+   */
+  if (failed) {
+    return (
+      <Notice tone="stop" title={strings.picker.unreachableTitle}>
+        {strings.picker.unreachableBody}
       </Notice>
     );
   }
@@ -70,8 +92,7 @@ export function PracticePicker({
           </SelectInput>
         )}
       </Field>
-      {failed && <p className={ui.hint}>{strings.picker.listFailed}</p>}
-      {!failed && practices.length === 0 && (
+      {practices.length === 0 && (
         <p className={ui.hint}>
           <Building2 size={13} aria-hidden="true" /> {strings.picker.loading}
         </p>

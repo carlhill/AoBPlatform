@@ -3,6 +3,8 @@ import { IdentityModule } from '../identity/identity.module';
 import { ConfigService } from '@nestjs/config';
 import { OrganisationsController } from './organisations.controller';
 import { OrganisationsService } from './organisations.service';
+import { PendingEmailService } from './pending-email.service';
+import { PendingEmailController } from './pending-email.controller';
 import { ChecksService } from './checks.service';
 import { ApplicantController } from './applicant.controller';
 import { ApplicantService } from './applicant.service';
@@ -24,9 +26,10 @@ import { createAddressValidator } from './address-validator';
  */
 @Module({
   imports: [IdentityModule],
-  controllers: [OrganisationsController, ApplicantController],
+  controllers: [OrganisationsController, ApplicantController, PendingEmailController],
   providers: [
     OrganisationsService,
+    PendingEmailService,
     ChecksService,
     ApplicantService,
     AuditService,

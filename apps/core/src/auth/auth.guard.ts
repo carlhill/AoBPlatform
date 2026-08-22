@@ -105,8 +105,22 @@ export class AuthGuard implements CanActivate {
     this.logger.warn(
       `Refused ${request.method} ${request.url} for ${principal.sub}: no practice claim on the token.`,
     );
+    /*
+     * NAME THE WAY THROUGH. The refusal is right -- these are the practice's
+     * own acts and a platform operator has no standing to perform them from
+     * the outside -- but stopping there tells somebody doing support that the
+     * thing is impossible, when it is merely not possible AS THEMSELVES.
+     *
+     * Acting as somebody at the practice is exactly the supported route, and
+     * it passes this check by construction: an acting-as session carries a
+     * practice claim, which is all this asks for. It is also the route that
+     * leaves a record of who did what on whose behalf, which doing it directly
+     * would not.
+     */
     throw new ForbiddenException(
-      'This is the practice’s own act and cannot be done for them. Inviting a practitioner to a location is the practice saying that person works there, so it needs a session belonging to the practice.',
+      'This is the practice’s own act and cannot be done for them. It is the practice saying something about ' +
+        'itself, so it needs a session belonging to the practice. If you are helping them, act as somebody ' +
+        'at the practice and do it from there — that works, and it records who did it on whose behalf.',
     );
   }
 

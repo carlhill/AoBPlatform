@@ -1,6 +1,8 @@
 <#ftl output_format="plainText">
 AoBPlatform
 
+<#if user.firstName?? && user.firstName?has_content>Hi ${user.firstName},<#else>Hi,</#if>
+
 Your practice has been approved on AoBPlatform, and this is how you sign in.
 
 AoBPlatform records patient consent to bulk billing. Your account is protected

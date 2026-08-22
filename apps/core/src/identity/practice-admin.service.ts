@@ -252,6 +252,169 @@ export class PracticeAdminService {
     };
   }
 
+  /**
+   * The same handover, found by practice rather than by account id.
+   *
+   * The confirmation arrives from an emailed token with no session, so the
+   * caller knows which practice it is about and nothing about which Keycloak
+   * account belongs to it.
+   */
+  async handOverPracticeAdminAccountFor(
+    practiceId: string,
+    to: { email?: string | null; name?: string | null },
+  ): Promise<{ passkeysRevoked: number; note: string }> {
+    const practice = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.practice.findFirst({ where: { id: practiceId } }),
+    );
+    if (!practice?.adminKeycloakUserId) {
+      return {
+        passkeysRevoked: 0,
+        note: 'This practice has no administrator account yet, so there was nothing to hand over.',
+      };
+    }
+
+    const result = await this.handOverPracticeAdminAccount(practice.adminKeycloakUserId, {
+      email: to.email,
+      name: to.name ?? practice.adminName,
+    });
+
+    /*
+     * AND THE WAY BACK IN. The handover revokes the passkeys, which is the
+     * point -- but revoking without issuing a replacement is what left an
+     * administrator holding an account they could not sign into and no link to
+     * fix it. The two belong together.
+     */
+    if (this.keycloak) {
+      await this.keycloak
+        .sendPasskeyEnrolment(practice.adminKeycloakUserId, {
+          clientId: this.config.get<string>('KEYCLOAK_WEB_CLIENT_ID', 'web'),
+          redirectUri: this.consoleUrl(),
+          lifespanSeconds: ENROLMENT_LINK_SECONDS,
+        })
+        .catch((err: Error) => {
+          this.logger.error(`Handover succeeded but the enrolment link failed for ${practiceId}: ${err.message}`);
+        });
+    }
+
+    return result;
+  }
+
+  /**
+   * "Confirm this is you" — to the NEW address, and the only message of the
+   * three that can move anything.
+   */
+  async onAdminEmailChangeRequested(input: {
+    to: string;
+    requestedByName: string;
+    confirmUrl: string;
+    code: string;
+    expiresAt: Date;
+  }): Promise<{ notified: boolean; detail: string }> {
+    const subject = 'Confirm your new AoBPlatform administrator address';
+    const closes = input.expiresAt.toISOString().slice(0, 10);
+
+    const { body, html } = this.compose(subject, [
+      { text: 'Hello,' },
+      {
+        text:
+          `${input.requestedByName} asked us to make this address the administrator address for their ` +
+          'practice on AoBPlatform. Nothing has changed yet, and nothing will until you confirm it here.',
+      },
+      { heading: 'Step 1 — open this page' },
+      { button: { label: 'Confirm the address', url: input.confirmUrl } },
+      { url: input.confirmUrl },
+      { heading: 'Step 2 — enter this code' },
+      { code: input.code },
+      {
+        small:
+          `Both work until ${closes}. The code is what confirms it — a scanner opening the link cannot ` +
+          'confirm it on your behalf.',
+      },
+      { rule: true },
+      {
+        text:
+          'Once confirmed, this address becomes where we send everything about the practice, and the ' +
+          'passkeys enrolled against the old address stop working. We will send you a link to set up your own.',
+      },
+      {
+        small:
+          'If you were not expecting this, do nothing. The request expires by itself, and we have also told ' +
+          'the address it would be replacing.',
+      },
+    ]);
+
+    const result = await this.messaging.dispatch({ channel: 'email', to: input.to, subject, body, html });
+    return {
+      notified: result.accepted,
+      detail: result.accepted
+        ? `A confirmation was sent (${this.messaging.mode}).`
+        : `The confirmation could NOT be sent: ${result.failureReason ?? 'unknown error'}.`,
+    };
+  }
+
+  /**
+   * "This is happening — stop it if it should not be" — to the OLD address and
+   * the group address.
+   *
+   * THE ONE THAT MATTERS. The new address belongs to whoever asked for the
+   * change, so telling them checks nothing. This message goes to the channel
+   * the requester does not control by having made the request, which is what
+   * makes it capable of raising the alarm.
+   */
+  async onAdminEmailChangeNotified(input: {
+    to: string;
+    requestedEmail: string;
+    previousEmail: string | null;
+    requestedByName: string;
+    requestedAt: Date;
+    stopUrl: string;
+    addressedToFormerHolder: boolean;
+  }): Promise<{ notified: boolean; detail: string }> {
+    const subject = 'Somebody asked to change your practice’s administrator address';
+    const when = input.requestedAt.toISOString().replace('T', ' ').slice(0, 16);
+
+    const { body, html } = this.compose(subject, [
+      { text: 'Hello,' },
+      {
+        text: input.addressedToFormerHolder
+          ? `${input.requestedByName} asked us to move your practice’s administrator address away from this ` +
+            `one, to ${input.requestedEmail}, at ${when} UTC.`
+          : `${input.requestedByName} asked us to change your practice’s administrator address to ` +
+            `${input.requestedEmail}, at ${when} UTC.`,
+      },
+      {
+        text:
+          'Nothing has changed yet. It only takes effect if somebody confirms it from the new address, and ' +
+          'we are telling you first so that you can stop it if it should not happen.',
+      },
+      { heading: 'If this was not asked for by your practice' },
+      { button: { label: 'Stop this change', url: input.stopUrl } },
+      { url: input.stopUrl },
+      {
+        small:
+          'This works even after the request expires, and pressing it always puts the account in front of ' +
+          'somebody here.',
+      },
+      { rule: true },
+      {
+        text:
+          'If your practice did ask for this, you do not need to do anything. The change goes through when ' +
+          'the new address confirms it.',
+      },
+      {
+        small:
+          'We are telling you because changing where our messages go is the first step somebody would take ' +
+          'to take over a practice account — so we never do it quietly.',
+      },
+    ]);
+
+    const result = await this.messaging.dispatch({ channel: 'email', to: input.to, subject, body, html });
+    return {
+      notified: result.accepted,
+      detail: result.accepted ? `Notified (${this.messaging.mode}).` : `NOT notified: ${result.failureReason ?? '?'}.`,
+    };
+  }
+
   async disablePracticeAdminAccount(userId: string): Promise<{ disabled: boolean; note: string }> {
     if (!this.keycloak) {
       return { disabled: false, note: 'Keycloak is not configured, so no account could be disabled.' };
