@@ -16,11 +16,22 @@ node infra/keycloak/transform-realm.mjs
 
 - **Realm roles**: `provider`, `practice_principal`, `practice_manager`,
   `front_desk`, `patient`, `assignor`, `system`.
-- **Public client `web`** (console/portal/tester) — authorization code + PKCE,
-  bound via `authenticationFlowBindingOverrides` to the **`clinician-browser`
-  flow, where a WebAuthn passkey is REQUIRED with no password/OTP fallback**.
-  That is rule 15 (REQ-VAULT-04) enforced at the identity layer: practitioner
-  and admin auth is passkeys, no password-only paths.
+- **Realm `browserFlow` is `clinician-browser`** — a WebAuthn passkey is
+  REQUIRED, with the password form DISABLED and no OTP fallback. That is rule
+  15 (REQ-VAULT-04) enforced at the identity layer: practitioner and admin auth
+  is passkeys, no password-only paths.
+
+  **It is bound at the REALM, deliberately.** It used to be only an
+  `authenticationFlowBindingOverrides` entry on `web`, which left every client
+  Keycloak creates for itself — `account-console` above all — falling back to
+  the stock `browser` flow. That flow's Username Password Form is REQUIRED, so
+  opening the account console asked a passkey-only user for a password that had
+  never been set. There was no answer to the prompt. A per-client override only
+  covers the clients you remember to think about, and the built-in ones are
+  exactly the ones you do not.
+- **Public client `web`** (console/portal/tester) — authorization code + PKCE.
+  It keeps its explicit override to the same flow: the realm default now covers
+  it, but `web` is ours and worth stating rather than inheriting.
 - **`patient-carer-browser` flow** (passkey as ALTERNATIVE to password+OTP —
   encouraged, not mandatory) — ready for the patient/assignor portal client
   when M8 auth lands (REQ-CLIENT-02: passkey never a barrier for patients).

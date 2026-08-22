@@ -1056,5 +1056,6 @@
       }
     ]
   },
-  "identityProviderMappers": []
+  "identityProviderMappers": [],
+  "browserFlow": "clinician-browser"
 }
