@@ -33,7 +33,7 @@ import {
   UserPlus,
   UserSquare,
 } from 'lucide-react';
-import { AHPRA_REGISTRATION_STATUSES, isValidAhpraNumberFormat } from '@aobplatform/domain';
+import { AHPRA_REGISTRATION_STATUSES, isValidAhpraNumberFormat, isPlatformOperator } from '@aobplatform/domain';
 import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui } from '../../ui';
 import { strings } from '../../strings';
 import styles from '../manage.module.css';
@@ -200,6 +200,15 @@ function PractitionerCard({
 }) {
   const [recording, setRecording] = useState(false);
 
+  /*
+   * WHO MAY RECORD A REGISTER CHECK. A practice may not verify its own
+   * evidence — the same rule that stops it confirming its own address. The
+   * server enforces it (@RequireRoles(PLATFORM_ADMIN)); this only decides
+   * whether to show a button or an explanation, because a button that always
+   * fails is worse than no button.
+   */
+  const canCheck = isPlatformOperator({ roles: currentSession()?.roles ?? [] });
+
   const deregistered = Boolean(entry.deregisteredAt);
   const tone = deregistered ? styles.cardStopped : entry.registerChecked ? styles.cardOk : styles.cardNeedsWork;
 
@@ -296,6 +305,7 @@ function PractitionerCard({
         A deregistered practitioner gets no actions. There is nothing useful to
         do to them here and offering a button would imply otherwise.
       */}
+      {/* A practice may not verify its own evidence. See below. */}
       {!deregistered && (
         <div className={styles.cardActions}>
           {recording ? (
@@ -310,13 +320,36 @@ function PractitionerCard({
             />
           ) : (
             <>
-              <Button
-                variant={entry.registerChecked ? 'default' : 'primary'}
-                onClick={() => setRecording(true)}
-                data-testid={`check-${entry.practitionerId}`}
-              >
-                {strings.practitioners.checkOpen}
-              </Button>
+              {/*
+                THE PRACTICE DOES NOT CHECK ITS OWN PRACTITIONER.
+
+                Same rule as the address, and for the same reason: a register
+                check is EVIDENCE THAT SOMEBODY INDEPENDENT LOOKED. It feeds
+                the strength score that decides whether consent may be
+                captured in this person’s name, so a practice recording its
+                own practitioner as "Registered" would be awarding itself the
+                check — and in the audit trail that reads identically to a
+                real one.
+
+                The practice still adds the person and still enters the AHPRA
+                number. Entering scores nothing; only the recorded check does.
+                The server refuses either way.
+              */}
+              {canCheck ? (
+                <Button
+                  variant={entry.registerChecked ? 'default' : 'primary'}
+                  onClick={() => setRecording(true)}
+                  data-testid={`check-${entry.practitionerId}`}
+                >
+                  {strings.practitioners.checkOpen}
+                </Button>
+              ) : (
+                !entry.registerChecked && (
+                  <Notice tone="warn" title={strings.practitioners.checkedByUsTitle}>
+                    {strings.practitioners.checkedByUsBody}
+                  </Notice>
+                )
+              )}
               <Link href="/practice/affiliations" className={ui.buttonLink}>
                 {strings.practitioners.invite}
               </Link>

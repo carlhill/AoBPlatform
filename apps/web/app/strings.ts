@@ -1372,6 +1372,12 @@ export const strings = {
 
     // --- Recording the register check ---
     checkTitle: 'Record what the register says',
+    checkedByUsTitle: 'AoBPlatform checks the register, not you',
+    checkedByUsBody:
+      'A register check is our evidence that somebody independent looked. It is what turns a typed-in ' +
+      'registration number into something with weight, so a practice checking its own practitioner would ' +
+      'be awarding itself the check. Add them here and enter their AHPRA number — we do the rest, and ' +
+      'nothing is needed from you unless we ask.',
     checkOpen: 'Record a register check',
     checkLead:
       'Search the AHPRA public register for this practitioner and record what it says. Your name is kept ' +

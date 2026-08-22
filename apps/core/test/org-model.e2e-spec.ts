@@ -32,6 +32,12 @@ const REVIEWER_PRINCIPAL = {
 /** Set by tests that need the request to arrive unsigned. */
 let signedIn = true;
 
+/**
+ * The roles the test principal holds. Overridable for one request, so the
+ * refusals can be tested rather than merely written.
+ */
+let principalRoles: string[] = ['platform_admin'];
+
 
 // Fixture ABNs (see src/organisations/abr.ts). All checksum-valid, none real.
 const COMPANY_ABN = '53004085616'; // ACTIVE, trades as "Sampletown Family Practice"
@@ -79,7 +85,7 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
     app.use((req: any, _res: unknown, next: () => void) => {
-      if (signedIn) req.principal = REVIEWER_PRINCIPAL;
+      if (signedIn) req.principal = { ...REVIEWER_PRINCIPAL, roles: principalRoles };
       next();
     });
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
@@ -554,6 +560,26 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
       const res = await api().get(`/practitioners/directory?ahpraNumber=${AHPRA}`).expect(200);
       expect(res.body.found).toBe(true);
       expect(res.body.practitioner.familyName).toBe('Example');
+    });
+
+    it('A PRACTICE CANNOT RECORD ITS OWN REGISTER CHECK', async () => {
+      /*
+       * The same rule that stops a practice confirming its own address, and
+       * it matters more here: a register check feeds the strength score that
+       * decides whether consent may be captured in that practitioner’s name.
+       *
+       * A practice recording its own practitioner as "Registered" is not a
+       * weaker check — it is a self-attestation wearing the name of an
+       * independent one, and in the audit trail it reads identically to a
+       * real one.
+       */
+      principalRoles = ['practice_principal'];
+      const refused = await api()
+        .post(`/practitioners/${practitionerId}/registration`)
+        .send({ registrationStatus: 'Registered', sightedByName: 'Someone At The Practice' })
+        .expect(403);
+      expect(refused.body.message).toMatch(/platform_admin/);
+      principalRoles = ['platform_admin'];
     });
 
     it('NEVER_RETURNS_A_PROVIDER_NUMBER, or an email', async () => {

@@ -13,6 +13,7 @@ import { Type } from 'class-transformer';
 import { IsArray, IsDate, IsEmail, IsIn, IsOptional, IsString, IsUUID, MinLength, ValidateNested } from 'class-validator';
 import { AffiliationsService } from './affiliations.service';
 import { InvitationService } from './invitation.service';
+import { PLATFORM_ADMIN, RequireRoles } from '../auth/roles.decorator';
 
 export class PreRegisterDto {
   @IsString()
@@ -250,7 +251,26 @@ export class AffiliationsController {
     return this.affiliations.respond(affiliationId, practitionerId, dto.decision);
   }
 
-  /** Record what the AHPRA public register says. Manual until PIE is bought. */
+  /**
+   * Record what the AHPRA public register says. PLATFORM OPERATOR ONLY.
+   *
+   * NOT THE PRACTICE’S ACT, for the same reason a practice cannot confirm
+   * its own address. A register check is EVIDENCE THAT SOMEBODY INDEPENDENT
+   * LOOKED: it is what turns a typed-in registration number into something
+   * with weight, and it feeds the practitioner strength score that decides
+   * whether consent may be captured in that person’s name.
+   *
+   * A practice recording its own practitioner as "Registered" is a practice
+   * awarding itself the check. That is not a weaker check, it is a
+   * self-attestation wearing the name of an independent one — and in the
+   * audit trail it reads identically to a real one.
+   *
+   * The practice still ADDS the practitioner and still enters the AHPRA
+   * number. Entering scores nothing; only the recorded check does.
+   *
+   * Manual until PIE is bought.
+   */
+  @RequireRoles(PLATFORM_ADMIN)
   @Post('practitioners/:practitionerId/registration')
   recordRegistration(
     @Param('practitionerId', ParseUUIDPipe) practitionerId: string,

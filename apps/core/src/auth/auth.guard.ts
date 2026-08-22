@@ -75,6 +75,34 @@ export class AuthGuard implements CanActivate {
     }
   }
 
+  /**
+   * Refuse a principal that does not hold one of the required roles.
+   *
+   * ONE COPY, called from both paths. It used to live only in the branch
+   * that had verified a token, which left every @RequireRoles endpoint
+   * undefended against a request that sent no token at all.
+   */
+  private assertRoles(
+    context: ExecutionContext,
+    request: { method: string; url: string },
+    principal: AuthenticatedPrincipal,
+  ): void {
+    const required = this.reflector.getAllAndOverride<string[]>(REQUIRED_ROLES, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (!required?.length) return;
+    const held = principal.roles ?? [];
+    if (required.some((role) => held.includes(role))) return;
+    this.logger.warn(
+      `Refused ${request.method} ${request.url} for ${principal.sub}: holds [${held.join(', ')}], ` +
+        `needs one of [${required.join(', ')}].`,
+    );
+    throw new ForbiddenException(
+      `This endpoint requires one of: ${required.join(', ')}. Your account does not hold it.`,
+    );
+  }
+
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(PUBLIC_ENDPOINT, [
       context.getHandler(),
@@ -88,6 +116,24 @@ export class AuthGuard implements CanActivate {
 
     if (!token) {
       if (this.enforce) throw new UnauthorizedException('A bearer token is required.');
+      /*
+       * NO TOKEN, BUT POSSIBLY A PRINCIPAL. Roles are checked against
+       * whatever principal is known, not only against one this guard
+       * verified itself.
+       *
+       * The old shape checked roles ONLY inside the token branch, so any
+       * @RequireRoles endpoint was wide open to a request that simply sent
+       * no Authorization header at all while AUTH_ENFORCE is false. That is
+       * the opposite of what the decorator promises, and it meant the
+       * platform-only endpoints — approving practices, confirming addresses,
+       * recording register checks — were decorated but not defended.
+       *
+       * `request.principal` is a property on the Express request object, not
+       * a header, so nothing a client sends can produce one. Only
+       * server-side code sets it.
+       */
+      const known = request.principal as AuthenticatedPrincipal | undefined;
+      if (known) this.assertRoles(context, request, known);
       return true; // staged: dev header path still works
     }
     if (!this.verifier) {
@@ -114,22 +160,7 @@ export class AuthGuard implements CanActivate {
        * valid practice-admin token could approve practices, which is the single
        * most privileged act in the system.
        */
-      const required = this.reflector.getAllAndOverride<string[]>(REQUIRED_ROLES, [
-        context.getHandler(),
-        context.getClass(),
-      ]);
-      if (required?.length) {
-        const held = principal.roles ?? [];
-        if (!required.some((role) => held.includes(role))) {
-          this.logger.warn(
-            `Refused ${request.method} ${request.url} for ${principal.sub}: holds [${held.join(', ')}], ` +
-              `needs one of [${required.join(', ')}].`,
-          );
-          throw new ForbiddenException(
-            `This endpoint requires one of: ${required.join(', ')}. Your account does not hold it.`,
-          );
-        }
-      }
+      this.assertRoles(context, request, principal);
 
       return true;
     } catch (err) {
