@@ -58,6 +58,18 @@ export class OutboundService {
       attemptGroup?: string;
       /** Hold it until this time. Used for scheduled reminders. */
       availableAt?: Date;
+      /** email | json | xml | pdf | markdown. What the recipient opens. */
+      mediaType?: string;
+      /*
+       * WHERE and WHO. Optional, but a caller that omits them is queueing
+       * a message that cannot be found by anybody answering a support
+       * call — which at 375,000 a day means it cannot be found at all.
+       */
+      locationId?: string | null;
+      departmentId?: string | null;
+      recipientType?: string | null;
+      recipientId?: string | null;
+      recipientName?: string | null;
     },
   ) {
     const serialised = JSON.stringify(input.payload ?? {});
@@ -98,6 +110,12 @@ export class OutboundService {
         payload: input.payload as Prisma.InputJsonValue,
         idempotencyKey: key,
         availableAt: input.availableAt ?? new Date(),
+        mediaType: input.mediaType ?? 'email',
+        locationId: input.locationId ?? null,
+        departmentId: input.departmentId ?? null,
+        recipientType: input.recipientType ?? null,
+        recipientId: input.recipientId ?? null,
+        recipientName: input.recipientName ?? null,
       },
       update: {},
     });
@@ -230,7 +248,17 @@ export class OutboundService {
    */
   async list(
     practiceId: string | undefined,
-    filter: { mediaType?: string; state?: string; channel?: string; search?: string; take?: number },
+    filter: {
+      mediaType?: string;
+      state?: string;
+      channel?: string;
+      locationId?: string;
+      departmentId?: string;
+      recipientType?: string;
+      recipientId?: string;
+      search?: string;
+      take?: number;
+    },
   ) {
     if (!practiceId) {
       throw new BadRequestException(
@@ -243,6 +271,10 @@ export class OutboundService {
       if (filter.mediaType) where.mediaType = filter.mediaType;
       if (filter.state) where.state = filter.state;
       if (filter.channel) where.channel = filter.channel;
+      if (filter.locationId) where.locationId = filter.locationId;
+      if (filter.departmentId) where.departmentId = filter.departmentId;
+      if (filter.recipientType) where.recipientType = filter.recipientType;
+      if (filter.recipientId) where.recipientId = filter.recipientId;
       if (filter.search?.trim()) {
         /*
          * Destination and subject only. NOT the payload — searching inside
@@ -252,6 +284,7 @@ export class OutboundService {
          */
         where.OR = [
           { destination: { contains: filter.search.trim(), mode: 'insensitive' } },
+          { recipientName: { contains: filter.search.trim(), mode: 'insensitive' } },
           { subjectType: { contains: filter.search.trim(), mode: 'insensitive' } },
         ];
       }
@@ -274,6 +307,14 @@ export class OutboundService {
           createdAt: true,
           sentAt: true,
           artefactId: true,
+          locationId: true,
+          departmentId: true,
+          recipientType: true,
+          recipientId: true,
+          recipientName: true,
+          resendOfId: true,
+          resendCount: true,
+          resendByName: true,
         },
       });
       return { items, count: items.length };
@@ -306,6 +347,158 @@ export class OutboundService {
       });
 
       return found;
+    });
+  }
+
+  /**
+   * Send it again.
+   *
+   * A RESEND IS A NEW ROW, NOT A MUTATED ONE. Carl asked whether to copy the
+   * record or increment a counter; the answer is copy, and here is why. A
+   * counter tells you it went three times. A copy tells you WHEN each went,
+   * WHO asked, whether the first actually succeeded, and what the provider
+   * said each time — which is the shape of every question a support call
+   * brings. It also matches how the rest of this system works: append, do not
+   * overwrite.
+   *
+   * The count is kept as well, on the original, so a list can show "sent 3
+   * times" without a subquery per row. Both, because they answer different
+   * questions.
+   *
+   * PRACTICE OR PLATFORM. Carl was explicit that either may do this. It is a
+   * repair, not a privilege — the practice is usually the one being told the
+   * message never arrived.
+   *
+   * ⚠ IT DOES NOT RESURRECT THE ORIGINAL. The original keeps whatever state it
+   * reached, including `dead`. That row is the record of an attempt that
+   * failed, and a resend does not make that untrue.
+   */
+  async resend(
+    practiceId: string | undefined,
+    id: string,
+    input: { reason?: string },
+    actor?: Actor,
+  ) {
+    if (!practiceId) throw new BadRequestException('Choose a practice first.');
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const original = await tx.outboundItem.findFirst({ where: { id } });
+      if (!original) throw new NotFoundException('That queued item is not in this practice.');
+
+      /*
+       * Refusing to resend something still in flight. A message that is
+       * pending or leased has not failed yet, and sending a second copy of a
+       * statutory notice because somebody was impatient is the failure mode
+       * this whole table exists to avoid.
+       */
+      if (original.state === 'pending' || original.state === 'leased') {
+        throw new BadRequestException(
+          'This one has not been sent yet — it is still queued. Wait for it to finish before sending ' +
+            'another copy, or you will have sent the same notice twice.',
+        );
+      }
+
+      // Walk to the root, so a resend of a resend still counts against the
+      // original rather than starting a new chain nobody can follow.
+      const rootId = original.resendOfId ?? original.id;
+      const root = rootId === original.id ? original : await tx.outboundItem.findFirst({ where: { id: rootId } });
+      const attempt = (root?.resendCount ?? 0) + 1;
+
+      const copy = await tx.outboundItem.create({
+        data: {
+          practiceId: original.practiceId,
+          channel: original.channel,
+          mediaType: original.mediaType,
+          destination: original.destination,
+          subjectType: original.subjectType,
+          subjectId: original.subjectId,
+          payload: original.payload as never,
+          locationId: original.locationId,
+          departmentId: original.departmentId,
+          recipientType: original.recipientType,
+          recipientId: original.recipientId,
+          recipientName: original.recipientName,
+          artefactId: original.artefactId,
+          // A new key, or the unique index would refuse the copy — which is
+          // exactly what `attemptGroup` was built for.
+          idempotencyKey: `${original.idempotencyKey}:resend:${attempt}`,
+          resendOfId: rootId,
+          resendReason: input.reason?.trim() || null,
+          resendByName: actor?.name ?? 'practice',
+          state: 'pending',
+          attempts: 0,
+          availableAt: new Date(),
+        },
+      });
+
+      if (root) {
+        await tx.outboundItem.update({ where: { id: root.id }, data: { resendCount: attempt } });
+      }
+
+      await enqueueVaultEvent(tx, {
+        type: 'access.read',
+        actor: { principalType: 'staff', id: actor?.id ?? practiceId },
+        subject: { type: 'OutboundItem', id: copy.id },
+        payload: {
+          resendOf: rootId,
+          attempt,
+          requestedBy: actor?.name ?? 'practice',
+          ...(input.reason?.trim() ? { reason: input.reason.trim() } : {}),
+        },
+      });
+
+      return { id: copy.id, resendOf: rootId, attempt, state: copy.state };
+    });
+  }
+
+  /**
+   * The sites and people a practice's messages have gone to.
+   *
+   * Built FROM THE QUEUE ITSELF rather than from practices and practitioners,
+   * so the filter offers only values that will actually match something. A
+   * dropdown listing every location a practice has ever had, most of which
+   * return nothing, teaches people the filters are broken.
+   */
+  async filterOptions(practiceId: string | undefined) {
+    if (!practiceId) throw new BadRequestException('Choose a practice first.');
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const [locations, departments, recipients] = await Promise.all([
+        tx.outboundItem.findMany({
+          where: { practiceId, locationId: { not: null } },
+          distinct: ['locationId'],
+          select: { locationId: true },
+        }),
+        tx.outboundItem.findMany({
+          where: { practiceId, departmentId: { not: null } },
+          distinct: ['departmentId'],
+          select: { departmentId: true },
+        }),
+        tx.outboundItem.findMany({
+          where: { practiceId, recipientId: { not: null } },
+          distinct: ['recipientId'],
+          select: { recipientId: true, recipientType: true, recipientName: true },
+          take: 500,
+        }),
+      ]);
+
+      // Names, resolved once here rather than per row in the list.
+      const locationIds = locations.map((l) => l.locationId!).filter(Boolean);
+      const departmentIds = departments.map((d) => d.departmentId!).filter(Boolean);
+      const [locationRows, departmentRows] = await Promise.all([
+        locationIds.length
+          ? tx.practiceLocation.findMany({ where: { id: { in: locationIds } }, select: { id: true, code: true, address: true } })
+          : Promise.resolve([]),
+        departmentIds.length
+          ? tx.department.findMany({ where: { id: { in: departmentIds } }, select: { id: true, name: true, locationId: true } })
+          : Promise.resolve([]),
+      ]);
+
+      return {
+        locations: locationRows.map((l) => ({ id: l.id, label: l.code ?? l.address })),
+        departments: departmentRows.map((d) => ({ id: d.id, label: d.name, locationId: d.locationId })),
+        recipients: recipients
+          .filter((r) => r.recipientId)
+          .map((r) => ({ id: r.recipientId!, type: r.recipientType, name: r.recipientName })),
+      };
     });
   }
 

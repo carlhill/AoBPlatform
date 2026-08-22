@@ -1359,6 +1359,43 @@ model OutboundItem {
    */
   mediaType String @default("email")
 
+  // --- WHERE and WHO, so a support call is answerable ---
+  //
+  // "Dr Sorrell never got the notice about the Yagoona site" has to be
+  // answerable by filtering, because the alternative is opening payloads one
+  // at a time — and payloads are the one thing we deliberately do not let
+  // anybody search, since a body search would let somebody trawl for a
+  // patient name across a practice.
+  locationId   String? @db.Uuid
+  departmentId String? @db.Uuid
+
+  /// practitioner | patient | assignor | practice | other
+  recipientType String?
+  recipientId   String? @db.Uuid
+  /**
+   * DENORMALISED, and correctly so. A support call is answered by typing a
+   * name, and resolving one through three joins on a table gaining 274
+   * million rows a year is not a query anybody should run. It is also the
+   * right evidence: this is the name the message was ADDRESSED to at the
+   * time, which is not necessarily the name that record carries today.
+   */
+  recipientName String?
+
+  // --- Resending ---
+  //
+  // A resend is a NEW ROW, not a mutated one. A counter alone would tell you
+  // it went three times; the copies tell you when each went, who asked, and
+  // what the provider said — which is what a support call actually needs.
+  // The count is kept as well so a list can show "sent 3 times" without a
+  // subquery per row.
+  /// The original. NULL on an original.
+  resendOfId   String? @db.Uuid
+  /// On the ORIGINAL: how many times it has been sent again.
+  resendCount  Int     @default(0)
+  resendReason String?
+  /// Who asked, from the verified token.
+  resendByName String?
+
   /// Set when the payload points at a stored file rather than carrying it.
   artefactId String? @db.Uuid
 

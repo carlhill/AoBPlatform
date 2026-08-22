@@ -744,6 +744,14 @@ export class AffiliationsService {
           destination: practitioner.email,
           subjectType: 'Affiliation',
           subjectId: affiliationId,
+          // WHERE and WHO, so this is findable when somebody rings to say it
+          // never arrived. Without these the only way to identify it is to
+          // open payloads, which the queue deliberately does not allow.
+          locationId: affiliation.locationId,
+          departmentId: affiliation.departmentId,
+          recipientType: 'practitioner',
+          recipientId: affiliation.practitionerId,
+          recipientName: who || practitioner.email,
           payload: composed as unknown as Record<string, unknown>,
           // A withdraw-and-re-notice is a NEW notice, not a retry of the old
           // one, so it must not collapse onto the same key.
@@ -907,6 +915,14 @@ export class AffiliationsService {
           destination: practitioner.email,
           subjectType: 'Affiliation',
           subjectId: affiliationId,
+          // WHERE and WHO, so this is findable when somebody rings to say it
+          // never arrived. Without these the only way to identify it is to
+          // open payloads, which the queue deliberately does not allow.
+          locationId: affiliation.locationId,
+          departmentId: affiliation.departmentId,
+          recipientType: 'practitioner',
+          recipientId: affiliation.practitionerId,
+          recipientName: who || practitioner.email,
           payload: composed as unknown as Record<string, unknown>,
           // Each withdrawal is its own message, not a retry of the notice.
           attemptGroup: `withdrawn:${new Date().toISOString()}`,

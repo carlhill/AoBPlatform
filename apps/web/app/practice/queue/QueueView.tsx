@@ -21,7 +21,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Clock, FileJson, FileText, Mail, RefreshCw, Search, XCircle } from 'lucide-react';
+import Link from 'next/link';
+import { AlertTriangle, ArrowLeft, CheckCircle2, Clock, FileJson, FileText, Mail, RefreshCw, Search, XCircle } from 'lucide-react';
 import { isPlatformOperator } from '@aobplatform/domain';
 import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui } from '../../ui';
 import { SessionControl } from '../../SessionControl';
@@ -47,6 +48,20 @@ interface QueueItem {
   createdAt: string;
   sentAt: string | null;
   artefactId: string | null;
+  locationId: string | null;
+  departmentId: string | null;
+  recipientType: string | null;
+  recipientId: string | null;
+  recipientName: string | null;
+  resendOfId: string | null;
+  resendCount: number;
+  resendByName: string | null;
+}
+
+interface FilterOptions {
+  locations: { id: string; label: string }[];
+  departments: { id: string; label: string; locationId: string }[];
+  recipients: { id: string; type: string | null; name: string | null }[];
 }
 
 interface Catalogue {
@@ -93,6 +108,10 @@ export function QueueView() {
   const [mediaType, setMediaType] = useState('');
   const [state, setState] = useState('');
   const [search, setSearch] = useState('');
+  const [locationId, setLocationId] = useState('');
+  const [departmentId, setDepartmentId] = useState('');
+  const [recipientId, setRecipientId] = useState('');
+  const [options, setOptions] = useState<FilterOptions | null>(null);
   const [openItem, setOpenItem] = useState<string | null>(null);
 
   useEffect(() => {
@@ -104,12 +123,30 @@ export function QueueView() {
       });
   }, []);
 
+  /*
+   * Options built FROM THE QUEUE, so every value in a dropdown matches at
+   * least one message. A list of every site a practice has ever had, most
+   * of which return nothing, teaches people the filters are broken.
+   */
+  useEffect(() => {
+    if (!practiceId) return;
+    fetch(`${CORE_URL}/outbound/filters`, { headers: apiHeaders(practiceId) })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((o) => o && setOptions(o))
+      .catch(() => {
+        // The dropdowns stay empty; the free-text search still works.
+      });
+  }, [practiceId]);
+
   const load = useCallback(async () => {
     if (!practiceId) return;
     setError(null);
     const params = new URLSearchParams();
     if (mediaType) params.set('mediaType', mediaType);
     if (state) params.set('state', state);
+    if (locationId) params.set('locationId', locationId);
+    if (departmentId) params.set('departmentId', departmentId);
+    if (recipientId) params.set('recipientId', recipientId);
     if (search.trim()) params.set('search', search.trim());
     try {
       const res = await fetch(`${CORE_URL}/outbound?${params.toString()}`, { headers: apiHeaders(practiceId) });
@@ -122,7 +159,7 @@ export function QueueView() {
     } catch (e) {
       setError(e instanceof TypeError ? strings.review.unreachableBody : (e as Error).message);
     }
-  }, [practiceId, mediaType, state, search]);
+  }, [practiceId, mediaType, state, search, locationId, departmentId, recipientId]);
 
   useEffect(() => {
     void load();
@@ -154,6 +191,10 @@ export function QueueView() {
   if (!practiceId) {
     return (
       <Shell right={<SessionControl audience={strings.setup.audience} />}>
+        <Link href="/practice/setup" className={ui.backLink} data-testid="queue-back">
+          <ArrowLeft size={15} aria-hidden="true" />
+          {strings.queue.back}
+        </Link>
         <h1 className={ui.pageTitle}>{strings.queue.title}</h1>
         <Notice tone="warn" title={strings.queue.chooseTitle}>
           {isOperator ? strings.queue.chooseBodyOperator : strings.queue.chooseBodyPractice}
@@ -164,6 +205,10 @@ export function QueueView() {
 
   return (
     <Shell right={<SessionControl audience={strings.setup.audience} />}>
+      <Link href="/practice/setup" className={ui.backLink} data-testid="queue-back">
+        <ArrowLeft size={15} aria-hidden="true" />
+        {strings.queue.back}
+      </Link>
       <h1 className={ui.pageTitle}>{strings.queue.title}</h1>
       <p className={`${ui.pageLead} ${styles.queueLead}`}>{strings.queue.lead}</p>
 
@@ -210,7 +255,65 @@ export function QueueView() {
             </SelectInput>
           )}
         </Field>
-        <Field label={strings.queue.filterSearch} hint={strings.queue.filterSearchHint}>
+        <Field label={strings.queue.filterLocation}>
+          {(props) => (
+            <SelectInput
+              {...props}
+              value={locationId}
+              onChange={(e) => {
+                setLocationId(e.target.value);
+                // A department belongs to a site, so changing the site
+                // invalidates the department beneath it.
+                setDepartmentId('');
+              }}
+              data-testid="filter-location"
+            >
+              <option value="">{strings.queue.anyLocation}</option>
+              {(options?.locations ?? []).map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.label}
+                </option>
+              ))}
+            </SelectInput>
+          )}
+        </Field>
+        <Field label={strings.queue.filterDepartment}>
+          {(props) => (
+            <SelectInput
+              {...props}
+              value={departmentId}
+              onChange={(e) => setDepartmentId(e.target.value)}
+              data-testid="filter-department"
+            >
+              <option value="">{strings.queue.anyDepartment}</option>
+              {(options?.departments ?? [])
+                .filter((d) => !locationId || d.locationId === locationId)
+                .map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.label}
+                  </option>
+                ))}
+            </SelectInput>
+          )}
+        </Field>
+        <Field label={strings.queue.filterRecipient}>
+          {(props) => (
+            <SelectInput
+              {...props}
+              value={recipientId}
+              onChange={(e) => setRecipientId(e.target.value)}
+              data-testid="filter-recipient"
+            >
+              <option value="">{strings.queue.anyRecipient}</option>
+              {(options?.recipients ?? []).map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name ?? r.id}
+                </option>
+              ))}
+            </SelectInput>
+          )}
+        </Field>
+        <Field label={strings.queue.filterSearch} hint={strings.queue.filterSearchWide}>
           {(props) => (
             <div className={styles.searchWrap}>
               <Search size={15} aria-hidden="true" className={styles.searchIcon} />
@@ -246,11 +349,24 @@ export function QueueView() {
                 <span className={styles.queueMedia}>
                   {mediaIcon(item.mediaType)} {item.mediaType}
                 </span>
-                <span className={styles.queueDest}>{item.destination ?? strings.queue.awaitingDevice}</span>
-                <span className={styles.queueSubject}>{item.subjectType}</span>
+                <span className={styles.queueDest}>
+                  {item.recipientName ?? item.destination ?? strings.queue.awaitingDevice}
+                  {item.recipientName && item.destination && (
+                    <span className={styles.queueSub}>{item.destination}</span>
+                  )}
+                </span>
+                <span className={styles.queueSubject}>
+                  {siteLabel(options, item) ?? strings.queue.noSite}
+                </span>
                 <Chip tone={chip.tone}>
                   {chip.icon} {item.state}
                 </Chip>
+                {item.resendOfId && <Chip tone="neutral">{strings.queue.resentCopy}</Chip>}
+                {item.resendCount > 0 && (
+                  <Chip tone="neutral">
+                    {item.resendCount}× {strings.queue.resentTimes}
+                  </Chip>
+                )}
                 <span className={styles.queueWhen}>{when(item.sentAt ?? item.createdAt)}</span>
               </button>
 
@@ -261,7 +377,12 @@ export function QueueView() {
                 </p>
               )}
 
-              {openItem === item.id && <PayloadViewer practiceId={practiceId} item={item} />}
+              {openItem === item.id && (
+                <>
+                  <PayloadViewer practiceId={practiceId} item={item} />
+                  <ResendControl practiceId={practiceId} item={item} onDone={load} />
+                </>
+              )}
             </li>
           );
         })}
@@ -362,6 +483,92 @@ function PayloadViewer({ practiceId, item }: { practiceId: string; item: QueueIt
   return (
     <div className={styles.viewer}>
       <pre className={styles.viewerBody}>{JSON.stringify(payload, null, 2)}</pre>
+    </div>
+  );
+}
+
+/** The site a message belongs to, resolved from the filter options. */
+function siteLabel(options: FilterOptions | null, item: QueueItem): string | null {
+  if (!item.locationId) return null;
+  const site = options?.locations.find((l) => l.id === item.locationId)?.label ?? item.locationId.slice(0, 8);
+  const dept = item.departmentId
+    ? options?.departments.find((d) => d.id === item.departmentId)?.label
+    : null;
+  return dept ? `${site} · ${dept}` : site;
+}
+
+/**
+ * Sending one again.
+ *
+ * A RESEND IS A COPY, not a retry of this row. The original keeps whatever
+ * state it reached — including `dead` — because that attempt really did
+ * happen and a resend does not make it untrue.
+ */
+function ResendControl({
+  practiceId,
+  item,
+  onDone,
+}: {
+  practiceId: string;
+  item: QueueItem;
+  onDone: () => void | Promise<void>;
+}) {
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Nothing in flight may be copied — that is how a statutory notice gets
+  // sent twice because somebody was impatient. The server refuses it too.
+  const inFlight = item.state === 'pending' || item.state === 'leased';
+
+  async function send() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`${CORE_URL}/outbound/item/${item.id}/resend`, {
+        method: 'POST',
+        headers: apiHeaders(practiceId),
+        body: JSON.stringify({ reason: reason.trim() || undefined }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { message?: string };
+        throw new Error(body.message ?? `That failed (${res.status}).`);
+      }
+      setReason('');
+      await onDone();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (inFlight) return null;
+
+  return (
+    <div className={styles.resendBar}>
+      <p className={styles.cardNote}>{strings.queue.resendBody}</p>
+      <div className={styles.inlineForm}>
+        <Field label={strings.queue.resendReason} hint={strings.queue.resendReasonHint}>
+          {(props) => (
+            <TextInput
+              {...props}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              data-testid={`resend-reason-${item.id}`}
+            />
+          )}
+        </Field>
+        <Button variant="primary" onClick={() => void send()} disabled={busy} data-testid={`resend-${item.id}`}>
+          <RefreshCw size={14} aria-hidden="true" />
+          {busy ? strings.queue.resending : strings.queue.resend}
+        </Button>
+      </div>
+      {error && (
+        <Notice tone="stop" title={strings.queue.resendFailed}>
+          {error}
+        </Notice>
+      )}
     </div>
   );
 }

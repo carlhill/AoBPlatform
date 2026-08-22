@@ -1,4 +1,5 @@
-import { Controller, Get, Headers, Param, ParseUUIDPipe, Query } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { IsOptional, IsString } from 'class-validator';
 import { OUTBOUND_STATES } from '@aobplatform/domain';
 import { OutboundService } from './outbound.service';
 import { SessionActor, type Actor } from '../auth/actor.decorator';
@@ -22,6 +23,13 @@ import { SessionActor, type Actor } from '../auth/actor.decorator';
  * A patient looking at this screen would watch their own records vanish. See
  * TODO.md; that is a different screen over different data.
  */
+export class ResendDto {
+  /** Why. Optional, but it is what the next person reads. */
+  @IsOptional()
+  @IsString()
+  reason?: string;
+}
+
 @Controller('outbound')
 export class OutboundController {
   constructor(private readonly outbound: OutboundService) {}
@@ -40,6 +48,10 @@ export class OutboundController {
     @Query('mediaType') mediaType?: string,
     @Query('state') state?: string,
     @Query('channel') channel?: string,
+    @Query('locationId') locationId?: string,
+    @Query('departmentId') departmentId?: string,
+    @Query('recipientType') recipientType?: string,
+    @Query('recipientId') recipientId?: string,
     @Query('search') search?: string,
     @Query('take') take?: string,
   ) {
@@ -47,6 +59,10 @@ export class OutboundController {
       mediaType,
       state,
       channel,
+      locationId,
+      departmentId,
+      recipientType,
+      recipientId,
       search,
       take: take ? Math.min(Number(take) || 50, 200) : 50,
     });
@@ -60,6 +76,27 @@ export class OutboundController {
     @SessionActor() actor: Actor | undefined,
   ) {
     return this.outbound.item(practiceId, id, actor);
+  }
+
+  /**
+   * Send it again. PRACTICE OR PLATFORM — Carl was explicit that either
+   * may, and it is a repair rather than a privilege: the practice is
+   * usually the one being told the message never arrived.
+   */
+  @Post('item/:id/resend')
+  resend(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ResendDto,
+    @SessionActor() actor: Actor | undefined,
+  ) {
+    return this.outbound.resend(practiceId, id, { reason: dto.reason }, actor);
+  }
+
+  /** Sites and people this practice has actually sent to. */
+  @Get('filters')
+  filters(@Headers('x-practice-id') practiceId: string | undefined) {
+    return this.outbound.filterOptions(practiceId);
   }
 
   /** Counts by state and channel, plus what is oldest. */

@@ -491,3 +491,34 @@
 .searchWrap input {
   padding-left: calc(var(--s3) * 2 + 1rem);
 }
+
+/* Six filters now, so they wrap rather than squeeze. */
+.queueFilters {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+/*
+ * The row gained two columns. Recipient name is the widest because it is what
+ * somebody scans for when a practice rings to say a notice never arrived.
+ */
+.queueRowMain {
+  grid-template-columns: 6.5rem minmax(0, 2.2fr) minmax(0, 1.4fr) auto auto auto;
+}
+
+/* The address under the name — present, quiet, not competing with it. */
+.queueSub {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resendBar {
+  display: grid;
+  gap: var(--s3);
+  padding: var(--s4);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
