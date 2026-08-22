@@ -221,6 +221,64 @@ at all.
 
 ---
 
+## Rostering — a practitioner who works at more than one practice
+
+Raised 22 Aug 2026: *"Some practitioners may work 2 days at practice A and 2
+at practice B."* Recorded rather than built, per that instruction.
+
+### What already works
+
+**The identity and affiliation model already handles this**, and it was
+designed to. A practitioner is one person on the platform; an affiliation is
+per practice AND per location, and FR-1.8 refuses a second affiliation at the
+same location rather than at the same practice. A provider number belongs to
+a place, not a person, which is exactly the multi-site shape.
+
+So Dr X at Practice A on Mondays and Practice B on Thursdays is already two
+affiliations, each with its own provider number, each accepted by the
+practitioner themselves.
+
+### The one thing that is NOT solved
+
+**Keycloak enforces one email address per realm.** We already hit this in the
+e2e logs: the same person at a second practice cannot get a second account on
+the same address. It needs either a different address or the existing account
+linked rather than duplicated — and linking is the right answer, since it is
+one person. Unresolved, and it is the real blocker, not rostering.
+
+### The rostering idea
+
+Also raised: build a simple roster — *"which Dr is working when"* — offered
+free or at minimal fee as a sweetener for small practices.
+
+**Worth taking seriously for a reason beyond goodwill.** A roster would let
+the platform answer a question it currently cannot: *was this practitioner
+actually at this location on the day that consent was captured?* Today an
+affiliation says they work there in general. A roster says they were there on
+the Tuesday. That is a genuine strengthening of the consent record, and it
+would feed the same strength scoring as every other check.
+
+**But note the risk before building it.** A roster is operational data that
+changes constantly, and this platform is an evidence store where things are
+append-only and retained for two years. If a roster becomes evidence, every
+shift swap becomes a record we cannot delete. That is not a reason to refuse
+— it is a reason to decide up front which it is:
+
+| If the roster is… | Then |
+|---|---|
+| **A convenience feature** | Keep it out of the evidence chain entirely. Mutable, deletable, no vault events |
+| **Evidence of presence** | Append-only like everything else, and a shift correction is a new record rather than an edit |
+
+Deciding that late would be expensive, because the storage shape follows from
+it. Deciding it early costs nothing.
+
+### If it gets built
+
+- [ ] Decide the question above FIRST — convenience or evidence
+- [ ] Resolve the one-email-per-realm constraint; account linking, not a second account
+- [ ] Roster entries per affiliation, not per practitioner — the affiliation is what carries the location
+- [ ] A capture-time check: is this practitioner rostered here today? Warning, not a block, until it is trusted
+- [ ] Keep it optional. A practice that does not roster must not be worse off
 ## Open questions
 
 These block work and need Carl, not code.

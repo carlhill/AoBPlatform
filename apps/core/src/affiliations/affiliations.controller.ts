@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import { IsArray, IsDate, IsEmail, IsIn, IsOptional, IsString, IsUUID, MinLength, ValidateNested } from 'class-validator';
+import { EXTERNAL_NOTICE_KEYS, EXTERNAL_NOTICE_MEANS } from '@aobplatform/domain';
 import { AffiliationsService } from './affiliations.service';
 import { InvitationService } from './invitation.service';
 import { PLATFORM_ADMIN, RequireRoles } from '../auth/roles.decorator';
@@ -72,10 +73,37 @@ export class RespondDto {
   decision!: 'accept' | 'reject';
 }
 
+/**
+ * Notice given outside AoBPlatform, for a departure that has already
+ * happened. Optional — a future-dated departure needs none of this.
+ */
+export class ExternalNoticeDto {
+  @IsIn(EXTERNAL_NOTICE_KEYS)
+  means!: string;
+
+  @Type(() => Date)
+  @IsDate()
+  givenAt!: Date;
+
+  @IsOptional()
+  @IsString()
+  note?: string;
+}
+
 export class GiveNoticeDto {
   @Type(() => Date)
   @IsDate()
   endsAt!: Date;
+
+  /**
+   * REQUIRED when the end date has passed. The domain refuses a past
+   * departure without it, because recording one would assert that we gave
+   * notice before a date that has already gone by.
+   */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ExternalNoticeDto)
+  externalNotice?: ExternalNoticeDto;
 
   @IsString()
   @MinLength(1)
@@ -314,6 +342,12 @@ export class AffiliationsController {
   }
 
   // --- Practice-scoped ------------------------------------------------------
+
+  /** The ways notice can have been given outside AoBPlatform. */
+  @Get('affiliations/external-notice/catalogue')
+  externalNoticeCatalogue() {
+    return { means: EXTERNAL_NOTICE_MEANS };
+  }
 
   @Get('affiliations')
   list(@Headers('x-practice-id') practiceId: string | undefined) {

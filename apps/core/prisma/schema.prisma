@@ -760,6 +760,30 @@ model Affiliation {
    */
   noticeGivenAt DateTime?
   noticeGivenBy String?
+
+  // --- Notice given OUTSIDE AoBPlatform (packages/domain/src/departure-notice.ts) ---
+  //
+  // A departure that already happened cannot have been noticed through us.
+  // Refusing to record it did not prevent the departure — it only left the
+  // platform showing a practitioner as active at a location they had left,
+  // which is the worse falsehood.
+  //
+  // So the practice may attest that notice was given elsewhere, and that
+  // attestation is stored AS an attestation. It is never relabelled as our
+  // own notice: the whole value of the record is that a reader can tell the
+  // two apart.
+  /// From EXTERNAL_NOTICE_MEANS. Null means notice came through the platform.
+  externalNoticeMeans   String?
+  /// When notice was ACTUALLY given, outside.
+  externalNoticeGivenAt DateTime?
+  externalNoticeNote    String?
+  /// Who attested it, from the verified token.
+  externalNoticeAttestedBy String?
+  /// Business days between notice and departure. Negative if notice came after.
+  noticeLeadBusinessDays Int?
+  /// Set when the record itself shows a problem, so it is visible without
+  /// recomputing: short notice, or notice dated after the departure.
+  noticeAnomaly         String?
   endsAt        DateTime?
   endedAt       DateTime?
   endReason     String? // practitioner_left_location | deregistered | rejected

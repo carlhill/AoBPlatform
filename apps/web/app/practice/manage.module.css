@@ -310,3 +310,22 @@
   font-size: var(--text-sm);
   color: var(--ok);
 }
+
+/*
+ * The "notice was given elsewhere" attestation.
+ *
+ * Set apart from the rest of the departure form on purpose. It is not another
+ * field — it is somebody putting their name to a statement about what happened
+ * outside this system, and it should not look like a checkbox for a mailing
+ * list.
+ */
+.attestation {
+  display: grid;
+  gap: var(--s3);
+  width: 100%;
+  padding: var(--s4);
+  margin-top: var(--s3);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}

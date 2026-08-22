@@ -34,7 +34,7 @@ import {
   UserSquare,
   XCircle,
 } from 'lucide-react';
-import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui, type Tone } from '../../ui';
+import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui, type Tone, Checkbox } from '../../ui';
 import { strings } from '../../strings';
 import styles from '../manage.module.css';
 import { SessionControl } from '../../SessionControl';
@@ -262,6 +262,41 @@ function statusChip(a: Affiliation): { tone: Tone; label: string; icon: React.Re
   }
 }
 
+
+interface ExternalMeans {
+  key: string;
+  label: string;
+  establishes: string;
+  limits: string;
+  strength: string;
+}
+
+/**
+ * The ways notice can have been given outside AoBPlatform, from the server.
+ *
+ * Fetched rather than hard-coded so the screen and the rule cannot drift: the
+ * domain refuses a means it does not know, and a stale copy here would offer
+ * the practice an option that is then rejected.
+ */
+function useExternalNoticeMeans(): ExternalMeans[] {
+  const [means, setMeans] = useState<ExternalMeans[]>([]);
+  useEffect(() => {
+    let live = true;
+    fetch(`${CORE_URL}/affiliations/external-notice/catalogue`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((c) => {
+        if (live && c?.means) setMeans(c.means);
+      })
+      .catch(() => {
+        // The tick box simply will not offer options; the server still refuses.
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+  return means;
+}
+
 function AffiliationCard({
   affiliation,
   headers,
@@ -281,10 +316,24 @@ function AffiliationCard({
    * when impersonation lands.
    */
   const canActForPractice = Boolean(currentSession()?.practiceId);
+
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState<string | null>(null);
+  const externalMeansCatalogue = useExternalNoticeMeans();
   const [noticing, setNoticing] = useState(false);
+  const [externalMeans, setExternalMeans] = useState<string>('');
+  const [externalGivenAt, setExternalGivenAt] = useState<string>('');
+  const [externalNote, setExternalNote] = useState<string>('');
+  const [attestExternal, setAttestExternal] = useState(false);
   const [endsAt, setEndsAt] = useState('');
+
+  /*
+   * Whether the chosen date is already behind us. Compared as DATES, not
+   * instants: "today" is not in the past, and a time-of-day comparison would
+   * make it so for anybody recording a same-day departure after midday.
+   */
+  const pastDated = Boolean(endsAt) && endsAt < new Date().toISOString().slice(0, 10);
+  const chosenMeans = externalMeansCatalogue.find((m) => m.key === externalMeans);
   // From the session; AttributionInterceptor overwrites it server-side.
     const givenBy = currentSession()?.username ?? '';
   const [reason, setReason] = useState('');
@@ -336,6 +385,15 @@ function AffiliationCard({
         endsAt: new Date(endsAt).toISOString(),
         givenByName: givenBy.trim(),
         reason: reason.trim() || undefined,
+        // Only sent when the date has passed AND the practice has said so.
+        externalNotice:
+          pastDated && attestExternal
+            ? {
+                means: externalMeans,
+                givenAt: new Date(externalGivenAt).toISOString(),
+                note: externalNote.trim() || undefined,
+              }
+            : undefined,
       });
       setNoticing(false);
       await onChanged();
@@ -468,6 +526,87 @@ function AffiliationCard({
                     />
                   )}
                 </Field>
+
+                {/*
+                  THE DATE HAS ALREADY PASSED.
+
+                  Refusing this outright was the old behaviour, and it was
+                  right about reg 65CA(8) — backdating a notice does not
+                  un-cease agreements — but wrong about the record. It did
+                  not prevent the departure; it only stopped us knowing, so
+                  the platform went on showing the practitioner as ACTIVE at
+                  a location they had left. That is the worse falsehood.
+
+                  Asked HERE rather than after submitting, so the person is
+                  asked at the moment they can answer.
+                */}
+                {pastDated && (
+                  <div className={styles.attestation}>
+                    <Notice tone="warn" title={strings.affiliations.externalNoticeTitle}>
+                      {strings.affiliations.externalNoticeBody}
+                    </Notice>
+                    <Checkbox
+                      label={strings.affiliations.externalNoticeTick}
+                      checked={attestExternal}
+                      onCheckedChange={setAttestExternal}
+                    />
+                    {attestExternal && (
+                      <>
+                        <Field label={strings.affiliations.externalNoticeMeansLabel} required>
+                          {(props) => (
+                            <SelectInput
+                              {...props}
+                              value={externalMeans}
+                              onChange={(e) => setExternalMeans(e.target.value)}
+                              data-testid={`attest-means-${a.id}`}
+                            >
+                              <option value="">{strings.affiliations.externalNoticeMeansPlaceholder}</option>
+                              {externalMeansCatalogue.map((m) => (
+                                <option key={m.key} value={m.key}>
+                                  {m.label}
+                                </option>
+                              ))}
+                            </SelectInput>
+                          )}
+                        </Field>
+                        {chosenMeans && (
+                          <p className={styles.cardNote}>
+                            <strong>{chosenMeans.establishes}</strong> {chosenMeans.limits}
+                          </p>
+                        )}
+                        <Field
+                          label={strings.affiliations.externalNoticeGivenAt}
+                          hint={strings.affiliations.externalNoticeGivenAtHint}
+                          required
+                        >
+                          {(props) => (
+                            <TextInput
+                              {...props}
+                              type="date"
+                              value={externalGivenAt}
+                              onChange={(e) => setExternalGivenAt(e.target.value)}
+                              data-testid={`attest-date-${a.id}`}
+                            />
+                          )}
+                        </Field>
+                        <Field
+                          label={strings.affiliations.externalNoticeNote}
+                          hint={strings.affiliations.externalNoticeNoteHint}
+                          required={externalMeans === 'other'}
+                        >
+                          {(props) => (
+                            <TextInput
+                              {...props}
+                              value={externalNote}
+                              onChange={(e) => setExternalNote(e.target.value)}
+                              data-testid={`attest-note-${a.id}`}
+                            />
+                          )}
+                        </Field>
+                      </>
+                    )}
+                  </div>
+                )}
                 <Field label={strings.affiliations.noticeReason} hint={strings.affiliations.noticeReasonHint}>
                   {(props) => (
                     <TextInput {...props} value={reason} onChange={(e) => setReason(e.target.value)} />

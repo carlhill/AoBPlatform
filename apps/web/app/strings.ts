@@ -1525,6 +1525,19 @@ export const strings = {
    * it has got to, and says whether capture is actually open.
    */
   affiliations: {
+    externalNoticeTitle: 'This date has already passed',
+    externalNoticeBody:
+      'We cannot have given notice through AoBPlatform before a date that has gone by. If the ' +
+      'practitioner was told another way, say so and we will record that — the agreements ceased on ' +
+      'their last day either way, and leaving this unrecorded would keep showing them as still ' +
+      'working here.',
+    externalNoticeTick: 'Notice was given outside AoBPlatform',
+    externalNoticeMeansLabel: 'How were they told?',
+    externalNoticeMeansPlaceholder: 'Choose how…',
+    externalNoticeGivenAt: 'When were they told?',
+    externalNoticeGivenAtHint: 'The date notice was actually given, not the date you are recording it.',
+    externalNoticeNote: 'Note',
+    externalNoticeNoteHint: 'Optional, unless you chose “something else”.',
     practiceOnlyTitle: 'Only the practice can invite a practitioner',
     practiceOnlyBody:
       'An invitation is the practice saying this person works here, and it is how they come to be ' +

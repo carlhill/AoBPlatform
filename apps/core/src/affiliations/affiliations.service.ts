@@ -19,7 +19,9 @@ import {
   AffiliationError,
   assertDirectoryQueryAllowed,
   assertNoProviderNumber,
-  assertNoticeValid,
+  assessDeparture,
+  DepartureNoticeError,
+  calendarFor,
   assertAffiliationTransition,
   canCaptureUnder,
   captureBlockReason,
@@ -598,17 +600,49 @@ export class AffiliationsService {
    * `endsAt` is the commercially agreed date — the platform records it and
    * refuses only the impossible shape, an end date before the notice.
    */
-  async giveNotice(practiceId: string, affiliationId: string, input: { endsAt: Date; givenByName: string; reason?: string }) {
+  async giveNotice(
+    practiceId: string,
+    affiliationId: string,
+    input: {
+      endsAt: Date;
+      givenByName: string;
+      reason?: string;
+      /**
+       * Set when the departure has already happened and notice was given
+       * outside AoBPlatform. Stored AS an attestation, never relabelled as
+       * our own notice.
+       */
+      externalNotice?: { means: string; givenAt: Date; note?: string };
+    },
+  ) {
     const affiliation = await this.prisma.withPractice(practiceId, (tx) =>
       tx.affiliation.findFirst({ where: { id: affiliationId } }),
     );
     if (!affiliation) throw new NotFoundException('Affiliation not found in this practice.');
 
     const noticeGivenAt = new Date();
+
+    /*
+     * THE HOLIDAY CALENDAR IS PER LOCATION, because a Friday notice before
+     * a long weekend lands differently in each state (REQ-OFF-03). The
+     * location carries the state for exactly this.
+     */
+    const location = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.practiceLocation.findFirst({ where: { id: affiliation.locationId } }),
+    );
+    const calendar = calendarFor((location?.state ?? 'NSW') as never, input.endsAt);
+
+    let assessment;
     try {
-      assertNoticeValid({ noticeGivenAt, endsAt: input.endsAt });
+      assessment = assessDeparture({
+        now: noticeGivenAt,
+        endsAt: input.endsAt,
+        calendar,
+        external: input.externalNotice,
+      });
       assertAffiliationTransition(affiliation.status as never, 'ending');
     } catch (err) {
+      if (err instanceof DepartureNoticeError) throw new BadRequestException(err.message);
       if (err instanceof AffiliationError) throw new BadRequestException(err.message);
       throw err;
     }
@@ -622,6 +656,12 @@ export class AffiliationsService {
           noticeGivenBy: input.givenByName,
           endsAt: input.endsAt,
           endReason: input.reason ?? 'practitioner_left_location',
+          externalNoticeMeans: input.externalNotice?.means ?? null,
+          externalNoticeGivenAt: input.externalNotice?.givenAt ?? null,
+          externalNoticeNote: input.externalNotice?.note?.trim() || null,
+          externalNoticeAttestedBy: input.externalNotice ? input.givenByName : null,
+          noticeLeadBusinessDays: assessment.leadBusinessDays,
+          noticeAnomaly: assessment.anomaly ?? null,
         },
       });
       await enqueueVaultEvent(tx, {
@@ -630,7 +670,14 @@ export class AffiliationsService {
         subject: { type: 'Affiliation', id: affiliationId },
         payload: {
           givenBy: input.givenByName,
-          noticeDays: Math.round((input.endsAt.getTime() - noticeGivenAt.getTime()) / 86_400_000),
+          // The BASIS, not just the count. A reader must be able to tell
+          // notice we delivered from notice a practice says it gave.
+          basis: assessment.basis,
+          leadBusinessDays: assessment.leadBusinessDays,
+          sufficientLead: assessment.sufficientLead,
+          agreementsCeasedOn: assessment.agreementsCeasedOn.toISOString(),
+          ...(input.externalNotice ? { externalNoticeMeans: input.externalNotice.means } : {}),
+          ...(assessment.anomaly ? { anomaly: assessment.anomaly } : {}),
         },
       });
       return result;
@@ -641,6 +688,10 @@ export class AffiliationsService {
       status: updated.status,
       noticeGivenAt: updated.noticeGivenAt,
       endsAt: updated.endsAt,
+      basis: assessment.basis,
+      leadBusinessDays: assessment.leadBusinessDays,
+      sufficientLead: assessment.sufficientLead,
+      anomaly: assessment.anomaly ?? null,
       /** The load-bearing sentence: nothing stops until the end date. */
       effectNow:
         'The affiliation is STILL ACTIVE. Capture proceeds and claims are valid until the end date — notice ' +

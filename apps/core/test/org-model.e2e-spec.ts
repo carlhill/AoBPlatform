@@ -910,9 +910,64 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
       const res = await scoped('post', `/affiliations/${affiliationId}/notice`)
         .send({ endsAt: '2020-01-01T00:00:00.000Z', givenByName: 'Robin Practicemanager' })
         .expect(400);
-      expect(res.body.message).toMatch(/BEFORE the affiliation ends/);
-      expect(res.body.message).toMatch(/un-cease/);
+      /*
+       * STILL REFUSED, and the message now says what to do instead.
+       *
+       * The old refusal was right about reg 65CA(8) and wrong about the
+       * record: it did not prevent the departure, it only stopped us knowing
+       * about it, so the platform went on showing the practitioner as ACTIVE
+       * at a location they had already left.
+       */
+      expect(res.body.message).toMatch(/already passed/);
+      expect(res.body.message).toMatch(/outside the platform/);
+      expect(res.body.message).toMatch(/untrue|still working here/);
     });
+
+    it('THE DATABASE ALSO ENFORCES IT, and knows about the attested case', async () => {
+      /*
+       * `affiliations_notice_precedes_end` is a CHECK constraint, and it is
+       * the right place for this rule: the domain and the API can both be
+       * bypassed by a script, and the constraint cannot.
+       *
+       * But it encoded the OLD rule, which merged "when did the agreements
+       * cease" with "was notice given, and by whom". A practitioner who left
+       * on the 19th, recorded on the 22nd, told months earlier in their
+       * employment agreement, is a legitimate record — and the constraint
+       * refused it with a 500, which is how this was found.
+       *
+       * Tested here rather than through the API because the API path mutates
+       * the shared fixture that every later test in this block depends on.
+       */
+      const past = new Date();
+      past.setUTCDate(past.getUTCDate() - 5);
+
+      /*
+       * Run INSIDE withPractice. A raw statement outside it is refused by
+       * RLS before the constraint is ever consulted — it matches zero rows
+       * and resolves happily, which is fail-closed working exactly as
+       * intended and useless as a test of the constraint.
+       */
+      await expect(
+        prisma.withPractice(orgId, (tx) =>
+          tx.$executeRawUnsafe(
+            `UPDATE core.affiliations SET "noticeGivenAt" = now(), "endsAt" = $1 WHERE id = $2::uuid`,
+            past,
+            affiliationId,
+          ),
+        ),
+      ).rejects.toThrow(/notice_precedes_end/);
+
+      // With one, it is permitted — and the attestation must carry its date.
+      await expect(
+        prisma.withPractice(orgId, (tx) =>
+          tx.$executeRawUnsafe(
+            `UPDATE core.affiliations SET "externalNoticeMeans" = 'employment_agreement' WHERE id = $1::uuid`,
+            affiliationId,
+          ),
+        ),
+      ).rejects.toThrow(/external_notice_complete/);
+    });
+
 
     it('accepts a forward-dated notice and keeps the affiliation working', async () => {
       const endsAt = new Date(Date.now() + 10 * 86_400_000).toISOString();
