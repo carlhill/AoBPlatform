@@ -723,10 +723,18 @@
   margin: 0 0 var(--s1);
 }
 
+/*
+ * The decision form: two fields, side by side, ALIGNED AT THE TOP.
+ *
+ * They are not the same height — the note carries a hint underneath and the
+ * decision does not — so aligning them at the bottom left the shorter one
+ * hanging below its neighbour. The note gets the wider share because it is the
+ * one thing here somebody actually writes in.
+ */
 .reviewActions {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  align-items: end;
+  grid-template-columns: minmax(12rem, 1fr) minmax(16rem, 2fr);
+  align-items: start;
   gap: var(--s3);
   margin-top: var(--s3);
   padding-top: var(--s3);
@@ -782,8 +790,17 @@
  * space and the two controls either side stay at their natural width — a
  * three-equal-columns grid gave a one-line note box and a stretched button.
  */
-.reviewActions {
-  grid-template-columns: minmax(12rem, auto) minmax(16rem, 1fr) auto;
+/* The button sits on its own line. Beside the fields it had to align against
+   two things of different heights and no label of its own, and it always
+   looked dropped whichever way it went. */
+.decideRow {
+  margin-top: var(--s3);
+}
+
+@media (max-width: 40rem) {
+  .reviewActions {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* When the claim row is present it already drew the rule. */

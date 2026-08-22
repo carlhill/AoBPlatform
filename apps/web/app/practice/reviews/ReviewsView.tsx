@@ -350,8 +350,7 @@ function TaskCard({
           )}
 
           <div className={styles.reviewActions}>
-
-          <Field label={strings.reviews.decision}>
+            <Field label={strings.reviews.decision}>
             {(props) => (
               <SelectInput
                 {...props}
@@ -367,8 +366,8 @@ function TaskCard({
                 ))}
               </SelectInput>
             )}
-          </Field>
-          <Field label={strings.reviews.note} hint={strings.reviews.noteHint}>
+            </Field>
+            <Field label={strings.reviews.note} hint={strings.reviews.noteHint}>
             {(props) => (
               <TextInput
                 {...props}
@@ -377,13 +376,22 @@ function TaskCard({
                 data-testid={`note-${task.id}`}
               />
             )}
-          </Field>
-          <Button
-            variant="primary"
-            onClick={() => void act('resolve', { resolution, note: note.trim() || undefined })}
-            disabled={busy || !resolution}
-            data-testid={`resolve-${task.id}`}
-          >
+            </Field>
+          </div>
+
+          {/*
+            THE BUTTON GETS ITS OWN ROW. Beside the two fields it meant aligning
+            three things of different heights — a label plus a select, a label
+            plus an input plus a hint, and a bare button — and whichever way they
+            were aligned, one of them looked dropped.
+          */}
+          <div className={styles.decideRow}>
+            <Button
+              variant="primary"
+              onClick={() => void act('resolve', { resolution, note: note.trim() || undefined })}
+              disabled={busy || !resolution}
+              data-testid={`resolve-${task.id}`}
+            >
               {busy ? strings.reviews.deciding : strings.reviews.decide}
             </Button>
           </div>
