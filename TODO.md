@@ -9,6 +9,27 @@ task and belongs in the code as a TODO comment instead.
 
 ---
 
+## Family reporting
+
+Asked 22 Aug 2026, flagged as a selling point rather than a requirement.
+
+Once patient and assignor reporting exists, an assignor who acts for several
+people — a parent, a carer, an adult child — should be able to see them
+together rather than one at a time. "What has been assigned in my family this
+year" is a question no practice can answer and we can.
+
+**It cannot be built before the relationship model is settled.** An assignor's
+authority is per-patient and must expire; a family view is that authority
+plotted over time, so it inherits every question the relationship has and adds
+one more — whether somebody may still see a period they were authorised for
+AFTER the authority ends. Probably yes for what they could see at the time, and
+certainly not for anything after it, but that is a decision rather than an
+obvious answer.
+
+Also worth stating plainly before anybody builds it: a family view makes one
+person's records visible to another. That is a feature the patient must be able
+to see and revoke, not a convenience granted by whoever set it up.
+
 ## Onboarding
 
 ### AI chat bot for application status
