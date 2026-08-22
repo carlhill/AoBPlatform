@@ -24,6 +24,7 @@ import { apiHeaders } from '../../auth';
 import { strings } from '../../strings';
 import { usePractice } from '../usePractice';
 import { useLiveRefresh } from '../../useLiveRefresh';
+import { ReportView } from './ReportView';
 import styles from '../manage.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
@@ -186,6 +187,13 @@ export function SummaryView({ groupBy }: { groupBy: 'org' | 'site' }) {
           </table>
         </div>
       )}
+
+      {/*
+        THE SAME NUMBERS, OVER TIME. The table above answers "who is sending
+        how much"; this answers "is that growing, and when". Sharing a page
+        because the second question is always the next one asked.
+      */}
+      <ReportView />
     </Shell>
   );
 }

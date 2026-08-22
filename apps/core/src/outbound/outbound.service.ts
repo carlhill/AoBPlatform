@@ -8,6 +8,18 @@ import {
   idempotencyKey,
   isPullChannel,
   leaseSecondsFor,
+  REPORT_GRAINS,
+  REPORT_MATRICES,
+  REPORT_MAX_YEARS,
+  REPORT_TIMEZONE,
+  ReportingError,
+  type ReportScope,
+  isReportGrain,
+  matrix,
+  mayGroupByOrganisation,
+  reportWindow,
+  scopeFor,
+  summarise,
 } from '@aobplatform/domain';
 import type { Prisma } from '@prisma/client';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
@@ -571,6 +583,89 @@ export class OutboundService {
    * That is a materially different disclosure from the item list, which is why
    * the item list stays scoped to one practice and this does not.
    */
+  /**
+   * Volumes over time, for the summary reports.
+   *
+   * THE SCOPE COMES FROM THE CALLER'S IDENTITY, not from a query parameter.
+   * `scopeFor` reads it off the principal and throws rather than defaulting
+   * when it cannot tell, because a report with no scope is everybody's report.
+   * The SQL then narrows by it, so there is no path that fetches everything
+   * and leaves the filtering to whatever renders it.
+   *
+   * The bucketing is done in the domain rather than in SQL. Doing it in both
+   * would put the same week-of-month arithmetic in two languages, which is how
+   * two screens come to disagree about a total.
+   */
+  async timeseries(
+    principal: { roles?: string[]; practiceId?: string | null },
+    options: {
+      grain?: string;
+      matrix?: string;
+      practiceId?: string;
+      locationId?: string;
+      departmentId?: string;
+      from?: string;
+    } = {},
+  ) {
+    let scope: ReportScope;
+    try {
+      scope = scopeFor(principal);
+    } catch (err) {
+      if (err instanceof ReportingError) throw new BadRequestException(err.message);
+      throw err;
+    }
+
+    /*
+     * A platform operator may narrow to one organisation; nobody else may
+     * widen. An organisation-scoped caller's practice comes from their claim,
+     * and a practiceId in the query string is ignored rather than trusted --
+     * it is the obvious thing to edit.
+     */
+    const practiceId = scope === 'platform' ? options.practiceId : (principal.practiceId ?? undefined);
+
+    if (scope !== 'platform' && scope !== 'organisation') {
+      throw new BadRequestException(
+        'These figures come from what was sent to and by a practice. Your own messages are a different ' +
+          'report, over your notices rather than the outbound queue.',
+      );
+    }
+
+    const now = new Date();
+    const window = reportWindow(now, options.from ? new Date(options.from) : null);
+
+    const rows = await this.prisma.$queryRaw<
+      Array<{ at: Date; count: bigint; practiceId: string; mediaType: string; state: string }>
+    >`SELECT * FROM core.outbound_timeseries(
+        ${scope}, ${practiceId ?? null}::uuid, ${options.locationId ?? null}::uuid,
+        ${options.departmentId ?? null}::uuid, ${window.from}, ${window.to})`;
+
+    const counted = rows.map((r) => ({ at: r.at, count: Number(r.count) }));
+    const grain = options.grain && isReportGrain(options.grain) ? options.grain : 'month';
+
+    return {
+      scope,
+      grain,
+      // Stated rather than assumed. A reader comparing this against their own
+      // records needs to know which midnight we used.
+      timezone: REPORT_TIMEZONE,
+      from: window.from.toISOString(),
+      to: window.to.toISOString(),
+      // TRUE only when somebody asked for more than we keep. Silence here would
+      // make a truncated report look complete.
+      capped: window.capped,
+      maxYears: REPORT_MAX_YEARS,
+      total: counted.reduce((sum, r) => sum + r.count, 0),
+      series: summarise(counted, grain),
+      matrices: {
+        month_by_week: matrix(counted, 'month_by_week'),
+        month_by_day: matrix(counted, 'month_by_day'),
+      },
+      mayGroupByOrganisation: mayGroupByOrganisation(scope),
+      grains: REPORT_GRAINS,
+      matrixKinds: REPORT_MATRICES,
+    };
+  }
+
   async totalsByOrg() {
     const rows = await this.prisma.$queryRaw<
       Array<{ practiceId: string; practiceName: string; mediaType: string; state: string; total: bigint }>

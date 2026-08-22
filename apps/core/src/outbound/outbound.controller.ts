@@ -43,6 +43,29 @@ export class OutboundController {
    * cannot ask for somebody else's queue by editing a request — the value they
    * send is replaced before it reaches here.
    */
+  /**
+   * The summary reports: five grains and two comparison matrices.
+   *
+   * NO `scope` PARAMETER, deliberately. Whose figures these are is read off the
+   * caller's own token, so there is nothing here to edit. A practice narrowing
+   * to another practice's id is ignored rather than refused, because the
+   * refusal would itself confirm the id exists.
+   */
+  @Get('report')
+  report(
+    @SessionActor() actor: Actor | undefined,
+    @Query('grain') grain?: string,
+    @Query('practiceId') practiceId?: string,
+    @Query('locationId') locationId?: string,
+    @Query('departmentId') departmentId?: string,
+    @Query('from') from?: string,
+  ) {
+    return this.outbound.timeseries(
+      { roles: actor?.roles, practiceId: actor?.practiceId },
+      { grain, practiceId, locationId, departmentId, from },
+    );
+  }
+
   @Get()
   list(
     @Headers('x-practice-id') practiceId: string | undefined,

@@ -1289,6 +1289,31 @@ export const strings = {
     end: 'Stop acting as them',
     ending: 'Stopping…',
   },
+  report: {
+    title: 'Totals over time',
+    lead:
+      'How much has been sent, and when. The last two tables compare the same position in each month — week 1 '
+      + 'against week 1 — which a running total cannot do.',
+    grain: 'Summarise by',
+    grainHint: 'The last two are comparison tables rather than a list.',
+    window: '{from} to {to} · {total} in total · days begin at midnight {tz}',
+    loading: 'Reading the figures…',
+    period: 'Period',
+    month: 'Month',
+    count: 'Sent',
+    total: 'Total',
+    everything: 'Everything we hold',
+    noSuchDay: 'No such day in this month',
+    failed: 'Those figures could not be read',
+    emptyTitle: 'Nothing has been sent in this period',
+    emptyBody:
+      'That is a real answer rather than a missing one — the query ran and found nothing. Widen the period, or '
+      + 'check the message list if you expected something here.',
+    cappedTitle: 'Shortened to what we still hold',
+    cappedBody:
+      'You asked for further back than {n} years. We do not keep sending records longer than that, so this '
+      + 'report starts where the records do rather than implying older ones are being withheld.',
+  },
   users: {
     title: 'Your people',
     lead:
