@@ -1297,6 +1297,7 @@ export const strings = {
       'This is advice, not a decision. It is shown here because this kind of change always needs a person — the check has flagged what it saw and you are the one deciding.',
     claimedBy: 'Being reviewed by',
     claim: 'I am reviewing this',
+    claimLapsed: 'Their claim has lapsed — anybody may take this',
     decision: 'Your decision',
     chooseDecision: 'Choose…',
     note: 'Note',

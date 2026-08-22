@@ -324,17 +324,32 @@ function TaskCard({
           <Check size={13} aria-hidden="true" /> {task.state} · {task.summary}
         </p>
       ) : (
-        <div className={styles.reviewActions}>
-          {task.claimedBy && !task.claimable && (
-            <Chip tone="warn">
-              {strings.reviews.claimedBy} {task.claimedBy}
-            </Chip>
+        <>
+          {/*
+            CLAIMING IS ITS OWN LINE. It answers a different question from the
+            decision below it — "is anybody already on this" versus "what did
+            you conclude" — and sitting them in one grid row made the claim
+            button look like a third field of the form.
+          */}
+          {(task.claimedBy || (task.claimable && task.state === 'open')) && (
+            <div className={styles.claimRow}>
+              {task.claimedBy && !task.claimable && (
+                <Chip tone="warn">
+                  {strings.reviews.claimedBy} {task.claimedBy}
+                </Chip>
+              )}
+              {task.claimedBy && task.claimable && (
+                <Chip tone="neutral">{strings.reviews.claimLapsed}</Chip>
+              )}
+              {task.claimable && task.state === 'open' && (
+                <Button onClick={() => void act('claim')} disabled={busy} data-testid={`claim-${task.id}`}>
+                  {strings.reviews.claim}
+                </Button>
+              )}
+            </div>
           )}
-          {task.claimable && task.state === 'open' && (
-            <Button onClick={() => void act('claim')} disabled={busy} data-testid={`claim-${task.id}`}>
-              {strings.reviews.claim}
-            </Button>
-          )}
+
+          <div className={styles.reviewActions}>
 
           <Field label={strings.reviews.decision}>
             {(props) => (
@@ -369,9 +384,10 @@ function TaskCard({
             disabled={busy || !resolution}
             data-testid={`resolve-${task.id}`}
           >
-            {busy ? strings.reviews.deciding : strings.reviews.decide}
-          </Button>
-        </div>
+              {busy ? strings.reviews.deciding : strings.reviews.decide}
+            </Button>
+          </div>
+        </>
       )}
 
       {error && (

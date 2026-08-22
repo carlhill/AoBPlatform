@@ -347,6 +347,55 @@ export class PracticeAdminService {
           where: { id: input.organisationId },
           data: { adminKeycloakUserId: user.id, adminInvitedAt: invitedAt },
         });
+
+        /*
+         * THE ADMINISTRATOR IS ALSO A PERSON ON THE LIST.
+         *
+         * Without this row the practice has an administrator account in
+         * Keycloak and nothing on /practice/users saying so — the screen
+         * reported "no administrator" for a practice that plainly had one,
+         * which is a screen contradicting the system it is a view of.
+         *
+         * It carries consoleRole `admin`, which the domain caps at exactly
+         * one per practice — so this row is also what makes that cap mean
+         * anything. Before it, the rule was counting rows that never existed.
+         *
+         * `keycloakUserId` is the join back to the account, so a later
+         * handover can find both halves.
+         */
+        const existing = await tx.staffMember.findFirst({
+          where: { practiceId: input.organisationId, consoleRole: 'admin' },
+        });
+        if (existing) {
+          await tx.staffMember.update({
+            where: { id: existing.id },
+            data: {
+              name: input.adminName ?? existing.name,
+              email: input.adminEmail ?? existing.email,
+              keycloakUserId: user.id,
+              invitedAt,
+              // A re-invitation restores access: the account is the
+              // practice's, and issuing a fresh credential is the point.
+              deactivatedAt: null,
+              deactivatedReason: null,
+              active: true,
+            },
+          });
+        } else {
+          await tx.staffMember.create({
+            data: {
+              practiceId: input.organisationId,
+              name: input.adminName ?? 'Practice administrator',
+              email: input.adminEmail,
+              // What they DO at the practice. Separate from consoleRole, so
+              // console access is never granted by describing somebody.
+              role: 'practice_manager',
+              consoleRole: 'admin',
+              keycloakUserId: user.id,
+              invitedAt,
+            },
+          });
+        }
         await tx.enrolmentCeremony.update({ where: { id: ceremony.id }, data: { consumedAt: invitedAt } });
         await enqueueVaultEvent(tx, {
           type: 'nomination.changed',

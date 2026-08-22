@@ -759,3 +759,35 @@
   border: 1px solid var(--line);
   border-radius: var(--radius);
 }
+
+/*
+ * Claiming sits on its own line, above the decision form.
+ *
+ * It answers a different question — "is anybody already on this" rather than
+ * "what did you conclude" — and sharing a grid row made the claim button look
+ * like a third field of the form.
+ */
+.claimRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  margin-top: var(--s3);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--line);
+}
+
+/*
+ * The decision form. The note wants room to be written in, so it takes the
+ * space and the two controls either side stay at their natural width — a
+ * three-equal-columns grid gave a one-line note box and a stretched button.
+ */
+.reviewActions {
+  grid-template-columns: minmax(12rem, auto) minmax(16rem, 1fr) auto;
+}
+
+/* When the claim row is present it already drew the rule. */
+.claimRow + .reviewActions {
+  border-top: 0;
+  padding-top: 0;
+}
