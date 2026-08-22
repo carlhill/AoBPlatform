@@ -38,6 +38,16 @@ export interface Actor {
    * "may not".
    */
   practiceId?: string;
+  /**
+   * A practitioner's own id, when the token is a practitioner's.
+   *
+   * A token carries this OR a practice claim, never both: a practice user is
+   * scoped to a practice, a practitioner is scoped to themselves across every
+   * practice they work at. Their own screens read it from here rather than
+   * taking it in a URL, so there is no parameter to tamper with and no
+   * ownership check to forget.
+   */
+  practitionerId?: string;
 }
 
 /**
@@ -60,5 +70,6 @@ export const SessionActor = createParamDecorator((_data: unknown, context: Execu
     principalType: principal.principalType,
     roles: principal.roles ?? [],
     practiceId: principal.practiceId,
+    practitionerId: (principal.raw as { practitioner_id?: string } | undefined)?.practitioner_id,
   };
 });

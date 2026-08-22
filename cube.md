@@ -66,17 +66,25 @@ Source: [`apps/core/test/reporting-isolation.e2e-spec.ts`](apps/core/test/report
 
 ```
 PASS test/reporting-isolation.e2e-spec.ts
-  √ has two practices with messages, or this test proves nothing
-  √ shows a scoped reader its own practice, so the positive case is real
-  √ SHOWS IT NOTHING FROM ANY OTHER PRACTICE
-  √ refuses a reader with NO practice on its connection
-  √ refuses the same reader going AROUND the view to the tables
-  √ lets the platform credential look across, because that is what it is for
-  √ keeps names and message content out of the reporting surface entirely
+  reporting layer tenancy
+    √ has two practices with messages, or this test proves nothing
+    √ shows a scoped reader its own practice, so the positive case is real
+    √ SHOWS IT NOTHING FROM ANY OTHER PRACTICE
+    √ refuses a reader with NO practice on its connection
+    √ refuses the same reader going AROUND the view to the tables
+    √ lets the platform credential look across, because that is what it is for
+    √ keeps MESSAGE CONTENT and identifiers out of the reporting surface
+    √ NEVER lets one practice see another practice's recipient names
+  a practitioner reading their own figures
+    √ has two practitioners with messages, or this proves nothing
+    √ shows a practitioner their own messages
+    √ SHOWS THEM NOTHING OF ANOTHER PRACTITIONER
+    √ reads nothing with no practitioner on the connection
+    √ REFUSES the practice-wide view outright, rather than returning it empty
+    √ cannot reach the raw table beyond its own rows
 
 Test Suites: 1 passed, 1 total
-Tests:       7 passed, 7 total
-Time:        3.094 s
+Tests:       14 passed, 14 total
 ```
 
 ### What each one is actually for
@@ -89,13 +97,51 @@ Time:        3.094 s
 | refuses a reader with NO practice | Fail-closed. A connection that forgot to name a practice must read nothing rather than everything. |
 | refuses going AROUND the view | The view is not the boundary; the policies are. A second view added later, or Cube pointed at a table, must not be a way through. |
 | lets the platform credential look across | That the separation is real and not just everything being broken. |
-| keeps names out of the surface | The fourth layer. Asserts no column contains `recipient`, `body`, `payload`, `subject`, `patient`, `practitioner` or `provider`. |
+| keeps message content out of the surface | The fourth layer. Bans `providernumber`, `ahpra`, `body`, `payload`, `subject`, `destination`, `medicare`. **It used to ban anything containing `recipient` or `practitioner`, which was wrong in both directions** — it tripped on `recipientType`, a category rather than a person, and it would have banned the recipient name a practice is entitled to see about its own people. |
+| never lets one practice see another's recipient NAMES | Replaced the blunt column check. Names being present is a decision; names crossing a practice boundary is not. Asserted about the **rows returned**, which is where the boundary actually lives, rather than about which columns exist. |
+| *(practitioner)* shows them their own messages | The positive case for the second policy, and the awkward one — a practitioner has no practice to name, so without `app.practitioner_id` this reads nothing at all. |
+| *(practitioner)* shows them nothing of another | Counts distinct practitioners (must be 1) as well as asking for another by name (must be 0). |
+| *(practitioner)* refuses the practice-wide view | A **refusal**, not an empty answer. "Permission denied" says you asked the wrong question; zero rows would say the practice sent nothing, which is a claim about the practice and would be false. |
 
 It runs through `psql` as those roles rather than through Prisma, deliberately —
 Prisma connects as the application role, and the entire question is what a
 *different* role can see.
 
 ---
+
+## The third scope: a practitioner
+
+A practitioner is not scoped to a practice. They work at several, which ones
+changes, and "what was sent to me" spans all of them — so the usual policy has
+no practice to name and reads nothing. Fail-closed, and here fail-wrong.
+
+**The tempting answer was the platform credential plus a filter in Cube.** That
+would put every practitioner's data one config mistake from every other
+practitioner's, and take the database out of the argument entirely — the exact
+trade refused for practices.
+
+**Instead: a second RLS policy on the same table**, keyed on
+`app.practitioner_id`. Policies are OR'd, so:
+
+| Connection carries | Sees |
+|---|---|
+| `app.practice_id` | that practice's rows |
+| `app.practitioner_id` | that practitioner's rows, wherever they are |
+| neither | nothing |
+
+Two further policies let a practitioner read the *name* of a practice that has
+actually written to them — expressed as a join back through their own messages,
+so the set is "practices I have heard from" rather than a list of practices.
+
+They get a **third credential**, `cube_practitioner_reader`, with no `BYPASSRLS`
+and **no grant at all** on the practice-wide view. A practitioner asking the
+practice question gets `permission denied`, not zero rows — because zero rows
+would say the practice sent nothing, which is a claim about the practice, and
+would be false.
+
+Their cube is `MyMessages`, separate from `OutboundMessages` rather than a
+filtered version of it. The two answer different questions from different
+vantage points, and keeping them apart is what keeps the credentials apart.
 
 ## End to end, through the API
 
@@ -157,12 +203,16 @@ more confidence than it earned.
   to filter on, and layer 3 would silently not apply to it. Layer 2 would still
   hold. The checklist in `infra/cube/README.md` exists for this and the isolation
   test should be extended alongside any new cube.
-- **Practitioner and patient scopes are not built.** Only `platform` and
-  `organisation` exist. `outbound_items` records what was sent to a *practice*
-  and carries no practitioner or patient column, so "my own messages" cannot be
-  answered from this surface at all — it belongs over `notices`. A branch that
-  returned nothing would be worse than none, because an empty report reads as
-  "you have sent nothing", and that would be false.
+- **Patient scope is not built.** Platform, organisation and practitioner
+  exist. A patient scope would need the same shape — its own policy, its own
+  credential, its own cube — and it waits on the assignor relationship model,
+  because an assignor acting for a patient is authority that expires, which a
+  role cannot express.
+
+  *(An earlier version of this file said practitioner scope was impossible here
+  because `outbound_items` had no practitioner column. That was wrong: it
+  carries `recipientType` and `recipientId`, and every practitioner message has
+  them populated.)*
 - **Pre-aggregations build lazily.** The scheduled refresh runs with no security
   context, which `driverFactory` refuses; that refusal is correct, so the
   scheduler is off rather than handed platform credentials — which would make it

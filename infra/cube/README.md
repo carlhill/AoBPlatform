@@ -23,7 +23,8 @@ whole point of it: the next report request does not need a developer.
 
 ## What you can ask about today
 
-One cube, `OutboundMessages`, over everything this platform has sent.
+Two cubes. `OutboundMessages` is the practice and platform view of everything
+sent; `MyMessages` is one practitioner's own, across every practice they work at.
 
 - **Measures** — Messages, Sent, Failed, Still waiting, Delivery attempts, Resends
 - **Dimensions** — Organisation, Site, Department, Channel, Format, State
@@ -66,6 +67,13 @@ refuses to answer.
 Plus a fourth thing that is not a layer but bounds the damage: the reporting
 view holds counts and coarse dimensions. If all three failed at once, what
 leaks is volumes rather than anybody's data.
+
+**A practitioner is a third scope.** Not a practice — they work at several — so
+a second RLS policy keyed on `app.practitioner_id` answers "what was sent to me"
+across all of them. Their credential, `cube_practitioner_reader`, carries no
+`BYPASSRLS` and no grant on the practice-wide view at all, so asking the practice
+question returns `permission denied` rather than zero rows. Their cube is
+`MyMessages`. See [`cube.md`](../../cube.md) for how it was proved.
 
 **A platform report reads across practices** — that is what it is. It uses a
 separate credential, `cube_platform_reader`, carrying `BYPASSRLS`, reachable
