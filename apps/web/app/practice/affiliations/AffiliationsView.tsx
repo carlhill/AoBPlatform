@@ -38,6 +38,7 @@ import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui, type To
 import { strings } from '../../strings';
 import styles from '../manage.module.css';
 import { SessionControl } from '../../SessionControl';
+import { apiHeaders } from '../../auth';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -113,10 +114,10 @@ export function AffiliationsView({ practiceId }: { practiceId: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [invited, setInvited] = useState(false);
 
-  const headers = { 'x-practice-id': practiceId, 'Content-Type': 'application/json' };
+  const headers = apiHeaders(practiceId);
 
   const load = useCallback(async () => {
-    const scope = { 'x-practice-id': practiceId };
+    const scope = apiHeaders(practiceId);
     try {
       const [affRes, locRes, rosRes, depRes] = await Promise.all([
         fetch(`${CORE_URL}/affiliations`, { headers: scope }),

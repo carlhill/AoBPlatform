@@ -233,3 +233,80 @@
 .suggestions li {
   padding: var(--s1) 0;
 }
+
+/*
+ * The address decision panel — confirm with a method, or send it back with a
+ * reason.
+ *
+ * It replaced a single "Confirm" button that could only ever say yes. A
+ * reviewer who looked and decided NOT to confirm had nothing to do but close
+ * the tab, which left the practice blocked with nothing to read.
+ */
+.decision {
+  width: 100%;
+  display: grid;
+  gap: var(--s3);
+  padding: var(--s4);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.decisionTabs {
+  display: flex;
+  gap: var(--s2);
+  flex-wrap: wrap;
+}
+
+/*
+ * What the chosen method establishes, and what it does NOT. The limits are the
+ * half people skip, and a reviewer who only reads what a check proves learns
+ * to over-read their own evidence.
+ */
+.methodDetail {
+  display: grid;
+  gap: var(--s1);
+  padding: var(--s3);
+  background: var(--surface);
+  border-left: 3px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+
+.methodEstablishes {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink);
+}
+
+.methodLimits {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s1);
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+/* "The practice will read:" — a reviewer is writing to somebody else. */
+.previewLabel {
+  margin: 0;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-muted);
+}
+
+.uploadRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+}
+
+.attached {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  font-size: var(--text-sm);
+  color: var(--ok);
+}

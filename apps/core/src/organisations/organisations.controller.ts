@@ -13,6 +13,13 @@ import {
 import { Type } from 'class-transformer';
 import { LOCKED_FIELDS } from '@aobplatform/domain';
 import { PLATFORM_ADMIN, RequireRoles } from '../auth/roles.decorator';
+import {
+  ADDRESS_CHECK_KEYS,
+  ADDRESS_CHECK_METHODS,
+  ADDRESS_CHECK_VERSION,
+  ADDRESS_REJECTION_KEYS,
+  ADDRESS_REJECTION_REASONS,
+} from '@aobplatform/domain';
 import { SessionActor, type Actor } from '../auth/actor.decorator';
 import {
   Equals,
@@ -23,6 +30,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   Min,
   MinLength,
@@ -401,12 +409,64 @@ export class AddLocationDto {
 
 export class ActivateLocationDto {
   /**
-   * HOW they confirmed it — optional, and there is no reviewerName field on
-   * purpose. Who did it comes from the verified token; see SessionActor.
+   * HOW it was checked. REQUIRED, from the catalogue in the domain.
+   *
+   * There is no reviewerName field on purpose — who did it comes from the
+   * verified token (see SessionActor). And "confirmed" without a method is a
+   * record nobody can weigh later, including the reviewer who wrote it.
    */
+  @IsIn(ADDRESS_CHECK_KEYS)
+  method!: string;
+
   @IsOptional()
   @IsString()
   note?: string;
+
+  /** The evidence. Required by the domain for document-based methods. */
+  @IsOptional()
+  @IsUUID()
+  artefactId?: string;
+}
+
+export class RejectAddressDto {
+  @IsIn(ADDRESS_REJECTION_KEYS)
+  reason!: string;
+
+  /** Required by the domain for reasons the practice could not otherwise act on. */
+  @IsOptional()
+  @IsString()
+  detail?: string;
+}
+
+/** The practice correcting its own address, before anybody has confirmed it. */
+export class UpdateLocationDto {
+  @IsOptional()
+  @IsString()
+  addressLine1?: string;
+
+  @IsOptional()
+  @IsString()
+  addressLine2?: string;
+
+  @IsOptional()
+  @IsString()
+  suburb?: string;
+
+  @IsOptional()
+  @IsString()
+  state?: string;
+
+  @IsOptional()
+  @IsString()
+  postcode?: string;
+
+  @IsOptional()
+  @IsString()
+  country?: string;
+
+  @IsOptional()
+  @IsString()
+  code?: string;
 }
 
 export class AddCredentialDto {
@@ -692,7 +752,57 @@ export class OrganisationsController {
     @Body() dto: ActivateLocationDto,
     @SessionActor() actor: Actor | undefined,
   ) {
-    return this.organisations.activateLocation(requirePractice(practiceId), locationId, actor, dto.note);
+    return this.organisations.activateLocation(requirePractice(practiceId), locationId, actor, {
+      method: dto.method,
+      note: dto.note,
+      artefactId: dto.artefactId,
+    });
+  }
+
+  /**
+   * Decline to confirm, and tell the practice why. PLATFORM OPERATOR ONLY.
+   *
+   * The counterpart to activate, and the half that was missing: a reviewer who
+   * looked and decided not to confirm previously had nothing to do but close
+   * the tab, leaving the practice locked out of that site with no way to learn
+   * why. A control that can only say yes is a queue, not a control.
+   */
+  @RequireRoles(PLATFORM_ADMIN)
+  @Post('locations/:locationId/reject-address')
+  rejectAddress(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('locationId', ParseUUIDPipe) locationId: string,
+    @Body() dto: RejectAddressDto,
+    @SessionActor() actor: Actor | undefined,
+  ) {
+    return this.organisations.rejectAddress(requirePractice(practiceId), locationId, actor, {
+      reason: dto.reason,
+      detail: dto.detail,
+    });
+  }
+
+  /**
+   * The practice corrects its own address. NOT operator-restricted — this is
+   * the practice's own claim, and correcting it before anybody has checked it
+   * is ordinary work. The domain refuses once it has been confirmed.
+   */
+  @Patch('locations/:locationId')
+  updateLocation(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('locationId', ParseUUIDPipe) locationId: string,
+    @Body() dto: UpdateLocationDto,
+  ) {
+    return this.organisations.updateLocation(requirePractice(practiceId), locationId, dto);
+  }
+
+  /** The catalogues the two screens above render from. */
+  @Get('address-check/catalogue')
+  addressCheckCatalogue() {
+    return {
+      version: ADDRESS_CHECK_VERSION,
+      methods: ADDRESS_CHECK_METHODS,
+      rejectionReasons: ADDRESS_REJECTION_REASONS,
+    };
   }
 
   @Get('credentials')

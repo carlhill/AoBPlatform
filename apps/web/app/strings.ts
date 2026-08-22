@@ -1166,6 +1166,55 @@ export const strings = {
    * a human.
    */
   locations: {
+    // --- The reviewer's decision -------------------------------------
+    decisionLegend: 'Confirm this address, or send it back',
+    rejectTitle: 'Send it back',
+    rejectAction: 'Send it back to the practice',
+    rejectBody:
+      'The practice sees your reason and can correct the address themselves. Nothing is deleted — ' +
+      'the address stays as they entered it, so they can see what we looked at.',
+    reasonLabel: 'Why are you sending it back?',
+    reasonHint: 'The practice sees this, so choose the one that tells them what to change.',
+    reasonPlaceholder: 'Choose a reason…',
+    practiceWillSee: 'The practice will read:',
+    detailLabel: 'What did you find?',
+    detailHint: 'Optional. Anything that would help them fix it faster.',
+    detailRequiredHint: 'Required for this reason — without it the practice cannot tell what to change.',
+    methodLabel: 'How did you check it?',
+    methodHint: 'Recorded permanently. “Confirmed” without a method cannot be weighed by anybody later.',
+    methodPlaceholder: 'Choose how it was checked…',
+    documentLabel: 'The document you checked',
+    documentHint: 'Required for this method. Up to 20 MB.',
+    uploading: 'Uploading…',
+    uploadTooLarge: 'That file is over 20 MB. Attach a smaller copy or a single relevant page.',
+    noteLabel: 'Note',
+    noteHint: 'Optional. What you saw, in your own words.',
+    noteRequiredHint: 'Required for “something else” — the note IS the record.',
+    catalogueLoading: 'Loading the check list…',
+    working: 'Working…',
+    // --- The practice correcting its own address ---------------------
+    editTitle: 'Edit this address',
+    editBody:
+      'You can correct this address until somebody here confirms it. After that it may already ' +
+      'appear on captured agreements, so changing it needs a review.',
+    editLine1: 'Street address',
+    editLine2: 'Level, unit or suite',
+    editSuburb: 'Suburb',
+    editState: 'State',
+    editStateHint: 'NSW, VIC, QLD, WA, SA, TAS, ACT or NT.',
+    editPostcode: 'Postcode',
+    editCode: 'Your name for this site',
+    editCodeHint: 'Optional. What your staff call it — “Main St”, “After Hours”.',
+    editSave: 'Save the address',
+    editFailed: 'That address could not be saved',
+    // --- What the practice is told when we send one back -------------
+    sentBackTitle: 'We could not confirm this address',
+    sentBackBy: 'Sent back by',
+    sentBackDetail: 'What we found:',
+    // --- How a confirmed address was checked -------------------------
+    confirmedHow: 'Confirmed by',
+    confirmedVia: 'Checked by',
+    confirmedDocument: 'Document on file',
     audience: 'Practice admin',
     title: 'Locations',
     lead:

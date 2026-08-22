@@ -496,6 +496,34 @@ model PracticeLocation {
   // dependency, and no address ever leaves our infrastructure — which matters
   // because address is one of the six approved patient identifiers.
   addressValidated Boolean @default(false)
+
+  // --- HOW it was confirmed, and by whom (packages/domain/src/address-check.ts) ---
+  // "Confirmed" on its own cannot be weighed by anybody later. A confirmation
+  // that does not say what was checked is an assertion wearing a check's name,
+  // and it reads identically to one that was done properly.
+  /// From ADDRESS_CHECK_METHODS. Never free text.
+  addressCheckMethod     String?
+  /// Which catalogue version defined it. A v1 confirmation must read as v1 for ever.
+  addressCheckVersion    String?
+  addressCheckNote       String?
+  /// The evidence itself. NO foreign key, for the reason given on Artefact:
+  /// evidence outlives its subject, and a key would invert that.
+  addressCheckArtefactId String?   @db.Uuid
+  addressCheckedAt       DateTime?
+  /// The Keycloak subject. Stable, and the thing to join on.
+  addressCheckedBySub    String?
+  /// Display name at the time. Denormalised on purpose — an audit line must
+  /// still read correctly after somebody is renamed or leaves.
+  addressCheckedByName   String?
+
+  // --- Sent back to the practice, with a reason they can act on ---
+  // A reviewer who should NOT confirm previously had nothing to do but walk
+  // away, which left the practice locked out with no way to learn why.
+  addressRejectedAt      DateTime?
+  /// From ADDRESS_REJECTION_REASONS.
+  addressRejectedReason  String?
+  addressRejectedDetail  String?
+  addressRejectedByName  String?
   /**
    * The canonical G-NAF form. What renders on the agreement, not what was typed.
    */

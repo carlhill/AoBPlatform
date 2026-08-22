@@ -1,4 +1,5 @@
 'use client';
+import { apiHeaders } from '../auth';
 
 /**
  * Everything that has happened to one application.
@@ -86,16 +87,19 @@ function when(iso: string): string {
 export function AuditTrail({
   practiceId,
   reloadKey,
-  readByName,
 }: {
   practiceId: string;
   reloadKey: number;
-  /**
-   * Who is opening the evidence. Sent as x-read-by, because reading a file IS
-   * an act on the record: the download endpoint logs it, and an unnamed read
-   * would be a hole in the very trail this component exists to show.
+  /*
+   * THERE IS NO readByName. Reading evidence IS an act on the record —
+   * the download endpoint logs an access.read — so who did it matters as
+   * much as for any other act, and it now comes from the verified token
+   * on the server rather than from a prop.
+   *
+   * The prop was actively wrong, not merely redundant: the practice
+   * dossier passed the PRACTICE ADMIN'S name for every reader, so the
+   * access log recorded one person whoever was actually looking.
    */
-  readByName: string;
 }) {
   const [trail, setTrail] = useState<Trail | null>(null);
   const [open, setOpen] = useState<Set<number>>(new Set());
@@ -104,7 +108,7 @@ export function AuditTrail({
 
   useEffect(() => {
     let live = true;
-    fetch(`${CORE_URL}/organisations/audit`, { headers: { 'x-practice-id': practiceId } })
+    fetch(`${CORE_URL}/organisations/audit`, { headers: apiHeaders(practiceId) })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((data: Trail) => live && setTrail(data))
       .catch(() => undefined);
@@ -132,10 +136,10 @@ export function AuditTrail({
     setOpenError(null);
     try {
       const response = await fetch(`${CORE_URL}/artefacts/${artefactId}/content`, {
-        headers: {
-          'x-practice-id': practiceId,
-          'x-read-by': readByName.trim() || 'unnamed reviewer',
-        },
+        // apiHeaders carries the bearer token, and the SERVER takes the
+        // reader's name from it. A name typed into this screen was an
+        // assertion by the sender that the access log then recorded as fact.
+        headers: apiHeaders(practiceId),
       });
       if (!response.ok) {
         const body = (await response.json().catch(() => ({}))) as { message?: string };

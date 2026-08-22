@@ -38,6 +38,7 @@ import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui } from '
 import { strings } from '../../strings';
 import styles from '../manage.module.css';
 import { SessionControl } from '../../SessionControl';
+import { apiHeaders } from '../../auth';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -96,11 +97,11 @@ export function PractitionersView({ practiceId }: { practiceId: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [added, setAdded] = useState(false);
 
-  const headers = { 'x-practice-id': practiceId, 'Content-Type': 'application/json' };
+  const headers = apiHeaders(practiceId);
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`${CORE_URL}/practitioners`, { headers: { 'x-practice-id': practiceId } });
+      const res = await fetch(`${CORE_URL}/practitioners`, { headers: apiHeaders(practiceId) });
       if (!res.ok) throw new Error(await refusalMessage(res));
       setRoster(await res.json());
     } catch (e) {

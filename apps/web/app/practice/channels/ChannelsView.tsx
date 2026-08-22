@@ -33,6 +33,7 @@ import { Button, Checkbox, Chip, Field, Notice, Shell, TextInput, ui } from '../
 import { strings } from '../../strings';
 import styles from '../manage.module.css';
 import { SessionControl } from '../../SessionControl';
+import { apiHeaders } from '../../auth';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -64,7 +65,7 @@ export function ChannelsView({ practiceId }: { practiceId: string }) {
   const load = useCallback(async () => {
     try {
       const res = await fetch(`${CORE_URL}/practices/${practiceId}`, {
-        headers: { 'x-practice-id': practiceId },
+        headers: apiHeaders(practiceId),
       });
       if (!res.ok) throw new Error(await refusalMessage(res));
       const data = (await res.json()) as Practice;
@@ -107,7 +108,7 @@ export function ChannelsView({ practiceId }: { practiceId: string }) {
     try {
       const res = await fetch(`${CORE_URL}/practices/${practiceId}/config`, {
         method: 'PATCH',
-        headers: { 'x-practice-id': practiceId, 'Content-Type': 'application/json' },
+        headers: apiHeaders(practiceId),
         body: JSON.stringify({
           senderIdRegistered: senderId,
           linkExpiryHours: hours,

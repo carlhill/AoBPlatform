@@ -72,7 +72,8 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
   let affiliationId: string;
 
   const api = () => request(app.getHttpServer());
-  const scoped = (method: 'post' | 'get', path: string) => api()[method](path).set('x-practice-id', orgId);
+  const scoped = (method: 'post' | 'get' | 'patch', path: string) =>
+    api()[method](path).set('x-practice-id', orgId);
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -412,7 +413,9 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
        * who was not there.
        */
       signedIn = false;
-      const refused = await scoped('post', `/organisations/locations/${locationId}/activate`).send({}).expect(400);
+      const refused = await scoped('post', `/organisations/locations/${locationId}/activate`)
+        .send({ method: 'site_visit' })
+        .expect(400);
       expect(refused.body.message).toMatch(/signed-in reviewer/);
       signedIn = true;
     });
@@ -421,16 +424,89 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
       const res = await scoped('post', `/organisations/locations/${locationId}/activate`)
         // A name in the body is IGNORED, not honoured. `whitelist: true` strips
         // it, and nothing downstream reads it.
-        .send({ reviewerName: 'Someone Else Entirely', note: 'letter returned signed' })
+        .send({ method: 'site_visit', reviewerName: 'Someone Else Entirely', note: 'attended 22 Aug' })
         .expect(201);
       expect(res.body.active).toBe(true);
       expect(res.body.validator).toBe('manual');
+    });
+
+    it('REFUSES A DOCUMENT METHOD WITH NO DOCUMENT', async () => {
+      /*
+       * The record would otherwise say a register was checked when nothing was
+       * attached — indistinguishable, later, from one that was done properly.
+       */
+      const res = await scoped('post', `/organisations/locations/${locationId}/activate`)
+        .send({ method: 'government_register' })
+        .expect(400);
+      expect(res.body.message).toMatch(/document has to be attached/);
+    });
+
+    it('refuses a method that is not in the catalogue', async () => {
+      await scoped('post', `/organisations/locations/${locationId}/activate`)
+        .send({ method: 'i_just_know' })
+        .expect(400);
     });
 
     it('records it as MANUAL, never claiming G-NAF confirmed it', async () => {
       const location = await prisma.withPractice(orgId, (tx) => tx.practiceLocation.findFirst({ where: { id: locationId } }));
       expect(location?.gnafVersion).toBe('manual:robin.reviewer');
       expect(location?.gnafPid).toBeNull();
+    });
+
+    it('sends an address back with a reason the practice can act on', async () => {
+      /*
+       * The half that was missing. A reviewer who looked and decided NOT to
+       * confirm had nothing to do but close the tab, which left the practice
+       * locked out of the site with no way to learn why.
+       */
+      const added = await scoped('post', '/organisations/locations')
+        .send({ addressLine1: 'PO Box 9', suburb: 'Sampletown', state: 'NSW', postcode: '2000', code: 'Postal' })
+        .expect(201);
+      const id = added.body.id;
+
+      const rejected = await scoped('post', `/organisations/locations/${id}/reject-address`)
+        .send({ reason: 'not_a_clinical_site' })
+        .expect(201);
+      expect(rejected.body.reason).toBe('not_a_clinical_site');
+      // The practice is told what to DO, not merely what was wrong.
+      expect(rejected.body.practiceGuidance).toMatch(/clinical address/i);
+
+      // A reason the practice could not act on needs detail.
+      await scoped('post', `/organisations/locations/${id}/reject-address`)
+        .send({ reason: 'evidence_inconsistent' })
+        .expect(400);
+
+      // The practice answers by correcting it, which CLEARS the rejection.
+      const corrected = await scoped('patch', `/organisations/locations/${id}`)
+        .send({ addressLine1: '18 Clinic Lane', suburb: 'Sampletown', state: 'NSW', postcode: '2000' })
+        .expect(200);
+      expect(corrected.body.address).toMatch(/18 Clinic Lane/);
+
+      const after = await prisma.withPractice(orgId, (tx) =>
+        tx.practiceLocation.findFirst({ where: { id } }),
+      );
+      expect(after?.addressRejectedAt).toBeNull();
+      expect(after?.addressRejectedReason).toBeNull();
+    });
+
+    it('WILL NOT EDIT AN ADDRESS THAT HAS BEEN CONFIRMED', async () => {
+      /*
+       * After confirmation the address may already be printed on captured
+       * agreements. A silent edit would invalidate the check while leaving the
+       * confirmation record standing — an address nobody checked, wearing a
+       * confirmation.
+       */
+      const res = await scoped('patch', `/organisations/locations/${locationId}`)
+        .send({ addressLine1: '999 Somewhere Else' })
+        .expect(400);
+      expect(res.body.message).toMatch(/confirmed/i);
+    });
+
+    it('will not reject an address that has already been confirmed', async () => {
+      const res = await scoped('post', `/organisations/locations/${locationId}/reject-address`)
+        .send({ reason: 'address_not_found' })
+        .expect(400);
+      expect(res.body.message).toMatch(/already been confirmed/i);
     });
 
     it('creates departments under a location', async () => {
@@ -569,7 +645,9 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
         .send({ addressLine1: '7 Invitation Way', suburb: 'Sampletown', state: 'NSW', postcode: '2000', code: 'Annexe' })
         .expect(201);
       inviteLocationId = location.body.id;
-      await scoped('post', `/organisations/locations/${inviteLocationId}/activate`).send({}).expect(201);
+      await scoped('post', `/organisations/locations/${inviteLocationId}/activate`)
+        .send({ method: 'site_visit' })
+        .expect(201);
 
       // The second practitioner exists but has no address; an invitation needs
       // somewhere to go.

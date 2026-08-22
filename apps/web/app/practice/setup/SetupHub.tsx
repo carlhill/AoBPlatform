@@ -47,7 +47,7 @@ import {
 import { mayChoosePractice, type CardState } from '@aobplatform/domain';
 import { Chip, Notice, Shell, ui, type Tone } from '../../ui';
 import { strings } from '../../strings';
-import { currentSession } from '../../auth';
+import { apiHeaders, currentSession } from '../../auth';
 import styles from './setup.module.css';
 import { SessionControl } from '../../SessionControl';
 
@@ -116,7 +116,7 @@ export function SetupHub({ practiceId }: { practiceId: string }) {
 
   useEffect(() => {
     let live = true;
-    fetch(`${CORE_URL}/organisations/setup`, { headers: { 'x-practice-id': practiceId } })
+    fetch(`${CORE_URL}/organisations/setup`, { headers: apiHeaders(practiceId) })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((data: Hub) => live && setHub(data))
       .catch((e: Error) =>

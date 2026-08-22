@@ -1,3 +1,4 @@
+import { SessionActor, type Actor } from '../auth/actor.decorator';
 import {
   BadRequestException,
   Body,
@@ -68,7 +69,11 @@ export class ArtefactsController {
   constructor(private readonly artefacts: ArtefactsService) {}
 
   @Post()
-  upload(@Headers('x-practice-id') practiceId: string | undefined, @Body() dto: UploadArtefactDto) {
+  upload(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Body() dto: UploadArtefactDto,
+    @SessionActor() actor: Actor | undefined,
+  ) {
     let bytes: Uint8Array;
     try {
       // Strict: a data: URL prefix or stray whitespace would otherwise be
@@ -78,7 +83,19 @@ export class ArtefactsController {
     } catch {
       throw new BadRequestException('contentBase64 is not valid base64.');
     }
-    return this.artefacts.upload(requirePractice(practiceId), { ...dto, bytes });
+    /*
+     * THE SESSION WINS. A name in the body is an assertion by whoever sent
+     * the request; the token subject is a claim the realm signed. The body
+     * value survives only where there is no verified session at all, which
+     * is the staged-auth path and not a state to write new evidence from.
+     */
+    const uploadedByName = actor?.name ?? dto.uploadedByName;
+    if (!uploadedByName) {
+      throw new BadRequestException(
+        'Evidence records who supplied it, so this needs a signed-in user.',
+      );
+    }
+    return this.artefacts.upload(requirePractice(practiceId), { ...dto, uploadedByName, bytes });
   }
 
   @Get()
@@ -127,12 +144,13 @@ export class ArtefactsController {
     @Headers('x-practice-id') practiceId: string | undefined,
     @Headers('x-read-by') readBy: string | undefined,
     @Param('artefactId', ParseUUIDPipe) artefactId: string,
+    @SessionActor() actor: Actor | undefined,
     @Res() res: Response,
   ) {
     const { bytes, headers } = await this.artefacts.download(
       requirePractice(practiceId),
       artefactId,
-      readBy ?? 'unattributed',
+      actor?.name ?? readBy ?? 'unattributed',
     );
     for (const [key, value] of Object.entries(headers)) res.setHeader(key, value);
     res.send(Buffer.from(bytes));

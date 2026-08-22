@@ -22,7 +22,7 @@
 
 import { useEffect, useState } from 'react';
 import { mayChoosePractice } from '@aobplatform/domain';
-import { attemptSilentLogin, currentSession } from '../auth';
+import { apiHeaders, attemptSilentLogin, currentSession } from '../auth';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 const SELECTION_KEY = 'aob.practiceId';
@@ -100,7 +100,7 @@ export function usePractice(): PracticeSelection {
     // The setup hub is the cheapest endpoint that answers "does this practice
     // exist AND is it mine": it is practice-scoped, so RLS refuses it for
     // anything the header does not entitle us to.
-    fetch(`${CORE_URL}/organisations/setup`, { headers: { 'x-practice-id': stored } })
+    fetch(`${CORE_URL}/organisations/setup`, { headers: apiHeaders(stored) })
       .then((r) => {
         if (!live) return;
         if (r.ok) {

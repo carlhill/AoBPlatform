@@ -26,12 +26,13 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, ArrowLeft, Building2, CheckCircle2, MapPin, Plus } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Building2, CheckCircle2, MapPin, Pencil, Plus } from 'lucide-react';
 import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui } from '../../ui';
 import { isPlatformOperator } from '@aobplatform/domain';
 import { strings } from '../../strings';
-import { currentSession } from '../../auth';
+import { apiHeaders, currentSession } from '../../auth';
 import styles from '../manage.module.css';
+import { AddressDecision, AddressEdit, useAddressCatalogue } from './AddressDecision';
 import { SessionControl } from '../../SessionControl';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
@@ -51,6 +52,20 @@ interface Location {
   state: string | null;
   active: boolean;
   addressValidated: boolean;
+
+  // How it was confirmed, and by whom. Absent on locations confirmed before
+  // the catalogue existed — those rows keep a bare boolean and are not
+  // retro-labelled with a method nobody chose.
+  addressCheckMethod?: string | null;
+  addressCheckedByName?: string | null;
+  addressCheckArtefactId?: string | null;
+
+  // Why it was sent back, if it was. The address itself is left exactly as
+  // the practice entered it, so they can see what we looked at.
+  addressRejectedAt?: string | null;
+  addressRejectedReason?: string | null;
+  addressRejectedDetail?: string | null;
+  addressRejectedByName?: string | null;
 }
 
 interface Department {
@@ -82,6 +97,9 @@ export function LocationsView({ practiceId }: { practiceId: string }) {
    * this decides what is OFFERED rather than what is allowed.
    */
   const canConfirm = isPlatformOperator({ roles: currentSession()?.roles ?? [] });
+  // Fetched once for the whole list rather than per card — every card
+  // renders from the same catalogue, and one request is one request.
+  const catalogue = useAddressCatalogue();
 
   const [locations, setLocations] = useState<Location[] | null>(null);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -90,13 +108,13 @@ export function LocationsView({ practiceId }: { practiceId: string }) {
   /** The just-added location's outcome, so the reader learns what happened to it. */
   const [addResult, setAddResult] = useState<AddResult | null>(null);
 
-  const headers = { 'x-practice-id': practiceId, 'Content-Type': 'application/json' };
+  const headers = apiHeaders(practiceId);
 
   const load = useCallback(async () => {
     try {
       const [locRes, deptRes] = await Promise.all([
-        fetch(`${CORE_URL}/organisations/locations`, { headers: { 'x-practice-id': practiceId } }),
-        fetch(`${CORE_URL}/organisations/departments`, { headers: { 'x-practice-id': practiceId } }),
+        fetch(`${CORE_URL}/organisations/locations`, { headers: apiHeaders(practiceId) }),
+        fetch(`${CORE_URL}/organisations/departments`, { headers: apiHeaders(practiceId) }),
       ]);
       if (!locRes.ok) throw new Error(String(locRes.status));
       setLocations(await locRes.json());
@@ -173,6 +191,7 @@ export function LocationsView({ practiceId }: { practiceId: string }) {
             departments={departments.filter((d) => d.locationId === location.id)}
             headers={headers}
             canConfirm={canConfirm}
+            catalogue={catalogue}
             onChanged={load}
           />
         ))}
@@ -199,6 +218,7 @@ function LocationCard({
   departments,
   headers,
   canConfirm,
+  catalogue,
   onChanged,
 }: {
   location: Location;
@@ -206,44 +226,23 @@ function LocationCard({
   headers: Record<string, string>;
   /** Whether the viewer may verify the address. A practice may not verify its own. */
   canConfirm: boolean;
+  /** The check-method and rejection-reason catalogue, from the server. */
+  catalogue: ReturnType<typeof useAddressCatalogue>;
   onChanged: () => Promise<void>;
 }) {
   const [confirming, setConfirming] = useState(false);
-  /*
-   * FROM THE SESSION. Asking somebody to type their own name asks them to
-   * assert an identity we already hold, and the answer is worth whatever they
-   * type. Same rule as the reviewer screens, which Carl has now had to give
-   * twice.
-   */
-  const signedInAs = currentSession()?.username ?? '';
-  const [typedName, setTypedName] = useState('');
-  const confirmName = signedInAs || typedName;
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
 
   const [deptName, setDeptName] = useState('');
   const [deptBusy, setDeptBusy] = useState(false);
   const [deptError, setDeptError] = useState<string | null>(null);
 
-  async function confirm() {
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(`${CORE_URL}/organisations/locations/${location.id}/activate`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ reviewerName: confirmName.trim() }),
-      });
-      if (!res.ok) throw new Error(await refusalMessage(res));
-      setConfirming(false);
-      setTypedName('');
-      await onChanged();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
+  /*
+   * THE CONFIRM HANDLER USED TO LIVE HERE, and it posted a name the person had
+   * typed about themselves. Both halves are gone: WHO comes from the verified
+   * token now (SessionActor on the server), and HOW comes from the catalogue —
+   * see AddressDecision. What is left here is only the open/close state.
+   */
 
   async function addDepartment() {
     setDeptBusy(true);
@@ -366,54 +365,80 @@ function LocationCard({
         shown only to somebody who may actually use it. The server refuses the
         rest either way.
       */}
+      {/*
+        THE PRACTICE DOES NOT CONFIRM ITS OWN ADDRESS, but it may CORRECT one.
+
+        The address prints in the s 65C(5)(a) particulars block of every
+        agreement captured here, so confirming it is VERIFYING EVIDENCE — and
+        the party supplying the evidence cannot be the party that verifies it.
+        Correcting a claim nobody has checked yet is a different act entirely,
+        and it is ordinary work.
+      */}
       {!location.active && !canConfirm && (
         <div className={styles.cardActions}>
-          <Notice tone="warn" title={strings.locations.confirmedByUsTitle}>
-            {strings.locations.confirmedByUsBody}
-          </Notice>
+          {/*
+            WHY IT CAME BACK, if it did. Before this existed a reviewer could
+            only ever say yes, so a practice whose address was wrong sat
+            blocked with nothing to read and nothing to do.
+          */}
+          {location.addressRejectedAt ? (
+            <Notice tone="warn" title={strings.locations.sentBackTitle}>
+              <p>{rejectionGuidance(catalogue, location.addressRejectedReason)}</p>
+              {location.addressRejectedDetail && (
+                <p>
+                  <strong>{strings.locations.sentBackDetail}</strong> {location.addressRejectedDetail}
+                </p>
+              )}
+              {location.addressRejectedByName && (
+                <p className={styles.cardNote}>
+                  {strings.locations.sentBackBy} {location.addressRejectedByName}
+                </p>
+              )}
+            </Notice>
+          ) : (
+            <Notice tone="warn" title={strings.locations.confirmedByUsTitle}>
+              {strings.locations.confirmedByUsBody}
+            </Notice>
+          )}
+
+          {editing ? (
+            <AddressEdit
+              location={location}
+              headers={headers}
+              onDone={async () => {
+                setEditing(false);
+                await onChanged();
+              }}
+              onCancel={() => setEditing(false)}
+            />
+          ) : (
+            <Button variant="primary" onClick={() => setEditing(true)} data-testid={`edit-${location.id}`}>
+              <Pencil size={15} aria-hidden="true" />
+              {strings.locations.editTitle}
+            </Button>
+          )}
         </div>
       )}
 
       {!location.active && canConfirm && (
         <div className={styles.cardActions}>
+          {location.addressRejectedAt && (
+            <Notice tone="warn" title={strings.locations.sentBackTitle}>
+              {rejectionGuidance(catalogue, location.addressRejectedReason)}
+              {location.addressRejectedByName ? ` — ${location.addressRejectedByName}` : ''}
+            </Notice>
+          )}
           {confirming ? (
-            <div style={{ width: '100%' }}>
-              <p className={styles.cardNote}>{strings.locations.confirmBody}</p>
-              <div className={styles.inlineForm}>
-                {signedInAs ? (
-                  <p className={styles.cardNote}>
-                    {strings.locations.confirmAs} <strong>{signedInAs}</strong>
-                  </p>
-                ) : (
-                  <Field label={strings.locations.confirmName} hint={strings.locations.confirmNameHint} required>
-                    {(props) => (
-                      <TextInput
-                        {...props}
-                        value={typedName}
-                        onChange={(e) => setTypedName(e.target.value)}
-                        data-testid={`confirm-name-${location.id}`}
-                      />
-                    )}
-                  </Field>
-                )}
-                <Button
-                  variant="primary"
-                  onClick={() => void confirm()}
-                  disabled={busy || confirmName.trim().length === 0}
-                  data-testid={`confirm-submit-${location.id}`}
-                >
-                  {busy ? strings.locations.confirming : strings.locations.confirmAction}
-                </Button>
-                <Button variant="subtle" onClick={() => setConfirming(false)}>
-                  {strings.locations.confirmCancel}
-                </Button>
-              </div>
-              {error && (
-                <Notice tone="stop" title={strings.locations.confirmFailed}>
-                  {error}
-                </Notice>
-              )}
-            </div>
+            <AddressDecision
+              locationId={location.id}
+              headers={headers}
+              catalogue={catalogue}
+              onDone={async () => {
+                setConfirming(false);
+                await onChanged();
+              }}
+              onCancel={() => setConfirming(false)}
+            />
           ) : (
             <Button variant="primary" onClick={() => setConfirming(true)} data-testid={`confirm-${location.id}`}>
               {strings.locations.confirmTitle}
@@ -421,6 +446,21 @@ function LocationCard({
           )}
         </div>
       )}
+
+      {/*
+        HOW a confirmed address was checked. A confirmation that does not say
+        what was done is not evidence anybody can weigh later.
+      */}
+      {location.active && location.addressCheckMethod && (
+        <p className={styles.cardNote} data-testid={`checked-${location.id}`}>
+          {strings.locations.confirmedVia}{' '}
+          <strong>{methodLabel(catalogue, location.addressCheckMethod)}</strong>
+          {location.addressCheckedByName ? ` — ${location.addressCheckedByName}` : ''}
+          {location.addressCheckArtefactId ? ` · ${strings.locations.confirmedDocument}` : ''}
+        </p>
+      )}
+
+
     </li>
   );
 }
@@ -604,4 +644,27 @@ function AddLocation({
       )}
     </div>
   );
+}
+
+/**
+ * The practice-facing wording for a rejection, from the server catalogue.
+ *
+ * Falls back to the raw key ONLY if the catalogue has not loaded. Showing
+ * "not_a_clinical_site" to a practice would be worse than useless, so the
+ * fallback is deliberately a generic sentence rather than the key.
+ */
+function rejectionGuidance(
+  catalogue: ReturnType<typeof useAddressCatalogue>,
+  reason?: string | null,
+): string {
+  const found = catalogue?.rejectionReasons.find((r) => r.key === reason);
+  return found?.practiceGuidance ?? strings.locations.confirmedByUsBody;
+}
+
+/** The reviewer-facing label for a check method. */
+function methodLabel(
+  catalogue: ReturnType<typeof useAddressCatalogue>,
+  method?: string | null,
+): string {
+  return catalogue?.methods.find((m) => m.key === method)?.label ?? method ?? '';
 }

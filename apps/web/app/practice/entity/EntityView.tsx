@@ -39,7 +39,7 @@ import {
 } from 'lucide-react';
 import { Button, Chip, Notice, Section, Shell, ui } from '../../ui';
 import { strings } from '../../strings';
-import { currentSession } from '../../auth';
+import { apiHeaders, currentSession } from '../../auth';
 import { AuditTrail } from '../../review/AuditTrail';
 import styles from '../manage.module.css';
 import { SessionControl } from '../../SessionControl';
@@ -130,10 +130,10 @@ export function EntityView({ practiceId }: { practiceId: string }) {
   const load = useCallback(async () => {
     try {
       const [pRes, cRes, lRes, kRes] = await Promise.all([
-        fetch(`${CORE_URL}/practices/${practiceId}`, { headers: { 'x-practice-id': practiceId } }),
-        fetch(`${CORE_URL}/organisations/credentials`, { headers: { 'x-practice-id': practiceId } }),
-        fetch(`${CORE_URL}/organisations/locations`, { headers: { 'x-practice-id': practiceId } }),
-        fetch(`${CORE_URL}/organisations/checks`, { headers: { 'x-practice-id': practiceId } }),
+        fetch(`${CORE_URL}/practices/${practiceId}`, { headers: apiHeaders(practiceId) }),
+        fetch(`${CORE_URL}/organisations/credentials`, { headers: apiHeaders(practiceId) }),
+        fetch(`${CORE_URL}/organisations/locations`, { headers: apiHeaders(practiceId) }),
+        fetch(`${CORE_URL}/organisations/checks`, { headers: apiHeaders(practiceId) }),
       ]);
       if (!pRes.ok) throw new Error(await refusalMessage(pRes));
       setPractice(await pRes.json());
@@ -372,7 +372,6 @@ export function EntityView({ practiceId }: { practiceId: string }) {
         <AuditTrail
           practiceId={practiceId}
           reloadKey={reloadKey}
-          readByName={practice.adminName ?? strings.entity.audience}
         />
       </Section>
     </Shell>
@@ -416,7 +415,7 @@ function ContactsPanel({ practice }: { practice: Practice }) {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
 
-  const headers = { 'Content-Type': 'application/json', 'x-practice-id': practice.id };
+  const headers = apiHeaders(practice.id);
 
   async function resend() {
     setBusy(true);

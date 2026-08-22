@@ -1,4 +1,5 @@
 'use client';
+import { apiHeaders } from '../auth';
 
 /**
  * Recording one check.
@@ -224,7 +225,7 @@ export function CheckRecorder({
       }
       const response = await fetch(
         CORE_URL + '/artefacts/' + artefactId + '/inspect?' + params.toString(),
-        { headers: { 'x-practice-id': practiceId } },
+        { headers: apiHeaders(practiceId) },
       );
       if (!response.ok) return;
       const data = (await response.json()) as { warnings: EvidenceWarning[] };
@@ -262,7 +263,7 @@ export function CheckRecorder({
 
       const response = await fetch(CORE_URL + '/artefacts', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-practice-id': practiceId },
+        headers: apiHeaders(practiceId),
         body: JSON.stringify({
           contentBase64: btoa(binary),
           filename: file.name,

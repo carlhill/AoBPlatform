@@ -27,7 +27,7 @@ import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
 import { Shell, ui } from '../../ui';
 import { strings } from '../../strings';
-import { currentSession } from '../../auth';
+import { apiHeaders, currentSession } from '../../auth';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 const SELECTION_KEY = 'aob.practiceId';
@@ -44,7 +44,7 @@ export default function SetupPage() {
       return;
     }
 
-    fetch(`${CORE_URL}/organisations/setup`, { headers: { 'x-practice-id': stored } })
+    fetch(`${CORE_URL}/organisations/setup`, { headers: apiHeaders(stored) })
       .then((r) => {
         if (r.ok) {
           setPracticeId(stored);

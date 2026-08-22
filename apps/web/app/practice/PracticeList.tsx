@@ -36,7 +36,7 @@ import { AlertTriangle, ArrowRight, Building2, CheckCircle2, Clock, Search, X } 
 import { matchesFilter, matchesPractice, mayChoosePractice, type PracticeFilter } from '@aobplatform/domain';
 import { Button, Chip, Field, Notice, Shell, TextInput, ui } from '../ui';
 import { strings } from '../strings';
-import { attemptSilentLogin, currentSession, beginLogin } from '../auth';
+import { apiHeaders, attemptSilentLogin, currentSession, beginLogin } from '../auth';
 import styles from './practice.module.css';
 import { SessionControl } from '../SessionControl';
 
@@ -177,7 +177,7 @@ export function PracticeList() {
 
             try {
               const res = await fetch(`${CORE_URL}/organisations/setup`, {
-                headers: { 'x-practice-id': p.id },
+                headers: apiHeaders(p.id),
               });
               if (!res.ok) return { ...p, ready: null, headline: null, statusUrl: null };
               const hub = (await res.json()) as { readiness: { ready: boolean; headline: string } };

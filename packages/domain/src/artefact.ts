@@ -39,6 +39,7 @@ export const ARTEFACT_PURPOSES = [
   'website_capture', // what the site showed, and its TLS certificate
   'credential', // an accreditation letter, HPI-O confirmation
   'identity_document', // something tying a person to the entity
+  'address_evidence', // a lease, rates notice, register extract or letterhead for a site
   'other',
 ] as const;
 export type ArtefactPurpose = (typeof ARTEFACT_PURPOSES)[number];

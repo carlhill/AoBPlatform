@@ -86,6 +86,12 @@ export const VAULT_EVENT_TYPES = [
   'credential.added',
   'credential.removed',
   'location.activated',
+  // A reviewer looked and declined to confirm, with a reason the practice can
+  // act on. Recorded because deciding NOT to confirm is a decision, and an
+  // audit trail that only records approvals cannot show what was scrutinised.
+  'location.address_rejected',
+  // The practice answered, by correcting the address itself.
+  'location.address_corrected',
   'affiliation.invited',
   'affiliation.accepted',
   'affiliation.rejected',

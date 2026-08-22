@@ -61,7 +61,7 @@ import {
 } from '@aobplatform/domain';
 import { Button, Chip, Field, Notice, Section, Shell, TextInput, ui } from '../../ui';
 import { strings } from '../../strings';
-import { currentSession } from '../../auth';
+import { apiHeaders, currentSession } from '../../auth';
 import { flagLabel, flagWhy } from '../flags';
 import { CheckRecorder, type RecordCheckInput } from '../CheckRecorder';
 import { AuditTrail } from '../AuditTrail';
@@ -302,7 +302,7 @@ export function DossierView({ id }: { id: string }) {
   const [busy, setBusy] = useState(false);
 
   const loadChecks = useCallback(() => {
-    fetch(`${CORE_URL}/organisations/checks`, { headers: { 'x-practice-id': id } })
+    fetch(`${CORE_URL}/organisations/checks`, { headers: apiHeaders(id) })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then(setChecks)
       .catch(() => undefined);
@@ -456,7 +456,7 @@ export function DossierView({ id }: { id: string }) {
     try {
       const response = await fetch(`${CORE_URL}/organisations/checks`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-practice-id': id },
+        headers: apiHeaders(id),
         body: JSON.stringify(input),
       });
       if (!response.ok) {
@@ -893,7 +893,7 @@ export function DossierView({ id }: { id: string }) {
         defaultOpen={false}
         summary={strings.review.auditCollapsed}
       >
-        <AuditTrail practiceId={id} reloadKey={trailVersion} readByName={reviewerName} />
+        <AuditTrail practiceId={id} reloadKey={trailVersion} />
       </Section>
 
       <Section number={next()} title={strings.review.decideHeading} aside={<Stamp size={16} aria-hidden="true" />}>
@@ -1075,7 +1075,7 @@ function EditPractice({
 
   useEffect(() => {
     if (!open || row) return;
-    fetch(`${CORE_URL}/practices/${id}`, { headers: { 'x-practice-id': id } })
+    fetch(`${CORE_URL}/practices/${id}`, { headers: apiHeaders(id) })
       .then((r) => (r.ok ? r.json() : null))
       .then((d: EditableRecord | null) => d && setRow(d))
       .catch(() => undefined);

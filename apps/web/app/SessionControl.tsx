@@ -26,6 +26,7 @@ import { LogIn, LogOut, Building2, ShieldCheck } from 'lucide-react';
 import { beginLogin, currentSession, signOut as endSession, type Session } from './auth';
 import { strings } from './strings';
 import { ui } from './ui';
+import { apiHeaders } from './auth';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -59,7 +60,7 @@ export function SessionControl({
     const practiceId = session?.practiceId;
     if (!practiceId) return;
     let live = true;
-    fetch(`${CORE_URL}/practices/${practiceId}`, { headers: { 'x-practice-id': practiceId } })
+    fetch(`${CORE_URL}/practices/${practiceId}`, { headers: apiHeaders(practiceId) })
       .then((r) => (r.ok ? r.json() : null))
       .then((p) => {
         if (!live || !p) return;

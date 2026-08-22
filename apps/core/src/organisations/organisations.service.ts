@@ -18,6 +18,11 @@ import {
   normaliseAbn,
   parseSingleLine,
   type StructuredAddress,
+  ADDRESS_CHECK_VERSION,
+  AddressCheckError,
+  assertRecordableCheck,
+  assertSendableRejection,
+  locationEditability,
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -1128,12 +1133,47 @@ export class OrganisationsService {
    * nobody cannot be questioned, corrected, or relied on. A 400 here is
    * recoverable; a permanent record of an anonymous confirmation is not.
    */
-  async activateLocation(practiceId: string, locationId: string, actor?: Actor, note?: string) {
+  async activateLocation(
+    practiceId: string,
+    locationId: string,
+    actor?: Actor,
+    check?: { method?: string; note?: string; artefactId?: string },
+  ) {
     if (!actor) {
       throw new BadRequestException(
         'Confirming an address records who did it, so it requires a signed-in reviewer. ' +
           'No verified session was presented with this request.',
       );
+    }
+
+    /*
+     * WHAT WAS ACTUALLY CHECKED. "Confirmed" on its own cannot be weighed by
+     * anybody later — not a regulator, not us, not the reviewer themselves in
+     * six months. The catalogue also refuses a document-based method with no
+     * document attached, because that record would read for ever as though a
+     * document had been examined when none was.
+     */
+    let method;
+    try {
+      method = assertRecordableCheck({
+        method: check?.method ?? '',
+        artefactId: check?.artefactId,
+        note: check?.note,
+      });
+    } catch (err) {
+      if (err instanceof AddressCheckError) throw new BadRequestException(err.message);
+      throw err;
+    }
+
+    // The artefact has to be this practice's. An id from another tenant would
+    // attach their evidence to our record — and confirm its existence.
+    if (check?.artefactId) {
+      const artefact = await this.prisma.withPractice(practiceId, (tx) =>
+        tx.artefact.findFirst({ where: { id: check.artefactId, practiceId } }),
+      );
+      if (!artefact) {
+        throw new BadRequestException('That document is not attached to this practice.');
+      }
     }
     await this.assertValidated(practiceId);
 
@@ -1148,7 +1188,25 @@ export class OrganisationsService {
       }
       const updated = await tx.practiceLocation.update({
         where: { id: locationId },
-        data: { active: true, addressValidated: true, gnafVersion: `manual:${actor.name}` },
+        data: {
+          active: true,
+          addressValidated: true,
+          gnafVersion: `manual:${actor.name}`,
+          addressCheckMethod: method.key,
+          addressCheckVersion: ADDRESS_CHECK_VERSION,
+          addressCheckNote: check?.note?.trim() || null,
+          addressCheckArtefactId: check?.artefactId ?? null,
+          addressCheckedAt: new Date(),
+          addressCheckedBySub: actor.id,
+          addressCheckedByName: actor.name,
+          // A confirmation ANSWERS an outstanding rejection. Leaving it set
+          // would show the practice "please correct this" under an address we
+          // have just accepted.
+          addressRejectedAt: null,
+          addressRejectedReason: null,
+          addressRejectedDetail: null,
+          addressRejectedByName: null,
+        },
       });
       await enqueueVaultEvent(tx, {
         type: 'location.activated',
@@ -1160,14 +1218,214 @@ export class OrganisationsService {
         subject: { type: 'PracticeLocation', id: locationId },
         payload: {
           validator: 'manual',
+          method: method.key,
+          methodStrength: method.strength,
+          checklistVersion: ADDRESS_CHECK_VERSION,
           confirmedBy: actor.name,
           confirmedBySub: actor.id,
-          ...(note?.trim() ? { note: note.trim() } : {}),
+          ...(check?.note?.trim() ? { note: check.note.trim() } : {}),
+          ...(check?.artefactId ? { artefactId: check.artefactId } : {}),
           onBehalfOfPractice: practiceId,
           state: updated.state ?? 'unknown',
         },
       });
-      return { id: updated.id, active: updated.active, state: updated.state, validator: 'manual' as const };
+      return {
+        id: updated.id,
+        active: updated.active,
+        state: updated.state,
+        validator: 'manual' as const,
+        method: method.key,
+      };
+    });
+  }
+
+  /**
+   * Send an address back to the practice, with a reason they can act on.
+   *
+   * WHY THIS HAD TO EXIST. Confirming an address was restricted to platform
+   * operators — correctly, because the practice supplying the evidence cannot
+   * be the party that verifies it. But a reviewer who looked and decided NOT
+   * to confirm had nothing to do except close the tab. The practice was then
+   * locked out of adding practitioners at that site, with no way to learn why
+   * and no way to fix it. A control that can only say yes is not a control;
+   * it is a queue that silently fills up.
+   *
+   * The rejection is a MESSAGE, not a deletion. The address stays exactly as
+   * entered, so the practice can see what we looked at.
+   */
+  async rejectAddress(
+    practiceId: string,
+    locationId: string,
+    actor?: Actor,
+    input?: { reason?: string; detail?: string },
+  ) {
+    if (!actor) {
+      throw new BadRequestException(
+        'Sending an address back records who did it, so it requires a signed-in reviewer.',
+      );
+    }
+
+    let reason;
+    try {
+      reason = assertSendableRejection({ reason: input?.reason ?? '', detail: input?.detail });
+    } catch (err) {
+      if (err instanceof AddressCheckError) throw new BadRequestException(err.message);
+      throw err;
+    }
+
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const location = await tx.practiceLocation.findFirst({ where: { id: locationId } });
+      if (!location) throw new NotFoundException('Location not found in this practice.');
+
+      /*
+       * A CONFIRMED ADDRESS IS NOT SENT BACK THIS WAY. It may already be
+       * printed on captured agreements, so withdrawing it is a different and
+       * heavier act than declining to confirm one in the first place — it has
+       * to reckon with what was captured while it stood.
+       */
+      if (location.addressValidated) {
+        throw new BadRequestException(
+          'This address has already been confirmed and may appear on captured agreements. ' +
+            'Withdrawing a confirmation is a separate step, not a rejection.',
+        );
+      }
+
+      const updated = await tx.practiceLocation.update({
+        where: { id: locationId },
+        data: {
+          active: false,
+          addressRejectedAt: new Date(),
+          addressRejectedReason: reason.key,
+          addressRejectedDetail: input?.detail?.trim() || null,
+          addressRejectedByName: actor.name,
+        },
+      });
+
+      await enqueueVaultEvent(tx, {
+        type: 'location.address_rejected',
+        actor: { principalType: 'staff', id: actor.id },
+        subject: { type: 'PracticeLocation', id: locationId },
+        payload: {
+          reason: reason.key,
+          ...(input?.detail?.trim() ? { detail: input.detail.trim() } : {}),
+          rejectedBy: actor.name,
+          rejectedBySub: actor.id,
+          onBehalfOfPractice: practiceId,
+        },
+      });
+
+      return {
+        id: updated.id,
+        rejectedAt: updated.addressRejectedAt,
+        reason: reason.key,
+        // What the PRACTICE will be shown. Returned so the reviewer can see
+        // exactly what their decision says to somebody else.
+        practiceGuidance: reason.practiceGuidance,
+      };
+    });
+  }
+
+  /**
+   * The practice corrects its own address — UNTIL SOMEBODY CONFIRMS IT.
+   *
+   * The rule lives in the domain (locationEditability) because it is a safety
+   * property, not a screen behaviour: before confirmation the address is a
+   * claim the practice is still making, and correcting it is ordinary work.
+   * After confirmation somebody independent has checked it and it may already
+   * be on captured agreements — a silent edit would invalidate that check
+   * while leaving the confirmation record standing, producing an address
+   * nobody checked that is wearing a confirmation.
+   *
+   * Editing CLEARS ANY REJECTION, because the practice has now answered it.
+   * Leaving it would show them a complaint about text they have just changed.
+   */
+  async updateLocation(
+    practiceId: string,
+    locationId: string,
+    input: {
+      addressLine1?: string;
+      addressLine2?: string;
+      suburb?: string;
+      state?: string;
+      postcode?: string;
+      country?: string;
+      code?: string;
+    },
+  ) {
+    await this.assertValidated(practiceId);
+
+    const existing = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.practiceLocation.findFirst({ where: { id: locationId } }),
+    );
+    if (!existing) throw new NotFoundException('Location not found in this practice.');
+
+    const editability = locationEditability(existing);
+    if (!editability.mayEdit) {
+      throw new BadRequestException(editability.reason ?? 'This address can no longer be edited here.');
+    }
+
+    const structured = this.structureAddress({
+      addressLine1: input.addressLine1 ?? existing.addressLine1 ?? undefined,
+      addressLine2: input.addressLine2 ?? existing.addressLine2 ?? undefined,
+      suburb: input.suburb ?? existing.suburb ?? undefined,
+      state: input.state ?? existing.state ?? undefined,
+      postcode: input.postcode ?? existing.postcode ?? undefined,
+      country: input.country ?? existing.country ?? undefined,
+    });
+    const result = await this.addresses.validate(structured.canonical);
+
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const updated = await tx.practiceLocation.update({
+        where: { id: locationId },
+        data: {
+          address: structured.canonical,
+          addressLine1: structured.address.addressLine1,
+          addressLine2: structured.address.addressLine2,
+          suburb: structured.address.suburb,
+          postcode: structured.address.postcode,
+          country: structured.address.country ?? 'Australia',
+          state: structured.address.state,
+          code: input.code ?? existing.code,
+          addressCanonical: result.canonical,
+          gnafPid: result.gnafPid,
+          gnafVersion: result.gnafVersion,
+          /*
+           * The address file may confirm the NEW text outright, in which case
+           * this needs no human at all. Otherwise it goes back to the queue —
+           * still unconfirmed, but no longer flagged as rejected, because the
+           * practice has answered.
+           */
+          addressValidated: result.validated,
+          active: result.validated,
+          addressRejectedAt: null,
+          addressRejectedReason: null,
+          addressRejectedDetail: null,
+          addressRejectedByName: null,
+        },
+      });
+
+      await enqueueVaultEvent(tx, {
+        type: 'location.address_corrected',
+        actor: { principalType: 'staff', id: practiceId },
+        subject: { type: 'PracticeLocation', id: locationId },
+        payload: {
+          // BOTH forms, because the point of the record is what changed.
+          previousAddress: existing.address,
+          address: structured.canonical,
+          ...(existing.addressRejectedReason ? { answeredRejection: existing.addressRejectedReason } : {}),
+          validator: this.addresses.kind,
+          addressValidated: result.validated,
+          state: updated.state ?? 'unknown',
+        },
+      });
+
+      return {
+        id: updated.id,
+        address: updated.address,
+        addressValidated: updated.addressValidated,
+        active: updated.active,
+        state: updated.state,
+      };
     });
   }
 
