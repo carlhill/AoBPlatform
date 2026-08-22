@@ -352,6 +352,12 @@ services:
       CUBE_PLATFORM_DB_USER: cube_platform_reader
       CUBE_PLATFORM_DB_PASS: cube_platform_reader
 
+      # A third credential for a third kind of caller. No BYPASSRLS: a policy
+      # keyed on app.practitioner_id is what scopes it, so the database stops
+      # one practitioner reading another rather than Cube's config doing it.
+      CUBE_PRACTITIONER_DB_USER: cube_practitioner_reader
+      CUBE_PRACTITIONER_DB_PASS: cube_practitioner_reader
+
       # Verified against the realm's JWKS. No second user store, and no shared
       # secret that could be lifted from a config file.
       CUBE_KEYCLOAK_URL: http://keycloak:8080

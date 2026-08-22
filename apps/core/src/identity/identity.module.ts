@@ -4,6 +4,7 @@ import { KeycloakAdminClient } from '@aobplatform/auth-client';
 import { IdentityController } from './identity.controller';
 import { IdentityService } from './identity.service';
 import { PracticeAdminService } from './practice-admin.service';
+import { PractitionerAccessService } from './practitioner-access.service';
 import { KEYCLOAK_ADMIN } from './identity.tokens';
 
 /**
@@ -16,6 +17,7 @@ import { KEYCLOAK_ADMIN } from './identity.tokens';
   providers: [
     IdentityService,
     PracticeAdminService,
+    PractitionerAccessService,
     {
       provide: KEYCLOAK_ADMIN,
       inject: [ConfigService],
@@ -32,6 +34,6 @@ import { KEYCLOAK_ADMIN } from './identity.tokens';
       },
     },
   ],
-  exports: [IdentityService, PracticeAdminService, KEYCLOAK_ADMIN],
+  exports: [IdentityService, PracticeAdminService, PractitionerAccessService, KEYCLOAK_ADMIN],
 })
 export class IdentityModule {}

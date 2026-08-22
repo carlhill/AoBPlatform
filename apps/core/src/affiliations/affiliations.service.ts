@@ -36,6 +36,7 @@ import {
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PractitionerAccessService } from '../identity/practitioner-access.service';
 import { OutboundService } from '../outbound/outbound.service';
 import { EmailComposer } from '../messaging/composer.service';
 import { OrganisationsService } from '../organisations/organisations.service';
@@ -64,6 +65,7 @@ export class AffiliationsService {
   
     private readonly outbound: OutboundService,
     private readonly composer: EmailComposer,
+    private readonly practitionerAccess: PractitionerAccessService,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -597,7 +599,29 @@ export class AffiliationsService {
       return result;
     });
 
-    return { id: updated.id, status: updated.status, startedAt: updated.startedAt };
+    /*
+     * ACCEPTING IS THE CEREMONY, so this is where a sign-in is issued.
+     *
+     * They opened a message sent to their own address and typed the code from
+     * it — possession of the address, proved — and only then does a credential
+     * follow. REQ-PKI-01: no ceremony, no key.
+     *
+     * AFTER the transaction and never inside it: creating a Keycloak account is
+     * a call to another system, and one that cannot be rolled back has no place
+     * in a database transaction. A failure here leaves them affiliated without
+     * a login, which the practice can put right by re-sending; the reverse —
+     * an account for an affiliation that was never recorded — would be an
+     * identity nothing accounts for.
+     */
+    let access: { invited: boolean; detail: string } = { invited: false, detail: '' };
+    if (decision === 'accept') {
+      access = await this.practitionerAccess.ensureAccount(practitionerId).catch((err: Error) => {
+        this.logger.error(`Accepted, but no sign-in could be issued for ${practitionerId}: ${err.message}`);
+        return { invited: false, detail: 'The affiliation is recorded. A sign-in could not be issued just now.' };
+      });
+    }
+
+    return { id: updated.id, status: updated.status, startedAt: updated.startedAt, access };
   }
 
   /**

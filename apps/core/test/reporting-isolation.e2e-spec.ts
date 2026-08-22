@@ -193,3 +193,84 @@ describe('reporting layer tenancy (e2e, real Postgres roles)', () => {
     expect(Number(foreignRaw)).toBe(0);
   });
 });
+
+describe('a practitioner reading their own figures (e2e, real Postgres roles)', () => {
+  let mine: string;
+  let theirs: string;
+
+  beforeAll(() => {
+    mine = psql(
+      'cube_platform_reader',
+      `SELECT "recipientId" FROM core.outbound_items WHERE "recipientType"='practitioner' ` +
+        'GROUP BY 1 ORDER BY count(*) DESC LIMIT 1',
+    );
+    theirs = psql(
+      'cube_platform_reader',
+      `SELECT "recipientId" FROM core.outbound_items WHERE "recipientType"='practitioner' ` +
+        `AND "recipientId" <> '${mine}' LIMIT 1`,
+    );
+  });
+
+  it('has two practitioners with messages, or this proves nothing', () => {
+    expect(mine).toMatch(/^[0-9a-f-]{36}$/);
+    expect(theirs).toMatch(/^[0-9a-f-]{36}$/);
+    expect(theirs).not.toBe(mine);
+  });
+
+  it('shows a practitioner their own messages', () => {
+    /*
+     * The positive case, and it is the awkward one. A practitioner is not
+     * scoped to a practice — they work at several — so the usual policy has no
+     * practice to name and would read nothing. A second policy keyed on
+     * `app.practitioner_id` is what makes this answerable at all.
+     */
+    const count = psql(
+      'cube_practitioner_reader',
+      `SET app.practitioner_id='${mine}'; SELECT count(*) FROM reporting.my_messages`,
+    );
+    expect(Number(count)).toBeGreaterThan(0);
+  });
+
+  it('SHOWS THEM NOTHING OF ANOTHER PRACTITIONER', () => {
+    const others = psql(
+      'cube_practitioner_reader',
+      `SET app.practitioner_id='${mine}'; ` +
+        `SELECT count(*) FROM reporting.my_messages WHERE "practitionerId"='${theirs}'`,
+    );
+    expect(Number(others)).toBe(0);
+
+    // And every row that IS returned is theirs, which is the stronger form.
+    const distinct = psql(
+      'cube_practitioner_reader',
+      `SET app.practitioner_id='${mine}'; SELECT count(DISTINCT "practitionerId") FROM reporting.my_messages`,
+    );
+    expect(Number(distinct)).toBe(1);
+  });
+
+  it('reads nothing with no practitioner on the connection', () => {
+    const count = psql('cube_practitioner_reader', 'SELECT count(*) FROM reporting.my_messages');
+    expect(Number(count)).toBe(0);
+  });
+
+  it('REFUSES the practice-wide view outright, rather than returning it empty', () => {
+    /*
+     * A refusal, not an empty answer. "Permission denied" tells a practitioner
+     * they asked the wrong question; zero rows would tell them the practice
+     * sent nothing, which is a claim about the practice and would be false.
+     */
+    expect(() =>
+      psql('cube_practitioner_reader', `SET app.practitioner_id='${mine}'; SELECT count(*) FROM reporting.outbound_messages`),
+    ).toThrow(/permission denied/i);
+  });
+
+  it('cannot reach the raw table beyond its own rows', () => {
+    // The view is not the boundary; the policy is. Going around it must give
+    // the same answer.
+    const others = psql(
+      'cube_practitioner_reader',
+      `SET app.practitioner_id='${mine}'; ` +
+        `SELECT count(*) FROM core.outbound_items WHERE "recipientId"='${theirs}'`,
+    );
+    expect(Number(others)).toBe(0);
+  });
+});

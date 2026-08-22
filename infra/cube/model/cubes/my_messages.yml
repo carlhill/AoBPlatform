@@ -1,0 +1,95 @@
+# One practitioner's own messages, across every practice they work at.
+#
+# A SEPARATE CUBE, not a filtered view of OutboundMessages. The two answer
+# different questions from different vantage points: a practice asks "what did
+# we send", a practitioner asks "what was sent to me" — and a practitioner's
+# answer spans practices, which the practice cube can never do.
+#
+# Keeping them apart also keeps the credentials apart. cube_practitioner_reader
+# has no grant on reporting.outbound_messages at all, so a practitioner asking
+# the practice question gets a refusal rather than an empty answer that would
+# read as "the practice sent nothing".
+#
+# `practitionerId` is a dimension nobody would chart. It is here because
+# queryRewrite filters on it — the boundary is expressed as a filter over a
+# dimension, so the dimension is part of the boundary.
+
+cubes:
+  - name: MyMessages
+    sql_table: reporting.my_messages
+    description: >
+      What this platform has sent to you, wherever you work. Counts, dates and
+      which practice sent them — nothing about anybody else, and nothing about a
+      practice beyond the fact that it wrote to you.
+
+    joins: []
+
+    dimensions:
+      - name: id
+        sql: id
+        type: string
+        primary_key: true
+        public: false
+
+      - name: practitionerId
+        sql: "\"practitionerId\""
+        type: string
+        public: false
+
+      # THE PRACTICE THAT WROTE TO THEM, which they already know: the message
+      # arrived from it. Visible through an RLS policy scoped to practices that
+      # have actually written to them, so it is never a list of practices in
+      # general.
+      - name: practice
+        sql: "\"practiceName\""
+        type: string
+        title: Practice
+
+      - name: site
+        sql: "\"locationCode\""
+        type: string
+        title: Site
+
+      - name: channel
+        sql: channel
+        type: string
+        title: Channel
+
+      - name: mediaType
+        sql: "\"mediaType\""
+        type: string
+        title: Format
+
+      - name: state
+        sql: state
+        type: string
+        title: State
+
+      # Sent if it was sent, raised otherwise — so something still on its way
+      # appears on the day it was raised rather than vanishing until it goes.
+      - name: occurredAt
+        sql: "\"occurredAt\""
+        type: time
+        title: When
+
+      - name: sentAt
+        sql: "\"sentAt\""
+        type: time
+        title: Sent
+
+    measures:
+      - name: count
+        type: count
+        title: Messages
+
+      - name: sent
+        type: count
+        title: Sent
+        filters:
+          - sql: "{CUBE}.state = 'sent'"
+
+      - name: waiting
+        type: count
+        title: Still on its way
+        filters:
+          - sql: "{CUBE}.state IN ('pending', 'leased')"

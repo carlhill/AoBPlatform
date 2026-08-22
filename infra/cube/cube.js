@@ -47,8 +47,11 @@ function identify(securityContext) {
 
   return {
     platform: Array.isArray(roles) && roles.includes('platform_admin'),
-    // Our own claim, set on the account when it is created.
+    // Our own claims, set on the account when it is created. A token carries
+    // one or the other, never both: a practice user is scoped to a practice, a
+    // practitioner is scoped to themselves across every practice they work at.
     practiceId: ctx.practice_id || ctx.practiceId || null,
+    practitionerId: ctx.practitioner_id || ctx.practitionerId || null,
   };
 }
 
@@ -118,13 +121,19 @@ module.exports = {
    */
   contextToAppId: ({ securityContext }) => {
     const who = identify(securityContext);
-    return who.platform ? 'aob_platform' : `aob_practice_${who.practiceId || 'none'}`;
+    if (who.platform) return 'aob_platform';
+    if (who.practiceId) return `aob_practice_${who.practiceId}`;
+    if (who.practitionerId) return `aob_practitioner_${who.practitionerId}`;
+    return 'aob_none';
   },
 
   /** Same reasoning, for the pre-aggregation store. */
   contextToOrchestratorId: ({ securityContext }) => {
     const who = identify(securityContext);
-    return who.platform ? 'aob_platform' : `aob_practice_${who.practiceId || 'none'}`;
+    if (who.platform) return 'aob_platform';
+    if (who.practiceId) return `aob_practice_${who.practiceId}`;
+    if (who.practitionerId) return `aob_practitioner_${who.practitionerId}`;
+    return 'aob_none';
   },
 
   /**
@@ -153,15 +162,36 @@ module.exports = {
       });
     }
 
+    /*
+     * A PRACTITIONER IS SCOPED TO THEMSELVES, not to a practice — they work at
+     * several and which ones changes. Their connection carries
+     * `app.practitioner_id`, which a second RLS policy reads, so the database
+     * is what stops one practitioner reading another's. Their credential holds
+     * no BYPASSRLS and cannot even reach the practice-wide view: asking the
+     * practice question returns a refusal rather than an empty answer that
+     * would read as "nothing was sent".
+     */
+    if (who.practitionerId) {
+      return new PostgresDriver({
+        host: process.env.CUBEJS_DB_HOST,
+        port: Number(process.env.CUBEJS_DB_PORT || 5432),
+        database: process.env.CUBEJS_DB_NAME,
+        user: process.env.CUBE_PRACTITIONER_DB_USER,
+        password: process.env.CUBE_PRACTITIONER_DB_PASS,
+        options: `-c app.practitioner_id=${who.practitionerId}`,
+      });
+    }
+
     if (!who.practiceId) {
       /*
-       * No practice and not platform. Refusing outright rather than returning
-       * a driver that would read nothing: an empty report reads as "you have
-       * sent nothing", which is a claim, and it would be false.
+       * Neither a practice nor a practitioner nor the platform. Refusing
+       * outright rather than returning a driver that would read nothing: an
+       * empty report reads as "you have sent nothing", which is a claim, and it
+       * would be false.
        */
       throw new Error(
-        'This token does not say which practice it is for, so there is nothing to report on. Sign out and ' +
-          'in again; if it keeps happening, tell us.',
+        'This token does not say whose figures to show, so there is nothing to report on. Sign out and in ' +
+          'again; if it keeps happening, tell us.',
       );
     }
 
@@ -188,16 +218,29 @@ module.exports = {
     const who = identify(securityContext);
     if (who.platform) return query;
 
-    if (!who.practiceId) {
-      throw new Error('No practice on this token, so this query is refused.');
+    query.filters = query.filters || [];
+
+    if (who.practiceId) {
+      query.filters.push({
+        member: 'OutboundMessages.practiceId',
+        operator: 'equals',
+        values: [who.practiceId],
+      });
+      return query;
     }
 
-    query.filters = query.filters || [];
-    query.filters.push({
-      member: 'OutboundMessages.practiceId',
-      operator: 'equals',
-      values: [who.practiceId],
-    });
-    return query;
+    if (who.practitionerId) {
+      // Belt to the database's braces. The policy already narrows the rows;
+      // saying it here means the narrowing is visible in the generated SQL
+      // rather than only in what Postgres was willing to answer.
+      query.filters.push({
+        member: 'MyMessages.practitionerId',
+        operator: 'equals',
+        values: [who.practitionerId],
+      });
+      return query;
+    }
+
+    throw new Error('This token does not say whose figures to show, so this query is refused.');
   },
 };
