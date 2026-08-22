@@ -1,6 +1,6 @@
 # Recertification and acting-as — proposal
 
-**Status:** proposal, nothing built. Decisions needed from Carl are marked ⚠.
+**Status:** APPROVED 2026-08-22 by Carl, with three additions in Part 5. Build order in Part 4.
 **Written:** 2026-08-22.
 
 Two designs in one document because they meet in a place neither reaches alone,
@@ -346,6 +346,81 @@ recertification, and depend on 1–3 only for the case where the two meet.
   anybody, its format is a separate question with legal input.
 
 ---
+
+---
+
+## Part 5 — Carl's additions, 2026-08-22
+
+Three requirements added on approving the above. All three are stronger than
+what was proposed, and one of them replaces the weakest control in it.
+
+### 5.1 Impersonation forces re-approval (rule 6)
+
+Any acting-as session puts the practice back through approval, **even if it is
+currently active**.
+
+This is what turns impersonation from *logged* into *costly*. A log nobody reads
+is not a control; a consequence somebody feels is. And it makes the quick path
+and the safe path the same path, which is the only kind of control that survives
+a busy afternoon.
+
+### 5.2 The re-approval must be a different person (rule 7)
+
+**This replaces §3.1 as the load-bearing control**, and it is better.
+
+§3.1 said evidence created under impersonation must not SCORE. That works only
+while the scoring exclusion is implemented correctly and stays correct — it is a
+rule enforced by arithmetic, and arithmetic gets "fixed".
+
+Rule 7 does not depend on any of that. The person who acted as the practice
+cannot be the person who blesses the result. If the scoring exclusion were
+removed tomorrow by mistake, one individual still could not manufacture evidence
+and approve it.
+
+Keep both. §3.1 stops impersonated evidence counting; rule 7 stops it being
+signed off by the same hand. The second holds when the first fails.
+
+**A hard refusal, not a warning.** Carl asked for it as a refusal, and a warning
+would be worthless here: the person clicking past it is exactly the person the
+rule exists to stop.
+
+### 5.3 Recertification is self-service, and every point must be addressed
+
+The practice gets a link. Against each data point already held they either
+confirm it or change it — **no "confirm all"**.
+
+The reason this is right is not thoroughness for its own sake. It is that a
+tick-every-point list is **harder to do carelessly than to do properly**. A
+single confirm button gets pressed without reading; a list of twenty points
+where one has been left blank shows exactly where the attention ran out.
+
+It also produces something worth having: an explicit, dated statement from the
+practice about each fact, rather than a global "still fine" that means nothing
+when a fact turns out to be wrong.
+
+Soft, not mandatory — so it warns and escalates, per recommendation 2, and never
+suspends by itself.
+
+### 5.4 What this costs, stated plainly
+
+Support becomes more expensive. Acting for a practice to fix one field now
+triggers a re-approval that a second person has to perform.
+
+That is the intended trade. It is also an argument for making practices more
+self-sufficient — better self-service, clearer errors, a working recertification
+flow — rather than for softening the rule when it becomes inconvenient.
+
+### 5.5 The deadlock to watch
+
+Rule 7 means a **single** platform operator cannot impersonate and then
+re-approve at all. With two, one impersonates and the other signs off.
+
+That is arguably correct rather than a bug — a lone operator being able to act
+as a practice and then approve their own work is the exact thing rule 7 exists
+to prevent. But it makes the second administrator **load-bearing rather than a
+convenience**, and that should be a deliberate operational decision rather than
+something discovered the first time somebody is on leave.
+
 
 ## Related
 

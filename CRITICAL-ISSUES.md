@@ -398,3 +398,72 @@ Getting it backwards produces a bare 401 or a bare 400 with no explanation.
 An endpoint that required a role, reached by a real browser session — which is
 exactly what found it. Worth remembering when the next auth surface is built:
 **a guard that has never refused anything has never run.**
+
+---
+
+## 5. Impersonation and recertification — RULES AGREED 2026-08-22
+
+Carl approved the five recommendations in
+[RECERTIFICATION-AND-ACTING-AS.md](RECERTIFICATION-AND-ACTING-AS.md) and added
+three requirements. Recorded here rather than only in the proposal, because
+these are the rules that must survive somebody reading the code in a hurry.
+
+### 5.1 The agreed rules
+
+| # | Rule |
+|---|---|
+| 1 | A practice check is worth full weight for **12 months**, decaying to zero at 24. |
+| 2 | Certification lapsing **warns and escalates. It never suspends automatically** — a named human decides. |
+| 3 | **No OTP** before an acting-as session. The practice is notified afterwards. |
+| 4 | Evidence created inside an acting-as session **does not score at all**. |
+| 5 | A platform user acting as a practice **may not remove anything**, including soft deletes. |
+| 6 | **Any impersonation forces re-approval**, even if the practice is currently active. |
+| 7 | That re-approval **must be performed by a different person** from the one who impersonated. |
+| 8 | Recertification is **soft, self-service, and every data point must be addressed**. |
+
+### 5.2 Why 6 and 7 matter more than the rest
+
+Rules 6 and 7 are Carl's, and they are stronger than what was proposed.
+
+The proposal said impersonated evidence should not SCORE. That works only if
+the scoring exclusion is implemented correctly and stays correct — a rule
+enforced by arithmetic that somebody could later "fix".
+
+Rule 7 does not depend on that. **The person who acted as the practice cannot
+be the person who blesses the result.** Even if the scoring exclusion were
+removed tomorrow by mistake, a single individual still could not manufacture
+evidence and approve it. That is separation of duties, and it holds when the
+finer control fails.
+
+Rule 6 is what gives rule 7 teeth. Without it, impersonation is merely logged —
+and a log nobody reads is not a control. With it, impersonation has a COST: it
+puts the practice back through approval. That is a deterrent a busy person
+actually feels, and it means the quick path and the safe path are the same
+path.
+
+**The consequence to accept:** support work becomes more expensive. Acting for
+a practice to fix one field triggers a re-approval that somebody else must do.
+That is the intended trade, not an oversight — and it is an argument for making
+sure practices can do more for themselves, not for softening the rule.
+
+### 5.3 What must be true in the code
+
+- Any write inside an acting-as session carries the session id.
+- `practice_validations` records `actingAsSessionId` and refuses a decision by
+  the principal named on that session. **A hard refusal, not a warning.**
+- The re-approval requirement is raised by the SESSION, not by the field that
+  changed. Somebody impersonating to change nothing still triggers it, because
+  the point is that they were in there.
+- Recertification collects an explicit answer for every data point. There is no
+  "confirm all" — a list where each point must be addressed is harder to do
+  carelessly than to do properly, and that is the entire design.
+
+### 5.4 Still open
+
+- **Whether rule 7 can deadlock a small operator.** With two platform
+  administrators, one impersonating means the other must re-approve. With one,
+  nothing can be re-approved at all. That is arguably correct — a single
+  operator should not be able to impersonate and self-approve — but it means
+  the second administrator is now load-bearing, not a convenience.
+- **What happens to an in-flight recertification when impersonation occurs
+  during it.** Presumably it restarts under a different reviewer. Not decided.
