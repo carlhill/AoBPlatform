@@ -97,6 +97,11 @@ export const VAULT_EVENT_TYPES = [
   // somebody who approved or confirmed something must stay identifiable for
   // as long as that record matters, which outlasts their employment.
   'practice_user.granted',
+  // Distinct from `granted`, because they are distinct acts: granting
+  // records that somebody may sign in, inviting is us writing to them with
+  // the means to. Somebody can be granted and never invited, which was
+  // exactly the state the user list used to misreport as "invited".
+  'practice_user.invited',
   'practice_user.role_changed',
   'practice_user.deactivated',
   'practice_user.reactivated',

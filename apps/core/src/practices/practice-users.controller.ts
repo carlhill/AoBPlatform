@@ -73,6 +73,22 @@ export class PracticeUsersController {
     return this.users.grant(practiceId ?? '', dto, actor);
   }
 
+  /**
+   * Send the enrolment link. A PRACTICE task, like the other invitations —
+   * @PracticeScoped means a platform operator cannot do it from the outside,
+   * but can while acting as somebody at the practice, because acting-as
+   * carries a practice claim.
+   */
+  @PracticeScoped()
+  @Post(':staffId/invite')
+  invite(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('staffId', ParseUUIDPipe) staffId: string,
+    @SessionActor() actor: Actor | undefined,
+  ) {
+    return this.users.invite(practiceId ?? '', staffId, actor);
+  }
+
   @PracticeScoped()
   @Post(':staffId/role')
   changeRole(

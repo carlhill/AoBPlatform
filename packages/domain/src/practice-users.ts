@@ -293,8 +293,27 @@ export function userStatus(user: {
   if (user.inactivityWarnedAt) {
     return { key: 'warned', label: 'Inactive — asked to sign in', tone: 'warn' };
   }
+  /*
+   * ADDED IS NOT INVITED, and the difference is not pedantry.
+   *
+   * This used to read the absence of a sign-in as evidence of an invitation,
+   * so somebody who had been added and never written to showed as "Invited —
+   * not signed in yet". The practice reads that as "we have done our part and
+   * they have not done theirs", goes looking for the person, and the person is
+   * waiting for an email that was never sent.
+   *
+   * Adding somebody and inviting them are separate steps ON PURPOSE — adding
+   * five people should not fire five credential links — so the status has to
+   * be able to say which of the two has happened.
+   */
   if (!user.lastSignInAt) {
-    return { key: 'invited', label: 'Invited — not signed in yet', tone: 'warn' };
+    // Nested rather than sequential: somebody who has signed in was plainly
+    // invited, whatever the invitedAt column says. Checking invitedAt first
+    // would relabel a working account as "added" if that column were ever
+    // missing, and a status must not contradict a sign-in that happened.
+    return user.invitedAt
+      ? { key: 'invited', label: 'Invited — not signed in yet', tone: 'warn' }
+      : { key: 'added', label: 'Added — no invitation sent yet', tone: 'muted' };
   }
   return { key: 'active', label: 'Active', tone: 'ok' };
 }

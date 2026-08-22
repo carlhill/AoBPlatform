@@ -821,6 +821,10 @@ model StaffMember {
    */
   keycloakUserId    String?
   invitedAt         DateTime?
+  /// How many enrolment links we have sent. Counted rather than replaced:
+  /// "written to four times, never signed in" is the situation worth acting
+  /// on, and a single timestamp hides it.
+  invitationsSent   Int       @default(0)
   passkeyEnrolledAt DateTime?
 
   // --- Console access (packages/domain/src/practice-users.ts) ---

@@ -29,6 +29,7 @@ export * from './practitioner-strength';
 export * from './landing';
 export * from './address-check';
 export * from './practice-users';
+export * from './pending-email-change';
 export * from './departure-notice';
 export * from './outbound-queue';
 export * from './acting-as';

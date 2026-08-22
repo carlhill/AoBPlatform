@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
   MAX_PASSKEYS_PER_ADMIN,
   MAX_USERS_PER_SCOPE,
@@ -10,6 +10,9 @@ import {
   scopeOf,
   userStatus,
 } from '@aobplatform/domain';
+import { ConfigService } from '@nestjs/config';
+import { KEYCLOAK_ADMIN } from '../identity/identity.tokens';
+import type { KeycloakAdminClient } from '@aobplatform/auth-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import type { Actor } from '../auth/actor.decorator';
@@ -33,7 +36,11 @@ import type { Actor } from '../auth/actor.decorator';
 export class PracticeUsersService {
   private readonly logger = new Logger(PracticeUsersService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+    @Inject(KEYCLOAK_ADMIN) private readonly keycloak: KeycloakAdminClient | null,
+  ) {}
 
   /**
    * Everyone at this practice, with what they may do and how many places are
@@ -206,6 +213,121 @@ export class PracticeUsersService {
 
       return { id: created.id, name: created.name, consoleRole, scope: scopeOf(created) };
     });
+  }
+
+  /**
+   * Send somebody their enrolment link — the step that actually reaches them.
+   *
+   * WHY IT IS SEPARATE FROM `grant`. Adding five people should not fire five
+   * credential links, so adding records the person and inviting writes to
+   * them. That split was deliberate and it was also invisible: the status
+   * read the absence of a sign-in as evidence of an invitation, so somebody
+   * nobody had written to appeared as "Invited — not signed in yet". The
+   * practice went looking for a person who was waiting on an email that had
+   * never been sent. `userStatus` now distinguishes the two, and this is the
+   * step that moves between them.
+   *
+   * SENDING AGAIN IS ORDINARY. Enrolment links expire in an hour and mail goes
+   * astray, so re-inviting is a normal thing a practice does, not a repair. It
+   * issues a fresh link and never a second account.
+   */
+  async invite(practiceId: string, staffId: string, actor?: Actor) {
+    const member = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.staffMember.findFirst({ where: { id: staffId } }),
+    );
+    if (!member) throw new NotFoundException('That person is not on this practice.');
+
+    if (!member.consoleRole) {
+      throw new BadRequestException(
+        `${member.name} is on the staff list but has no sign-in access, so there is nothing to invite them ` +
+          'to. Give them access first.',
+      );
+    }
+    if (member.deactivatedAt) {
+      throw new BadRequestException(
+        `${member.name}’s access was withdrawn. Restore it before sending them a new link, so the invitation ` +
+          'and the access decision cannot disagree.',
+      );
+    }
+    if (!member.email) {
+      throw new BadRequestException(`We have no email address for ${member.name}, so there is nowhere to send it.`);
+    }
+
+    if (!this.keycloak) {
+      throw new BadRequestException(
+        'Keycloak is not configured in this environment, so no sign-in link can be issued. The person is ' +
+          'still on the list and can be invited once it is.',
+      );
+    }
+
+    /*
+     * REUSE THE ACCOUNT IF ONE EXISTS. Keycloak enforces one email per realm,
+     * so creating a second would fail anyway — but the reason to look first is
+     * that re-inviting somebody must not orphan the account they already hold,
+     * along with whatever they have already done under it.
+     */
+    let keycloakUserId = member.keycloakUserId;
+    if (!keycloakUserId) {
+      const existing = await this.keycloak.findByEmail(member.email);
+      keycloakUserId = existing?.id ?? null;
+    }
+
+    if (!keycloakUserId) {
+      const [firstName, ...rest] = member.name.trim().split(/\s+/);
+      const created = await this.keycloak.createPasskeyOnlyUser({
+        username: member.email,
+        email: member.email,
+        firstName: firstName || member.name,
+        lastName: rest.join(' ') || firstName || member.name,
+        // Not `practice_principal`: that is the administrator's role. An
+        // ordinary console user gets the least privileged realm role, and what
+        // they may do here comes from consoleRole rather than from Keycloak.
+        realmRoles: ['front_desk'],
+        attributes: { practice_id: practiceId },
+      });
+      keycloakUserId = created.id;
+    }
+
+    await this.keycloak.sendPasskeyEnrolment(keycloakUserId, {
+      clientId: this.config.get<string>('KEYCLOAK_WEB_CLIENT_ID', 'web'),
+      redirectUri: this.config.get<string>('CONSOLE_URL', 'http://localhost:21100'),
+      lifespanSeconds: 60 * 60,
+    });
+
+    const invitedAt = new Date();
+    await this.prisma.withPractice(practiceId, async (tx) => {
+      await tx.staffMember.update({
+        where: { id: staffId },
+        data: {
+          keycloakUserId,
+          invitedAt,
+          // Counted rather than replaced: "we have written to this person four
+          // times and they have never signed in" is worth being able to see.
+          invitationsSent: { increment: 1 },
+        },
+      });
+
+      await enqueueVaultEvent(tx, {
+        type: 'practice_user.invited',
+        actor: { principalType: 'staff', id: actor?.id ?? practiceId },
+        subject: { type: 'StaffMember', id: staffId },
+        payload: {
+          invitedBy: actor?.name ?? 'practice',
+          onBehalfOfPractice: practiceId,
+          // WHICH person, never the address. An audit event is not a second
+          // copy of the contact book.
+          consoleRole: member.consoleRole ?? 'unknown',
+        },
+      });
+    });
+
+    this.logger.log(`Enrolment link sent to staff member ${staffId} at ${practiceId}.`);
+    return {
+      id: staffId,
+      name: member.name,
+      invitedAt: invitedAt.toISOString(),
+      detail: `An enrolment link was sent to ${member.email}. It lasts an hour.`,
+    };
   }
 
   /** Change what somebody may do. Same caps, same refusals. */

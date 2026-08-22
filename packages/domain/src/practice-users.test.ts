@@ -193,7 +193,9 @@ describe('userStatus', () => {
   it('distinguishes the states a practice admin actually decides from', () => {
     expect(userStatus({ consoleRole: null }).key).toBe('no_access');
     expect(userStatus({ consoleRole: 'other', deactivatedAt: new Date() }).key).toBe('deactivated');
-    expect(userStatus({ consoleRole: 'other' }).key).toBe('invited');
+    expect(userStatus({ consoleRole: 'other', invitedAt: new Date() }).key).toBe('invited');
+    // Added but never written to is its own state, not a synonym for invited.
+    expect(userStatus({ consoleRole: 'other' }).key).toBe('added');
     expect(userStatus({ consoleRole: 'other', lastSignInAt: new Date() }).key).toBe('active');
     expect(userStatus({ consoleRole: 'other', inactivityWarnedAt: new Date() }).key).toBe('warned_never');
     expect(
@@ -209,3 +211,45 @@ describe('userStatus', () => {
     expect(s.label).toMatch(/restored/);
   });
 });
+
+describe('added is not invited', () => {
+  /*
+   * The bug this pins: status was inferred from the absence of a sign-in, so
+   * somebody nobody had written to appeared as "Invited — not signed in yet".
+   * That reads as "the ball is in their court" when it is squarely in ours.
+   */
+  it('says nothing has been sent when nothing has been sent', () => {
+    const s = userStatus({ consoleRole: 'other', invitedAt: null, lastSignInAt: null });
+    expect(s.key).toBe('added');
+    expect(s.label).toMatch(/no invitation sent/i);
+    // Muted, not warn: nobody is late for anything yet.
+    expect(s.tone).toBe('muted');
+  });
+
+  it('says invited once an invitation has actually gone out', () => {
+    const s = userStatus({ consoleRole: 'other', invitedAt: new Date('2026-08-22'), lastSignInAt: null });
+    expect(s.key).toBe('invited');
+  });
+
+  it('says active once they have signed in', () => {
+    const s = userStatus({
+      consoleRole: 'other',
+      invitedAt: new Date('2026-08-22'),
+      lastSignInAt: new Date('2026-08-23'),
+    });
+    expect(s.key).toBe('active');
+  });
+
+  it('never calls a signed-in account "added", whatever invitedAt says', () => {
+    // Somebody who signed in was invited. If the column disagrees the column
+    // is wrong, and the status must not contradict a sign-in that happened.
+    expect(userStatus({ consoleRole: 'other', invitedAt: null, lastSignInAt: new Date() }).key).toBe('active');
+  });
+
+  it('still reports no access before it reports anything about invitations', () => {
+    // Somebody on staff with no console role was never going to be invited,
+    // and "no invitation sent yet" would imply one is coming.
+    expect(userStatus({ consoleRole: null, invitedAt: null, lastSignInAt: null }).key).toBe('no_access');
+  });
+});
+
