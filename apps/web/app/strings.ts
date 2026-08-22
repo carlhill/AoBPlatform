@@ -1225,6 +1225,46 @@ export const strings = {
     noPracticeBody:
       'Your session should say which practice you are with, and it does not. Sign out and in again. If that does not fix it, tell us — we are not going to offer you a list of other people’s practices.',
   },
+  confirmEmail: {
+    title: 'Confirm your administrator address',
+    lead:
+      'Somebody at your practice asked us to make this the administrator address for AoBPlatform. Nothing has '
+      + 'changed yet. Enter the code from the same message to confirm it.',
+    code: 'The code from the email',
+    codeHint: 'Six digits. The link on its own does not confirm anything — that is deliberate.',
+    confirm: 'Confirm this address',
+    confirming: 'Confirming…',
+    failed: 'That could not be confirmed',
+    doneTitle: 'Confirmed',
+    doneFallback: 'This is now the practice’s administrator address.',
+    noTokenTitle: 'This page needs the link from the email',
+    noTokenBody:
+      'There is no confirmation to act on here. Open the link in the message we sent, rather than typing the '
+      + 'address by hand — the link is what tells us which change you are confirming.',
+    whatHappensTitle: 'What happens when you confirm',
+    whatHappensBody:
+      'This becomes where we send everything about the practice, and the passkeys enrolled against the old '
+      + 'address stop working. We will send you a link to set up your own.',
+  },
+  stopEmail: {
+    title: 'Stop this change',
+    lead:
+      'Somebody asked us to change your practice’s administrator email address. Nothing has changed yet, and '
+      + 'it only takes effect if the new address confirms it. If your practice did not ask for this, stop it here.',
+    stop: 'Stop this change',
+    stopping: 'Stopping…',
+    failed: 'That could not be stopped',
+    doneTitle: 'Stopped',
+    doneFallback: 'The change has been stopped and the address is unchanged.',
+    noTokenTitle: 'This page needs the link from the email',
+    noTokenBody:
+      'There is nothing to stop here. Open the link in the message we sent — it is what tells us which change '
+      + 'you mean.',
+    ifItWasYouTitle: 'If your practice did ask for this',
+    ifItWasYouBody:
+      'You do not need to do anything. The change goes through when the new address confirms it, and expires '
+      + 'by itself if nobody does.',
+  },
   users: {
     title: 'Your people',
     lead:
@@ -1257,6 +1297,9 @@ export const strings = {
     whyWithdraw: 'Why?',
     whyWithdrawHint: 'The practice reads this when deciding whether to restore them.',
     actionFailed: 'That could not be done',
+    readOnlyTitle: 'Only the administrator can change this',
+    readOnlyBody:
+      'You can see who has access, so you know who to ask. Adding people, changing what they may do and withdrawing access are the administrator’s to do — deliberately, because they decide who can reach patient records.',
     addTitle: 'Give somebody access',
     addBody:
       'They get their own account, so what they do is recorded against their name rather than the practice’s.',

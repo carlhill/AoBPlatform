@@ -1,4 +1,11 @@
-import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   MAX_PASSKEYS_PER_ADMIN,
   MAX_USERS_PER_SCOPE,
@@ -43,6 +50,49 @@ export class PracticeUsersService {
   ) {}
 
   /**
+   * MAY THIS CALLER DECIDE WHO ELSE MAY SIGN IN?
+   *
+   * Being scoped to a practice was the entire access model here, which
+   * separated a practice from the platform and separated nothing inside a
+   * practice. So somebody granted "ordinary access" -- a receptionist, the
+   * least privileged role we issue -- could open this screen and grant
+   * themselves the administrator role, withdraw the real administrator, or
+   * invite anybody they liked. Every cap the domain enforces sat behind a door
+   * that anybody at the practice could walk through.
+   *
+   * The check is against the STAFF ROW rather than the token's realm roles.
+   * The row is what the screen shows, what the domain caps at one per
+   * practice, and what `changeRole` writes; a realm role is a copy that drifts
+   * the moment somebody is promoted here without Keycloak being told.
+   *
+   * A PLATFORM OPERATOR PASSES, and only by acting as somebody at the
+   * practice: that is the supported support route, it already refuses the
+   * destructive verbs, and it records who did what on whose behalf. Reaching
+   * this code at all means the practice claim is present, and for an operator
+   * the only way to have one is an open acting-as session.
+   */
+  private async assertMayManageUsers(practiceId: string, actor?: Actor): Promise<void> {
+    if (!actor?.id) {
+      throw new ForbiddenException(
+        'We could not tell who is asking, so this was refused. Sign out and in again.',
+      );
+    }
+
+    if (actor.roles?.includes('platform_admin')) return;
+
+    const me = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.staffMember.findFirst({ where: { keycloakUserId: actor.id } }),
+    );
+
+    if (!me || me.deactivatedAt || me.consoleRole !== 'admin') {
+      throw new ForbiddenException(
+        'Only this practice’s administrator can change who may sign in. If you need somebody added or ' +
+          'removed, ask them — this is deliberately not something an ordinary account can do.',
+      );
+    }
+  }
+
+  /**
    * Everyone at this practice, with what they may do and how many places are
    * left.
    *
@@ -50,7 +100,20 @@ export class PracticeUsersService {
    * practice discovers by hitting it reads as a bug, and two surfaces counting
    * it differently is how somebody is told there is room when there is not.
    */
-  async list(practiceId: string) {
+  async list(practiceId: string, actor?: Actor) {
+    /*
+     * WHETHER THE CALLER MAY CHANGE ANY OF THIS, answered by the server.
+     *
+     * The screen could work it out — it knows the roles — but then the rule
+     * would exist twice and the copy in the browser would be the one that
+     * drifts. Worse, it is the copy an attacker edits. The server decides and
+     * the screen obeys; the buttons it hides are the same ones the API refuses.
+     */
+    const mayManage = await this.assertMayManageUsers(practiceId, actor).then(
+      () => true,
+      () => false,
+    );
+
     return this.prisma.withPractice(practiceId, async (tx) => {
       const staff = await tx.staffMember.findMany({
         where: { practiceId },
@@ -123,6 +186,10 @@ export class PracticeUsersService {
       const admin = staff.find((s) => s.consoleRole === 'admin' && !s.deactivatedAt);
 
       return {
+        // Read-only callers still SEE the list — knowing who has access is not
+        // privileged, and hiding it would leave an ordinary user unable to tell
+        // who to ask.
+        mayManage,
         users,
         scopes,
         admin: admin
@@ -160,6 +227,7 @@ export class PracticeUsersService {
     },
     actor?: Actor,
   ) {
+    await this.assertMayManageUsers(practiceId, actor);
     return this.prisma.withPractice(practiceId, async (tx) => {
       const existing = await tx.staffMember.findMany({ where: { practiceId } });
 
@@ -250,6 +318,8 @@ export class PracticeUsersService {
    * issues a fresh link and never a second account.
    */
   async invite(practiceId: string, staffId: string, actor?: Actor) {
+    await this.assertMayManageUsers(practiceId, actor);
+
     const member = await this.prisma.withPractice(practiceId, (tx) =>
       tx.staffMember.findFirst({ where: { id: staffId } }),
     );
@@ -350,6 +420,8 @@ export class PracticeUsersService {
 
   /** Change what somebody may do. Same caps, same refusals. */
   async changeRole(practiceId: string, staffId: string, consoleRole: string, actor?: Actor) {
+    await this.assertMayManageUsers(practiceId, actor);
+
     return this.prisma.withPractice(practiceId, async (tx) => {
       const member = await tx.staffMember.findFirst({ where: { id: staffId } });
       if (!member) throw new NotFoundException('That person is not on this practice.');
@@ -435,6 +507,7 @@ export class PracticeUsersService {
   }
 
   async deactivate(practiceId: string, staffId: string, reason: string, actor?: Actor) {
+    await this.assertMayManageUsers(practiceId, actor);
     if (!reason?.trim()) {
       throw new BadRequestException('Say why access is being withdrawn — the practice will read this later.');
     }
@@ -484,6 +557,8 @@ export class PracticeUsersService {
 
   /** Give it back. The cap applies again, so this can be refused. */
   async reactivate(practiceId: string, staffId: string, actor?: Actor) {
+    await this.assertMayManageUsers(practiceId, actor);
+
     return this.prisma.withPractice(practiceId, async (tx) => {
       const member = await tx.staffMember.findFirst({ where: { id: staffId } });
       if (!member) throw new NotFoundException('That person is not on this practice.');

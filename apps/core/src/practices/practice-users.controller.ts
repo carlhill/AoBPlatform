@@ -59,8 +59,13 @@ export class PracticeUsersController {
   constructor(private readonly users: PracticeUsersService) {}
 
   @Get()
-  list(@Headers('x-practice-id') practiceId: string | undefined) {
-    return this.users.list(practiceId ?? '');
+  list(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @SessionActor() actor: Actor | undefined,
+  ) {
+    // The caller goes in so the response can say whether they may change any
+    // of it. The screen hides exactly what the API would refuse.
+    return this.users.list(practiceId ?? '', actor);
   }
 
   @PracticeScoped()

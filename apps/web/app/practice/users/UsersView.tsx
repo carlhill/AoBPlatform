@@ -70,6 +70,15 @@ interface Scope {
 }
 
 interface Listing {
+  /*
+   * Whether this account may change any of it, decided by the SERVER.
+   *
+   * The screen knows the roles and could work it out, but then the rule would
+   * exist twice and the copy in the browser would be the one that drifts — and
+   * the one an attacker edits. So the buttons hidden here are exactly the ones
+   * the API refuses; this is presentation, never protection.
+   */
+  mayManage?: boolean;
   users: User[];
   scopes: Scope[];
   admin: { id: string; name: string; email: string | null; maxPasskeys: number } | null;
@@ -178,7 +187,7 @@ export function UsersView() {
       {active.length === 0 && <p className={ui.hint}>{strings.users.nobodyYet}</p>}
       <ul className={styles.reviewList}>
         {active.map((u) => (
-          <UserRow key={u.id} user={u} practiceId={scope} onDone={load} />
+          <UserRow key={u.id} user={u} practiceId={scope} onDone={load} mayManage={listing?.mayManage !== false} />
         ))}
       </ul>
 
@@ -188,7 +197,7 @@ export function UsersView() {
           <p className={ui.hint}>{strings.users.onStaffNote}</p>
           <ul className={styles.reviewList}>
             {noAccess.map((u) => (
-              <UserRow key={u.id} user={u} practiceId={scope} onDone={load} />
+              <UserRow key={u.id} user={u} practiceId={scope} onDone={load} mayManage={listing?.mayManage !== false} />
             ))}
           </ul>
         </>
@@ -200,18 +209,33 @@ export function UsersView() {
           <p className={ui.hint}>{strings.users.withdrawnNote}</p>
           <ul className={styles.reviewList}>
             {withdrawn.map((u) => (
-              <UserRow key={u.id} user={u} practiceId={scope} onDone={load} />
+              <UserRow key={u.id} user={u} practiceId={scope} onDone={load} mayManage={listing?.mayManage !== false} />
             ))}
           </ul>
         </>
       )}
 
-      <AddUser practiceId={scope} scopes={listing?.scopes ?? []} onDone={load} />
+      <AddUser
+        practiceId={scope}
+        scopes={listing?.scopes ?? []}
+        onDone={load}
+        mayManage={listing?.mayManage !== false}
+      />
     </Shell>
   );
 }
 
-function UserRow({ user, practiceId, onDone }: { user: User; practiceId: string; onDone: () => void | Promise<void> }) {
+function UserRow({
+  user,
+  practiceId,
+  onDone,
+  mayManage,
+}: {
+  user: User;
+  practiceId: string;
+  onDone: () => void | Promise<void>;
+  mayManage: boolean;
+}) {
   const [reason, setReason] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -261,7 +285,7 @@ function UserRow({ user, practiceId, onDone }: { user: User; practiceId: string;
         </p>
       )}
 
-      {user.deactivatedAt ? (
+      {!mayManage ? null : user.deactivatedAt ? (
         <>
           <p className={styles.cardNote}>
             {strings.users.withdrawnBy} {user.deactivatedByName} — {user.deactivatedReason}
@@ -339,10 +363,12 @@ function AddUser({
   practiceId,
   scopes,
   onDone,
+  mayManage,
 }: {
   practiceId: string;
   scopes: Scope[];
   onDone: () => void | Promise<void>;
+  mayManage: boolean;
 }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -382,6 +408,19 @@ function AddUser({
     } finally {
       setBusy(false);
     }
+  }
+
+  /*
+   * READING THE LIST IS NOT PRIVILEGED; changing it is. An ordinary account
+   * still sees who has access -- otherwise they cannot tell who to ask -- but
+   * is not shown a form the server would refuse. Being handed controls that
+   * fail on submit teaches people the product is broken rather than that they
+   * lack permission.
+   */
+  if (!mayManage) {
+    return (
+      <Notice title={strings.users.readOnlyTitle}>{strings.users.readOnlyBody}</Notice>
+    );
   }
 
   return (

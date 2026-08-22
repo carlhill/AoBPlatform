@@ -2,6 +2,7 @@ import { Global, Module } from '@nestjs/common';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { AuthGuard } from './auth.guard';
 import { AttributionInterceptor } from './attribution.interceptor';
+import { LastSeenInterceptor } from './last-seen.interceptor';
 
 @Global()
 @Module({
@@ -16,6 +17,9 @@ import { AttributionInterceptor } from './attribution.interceptor';
      * the caller typed.
      */
     { provide: APP_INTERCEPTOR, useClass: AttributionInterceptor },
+    // Records that somebody signed in. Registered after acting-as so that
+    // `request.actingAs` is already set when it decides whether to count.
+    { provide: APP_INTERCEPTOR, useClass: LastSeenInterceptor },
   ],
 })
 export class AuthModule {}
