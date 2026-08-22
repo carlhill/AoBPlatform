@@ -455,3 +455,39 @@
   border: 1px solid var(--line);
   border-radius: var(--radius);
 }
+
+/*
+ * The queue screen is a TABLE, not prose.
+ *
+ * `ui.pageLead` caps at 62ch, which is right for reading paragraphs and wrong
+ * here — the rest of the screen is full width, so a narrow lead above it reads
+ * as a mistake rather than as a measure.
+ */
+.queueLead {
+  max-width: none;
+}
+
+/*
+ * The search field. These class names were used on this screen before they
+ * existed in this stylesheet — they live in practice.module.css, so on the
+ * queue page they resolved to nothing and the icon rendered as a block ABOVE
+ * the input instead of inside it.
+ */
+.searchWrap {
+  position: relative;
+  display: block;
+}
+
+.searchIcon {
+  position: absolute;
+  left: var(--s3);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-faint);
+  pointer-events: none;
+}
+
+/* Room for the icon, so the caret does not start underneath it. */
+.searchWrap input {
+  padding-left: calc(var(--s3) * 2 + 1rem);
+}

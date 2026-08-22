@@ -28,6 +28,7 @@ import { SessionControl } from '../../SessionControl';
 import { apiHeaders, currentSession } from '../../auth';
 import { strings } from '../../strings';
 import { usePractice } from '../usePractice';
+import { useLiveRefresh } from '../../useLiveRefresh';
 import styles from '../manage.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
@@ -138,6 +139,16 @@ export function QueueView() {
   );
   const dead = useMemo(() => (items ?? []).filter((i) => i.state === 'dead').length, [items]);
 
+  /*
+   * AUTO-REFRESH WHILE ANYTHING IS STILL MOVING. A queue screen that needs a
+   * manual refresh is a screen that shows you the past — and the question it
+   * answers, "is it stuck", is about now.
+   *
+   * Gated on there being something unsent, so a settled queue polls not at
+   * all.
+   */
+  useLiveRefresh(waiting > 0, load);
+
   if (!checked) return null;
 
   if (!practiceId) {
@@ -154,7 +165,7 @@ export function QueueView() {
   return (
     <Shell right={<SessionControl audience={strings.setup.audience} />}>
       <h1 className={ui.pageTitle}>{strings.queue.title}</h1>
-      <p className={ui.pageLead}>{strings.queue.lead}</p>
+      <p className={`${ui.pageLead} ${styles.queueLead}`}>{strings.queue.lead}</p>
 
       <div className={styles.queueSummary}>
         <span>{(items ?? []).length} shown</span>
