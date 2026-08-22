@@ -1,4 +1,5 @@
 import { Global, Module } from '@nestjs/common';
+import { OutboundController } from './outbound.controller';
 import { OutboundService } from './outbound.service';
 import { OutboundWorkerService } from './outbound-worker.service';
 
@@ -10,6 +11,7 @@ import { OutboundWorkerService } from './outbound-worker.service';
  */
 @Global()
 @Module({
+  controllers: [OutboundController],
   providers: [OutboundService, OutboundWorkerService],
   exports: [OutboundService],
 })

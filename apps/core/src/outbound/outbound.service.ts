@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
   MAX_PAYLOAD_BYTES,
   OutboundQueueError,
@@ -10,7 +10,9 @@ import {
   leaseSecondsFor,
 } from '@aobplatform/domain';
 import type { Prisma } from '@prisma/client';
+import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
+import type { Actor } from '../auth/actor.decorator';
 
 /**
  * The outbound queue.
@@ -211,6 +213,100 @@ export class OutboundService {
   async pullForDevice(practiceId: string, deviceId: string, limit = 20) {
     if (!isPullChannel('device')) throw new BadRequestException('Device pull is not enabled.');
     return this.claim(practiceId, 'device', `device:${deviceId}`, limit);
+  }
+
+  /**
+   * The queue, for a screen.
+   *
+   * REQUIRES A PRACTICE. There is deliberately no all-practices listing: these
+   * payloads carry patient names and consent details, and a screen that
+   * renders every practice at once is a cross-tenant disclosure waiting for
+   * one missing WHERE clause. A platform operator picks a practice and looks
+   * at that practice, which is also how they actually work.
+   *
+   * PAYLOADS ARE NOT RETURNED HERE. A list of two hundred emails would ship
+   * two hundred patient-bearing bodies to a browser in order to render a table
+   * that shows none of them. The viewer fetches one at a time.
+   */
+  async list(
+    practiceId: string | undefined,
+    filter: { mediaType?: string; state?: string; channel?: string; search?: string; take?: number },
+  ) {
+    if (!practiceId) {
+      throw new BadRequestException(
+        'Choose a practice first. The queue is read one practice at a time, because these messages carry ' +
+          'patient details.',
+      );
+    }
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const where: Record<string, unknown> = { practiceId };
+      if (filter.mediaType) where.mediaType = filter.mediaType;
+      if (filter.state) where.state = filter.state;
+      if (filter.channel) where.channel = filter.channel;
+      if (filter.search?.trim()) {
+        /*
+         * Destination and subject only. NOT the payload — searching inside
+         * message bodies would let somebody trawl for a patient name across a
+         * practice, which is a different capability from operating a queue and
+         * should not arrive as a side effect of a search box.
+         */
+        where.OR = [
+          { destination: { contains: filter.search.trim(), mode: 'insensitive' } },
+          { subjectType: { contains: filter.search.trim(), mode: 'insensitive' } },
+        ];
+      }
+
+      const items = await tx.outboundItem.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: filter.take ?? 50,
+        select: {
+          id: true,
+          channel: true,
+          mediaType: true,
+          destination: true,
+          subjectType: true,
+          subjectId: true,
+          state: true,
+          attempts: true,
+          availableAt: true,
+          lastError: true,
+          createdAt: true,
+          sentAt: true,
+          artefactId: true,
+        },
+      });
+      return { items, count: items.length };
+    });
+  }
+
+  /**
+   * One item WITH its payload, for the viewer.
+   *
+   * Reading a queued message is reading something written about a patient, so
+   * it is logged exactly as opening evidence is. An operator browsing notice
+   * contents should leave the same trail as one opening a document — otherwise
+   * the queue becomes the unaudited way to read what the audited path protects.
+   */
+  async item(practiceId: string | undefined, id: string, actor?: Actor) {
+    if (!practiceId) throw new BadRequestException('Choose a practice first.');
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const found = await tx.outboundItem.findFirst({ where: { id } });
+      if (!found) throw new NotFoundException('That queued item is not in this practice.');
+
+      await enqueueVaultEvent(tx, {
+        type: 'access.read',
+        actor: { principalType: 'staff', id: actor?.id ?? practiceId },
+        subject: { type: 'OutboundItem', id },
+        payload: {
+          readBy: actor?.name ?? 'unattributed',
+          mediaType: found.mediaType,
+          about: `${found.subjectType}:${found.subjectId}`,
+        },
+      });
+
+      return found;
+    });
   }
 
   /** What an operator wants to see: what is stuck, and how badly. */

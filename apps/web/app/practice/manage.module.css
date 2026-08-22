@@ -329,3 +329,129 @@
   border: 1px solid var(--line);
   border-radius: var(--radius);
 }
+
+/* --- The outbound queue screen ------------------------------------------ */
+
+.queueSummary {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  margin-bottom: var(--s4);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+.queueFilters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--s3);
+  margin-bottom: var(--s4);
+}
+
+.queueList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s2);
+}
+
+.queueRow {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+/*
+ * The whole row is the control. An operator scanning a queue is clicking to
+ * look inside, and a separate "view" link would make the obvious target the
+ * wrong one.
+ */
+.queueRowMain {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 2fr) minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--s3);
+  width: 100%;
+  padding: var(--s3) var(--s4);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.queueRowMain:hover {
+  background: var(--surface-sunken);
+}
+
+.queueMedia {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  color: var(--ink-muted);
+}
+
+.queueDest,
+.queueSubject {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queueDest {
+  color: var(--ink);
+}
+
+.queueSubject {
+  color: var(--ink-muted);
+}
+
+.queueWhen {
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+.queueError {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s1);
+  margin: 0;
+  padding: 0 var(--s4) var(--s3);
+  font-size: var(--text-sm);
+  color: var(--stop);
+}
+
+.viewer {
+  border-top: 1px solid var(--line);
+  padding: var(--s4);
+  background: var(--surface-sunken);
+}
+
+.viewerSubject {
+  margin: 0 0 var(--s2);
+  font-weight: 600;
+}
+
+/*
+ * Source, not rendered. Payloads are assembled from practice-supplied text,
+ * and rendering somebody else's markup inside our console would run it in our
+ * origin. `pre` also happens to be what an operator debugging a queue wants.
+ */
+.viewerBody {
+  margin: 0;
+  padding: var(--s3);
+  max-height: 28rem;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}

@@ -1349,6 +1349,19 @@ model OutboundItem {
    */
   payload Json
 
+  /**
+   * WHAT IT IS, as distinct from how it travels.
+   *
+   * email | json | xml | pdf | markdown. `channel` says how it gets there;
+   * this says what the recipient opens. A JSON document can go by webhook or
+   * wait for a kiosk, and the viewer that renders it depends on this, not on
+   * the channel.
+   */
+  mediaType String @default("email")
+
+  /// Set when the payload points at a stored file rather than carrying it.
+  artefactId String? @db.Uuid
+
   /// pending | leased | sent | failed | dead
   state    String @default("pending")
   attempts Int    @default(0)

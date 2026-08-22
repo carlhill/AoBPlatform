@@ -1165,6 +1165,33 @@ export const strings = {
    * exist. That is why a location arrives inactive and why activating it names
    * a human.
    */
+  queue: {
+    title: 'Outbound queue',
+    lead:
+      'Everything waiting to leave the platform, and everything that has. This is transport: what was sent, and what happened to it, lives with the record it belongs to and is kept far longer.',
+    chooseTitle: 'Choose a practice first',
+    chooseBodyOperator:
+      'The queue is read one practice at a time, because these messages carry patient details. Pick a practice from the list and come back.',
+    chooseBodyPractice: 'We could not tell which practice you belong to. Sign in again and try once more.',
+    waiting: 'waiting',
+    dead: 'gave up',
+    attempts: 'attempts',
+    refresh: 'Refresh',
+    filterMedia: 'Type',
+    anyMedia: 'Any type',
+    filterState: 'State',
+    anyState: 'Any state',
+    filterSearch: 'Find',
+    filterSearchHint: 'Matches the destination and what it is about — never the message body.',
+    notLoaded: 'The queue could not be read',
+    emptyTitle: 'Nothing here',
+    emptyBody: 'No messages match those filters. An empty queue is the normal state.',
+    awaitingDevice: 'waiting for a device',
+    opening: 'Opening…',
+    notOpened: 'That could not be opened',
+    pdfInStore: 'The document is in the artefact store:',
+    pdfMissing: 'This is marked as a PDF but carries no stored document.',
+  },
   locations: {
     // --- The reviewer's decision -------------------------------------
     decisionLegend: 'Confirm this address, or send it back',

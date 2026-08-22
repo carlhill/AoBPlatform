@@ -279,6 +279,70 @@ it. Deciding it early costs nothing.
 - [ ] Roster entries per affiliation, not per practitioner — the affiliation is what carries the location
 - [ ] A capture-time check: is this practitioner rostered here today? Warning, not a block, until it is trusted
 - [ ] Keep it optional. A practice that does not roster must not be worse off
+## Outbound queue — when to reach for a broker
+
+Asked 22 Aug 2026: should we use BullMQ, RabbitMQ or Pulsar instead of the
+Postgres queue?
+
+### Why we did not, and what would change that
+
+All three are out-of-process brokers, which means the enqueue cannot be in
+the same transaction as the evidence write. That gives two failure modes we
+cannot accept: a notice with no send, and a send with no notice. The standard
+fix is a transactional outbox — so **we build this table either way**, and
+the only real question is whether a broker is needed IN ADDITION.
+
+At the modelled 750,000 notices/day (~21/second average) it is not. Verified:
+two workers claiming concurrently through `FOR UPDATE SKIP LOCKED`, zero
+overlap, no coordinator.
+
+**Adopt RabbitMQ when any of these becomes true:**
+
+- [ ] Sustained throughput above ~100/second, or peaks the database feels
+- [ ] Cross-region fan-out, where a single Postgres is the wrong hub
+- [ ] Non-Node consumers that would otherwise need their own claim logic
+- [ ] A second product needs the same messages, and polling our table is worse than subscribing
+
+**RabbitMQ over the other two, if it comes to that.** BullMQ needs Redis, and
+Redis as a durability-critical store for "must not lose this" makes AOF and
+fsync tuning a compliance question — the wrong shape for evidence. Pulsar’s
+tenancy sounds like a fit and is not: our tenant boundary is Postgres RLS
+(CONVENTIONS.md §6), and moving notice CONTENT into a broker takes it outside
+that boundary and re-implements isolation in a second system.
+
+**The migration is cheap because the outbox exists.** The relay changes
+destination; nothing else moves. That is the point of building it this way,
+not an accident.
+
+## "What was sent to me" — a separate screen from the queue
+
+Raised 22 Aug 2026 alongside the queue viewer: practitioners should see
+notices for their practices, and patients/carers should see their own.
+
+**Agreed on the need. Not from the queue table, though**, and the reason is
+not fussiness:
+
+| | Queue (`outbound_items`) | Evidence (`Notice`) |
+|---|---|---|
+| Retention | **Pruned after ~30 days** | Full statutory period |
+| Question it answers | "Did this leave? Is it stuck?" | "What was sent, and what happened to it" |
+| Audience | Operators, practice admins | Practitioners, patients, regulators |
+
+A patient looking at the queue would watch their own records vanish. The
+queue is transport and is deliberately disposable.
+
+**And patients have no accounts, by design.** REQ-PORT-08: a patient signs
+from a single-use link and must never need one. A patient-facing history
+screen means building patient authentication — a large new surface, and one
+that reverses an existing decision rather than extending it. Worth doing
+deliberately if we want it, not as a side effect of a queue viewer.
+
+### If it gets built
+
+- [ ] Source it from `Notice` + `NoticeDeliveryEvent`, never `outbound_items`
+- [ ] Decide the patient auth question FIRST — token-scoped view, or real accounts
+- [ ] A practitioner spanning practices needs a deliberate cross-tenant read; RLS forbids it by default and every exception is individually justified (CONVENTIONS.md §6)
+- [ ] A carer selecting a patient is an authority question, not a filter — who may act for whom has to be recorded before it can be offered
 ## Open questions
 
 These block work and need Carl, not code.
