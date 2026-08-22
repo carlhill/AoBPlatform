@@ -34,6 +34,9 @@ import styles from '../manage.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
+/** Distinguishes "they picked somebody" from "they typed a word". */
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 interface QueueItem {
   id: string;
   channel: string;
@@ -59,7 +62,7 @@ interface QueueItem {
 }
 
 interface FilterOptions {
-  locations: { id: string; label: string }[];
+  locations: { id: string; label: string; active: boolean }[];
   departments: { id: string; label: string; locationId: string }[];
   recipients: { id: string; type: string | null; name: string | null }[];
 }
@@ -110,7 +113,15 @@ export function QueueView() {
   const [search, setSearch] = useState('');
   const [locationId, setLocationId] = useState('');
   const [departmentId, setDepartmentId] = useState('');
-  const [recipientId, setRecipientId] = useState('');
+  const [orgId, setOrgId] = useState('');
+  const [practices, setPractices] = useState<{ id: string; label: string }[]>([]);
+  /*
+   * Holds EITHER a recipient id (picked from the list) or free text
+   * (typed). Carl asked for both -- "anybody or we enter a word" -- so the
+   * value is sent as an id when it looks like one and as a search term
+   * when it does not.
+   */
+  const [recipient, setRecipient] = useState('');
   const [options, setOptions] = useState<FilterOptions | null>(null);
   const [openItem, setOpenItem] = useState<string | null>(null);
 
@@ -129,8 +140,9 @@ export function QueueView() {
    * of which return nothing, teaches people the filters are broken.
    */
   useEffect(() => {
-    if (!practiceId) return;
-    fetch(`${CORE_URL}/outbound/filters`, { headers: apiHeaders(practiceId) })
+    const forPractice = orgId || practiceId;
+    if (!forPractice) return;
+    fetch(`${CORE_URL}/outbound/filters`, { headers: apiHeaders(forPractice) })
       .then((r) => (r.ok ? r.json() : null))
       .then((o) => o && setOptions(o))
       .catch(() => {
@@ -138,18 +150,36 @@ export function QueueView() {
       });
   }, [practiceId]);
 
+  useEffect(() => {
+    if (!isOperator) return;
+    fetch(`${CORE_URL}/outbound/practices`, { headers: apiHeaders() })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((b) => b && setPractices((b.practices ?? []).map((x: { id: string; name: string }) => ({ id: x.id, label: x.name }))))
+      .catch(() => {
+        // The chooser stays empty; a practice can still be reached from
+        // the practice list, which is where operators usually start.
+      });
+  }, [isOperator]);
+
   const load = useCallback(async () => {
-    if (!practiceId) return;
+    const scope = orgId || practiceId;
+    if (!scope) return;
     setError(null);
     const params = new URLSearchParams();
     if (mediaType) params.set('mediaType', mediaType);
     if (state) params.set('state', state);
     if (locationId) params.set('locationId', locationId);
     if (departmentId) params.set('departmentId', departmentId);
-    if (recipientId) params.set('recipientId', recipientId);
+    if (recipient) {
+      // A picked person filters exactly; a typed word searches names and
+      // addresses. Same box, because to the person using it they are the
+      // same question.
+      if (UUID_SHAPE.test(recipient)) params.set('recipientId', recipient);
+      else params.set('search', recipient);
+    }
     if (search.trim()) params.set('search', search.trim());
     try {
-      const res = await fetch(`${CORE_URL}/outbound?${params.toString()}`, { headers: apiHeaders(practiceId) });
+      const res = await fetch(`${CORE_URL}/outbound?${params.toString()}`, { headers: apiHeaders(scope) });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { message?: string };
         throw new Error(body.message ?? `Could not read the queue (${res.status}).`);
@@ -159,7 +189,7 @@ export function QueueView() {
     } catch (e) {
       setError(e instanceof TypeError ? strings.review.unreachableBody : (e as Error).message);
     }
-  }, [practiceId, mediaType, state, search, locationId, departmentId, recipientId]);
+  }, [practiceId, orgId, mediaType, state, search, locationId, departmentId, recipient]);
 
   useEffect(() => {
     void load();
@@ -255,64 +285,59 @@ export function QueueView() {
             </SelectInput>
           )}
         </Field>
-        <Field label={strings.queue.filterLocation}>
-          {(props) => (
-            <SelectInput
-              {...props}
-              value={locationId}
-              onChange={(e) => {
-                setLocationId(e.target.value);
-                // A department belongs to a site, so changing the site
-                // invalidates the department beneath it.
-                setDepartmentId('');
-              }}
-              data-testid="filter-location"
-            >
-              <option value="">{strings.queue.anyLocation}</option>
-              {(options?.locations ?? []).map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.label}
-                </option>
-              ))}
-            </SelectInput>
-          )}
-        </Field>
-        <Field label={strings.queue.filterDepartment}>
-          {(props) => (
-            <SelectInput
-              {...props}
-              value={departmentId}
-              onChange={(e) => setDepartmentId(e.target.value)}
-              data-testid="filter-department"
-            >
-              <option value="">{strings.queue.anyDepartment}</option>
-              {(options?.departments ?? [])
-                .filter((d) => !locationId || d.locationId === locationId)
-                .map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.label}
-                  </option>
-                ))}
-            </SelectInput>
-          )}
-        </Field>
-        <Field label={strings.queue.filterRecipient}>
-          {(props) => (
-            <SelectInput
-              {...props}
-              value={recipientId}
-              onChange={(e) => setRecipientId(e.target.value)}
-              data-testid="filter-recipient"
-            >
-              <option value="">{strings.queue.anyRecipient}</option>
-              {(options?.recipients ?? []).map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name ?? r.id}
-                </option>
-              ))}
-            </SelectInput>
-          )}
-        </Field>
+        {/*
+          THE ORGANISATION, for a platform operator. A practice user has one
+          practice and their token says which, so offering them a chooser
+          would be offering a list of other people’s practices.
+        */}
+        {isOperator && (
+          <ComboFilter
+            label={strings.queue.filterOrg}
+            hint={strings.queue.orgHint}
+            placeholder={strings.queue.orgPlaceholder}
+            value={orgId}
+            onChange={setOrgId}
+            options={practices}
+            testId="filter-org"
+          />
+        )}
+        <ComboFilter
+          label={strings.queue.filterLocation}
+          hint={strings.queue.typeToNarrow}
+          placeholder={strings.queue.anyLocation}
+          value={locationId}
+          onChange={(v) => {
+            setLocationId(v);
+            // A department belongs to a site, so changing the site
+            // invalidates the department beneath it.
+            setDepartmentId('');
+          }}
+          options={(options?.locations ?? []).map((l) => ({
+            id: l.id,
+            label: l.active ? l.label : `${l.label} (${strings.queue.inactive})`,
+          }))}
+          testId="filter-location"
+        />
+        <ComboFilter
+          label={strings.queue.filterDepartment}
+          hint={strings.queue.typeToNarrow}
+          placeholder={strings.queue.anyDepartment}
+          value={departmentId}
+          onChange={setDepartmentId}
+          options={(options?.departments ?? [])
+            .filter((d) => !locationId || d.locationId === locationId)
+            .map((d) => ({ id: d.id, label: d.label }))}
+          testId="filter-department"
+        />
+        <ComboFilter
+          label={strings.queue.filterRecipient}
+          hint={strings.queue.recipientHint}
+          placeholder={strings.queue.recipientPlaceholder}
+          value={recipient}
+          onChange={setRecipient}
+          options={(options?.recipients ?? []).map((r) => ({ id: r.id, label: r.name ?? r.id }))}
+          testId="filter-recipient"
+        />
         <Field label={strings.queue.filterSearch} hint={strings.queue.filterSearchWide}>
           {(props) => (
             <div className={styles.searchWrap}>
@@ -334,6 +359,20 @@ export function QueueView() {
           {strings.queue.emptyBody}
         </Notice>
       )}
+
+      {/*
+        A HEADER, because six columns with no labels means "—" is a
+        mystery rather than "no site". Marked aria-hidden: the rows are a
+        list of buttons rather than a real table, so a screen reader gets
+        the labels from each row instead of from here.
+      */}
+      <div className={styles.queueHead} aria-hidden="true">
+        <span>{strings.queue.colType}</span>
+        <span>{strings.queue.colRecipient}</span>
+        <span>{strings.queue.colSite}</span>
+        <span>{strings.queue.colState}</span>
+        <span>{strings.queue.colWhen}</span>
+      </div>
 
       <ul className={styles.queueList}>
         {(items ?? []).map((item) => {
@@ -379,8 +418,11 @@ export function QueueView() {
 
               {openItem === item.id && (
                 <>
-                  <PayloadViewer practiceId={practiceId} item={item} />
-                  <ResendControl practiceId={practiceId} item={item} onDone={load} />
+                  {/* The chosen org, not the viewer's own — an operator
+                      looking at another practice must read and resend within
+                      THAT practice, or the scope silently reverts. */}
+                  <PayloadViewer practiceId={orgId || practiceId} item={item} />
+                  <ResendControl practiceId={orgId || practiceId} item={item} onDone={load} />
                 </>
               )}
             </li>
@@ -570,5 +612,80 @@ function ResendControl({
         </Notice>
       )}
     </div>
+  );
+}
+/**
+ * A filter you can type into.
+ *
+ * A plain <select> with two hundred practices in it is unusable — you
+ * scroll, you cannot type, and you give up. This is an input with a
+ * datalist behind it: the browser narrows the list as you type, and
+ * anything you type that is NOT in the list is still accepted, which is
+ * what Carl asked for on "send to" (pick somebody, or enter a word).
+ *
+ * Native rather than a custom dropdown, deliberately. The browser already
+ * handles keyboard, screen readers and touch, and a hand-rolled listbox
+ * gets those wrong in ways nobody notices until somebody who needs them
+ * tries to use it.
+ */
+function ComboFilter({
+  label,
+  hint,
+  placeholder,
+  value,
+  onChange,
+  options,
+  testId,
+}: {
+  label: string;
+  hint?: string;
+  placeholder?: string;
+  /** The id currently chosen, or free text. */
+  value: string;
+  onChange: (value: string) => void;
+  options: { id: string; label: string }[];
+  testId: string;
+}) {
+  const listId = `${testId}-list`;
+  /*
+   * The input shows the LABEL while the caller holds the ID. Showing a
+   * uuid in a filter box would be unreadable, and holding the label would
+   * break the moment two sites share a name.
+   */
+  const chosen = options.find((o) => o.id === value);
+  const [text, setText] = useState(chosen?.label ?? value);
+
+  useEffect(() => {
+    const match = options.find((o) => o.id === value);
+    setText(match?.label ?? (value || ''));
+  }, [value, options]);
+
+  return (
+    <Field label={label} hint={hint}>
+      {(props) => (
+        <>
+          <TextInput
+            {...props}
+            list={listId}
+            value={text}
+            placeholder={placeholder}
+            onChange={(e) => {
+              const next = e.target.value;
+              setText(next);
+              // A typed value that matches an option becomes that option;
+              // anything else is passed through as free text.
+              const hit = options.find((o) => o.label === next);
+              onChange(hit ? hit.id : next);
+            }}
+            data-testid={testId}
+          />
+          <datalist id={listId}>
+            {options.map((o) => (
+              <option key={o.id} value={o.label} />
+            ))}
+          </datalist>
+        </>
+      )}
+    </Field>
   );
 }

@@ -522,3 +522,21 @@
   border-top: 1px solid var(--line);
   background: var(--surface);
 }
+
+/*
+ * The column header. Matches .queueRowMain exactly, or the labels drift from
+ * the values beneath them — which is worse than no header at all.
+ */
+.queueHead {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 2.2fr) minmax(0, 1.4fr) auto auto auto;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s2) var(--s4);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: var(--s2);
+}

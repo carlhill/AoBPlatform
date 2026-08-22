@@ -451,27 +451,42 @@ export class OutboundService {
   }
 
   /**
-   * The sites and people a practice's messages have gone to.
+   * The sites, departments and people this practice's messages can be
+   * filtered by.
    *
-   * Built FROM THE QUEUE ITSELF rather than from practices and practitioners,
-   * so the filter offers only values that will actually match something. A
-   * dropdown listing every location a practice has ever had, most of which
-   * return nothing, teaches people the filters are broken.
+   * FROM THE ORGANISATION, not from the queue. I built it the other way
+   * first, reasoning that every option should match something — but Carl is
+   * right that a site with NO messages is itself an answer. "Did anything
+   * go to Yagoona?" needs Yagoona in the list so the empty result can be
+   * seen, rather than the site being absent and the question unanswerable.
    */
   async filterOptions(practiceId: string | undefined) {
     if (!practiceId) throw new BadRequestException('Choose a practice first.');
     return this.prisma.withPractice(practiceId, async (tx) => {
-      const [locations, departments, recipients] = await Promise.all([
-        tx.outboundItem.findMany({
-          where: { practiceId, locationId: { not: null } },
-          distinct: ['locationId'],
-          select: { locationId: true },
+      const [locations, departments, practitioners, recipients] = await Promise.all([
+        tx.practiceLocation.findMany({
+          where: { practiceId },
+          select: { id: true, code: true, address: true, active: true },
+          orderBy: { code: 'asc' },
         }),
-        tx.outboundItem.findMany({
-          where: { practiceId, departmentId: { not: null } },
-          distinct: ['departmentId'],
-          select: { departmentId: true },
+        tx.department.findMany({
+          where: { practiceId },
+          select: { id: true, name: true, locationId: true },
+          orderBy: { name: 'asc' },
         }),
+        /*
+         * Everyone the practice could have written to. From affiliations
+         * rather than the whole practitioner directory, because the
+         * directory is global and a practice must never be handed a list of
+         * practitioners who have nothing to do with it.
+         */
+        tx.affiliation.findMany({
+          where: { practiceId },
+          distinct: ['practitionerId'],
+          select: { practitionerId: true },
+        }),
+        // Anybody already written to who is not in the lists above --
+        // a practice, an assignor, somebody added later.
         tx.outboundItem.findMany({
           where: { practiceId, recipientId: { not: null } },
           distinct: ['recipientId'],
@@ -480,26 +495,69 @@ export class OutboundService {
         }),
       ]);
 
-      // Names, resolved once here rather than per row in the list.
-      const locationIds = locations.map((l) => l.locationId!).filter(Boolean);
-      const departmentIds = departments.map((d) => d.departmentId!).filter(Boolean);
-      const [locationRows, departmentRows] = await Promise.all([
-        locationIds.length
-          ? tx.practiceLocation.findMany({ where: { id: { in: locationIds } }, select: { id: true, code: true, address: true } })
-          : Promise.resolve([]),
-        departmentIds.length
-          ? tx.department.findMany({ where: { id: { in: departmentIds } }, select: { id: true, name: true, locationId: true } })
-          : Promise.resolve([]),
-      ]);
+      const practitionerIds = practitioners.map((a) => a.practitionerId);
+      const people = practitionerIds.length
+        ? await tx.practitioner.findMany({
+            where: { id: { in: practitionerIds } },
+            select: { id: true, familyName: true, givenNames: true },
+          })
+        : [];
+
+      const byId = new Map<string, { id: string; type: string; name: string }>();
+      for (const p of people) {
+        byId.set(p.id, {
+          id: p.id,
+          type: 'practitioner',
+          name: [p.familyName, p.givenNames].filter(Boolean).join(', '),
+        });
+      }
+      for (const r of recipients) {
+        if (!r.recipientId || byId.has(r.recipientId)) continue;
+        byId.set(r.recipientId, {
+          id: r.recipientId,
+          type: r.recipientType ?? 'other',
+          name: r.recipientName ?? r.recipientId,
+        });
+      }
 
       return {
-        locations: locationRows.map((l) => ({ id: l.id, label: l.code ?? l.address })),
-        departments: departmentRows.map((d) => ({ id: d.id, label: d.name, locationId: d.locationId })),
-        recipients: recipients
-          .filter((r) => r.recipientId)
-          .map((r) => ({ id: r.recipientId!, type: r.recipientType, name: r.recipientName })),
+        locations: locations.map((l) => ({
+          id: l.id,
+          label: l.code ?? l.address,
+          active: l.active,
+        })),
+        departments: departments.map((d) => ({ id: d.id, label: d.name, locationId: d.locationId })),
+        recipients: [...byId.values()].sort((a, b) => a.name.localeCompare(b.name)),
       };
     });
+  }
+  /**
+   * Every practice, for the organisation filter.
+   *
+   * PRE-TENANT, like the application list it borrows from: an operator
+   * choosing which practice to look at has not chosen one yet, so there is no
+   * scope to run inside. It returns NAMES AND IDS ONLY — nothing about what
+   * is queued, and nothing that would make this a way to read across
+   * practices.
+   */
+  async practicesForChooser() {
+    /*
+     * THROUGH list_organisations, the existing pre-tenant function.
+     *
+     * A plain SELECT on core.practices returns ZERO ROWS: RLS is fail-closed
+     * and an operator choosing which practice to look at has not chosen one
+     * yet, so there is no scope to run inside. That is the third time today
+     * the same trap has bitten — the worker, the raw constraint test, and now
+     * this.
+     *
+     * Reusing the function rather than adding another SECURITY DEFINER: every
+     * one of those is an individually-justified hole in the tenancy boundary
+     * (CONVENTIONS.md §6), and this question is already answered by one that
+     * exists.
+     */
+    const rows = await this.prisma.$queryRaw<Array<{ id: string; name: string }>>`
+      SELECT "id", "name" FROM list_organisations('all') ORDER BY "name" LIMIT 500`;
+    return { practices: rows };
   }
 
   /** What an operator wants to see: what is stuck, and how badly. */

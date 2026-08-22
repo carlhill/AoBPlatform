@@ -3,6 +3,7 @@ import { IsOptional, IsString } from 'class-validator';
 import { OUTBOUND_STATES } from '@aobplatform/domain';
 import { OutboundService } from './outbound.service';
 import { SessionActor, type Actor } from '../auth/actor.decorator';
+import { PLATFORM_ADMIN, RequireRoles } from '../auth/roles.decorator';
 
 /**
  * Reading the queue.
@@ -91,6 +92,22 @@ export class OutboundController {
     @SessionActor() actor: Actor | undefined,
   ) {
     return this.outbound.resend(practiceId, id, { reason: dto.reason }, actor);
+  }
+
+  /**
+   * Every practice, for the organisation filter.
+   *
+   * PLATFORM OPERATORS ONLY. A practice user has exactly one practice and
+   * their token says which, so offering them a chooser would be offering
+   * a list of other people’s practices — the disclosure this screen was
+   * careful about in the first place.
+   *
+   * Names and ids only. Nothing about what is queued for them.
+   */
+  @RequireRoles(PLATFORM_ADMIN)
+  @Get('practices')
+  practices() {
+    return this.outbound.practicesForChooser();
   }
 
   /** Sites and people this practice has actually sent to. */
