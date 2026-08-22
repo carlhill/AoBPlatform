@@ -687,3 +687,25 @@
   border-radius: var(--radius);
   line-height: 1.6;
 }
+
+/*
+ * The edit panel on the dossier.
+ *
+ * Set apart from the read-only sections above it, because everything else on
+ * this page is a record of what happened and this is the one place that
+ * CHANGES it. Looking the same as the rest would be the wrong signal.
+ */
+.editPanel {
+  background: var(--surface-sunken);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: var(--s5);
+  margin-top: var(--s4);
+}
+
+.editGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--s3) var(--s4);
+  margin: var(--s3) 0 var(--s5);
+}

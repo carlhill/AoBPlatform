@@ -196,6 +196,64 @@ export const strings = {
     endBypass: 'End the bypass',
   },
   review: {
+    // --- Editing an approved practice from the dossier ---
+    // NOTE the prefix. `amend*` above means "ask the APPLICANT to correct it";
+    // `edit*` is the console changing the record directly. Different acts, by
+    // different parties, so deliberately not near-identical names.
+    editHeading: 'Correct the details',
+    editLead:
+      'The practice record, as it stands. The entity itself cannot be changed here — a different ABN is a ' +
+      'different legal entity, and that is a new application rather than a correction.',
+    editOpen: 'Correct these details',
+    editCancel: 'Cancel',
+    editSave: 'Save the change',
+    editSaving: 'Saving…',
+    editFailed: 'That could not be saved',
+    editReason: 'Why',
+    editReasonHint:
+      'One line, kept with the change and shown in the trail. This is the record of who was approved, and a ' +
+      'change to it with no stated reason is indistinguishable from a mistake.',
+    editRecordedAs: 'This will be recorded as changed by',
+    editNothing: 'Change something before saving.',
+
+    editPractice: 'Practice',
+    editName: 'Practice name',
+    editWebsite: 'Website',
+    editAdmin: 'Practice administrator',
+    editManager: 'Second contact',
+    editHeadOffice: 'Head office',
+    editFieldName: 'Name',
+    editFieldEmail: 'Email',
+    editFieldPhone: 'Phone',
+    editFieldPosition: 'Position',
+    editLine1: 'Street address',
+    editLine2: 'Suite, level or unit',
+    editSuburb: 'Suburb',
+    editState: 'State',
+    editPostcode: 'Postcode',
+    editHeadcount: 'Practitioners at this practice',
+
+    // --- The handover, which is what changing the admin email really is ---
+    editHandoverTitle: 'This changes who controls the practice account',
+    editHandoverBody:
+      'Changing the administrator’s email is a HANDOVER, not a correction. The passkey enrolled against ' +
+      'this practice will be REVOKED, so whoever holds it can no longer sign in, and the new address starts ' +
+      'unconfirmed. The account itself is kept — it belongs to the practice. Send the sign-in invitation ' +
+      'afterwards so the new administrator can enrol a passkey of their own.',
+    editHandoverWhy:
+      'This is the path for a practice administrator who has left, or who was never going to manage it ' +
+      'themselves. The practice cannot do it alone, because the only account that could is the one that ' +
+      'has gone.',
+    editHandoverDone: 'The practice administrator has changed',
+    editDisabledOk: 'The previous account has been disabled.',
+    editDisabledFailed:
+      'The previous account could NOT be disabled, so it may still be able to sign in. This needs looking ' +
+      'at before the new administrator is invited.',
+    editAffected:
+      'This touches checks that had already passed: {keys}. They are not undone — but a reviewer who ' +
+      'verified them did so against the old details.',
+    editSendInvitation: 'Send the sign-in invitation',
+    editSending: 'Sending…',
     // --- The score, restated at the decision ---
     decideScore: 'Identity strength {n}',
     decideScorePasses:

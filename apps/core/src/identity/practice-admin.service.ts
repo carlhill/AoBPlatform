@@ -5,6 +5,7 @@ import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { KEYCLOAK_ADMIN } from './identity.tokens';
 import { MESSAGING_GATEWAY, type MessagingGateway } from '../messaging/gateway';
+import { PLATFORM_ADMIN } from '../auth/roles.decorator';
 import { renderHtml, renderText, type EmailBlock, type EmailFooter } from '../messaging/template';
 
 /**
@@ -106,6 +107,152 @@ export class PracticeAdminService {
    * failure would leave an approved practice with no way in, so every path
    * returns a status the caller surfaces.
    */
+  /**
+   * Disable an outgoing practice administrator's account.
+   *
+   * WHY THIS IS ITS OWN METHOD WITH ITS OWN GUARD. Practice-admin succession is
+   * ordinary — people leave, and often at short notice — so this will be used,
+   * and it disables the ability to sign in. That is exactly the kind of
+   * operation that should refuse rather than proceed when anything looks wrong.
+   *
+   * IT WILL NOT TOUCH A PLATFORM ADMINISTRATOR. The realistic accident is not
+   * malice: a practice is registered with an address that already belongs to
+   * somebody at AoBPlatform — which has already happened, on XLEVELUP — and a
+   * handover then reaches for the account behind that address. The caller
+   * already restricts this to the account WE created for that practice; this is
+   * the second belt, checked here because it is the last point before the
+   * account is switched off.
+   */
+  /**
+   * The username for a practice's administrator account.
+   *
+   * IT USES THE WHOLE PRACTICE ID, and the reason is arithmetic. The first
+   * version used the first eight hex characters — 32 bits — and
+   * `createPasskeyOnlyUser` RETURNS an existing account when the username
+   * matches. So a collision would not fail: practice B would be silently handed
+   * practice A's admin account, an account carrying `practice_id: A` as its
+   * token claim. That is a cross-tenant breach, arriving quietly, as a
+   * successful invitation.
+   *
+   * The birthday bound on 32 bits is not comfortable:
+   *
+   *     10,000 practices  ~1.2% chance of at least one collision
+   *     50,000 practices  ~25%
+   *    100,000 practices  ~69%
+   *
+   * A full UUID is unique by construction, so there is nothing to probe for and
+   * no collision path to get right.
+   *
+   * LEGACY SHORT NAMES ARE STILL HONOURED, because accounts already exist with
+   * them — but only after checking that the account really is this practice's.
+   * That check is what the short form never had.
+   */
+  private async adminUsernameFor(organisationId: string): Promise<string> {
+    const full = `admin.${organisationId}`;
+    if (!this.keycloak) return full;
+
+    if (await this.keycloak.findByUsername(full)) return full;
+
+    const legacy = `admin.${organisationId.slice(0, 8)}`;
+    const existing = await this.keycloak.findByUsername(legacy);
+    if (!existing) return full;
+
+    const claimed = existing.attributes?.practice_id?.[0];
+    if (claimed === organisationId) return legacy;
+
+    // Somebody else's account wearing a name that looks like ours. Never reuse
+    // it; the full form cannot collide.
+    this.logger.warn(
+      `Username "${legacy}" belongs to practice ${claimed ?? 'unknown'}, not ${organisationId}. Using the ` +
+        'full-id form instead. This is the eight-character collision the short name allowed.',
+    );
+    return full;
+  }
+
+  /**
+   * Hand the practice-admin account to somebody new.
+   *
+   * THE ACCOUNT BELONGS TO THE PRACTICE, NOT TO A PERSON — `admin.<practiceId>`,
+   * and its address is normally a shared mailbox (aobplatform@practice.com.au)
+   * chosen precisely so that somebody leaving does not lock the practice out.
+   *
+   * What belongs to a PERSON is the passkey: it is bound to their device and
+   * their fingerprint. So a handover revokes the CREDENTIAL and keeps the
+   * ACCOUNT. Disabling the account would take a practice offline to punish a
+   * departure; leaving the passkey would let somebody who has left carry on
+   * signing in from their own laptop.
+   *
+   * An earlier version of this disabled the account instead. It was wrong in
+   * both directions and it is worth saying why: the practice was orphaned, and
+   * the next invitation then failed with Keycloak's `400 User is disabled`,
+   * which explains nothing to whoever is trying to get a new administrator in.
+   */
+  async handOverPracticeAdminAccount(
+    userId: string,
+    to: { email?: string | null; name?: string | null },
+  ): Promise<{ passkeysRevoked: number; note: string }> {
+    if (!this.keycloak) {
+      return { passkeysRevoked: 0, note: 'Keycloak is not configured, so no credentials were revoked.' };
+    }
+
+    // The same guard as everywhere else that touches an account: never a
+    // platform operator. A practice registered with an address that already
+    // belongs to somebody here is the ordinary way that would happen.
+    const roles = await this.keycloak.realmRolesOf(userId);
+    if (roles.includes(PLATFORM_ADMIN)) {
+      throw new Error(
+        `Refusing to touch ${userId}: it holds ${PLATFORM_ADMIN}. A practice-admin handover must never ` +
+          'revoke a platform operator\u2019s credentials.',
+      );
+    }
+
+    const passkeysRevoked = await this.keycloak.revokePasskeys(userId);
+
+    const [firstName, ...rest] = (to.name ?? '').trim().split(/\s+/).filter(Boolean);
+    await this.keycloak.updateUser(userId, {
+      ...(to.email ? { email: to.email } : {}),
+      ...(firstName ? { firstName, lastName: rest.join(' ') || firstName } : {}),
+      // Re-enabled deliberately: a handover is somebody arriving, not the
+      // practice being switched off.
+      enabled: true,
+    });
+
+    this.logger.log(
+      `Practice-admin account ${userId} handed over: ${passkeysRevoked} passkey(s) revoked, account kept.`,
+    );
+
+    return {
+      passkeysRevoked,
+      note:
+        passkeysRevoked > 0
+          ? `${passkeysRevoked} passkey(s) revoked, so the previous administrator can no longer sign in. The ` +
+            'account itself is kept — it belongs to the practice.'
+          : 'There were no passkeys to revoke; nobody had enrolled one yet.',
+    };
+  }
+
+  async disablePracticeAdminAccount(userId: string): Promise<{ disabled: boolean; note: string }> {
+    if (!this.keycloak) {
+      return { disabled: false, note: 'Keycloak is not configured, so no account could be disabled.' };
+    }
+
+    const roles = await this.keycloak.realmRolesOf(userId);
+    if (roles.includes(PLATFORM_ADMIN)) {
+      throw new Error(
+        `Refusing to disable ${userId}: it holds ${PLATFORM_ADMIN}. A practice-admin handover must never ` +
+          'switch off a platform operator, and an address shared between the two is the ordinary way that ' +
+          'would happen.',
+      );
+    }
+
+    await this.keycloak.setEnabled(userId, false);
+    this.logger.log(`Practice-admin account ${userId} disabled on handover. Not deleted — it is evidence.`);
+    return {
+      disabled: true,
+      note: 'The previous administrator can no longer sign in. The account is disabled, not deleted.',
+    };
+  }
+
   async onApproved(input: {
     organisationId: string;
     organisationName: string;
@@ -153,7 +300,7 @@ export class PracticeAdminService {
       };
     }
 
-    const username = `admin.${input.organisationId.slice(0, 8)}`;
+    const username = await this.adminUsernameFor(input.organisationId);
     const [firstName, ...rest] = (input.adminName ?? 'Practice Admin').trim().split(/\s+/);
     try {
       const user = await this.keycloak.createPasskeyOnlyUser({

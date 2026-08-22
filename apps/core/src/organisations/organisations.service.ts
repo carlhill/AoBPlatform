@@ -9,6 +9,9 @@ import {
   assertAddressUsable,
   ContactError,
   assertContactsIndependent,
+  LOCKED_FIELDS,
+  checksAffectedBy,
+  diffApplication,
   assertOrganisationApplicationValid,
   formatAddress,
   isValidAbnChecksum,
@@ -792,48 +795,43 @@ export class OrganisationsService {
    * s 65C(5)(a) particulars block.
    */
   /**
-   * Change the CONTACT DETAILS of a practice that has already been approved.
+   * Amend an approved practice — the console path the domain already promises.
    *
-   * WHY THIS HAD TO EXIST. `assertAmendmentAllowed` refuses a post-approval
-   * amendment with "changes are made in the console, by a named admin, not
-   * through the application link" — and that console path did not exist. So the
-   * only way to correct a mistyped practice-admin email on an approved practice
-   * was to edit the database by hand, and the commonest reason to need it is
-   * that the address is wrong, which is exactly the state in which nobody can
-   * be told anything.
+   * `assertAmendmentAllowed` refuses a post-approval amendment through the
+   * applicant link with "changes are made in the console, by a named admin".
+   * This is that path. It covers the sixteen AMENDABLE_FIELDS and refuses the
+   * locked ones with the reasons the domain already words.
    *
-   * WHAT IT WILL NOT TOUCH: the entity. Name, ABN, ACN and entity type are
-   * LOCKED (amendment.ts). A different ABN is a different legal entity, and
-   * every consent record captured here names this one — a correction that
-   * re-pointed the entity would silently re-attribute evidence.
+   * THE CASE THIS EXISTS FOR. The practice administrator leaves suddenly, or
+   * was never comfortable with any of this — an older doctor, a receptionist
+   * who has moved on. Somebody has to be able to put a new person in place, and
+   * the practice cannot do it themselves, because the only account that could
+   * is the one that left.
    *
-   * CHANGING THE ADMIN EMAIL UNVERIFIES IT. The old address was confirmed; the
-   * new one has not been, and carrying the tick across would assert a
-   * round-trip that never happened against an address nobody has proved anybody
-   * reads. A fresh verification is issued instead.
+   * So changing `adminEmail` is NOT a contact correction. It is a HANDOVER of
+   * who controls the practice account, and it is treated as one.
    */
-  async updateContacts(
+  async amendApplication(
     practiceId: string,
-    input: {
-      adminName?: string;
-      adminEmail?: string;
-      adminPhone?: string;
-      adminPosition?: string;
-      managerName?: string;
-      managerEmail?: string;
-      managerPhone?: string;
-      changedByName: string;
-      reason: string;
-    },
+    proposed: Record<string, unknown>,
+    meta: { changedByName: string; reason: string },
   ) {
-    if (!input.changedByName?.trim()) {
+    if (!meta.changedByName?.trim()) {
       throw new BadRequestException('A change to an approved practice must name the person making it.');
     }
-    if (!input.reason?.trim()) {
+    if (!meta.reason?.trim()) {
       throw new BadRequestException(
         'A change to an approved practice must record why. This is the record of who was approved, and a ' +
           'change to it with no stated reason is indistinguishable from a mistake.',
       );
+    }
+
+    // Locked fields are refused in the domain's own words, so the console and
+    // the applicant link give the same answer to the same question.
+    for (const field of Object.keys(proposed)) {
+      if (proposed[field] !== undefined && field in LOCKED_FIELDS) {
+        throw new BadRequestException(LOCKED_FIELDS[field]);
+      }
     }
 
     const current = await this.prisma.withPractice(practiceId, (tx) =>
@@ -841,89 +839,136 @@ export class OrganisationsService {
     );
     if (!current) throw new NotFoundException('Practice not found.');
 
-    const next = {
-      adminName: input.adminName?.trim() || current.adminName,
-      adminEmail: input.adminEmail?.trim() || current.adminEmail,
-      adminPhone: input.adminPhone?.trim() || current.adminPhone,
-      adminPosition: input.adminPosition?.trim() || current.adminPosition,
-      managerName: input.managerName?.trim() || current.managerName,
-      managerEmail: input.managerEmail?.trim() || current.managerEmail,
-      managerPhone: input.managerPhone?.trim() || current.managerPhone,
-    };
+    const changes = diffApplication(current as unknown as Record<string, unknown>, proposed);
+    if (changes.length === 0) {
+      throw new BadRequestException('Nothing was changed, so there is nothing to record.');
+    }
 
-    /*
-     * FR-1.9 STILL APPLIES AFTER APPROVAL. The second contact exists to give a
-     * reviewer somebody to call who is not the applicant, and an edit that
-     * quietly collapsed the two into one inbox or one handset would defeat that
-     * without anybody noticing — which is precisely the shape of a takeover.
-     */
+    const next: Record<string, unknown> = {};
+    for (const change of changes) next[change.field] = change.to;
+
+    // FR-1.9 survives the amendment. An edit that quietly collapsed the two
+    // contacts into one inbox or one handset would defeat the reason a second
+    // contact exists, and would do it without anybody noticing.
     try {
       assertContactsIndependent({
-        // Empty string rather than undefined: contactClash() treats a blank as
-        // "no channel to clash on", which is the right reading of a contact
-        // detail nobody has supplied.
-        adminEmail: next.adminEmail ?? '',
-        adminPhone: next.adminPhone ?? '',
-        managerEmail: next.managerEmail,
-        managerPhone: next.managerPhone,
+        adminEmail: (next.adminEmail ?? current.adminEmail ?? '') as string,
+        adminPhone: (next.adminPhone ?? current.adminPhone ?? '') as string,
+        managerEmail: (next.managerEmail ?? current.managerEmail) as string | null,
+        managerPhone: (next.managerPhone ?? current.managerPhone) as string | null,
       });
     } catch (err) {
       if (err instanceof Error) throw new BadRequestException(err.message);
       throw err;
     }
 
-    const emailChanged = next.adminEmail !== current.adminEmail;
+    const handover = changes.some((c) => c.field === 'adminEmail');
+    const revoked = handover
+      ? await this.handOverAdminAccount(current, {
+          email: (next.adminEmail as string | undefined) ?? current.adminEmail,
+          name: (next.adminName as string | undefined) ?? current.adminName,
+        })
+      : null;
 
     const updated = await this.prisma.withPractice(practiceId, async (tx) => {
       const row = await tx.practice.update({
         where: { id: practiceId },
         data: {
           ...next,
-          // A new address is an unproven address.
-          ...(emailChanged
-            ? { adminEmailVerifiedAt: null, adminEmailVerificationToken: null, adminEmailVerificationCode: null }
+          ...(handover
+            ? {
+                // The new address is unproven, and the account belonging to the
+                // old one is no longer this practice's admin account.
+                // The address is unproven again, and nobody has enrolled a
+                // passkey against it yet. The ACCOUNT ID STAYS: the account
+                // belongs to the practice, not to whoever last held it.
+                adminEmailVerifiedAt: null,
+                adminEmailVerificationToken: null,
+                adminEmailVerificationCode: null,
+                adminPasskeyEnrolledAt: null,
+              }
             : {}),
         },
       });
 
       await enqueueVaultEvent(tx, {
-        type: 'organisation.contacts_changed',
+        type: handover ? 'organisation.admin_handover' : 'organisation.contacts_changed',
         actor: { principalType: 'staff', id: practiceId },
         subject: { type: 'Organisation', id: practiceId },
         payload: {
-          changedBy: input.changedByName.trim(),
-          reason: input.reason.trim(),
-          // WHICH FIELDS, never the values. An audit event is not a second copy
-          // of the contact book, and a phone number in an event payload is a
-          // phone number in the evidence chain for ever.
-          // Joined, because the payload accepts scalars only. Which fields,
-          // never the values — an audit event is not a second copy of the
-          // contact book, and a phone number in the evidence chain is there
-          // for ever.
-          fieldsChanged: Object.keys(next)
-            .filter((k) => (next as Record<string, unknown>)[k] !== (current as unknown as Record<string, unknown>)[k])
-            .join(', '),
-          adminEmailUnverifiedByThisChange: emailChanged,
+          changedBy: meta.changedByName.trim(),
+          reason: meta.reason.trim(),
+          // WHICH fields, never the values. An audit event is not a second copy
+          // of the contact book, and a phone number in the evidence chain is
+          // there for ever.
+          fieldsChanged: changes.map((c) => c.field).join(', '),
+          // The consequential half, spelled out: a reader in two years needs to
+          // know whether somebody lost access here.
+          passkeysRevoked: revoked?.passkeysRevoked ?? 0,
+          handoverNote: revoked?.note ?? 'n/a',
         },
       });
       return row;
     });
 
+    // Which already-passed checks this touches. A reviewer who verified an
+    // address in March should be told when it changes in September.
+    const recorded = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.practiceCheck.findMany({ where: { outcome: 'passed' }, select: { checkKey: true } }),
+    );
+    const affectedChecks = checksAffectedBy(
+      changes,
+      recorded.map((r) => r.checkKey),
+    );
+
     return {
       id: updated.id,
-      adminName: updated.adminName,
-      adminEmail: updated.adminEmail,
-      adminPhone: updated.adminPhone,
-      managerName: updated.managerName,
-      managerEmail: updated.managerEmail,
-      managerPhone: updated.managerPhone,
-      adminEmailVerified: Boolean(updated.adminEmailVerifiedAt),
-      emailChanged,
-      next: emailChanged
-        ? 'The admin email changed, so it is no longer confirmed. Send the sign-in invitation again to ' +
-          'reach the new address.'
-        : 'Contact details updated.',
+      changed: changes.map((c) => c.field),
+      handover,
+      previousAdminAccount: revoked,
+      affectedChecks,
+      next: handover
+        ? 'The practice administrator has changed. The previous passkey has been revoked, the address is ' +
+          'unconfirmed, and nobody has enrolled yet — send the sign-in invitation so the new administrator ' +
+          'can set up their own passkey.'
+        : 'The details were updated.',
     };
+  }
+
+  /**
+   * Revoke the outgoing administrator's passkey and point the account at
+   * whoever is taking over.
+   *
+   * THE ACCOUNT IS KEPT. It is the practice's — `admin.<practiceId>`, normally
+   * on a shared mailbox chosen so that a departure does not lock the practice
+   * out. What belongs to a person is the passkey, and that is what goes.
+   *
+   * Only `practice.adminKeycloakUserId` is ever touched — the account WE
+   * created for THIS practice — and never one found by looking up the old
+   * address. The difference is not theoretical: XLEVELUP was registered with an
+   * address that already belonged to a PLATFORM ADMINISTRATOR.
+   */
+  private async handOverAdminAccount(
+    practice: { adminKeycloakUserId: string | null },
+    to: { email?: string | null; name?: string | null },
+  ): Promise<{ passkeysRevoked: number; note: string }> {
+    if (!practice.adminKeycloakUserId) {
+      return {
+        passkeysRevoked: 0,
+        note: 'There was no practice-admin account yet, so there was nothing to revoke.',
+      };
+    }
+    try {
+      return await this.practiceAdmin.handOverPracticeAdminAccount(practice.adminKeycloakUserId, to);
+    } catch (err) {
+      // NEVER fails the amendment. The change to the record is what the
+      // operator asked for and a Keycloak hiccup must not roll it back. But it
+      // is reported loudly, because an amendment that BELIEVED it revoked a
+      // credential and did not is worse than one that never tried.
+      const note = `The previous passkey could NOT be revoked: ${(err as Error).message}`;
+      this.logger.error(`${note} (account ${practice.adminKeycloakUserId})`);
+      return { passkeysRevoked: 0, note };
+    }
   }
 
   /**

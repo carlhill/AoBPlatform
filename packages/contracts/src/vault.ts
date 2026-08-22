@@ -71,6 +71,12 @@ export const VAULT_EVENT_TYPES = [
   /** The sign-in invitation sent again, after the one at approval failed. */
   'organisation.invitation_resent',
   /**
+   * The practice administrator CHANGED — a handover, not a contact
+   * correction. The outgoing account is disabled, so this event is the record
+   * that somebody lost access and who decided it.
+   */
+  'organisation.admin_handover',
+  /**
    * Practice structure and evidence. Every one of these used to happen
    * silently: a location added with an unrecognised address, a department, a
    * credential offered, and a credential REMOVED — the last by hard delete.

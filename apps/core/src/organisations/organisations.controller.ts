@@ -11,7 +11,9 @@ import {
   Query,
 } from '@nestjs/common';
 import { Type } from 'class-transformer';
+import { LOCKED_FIELDS } from '@aobplatform/domain';
 import {
+  Equals,
   IsArray,
   IsBoolean,
   IsEmail,
@@ -215,6 +217,82 @@ export class RequestCorrectionDto {
   requestedByName!: string;
 }
 
+/**
+ * An amendment to an APPROVED practice, from the console.
+ *
+ * Every field optional, and `undefined` means "not touching this one" — which
+ * is not the same as an empty string meaning "clear it". `diffApplication`
+ * depends on that distinction, and getting it wrong once wiped fifteen fields
+ * of a live application while submitting one.
+ *
+ * The locked fields are absent by construction: ABN, ACN, legal name, entity
+ * type and ABN status come from the register, not from a form.
+ */
+export class AmendPracticeDto {
+  @IsOptional() @IsString() name?: string;
+  @IsOptional() @IsString() website?: string;
+
+  @IsOptional() @IsString() adminName?: string;
+  @IsOptional() @IsEmail() adminEmail?: string;
+  @IsOptional() @IsString() adminPhone?: string;
+  @IsOptional() @IsString() adminPosition?: string;
+
+  @IsOptional() @IsString() managerName?: string;
+  @IsOptional() @IsEmail() managerEmail?: string;
+  @IsOptional() @IsString() managerPhone?: string;
+  @IsOptional() @IsString() managerPosition?: string;
+
+  @IsOptional() @IsString() headOfficeLine1?: string;
+  @IsOptional() @IsString() headOfficeLine2?: string;
+  @IsOptional() @IsString() headOfficeSuburb?: string;
+  @IsOptional() @IsString() headOfficeState?: string;
+  @IsOptional() @IsString() headOfficePostcode?: string;
+
+  @IsOptional() @IsInt() @Min(0) statedPractitionerCount?: number;
+
+  /*
+   * THE LOCKED FIELDS ARE DECLARED SO THEY CAN BE REFUSED BY NAME.
+   *
+   * Without them, `whitelist: true` strips an unknown property silently and
+   * the request reaches the service with nothing in it — which then answers
+   * "nothing was changed, so there is nothing to record". True, and useless:
+   * somebody who tried to correct an ABN is told they changed nothing rather
+   * than why they cannot.
+   *
+   * Declared here, present-and-refused, with the domain's own wording, so the
+   * console and the applicant link give the same answer to the same question.
+   */
+  @IsOptional()
+  @Equals(undefined, { message: LOCKED_FIELDS.abn })
+  abn?: undefined;
+
+  @IsOptional()
+  @Equals(undefined, { message: LOCKED_FIELDS.acn })
+  acn?: undefined;
+
+  @IsOptional()
+  @Equals(undefined, { message: LOCKED_FIELDS.legalName })
+  legalName?: undefined;
+
+  @IsOptional()
+  @Equals(undefined, { message: LOCKED_FIELDS.entityType })
+  entityType?: undefined;
+
+  @IsOptional()
+  @Equals(undefined, { message: LOCKED_FIELDS.abnStatus })
+  abnStatus?: undefined;
+
+  /** Never "the system". A change to an approved record has an author. */
+  @IsString()
+  @MinLength(1)
+  changedByName!: string;
+
+  /** A change with no stated reason is indistinguishable from a mistake. */
+  @IsString()
+  @MinLength(1)
+  reason!: string;
+}
+
 export class RemoveCredentialDto {
   /** Never "the system". Removing evidence has an author. */
   @IsString()
@@ -235,26 +313,6 @@ export class ResendInvitationDto {
   @IsString()
   @MinLength(1)
   requestedByName!: string;
-}
-
-export class UpdateContactsDto {
-  @IsOptional() @IsString() adminName?: string;
-  @IsOptional() @IsEmail() adminEmail?: string;
-  @IsOptional() @IsString() adminPhone?: string;
-  @IsOptional() @IsString() adminPosition?: string;
-  @IsOptional() @IsString() managerName?: string;
-  @IsOptional() @IsEmail() managerEmail?: string;
-  @IsOptional() @IsString() managerPhone?: string;
-
-  /** Never "the system". A change to an approved record has an author. */
-  @IsString()
-  @MinLength(1)
-  changedByName!: string;
-
-  /** A change with no stated reason is indistinguishable from a mistake. */
-  @IsString()
-  @MinLength(1)
-  reason!: string;
 }
 
 export class ValidationDecisionDto {
@@ -571,12 +629,22 @@ export class OrganisationsController {
     return this.organisations.resendAdminInvitation(organisationId, dto.requestedByName);
   }
 
-  @Patch(':organisationId/contacts')
-  updateContacts(
-    @Param('organisationId', ParseUUIDPipe) organisationId: string,
-    @Body() dto: UpdateContactsDto,
-  ) {
-    return this.organisations.updateContacts(organisationId, dto);
+  /**
+   * Amend an approved practice from the console.
+   *
+   * The domain refuses a post-approval amendment through the applicant link
+   * with "changes are made in the console, by a named admin" — this is that
+   * path, over the sixteen AMENDABLE_FIELDS. The entity stays untouchable: a
+   * different ABN is a different legal entity, so it is a new application.
+   *
+   * Changing  is a HANDOVER rather than a correction, because it
+   * transfers who controls the practice account. The outgoing account is
+   * disabled — see amendApplication.
+   */
+  @Patch(':organisationId')
+  amend(@Param('organisationId', ParseUUIDPipe) organisationId: string, @Body() dto: AmendPracticeDto) {
+    const { changedByName, reason, ...fields } = dto;
+    return this.organisations.amendApplication(organisationId, fields, { changedByName, reason });
   }
 
   @Post(':organisationId/validate')

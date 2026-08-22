@@ -45,6 +45,7 @@ import {
   Ban,
   ShieldAlert,
   ShieldCheck,
+  Pencil,
   Stamp,
   Users,
   UserX,
@@ -753,6 +754,17 @@ export function DossierView({ id }: { id: string }) {
             )}
           </div>
         </div>
+
+        {/*
+          CORRECTING THE RECORD, under the contacts it most often corrects.
+          
+          The case it exists for is a practice administrator who has left, or
+          who was never going to manage any of this — an older doctor, a
+          receptionist who has moved on. The practice cannot fix that
+          themselves, because the only account that could is the one that has
+          gone.
+        */}
+        <EditPractice id={id} editedByName={reviewerName} onSaved={loadChecks} />
       </Section>
 
       {checks && (
@@ -1000,5 +1012,275 @@ export function DossierView({ id }: { id: string }) {
         </div>
       </Section>
     </Shell>
+  );
+}
+
+/**
+ * Correcting an approved practice, from the dossier.
+ *
+ * WHY IT LIVES HERE and not on a practice-facing page: this is one surface with
+ * everything on it, and the person doing this is usually not the practice. The
+ * case it exists for is a practice administrator who has LEFT — or an older
+ * doctor or a receptionist who was never going to manage any of this — where
+ * the practice cannot fix it themselves, because the only account that could is
+ * the one that has gone.
+ *
+ * CHANGING THE ADMIN EMAIL IS A HANDOVER, not a correction, and the panel says
+ * so BEFORE it is saved. The outgoing account is disabled, the new address
+ * starts unconfirmed, and nobody is invited until somebody chooses to.
+ *
+ * THE ENTITY IS ABSENT from these fields entirely, rather than shown and
+ * disabled. A greyed-out ABN invites somebody to ask for it to be enabled; the
+ * dossier above already says why it cannot be.
+ */
+interface EditableRecord {
+  name?: string | null;
+  website?: string | null;
+  adminName?: string | null;
+  adminEmail?: string | null;
+  adminPhone?: string | null;
+  adminPosition?: string | null;
+  managerName?: string | null;
+  managerEmail?: string | null;
+  managerPhone?: string | null;
+  managerPosition?: string | null;
+  headOfficeLine1?: string | null;
+  headOfficeLine2?: string | null;
+  headOfficeSuburb?: string | null;
+  headOfficeState?: string | null;
+  headOfficePostcode?: string | null;
+  statedPractitionerCount?: number | null;
+}
+
+function EditPractice({
+  id,
+  editedByName,
+  onSaved,
+}: {
+  id: string;
+  editedByName: string;
+  onSaved: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  /*
+   * FETCHED, not taken from the queue row.
+   *
+   * The queue row carries a single-line head office and no practitioner count,
+   * so an edit form built from it would show EMPTY boxes for fields that have
+   * values — and an empty box beside a "save" button is an invitation to
+   * overwrite something with nothing.
+   */
+  const [row, setRow] = useState<EditableRecord | null>(null);
+
+  useEffect(() => {
+    if (!open || row) return;
+    fetch(`${CORE_URL}/practices/${id}`, { headers: { 'x-practice-id': id } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: EditableRecord | null) => d && setRow(d))
+      .catch(() => undefined);
+  }, [open, row, id]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{
+    handover: boolean;
+    previousAdminAccount: { passkeysRevoked: number; note: string } | null;
+    affectedChecks: string[];
+    next: string;
+  } | null>(null);
+  const [reason, setReason] = useState('');
+
+  const [fields, setFields] = useState<Record<string, string>>({});
+  const value = (key: string, current: string | null | undefined) => fields[key] ?? current ?? '';
+  const set = (key: string) => (e: { target: { value: string } }) =>
+    setFields((f) => ({ ...f, [key]: e.target.value }));
+
+  // `row` is null until the record loads; nothing below renders before then.
+  const adminEmailNow = value('adminEmail', row?.adminEmail);
+  const isHandover = row !== null && adminEmailNow.trim() !== (row.adminEmail ?? '').trim();
+  const touched = Object.keys(fields).length > 0;
+  const ready = touched && reason.trim().length > 0 && !busy;
+
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      // Only what was TOUCHED. `undefined` means "not changing this"; sending
+      // every field back would make an untouched one indistinguishable from a
+      // deliberate overwrite.
+      const body: Record<string, unknown> = { changedByName: editedByName, reason: reason.trim() };
+      for (const [k, v] of Object.entries(fields)) {
+        body[k] = k === 'statedPractitionerCount' ? Number(v) || 0 : v;
+      }
+      const res = await fetch(`${CORE_URL}/organisations/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => ({}))) as { message?: string | string[] };
+        throw new Error(Array.isArray(b.message) ? b.message.join(' ') : (b.message ?? String(res.status)));
+      }
+      setResult(await res.json());
+      setFields({});
+      setReason('');
+      setOpen(false);
+      onSaved();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendInvitation() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`${CORE_URL}/organisations/${id}/resend-invitation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestedByName: editedByName }),
+      });
+      const b = (await res.json().catch(() => ({}))) as { invited?: boolean; detail?: string; message?: string };
+      if (!res.ok || !b.invited) throw new Error(b.detail ?? b.message ?? 'The invitation was not sent.');
+      setResult((r) => (r ? { ...r, next: b.detail ?? '' } : r));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const text = (key: string, label: string, current: string | null | undefined, hint?: string) => (
+    <Field label={label} hint={hint}>
+      {(props) => (
+        <TextInput {...props} value={value(key, current)} onChange={set(key)} data-testid={`edit-${key}`} />
+      )}
+    </Field>
+  );
+
+  return (
+    <>
+      {!open && (
+        <div className={ui.rowActions}>
+          <Button onClick={() => setOpen(true)} data-testid="edit-open">
+            <Pencil size={14} aria-hidden="true" />
+            {strings.review.editOpen}
+          </Button>
+        </div>
+      )}
+
+      {open && !row && <p className={ui.hint}>{strings.review.loading}</p>}
+
+      {open && row && (
+        <div className={styles.editPanel}>
+          <p className={ui.hint}>{strings.review.editLead}</p>
+          <p className={ui.hint}>
+            {strings.review.editRecordedAs} <strong>{editedByName || '—'}</strong>
+          </p>
+
+          <h3 className={ui.sectionTitle}>{strings.review.editPractice}</h3>
+          <div className={styles.editGrid}>
+            {text('name', strings.review.editName, row.name)}
+            {text('website', strings.review.editWebsite, row.website)}
+            {text('statedPractitionerCount', strings.review.editHeadcount, String(row.statedPractitionerCount ?? ''))}
+          </div>
+
+          <h3 className={ui.sectionTitle}>{strings.review.editAdmin}</h3>
+          <div className={styles.editGrid}>
+            {text('adminName', strings.review.editFieldName, row.adminName)}
+            {text('adminEmail', strings.review.editFieldEmail, row.adminEmail)}
+            {text('adminPhone', strings.review.editFieldPhone, row.adminPhone)}
+            {text('adminPosition', strings.review.editFieldPosition, row.adminPosition)}
+          </div>
+
+          {/*
+            Said BEFORE saving, not after. Disabling somebody's sign-in is not
+            something to discover from a result panel.
+          */}
+          {isHandover && (
+            <Notice tone="warn" title={strings.review.editHandoverTitle}>
+              {strings.review.editHandoverBody} {strings.review.editHandoverWhy}
+            </Notice>
+          )}
+
+          <h3 className={ui.sectionTitle}>{strings.review.editManager}</h3>
+          <div className={styles.editGrid}>
+            {text('managerName', strings.review.editFieldName, row.managerName)}
+            {text('managerEmail', strings.review.editFieldEmail, row.managerEmail)}
+            {text('managerPhone', strings.review.editFieldPhone, row.managerPhone)}
+            {text('managerPosition', strings.review.editFieldPosition, row.managerPosition)}
+          </div>
+
+          <h3 className={ui.sectionTitle}>{strings.review.editHeadOffice}</h3>
+          <div className={styles.editGrid}>
+            {text('headOfficeLine1', strings.review.editLine1, row.headOfficeLine1)}
+            {text('headOfficeLine2', strings.review.editLine2, row.headOfficeLine2)}
+            {text('headOfficeSuburb', strings.review.editSuburb, row.headOfficeSuburb)}
+            {text('headOfficeState', strings.review.editState, row.headOfficeState)}
+            {text('headOfficePostcode', strings.review.editPostcode, row.headOfficePostcode)}
+          </div>
+
+          <div className={styles.editGrid}>
+            <Field label={strings.review.editReason} hint={strings.review.editReasonHint} required>
+              {(props) => (
+                <TextInput
+                  {...props}
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  data-testid="edit-reason"
+                />
+              )}
+            </Field>
+          </div>
+
+          {!touched && <p className={ui.hint}>{strings.review.editNothing}</p>}
+
+          <div className={ui.rowActions}>
+            <Button variant="primary" onClick={() => void save()} disabled={!ready} data-testid="edit-save">
+              {busy ? strings.review.editSaving : strings.review.editSave}
+            </Button>
+            <Button
+              variant="subtle"
+              onClick={() => {
+                setOpen(false);
+                setFields({});
+                setReason('');
+              }}
+            >
+              {strings.review.editCancel}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <Notice tone="stop" title={strings.review.editFailed}>
+          {error}
+        </Notice>
+      )}
+
+      {result && !error && (
+        <Notice tone={result.handover ? 'warn' : 'ok'} title={result.handover ? strings.review.editHandoverDone : ''}>
+          {result.next}
+          {result.previousAdminAccount && <> {result.previousAdminAccount.note}</>}
+          {result.affectedChecks.length > 0 && (
+            <>
+              {' '}
+              {strings.review.editAffected.replace('{keys}', result.affectedChecks.join(', '))}
+            </>
+          )}
+        </Notice>
+      )}
+
+      {/* The next step in the succession, offered where it is needed. */}
+      {result?.handover && !error && (
+        <div className={ui.rowActions}>
+          <Button variant="primary" onClick={() => void sendInvitation()} disabled={busy} data-testid="edit-invite">
+            {busy ? strings.review.editSending : strings.review.editSendInvitation}
+          </Button>
+        </div>
+      )}
+    </>
   );
 }
