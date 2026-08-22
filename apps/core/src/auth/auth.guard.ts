@@ -51,6 +51,21 @@ export class AuthGuard implements CanActivate {
     if (issuer) {
       this.verifier = new TokenVerifier({
         issuer,
+        /*
+         * THE AUDIENCE, WHICH WAS NEVER CHECKED.
+         *
+         * `aud` is the claim that says who a token is FOR. Until now this
+         * service accepted any token the realm had signed, for anybody — and
+         * the realm was minting tokens whose audience listed thirteen services
+         * belonging to a different product entirely, copied in with the realm
+         * export, while OMITTING core-service itself.
+         *
+         * So the claim was simultaneously too broad to mean anything and did
+         * not name the one service reading it. Both halves are now fixed: the
+         * realm names our real services, and this checks that we are one of
+         * them.
+         */
+        audience: this.config.get<string>('KEYCLOAK_AUDIENCE') ?? 'core-service',
         // Containers reach Keycloak internally while tokens carry the public
         // issuer — the JWKS route may differ from the issuer string.
         jwksUri: this.config.get<string>('KEYCLOAK_JWKS_URI'),

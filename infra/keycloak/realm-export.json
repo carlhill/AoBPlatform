@@ -477,7 +477,7 @@
   "clientScopes": [
     {
       "name": "backend-services-audience",
-      "description": "Adds every backend service's client id to the aud claim so frontend-issued user tokens can be validated by any backend service they call.",
+      "description": "Adds THIS PRODUCT'S backend service ids to the aud claim. It previously listed thirteen services from another product, copied in with the realm export, while omitting core-service itself - so the audience was too broad to mean anything and did not name the service reading it.",
       "protocol": "openid-connect",
       "attributes": {
         "include.in.token.scope": "true",
@@ -485,146 +485,33 @@
       },
       "protocolMappers": [
         {
-          "name": "admin-console-service-audience",
+          "name": "core-service-audience",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
           "config": {
-            "included.client.audience": "admin-console-service",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
+            "included.client.audience": "core-service",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
           }
         },
         {
-          "name": "fhir-gateway-service-audience",
+          "name": "rules-service-audience",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
           "config": {
-            "included.client.audience": "fhir-gateway-service",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
+            "included.client.audience": "rules-service",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
           }
         },
         {
-          "name": "gp-authorisation-service-audience",
+          "name": "vault-service-audience",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
           "config": {
-            "included.client.audience": "gp-authorisation-service",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        },
-        {
-          "name": "followup-recall-service-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "followup-recall-service",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        },
-        {
-          "name": "identity-access-service-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "identity-access-service",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        },
-        {
-          "name": "referral-service-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "referral-service",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        },
-        {
-          "name": "audit-log-service-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "audit-log-service",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        },
-        {
-          "name": "onboarding-account-service-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "onboarding-account-service",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        },
-        {
-          "name": "directory-service-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "directory-service",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        },
-        {
-          "name": "booking-service-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "booking-service",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        },
-        {
-          "name": "consent-security-service-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "consent-security-service",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        },
-        {
-          "name": "notification-service-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "notification-service",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        },
-        {
-          "name": "specialist-review-service-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "specialist-review-service",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
+            "included.client.audience": "vault-service",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
           }
         }
       ]
