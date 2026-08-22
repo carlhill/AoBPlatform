@@ -78,7 +78,23 @@ export class PracticeUsersService {
       );
     }
 
-    if (actor.roles?.includes('platform_admin')) return;
+    /*
+     * A PLATFORM OPERATOR PASSES ONLY WHILE ACTING AS THE PRACTICE.
+     *
+     * The claim is the evidence. An operator's own token carries none; the
+     * acting-as interceptor puts one there for the life of an open session. So
+     * "has a practice claim" and "is acting as this practice" are the same
+     * statement for an operator, and checking the role alone would have let
+     * support perform the practice's own acts with no session, no stated
+     * reason, and nothing said to the practice.
+     */
+    if (actor.roles?.includes('platform_admin')) {
+      if (actor.practiceId === practiceId) return;
+      throw new ForbiddenException(
+        'These are the practice’s own acts, so they need a practice session rather than yours. Act as ' +
+          'somebody at the practice and do it from there — it works, and it records who did it on whose behalf.',
+      );
+    }
 
     const me = await this.prisma.withPractice(practiceId, (tx) =>
       tx.staffMember.findFirst({ where: { keycloakUserId: actor.id } }),

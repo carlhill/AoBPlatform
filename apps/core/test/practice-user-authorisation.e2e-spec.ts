@@ -175,14 +175,49 @@ describe('who may manage a practice’s users (e2e, real Postgres)', () => {
     );
   });
 
-  it('lets a platform operator through, because they can only be acting as the practice', async () => {
-    // Reaching this code means a practice claim is present, and for a platform
-    // operator the only way to have one is an open acting-as session — which
-    // records who did what on whose behalf and refuses the destructive verbs.
-    const operator = { id: 'kc-platform-operator', name: 'Support', principalType: 'staff', roles: ['platform_admin'] };
-    const created = await users.grant(practiceId, newPerson, operator);
+  it('REFUSES a platform operator who is not acting as the practice', async () => {
+    /*
+     * The role is not the permission. An operator's own token carries no
+     * practice claim; the acting-as interceptor puts one there for the life of
+     * an open session. Passing on the role alone would let support perform a
+     * practice's own acts with no session, no stated reason, and nothing said
+     * to the practice — which is the entire cost that makes acting-as
+     * acceptable in the first place.
+     */
+    const looking = {
+      id: 'kc-platform-operator',
+      name: 'Support',
+      principalType: 'staff',
+      roles: ['platform_admin'],
+    };
+    await expect(users.grant(practiceId, newPerson, looking)).rejects.toThrow(/practice session rather than yours/i);
+  });
+
+  it('lets a platform operator through while acting as THIS practice', async () => {
+    const acting = {
+      id: 'kc-platform-operator',
+      name: 'Support',
+      principalType: 'staff',
+      roles: ['platform_admin'],
+      practiceId,
+    };
+    const created = await users.grant(practiceId, newPerson, acting);
     expect(created.id).toBeTruthy();
 
     await prisma.withPractice(practiceId, (tx) => tx.staffMember.delete({ where: { id: created.id } }));
+  });
+
+  it('REFUSES an operator acting as a DIFFERENT practice', async () => {
+    // The claim has to name THIS practice. Holding an open session elsewhere
+    // is not standing here, and a stale claim from a previous session is the
+    // ordinary way that would happen.
+    const elsewhere = {
+      id: 'kc-platform-operator',
+      name: 'Support',
+      principalType: 'staff',
+      roles: ['platform_admin'],
+      practiceId: '00000000-0000-4000-8000-000000000000',
+    };
+    await expect(users.grant(practiceId, newPerson, elsewhere)).rejects.toThrow(/practice session rather than yours/i);
   });
 });

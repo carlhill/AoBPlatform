@@ -34,6 +34,7 @@ import { apiHeaders, currentSession } from '../../auth';
 import { strings } from '../../strings';
 import { usePractice } from '../usePractice';
 import { PracticePicker } from '../PracticePicker';
+import { ActingAsBanner, ActingAsStart } from '../ActingAs';
 import styles from '../manage.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
@@ -137,8 +138,24 @@ export function UsersView() {
         <ArrowLeft size={15} aria-hidden="true" />
         {strings.queue.back}
       </Link>
+      {/*
+        THE BANNER FIRST, above everything. An operator acting as a practice is
+        looking at a screen indistinguishable from that practice's own, so the
+        reminder has to arrive before the content rather than beside it.
+      */}
+      <ActingAsBanner onChange={load} />
+
       <h1 className={ui.pageTitle}>{strings.users.title}</h1>
       <p className={`${ui.pageLead} ${styles.queueLead}`}>{strings.users.lead}</p>
+
+      {/*
+        And the way IN, for an operator who has picked a practice and is being
+        refused its own acts. Previously the refusal named acting-as as the
+        route and there was no way to take it.
+      */}
+      {isOperator && listing?.mayManage === false && (
+        <ActingAsStart practiceId={scope} practiceName={listing?.admin?.name ?? null} onStarted={load} />
+      )}
 
       {error && (
         <Notice tone="stop" title={strings.users.notLoaded}>
@@ -173,15 +190,33 @@ export function UsersView() {
           <p className={styles.cardNote}>
             <strong>{listing.admin.name}</strong> · {listing.admin.email}
           </p>
-          <a href={KEYCLOAK_ACCOUNT} target="_blank" rel="noreferrer" className={ui.buttonLink}>
-            <KeyRound size={15} aria-hidden="true" />
-            {strings.users.managePasskeys}
-          </a>
           <p className={ui.hint}>
             {strings.users.passkeyNote.replace('{n}', String(listing.admin.maxPasskeys))}
           </p>
         </section>
       )}
+
+      {/*
+        MOVED OUT OF THE ADMINISTRATOR PANEL, because it was describing itself
+        wrongly. The account console always manages THE ACCOUNT YOU ARE SIGNED
+        IN AS — it cannot manage anybody else's, and nothing about the link
+        says which account it will open. Sitting inside a panel headed "The
+        administrator account", beside the administrator's name and address, it
+        read as a control over that account. An ordinary user pressing it would
+        have been managing their own passkeys while believing otherwise.
+
+        Nobody can manage somebody else's passkeys, and that is not a gap: a
+        passkey is bound to a device the other person is holding. What an
+        administrator can do instead is withdraw access, above.
+      */}
+      <section className={styles.applicationSection}>
+        <h2 className={styles.applicationHeading}>{strings.users.myPasskeysTitle}</h2>
+        <p className={ui.hint}>{strings.users.myPasskeysBody}</p>
+        <a href={KEYCLOAK_ACCOUNT} target="_blank" rel="noreferrer" className={ui.buttonLink}>
+          <KeyRound size={15} aria-hidden="true" />
+          {strings.users.managePasskeys}
+        </a>
+      </section>
 
       <h2 className={styles.applicationHeading}>{strings.users.withAccess}</h2>
       {active.length === 0 && <p className={ui.hint}>{strings.users.nobodyYet}</p>}

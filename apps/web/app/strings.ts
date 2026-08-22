@@ -1265,6 +1265,30 @@ export const strings = {
       'You do not need to do anything. The change goes through when the new address confirms it, and expires '
       + 'by itself if nobody does.',
   },
+  actingAs: {
+    thisPractice: 'this practice',
+    start: 'Act as {practice}',
+    startTitle: 'Act as somebody at this practice',
+    startBody:
+      'You will see and do what they see and do, and everything is recorded against you AND them. Some things '
+      + 'a practice does are refused to us outright — inviting somebody, recording a departure — and this is '
+      + 'how support performs them.',
+    reason: 'Why',
+    reasonHint: 'Chosen from a list rather than typed, so these can be counted and looked at together.',
+    chooseReason: 'Choose a reason…',
+    note: 'What you are about to do',
+    noteHint: 'A sentence. The practice is told, and reads this.',
+    confirmStart: 'Start acting as them',
+    starting: 'Starting…',
+    failed: 'That could not be started',
+    warnTitle: 'What this does not let you do',
+    warnBody:
+      'Deleting, removing, withdrawing or ending anything stays refused, and an approval you make while acting '
+      + 'as somebody must be re-approved by a different person. The session ends by itself after 30 minutes.',
+    bannerText: 'You are acting as {practice}. Everything you do is recorded against you and them.',
+    end: 'Stop acting as them',
+    ending: 'Stopping…',
+  },
   users: {
     title: 'Your people',
     lead:
@@ -1274,7 +1298,10 @@ export const strings = {
     adminTitle: 'The administrator account',
     adminBody:
       'There is exactly one, and it belongs to the PRACTICE rather than to a person. That is what makes handover work when an administrator leaves suddenly: the account stays and its passkeys are reset, instead of the practice losing access with them.',
-    managePasskeys: 'Manage passkeys',
+    managePasskeys: 'Manage my passkeys',
+    myPasskeysTitle: 'Your own passkeys',
+    myPasskeysBody:
+      'This opens the passkeys for the account YOU are signed in as — nobody can manage anybody else’s, because a passkey is bound to a device the other person is holding. To stop somebody signing in, withdraw their access above.',
     passkeyNote:
       'Up to {n} devices. Add them from a session you have already signed in to — only the FIRST passkey comes from an emailed link, and every one after it is stronger for that.',
     withAccess: 'Can sign in',

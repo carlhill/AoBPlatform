@@ -808,3 +808,33 @@
   border-top: 0;
   padding-top: 0;
 }
+
+/*
+ * THE ACTING-AS BANNER. Loud on purpose.
+ *
+ * The danger of impersonation is not that it happens, it is that somebody
+ * forgets it is happening — every screen looks exactly like the practice's own
+ * console, because it IS the practice's own console. A quiet, tasteful notice
+ * would be read once and then stop being seen, which is the failure mode.
+ */
+.actingAsBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  margin-bottom: var(--s4);
+  padding: var(--s3) var(--s4);
+  border: 2px solid #b45309;
+  border-radius: 8px;
+  background: #fffbeb;
+  color: #7c2d12;
+}
+
+.actingAsText {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  font-weight: 600;
+}
+

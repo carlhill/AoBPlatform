@@ -28,6 +28,16 @@ export interface Actor {
   name: string;
   principalType: string;
   roles: string[];
+  /**
+   * The practice claim, when there is one.
+   *
+   * Carried so callers can tell a platform operator who is ACTING AS a practice
+   * from one who is merely looking at it. The acting-as interceptor sets this
+   * on the principal, so its presence on an operator means an open session --
+   * which is the difference between "may perform the practice's own acts" and
+   * "may not".
+   */
+  practiceId?: string;
 }
 
 /**
@@ -49,5 +59,6 @@ export const SessionActor = createParamDecorator((_data: unknown, context: Execu
     name: principal.preferredUsername ?? principal.sub,
     principalType: principal.principalType,
     roles: principal.roles ?? [],
+    practiceId: principal.practiceId,
   };
 });
