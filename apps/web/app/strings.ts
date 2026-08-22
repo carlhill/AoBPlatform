@@ -1289,6 +1289,50 @@ export const strings = {
     end: 'Stop acting as them',
     ending: 'Stopping…',
   },
+  practitioner: {
+    audience: 'Practitioner',
+    title: 'Your practice work',
+    lead:
+      'Where you work, what we hold about you, and what we have sent you. Only yours — a practice’s other '
+      + 'people and its other messages are not here.',
+    failed: 'That could not be read',
+    signedOutTitle: 'Sign in to see your own record',
+    signedOutBody: 'This page shows what we hold about you, so it needs you signed in.',
+    deregisteredTitle: 'Your registration is recorded as ended',
+    deregisteredBody:
+      'While that stands, your affiliations are ended and consent cannot be captured under your name. If it '
+      + 'is wrong, tell us — it is a record of what a register said, not a decision we made.',
+
+    entitiesTitle: 'Where you work',
+    entitiesBody:
+      'The practices you are affiliated with, and the sites you work at. You see the practice’s name and your '
+      + 'own sites — not its other people, and not its records.',
+    noEntities: 'You are not affiliated with any practice at the moment.',
+    unnamedPractice: 'A practice',
+
+    detailsTitle: 'Your details',
+    verifiedNote: 'Your name and AHPRA number were checked against the public register, so they are not edited here.',
+    email: 'Your email address',
+    emailHint:
+      'Yours, not a practice’s. Invitations to join a practice come here, which is why a change to it is '
+      + 'looked at by a person.',
+    save: 'Save this address',
+    saving: 'Saving…',
+    contactSaved: 'Saved. Somebody here will look at the change, because this is where invitations go.',
+
+    affiliationsTitle: 'Your affiliations',
+    affiliationsBody:
+      'Every practice you have been invited to, including ones that have ended. Leaving one is its own page: '
+      + 'a departure has a date that matters and consequences for what was captured under your name.',
+    endsOn: 'ends',
+    openAffiliations: 'Open your affiliations',
+
+    messagesTitle: 'What we have sent you',
+    messagesBody:
+      'Everything addressed to you, wherever you work, for the last two years. Yours only — the database '
+      + 'enforces that, not this screen.',
+    openMessages: 'Open your messages',
+  },
   reports: {
     title: 'Reports',
     lead:

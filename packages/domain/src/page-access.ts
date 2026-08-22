@@ -183,7 +183,8 @@ export const PAGES: Readonly<Record<string, PageRule>> = {
    */
   '/practitioner': {
     audiences: ['practitioner'],
-    why: 'A practitioner’s own view: where they work, and what was sent to them.',
+    why: 'A practitioner’s own view: where they work, what we hold about them, and what was sent to them.',
+    matchesChildren: true,
   },
 };
 
