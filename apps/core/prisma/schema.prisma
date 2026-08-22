@@ -46,6 +46,7 @@ model Practice {
   /**
    * /**
    * /**
+   * /**
    * The ABR legal entity name. Often NOT what the practice trades as.
    */
   legalName             String?
@@ -78,6 +79,18 @@ model Practice {
   // --- The applicant (ORG-MODEL-PROPOSAL.md §10, step 1) ---
   // Where the passkey invitation goes. Without an email there is nobody to
   // invite and the sequence stalls at step 3.
+  /// A SHARED MAILBOX for practice-level notices — recertification reminders,
+  /// certification-lapse warnings. Deliberately separate from `adminEmail`.
+  ///
+  /// `adminEmail` identifies a HUMAN who holds the practice-admin role.
+  /// `groupEmail` outlives any individual. Collapsing the two is what creates
+  /// a shared account: if the identity address is also the group address, then
+  /// everybody with mailbox access can request a credential-enrolment link and
+  /// every action becomes attributable to a mailbox rather than a person.
+  ///
+  /// NOTHING ENROLS AGAINST THIS ADDRESS. It receives notices only.
+  groupEmail String?
+
   adminName     String?
   adminEmail    String?
   adminPhone    String?
@@ -711,6 +724,7 @@ model Affiliation {
 
   // --- Offboarding: notice runs BEFORE the end date (§6) ---
   /**
+   * /**
    * /**
    * /**
    * Must be <= endsAt. Enforced by a CHECK constraint, not just in code.

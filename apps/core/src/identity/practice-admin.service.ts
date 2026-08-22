@@ -29,6 +29,27 @@ import { renderHtml, renderText, type EmailBlock, type EmailFooter } from '../me
  * cannot exist before the ceremony. The ordering is not incidental; it is the
  * control.
  */
+/**
+ * How long an enrolment link lives.
+ *
+ * ONE HOUR, DOWN FROM KEYCLOAK'S TWELVE. The link is a BEARER CREDENTIAL, and
+ * a stronger one than it looks: the action token is a signed JWT carrying the
+ * user id, so whoever opens it is treated as that account. You do not need to
+ * know the username — the link IS the username, and the password, and the
+ * second factor.
+ *
+ * Twelve hours of that sitting in an inbox is a long time, and longer still
+ * when the inbox is a shared practice mailbox. An hour is comfortable for
+ * somebody who asked for it and short enough that a forwarded message goes
+ * stale before it reaches anywhere it should not; re-sending is one click.
+ *
+ * This does NOT make the link safe on its own. It bounds the window. What
+ * carries the assurance is the REQ-PKI-01 ceremony performed before it was
+ * sent, and the fact that additional devices are added from a signed-in
+ * session rather than from another emailed link.
+ */
+const ENROLMENT_LINK_SECONDS = 60 * 60;
+
 @Injectable()
 export class PracticeAdminService {
   private readonly logger = new Logger(PracticeAdminService.name);
@@ -317,6 +338,7 @@ export class PracticeAdminService {
       await this.keycloak.sendPasskeyEnrolment(user.id, {
         clientId: this.config.get<string>('KEYCLOAK_WEB_CLIENT_ID', 'web'),
         redirectUri: this.consoleUrl(),
+        lifespanSeconds: ENROLMENT_LINK_SECONDS,
       });
 
       const invitedAt = new Date();

@@ -24,6 +24,25 @@
  * constraint, and "your passkey only works at one machine" is a fair objection
  * to the whole model. Passkeys do not have that limitation; our scripts did.
  *
+ * ⚠ PREFER THE ACCOUNT CONSOLE. This mints ANOTHER emailed enrolment link, and
+ * an emailed link is a bearer credential: the action token is a signed JWT
+ * carrying the user id, so whoever opens it is treated as that account —
+ * knowing the username is not required, because the link IS the identity.
+ *
+ * Somebody who can already sign in does not need one. They add a device from
+ * Keycloak's own Account Console, in a session they have already
+ * authenticated:
+ *
+ *     <KEYCLOAK>/realms/aobplatform/account/#/security/signingin
+ *
+ * That is the industry answer to "a link can bootstrap a credential": only the
+ * FIRST credential comes from a link, and every one after it is added from a
+ * session proved by the first. It collapses the attack surface from every
+ * enrolment to exactly one.
+ *
+ * THIS SCRIPT IS THE EXCEPTION PATH — somebody who cannot sign in at all, and
+ * for whom the alternative is the full recovery tool.
+ *
  * Usage:
  *   node infra/keycloak/add-passkey-device.mjs --email you@example.com
  *   node infra/keycloak/add-passkey-device.mjs --email you@example.com --note "clinic laptop"
@@ -51,6 +70,11 @@ const CLIENT_ID = 'console';
  * left lying about for no benefit.
  */
 const LINK_LIFETIME_SECONDS = 60 * 60;
+
+/** Where somebody who CAN sign in should go instead. */
+const ACCOUNT_CONSOLE = `${(process.env.KEYCLOAK_PUBLIC_BASE_URL ?? 'http://localhost:21024')}/realms/${
+  process.env.KEYCLOAK_REALM ?? 'aobplatform'
+}/account/#/security/signingin`;
 
 /** Providers known not to set the user-verification flag. See PASSKEYS.md. */
 const PROVIDERS = {
@@ -172,6 +196,12 @@ async function main() {
     console.log(`  Keycloak could not send the email (${link.status}). Mint a link manually with:`);
     console.log('    node infra/keycloak/latest-invite-link.mjs\n');
   }
+
+  console.log('  IF THEY CAN ALREADY SIGN IN, THEY DID NOT NEED THIS. Adding a device from a session');
+  console.log('  they have already authenticated is stronger than any emailed link, because the link');
+  console.log('  is a bearer credential and the session is not:');
+  console.log(`    ${ACCOUNT_CONSOLE}
+`);
 
   console.log('  OPEN THE LINK ON THE DEVICE THE PASSKEY IS FOR. A passkey is created where it');
   console.log('  is enrolled — following this on the machine you are already using just adds a');

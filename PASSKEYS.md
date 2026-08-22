@@ -230,6 +230,34 @@ rather than merely restarted.
 templates. Anything that is ours and untranslated — the product name — should
 be written literally.
 
+## The enrolment link is a bearer credential
+
+`/realms/.../login-actions/action-token?key=<JWT>` — and the JWT **carries the
+user id**, signed by the realm. So knowing a username is not required: the link
+IS the identity, the password and the second factor, in one URL.
+
+Anybody who opens it enrols a passkey on their own device, and nothing
+distinguishes them afterwards from the person it was sent to.
+
+**What bounds it here:**
+
+| | |
+|---|---|
+| **One hour**, not Keycloak's twelve | A credential-bootstrap link does not need to survive overnight, and re-sending is one click |
+| **Only the FIRST passkey comes from a link** | Devices 2–6 are added from Keycloak's Account Console, in a session already proved by the first — `<KEYCLOAK>/realms/aobplatform/account/#/security/signingin` |
+| **A REQ-PKI-01 ceremony precedes it** | `onApproved` records one, with `independent_callback` when the entitlement was a phone call to a number the applicant did not choose |
+
+That last row is the one that actually carries the assurance, and it is stronger
+than most products manage. The gap it does not close is the **last mile**: the
+ceremony verified a person, and the link then went to an inbox. Shortening the
+window and moving later enrolments behind a session is what carries the
+ceremony's assurance through to the credential instead of dropping it at the
+mailbox.
+
+**Still open:** a code by a second channel (the practice's `adminPhone`) so an
+inbox compromise alone is not enough. FR-1.9 already forces the admin and
+manager onto independent channels, so the platform is built around the idea.
+
 ## Commands worth having to hand
 
 Invite an administrator:
