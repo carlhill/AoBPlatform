@@ -1302,6 +1302,16 @@ export const strings = {
     failed: 'That report could not be read',
     noSession: 'You are not signed in, so there is nothing to report on. Sign in and try again.',
     none: 'None',
+    everything: 'Everything',
+    organisation: 'Organisation',
+    site: 'Site',
+    department: 'Department',
+    placeHint: 'Narrow to one place. Different from breaking down — this shows one, that shows all of them.',
+    allOrganisations: 'All organisations',
+    allSites: 'All sites',
+    allDepartments: 'All departments',
+    chartCaption: 'Messages over time',
+    chartPeak: 'tallest bar is {n}',
     emptyTitle: 'Nothing to show for this period',
     emptyBody:
       'A real answer rather than a missing one — the query ran and found nothing. Try a wider report, or check '

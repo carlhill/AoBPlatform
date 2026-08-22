@@ -26,6 +26,12 @@ export type CubeQuery = {
   timeDimensions?: { dimension: string; granularity?: CubeGranularity; dateRange?: string | string[] }[];
   order?: Record<string, 'asc' | 'desc'>;
   limit?: number;
+  /**
+   * Only ever set from the place controls. Never a practice — that comes off
+   * the token and is enforced by the database, and a filter naming a practice
+   * would be a second place the boundary lived.
+   */
+  filters?: { member: string; operator: 'equals'; values: string[] }[];
 };
 
 /**
@@ -166,13 +172,74 @@ export const PACKED_BREAKDOWNS = [
 
 export type PackedBreakdown = (typeof PACKED_BREAKDOWNS)[number]['key'];
 
-/** The query to actually send: a report, plus a breakdown if one was chosen. */
-export function packedQuery(report: PackedReport, breakdown: PackedBreakdown): CubeQuery {
-  const chosen = PACKED_BREAKDOWNS.find((b) => b.key === breakdown);
-  if (!chosen || chosen.dimensions.length === 0) return report.query;
+/**
+ * Narrowing to one place, which is not the same as breaking down BY place.
+ *
+ * A breakdown splits the figures and shows every group; a filter picks one and
+ * shows only that. Both are useful and they answer different questions — "how
+ * do my sites compare" versus "what did Yagoona do in March" — so they are
+ * separate controls rather than one clever one.
+ *
+ * These are FILTERS ON DIMENSIONS, never on the practice. The practice comes
+ * off the token and the database enforces it; nothing here can widen that, and
+ * a filter naming a practice would be a second place the boundary lived.
+ */
+export type PlaceFilter = {
+  organisation?: string;
+  site?: string;
+  department?: string;
+};
 
+export function placeFilters(place: PlaceFilter): { member: string; operator: 'equals'; values: string[] }[] {
+  const out: { member: string; operator: 'equals'; values: string[] }[] = [];
+  if (place.organisation) {
+    out.push({ member: 'OutboundMessages.organisation', operator: 'equals', values: [place.organisation] });
+  }
+  if (place.site) out.push({ member: 'OutboundMessages.site', operator: 'equals', values: [place.site] });
+  if (place.department) {
+    out.push({ member: 'OutboundMessages.department', operator: 'equals', values: [place.department] });
+  }
+  return out;
+}
+
+/**
+ * The values available to choose between, for the filter dropdowns.
+ *
+ * Asked of Cube rather than assembled from a report's rows, so the list is the
+ * same whichever report is showing — a dropdown whose options changed when you
+ * switched report would be unusable.
+ */
+export function placeOptionsQuery(): CubeQuery {
   return {
-    ...report.query,
-    dimensions: [...chosen.dimensions],
+    measures: ['OutboundMessages.count'],
+    dimensions: [
+      'OutboundMessages.organisation',
+      'OutboundMessages.site',
+      'OutboundMessages.department',
+    ],
+    timeDimensions: [{ dimension: TIME, dateRange: PACKED_REPORT_RANGE }],
   };
+}
+
+/** The query to actually send: a report, plus a breakdown if one was chosen. */
+export function packedQuery(
+  report: PackedReport,
+  breakdown: PackedBreakdown,
+  place: PlaceFilter = {},
+): CubeQuery {
+  const chosen = PACKED_BREAKDOWNS.find((b) => b.key === breakdown);
+  const filters = placeFilters(place);
+
+  const query: CubeQuery = { ...report.query };
+  if (chosen && chosen.dimensions.length > 0) query.dimensions = [...chosen.dimensions];
+
+  /*
+   * A MATRIX NEEDS ITS GROUPING DIMENSIONS EVEN WHEN FILTERED, because it is
+   * drawn one table per group. Without them every group's days collapse into a
+   * single matrix and the breakdown silently does nothing — which is what
+   * happened: the control was there, the table ignored it.
+   */
+  if (filters.length > 0) query.filters = filters;
+
+  return query;
 }

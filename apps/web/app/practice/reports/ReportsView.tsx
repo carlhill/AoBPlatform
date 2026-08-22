@@ -27,10 +27,13 @@ import {
   PACKED_BREAKDOWNS,
   PACKED_REPORTS,
   type PackedBreakdown,
+  type PlaceFilter,
   matrix,
   packedQuery,
   packedReport,
+  placeOptionsQuery,
 } from '@aobplatform/domain';
+import { BarChart, type Bar } from './BarChart';
 import { Button, Field, Notice, SelectInput, Shell, ui } from '../../ui';
 import { SessionControl } from '../../SessionControl';
 import { currentSession } from '../../auth';
@@ -65,6 +68,8 @@ function num(row: Row, key: string): number {
 export function ReportsView() {
   const [reportKey, setReportKey] = useState('month');
   const [breakdown, setBreakdown] = useState<PackedBreakdown>('none');
+  const [place, setPlace] = useState<PlaceFilter>({});
+  const [places, setPlaces] = useState<Row[]>([]);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -78,7 +83,7 @@ export function ReportsView() {
       const token = currentSession()?.accessToken;
       if (!token) throw new Error(strings.reports.noSession);
 
-      const query = packedQuery(report, breakdown);
+      const query = packedQuery(report, breakdown, place);
       const res = await fetch(`${CUBE_URL}/cubejs-api/v1/load?query=${encodeURIComponent(JSON.stringify(query))}`, {
         headers: { Authorization: token },
       });
@@ -99,26 +104,129 @@ export function ReportsView() {
     } finally {
       setBusy(false);
     }
-  }, [report, breakdown]);
+  }, [report, breakdown, place]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  /*
+   * The values to choose between, asked ONCE and not per report. A dropdown
+   * whose options changed when you switched report would be unusable — and
+   * these are the same places whichever question is being asked.
+   */
+  useEffect(() => {
+    const token = currentSession()?.accessToken;
+    if (!token) return;
+    fetch(`${CUBE_URL}/cubejs-api/v1/load?query=${encodeURIComponent(JSON.stringify(placeOptionsQuery()))}`, {
+      headers: { Authorization: token },
+    })
+      .then((r) => r.json())
+      .then((b: { data?: Row[] }) => setPlaces(b.data ?? []))
+      .catch(() => setPlaces([]));
+  }, []);
+
+  /*
+   * CASCADING, because a department only means anything inside its site.
+   * Offering every department at every site would let somebody pick a pair
+   * that never occurs together and get an empty report that looks like an
+   * absence of messages rather than an impossible question.
+   */
+  const orgOptions = useMemo(
+    () => [...new Set(places.map((p) => p['OutboundMessages.organisation'] as string).filter(Boolean))].sort(),
+    [places],
+  );
+  const siteOptions = useMemo(
+    () =>
+      [
+        ...new Set(
+          places
+            .filter((p) => !place.organisation || p['OutboundMessages.organisation'] === place.organisation)
+            .map((p) => p['OutboundMessages.site'] as string)
+            .filter(Boolean),
+        ),
+      ].sort(),
+    [places, place.organisation],
+  );
+  const deptOptions = useMemo(
+    () =>
+      [
+        ...new Set(
+          places
+            .filter((p) => !place.organisation || p['OutboundMessages.organisation'] === place.organisation)
+            .filter((p) => !place.site || p['OutboundMessages.site'] === place.site)
+            .map((p) => p['OutboundMessages.department'] as string)
+            .filter(Boolean),
+        ),
+      ].sort(),
+    [places, place.organisation, place.site],
+  );
 
   const dimensions = useMemo(
     () => PACKED_BREAKDOWNS.find((b) => b.key === breakdown)?.dimensions ?? [],
     [breakdown],
   );
 
-  // The matrices need dates, so they are built from the daily rows Cube returns.
+  /*
+   * ONE MATRIX PER GROUP, which is the bug this replaced. The previous version
+   * poured every row into a single matrix and threw the dimensions away — so
+   * choosing "by site and department" changed the query, changed nothing on
+   * screen, and looked like the control did not work.
+   */
   const built = useMemo(() => {
     if (!rows || (report.shape !== 'matrix_week' && report.shape !== 'matrix_day')) return null;
-    const counted = rows
-      .map((r) => ({ at: timeOf(r), count: num(r, 'OutboundMessages.count') }))
-      .filter((r): r is { at: string; count: number } => Boolean(r.at))
-      .map((r) => ({ at: new Date(r.at), count: r.count }));
-    return matrix(counted, report.shape === 'matrix_week' ? 'month_by_week' : 'month_by_day');
-  }, [rows, report.shape]);
+    const kind = report.shape === 'matrix_week' ? 'month_by_week' : 'month_by_day';
+
+    const groups = new Map<string, { heading: string; counted: { at: Date; count: number }[] }>();
+    for (const row of rows) {
+      const at = timeOf(row);
+      if (!at) continue;
+
+      // Org › Site › Department, with the empty parts said in words: a message
+      // addressed to the practice itself genuinely has no site.
+      const parts = dimensions.map((d) => (row[d] as string) || strings.reports.none);
+      const key = parts.join(' › ') || strings.reports.everything;
+
+      const group = groups.get(key) ?? { heading: key, counted: [] };
+      group.counted.push({ at: new Date(at), count: num(row, 'OutboundMessages.count') });
+      groups.set(key, group);
+    }
+
+    return [...groups.values()]
+      .map((g) => ({ heading: g.heading, matrix: matrix(g.counted, kind) }))
+      .sort((a, b) => a.heading.localeCompare(b.heading));
+  }, [rows, report.shape, dimensions]);
+
+  /*
+   * THE SAME ROWS THE TABLE IS BUILT FROM. A chart that fetched its own data is
+   * a chart that can disagree with the numbers beside it, and the reader has no
+   * way to tell which one is wrong.
+   */
+  const bars = useMemo<Bar[]>(() => {
+    if (!rows || rows.length === 0) return [];
+
+    if (built) {
+      // For a matrix, one bar per month across every group — the chart answers
+      // "how is this trending", which the grouped tables do not.
+      const perMonth = new Map<string, number>();
+      for (const group of built) {
+        for (const row of group.matrix.rows) {
+          perMonth.set(row.label, (perMonth.get(row.label) ?? 0) + row.total);
+        }
+      }
+      return [...perMonth.entries()].map(([label, value]) => ({ label, value }));
+    }
+
+    if (report.shape === 'total') return [];
+
+    const perPeriod = new Map<string, number>();
+    for (const row of rows) {
+      const at = (timeOf(row) ?? '').slice(0, 10);
+      if (!at) continue;
+      perPeriod.set(at, (perPeriod.get(at) ?? 0) + num(row, 'OutboundMessages.count'));
+    }
+    return [...perPeriod.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([label, value]) => ({ label, value }));
+  }, [rows, built, report.shape]);
 
   const totals = useMemo(() => {
     if (!rows) return null;
@@ -164,6 +272,69 @@ export function ReportsView() {
               {PACKED_BREAKDOWNS.map((b) => (
                 <option key={b.key} value={b.key}>
                   {b.label}
+                </option>
+              ))}
+            </SelectInput>
+          )}
+        </Field>
+      </div>
+
+      {/*
+        NARROWING TO ONE PLACE, which is a different question from breaking down
+        BY place — "what did Yagoona do in March" rather than "how do my sites
+        compare". Cascading, because choosing a department that never occurs at
+        the chosen site would give an empty report that reads as an absence of
+        messages rather than an impossible question.
+      */}
+      <div className={styles.applicationFields}>
+        <Field label={strings.reports.organisation} hint={strings.reports.placeHint}>
+          {(props) => (
+            <SelectInput
+              {...props}
+              value={place.organisation ?? ''}
+              onChange={(e) => setPlace({ organisation: e.target.value || undefined })}
+              data-testid="place-org"
+            >
+              <option value="">{strings.reports.allOrganisations}</option>
+              {orgOptions.map((o) => (
+                <option key={o} value={o}>
+                  {o}
+                </option>
+              ))}
+            </SelectInput>
+          )}
+        </Field>
+
+        <Field label={strings.reports.site}>
+          {(props) => (
+            <SelectInput
+              {...props}
+              value={place.site ?? ''}
+              onChange={(e) => setPlace((p) => ({ ...p, site: e.target.value || undefined, department: undefined }))}
+              data-testid="place-site"
+            >
+              <option value="">{strings.reports.allSites}</option>
+              {siteOptions.map((o) => (
+                <option key={o} value={o}>
+                  {o}
+                </option>
+              ))}
+            </SelectInput>
+          )}
+        </Field>
+
+        <Field label={strings.reports.department}>
+          {(props) => (
+            <SelectInput
+              {...props}
+              value={place.department ?? ''}
+              onChange={(e) => setPlace((p) => ({ ...p, department: e.target.value || undefined }))}
+              data-testid="place-dept"
+            >
+              <option value="">{strings.reports.allDepartments}</option>
+              {deptOptions.map((o) => (
+                <option key={o} value={o}>
+                  {o}
                 </option>
               ))}
             </SelectInput>
@@ -251,49 +422,63 @@ export function ReportsView() {
         sent; empty says there was no such day, and the difference matters to
         anybody hunting a gap.
       */}
-      {built && built.rows.length > 0 && (
-        <div className={styles.tableScroll}>
-          <table className={styles.totalsTable}>
-            <thead>
-              <tr>
-                <th scope="col">{strings.report.month}</th>
-                {built.columns.map((c) => (
-                  <th key={c} scope="col" className={styles.stateCol}>
-                    {c}
-                  </th>
-                ))}
-                <th scope="col" className={styles.totalCol}>
-                  {strings.report.total}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {built.rows.map((row) => (
-                <tr key={row.key}>
-                  <th scope="row">{row.label}</th>
-                  {row.cells.map((cell, i) => (
-                    <td key={i} className={styles.stateCol}>
-                      {cell === null ? '' : cell}
-                    </td>
+      {/*
+        ONE TABLE PER GROUP, headed Org › Site › Department. Stacked rather than
+        nested into a single table because a matrix already uses both axes —
+        months down, weeks across — so a third dimension has nowhere to go
+        except a repeat of the table.
+      */}
+      {built &&
+        built.map((group) => (
+          <div key={group.heading}>
+            {dimensions.length > 0 && <h2 className={styles.applicationHeading}>{group.heading}</h2>}
+            <div className={styles.tableScroll}>
+              <table className={styles.totalsTable}>
+                <thead>
+                  <tr>
+                    <th scope="col">{strings.report.month}</th>
+                    {group.matrix.columns.map((c) => (
+                      <th key={c} scope="col" className={styles.stateCol}>
+                        {c}
+                      </th>
+                    ))}
+                    <th scope="col" className={styles.totalCol}>
+                      {strings.report.total}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {group.matrix.rows.map((row) => (
+                    <tr key={row.key}>
+                      <th scope="row">{row.label}</th>
+                      {row.cells.map((cell, i) => (
+                        <td key={i} className={styles.stateCol}>
+                          {cell === null ? '' : cell}
+                        </td>
+                      ))}
+                      <td className={styles.totalCol}>{row.total}</td>
+                    </tr>
                   ))}
-                  <td className={styles.totalCol}>{row.total}</td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr>
-                <th scope="row">{strings.report.total}</th>
-                {built.columnTotals.map((t, i) => (
-                  <td key={i} className={styles.stateCol}>
-                    {t}
-                  </td>
-                ))}
-                <td className={styles.totalCol}>{built.grandTotal}</td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      )}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <th scope="row">{strings.report.total}</th>
+                    {group.matrix.columnTotals.map((t, i) => (
+                      <td key={i} className={styles.stateCol}>
+                        {t}
+                      </td>
+                    ))}
+                    <td className={styles.totalCol}>{group.matrix.grandTotal}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        ))}
+
+      {/* Below the table, deliberately: the numbers are the answer and the
+          chart is the shape of them. */}
+      {bars.length > 0 && <BarChart bars={bars} caption={strings.reports.chartCaption} />}
 
       <Notice title={strings.reports.moreTitle}>
         {strings.reports.moreBody}{' '}

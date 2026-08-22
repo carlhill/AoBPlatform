@@ -838,3 +838,66 @@
   font-weight: 600;
 }
 
+/*
+ * THE CHART. Deliberately plain, and deliberately not a charting library.
+ *
+ * What is wanted is "let us see the shape of it" — proportional bars with
+ * readable labels — which is a viewBox and some rects. A library would draw a
+ * nicer chart and cost a dependency that ships to every visitor and has to be
+ * kept current, and the time to take that on is after learning what people
+ * actually look at.
+ */
+.chartFigure {
+  margin: var(--s4) 0 0;
+}
+
+.chartSvg {
+  display: block;
+  width: 100%;
+  /* Fixed height with a stretched viewBox: the bars scale horizontally to any
+     width without measuring the container, and stay a readable height. */
+  height: 190px;
+  overflow: visible;
+}
+
+.chartBar {
+  fill: var(--brand, #1f4d7a);
+  opacity: 0.85;
+}
+
+.chartBar:hover {
+  opacity: 1;
+}
+
+.chartAxis {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+/*
+ * Labels in HTML rather than SVG text, so they inherit the page font and can be
+ * thinned or hidden without touching the drawing. `min-width: 0` is what lets
+ * them shrink rather than forcing the row wider than its chart.
+ */
+.chartLabels {
+  display: flex;
+  margin-top: var(--s1);
+}
+
+.chartLabel {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.chartCaption {
+  margin-top: var(--s2);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
