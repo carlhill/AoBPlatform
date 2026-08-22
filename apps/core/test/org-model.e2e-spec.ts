@@ -38,6 +38,16 @@ let signedIn = true;
  */
 let principalRoles: string[] = ['platform_admin'];
 
+/**
+ * The practice claim on the test principal, set once the fixture org exists.
+ *
+ * Practice-scoped endpoints (@PracticeScoped) refuse a principal without
+ * one — inviting a practitioner to a location is the practice saying that
+ * person works there, and the platform may not say it for them. Clearing
+ * this for one request is how that refusal gets tested.
+ */
+let principalPracticeId: string | undefined;
+
 
 // Fixture ABNs (see src/organisations/abr.ts). All checksum-valid, none real.
 const COMPANY_ABN = '53004085616'; // ACTIVE, trades as "Sampletown Family Practice"
@@ -85,7 +95,7 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
     app.use((req: any, _res: unknown, next: () => void) => {
-      if (signedIn) req.principal = { ...REVIEWER_PRINCIPAL, roles: principalRoles };
+      if (signedIn) req.principal = { ...REVIEWER_PRINCIPAL, roles: principalRoles, practiceId: principalPracticeId };
       next();
     });
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
@@ -160,6 +170,8 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
         .send({ ...applicant(), name: 'Sampletown Family Practice', abn: COMPANY_ABN })
         .expect(201);
       orgId = res.body.id;
+    // The fixture practice acts as itself for practice-scoped endpoints.
+    principalPracticeId = orgId;
       expect(res.body.legalName).toBe('Sample Medical Holdings Pty Ltd');
       expect(res.body.nameMatch.tier).toBe('exact');
       expect(res.body.nameMatch.source).toBe('business_name');
@@ -708,6 +720,33 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
      * them" and "nobody has told them anything", and only one of those is
      * waiting on the practitioner.
      */
+    it('A PLATFORM USER CANNOT INVITE ON THE PRACTICE’S BEHALF', async () => {
+      /*
+       * The mirror of the register-check rule, and the pair is the point:
+       * separation of duties cuts both ways. A practice may not verify its
+       * own evidence; the platform may not originate the practice’s
+       * relationships.
+       *
+       * An invitation is how a practitioner comes to be named on consent
+       * records at a site. If a platform operator could send one, a single
+       * person at AoBPlatform could introduce a practitioner into a practice
+       * they do not work for — and the practice’s own records would show the
+       * practice inviting them, with no way to tell afterwards that it had
+       * not.
+       *
+       * A platform user ACTING AS the practice holds that practice’s claim
+       * and passes, which is the intended path and carries its own cost
+       * (CRITICAL-ISSUES.md §5 rules 6 and 7).
+       */
+      principalPracticeId = undefined;
+      const refused = await scoped(
+        'post',
+        `/affiliations/${inviteAffiliationId}/invitation`,
+      ).send({}).expect(403);
+      expect(refused.body.message).toMatch(/practice’s own act/);
+      principalPracticeId = orgId;
+    });
+
     it('starts with nothing sent, and says so', async () => {
       const res = await scoped('get', '/affiliations').expect(200);
       const row = res.body.find((a: { id: string }) => a.id === inviteAffiliationId);

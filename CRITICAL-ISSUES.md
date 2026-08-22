@@ -467,3 +467,88 @@ sure practices can do more for themselves, not for softening the rule.
   the second administrator is now load-bearing, not a convenience.
 - **What happens to an in-flight recertification when impersonation occurs
   during it.** Presumably it restarts under a different reviewer. Not decided.
+
+## 6. Separation of duties cuts BOTH ways — RULES AGREED 2026-08-22
+
+Carl, on two separate screens within an hour:
+
+> *"Practice user cannot record a register check. Must be a platform user."*
+
+> *"Send it again and Send Invite and Invite to Location should not be
+> allowed for a Platform user, unless the Platform-user is impersonating a
+> Practice-user. These are Practice-user tasks."*
+
+Those look like two unrelated permission tweaks. They are one rule, and it
+is worth stating as one because a reader who only sees half of it will
+"fix" the other half as an inconsistency.
+
+### 6.1 The rule
+
+| Act | Who | Why |
+|---|---|---|
+| Confirm a location’s address | **Platform only** | The address prints in the s 65C(5)(a) particulars block. Confirming it is verifying evidence, and the party supplying evidence cannot verify it |
+| Record an AHPRA register check | **Platform only** | It is evidence that somebody INDEPENDENT looked, and it feeds the strength score that decides whether consent may be captured in that person’s name |
+| Approve a practice | **Platform only** | It is what opens consent capture |
+| Invite a practitioner to a location | **Practice only** | It is the practice saying "this person works here" |
+| Send or re-send that invitation | **Practice only** | Same act, second half |
+| Record a practitioner’s departure | **Practice only** | The practice is the only party that knows they have gone |
+
+### 6.2 Why it is not merely tidy
+
+**A practice verifying its own evidence** produces a record that reads
+exactly like an independent check and is not one. Not a weaker check — a
+self-attestation wearing an independent one’s name.
+
+**The platform originating a practice’s relationships** is the same defect
+inverted. An invitation is how a practitioner comes to be named on consent
+records at a site. If a platform operator could send one, a single person at
+AoBPlatform could introduce a practitioner into a practice they do not work
+for — and the practice’s own records would show the practice inviting them,
+with no way to tell afterwards that it had not.
+
+### 6.3 How it is written, and why the phrasing matters
+
+Platform-only acts are `@RequireRoles(PLATFORM_ADMIN)`.
+
+Practice-only acts are `@PracticeScoped()`, which refuses a principal whose
+token **carries no practice claim**.
+
+⚠ **Note what it does NOT say.** It does not say "refuse platform roles".
+The distinction is load-bearing: when acting-as is built, a platform user
+impersonating a practice holds that practice’s claim, so they pass this check
+BY CONSTRUCTION rather than by exception. A rule phrased as "not a platform
+user" would have had to be unpicked to allow the very case Carl named.
+
+§5 rules 6 and 7 then supply the cost: any impersonation forces re-approval,
+by a different person. So the permitted path exists and is expensive, which
+is what stops it becoming the normal path.
+
+### 6.4 What is NOT yet true
+
+**Acting-as does not exist yet.** Until it does, a platform operator simply
+cannot invite a practitioner or record a departure for a practice — there is
+no impersonation path to take.
+
+The consequence to know about: a practice that cannot act for itself — no
+admin passkey enrolled yet, an administrator who has left — currently has
+nobody who can invite a practitioner on its behalf. That is the correct
+trade for now (the alternative is an unaudited back door), but it is a real
+gap and it is an argument for building acting-as sooner rather than later.
+
+### 6.5 The guard bug this found
+
+Writing the test for the register-check rule found that `@RequireRoles` was
+**not being enforced at all** in the ordinary case. The role check lived only
+inside the branch that had verified a bearer token, so while
+`AUTH_ENFORCE=false` any decorated endpoint was open to a request that sent
+no `Authorization` header. Not a bypass anyone had to find — sending nothing
+was enough.
+
+That covered approving a practice, confirming an address, and recording a
+register check. All decorated, none defended. **The decorator promised
+something it did not do, which is worse than not having it, because the
+promise is what stopped anybody looking.**
+
+Roles and practice scope are now checked against whatever principal is
+known. `request.principal` is a property on the request object rather than a
+header, so nothing a client sends can forge one.

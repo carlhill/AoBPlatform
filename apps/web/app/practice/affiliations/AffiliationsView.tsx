@@ -39,6 +39,7 @@ import { strings } from '../../strings';
 import styles from '../manage.module.css';
 import { SessionControl } from '../../SessionControl';
 import { currentSession, apiHeaders } from '../../auth';
+import { useLiveRefresh } from '../../useLiveRefresh';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -141,6 +142,21 @@ export function AffiliationsView({ practiceId }: { practiceId: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /*
+   * AUTO-REFRESH WHILE SOMEBODY ELSE IS DECIDING.
+   *
+   * Only the practitioner can accept an invitation, and they do it from their
+   * own inbox, minutes or hours later. Without this the practice sits looking
+   * at "awaiting their answer" long after the answer arrived — the work
+   * happened and the screen went on lying about it.
+   *
+   * Gated on there being something outstanding, so a page with nothing
+   * pending does not poll at all. See useLiveRefresh for why this is polling
+   * rather than a push.
+   */
+  const awaitingAnyone = (affiliations ?? []).some((a) => a.status === 'invited');
+  useLiveRefresh(awaitingAnyone, load);
 
   if (loadError) {
     return (
@@ -256,11 +272,21 @@ function AffiliationCard({
   onChanged: () => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
+
+  /*
+   * WHO MAY ACT FOR THE PRACTICE. Phrased as "carries a practice claim",
+   * server rule is (@PracticeScoped), so that a platform user ACTING AS a
+   * practice passes here too — their token carries that practice’s claim.
+   * Phrasing it as "is not a platform user" would have had to be unpicked
+   * when impersonation lands.
+   */
+  const canActForPractice = Boolean(currentSession()?.practiceId);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState<string | null>(null);
   const [noticing, setNoticing] = useState(false);
   const [endsAt, setEndsAt] = useState('');
-  const [givenBy, setGivenBy] = useState('');
+  // From the session; AttributionInterceptor overwrites it server-side.
+    const givenBy = currentSession()?.username ?? '';
   const [reason, setReason] = useState('');
 
   const a = affiliation;
@@ -399,7 +425,15 @@ function AffiliationCard({
       </div>
 
       <div className={styles.cardActions}>
-        {a.status === 'invited' && (
+        {/*
+          SENDING IS THE PRACTICE’S ACT. A platform operator sees the state
+          but no button — the server refuses them either way, and a control
+          that always fails is worse than no control.
+        */}
+        {a.status === 'invited' && !canActForPractice && (
+          <span className={ui.hint}>{strings.affiliations.practiceOnlyTitle}</span>
+        )}
+        {a.status === 'invited' && canActForPractice && (
           <>
             <Button
               variant={notSent ? 'primary' : 'default'}
@@ -434,16 +468,6 @@ function AffiliationCard({
                     />
                   )}
                 </Field>
-                <Field label={strings.affiliations.noticeBy} required>
-                  {(props) => (
-                    <TextInput
-                      {...props}
-                      value={givenBy}
-                      onChange={(e) => setGivenBy(e.target.value)}
-                      data-testid={`notice-by-${a.id}`}
-                    />
-                  )}
-                </Field>
                 <Field label={strings.affiliations.noticeReason} hint={strings.affiliations.noticeReasonHint}>
                   {(props) => (
                     <TextInput {...props} value={reason} onChange={(e) => setReason(e.target.value)} />
@@ -464,10 +488,19 @@ function AffiliationCard({
             </div>
           ) : (
             <>
-              <Button onClick={() => setNoticing(true)} data-testid={`notice-${a.id}`}>
-                {strings.affiliations.notice}
-              </Button>
-              {a.status === 'ending' && (
+              {/*
+                RECORDING A DEPARTURE IS THE PRACTICE’S ACT — they are the
+                only party who knows the person has gone. A platform operator
+                sees the state and no button; the server refuses them anyway.
+              */}
+              {!canActForPractice ? (
+                <span className={ui.hint}>{strings.affiliations.practiceOnlyTitle}</span>
+              ) : (
+                <Button onClick={() => setNoticing(true)} data-testid={`notice-${a.id}`}>
+                  {strings.affiliations.notice}
+                </Button>
+              )}
+              {a.status === 'ending' && canActForPractice && (
                 <Button
                   onClick={() =>
                     void post(`/affiliations/${a.id}/notice/withdraw`)
@@ -530,6 +563,15 @@ function InviteForm({
   // anyway (AttributionInterceptor); asking was theatre.
   const invitedBy = currentSession()?.username ?? '';
   const [busy, setBusy] = useState(false);
+
+  /*
+   * WHO MAY INVITE. Phrased as "carries a practice claim", exactly as the
+   * server rule is (@PracticeScoped), so that a platform user ACTING AS a
+   * practice passes here too — their token carries that practice’s claim.
+   * Phrasing it as "is not a platform user" would have had to be unpicked
+   * when impersonation lands.
+   */
+  const canActForPractice = Boolean(currentSession()?.practiceId);
   const [error, setError] = useState<string | null>(null);
 
   // Only CONFIRMED locations. An unconfirmed address must not appear in a
@@ -676,7 +718,12 @@ function InviteForm({
       </div>
 
       <div className={styles.formActions}>
-        <Button variant="primary" onClick={() => void submit()} disabled={!ready || busy} data-testid="aff-invite">
+        <Button
+          variant="primary"
+          onClick={() => void submit()}
+          disabled={!ready || busy || !canActForPractice}
+          data-testid="aff-invite"
+        >
           {busy ? strings.affiliations.inviting : strings.affiliations.inviteAction}
         </Button>
       </div>

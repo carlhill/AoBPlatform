@@ -1525,6 +1525,12 @@ export const strings = {
    * it has got to, and says whether capture is actually open.
    */
   affiliations: {
+    practiceOnlyTitle: 'Only the practice can invite a practitioner',
+    practiceOnlyBody:
+      'An invitation is the practice saying this person works here, and it is how they come to be ' +
+      'named on consent records at that location. AoBPlatform does not send it for them — otherwise ' +
+      'the practice’s own records would show them inviting somebody they never did. Ask the practice ' +
+      'to send it from their console.',
     audience: 'Practice admin',
     title: 'Affiliations',
     lead:

@@ -11,6 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import { TokenVerifier, type AuthenticatedPrincipal } from '@aobplatform/auth-client';
 import { PUBLIC_ENDPOINT } from './public.decorator';
 import { REQUIRED_ROLES } from './roles.decorator';
+import { PRACTICE_SCOPED } from './practice-scope.decorator';
 
 declare module 'express' {
   interface Request {
@@ -82,6 +83,33 @@ export class AuthGuard implements CanActivate {
    * that had verified a token, which left every @RequireRoles endpoint
    * undefended against a request that sent no token at all.
    */
+  /**
+   * Refuse a principal that is not scoped to a practice.
+   *
+   * The mirror of assertRoles. Written as "carries a practice claim"
+   * rather than "is not a platform user" so that a platform user ACTING AS
+   * a practice — who holds that practice’s claim — passes by construction
+   * rather than by exception.
+   */
+  private assertPracticeScope(
+    context: ExecutionContext,
+    request: { method: string; url: string },
+    principal: AuthenticatedPrincipal,
+  ): void {
+    const needed = this.reflector.getAllAndOverride<boolean>(PRACTICE_SCOPED, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (!needed) return;
+    if (principal.practiceId) return;
+    this.logger.warn(
+      `Refused ${request.method} ${request.url} for ${principal.sub}: no practice claim on the token.`,
+    );
+    throw new ForbiddenException(
+      'This is the practice’s own act and cannot be done for them. Inviting a practitioner to a location is the practice saying that person works there, so it needs a session belonging to the practice.',
+    );
+  }
+
   private assertRoles(
     context: ExecutionContext,
     request: { method: string; url: string },
@@ -133,7 +161,10 @@ export class AuthGuard implements CanActivate {
        * server-side code sets it.
        */
       const known = request.principal as AuthenticatedPrincipal | undefined;
-      if (known) this.assertRoles(context, request, known);
+      if (known) {
+        this.assertRoles(context, request, known);
+        this.assertPracticeScope(context, request, known);
+      }
       return true; // staged: dev header path still works
     }
     if (!this.verifier) {
@@ -161,6 +192,7 @@ export class AuthGuard implements CanActivate {
        * most privileged act in the system.
        */
       this.assertRoles(context, request, principal);
+      this.assertPracticeScope(context, request, principal);
 
       return true;
     } catch (err) {

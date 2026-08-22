@@ -14,6 +14,7 @@ import { IsArray, IsDate, IsEmail, IsIn, IsOptional, IsString, IsUUID, MinLength
 import { AffiliationsService } from './affiliations.service';
 import { InvitationService } from './invitation.service';
 import { PLATFORM_ADMIN, RequireRoles } from '../auth/roles.decorator';
+import { PracticeScoped } from '../auth/practice-scope.decorator';
 
 export class PreRegisterDto {
   @IsString()
@@ -319,6 +320,20 @@ export class AffiliationsController {
     return this.affiliations.listForPractice(requirePractice(practiceId));
   }
 
+  /**
+   * Invite a practitioner to a location. THE PRACTICE’S OWN ACT.
+   *
+   * A platform operator may not do this for them: an invitation is how a
+   * practitioner comes to be named on consent records at a site, and if
+   * the platform could originate one, the practice’s records would show
+   * the practice inviting somebody it never invited.
+   *
+   * A platform user ACTING AS the practice passes, because they hold that
+   * practice’s claim — and CRITICAL-ISSUES.md §5 rules 6 and 7 then force
+   * a re-approval by a different person, which is the cost that stops
+   * impersonation becoming the normal path.
+   */
+  @PracticeScoped()
   @Post('affiliations')
   invite(@Headers('x-practice-id') practiceId: string | undefined, @Body() dto: InviteAffiliationDto) {
     return this.affiliations.invite(requirePractice(practiceId), dto);
@@ -331,6 +346,7 @@ export class AffiliationsController {
    * moment a new one goes out — otherwise every re-send would leave another
    * live credential behind in an inbox.
    */
+  @PracticeScoped()
   @Post('affiliations/:affiliationId/invitation')
   sendInvitation(
     @Headers('x-practice-id') practiceId: string | undefined,
@@ -340,6 +356,16 @@ export class AffiliationsController {
   }
 
   /** Offboarding. Notice runs BEFORE the end date (§6). */
+  /**
+   * Record that a practitioner is leaving. THE PRACTICE’S OWN ACT.
+   *
+   * Ending an affiliation stops consent being captured in that person’s
+   * name at that site, and the practice is the only party that knows they
+   * have gone. A platform operator ending one would be removing a
+   * practitioner from a practice that never asked — and the practice’s
+   * records would show the practice doing it.
+   */
+  @PracticeScoped()
   @Post('affiliations/:affiliationId/notice')
   giveNotice(
     @Headers('x-practice-id') practiceId: string | undefined,
@@ -349,6 +375,8 @@ export class AffiliationsController {
     return this.affiliations.giveNotice(requirePractice(practiceId), affiliationId, dto);
   }
 
+  // Withdrawing it is the same act, undone.
+  @PracticeScoped()
   @Post('affiliations/:affiliationId/notice/withdraw')
   withdrawNotice(
     @Headers('x-practice-id') practiceId: string | undefined,
