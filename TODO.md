@@ -284,7 +284,74 @@ it. Deciding it early costs nothing.
 Asked 22 Aug 2026: should we use BullMQ, RabbitMQ or Pulsar instead of the
 Postgres queue?
 
+### Decision: no external tracker (ServiceNow / Jira / Zammad) for review tasks
+
+Asked 22 Aug 2026: at a 100-500/day spike, is there an open-source ServiceNow
+or Jira we could hold outstanding tasks in, assign to different platform
+users, and click through one at a time?
+
 ### Why we did not, and what would change that
+
+They exist and they are good. Closest to ServiceNow: **iTop** or **GLPI**
+(both ITSM, both GPL/AGPL). Closest to Jira: **Plane** or **Redmine**. For a
+general operations desk any of them would beat writing our own.
+
+Three things stop it being right HERE:
+
+1. **The task carries the practice’s data.** A review task is not a pointer —
+   it holds the before and after values of what changed, including admin
+   contact details. Today that sits behind RLS and a practice can only ever be
+   seen by somebody scoped to it. In every tracker listed, everyone with
+   access to the project sees every ticket. That is not a configuration we
+   would be tightening; it is the absence of a tenancy model.
+
+2. **The resolution IS the evidence.** "A named person looked at this change
+   and accepted it" is the compliance record — that is the whole reason the
+   queue exists rather than the change just applying. It has to be in the
+   vault chain and retained with everything else. Recorded in Zammad instead,
+   our evidence chain has a hole at exactly the point a human decided.
+
+3. **Two systems would disagree.** Closed there, open here; and our own
+   automated checks resolve tasks from this side, so the sync is
+   bidirectional, not a feed.
+
+### The volume argument points the other way
+
+If 500 tasks a day are reaching a person, the AI check has failed, and a
+tracker would be organising work that should not exist. The mix matters:
+`practice_amended` and `recertification_due` are low-stakes and already
+`autoResolvable`. The other three — admin contact changed, address changed
+after confirmation, acting-as occurred — are high-stakes and a person MUST
+decide them. That is deliberate: they are the anti-fraud controls, and no
+amount of queue tooling should make them cheaper to wave through.
+
+So the lever against a spike is the checker, which nothing calls yet.
+
+### What to build here instead (~1 day)
+
+- [ ] Assign a task to a named platform user (claim already exists; this is
+      claim-on-behalf, plus an "assigned to me" filter)
+- [ ] Focus mode — one task at a time, decide, advance to the next in the
+      filtered set. This is the click-through Carl described and it is a route,
+      not a system.
+- [ ] Accept-many for low-stakes kinds, with each decision still recorded
+      individually against the person
+- [ ] Age on the card, and oldest-first ordering
+
+**Reconsider an external tracker when any of these becomes true:**
+
+- [ ] Platform operations grows past ~8 people, or runs shifts needing handover
+- [ ] Work arrives from sources we do not own (support email, phone) and needs
+      to sit in one place with these
+- [ ] Somebody needs SLA reporting we would otherwise build
+
+**If it comes to that, mirror — do not move.** Push a task STUB out (id, kind,
+practice name, age; no changed values) and treat the tracker as the worklist,
+while the decision is still made and recorded here. That keeps both the
+tenancy boundary and the evidence chain intact, and it is the same shape as
+the outbox decision above.
+
+## Why we did not, and what would change that
 
 All three are out-of-process brokers, which means the enqueue cannot be in
 the same transaction as the evidence write. That gives two failure modes we
