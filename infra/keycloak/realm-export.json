@@ -1020,6 +1020,20 @@
       ]
     }
   ],
+  "defaultDefaultClientScopes": [
+    "acr",
+    "basic",
+    "email",
+    "profile",
+    "roles",
+    "web-origins"
+  ],
+  "defaultOptionalClientScopes": [
+    "address",
+    "phone",
+    "microprofile-jwt",
+    "offline_access"
+  ],
   "smtpServer": {
     "host": "mailhog",
     "port": "1025",
