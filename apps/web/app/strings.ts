@@ -1171,6 +1171,10 @@ export const strings = {
       'What this practice told us, in the order it was asked. Contact details and the head office can be ' +
       'changed here; what the ABR said cannot.',
     notLoaded: 'Your application could not be loaded',
+    reasonLabel: 'Why are you changing this?',
+    reasonHint:
+      'Required. This record is what your practice was approved on, so a change to it with no stated ' +
+      'reason is indistinguishable from a mistake.',
     save: 'Save the changes',
     saving: 'Saving…',
     nothingChanged: 'Nothing has changed',
@@ -1184,6 +1188,24 @@ export const strings = {
       'ABR and their name is recorded against that check. If we let you edit them afterwards, a practice ' +
       'could change what was verified while keeping the verification. If any of it is wrong, tell us and ' +
       'we will check it again properly.',
+  },
+  summary: {
+    byOrgTitle: 'Messages by practice',
+    byOrgLead:
+      'How much each practice is sending, and of what. These are counts only — no names and no message ' +
+      'bodies, which is why this one may span practices when the message list may not.',
+    bySiteTitle: 'Messages by site and department',
+    bySiteLead:
+      'Where this practice’s messages are going. A row with no site is addressed to the practice itself ' +
+      'rather than to one of its locations.',
+    backToQueue: 'Back to the queue',
+    messages: 'messages',
+    notLoaded: 'Those totals could not be read',
+    emptyBody: 'Nothing has been queued yet. An empty queue is the normal state.',
+    colOrg: 'Practice',
+    colSite: 'Site',
+    colTotal: 'Total',
+    wholePractice: 'The practice itself',
   },
   queue: {
     // On the setup hub, pointing at this screen.

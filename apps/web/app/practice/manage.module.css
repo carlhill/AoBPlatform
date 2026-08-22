@@ -572,3 +572,56 @@
   padding: var(--s2) 0;
   color: var(--ink-muted);
 }
+
+/* --- Totals tables ------------------------------------------------------- */
+
+/*
+ * A real table this time, not a grid of divs. These ARE tabular data — a
+ * screen reader announcing "row: XLEVELUP, email 10" is doing something a
+ * stack of divs cannot.
+ */
+.tableScroll {
+  overflow-x: auto;
+}
+
+.totalsTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.totalsTable th,
+.totalsTable td {
+  padding: var(--s2) var(--s3);
+  text-align: right;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.totalsTable thead th {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+
+/* The name column reads left, everything else is a number and reads right. */
+.totalsTable th:first-child,
+.totalsTable tbody th {
+  text-align: left;
+  font-weight: 600;
+  white-space: normal;
+}
+
+/* States are a different question from types; the rule says so. */
+.stateCol {
+  color: var(--ink-muted);
+}
+
+.totalsTable .stateCol:first-of-type {
+  border-left: 1px solid var(--line);
+}
+
+.totalCol {
+  font-weight: 600;
+}

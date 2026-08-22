@@ -851,7 +851,10 @@ export class OrganisationsService {
   async amendApplication(
     practiceId: string,
     proposed: Record<string, unknown>,
-    meta: { changedByName: string; reason: string },
+    // changedByName arrives from AttributionInterceptor in practice; the
+    // guard below refuses the case where there is neither a session nor a
+    // name, so optional here is not a weakening.
+    meta: { changedByName?: string; reason: string },
   ) {
     if (!meta.changedByName?.trim()) {
       throw new BadRequestException('A change to an approved practice must name the person making it.');
@@ -933,7 +936,8 @@ export class OrganisationsService {
         actor: { principalType: 'staff', id: practiceId },
         subject: { type: 'Organisation', id: practiceId },
         payload: {
-          changedBy: meta.changedByName.trim(),
+          // Non-null by the guard at the top of this method.
+          changedBy: meta.changedByName!.trim(),
           reason: meta.reason.trim(),
           // WHICH fields, never the values. An audit event is not a second copy
           // of the contact book, and a phone number in the evidence chain is

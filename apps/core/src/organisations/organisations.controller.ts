@@ -292,10 +292,19 @@ export class AmendPracticeDto {
   @Equals(undefined, { message: LOCKED_FIELDS.abnStatus })
   abnStatus?: undefined;
 
-  /** Never "the system". A change to an approved record has an author. */
+  /**
+   * Never "the system" — a change to an approved record has an author.
+   *
+   * OPTIONAL ON THE WIRE, because AttributionInterceptor overwrites it
+   * from the verified token before this is read. Requiring it meant every
+   * caller sending a value that is then thrown away, and a screen that
+   * forgot got a validation error about a field it should never have had
+   * to think about. The service refuses when there is neither a session
+   * nor a name, so the guarantee is unchanged.
+   */
+  @IsOptional()
   @IsString()
-  @MinLength(1)
-  changedByName!: string;
+  changedByName?: string;
 
   /** A change with no stated reason is indistinguishable from a mistake. */
   @IsString()
@@ -691,8 +700,12 @@ export class OrganisationsController {
   resendInvitation(
     @Param('organisationId', ParseUUIDPipe) organisationId: string,
     @Body() dto: ResendInvitationDto,
+    @SessionActor() actor: Actor | undefined,
   ) {
-    return this.organisations.resendAdminInvitation(organisationId, dto.requestedByName);
+    // Same trap as amend: the interceptor only overwrites fields that are
+    // PRESENT, so a caller that sends no name gets none. The session is the
+    // reliable source.
+    return this.organisations.resendAdminInvitation(organisationId, actor?.name ?? dto.requestedByName);
   }
 
   /**
@@ -708,9 +721,23 @@ export class OrganisationsController {
    * disabled — see amendApplication.
    */
   @Patch(':organisationId')
-  amend(@Param('organisationId', ParseUUIDPipe) organisationId: string, @Body() dto: AmendPracticeDto) {
+  amend(
+    @Param('organisationId', ParseUUIDPipe) organisationId: string,
+    @Body() dto: AmendPracticeDto,
+    @SessionActor() actor: Actor | undefined,
+  ) {
     const { changedByName, reason, ...fields } = dto;
-    return this.organisations.amendApplication(organisationId, fields, { changedByName, reason });
+    /*
+     * THE ACTOR, not the body. AttributionInterceptor only OVERWRITES fields
+     * that are already present, so a screen that sends no changedByName gets
+     * none — which is exactly what happened. Taking it from the verified
+     * session removes the trap: a caller cannot forget a field it never has
+     * to send.
+     */
+    return this.organisations.amendApplication(organisationId, fields, {
+      changedByName: actor?.name ?? changedByName,
+      reason,
+    });
   }
 
   @Post(':organisationId/validate')

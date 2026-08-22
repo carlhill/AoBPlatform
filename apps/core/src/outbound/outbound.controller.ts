@@ -116,6 +116,25 @@ export class OutboundController {
     return this.outbound.filterOptions(practiceId);
   }
 
+  /**
+   * Totals for every practice. PLATFORM ONLY.
+   *
+   * Safe to be platform-wide because it is COUNTS. A practice sending 412
+   * emails yesterday tells an operator the platform is working; it says
+   * nothing about any patient or consent record.
+   */
+  @RequireRoles(PLATFORM_ADMIN)
+  @Get('summary/by-org')
+  totalsByOrg() {
+    return this.outbound.totalsByOrg();
+  }
+
+  /** Totals within one practice, by site and department. */
+  @Get('summary/by-site')
+  totalsBySite(@Headers('x-practice-id') practiceId: string | undefined) {
+    return this.outbound.totalsBySite(practiceId);
+  }
+
   /** Counts by state and channel, plus what is oldest. */
   @Get('health')
   health(@Headers('x-practice-id') practiceId: string | undefined) {

@@ -560,6 +560,128 @@ export class OutboundService {
     return { practices: rows };
   }
 
+  /**
+   * Totals for every practice, by message type and state.
+   *
+   * PLATFORM-WIDE, and safe to be so because it returns COUNTS. No payload, no
+   * destination, no recipient. Knowing a practice sent 412 emails yesterday
+   * tells an operator whether the platform is working; it tells them nothing
+   * about any patient, practitioner or consent record.
+   *
+   * That is a materially different disclosure from the item list, which is why
+   * the item list stays scoped to one practice and this does not.
+   */
+  async totalsByOrg() {
+    const rows = await this.prisma.$queryRaw<
+      Array<{ practiceId: string; practiceName: string; mediaType: string; state: string; total: bigint }>
+    >`SELECT * FROM core.outbound_totals_by_org()`;
+
+    /*
+     * Pivoted here rather than in the browser. The shape a table wants — one
+     * row per practice, one column per type — is not the shape a GROUP BY
+     * produces, and doing it twice (once per screen) is how two screens come
+     * to disagree about a total.
+     */
+    const byPractice = new Map<
+      string,
+      { practiceId: string; practiceName: string; byType: Record<string, number>; byState: Record<string, number>; total: number }
+    >();
+
+    for (const row of rows) {
+      const count = Number(row.total);
+      const entry = byPractice.get(row.practiceId) ?? {
+        practiceId: row.practiceId,
+        practiceName: row.practiceName,
+        byType: {},
+        byState: {},
+        total: 0,
+      };
+      entry.byType[row.mediaType] = (entry.byType[row.mediaType] ?? 0) + count;
+      entry.byState[row.state] = (entry.byState[row.state] ?? 0) + count;
+      entry.total += count;
+      byPractice.set(row.practiceId, entry);
+    }
+
+    const practices = [...byPractice.values()].sort((a, b) => b.total - a.total);
+    return {
+      practices,
+      mediaTypes: [...new Set(rows.map((r) => r.mediaType))].sort(),
+      states: [...new Set(rows.map((r) => r.state))].sort(),
+      grandTotal: practices.reduce((sum, p) => sum + p.total, 0),
+    };
+  }
+
+  /**
+   * Totals within one practice, broken down by site and department.
+   *
+   * NO SECURITY DEFINER HERE, and the asymmetry is deliberate: this runs
+   * inside the practice scope like every other read, so RLS does the work and
+   * no hole is opened. Only the cross-practice question needed one.
+   */
+  async totalsBySite(practiceId: string | undefined) {
+    if (!practiceId) throw new BadRequestException('Choose a practice first.');
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const rows = await tx.outboundItem.groupBy({
+        by: ['locationId', 'departmentId', 'mediaType', 'state'],
+        where: { practiceId },
+        _count: { _all: true },
+      });
+
+      const [locations, departments] = await Promise.all([
+        tx.practiceLocation.findMany({ where: { practiceId }, select: { id: true, code: true, address: true } }),
+        tx.department.findMany({ where: { practiceId }, select: { id: true, name: true, locationId: true } }),
+      ]);
+      const locationName = new Map(locations.map((l) => [l.id, l.code ?? l.address]));
+      const departmentName = new Map(departments.map((d) => [d.id, d.name]));
+
+      const groups = new Map<
+        string,
+        {
+          key: string;
+          locationId: string | null;
+          locationName: string | null;
+          departmentId: string | null;
+          departmentName: string | null;
+          byType: Record<string, number>;
+          byState: Record<string, number>;
+          total: number;
+        }
+      >();
+
+      for (const row of rows) {
+        const key = `${row.locationId ?? '-'}:${row.departmentId ?? '-'}`;
+        const count = row._count._all;
+        const entry = groups.get(key) ?? {
+          key,
+          locationId: row.locationId,
+          /*
+           * A message with no site is not an error — acting-as notices go to
+           * the practice itself. Named so, rather than left blank, because a
+           * blank row in a total invites somebody to think it is a bug.
+           */
+          locationName: row.locationId ? (locationName.get(row.locationId) ?? row.locationId.slice(0, 8)) : null,
+          departmentId: row.departmentId,
+          departmentName: row.departmentId ? (departmentName.get(row.departmentId) ?? null) : null,
+          byType: {},
+          byState: {},
+          total: 0,
+        };
+        entry.byType[row.mediaType] = (entry.byType[row.mediaType] ?? 0) + count;
+        entry.byState[row.state] = (entry.byState[row.state] ?? 0) + count;
+        entry.total += count;
+        groups.set(key, entry);
+      }
+
+      const sites = [...groups.values()].sort((a, b) => b.total - a.total);
+      return {
+        sites,
+        mediaTypes: [...new Set(rows.map((r) => r.mediaType))].sort(),
+        states: [...new Set(rows.map((r) => r.state))].sort(),
+        grandTotal: sites.reduce((sum, s) => sum + s.total, 0),
+      };
+    });
+  }
+
   /** What an operator wants to see: what is stuck, and how badly. */
   async health(practiceId: string) {
     return this.prisma.withPractice(practiceId, async (tx) => {

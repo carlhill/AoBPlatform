@@ -77,6 +77,13 @@ export const AMENDABLE_FIELDS = [
   'managerEmail',
   'managerPhone',
   'managerPosition',
+  /*
+   * The practice's shared address, and it belongs here for the same
+   * reason the others do: it is a contact detail, not identity evidence.
+   * It also outlives any individual, which is precisely why a practice
+   * needs to be able to correct it without asking us.
+   */
+  'groupEmail',
   'headOfficeLine1',
   'headOfficeLine2',
   'headOfficeSuburb',

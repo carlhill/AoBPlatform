@@ -70,6 +70,13 @@ const SECTIONS: { heading: string; note?: string; fields: { key: string; label: 
       { key: 'adminEmail', label: 'Email' },
       { key: 'adminPhone', label: 'Phone' },
       { key: 'adminPosition', label: 'Position' },
+      {
+        key: 'groupEmail',
+        label: 'Shared practice address',
+        hint:
+          'Where we send anything meant for the practice rather than for one person. Use an address that ' +
+          'outlives whoever holds the job.',
+      },
     ],
   },
   {
@@ -105,6 +112,12 @@ export function ApplicationView() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
+  /*
+   * REQUIRED, and the server says so too. A change to an approved record
+   * with no stated reason is indistinguishable from a mistake — and this
+   * record is what the practice was approved on.
+   */
+  const [reason, setReason] = useState('');
 
   const load = useCallback(async () => {
     if (!practiceId) return;
@@ -142,12 +155,13 @@ export function ApplicationView() {
   );
 
   async function save() {
-    if (!practiceId || changed.length === 0) return;
+    if (!practiceId || changed.length === 0 || !reason.trim()) return;
     setBusy(true);
     setError(null);
     try {
       const patch: Record<string, string> = {};
       for (const key of changed) patch[key] = draft[key];
+      patch.reason = reason.trim();
       const res = await fetch(`${CORE_URL}/organisations/${practiceId}`, {
         method: 'PATCH',
         headers: apiHeaders(practiceId),
@@ -159,6 +173,7 @@ export function ApplicationView() {
         throw new Error(message ?? `That could not be saved (${res.status}).`);
       }
       setSaved(true);
+      setReason('');
       await load();
     } catch (e) {
       setError((e as Error).message);
@@ -240,11 +255,28 @@ export function ApplicationView() {
         </section>
       ))}
 
+      {/* Asked only once something has changed — before that there is
+          nothing to explain. */}
+      {changed.length > 0 && (
+        <div className={styles.amendReason}>
+          <Field label={strings.application.reasonLabel} hint={strings.application.reasonHint} required>
+            {(props) => (
+              <TextInput
+                {...props}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                data-testid="application-reason"
+              />
+            )}
+          </Field>
+        </div>
+      )}
+
       <div className={ui.rowActions}>
         <Button
           variant="primary"
           onClick={() => void save()}
-          disabled={busy || changed.length === 0}
+          disabled={busy || changed.length === 0 || !reason.trim()}
           data-testid="application-save"
         >
           <Save size={15} aria-hidden="true" />
