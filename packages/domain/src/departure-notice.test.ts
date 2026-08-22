@@ -79,6 +79,30 @@ describe('a departure still in the future', () => {
   });
 });
 
+describe('a departure recorded on the day it happens', () => {
+  it('SAME DAY IS NOT THE PAST, and needs no attestation', () => {
+    /*
+     * The case that broke in front of Carl. A date input arrives as midnight;
+     * `now` is whatever time of day it is. Compared as instants, "their last
+     * day is today" recorded at 3:32pm looks like backdating. Compared as
+     * days, which is what the rule is about, it is Tuesday.
+     *
+     * The domain always got this right; the DATABASE CONSTRAINT did not, and
+     * the constraint won at runtime as a 500. Both compare dates now.
+     */
+    const now = new Date('2026-08-22T15:32:00Z');
+    const endsAt = new Date('2026-08-22T00:00:00Z');
+    expect(needsExternalAttestation({ now, endsAt })).toBe(false);
+
+    const result = assessDeparture({ now, endsAt, calendar: CAL });
+    expect(result.basis).toBe('platform');
+    // Zero days notice is an anomaly worth naming, not a refusal.
+    expect(result.leadBusinessDays).toBe(0);
+    expect(result.sufficientLead).toBe(false);
+    expect(result.anomaly).toMatch(/short of the 2/);
+  });
+});
+
 describe('a departure that already happened', () => {
   it('IS REFUSED WITH NO ATTESTATION, and says what to do instead', () => {
     /*
