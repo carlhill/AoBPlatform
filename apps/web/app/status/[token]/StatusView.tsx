@@ -1,4 +1,5 @@
 'use client';
+import { SessionControl } from '../../SessionControl';
 
 /**
  * The applicant's status page.
@@ -60,7 +61,7 @@ export function StatusView({ token }: { token: string }) {
 
   if (missing) {
     return (
-      <Shell right={strings.status.audience}>
+      <Shell right={<SessionControl audience={strings.status.audience} />}>
         <h1 className={ui.pageTitle}>{strings.status.notFound}</h1>
         <p className={ui.pageLead}>{strings.status.notFoundBody}</p>
       </Shell>
@@ -69,7 +70,7 @@ export function StatusView({ token }: { token: string }) {
 
   if (error) {
     return (
-      <Shell right={strings.status.audience}>
+      <Shell right={<SessionControl audience={strings.status.audience} />}>
         <Notice tone="stop" title={strings.status.notLoaded}>
           {error}
         </Notice>
@@ -79,7 +80,7 @@ export function StatusView({ token }: { token: string }) {
 
   if (!status) {
     return (
-      <Shell right={strings.status.audience}>
+      <Shell right={<SessionControl audience={strings.status.audience} />}>
         <p className={ui.hint}>{strings.review.loading}</p>
       </Shell>
     );
@@ -88,7 +89,7 @@ export function StatusView({ token }: { token: string }) {
   const decided = status.state !== 'pending';
 
   return (
-    <Shell right={strings.status.audience}>
+    <Shell right={<SessionControl audience={strings.status.audience} />}>
       <h1 className={ui.pageTitle}>{status.name}</h1>
       <p className={ui.pageLead}>
         {decided

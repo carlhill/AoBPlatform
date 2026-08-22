@@ -1,4 +1,5 @@
 'use client';
+import { SessionControl } from '../SessionControl';
 
 /**
  * Frame 01 — Apply, entity details.
@@ -202,7 +203,7 @@ export function ApplyForm() {
 
   if (sentReference) {
     return (
-      <Shell right={strings.apply.audience}>
+      <Shell right={<SessionControl audience={strings.apply.audience} />}>
         <h1 className={ui.pageTitle}>{strings.apply.sentTitle}</h1>
         <p className={ui.pageLead}>{strings.apply.sentBody}</p>
         <GateLedger state={gates} />
@@ -214,7 +215,7 @@ export function ApplyForm() {
   }
 
   return (
-    <Shell right={strings.apply.audience}>
+    <Shell right={<SessionControl audience={strings.apply.audience} />}>
       <h1 className={ui.pageTitle}>{strings.apply.title}</h1>
       <p className={ui.pageLead}>{strings.apply.lead}</p>
 

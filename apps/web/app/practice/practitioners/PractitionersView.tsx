@@ -37,6 +37,7 @@ import { AHPRA_REGISTRATION_STATUSES, isValidAhpraNumberFormat } from '@aobplatf
 import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui } from '../../ui';
 import { strings } from '../../strings';
 import styles from '../manage.module.css';
+import { SessionControl } from '../../SessionControl';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -113,7 +114,7 @@ export function PractitionersView({ practiceId }: { practiceId: string }) {
 
   if (loadError) {
     return (
-      <Shell right={strings.setup.audience}>
+      <Shell right={<SessionControl audience={strings.setup.audience} />}>
         <Notice tone="stop" title={strings.practitioners.notLoaded}>
           {loadError}
         </Notice>
@@ -130,7 +131,7 @@ export function PractitionersView({ practiceId }: { practiceId: string }) {
   const unchecked = ordered.length - checked;
 
   return (
-    <Shell right={strings.setup.audience}>
+    <Shell right={<SessionControl audience={strings.setup.audience} />}>
       <Link href="/practice/setup" className={styles.crumb} data-testid="practitioners-back">
         <ArrowLeft size={15} aria-hidden="true" />
         {strings.practitioners.backToSetup}

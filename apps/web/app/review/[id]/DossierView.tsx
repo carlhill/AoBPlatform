@@ -67,6 +67,7 @@ import { CheckRecorder, type RecordCheckInput } from '../CheckRecorder';
 import { AuditTrail } from '../AuditTrail';
 import { formatAbn, type QueueRow } from '../QueueView';
 import styles from '../review.module.css';
+import { SessionControl } from '../../SessionControl';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -339,7 +340,7 @@ export function DossierView({ id }: { id: string }) {
 
   if (missing) {
     return (
-      <Shell right={strings.review.audience}>
+      <Shell right={<SessionControl audience={strings.review.audience} />}>
         <Link href="/review" className={styles.backLink}>
           <ArrowLeft size={15} aria-hidden="true" />
           {strings.review.back}
@@ -352,7 +353,7 @@ export function DossierView({ id }: { id: string }) {
 
   if (!row) {
     return (
-      <Shell right={strings.review.audience}>
+      <Shell right={<SessionControl audience={strings.review.audience} />}>
         <Link href="/review" className={styles.backLink}>
           <ArrowLeft size={15} aria-hidden="true" />
           {strings.review.back}
@@ -535,7 +536,7 @@ export function DossierView({ id }: { id: string }) {
 
   if (decided) {
     return (
-      <Shell right={strings.review.audience}>
+      <Shell right={<SessionControl audience={strings.review.audience} />}>
         <h1 className={ui.pageTitle}>
           {decided === 'validated' ? strings.review.decidedApproved : strings.review.decidedRejected}: {row.name}
         </h1>
@@ -567,7 +568,7 @@ export function DossierView({ id }: { id: string }) {
   const next = () => (n += 1);
 
   return (
-    <Shell right={strings.review.audience}>
+    <Shell right={<SessionControl audience={strings.review.audience} />}>
       <Link href="/review" className={styles.backLink}>
         <ArrowLeft size={15} aria-hidden="true" />
         {strings.review.back}

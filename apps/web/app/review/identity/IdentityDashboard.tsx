@@ -30,6 +30,7 @@ import { Button, Chip, Field, Notice, Shell, TextInput, ui } from '../../ui';
 import { strings } from '../../strings';
 import { apiHeaders } from '../../auth';
 import styles from './identity.module.css';
+import { SessionControl } from '../../SessionControl';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -211,7 +212,7 @@ export function IdentityDashboard() {
 
   if (error) {
     return (
-      <Shell right={strings.identity.audience}>
+      <Shell right={<SessionControl audience={strings.identity.audience} />}>
         <Notice tone="stop" title={strings.identity.notLoaded}>
           {error}
         </Notice>
@@ -226,7 +227,7 @@ export function IdentityDashboard() {
   const shown = tab === 'practices' ? shownPractices.length : shownPractitioners.length;
 
   return (
-    <Shell right={strings.identity.audience}>
+    <Shell right={<SessionControl audience={strings.identity.audience} />}>
       <Link href="/review" className={ui.hint} data-testid="identity-back">
         <ArrowLeft size={14} aria-hidden="true" /> {strings.identity.backToQueue}
       </Link>

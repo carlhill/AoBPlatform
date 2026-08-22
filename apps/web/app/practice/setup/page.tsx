@@ -1,4 +1,5 @@
 'use client';
+import { SessionControl } from '../../SessionControl';
 
 /**
  * The setup hub route.
@@ -60,7 +61,7 @@ export default function SetupPage() {
 
   if (!checked) {
     return (
-      <Shell right={strings.setup.audience}>
+      <Shell right={<SessionControl audience={strings.setup.audience} />}>
         <p className={ui.hint}>{strings.review.loading}</p>
       </Shell>
     );
@@ -74,7 +75,7 @@ export default function SetupPage() {
    */
   if (!practiceId) {
     return (
-      <Shell right={strings.setup.audience}>
+      <Shell right={<SessionControl audience={strings.setup.audience} />}>
         <h1 className={ui.pageTitle}>{strings.setup.noPracticeTitle}</h1>
         <p className={ui.pageLead}>{strings.setup.noPracticeBody}</p>
         <Link href="/practice" className={ui.buttonLink} data-testid="setup-to-list">

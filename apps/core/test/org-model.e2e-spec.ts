@@ -13,6 +13,26 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AffiliationsService } from '../src/affiliations/affiliations.service';
 
+/**
+ * A platform reviewer, as the auth guard would attach one.
+ *
+ * Confirming an address is now attributed to the SESSION USER rather than
+ * to a name in the request body, so these tests need a session. Overriding
+ * the guard rather than skipping it keeps the endpoint's own refusal path
+ * testable — see the unsigned case below.
+ */
+const REVIEWER_PRINCIPAL = {
+  sub: '00000000-0000-4000-8000-00000000ab01',
+  principalType: 'staff',
+  roles: ['platform_admin'],
+  preferredUsername: 'robin.reviewer',
+  raw: {},
+};
+
+/** Set by tests that need the request to arrive unsigned. */
+let signedIn = true;
+
+
 // Fixture ABNs (see src/organisations/abr.ts). All checksum-valid, none real.
 const COMPANY_ABN = '53004085616'; // ACTIVE, trades as "Sampletown Family Practice"
 const SOLE_ABN = '51824753556'; // ACTIVE sole trader, no derivable ACN
@@ -57,6 +77,10 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
+    app.use((req: any, _res: unknown, next: () => void) => {
+      if (signedIn) req.principal = REVIEWER_PRINCIPAL;
+      next();
+    });
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
     await app.init();
     prisma = app.get(PrismaService);
@@ -376,10 +400,28 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
       expect(res.body.message).toMatch(/65C\(5\)\(a\)/);
     });
 
-    it('activation names the human who confirmed the address', async () => {
-      await scoped('post', `/organisations/locations/${locationId}/activate`).send({ reviewerName: '' }).expect(400);
+    it('refuses to confirm an address without a signed-in reviewer', async () => {
+      /*
+       * The endpoint records that A PERSON confirmed this address, and that
+       * record is append-only. An anonymous one could never be questioned or
+       * corrected later, so an unsigned request is refused outright rather
+       * than written with a blank name.
+       *
+       * This used to be satisfied by typing any non-empty string into
+       * `reviewerName` — including, in the ordinary case, the name of somebody
+       * who was not there.
+       */
+      signedIn = false;
+      const refused = await scoped('post', `/organisations/locations/${locationId}/activate`).send({}).expect(400);
+      expect(refused.body.message).toMatch(/signed-in reviewer/);
+      signedIn = true;
+    });
+
+    it('attributes the confirmation to the session user, not to the request body', async () => {
       const res = await scoped('post', `/organisations/locations/${locationId}/activate`)
-        .send({ reviewerName: 'Robin Reviewer' })
+        // A name in the body is IGNORED, not honoured. `whitelist: true` strips
+        // it, and nothing downstream reads it.
+        .send({ reviewerName: 'Someone Else Entirely', note: 'letter returned signed' })
         .expect(201);
       expect(res.body.active).toBe(true);
       expect(res.body.validator).toBe('manual');
@@ -387,7 +429,7 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
 
     it('records it as MANUAL, never claiming G-NAF confirmed it', async () => {
       const location = await prisma.withPractice(orgId, (tx) => tx.practiceLocation.findFirst({ where: { id: locationId } }));
-      expect(location?.gnafVersion).toBe('manual:Robin Reviewer');
+      expect(location?.gnafVersion).toBe('manual:robin.reviewer');
       expect(location?.gnafPid).toBeNull();
     });
 
@@ -527,9 +569,7 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
         .send({ addressLine1: '7 Invitation Way', suburb: 'Sampletown', state: 'NSW', postcode: '2000', code: 'Annexe' })
         .expect(201);
       inviteLocationId = location.body.id;
-      await scoped('post', `/organisations/locations/${inviteLocationId}/activate`)
-        .send({ reviewerName: 'Robin Reviewer' })
-        .expect(201);
+      await scoped('post', `/organisations/locations/${inviteLocationId}/activate`).send({}).expect(201);
 
       // The second practitioner exists but has no address; an invitation needs
       // somewhere to go.

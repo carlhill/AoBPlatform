@@ -31,6 +31,14 @@ export const strings = {
     inviteSent: 'Invitation sent — open Mailhog to follow the link:',
     noAccount: 'no account yet',
     accountReady: 'account created — passkey pending',
+    signedOutTitle: 'Sign in to continue',
+    signedOutBody:
+      'This page lists every practice on the platform, so it needs to know who you are. Signing in binds ' +
+      'what you do here to your name.',
+    /** Shown above the username in the top bar when the session carries no practice. */
+    platformUser: 'AoBPlatform',
+    /** The session is scoped to a practice whose name has not loaded yet. */
+    practiceLoading: 'Practice…',
   },
   gate: {
     heading: 'Sign in to the practice console',

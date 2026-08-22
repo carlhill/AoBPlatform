@@ -22,6 +22,7 @@ import { Chip, Field, Notice, Shell, TextInput, ui } from '../ui';
 import { strings } from '../strings';
 import { FlagChip } from './flags';
 import styles from './review.module.css';
+import { SessionControl } from '../SessionControl';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -115,7 +116,7 @@ export function QueueView() {
   }, [rows, filter]);
 
   return (
-    <Shell right={strings.review.audience}>
+    <Shell right={<SessionControl audience={strings.review.audience} />}>
       <h1 className={ui.pageTitle}>{strings.review.queueTitle}</h1>
       <p className={ui.pageLead}>{strings.review.queueLead}</p>
 

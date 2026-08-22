@@ -33,6 +33,7 @@ import { CheckCircle2, Clock, Lock, ShieldCheck, ShieldX, XCircle } from 'lucide
 import { Button, Notice, Shell, ui } from '../../ui';
 import { strings } from '../../strings';
 import styles from '../invitation.module.css';
+import { SessionControl } from '../../SessionControl';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -111,7 +112,7 @@ export function InvitationView({ token }: { token: string }) {
 
   if (invitation === null) {
     return (
-      <Shell right={strings.invitation.audience}>
+      <Shell right={<SessionControl audience={strings.invitation.audience} />}>
         <div className={styles.card}>
           {Wordmark}
           <p className={styles.lead}>{strings.invitation.checking}</p>
@@ -124,7 +125,7 @@ export function InvitationView({ token }: { token: string }) {
   if (answered) {
     const practice = invitation.practiceName ?? 'The practice';
     return (
-      <Shell right={strings.invitation.audience}>
+      <Shell right={<SessionControl audience={strings.invitation.audience} />}>
         <div className={styles.card}>
           {Wordmark}
           <div className={styles.outcome}>
@@ -180,7 +181,7 @@ export function InvitationView({ token }: { token: string }) {
           : styles.outcomeStop;
 
     return (
-      <Shell right={strings.invitation.audience}>
+      <Shell right={<SessionControl audience={strings.invitation.audience} />}>
         <div className={styles.card}>
           {Wordmark}
           <div className={styles.outcome}>
@@ -195,7 +196,7 @@ export function InvitationView({ token }: { token: string }) {
   }
 
   return (
-    <Shell right={strings.invitation.audience}>
+    <Shell right={<SessionControl audience={strings.invitation.audience} />}>
       <div className={styles.card}>
         {Wordmark}
         <h1 className={styles.title}>{strings.invitation.title}</h1>

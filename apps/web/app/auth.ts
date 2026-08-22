@@ -46,6 +46,8 @@ const STATE_KEY = 'aob.pkce.state';
 
 export interface Session {
   accessToken: string;
+  /** Identity assertion, used only as `id_token_hint` at logout. */
+  idToken?: string;
   expiresAt: number;
   username?: string;
   practiceId?: string;
@@ -191,6 +193,57 @@ export async function attemptSilentLogin(clientId: string = CLIENT_ID): Promise<
   return true;
 }
 
+/**
+ * Sign out — OF KEYCLOAK, not just of this tab.
+ *
+ * THE LOCAL-ONLY VERSION WAS A LIE, and the bug it caused was worse than the
+ * lie. Clearing the in-memory token left Keycloak's SSO session untouched, so
+ * the very next page load restored it silently and the person was signed
+ * straight back in. A "Sign out" button that signs you back in is not a
+ * cosmetic problem on a platform whose whole claim is knowing who did what:
+ * somebody hands the laptop over believing they have left.
+ *
+ * IT ALSO CLEARS THE ONE-ATTEMPT-PER-TAB MARKER, and leaving that behind is
+ * what made /practice render blank forever. `attemptSilentLogin` refuses a
+ * second try in the same tab — correctly, or a `login_required` answer would
+ * loop. But signing out inside that tab left the marker set with no session:
+ * the page waited for a restore that would never be attempted, and showed
+ * nothing at all. Not an error, not a sign-in prompt. Nothing.
+ *
+ * `post.logout.redirect.uris` is "+" on both clients, meaning it inherits the
+ * registered redirect URIs — so the origin is already allowed and no realm
+ * change is needed here.
+ */
+export function signOut(): void {
+  const clientId = sessionStorage.getItem(CLIENT_KEY) ?? hasSignedInBefore() ?? CLIENT_ID;
+  // Read BEFORE clearing — clearSession() is what drops it.
+  const idToken = currentSession()?.idToken;
+  clearSession();
+  try {
+    window.localStorage.removeItem(SEEN_KEY);
+    window.sessionStorage.removeItem(SILENT_TRIED_KEY);
+  } catch {
+    // Private browsing — the session is already gone from memory, which is the
+    // part that matters.
+  }
+  const params = new URLSearchParams({
+    client_id: clientId,
+    post_logout_redirect_uri: `${window.location.origin}/`,
+  });
+  /*
+   * WITHOUT THIS, KEYCLOAK ASKS. It cannot tell which session a bare logout
+   * request refers to, so it renders a confirmation page — one button reading
+   * "Logout", and no way to change your mind. The hint identifies the session,
+   * so the logout is unambiguous and happens directly.
+   *
+   * A session restored from an older page load may not carry one. Logging out
+   * via the prompt is still correct, just clumsier, and is better than not
+   * offering to log out at all.
+   */
+  if (idToken) params.set('id_token_hint', idToken);
+  window.location.assign(`${ISSUER}/protocol/openid-connect/logout?${params.toString()}`);
+}
+
 /** Called by the callback when Keycloak answers `login_required`. */
 export function silentLoginFailed(): void {
   try {
@@ -227,10 +280,21 @@ export async function completeLogin(code: string, state: string): Promise<Sessio
   });
   if (!res.ok) throw new Error(`Token exchange failed: ${res.status} ${await res.text()}`);
 
-  const body = (await res.json()) as { access_token: string; expires_in: number };
+  const body = (await res.json()) as { access_token: string; expires_in: number; id_token?: string };
   const claims = decodeClaims(body.access_token);
   session = {
     accessToken: body.access_token,
+    /*
+     * KEPT SOLELY TO PROVE WHICH SESSION IS ENDING. Without it Keycloak cannot
+     * tell which session a logout refers to, so it stops and asks — a page
+     * headed "Logging out / Do you want to log out?" with a single button and
+     * no way to say no. Passing it as `id_token_hint` makes the logout
+     * unambiguous and it happens directly.
+     *
+     * This is an identity assertion, not an access credential: it authorises
+     * nothing, and like the access token it is held in memory only.
+     */
+    idToken: body.id_token,
     expiresAt: Date.now() + body.expires_in * 1000,
     username: claims.preferred_username as string | undefined,
     practiceId: claims.practice_id as string | undefined,

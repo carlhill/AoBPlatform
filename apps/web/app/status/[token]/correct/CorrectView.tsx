@@ -1,4 +1,5 @@
 'use client';
+import { SessionControl } from '../../../SessionControl';
 
 /**
  * The applicant's correction form.
@@ -138,7 +139,7 @@ export function CorrectView({ token }: { token: string }) {
 
   if (missing) {
     return (
-      <Shell right={strings.status.audience}>
+      <Shell right={<SessionControl audience={strings.status.audience} />}>
         <h1 className={ui.pageTitle}>{strings.status.notFound}</h1>
         <p className={ui.pageLead}>{strings.status.notFoundBody}</p>
       </Shell>
@@ -147,7 +148,7 @@ export function CorrectView({ token }: { token: string }) {
 
   if (!payload) {
     return (
-      <Shell right={strings.status.audience}>
+      <Shell right={<SessionControl audience={strings.status.audience} />}>
         {error ? (
           <Notice tone="stop" title={strings.status.notLoaded}>
             {error}
@@ -161,7 +162,7 @@ export function CorrectView({ token }: { token: string }) {
 
   if (done) {
     return (
-      <Shell right={strings.status.audience}>
+      <Shell right={<SessionControl audience={strings.status.audience} />}>
         <h1 className={ui.pageTitle}>{strings.status.correctedTitle}</h1>
         <p className={ui.pageLead}>{strings.status.correctedBody}</p>
         <Link href={`/status/${token}`} className={ui.buttonLink}>
@@ -187,7 +188,7 @@ export function CorrectView({ token }: { token: string }) {
     const expired = !decided && expiry !== null && expiry.getTime() <= Date.now();
 
     return (
-      <Shell right={strings.status.audience}>
+      <Shell right={<SessionControl audience={strings.status.audience} />}>
         <Link href={`/status/${token}`} className={ui.backLink}>
           <ArrowLeft size={15} aria-hidden="true" />
           {strings.status.backToStatus}
@@ -212,7 +213,7 @@ export function CorrectView({ token }: { token: string }) {
   }
 
   return (
-    <Shell right={strings.status.audience}>
+    <Shell right={<SessionControl audience={strings.status.audience} />}>
       <Link href={`/status/${token}`} className={ui.backLink}>
         <ArrowLeft size={15} aria-hidden="true" />
         {strings.status.backToStatus}

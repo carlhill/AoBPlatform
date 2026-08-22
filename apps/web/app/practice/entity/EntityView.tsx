@@ -42,6 +42,7 @@ import { strings } from '../../strings';
 import { currentSession } from '../../auth';
 import { AuditTrail } from '../../review/AuditTrail';
 import styles from '../manage.module.css';
+import { SessionControl } from '../../SessionControl';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -152,7 +153,7 @@ export function EntityView({ practiceId }: { practiceId: string }) {
 
   if (error) {
     return (
-      <Shell right={strings.entity.audience}>
+      <Shell right={<SessionControl audience={strings.entity.audience} />}>
         <Notice tone="stop" title={strings.entity.notLoaded}>
           {error}
         </Notice>
@@ -162,7 +163,7 @@ export function EntityView({ practiceId }: { practiceId: string }) {
 
   if (!practice) {
     return (
-      <Shell right={strings.entity.audience}>
+      <Shell right={<SessionControl audience={strings.entity.audience} />}>
         <p className={ui.hint}>{strings.entity.loading}</p>
       </Shell>
     );
@@ -175,7 +176,7 @@ export function EntityView({ practiceId }: { practiceId: string }) {
   const next = () => (n += 1);
 
   return (
-    <Shell right={strings.entity.audience}>
+    <Shell right={<SessionControl audience={strings.entity.audience} />}>
       <Link href="/practice/setup" className={styles.crumb} data-testid="entity-back">
         <ArrowLeft size={15} aria-hidden="true" />
         {strings.entity.backToSetup}

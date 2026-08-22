@@ -19,10 +19,11 @@ import { ArrowLeft, Download, Radio, ShieldCheck } from 'lucide-react';
 import { Chip, Notice, Shell, ui } from '../../ui';
 import { strings } from '../../strings';
 import styles from '../manage.module.css';
+import { SessionControl } from '../../SessionControl';
 
 export function PmsView({ pms }: { pms: string }) {
   return (
-    <Shell right={strings.pms.audience}>
+    <Shell right={<SessionControl audience={strings.pms.audience} />}>
       <Link href="/practice/setup" className={styles.crumb} data-testid="pms-back">
         <ArrowLeft size={15} aria-hidden="true" />
         {strings.pms.backToSetup}

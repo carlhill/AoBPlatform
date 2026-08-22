@@ -32,6 +32,7 @@ import { isPlatformOperator } from '@aobplatform/domain';
 import { strings } from '../../strings';
 import { currentSession } from '../../auth';
 import styles from '../manage.module.css';
+import { SessionControl } from '../../SessionControl';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -114,7 +115,7 @@ export function LocationsView({ practiceId }: { practiceId: string }) {
 
   if (loadError) {
     return (
-      <Shell right={strings.setup.audience}>
+      <Shell right={<SessionControl audience={strings.setup.audience} />}>
         <Notice tone="stop" title={strings.locations.notLoaded}>
           {loadError}
         </Notice>
@@ -129,7 +130,7 @@ export function LocationsView({ practiceId }: { practiceId: string }) {
   const inactiveCount = ordered.length - activeCount;
 
   return (
-    <Shell right={strings.setup.audience}>
+    <Shell right={<SessionControl audience={strings.setup.audience} />}>
       <Link href="/practice/setup" className={styles.crumb} data-testid="locations-back">
         <ArrowLeft size={15} aria-hidden="true" />
         {strings.locations.backToSetup}

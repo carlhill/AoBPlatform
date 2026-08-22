@@ -13,6 +13,7 @@ import {
 import { Type } from 'class-transformer';
 import { LOCKED_FIELDS } from '@aobplatform/domain';
 import { PLATFORM_ADMIN, RequireRoles } from '../auth/roles.decorator';
+import { SessionActor, type Actor } from '../auth/actor.decorator';
 import {
   Equals,
   IsArray,
@@ -399,9 +400,13 @@ export class AddLocationDto {
 }
 
 export class ActivateLocationDto {
+  /**
+   * HOW they confirmed it — optional, and there is no reviewerName field on
+   * purpose. Who did it comes from the verified token; see SessionActor.
+   */
+  @IsOptional()
   @IsString()
-  @MinLength(1)
-  reviewerName!: string;
+  note?: string;
 }
 
 export class AddCredentialDto {
@@ -685,8 +690,9 @@ export class OrganisationsController {
     @Headers('x-practice-id') practiceId: string | undefined,
     @Param('locationId', ParseUUIDPipe) locationId: string,
     @Body() dto: ActivateLocationDto,
+    @SessionActor() actor: Actor | undefined,
   ) {
-    return this.organisations.activateLocation(requirePractice(practiceId), locationId, dto.reviewerName);
+    return this.organisations.activateLocation(requirePractice(practiceId), locationId, actor, dto.note);
   }
 
   @Get('credentials')

@@ -23,10 +23,11 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { ShieldCheck, ShieldAlert, LogOut } from 'lucide-react';
-import { beginLogin, clearSession, currentSession, type Session } from '../auth';
+import { ShieldCheck, ShieldAlert } from 'lucide-react';
+import { beginLogin, currentSession, signOut as endSession, type Session } from '../auth';
 import { Button, Notice, Shell, ui } from '../ui';
 import { strings } from '../strings';
+import { SessionControl } from '../SessionControl';
 
 const REQUIRED_ROLE = 'platform_admin';
 
@@ -84,11 +85,18 @@ export function ReviewerGate({ children }: { children: React.ReactNode }) {
     setChecked(true);
   }, []);
 
+  /*
+   * Clears the DEV BYPASS as well, then hands off to the shared sign-out —
+   * which ends the Keycloak session rather than just this tab's copy of it.
+   * Leaving the bypass set would sign somebody out of Keycloak and leave them
+   * looking at reviewer screens anyway, which is the opposite of what the
+   * button says.
+   */
   const signOut = useCallback(() => {
-    clearSession();
     window.sessionStorage.removeItem(BYPASS_KEY);
     setSession(null);
     setBypassed(false);
+    endSession();
   }, []);
 
   // Avoids flashing the sign-in card before the in-memory session is read.
@@ -99,32 +107,19 @@ export function ReviewerGate({ children }: { children: React.ReactNode }) {
     // wrong turn, not an attack, and is told so plainly.
     if (!session.roles.includes(REQUIRED_ROLE)) {
       return (
-        <Shell right={strings.review.audience}>
+        <Shell right={<SessionControl audience={strings.review.audience} />}>
           <h1 className={ui.pageTitle}>{strings.reviewerGate.wrongRoleTitle}</h1>
           <p className={ui.pageLead}>{strings.reviewerGate.wrongRoleBody}</p>
           <p className={ui.hint}>
             {strings.reviewerGate.signedInAs} <strong>{session.username}</strong>
             {session.roles.length > 0 && <> · {session.roles.join(', ')}</>}
           </p>
-          <div className={ui.rowActions}>
-            <Button onClick={signOut}>
-              <LogOut size={15} aria-hidden="true" />
-              {strings.auth.signOut}
-            </Button>
-          </div>
         </Shell>
       );
     }
 
     return (
       <>
-        <div className={ui.reviewerBanner}>
-          <ShieldCheck size={15} aria-hidden="true" />
-          {strings.reviewerGate.signedInAs} <strong>{session.username}</strong>
-          <button type="button" className={ui.bannerButton} onClick={signOut} data-testid="reviewer-sign-out">
-            {strings.auth.signOut}
-          </button>
-        </div>
         {children}
       </>
     );
@@ -151,7 +146,7 @@ export function ReviewerGate({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <Shell right={strings.review.audience}>
+    <Shell right={<SessionControl audience={strings.review.audience} />}>
       <div className={ui.signInCard} data-testid="reviewer-gate">
         <div className={ui.signInMark}>
           <ShieldCheck size={20} aria-hidden="true" />

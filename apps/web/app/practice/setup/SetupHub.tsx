@@ -49,6 +49,7 @@ import { Chip, Notice, Shell, ui, type Tone } from '../../ui';
 import { strings } from '../../strings';
 import { currentSession } from '../../auth';
 import styles from './setup.module.css';
+import { SessionControl } from '../../SessionControl';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -128,7 +129,7 @@ export function SetupHub({ practiceId }: { practiceId: string }) {
 
   if (error) {
     return (
-      <Shell right={strings.setup.audience}>
+      <Shell right={<SessionControl audience={strings.setup.audience} />}>
         <Notice tone="stop" title={strings.setup.notLoaded}>
           {error}
         </Notice>
@@ -138,7 +139,7 @@ export function SetupHub({ practiceId }: { practiceId: string }) {
 
   if (!hub) {
     return (
-      <Shell right={strings.setup.audience}>
+      <Shell right={<SessionControl audience={strings.setup.audience} />}>
         <p className={ui.hint}>{strings.review.loading}</p>
       </Shell>
     );
@@ -156,7 +157,7 @@ export function SetupHub({ practiceId }: { practiceId: string }) {
   if (hub.practice.validationState !== 'validated') {
     const refused = hub.practice.validationState === 'rejected';
     return (
-      <Shell right={strings.setup.audience}>
+      <Shell right={<SessionControl audience={strings.setup.audience} />}>
         <Link href="/practice" className={ui.backLink} data-testid="hub-to-list">
           <ArrowLeft size={15} aria-hidden="true" />
           {strings.setup.backToPractices}
@@ -213,7 +214,7 @@ export function SetupHub({ practiceId }: { practiceId: string }) {
   }
 
   return (
-    <Shell right={strings.setup.audience}>
+    <Shell right={<SessionControl audience={strings.setup.audience} />}>
       {/*
         A group manager must never be stranded on one practice — but a SCOPED
         user has exactly one and the list would bounce them straight back here.

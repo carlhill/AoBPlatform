@@ -36,8 +36,9 @@ import { AlertTriangle, ArrowRight, Building2, CheckCircle2, Clock, Search, X } 
 import { matchesFilter, matchesPractice, mayChoosePractice, type PracticeFilter } from '@aobplatform/domain';
 import { Button, Chip, Field, Notice, Shell, TextInput, ui } from '../ui';
 import { strings } from '../strings';
-import { attemptSilentLogin, currentSession } from '../auth';
+import { attemptSilentLogin, currentSession, beginLogin } from '../auth';
 import styles from './practice.module.css';
+import { SessionControl } from '../SessionControl';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 const SELECTION_KEY = 'aob.practiceId';
@@ -98,15 +99,43 @@ export function PracticeList() {
    * fetched or painted until it has. Only a browser that has never signed in
    * falls through to the list.
    */
-  const restoring = !session;
+  /*
+   * "Restoring" HAS TO BE ABLE TO END, and it could not.
+   *
+   * It used to be plain `!session`, which conflates two different things: a
+   * restore in flight, and a restore that has already failed. Combined with
+   * `if (scoped || restoring) return null` below, the second case rendered
+   * NOTHING, for ever — no error, no sign-in prompt, a blank page.
+   *
+   * Reaching it took one ordinary sequence: sign in, sign out, come back here.
+   * `attemptSilentLogin` allows one attempt per tab (correctly — a
+   * `login_required` answer would otherwise loop), the marker survived the
+   * sign-out, and so the second visit waited on a restore that would never be
+   * attempted.
+   *
+   * The redirect is now the signal. `attemptSilentLogin` resolves `true` when
+   * it is navigating to Keycloak and `false` when it has declined to try, and
+   * only the first is a reason to keep waiting.
+   */
+  const [restoreSettled, setRestoreSettled] = useState(false);
+  const restoring = !session && !restoreSettled;
 
   useEffect(() => {
     if (scoped) {
       router.replace('/practice/setup');
       return;
     }
-    if (restoring) void attemptSilentLogin();
-  }, [scoped, restoring, router]);
+    if (session || restoreSettled) return;
+    let live = true;
+    void attemptSilentLogin().then((redirecting) => {
+      // `true` means the browser is on its way to Keycloak and this component
+      // is about to be torn down; settling would only paint a flash first.
+      if (live && !redirecting) setRestoreSettled(true);
+    });
+    return () => {
+      live = false;
+    };
+  }, [scoped, session, restoreSettled, router]);
 
   const [practices, setPractices] = useState<WithReadiness[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -207,9 +236,27 @@ export function PracticeList() {
   // is still a disclosure of other practices' names.
   if (scoped || restoring) return null;
 
+  /*
+   * SIGNED OUT, AND SAYING SO. This page enumerates every practice on the
+   * platform, which is not something to show somebody we cannot identify —
+   * and falling through to the list "because auth is staged" is how a missing
+   * session became a disclosure the first time.
+   */
+  if (!session) {
+    return (
+      <Shell right={<SessionControl audience={strings.setup.audience} />}>
+        <h1 className={ui.pageTitle}>{strings.auth.signedOutTitle}</h1>
+        <p className={ui.pageLead}>{strings.auth.signedOutBody}</p>
+        <button type="button" className={ui.buttonLink} onClick={() => void beginLogin()} data-testid="list-sign-in">
+          {strings.auth.signIn}
+        </button>
+      </Shell>
+    );
+  }
+
   if (error) {
     return (
-      <Shell right={strings.setup.audience}>
+      <Shell right={<SessionControl audience={strings.setup.audience} />}>
         <Notice tone="stop" title={strings.practices.notLoaded}>
           {error}
         </Notice>
@@ -218,7 +265,7 @@ export function PracticeList() {
   }
 
   return (
-    <Shell right={strings.setup.audience}>
+    <Shell right={<SessionControl audience={strings.setup.audience} />}>
       <h1 className={ui.pageTitle}>{strings.practices.title}</h1>
       <p className={ui.pageLead}>{strings.practices.lead}</p>
 

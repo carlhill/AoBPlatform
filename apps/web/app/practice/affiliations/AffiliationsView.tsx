@@ -37,6 +37,7 @@ import {
 import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui, type Tone } from '../../ui';
 import { strings } from '../../strings';
 import styles from '../manage.module.css';
+import { SessionControl } from '../../SessionControl';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -142,7 +143,7 @@ export function AffiliationsView({ practiceId }: { practiceId: string }) {
 
   if (loadError) {
     return (
-      <Shell right={strings.setup.audience}>
+      <Shell right={<SessionControl audience={strings.setup.audience} />}>
         <Notice tone="stop" title={strings.affiliations.notLoaded}>
           {loadError}
         </Notice>
@@ -155,7 +156,7 @@ export function AffiliationsView({ practiceId }: { practiceId: string }) {
   const waiting = ordered.filter((a) => a.status === 'invited').length;
 
   return (
-    <Shell right={strings.setup.audience}>
+    <Shell right={<SessionControl audience={strings.setup.audience} />}>
       <Link href="/practice/setup" className={styles.crumb} data-testid="affiliations-back">
         <ArrowLeft size={15} aria-hidden="true" />
         {strings.affiliations.backToSetup}

@@ -15,13 +15,14 @@ import { ArrowRight } from 'lucide-react';
 import { Shell, ui } from '../ui';
 import { strings } from '../strings';
 import { usePractice } from './usePractice';
+import { SessionControl } from '../SessionControl';
 
 export function PracticeGate({ children }: { children: (practiceId: string) => React.ReactNode }) {
   const { practiceId, checked, scoped } = usePractice();
 
   if (!checked) {
     return (
-      <Shell right={strings.setup.audience}>
+      <Shell right={<SessionControl audience={strings.setup.audience} />}>
         <p className={ui.hint}>{strings.review.loading}</p>
       </Shell>
     );
@@ -29,7 +30,7 @@ export function PracticeGate({ children }: { children: (practiceId: string) => R
 
   if (!practiceId) {
     return (
-      <Shell right={strings.setup.audience}>
+      <Shell right={<SessionControl audience={strings.setup.audience} />}>
         <h1 className={ui.pageTitle}>{strings.setup.noPracticeTitle}</h1>
         <p className={ui.pageLead}>{scoped ? strings.setup.noPracticeScoped : strings.setup.noPracticeBody}</p>
         {/*

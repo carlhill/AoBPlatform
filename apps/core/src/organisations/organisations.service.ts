@@ -44,6 +44,7 @@ import { ConfigService } from '@nestjs/config';
 import { ABR_CLIENT, ADDRESS_VALIDATOR } from './organisations.tokens';
 import type { AbrClient } from './abr';
 import type { AddressValidator } from './address-validator';
+import type { Actor } from '../auth/actor.decorator';
 
 /**
  * Organisation onboarding (ORG-MODEL-PROPOSAL.md §4).
@@ -1114,9 +1115,25 @@ export class OrganisationsService {
    * as the organisation queue — and recorded as a MANUAL validation so the
    * evidence never claims G-NAF confirmed something it did not.
    */
-  async activateLocation(practiceId: string, locationId: string, reviewerName: string) {
-    if (!reviewerName?.trim()) {
-      throw new BadRequestException('Activating a location must name the human who confirmed the address.');
+  /**
+   * Confirm a location's address. THE PLATFORM'S ACT, NOT THE PRACTICE'S.
+   *
+   * WHO confirmed it is the session user from the verified token — never a
+   * name typed into the request. A self-declared name in an audit record is
+   * indistinguishable later from a verified one, which makes the record worse
+   * than useless: it invites reliance it cannot support.
+   *
+   * Refusing an absent actor is deliberate. This writes an append-only vault
+   * event asserting that a person confirmed an address, and an event naming
+   * nobody cannot be questioned, corrected, or relied on. A 400 here is
+   * recoverable; a permanent record of an anonymous confirmation is not.
+   */
+  async activateLocation(practiceId: string, locationId: string, actor?: Actor, note?: string) {
+    if (!actor) {
+      throw new BadRequestException(
+        'Confirming an address records who did it, so it requires a signed-in reviewer. ' +
+          'No verified session was presented with this request.',
+      );
     }
     await this.assertValidated(practiceId);
 
@@ -1131,13 +1148,24 @@ export class OrganisationsService {
       }
       const updated = await tx.practiceLocation.update({
         where: { id: locationId },
-        data: { active: true, addressValidated: true, gnafVersion: `manual:${reviewerName.trim()}` },
+        data: { active: true, addressValidated: true, gnafVersion: `manual:${actor.name}` },
       });
       await enqueueVaultEvent(tx, {
         type: 'location.activated',
-        actor: { principalType: 'staff', id: practiceId },
+        // THE REVIEWER, not the practice. This said `id: practiceId` until now,
+        // which recorded the practice as having confirmed its own address —
+        // the exact thing restricting the endpoint was meant to prevent. The
+        // control was right and the evidence it produced contradicted it.
+        actor: { principalType: 'staff', id: actor.id },
         subject: { type: 'PracticeLocation', id: locationId },
-        payload: { validator: 'manual', confirmedBy: reviewerName.trim(), state: updated.state ?? 'unknown' },
+        payload: {
+          validator: 'manual',
+          confirmedBy: actor.name,
+          confirmedBySub: actor.id,
+          ...(note?.trim() ? { note: note.trim() } : {}),
+          onBehalfOfPractice: practiceId,
+          state: updated.state ?? 'unknown',
+        },
       });
       return { id: updated.id, active: updated.active, state: updated.state, validator: 'manual' as const };
     });
