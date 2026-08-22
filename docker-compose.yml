@@ -12,6 +12,7 @@
 #   21024 keycloak          (added when identity work starts — see infra/keycloak)
 #   21025 mailhog (SMTP)    21026 mailhog (web UI)
 #   21001 core              21002 rules              21003 vault
+#   21030 cube (reporting API + playground)
 #   21100 web
 #
 # Windows note (lesson from ReferralPlatform, 2026-08-15): if a host-mapped
@@ -314,6 +315,76 @@ services:
       timeout: 5s
       retries: 5
       start_period: 25s
+
+  # ---------------------------------------------------------------------------
+  # Cube — the reporting layer.
+  #
+  # WHY IT EXISTS: report requests arrive faster than reports can be built by
+  # hand, and each hand-built one is another place a total can come from. Cube
+  # answers questions nobody anticipated, from one definition of what a message
+  # is.
+  #
+  # WHAT KEEPS TENANTS APART is NOT this service. It is Postgres: the reporting
+  # view is `security_invoker`, Cube connects as a role RLS applies to, and the
+  # practice is pinned on the connection. Cube's own filter is a third layer on
+  # top, not the boundary. See infra/cube/cube.js for the reasoning and
+  # infra/cube/README.md for how it was proved.
+  # ---------------------------------------------------------------------------
+  cube:
+    image: cubejs/cube:v1.3.55
+    container_name: aobplatform-cube
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      CUBEJS_DEV_MODE: 'true'
+      CUBEJS_DB_TYPE: postgres
+      CUBEJS_DB_HOST: postgres
+      CUBEJS_DB_PORT: '5432'
+      CUBEJS_DB_NAME: aobplatform
+
+      # Two credentials, because "one practice" and "all practices" should be a
+      # different login rather than a different variable. cube_reader has RLS
+      # applied; cube_platform_reader carries BYPASSRLS and is reachable only
+      # through a Keycloak-signed platform_admin token.
+      CUBE_DB_USER: cube_reader
+      CUBE_DB_PASS: cube_reader
+      CUBE_PLATFORM_DB_USER: cube_platform_reader
+      CUBE_PLATFORM_DB_PASS: cube_platform_reader
+
+      # Verified against the realm's JWKS. No second user store, and no shared
+      # secret that could be lifted from a config file.
+      CUBE_KEYCLOAK_URL: http://keycloak:8080
+      CUBE_KEYCLOAK_REALM: aobplatform
+      CUBE_KEYCLOAK_ISSUER: http://localhost:21024/realms/aobplatform
+
+      # NO TENANT-LESS BACKGROUND REFRESH.
+      #
+      # The scheduler runs with an empty security context, which our
+      # driverFactory refuses -- correctly, because a connection with no
+      # practice is one RLS would return nothing through, and a refresh job
+      # that quietly used the platform credentials instead would be a
+      # background process reading every tenant's data on a timer.
+      #
+      # Pre-aggregations still build, lazily, on the first query for a tenant --
+      # under that tenant's own scoped connection, which is where they belong.
+      # Turning this on later means naming the contexts to refresh
+      # (scheduledRefreshContexts), not relaxing the check.
+      CUBEJS_SCHEDULED_REFRESH_TIMER: 'false'
+
+      # Dev-mode playground needs one; it is not what authorises a query.
+      CUBEJS_API_SECRET: dev-only-not-a-credential
+    ports:
+      - '127.0.0.1:21030:4000'
+    volumes:
+      - ./infra/cube/cube.js:/cube/conf/cube.js:ro
+      - ./infra/cube/model:/cube/conf/model:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:4000/readyz || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
 volumes:
   aobplatform-artefacts:
