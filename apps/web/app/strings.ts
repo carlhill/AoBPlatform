@@ -1171,6 +1171,12 @@ export const strings = {
       'What this practice told us, in the order it was asked. Contact details and the head office can be ' +
       'changed here; what the ABR said cannot.',
     notLoaded: 'Your application could not be loaded',
+    handoverWarnTitle: 'This will sign the administrator out',
+    handoverWarnBody:
+      'Changing the administrator’s email is treated as a HANDOVER, not a correction: the account belongs ' +
+      'to the practice, so a new address means a new person and every passkey on it is revoked. Whoever ' +
+      'uses that account will have to enrol again from a link sent to the NEW address. If you only meant ' +
+      'to fix a typo, it still counts — there is no way for us to tell the difference.',
     reasonLabel: 'Why are you changing this?',
     reasonHint:
       'Required. This record is what your practice was approved on, so a change to it with no stated ' +
@@ -1206,6 +1212,16 @@ export const strings = {
     colSite: 'Site',
     colTotal: 'Total',
     wholePractice: 'The practice itself',
+  },
+  picker: {
+    label: 'Which practice?',
+    hint: 'This screen shows one practice at a time.',
+    choose: 'Choose a practice…',
+    loading: 'Loading the list…',
+    listFailed: 'The practice list could not be read. You can still reach a practice from the practice list.',
+    noPracticeTitle: 'We could not tell which practice you belong to',
+    noPracticeBody:
+      'Your session should say which practice you are with, and it does not. Sign out and in again. If that does not fix it, tell us — we are not going to offer you a list of other people’s practices.',
   },
   users: {
     title: 'Your people',

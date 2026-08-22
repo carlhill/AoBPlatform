@@ -28,10 +28,12 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, KeyRound, RotateCcw, UserMinus, UserPlus } from 'lucide-react';
 import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui } from '../../ui';
+import { isPlatformOperator } from '@aobplatform/domain';
 import { SessionControl } from '../../SessionControl';
-import { apiHeaders } from '../../auth';
+import { apiHeaders, currentSession } from '../../auth';
 import { strings } from '../../strings';
 import { usePractice } from '../usePractice';
+import { PracticePicker } from '../PracticePicker';
 import styles from '../manage.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
@@ -74,14 +76,22 @@ interface Listing {
 
 export function UsersView() {
   const { practiceId, checked } = usePractice();
+  /*
+   * A PLATFORM OPERATOR HAS NO PRACTICE CLAIM, so this screen was
+   * rendering an empty list with no error and no way forward — which
+   * looks exactly like "there is nothing here" and was not.
+   */
+  const [chosen, setChosen] = useState('');
+  const isOperator = isPlatformOperator({ roles: currentSession()?.roles ?? [] });
+  const scope = practiceId ?? chosen;
   const [listing, setListing] = useState<Listing | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!practiceId) return;
+    if (!scope) return;
     setError(null);
     try {
-      const res = await fetch(`${CORE_URL}/practice-users`, { headers: apiHeaders(practiceId) });
+      const res = await fetch(`${CORE_URL}/practice-users`, { headers: apiHeaders(scope) });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { message?: string };
         throw new Error(body.message ?? `Your people could not be listed (${res.status}).`);
@@ -90,13 +100,22 @@ export function UsersView() {
     } catch (e) {
       setError(e instanceof TypeError ? strings.review.unreachableBody : (e as Error).message);
     }
-  }, [practiceId]);
+  }, [scope]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   if (!checked) return null;
+
+  if (!scope) {
+    return (
+      <Shell right={<SessionControl audience={strings.setup.audience} />}>
+        <h1 className={ui.pageTitle}>{strings.users.title}</h1>
+        <PracticePicker value={chosen} onChange={setChosen} isOperator={isOperator} />
+      </Shell>
+    );
+  }
 
   const active = (listing?.users ?? []).filter((u) => u.consoleRole && !u.deactivatedAt);
   const withdrawn = (listing?.users ?? []).filter((u) => u.deactivatedAt);
@@ -158,7 +177,7 @@ export function UsersView() {
       {active.length === 0 && <p className={ui.hint}>{strings.users.nobodyYet}</p>}
       <ul className={styles.reviewList}>
         {active.map((u) => (
-          <UserRow key={u.id} user={u} practiceId={practiceId!} onDone={load} />
+          <UserRow key={u.id} user={u} practiceId={scope} onDone={load} />
         ))}
       </ul>
 
@@ -168,7 +187,7 @@ export function UsersView() {
           <p className={ui.hint}>{strings.users.onStaffNote}</p>
           <ul className={styles.reviewList}>
             {noAccess.map((u) => (
-              <UserRow key={u.id} user={u} practiceId={practiceId!} onDone={load} />
+              <UserRow key={u.id} user={u} practiceId={scope} onDone={load} />
             ))}
           </ul>
         </>
@@ -180,13 +199,13 @@ export function UsersView() {
           <p className={ui.hint}>{strings.users.withdrawnNote}</p>
           <ul className={styles.reviewList}>
             {withdrawn.map((u) => (
-              <UserRow key={u.id} user={u} practiceId={practiceId!} onDone={load} />
+              <UserRow key={u.id} user={u} practiceId={scope} onDone={load} />
             ))}
           </ul>
         </>
       )}
 
-      <AddUser practiceId={practiceId!} scopes={listing?.scopes ?? []} onDone={load} />
+      <AddUser practiceId={scope} scopes={listing?.scopes ?? []} onDone={load} />
     </Shell>
   );
 }
@@ -301,7 +320,7 @@ function AddUser({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const scope = scopes.find((s) => s.key === scopeKey);
+  const chosenScope = scopes.find((s) => s.key === scopeKey);
   const ready = name.trim().length > 1 && email.trim().length > 3;
 
   async function submit() {
@@ -315,8 +334,8 @@ function AddUser({
           name: name.trim(),
           email: email.trim(),
           consoleRole,
-          locationId: scope?.locationId ?? undefined,
-          departmentId: scope?.departmentId ?? undefined,
+          locationId: chosenScope?.locationId ?? undefined,
+          departmentId: chosenScope?.departmentId ?? undefined,
         }),
       });
       if (!res.ok) {

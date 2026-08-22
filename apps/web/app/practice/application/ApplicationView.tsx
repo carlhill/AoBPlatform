@@ -255,6 +255,19 @@ export function ApplicationView() {
         </section>
       ))}
 
+      {/*
+        THE CONSEQUENCE, BEFORE THE BUTTON. Changing adminEmail revokes every
+        passkey on the practice account — correct, because the account belongs
+        to the practice and a new address means a new person. But Carl changed
+        his own address and locked himself out with no warning at all, which
+        is a control doing its job badly.
+      */}
+      {changed.includes('adminEmail') && (
+        <Notice tone="stop" title={strings.application.handoverWarnTitle}>
+          {strings.application.handoverWarnBody}
+        </Notice>
+      )}
+
       {/* Asked only once something has changed — before that there is
           nothing to explain. */}
       {changed.length > 0 && (

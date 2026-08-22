@@ -22,10 +22,12 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ArrowRight, Bot, Check, RefreshCw, ShieldAlert } from 'lucide-react';
 import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui } from '../../ui';
+import { isPlatformOperator } from '@aobplatform/domain';
 import { SessionControl } from '../../SessionControl';
-import { apiHeaders } from '../../auth';
+import { apiHeaders, currentSession } from '../../auth';
 import { strings } from '../../strings';
 import { usePractice } from '../usePractice';
+import { PracticePicker } from '../PracticePicker';
 import { useLiveRefresh } from '../../useLiveRefresh';
 import styles from '../manage.module.css';
 
@@ -69,6 +71,14 @@ function when(value: string): string {
 
 export function ReviewsView() {
   const { practiceId, checked } = usePractice();
+  /*
+   * A PLATFORM OPERATOR HAS NO PRACTICE CLAIM, so this screen was
+   * rendering an empty list with no error and no way forward — which
+   * looks exactly like "there is nothing here" and was not.
+   */
+  const [chosen, setChosen] = useState('');
+  const isOperator = isPlatformOperator({ roles: currentSession()?.roles ?? [] });
+  const scope = practiceId ?? chosen;
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [catalogue, setCatalogue] = useState<Catalogue | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -85,13 +95,13 @@ export function ReviewsView() {
   }, []);
 
   const load = useCallback(async () => {
-    if (!practiceId) return;
+    if (!scope) return;
     setError(null);
     const params = new URLSearchParams();
     if (state) params.set('state', state);
     if (kind) params.set('kind', kind);
     try {
-      const res = await fetch(`${CORE_URL}/review-tasks?${params.toString()}`, { headers: apiHeaders(practiceId) });
+      const res = await fetch(`${CORE_URL}/review-tasks?${params.toString()}`, { headers: apiHeaders(scope) });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { message?: string };
         throw new Error(body.message ?? `The review queue could not be read (${res.status}).`);
@@ -101,7 +111,7 @@ export function ReviewsView() {
     } catch (e) {
       setError(e instanceof TypeError ? strings.review.unreachableBody : (e as Error).message);
     }
-  }, [practiceId, state, kind]);
+  }, [scope, state, kind]);
 
   useEffect(() => {
     void load();
@@ -112,6 +122,15 @@ export function ReviewsView() {
   useLiveRefresh(true, load, 30_000);
 
   if (!checked) return null;
+
+  if (!scope) {
+    return (
+      <Shell right={<SessionControl audience={strings.setup.audience} />}>
+        <h1 className={ui.pageTitle}>{strings.reviews.title}</h1>
+        <PracticePicker value={chosen} onChange={setChosen} isOperator={isOperator} />
+      </Shell>
+    );
+  }
 
   const open = (tasks ?? []).filter((t) => t.state === 'open' || t.state === 'claimed');
   const highStakes = open.filter((t) => t.stakes === 'high').length;
@@ -177,7 +196,7 @@ export function ReviewsView() {
 
       <ul className={styles.reviewList}>
         {(tasks ?? []).map((task) => (
-          <TaskCard key={task.id} task={task} practiceId={practiceId!} catalogue={catalogue} onDone={load} />
+          <TaskCard key={task.id} task={task} practiceId={scope} catalogue={catalogue} onDone={load} />
         ))}
       </ul>
     </Shell>
