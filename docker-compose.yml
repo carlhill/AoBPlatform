@@ -358,6 +358,10 @@ services:
       CUBE_KEYCLOAK_REALM: aobplatform
       CUBE_KEYCLOAK_ISSUER: http://localhost:21024/realms/aobplatform
 
+      # Listed, never '*'. Credentials travel on these requests, so a wildcard
+      # would let any page a signed-in user visits query on their behalf.
+      CUBE_CORS_ORIGINS: http://localhost:3100,http://localhost:21100
+
       # NO TENANT-LESS BACKGROUND REFRESH.
       #
       # The scheduler runs with an empty security context, which our

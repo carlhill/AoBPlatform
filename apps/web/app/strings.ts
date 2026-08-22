@@ -1289,6 +1289,33 @@ export const strings = {
     end: 'Stop acting as them',
     ending: 'Stopping…',
   },
+  reports: {
+    title: 'Reports',
+    lead:
+      'The questions people ask most, ready made. Everything here is counts of messages — no names, no '
+      + 'recipients and no message content, whichever report you pick.',
+    report: 'Report',
+    breakdown: 'Broken down',
+    breakdownHint: 'Split the same figures by where the messages went, or leave them together.',
+    window: 'Covers the last two years, which is everything we keep.',
+    reading: 'Reading…',
+    failed: 'That report could not be read',
+    noSession: 'You are not signed in, so there is nothing to report on. Sign in and try again.',
+    none: 'None',
+    emptyTitle: 'Nothing to show for this period',
+    emptyBody:
+      'A real answer rather than a missing one — the query ran and found nothing. Try a wider report, or check '
+      + 'the message list if you expected something here.',
+    totalTitle: 'One number, on purpose',
+    totalBody:
+      'This is everything we still hold, added up. For the shape of it over time, pick one of the per-period '
+      + 'reports above.',
+    moreTitle: 'Need something that is not here?',
+    moreBody:
+      'These are the common questions, not the only ones. The report builder answers anything the data can '
+      + 'support, and it only ever shows you what your account is allowed to see.',
+    playground: 'Open the report builder',
+  },
   report: {
     title: 'Totals over time',
     lead:

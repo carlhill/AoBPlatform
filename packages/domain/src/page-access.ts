@@ -165,6 +165,11 @@ export const PAGES: Readonly<Record<string, PageRule>> = {
   '/practice/practitioners': { audiences: ['practice'], why: 'Who works here.' },
   '/practice/affiliations': { audiences: ['practice'], why: 'Inviting practitioners, and recording departures.' },
 
+  '/practice/reports': {
+    audiences: ['practice', 'platform'],
+    why: 'Counts of what was sent. Named for both audiences because the figures are scoped by the caller’s own token rather than by the page — a practice sees its own, the platform sees across.',
+  },
+
   '/practice/users': {
     audiences: ['practice_admin'],
     why: 'Deciding who may sign in. The administrator’s alone — it decides who can reach patient records.',

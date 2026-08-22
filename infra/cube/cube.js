@@ -67,6 +67,32 @@ module.exports = {
    */
   dbType: 'postgres',
 
+  /**
+   * THE BROWSER TALKS TO CUBE DIRECTLY, carrying the same Keycloak token it
+   * uses for everything else.
+   *
+   * The alternative — proxying every query through core — would put our own
+   * API in front of a query engine whose entire value is answering questions
+   * we did not anticipate. Every new report would need an endpoint, which is
+   * the situation Cube was adopted to end.
+   *
+   * It is safe to expose because the token is what scopes it, and the scoping
+   * does not depend on the caller being trusted: the practice comes off a
+   * signed claim, the connection is pinned to it, and the database refuses
+   * anything wider. A browser can ask any QUESTION; it cannot widen its scope
+   * by asking differently.
+   *
+   * Origins are listed rather than `*`, because credentials travel on these
+   * requests and a wildcard would let any page a user visits query on their
+   * behalf.
+   */
+  http: {
+    cors: {
+      origin: (process.env.CUBE_CORS_ORIGINS || 'http://localhost:3100,http://localhost:21100').split(','),
+      credentials: true,
+    },
+  },
+
   /*
    * Keycloak verifies the caller, not us. `jwkUrl` means the signing keys are
    * fetched and rotated by Cube rather than pinned in config, so a key roll

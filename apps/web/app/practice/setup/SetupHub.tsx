@@ -358,6 +358,10 @@ export function SetupHub({ practiceId }: { practiceId: string }) {
             {strings.setup.open} {strings.application.title.toLowerCase()}
             <ArrowRight size={14} aria-hidden="true" />
           </Link>
+          <Link href="/practice/reports" className={styles.cardLink} data-testid="hub-to-reports">
+            {strings.setup.open} {strings.reports.title.toLowerCase()}
+            <ArrowRight size={14} aria-hidden="true" />
+          </Link>
           <Link href="/practice/users" className={styles.cardLink} data-testid="hub-to-users">
             {strings.setup.open} {strings.users.title.toLowerCase()}
             <ArrowRight size={14} aria-hidden="true" />
