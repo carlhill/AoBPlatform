@@ -104,6 +104,10 @@ export const VAULT_EVENT_TYPES = [
   'affiliation.accepted',
   'affiliation.rejected',
   'affiliation.notice_given',
+  // The practitioner stayed. Recorded because a notice that was given and
+  // then withdrawn is not the same history as one never given -- somebody
+  // was told they were leaving, and that has to remain visible.
+  'affiliation.notice_withdrawn',
   'affiliation.ended',
   'practitioner.deregistered',
   'campaign.declared',

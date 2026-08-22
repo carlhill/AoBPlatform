@@ -735,7 +735,7 @@ export class AffiliationsService {
                   ? "The practice has told us that notice was given to you outside AoBPlatform."
                   : "This was recorded in AoBPlatform on the date shown above.",
             },
-          ]),
+          ], this.practitionerFooter(practiceName)),
         };
 
         await this.outbound.enqueue(tx, {
@@ -798,11 +798,139 @@ export class AffiliationsService {
     if (affiliation.status !== 'ending') {
       throw new ConflictException(`This affiliation is ${affiliation.status}; there is no notice to withdraw.`);
     }
-    return this.prisma.withPractice(practiceId, (tx) =>
-      tx.affiliation.update({
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const updated = await tx.affiliation.update({
         where: { id: affiliationId },
-        data: { status: 'active', noticeGivenAt: null, noticeGivenBy: null, endsAt: null, endReason: null },
-      }),
+        data: {
+          status: 'active',
+          noticeGivenAt: null,
+          noticeGivenBy: null,
+          endsAt: null,
+          endReason: null,
+          /*
+           * THE ATTESTATION GOES TOO. It said notice was given outside
+           * AoBPlatform — for a notice that no longer exists. Leaving it
+           * behind would be a standing claim about a departure that was
+           * called off, and the next reader would have no way to tell it
+           * was stale.
+           */
+          externalNoticeMeans: null,
+          externalNoticeGivenAt: null,
+          externalNoticeNote: null,
+          externalNoticeAttestedBy: null,
+          noticeLeadBusinessDays: null,
+          noticeAnomaly: null,
+        },
+      });
+
+      /*
+       * RECORDED, which it was not before.
+       *
+       * Withdrawing a notice is a real act with a real effect — capture
+       * continues, agreements do not cease — and it left no trace at all.
+       * A notice given and then withdrawn is NOT the same history as one
+       * never given: somebody was told they were leaving.
+       */
+      await enqueueVaultEvent(tx, {
+        type: 'affiliation.notice_withdrawn',
+        actor: { principalType: 'staff', id: practiceId },
+        subject: { type: 'Affiliation', id: affiliationId },
+        payload: {
+          // Omitted rather than null — the vault payload takes primitives, and
+          // an absent key reads the same as "there was none".
+          ...(affiliation.noticeGivenAt
+            ? { withdrewNoticeGivenAt: affiliation.noticeGivenAt.toISOString() }
+            : {}),
+          ...(affiliation.endsAt ? { withdrewEndsAt: affiliation.endsAt.toISOString() } : {}),
+        },
+      });
+
+      /*
+       * TELL THEM IT IS OFF. We emailed this person to say they were
+       * leaving on a date. If that is reversed and we say nothing, the last
+       * thing they heard from us is wrong — and they may act on it.
+       */
+      const practitioner = await tx.practitioner.findFirst({ where: { id: affiliation.practitionerId } });
+      if (practitioner?.email) {
+        const who = [practitioner.familyName, practitioner.givenNames].filter(Boolean).join(", ");
+        const practice = await tx.practice.findFirst({ where: { id: practiceId } });
+        const practiceName = practice?.tradingNames?.[0] ?? practice?.legalName ?? "the practice";
+        const wasEnding = affiliation.endsAt
+          ? affiliation.endsAt.toLocaleDateString("en-AU", {
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+              timeZone: "UTC",
+            })
+          : null;
+
+        const subject = `You are staying at ${practiceName} — the leaving date has been withdrawn`;
+        const composed = {
+          subject,
+          ...this.composer.compose(
+            subject,
+            [
+              {
+                text:
+                  `${who || "Doctor"}, ${practiceName} has withdrawn the leaving date they recorded for ` +
+                  "you at this location.",
+              },
+              { heading: "What has changed" },
+              {
+                text: wasEnding
+                  ? `We previously told you your last day here was ${wasEnding}. That no longer applies.`
+                  : "We previously told you a leaving date had been recorded. That no longer applies.",
+              },
+              { text: "Your affiliation with this location is active again, with no end date." },
+              { rule: true },
+              { heading: "What this means" },
+              {
+                text:
+                  "Nothing ceases. Patients can sign agreements naming you at this location, and existing " +
+                  "enduring agreements continue exactly as before — they were never interrupted.",
+              },
+              { rule: true },
+              { heading: "If this is wrong" },
+              {
+                text:
+                  `Tell ${practiceName} directly. They recorded this and only they can change it. We have ` +
+                  "sent this so that you know what has been recorded about you, not to ask you to approve it.",
+              },
+            ],
+            this.practitionerFooter(practiceName),
+          ),
+        };
+
+        await this.outbound.enqueue(tx, {
+          practiceId,
+          channel: 'email',
+          destination: practitioner.email,
+          subjectType: 'Affiliation',
+          subjectId: affiliationId,
+          payload: composed as unknown as Record<string, unknown>,
+          // Each withdrawal is its own message, not a retry of the notice.
+          attemptGroup: `withdrawn:${new Date().toISOString()}`,
+        });
+      }
+
+      return updated;
+    });
+  }
+
+  /**
+   * The footer for somebody who never applied to us.
+   *
+   * A practitioner was added by a practice; they did not fill in a form
+   * here. Telling them "this address was given on an application" is false,
+   * and false in the one paragraph whose entire job is to make the message
+   * credible. A reader who catches us being wrong about why they got it has
+   * every reason to treat the rest as a scam — which for a message about
+   * consent records is exactly the wrong instinct to teach.
+   */
+  private practitionerFooter(practiceName: string) {
+    return this.composer.footerFor(
+      `You received this because ${practiceName} listed this address for you on AoBPlatform, where they ` +
+        `record patient consent naming you as the practitioner.`,
     );
   }
 
