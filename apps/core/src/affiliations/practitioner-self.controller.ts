@@ -153,7 +153,49 @@ export class PractitionerSelfController {
       throw new NotFoundException('That practice was not found, or you are not affiliated with it.');
     }
 
-    return practice;
+    /*
+     * THE PLACES, alongside the entity. One request rather than two, because a
+     * page that fetches them separately can render the practice and then fail
+     * to render its locations — leaving somebody looking at a practice that
+     * appears to have none.
+     */
+    const places = await this.prisma.$queryRaw<
+      Array<Record<string, unknown>>
+    >`SELECT * FROM core.practice_places_for_practitioner(${practitionerId}::uuid, ${practiceId}::uuid)`;
+
+    /*
+     * Pivoted here rather than in the browser: the SQL returns one row per
+     * location-and-department, which is the shape a join produces and not the
+     * shape a reader wants. Doing it in two places is how two screens come to
+     * disagree about how many sites a practice has.
+     */
+    const byLocation = new Map<string, Record<string, unknown>>();
+    for (const row of places) {
+      const id = String(row.locationId);
+      const entry = byLocation.get(id) ?? {
+        id,
+        code: row.code,
+        address: row.address,
+        addressLine1: row.addressLine1,
+        addressLine2: row.addressLine2,
+        suburb: row.suburb,
+        state: row.state,
+        postcode: row.postcode,
+        country: row.country,
+        departments: [] as { id: string; name: string }[],
+      };
+      // The LEFT JOIN yields a null department for a location that has none,
+      // which is a location rather than a row to drop.
+      if (row.departmentId) {
+        (entry.departments as { id: string; name: string }[]).push({
+          id: String(row.departmentId),
+          name: String(row.departmentName),
+        });
+      }
+      byLocation.set(id, entry);
+    }
+
+    return { ...practice, locations: [...byLocation.values()] };
   }
 
   /** The reasons, so the screen offers the same list the server accepts. */

@@ -620,7 +620,9 @@ export class AffiliationsService {
      */
     let access: { invited: boolean; detail: string } = { invited: false, detail: '' };
     if (decision === 'accept') {
-      access = await this.practitionerAccess.ensureAccount(practitionerId).catch((err: Error) => {
+      access = await this.practitionerAccess
+        .ensureAccount(practitionerId, affiliation.practiceId)
+        .catch((err: Error) => {
         this.logger.error(`Accepted, but no sign-in could be issued for ${practitionerId}: ${err.message}`);
         return { invited: false, detail: 'The affiliation is recorded. A sign-in could not be issued just now.' };
       });

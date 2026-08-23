@@ -9,6 +9,58 @@ task and belongs in the code as a TODO comment instead.
 
 ---
 
+## Contact details on locations and departments
+
+Asked 23 Aug 2026, while adding the practice page a practitioner sees. At least
+`phone1`, `phone2`, `email1`, `email2` on **both** `practice_locations` and
+`departments`, shown on that page under each site.
+
+### Why two of each, and not one
+
+A site has a number people ring and a number that is answered when the first is
+not — reception and the back office, or the rooms and the after-hours service.
+Modelling one and letting practices cram both into a single field produces
+`"9555 1234 / 9555 5678 (after hours)"`, which nothing can dial, nothing can
+validate, and every screen has to render as free text.
+
+The same for addresses: the one the practice publishes, and the one that
+actually reaches somebody.
+
+### The decision to make first
+
+**These are PUBLIC, like `practices.businessPhone` and `businessEmail`.** That
+is the whole reason they are new columns rather than a reuse of something
+existing — every address already on a location's practice belongs to a person
+(`adminEmail` holds a credential) or to us (`groupEmail` is an internal notices
+mailbox), and showing either to answer "how do I contact this site" publishes
+somebody's personal details.
+
+So they need the same treatment as the practice ones:
+
+- [ ] Added to `reporting.outbound_messages`? **No.** They are contact details,
+      not volumes, and the reporting surface stays free of anything that
+      identifies a way to reach a person.
+- [ ] Returned by `practice_places_for_practitioner`, which already exists and
+      already carries the affiliation check.
+- [ ] Shown on `/practitioner/practices/[id]` under each location, and later on
+      the patient-facing equivalent.
+- [ ] Editable by the practice on `/practice/locations`, with the same
+      review-task treatment as other contact changes? **Probably not.** A
+      location's phone number is not a credential and redirecting it does not
+      let anybody receive a sign-in link — the review task on `adminEmail`
+      exists because that address holds an account, and copying it here would
+      be ceremony without a reason.
+
+### Worth deciding at the same time
+
+- **Should a department inherit its location's numbers when it has none?**
+  Inheriting is friendlier and hides whether anybody actually set them. I would
+  show the location's and say it is the location's, rather than silently
+  presenting it as the department's own.
+- **Validation.** An Australian number has a shape; an obviously malformed one
+  should be refused at entry rather than discovered by a patient who cannot get
+  through.
+
 ## A patient or carer terminating an agreement
 
 Asked 23 Aug 2026. A practitioner can now end their own affiliation

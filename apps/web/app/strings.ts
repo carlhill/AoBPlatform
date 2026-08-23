@@ -1290,6 +1290,11 @@ export const strings = {
     ending: 'Stopping…',
   },
   access: {
+    audience: 'AoBPlatform',
+    signInTitle: 'Sign in to see this page',
+    signInNoticeTitle: 'You are not signed in',
+    signInBody:
+      'This page shows real records, so it needs to know who you are. Sign in with your passkey using the button above — you will come back here afterwards.',
     refusedTitle: 'That page is not for this account',
     refusedBody:
       'You are signed in, and this page belongs to a different kind of account — a practice’s own screens are '
@@ -1396,6 +1401,13 @@ export const strings = {
     headOfficeTitle: 'Head office',
     headOfficeNote: 'Where the entity is run from. Not necessarily where patients are seen.',
     noAddress: 'No head office address has been recorded.',
+    locationsTitle: 'Their locations',
+    locationsNote:
+      'Every site this practice runs, not only the ones you work at — an address here is one they already put on patient notices. Who works at each is deliberately not shown.',
+    noLocations: 'No active locations have been recorded.',
+    unnamedSite: 'A site',
+    departments: 'Departments',
+    noDepartments: 'No departments recorded at this site.',
     contactTitle: 'How to contact them',
     noContactTitle: 'They have not published contact details',
     noContactBody:

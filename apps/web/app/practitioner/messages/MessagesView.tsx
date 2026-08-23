@@ -4,23 +4,22 @@
  * What has been sent to this practitioner, wherever they work.
  *
  * WHY A PAGE RATHER THAN A LINK TO THE PLAYGROUND. The card used to open Cube's
- * own report builder, which is a tool for somebody composing a question — panels
- * for measures, dimensions, granularity, and an empty result until you build
- * one. A practitioner opening "what we have sent you" has already asked their
- * question; they want the answer.
- *
- * The builder is still one click away at the bottom, for the rarer case of
- * somebody who does want to slice it.
+ * report builder, which is an analyst's tool — panels for measures, dimensions
+ * and granularity, and an empty result until you compose something. Somebody
+ * asking "what have you sent me" has already asked their question, and handing
+ * them a blank query builder offers them a job instead of an answer. The
+ * builder stays on the platform reports screen, where the reader is somebody
+ * who wants to compose questions.
  *
  * THEIR OWN, ENFORCED BY THE DATABASE. This queries the `MyMessages` cube under
  * a credential whose connection is pinned to their practitioner id, against an
- * RLS policy keyed on it. The screen does not filter anything — it could not
- * widen the result if it tried.
+ * RLS policy keyed on it. The screen filters nothing — it could not widen the
+ * result if it tried.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, BarChart3, RefreshCw } from 'lucide-react';
+import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { Button, Notice, Shell, ui } from '../../ui';
 import { SessionControl } from '../../SessionControl';
 import { currentSession } from '../../auth';
@@ -32,9 +31,9 @@ const CUBE_URL = process.env.NEXT_PUBLIC_CUBE_URL ?? 'http://localhost:21030';
 type Row = Record<string, string | number | null>;
 
 /**
- * One row per month per practice. Both dimensions matter: a practitioner
- * working at two practices wants to know which one is writing to them, and
- * "when" is the other half of every question about a message.
+ * One row per month per practice, and both dimensions earn their place: a
+ * practitioner working at two practices wants to know which is writing to them,
+ * and "when" is the other half of every question about a message.
  */
 const QUERY = {
   measures: ['MyMessages.count', 'MyMessages.sent', 'MyMessages.waiting'],
@@ -67,9 +66,11 @@ export function MessagesView() {
       });
       const body = (await res.json().catch(() => ({}))) as { data?: Row[]; error?: string };
 
-      // Cube answers 200 with an `error` field for a refused query, so checking
-      // the status alone would render a refusal as "you have no messages" —
-      // which is a claim, and would be false.
+      /*
+       * Cube answers 200 with an `error` field for a refused query, so checking
+       * the status alone would render a refusal as "nothing has been sent to
+       * you" — which is a claim about us, and would be false.
+       */
       if (body.error) throw new Error(String(body.error));
       if (!res.ok) throw new Error(`That could not be read (${res.status}).`);
       setRows(body.data ?? []);
@@ -171,18 +172,6 @@ export function MessagesView() {
           </table>
         </div>
       )}
-
-      {/* For the rarer case: somebody who does want to compose their own. */}
-      <Notice title={strings.myMessages.builderTitle}>
-        {strings.myMessages.builderBody}{' '}
-        <a
-          href={`${CUBE_URL}/#/build?query=${encodeURIComponent(JSON.stringify(QUERY))}`}
-          target="_blank"
-          rel="noreferrer"
-        >
-          <BarChart3 size={13} aria-hidden="true" /> {strings.myMessages.builderLink}
-        </a>
-      </Notice>
     </Shell>
   );
 }

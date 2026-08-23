@@ -29,6 +29,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { ShieldAlert } from 'lucide-react';
 import { audiencesOf, landingPath, mayReach, ruleFor } from '@aobplatform/domain';
 import { Notice, Shell, ui } from './ui';
+import { SessionControl } from './SessionControl';
 import { currentSession } from './auth';
 import { strings } from './strings';
 
@@ -38,20 +39,29 @@ const REDIRECT_AFTER_MS = 4000;
 export function AccessGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? '/';
   const router = useRouter();
-  const [refused, setRefused] = useState<'unknown-page' | 'wrong-audience' | null>(null);
+  const [refused, setRefused] = useState<'unknown-page' | 'wrong-audience' | 'signed-out' | null>(null);
   const [goingTo, setGoingTo] = useState('/');
 
   useEffect(() => {
     const session = currentSession();
 
     /*
-     * SIGNED OUT IS NOT REFUSED. Somebody who has not signed in yet has no
-     * audience beyond `public`, and telling them a page is not theirs before
-     * they have had the chance to sign in would be wrong. The pages that need a
-     * session say so themselves.
+     * SIGNED OUT NEEDS ITS OWN ANSWER, and "pass through and let the page cope"
+     * was the wrong one.
+     *
+     * `/practice/reviews` with no session rendered "We could not tell which
+     * practice you belong to" — the message for somebody signed in whose token
+     * carries no practice claim. Told to a signed-out person it is nonsense:
+     * their session says nothing because they have not got one, and the advice
+     * to sign out and in again is advice they cannot follow.
+     *
+     * A page that is `public` still passes through, because those are answered
+     * by people who cannot sign in at all — an emailed token, an applicant with
+     * no account. Everything else says the one useful thing: sign in.
      */
     if (!session) {
-      setRefused(null);
+      const rule = ruleFor(pathname);
+      setRefused(rule && !rule.audiences.includes('public') ? 'signed-out' : null);
       return;
     }
 
@@ -105,12 +115,29 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   useEffect(() => {
-    if (!refused) return;
+    /*
+     * NOT REDIRECTED WHEN SIGNED OUT. They are already at the page they wanted;
+     * bouncing them elsewhere loses it, and after signing in they would have to
+     * find their way back. The sign-in control in the header is the way
+     * forward, and `returnPath` already brings them back here afterwards.
+     */
+    if (!refused || refused === 'signed-out') return;
     const timer = setTimeout(() => router.replace(goingTo), REDIRECT_AFTER_MS);
     return () => clearTimeout(timer);
   }, [refused, goingTo, router]);
 
   if (!refused) return <>{children}</>;
+
+  if (refused === 'signed-out') {
+    return (
+      <Shell right={<SessionControl audience={strings.access.audience} />}>
+        <h1 className={ui.pageTitle}>
+          <ShieldAlert size={20} aria-hidden="true" /> {strings.access.signInTitle}
+        </h1>
+        <Notice tone="warn" title={strings.access.signInNoticeTitle}>{strings.access.signInBody}</Notice>
+      </Shell>
+    );
+  }
 
   return (
     <Shell>

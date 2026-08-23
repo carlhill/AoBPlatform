@@ -27,6 +27,21 @@ import styles from '../../../practice/manage.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
+type Department = { id: string; name: string };
+
+type Location = {
+  id: string;
+  code: string | null;
+  address: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  suburb: string | null;
+  state: string | null;
+  postcode: string | null;
+  country: string | null;
+  departments: Department[];
+};
+
 type Practice = {
   id: string;
   name: string;
@@ -42,7 +57,22 @@ type Practice = {
   headOfficeState: string | null;
   headOfficePostcode: string | null;
   headOfficeCountry: string | null;
+  locations?: Location[];
 };
+
+function locationLines(l: Location): string[] {
+  // Prefer the structured parts; fall back to the single `address` line, which
+  // is what older locations have and is better than showing nothing.
+  const structured = [
+    l.addressLine1,
+    l.addressLine2,
+    [l.suburb, l.state, l.postcode].filter(Boolean).join(' '),
+  ]
+    .map((line) => (line ?? '').trim())
+    .filter(Boolean);
+
+  return structured.length > 0 ? structured : [(l.address ?? '').trim()].filter(Boolean);
+}
 
 function addressLines(p: Practice): string[] {
   return [
@@ -142,6 +172,53 @@ export function PracticeView({ practiceId }: { practiceId: string }) {
               <p className={ui.hint}>{strings.practicePublic.noAddress}</p>
             )}
             <p className={ui.hint}>{strings.practicePublic.headOfficeNote}</p>
+          </section>
+
+          {/*
+            THE PLACES, under the head office. All of the practice's active
+            locations, not only the ones this practitioner works at: an address
+            is already printed on patient-facing notices, and somebody needing
+            to ring another site of their own practice is an ordinary need.
+
+            WHAT IS NOT HERE is who works at each. "Locations, and who is at
+            each" is the practitioner directory the hard rules forbid — so this
+            carries departments, which are structure, and no people.
+          */}
+          <section className={styles.applicationSection}>
+            <h2 className={styles.applicationHeading}>
+              <MapPin size={16} aria-hidden="true" /> {strings.practicePublic.locationsTitle}
+            </h2>
+            <p className={ui.hint}>{strings.practicePublic.locationsNote}</p>
+
+            {(practice.locations ?? []).length === 0 && (
+              <p className={ui.hint}>{strings.practicePublic.noLocations}</p>
+            )}
+
+            {(practice.locations ?? []).map((l) => (
+              <div key={l.id} className={styles.reviewCard}>
+                <div className={styles.reviewHead}>
+                  <span className={styles.reviewKind}>{l.code ?? strings.practicePublic.unnamedSite}</span>
+                </div>
+                {locationLines(l).map((line, i) => (
+                  <p key={i} className={styles.cardNote}>
+                    {line}
+                  </p>
+                ))}
+
+                {/*
+                  Departments under their own site, because a department only
+                  means anything inside one — two practices can both have a
+                  "Reception" and they are not the same place.
+                */}
+                {l.departments.length > 0 ? (
+                  <p className={ui.hint}>
+                    {strings.practicePublic.departments}: {l.departments.map((d) => d.name).join(', ')}
+                  </p>
+                ) : (
+                  <p className={ui.hint}>{strings.practicePublic.noDepartments}</p>
+                )}
+              </div>
+            ))}
           </section>
 
           <section className={styles.applicationSection}>

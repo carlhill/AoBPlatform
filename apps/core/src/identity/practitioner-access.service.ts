@@ -41,6 +41,67 @@ export class PractitionerAccessService {
   ) {}
 
   /**
+   * Write down that we sent them a sign-in link.
+   *
+   * WHY THIS IS NOT AUTOMATIC. The enrolment email is sent by KEYCLOAK, over
+   * its own SMTP, because the link inside it is an action token only Keycloak
+   * can mint. It never touches our outbound queue — so "what we have sent you"
+   * showed a practitioner nothing, having just emailed them.
+   *
+   * That is a page telling somebody we had sent them nothing while the message
+   * sat in their inbox. Recorded here so the two agree.
+   *
+   * WRITTEN AS ALREADY SENT, not queued. The send has happened; a pending row
+   * would have a worker try to send it again, and the queue would be carrying
+   * a duplicate of a message that already arrived.
+   *
+   * ANCHORED TO A PRACTICE because `outbound_items` is practice-scoped and a
+   * practitioner is not. The practice whose acceptance caused it, or the one
+   * that introduced them — either is a truthful answer to "on whose account
+   * did this go out".
+   */
+  private async recordEnrolmentSent(
+    practitionerId: string,
+    email: string,
+    practiceId: string | null | undefined,
+  ): Promise<void> {
+    if (!practiceId) {
+      // Nowhere truthful to anchor it. Better an unrecorded send than one
+      // attributed to a practice that had nothing to do with it.
+      this.logger.warn(`Enrolment sent to practitioner ${practitionerId} with no practice to record it against.`);
+      return;
+    }
+
+    try {
+      const now = new Date();
+      await this.prisma.withPractice(practiceId, (tx) =>
+        tx.outboundItem.create({
+          data: {
+            practiceId,
+            channel: 'email',
+            destination: email,
+            subjectType: 'Practitioner',
+            subjectId: practitionerId,
+            mediaType: 'email',
+            recipientType: 'practitioner',
+            recipientId: practitionerId,
+            // The subject line Keycloak actually uses, so the row and the inbox
+            // say the same thing.
+            payload: { subject: 'Set up your AoBPlatform sign-in', sentBy: 'keycloak' },
+            state: 'sent',
+            sentAt: now,
+            idempotencyKey: `practitioner-enrolment:${practitionerId}:${now.toISOString()}`,
+          },
+        }),
+      );
+    } catch (err) {
+      // Never fatal. Failing to write down a send that already happened must
+      // not undo the send or the account.
+      this.logger.error(`Could not record the enrolment send for ${practitionerId}: ${(err as Error).message}`);
+    }
+  }
+
+  /**
    * Make sure this practitioner can sign in, and send them the link if they
    * cannot yet.
    *
@@ -49,7 +110,16 @@ export class PractitionerAccessService {
    * enrolment link — that would invalidate the passkey they are already using,
    * turning "I accepted a job" into "I am locked out of the other two".
    */
-  async ensureAccount(practitionerId: string): Promise<{ created: boolean; invited: boolean; detail: string }> {
+  async ensureAccount(
+    practitionerId: string,
+    /**
+     * The practice whose acceptance caused this, when there is one. Used only
+     * to anchor the RECORD of the message — `outbound_items` is practice-scoped
+     * and a practitioner is not, so without it the send has nowhere to be
+     * written down.
+     */
+    causedByPracticeId?: string,
+  ): Promise<{ created: boolean; invited: boolean; detail: string }> {
     // `practitioners` is not practice-scoped, so this needs no scope. That is
     // the entire point of the person-level record.
     const practitioner = await this.prisma.practitioner.findFirst({ where: { id: practitionerId } });
@@ -124,6 +194,8 @@ export class PractitionerAccessService {
       where: { id: practitionerId },
       data: { keycloakUserId: userId, invitedAt: new Date() },
     });
+
+    await this.recordEnrolmentSent(practitionerId, practitioner.email, causedByPracticeId ?? practitioner.invitedByPracticeId);
 
     this.logger.log(`Practitioner ${practitionerId} can now sign in; enrolment link sent.`);
     return {
