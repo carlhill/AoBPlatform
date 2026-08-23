@@ -23,6 +23,7 @@
 import * as RadixLabel from '@radix-ui/react-label';
 import * as RadixCheckbox from '@radix-ui/react-checkbox';
 import * as RadixDialog from '@radix-ui/react-dialog';
+import { MainMenu } from '../MainMenu';
 import { useId, useState } from 'react';
 import styles from './ui.module.css';
 
@@ -45,6 +46,13 @@ export function Shell({
     <div className={styles.shell}>
       <header className={styles.topbar}>
         <div className={styles.topbarInner}>
+          {/*
+            THE MENU FIRST, and in the shell rather than on each page. Every
+            screen already wraps itself in Shell, so putting it here is what
+            makes it appear everywhere at once — and, more to the point, keeps
+            it from appearing on all but the one page somebody forgot.
+          */}
+          <MainMenu />
           <span className={styles.wordmark}>AoBPlatform</span>
           {nav && <nav className={styles.nav}>{nav}</nav>}
           {right && <span className={styles.topbarRight}>{right}</span>}
@@ -289,16 +297,23 @@ export function Notice({
   tone = 'warn',
   title,
   children,
+  ...rest
 }: {
   tone?: Exclude<Tone, 'neutral'>;
   title?: string;
   children: React.ReactNode;
-}) {
+} & React.HTMLAttributes<HTMLDivElement>) {
   return (
     // `alert` so a refusal is announced when it appears, not silently painted.
-    <div className={`${styles.notice} ${noticeTone[tone]}`} role="alert">
+    <div className={`${styles.notice} ${noticeTone[tone]}`} role="alert" {...rest}>
       {title && <p className={styles.noticeTitle}>{title}</p>}
-      <p className={styles.noticeBody}>{children}</p>
+      {/*
+        A DIV, NOT A `p`. Longer notices carry more than one sentence and want
+        paragraphs; a `p` inside a `p` is invalid and the browser silently
+        closes the outer one, which broke the styling in a way that looked like
+        a CSS bug rather than bad markup.
+      */}
+      <div className={styles.noticeBody}>{children}</div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
-import { IsOptional, IsString } from 'class-validator';
+import { IsString } from 'class-validator';
 import { OUTBOUND_STATES } from '@aobplatform/domain';
 import { OutboundService } from './outbound.service';
 import { SessionActor, type Actor } from '../auth/actor.decorator';

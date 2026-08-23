@@ -534,6 +534,42 @@ deliberately if we want it, not as a side effect of a queue viewer.
 - [ ] Decide the patient auth question FIRST — token-scoped view, or real accounts
 - [ ] A practitioner spanning practices needs a deliberate cross-tenant read; RLS forbids it by default and every exception is individually justified (CONVENTIONS.md §6)
 - [ ] A carer selecting a patient is an authority question, not a filter — who may act for whom has to be recorded before it can be offered
+## Support, lockouts and passkey recovery
+
+Full design in **support.md**. The short of it:
+
+- [ ] `/support` page, reachable signed in or out, listed in the menu for everybody
+- [ ] Lane A (signed in) — chat immediately, ticket bound to the verified identity
+- [ ] Lane B (signed out, no credential involved) — public, rate-limited, unverified contact
+- [ ] Lane C (signed out, needs a credential) — **never resolved in chat**; a ticket
+      plus an out-of-band challenge to the channels we already hold
+- [ ] Ask what they typed, contact what we hold, store only whether the two matched
+      (REQ-VER-04 / HARD-04: identifier types and outcomes, never values)
+- [ ] Never confirm whether an account exists — the same answer either way, or the
+      chat becomes a lookup service for valid practitioner identities
+- [ ] `passkey_compromised` disables first and verifies after; it is an incident,
+      not a request
+
+**Before any of that, the cheap work that removes most of the need:**
+
+- [ ] Prompt for a **second passkey** at enrolment; nag while somebody holds one
+- [ ] **Verified mobile** on practitioners and practice admins — captured at
+      enrolment, because one collected during an incident proves nothing.
+      `practitioners` has no phone column today
+- [ ] Self-service add / remove passkey, and self-service "my key was stolen"
+
+**Resolution paths, which are stronger than any question a chat could ask:**
+
+- [ ] A practice admin, signed in, requests re-enrolment for their affiliated
+      practitioner — the introduction chain, run in reverse
+- [ ] Two platform operators, different people, for a locked-out practice admin
+- [ ] Cooling-off and old-channel notification on every reissue, reusing the
+      pending-email-change pattern
+
+Needs Carl: LLM in the request path (CLAUDE.md 7), a third-party bot check,
+mobile numbers in the collection notice, and what to do about a practitioner
+whose introducing practice no longer exists.
+
 ## Open questions
 
 These block work and need Carl, not code.

@@ -16,6 +16,7 @@ import { MESSAGING_GATEWAY, type MessagingGateway } from '../messaging/gateway';
 import { ReviewTasksService } from '../review-tasks/review-tasks.service';
 import { PracticeAdminService } from '../identity/practice-admin.service';
 import type { Actor } from '../auth/actor.decorator';
+import type { ResolvedChange } from '../identity/practitioner-email.service';
 
 /**
  * Holding a change to the administrator's email address until it is confirmed.
@@ -177,6 +178,27 @@ export class PendingEmailService {
       requestedAt: row.requestedAt.toISOString(),
       expiresAt: row.expiresAt.toISOString(),
     };
+  }
+
+  /**
+   * WHOSE CHANGE IS THIS? Resolved before any scope exists, because whoever
+   * holds the token has not signed in and carries neither a practice claim nor
+   * a practitioner one.
+   *
+   * The row comes back through a SECURITY DEFINER function that matches the
+   * token and returns nothing at all otherwise -- an individually justified
+   * escape hatch from RLS (CONVENTIONS.md 6), narrow because it can only ever
+   * be entered with an unguessable token that names one row.
+   *
+   * Public because the controller needs it to decide WHICH service handles the
+   * answer: one link, two kinds of subject, and the link cannot say which
+   * without telling a stranger something about the account.
+   */
+  async resolve(token: string, kind: 'confirm' | 'stop'): Promise<ResolvedChange | undefined> {
+    const [found] = await this.prisma.$queryRaw<
+      ResolvedChange[]
+    >`SELECT * FROM core.pending_email_change_by_token(${token}, ${kind})`;
+    return found;
   }
 
   /**

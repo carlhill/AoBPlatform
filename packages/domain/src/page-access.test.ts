@@ -108,6 +108,25 @@ describe('reaching a page', () => {
     }
   });
 
+  it('lets a platform operator open the organisation list', () => {
+    /*
+     * THE ONE `/practice/...` PATH AN OPERATOR REACHES WITHOUT ACTING AS
+     * ANYBODY. It was closed to them, which shut the exact audience it was
+     * written for out of the page that lists every organisation — the
+     * component sends practice-scoped users away, so nobody could open it.
+     *
+     * It is the directory an operator needs in order to CHOOSE a practice to
+     * act as. Without it the only way to reach one is to already know its id.
+     */
+    expect(mayReach('/practice', operator)).toBe(true);
+
+    // And it changes nothing below it: a practice's own work still needs a
+    // practice claim, which acting-as is what grants.
+    for (const page of ['/practice/setup', '/practice/application', '/practice/locations', '/practice/pms']) {
+      expect(mayReach(page, operator)).toBe(false);
+    }
+  });
+
   it('does NOT let a platform operator open practice pages directly', () => {
     /*
      * They get there by acting as somebody at the practice, which carries a

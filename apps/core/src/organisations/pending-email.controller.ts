@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, NotFoundException, Param, Post } from '@nestjs/common';
 import { IsString, Length } from 'class-validator';
 import { Public } from '../auth/public.decorator';
 import { PendingEmailService } from './pending-email.service';
 import { SessionActor, type Actor } from '../auth/actor.decorator';
+import { PractitionerEmailService } from '../identity/practitioner-email.service';
 
 class ConfirmDto {
   @IsString() @Length(10, 200) token!: string;
@@ -27,7 +28,10 @@ class StopDto {
  */
 @Controller('pending-email-change')
 export class PendingEmailController {
-  constructor(private readonly pending: PendingEmailService) {}
+  constructor(
+    private readonly pending: PendingEmailService,
+    private readonly practitionerEmail: PractitionerEmailService,
+  ) {}
 
   /**
    * Confirming needs the CODE as well as the token, because the link alone is
@@ -37,8 +41,24 @@ export class PendingEmailController {
    */
   @Public()
   @Post('confirm')
-  confirm(@Body() dto: ConfirmDto) {
-    return this.pending.confirm(dto.token, dto.code);
+  async confirm(@Body() dto: ConfirmDto) {
+    /*
+     * ONE LINK, TWO KINDS OF SUBJECT. The message cannot say which -- printing
+     * "this is a practitioner address change" in a link would tell whoever
+     * intercepted it something about the account before they proved anything.
+     * So the token is resolved first and the answer routed by what it names.
+     *
+     * The two paths differ in more than plumbing: confirming a PRACTICE
+     * administrator address hands the account over and revokes its passkeys,
+     * because that account belongs to the practice. Confirming a
+     * PRACTITIONER's does not, because that credential is the person's own.
+     */
+    const found = await this.pending.resolve(dto.token, 'confirm');
+    if (!found) throw new NotFoundException('That confirmation link is not one of ours, or it has been replaced.');
+
+    return found.practitionerId
+      ? this.practitionerEmail.confirm(found, dto.code)
+      : this.pending.confirm(dto.token, dto.code);
   }
 
   /**
@@ -51,8 +71,11 @@ export class PendingEmailController {
    */
   @Public()
   @Post('stop')
-  stop(@Body() dto: StopDto, @SessionActor() actor: Actor | undefined) {
-    return this.pending.stop(dto.token, actor);
+  async stop(@Body() dto: StopDto, @SessionActor() actor: Actor | undefined) {
+    const found = await this.pending.resolve(dto.token, 'stop');
+    if (!found) throw new NotFoundException('That link is not one of ours.');
+
+    return found.practitionerId ? this.practitionerEmail.stop(found) : this.pending.stop(dto.token, actor);
   }
 
   /**

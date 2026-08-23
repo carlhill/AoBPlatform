@@ -258,6 +258,11 @@ model Practice {
   adminEmailVerificationExpiresAt DateTime?
   adminEmailVerificationAttempts  Int       @default(0)
 
+  /// The practice's backup address — see `Practitioner.backupEmail` for why
+  /// this exists. Never equal to `adminEmail`, by CHECK constraint.
+  backupEmail           String?
+  backupEmailVerifiedAt DateTime?
+
   /// The correction window. Opened by a reviewer rather than at submission, so
   /// the clock does not run down while an application waits in a queue nobody
   /// has reached.
@@ -609,6 +614,22 @@ model Practitioner {
    * cannot accept an affiliation on the practitioner's behalf.
    */
   email        String?
+
+  /**
+   * A SECOND CHANNEL, and the piece that makes holding an address change
+   * workable rather than merely strict.
+   *
+   * Requiring the OLD address to authorise a change defeats takeover
+   * completely and breaks the commonest legitimate case — the old mailbox is
+   * gone, which is WHY they are changing it. A backup is an address that is
+   * not the one being changed, so the warning still reaches somebody.
+   *
+   * Never equal to `email`: one inbox covering both is one compromise
+   * covering both. Enforced by a CHECK constraint, because the form is not
+   * the only caller.
+   */
+  backupEmail           String?
+  backupEmailVerifiedAt DateTime?
 
   /**
    * Which validated practice created this identity (CONVENTIONS.md §8b).
@@ -1574,8 +1595,20 @@ model ReviewTask {
 /// was redirected -- so it is proved before it takes effect, and BOTH ends are
 /// told while it waits.
 model PendingEmailChange {
-  id         String @id @default(uuid()) @db.Uuid
-  practiceId String @db.Uuid
+  id String @id @default(uuid()) @db.Uuid
+
+  /**
+   * EXACTLY ONE SUBJECT. This table was built for a practice's administrator
+   * address, so `practiceId` was the anchor. A practitioner has no practice —
+   * their scope is their affiliations — so theirs cannot hang off it.
+   *
+   * Rather than a second table repeating token, code, expiry and outcome, the
+   * change gains a subject: a practice or a practitioner, never both and never
+   * neither. `num_nonnulls(...) = 1` in the database says so; nullable columns
+   * alone would allow a row belonging to nobody.
+   */
+  practiceId     String? @db.Uuid
+  practitionerId String? @db.Uuid
 
   requestedEmail String
   /// What it was AT THE TIME. `practices` moves on; a reviewer reading history
@@ -1606,9 +1639,19 @@ model PendingEmailChange {
   /// The ADDRESS that answered, never free text from whoever answered it.
   outcomeBy String?
 
+  /// The backup address AT THE TIME, so a reviewer can see which channel was
+  /// actually reachable rather than assuming the old one was.
+  backupEmail String?
+
+  /// When it took effect. The cooling-off window runs from HERE, not from the
+  /// request: somebody who notices late is objecting to the change having
+  /// happened, not to it having been asked for.
+  effectiveAt DateTime?
+
   createdAt DateTime @default(now())
 
   @@index([practiceId, requestedAt])
+  @@index([practitionerId, requestedAt])
   @@map("pending_email_changes")
 }
 

@@ -726,6 +726,10 @@ export const strings = {
       done: 'Done',
     } as Record<string, string>,
 
+    offlineTitle: 'We cannot reach the server',
+    offlineBody:
+      'Nothing is shown here because there is no way to read it right now — not because anything is missing. '
+      + 'Your selection has been kept. Try again in a moment, and if it keeps happening the API is not running.',
     noPracticeTitle: 'No practice is selected',
     noPracticeScoped:
       'Your sign-in is tied to one practice, and we could not load it. That usually means the approval has ' +
@@ -1431,6 +1435,67 @@ export const strings = {
       + 'their administrator’s personal address instead — that identifies a person and is where their sign-in '
       + 'lives. Ask them directly, or ask us.',
   },
+  /*
+   * THE MENU. Labels only — WHICH of these appear is decided by the access
+   * table, so this list is never the thing that grants anybody anything.
+   */
+  nav: {
+    title: 'Go to',
+    open: 'Open the menu',
+    close: 'Close the menu',
+    hint: 'Only the pages you can actually open are listed here.',
+    hintSignedOut: 'You are not signed in, so this is everything open to anybody.',
+
+    /*
+     * WHY SOMETHING IS NOT HERE. A short list with no explanation reads as a
+     * broken menu. These lines say what is missing and how to reach it, which
+     * is the difference between a rule and a fault.
+     */
+    absentTitle: 'Not listed here',
+    absentPractice:
+      'A practice’s own pages — its setup, locations, practitioners and users — open when you act as that '
+      + 'practice. Start from All organisations. Opening them directly would let an operator read a '
+      + 'practice’s records with nothing recorded about whose behalf it was on.',
+    absentPractitioner:
+      'A practitioner’s pages are that person’s own and show only their affiliations and their messages. '
+      + 'There is nothing there for an operator to see, which is why this platform is not a directory of who '
+      + 'works where.',
+    absentSignedOut: 'The rest appears once you sign in.',
+
+    platformHeading: 'Platform',
+    allOrganisations: 'All organisations',
+    reviewDossiers: 'Applications to review',
+    reviewQueue: 'Review queue',
+    outbound: 'Messages sent',
+    outboundByOrg: 'Messages by organisation',
+    outboundByPlace: 'Messages by location and department',
+
+    practiceHeading: 'This practice',
+    yourPractices: 'Your practices',
+    setup: 'Setup',
+    entity: 'The organisation',
+    application: 'Your application',
+    locations: 'Locations',
+    practitioners: 'Practitioners',
+    affiliations: 'Invitations and departures',
+    channels: 'How you reach patients',
+    pms: 'Practice management system',
+    users: 'Who may sign in',
+
+    reportsHeading: 'Reports',
+    reports: 'Reports',
+
+    yoursHeading: 'Yours',
+    practitionerHub: 'Your practice work',
+    myAffiliations: 'Your affiliations',
+    myMessages: 'What we have sent you',
+
+    everyoneHeading: 'Everyone',
+    home: 'Home',
+    apply: 'Apply to join',
+    help: 'Help and contact',
+  },
+
   practitioner: {
     audience: 'Practitioner',
     title: 'Your practice work',
@@ -1456,11 +1521,40 @@ export const strings = {
     verifiedNote: 'Your name and AHPRA number were checked against the public register, so they are not edited here.',
     email: 'Your email address',
     emailHint:
-      'Yours, not a practice’s. Invitations to join a practice come here, which is why a change to it is '
-      + 'looked at by a person.',
-    save: 'Save this address',
-    saving: 'Saving…',
-    contactSaved: 'Saved. Somebody here will look at the change, because this is where invitations go.',
+      'Yours, not a practice’s. Invitations and sign-in links come here, so a change is held until the new '
+      + 'address proves itself — nothing moves the moment you press save.',
+    save: 'Ask to change this address',
+    saving: 'Sending…',
+    contactSaved:
+      'We have written to the new address with a code. Nothing has changed yet — enter the code from that '
+      + 'message and it takes effect then.',
+
+    /*
+     * WHAT IS WAITING, shown on their own page rather than only in an email.
+     * If somebody else raised this, the warning goes to an address that may be
+     * exactly the one under attack; the person finds out here regardless.
+     */
+    pendingTitle: 'A change to your address is waiting',
+    pendingBody:
+      'We have asked {email} to confirm itself. Until somebody enters the code we sent there, your address is '
+      + 'unchanged. It lapses on its own if nobody answers.',
+    pendingStop:
+      'If you did not ask for this, use the "this was not me" link in the message we sent to your other '
+      + 'addresses. That link keeps working for a week after a change goes through.',
+
+    backupTitle: 'Your backup address',
+    backupHint:
+      'A second address we can warn if anybody asks to change your main one. Nothing routine is sent here. It '
+      + 'matters most when your main address has stopped working — which is the commonest reason people '
+      + 'change it.',
+    backupNone:
+      'You have no backup address. If your main one stops working, there is nowhere for us to warn you that '
+      + 'somebody asked to move it.',
+    backupUnverified: 'Set, but nobody has answered at it yet. We have written to it to say so.',
+    backupSave: 'Save backup address',
+    backupClear: 'Remove it',
+    backupSaved: 'Saved. We have written to it so its holder knows.',
+    backupCleared: 'Removed. You now have no second address for us to warn.',
 
     affiliationsTitle: 'Your affiliations',
     affiliationsBody:

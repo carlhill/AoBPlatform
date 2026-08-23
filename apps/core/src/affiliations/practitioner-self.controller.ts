@@ -2,12 +2,14 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   NotFoundException,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
 } from '@nestjs/common';
 import { IsDateString, IsEmail, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import { DEPARTURE_REASONS, DEPARTURE_REASON_KEYS } from '@aobplatform/domain';
@@ -15,6 +17,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AffiliationsService } from './affiliations.service';
 import { ReviewTasksService } from '../review-tasks/review-tasks.service';
 import { SessionActor, type Actor } from '../auth/actor.decorator';
+import { PractitionerEmailService } from '../identity/practitioner-email.service';
 
 /*
  * EMAIL ONLY. `practitioners` carries no phone column, and this is not the
@@ -22,6 +25,16 @@ import { SessionActor, type Actor } from '../auth/actor.decorator';
  * invitations go and therefore the thing worth protecting.
  */
 class UpdateContactDto {
+  @IsEmail() email!: string;
+}
+
+/*
+ * THE SECOND CHANNEL. Not a contact detail in the ordinary sense — nobody
+ * writes to it about work. It exists so that a change to the FIRST channel has
+ * somewhere to be announced when the first channel has stopped working, which
+ * is the commonest reason anybody changes it.
+ */
+class BackupEmailDto {
   @IsEmail() email!: string;
 }
 
@@ -53,6 +66,7 @@ export class PractitionerSelfController {
     private readonly prisma: PrismaService,
     private readonly affiliations: AffiliationsService,
     private readonly reviewTasks: ReviewTasksService,
+    private readonly practitionerEmail: PractitionerEmailService,
   ) {}
 
   private practitionerIdOf(actor: Actor | undefined): string {
@@ -88,8 +102,16 @@ export class PractitionerSelfController {
       familyName: practitioner.familyName,
       providerType: practitioner.providerType,
       registrationStatus: practitioner.registrationStatus,
-      // Theirs to change.
+      // Theirs to change — but not instantly. See `updateContact`.
       email: practitioner.email,
+      backupEmail: practitioner.backupEmail,
+      backupEmailVerifiedAt: practitioner.backupEmailVerifiedAt,
+      /*
+       * SHOWN WHETHER OR NOT THEY ASKED FOR IT. If somebody else raised this,
+       * the person it concerns finds out by opening their own page — not only
+       * by reading an email that may be going to the address under attack.
+       */
+      pendingEmailChange: await this.practitionerEmail.live(practitionerId),
       passkeyEnrolledAt: practitioner.passkeyEnrolledAt,
       deregisteredAt: practitioner.deregisteredAt,
       affiliations,
@@ -267,53 +289,110 @@ export class PractitionerSelfController {
   @Patch('me/contact')
   async updateContact(@Body() dto: UpdateContactDto, @SessionActor() actor: Actor | undefined) {
     const practitionerId = this.practitionerIdOf(actor);
-    // Hoisted so the narrowing survives into the closure below, where TypeScript
-    // would otherwise widen it back to `string | undefined`.
     const email = dto.email.trim();
 
     const before = await this.prisma.practitioner.findFirst({ where: { id: practitionerId } });
     if (!before) throw new BadRequestException('We could not find your record.');
 
-    if (before.email && email.toLowerCase() === before.email.toLowerCase()) {
-      throw new BadRequestException('That is already your address, so there is nothing to record.');
-    }
-
-    const updated = await this.prisma.practitioner.update({
-      where: { id: practitionerId },
-      data: { email },
-    });
+    /*
+     * HELD, NOT APPLIED. This used to write the new address immediately and
+     * raise a review task afterwards — which is a record of what happened, not
+     * a control over whether it happens. A practice administrator's address had
+     * been held pending proof for months by then; a practitioner's, which is
+     * where their SIGN-IN LINKS go, applied on save.
+     *
+     * Now the new address proves itself with a code, and the old address and
+     * the backup are told with the power to stop it. `PractitionerEmailService`
+     * carries the reasoning for why the old address is TOLD rather than asked
+     * to authorise.
+     */
+    const pending = await this.practitionerEmail.request(
+      practitionerId,
+      email,
+      // Never free text. The session names who is doing this.
+      actor?.name ?? 'the practitioner',
+    );
 
     /*
-     * A CHANGED ADDRESS IS WORTH SOMEBODY SEEING, for the same reason it is on
-     * a practice: this is where invitations go, and redirecting it is the first
-     * step somebody would take to accept affiliations in another person's name.
+     * THE REVIEW TASK STILL GOES UP, and now says something sharper: not "an
+     * address changed" but "somebody asked to change one, and here is whether
+     * anybody could be told". A request with nowhere to warn is the shape an
+     * account takeover takes, and that is precisely what a reviewer should see.
      *
      * Raised against the practice that introduced them, because a review task
      * is practice-scoped and that is the practice with standing to have
-     * introduced this identity in the first place.
+     * introduced this identity at all.
      */
-    {
-      const practiceId = before.invitedByPracticeId;
-      if (practiceId) {
-        await this.prisma.withPractice(practiceId, (tx) =>
-          this.reviewTasks.raise(tx, {
-            practiceId,
-            kind: 'admin_contact_changed',
-            subjectType: 'Practitioner',
-            subjectId: practitionerId,
-            summary: 'A practitioner changed the address their invitations go to',
-            detail: {
-              reason:
-                'Invitations to join a practice are sent to this address, so a change to it is the first ' +
-                'step somebody would take to accept an affiliation in another person’s name.',
-              changes: [{ field: 'email', from: before.email, to: email }],
-            },
-            raisedBy: actor?.name ?? 'the practitioner',
-          }),
-        );
-      }
+    const practiceId = before.invitedByPracticeId;
+    if (practiceId) {
+      await this.prisma.withPractice(practiceId, (tx) =>
+        this.reviewTasks.raise(tx, {
+          practiceId,
+          kind: 'admin_contact_changed',
+          subjectType: 'Practitioner',
+          subjectId: practitionerId,
+          summary: pending.unwitnessed
+            ? 'A practitioner asked to change their address, and there was nobody to warn'
+            : 'A practitioner asked to change the address their invitations go to',
+          detail: {
+            reason: pending.unwitnessed
+              ? 'The request is held pending proof from the new address, but this practitioner had neither ' +
+                'an old address nor a backup — so nobody but the requester knows it was asked for.'
+              : 'Invitations and sign-in links go to this address, so a change to it is the first step ' +
+                'somebody would take to receive a credential in another person’s name. It is held until ' +
+                'the new address proves itself.',
+            changes: [{ field: 'email', from: before.email, to: email }],
+            held: true,
+            addressesWarned: pending.warned,
+          },
+          raisedBy: actor?.name ?? 'the practitioner',
+        }),
+      );
     }
 
-    return { id: updated.id, email: updated.email };
+    return {
+      id: practitionerId,
+      // UNCHANGED, and the screen must show this rather than the new one.
+      email: before.email,
+      pending: {
+        requestedEmail: pending.requestedEmail,
+        expiresAt: pending.expiresAt,
+        warned: pending.warned,
+        unwitnessed: pending.unwitnessed,
+      },
+      detail: pending.unwitnessed
+        ? `We have written to ${pending.requestedEmail} with a code. Nothing changes until you enter it. You ` +
+          'have no backup address — please add one, so that next time we have somewhere to warn you.'
+        : `We have written to ${pending.requestedEmail} with a code. Nothing changes until you enter it, and ` +
+          'we have told your other addresses so they can stop it.',
+    };
+  }
+
+  /** What is waiting, on its own, for a screen that only needs this. */
+  @Get('me/pending-email')
+  pendingEmail(@SessionActor() actor: Actor | undefined) {
+    return this.practitionerEmail.live(this.practitionerIdOf(actor));
+  }
+
+  /**
+   * Setting the backup address.
+   *
+   * NOT HELD PENDING PROOF, unlike the primary — and that asymmetry is the
+   * point rather than an oversight. The primary is where sign-in links go, so
+   * moving it is an attack; the backup receives nothing but warnings, so the
+   * worst a wrong one does is fail to warn, which is exactly where somebody
+   * with no backup already is. Holding it would mean a person with an
+   * unreachable primary could never establish one, and that is the case that
+   * matters most.
+   */
+  @Put('me/backup-email')
+  setBackupEmail(@Body() dto: BackupEmailDto, @SessionActor() actor: Actor | undefined) {
+    return this.practitionerEmail.setBackup(this.practitionerIdOf(actor), dto.email);
+  }
+
+  /** Removing it. Allowed, and the screen says plainly what it costs. */
+  @Delete('me/backup-email')
+  clearBackupEmail(@SessionActor() actor: Actor | undefined) {
+    return this.practitionerEmail.clearBackup(this.practitionerIdOf(actor));
   }
 }

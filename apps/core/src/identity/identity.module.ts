@@ -5,6 +5,7 @@ import { IdentityController } from './identity.controller';
 import { IdentityService } from './identity.service';
 import { PracticeAdminService } from './practice-admin.service';
 import { PractitionerAccessService } from './practitioner-access.service';
+import { PractitionerEmailService } from './practitioner-email.service';
 import { KEYCLOAK_ADMIN } from './identity.tokens';
 
 /**
@@ -18,6 +19,7 @@ import { KEYCLOAK_ADMIN } from './identity.tokens';
     IdentityService,
     PracticeAdminService,
     PractitionerAccessService,
+    PractitionerEmailService,
     {
       provide: KEYCLOAK_ADMIN,
       inject: [ConfigService],
@@ -34,6 +36,12 @@ import { KEYCLOAK_ADMIN } from './identity.tokens';
       },
     },
   ],
-  exports: [IdentityService, PracticeAdminService, PractitionerAccessService, KEYCLOAK_ADMIN],
+  exports: [
+    IdentityService,
+    PracticeAdminService,
+    PractitionerAccessService,
+    PractitionerEmailService,
+    KEYCLOAK_ADMIN,
+  ],
 })
 export class IdentityModule {}

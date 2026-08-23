@@ -38,6 +38,13 @@ type Affiliation = {
   endedAt?: string | null;
 };
 
+type PendingChange = {
+  id: string;
+  requestedEmail: string;
+  requestedAt: string;
+  expiresAt: string;
+};
+
 type Me = {
   id: string;
   ahpraNumber: string;
@@ -46,6 +53,9 @@ type Me = {
   providerType: string;
   registrationStatus: string | null;
   email: string | null;
+  backupEmail: string | null;
+  backupEmailVerifiedAt: string | null;
+  pendingEmailChange: PendingChange | null;
   passkeyEnrolledAt: string | null;
   deregisteredAt: string | null;
   affiliations: Affiliation[];
@@ -56,6 +66,7 @@ export function PractitionerHub() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [email, setEmail] = useState('');
+  const [backup, setBackup] = useState('');
   const [saved, setSaved] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -66,6 +77,7 @@ export function PractitionerHub() {
       if (!res.ok) throw new Error(body.message ?? `That could not be read (${res.status}).`);
       setMe(body);
       setEmail(body.email ?? '');
+      setBackup(body.backupEmail ?? '');
     } catch (e) {
       setError((e as Error).message);
     }
@@ -85,9 +97,61 @@ export function PractitionerHub() {
         headers: apiHeaders(),
         body: JSON.stringify({ email: email.trim() }),
       });
+      const body = (await res.json().catch(() => ({}))) as { message?: string; detail?: string };
+      if (!res.ok) throw new Error(body.message ?? `That could not be sent (${res.status}).`);
+      /*
+       * THE SERVER'S OWN WORDS, not a fixed string. It is the only side that
+       * knows whether there was anybody to warn, and "we told your other
+       * addresses" is a lie when there were none. The generic line is the
+       * fallback, not the default.
+       */
+      setSaved(body.detail ?? strings.practitioner.contactSaved);
+      /*
+       * RELOADED so the field snaps BACK to the address still in force. The
+       * new one sits in the pending notice above it, where it reads as asked
+       * for rather than as done.
+       */
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveBackup() {
+    setBusy(true);
+    setError(null);
+    setSaved(null);
+    try {
+      const res = await fetch(`${CORE_URL}/practitioner/me/backup-email`, {
+        method: 'PUT',
+        headers: apiHeaders(),
+        body: JSON.stringify({ email: backup.trim() }),
+      });
       const body = (await res.json().catch(() => ({}))) as { message?: string };
       if (!res.ok) throw new Error(body.message ?? `That could not be saved (${res.status}).`);
-      setSaved(strings.practitioner.contactSaved);
+      setSaved(strings.practitioner.backupSaved);
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clearBackup() {
+    setBusy(true);
+    setError(null);
+    setSaved(null);
+    try {
+      const res = await fetch(`${CORE_URL}/practitioner/me/backup-email`, {
+        method: 'DELETE',
+        headers: apiHeaders(),
+      });
+      const body = (await res.json().catch(() => ({}))) as { message?: string };
+      if (!res.ok) throw new Error(body.message ?? `That could not be removed (${res.status}).`);
+      setSaved(strings.practitioner.backupCleared);
       await load();
     } catch (e) {
       setError((e as Error).message);
@@ -210,6 +274,19 @@ export function PractitionerHub() {
                 <ShieldCheck size={13} aria-hidden="true" /> {strings.practitioner.verifiedNote}
               </p>
 
+              {/*
+                WHAT IS WAITING, above the field rather than below it. Somebody
+                who asked for a change yesterday and sees their old address in
+                the box will otherwise conclude it did not save and ask again —
+                which is the churn the server refuses on the third try.
+              */}
+              {me.pendingEmailChange && (
+                <Notice tone="warn" title={strings.practitioner.pendingTitle} data-testid="practitioner-pending">
+                  <p>{strings.practitioner.pendingBody.replace('{email}', me.pendingEmailChange.requestedEmail)}</p>
+                  <p className={ui.hint}>{strings.practitioner.pendingStop}</p>
+                </Notice>
+              )}
+
               <Field label={strings.practitioner.email} hint={strings.practitioner.emailHint}>
                 {(props) => (
                   <TextInput
@@ -228,6 +305,49 @@ export function PractitionerHub() {
               >
                 {busy ? strings.practitioner.saving : strings.practitioner.save}
               </Button>
+
+              {/*
+                THE BACKUP, on the same card as the address it protects. Put on
+                its own screen it would be a setting nobody visits; put here it
+                is the obvious next line after "this is where our messages go".
+
+                Told plainly when it is missing, because having none is the
+                state that costs something and silence reads as fine.
+              */}
+              {!me.backupEmail && (
+                <Notice tone="warn" title={strings.practitioner.backupTitle} data-testid="practitioner-no-backup">
+                  {strings.practitioner.backupNone}
+                </Notice>
+              )}
+
+              <Field label={strings.practitioner.backupTitle} hint={strings.practitioner.backupHint}>
+                {(props) => (
+                  <TextInput
+                    {...props}
+                    value={backup}
+                    onChange={(e) => setBackup(e.target.value)}
+                    data-testid="practitioner-backup-email"
+                  />
+                )}
+              </Field>
+              {me.backupEmail && !me.backupEmailVerifiedAt && (
+                <p className={ui.hint}>{strings.practitioner.backupUnverified}</p>
+              )}
+              <div className={ui.rowActions}>
+                <Button
+                  onClick={() => void saveBackup()}
+                  disabled={busy || !backup.trim() || backup.trim() === (me.backupEmail ?? '')}
+                  data-testid="practitioner-save-backup"
+                >
+                  {strings.practitioner.backupSave}
+                </Button>
+                {me.backupEmail && (
+                  <Button variant="subtle" onClick={() => void clearBackup()} disabled={busy} data-testid="practitioner-clear-backup">
+                    {strings.practitioner.backupClear}
+                  </Button>
+                )}
+              </div>
+
               {saved && <p className={ui.hint}>{saved}</p>}
             </>
           )}

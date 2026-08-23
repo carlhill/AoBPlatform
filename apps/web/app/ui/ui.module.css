@@ -52,6 +52,99 @@
   font-weight: 600;
 }
 
+/*
+ * THE MENU BUTTON AND ITS PANEL.
+ *
+ * A DRAWER RATHER THAN A DROPDOWN. The list is long for an operator and short
+ * for a practitioner; a dropdown that has to grow to fifteen items ends up
+ * scrolling inside a floating box, which is awkward on a phone and worse with a
+ * keyboard. A drawer has room and closes the same way every time.
+ */
+.menuButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.menuButton:hover {
+  background: var(--surface-sunken, var(--surface));
+}
+
+.menuPanel {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: min(320px, 88vw);
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  padding: var(--s5);
+  overflow-y: auto;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+.menuHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s4);
+}
+
+.menuHint {
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+  margin: 0;
+}
+
+.menuGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.menuHeading {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-muted);
+  margin: 0 0 var(--s1);
+}
+
+.menuLink,
+.menuLinkActive {
+  text-decoration: none;
+  font-size: var(--text-sm);
+  padding: var(--s2) var(--s3);
+  border-radius: var(--radius-sm, 6px);
+  border-left: 3px solid transparent;
+}
+
+.menuLink {
+  color: var(--ink);
+}
+
+.menuLink:hover {
+  background: var(--surface-sunken, rgba(0, 0, 0, 0.04));
+}
+
+/* WHERE YOU ARE, marked by a bar as well as by weight. Colour alone is not a
+   specification -- roughly one man in twelve cannot use it. */
+.menuLinkActive {
+  color: var(--ink);
+  font-weight: 600;
+  border-left-color: var(--accent);
+  background: var(--surface-sunken, rgba(0, 0, 0, 0.04));
+}
+
 .topbarRight {
   margin-left: auto;
   font-size: var(--text-xs);

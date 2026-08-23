@@ -159,7 +159,27 @@ export const PAGES: Readonly<Record<string, PageRule>> = {
    * without naming `platform` here. Naming platform would let an operator open
    * them directly and leave no record of whose behalf they were acting on.
    */
-  '/practice': { audiences: ['practice'], why: 'The practice’s hub.' },
+  /*
+   * THE ORGANISATION LIST, and the one place a platform operator legitimately
+   * belongs on a `/practice/...` path without acting as anybody.
+   *
+   * It was classified `practice` only, which closed it to the exact audience it
+   * was written for: the component redirects practice-scoped users away and
+   * lists every organisation, so an operator was blocked from the operator's
+   * page while a practice user was sent off it — nobody could open it.
+   *
+   * THIS IS NOT A CRACK IN THE ACTING-AS RULE. Every page BELOW this one stays
+   * `practice`-only, so an operator still cannot read one practice's setup,
+   * patients or messages without opening a session against it and leaving a
+   * record of on whose behalf. This page carries no practice's work — it
+   * carries names, ABNs and readiness, which is the directory an operator needs
+   * in order to choose which practice to act as at all. Without it the only way
+   * to reach a practice is to already know its id.
+   */
+  '/practice': {
+    audiences: ['practice', 'platform'],
+    why: 'The practice’s hub, and the platform’s list of every organisation. The list is how an operator finds a practice to act as; everything below it stays practice-only.',
+  },
   '/practice/setup': { audiences: ['practice'], why: 'Setting the practice up.' },
   '/practice/entity': { audiences: ['practice'], why: 'The practice’s own record.' },
   '/practice/application': { audiences: ['practice'], why: 'What the practice told us, and corrections to it.' },
