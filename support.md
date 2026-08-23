@@ -423,7 +423,100 @@ about volume, not capability.*
 
 ---
 
-## 12. The short version
+## 12. Should we add a password, just for recovery?
+
+Carl asked directly, so here is a direct answer: **no**, and the reason is not
+purism.
+
+### A password kept "just for recovery" is not a lesser credential. It is the account.
+
+Anything that can restore access **is** the authenticator. Adding a password as
+a fallback does not give you passkeys with a safety net; it gives you an account
+whose real strength is `passkey OR password`, and an attacker only ever engages
+with the weaker side of an OR. The passkey then protects nobody — it protects
+the people who were never going to be attacked anyway.
+
+The specific proposal — *password, plus send a passkey reset to the recovery
+email* — makes it worse rather than better, because it is `passkey OR password OR
+control-of-an-inbox`. Three doors, two of them phishable, and the account is only
+ever as strong as the flimsiest.
+
+And consider what that inbox usually is: a practitioner's Gmail, secured with a
+password and an SMS code. The chain would end with **a Medicare-benefit-assigning
+credential defended by somebody's personal webmail and their mobile carrier's
+SIM-swap procedure.** Carl's own rule — *"we cannot at any cost have people using
+our platform to fraud the government"* — is the rule that this proposal breaks,
+and it would break it invisibly: fraud through a recovered account looks exactly
+like legitimate consent captured by a legitimate practitioner.
+
+### Is the industry moving to passkey-only?
+
+Split, and the split is informative.
+
+**Consumer platforms are passkey-FIRST, not passkey-only.** Google, Apple and
+Microsoft consumer accounts all still have a password behind the passkey. That is
+not a considered security position — it is billions of existing accounts that
+cannot be stranded. They are stuck with it and are slowly deprecating it.
+
+**Where the population is enrollable and the stakes are high, passkey-only is
+exactly where things are going.** US federal policy (OMB M-22-09) mandates
+phishing-resistant MFA; the Australian ISM and Essential Eight push the same way;
+Microsoft Entra's phishing-resistant policies exist to let organisations turn the
+password off for staff. Cloudflare, Shopify and others have removed passwords for
+their own workforce entirely.
+
+AoBPlatform is squarely in the second group. Every user is **introduced** — no
+self-registration path exists — and the population is thousands of practitioners
+and administrators, not hundreds of millions of consumers. That is precisely the
+setting where passwordless works, and the reason the original decision was right.
+
+### The honest cost of holding the line
+
+Passkey-only does produce real lockouts and real support load. Pretending
+otherwise is why teams quietly add a password eighteen months in and undo their
+own work.
+
+The answer is to **spend that budget at enrolment rather than on a fallback
+credential**:
+
+1. **A second passkey at enrolment.** Different device, or a security key in a
+   drawer. This is the FIDO Alliance's own answer, and it removes the large
+   majority of lockouts — new phone, lost laptop — while adding no new attack
+   path. Nothing else on this page comes close to its value.
+2. **The practice vouches** (§3). Already mostly built.
+3. **Re-proofing** for the orphan case (§10, Phase 4). The myID model.
+
+### If something password-shaped is still wanted
+
+The least-bad version is a **one-time recovery code**, not a password:
+
+- High-entropy, generated at enrolment, shown once, stored offline.
+- **Single use** — using it consumes it.
+- Not phishable at scale, because no sign-in form ever asks for it, so there is
+  nothing for a fake page to imitate.
+- Its use is a **loud event**: cooling-off, notification to the old channels, and
+  a review task, exactly as a credential reissue would be.
+
+This is what GitHub and Google issue alongside their strong authenticators, and
+it is a genuinely different object from a password: not reusable, not guessable,
+not memorable, not typed into anything routinely, and never a second way to log
+in — only a way to *begin* a recovery that a human still finishes.
+
+Its weakness is honest: people lose them, and anybody who stores theirs in the
+same password manager as everything else has collapsed the separation that made
+it worth having.
+
+> **Recommendation:** hold passwordless. Do §7 — second passkey, verified mobile,
+> practice vouching — first, and measure the lockout rate for a quarter. If it is
+> genuinely unmanageable, add **recovery codes**, never a password, and never an
+> email-triggered passkey reset.
+
+⚠️ Either way this is an **ADR-level decision that touches auth flows**, which
+CLAUDE.md §7 says needs explicit sign-off before anybody writes code. The console
+currently tells every user *"There is no password option, by design"*. That
+sentence is a promise, and it should not change quietly.
+
+## 13. The short version
 
 - Recovery is the real authenticator. Build it at the strength of enrolment or
   it silently replaces it.
@@ -434,3 +527,5 @@ about volume, not capability.*
   and it already exists — use it instead of a quiz.
 - A second passkey at enrolment prevents more lockouts than any recovery flow
   will ever resolve.
+- No password "just for recovery". Whatever restores access IS the credential,
+  and an attacker only ever engages the weaker half of an OR (§12).
