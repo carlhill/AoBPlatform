@@ -27,6 +27,28 @@
   color: inherit;
 }
 
+/*
+ * THE SAME ROW, AS A BUTTON.
+ *
+ * A platform operator's row is a button rather than a link, because it opens
+ * the acting-as form instead of navigating. The class was written for an anchor,
+ * and a button brings user-agent defaults an anchor does not have: centred text,
+ * shrink-to-fit width, and the browser's own font. The row went from a full-width
+ * card to centred text in a narrow box, which looked like the stylesheet had
+ * failed rather than like an element swap.
+ *
+ * Only the properties `.row` does not set are listed. Background, border and
+ * radius already win on specificity, so restating them here would be a second
+ * copy to keep in step.
+ */
+button.row {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  appearance: none;
+}
+
 .row:hover {
   border-color: var(--line-strong);
   background: var(--surface-sunken);

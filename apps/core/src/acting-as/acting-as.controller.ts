@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, ParseUUIDPipe, Param } from '@nestjs/common';
 import { IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ACTING_AS_REASONS, ACTING_AS_REASON_KEYS } from '@aobplatform/domain';
 import { ActingAsService } from './acting-as.service';
@@ -52,6 +52,18 @@ export class ActingAsController {
   @Get()
   list(@Query('practiceId') practiceId?: string) {
     return this.actingAs.list(practiceId);
+  }
+
+  /**
+   * Stopping somebody else's session.
+   *
+   * Every session expires by computation after the cap, so nothing is ever left
+   * open indefinitely. This is for ending one EARLY, which is what you want the
+   * moment you notice a session that should not be running.
+   */
+  @Post(':sessionId/end')
+  endOther(@Param('sessionId', ParseUUIDPipe) sessionId: string, @SessionActor() actor: Actor | undefined) {
+    return this.actingAs.endOther(sessionId, actor);
   }
 
   @Get('catalogue')

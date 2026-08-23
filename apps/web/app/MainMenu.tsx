@@ -87,6 +87,7 @@ export function MainMenu() {
         { path: '/practice/queue', label: strings.nav.outbound },
         { path: '/practice/queuebyOrg', label: strings.nav.outboundByOrg },
         { path: '/practice/queuebyOrgLocDepartment', label: strings.nav.outboundByPlace },
+        { path: '/platform/acting-as', label: strings.nav.actingAsRegister },
       ],
     },
     {

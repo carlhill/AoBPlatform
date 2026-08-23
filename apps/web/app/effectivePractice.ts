@@ -31,6 +31,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { apiHeaders, currentSession } from './auth';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
@@ -43,10 +44,26 @@ export type ActingAs = { practiceId: string; practiceName?: string | null } | nu
 let cached: { at: number; value: ActingAs } | null = null;
 let inFlight: Promise<ActingAs> | null = null;
 
+/*
+ * SUBSCRIBERS, because clearing the cache is not enough on its own.
+ *
+ * `Shell` renders on every page and does not unmount when you navigate, so the
+ * hook below is long-lived. Dropping the cached answer told nobody: the effect
+ * had already run, its dependencies had not changed, and it never fetched
+ * again. An operator who had just started a session was therefore pushed to the
+ * console and refused by a guard still holding the answer from before they
+ * started -- which is exactly the bounce this file was written to fix, moved
+ * one step later.
+ */
+let version = 0;
+const listeners = new Set<() => void>();
+
 /** Dropped when a session starts or ends, so the next read is honest. */
 export function forgetActingAs(): void {
   cached = null;
   inFlight = null;
+  version += 1;
+  for (const notify of listeners) notify();
 }
 
 export async function fetchActingAs(): Promise<ActingAs> {
@@ -85,10 +102,23 @@ export async function fetchActingAs(): Promise<ActingAs> {
  */
 export function useEffectivePractice(): { practiceId?: string; settled: boolean } {
   const fromToken = currentSession()?.practiceId;
+  const pathname = usePathname();
   const [acting, setActing] = useState<ActingAs>(null);
   // A token that already carries the claim needs no round trip, and there is
   // nothing to wait for.
   const [settled, setSettled] = useState(Boolean(fromToken) || !currentSession());
+  const [tick, setTick] = useState(version);
+
+  // Told when a session starts or ends, rather than waiting for the cache to
+  // age out. Half a minute of the console showing the wrong scope is half a
+  // minute too long.
+  useEffect(() => {
+    const notify = () => setTick(version);
+    listeners.add(notify);
+    return () => {
+      listeners.delete(notify);
+    };
+  }, []);
 
   useEffect(() => {
     if (fromToken || !currentSession()) {
@@ -97,6 +127,9 @@ export function useEffectivePractice(): { practiceId?: string; settled: boolean 
     }
 
     let live = true;
+    // NOT settled while this is in flight, so a guard does not decide on the
+    // previous page's answer.
+    setSettled(false);
     void fetchActingAs().then((v) => {
       if (!live) return;
       setActing(v);
@@ -105,7 +138,9 @@ export function useEffectivePractice(): { practiceId?: string; settled: boolean 
     return () => {
       live = false;
     };
-  }, [fromToken]);
+    // `pathname` because navigating is exactly when the answer matters, and
+    // `tick` because starting or ending a session changes it without navigating.
+  }, [fromToken, pathname, tick]);
 
   return { practiceId: fromToken ?? acting?.practiceId, settled };
 }

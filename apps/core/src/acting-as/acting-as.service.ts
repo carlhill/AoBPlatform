@@ -175,7 +175,77 @@ export class ActingAsService {
      * open — relying on a sweep to close it would make the sweep failing
      * indistinguishable from sessions that never end.
      */
-    return isSessionLive(candidate, new Date()) ? candidate : null;
+    if (!isSessionLive(candidate, new Date())) return null;
+
+    /*
+     * WITH THE NAME, THE REASON AND THE DEADLINE.
+     *
+     * The banner said "You are acting as 821709fb-7f89-4fcf-95c0-27c5eb55cec8"
+     * because this returned the raw row and the id was all it had. A UUID names
+     * nothing to the person reading it, and the one thing this banner exists to
+     * do is make it impossible to forget WHOSE console you are in.
+     *
+     * The reason belongs there too. It is stated at the start and then never
+     * shown again, so a session opened for one purpose drifts into another
+     * without anybody being reminded what they said they were doing.
+     */
+    const practice = await this.prisma.withPractice(candidate.practiceId, (tx) =>
+      tx.practice.findFirst({ where: { id: candidate.practiceId } }),
+    );
+
+    return {
+      ...candidate,
+      practiceName: practice?.name ?? practice?.legalName ?? null,
+      reasonLabel: actingAsReason(candidate.reason)?.label ?? candidate.reason,
+      expiresAt: sessionExpiresAt(candidate),
+      expiresInMinutes: ACTING_AS_MAX_MINUTES,
+    };
+  }
+
+  /**
+   * Stopping SOMEBODY ELSE'S session.
+   *
+   * WHY THIS IS NOT MERELY A CONVENIENCE. Every session already expires by
+   * computation after ACTING_AS_MAX_MINUTES, so nothing can be left open
+   * indefinitely and no sweep is load-bearing. What this adds is the ability to
+   * end one EARLY — when somebody notices a session that should not be running,
+   * the answer must not be "wait up to half an hour".
+   *
+   * Recorded as `ended_by_platform` and against the person who did it, because
+   * ending another operator's session is itself an act worth being able to
+   * question later.
+   */
+  async endOther(sessionId: string, actor?: Actor) {
+    if (!actor) throw new BadRequestException('No signed-in operator.');
+
+    const open = await this.prisma.actingAsSession.findFirst({ where: { id: sessionId } });
+    if (!open) throw new BadRequestException('There is no such session.');
+    if (open.endedAt) return { ended: false, detail: 'That session had already ended.' };
+
+    await this.prisma.actingAsSession.update({
+      where: { id: open.id },
+      data: { endedAt: new Date(), endedHow: 'ended_by_platform' },
+    });
+
+    await this.prisma.withPractice(open.practiceId, (tx) =>
+      enqueueVaultEvent(tx, {
+        type: 'acting_as.ended',
+        actor: { principalType: 'staff', id: actor.id },
+        subject: { type: 'Practice', id: open.practiceId },
+        payload: {
+          actingAsSessionId: open.id,
+          operator: open.operatorName,
+          endedBy: actor.name,
+          endedHow: 'ended_by_platform',
+        },
+      }),
+    );
+
+    this.logger.warn(`${actor.name} stopped ${open.operatorName}'s session on practice ${open.practiceId}.`);
+    return {
+      ended: true,
+      detail: `${open.operatorName} is no longer acting as that practice. The reapproval it forced still stands.`,
+    };
   }
 
   /** Stop. Ending is always allowed and never refused — the exit must be easy. */
@@ -256,13 +326,29 @@ export class ActingAsService {
       take: 100,
     });
     const now = new Date();
+
+    /*
+     * NAMES, not ids. This is a register somebody READS -- a column of UUIDs is
+     * a list nobody can act on, and acting on it is the entire point.
+     */
+    const names = new Map<string, string>();
+    for (const id of new Set(sessions.map((x) => x.practiceId))) {
+      const practice = await this.prisma.withPractice(id, (tx) =>
+        tx.practice.findFirst({ where: { id }, select: { name: true, legalName: true } }),
+      );
+      if (practice) names.set(id, practice.name ?? practice.legalName ?? id);
+    }
+
     return {
       sessions: sessions.map((s) => ({
         ...s,
+        practiceName: names.get(s.practiceId) ?? null,
         live: isSessionLive(s, now),
         expiresAt: sessionExpiresAt(s),
         reasonLabel: actingAsReason(s.reason)?.label ?? s.reason,
       })),
+      /** So the screen can say the rule rather than hard-coding the number. */
+      maxMinutes: ACTING_AS_MAX_MINUTES,
     };
   }
 }

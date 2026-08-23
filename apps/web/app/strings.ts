@@ -1299,7 +1299,21 @@ export const strings = {
     warnBody:
       'Deleting, removing, withdrawing or ending anything stays refused, and an approval you make while acting '
       + 'as somebody must be re-approved by a different person. The session ends by itself after 30 minutes.',
+    /*
+     * THE NAME, THE REASON AND THE DEADLINE.
+     *
+     * This read "You are acting as 821709fb-7f89-4fcf-95c0-27c5eb55cec8",
+     * because the server returned the row and the id was all it had. A UUID
+     * names nothing to the person reading it, and the single job of this banner
+     * is to make it impossible to forget whose console you are in.
+     *
+     * The reason is here because it is stated once at the start and then never
+     * shown again — so a session opened to do one thing drifts into another
+     * with nothing reminding anybody what they said they were doing.
+     */
     bannerText: 'You are acting as {practice}. Everything you do is recorded against you and them.',
+    bannerReason: 'Reason given: {reason}.',
+    bannerExpires: 'It stops by itself at {time}.',
     end: 'Stop acting as them',
     ending: 'Stopping…',
   },
@@ -1481,6 +1495,7 @@ export const strings = {
     outbound: 'Messages sent',
     outboundByOrg: 'Messages by organisation',
     outboundByPlace: 'Messages by location and department',
+    actingAsRegister: 'Who is acting as a practice',
 
     practiceHeading: 'This practice',
     yourPractices: 'Your practices',
@@ -1506,6 +1521,41 @@ export const strings = {
     home: 'Home',
     apply: 'Apply to join',
     help: 'Help and contact',
+  },
+
+  /* The register of who is acting as whom. */
+  actingAsRegister: {
+    audience: 'Platform',
+    title: 'Who is acting as a practice',
+    lead:
+      'Every session an operator has opened against a practice, newest first. Open ones are at the top and '
+      + 'can be stopped from here.',
+    loading: 'Reading the register…',
+    notLoaded: 'The register could not be read',
+    openHeading: 'Open now',
+    pastHeading: 'Ended',
+    nobody: 'Nobody is acting as any practice at the moment.',
+    /*
+     * THE RULE, SAID ON THE PAGE. Somebody reading a register of open sessions
+     * wants to know what stops them, and "a background job, we hope" is a much
+     * weaker answer than the true one.
+     */
+    capNote:
+      'Nothing here can run longer than {n} minutes. A session expires by the clock rather than by a sweep, '
+      + 'so a failed background job cannot leave one open — there is no background job. Stopping one here '
+      + 'ends it early, which is what you want the moment you notice one that should not be running.',
+    operator: 'Operator',
+    practice: 'Practice',
+    reason: 'Reason',
+    started: 'Started',
+    ends: 'Ends',
+    ended: 'Ended',
+    endedHow: 'How it ended',
+    stop: 'Stop this session',
+    stopping: 'Stopping…',
+    stopped: 'Stopped. The reapproval it forced still stands.',
+    reapproval: 'Forced a reapproval',
+    note: 'Note',
   },
 
   practitioner: {

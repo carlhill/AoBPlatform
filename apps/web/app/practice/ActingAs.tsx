@@ -36,6 +36,8 @@ type Session = {
   practiceId: string;
   practiceName?: string | null;
   reason: string;
+  /** The reason in words, because a key is not a sentence anybody reads. */
+  reasonLabel?: string | null;
   note: string | null;
   startedAt: string;
   expiresAt: string;
@@ -87,7 +89,13 @@ export function ActingAsBanner({ onChange }: { onChange?: () => void }) {
     <div className={styles.actingAsBanner} role="status" data-testid="acting-as-banner">
       <span className={styles.actingAsText}>
         <UserCheck size={15} aria-hidden="true" />{' '}
-        {strings.actingAs.bannerText.replace('{practice}', session.practiceName ?? session.practiceId)}
+        {strings.actingAs.bannerText.replace('{practice}', session.practiceName ?? session.practiceId)}{' '}
+        {session.reasonLabel && strings.actingAs.bannerReason.replace('{reason}', session.reasonLabel)}{' '}
+        {session.expiresAt &&
+          strings.actingAs.bannerExpires.replace(
+            '{time}',
+            new Date(session.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          )}
       </span>
       <Button variant="subtle" onClick={() => void end()} disabled={busy} data-testid="acting-as-end">
         <UserX size={14} aria-hidden="true" />
