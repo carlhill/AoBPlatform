@@ -546,6 +546,8 @@ function siteLabel(options: FilterOptions | null, item: QueueItem): string | nul
  * state it reached — including `dead` — because that attempt really did
  * happen and a resend does not make it untrue.
  */
+type ResendReason = { key: string; label: string; detail: string };
+
 function ResendControl({
   practiceId,
   item,
@@ -556,8 +558,32 @@ function ResendControl({
   onDone: () => void | Promise<void>;
 }) {
   const [reason, setReason] = useState('');
+  const [note, setNote] = useState('');
+  const [reasons, setReasons] = useState<ResendReason[]>([]);
+  const [minWords, setMinWords] = useState(3);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /*
+   * THE REASONS COME FROM THE SERVER, which reads them from a table.
+   *
+   * A copy of the list in this file would drift the first time somebody adds a
+   * sixth reason and updates only one of the two places — and the screen would
+   * then offer something the server refuses, or refuse something it accepts.
+   */
+  useEffect(() => {
+    fetch(`${CORE_URL}/outbound/resend-reasons`, { headers: apiHeaders(practiceId) })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((b: { reasons?: ResendReason[]; minWords?: number }) => {
+        setReasons(b.reasons ?? []);
+        if (typeof b.minWords === 'number') setMinWords(b.minWords);
+      })
+      .catch(() => setReasons([]));
+  }, [practiceId]);
+
+  const chosen = reasons.find((r) => r.key === reason);
+  const words = note.trim().split(/\s+/).filter(Boolean).length;
+  const ready = Boolean(reason) && words >= minWords;
 
   // Nothing in flight may be copied — that is how a statutory notice gets
   // sent twice because somebody was impatient. The server refuses it too.
@@ -570,13 +596,14 @@ function ResendControl({
       const res = await fetch(`${CORE_URL}/outbound/item/${item.id}/resend`, {
         method: 'POST',
         headers: apiHeaders(practiceId),
-        body: JSON.stringify({ reason: reason.trim() || undefined }),
+        body: JSON.stringify({ reason, note: note.trim() }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { message?: string };
         throw new Error(body.message ?? `That failed (${res.status}).`);
       }
       setReason('');
+      setNote('');
       await onDone();
     } catch (e) {
       setError((e as Error).message);
@@ -591,17 +618,60 @@ function ResendControl({
     <div className={styles.resendBar}>
       <p className={styles.cardNote}>{strings.queue.resendBody}</p>
       <div className={styles.inlineForm}>
-        <Field label={strings.queue.resendReason} hint={strings.queue.resendReasonHint}>
+        {/*
+          A LIST AND A NOTE, because they do different work. The list makes
+          answers countable — "how often do our messages not arrive" is a
+          deliverability question nobody could answer while this was free text.
+          The note makes one resend accountable.
+        */}
+        <Field label={strings.queue.resendReason} hint={chosen?.detail ?? strings.queue.resendReasonHint} required>
           {(props) => (
-            <TextInput
+            <SelectInput
               {...props}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               data-testid={`resend-reason-${item.id}`}
+            >
+              <option value="">{strings.queue.resendChoose}</option>
+              {reasons.map((r) => (
+                <option key={r.key} value={r.key}>
+                  {r.label}
+                </option>
+              ))}
+            </SelectInput>
+          )}
+        </Field>
+
+        <Field
+          label={strings.queue.resendNote}
+          hint={
+            words > 0 && words < minWords
+              ? strings.queue.resendNoteShort.replace('{n}', String(minWords - words))
+              : strings.queue.resendNoteHint.replace('{n}', String(minWords))
+          }
+          required
+        >
+          {(props) => (
+            <TextInput
+              {...props}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              data-testid={`resend-note-${item.id}`}
             />
           )}
         </Field>
-        <Button variant="primary" onClick={() => void send()} disabled={busy} data-testid={`resend-${item.id}`}>
+
+        {/*
+          Disabled until both are given. The server checks the same thing, so
+          this is courtesy rather than control — a disabled button is a
+          suggestion, and the rule lives where it cannot be edited away.
+        */}
+        <Button
+          variant="primary"
+          onClick={() => void send()}
+          disabled={busy || !ready}
+          data-testid={`resend-${item.id}`}
+        >
           <RefreshCw size={14} aria-hidden="true" />
           {busy ? strings.queue.resending : strings.queue.resend}
         </Button>

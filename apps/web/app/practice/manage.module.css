@@ -901,3 +901,26 @@
   color: var(--muted);
 }
 
+/*
+ * A MESSAGE AS IT WAS SENT. Monospaced and pre-wrapped because the body was
+ * composed as plain text with its own line breaks and headings — reflowing it
+ * as prose would run "WHAT HAS CHANGED" into the sentence beneath it.
+ *
+ * Scrolls rather than stretching the row: a long notice should not push the
+ * rest of the table off the page.
+ */
+.messageBody {
+  margin: 0;
+  padding: var(--s3);
+  max-height: 24rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, 'Cascadia Mono', Menlo, monospace;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  background: var(--surface-muted, #f7f8f9);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+

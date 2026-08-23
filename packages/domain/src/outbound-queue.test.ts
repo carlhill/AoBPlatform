@@ -14,6 +14,9 @@ import {
   isClaimable,
   isPullChannel,
   leaseSecondsFor,
+  MIN_RESEND_REASON_WORDS,
+  assertResendNote,
+  countWords,
 } from './outbound-queue';
 
 const NOW = new Date('2026-08-22T10:00:00Z');
@@ -205,3 +208,36 @@ describe('the shape holds together at Carl’s volumes', () => {
     expect(MAX_PAYLOAD_BYTES).toBeLessThanOrEqual(256 * 1024);
   });
 });
+
+describe('what somebody must say when sending a message again', () => {
+  it('REFUSES A ONE-WORD NOTE', () => {
+    /*
+     * "resent", "again", "requested" — a label rather than an account of what
+     * happened, and it tells the next person nothing they did not already know
+     * from the fact of the resend. Three words is the shortest thing that can
+     * carry a subject and something about it: "patient rang twice".
+     */
+    expect(() => assertResendNote('resent')).toThrow(/at least 3 words/i);
+    expect(() => assertResendNote('sent again')).toThrow(/at least 3 words/i);
+  });
+
+  it('accepts three', () => {
+    expect(() => assertResendNote('patient rang twice')).not.toThrow();
+  });
+
+  it('does not count whitespace as words', () => {
+    expect(countWords('  patient   rang   twice  ')).toBe(3);
+    expect(() => assertResendNote('   one    ')).toThrow(/at least 3 words/i);
+  });
+
+  it('keeps the RULE in code even though the reasons are data', () => {
+    /*
+     * The list of common reasons lives in a table so somebody can add a sixth
+     * without a deploy. This does not, and the difference is the point: a
+     * minimum that lived in that table could be edited to nothing by whoever
+     * was tired of typing.
+     */
+    expect(MIN_RESEND_REASON_WORDS).toBe(3);
+  });
+});
+

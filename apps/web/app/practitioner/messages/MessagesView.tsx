@@ -17,7 +17,7 @@
  * result if it tried.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import { matrix } from '@aobplatform/domain';
@@ -64,6 +64,35 @@ function queryFor(grain: GrainKey) {
     ],
     order: { 'MyMessages.occurredAt': 'desc' },
   };
+}
+
+/**
+ * The period cell, whatever grain was chosen.
+ *
+ * Cube names the column after the granularity — `occurredAt.month`,
+ * `occurredAt.week`, `occurredAt.quarter` — so reading `.month` unconditionally
+ * left every other grain with an empty first column under a heading that said
+ * MONTH. Empty cells under a wrong label read as missing data rather than as a
+ * screen looking in the wrong place.
+ */
+function periodOf(row: Row, grain: GrainKey): string {
+  const chosen = GRAINS.find((g) => g.key === grain);
+  const value =
+    (chosen?.granularity ? row[`MyMessages.occurredAt.${chosen.granularity}`] : null) ??
+    row['MyMessages.occurredAt'] ??
+    '';
+
+  const text = String(value);
+  if (!text) return '';
+
+  // Trimmed to the precision actually being shown: a day needs the date, a
+  // month does not need the day, and nothing here needs the time.
+  if (chosen?.granularity === 'month') return text.slice(0, 7);
+  if (chosen?.granularity === 'quarter') {
+    const month = Number(text.slice(5, 7));
+    return `${text.slice(0, 4)} Q${Math.floor((month - 1) / 3) + 1}`;
+  }
+  return text.slice(0, 10);
 }
 
 function num(row: Row, key: string): number {
@@ -134,12 +163,23 @@ export function MessagesView() {
    * Fetched once, not per grain: the grain changes how the SUMMARY is grouped,
    * and a list of what arrived does not group at all.
    */
-  useEffect(() => {
-    fetch(`${CORE_URL}/practitioner/me/messages`, { headers: apiHeaders() })
+  const loadMessages = useCallback(() => {
+    return fetch(`${CORE_URL}/practitioner/me/messages`, { headers: apiHeaders() })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((b: { messages?: Message[] }) => setMessages(b.messages ?? []))
       .catch(() => setMessages([]));
   }, []);
+
+  /*
+   * REFETCHED ALONGSIDE THE SUMMARY, not once on mount. Fetching the list only
+   * at mount let the two disagree: the summary said two messages and the list
+   * showed one, because the second had arrived between the page loading and
+   * being looked at. Two counts on one screen that do not match is worse than
+   * either being slightly stale.
+   */
+  useEffect(() => {
+    void loadMessages();
+  }, [loadMessages, rows]);
 
   /*
    * The two matrices are reshaped from daily rows, exactly as the platform
@@ -271,7 +311,10 @@ export function MessagesView() {
           <table className={styles.totalsTable}>
             <thead>
               <tr>
-                <th scope="col">{strings.myMessages.month}</th>
+                {/* NOT "Month". The column holds whatever grain was chosen,
+                    and labelling it Month made a quarter look like missing
+                    data. */}
+                <th scope="col">{strings.myMessages.period}</th>
                 <th scope="col">{strings.myMessages.practice}</th>
                 <th scope="col" className={styles.stateCol}>
                   {strings.myMessages.sent}
@@ -287,7 +330,7 @@ export function MessagesView() {
             <tbody>
               {rows.map((r, i) => (
                 <tr key={i}>
-                  <th scope="row">{String(r['MyMessages.occurredAt.month'] ?? '').slice(0, 7)}</th>
+                  <th scope="row">{periodOf(r, grain) || strings.myMessages.everything}</th>
                   <td>{r['MyMessages.practice'] ?? strings.practitioner.unnamedPractice}</td>
                   <td className={styles.stateCol}>{num(r, 'MyMessages.sent')}</td>
                   <td className={styles.stateCol}>{num(r, 'MyMessages.waiting')}</td>
@@ -300,53 +343,82 @@ export function MessagesView() {
       )}
       {/*
         THE MESSAGES THEMSELVES. The table above answers "how many and when";
-        this answers "what did it say" — which is the question somebody actually
-        has when they open a page called "what we have sent you".
+        this answers "which ones, and what did each say" — the question somebody
+        actually has when they open a page called "what we have sent you".
+
+        A table rather than a list of buttons, because the columns are what
+        people scan by: when it arrived, who from, and what it was about.
       */}
       {messages && messages.length > 0 && (
         <section className={styles.applicationSection}>
           <h2 className={styles.applicationHeading}>{strings.myMessages.listTitle}</h2>
-          <ul className={ui.list}>
-            {messages.map((m) => (
-              <li key={m.id} className={styles.reviewCard}>
-                <button
-                  type="button"
-                  className={ui.buttonLink}
-                  onClick={() => setOpenId(openId === m.id ? null : m.id)}
-                  data-testid={`message-${m.id}`}
-                >
-                  {openId === m.id ? (
-                    <ChevronDown size={14} aria-hidden="true" />
-                  ) : (
-                    <ChevronRight size={14} aria-hidden="true" />
-                  )}
-                  <strong>{m.subject ?? strings.myMessages.noSubject}</strong>
-                </button>
-                <p className={ui.hint}>
-                  {String(m.occurredAt).slice(0, 10)} ·{' '}
-                  {m.practice ?? strings.practitioner.unnamedPractice} · {m.state}
-                </p>
+          <p className={ui.hint}>{strings.myMessages.listHint}</p>
 
-                {openId === m.id &&
-                  (m.body ? (
-                    <pre className={styles.cardNote}>{m.body}</pre>
-                  ) : (
-                    /*
-                      NOT A BLANK. A sign-in link is composed and sent by
-                      Keycloak, so we record that it went and hold the subject,
-                      never the text. Rendering nothing would read as a message
-                      with nothing in it, which is a different and false thing
-                      to say.
-                    */
-                    <Notice title={strings.myMessages.noBodyTitle}>
-                      {strings.myMessages.noBodyBody.replace('{who}', m.sentBy)}
-                    </Notice>
-                  ))}
-              </li>
-            ))}
-          </ul>
+          <div className={styles.tableScroll}>
+            <table className={styles.totalsTable}>
+              <thead>
+                <tr>
+                  <th scope="col">{strings.myMessages.when}</th>
+                  <th scope="col">{strings.myMessages.practice}</th>
+                  <th scope="col">{strings.myMessages.subject}</th>
+                  <th scope="col">{strings.myMessages.state}</th>
+                  <th scope="col" />
+                </tr>
+              </thead>
+              <tbody>
+                {messages.map((m) => (
+                  <Fragment key={m.id}>
+                    <tr>
+                      <th scope="row">{String(m.occurredAt).slice(0, 10)}</th>
+                      <td>{m.practice ?? strings.practitioner.unnamedPractice}</td>
+                      <td>{m.subject ?? strings.myMessages.noSubject}</td>
+                      <td>{m.state}</td>
+                      <td>
+                        <Button
+                          variant="subtle"
+                          onClick={() => setOpenId(openId === m.id ? null : m.id)}
+                          data-testid={`message-${m.id}`}
+                        >
+                          {openId === m.id ? (
+                            <ChevronDown size={14} aria-hidden="true" />
+                          ) : (
+                            <ChevronRight size={14} aria-hidden="true" />
+                          )}
+                          {openId === m.id ? strings.myMessages.hide : strings.myMessages.view}
+                        </Button>
+                      </td>
+                    </tr>
+
+                    {openId === m.id && (
+                      <tr>
+                        {/* The detail spans the table, so it reads as belonging
+                            to the row above rather than as a new record. */}
+                        <td colSpan={5}>
+                          {m.body ? (
+                            <pre className={styles.messageBody}>{m.body}</pre>
+                          ) : (
+                            /*
+                              NOT A BLANK. A sign-in link is composed and sent by
+                              Keycloak, so we record that it went and hold the
+                              subject, never the text. Rendering nothing would
+                              read as a message with nothing in it, which is a
+                              different and false thing to say.
+                            */
+                            <Notice title={strings.myMessages.noBodyTitle}>
+                              {strings.myMessages.noBodyBody.replace('{who}', m.sentBy)}
+                            </Notice>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
+
     </Shell>
   );
 }

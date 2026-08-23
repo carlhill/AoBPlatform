@@ -21,6 +21,8 @@ import {
   reportWindow,
   scopeFor,
   summarise,
+  MIN_RESEND_REASON_WORDS,
+  assertResendNote,
 } from '@aobplatform/domain';
 import type { Prisma } from '@prisma/client';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
@@ -386,12 +388,50 @@ export class OutboundService {
    * reached, including `dead`. That row is the record of an attempt that
    * failed, and a resend does not make that untrue.
    */
+  /**
+   * The reasons somebody may choose from, read from the table.
+   *
+   * Served to the screen so it offers exactly what the server accepts. A screen
+   * with its own copy of the list is a screen that drifts from it the first
+   * time somebody adds a sixth reason and forgets one of the two places.
+   */
+  async resendReasons() {
+    const reasons = await this.prisma.resendReason.findMany({
+      where: { active: true },
+      orderBy: [{ sortOrder: 'asc' }, { key: 'asc' }],
+    });
+    return { reasons, minWords: MIN_RESEND_REASON_WORDS };
+  }
+
   async resend(
     practiceId: string | undefined,
     id: string,
-    input: { reason?: string },
+    input: { reason?: string; note?: string },
     actor?: Actor,
   ) {
+    /*
+     * CHECKED HERE AS WELL AS ON THE SCREEN, because a disabled button is a
+     * suggestion. The key is checked against the TABLE — only the server can
+     * see it — and the note against the rule, which lives in the domain
+     * precisely so it cannot be edited away by whoever maintains the table.
+     */
+    const chosen = await this.prisma.resendReason.findFirst({
+      where: { key: input.reason ?? '', active: true },
+    });
+    if (!chosen) {
+      throw new BadRequestException(
+        'Choose a reason for sending this again. A resend is a second time we assert that notice was given, ' +
+          'so the record needs to say why somebody decided to.',
+      );
+    }
+
+    try {
+      assertResendNote(input.note ?? '');
+    } catch (err) {
+      if (err instanceof OutboundQueueError) throw new BadRequestException(err.message);
+      throw err;
+    }
+
     if (!practiceId) throw new BadRequestException('Choose a practice first.');
     return this.prisma.withPractice(practiceId, async (tx) => {
       const original = await tx.outboundItem.findFirst({ where: { id } });
@@ -436,6 +476,7 @@ export class OutboundService {
           idempotencyKey: `${original.idempotencyKey}:resend:${attempt}`,
           resendOfId: rootId,
           resendReason: input.reason?.trim() || null,
+          resendNote: input.note?.trim() || null,
           resendByName: actor?.name ?? 'practice',
           state: 'pending',
           attempts: 0,

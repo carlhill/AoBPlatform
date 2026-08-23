@@ -1410,7 +1410,14 @@ model OutboundItem {
   resendOfId   String? @db.Uuid
   /// On the ORIGINAL: how many times it has been sent again.
   resendCount  Int     @default(0)
+  /// The KEY, from `resend_reasons`. Countable — "how often do our messages
+  /// not arrive" is a question about deliverability, and free text cannot
+  /// answer it.
   resendReason String?
+  reason       ResendReason? @relation(fields: [resendReason], references: [key])
+  /// The WORDS. What makes one resend accountable rather than countable. At
+  /// least three of them; the rule is in the domain.
+  resendNote   String?
   /// Who asked, from the verified token.
   resendByName String?
 
@@ -1603,4 +1610,35 @@ model PendingEmailChange {
 
   @@index([practiceId, requestedAt])
   @@map("pending_email_changes")
+}
+
+/// The common reasons for sending a message again, as DATA.
+///
+/// A table rather than a list in the code, because somebody will think of a
+/// sixth one and that should not be a code change, a review and a deploy. A
+/// catalogue of common answers changes at the speed of operations.
+///
+/// What deliberately did NOT move here is the rule about how much somebody has
+/// to say — `MIN_RESEND_REASON_WORDS` stays in the domain, because a rule
+/// living in this table could be edited to nothing by whoever was tired of
+/// typing.
+///
+/// Not row-level scoped: a catalogue of words, identical for every practice and
+/// containing nothing about anybody. Scoping it would give each practice its
+/// own list, which is the opposite of what makes the answers countable.
+model ResendReason {
+  /// Stable, and referenced by outboundItems.resendReason. Renaming a label
+  /// must never orphan the records that chose it.
+  key       String   @id
+  label     String
+  detail    String
+  /// Retired rather than deleted: deleting one orphans every record that chose
+  /// it, and "why did we resend these forty" stops having an answer.
+  active    Boolean  @default(true)
+  sortOrder Int      @default(100)
+  createdAt DateTime @default(now())
+
+  outboundItems OutboundItem[]
+
+  @@map("resend_reasons")
 }

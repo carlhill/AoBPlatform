@@ -247,3 +247,54 @@ export function assertQueueable(input: { channel: string; payloadBytes: number; 
   }
   return channel;
 }
+
+/**
+ * WHY A MESSAGE IS BEING SENT AGAIN.
+ *
+ * A resend is a second assertion that notice was given. The record already
+ * distinguishes it from a retry — a retry is us failing, a resend is somebody
+ * deciding — and the only thing that makes the second one accountable is
+ * knowing who decided and why.
+ *
+ * "Optional, and it is what the next person reads" was the old hint, which is
+ * two incompatible claims: if the next person reads it, it is not optional.
+ *
+ * THE LIST OF REASONS IS NOT HERE. It lives in `resend_reasons`, a table,
+ * because a catalogue of common answers is DATA — somebody will think of a
+ * sixth one, and that should not be a code change, a review and a deploy.
+ *
+ * What stays here is the RULE, which is not data: how much somebody has to say.
+ * The difference matters. A rule that moved into the table could be edited to
+ * nothing by whoever was tired of typing.
+ */
+
+/**
+ * AT LEAST THREE WORDS, and it is not arbitrary.
+ *
+ * One word is a label — "resent", "again", "requested" — and tells the next
+ * person nothing they did not already know from the fact of the resend. Three
+ * is the shortest thing that can carry a subject and something about it:
+ * "patient rang twice", "bounced, address fixed".
+ *
+ * A floor, not a target. Enforced on the SERVER as well, because a disabled
+ * button is a suggestion.
+ */
+export const MIN_RESEND_REASON_WORDS = 3;
+
+export function countWords(text: string): number {
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+/**
+ * The note, checked against the rule. The reason KEY is checked by the caller
+ * against the table, because only the caller can see it.
+ */
+export function assertResendNote(note: string): void {
+  if (countWords(note) < MIN_RESEND_REASON_WORDS) {
+    throw new OutboundQueueError(
+      `Say a little more about why — at least ${MIN_RESEND_REASON_WORDS} words. A resend is a second time ` +
+        'we assert that notice was given, and the next person reading this record needs to know what ' +
+        'happened rather than merely that it happened.',
+    );
+  }
+}

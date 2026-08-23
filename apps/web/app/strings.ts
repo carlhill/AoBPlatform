@@ -1388,6 +1388,14 @@ export const strings = {
     noBodyBody:
       'This was composed and sent by {who} rather than by us — a sign-in link, which only it can create. '
       + 'We recorded that it went and when. The message itself is in your inbox.',
+    period: 'Time period',
+    everything: 'Everything we hold',
+    when: 'When',
+    subject: 'What it was about',
+    state: 'State',
+    view: 'Read it',
+    hide: 'Close',
+    listHint: 'Each one we sent you. Open any to read what it said.',
     month: 'Month',
     practice: 'From',
     sent: 'Sent',
@@ -1685,7 +1693,12 @@ export const strings = {
     resendBody:
       'This copies the message and queues the copy. The original stays exactly as it is — including if it failed, because that attempt really did happen.',
     resendReason: 'Why are you sending it again?',
-    resendReasonHint: 'Optional, and it is what the next person reads.',
+    resendChoose: 'Choose a reason…',
+    resendNote: 'What happened',
+    resendNoteHint:
+      'At least {n} words. A resend is a second time we say notice was given, so the next person reading this needs to know what happened rather than that it did.',
+    resendNoteShort: '{n} more word(s) needed.',
+    resendReasonHint: 'Pick the one that fits. If you keep choosing “another reason”, tell us — the list is missing something.',
     resendFailed: 'It could not be sent again',
     resentTimes: 'sent again',
     resentCopy: 'a re-send',

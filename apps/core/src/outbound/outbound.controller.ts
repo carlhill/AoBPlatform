@@ -25,10 +25,23 @@ import { PLATFORM_ADMIN, RequireRoles } from '../auth/roles.decorator';
  * TODO.md; that is a different screen over different data.
  */
 export class ResendDto {
-  /** Why. Optional, but it is what the next person reads. */
-  @IsOptional()
+  /**
+   * The KEY, from `resend_reasons`. Required, and checked against the table
+   * rather than against a list here — the table is the one that can grow.
+   */
   @IsString()
-  reason?: string;
+  reason!: string;
+
+  /**
+   * The WORDS. Required too, and at least three of them: a resend is a second
+   * assertion that notice was given, and the next person needs to know what
+   * happened rather than merely that it did.
+   *
+   * "Optional, but it is what the next person reads" was the old comment, which
+   * is two incompatible claims.
+   */
+  @IsString()
+  note!: string;
 }
 
 @Controller('outbound')
@@ -108,6 +121,12 @@ export class OutboundController {
    * may, and it is a repair rather than a privilege: the practice is
    * usually the one being told the message never arrived.
    */
+  /** The reasons, so the screen offers exactly what the server accepts. */
+  @Get('resend-reasons')
+  resendReasons() {
+    return this.outbound.resendReasons();
+  }
+
   @Post('item/:id/resend')
   resend(
     @Headers('x-practice-id') practiceId: string | undefined,
@@ -115,7 +134,7 @@ export class OutboundController {
     @Body() dto: ResendDto,
     @SessionActor() actor: Actor | undefined,
   ) {
-    return this.outbound.resend(practiceId, id, { reason: dto.reason }, actor);
+    return this.outbound.resend(practiceId, id, { reason: dto.reason, note: dto.note }, actor);
   }
 
   /**
