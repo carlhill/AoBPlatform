@@ -204,6 +204,12 @@ export const PAGES: Readonly<Record<string, PageRule>> = {
 export function audiencesOf(principal: {
   roles?: readonly string[];
   practiceId?: string | null;
+  /**
+   * A practitioner's own claim. Carried INSTEAD of a practice claim, so it is
+   * checked separately rather than as a fallback — somebody with neither is
+   * not a practitioner with a missing value, they are somebody we cannot place.
+   */
+  practitionerId?: string | null;
   consoleRole?: string | null;
   deactivatedAt?: Date | string | null;
 }): Audience[] {
@@ -227,7 +233,13 @@ export function audiencesOf(principal: {
     if (principal.consoleRole === 'admin') out.add('practice_admin');
   }
 
-  if (roles.includes('provider')) out.add('practitioner');
+  /*
+   * THE CLAIM, not the role — the same rule as a practice user. `provider` says
+   * what kind of person they are; the claim says which person. A role with no
+   * claim is an account nothing has been scoped to, and letting it reach a
+   * practitioner page would show it somebody else's or refuse and look broken.
+   */
+  if (principal.practitionerId) out.add('practitioner');
   if (roles.includes('patient')) out.add('patient');
   if (roles.includes('assignor')) out.add('assignor');
 

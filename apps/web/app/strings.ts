@@ -1289,6 +1289,18 @@ export const strings = {
     end: 'Stop acting as them',
     ending: 'Stopping…',
   },
+  access: {
+    refusedTitle: 'That page is not for this account',
+    refusedBody:
+      'You are signed in, and this page belongs to a different kind of account — a practice’s own screens are '
+      + 'not a practitioner’s, and the other way round. Nothing is wrong with your sign-in.',
+    notFoundTitle: 'There is no such page',
+    notFoundBody:
+      'That address does not match anything here. It may have been mistyped, or it may be a link that has '
+      + 'moved since it was written down.',
+    takingYouBack: 'Taking you back',
+    goNow: 'Go now',
+  },
   help: {
     audience: 'AoBPlatform',
     title: 'We cannot tell what you should see',
@@ -1569,6 +1581,13 @@ export const strings = {
     filterState: 'Show',
     anyOpen: 'Still open',
     resolved: 'Already decided',
+    search: 'Search',
+    searchHint: 'Matches the field name and both values, plus the summary and who raised it.',
+    searchPlaceholder: 'An address, a field name, a name…',
+    noMatchTitle: 'Nothing here matches that',
+    noMatchBody:
+      'There are {n} tasks loaded and none of them contain what you typed. Clear the search to see them '
+      + 'again — this filters what is on screen, so a task that has not loaded yet will not be found by it.',
     filterKind: 'Kind',
     anyKind: 'Any kind',
     notLoaded: 'The review queue could not be read',

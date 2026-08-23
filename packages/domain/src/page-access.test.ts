@@ -32,7 +32,10 @@ describe('who somebody is', () => {
   });
 
   it('recognises the three party audiences', () => {
-    expect(audiencesOf({ roles: ['provider'] })).toContain('practitioner');
+    // A practitioner is identified by their CLAIM, like a practice user — the
+    // role says what kind of person, the claim says which person.
+    expect(audiencesOf({ practitionerId: 'dr1' })).toContain('practitioner');
+    expect(audiencesOf({ roles: ['provider'] })).not.toContain('practitioner');
     expect(audiencesOf({ roles: ['patient'] })).toContain('patient');
     expect(audiencesOf({ roles: ['assignor'] })).toContain('assignor');
   });
@@ -40,7 +43,7 @@ describe('who somebody is', () => {
   it('lets somebody be several things at once', () => {
     // A practitioner who also runs a practice is one person with two jobs, not
     // two accounts.
-    const both = audiencesOf({ practiceId: 'p1', consoleRole: 'admin', roles: ['provider'] });
+    const both = audiencesOf({ practiceId: 'p1', consoleRole: 'admin', practitionerId: 'dr1' });
     expect(both).toEqual(expect.arrayContaining(['practice', 'practice_admin', 'practitioner']));
   });
 });
@@ -70,7 +73,7 @@ describe('reaching a page', () => {
   const ordinary = audiencesOf({ practiceId: 'p1', consoleRole: 'other' });
   const admin = audiencesOf({ practiceId: 'p1', consoleRole: 'admin' });
   const operator = audiencesOf({ roles: ['platform_admin'] });
-  const practitioner = audiencesOf({ roles: ['provider'] });
+  const practitioner = audiencesOf({ practitionerId: 'dr1' });
   const stranger = audiencesOf({});
 
   it('REFUSES A PAGE NOBODY CLASSIFIED', () => {

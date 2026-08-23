@@ -127,6 +127,109 @@ export function assertMayRequest(input: {
   }
 }
 
+/**
+ * SEVEN DAYS AFTER IT TAKES EFFECT, somebody can still stop it.
+ *
+ * The request window protects against a change nobody noticed being asked for.
+ * This protects against one nobody noticed HAPPENING — and that is the more
+ * likely miss, because the warning arrives while somebody is away and the
+ * effect arrives while they still are.
+ *
+ * Google gives seven days for the same reason. It is long enough to survive a
+ * week's leave and short enough that a genuine change is not permanently
+ * reversible by an address the person no longer uses.
+ */
+export const COOLING_OFF_DAYS = 7;
+
+export function coolingOffEndsAt(effectiveAt: Date): Date {
+  const out = new Date(effectiveAt);
+  out.setUTCDate(out.getUTCDate() + COOLING_OFF_DAYS);
+  return out;
+}
+
+export function withinCoolingOff(effectiveAt: Date | null | undefined, now: Date): boolean {
+  if (!effectiveAt) return false;
+  return now.getTime() <= coolingOffEndsAt(effectiveAt).getTime();
+}
+
+/**
+ * A backup address, and why it is what makes the rest workable.
+ *
+ * The strong-looking design is "the OLD address must authorise the change". It
+ * defeats takeover — and breaks the case the feature exists for, because the
+ * commonest legitimate reason to change an address is that the old one is gone.
+ * Requiring it to authorise means the people who most need this cannot use it.
+ *
+ * A backup gives a second channel that is NOT the one being changed, so the
+ * alarm still reaches somebody when the old address is unreachable. It is the
+ * difference between "somebody other than the requester can object" and "the
+ * old inbox must consent".
+ */
+export function assertBackupUsable(input: { backupEmail: string; primaryEmail: string | null }): void {
+  const backup = normalise(input.backupEmail);
+  const primary = normalise(input.primaryEmail);
+
+  if (!backup || !backup.includes('@')) {
+    throw new PendingEmailChangeError('A backup address is needed, and it must be an email address.');
+  }
+
+  /*
+   * ONE INBOX COVERING BOTH IS ONE COMPROMISE COVERING BOTH, which is the whole
+   * thing this defends against. The database enforces it too — the form is not
+   * the only caller.
+   */
+  if (backup === primary) {
+    throw new PendingEmailChangeError(
+      'Your backup address cannot be the same as your main one. The point of it is to be somewhere we can ' +
+        'still reach you if the main one stops working.',
+    );
+  }
+}
+
+/**
+ * Who is warned, given a backup may or may not exist.
+ *
+ * The old address if it is reachable, the backup always. Both get the power to
+ * STOP the change — because the address being changed is exactly the one that
+ * cannot be trusted to object.
+ */
+export function warnedAddresses(input: {
+  previousEmail: string | null;
+  backupEmail: string | null;
+  requestedEmail: string;
+}): string[] {
+  const requested = normalise(input.requestedEmail);
+  const out: string[] = [];
+
+  for (const candidate of [input.previousEmail, input.backupEmail]) {
+    const value = normalise(candidate);
+    // Never the address being changed TO — warning the requester about their
+    // own request checks nothing.
+    if (value && value !== requested && !out.includes(value)) out.push(value);
+  }
+
+  return out;
+}
+
+/**
+ * How many changes are too many, and over what.
+ *
+ * Three attempts inside a month is not proof of anything, and it is a pattern
+ * worth stopping to look at whatever each one claimed. Refused rather than
+ * flagged: the fourth attempt in a month is not a person who keeps changing
+ * jobs, and if it is, support can do it with a person watching.
+ */
+export const MAX_CHANGES_PER_MONTH = 3;
+
+export function assertNotChurning(recentChangeCount: number): void {
+  if (recentChangeCount >= MAX_CHANGES_PER_MONTH) {
+    throw new PendingEmailChangeError(
+      `This address has been changed ${recentChangeCount} times in the last month, so we have stopped and ` +
+        'want a person to look. Tell us and somebody here will sort it out.',
+    );
+  }
+}
+
 export function expiresAt(requestedAt: Date): Date {
   const out = new Date(requestedAt);
   out.setUTCDate(out.getUTCDate() + PENDING_EMAIL_EXPIRY_DAYS);

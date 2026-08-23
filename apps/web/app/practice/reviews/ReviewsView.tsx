@@ -84,6 +84,7 @@ export function ReviewsView() {
   const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState('');
   const [kind, setKind] = useState('');
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     fetch(`${CORE_URL}/review-tasks/catalogue`)
@@ -132,6 +133,45 @@ export function ReviewsView() {
     );
   }
 
+  /*
+   * SEARCH OVER WHAT THE CARD ACTUALLY SHOWS, which is mostly the change
+   * itself. The state and kind dropdowns narrow by category; this narrows by
+   * VALUE — "which task was about that address" is the question somebody has
+   * when they already know the answer they are looking for.
+   *
+   * Client-side over the loaded page, deliberately for now. At the volumes
+   * Carl is planning for this becomes a server-side filter, and the API
+   * already takes query parameters for the other two. Said plainly on the
+   * screen so nobody mistakes a page of matches for all of them.
+   */
+  /*
+   * A PLAIN FUNCTION, NOT A HOOK. `useCallback` here sat after the early
+   * returns above, so on the renders that take one it was never called and
+   * React saw the hook order change between renders — which it reports as
+   * "a change in the order of Hooks" and which genuinely does cause wrong
+   * state later.
+   *
+   * It never needed memoising: it closes over one string and runs over a list
+   * already in memory.
+   */
+  const matches = (t: Task) => {
+    const term = search.trim().toLowerCase();
+    if (!term) return true;
+
+    const haystack = [
+      t.summary,
+      t.raisedBy,
+      t.detail?.reason,
+      ...(t.detail?.changes ?? []).flatMap((c) => [c.field, c.from ?? '', c.to ?? '']),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+
+    return haystack.includes(term);
+  };
+
+  const visible = (tasks ?? []).filter(matches);
   const open = (tasks ?? []).filter((t) => t.state === 'open' || t.state === 'claimed');
   const highStakes = open.filter((t) => t.stakes === 'high').length;
 
@@ -168,6 +208,18 @@ export function ReviewsView() {
             </SelectInput>
           )}
         </Field>
+        <Field label={strings.reviews.search} hint={strings.reviews.searchHint}>
+          {(props) => (
+            <TextInput
+              {...props}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={strings.reviews.searchPlaceholder}
+              data-testid="review-search"
+            />
+          )}
+        </Field>
+
         <Field label={strings.reviews.filterKind}>
           {(props) => (
             <SelectInput {...props} value={kind} onChange={(e) => setKind(e.target.value)} data-testid="reviews-kind">
@@ -188,6 +240,12 @@ export function ReviewsView() {
         </Notice>
       )}
 
+      {tasks && tasks.length > 0 && visible.length === 0 && (
+        <Notice title={strings.reviews.noMatchTitle}>
+          {strings.reviews.noMatchBody.replace('{n}', String(tasks.length))}
+        </Notice>
+      )}
+
       {tasks && tasks.length === 0 && !error && (
         <Notice tone="ok" title={strings.reviews.emptyTitle}>
           {strings.reviews.emptyBody}
@@ -195,7 +253,7 @@ export function ReviewsView() {
       )}
 
       <ul className={styles.reviewList}>
-        {(tasks ?? []).map((task) => (
+        {visible.map((task) => (
           <TaskCard key={task.id} task={task} practiceId={scope} catalogue={catalogue} onDone={load} />
         ))}
       </ul>

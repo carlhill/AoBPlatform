@@ -1,5 +1,10 @@
 import {
   MAX_CONFIRMATION_ATTEMPTS,
+  assertBackupUsable,
+  assertNotChurning,
+  coolingOffEndsAt,
+  warnedAddresses,
+  withinCoolingOff,
   PENDING_EMAIL_EXPIRY_DAYS,
   PendingEmailChangeError,
   afterStop,
@@ -163,3 +168,119 @@ describe('stopping', () => {
     expect(afterStop()).toEqual({ raiseTask: true, kind: 'admin_contact_changed', stakes: 'high' });
   });
 });
+
+describe('the backup address', () => {
+  it('refuses one that is the same as the primary', () => {
+    /*
+     * One inbox covering both is one compromise covering both, which is the
+     * entire thing this defends against. The database enforces it too, because
+     * the form is not the only caller.
+     */
+    expect(() =>
+      assertBackupUsable({ backupEmail: 'me@practice.invalid', primaryEmail: 'ME@practice.invalid' }),
+    ).toThrow(/cannot be the same/i);
+  });
+
+  it('accepts a genuinely different one', () => {
+    expect(() =>
+      assertBackupUsable({ backupEmail: 'personal@elsewhere.invalid', primaryEmail: 'me@practice.invalid' }),
+    ).not.toThrow();
+  });
+
+  it('refuses something that is not an address', () => {
+    expect(() => assertBackupUsable({ backupEmail: 'not-an-address', primaryEmail: 'me@practice.invalid' })).toThrow(
+      PendingEmailChangeError,
+    );
+  });
+});
+
+describe('who is warned', () => {
+  it('warns the old address AND the backup', () => {
+    expect(
+      warnedAddresses({
+        previousEmail: 'old@practice.invalid',
+        backupEmail: 'personal@elsewhere.invalid',
+        requestedEmail: 'new@practice.invalid',
+      }),
+    ).toEqual(['old@practice.invalid', 'personal@elsewhere.invalid']);
+  });
+
+  it('STILL WARNS SOMEBODY when the old address is gone', () => {
+    /*
+     * The case the backup exists for. Somebody whose old mailbox was closed
+     * still has a channel that is not the one being changed — without it, a
+     * change to an unreachable address is a change nobody can object to.
+     */
+    expect(
+      warnedAddresses({
+        previousEmail: null,
+        backupEmail: 'personal@elsewhere.invalid',
+        requestedEmail: 'new@practice.invalid',
+      }),
+    ).toEqual(['personal@elsewhere.invalid']);
+  });
+
+  it('never warns the address being changed TO', () => {
+    // Warning the requester about their own request checks nothing, and if the
+    // backup happens to be the new address it must not stand in for a witness.
+    expect(
+      warnedAddresses({
+        previousEmail: 'old@practice.invalid',
+        backupEmail: 'new@practice.invalid',
+        requestedEmail: 'new@practice.invalid',
+      }),
+    ).toEqual(['old@practice.invalid']);
+  });
+
+  it('does not warn the same address twice', () => {
+    expect(
+      warnedAddresses({
+        previousEmail: 'same@practice.invalid',
+        backupEmail: 'SAME@practice.invalid',
+        requestedEmail: 'new@practice.invalid',
+      }),
+    ).toEqual(['same@practice.invalid']);
+  });
+});
+
+describe('the cooling-off window', () => {
+  const effective = new Date('2026-08-23T02:00:00Z');
+
+  it('runs from when the change TOOK EFFECT, not from when it was asked for', () => {
+    /*
+     * The request window catches a change nobody noticed being asked for. This
+     * catches one nobody noticed HAPPENING — the likelier miss, because the
+     * warning arrives while somebody is away and the effect arrives while they
+     * still are.
+     */
+    expect(coolingOffEndsAt(effective).toISOString().slice(0, 10)).toBe('2026-08-30');
+  });
+
+  it('lets somebody stop it within the window', () => {
+    expect(withinCoolingOff(effective, new Date('2026-08-29T02:00:00Z'))).toBe(true);
+  });
+
+  it('closes after it', () => {
+    expect(withinCoolingOff(effective, new Date('2026-08-31T02:00:00Z'))).toBe(false);
+  });
+
+  it('is not open for a change that never took effect', () => {
+    // Nothing to cool off from. A pending change is stopped through the
+    // ordinary path, which has its own window.
+    expect(withinCoolingOff(null, new Date())).toBe(false);
+  });
+});
+
+describe('churn', () => {
+  it('stops after three changes in a month', () => {
+    /*
+     * Not proof of anything, and a pattern worth stopping for whatever each
+     * one claimed. Refused rather than flagged: the fourth attempt in a month
+     * is not somebody who keeps changing jobs, and if it is, support can do it
+     * with a person watching.
+     */
+    expect(() => assertNotChurning(2)).not.toThrow();
+    expect(() => assertNotChurning(3)).toThrow(/stopped and want a person to look/i);
+  });
+});
+
