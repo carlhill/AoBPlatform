@@ -1,5 +1,6 @@
-import { BadRequestException, Body, Controller, Get, Patch } from '@nestjs/common';
-import { IsEmail } from 'class-validator';
+import { BadRequestException, Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
+import { IsDateString, IsEmail, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { DEPARTURE_REASONS, DEPARTURE_REASON_KEYS } from '@aobplatform/domain';
 import { PrismaService } from '../prisma/prisma.service';
 import { AffiliationsService } from './affiliations.service';
 import { ReviewTasksService } from '../review-tasks/review-tasks.service';
@@ -12,6 +13,13 @@ import { SessionActor, type Actor } from '../auth/actor.decorator';
  */
 class UpdateContactDto {
   @IsEmail() email!: string;
+}
+
+class DepartDto {
+  @IsIn(DEPARTURE_REASON_KEYS) reason!: string;
+  @IsOptional() @IsString() @MaxLength(500) note?: string;
+  /** Ignored for the reasons that mean "this listing was wrong". */
+  @IsOptional() @IsDateString() endsAt?: string;
 }
 
 /**
@@ -76,6 +84,38 @@ export class PractitionerSelfController {
       deregisteredAt: practitioner.deregisteredAt,
       affiliations,
     };
+  }
+
+  /**
+   * Leaving a practice. Their own act, and nobody has to agree to it.
+   *
+   * IF THE PRACTICE HAD TO AGREE, a practice could keep somebody listed after
+   * they had gone — and a listed practitioner is one under whose name consent
+   * can still be captured. That is not an inconvenience, it is the fraud this
+   * platform exists to make impossible.
+   *
+   * The affiliation id is checked against THEM, by the query rather than by a
+   * comparison afterwards: a departure that could be aimed at somebody else's
+   * affiliation would let one practitioner end another's employment.
+   */
+  @Post('me/affiliations/:affiliationId/depart')
+  depart(
+    @Param('affiliationId', ParseUUIDPipe) affiliationId: string,
+    @Body() dto: DepartDto,
+    @SessionActor() actor: Actor | undefined,
+  ) {
+    const practitionerId = this.practitionerIdOf(actor);
+    return this.affiliations.departByPractitioner(practitionerId, affiliationId, {
+      reason: dto.reason,
+      note: dto.note ?? null,
+      endsAt: dto.endsAt ? new Date(dto.endsAt) : null,
+    });
+  }
+
+  /** The reasons, so the screen offers the same list the server accepts. */
+  @Get('departure-reasons')
+  departureReasons() {
+    return { reasons: DEPARTURE_REASONS };
   }
 
   /**

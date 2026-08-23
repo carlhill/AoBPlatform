@@ -33,10 +33,14 @@ import {
   AFFILIATION_VELOCITY_THRESHOLD,
   AFFILIATION_VELOCITY_WINDOW_DAYS,
   isAffiliationVelocityAnomalous,
+  PractitionerDepartureError,
+  assessPractitionerDeparture,
+  departureNoticeToPractice,
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PractitionerAccessService } from '../identity/practitioner-access.service';
+import { ReviewTasksService } from '../review-tasks/review-tasks.service';
 import { OutboundService } from '../outbound/outbound.service';
 import { EmailComposer } from '../messaging/composer.service';
 import { OrganisationsService } from '../organisations/organisations.service';
@@ -66,6 +70,7 @@ export class AffiliationsService {
     private readonly outbound: OutboundService,
     private readonly composer: EmailComposer,
     private readonly practitionerAccess: PractitionerAccessService,
+    private readonly reviewTasks: ReviewTasksService,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -622,6 +627,154 @@ export class AffiliationsService {
     }
 
     return { id: updated.id, status: updated.status, startedAt: updated.startedAt, access };
+  }
+
+  /**
+   * A practitioner ending their own affiliation.
+   *
+   * UNILATERAL, AND THAT IS THE POINT. `giveNotice` below is the practice's
+   * side — a commercial arrangement with a negotiated end date. This is a
+   * statement of fact about where somebody works, and a fact does not need the
+   * other party's agreement. If it did, a practice could keep a departed
+   * practitioner listed, and consent captured under that name would keep
+   * looking valid.
+   *
+   * The rules are in `practitioner-departure.ts` with tests; this writes the
+   * result and tells the practice.
+   */
+  async departByPractitioner(
+    practitionerId: string,
+    affiliationId: string,
+    request: { reason: string; note: string | null; endsAt: Date | null },
+  ) {
+    /*
+     * Keyed on BOTH ids, so it returns nothing unless the affiliation really is
+     * this practitioner's. The ownership check IS the query — a comparison
+     * afterwards is one somebody can forget, and forgetting it here would let
+     * one practitioner end another's employment.
+     */
+    const [affiliation] = await this.prisma.$queryRaw<
+      Array<{ id: string; practiceId: string; status: string; endedAt: Date | null; endsAt: Date | null }>
+    >`SELECT * FROM find_affiliation_for_practitioner(${affiliationId}::uuid, ${practitionerId}::uuid)`;
+
+    if (!affiliation) {
+      // The same answer whether it does not exist or is not theirs, so this
+      // cannot be used to discover which affiliation ids are real.
+      throw new NotFoundException('That affiliation was not found, or is not yours.');
+    }
+
+    const now = new Date();
+    let assessment;
+    try {
+      assessment = assessPractitionerDeparture({
+        affiliation: { status: affiliation.status, endedAt: affiliation.endedAt, endsAt: affiliation.endsAt },
+        request,
+        now,
+      });
+    } catch (err) {
+      if (err instanceof PractitionerDepartureError) throw new BadRequestException(err.message);
+      throw err;
+    }
+
+    const practitioner = await this.prisma.practitioner.findFirst({ where: { id: practitionerId } });
+    const practitionerName = practitioner
+      ? `${practitioner.givenNames} ${practitioner.familyName}`.trim()
+      : 'A practitioner';
+
+    await this.prisma.withPractice(affiliation.practiceId, async (tx) => {
+      await tx.affiliation.update({
+        where: { id: affiliationId },
+        data: assessment.immediate
+          ? {
+              status: 'ended',
+              // endsAt = endedAt = now is the tell that no notice period
+              // applied, which is the same shape deregistration uses.
+              endedAt: assessment.endsAt,
+              endsAt: assessment.endsAt,
+              endReason: request.reason,
+            }
+          : { endsAt: assessment.endsAt, noticeGivenAt: now, noticeGivenBy: practitionerName, endReason: request.reason },
+      });
+
+      await enqueueVaultEvent(tx, {
+        type: assessment.immediate ? 'affiliation.ended' : 'affiliation.notice_given',
+        actor: { principalType: 'provider', id: practitionerId },
+        subject: { type: 'Affiliation', id: affiliationId },
+        payload: {
+          reason: request.reason,
+          byPractitioner: true,
+          noticePeriodApplied: !assessment.immediate,
+          disputed: assessment.concern,
+        },
+      });
+
+      /*
+       * A DISPUTED LISTING ALWAYS REACHES A PERSON. "I never worked here" is a
+       * claim that somebody was listed at a practice they have no connection
+       * to — and if it is true, everything captured under their name there is
+       * in question. Not conditional on there being captures: whether anybody
+       * used it is for the reviewer to establish.
+       */
+      /*
+       * THE PRACTICE IS TOLD, NOT ASKED — and told the fact without the
+       * practitioner's stated reason. That reason is between them and us until
+       * a reviewer decides otherwise; a practice reading "they say they never
+       * worked here" before anybody has checked helps nobody and prejudices the
+       * person who has to check it.
+       *
+       * Enqueued IN this transaction, so a departure that was recorded is a
+       * departure the practice will hear about. The outbox exists precisely so
+       * those two cannot come apart.
+       */
+      const notice = departureNoticeToPractice({
+        practitionerName,
+        endsAt: assessment.endsAt,
+        immediate: assessment.immediate,
+      });
+      const practice = await tx.practice.findFirst({ where: { id: affiliation.practiceId } });
+      const to = practice?.groupEmail ?? practice?.adminEmail;
+      if (to) {
+        await this.outbound.enqueue(tx, {
+          practiceId: affiliation.practiceId,
+          channel: 'email',
+          destination: to,
+          subjectType: 'Affiliation',
+          subjectId: affiliationId,
+          mediaType: 'email',
+          recipientType: 'practice',
+          payload: { subject: notice.subject, body: notice.lines.join('\n\n') },
+        });
+      }
+
+      if (assessment.needsReview) {
+        await this.reviewTasks.raise(tx, {
+          practiceId: affiliation.practiceId,
+          kind: 'admin_contact_changed',
+          subjectType: 'Affiliation',
+          subjectId: affiliationId,
+          summary: `${practitionerName} disputes being listed at this practice`,
+          detail: {
+            reason:
+              'The practitioner ended this affiliation themselves, giving a reason that says the listing was ' +
+              'wrong rather than that it is ending. Anything captured under their name here needs looking at.',
+            departureReason: request.reason,
+            theirWords: request.note,
+          },
+          raisedBy: practitionerName,
+        });
+      }
+    });
+
+
+    return {
+      id: affiliationId,
+      endsAt: assessment.endsAt.toISOString(),
+      immediate: assessment.immediate,
+      reviewRaised: assessment.needsReview,
+      detail: assessment.immediate
+        ? 'Recorded. You are no longer listed there, and consent cannot be captured under your name.'
+        : `Recorded. Your last day there is ${assessment.endsAt.toISOString().slice(0, 10)}.`,
+    };
   }
 
   /**

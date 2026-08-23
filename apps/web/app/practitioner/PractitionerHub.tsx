@@ -82,7 +82,7 @@ export function PractitionerHub() {
     try {
       const res = await fetch(`${CORE_URL}/practitioner/me/contact`, {
         method: 'PATCH',
-        headers: { ...apiHeaders(), 'content-type': 'application/json' },
+        headers: apiHeaders(),
         body: JSON.stringify({ email: email.trim() }),
       });
       const body = (await res.json().catch(() => ({}))) as { message?: string };
@@ -97,8 +97,14 @@ export function PractitionerHub() {
   }
 
   if (!currentSession()) {
+    /*
+     * THE SIGN-IN CONTROL BELONGS HERE MOST OF ALL. This branch shipped
+     * without it, so the one page that exists to say "you need to sign in"
+     * was the one page with no way to do it — a dead end telling somebody
+     * to do something and then not letting them.
+     */
     return (
-      <Shell>
+      <Shell right={<SessionControl audience={strings.practitioner.audience} />}>
         <h1 className={ui.pageTitle}>{strings.practitioner.title}</h1>
         <Notice tone="warn" title={strings.practitioner.signedOutTitle}>
           {strings.practitioner.signedOutBody}

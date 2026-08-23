@@ -127,7 +127,7 @@ export function ActingAsStart({
     try {
       const res = await fetch(`${CORE_URL}/acting-as/start`, {
         method: 'POST',
-        headers: { ...apiHeaders(practiceId), 'content-type': 'application/json' },
+        headers: apiHeaders(practiceId),
         body: JSON.stringify({ practiceId, reason, note: note.trim() }),
       });
       const body = (await res.json().catch(() => ({}))) as { message?: string };

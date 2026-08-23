@@ -31,6 +31,7 @@ export * from './address-check';
 export * from './practice-users';
 export * from './pending-email-change';
 export * from './page-access';
+export * from './practitioner-departure';
 export * from './reporting';
 export * from './packed-reports';
 export * from './departure-notice';

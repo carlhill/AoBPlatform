@@ -170,6 +170,10 @@ export function assessPractitionerDeparture(input: {
 /**
  * What the practice is told. They are told in every case.
  *
+ * NOT `noticeToPractice` — `acting-as.ts` already exports that, and two modules
+ * exporting one name means the barrel picks a winner silently. The same trap as
+ * `isClaimable`, which had to be renamed for the same reason.
+ *
  * A departure changes who the practice may capture consent under, so a
  * practice learning about it late is a practice capturing invalid consent in
  * the meantime. The message is deliberately plain about the fact and silent
@@ -177,7 +181,7 @@ export function assessPractitionerDeparture(input: {
  * until a reviewer decides otherwise, and a practice reading "they say they
  * never worked here" before anybody has checked helps nobody.
  */
-export function noticeToPractice(input: {
+export function departureNoticeToPractice(input: {
   practitionerName: string;
   endsAt: Date;
   immediate: boolean;
