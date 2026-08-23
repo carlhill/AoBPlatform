@@ -29,6 +29,7 @@ const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
 type Affiliation = {
   id: string;
+  practiceId?: string | null;
   practiceName?: string | null;
   locationCode?: string | null;
   status: string;
@@ -122,10 +123,10 @@ export function PractitionerHub() {
    * duplicate rather than as two places.
    */
   const entities = useMemo(() => {
-    const byPractice = new Map<string, { name: string; sites: string[] }>();
+    const byPractice = new Map<string, { id: string | null; name: string; sites: string[] }>();
     for (const a of live) {
       const name = a.practiceName ?? strings.practitioner.unnamedPractice;
-      const entry = byPractice.get(name) ?? { name, sites: [] };
+      const entry = byPractice.get(name) ?? { id: a.practiceId ?? null, name, sites: [] };
       if (a.locationCode && !entry.sites.includes(a.locationCode)) entry.sites.push(a.locationCode);
       byPractice.set(name, entry);
     }
@@ -168,7 +169,14 @@ export function PractitionerHub() {
           {entities.length === 0 && <p className={manage.cardNote}>{strings.practitioner.noEntities}</p>}
           {entities.map((e) => (
             <p key={e.name} className={manage.cardNote}>
-              <strong>{e.name}</strong>
+              {/* The name is the way in to the practice's own details. */}
+              {e.id ? (
+                <Link href={`/practitioner/practices/${e.id}`} data-testid={`to-practice-${e.id}`}>
+                  <strong>{e.name}</strong>
+                </Link>
+              ) : (
+                <strong>{e.name}</strong>
+              )}
               {/* The sites under it, so two sites read as two places rather
                   than as the practice listed twice. */}
               {e.sites.length > 0 && <span className={ui.hint}> · {e.sites.join(', ')}</span>}

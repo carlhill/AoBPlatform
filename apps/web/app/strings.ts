@@ -1372,6 +1372,25 @@ export const strings = {
     builderBody: 'The report builder opens this same question, and only ever shows what your account may see.',
     builderLink: 'Open the report builder',
   },
+  practicePublic: {
+    title: 'The practice',
+    lead:
+      'How this practice publishes itself. Its own business details — not its people, and not its records.',
+    failed: 'That could not be read',
+    entityTitle: 'The entity',
+    legalName: 'Registered name',
+    tradingAs: 'Trading as',
+    abn: 'ABN',
+    headOfficeTitle: 'Head office',
+    headOfficeNote: 'Where the entity is run from. Not necessarily where patients are seen.',
+    noAddress: 'No head office address has been recorded.',
+    contactTitle: 'How to contact them',
+    noContactTitle: 'They have not published contact details',
+    noContactBody:
+      'This practice has not given us a business phone or address to show you. We are not going to show you '
+      + 'their administrator’s personal address instead — that identifies a person and is where their sign-in '
+      + 'lives. Ask them directly, or ask us.',
+  },
   practitioner: {
     audience: 'Practitioner',
     title: 'Your practice work',

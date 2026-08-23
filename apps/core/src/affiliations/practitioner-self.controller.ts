@@ -1,4 +1,14 @@
-import { BadRequestException, Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  NotFoundException,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+} from '@nestjs/common';
 import { IsDateString, IsEmail, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import { DEPARTURE_REASONS, DEPARTURE_REASON_KEYS } from '@aobplatform/domain';
 import { PrismaService } from '../prisma/prisma.service';
@@ -110,6 +120,40 @@ export class PractitionerSelfController {
       note: dto.note ?? null,
       endsAt: dto.endsAt ? new Date(dto.endsAt) : null,
     });
+  }
+
+  /**
+   * A practice they work at, as the BUSINESS publishes itself.
+   *
+   * Goes through a SECURITY DEFINER function because a practitioner has no
+   * practice claim — their scope is their affiliations, which RLS cannot
+   * express. The function checks the affiliation itself, so this cannot be
+   * pointed at a practice they have nothing to do with.
+   *
+   * WHAT IT DELIBERATELY DOES NOT RETURN: the administrator, the manager, the
+   * other practitioners, the application, the verification state. Working
+   * somewhere does not make somebody a reader of that practice's record — and
+   * the guarantee is that those columns are not selected, rather than that
+   * somebody remembered not to render them.
+   *
+   * An ENDED affiliation still counts. Somebody who worked there last year may
+   * legitimately need the practice's details to chase something from then.
+   */
+  @Get('me/practices/:practiceId')
+  async practice(@Param('practiceId', ParseUUIDPipe) practiceId: string, @SessionActor() actor: Actor | undefined) {
+    const practitionerId = this.practitionerIdOf(actor);
+
+    const [practice] = await this.prisma.$queryRaw<
+      Array<Record<string, unknown>>
+    >`SELECT * FROM core.practice_public_for_practitioner(${practitionerId}::uuid, ${practiceId}::uuid)`;
+
+    if (!practice) {
+      // The same answer whether the practice does not exist or they are not
+      // affiliated with it, so this cannot be used to discover practices.
+      throw new NotFoundException('That practice was not found, or you are not affiliated with it.');
+    }
+
+    return practice;
   }
 
   /** The reasons, so the screen offers the same list the server accepts. */

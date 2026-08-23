@@ -91,6 +91,20 @@ model Practice {
   /// NOTHING ENROLS AGAINST THIS ADDRESS. It receives notices only.
   groupEmail String?
 
+  /// PUBLIC, and that is the whole point of them existing separately.
+  ///
+  /// Every other address here belongs to a person or to us: `adminEmail`
+  /// identifies a human and holds their credential, `managerEmail` is the
+  /// second named human, `groupEmail` is an internal notices mailbox. None
+  /// answers "how do I contact this practice", and showing a practitioner the
+  /// administrator's personal address because it was the only one to hand
+  /// would publish a person's details to answer a question about a business.
+  ///
+  /// Optional on purpose: a practice that has not filled these in shows
+  /// nothing, rather than falling back to a private address.
+  businessPhone String?
+  businessEmail String?
+
   adminName     String?
   adminEmail    String?
   adminPhone    String?
