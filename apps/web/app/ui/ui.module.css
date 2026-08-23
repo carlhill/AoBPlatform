@@ -145,6 +145,20 @@
   background: var(--surface-sunken, rgba(0, 0, 0, 0.04));
 }
 
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.backLink:hover {
+  color: var(--ink);
+}
+
 .topbarRight {
   margin-left: auto;
   font-size: var(--text-xs);

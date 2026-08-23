@@ -100,6 +100,23 @@ function displayDate(value: string | null): string {
  * own move and the likeliest thing to have been forgotten. Ended and declined
  * sink to the bottom: they are history, not work.
  */
+/**
+ * WHEN DID THIS HAPPEN — the one date that stands for an affiliation.
+ *
+ * There is no single timestamp on the row, and picking the wrong one makes the
+ * order look random: an invitation sent yesterday for a start date next month
+ * belongs with yesterday's work, not next month's. So it is the most recent
+ * thing that has ACTUALLY happened, which is what somebody scanning by date is
+ * looking for.
+ */
+function happenedAt(a: Affiliation): number {
+  const stamps = [a.noticeGivenAt, a.invitationSentAt, a.startedAt]
+    .filter(Boolean)
+    .map((d) => new Date(d as string).getTime())
+    .filter((n) => !Number.isNaN(n));
+  return stamps.length > 0 ? Math.max(...stamps) : 0;
+}
+
 function rank(a: Affiliation): number {
   if (a.status === 'invited') return a.invitationSentAt ? 1 : 0;
   if (a.status === 'ending') return 2;
@@ -114,6 +131,7 @@ export function AffiliationsView({ practiceId }: { practiceId: string }) {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [invited, setInvited] = useState(false);
+  const [order, setOrder] = useState<'attention' | 'recent' | 'oldest'>('attention');
 
   const headers = apiHeaders(practiceId);
 
@@ -168,7 +186,23 @@ export function AffiliationsView({ practiceId }: { practiceId: string }) {
     );
   }
 
-  const ordered = affiliations ? [...affiliations].sort((a, b) => rank(a) - rank(b)) : [];
+  /*
+   * WORST FIRST BY DEFAULT, because this page answers "who cannot capture
+   * consent". Date order is offered rather than substituted: somebody looking
+   * for what they did last Tuesday has a different question, and neither order
+   * is right for both.
+   *
+   * Date is the TIEBREAK inside the attention order too. Two rows at the same
+   * rank used to come back in whatever order the server happened to return,
+   * which reads as no order at all.
+   */
+  const ordered = affiliations
+    ? [...affiliations].sort((a, b) => {
+        if (order === 'recent') return happenedAt(b) - happenedAt(a);
+        if (order === 'oldest') return happenedAt(a) - happenedAt(b);
+        return rank(a) - rank(b) || happenedAt(b) - happenedAt(a);
+      })
+    : [];
   const capturing = ordered.filter((a) => a.canCapture).length;
   const waiting = ordered.filter((a) => a.status === 'invited').length;
 
@@ -198,6 +232,23 @@ export function AffiliationsView({ practiceId }: { practiceId: string }) {
             <Chip tone="warn">{strings.affiliations.awaiting.replace('{n}', String(waiting))}</Chip>
           )}
         </p>
+      )}
+
+      {affiliations !== null && affiliations.length > 1 && (
+        <Field label={strings.affiliations.sortLabel} hint={strings.affiliations.sortHint}>
+          {(props) => (
+            <SelectInput
+              {...props}
+              value={order}
+              onChange={(e) => setOrder(e.target.value as 'attention' | 'recent' | 'oldest')}
+              data-testid="affiliations-order"
+            >
+              <option value="attention">{strings.affiliations.sortAttention}</option>
+              <option value="recent">{strings.affiliations.sortRecent}</option>
+              <option value="oldest">{strings.affiliations.sortOldest}</option>
+            </SelectInput>
+          )}
+        </Field>
       )}
 
       {affiliations !== null && affiliations.length === 0 && (

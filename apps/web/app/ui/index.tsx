@@ -24,6 +24,7 @@ import * as RadixLabel from '@radix-ui/react-label';
 import * as RadixCheckbox from '@radix-ui/react-checkbox';
 import * as RadixDialog from '@radix-ui/react-dialog';
 import { MainMenu } from '../MainMenu';
+import { BackLink } from '../BackLink';
 import { useId, useState } from 'react';
 import styles from './ui.module.css';
 
@@ -54,6 +55,12 @@ export function Shell({
           */}
           <MainMenu />
           <span className={styles.wordmark}>AoBPlatform</span>
+          {/*
+            AND WHERE "UP" IS. Derived from the path rather than passed in, so
+            no page can be the one that forgot it, and it renders nothing at all
+            on a page that has no parent.
+          */}
+          <BackLink />
           {nav && <nav className={styles.nav}>{nav}</nav>}
           {right && <span className={styles.topbarRight}>{right}</span>}
         </div>

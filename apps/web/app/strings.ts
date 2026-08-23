@@ -673,6 +673,16 @@ export const strings = {
       'AoBPlatform is reviewing this application. Nothing is needed from you \u2014 you will hear either way, ' +
       'at the email on the application.',
     openStatus: 'See where it is up to',
+    /*
+     * WHAT THE ROW OFFERS AN OPERATOR. Every row used to say "Open" and link
+     * to the console, which an operator cannot reach without a practice claim
+     * -- so clicking a practice bounced them to their own landing page four
+     * seconds later. The row now says what will actually happen.
+     */
+    actAsFirst: 'Act as this practice',
+    actAsFirstHint:
+      'Their console is theirs, so opening it means acting as them — with a reason, recorded, and visible to '
+      + 'the practice. Choose a reason below and you will land on their hub.',
     openPending: 'See where it is up to',
     rejected: 'Not approved',
     rejectedBody:
@@ -1462,6 +1472,7 @@ export const strings = {
       + 'works where.',
     absentSignedOut: 'The rest appears once you sign in.',
     actingAsNote: 'You are acting as {practice}, so its pages are listed here too.',
+    backTo: 'Back to {page}',
 
     platformHeading: 'Platform',
     allOrganisations: 'All organisations',
@@ -2021,12 +2032,19 @@ export const strings = {
 
     // --- Recording the register check ---
     checkTitle: 'Record what the register says',
+    /*
+     * SHOWN ON THE CARD OF A PRACTITIONER WHO IS ALREADY HERE, so it must not
+     * read as instructions for adding one. It ended "Add them here and enter
+     * their AHPRA number", which told an existing, affiliated practitioner's
+     * card how to create the record it was already sitting on.
+     */
     checkedByUsTitle: 'AoBPlatform checks the register, not you',
     checkedByUsBody:
       'A register check is our evidence that somebody independent looked. It is what turns a typed-in ' +
       'registration number into something with weight, so a practice checking its own practitioner would ' +
-      'be awarding itself the check. Add them here and enter their AHPRA number — we do the rest, and ' +
-      'nothing is needed from you unless we ask.',
+      'be awarding itself the check. We have their AHPRA number and the check is ours to do — nothing is ' +
+      'needed from you unless we ask. They can be invited and can work in the meantime; the check has to ' +
+      'be recorded before consent can be captured under their name.',
     checkOpen: 'Record a register check',
     checkLead:
       'Search the AHPRA public register for this practitioner and record what it says. Your name is kept ' +
@@ -2199,6 +2217,13 @@ export const strings = {
       'Which practitioners work at which of your locations. A practitioner’s Medicare provider number ' +
       'belongs to a place, not to a person, so this is where it lives — and only the practitioner can ' +
       'accept one of these.',
+    sortLabel: 'Order',
+    sortAttention: 'What needs attention',
+    sortRecent: 'Most recent first',
+    sortOldest: 'Oldest first',
+    sortHint:
+      'By default the ones that cannot capture consent come first, because that is the question this page '
+      + 'answers. Sort by date when you are looking for something you did rather than something to do.',
     backToSetup: 'Back to set up',
     notLoaded: 'The affiliations could not be loaded',
     loading: 'Loading…',

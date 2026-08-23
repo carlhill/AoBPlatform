@@ -102,17 +102,34 @@ export function ActingAsStart({
   practiceId,
   practiceName,
   onStarted,
+  open: openProp,
+  onOpenChange,
 }: {
   practiceId: string;
   practiceName?: string | null;
   onStarted?: () => void;
+  /**
+   * OPTIONALLY CONTROLLED, so something else on the page can open the form.
+   *
+   * The practices list needs this: clicking a practice row is what an operator
+   * expects to do, and that click has to land on the reason form rather than on
+   * a page they will be turned away from. Left uncontrolled it keeps its own
+   * state, which is what every other caller wants.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const [reasons, setReasons] = useState<{ key: string; label: string; detail: string }[]>([]);
   const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
+  const [ownOpen, setOwnOpen] = useState(false);
+  const open = openProp ?? ownOpen;
+  const setOpen = (next: boolean) => {
+    setOwnOpen(next);
+    onOpenChange?.(next);
+  };
 
   useEffect(() => {
     fetch(`${CORE_URL}/acting-as/catalogue`, { headers: apiHeaders() })

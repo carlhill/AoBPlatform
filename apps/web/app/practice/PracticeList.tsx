@@ -129,6 +129,8 @@ export function PracticeList() {
    */
   const isOperator = Boolean(session?.roles?.includes('platform_admin')) && !session?.practiceId;
   const [actingOn, setActingOn] = useState<string | null>(null);
+  /** Which row's reason form is open, when the row itself was the thing clicked. */
+  const [openActAs, setOpenActAs] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOperator) return;
@@ -380,6 +382,23 @@ export function PracticeList() {
            */
           const href = '/practice/setup';
 
+          /*
+           * CLICKING A PRACTICE MUST NOT BOUNCE YOU.
+           *
+           * Every row linked to the console. A practice user can open it; a
+           * platform OPERATOR cannot, because the console needs a practice
+           * claim and their token carries none. So an operator clicking a
+           * practice was sent to /practice/setup, refused by the guard, and
+           * redirected to their own landing page a few seconds later — which
+           * reads as the wrong link rather than as a rule.
+           *
+           * It is a rule, and a good one: an operator reaches a practice's
+           * records by acting as them, with a reason, recorded, and visible to
+           * the practice. So the row now offers exactly that instead of
+           * offering a door that shuts.
+           */
+          const canOpen = !isOperator || actingOn === p.id;
+
           const body = (
             <>
               <div className={styles.rowMain}>
@@ -419,7 +438,11 @@ export function PracticeList() {
                   </Chip>
                 )}
                 <span className={styles.rowOpen}>
-                  {pending || rejected ? strings.practices.openPending : strings.practices.open}
+                  {!canOpen
+                    ? strings.practices.actAsFirst
+                    : pending || rejected
+                      ? strings.practices.openPending
+                      : strings.practices.open}
                   <ArrowRight size={15} aria-hidden="true" />
                 </span>
               </div>
@@ -428,14 +451,38 @@ export function PracticeList() {
 
           return (
             <li key={p.id}>
-              <Link
-                href={href}
-                className={styles.row}
-                onClick={() => window.localStorage.setItem(SELECTION_KEY, p.id)}
-                data-testid={`practice-${p.id}`}
-              >
-                {body}
-              </Link>
+              {canOpen ? (
+                <Link
+                  href={href}
+                  className={styles.row}
+                  onClick={() => window.localStorage.setItem(SELECTION_KEY, p.id)}
+                  data-testid={`practice-${p.id}`}
+                >
+                  {body}
+                </Link>
+              ) : (
+                /*
+                  A BUTTON, NOT A LINK AND NOT AN INERT DIV.
+
+                  Not a link, because there is nowhere for it to go yet: an
+                  operator has no practice claim, so the console would turn them
+                  away. Not inert either — it said "Act as this practice" and
+                  did nothing when pressed, which is the same broken promise
+                  wearing different clothes.
+
+                  Pressing it opens the reason form below, which is the actual
+                  next step. The reason is still required; this only removes the
+                  guessing about where to click.
+                */
+                <button
+                  type="button"
+                  className={styles.row}
+                  onClick={() => setOpenActAs(p.id)}
+                  data-testid={`practice-${p.id}`}
+                >
+                  {body}
+                </button>
+              )}
 
               {/*
                 ACTING AS THIS PRACTICE, from the list.
@@ -455,6 +502,8 @@ export function PracticeList() {
                 <ActingAsStart
                   practiceId={p.id}
                   practiceName={p.name ?? p.legalName ?? null}
+                  open={openActAs === p.id}
+                  onOpenChange={(o) => setOpenActAs(o ? p.id : null)}
                   onStarted={() => {
                     // The cached answer is now wrong, and the menu and the
                     // guard both read it.
@@ -476,9 +525,18 @@ export function PracticeList() {
       */}
       <ActingAsBanner onChange={() => { forgetActingAs(); void fetchActingAs().then((a) => setActingOn(a?.practiceId ?? null)); }} />
 
-      <Notice tone="warn" title={strings.practices.scopeHeading}>
-        {strings.practices.scopeBody}
-      </Notice>
+      {/*
+        NOT SHOWN TO A PLATFORM OPERATOR. "This list is not yet scoped to you"
+        is an apology to a practice administrator who is seeing other people's
+        practices. An operator seeing every practice is not a gap waiting to be
+        closed — it is the page working, and apologising for it says the
+        opposite of what is true.
+      */}
+      {!isOperator && (
+        <Notice tone="warn" title={strings.practices.scopeHeading}>
+          {strings.practices.scopeBody}
+        </Notice>
+      )}
     </Shell>
   );
 }
