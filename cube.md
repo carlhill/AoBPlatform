@@ -219,6 +219,66 @@ more confidence than it earned.
   a background job reading every tenant on a timer. Turning it on later means
   naming `scheduledRefreshContexts`, not relaxing the check.
 
+## What Cube says on startup, and which of it matters
+
+Three lines in the log that look like findings. Two are expected and one is
+worth knowing about.
+
+### "You are using multitenancy without configuring scheduledRefreshContexts"
+
+**Expected, and the warning is describing the thing we deliberately avoided.**
+
+Cube is saying: you have a per-tenant security context AND a background
+refresher, and the refresher runs with no context — so it either fails or, if
+somebody "fixes" it, runs as something with more access than any real user.
+
+That is exactly why `CUBEJS_SCHEDULED_REFRESH_TIMER` is `false`. Our
+`driverFactory` refuses a tenant-less call, and the correct response to that
+refusal was to stop the scheduler rather than to hand it the platform
+credentials — which would have made it a background job reading every tenant's
+data on a timer.
+
+Pre-aggregations still build lazily, on the first query for a tenant, under
+that tenant's own scoped connection. Turning the scheduler on later means
+naming the contexts (`scheduledRefreshContexts`), not relaxing the check.
+
+### "Authentication checks are disabled in developer mode"
+
+**Overstated here, and checked rather than assumed.** `jwt.jwkUrl` is
+configured, so tokens are still verified against the realm's JWKS — an
+unsigned or forged token is refused, and a valid one with no scope claims is
+refused too. See the table under *About dev mode* in
+[`infra/cube/README.md`](infra/cube/README.md).
+
+Underneath that, the database does not care whether Cube authenticated anybody:
+a connection with no practice or practitioner reads nothing.
+
+Still set `NODE_ENV=production` outside a laptop. The Playground goes, and Cube
+enforces the JWT itself rather than relying on the layer below it.
+
+### "Cube SQL (pg) is listening on 0.0.0.0:15432"
+
+**The one worth knowing about.** Cube exposes a Postgres-wire endpoint so BI
+tools can connect as though it were a database. `0.0.0.0` means it is listening
+on every interface *inside its container*.
+
+It is **not** published to the host — `docker compose` maps only 4000 (the API
+and Playground) to `127.0.0.1:21030`. Verified: a connection to `127.0.0.1:15432`
+from the host times out.
+
+So today it is reachable only from the Docker network. That is fine for a
+sandbox and is **not** something to leave unexamined when this is deployed:
+
+- [ ] If the SQL API is not wanted, disable it rather than relying on nothing
+      being able to route to it.
+- [ ] If it is wanted (Metabase, Excel, psql), it needs its own credentials and
+      its own decision about which of the three scopes it connects as — a BI
+      tool holding the platform credential is a BI tool that can read every
+      practice.
+
+Neither is a problem now. Both become one the first time this runs somewhere
+with more than one host on the network.
+
 ---
 
 *Last verified 22 August 2026 against the local stack: Postgres 16.15, Cube

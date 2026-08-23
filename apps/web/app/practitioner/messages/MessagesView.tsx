@@ -19,37 +19,73 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, RefreshCw } from 'lucide-react';
-import { Button, Notice, Shell, ui } from '../../ui';
+import { ArrowLeft, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
+import { matrix } from '@aobplatform/domain';
+import { Button, Field, Notice, SelectInput, Shell, ui } from '../../ui';
 import { SessionControl } from '../../SessionControl';
-import { currentSession } from '../../auth';
+import { apiHeaders, currentSession } from '../../auth';
 import { strings } from '../../strings';
 import styles from '../../practice/manage.module.css';
 
 const CUBE_URL = process.env.NEXT_PUBLIC_CUBE_URL ?? 'http://localhost:21030';
+const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
 type Row = Record<string, string | number | null>;
 
 /**
- * One row per month per practice, and both dimensions earn their place: a
- * practitioner working at two practices wants to know which is writing to them,
- * and "when" is the other half of every question about a message.
+ * THE SAME GRAINS AS THE PLATFORM REPORT, because "how much and when" is the
+ * same question whoever is asking it. The two matrices are reshaped from daily
+ * rows through the same `matrix()` the other screen uses, so the two agree
+ * about what "week 3 of its own month" means.
  */
-const QUERY = {
-  measures: ['MyMessages.count', 'MyMessages.sent', 'MyMessages.waiting'],
-  dimensions: ['MyMessages.practice'],
-  timeDimensions: [
-    { dimension: 'MyMessages.occurredAt', granularity: 'month', dateRange: 'from 2 years ago to now' },
-  ],
-  order: { 'MyMessages.occurredAt': 'desc' },
-};
+const GRAINS = [
+  { key: 'all', label: 'Since the start', granularity: null },
+  { key: 'quarter', label: 'Per quarter', granularity: 'quarter' },
+  { key: 'month', label: 'Per month', granularity: 'month' },
+  { key: 'week', label: 'Per week', granularity: 'week' },
+  { key: 'day', label: 'Per day', granularity: 'day' },
+  { key: 'month_by_week', label: 'Months down, weeks across', granularity: 'day' },
+  { key: 'month_by_day', label: 'Months down, days across', granularity: 'day' },
+] as const;
+
+type GrainKey = (typeof GRAINS)[number]['key'];
+
+function queryFor(grain: GrainKey) {
+  const chosen = GRAINS.find((g) => g.key === grain) ?? GRAINS[2];
+  return {
+    measures: ['MyMessages.count', 'MyMessages.sent', 'MyMessages.waiting'],
+    dimensions: ['MyMessages.practice'],
+    timeDimensions: [
+      {
+        dimension: 'MyMessages.occurredAt',
+        ...(chosen.granularity ? { granularity: chosen.granularity } : {}),
+        dateRange: 'from 2 years ago to now',
+      },
+    ],
+    order: { 'MyMessages.occurredAt': 'desc' },
+  };
+}
 
 function num(row: Row, key: string): number {
   const value = row[key];
   return typeof value === 'number' ? value : Number(value ?? 0);
 }
 
+type Message = {
+  id: string;
+  practice: string | null;
+  channel: string;
+  state: string;
+  occurredAt: string;
+  subject: string | null;
+  body: string | null;
+  sentBy: string;
+};
+
 export function MessagesView() {
+  const [grain, setGrain] = useState<GrainKey>('month');
+  const [messages, setMessages] = useState<Message[] | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -61,9 +97,10 @@ export function MessagesView() {
       const token = currentSession()?.accessToken;
       if (!token) throw new Error(strings.myMessages.noSession);
 
-      const res = await fetch(`${CUBE_URL}/cubejs-api/v1/load?query=${encodeURIComponent(JSON.stringify(QUERY))}`, {
-        headers: { Authorization: token },
-      });
+      const res = await fetch(
+        `${CUBE_URL}/cubejs-api/v1/load?query=${encodeURIComponent(JSON.stringify(queryFor(grain)))}`,
+        { headers: { Authorization: token } },
+      );
       const body = (await res.json().catch(() => ({}))) as { data?: Row[]; error?: string };
 
       /*
@@ -80,11 +117,48 @@ export function MessagesView() {
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [grain]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  /*
+   * THE MESSAGES THEMSELVES, from core rather than from Cube.
+   *
+   * The reporting layer carries counts and no content — that is what makes it
+   * safe to let a query engine compose its own SQL over it. Reading a message
+   * sent TO YOU is a different question, answered from a different place rather
+   * than by widening that surface.
+   *
+   * Fetched once, not per grain: the grain changes how the SUMMARY is grouped,
+   * and a list of what arrived does not group at all.
+   */
+  useEffect(() => {
+    fetch(`${CORE_URL}/practitioner/me/messages`, { headers: apiHeaders() })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((b: { messages?: Message[] }) => setMessages(b.messages ?? []))
+      .catch(() => setMessages([]));
+  }, []);
+
+  /*
+   * The two matrices are reshaped from daily rows, exactly as the platform
+   * report does. Cube groups by CALENDAR week, which puts week 31 in one month
+   * and leaves every row in a different set of columns, comparing nothing.
+   * `matrix()` is shared, so the two screens cannot disagree about what
+   * "week 3 of its own month" means.
+   */
+  const built = useMemo(() => {
+    if (!rows || (grain !== 'month_by_week' && grain !== 'month_by_day')) return null;
+    const counted = rows
+      .map((r) => ({
+        at: String(r['MyMessages.occurredAt.day'] ?? r['MyMessages.occurredAt'] ?? ''),
+        count: num(r, 'MyMessages.count'),
+      }))
+      .filter((r) => r.at)
+      .map((r) => ({ at: new Date(r.at), count: r.count }));
+    return matrix(counted, grain === 'month_by_week' ? 'month_by_week' : 'month_by_day');
+  }, [rows, grain]);
 
   const totals = useMemo(() => {
     if (!rows) return null;
@@ -115,6 +189,25 @@ export function MessagesView() {
       <h1 className={ui.pageTitle}>{strings.myMessages.title}</h1>
       <p className={ui.pageLead}>{strings.myMessages.lead}</p>
 
+      <div className={styles.applicationFields}>
+        <Field label={strings.myMessages.grain} hint={strings.myMessages.grainHint}>
+          {(props) => (
+            <SelectInput
+              {...props}
+              value={grain}
+              onChange={(e) => setGrain(e.target.value as GrainKey)}
+              data-testid="messages-grain"
+            >
+              {GRAINS.map((g) => (
+                <option key={g.key} value={g.key}>
+                  {g.label}
+                </option>
+              ))}
+            </SelectInput>
+          )}
+        </Field>
+      </div>
+
       <div className={ui.rowActions}>
         {totals && (
           <span className={ui.hint}>
@@ -140,7 +233,40 @@ export function MessagesView() {
         <Notice title={strings.myMessages.emptyTitle}>{strings.myMessages.emptyBody}</Notice>
       )}
 
-      {rows && rows.length > 0 && (
+      {built && (
+        <div className={styles.tableScroll}>
+          <table className={styles.totalsTable}>
+            <thead>
+              <tr>
+                <th scope="col">{strings.myMessages.month}</th>
+                {built.columns.map((c) => (
+                  <th key={c} scope="col" className={styles.stateCol}>
+                    {c}
+                  </th>
+                ))}
+                <th scope="col" className={styles.totalCol}>
+                  {strings.myMessages.total}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {built.rows.map((row) => (
+                <tr key={row.key}>
+                  <th scope="row">{row.label}</th>
+                  {row.cells.map((cell, i) => (
+                    <td key={i} className={styles.stateCol}>
+                      {cell === null ? '' : cell}
+                    </td>
+                  ))}
+                  <td className={styles.totalCol}>{row.total}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {!built && rows && rows.length > 0 && (
         <div className={styles.tableScroll}>
           <table className={styles.totalsTable}>
             <thead>
@@ -171,6 +297,55 @@ export function MessagesView() {
             </tbody>
           </table>
         </div>
+      )}
+      {/*
+        THE MESSAGES THEMSELVES. The table above answers "how many and when";
+        this answers "what did it say" — which is the question somebody actually
+        has when they open a page called "what we have sent you".
+      */}
+      {messages && messages.length > 0 && (
+        <section className={styles.applicationSection}>
+          <h2 className={styles.applicationHeading}>{strings.myMessages.listTitle}</h2>
+          <ul className={ui.list}>
+            {messages.map((m) => (
+              <li key={m.id} className={styles.reviewCard}>
+                <button
+                  type="button"
+                  className={ui.buttonLink}
+                  onClick={() => setOpenId(openId === m.id ? null : m.id)}
+                  data-testid={`message-${m.id}`}
+                >
+                  {openId === m.id ? (
+                    <ChevronDown size={14} aria-hidden="true" />
+                  ) : (
+                    <ChevronRight size={14} aria-hidden="true" />
+                  )}
+                  <strong>{m.subject ?? strings.myMessages.noSubject}</strong>
+                </button>
+                <p className={ui.hint}>
+                  {String(m.occurredAt).slice(0, 10)} ·{' '}
+                  {m.practice ?? strings.practitioner.unnamedPractice} · {m.state}
+                </p>
+
+                {openId === m.id &&
+                  (m.body ? (
+                    <pre className={styles.cardNote}>{m.body}</pre>
+                  ) : (
+                    /*
+                      NOT A BLANK. A sign-in link is composed and sent by
+                      Keycloak, so we record that it went and hold the subject,
+                      never the text. Rendering nothing would read as a message
+                      with nothing in it, which is a different and false thing
+                      to say.
+                    */
+                    <Notice title={strings.myMessages.noBodyTitle}>
+                      {strings.myMessages.noBodyBody.replace('{who}', m.sentBy)}
+                    </Notice>
+                  ))}
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
     </Shell>
   );

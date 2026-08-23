@@ -1380,6 +1380,14 @@ export const strings = {
     emptyBody:
       'That is a real answer rather than a missing one — we asked and there was nothing. Messages appear here '
       + 'once a practice you work at starts sending them.',
+    grain: 'Summarise by',
+    grainHint: 'The last two compare the same week or day of each month.',
+    listTitle: 'The messages',
+    noSubject: 'No subject recorded',
+    noBodyTitle: 'We did not keep a copy of this one',
+    noBodyBody:
+      'This was composed and sent by {who} rather than by us — a sign-in link, which only it can create. '
+      + 'We recorded that it went and when. The message itself is in your inbox.',
     month: 'Month',
     practice: 'From',
     sent: 'Sent',

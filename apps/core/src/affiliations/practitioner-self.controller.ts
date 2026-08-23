@@ -198,6 +198,52 @@ export class PractitionerSelfController {
     return { ...practice, locations: [...byLocation.values()] };
   }
 
+  /**
+   * The messages themselves, with what was in them.
+   *
+   * NOT A CUBE QUERY, deliberately. The reporting layer carries counts and no
+   * content, which is what makes it safe to let a query engine roam over it.
+   * Answering "what did it say" from there would mean putting message bodies
+   * into that surface and undoing the reason it is defensible.
+   *
+   * A practitioner reading a message sent TO THEM is not a privacy question —
+   * they received it. So it is answered from a different place: Cube for how
+   * many, this for what one said.
+   *
+   * The practitioner id comes off the token, never from the request, so this
+   * cannot be asked about somebody else.
+   */
+  @Get('me/messages')
+  async messages(@SessionActor() actor: Actor | undefined) {
+    const practitionerId = this.practitionerIdOf(actor);
+
+    const rows = await this.prisma.$queryRaw<
+      Array<Record<string, unknown>>
+    >`SELECT * FROM core.practitioner_message_detail(${practitionerId}::uuid, 100)`;
+
+    return {
+      messages: rows.map((r) => ({
+        id: r.id,
+        practice: r.practiceName,
+        channel: r.channel,
+        mediaType: r.mediaType,
+        state: r.state,
+        occurredAt: r.occurredAt,
+        sentAt: r.sentAt,
+        subject: r.subject,
+        body: r.body,
+        /*
+         * WHO COMPOSED IT, which decides whether a body exists at all. An
+         * enrolment link is sent by Keycloak — we record that it went and hold
+         * the subject, never the text. The screen says so rather than showing
+         * an empty message, because a blank body reads as "we sent you nothing"
+         * rather than "we did not keep a copy".
+         */
+        sentBy: r.sentBy ?? 'aobplatform',
+      })),
+    };
+  }
+
   /** The reasons, so the screen offers the same list the server accepts. */
   @Get('departure-reasons')
   departureReasons() {
