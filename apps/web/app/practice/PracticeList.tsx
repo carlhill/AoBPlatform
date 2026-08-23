@@ -39,6 +39,8 @@ import { strings } from '../strings';
 import { apiHeaders, attemptSilentLogin, currentSession, beginLogin } from '../auth';
 import styles from './practice.module.css';
 import { SessionControl } from '../SessionControl';
+import { ActingAsBanner, ActingAsStart } from './ActingAs';
+import { fetchActingAs, forgetActingAs } from '../effectivePractice';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 const SELECTION_KEY = 'aob.practiceId';
@@ -119,6 +121,19 @@ export function PracticeList() {
    */
   const [restoreSettled, setRestoreSettled] = useState(false);
   const restoring = !session && !restoreSettled;
+
+  /*
+   * ONLY AN OPERATOR IS OFFERED THIS. A practice user reading their own list
+   * has no business acting as anybody, and a control they cannot use is noise
+   * on every row.
+   */
+  const isOperator = Boolean(session?.roles?.includes('platform_admin')) && !session?.practiceId;
+  const [actingOn, setActingOn] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOperator) return;
+    void fetchActingAs().then((a) => setActingOn(a?.practiceId ?? null));
+  }, [isOperator]);
 
   useEffect(() => {
     if (scoped) {
@@ -421,10 +436,45 @@ export function PracticeList() {
               >
                 {body}
               </Link>
+
+              {/*
+                ACTING AS THIS PRACTICE, from the list.
+
+                This control existed only on /practice/users, which is
+                practice_admin-only — so a platform operator could not reach the
+                page that starts the session that would give them a practice
+                claim. The one way in was closed by the thing it was the way in
+                to, and an operator had no route to a practice at all.
+
+                It belongs here in any case: this is the page where an operator
+                picks WHICH practice, so it is where "and work as them" is the
+                obvious next act. Opening a session is still a recorded,
+                reasoned thing — ActingAsStart asks why before it will start.
+              */}
+              {isOperator && actingOn !== p.id && (
+                <ActingAsStart
+                  practiceId={p.id}
+                  practiceName={p.name ?? p.legalName ?? null}
+                  onStarted={() => {
+                    // The cached answer is now wrong, and the menu and the
+                    // guard both read it.
+                    forgetActingAs();
+                    window.localStorage.setItem(SELECTION_KEY, p.id);
+                    router.push('/practice/setup');
+                  }}
+                />
+              )}
             </li>
           );
         })}
       </ul>
+
+      {/*
+        AN OPEN SESSION, VISIBLE AND ENDABLE FROM HERE. An operator who started
+        one on this page must be able to end it on this page; a session you can
+        only close somewhere else is one people leave open.
+      */}
+      <ActingAsBanner onChange={() => { forgetActingAs(); void fetchActingAs().then((a) => setActingOn(a?.practiceId ?? null)); }} />
 
       <Notice tone="warn" title={strings.practices.scopeHeading}>
         {strings.practices.scopeBody}

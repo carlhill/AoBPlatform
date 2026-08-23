@@ -31,6 +31,7 @@ import * as RadixDialog from '@radix-ui/react-dialog';
 import { Menu, X } from 'lucide-react';
 import { audiencesOf, mayReach, type Audience } from '@aobplatform/domain';
 import { currentSession } from './auth';
+import { useEffectivePractice } from './effectivePractice';
 import { strings } from './strings';
 import styles from './ui/ui.module.css';
 
@@ -47,9 +48,19 @@ export function MainMenu() {
    * a signed-out person the pages they had a minute ago.
    */
   const session = currentSession();
+
+  /*
+   * INCLUDES THE CLAIM ACTING-AS GRANTS, which the token does not carry. Built
+   * from `session.practiceId` alone, this menu showed an operator no practice
+   * pages even while they had a practice session open — and then explained the
+   * absence with a note telling them to act as a practice, which they already
+   * were.
+   */
+  const { practiceId } = useEffectivePractice();
+
   const audiences: Audience[] = audiencesOf({
     roles: session?.roles ?? [],
-    practiceId: session?.practiceId,
+    practiceId,
     practitionerId: session?.practitionerId,
     consoleRole: session?.consoleRole,
   });

@@ -1461,6 +1461,7 @@ export const strings = {
       + 'There is nothing there for an operator to see, which is why this platform is not a directory of who '
       + 'works where.',
     absentSignedOut: 'The rest appears once you sign in.',
+    actingAsNote: 'You are acting as {practice}, so its pages are listed here too.',
 
     platformHeading: 'Platform',
     allOrganisations: 'All organisations',

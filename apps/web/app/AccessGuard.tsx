@@ -31,6 +31,7 @@ import { audiencesOf, landingPath, mayReach, ruleFor } from '@aobplatform/domain
 import { Notice, Shell, ui } from './ui';
 import { SessionControl } from './SessionControl';
 import { currentSession } from './auth';
+import { useEffectivePractice } from './effectivePractice';
 import { strings } from './strings';
 
 /** Long enough to read the sentence, short enough not to feel stuck. */
@@ -42,8 +43,31 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
   const [refused, setRefused] = useState<'unknown-page' | 'wrong-audience' | 'signed-out' | null>(null);
   const [goingTo, setGoingTo] = useState('/');
 
+  /*
+   * THE PRACTICE CLAIM, INCLUDING THE ONE ACTING-AS GRANTS.
+   *
+   * This used to read `session.practiceId` alone — the OIDC token. An operator
+   * acting as a practice holds their claim on the SERVER, where the interceptor
+   * puts it on the principal, so every endpoint let them through while this
+   * guard bounced them off the page four seconds after they arrived. The design
+   * says practice pages open when you act as a practice; this is what makes
+   * that true in the browser too.
+   */
+  const { practiceId, settled } = useEffectivePractice();
+
   useEffect(() => {
     const session = currentSession();
+
+    /*
+     * NOT YET. Deciding before the acting-as answer arrives would flash "this
+     * page is not yours" at somebody it is. Refusing nothing while we do not
+     * know is safe here: this guard is a courtesy, and the endpoints and the
+     * database refuse for themselves regardless.
+     */
+    if (!settled) {
+      setRefused(null);
+      return;
+    }
 
     /*
      * SIGNED OUT NEEDS ITS OWN ANSWER, and "pass through and let the page cope"
@@ -84,13 +108,13 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
      */
     const audiences = audiencesOf({
       roles: session.roles,
-      practiceId: session.practiceId,
+      practiceId,
       practitionerId: session.practitionerId,
     });
 
     const home = landingPath({
       roles: session.roles,
-      practiceId: session.practiceId,
+      practiceId,
       practitionerId: session.practitionerId,
     });
     setGoingTo(home);
@@ -112,7 +136,7 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
     } else {
       setRefused(null);
     }
-  }, [pathname]);
+  }, [pathname, practiceId, settled]);
 
   useEffect(() => {
     /*
