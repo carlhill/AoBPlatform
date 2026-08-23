@@ -1289,6 +1289,35 @@ export const strings = {
     end: 'Stop acting as them',
     ending: 'Stopping…',
   },
+  help: {
+    audience: 'AoBPlatform',
+    title: 'We cannot tell what you should see',
+    lead:
+      'You are signed in, so we know who you are. What we do not know is which practice or which record this '
+      + 'account belongs to — so there is nothing we can safely show you. That is ours to fix, not yours.',
+    whoTitle: 'You are signed in as',
+    whoBody:
+      '{who}. If that is not the account you meant to use, sign out and in again with the right one — half the '
+      + 'time that is the whole problem.',
+    unknownAccount: 'an account we cannot name',
+    contactTitle: 'Talk to us',
+    noContactTitle: 'No contact details are configured here',
+    noContactBody:
+      'This environment has no support address set, so we are not going to print one that goes nowhere. If '
+      + 'you are testing, set SUPPORT_EMAIL and SUPPORT_PHONE. If you are not, whoever gave you this link can '
+      + 'reach us.',
+    tryTitle: 'Things that are worth trying first',
+    trySignOut: 'Sign out and back in. A claim added after you signed in does not appear until you get a new session.',
+    tryInvite:
+      'If you were invited by a practice, open the invitation again — accepting it is what connects this '
+      + 'account to them.',
+    tryAsk:
+      'If you work at a practice, its administrator can see whether your access is set up, and can send you a '
+      + 'fresh invitation.',
+    notYourFault:
+      'An account can end up here for ordinary reasons — created before it was linked to anything, or an '
+      + 'affiliation that ended while you were signed in. None of them mean you have done anything wrong.',
+  },
   practitioner: {
     audience: 'Practitioner',
     title: 'Your practice work',

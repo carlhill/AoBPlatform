@@ -1,4 +1,27 @@
 <#ftl output_format="HTML">
+<#--
+  ADDRESSED THE WAY A CLINICIAN IS ADDRESSED: title and family name.
+
+  `firstName` holds the given names AS RECORDED, which for practitioners
+  includes the title -- "Dr Jessica Leigh", "Ms Yu-Feng Judy". Greeting with it
+  whole gives "Hi Dr Jessica Leigh," and greeting with the first word alone
+  gave "Hi Dr,". Neither is how you would write to somebody.
+
+  So: if the given names begin with a title and we have a family name, use
+  those two. Otherwise fall back to the given names, then to nothing at all --
+  a missing name must never produce a stray comma.
+-->
+<#assign given = (user.firstName!"")?trim>
+<#assign family = (user.lastName!"")?trim>
+<#assign titles = ["Dr", "Dr.", "Prof", "Prof.", "A/Prof", "Mr", "Mrs", "Ms", "Miss", "Mx"]>
+<#assign lead = given?has_content?then(given?split(" ")[0], "")>
+<#if titles?seq_contains(lead) && family?has_content>
+  <#assign greeting = "Hi " + lead + " " + family + ",">
+<#elseif given?has_content>
+  <#assign greeting = "Hi " + given + ",">
+<#else>
+  <#assign greeting = "Hi,">
+</#if>
 <html>
 <body style="margin:0;padding:0;background:#f7f8f9;">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#f7f8f9;padding:24px 12px;">
@@ -10,7 +33,7 @@
       </td></tr>
 
       <tr><td style="padding:8px 32px 16px;font-family:ui-sans-serif,system-ui,'Segoe UI',Roboto,sans-serif;font-size:22px;font-weight:700;color:#16181a;line-height:1.3;">
-        Your practice has been approved
+        Set up your sign-in
       </td></tr>
 
       <#-- ADDRESSED TO A PERSON. A message that asks somebody to enrol a
@@ -19,7 +42,7 @@
            empty -- Keycloak does not require it -- so there is a fallback
            rather than a stray comma. -->
       <tr><td style="padding:0 32px 12px;font-family:ui-sans-serif,system-ui,'Segoe UI',Roboto,sans-serif;font-size:15px;line-height:1.65;color:#16181a;">
-        <#if user.firstName?? && user.firstName?has_content>Hi ${user.firstName},<#else>Hi,</#if>
+        ${greeting}
       </td></tr>
 
       <tr><td style="padding:0 32px 16px;font-family:ui-sans-serif,system-ui,'Segoe UI',Roboto,sans-serif;font-size:15px;line-height:1.65;color:#16181a;">

@@ -51,6 +51,7 @@ export interface Session {
   expiresAt: number;
   username?: string;
   practiceId?: string;
+  practitionerId?: string;
   roles: string[];
 }
 
@@ -326,6 +327,9 @@ export async function completeLogin(code: string, state: string): Promise<Sessio
     expiresAt: Date.now() + body.expires_in * 1000,
     username: claims.preferred_username as string | undefined,
     practiceId: claims.practice_id as string | undefined,
+    // A practitioner carries this INSTEAD of a practice claim: they work at
+    // several practices, so there is no single one to name.
+    practitionerId: claims.practitioner_id as string | undefined,
     roles: ((claims.realm_access as { roles?: string[] } | undefined)?.roles ?? []) as string[],
   };  // Remembered separately, so a later expiry cannot take it with it.
   lastIdToken = body.id_token ?? lastIdToken;

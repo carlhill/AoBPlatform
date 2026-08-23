@@ -19,9 +19,12 @@ describe('landingPath', () => {
     expect(landingPath({ roles: ['platform_admin'] })).not.toBe('/');
   });
 
-  it('has nowhere better for an account with neither', () => {
-    expect(landingPath({})).toBe('/');
-    expect(landingPath({ roles: ['practice_principal'] })).toBe('/');
+  it('sends an account with neither to help, not to the scaffold', () => {
+    // This used to expect '/', which is the developer scaffold. Landing a
+    // signed-in person there tells them nothing about why they are stuck and
+    // offers them practice onboarding they have no business doing.
+    expect(landingPath({})).toBe('/help');
+    expect(landingPath({ roles: ['practice_principal'] })).toBe('/help');
   });
 
   /*
@@ -87,5 +90,57 @@ describe('choosing a practice', () => {
   it('is allowed to an operator with no claim, who has to pick one', () => {
     expect(mayChoosePractice({ roles: ['platform_admin'] })).toBe(true);
     expect(mayChoosePractice({})).toBe(true);
+  });
+
+  describe('a practitioner', () => {
+    it('is sent to their own hub', () => {
+      /*
+       * The failure this prevents actually happened twice. A practice
+       * administrator signed in and landed on the developer scaffold; it was
+       * fixed for them, and the day practitioners could first sign in they
+       * landed on the same page — offering practice onboarding they have no
+       * business doing.
+       */
+      expect(landingPath({ roles: ['provider'], practitionerId: 'p1' })).toBe('/practitioner');
+    });
+
+    it('is NOT identified by the provider role alone', () => {
+      // The role says what kind of person they are; the claim says which
+      // person. Without one there is nobody to show, and the hub would refuse.
+      // They go to /help, not to the scaffold.
+      expect(landingPath({ roles: ['provider'] })).toBe('/help');
+    });
+
+    it('yields to a practice claim when somebody has both', () => {
+      // One person, two jobs. The practice hub is the one with work waiting.
+      expect(landingPath({ roles: ['provider'], practitionerId: 'p1', practiceId: 'prac1' })).toBe(
+        '/practice/setup',
+      );
+    });
+
+    it('still honours where they were heading before signing in', () => {
+      expect(landingPath({ roles: ['provider'], practitionerId: 'p1', intended: '/practitioner/affiliations' })).toBe(
+        '/practitioner/affiliations',
+      );
+    });
+  });
+
+  describe('somebody we cannot place', () => {
+    it('is sent to help, NEVER to the developer scaffold', () => {
+      /*
+       * The scaffold is headed "Scaffold status view" and offers practice
+       * onboarding to whoever lands on it. Showing that to a signed-in person
+       * we could not place is alarming in production and useless everywhere —
+       * it says nothing about why they are stuck.
+       */
+      expect(landingPath({ roles: [] })).toBe('/help');
+      expect(landingPath({ roles: ['front_desk'] })).toBe('/help');
+      expect(landingPath({ practiceId: '   ' })).toBe('/help');
+    });
+
+    it('still honours where they were heading', () => {
+      // Being unplaceable does not mean they were going nowhere.
+      expect(landingPath({ roles: [], intended: '/status/abc' })).toBe('/status/abc');
+    });
   });
 });

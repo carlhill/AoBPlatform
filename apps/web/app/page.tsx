@@ -38,7 +38,11 @@ export default function Home() {
   useEffect(() => {
     const session = currentSession();
     const to = session
-      ? landingPath({ roles: session.roles, practiceId: session.practiceId })
+      ? landingPath({
+          roles: session.roles,
+          practiceId: session.practiceId,
+          practitionerId: session.practitionerId,
+        })
       : '/';
     if (to !== '/') {
       // `replace`, not `push`: the scaffold should not sit in the back stack

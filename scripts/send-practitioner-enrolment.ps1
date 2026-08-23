@@ -58,7 +58,9 @@ if (-not $row) { throw "No practitioner with the address $Email." }
 # they were deregistered, which is the failure that looks most like a real one.
 $parts = $row -split '\|'
 $practitionerId = $parts[0]
-$name = "$($parts[1]) $($parts[2])".Trim()
+$givenNames = $parts[1].Trim()
+$familyName = $parts[2].Trim()
+$name = "$givenNames $familyName".Trim()
 if ($parts.Length -gt 3 -and $parts[3].Trim()) {
   throw "$name is recorded as deregistered. A deregistered practitioner does not get a way in."
 }
@@ -77,12 +79,15 @@ if ($existing) {
   $userId = $existing[0].id
   Write-Host "Existing account adopted: $userId"
 } else {
-  $given, $family = ($name -split ' ', 2)
+  # THE RECORD ALREADY HOLDS THE SPLIT. Re-splitting the joined name on the
+  # first space gave firstName "Dr" and lastName "Jessica Leigh Savva", so the
+  # enrolment email opened "Hi Dr,". The columns were right and I discarded
+  # them.
   $body = @{
     username      = $Email
     email         = $Email
-    firstName     = $given
-    lastName      = if ($family) { $family } else { $given }
+    firstName     = $givenNames
+    lastName      = $familyName
     enabled       = $true
     emailVerified = $true
     # practitioner_id and NOT practice_id: their scope is their affiliations.

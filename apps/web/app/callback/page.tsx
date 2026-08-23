@@ -75,6 +75,7 @@ function CallbackInner() {
           landingPath({
             roles: session.roles,
             practiceId: session.practiceId,
+            practitionerId: session.practitionerId,
             intended: returnPath(),
           }),
         );

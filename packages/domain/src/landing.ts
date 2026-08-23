@@ -28,6 +28,12 @@ export interface LandingInput {
   readonly roles?: readonly string[];
   /** The `practice_id` claim. Its presence is what makes somebody a practice user. */
   readonly practiceId?: string | null;
+  /**
+   * The `practitioner_id` claim. A practitioner carries this INSTEAD of a
+   * practice claim — they work at several practices and which ones changes, so
+   * there is no single practice to name.
+   */
+  readonly practitionerId?: string | null;
   /** Where they were heading before being asked to sign in. */
   readonly intended?: string | null;
 }
@@ -49,6 +55,17 @@ export function isPlatformOperator(input: LandingInput): boolean {
   return (input.roles ?? []).includes(PLATFORM_ADMIN_ROLE);
 }
 
+/**
+ * A practitioner is defined by their own claim, for the same reason a practice
+ * user is defined by theirs: the `provider` ROLE says what kind of person they
+ * are, and the claim says which person. A `provider` role with no claim is an
+ * account nothing has been scoped to, and sending it to a practitioner screen
+ * would show it somebody else's — or, more likely, refuse and look broken.
+ */
+export function isPractitioner(input: LandingInput): boolean {
+  return typeof input.practitionerId === 'string' && input.practitionerId.trim().length > 0;
+}
+
 export function landingPath(input: LandingInput): string {
   const intended = safeReturnPath(input.intended);
   // `safeReturnPath` answers '/' both for "nothing stored" and for "something
@@ -58,7 +75,36 @@ export function landingPath(input: LandingInput): string {
 
   if (isPracticeUser(input)) return '/practice/setup';
   if (isPlatformOperator(input)) return '/review';
-  return '/';
+  /*
+   * Added the day practitioners could first sign in — and it is the same
+   * failure this function's own comment describes happening to practice
+   * administrators. A practitioner enrolled a passkey, signed in successfully,
+   * and landed on the developer scaffold offering practice onboarding they have
+   * no business doing. Nothing was broken; nobody had decided where they go.
+   *
+   * LAST, because the earlier cases are narrower. Somebody who is both a
+   * practitioner and runs a practice is one person with two jobs, and the
+   * practice hub is the one with work waiting on it.
+   */
+  if (isPractitioner(input)) return '/practitioner';
+
+  /*
+   * SIGNED IN, AND WE CANNOT PLACE THEM.
+   *
+   * This used to fall through to '/', which is the developer scaffold — a page
+   * headed "Scaffold status view" offering practice onboarding and a console
+   * for organisations that are not theirs. Alarming in production and useless
+   * everywhere: it tells somebody nothing about why they are stuck.
+   *
+   * `/help` says what we know (who they are), what we do not (what they should
+   * see), and how to reach a person. It is a real state — an account created
+   * before it was scoped, a claim that failed to map — and it deserves an
+   * answer rather than a scaffold.
+   *
+   * Only reached WITH a session. Somebody not signed in still sees the public
+   * landing page, because they have not asked us anything yet.
+   */
+  return '/help';
 }
 
 /**

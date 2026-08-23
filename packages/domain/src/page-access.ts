@@ -82,6 +82,10 @@ export const PAGES: Readonly<Record<string, PageRule>> = {
     audiences: ['public'],
     why: 'A practice applying. There is no account yet, by definition.',
   },
+  '/help': {
+    audiences: ['public'],
+    why: 'Where somebody signed in but unplaceable lands. Public because being unplaceable is the whole point — any audience can arrive here.',
+  },
   '/callback': {
     audiences: ['public'],
     why: 'The OIDC redirect. Reached mid-sign-in, when there is not yet a session to check.',
