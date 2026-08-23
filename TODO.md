@@ -9,6 +9,57 @@ task and belongs in the code as a TODO comment instead.
 
 ---
 
+## A patient or carer terminating an agreement
+
+Asked 23 Aug 2026. A practitioner can now end their own affiliation
+unilaterally, and the reasoning applies at least as strongly one level down:
+**the person who gave consent should be able to withdraw it without asking the
+party who benefits from it.**
+
+If a practice had to agree, a practice could keep an agreement alive after the
+patient wanted it gone — which is the same shape as a practice keeping a
+departed practitioner listed, and the same fraud.
+
+### The blocker is the definition, not the mechanism
+
+**Get the Health department's definition of a carer before building this.** Not
+a detail to fill in later: it decides who may end somebody else's agreement,
+and getting it wrong means either a carer who cannot act for the person they
+care for, or a stranger who can.
+
+The statutory ground already in play is reg 65CB(5) — an assignor acting for
+another person, self-declared. Whether "carer" there is the same set as the
+department's carer definition is exactly what needs establishing, and it is a
+question for somebody who can read the instrument, not for us to infer.
+
+### What is already decided by things we have built
+
+- **Termination is a fact, not a negotiation.** Same as a practitioner leaving:
+  recorded, the other side told, nobody asked.
+- **It cannot be retroactive.** Consent captured before the withdrawal stands —
+  the agreement ceases, it is not erased. `enduring.ts` already holds this for
+  reg 65CA(8) cessation.
+- **Evidence is retained in full.** Withdrawing consent does not delete the
+  record that it was given; that record is what protects the practice against a
+  later claim that it never was.
+
+### What is genuinely open
+
+- [ ] **Whose act is it when a carer does it?** Recorded as the carer's, on the
+      patient's behalf — never as the patient's own. A record that cannot
+      distinguish them cannot answer "did the patient know".
+- [ ] **Is the patient told when a carer acts for them?** Almost certainly yes,
+      and the exception (a patient who cannot be told) is the hard case.
+- [ ] **Can a patient reverse a carer's termination, and vice versa?** Related to
+      the assignor revocation question already open.
+- [ ] **What reaches the practice, and how fast?** A terminated agreement changes
+      what can be billed, so a practice learning late is a practice billing
+      wrongly in the meantime.
+
+**Blocked on the same relationship model as patient and assignor reporting.** An
+assignor's authority is per-patient and expires; a role cannot say which patient
+or until when, and neither can a termination endpoint that trusts a role.
+
 ## Family reporting
 
 Asked 22 Aug 2026, flagged as a selling point rather than a requirement.

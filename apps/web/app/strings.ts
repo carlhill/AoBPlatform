@@ -1318,6 +1318,60 @@ export const strings = {
       'An account can end up here for ordinary reasons — created before it was linked to anything, or an '
       + 'affiliation that ended while you were signed in. None of them mean you have done anything wrong.',
   },
+  /*
+   * `myAffiliations`, not `affiliations` — the practice-side screen already
+   * owns that key. Two keys of one name in this object means the later silently
+   * wins, and which screen breaks depends on declaration order.
+   */
+  myAffiliations: {
+    title: 'Your affiliations',
+    back: 'Back to your practice work',
+    lead:
+      'Every practice you have been invited to, including ones that have ended. You can leave any of them '
+      + 'yourself — the practice is told, not asked.',
+    failed: 'That could not be done',
+    doneTitle: 'Recorded',
+    recorded: 'Recorded.',
+    emptyTitle: 'You have no affiliations',
+    emptyBody: 'Nobody has invited you to a practice yet. An invitation arrives by email, at your own address.',
+    endsOn: 'Ends',
+    endedOn: 'Ended',
+    leave: 'Leave this practice',
+    reason: 'Why are you leaving?',
+    reasonHint: 'Choose the one that fits. Two of them mean the listing was wrong rather than that it is ending.',
+    chooseReason: 'Choose a reason…',
+    lastDay: 'Your last day',
+    lastDayHint: 'Leave it blank to end it today. It cannot be in the past — see the reasons above if it should be.',
+    note: 'What has happened',
+    noteHint: 'In your own words. Somebody here reads this.',
+    immediateTitle: 'This takes effect immediately',
+    immediateBody:
+      'You will be removed from this practice now, and consent can no longer be captured under your name '
+      + 'there. Somebody here will look at what was captured while you were listed.',
+    confirmLeave: 'Record this',
+    recording: 'Recording…',
+  },
+  myMessages: {
+    title: 'What we have sent you',
+    lead:
+      'Everything addressed to you, at every practice you work at, for the last two years. Yours only — the '
+      + 'database enforces that, not this screen.',
+    noSession: 'You are signed out, so there is nothing of yours to show.',
+    totals: '{count} messages · {sent} sent · {waiting} still on their way',
+    failed: 'Those could not be read',
+    emptyTitle: 'Nothing has been sent to you yet',
+    emptyBody:
+      'That is a real answer rather than a missing one — we asked and there was nothing. Messages appear here '
+      + 'once a practice you work at starts sending them.',
+    month: 'Month',
+    practice: 'From',
+    sent: 'Sent',
+    waiting: 'On its way',
+    total: 'Total',
+    builderTitle: 'Want to slice this differently?',
+    builderBody: 'The report builder opens this same question, and only ever shows what your account may see.',
+    builderLink: 'Open the report builder',
+  },
   practitioner: {
     audience: 'Practitioner',
     title: 'Your practice work',

@@ -15,7 +15,7 @@
  * id in a URL to tamper with.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Building2, CalendarClock, IdCard, RefreshCw, Send, ShieldCheck } from 'lucide-react';
 import { Button, Field, Notice, Shell, TextInput, ui } from '../ui';
@@ -26,7 +26,6 @@ import styles from '../practice/setup/setup.module.css';
 import manage from '../practice/manage.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
-const CUBE_URL = process.env.NEXT_PUBLIC_CUBE_URL ?? 'http://localhost:21030';
 
 type Affiliation = {
   id: string;
@@ -115,6 +114,24 @@ export function PractitionerHub() {
 
   const live = (me?.affiliations ?? []).filter((a) => a.status === 'active');
 
+  /*
+   * GROUPED BY PRACTICE, because this card answers "which entities do I work
+   * for" and an affiliation is per SITE. Somebody working at two sites of one
+   * practice has two affiliations, and listing them raw showed the practice
+   * name twice with nothing to distinguish the rows — which reads as a
+   * duplicate rather than as two places.
+   */
+  const entities = useMemo(() => {
+    const byPractice = new Map<string, { name: string; sites: string[] }>();
+    for (const a of live) {
+      const name = a.practiceName ?? strings.practitioner.unnamedPractice;
+      const entry = byPractice.get(name) ?? { name, sites: [] };
+      if (a.locationCode && !entry.sites.includes(a.locationCode)) entry.sites.push(a.locationCode);
+      byPractice.set(name, entry);
+    }
+    return [...byPractice.values()].sort((x, y) => x.name.localeCompare(y.name));
+  }, [live]);
+
   return (
     <Shell right={<SessionControl audience={strings.practitioner.audience} />}>
       <h1 className={ui.pageTitle}>{strings.practitioner.title}</h1>
@@ -148,11 +165,13 @@ export function PractitionerHub() {
             <h2 className={styles.cardTitle}>{strings.practitioner.entitiesTitle}</h2>
           </div>
           <p className={ui.hint}>{strings.practitioner.entitiesBody}</p>
-          {live.length === 0 && <p className={manage.cardNote}>{strings.practitioner.noEntities}</p>}
-          {live.map((a) => (
-            <p key={a.id} className={manage.cardNote}>
-              <strong>{a.practiceName ?? strings.practitioner.unnamedPractice}</strong>
-              {a.locationCode ? ` · ${a.locationCode}` : ''}
+          {entities.length === 0 && <p className={manage.cardNote}>{strings.practitioner.noEntities}</p>}
+          {entities.map((e) => (
+            <p key={e.name} className={manage.cardNote}>
+              <strong>{e.name}</strong>
+              {/* The sites under it, so two sites read as two places rather
+                  than as the practice listed twice. */}
+              {e.sites.length > 0 && <span className={ui.hint}> · {e.sites.join(', ')}</span>}
             </p>
           ))}
         </section>
@@ -244,9 +263,14 @@ export function PractitionerHub() {
             <h2 className={styles.cardTitle}>{strings.practitioner.messagesTitle}</h2>
           </div>
           <p className={ui.hint}>{strings.practitioner.messagesBody}</p>
-          <a href={`${CUBE_URL}`} target="_blank" rel="noreferrer" className={styles.cardLink}>
+          {/*
+            Their own page, not Cube's builder. The builder is a tool for
+            composing a question and shows nothing until you have; somebody
+            opening "what we have sent you" has already asked theirs.
+          */}
+          <Link href="/practitioner/messages" className={styles.cardLink} data-testid="to-messages">
             {strings.practitioner.openMessages}
-          </a>
+          </Link>
         </section>
       </div>
 

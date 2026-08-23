@@ -319,6 +319,19 @@ function AffiliationCard({
 
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState<string | null>(null);
+
+  /*
+   * THE NOTICE DESCRIBES AN ACT, NOT A STATE, so it has to stop when the state
+   * moves past it. "Invitation sent" sat under a row reading ACCEPTED — the
+   * invitation HAD been sent, so the sentence was true and useless, and it
+   * read as though the acceptance had not registered.
+   *
+   * Cleared on any status change rather than on a timer: the thing that makes
+   * it stale is the answer arriving, and that is exactly what this watches.
+   */
+  useEffect(() => {
+    if (affiliation.status !== 'invited') setSent(null);
+  }, [affiliation.status]);
   const externalMeansCatalogue = useExternalNoticeMeans();
   const [noticing, setNoticing] = useState(false);
   const [externalMeans, setExternalMeans] = useState<string>('');

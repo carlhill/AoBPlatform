@@ -286,8 +286,16 @@ export function SetupHub({ practiceId }: { practiceId: string }) {
 
               <ul className={styles.cardRows}>
                 {card.rows.length === 0 && <li className={ui.hint}>{strings.setup.nothingYet}</li>}
-                {card.rows.map((row) => (
-                  <li className={styles.cardRow} key={row.label + row.note}>
+                {/*
+                  KEYED BY POSITION, not by content. Two rows can legitimately
+                  read the same — two practitioners with the same status, two
+                  locations with the same note — and label+note then collides,
+                  which React reports as "two children with the same key" and
+                  answers by dropping one of them. A list that silently omits a
+                  row is worse than an ugly key.
+                */}
+                {card.rows.map((row, i) => (
+                  <li className={styles.cardRow} key={`${card.key}-${i}`}>
                     <span className={styles.rowLabel}>{row.label}</span>
                     {/* The note carries the state in WORDS — the colour of the
                         dot is reinforcement, never the message. */}
