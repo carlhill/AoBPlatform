@@ -48,12 +48,21 @@ describe('the directory projection', () => {
   });
 
   it('is built field-by-field, so a new column cannot ride along', () => {
+    /*
+     * EVERY KEY, LISTED. Adding one here is meant to be a deliberate act: this
+     * assertion is what makes a new column on `practitioners` fail loudly
+     * rather than quietly appear in a response that crosses a practice
+     * boundary. Two were added on purpose when a practice needed to see, before
+     * inviting somebody, whether their registration had ended.
+     */
     expect(Object.keys(toDirectoryEntry(practitioner)).sort()).toEqual([
       'ahpraNumber',
+      'deregistered',
       'familyName',
       'givenNames',
       'practitionerId',
       'providerType',
+      'registrationStatus',
       'verified',
     ]);
   });
@@ -184,5 +193,52 @@ describe('toRosterEntry', () => {
   it('surfaces deregistration, which is an immediate hard stop', () => {
     const entry = toRosterEntry({ ...practitioner, deregisteredAt: new Date('2026-02-01') }, 'practice-a');
     expect(entry.deregisteredAt).toEqual(new Date('2026-02-01'));
+  });
+});
+
+describe('what a practice sees when the practitioner already exists', () => {
+  /*
+   * THE CASE THIS EXISTS FOR. A practice types an AHPRA number that is already
+   * on the platform. It must learn enough to say "yes, that is them" and
+   * nothing more -- the entry is what a practice is allowed to know about
+   * somebody it does not yet employ.
+   */
+  const record = {
+    id: 'p1',
+    familyName: 'Testworth',
+    givenNames: 'Alex',
+    ahpraNumber: 'MED0001234567',
+    providerType: 'general_practitioner',
+    email: 'alex@example.invalid',
+    verifiedAt: new Date(),
+    registrationStatus: 'registered',
+    deregisteredAt: null,
+    providerNumber: '1234567A',
+    invitedByPracticeId: 'other-practice',
+  };
+
+  it('says enough to confirm an identity', () => {
+    const entry = toDirectoryEntry(record);
+    expect(entry.familyName).toBe('Testworth');
+    expect(entry.ahpraNumber).toBe('MED0001234567');
+    expect(entry.registrationStatus).toBe('registered');
+    expect(entry.deregistered).toBe(false);
+  });
+
+  it('says NOTHING about where else they work, or how to reach them', () => {
+    const entry = toDirectoryEntry(record) as Record<string, unknown>;
+    // The email is the practitioner's own and is how an invitation reaches
+    // them. A practice that could read it could invite somebody without ever
+    // being given their address.
+    expect(entry.email).toBeUndefined();
+    expect(entry.providerNumber).toBeUndefined();
+    // Which practice introduced them is a fact about ANOTHER practice.
+    expect(entry.invitedByPracticeId).toBeUndefined();
+  });
+
+  it('shows a practice that a registration has ended, before they invite', () => {
+    const entry = toDirectoryEntry({ ...record, deregisteredAt: new Date(), registrationStatus: 'cancelled' });
+    expect(entry.deregistered).toBe(true);
+    expect(entry.registrationStatus).toBe('cancelled');
   });
 });

@@ -199,15 +199,33 @@ describe('a practitioner reading their own figures (e2e, real Postgres roles)', 
   let theirs: string;
 
   beforeAll(() => {
+    /*
+     * JOINED TO A LIVE PRACTITIONER, not merely present on a message.
+     *
+     * This used to take whichever recipientId had the most rows. Other suites
+     * create practitioners, send to them and delete them again, so the busiest
+     * recipient was often somebody who no longer exists — and `my_messages`
+     * joins practitioners, so the count came back zero and this test failed
+     * for a reason that had nothing to do with isolation.
+     *
+     * The subject of this test is RLS. Picking a practitioner who is actually
+     * there is setup, and setup should not be the thing that breaks.
+     */
     mine = psql(
-      'cube_platform_reader',
-      `SELECT "recipientId" FROM core.outbound_items WHERE "recipientType"='practitioner' ` +
-        'GROUP BY 1 ORDER BY count(*) DESC LIMIT 1',
+      // THE OWNER, for setup only. `cube_platform_reader` cannot read
+      // `core.practitioners` at all -- which is the isolation this file exists
+      // to prove, so borrowing it here would have been proving the opposite.
+      // Every ASSERTION below still runs as the restricted role.
+      'aobplatform',
+      `SELECT o."recipientId" FROM core.outbound_items o ` +
+        `JOIN core.practitioners p ON p.id = o."recipientId" ` +
+        `WHERE o."recipientType"='practitioner' GROUP BY 1 ORDER BY count(*) DESC LIMIT 1`,
     );
     theirs = psql(
-      'cube_platform_reader',
-      `SELECT "recipientId" FROM core.outbound_items WHERE "recipientType"='practitioner' ` +
-        `AND "recipientId" <> '${mine}' LIMIT 1`,
+      'aobplatform',
+      `SELECT o."recipientId" FROM core.outbound_items o ` +
+        `JOIN core.practitioners p ON p.id = o."recipientId" ` +
+        `WHERE o."recipientType"='practitioner' AND o."recipientId" <> '${mine}' LIMIT 1`,
     );
   });
 

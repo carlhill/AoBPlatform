@@ -603,6 +603,17 @@ function RegisterCheck({
 // Adding one
 // ---------------------------------------------------------------------------
 
+type DirectoryHit = {
+  practitionerId: string;
+  familyName: string;
+  givenNames: string;
+  ahpraNumber: string;
+  providerType: string;
+  verified: boolean;
+  registrationStatus: string | null;
+  deregistered: boolean;
+};
+
 function AddPractitioner({
   headers,
   onAdded,
@@ -619,6 +630,9 @@ function AddPractitioner({
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [existing, setExisting] = useState<DirectoryHit | null>(null);
+  const [looking, setLooking] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
 
   /*
    * The AHPRA number is format-checked HERE as well as on the server, and the
@@ -627,7 +641,57 @@ function AddPractitioner({
    * lived in a form, which is where rules go to be forgotten.
    */
   const ahpraOk = isValidAhpraNumberFormat(ahpra.trim().toUpperCase());
-  const ready = ahpraOk && familyName.trim().length > 0 && givenNames.trim().length > 0;
+
+  /*
+   * ASKED AS SOON AS THE NUMBER IS WELL-FORMED, not on submit.
+   *
+   * An AHPRA number is unique across the platform, so the moment it is typed we
+   * already know whether there is anything to create. Waiting until submit
+   * meant somebody filled in a name, a profession and an email, pressed the
+   * button, and was told the record existed all along — work thrown away for a
+   * fact we had before they started.
+   *
+   * The lookup is AHPRA-number-only by design (domain/directory.ts): a name
+   * search would let any practice enumerate every practitioner here. What comes
+   * back is public-register data about one person somebody already named, which
+   * is why it is safe to show to a practice that does not employ them yet.
+   */
+  useEffect(() => {
+    const number = ahpra.trim().toUpperCase();
+    if (!isValidAhpraNumberFormat(number)) {
+      setExisting(null);
+      setDismissed(false);
+      return;
+    }
+
+    let live = true;
+    setLooking(true);
+    // A short pause, so typing a number does not fire a request per keystroke.
+    const timer = setTimeout(() => {
+      fetch(`${CORE_URL}/practitioners/directory?ahpraNumber=${encodeURIComponent(number)}`, { headers })
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+        .then((b: { found?: boolean; practitioner?: DirectoryHit }) => {
+          if (!live) return;
+          setExisting(b.found && b.practitioner ? b.practitioner : null);
+        })
+        // Silent. Not being able to check is not a reason to block somebody
+        // from adding a practitioner; the server refuses a duplicate anyway.
+        .catch(() => live && setExisting(null))
+        .finally(() => live && setLooking(false));
+    }, 350);
+
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+    // `headers` is deliberately not a dependency: its caller rebuilds the object
+    // on every render, so including it would re-run this on every keystroke and
+    // defeat the debounce. The practice scope inside it does not change while
+    // this form is open.
+  }, [ahpra]);
+
+  const showExisting = Boolean(existing) && !dismissed;
+  const ready = ahpraOk && !showExisting && familyName.trim().length > 0 && givenNames.trim().length > 0;
 
   async function submit() {
     setBusy(true);
@@ -662,6 +726,85 @@ function AddPractitioner({
       <h2 className={ui.sectionTitle}>{strings.practitioners.addTitle}</h2>
       <p className={ui.hint}>{strings.practitioners.addLead}</p>
 
+      {looking && !existing && ahpraOk && <p className={ui.hint}>{strings.practitioners.lookingUp}</p>}
+
+      {/*
+        ALREADY HERE. The refusal this replaces was accurate and useless: it
+        told a practice that had typed the one identifier which settles who
+        somebody is to go somewhere else and do something different.
+
+        What it shows is deliberately thin — name, AHPRA number, profession,
+        registration. Not their email, not their provider numbers, not where
+        else they work. A practice confirming an identity needs to recognise a
+        person; it does not need a file on them, and this platform must never
+        become a directory of who works where.
+      */}
+      {showExisting && existing && (
+        <div className={styles.addPanel} data-testid="practitioner-exists">
+          <Notice tone="warn" title={strings.practitioners.existsTitle}>
+            {strings.practitioners.existsBody}
+          </Notice>
+
+          <h3 className={ui.sectionTitle}>{strings.practitioners.existsCheck}</h3>
+          <p className={styles.cardNote}>
+            <strong>
+              {existing.familyName}, {existing.givenNames}
+            </strong>
+          </p>
+          <p className={ui.hint}>
+            {strings.practitioners.existsAhpra}: {existing.ahpraNumber} · {strings.practitioners.existsType}:{' '}
+            {strings.practitioners.providerTypes[existing.providerType] ?? existing.providerType}
+          </p>
+          <p className={ui.hint}>
+            {strings.practitioners.existsStatus}:{' '}
+            {existing.registrationStatus ?? strings.practitioners.existsStatusUnknown} ·{' '}
+            {existing.verified ? strings.practitioners.existsVerified : strings.practitioners.existsUnverified}
+          </p>
+
+          {/*
+            THE REGISTER, next to the details rather than elsewhere on the page.
+            The practice is being asked to confirm an identity and AHPRA is the
+            only authority on it, so the way to check has to be within reach of
+            the thing being checked.
+          */}
+          <p>
+            <a
+              href={AHPRA_REGISTER}
+              target="_blank"
+              rel="noreferrer noopener"
+              className={ui.buttonLink}
+              data-testid="exists-ahpra-link"
+            >
+              <ExternalLink size={14} aria-hidden="true" />
+              {strings.practitioners.existsOnRegister}
+            </a>
+          </p>
+          <p className={ui.hint}>
+            {strings.practitioners.existsOnRegisterHint.replace('{ahpra}', existing.ahpraNumber)}
+          </p>
+
+          {existing.deregistered && (
+            <Notice tone="stop" title={strings.practitioners.existsDeregisteredTitle}>
+              {strings.practitioners.existsDeregisteredBody}
+            </Notice>
+          )}
+
+          <div className={styles.formActions}>
+            <Link href="/practice/affiliations" className={ui.buttonLink} data-testid="exists-invite">
+              {strings.practitioners.existsInvite}
+            </Link>
+            {/*
+              A WAY OUT, because a mistyped digit is a real AHPRA number
+              belonging to somebody else. Without this the form would insist
+              they had meant a stranger.
+            */}
+            <Button variant="subtle" onClick={() => setDismissed(true)} data-testid="exists-not-them">
+              {strings.practitioners.existsNotThem}
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className={styles.addGrid}>
         <Field
           label={strings.practitioners.addAhpra}
@@ -680,12 +823,23 @@ function AddPractitioner({
           )}
         </Field>
 
-        <Field label={strings.practitioners.addFamilyName} required>
+        {/*
+          LOCKED once the practitioner exists. A practice that could rename an
+          existing practitioner could point a confirmed identity at a different
+          person -- and any register check already recorded would go on
+          attesting to a name that had changed underneath it.
+        */}
+        <Field
+          label={strings.practitioners.addFamilyName}
+          hint={showExisting ? strings.practitioners.existsNameLocked : undefined}
+          required
+        >
           {(props) => (
             <TextInput
               {...props}
-              value={familyName}
+              value={showExisting && existing ? existing.familyName : familyName}
               onChange={(e) => setFamilyName(e.target.value)}
+              disabled={showExisting}
               autoComplete="family-name"
               data-testid="prac-family"
             />
@@ -696,8 +850,9 @@ function AddPractitioner({
           {(props) => (
             <TextInput
               {...props}
-              value={givenNames}
+              value={showExisting && existing ? existing.givenNames : givenNames}
               onChange={(e) => setGivenNames(e.target.value)}
+              disabled={showExisting}
               autoComplete="given-name"
               data-testid="prac-given"
             />

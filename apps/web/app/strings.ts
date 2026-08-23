@@ -2137,6 +2137,51 @@ export const strings = {
     checkRefused: 'This status does not permit practice',
 
     // --- Adding a practitioner ---
+    /*
+     * WHEN THE AHPRA NUMBER IS ALREADY ON THE PLATFORM.
+     *
+     * This used to be a refusal: "already on this platform, invite them to your
+     * practice instead" -- true, and a dead end. The practice had typed the one
+     * identifier that settles who somebody is, and got told to go elsewhere and
+     * do something else.
+     */
+    existsTitle: 'This practitioner is already on AoBPlatform',
+    existsBody:
+      'A practitioner is one identity across every practice they work at, so there is nothing to create. '
+      + 'Check the details below against their registration, then invite them to one of your locations.',
+    existsCheck: 'Is this the person you meant?',
+    existsName: 'Name',
+    existsAhpra: 'AHPRA number',
+    existsType: 'Profession',
+    existsStatus: 'Registration',
+    existsStatusUnknown: 'Nobody has checked the register for them yet',
+    existsVerified: 'Identity confirmed',
+    existsUnverified: 'Identity not yet confirmed',
+    existsDeregisteredTitle: 'Their registration is recorded as ended',
+    existsDeregisteredBody:
+      'While that stands, consent cannot be captured under their name. Invite them if you need to, but the '
+      + 'block stays until the register says otherwise.',
+    existsInvite: 'Invite them to a location',
+    existsNotThem: 'That is not who I meant',
+    /*
+     * THE REGISTER ITSELF. The practice is being asked to confirm an identity,
+     * and the only authority on that is AHPRA -- so the link is next to the
+     * details rather than somewhere else on the page.
+     */
+    existsOnRegister: 'Check them on the AHPRA register',
+    existsOnRegisterHint:
+      'Opens the public register in a new tab. Search for {ahpra} — the name and profession there are what '
+      + 'these details should match.',
+    /*
+     * NAME FIELDS ARE LOCKED once the practitioner exists. A practice that
+     * could rename an existing practitioner could quietly point a confirmed
+     * identity at a different person, and any register check already recorded
+     * would go on attesting to a name that had changed underneath it.
+     */
+    existsNameLocked:
+      'The name comes from their record and is not edited here. If it is wrong, tell us — a register check '
+      + 'may have been recorded against it.',
+    lookingUp: 'Checking whether we already hold this AHPRA number…',
     addTitle: 'Add a practitioner',
     addLead:
       'This creates the practitioner’s identity on AoBPlatform. One person, one record, however many ' +

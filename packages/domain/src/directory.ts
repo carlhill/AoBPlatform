@@ -46,6 +46,21 @@ export interface DirectoryEntry {
   readonly providerType: string;
   /** Whether they have completed a REQ-PKI-01 ceremony — not WHO attested it. */
   readonly verified: boolean;
+  /**
+   * WHAT THE REGISTER SAID, and why it belongs in a shape this careful about
+   * what it exposes.
+   *
+   * A practice looking up an AHPRA number is about to invite that person to
+   * work for them. Inviting somebody whose registration has ended is precisely
+   * what this platform exists to make impossible, and finding out afterwards —
+   * when the hard-stop refuses a capture — is finding out too late to have
+   * planned around it.
+   *
+   * It leaks nothing. Registration status is on the AHPRA public register,
+   * which is where this value came from in the first place.
+   */
+  readonly registrationStatus: string | null;
+  readonly deregistered: boolean;
 }
 
 /** Everything the platform holds about a practitioner. Never returned as-is. */
@@ -57,6 +72,8 @@ export interface PractitionerRecord {
   readonly providerType: string;
   readonly email?: string | null;
   readonly verifiedAt?: Date | null;
+  readonly registrationStatus?: string | null;
+  readonly deregisteredAt?: Date | null;
   readonly [extra: string]: unknown;
 }
 
@@ -73,6 +90,8 @@ export function toDirectoryEntry(practitioner: PractitionerRecord): DirectoryEnt
     ahpraNumber: practitioner.ahpraNumber,
     providerType: practitioner.providerType,
     verified: Boolean(practitioner.verifiedAt),
+    registrationStatus: practitioner.registrationStatus ?? null,
+    deregistered: Boolean(practitioner.deregisteredAt),
   };
 }
 
@@ -152,7 +171,9 @@ export interface RosterEntry extends DirectoryEntry {
   readonly invitedByThisPractice: boolean;
 
   // --- What the AHPRA public register says ---
-  readonly registrationStatus?: string | null;
+  // `registrationStatus` and `deregistered` are inherited from DirectoryEntry:
+  // a practice needs them BEFORE it employs somebody, so they belong on the
+  // narrower shape and restating them here would let the two drift apart.
   readonly profession?: string | null;
   readonly division?: string | null;
   readonly conditions?: string | null;
