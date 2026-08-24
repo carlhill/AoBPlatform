@@ -17,6 +17,14 @@ import { CONTACT_CLASH_MESSAGES } from '@aobplatform/domain';
 export const strings = {
   appName: 'AoBPlatform',
   auth: {
+    /*
+     * A TOKEN WITH NO ROLES. Not a permissions problem — a stale session that
+     * keeps refreshing and can never regain what it was minted without.
+     */
+    staleToken: 'Sign in again',
+    staleTokenHint:
+      'Your session was issued before this realm was corrected and carries no roles, so anything you are '
+      + 'entitled to do is hidden rather than refused. Signing in again fixes it.',
     signIn: 'Sign in with your passkey',
     signOut: 'Sign out',
     signedInAs: 'Signed in as',
@@ -679,6 +687,12 @@ export const strings = {
      * -- so clicking a practice bounced them to their own landing page four
      * seconds later. The row now says what will actually happen.
      */
+    /*
+     * THE PLATFORM'S OWN WORK, which is not acting-as. Named for what it is
+     * rather than "open" — an operator choosing between two doors needs the
+     * difference in the label, not in a tooltip.
+     */
+    checkAsPlatform: 'Check their practitioners (as AoBPlatform)',
     actAsFirst: 'Act as this practice',
     actAsFirstHint:
       'Their console is theirs, so opening it means acting as them — with a reason, recorded, and visible to '
@@ -2210,6 +2224,17 @@ export const strings = {
      * identifier that settles who somebody is, and got told to go elsewhere and
      * do something else.
      */
+    /*
+     * WHICH HAT. Somebody who arrived by acting as the practice and somebody
+     * who arrived from the organisation list see the same roster, and the
+     * difference in what they may do is invisible without saying it.
+     */
+    platformModeTitle: 'You are here as AoBPlatform, not as this practice',
+    platformModeBody:
+      'Recording what the AHPRA register says is our check, not theirs — a practice recording its own '
+      + 'practitioner as Registered would be a self-attestation wearing the name of an independent one. So '
+      + 'this page is here to be checked, not added to. Adding a practitioner or inviting one is the '
+      + 'practice’s act: start an "acting as" session from the organisation list if that is what you meant.',
     historyShow: 'Every check',
     historyEmpty: 'No check has been recorded against this practitioner yet.',
     historyNobody: 'nobody named',

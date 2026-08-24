@@ -32,7 +32,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { AlertTriangle, ArrowRight, Building2, CheckCircle2, Clock, Search, X } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Building2, CheckCircle2, Clock, Search, ShieldCheck, X } from 'lucide-react';
 import { matchesFilter, matchesPractice, mayChoosePractice, type PracticeFilter } from '@aobplatform/domain';
 import { Button, Chip, Field, Notice, Shell, TextInput, ui } from '../ui';
 import { strings } from '../strings';
@@ -498,6 +498,29 @@ export function PracticeList() {
                 obvious next act. Opening a session is still a recorded,
                 reasoned thing — ActingAsStart asks why before it will start.
               */}
+              {/*
+                TWO WAYS IN, because there are two kinds of work.
+                
+                Checking a practitioner against the AHPRA register is OUR job.
+                Doing it from inside the practice's session would record our
+                attestation as theirs — a self-attestation wearing the name of
+                an independent one — and would force the practice to be
+                reapproved because we did our own work. So it has its own door,
+                entered as the platform.
+
+                Everything the PRACTICE does still needs acting-as, below.
+              */}
+              {isOperator && (
+                <Link
+                  href={`/platform/practices/${p.id}/practitioners`}
+                  className={ui.buttonLink}
+                  data-testid={`platform-practitioners-${p.id}`}
+                >
+                  <ShieldCheck size={14} aria-hidden="true" />
+                  {strings.practices.checkAsPlatform}
+                </Link>
+              )}
+
               {isOperator && actingOn !== p.id && (
                 <ActingAsStart
                   practiceId={p.id}

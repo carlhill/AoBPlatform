@@ -22,7 +22,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { LogIn, LogOut, Building2, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, LogIn, LogOut, Building2, ShieldCheck } from 'lucide-react';
 import { beginLogin, currentSession, signOut as endSession, type Session } from './auth';
 import { strings } from './strings';
 import { ui } from './ui';
@@ -102,6 +102,22 @@ export function SessionControl({
     );
   }
 
+  /*
+   * A TOKEN CARRYING NO ROLES AT ALL is not somebody with no permissions — it
+   * is a token of the wrong shape, and the two are indistinguishable from the
+   * inside. Every role-gated control simply vanishes, which reads as "you are
+   * not allowed" rather than "your session is stale".
+   *
+   * It happens for a real reason: the realm's `roles` client scope was not a
+   * default, so tokens minted before that was fixed carry no `realm_access`.
+   * They keep refreshing silently and never regain it — the only cure is
+   * signing in again, and nothing was telling anybody that.
+   *
+   * Everybody has at least `default-roles-<realm>`, so an empty list is always
+   * the broken case and never a legitimate one.
+   */
+  const rolesMissing = (session.roles ?? []).length === 0;
+
   // A practice claim beats a platform role — the same rule landingPath() uses.
   // Somebody scoped to a practice is acting AS that practice, whatever else
   // they may also hold.
@@ -112,6 +128,18 @@ export function SessionControl({
 
   return (
     <span className={ui.sessionBar}>
+      {rolesMissing && (
+        <button
+          type="button"
+          className={ui.sessionStale}
+          onClick={signOut}
+          title={strings.auth.staleTokenHint}
+          data-testid="session-stale"
+        >
+          <AlertTriangle size={13} aria-hidden="true" />
+          {strings.auth.staleToken}
+        </button>
+      )}
       {scopedToPractice ? (
         <Building2 size={14} aria-hidden="true" className={ui.sessionIcon} />
       ) : (

@@ -156,6 +156,24 @@ export const PAGES: Readonly<Record<string, PageRule>> = {
     audiences: ['platform'],
     why: 'The register of who is acting as which practice. Ours, and the one page that can stop a session early.',
   },
+  /*
+   * A PRACTICE'S PAGES, REACHED AS THE PLATFORM.
+   *
+   * Not a crack in the acting-as rule — it is the other half of it. Some work
+   * about a practice is OURS: recording what the AHPRA register says is an
+   * independent attestation, and doing it from inside the practice's session
+   * would record it as theirs and force a reapproval for our own job.
+   *
+   * So the rule is not "operators reach practice pages only by acting as
+   * them". It is "an operator does the PRACTICE's acts by acting as them, and
+   * the PLATFORM's acts as themselves". These routes are the second case, and
+   * what they expose is narrower than the practice route, not wider.
+   */
+  '/platform/practices': {
+    audiences: ['platform'],
+    why: 'A practice’s pages reached as the platform, for work that is ours rather than theirs — the register check above all. Never for the practice’s own acts, which still need acting-as.',
+    matchesChildren: true,
+  },
   '/platform/acting-as/history': {
     audiences: ['platform'],
     why: 'Every acting-as session there has ever been, with its reason. Asked about months later, so it is a search rather than a dashboard.',

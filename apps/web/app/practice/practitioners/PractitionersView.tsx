@@ -100,7 +100,34 @@ function displayDate(value: string | null): string {
   return new Date(value).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-export function PractitionersView({ practiceId }: { practiceId: string }) {
+/**
+ * WHOSE WORK IS BEING DONE ON THIS PAGE — and there are two answers, which is
+ * the thing acting-as alone could not express.
+ *
+ * 'practice'  the practice's own roster: adding a practitioner, inviting one,
+ *             correcting a detail. An operator does this by ACTING AS them,
+ *             which is recorded, announced, and forces a reapproval.
+ *
+ * 'platform'  OUR work about their practitioners: recording what the AHPRA
+ *             public register says. That is an independent attestation and it
+ *             must NOT be done while acting as the practice — a check recorded
+ *             under the practice's name is a self-attestation wearing the name
+ *             of an independent one, and in the audit trail it reads exactly
+ *             like a real one. Acting-as would also force the practice to be
+ *             reapproved because we did our own job, which is nonsense.
+ *
+ * The server has always known this: `recordRegistration` is PLATFORM_ADMIN and
+ * takes no practice scope. Only the browser was missing the door.
+ */
+export type PractitionersMode = 'practice' | 'platform';
+
+export function PractitionersView({
+  practiceId,
+  mode = 'practice',
+}: {
+  practiceId: string;
+  mode?: PractitionersMode;
+}) {
   const [roster, setRoster] = useState<RosterEntry[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [added, setAdded] = useState(false);
@@ -188,14 +215,35 @@ export function PractitionersView({ practiceId }: { practiceId: string }) {
         ))}
       </ul>
 
-      <AddPractitioner
-        headers={headers}
-        added={added}
-        onAdded={() => {
-          setAdded(true);
-          void load();
-        }}
-      />
+      {mode === 'platform' && (
+        /*
+          SAYING WHICH HAT. Somebody who arrived here from the organisation list
+          and somebody who arrived by acting as the practice see the same
+          roster, and the difference in what they may do is invisible without
+          this. A page whose rules you cannot see is a page you will be
+          surprised by.
+        */
+        <Notice tone="warn" title={strings.practitioners.platformModeTitle}>
+          {strings.practitioners.platformModeBody}
+        </Notice>
+      )}
+
+      {/*
+        THE PRACTICE'S OWN CONTROL, and only theirs. Adding a practitioner is
+        the practice's act -- an operator does it by acting as them, which is
+        recorded and announced. In platform mode the roster is here to be
+        CHECKED, not added to.
+      */}
+      {mode === 'practice' && (
+        <AddPractitioner
+          headers={headers}
+          added={added}
+          onAdded={() => {
+            setAdded(true);
+            void load();
+          }}
+        />
+      )}
     </Shell>
   );
 }

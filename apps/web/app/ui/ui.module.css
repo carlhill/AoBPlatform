@@ -178,6 +178,21 @@
   .spinning { animation: none; }
 }
 
+/* Loud, because a silently degraded session is the thing this exists to stop
+   being silent. */
+.sessionStale {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s1) var(--s3);
+  border: 1px solid var(--stop-line, #b3261e);
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--stop-line, #b3261e);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
 .historyBlock {
   margin-top: var(--s2);
 }

@@ -60,6 +60,9 @@ const PARENTS: Readonly<Record<string, string>> = {
 /** Pages with an id in the path. Longest match wins, so order matters. */
 const PREFIX_PARENTS: ReadonlyArray<readonly [string, string]> = [
   ['/practitioner/practices/', '/practitioner'],
+  // Up from a practice viewed AS THE PLATFORM is the organisation list, which
+  // is where an operator chose the practice in the first place.
+  ['/platform/practices/', '/practice'],
   ['/review/', '/review'],
 ];
 
