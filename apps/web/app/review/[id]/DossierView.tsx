@@ -68,6 +68,7 @@ import { AuditTrail } from '../AuditTrail';
 import { formatAbn, type QueueRow } from '../QueueView';
 import styles from '../review.module.css';
 import { SessionControl } from '../../SessionControl';
+import { useRefreshable } from '../../refresh';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -308,7 +309,7 @@ export function DossierView({ id }: { id: string }) {
       .catch(() => undefined);
   }, [id]);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     // The pending queue is the source. An application is only reviewable while
     // it is still waiting, so there is deliberately no second endpoint that
     // could disagree with the list the reviewer just came from.
@@ -334,9 +335,18 @@ export function DossierView({ id }: { id: string }) {
         setIncompleteReasons(data.incompleteReasons ?? []);
       })
       .catch(() => undefined);
+  }, [id]);
 
+  useEffect(() => {
+    load();
     loadChecks();
-  }, [id, loadChecks]);
+  }, [load, loadChecks]);
+
+  // REGISTERED WITH THE TOP-BAR REFRESH, same as every other console page —
+  // see `refresh.ts`. Without this the only way to re-read the dossier is F5,
+  // which throws the in-memory session away.
+  useRefreshable(load);
+  useRefreshable(loadChecks);
 
   if (missing) {
     return (
