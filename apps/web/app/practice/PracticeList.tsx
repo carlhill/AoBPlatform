@@ -29,12 +29,13 @@
  * scoped to anybody.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { AlertTriangle, ArrowRight, Building2, CheckCircle2, Clock, Search, ShieldCheck, X } from 'lucide-react';
 import { matchesFilter, matchesPractice, mayChoosePractice, type PracticeFilter } from '@aobplatform/domain';
 import { Button, Chip, Field, Notice, Shell, TextInput, ui } from '../ui';
+import { useRefreshable } from '../refresh';
 import { strings } from '../strings';
 import { apiHeaders, attemptSilentLogin, currentSession, beginLogin } from '../auth';
 import styles from './practice.module.css';
@@ -159,7 +160,13 @@ export function PracticeList() {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<PracticeFilter>('all');
 
-  useEffect(() => {
+  /*
+   * HOISTED INTO A useCallback so the top-bar refresh can re-run it. It was an
+   * inline effect body, which meant nothing else could ask for the list again
+   * -- and this page is the one most likely to be stale, because it is where an
+   * operator sits while other people are changing the practices on it.
+   */
+  const load = useCallback(() => {
     if (scoped || restoring) return;
     let live = true;
 
@@ -231,7 +238,20 @@ export function PracticeList() {
     return () => {
       live = false;
     };
-  }, []);
+    // `scoped` and `restoring` decide whether there is anything to fetch at
+    // all, so a change in either has to re-run this.
+  }, [scoped, restoring]);
+
+  useEffect(() => {
+    const cancel = load();
+    return cancel;
+  }, [load]);
+
+  /*
+   * REGISTERED WITH THE TOP-BAR REFRESH. The token is memory-only, so a browser
+   * reload throws the session away and asks for a passkey again.
+   */
+  useRefreshable(load);
 
   /*
    * Filtered here rather than on the server. With a handful of practices a
@@ -380,7 +400,44 @@ export function PracticeList() {
            * looks like being logged out. The console has its own view of an
            * application under review, and that is where this belongs.
            */
-          const href = '/practice/setup';
+          /*
+           * NOT UNTIL IT HAS BEEN DECIDED.
+           *
+           * An application still being reviewed is not a practice yet, and one
+           * that was refused never became one. Acting as it, or checking its
+           * practitioners against the register, are things you do to an
+           * APPROVED practice — offering them here invites an operator to work
+           * on a record whose whole question is still open, and acting as an
+           * applicant would force a reapproval of an approval that has not
+           * happened.
+           *
+           * The row still appears, and still leads to the review. What is
+           * hidden is the two doors that only make sense once somebody has said
+           * yes.
+           */
+          const decided = !pending && !rejected;
+
+          /*
+           * An operator CAN open an undecided one — the review is theirs. What
+           * they cannot open without acting-as is a decided practice's console.
+           */
+          const canOpen = !isOperator || actingOn === p.id || !decided;
+
+          /*
+           * WHERE THE ROW GOES, and for an undecided application that is the
+           * REVIEW, not the console.
+           *
+           * Every row pointed at `/practice/setup`. For an application still
+           * being reviewed that is wrong twice: there is no console yet, and an
+           * operator has no practice claim to open one with — so "See where it
+           * is up to" led nowhere and bounced.
+           *
+           * What an operator actually does with an application under review is
+           * decide it: read the dossier, validate the entity, and only then does
+           * the practice get its administrator invitation and a passkey to
+           * enrol. That is the work, so that is where the row leads.
+           */
+          const href = isOperator && !decided ? `/review/${p.id}` : '/practice/setup';
 
           /*
            * CLICKING A PRACTICE MUST NOT BOUNCE YOU.
@@ -397,7 +454,6 @@ export function PracticeList() {
            * the practice. So the row now offers exactly that instead of
            * offering a door that shuts.
            */
-          const canOpen = !isOperator || actingOn === p.id;
 
           const body = (
             <>
@@ -438,7 +494,9 @@ export function PracticeList() {
                   </Chip>
                 )}
                 <span className={styles.rowOpen}>
-                  {!canOpen
+                  {isOperator && !decided
+                    ? strings.practices.reviewIt
+                    : !canOpen
                     ? strings.practices.actAsFirst
                     : pending || rejected
                       ? strings.practices.openPending
@@ -510,7 +568,7 @@ export function PracticeList() {
 
                 Everything the PRACTICE does still needs acting-as, below.
               */}
-              {isOperator && (
+              {isOperator && decided && (
                 <Link
                   href={`/platform/practices/${p.id}/practitioners`}
                   className={ui.buttonLink}
@@ -521,7 +579,7 @@ export function PracticeList() {
                 </Link>
               )}
 
-              {isOperator && actingOn !== p.id && (
+              {isOperator && decided && actingOn !== p.id && (
                 <ActingAsStart
                   practiceId={p.id}
                   practiceName={p.name ?? p.legalName ?? null}

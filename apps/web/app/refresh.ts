@@ -30,7 +30,17 @@
 
 import { useEffect, useState } from 'react';
 
-type Loader = () => void | Promise<unknown>;
+/*
+ * A loader may return anything and the return is ignored.
+ *
+ * Some pages hoist an effect body into the loader, and an effect body returns
+ * its own cleanup. That cleanup belongs to the EFFECT -- React calls it on
+ * unmount -- and not to a refresh, which is a re-read of a page that is still
+ * on screen. Typing this narrowly would have forced those pages to wrap the
+ * loader in a lambda that swallowed the cleanup, which is the same thing with
+ * more ceremony and one more place to get it wrong.
+ */
+type Loader = () => unknown;
 
 const loaders = new Set<Loader>();
 const watchers = new Set<() => void>();
@@ -78,5 +88,5 @@ export function useHasRefresh(): boolean {
  * than both being a minute old.
  */
 export async function refreshAll(): Promise<void> {
-  await Promise.all([...loaders].map((load) => Promise.resolve().then(load).catch(() => undefined)));
+  await Promise.all([...loaders].map((load) => Promise.resolve().then(() => load()).catch(() => undefined)));
 }

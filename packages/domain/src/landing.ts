@@ -74,7 +74,22 @@ export function landingPath(input: LandingInput): string {
   if (intended !== '/') return intended;
 
   if (isPracticeUser(input)) return '/practice/setup';
-  if (isPlatformOperator(input)) return '/review';
+  /*
+   * THE ORGANISATION LIST, not the review queue.
+   *
+   * `/review` is one job an operator does — applications waiting for a decision
+   * — and landing there says that queue is the product. It is not. An
+   * operator's day starts from a PRACTICE: which one is stuck, whose
+   * practitioners need checking against the register, who to act as. The list
+   * is also where both doors into a practice are, so it is the only page that
+   * leads everywhere else.
+   *
+   * The review queue has not moved. It is one item in the menu alongside the
+   * others, rather than the place everybody is dropped whether or not there is
+   * anything in it — and an empty queue as a landing page says "nothing to do"
+   * to somebody who came in to do something else.
+   */
+  if (isPlatformOperator(input)) return '/practice';
   /*
    * Added the day practitioners could first sign in — and it is the same
    * failure this function's own comment describes happening to practice

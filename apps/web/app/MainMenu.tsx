@@ -29,7 +29,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import * as RadixDialog from '@radix-ui/react-dialog';
 import { Menu, X } from 'lucide-react';
-import { audiencesOf, mayReach, type Audience } from '@aobplatform/domain';
+import { audiencesOf, landingPath, mayReach, type Audience } from '@aobplatform/domain';
 import { currentSession } from './auth';
 import { useEffectivePractice } from './effectivePractice';
 import { strings } from './strings';
@@ -136,7 +136,21 @@ export function MainMenu() {
     {
       heading: strings.nav.everyoneHeading,
       items: [
-        { path: '/', label: strings.nav.home },
+        /*
+         * HOME MEANS *YOUR* HOME once you are signed in.
+         *
+         * `/` is the public landing page, and for somebody signed in it is the
+         * wrong answer twice: it is a page about signing up, and it bounces
+         * them onward anyway. `landingPath` already knows where each audience
+         * belongs -- an operator to the organisation list, a practice to its
+         * hub, a practitioner to their own -- so Home points there and the
+         * bounce disappears.
+         */
+        { path: session ? landingPath({
+            roles: session.roles ?? [],
+            practiceId,
+            practitionerId: session.practitionerId,
+          }) : '/', label: strings.nav.home },
         { path: '/apply', label: strings.nav.apply },
         { path: '/help', label: strings.nav.help },
       ],

@@ -46,12 +46,29 @@ const PARENTS: Readonly<Record<string, string>> = {
   '/practice/practitioners': '/practice/setup',
   '/practice/affiliations': '/practice/setup',
   '/practice/users': '/practice/setup',
-  '/practice/reports': '/practice/setup',
+  // '/practice/reports' is decided per audience in parentOf -- it belongs under
+  // the practice hub for a practice user and under the organisation list for an
+  // operator, because those are the places each of them came from.
 
   '/practice/queuebyOrg': '/practice/queue',
   '/practice/queuebyOrgLocDepartment': '/practice/queue',
   '/review/identity': '/review',
   '/platform/acting-as/history': '/platform/acting-as',
+
+  /*
+   * THE PLATFORM'S TOP-LEVEL PAGES GO UP TO THE ORGANISATION LIST.
+   *
+   * They looked like roots, so they had no back link and an operator opening
+   * one had no way out but the menu. They are not roots: an operator's work
+   * starts from a PRACTICE -- which one is stuck, whose practitioners need
+   * checking, who to act as -- and the list is the only page that leads to
+   * both doors into every practice. These are the queues you visit FROM there.
+   */
+  '/review': '/practice',
+  '/practice/reviews': '/practice',
+  '/practice/queue': '/practice',
+  '/platform/acting-as': '/practice',
+  '/practice/reports': '/practice',
 
   '/practitioner/affiliations': '/practitioner',
   '/practitioner/messages': '/practitioner',
@@ -66,7 +83,14 @@ const PREFIX_PARENTS: ReadonlyArray<readonly [string, string]> = [
   ['/review/', '/review'],
 ];
 
-function parentOf(pathname: string): string | null {
+function parentOf(pathname: string, hasPractice: boolean): string | null {
+  /*
+   * ONE PAGE, TWO PARENTS. Reports belong under a practice's hub for a practice
+   * user and under the organisation list for an operator, because those are the
+   * places each of them came from. A single answer would send one of them
+   * somewhere they have never been.
+   */
+  if (pathname === '/practice/reports') return hasPractice ? '/practice/setup' : '/practice';
   if (PARENTS[pathname]) return PARENTS[pathname];
   for (const [prefix, parent] of PREFIX_PARENTS) {
     if (pathname.startsWith(prefix) && pathname !== parent) return parent;
@@ -79,15 +103,15 @@ export function BackLink() {
   const session = currentSession();
   const { practiceId } = useEffectivePractice();
 
-  const parent = parentOf(pathname);
-  if (!parent) return null;
-
   const audiences: Audience[] = audiencesOf({
     roles: session?.roles ?? [],
     practiceId,
     practitionerId: session?.practitionerId,
     consoleRole: session?.consoleRole,
   });
+
+  const parent = parentOf(pathname, audiences.includes('practice'));
+  if (!parent) return null;
 
   /*
    * NOT OFFERED IF IT WOULD REFUSE YOU. The same rule the menu follows: a

@@ -14,11 +14,12 @@
  * eventually open none of them properly.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ArrowRight, Inbox, Search } from 'lucide-react';
 import { compareForReview, reviewFlags, type ReviewFlag } from '@aobplatform/domain';
 import { Chip, Field, Notice, Shell, TextInput, ui } from '../ui';
+import { useRefreshable } from '../refresh';
 import { strings } from '../strings';
 import { FlagChip } from './flags';
 import styles from './review.module.css';
@@ -88,15 +89,23 @@ export function QueueView() {
   // about "now" and produce a hydration mismatch.
   const [now, setNow] = useState<Date | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     setNow(new Date());
-    fetch(`${CORE_URL}/organisations/pending`)
+    setError(null);
+    return fetch(`${CORE_URL}/organisations/pending`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`${r.status}`))))
       .then((data) => setRows(data.organisations ?? []))
       // A dead connection throws a TypeError reading "Failed to fetch" — a DOM
       // exception string, not an answer. Say what happened instead.
       .catch((e: Error) => setError(e instanceof TypeError ? strings.review.unreachableBody : e.message));
   }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // A queue is stale the moment somebody else decides an application.
+  useRefreshable(load);
 
   const ordered = useMemo(() => {
     if (!rows) return [];

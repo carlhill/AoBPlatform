@@ -38,12 +38,21 @@ import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui, type To
 import { useRefreshable } from '../../refresh';
 import { strings } from '../../strings';
 import { ClearForm } from '../../ClearForm';
+import { HistoryDisclosure } from '../../HistoryDisclosure';
 import styles from '../manage.module.css';
 import { SessionControl } from '../../SessionControl';
 import { currentSession, apiHeaders } from '../../auth';
 import { useLiveRefresh } from '../../useLiveRefresh';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
+
+/** One thing that happened to an affiliation. Derived from its timestamps. */
+interface AffiliationEvent {
+  at: string;
+  what: string;
+  who: string | null;
+  detail: string | null;
+}
 
 interface Affiliation {
   id: string;
@@ -270,7 +279,7 @@ export function AffiliationsView({ practiceId }: { practiceId: string }) {
 
       <ul className={styles.list}>
         {ordered.map((a) => (
-          <AffiliationCard key={a.id} affiliation={a} headers={headers} onChanged={load} />
+          <AffiliationCard key={a.id} affiliation={a} headers={headers} onChanged={load} practiceId={practiceId} />
         ))}
       </ul>
 
@@ -361,10 +370,14 @@ function AffiliationCard({
   affiliation,
   headers,
   onChanged,
+  practiceId,
 }: {
   affiliation: Affiliation;
   headers: Record<string, string>;
   onChanged: () => Promise<void>;
+  /** Scope for the card's own reads. `headers` already carries it, but the
+   *  history disclosure builds its own and needs to be told which practice. */
+  practiceId: string;
 }) {
   const [busy, setBusy] = useState(false);
 
@@ -550,6 +563,37 @@ function AffiliationCard({
               <strong>{strings.affiliations.howAccepted}:</strong> {a.acceptanceMeans}
             </p>
           )}
+
+          {/*
+            THE WHOLE LIFE OF THIS AFFILIATION, next to the row it belongs to.
+            Invited, sent, accepted and how, notice given and by whom, ended and
+            why -- in one place, rather than scattered across the sentences
+            above in the order they happened to be written.
+
+            Built from the timestamps already on the record, so there is one
+            source and not two that can silently disagree. That also means it
+            cannot show a value changed and changed back; the response says so
+            rather than letting an incomplete list look complete.
+          */}
+          <HistoryDisclosure
+            url={`${CORE_URL}/affiliations/${a.id}/history`}
+            practiceId={practiceId}
+            extract={(body) => ((body as { events?: AffiliationEvent[] }).events ?? [])}
+            emptyMessage={strings.affiliations.historyEmpty}
+            label={strings.affiliations.historyShow}
+            testId={`aff-history-${a.id}`}
+            renderRow={(e: AffiliationEvent) => (
+              <>
+                <strong>{e.what}</strong>
+                <span className={ui.hint}>
+                  {' '}
+                  · {new Date(e.at).toLocaleString()}
+                  {e.who ? ` · ${e.who}` : ''}
+                  {e.detail ? ` · ${e.detail}` : ''}
+                </span>
+              </>
+            )}
+          />
 
           {/*
             Shown ONLY where it adds something: a row that says "accepted" and

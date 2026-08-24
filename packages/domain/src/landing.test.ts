@@ -6,7 +6,10 @@ describe('landingPath', () => {
   });
 
   it('sends a platform operator to the queue', () => {
-    expect(landingPath({ roles: ['platform_admin'] })).toBe('/review');
+    // The organisation list, not the review queue: an operator's day starts
+    // from a practice, and the list is the only page leading to both doors
+    // into every one of them.
+    expect(landingPath({ roles: ['platform_admin'] })).toBe('/practice');
   });
 
   /*
@@ -47,7 +50,7 @@ describe('landingPath', () => {
   it('REFUSES a foreign destination and decides one itself', () => {
     expect(landingPath({ practiceId: 'p1', intended: 'https://evil.example' })).toBe('/practice/setup');
     expect(landingPath({ practiceId: 'p1', intended: '//evil.example' })).toBe('/practice/setup');
-    expect(landingPath({ roles: ['platform_admin'], intended: '/callback' })).toBe('/review');
+    expect(landingPath({ roles: ['platform_admin'], intended: '/callback' })).toBe('/practice');
   });
 });
 

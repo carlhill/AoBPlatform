@@ -692,6 +692,11 @@ export const strings = {
      * rather than "open" — an operator choosing between two doors needs the
      * difference in the label, not in a tooltip.
      */
+    /*
+     * WHAT AN OPERATOR ACTUALLY DOES with an application under review: decide
+     * it. "See where it is up to" is the applicant's question, not ours.
+     */
+    reviewIt: 'Review this application',
     checkAsPlatform: 'Check their practitioners (as AoBPlatform)',
     actAsFirst: 'Act as this practice',
     actAsFirstHint:
@@ -1339,6 +1344,17 @@ export const strings = {
     signInNoticeTitle: 'You are not signed in',
     signInBody:
       'This page shows real records, so it needs to know who you are. Sign in with your passkey using the button above — you will come back here afterwards.',
+    /*
+     * AN OPERATOR AT A PRACTICE PAGE. Not the generic refusal: they are neither
+     * a practice nor a practitioner, and telling them the two do not mix
+     * explains nothing. One sentence that resolves it, and where to start.
+     */
+    actingAsTitle: 'This is one of the practice’s own pages',
+    actingAsBody:
+      'You are signed in as AoBPlatform, and a practice’s own screens open when you act as that practice — '
+      + 'which is recorded, told to them, and is what makes anything done here attributable. Start from All '
+      + 'organisations. Work that is OURS rather than theirs, like checking a practitioner against the '
+      + 'register, has its own door on the same list and needs no session.',
     refusedTitle: 'That page is not for this account',
     refusedBody:
       'You are signed in, and this page belongs to a different kind of account — a practice’s own screens are '
@@ -2443,6 +2459,9 @@ export const strings = {
     endingNote: 'Notice given. This ends on {when}, and capture continues until then.',
     endedNote: 'Ended {when}. Enduring agreements at this location ceased on that date.',
     rejectedNote: 'The practitioner declined this invitation.',
+    /* One affiliation's whole life, next to the row it belongs to. */
+    historyShow: 'What happened to this one',
+    historyEmpty: 'Nothing has been recorded against this affiliation yet.',
     howAccepted: 'How it was accepted',
 
     providerNumber: 'Provider number',

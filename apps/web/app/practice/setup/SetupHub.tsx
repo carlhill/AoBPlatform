@@ -28,7 +28,7 @@
  * hides exactly the row the promotion rule just surfaced.
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
@@ -47,6 +47,7 @@ import {
 } from 'lucide-react';
 import { mayChoosePractice, type CardState } from '@aobplatform/domain';
 import { Chip, Notice, Shell, ui, type Tone } from '../../ui';
+import { useRefreshable } from '../../refresh';
 import { strings } from '../../strings';
 import { apiHeaders, currentSession } from '../../auth';
 import styles from './setup.module.css';
@@ -88,6 +89,19 @@ interface Hub {
 }
 
 
+/**
+ * The hub's cards, left to right, top to bottom.
+ *
+ * `affiliations` sits beside `practitioners` because the pair is one question —
+ * who works here, and where — read together far more often than either alone.
+ * `channels` comes last of the grid because it is set up once and then not
+ * looked at.
+ *
+ * ANYTHING NOT NAMED HERE STILL APPEARS, at the end. A new card must not be
+ * able to vanish by being forgotten in this list.
+ */
+const CARD_ORDER: readonly string[] = ['entity', 'locations', 'practitioners', 'affiliations', 'channels'];
+
 const CARD_ICONS: Record<string, typeof Building2> = {
   entity: Building2,
   locations: MapPin,
@@ -115,8 +129,11 @@ export function SetupHub({ practiceId }: { practiceId: string }) {
   const [hub, setHub] = useState<Hub | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  // Hoisted so the top-bar refresh can re-run it. The hub is the page most
+  // worth re-reading: it is a summary of work other people are doing.
+  const load = useCallback(() => {
     let live = true;
+    setError(null);
     fetch(`${CORE_URL}/organisations/setup`, { headers: apiHeaders(practiceId) })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((data: Hub) => live && setHub(data))
@@ -127,6 +144,9 @@ export function SetupHub({ practiceId }: { practiceId: string }) {
       live = false;
     };
   }, [practiceId]);
+
+  useEffect(() => load(), [load]);
+  useRefreshable(load);
 
   if (error) {
     return (
@@ -269,8 +289,32 @@ export function SetupHub({ practiceId }: { practiceId: string }) {
         )}
       </div>
 
+      {/*
+        A FIXED ORDER, chosen by Carl, and it is worth saying why fixed beats
+        clever here.
+        
+        The server returns these in the order it builds them, which is the order
+        somebody happened to write the code. That put "Capture channels" first
+        and "The entity" second, so the card a practice opens most often moved
+        depending on what the server thought about that day. A hub is a place
+        people learn the position of things; a layout that reorders itself makes
+        them read every card every time.
+        
+        Entity and locations first because they are what the practice IS; then
+        the people; then how it reaches patients. Anything the server sends that
+        is not named here still appears, at the end, so a new card cannot vanish
+        by being forgotten in this list.
+      */}
       <div className={styles.cards}>
-        {hub.cards.map((card) => {
+        {[...hub.cards]
+          .sort((a, b) => {
+            const rank = (k: string) => {
+              const i = CARD_ORDER.indexOf(k);
+              return i === -1 ? CARD_ORDER.length : i;
+            };
+            return rank(a.key) - rank(b.key);
+          })
+          .map((card) => {
           const Icon = CARD_ICONS[card.key] ?? Circle;
           return (
             <section className={styles.card} key={card.key} aria-label={card.title} data-testid={`card-${card.key}`}>

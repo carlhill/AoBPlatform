@@ -161,7 +161,17 @@ export function ActingAsHistory() {
                     and time — listing "pages visited" here would be a weaker
                     record wearing the clothes of a stronger one.
                   */}
-                  <Link href={`/practice/entity?practiceId=${r.practiceId}`} data-testid={`history-practice-${r.id}`}>
+                  {/*
+                    THE PLATFORM'S DOOR, not the practice's. This linked to
+                    `/practice/entity`, which needs a practice claim -- so an
+                    operator following it from their own history page was
+                    refused and bounced. A link that only works for somebody who
+                    is not reading this page is not a link.
+                  */}
+                  <Link
+                    href={`/platform/practices/${r.practiceId}/practitioners`}
+                    data-testid={`history-practice-${r.id}`}
+                  >
                     {r.practiceName ?? r.practiceId}
                   </Link>
                 </td>

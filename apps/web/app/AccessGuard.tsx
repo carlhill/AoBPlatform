@@ -40,7 +40,7 @@ const REDIRECT_AFTER_MS = 4000;
 export function AccessGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? '/';
   const router = useRouter();
-  const [refused, setRefused] = useState<'unknown-page' | 'wrong-audience' | 'signed-out' | null>(null);
+  const [refused, setRefused] = useState<'unknown-page' | 'wrong-audience' | 'signed-out' | 'needs-acting-as' | null>(null);
   const [goingTo, setGoingTo] = useState('/');
 
   /*
@@ -132,7 +132,22 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
        */
       const rule = ruleFor(pathname);
       const adminOnly = rule?.audiences.length === 1 && rule.audiences[0] === 'practice_admin';
-      setRefused(adminOnly && audiences.includes('practice') ? null : 'wrong-audience');
+      if (adminOnly && audiences.includes('practice')) {
+        setRefused(null);
+      } else if (audiences.includes('platform') && rule?.audiences.includes('practice')) {
+        /*
+         * AN OPERATOR AT A PRACTICE PAGE IS A DIFFERENT REFUSAL.
+         *
+         * The generic message says "a practice's own screens are not a
+         * practitioner's, and the other way round" -- true of the case it was
+         * written for and baffling here, because an operator is neither. What
+         * they need is the one sentence that resolves it: act as the practice,
+         * and here is where to start.
+         */
+        setRefused('needs-acting-as');
+      } else {
+        setRefused('wrong-audience');
+      }
     } else {
       setRefused(null);
     }
@@ -167,10 +182,18 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
     <Shell>
       <h1 className={ui.pageTitle}>
         <ShieldAlert size={20} aria-hidden="true" />{' '}
-        {refused === 'unknown-page' ? strings.access.notFoundTitle : strings.access.refusedTitle}
+        {refused === 'unknown-page'
+          ? strings.access.notFoundTitle
+          : refused === 'needs-acting-as'
+            ? strings.access.actingAsTitle
+            : strings.access.refusedTitle}
       </h1>
       <Notice tone="warn" title={strings.access.takingYouBack}>
-        {refused === 'unknown-page' ? strings.access.notFoundBody : strings.access.refusedBody}
+        {refused === 'unknown-page'
+          ? strings.access.notFoundBody
+          : refused === 'needs-acting-as'
+            ? strings.access.actingAsBody
+            : strings.access.refusedBody}
       </Notice>
       {/*
         A link as well as the timer. Somebody who reads faster than four seconds

@@ -183,6 +183,27 @@ export function PractitionersView({
       <h1 className={ui.pageTitle}>{strings.practitioners.title}</h1>
       <p className={ui.pageLead}>{strings.practitioners.lead}</p>
 
+      {mode === 'platform' && (
+        /*
+          SAYING WHICH HAT. Somebody who arrived here from the organisation list
+          and somebody who arrived by acting as the practice see the same
+          roster, and the difference in what they may do is invisible without
+          this. A page whose rules you cannot see is a page you will be
+          surprised by.
+        */
+        <Notice tone="warn" title={strings.practitioners.platformModeTitle}>
+          {strings.practitioners.platformModeBody}
+        </Notice>
+      )}
+
+      {/*
+        THE PRACTICE'S OWN CONTROL, and only theirs. Adding a practitioner is
+        the practice's act -- an operator does it by acting as them, which is
+        recorded and announced. In platform mode the roster is here to be
+        CHECKED, not added to.
+      */}
+
+
       {roster === null && <p className={ui.hint}>{strings.practitioners.loading}</p>}
 
       {roster !== null && roster.length > 0 && (
@@ -211,29 +232,10 @@ export function PractitionersView({
 
       <ul className={styles.list}>
         {ordered.map((p) => (
-          <PractitionerCard key={p.practitionerId} entry={p} headers={headers} onChanged={load} />
+          <PractitionerCard key={p.practitionerId} entry={p} headers={headers} onChanged={load} mode={mode} />
         ))}
       </ul>
 
-      {mode === 'platform' && (
-        /*
-          SAYING WHICH HAT. Somebody who arrived here from the organisation list
-          and somebody who arrived by acting as the practice see the same
-          roster, and the difference in what they may do is invisible without
-          this. A page whose rules you cannot see is a page you will be
-          surprised by.
-        */
-        <Notice tone="warn" title={strings.practitioners.platformModeTitle}>
-          {strings.practitioners.platformModeBody}
-        </Notice>
-      )}
-
-      {/*
-        THE PRACTICE'S OWN CONTROL, and only theirs. Adding a practitioner is
-        the practice's act -- an operator does it by acting as them, which is
-        recorded and announced. In platform mode the roster is here to be
-        CHECKED, not added to.
-      */}
       {mode === 'practice' && (
         <AddPractitioner
           headers={headers}
@@ -256,10 +258,12 @@ function PractitionerCard({
   entry,
   headers,
   onChanged,
+  mode,
 }: {
   entry: RosterEntry;
   headers: Record<string, string>;
   onChanged: () => Promise<void>;
+  mode: PractitionersMode;
 }) {
   const [recording, setRecording] = useState(false);
 
@@ -455,9 +459,21 @@ function PractitionerCard({
                   </Notice>
                 )
               )}
-              <Link href="/practice/affiliations" className={ui.buttonLink}>
-                {strings.practitioners.invite}
-              </Link>
+              {/*
+                INVITING IS THE PRACTICE'S ACT, so it appears only when this
+                page is being used as the practice.
+                
+                An operator here as the platform has no practice claim, so the
+                affiliations page would refuse them anyway -- offering the link
+                would spend their attention and then take it back. If they mean
+                to invite somebody, they mean to act as the practice, and the
+                banner above says where to start that.
+              */}
+              {mode === 'practice' && (
+                <Link href="/practice/affiliations" className={ui.buttonLink}>
+                  {strings.practitioners.invite}
+                </Link>
+              )}
             </>
           )}
         </div>

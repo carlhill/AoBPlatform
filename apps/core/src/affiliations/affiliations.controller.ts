@@ -307,6 +307,19 @@ export class AffiliationsController {
    * out how closely it is being watched. What the practice needs — whether the
    * check is done and what it says now — it already has on its roster.
    */
+  /**
+   * One affiliation's life. PRACTICE-scoped, unlike the register-check history:
+   * this is the practice's own record of its own affiliation, and the query is
+   * keyed on the practice so it cannot be pointed at another one's.
+   */
+  @Get('affiliations/:affiliationId/history')
+  affiliationHistory(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('affiliationId', ParseUUIDPipe) affiliationId: string,
+  ) {
+    return this.affiliations.affiliationHistory(requirePractice(practiceId), affiliationId);
+  }
+
   @RequireRoles(PLATFORM_ADMIN)
   @Get('practitioners/:practitionerId/registration/history')
   registerCheckHistory(@Param('practitionerId', ParseUUIDPipe) practitionerId: string) {

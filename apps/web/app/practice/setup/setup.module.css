@@ -48,10 +48,27 @@
   margin-bottom: var(--s2);
 }
 
+/*
+ * TWO COLUMNS, FIXED — so a card keeps its place.
+ *
+ * `auto-fill` gave three columns on a wide screen and one on a narrow one, and
+ * every card moved when the window did. A hub is a place people learn the
+ * position of things: "locations is top right" has to stay true, or they read
+ * all six every time.
+ *
+ * Still collapses to one column when there is not room for two, because a
+ * fixed grid that overflows is worse than a moved card.
+ */
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--s4);
+}
+
+@media (max-width: 760px) {
+  .cards {
+    grid-template-columns: 1fr;
+  }
 }
 
 .card {

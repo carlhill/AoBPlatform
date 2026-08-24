@@ -146,6 +146,75 @@ export class AffiliationsService {
   }
 
   /**
+   * One affiliation's life, as a list of things that happened.
+   *
+   * DERIVED FROM THE TIMESTAMPS WE ALREADY HOLD rather than from a new events
+   * table — and that is a deliberate first version, not a shortcut. An
+   * affiliation records WHEN it was invited, sent, accepted, given notice, and
+   * ended, each with who did it where we know. Those columns are the record;
+   * building a second one beside them would create two sources that can
+   * disagree, and the disagreement would be silent.
+   *
+   * WHAT IT THEREFORE CANNOT SHOW: a value that was changed and changed back,
+   * or a provider number corrected twice. Those overwrite, exactly as the
+   * register check used to. If that turns out to matter, the answer is the same
+   * as it was there — an append-only table — and this shape is what will show
+   * that it matters.
+   */
+  async affiliationHistory(practiceId: string, affiliationId: string) {
+    const a = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.affiliation.findFirst({
+        where: { id: affiliationId, practiceId },
+        include: { practitioner: true, location: true },
+      }),
+    );
+    if (!a) throw new NotFoundException('That affiliation is not one of this practice’s.');
+
+    const events: Array<{ at: Date; what: string; who?: string | null; detail?: string | null }> = [];
+
+    if (a.invitedAt) {
+      events.push({ at: a.invitedAt, what: 'Invited', who: a.invitedByName, detail: a.location?.code ?? null });
+    }
+    if (a.inviteSentAt) events.push({ at: a.inviteSentAt, what: 'Invitation sent', detail: null });
+    if (a.startedAt) {
+      /*
+       * HOW it was accepted, not merely that it was. Opening a link and typing
+       * a code proves access to an inbox; it does not prove who was at the
+       * keyboard, and the difference is the whole reason this is recorded.
+       */
+      events.push({ at: a.startedAt, what: 'Accepted by the practitioner', detail: a.acceptanceMethod });
+    }
+    if (a.rejectedAt) events.push({ at: a.rejectedAt, what: 'Declined', detail: null });
+    if (a.noticeGivenAt) {
+      events.push({ at: a.noticeGivenAt, what: 'Notice given', who: a.noticeGivenBy, detail: null });
+    }
+    if (a.externalNoticeGivenAt) {
+      events.push({
+        at: a.externalNoticeGivenAt,
+        what: 'Notice given outside AoBPlatform',
+        who: a.externalNoticeAttestedBy,
+        detail: [a.externalNoticeMeans, a.externalNoticeNote].filter(Boolean).join(' · ') || null,
+      });
+    }
+    if (a.endedAt) events.push({ at: a.endedAt, what: 'Ended', detail: a.endReason });
+
+    return {
+      affiliationId: a.id,
+      // Newest first, like every other history here.
+      events: events
+        .sort((x, y) => y.at.getTime() - x.at.getTime())
+        .map((e) => ({ at: e.at.toISOString(), what: e.what, who: e.who ?? null, detail: e.detail ?? null })),
+      /*
+       * SAID ON THE RESPONSE, so the screen does not have to know it. A list
+       * built from columns cannot show a value that was changed and changed
+       * back, and a history that quietly omits things is worse than one that
+       * admits its shape.
+       */
+      derivedFromColumns: true,
+    };
+  }
+
+  /**
    * Every register check on one practitioner, newest first.
    *
    * A PLATFORM READ. The practice does not get this: it is our record of our
