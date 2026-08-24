@@ -114,6 +114,21 @@ export const REVIEW_TASK_KINDS: readonly ReviewTaskKind[] = [
     stakes: 'high',
   }),
   kind({
+    key: 'email_change_churn',
+    label: 'A personal address was changed too many times',
+    question: 'Is this the practitioner genuinely struggling with their address, or is somebody probing?',
+    /*
+     * HIGH. Until this kind existed, three rapid attempts to move a
+     * practitioner's own address were refused at the API and then FORGOTTEN --
+     * visible to nobody but whoever tried, which is exactly the audience a
+     * genuine attacker is content to be alone with. The domain's own comment
+     * on the churn rule says it plainly: "a pattern worth stopping for,
+     * whatever each one claimed." Stopping it at the API and not recording it
+     * left the stopping without a witness.
+     */
+    stakes: 'high',
+  }),
+  kind({
     key: 'recertification_due',
     label: 'A practice is due to recertify',
     question: 'Has the practice confirmed its details are still correct?',

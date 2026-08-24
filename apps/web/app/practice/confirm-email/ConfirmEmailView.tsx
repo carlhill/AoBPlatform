@@ -14,13 +14,20 @@
  * previews and antivirus gateways all issue GETs, so a scheme where arriving
  * here were enough would have addresses confirming themselves with nobody
  * involved.
+ *
+ * DRESSED LIKE /verify AND /practice/confirm-backup, on purpose. All three ask
+ * a stranger to type a code from an email, which is precisely the interaction
+ * a phishing site asks for — Carl's words on the first cut of this shape:
+ * "this looks cheap." One stylesheet rather than three near-copies, so they
+ * cannot drift apart from each other.
  */
 
 import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { CheckCircle2, ShieldCheck } from 'lucide-react';
-import { Button, Field, Notice, Shell, TextInput, ui } from '../../ui';
+import { Button, Notice, Shell } from '../../ui';
 import { strings } from '../../strings';
+import styles from '../../verify/verify.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -30,6 +37,13 @@ export function ConfirmEmailView() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+
+  const Wordmark = (
+    <div className={styles.mark}>
+      <ShieldCheck size={20} aria-hidden="true" />
+      <span className={styles.markText}>{strings.appName}</span>
+    </div>
+  );
 
   async function submit() {
     setBusy(true);
@@ -50,18 +64,18 @@ export function ConfirmEmailView() {
     }
   }
 
-  /*
-   * A MISSING TOKEN IS ITS OWN ANSWER. Somebody who typed the address by hand,
-   * or whose mail client mangled the link, needs to be told that rather than
-   * shown a form that cannot work.
-   */
+  // A missing token is its own answer: a form that cannot work must not be
+  // shown as though it could.
   if (!token) {
     return (
       <Shell>
-        <h1 className={ui.pageTitle}>{strings.confirmEmail.title}</h1>
-        <Notice tone="stop" title={strings.confirmEmail.noTokenTitle}>
-          {strings.confirmEmail.noTokenBody}
-        </Notice>
+        <div className={styles.card}>
+          {Wordmark}
+          <h1 className={styles.title}>{strings.confirmEmail.title}</h1>
+          <Notice tone="stop" title={strings.confirmEmail.noTokenTitle}>
+            {strings.confirmEmail.noTokenBody}
+          </Notice>
+        </div>
       </Shell>
     );
   }
@@ -69,53 +83,76 @@ export function ConfirmEmailView() {
   if (done) {
     return (
       <Shell>
-        <h1 className={ui.pageTitle}>{strings.confirmEmail.title}</h1>
-        <Notice tone="ok" title={strings.confirmEmail.doneTitle}>
-          <CheckCircle2 size={15} aria-hidden="true" /> {done}
-        </Notice>
+        <div className={styles.card}>
+          {Wordmark}
+          <div className={styles.outcomeIcon}>
+            <CheckCircle2 size={40} aria-hidden="true" />
+          </div>
+          <h1 className={styles.title}>{strings.confirmEmail.doneTitle}</h1>
+          <p className={styles.lead}>{done}</p>
+        </div>
       </Shell>
     );
   }
 
   return (
     <Shell>
-      <h1 className={ui.pageTitle}>{strings.confirmEmail.title}</h1>
-      <p className={ui.lead}>{strings.confirmEmail.lead}</p>
+      <div className={styles.card}>
+        {Wordmark}
+        <h1 className={styles.title}>{strings.confirmEmail.title}</h1>
+        <p className={styles.lead}>{strings.confirmEmail.lead}</p>
 
-      <Field label={strings.confirmEmail.code} hint={strings.confirmEmail.codeHint} required>
-        {(props) => (
-          <TextInput
-            {...props}
+        {error && (
+          <Notice tone="stop" title={strings.confirmEmail.failed}>
+            {error}
+          </Notice>
+        )}
+
+        <div className={styles.codeWrap}>
+          <label className={styles.codeLabel} htmlFor="confirm-code">
+            {strings.confirmEmail.code}
+          </label>
+          <input
+            id="confirm-code"
+            className={`${styles.code} ${error ? styles.codeInvalid : ''}`}
             value={code}
-            onChange={(e) => setCode(e.target.value)}
+            placeholder="––––––"
             inputMode="numeric"
             autoComplete="one-time-code"
+            autoFocus
+            maxLength={6}
+            aria-describedby="confirm-code-hint"
+            aria-invalid={error ? true : undefined}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && /^\d{6}$/.test(code)) void submit();
+            }}
             data-testid="confirm-code"
           />
-        )}
-      </Field>
+          <p id="confirm-code-hint" className={styles.codeHint}>
+            {strings.confirmEmail.codeHint}
+          </p>
+        </div>
 
-      <div className={ui.rowActions}>
         <Button
           variant="primary"
+          className={styles.submit}
+          disabled={busy || !/^\d{6}$/.test(code)}
           onClick={() => void submit()}
-          disabled={busy || code.trim().length !== 6}
           data-testid="confirm-submit"
         >
-          <ShieldCheck size={14} aria-hidden="true" />
           {busy ? strings.confirmEmail.confirming : strings.confirmEmail.confirm}
         </Button>
+
+        {/* What confirming actually does, before they do it. */}
+        <div className={styles.why}>
+          <div className={styles.whyHead}>
+            <ShieldCheck size={16} aria-hidden="true" />
+            {strings.confirmEmail.whatHappensTitle}
+          </div>
+          {strings.confirmEmail.whatHappensBody}
+        </div>
       </div>
-
-      {error && (
-        <Notice tone="stop" title={strings.confirmEmail.failed}>
-          {error}
-        </Notice>
-      )}
-
-      <Notice title={strings.confirmEmail.whatHappensTitle}>
-        {strings.confirmEmail.whatHappensBody}
-      </Notice>
     </Shell>
   );
 }

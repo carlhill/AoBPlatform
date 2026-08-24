@@ -198,3 +198,22 @@
 .cardLink:hover {
   text-decoration: underline;
 }
+
+/*
+ * A FIELD'S OWN ACTION, pulled close to the hint that explains it rather than
+ * pushed away by a row-of-buttons margin meant for a different layout.
+ */
+.fieldAction {
+  margin-top: var(--s2);
+}
+
+/*
+ * A LIGHT LINE between one field group and the next — Carl's words: "we want
+ * to separate both the email addresses." Whitespace alone read as one
+ * continuous block; an actual rule says two different answers live here.
+ */
+.fieldDivider {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: var(--s5) 0;
+}

@@ -13,6 +13,7 @@ import {
   withinCoolingOff,
 } from '@aobplatform/domain';
 import { PrismaService } from '../prisma/prisma.service';
+import { ReviewTasksService } from '../review-tasks/review-tasks.service';
 import { MESSAGING_GATEWAY, type MessagingGateway } from '../messaging/gateway';
 import { EmailComposer } from '../messaging/composer.service';
 
@@ -73,6 +74,7 @@ export class PractitionerEmailService {
     private readonly config: ConfigService,
     @Inject(MESSAGING_GATEWAY) private readonly messaging: MessagingGateway,
     private readonly composer: EmailComposer,
+    private readonly reviewTasks: ReviewTasksService,
   ) {}
 
   private consoleUrl(): string {
@@ -376,7 +378,51 @@ export class PractitionerEmailService {
     try {
       assertNotChurning(recent);
     } catch (err) {
-      if (err instanceof PendingEmailChangeError) throw new BadRequestException(err.message);
+      if (err instanceof PendingEmailChangeError) {
+        /*
+         * RECORDED, NOT ONLY REFUSED. Carl asked directly: "is this platform
+         * rule breach recorded anywhere?" It was not -- the refusal reached
+         * only the person who triggered it, which is exactly the audience a
+         * genuine attacker is content to be alone with. The domain's own
+         * comment on this rule already says why it matters: "a pattern worth
+         * stopping for, whatever each one claimed."
+         *
+         * Reused REVIEW_TASKS rather than a new table (Carl's fallback
+         * suggestion). A second table for "things a human should look at"
+         * would duplicate the one that already exists, be missing from every
+         * screen that reads the queue, and need its own retention and access
+         * rules built from nothing -- review_tasks already has all three.
+         *
+         * ANCHORED TO THE INTRODUCING PRACTICE, the same choice
+         * updateContact() already makes for admin_contact_changed: a
+         * practitioner has no practice of their own, and the practice that
+         * vouched for this identity existing at all is the one with standing
+         * to be told something is wrong with it.
+         */
+        if (practitioner.invitedByPracticeId) {
+          const introducingPracticeId = practitioner.invitedByPracticeId;
+          await this.prisma.withPractice(introducingPracticeId, (tx) =>
+            this.reviewTasks.raise(tx, {
+              practiceId: introducingPracticeId,
+              kind: 'email_change_churn',
+              subjectType: 'Practitioner',
+              subjectId: practitionerId,
+              summary: `${practitioner.givenNames} ${practitioner.familyName} tried to change their address too many times`,
+              detail: {
+                reason: err.message,
+                attemptsInLastMonth: recent + 1,
+                mostRecentRequestedBy: requestedByName,
+              },
+              raisedBy: 'system',
+            }),
+          );
+        } else {
+          this.logger.warn(
+            `Email-change churn on practitioner ${practitionerId}, with no introducing practice to tell.`,
+          );
+        }
+        throw new BadRequestException(err.message);
+      }
       throw err;
     }
 

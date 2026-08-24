@@ -306,49 +306,32 @@ export class PractitionerSelfController {
      * carries the reasoning for why the old address is TOLD rather than asked
      * to authorise.
      */
+    /*
+     * NO REVIEW TASK for the ordinary case. Carl's instruction, directly: "we
+     * should only have a review if the Platform rule was broken... otherwise
+     * we let the practitioner make the change and approve it." This used to
+     * raise `admin_contact_changed` on EVERY request, which put an ordinary
+     * practitioner updating their own address in the same queue as a
+     * practice-admin handover — noise that trained reviewers to skim past
+     * "PRACTITIONER" rows, which is worse than not having them.
+     *
+     * The system's own hold-and-prove mechanism IS the safeguard for the
+     * ordinary case: the new address must answer a code, and the old address
+     * plus the backup are warned with the power to stop it. A human is not
+     * needed to approve what the practitioner can already only do by proving
+     * they hold the mailbox.
+     *
+     * The genuine platform rule — three changes in a month — is a SEPARATE,
+     * narrower signal and is raised from `PractitionerEmailService.request()`
+     * as `email_change_churn`, at the point the rule is actually broken, not
+     * on every ordinary request that has not broken anything.
+     */
     const pending = await this.practitionerEmail.request(
       practitionerId,
       email,
       // Never free text. The session names who is doing this.
       actor?.name ?? 'the practitioner',
     );
-
-    /*
-     * THE REVIEW TASK STILL GOES UP, and now says something sharper: not "an
-     * address changed" but "somebody asked to change one, and here is whether
-     * anybody could be told". A request with nowhere to warn is the shape an
-     * account takeover takes, and that is precisely what a reviewer should see.
-     *
-     * Raised against the practice that introduced them, because a review task
-     * is practice-scoped and that is the practice with standing to have
-     * introduced this identity at all.
-     */
-    const practiceId = before.invitedByPracticeId;
-    if (practiceId) {
-      await this.prisma.withPractice(practiceId, (tx) =>
-        this.reviewTasks.raise(tx, {
-          practiceId,
-          kind: 'admin_contact_changed',
-          subjectType: 'Practitioner',
-          subjectId: practitionerId,
-          summary: pending.unwitnessed
-            ? 'A practitioner asked to change their address, and there was nobody to warn'
-            : 'A practitioner asked to change the address their invitations go to',
-          detail: {
-            reason: pending.unwitnessed
-              ? 'The request is held pending proof from the new address, but this practitioner had neither ' +
-                'an old address nor a backup — so nobody but the requester knows it was asked for.'
-              : 'Invitations and sign-in links go to this address, so a change to it is the first step ' +
-                'somebody would take to receive a credential in another person’s name. It is held until ' +
-                'the new address proves itself.',
-            changes: [{ field: 'email', from: before.email, to: email }],
-            held: true,
-            addressesWarned: pending.warned,
-          },
-          raisedBy: actor?.name ?? 'the practitioner',
-        }),
-      );
-    }
 
     return {
       id: practitionerId,

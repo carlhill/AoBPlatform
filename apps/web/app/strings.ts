@@ -1285,8 +1285,8 @@ export const strings = {
       + 'address by hand — the link is what tells us which change you are confirming.',
     whatHappensTitle: 'What happens when you confirm',
     whatHappensBody:
-      'This becomes where we send everything about the practice, and the passkeys enrolled against the old '
-      + 'address stop working. We will send you a link to set up your own.',
+      'From then on, this address is where the practice’s sign-in and notices go. The old address stops '
+      + 'working for signing in, and we send a new sign-in link here.',
   },
   stopEmail: {
     title: 'Stop this change',
@@ -1708,6 +1708,10 @@ export const strings = {
       'Where you work, what we hold about you, and what we have sent you. Only yours — a practice’s other '
       + 'people and its other messages are not here.',
     failed: 'That could not be read',
+    /* A refused SAVE, not a failed load — the server correctly declining a
+       change (the churn limit, an invalid address) is not "we could not read
+       anything", and saying so was actively misleading. */
+    changeRefused: 'Your change was not accepted',
     signedOutTitle: 'Sign in to see your own record',
     signedOutBody: 'This page shows what we hold about you, so it needs you signed in.',
     deregisteredTitle: 'Your registration is recorded as ended',

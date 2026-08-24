@@ -66,6 +66,14 @@ type Me = {
 export function PractitionerHub() {
   const [me, setMe] = useState<Me | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /*
+   * READ VS WRITE, because they are different failures and read as one. "That
+   * could not be read" is right when the page failed to LOAD — it is wrong,
+   * and actively misleading, on a refused SAVE: the churn refusal ("this
+   * address has been changed 3 times...") is the server correctly rejecting a
+   * change, not a failure to fetch anything.
+   */
+  const [errorKind, setErrorKind] = useState<'read' | 'write'>('read');
   const [busy, setBusy] = useState(false);
   const [email, setEmail] = useState('');
   const [backup, setBackup] = useState('');
@@ -73,10 +81,12 @@ export function PractitionerHub() {
 
   const load = useCallback(async () => {
     setError(null);
+    setErrorKind('read');
     try {
       const res = await fetch(`${CORE_URL}/practitioner/me`, { headers: apiHeaders() });
       const body = (await res.json().catch(() => ({}))) as Me & { message?: string };
       if (!res.ok) throw new Error(body.message ?? `That could not be read (${res.status}).`);
+      setErrorKind('read');
       setMe(body);
       setEmail(body.email ?? '');
       setBackup(body.backupEmail ?? '');
@@ -108,6 +118,7 @@ export function PractitionerHub() {
   async function saveEmail() {
     setBusy(true);
     setError(null);
+    setErrorKind('write');
     setSaved(null);
     try {
       const res = await fetch(`${CORE_URL}/practitioner/me/contact`, {
@@ -140,6 +151,7 @@ export function PractitionerHub() {
   async function saveBackup() {
     setBusy(true);
     setError(null);
+    setErrorKind('write');
     setSaved(null);
     try {
       const res = await fetch(`${CORE_URL}/practitioner/me/backup-email`, {
@@ -161,6 +173,7 @@ export function PractitionerHub() {
   async function clearBackup() {
     setBusy(true);
     setError(null);
+    setErrorKind('write');
     setSaved(null);
     try {
       const res = await fetch(`${CORE_URL}/practitioner/me/backup-email`, {
@@ -227,7 +240,7 @@ export function PractitionerHub() {
       <p className={ui.pageLead}>{strings.practitioner.lead}</p>
 
       {error && (
-        <Notice tone="stop" title={strings.practitioner.failed}>
+        <Notice tone="stop" title={errorKind === 'write' ? strings.practitioner.changeRefused : strings.practitioner.failed}>
           {error}
         </Notice>
       )}
@@ -330,14 +343,18 @@ export function PractitionerHub() {
                 )}
               </Field>
               {/*
-                THE GAP AFTER IT. A full-width primary button sat flush
-                against "Your backup address" below with nothing separating
-                one field's action from the next field's label — the same
-                `rowActions` wrapper the backup buttons already use, which
-                gives space above; this needs it below as well, since nothing
-                follows it inside this field's own group.
+                CLOSE TO THE HINT ABOVE, FAR FROM THE BACKUP BELOW. It used to
+                be the opposite: `rowActions`'s own top margin put daylight
+                between the button and the sentence explaining it, and then
+                nothing at all separated the button from "Your backup address"
+                — the two fields read as one continuous block. `fieldAction`
+                pulls the button up to its own hint; the rule below is an
+                actual line, not whitespace pretending to be one, because
+                "your email address" and "your backup address" are two
+                different answers and the eye should be told so, not left to
+                infer it.
               */}
-              <div className={`${ui.rowActions} ${ui.fieldGapAfter}`}>
+              <div className={styles.fieldAction}>
                 <Button
                   variant="primary"
                   onClick={() => void saveEmail()}
@@ -347,6 +364,8 @@ export function PractitionerHub() {
                   {busy ? strings.practitioner.saving : strings.practitioner.save}
                 </Button>
               </div>
+
+              <hr className={styles.fieldDivider} />
 
               {/*
                 THE BACKUP, on the same card as the address it protects. Put on

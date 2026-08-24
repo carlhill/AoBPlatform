@@ -16,13 +16,20 @@
  * It works after the request has expired, too. Somebody reading the warning a
  * week late must still be able to object; refusing them would give the alarm a
  * shorter life than the thing it warns about.
+ *
+ * DRESSED LIKE THE OTHER TWO EMAIL-ACTION PAGES (/verify,
+ * /practice/confirm-email, /practice/confirm-backup) even though this one asks
+ * for no code — a stranger arriving from an email to press a security-relevant
+ * button deserves the same "built by an organisation" look, not a plainer one
+ * because the interaction is simpler.
  */
 
 import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { CheckCircle2, ShieldAlert } from 'lucide-react';
-import { Button, Notice, Shell, ui } from '../../ui';
+import { CheckCircle2, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { Button, Notice, Shell } from '../../ui';
 import { strings } from '../../strings';
+import styles from '../../verify/verify.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -31,6 +38,13 @@ export function StopEmailChangeView() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+
+  const Wordmark = (
+    <div className={styles.mark}>
+      <ShieldCheck size={20} aria-hidden="true" />
+      <span className={styles.markText}>{strings.appName}</span>
+    </div>
+  );
 
   async function stop() {
     setBusy(true);
@@ -54,10 +68,13 @@ export function StopEmailChangeView() {
   if (!token) {
     return (
       <Shell>
-        <h1 className={ui.pageTitle}>{strings.stopEmail.title}</h1>
-        <Notice tone="stop" title={strings.stopEmail.noTokenTitle}>
-          {strings.stopEmail.noTokenBody}
-        </Notice>
+        <div className={styles.card}>
+          {Wordmark}
+          <h1 className={styles.title}>{strings.stopEmail.title}</h1>
+          <Notice tone="stop" title={strings.stopEmail.noTokenTitle}>
+            {strings.stopEmail.noTokenBody}
+          </Notice>
+        </div>
       </Shell>
     );
   }
@@ -65,35 +82,50 @@ export function StopEmailChangeView() {
   if (done) {
     return (
       <Shell>
-        <h1 className={ui.pageTitle}>{strings.stopEmail.title}</h1>
-        <Notice tone="ok" title={strings.stopEmail.doneTitle}>
-          <CheckCircle2 size={15} aria-hidden="true" /> {done}
-        </Notice>
+        <div className={styles.card}>
+          {Wordmark}
+          <div className={styles.outcomeIcon}>
+            <CheckCircle2 size={40} aria-hidden="true" />
+          </div>
+          <h1 className={styles.title}>{strings.stopEmail.doneTitle}</h1>
+          <p className={styles.lead}>{done}</p>
+        </div>
       </Shell>
     );
   }
 
   return (
     <Shell>
-      <h1 className={ui.pageTitle}>{strings.stopEmail.title}</h1>
-      <p className={ui.lead}>{strings.stopEmail.lead}</p>
+      <div className={styles.card}>
+        {Wordmark}
+        <h1 className={styles.title}>{strings.stopEmail.title}</h1>
+        <p className={styles.lead}>{strings.stopEmail.lead}</p>
 
-      <div className={ui.rowActions}>
-        <Button variant="primary" onClick={() => void stop()} disabled={busy} data-testid="stop-submit">
+        {error && (
+          <Notice tone="stop" title={strings.stopEmail.failed}>
+            {error}
+          </Notice>
+        )}
+
+        <Button
+          variant="primary"
+          className={styles.submit}
+          onClick={() => void stop()}
+          disabled={busy}
+          data-testid="stop-submit"
+        >
           <ShieldAlert size={14} aria-hidden="true" />
           {busy ? strings.stopEmail.stopping : strings.stopEmail.stop}
         </Button>
+
+        <div className={styles.why}>
+          <div className={styles.whyHead}>
+            <ShieldAlert size={16} aria-hidden="true" />
+            {strings.stopEmail.ifItWasYouTitle}
+          </div>
+          {strings.stopEmail.ifItWasYouBody}
+        </div>
       </div>
-
-      {error && (
-        <Notice tone="stop" title={strings.stopEmail.failed}>
-          {error}
-        </Notice>
-      )}
-
-      <Notice title={strings.stopEmail.ifItWasYouTitle}>
-        {strings.stopEmail.ifItWasYouBody}
-      </Notice>
     </Shell>
   );
 }

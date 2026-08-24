@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { AppModule } from '../src/app.module';
@@ -229,5 +230,84 @@ describe('a held practitioner email change (e2e, real Postgres)', () => {
     await expect(service.request(practitionerId, 'alex.spam@example.invalid', 'Alex Testworth')).rejects.toThrow(
       /3 times in the last month/i,
     );
+  });
+
+  describe('the churn rule is the ONLY thing that raises a review — an ordinary change does not', () => {
+    /*
+     * Carl's instruction, directly: "we should only have a review if the
+     * Platform rule was broken... otherwise we let the practitioner make the
+     * change and approve it. We do not need to check every email change." An
+     * unconditional review task on every request had trained reviewers to
+     * skim past a queue full of ordinary changes — worse than not raising one
+     * at all.
+     *
+     * A fresh practitioner, WITH an introducing practice, so both branches of
+     * "is there anywhere to raise this against" are exercised.
+     */
+    let churnPractitionerId: string;
+    const churnAhpra = `CHRN${Date.now().toString().slice(-8)}`;
+    let churnPracticeId: string;
+
+    beforeAll(async () => {
+      // RLS on `practices` requires the scope set before the row exists, so
+      // the id is generated first and the insert runs inside its own scope.
+      churnPracticeId = randomUUID();
+      await prisma.withPractice(churnPracticeId, (tx) =>
+        tx.practice.create({
+          data: { id: churnPracticeId, name: 'Churn Review Test Practice', validationState: 'validated' },
+        }),
+      );
+
+      const created = await prisma.practitioner.create({
+        data: {
+          ahpraNumber: churnAhpra,
+          familyName: 'Churn',
+          givenNames: 'Test',
+          providerType: 'general_practitioner',
+          email: 'churn.old@example.invalid',
+          invitedByPracticeId: churnPracticeId,
+        },
+      });
+      churnPractitionerId = created.id;
+    });
+
+    afterAll(async () => {
+      if (churnPractitionerId) {
+        await prisma.withPractitioner(churnPractitionerId, (tx) =>
+          tx.pendingEmailChange.deleteMany({ where: { practitionerId: churnPractitionerId } }),
+        );
+        await prisma.practitioner.deleteMany({ where: { id: churnPractitionerId } });
+      }
+      if (churnPracticeId) {
+        await prisma.withPractice(churnPracticeId, (tx) => tx.practice.deleteMany({ where: { id: churnPracticeId } }));
+      }
+    });
+
+    it('raises NOTHING for an ordinary, unbroken-rule request', async () => {
+      await service.request(churnPractitionerId, 'churn.new1@example.invalid', 'Test Churn');
+
+      const tasks = await prisma.withPractice(churnPracticeId, (tx) =>
+        tx.reviewTask.findMany({ where: { subjectId: churnPractitionerId } }),
+      );
+      expect(tasks).toHaveLength(0);
+    });
+
+    it('raises email_change_churn once the rule is actually broken', async () => {
+      // Two more requests, spending the allowance the same way the earlier
+      // describe block does.
+      await service.request(churnPractitionerId, 'churn.new2@example.invalid', 'Test Churn');
+      await service.request(churnPractitionerId, 'churn.new3@example.invalid', 'Test Churn');
+
+      await expect(
+        service.request(churnPractitionerId, 'churn.new4@example.invalid', 'Test Churn'),
+      ).rejects.toThrow(/3 times in the last month/i);
+
+      const tasks = await prisma.withPractice(churnPracticeId, (tx) =>
+        tx.reviewTask.findMany({ where: { subjectId: churnPractitionerId } }),
+      );
+      expect(tasks).toHaveLength(1);
+      expect(tasks[0].kind).toBe('email_change_churn');
+      expect(tasks[0].subjectType).toBe('Practitioner');
+    });
   });
 });

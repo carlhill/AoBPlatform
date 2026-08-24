@@ -937,6 +937,14 @@
   background: var(--surface-muted, #f7f8f9);
   border: 1px solid var(--line);
   border-radius: 6px;
+  /*
+   * EXPLICIT, because the parent cell disagrees. This body lives inside a
+   * <td colSpan> of `.totalsTable`, whose own rule right-aligns every cell for
+   * the numeric summaries the table was built for -- a rule with nothing to do
+   * with a paragraph of prose, and one this element inherits by sitting inside
+   * that table rather than by anything of its own. Read text left-aligns.
+   */
+  text-align: left;
 }
 
 

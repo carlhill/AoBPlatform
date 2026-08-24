@@ -980,10 +980,3 @@
   align-items: center;
   gap: var(--s2);
 }
-
-/* Space after a control group that has nothing else following it inside its
-   own field cluster — the primary email button, sat flush against the next
-   field's label with nothing to separate one action from the next. */
-.fieldGapAfter {
-  margin-bottom: var(--s5);
-}
