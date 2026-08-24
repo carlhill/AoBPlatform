@@ -22,8 +22,11 @@ export type ResolvedChange = {
   id: string;
   practiceId: string | null;
   practitionerId: string | null;
+  /** adminEmail or groupEmail. Meaningless on a practitioner row — always 'adminEmail' there. */
+  field: string;
   requestedEmail: string;
   previousEmail: string | null;
+  previousAdminEmail: string | null;
   backupEmail: string | null;
   expiresAt: Date;
   effectiveAt: Date | null;

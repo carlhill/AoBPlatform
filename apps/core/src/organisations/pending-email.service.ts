@@ -6,9 +6,12 @@ import {
   afterStop,
   assertConfirmable,
   assertMayRequest,
+  assertMayRequestGroupEmail,
   assertStoppable,
   expiresAt as expiryOf,
   recipientsFor,
+  recipientsForGroupEmail,
+  withinCoolingOff,
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -17,6 +20,14 @@ import { ReviewTasksService } from '../review-tasks/review-tasks.service';
 import { PracticeAdminService } from '../identity/practice-admin.service';
 import type { Actor } from '../auth/actor.decorator';
 import type { ResolvedChange } from '../identity/practitioner-email.service';
+
+type LivePendingChange = {
+  id: string;
+  requestedEmail: string;
+  requestedByName: string;
+  requestedAt: string;
+  expiresAt: string;
+};
 
 /**
  * Holding a change to the administrator's email address until it is confirmed.
@@ -83,16 +94,19 @@ export class PendingEmailService {
       /*
        * A SECOND REQUEST SUPERSEDES THE FIRST rather than queueing behind it.
        * Recorded rather than deleted: two attempts to move the same address
-       * inside five days is itself the signal a reviewer wants.
+       * inside five days is itself the signal a reviewer wants. Scoped to
+       * `field: 'adminEmail'` — a live groupEmail change is a different
+       * request and must not be knocked out by this one.
        */
       await tx.pendingEmailChange.updateMany({
-        where: { practiceId, outcome: null },
+        where: { practiceId, field: 'adminEmail', outcome: null },
         data: { outcome: 'superseded', outcomeAt: requestedAt, outcomeBy: input.requestedByName },
       });
 
       return tx.pendingEmailChange.create({
         data: {
           practiceId,
+          field: 'adminEmail',
           requestedEmail: input.requestedEmail.trim(),
           previousEmail: input.previousAdminEmail,
           previousGroupEmail: input.previousGroupEmail,
@@ -163,21 +177,30 @@ export class PendingEmailService {
     };
   }
 
-  /** What the practice's own screens show while a change is waiting. */
-  async live(practiceId: string) {
-    const row = await this.prisma.withPractice(practiceId, (tx) =>
-      tx.pendingEmailChange.findFirst({ where: { practiceId, outcome: null }, orderBy: { requestedAt: 'desc' } }),
+  /**
+   * What the practice's own screens show while a change is waiting — for
+   * BOTH fields, since a practice may now hold a live adminEmail change and a
+   * live groupEmail change at once. Keyed by field so the screen can put the
+   * right tag beside the right box without guessing.
+   */
+  async live(practiceId: string): Promise<Record<'adminEmail' | 'groupEmail', LivePendingChange | null>> {
+    const rows = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.pendingEmailChange.findMany({ where: { practiceId, outcome: null }, orderBy: { requestedAt: 'desc' } }),
     );
-    if (!row) return null;
-    if (row.expiresAt.getTime() <= Date.now()) return null;
 
-    return {
-      id: row.id,
-      requestedEmail: row.requestedEmail,
-      requestedByName: row.requestedByName,
-      requestedAt: row.requestedAt.toISOString(),
-      expiresAt: row.expiresAt.toISOString(),
+    const forField = (field: 'adminEmail' | 'groupEmail'): LivePendingChange | null => {
+      const row = rows.find((r) => r.field === field);
+      if (!row || row.expiresAt.getTime() <= Date.now()) return null;
+      return {
+        id: row.id,
+        requestedEmail: row.requestedEmail,
+        requestedByName: row.requestedByName,
+        requestedAt: row.requestedAt.toISOString(),
+        expiresAt: row.expiresAt.toISOString(),
+      };
     };
+
+    return { adminEmail: forField('adminEmail'), groupEmail: forField('groupEmail') };
   }
 
   /**
@@ -366,6 +389,236 @@ export class PendingEmailService {
       detail:
         'The change has been stopped and the address is unchanged. Somebody here will look at the account — ' +
         'you do not need to do anything else.',
+    };
+  }
+
+  /**
+   * Requesting a change to the SHARED practice address — the groupEmail mirror
+   * of {@link request}. Held and proved the same way, for the reason the
+   * migration that added this column explains: groupEmail is the witness an
+   * adminEmail handover relies on, and a witness that changes unchecked is a
+   * witness that can be silenced.
+   *
+   * NOT A HANDOVER. No Keycloak call anywhere in this method or in {@link
+   * confirmGroupEmail} — nobody signs in as groupEmail, so there is nothing to
+   * hand over.
+   */
+  async requestGroupEmail(
+    practiceId: string,
+    input: { requestedEmail: string; previousGroupEmail: string | null; currentAdminEmail: string | null; requestedByName: string },
+  ) {
+    try {
+      assertMayRequestGroupEmail({
+        requestedEmail: input.requestedEmail,
+        currentGroupEmail: input.previousGroupEmail,
+      });
+    } catch (err) {
+      if (err instanceof PendingEmailChangeError) throw new BadRequestException(err.message);
+      throw err;
+    }
+
+    const requestedAt = new Date();
+    const code = this.newCode();
+    const confirmToken = randomBytes(32).toString('base64url');
+    const stopToken = randomBytes(32).toString('base64url');
+
+    const created = await this.prisma.withPractice(practiceId, async (tx) => {
+      // Scoped to field: 'groupEmail' — a live adminEmail change is a
+      // different request and must not be knocked out by this one.
+      await tx.pendingEmailChange.updateMany({
+        where: { practiceId, field: 'groupEmail', outcome: null },
+        data: { outcome: 'superseded', outcomeAt: requestedAt, outcomeBy: input.requestedByName },
+      });
+
+      return tx.pendingEmailChange.create({
+        data: {
+          practiceId,
+          field: 'groupEmail',
+          requestedEmail: input.requestedEmail.trim(),
+          previousEmail: input.previousGroupEmail,
+          previousAdminEmail: input.currentAdminEmail,
+          requestedAt,
+          requestedByName: input.requestedByName,
+          expiresAt: expiryOf(requestedAt),
+          confirmToken,
+          confirmCode: code,
+          stopToken,
+        },
+      });
+    });
+
+    const base = this.consoleUrl();
+    const confirmUrl = `${base}/practice/confirm-email?token=${confirmToken}`;
+    const stopUrl = `${base}/practice/stop-email-change?token=${stopToken}`;
+
+    const recipients = recipientsForGroupEmail({
+      requestedEmail: input.requestedEmail,
+      previousGroupEmail: input.previousGroupEmail,
+      currentAdminEmail: input.currentAdminEmail,
+    });
+
+    for (const recipient of recipients) {
+      const sent =
+        recipient.role === 'confirm'
+          ? await this.practiceAdmin.onGroupEmailChangeRequested({
+              to: recipient.to,
+              requestedByName: input.requestedByName,
+              confirmUrl,
+              code,
+              expiresAt: expiryOf(requestedAt),
+            })
+          : await this.practiceAdmin.onGroupEmailChangeNotified({
+              to: recipient.to,
+              requestedEmail: input.requestedEmail,
+              previousEmail: input.previousGroupEmail,
+              requestedByName: input.requestedByName,
+              requestedAt,
+              stopUrl,
+              addressedToFormerHolder: recipient.role === 'notify_old',
+            });
+
+      if (!sent.notified) {
+        this.logger.error(`Could not tell ${recipient.role} about the group-email change on practice ${practiceId}.`);
+      }
+    }
+
+    this.logger.log(
+      `Group-email change requested on ${practiceId}: held pending confirmation, ${recipients.length} ` +
+        'recipient(s) told.',
+    );
+
+    return {
+      id: created.id,
+      requestedEmail: created.requestedEmail,
+      expiresAt: created.expiresAt.toISOString(),
+      notified: recipients.map((r) => r.role),
+    };
+  }
+
+  /**
+   * The new shared address answers, with the code from its own message.
+   *
+   * No Keycloak call, no staff-row sync, no passkey enrolment link — those all
+   * exist in {@link confirm} because that address signs somebody in. This one
+   * writes a column and stops.
+   */
+  async confirmGroupEmail(found: ResolvedChange, code: string) {
+    const practiceId = found.practiceId;
+    if (!practiceId) throw new NotFoundException('That change could not be read.');
+
+    try {
+      assertConfirmable(found, new Date());
+    } catch (err) {
+      if (err instanceof PendingEmailChangeError) throw new BadRequestException(err.message);
+      throw err;
+    }
+
+    const row = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.pendingEmailChange.findFirst({ where: { id: found.id } }),
+    );
+    if (!row) throw new NotFoundException('That change could not be read.');
+
+    if (row.confirmCode !== code.trim()) {
+      await this.prisma.withPractice(practiceId, (tx) =>
+        tx.pendingEmailChange.update({ where: { id: row.id }, data: { attempts: { increment: 1 } } }),
+      );
+      throw new BadRequestException('That code does not match the one we sent. Check the message and try again.');
+    }
+
+    const at = new Date();
+    await this.prisma.withPractice(practiceId, async (tx) => {
+      await tx.pendingEmailChange.update({
+        where: { id: row.id },
+        data: { outcome: 'confirmed', outcomeAt: at, outcomeBy: row.requestedEmail, effectiveAt: at },
+      });
+
+      await tx.practice.update({
+        where: { id: practiceId },
+        data: { groupEmail: row.requestedEmail, groupEmailVerifiedAt: at },
+      });
+
+      await enqueueVaultEvent(tx, {
+        type: 'organisation.contacts_changed',
+        actor: { principalType: 'staff', id: practiceId },
+        subject: { type: 'Organisation', id: practiceId },
+        payload: {
+          changedBy: row.requestedByName,
+          reason: 'Shared practice email address, confirmed from the new address.',
+          fieldsChanged: 'groupEmail',
+          passkeysRevoked: 0,
+          handoverNote: 'n/a',
+        },
+      });
+    });
+
+    this.logger.log(`Group-email change confirmed on ${practiceId}.`);
+    return {
+      confirmed: true,
+      email: row.requestedEmail,
+      detail: 'The address is confirmed and now in force.',
+    };
+  }
+
+  /** "This was not me", from the old address or the administrator. */
+  async stopGroupEmail(found: ResolvedChange, actor?: Actor) {
+    const practiceId = found.practiceId;
+    if (!practiceId) throw new NotFoundException('That change could not be read.');
+
+    const now = new Date();
+
+    if (found.outcome === 'confirmed') {
+      if (!withinCoolingOff(found.effectiveAt, now)) {
+        throw new BadRequestException(
+          'This change went through more than a week ago, so it cannot be undone from this link. Please tell ' +
+            'us straight away and somebody here will look at the account.',
+        );
+      }
+    } else {
+      try {
+        assertStoppable(found);
+      } catch (err) {
+        if (err instanceof PendingEmailChangeError) throw new BadRequestException(err.message);
+        throw err;
+      }
+    }
+
+    const undone = Boolean(found.effectiveAt && found.previousEmail);
+
+    await this.prisma.withPractice(practiceId, async (tx) => {
+      await tx.pendingEmailChange.update({
+        where: { id: found.id },
+        data: { outcome: 'stopped', outcomeAt: now, outcomeBy: found.previousEmail ?? 'the practice' },
+      });
+
+      if (undone) {
+        await tx.practice.update({ where: { id: practiceId }, data: { groupEmail: found.previousEmail } });
+      }
+
+      const consequence = afterStop();
+      await this.reviewTasks.raise(tx, {
+        practiceId,
+        kind: consequence.kind,
+        subjectType: 'Organisation',
+        subjectId: practiceId,
+        summary: 'Somebody stopped a change to the shared practice email address',
+        detail: {
+          reason:
+            'The practice pressed "this was not me" on a change to the shared practice address. Whether or ' +
+            'not the change was genuine, it is worth a look.',
+          changes: [{ field: 'groupEmail', from: found.previousEmail, to: found.requestedEmail }],
+          stopped: true,
+        },
+        raisedBy: actor?.name ?? 'the practice',
+      });
+    });
+
+    this.logger.warn(`Group-email change STOPPED on ${practiceId}. Review task raised.`);
+    return {
+      stopped: true,
+      detail: undone
+        ? 'The change has been undone and the shared address is back to what it was. Somebody here will ' +
+          'look at the account.'
+        : 'The change has been stopped and the address is unchanged. Somebody here will look at the account.',
     };
   }
 }

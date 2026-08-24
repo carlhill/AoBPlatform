@@ -58,7 +58,7 @@ export type PendingEmailOutcome = (typeof PENDING_EMAIL_OUTCOMES)[number];
 export type PendingEmailRecipient = {
   to: string;
   /** What this address is being told, which is not the same for all three. */
-  role: 'confirm' | 'notify_old' | 'notify_group';
+  role: 'confirm' | 'notify_old' | 'notify_group' | 'notify_admin';
 };
 
 function normalise(email: string | null | undefined): string {
@@ -88,6 +88,35 @@ export function recipientsFor(input: {
   // that did not change trains people to ignore the warning.
   if (previous && previous !== requested) out.push({ to: previous, role: 'notify_old' });
   if (group && group !== requested && group !== previous) out.push({ to: group, role: 'notify_group' });
+
+  return out;
+}
+
+/**
+ * Who gets told about a groupEmail change — the same shape as {@link
+ * recipientsFor}, with the pairing inverted.
+ *
+ * groupEmail is not a credential, so there is no "old address" being
+ * displaced from a sign-in — but it IS the witness an adminEmail handover
+ * relies on, so adminEmail is the witness told here, and the OLD groupEmail is
+ * the one warned, exactly as the old adminEmail is warned in the other
+ * direction. A separate function rather than a flag on `recipientsFor`,
+ * because "which address is the witness" is not a detail one function should
+ * branch on — it is the whole difference between the two calls.
+ */
+export function recipientsForGroupEmail(input: {
+  requestedEmail: string;
+  previousGroupEmail: string | null;
+  currentAdminEmail: string | null;
+}): PendingEmailRecipient[] {
+  const requested = normalise(input.requestedEmail);
+  const previous = normalise(input.previousGroupEmail);
+  const admin = normalise(input.currentAdminEmail);
+
+  const out: PendingEmailRecipient[] = [{ to: requested, role: 'confirm' }];
+
+  if (previous && previous !== requested) out.push({ to: previous, role: 'notify_old' });
+  if (admin && admin !== requested && admin !== previous) out.push({ to: admin, role: 'notify_admin' });
 
   return out;
 }
@@ -124,6 +153,24 @@ export function assertMayRequest(input: {
       'That address already belongs to another contact at this practice. Two contacts sharing an inbox ' +
         'means one person can confirm their own change, so we need a different address.',
     );
+  }
+}
+
+/**
+ * Whether a groupEmail request may be made at all — the mirror of {@link
+ * assertMayRequest}, minus the checks that only make sense for a credential.
+ * groupEmail signs nobody in, so there is no shared-inbox-confirms-itself risk
+ * to guard against; what is left is simply "is this a real, different address".
+ */
+export function assertMayRequestGroupEmail(input: { requestedEmail: string; currentGroupEmail: string | null }): void {
+  const requested = normalise(input.requestedEmail);
+
+  if (!requested || !requested.includes('@')) {
+    throw new PendingEmailChangeError('A new shared address is needed, and it must be an email address.');
+  }
+
+  if (requested === normalise(input.currentGroupEmail)) {
+    throw new PendingEmailChangeError('That is already the shared practice address, so there is nothing to confirm.');
   }
 }
 
@@ -318,5 +365,8 @@ export function assertStoppable(pending: { outcome: string | null }): void {
  * never an automatically closable one.
  */
 export function afterStop(): { raiseTask: true; kind: string; stakes: 'high' } {
+  // Same kind regardless of which field: SENSITIVE_CONTACT_FIELDS already
+  // groups adminEmail, adminPhone and groupEmail under admin_contact_changed,
+  // because a reviewer's next step is the same account-level look either way.
   return { raiseTask: true, kind: 'admin_contact_changed', stakes: 'high' };
 }

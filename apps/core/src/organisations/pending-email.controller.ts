@@ -56,9 +56,11 @@ export class PendingEmailController {
     const found = await this.pending.resolve(dto.token, 'confirm');
     if (!found) throw new NotFoundException('That confirmation link is not one of ours, or it has been replaced.');
 
-    return found.practitionerId
-      ? this.practitionerEmail.confirm(found, dto.code)
-      : this.pending.confirm(dto.token, dto.code);
+    if (found.practitionerId) return this.practitionerEmail.confirm(found, dto.code);
+    // Same subject, two very different confirmations: adminEmail hands the
+    // account over, groupEmail just writes a column. See PendingEmailChange.field.
+    if (found.field === 'groupEmail') return this.pending.confirmGroupEmail(found, dto.code);
+    return this.pending.confirm(dto.token, dto.code);
   }
 
   /**
@@ -75,7 +77,9 @@ export class PendingEmailController {
     const found = await this.pending.resolve(dto.token, 'stop');
     if (!found) throw new NotFoundException('That link is not one of ours.');
 
-    return found.practitionerId ? this.practitionerEmail.stop(found) : this.pending.stop(dto.token, actor);
+    if (found.practitionerId) return this.practitionerEmail.stop(found);
+    if (found.field === 'groupEmail') return this.pending.stopGroupEmail(found, actor);
+    return this.pending.stop(dto.token, actor);
   }
 
   /**

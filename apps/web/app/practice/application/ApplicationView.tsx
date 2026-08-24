@@ -34,11 +34,15 @@ import { apiHeaders } from '../../auth';
 import { useRefreshable } from '../../refresh';
 import { strings } from '../../strings';
 import { usePractice } from '../usePractice';
+import { EmailStatusChip, usePendingRefresh } from '../../EmailStatusChip';
 import styles from '../manage.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
 type Practice = Record<string, unknown> & { id: string };
+
+type LivePendingChange = { id: string; requestedEmail: string; requestedByName: string; requestedAt: string; expiresAt: string };
+type LivePendingChanges = { adminEmail: LivePendingChange | null; groupEmail: LivePendingChange | null };
 
 /** The form, in the order /apply asks it. */
 const SECTIONS: { heading: string; note?: string; fields: { key: string; label: string; hint?: string }[] }[] = [
@@ -127,6 +131,7 @@ export function ApplicationView() {
    * record is what the practice was approved on.
    */
   const [reason, setReason] = useState('');
+  const [live, setLive] = useState<LivePendingChanges | null>(null);
 
   const load = useCallback(async () => {
     if (!practiceId) return;
@@ -148,6 +153,14 @@ export function ApplicationView() {
       setErrorKind('load');
       setError(e instanceof TypeError ? strings.review.unreachableBody : (e as Error).message);
     }
+
+    // A tag beside adminEmail and groupEmail, and what they are waiting on —
+    // CONVENTIONS.md §9d. Fetched separately from the practice record itself,
+    // because a practice may now hold a live change on BOTH fields at once.
+    await fetch(`${CORE_URL}/pending-email-change/live/${practiceId}`, { headers: apiHeaders(practiceId) })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((body: LivePendingChanges) => setLive(body))
+      .catch(() => setLive(null));
   }, [practiceId]);
 
   useEffect(() => {
@@ -160,6 +173,10 @@ export function ApplicationView() {
    * this is the way to re-read without paying that.
    */
   useRefreshable(load);
+
+  // Reload automatically WHILE something is pending — see EmailStatusChip.tsx.
+  // The confirmation usually happens in another inbox entirely.
+  usePendingRefresh(Boolean(live?.adminEmail) || Boolean(live?.groupEmail), () => void load());
 
   /*
    * Only what has actually changed, and only from the amendable set. Sending
@@ -236,33 +253,70 @@ export function ApplicationView() {
           <div className={styles.applicationFields}>
             {section.fields.map((f) => {
               const editable = AMENDABLE.has(f.key);
+              // WHICH FIELD IS WAITING, above it rather than below — somebody
+              // who asked for a change yesterday and sees the old address in
+              // the box would otherwise conclude it did not save.
+              const pendingChange = f.key === 'adminEmail' ? live?.adminEmail : f.key === 'groupEmail' ? live?.groupEmail : null;
+              const chipStatus = f.key === 'adminEmail' || f.key === 'groupEmail' ? (pendingChange ? 'pending' : 'verified') : null;
               return (
-                <Field
-                  key={f.key}
-                  label={f.label}
-                  hint={editable ? f.hint : strings.application.lockedHint}
-                >
-                  {(props) =>
-                    editable ? (
-                      <TextInput
-                        {...props}
-                        value={draft[f.key] ?? ''}
-                        onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })}
-                        data-testid={`app-${f.key}`}
-                      />
-                    ) : (
-                      /*
-                       * Rendered as text, not a disabled input. A greyed-out box
-                       * invites somebody to keep clicking it; a value with a
-                       * padlock says the answer is "no", once.
-                       */
-                      <p className={styles.applicationLocked} data-testid={`app-${f.key}`}>
-                        <Lock size={13} aria-hidden="true" />
-                        {draft[f.key] || strings.application.notRecorded}
-                      </p>
-                    )
-                  }
-                </Field>
+                <div key={f.key} className={styles.applicationFieldGroup}>
+                  {/*
+                    WHAT IS WAITING, above the field rather than below it —
+                    same reasoning as the practitioner hub: somebody who asked
+                    for a change yesterday and sees the old address in the box
+                    would otherwise conclude it did not save and ask again.
+                  */}
+                  {pendingChange && (
+                    <Notice
+                      tone="warn"
+                      title={
+                        f.key === 'adminEmail'
+                          ? strings.application.pendingAdminEmailTitle
+                          : strings.application.pendingGroupEmailTitle
+                      }
+                      data-testid={`app-${f.key}-pending`}
+                    >
+                      {(f.key === 'adminEmail'
+                        ? strings.application.pendingAdminEmailBody
+                        : strings.application.pendingGroupEmailBody
+                      ).replace('{email}', pendingChange.requestedEmail)}
+                    </Notice>
+                  )}
+                  <Field
+                    label={
+                      chipStatus ? (
+                        <span className={ui.fieldLabelRow}>
+                          {f.label}
+                          <EmailStatusChip status={chipStatus} />
+                        </span>
+                      ) : (
+                        f.label
+                      )
+                    }
+                    hint={editable ? f.hint : strings.application.lockedHint}
+                  >
+                    {(props) =>
+                      editable ? (
+                        <TextInput
+                          {...props}
+                          value={draft[f.key] ?? ''}
+                          onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })}
+                          data-testid={`app-${f.key}`}
+                        />
+                      ) : (
+                        /*
+                         * Rendered as text, not a disabled input. A greyed-out box
+                         * invites somebody to keep clicking it; a value with a
+                         * padlock says the answer is "no", once.
+                         */
+                        <p className={styles.applicationLocked} data-testid={`app-${f.key}`}>
+                          <Lock size={13} aria-hidden="true" />
+                          {draft[f.key] || strings.application.notRecorded}
+                        </p>
+                      )
+                    }
+                  </Field>
+                </div>
               );
             })}
           </div>

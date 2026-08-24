@@ -925,8 +925,17 @@ export class OrganisationsService {
     const handover = Boolean(emailChange);
     if (emailChange) delete next.adminEmail;
 
+    /*
+     * THE SHARED ADDRESS IS HELD TOO, for a different reason: it is not a
+     * credential, but it IS the witness an adminEmail handover is told about
+     * when the old admin inbox is unreachable. Changed in the same breath as
+     * the thing it watches, it would silence itself before it ever saw the
+     * handover it exists to catch. See PendingEmailChange.field.
+     */
+    const groupEmailChange = changes.find((c) => c.field === 'groupEmail');
+    if (groupEmailChange) delete next.groupEmail;
 
-    const pending = emailChange
+    const pendingAdminEmail = emailChange
       ? await this.pendingEmail.request(practiceId, {
           requestedEmail: String(emailChange.to),
           // BEFORE-values, deliberately. Called with the after-state this would
@@ -936,6 +945,15 @@ export class OrganisationsService {
           previousGroupEmail: current.groupEmail,
           requestedByName: meta.changedByName!.trim(),
           otherContactEmails: [current.managerEmail],
+        })
+      : null;
+
+    const pendingGroupEmail = groupEmailChange
+      ? await this.pendingEmail.requestGroupEmail(practiceId, {
+          requestedEmail: String(groupEmailChange.to),
+          previousGroupEmail: current.groupEmail,
+          currentAdminEmail: current.adminEmail,
+          requestedByName: meta.changedByName!.trim(),
         })
       : null;
 
@@ -1005,9 +1023,13 @@ export class OrganisationsService {
           // point any more -- the address has not moved yet. The revocation is
           // recorded against the confirmation, which is where it now happens.
           passkeysRevoked: 0,
-          handoverNote: handover
-            ? 'The address change is held pending confirmation from the new address. Nothing was revoked.'
-            : 'n/a',
+          handoverNote:
+            [
+              handover && 'The administrator address is held pending confirmation from the new address. Nothing was revoked.',
+              pendingGroupEmail && 'The shared practice address is held pending confirmation from the new address.',
+            ]
+              .filter(Boolean)
+              .join(' ') || 'n/a',
         },
       });
       return row;
@@ -1023,20 +1045,36 @@ export class OrganisationsService {
       recorded.map((r) => r.checkKey),
     );
 
+    const waitingOn: string[] = [];
+    if (pendingAdminEmail) {
+      waitingOn.push(
+        `the administrator address has NOT changed yet: we have written to ${pendingAdminEmail.requestedEmail} ` +
+          `to confirm it, and told ${current.adminEmail ?? 'the previous address'}` +
+          `${current.groupEmail ? ' and ' + current.groupEmail : ''} that it was asked for`,
+      );
+    }
+    if (pendingGroupEmail) {
+      waitingOn.push(
+        `the shared practice address has NOT changed yet: we have written to ` +
+          `${pendingGroupEmail.requestedEmail} to confirm it, and told ` +
+          `${current.groupEmail ?? 'the previous address'}${current.adminEmail ? ' and ' + current.adminEmail : ''} ` +
+          'that it was asked for',
+      );
+    }
+
     return {
       id: updated.id,
       changed: changes.map((c) => c.field),
       handover,
       // What is WAITING, so the screen can say so rather than implying the
       // save did everything asked of it.
-      pending,
+      pending: { adminEmail: pendingAdminEmail, groupEmail: pendingGroupEmail },
       affectedChecks,
-      next: pending
-        ? `Everything else was saved. The administrator address has NOT changed yet: we have written to ` +
-          `${pending.requestedEmail} to confirm it, and told ${current.adminEmail ?? 'the previous address'}` +
-          `${current.groupEmail ? ' and ' + current.groupEmail : ''} that it was asked for. It takes effect ` +
-          'when the new address confirms, and until then the current one keeps working.'
-        : 'The details were updated.',
+      next:
+        waitingOn.length > 0
+          ? `Everything else was saved. ${waitingOn.join('; ')}. Each takes effect when its new address ` +
+            'confirms, and until then the current one keeps working.'
+          : 'The details were updated.',
     };
   }
 

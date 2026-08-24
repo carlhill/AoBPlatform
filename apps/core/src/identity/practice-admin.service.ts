@@ -419,6 +419,115 @@ export class PracticeAdminService {
     };
   }
 
+  /**
+   * "Confirm this is you" for the SHARED address — the groupEmail mirror of
+   * {@link onAdminEmailChangeRequested}, with the one paragraph that differs:
+   * nothing here is a handover, because nobody signs in as groupEmail.
+   */
+  async onGroupEmailChangeRequested(input: {
+    to: string;
+    requestedByName: string;
+    confirmUrl: string;
+    code: string;
+    expiresAt: Date;
+  }): Promise<{ notified: boolean; detail: string }> {
+    const subject = 'Confirm your practice’s shared email address';
+    const closes = input.expiresAt.toISOString().slice(0, 10);
+
+    const { body, html } = this.compose(subject, [
+      { text: 'Hello,' },
+      {
+        text:
+          `${input.requestedByName} asked us to make this address the shared practice address on ` +
+          'AoBPlatform — where notices meant for the practice, rather than for one person, are sent. ' +
+          'Nothing has changed yet, and nothing will until you confirm it here.',
+      },
+      { heading: 'Step 1 — open this page' },
+      { button: { label: 'Confirm the address', url: input.confirmUrl } },
+      { url: input.confirmUrl },
+      { heading: 'Step 2 — enter this code' },
+      { code: input.code },
+      {
+        small:
+          `Both work until ${closes}. The code is what confirms it — a scanner opening the link cannot ` +
+          'confirm it on your behalf.',
+      },
+      { rule: true },
+      {
+        small:
+          'If you were not expecting this, do nothing. The request expires by itself, and we have also told ' +
+          'the address it would be replacing.',
+      },
+    ]);
+
+    const result = await this.messaging.dispatch({ channel: 'email', to: input.to, subject, body, html });
+    return {
+      notified: result.accepted,
+      detail: result.accepted
+        ? `A confirmation was sent (${this.messaging.mode}).`
+        : `The confirmation could NOT be sent: ${result.failureReason ?? 'unknown error'}.`,
+    };
+  }
+
+  /**
+   * "This is happening — stop it if it should not be", to the address it
+   * replaces or to the administrator — the groupEmail mirror of {@link
+   * onAdminEmailChangeNotified}.
+   */
+  async onGroupEmailChangeNotified(input: {
+    to: string;
+    requestedEmail: string;
+    previousEmail: string | null;
+    requestedByName: string;
+    requestedAt: Date;
+    stopUrl: string;
+    addressedToFormerHolder: boolean;
+  }): Promise<{ notified: boolean; detail: string }> {
+    const subject = 'Somebody asked to change your practice’s shared email address';
+    const when = input.requestedAt.toISOString().replace('T', ' ').slice(0, 16);
+
+    const { body, html } = this.compose(subject, [
+      { text: 'Hello,' },
+      {
+        text: input.addressedToFormerHolder
+          ? `${input.requestedByName} asked us to move your practice’s shared email address away from this ` +
+            `one, to ${input.requestedEmail}, at ${when} UTC.`
+          : `${input.requestedByName} asked us to change your practice’s shared email address to ` +
+            `${input.requestedEmail}, at ${when} UTC.`,
+      },
+      {
+        text:
+          'Nothing has changed yet. It only takes effect if somebody confirms it from the new address, and ' +
+          'we are telling you first so that you can stop it if it should not happen.',
+      },
+      { heading: 'If this was not asked for by your practice' },
+      { button: { label: 'Stop this change', url: input.stopUrl } },
+      { url: input.stopUrl },
+      {
+        small:
+          'This works even after the request expires, and pressing it always puts the account in front of ' +
+          'somebody here.',
+      },
+      { rule: true },
+      {
+        text:
+          'If your practice did ask for this, you do not need to do anything. The change goes through when ' +
+          'the new address confirms it.',
+      },
+      {
+        small:
+          'We are telling you because the shared address is where we send notices meant for the whole ' +
+          'practice, so we never change it quietly.',
+      },
+    ]);
+
+    const result = await this.messaging.dispatch({ channel: 'email', to: input.to, subject, body, html });
+    return {
+      notified: result.accepted,
+      detail: result.accepted ? `Notified (${this.messaging.mode}).` : `NOT notified: ${result.failureReason ?? '?'}.`,
+    };
+  }
+
   async disablePracticeAdminAccount(userId: string): Promise<{ disabled: boolean; note: string }> {
     if (!this.keycloak) {
       return { disabled: false, note: 'Keycloak is not configured, so no account could be disabled.' };

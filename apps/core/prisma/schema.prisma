@@ -88,8 +88,16 @@ model Practice {
   /// everybody with mailbox access can request a credential-enrolment link and
   /// every action becomes attributable to a mailbox rather than a person.
   ///
-  /// NOTHING ENROLS AGAINST THIS ADDRESS. It receives notices only.
+  /// NOTHING ENROLS AGAINST THIS ADDRESS. It receives notices only. That is
+  /// exactly why a change to it is still held and proved, not applied on save
+  /// — see PendingEmailChange.field. groupEmail is the WITNESS an adminEmail
+  /// handover is told about when the old admin inbox is unreachable, and a
+  /// witness changed in the same breath as the thing it watches is a witness
+  /// silenced, not merely updated.
   groupEmail String?
+  /// Proven by the same hold-and-prove exchange as adminEmail, just without a
+  /// handover: nobody's credential moves, only the column.
+  groupEmailVerifiedAt DateTime?
 
   /// PUBLIC, and that is the whole point of them existing separately.
   ///
@@ -1696,13 +1704,28 @@ model PendingEmailChange {
   practiceId     String? @db.Uuid
   practitionerId String? @db.Uuid
 
+  /// WHICH ADDRESS ON THE PRACTICE. adminEmail or groupEmail — practitioner
+  /// rows have no second field to name, so this stays 'adminEmail' for them by
+  /// convention rather than meaning anything there. The one-live-request index
+  /// is keyed on this too, so a practice can hold a live adminEmail change and
+  /// a live groupEmail change at once without either superseding the other.
+  field String @default("adminEmail")
+
   requestedEmail String
-  /// What it was AT THE TIME. `practices` moves on; a reviewer reading history
-  /// needs the value this request was actually about.
+  /// What THE FIELD NAMED ABOVE was AT THE TIME — the previous adminEmail when
+  /// `field` is adminEmail, the previous groupEmail when it is groupEmail.
+  /// `practices` moves on; a reviewer reading history needs the value this
+  /// request was actually about.
   previousEmail  String?
-  /// The group address BEFORE the save. If the group address is changed in the
-  /// same save, the warning must still go where the practice could read it.
+  /// The WITNESS for an adminEmail change: the group address BEFORE the save.
+  /// If the group address is changed in the same save, the warning must still
+  /// go where the practice could read it.
   previousGroupEmail String?
+  /// The WITNESS for a groupEmail change: the admin address at the time, told
+  /// what the practice's shared inbox is becoming. groupEmail has no sign-in
+  /// of its own to protect, so there is no handover here — only a second
+  /// channel to notice the change.
+  previousAdminEmail String?
 
   requestedAt     DateTime @default(now())
   requestedByName String

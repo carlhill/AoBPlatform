@@ -1230,6 +1230,14 @@ export const strings = {
     savedBody: 'The change is recorded against your name, with what it was before and what it is now.',
     lockedHint: 'Recorded when your application was checked. Not editable here.',
     notRecorded: 'Not recorded',
+    pendingAdminEmailTitle: 'Waiting on the new administrator address',
+    pendingAdminEmailBody:
+      'We wrote to {email} to confirm it. The address above has NOT changed yet — it still shows the ' +
+      'current one, and that keeps working until the new one confirms.',
+    pendingGroupEmailTitle: 'Waiting on the new shared address',
+    pendingGroupEmailBody:
+      'We wrote to {email} to confirm it. The address above has NOT changed yet — it still shows the ' +
+      'current one, and that keeps working until the new one confirms.',
     lockedTitle: 'Why some of this is locked',
     lockedBody:
       'The ABN, legal name and entity type are identity evidence — somebody looked them up against the ' +

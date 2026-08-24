@@ -575,6 +575,14 @@
   margin-top: var(--s3);
 }
 
+/* One grid cell: the notice for a field waiting on confirmation, stacked
+   above the field itself rather than beside it. */
+.applicationFieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
 /*
  * A locked value is TEXT with a padlock, not a disabled input. A greyed-out
  * box invites somebody to keep clicking it; this says the answer is no, once.
