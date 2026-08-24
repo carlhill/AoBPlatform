@@ -107,6 +107,52 @@ export class PractitionerEmailService {
     );
   }
 
+  /**
+   * A durable row for a message this service sent, on "what we have sent
+   * you" -- which reads `outbound_items` and, until now, never received one
+   * from here. Carl caught it directly: "email messages for backup email not
+   * appearing. At least 4 sent and email verified."
+   *
+   * `practiceId: null`, because this is about the practitioner's own identity
+   * and no practice is involved. That is not a gap: `practice_isolation`'s
+   * WITH CHECK requires `practiceId = app.practice_id`, so a NULL row can
+   * never satisfy it and is invisible to every practice's queue by the same
+   * three-valued-logic rule that made skipping this record look safe in the
+   * first place. `practitioner_own_messages` is the policy that actually
+   * governs this row, keyed on `app.practitioner_id` alone.
+   *
+   * BEST-EFFORT. The email has already gone; a failure to write the record of
+   * it having gone must not be treated as the send itself failing.
+   */
+  private async recordPersonalOutbound(
+    practitionerId: string,
+    input: { to: string; subject: string; body: string },
+  ): Promise<void> {
+    const now = new Date();
+    await this.prisma
+      .withPractitioner(practitionerId, (tx) =>
+        tx.outboundItem.create({
+          data: {
+            practiceId: null,
+            channel: 'email',
+            destination: input.to,
+            subjectType: 'Practitioner',
+            subjectId: practitionerId,
+            mediaType: 'email',
+            recipientType: 'practitioner',
+            recipientId: practitionerId,
+            payload: { subject: input.subject, body: input.body, sentBy: 'aobplatform' },
+            state: 'sent',
+            sentAt: now,
+            idempotencyKey: `practitioner-personal:${practitionerId}:${now.toISOString()}:${input.to}`,
+          },
+        }),
+      )
+      .catch(() =>
+        this.logger.error(`Could not record a personal outbound message for practitioner ${practitionerId}.`),
+      );
+  }
+
   /** Their backup address, announced to itself so its holder knows. */
   async setBackup(practitionerId: string, backupEmail: string) {
     const practitioner = await this.prisma.practitioner.findFirst({ where: { id: practitionerId } });
@@ -183,13 +229,17 @@ export class PractitionerEmailService {
       this.footerForPractitioner(),
     );
 
-    await this.messaging
+    const backupResult = await this.messaging
       .dispatch({ channel: 'email', to: wanted, subject, body: composed.body, html: composed.html })
       .catch(() => {
         // Recorded regardless. A backup we could not write to is still a
         // backup, and refusing to store it would leave them with none.
         this.logger.warn(`Could not write to the new backup address for practitioner ${practitionerId}.`);
+        return null;
       });
+    if (backupResult?.accepted) {
+      await this.recordPersonalOutbound(practitionerId, { to: wanted, subject, body: composed.body });
+    }
 
     return {
       backupEmail: updated.backupEmail,
@@ -387,7 +437,7 @@ export class PractitionerEmailService {
       this.footerForPractitioner(),
     );
 
-    await this.messaging
+    const confirmResult = await this.messaging
       .dispatch({
         channel: 'email',
         to: requested,
@@ -395,7 +445,13 @@ export class PractitionerEmailService {
         body: confirm.body,
         html: confirm.html,
       })
-      .catch(() => this.logger.error(`Could not write to the new address for practitioner ${practitionerId}.`));
+      .catch(() => {
+        this.logger.error(`Could not write to the new address for practitioner ${practitionerId}.`);
+        return null;
+      });
+    if (confirmResult?.accepted) {
+      await this.recordPersonalOutbound(practitionerId, { to: requested, subject: confirmSubject, body: confirm.body });
+    }
 
     /*
      * THE OLD ADDRESS AND THE BACKUP, both able to stop it. The new address
@@ -436,7 +492,7 @@ export class PractitionerEmailService {
     );
 
     for (const address of warn) {
-      await this.messaging
+      const warnResult = await this.messaging
         .dispatch({
           channel: 'email',
           to: address,
@@ -444,7 +500,13 @@ export class PractitionerEmailService {
           body: warning.body,
           html: warning.html,
         })
-        .catch(() => this.logger.error(`Could not warn an address about the change on ${practitionerId}.`));
+        .catch(() => {
+          this.logger.error(`Could not warn an address about the change on ${practitionerId}.`);
+          return null;
+        });
+      if (warnResult?.accepted) {
+        await this.recordPersonalOutbound(practitionerId, { to: address, subject: warnSubject, body: warning.body });
+      }
     }
 
     if (warn.length === 0) {

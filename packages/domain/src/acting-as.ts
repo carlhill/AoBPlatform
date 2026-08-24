@@ -225,6 +225,12 @@ export function noticeToPractice(input: {
   reasonKey: string;
   startedAt: Date;
   note?: string;
+  /**
+   * Where to see it for themselves. Optional so a caller with no console URl
+   * configured still gets a usable notice — the line simply does not appear,
+   * rather than the function refusing to compose one at all.
+   */
+  consoleUrl?: string;
 }): { subject: string; lines: string[] } {
   const reason = actingAsReason(input.reasonKey);
   return {
@@ -237,6 +243,15 @@ export function noticeToPractice(input: {
       'Everything they did is recorded against their name, not yours.',
       'Your practice now needs to be approved again before anything else changes. That is deliberate: it ' +
         'means somebody other than the person who acted for you has to look at what was done.',
+      /*
+       * TOLD WHERE TO LOOK, not only what happened. A notice that describes an
+       * action without a way to go and see it for yourself asks to be trusted
+       * rather than checked — and this is precisely the message where trust
+       * without a way to verify is the wrong ask.
+       */
+      ...(input.consoleUrl
+        ? [`You can sign in to AoBPlatform at ${input.consoleUrl} to see this change for yourself.`]
+        : []),
       'If you did not expect this, tell us — the details above are enough for us to find exactly what ' +
         'happened.',
     ],

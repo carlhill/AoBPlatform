@@ -1661,6 +1661,13 @@ export const strings = {
     cleared: 'Cleared.',
   },
 
+  /* EmailStatusChip — CONVENTIONS.md §9d, used wherever an email address's
+     verification state is shown. */
+  emailStatus: {
+    verified: 'Verified',
+    pending: 'Confirmation pending',
+  },
+
   /* The band on a practice page opened as the platform. */
   viewOnly: {
     title: 'You are looking at this practice, not working in it',
@@ -1721,7 +1728,7 @@ export const strings = {
     emailHint:
       'Yours, not a practice’s. Invitations and sign-in links come here, so a change is held until the new '
       + 'address proves itself — nothing moves the moment you press save.',
-    save: 'Ask to change this address',
+    save: 'Ask to change this email address',
     saving: 'Sending…',
     contactSaved:
       'We have written to the new address with a code. Nothing has changed yet — enter the code from that '

@@ -1,6 +1,6 @@
 import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
 import type { Observable } from 'rxjs';
-import type { AuthenticatedPrincipal } from '@aobplatform/auth-client';
+import { principalDisplayName, type AuthenticatedPrincipal } from '@aobplatform/auth-client';
 
 /**
  * WHO DID IT COMES FROM THE TOKEN. Always. Everywhere.
@@ -60,7 +60,7 @@ export class AttributionInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const request = context.switchToHttp().getRequest();
     const principal = request?.principal as AuthenticatedPrincipal | undefined;
-    const name = principal?.preferredUsername ?? principal?.sub;
+    const name = principal && principalDisplayName(principal);
 
     if (name && request.body && typeof request.body === 'object' && !Array.isArray(request.body)) {
       for (const key of Object.keys(request.body)) {

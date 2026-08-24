@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   ACTING_AS_MAX_MINUTES,
   ACTING_AS_REASON_KEYS,
@@ -37,7 +38,12 @@ export class ActingAsService {
     private readonly prisma: PrismaService,
     private readonly outbound: OutboundService,
     private readonly composer: EmailComposer,
+    private readonly config: ConfigService,
   ) {}
+
+  private consoleUrl(): string {
+    return this.config.get<string>('CONSOLE_URL', 'http://localhost:21100');
+  }
 
   /**
    * Start acting for a practice.
@@ -125,6 +131,7 @@ export class ActingAsService {
           reasonKey: input.reason,
           startedAt: session.startedAt,
           note: input.note?.trim(),
+          consoleUrl: this.consoleUrl(),
         });
         const composed = {
           subject: notice.subject,

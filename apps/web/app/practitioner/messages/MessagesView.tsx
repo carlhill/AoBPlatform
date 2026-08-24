@@ -21,6 +21,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import { matrix } from '@aobplatform/domain';
 import { Button, Field, Notice, SelectInput, Shell, ui } from '../../ui';
+import { useRefreshable } from '../../refresh';
 import { SessionControl } from '../../SessionControl';
 import { apiHeaders, currentSession } from '../../auth';
 import { strings } from '../../strings';
@@ -179,6 +180,16 @@ export function MessagesView() {
   useEffect(() => {
     void loadMessages();
   }, [loadMessages, rows]);
+
+  /*
+   * REGISTERED WITH THE TOP-BAR REFRESH. Every other console page has the
+   * icon beside the menu button; this one only had the button at the foot of
+   * the summary table, easy to miss and the only way to also refresh the list
+   * below it. `refreshAll` runs every registered loader, so one press catches
+   * both the counts and the messages.
+   */
+  useRefreshable(load);
+  useRefreshable(loadMessages);
 
   /*
    * The two matrices are reshaped from daily rows, exactly as the platform

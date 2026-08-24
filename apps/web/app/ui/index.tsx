@@ -193,7 +193,12 @@ export function Field({
   required,
   children,
 }: {
-  label: string;
+  /**
+   * A string normally; a node when a status chip needs to sit beside it (an
+   * email address under verification, say). `RadixLabel.Root` renders
+   * whatever it is given, so widening this cost nothing beyond the type.
+   */
+  label: React.ReactNode;
   hint?: string;
   error?: string | null;
   required?: boolean;

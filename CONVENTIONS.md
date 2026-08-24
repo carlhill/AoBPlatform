@@ -304,6 +304,34 @@ around it.
 - Never persist tokens or credentials. `apps/web/app/auth.ts` keeps the access
   token in memory for exactly this reason, and that is not to be "improved".
 
+## 9d. An email address under verification is a visible, live state
+
+Carl's rule, verbatim: "need an auto-refresh and a tag to say the email
+validation is pending or validated. We should do this everywhere we check
+emails."
+
+Any screen that shows an email address whose verification matters MUST show:
+
+1. **A status tag beside the address.** `Verified` or `Confirmation pending` —
+   a word, never colour alone, and never nothing. An address with no tag reads
+   as fine, and "reads as fine" is precisely how an unverified address gets
+   relied on. The unverified state is the one that costs something, so it is
+   the one that must be loud.
+
+2. **Auto-refresh while anything is pending.** The person who confirms is
+   usually in ANOTHER tab or another building — the flip from pending to
+   verified happens on the server while this screen sits still. Poll the
+   page's own loader (15–30s) while and only while something on it is pending;
+   stop when nothing is. A screen that needs a manual reload to notice teaches
+   people the tag is stale, and a stale tag is worse than none.
+
+The pieces exist — use them rather than re-cutting them:
+`EmailStatusChip` (apps/web/app/EmailStatusChip.tsx) for the tag,
+`usePendingRefresh` (same file) for the polling. Applies to: a practitioner's
+primary (pending change) and backup, a practice's administrator address, the
+applicant's address during onboarding, and every address verification added
+later. A new email-bearing screen without these two is not done (see 9a).
+
 ## 10. Lint/format
 
 One root ESLint flat config, zero-warning tolerance (`--max-warnings=0`);

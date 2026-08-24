@@ -20,6 +20,7 @@ import Link from 'next/link';
 import { Building2, CalendarClock, IdCard, RefreshCw, Send, ShieldCheck } from 'lucide-react';
 import { Button, Field, Notice, Shell, TextInput, ui } from '../ui';
 import { SessionControl } from '../SessionControl';
+import { EmailStatusChip, usePendingRefresh } from '../EmailStatusChip';
 import { apiHeaders, currentSession } from '../auth';
 import { useRefreshable } from '../refresh';
 import { strings } from '../strings';
@@ -87,6 +88,15 @@ export function PractitionerHub() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /*
+   * AUTO-REFRESH WHILE ANYTHING HERE IS PENDING (CONVENTIONS.md §9d). The
+   * person who confirms a new primary or backup address is answering an email
+   * in another tab; this screen has to notice on its own rather than wait for
+   * a manual reload that teaches people the chip cannot be trusted.
+   */
+  const anyPending = Boolean(me?.pendingEmailChange) || Boolean(me?.backupEmail && !me.backupEmailVerifiedAt);
+  usePendingRefresh(anyPending, () => void load());
 
   /*
    * REGISTERED WITH THE TOP-BAR REFRESH. The token is held in memory only, so
@@ -168,6 +178,32 @@ export function PractitionerHub() {
     }
   }
 
+  /*
+   * GROUPED BY PRACTICE, because the entities card answers "which entities do
+   * I work for" and an affiliation is per SITE — two sites of one practice
+   * must read as two places, not as the practice listed twice.
+   *
+   * ABOVE THE EARLY RETURN, and that placement is load-bearing. This useMemo
+   * used to sit below the signed-out return, so the hook COUNT depended on
+   * whether a session existed — and the moment one appeared mid-mount, React
+   * threw "rendered fewer hooks than expected" and took the page down. Every
+   * hook runs on every render; only JSX gets to be conditional.
+   */
+  const affiliations = me?.affiliations;
+  const entities = useMemo(() => {
+    const live = (affiliations ?? []).filter((a) => a.status === 'active');
+    const byPractice = new Map<string, { id: string | null; name: string; sites: string[] }>();
+    for (const a of live) {
+      const name = a.practiceName ?? strings.practitioner.unnamedPractice;
+      const entry = byPractice.get(name) ?? { id: a.practiceId ?? null, name, sites: [] };
+      if (a.locationCode && !entry.sites.includes(a.locationCode)) entry.sites.push(a.locationCode);
+      byPractice.set(name, entry);
+    }
+    return [...byPractice.values()].sort((x, y) => x.name.localeCompare(y.name));
+    // `affiliations` (the array reference from state) is the real dependency —
+    // filtering happens inside the memo, so there is nothing to disable.
+  }, [affiliations]);
+
   if (!currentSession()) {
     /*
      * THE SIGN-IN CONTROL BELONGS HERE MOST OF ALL. This branch shipped
@@ -184,26 +220,6 @@ export function PractitionerHub() {
       </Shell>
     );
   }
-
-  const live = (me?.affiliations ?? []).filter((a) => a.status === 'active');
-
-  /*
-   * GROUPED BY PRACTICE, because this card answers "which entities do I work
-   * for" and an affiliation is per SITE. Somebody working at two sites of one
-   * practice has two affiliations, and listing them raw showed the practice
-   * name twice with nothing to distinguish the rows — which reads as a
-   * duplicate rather than as two places.
-   */
-  const entities = useMemo(() => {
-    const byPractice = new Map<string, { id: string | null; name: string; sites: string[] }>();
-    for (const a of live) {
-      const name = a.practiceName ?? strings.practitioner.unnamedPractice;
-      const entry = byPractice.get(name) ?? { id: a.practiceId ?? null, name, sites: [] };
-      if (a.locationCode && !entry.sites.includes(a.locationCode)) entry.sites.push(a.locationCode);
-      byPractice.set(name, entry);
-    }
-    return [...byPractice.values()].sort((x, y) => x.name.localeCompare(y.name));
-  }, [live]);
 
   return (
     <Shell right={<SessionControl audience={strings.practitioner.audience} />}>
@@ -295,7 +311,15 @@ export function PractitionerHub() {
                 </Notice>
               )}
 
-              <Field label={strings.practitioner.email} hint={strings.practitioner.emailHint}>
+              <Field
+                label={
+                  <span className={ui.fieldLabelRow}>
+                    {strings.practitioner.email}
+                    <EmailStatusChip status={me.pendingEmailChange ? 'pending' : 'verified'} />
+                  </span>
+                }
+                hint={strings.practitioner.emailHint}
+              >
                 {(props) => (
                   <TextInput
                     {...props}
@@ -305,14 +329,24 @@ export function PractitionerHub() {
                   />
                 )}
               </Field>
-              <Button
-                variant="primary"
-                onClick={() => void saveEmail()}
-                disabled={busy || !email.trim() || email.trim() === (me.email ?? '')}
-                data-testid="practitioner-save-email"
-              >
-                {busy ? strings.practitioner.saving : strings.practitioner.save}
-              </Button>
+              {/*
+                THE GAP AFTER IT. A full-width primary button sat flush
+                against "Your backup address" below with nothing separating
+                one field's action from the next field's label — the same
+                `rowActions` wrapper the backup buttons already use, which
+                gives space above; this needs it below as well, since nothing
+                follows it inside this field's own group.
+              */}
+              <div className={`${ui.rowActions} ${ui.fieldGapAfter}`}>
+                <Button
+                  variant="primary"
+                  onClick={() => void saveEmail()}
+                  disabled={busy || !email.trim() || email.trim() === (me.email ?? '')}
+                  data-testid="practitioner-save-email"
+                >
+                  {busy ? strings.practitioner.saving : strings.practitioner.save}
+                </Button>
+              </div>
 
               {/*
                 THE BACKUP, on the same card as the address it protects. Put on
@@ -328,7 +362,15 @@ export function PractitionerHub() {
                 </Notice>
               )}
 
-              <Field label={strings.practitioner.backupTitle} hint={strings.practitioner.backupHint}>
+              <Field
+                label={
+                  <span className={ui.fieldLabelRow}>
+                    {strings.practitioner.backupTitle}
+                    <EmailStatusChip status={!me.backupEmail ? 'none' : me.backupEmailVerifiedAt ? 'verified' : 'pending'} />
+                  </span>
+                }
+                hint={strings.practitioner.backupHint}
+              >
                 {(props) => (
                   <TextInput
                     {...props}

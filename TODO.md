@@ -620,6 +620,40 @@ signals. On its own it is a bad predictor; alongside "added five practitioners
 in a week", "none has ever captured consent" and "no register check recorded",
 it is one column in a picture that a person then reads.
 
+## groupEmail changes apply instantly, with no proof
+
+Carl caught it directly: "group email changed - no email verification sent."
+
+`groupEmail` is one of the plain `AMENDABLE_FIELDS` -- it changes on save like
+a phone number, with no hold and no proof, unlike `adminEmail` (held pending
+the new address answering a code) and unlike a practitioner's own address
+(same, plus a backup-address warning). This was not an oversight so much as
+never having been asked: the field's own schema comment says "NOTHING ENROLS
+AGAINST THIS ADDRESS. It receives notices only" -- so an unverified groupEmail
+cannot by itself be used to obtain a credential, which is a real and different
+risk profile from adminEmail.
+
+**It is not nothing, though.** `groupEmail` is the CO-WITNESS for an
+`adminEmail` handover -- `pending-email.service.ts` warns both the old admin
+address and `previousGroupEmail` when a handover is requested, specifically so
+a second channel can object. An attacker who can amend the practice at all
+(any practice-admin session) can repoint `groupEmail` to an address they
+control, THEN request the adminEmail handover -- and the witness meant to
+catch it is now them. Two steps, no proof required for either, and the second
+step's protection depends on the first step being trustworthy.
+
+- [ ] Decide whether `groupEmail` needs its own held/proof cycle -- a third
+      copy of the `PendingEmailChange` shape (practice admin's is the model),
+      or a lighter one, since nothing enrols against it and the stakes are
+      narrower
+- [ ] At minimum: warn the OLD groupEmail when a change is saved, mirroring
+      the admin-email pattern, even before deciding whether to hold it
+- [ ] `SENSITIVE_CONTACT_FIELDS` already names `groupEmail` alongside
+      `adminEmail`/`adminPhone` (review-tasks.ts) -- so a groupEmail change
+      already raises a review task at `admin_contact_changed` stakes. The gap
+      is specifically that it takes effect BEFORE anybody reviews it, not that
+      it goes unrecorded
+
 ## Can somebody read another practice by editing the URL?
 
 Carl asked about `/platform/practices/<uuid>/practitioners`. Answered here

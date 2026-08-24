@@ -1446,8 +1446,12 @@ model VaultOutbox {
  * without breathing hard.
  */
 model OutboundItem {
-  id         String @id @default(uuid()) @db.Uuid
-  practiceId String @db.Uuid
+  id         String  @id @default(uuid()) @db.Uuid
+  /// NULL is legal for exactly one shape: a message about a practitioner's
+  /// own identity, addressed to them, with no practice to anchor it to (see
+  /// migration 20260824050000). A CHECK constraint enforces that this is the
+  /// only case NULL is allowed in -- never a practice message left blank.
+  practiceId String? @db.Uuid
 
   /// email | sms | webhook | device
   channel String

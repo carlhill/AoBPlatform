@@ -1,5 +1,5 @@
 import { createParamDecorator, type ExecutionContext } from '@nestjs/common';
-import type { AuthenticatedPrincipal } from '@aobplatform/auth-client';
+import { principalDisplayName, type AuthenticatedPrincipal } from '@aobplatform/auth-client';
 
 /**
  * WHO IS DOING THIS — taken from the verified token, never from the request
@@ -66,7 +66,7 @@ export const SessionActor = createParamDecorator((_data: unknown, context: Execu
   if (!principal) return undefined;
   return {
     id: principal.sub,
-    name: principal.preferredUsername ?? principal.sub,
+    name: principalDisplayName(principal),
     principalType: principal.principalType,
     roles: principal.roles ?? [],
     practiceId: principal.practiceId,
