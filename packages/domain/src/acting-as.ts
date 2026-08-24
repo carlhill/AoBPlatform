@@ -325,15 +325,19 @@ export function noticeToPracticeOnEnd(input: {
   consoleUrl?: string;
   sessionId: string;
 }): { subject: string; lines: string[]; sessionId: string } {
+  // Date AND time — a date alone reads as "24 August 2026 to 24 August
+  // 2026" for a session that lasted twenty minutes, which tells a practice
+  // nothing about how long somebody was actually in their console.
   const when = (d: Date) =>
-    d.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+    `${d.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })} at ` +
+    `${d.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC' })} UTC`;
 
   return {
     subject: 'AoBPlatform has finished acting on your practice’s behalf',
     sessionId: input.sessionId,
     lines: [
-      `${input.operatorName} at AoBPlatform has stopped using your practice’s console. The session ran on ` +
-        `${when(input.startedAt)} and ended on ${when(input.endedAt)}.`,
+      `${input.operatorName} at AoBPlatform has stopped using your practice’s console. The session started ` +
+        `${when(input.startedAt)} and ended ${when(input.endedAt)}.`,
       input.changeSummaries.length > 0
         ? 'What changed during that session:'
         : 'Nothing was changed during that session — they looked without altering anything.',
