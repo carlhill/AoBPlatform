@@ -33,7 +33,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { AlertTriangle, ArrowRight, Building2, CheckCircle2, Clock, Search, ShieldCheck, X } from 'lucide-react';
-import { matchesFilter, matchesPractice, mayChoosePractice, type PracticeFilter } from '@aobplatform/domain';
+import {
+  matchesFilter,
+  matchesPractice,
+  mayChoosePractice,
+  type PracticeFilter,
+  type SetupGap,
+} from '@aobplatform/domain';
 import { Button, Chip, Field, Notice, Shell, TextInput, ui } from '../ui';
 import { useRefreshable } from '../refresh';
 import { strings } from '../strings';
@@ -70,6 +76,8 @@ interface Practice {
 interface WithReadiness extends Practice {
   ready: boolean | null;
   headline: string | null;
+  /** What is missing and where to go and fix it. Empty when nothing is. */
+  gaps: SetupGap[];
   /** For an application still waiting: where the applicant can watch it. */
   statusUrl: string | null;
 }
@@ -196,18 +204,27 @@ export function PracticeList() {
               } catch {
                 // A missing link is not worth failing the row for.
               }
-              return { ...p, ready: null, headline: null, statusUrl };
+              return { ...p, ready: null, headline: null, gaps: [], statusUrl };
             }
 
             try {
               const res = await fetch(`${CORE_URL}/organisations/setup`, {
                 headers: apiHeaders(p.id),
               });
-              if (!res.ok) return { ...p, ready: null, headline: null, statusUrl: null };
-              const hub = (await res.json()) as { readiness: { ready: boolean; headline: string } };
-              return { ...p, ready: hub.readiness.ready, headline: hub.readiness.headline, statusUrl: null };
+              if (!res.ok) return { ...p, ready: null, headline: null, gaps: [], statusUrl: null };
+              const hub = (await res.json()) as {
+                readiness: { ready: boolean; headline: string; gaps?: SetupGap[] };
+              };
+              return {
+                ...p,
+                ready: hub.readiness.ready,
+                headline: hub.readiness.headline,
+                // WHAT IS MISSING, and where it is fixed.
+                gaps: hub.readiness.gaps ?? [],
+                statusUrl: null,
+              };
             } catch {
-              return { ...p, ready: null, headline: null, statusUrl: null };
+              return { ...p, ready: null, headline: null, gaps: [], statusUrl: null };
             }
           }),
         );
@@ -468,6 +485,35 @@ export function PracticeList() {
                   readiness and is not — the same trap the hub itself avoids.
                 */}
                 {p.headline && <p className={styles.rowHeadline}>{p.headline}</p>}
+
+                {/*
+                  EVERY GAP, WITH SOMEWHERE TO GO. Carl's words: "you have to
+                  list what work needs to be done and give a link to the page to
+                  do this work." One label in a chip answers "what"; this
+                  answers "and then what", which is the half that costs somebody
+                  their afternoon.
+
+                  Only for a practice user, because the destinations are the
+                  practice's own pages -- an operator without a session would be
+                  offered links that refuse them, and the row already tells them
+                  to act as the practice.
+                */}
+                {!isOperator && p.gaps.length > 0 && (
+                  <ul className={styles.rowGaps}>
+                    {p.gaps.map((gap) => (
+                      <li key={gap.label}>
+                        <Link
+                          href={gap.href}
+                          onClick={() => window.localStorage.setItem(SELECTION_KEY, p.id)}
+                          data-testid={`gap-${p.id}-${gap.label}`}
+                        >
+                          {gap.label}
+                        </Link>
+                        <span className={ui.hint}> — {gap.detail}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 {pending && <p className={styles.rowHeadline}>{strings.practices.pendingBody}</p>}
                 {rejected && <p className={styles.rowHeadline}>{strings.practices.rejectedBody}</p>}
               </div>
@@ -488,9 +534,16 @@ export function PracticeList() {
                     {strings.practices.capturing}
                   </Chip>
                 ) : (
+                  /*
+                    THE CHIP NAMES THE WORK. "NEEDS WORK" described a state
+                    without saying which, so the one thing anybody wants from a
+                    status -- what do I do about it -- was the thing it withheld.
+                    The first gap is the one that has to be fixed first, so it is
+                    the one that goes in the chip.
+                  */
                   <Chip tone="warn">
                     <AlertTriangle size={13} aria-hidden="true" />
-                    {strings.practices.needsWork}
+                    {p.gaps[0]?.label ?? strings.practices.needsWork}
                   </Chip>
                 )}
                 <span className={styles.rowOpen}>

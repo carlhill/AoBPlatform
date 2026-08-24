@@ -38,10 +38,26 @@ export { styles as ui };
 export function Shell({
   nav,
   right,
+  title,
+  lead,
   children,
 }: {
   nav?: React.ReactNode;
   right?: React.ReactNode;
+  /**
+   * The page's title and the sentence under it, PINNED while you scroll.
+   *
+   * Owned by the Shell rather than written into each page's body, and that is
+   * the whole reason it moved: a banner can only stay put if something outside
+   * the scrolling content holds it. A page rendering its own `<h1>` inside
+   * `<main>` scrolls it away, and on a long roster or queue you lose which
+   * practice you are even looking at.
+   *
+   * OPTIONAL, so nothing breaks. A page that passes neither renders exactly
+   * what it did before and can be moved over when somebody is next in it.
+   */
+  title?: React.ReactNode;
+  lead?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -77,6 +93,14 @@ export function Shell({
           {right && <span className={styles.topbarRight}>{right}</span>}
         </div>
       </header>
+      {(title || lead) && (
+        <div className={styles.banner}>
+          <div className={styles.bannerInner}>
+            {title && <h1 className={styles.pageTitle}>{title}</h1>}
+            {lead && <p className={styles.bannerLead}>{lead}</p>}
+          </div>
+        </div>
+      )}
       <main className={styles.main}>{children}</main>
     </div>
   );

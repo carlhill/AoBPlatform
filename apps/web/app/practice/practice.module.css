@@ -41,6 +41,19 @@
  * radius already win on specificity, so restating them here would be a second
  * copy to keep in step.
  */
+/*
+ * THE GAPS, listed under the row. Indented and quiet: the row's own line is
+ * the headline, and these are the steps under it.
+ */
+.rowGaps {
+  margin: var(--s2) 0 0;
+  padding-left: var(--s5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  font-size: var(--text-sm);
+}
+
 button.row {
   width: 100%;
   text-align: left;

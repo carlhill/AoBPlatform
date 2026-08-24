@@ -119,3 +119,78 @@ describe('orderCards', () => {
     expect(orderCards(cards).map((c) => c.id)).toEqual(['first', 'second', 'third']);
   });
 });
+
+describe('a status that names the work', () => {
+  /*
+   * "NEEDS WORK" described a state without naming the gap, so the one thing
+   * anybody wants from a status -- what do I do about it -- was the thing it
+   * withheld. These are the labels that replace it.
+   */
+  const ready = {
+    activeLocations: 2,
+    practitioners: 2,
+    acceptedAffiliations: 2,
+    captureReadyAffiliations: 2,
+    administratorEnrolled: true,
+  };
+
+  it('says nothing when there is nothing to say', () => {
+    expect(captureReadiness(ready).gaps).toEqual([]);
+  });
+
+  it('puts the administrator FIRST, because nothing below it can be done without one', () => {
+    const r = captureReadiness({ ...ready, administratorEnrolled: false, activeLocations: 0 });
+    expect(r.gaps[0].label).toBe('No administrator');
+    // And the rest still appears -- a practice that cannot sign in usually has
+    // more than one thing missing, and hiding the others would make the first
+    // fix look like the last one.
+    expect(r.gaps.map((g) => g.label)).toContain('No active location');
+  });
+
+  it('does NOT guess when the caller has not said', () => {
+    // `undefined` means "not told", which is a different thing from "no".
+    // Answering it as a blocker would mark every older caller's practice as
+    // having no administrator.
+    expect(captureReadiness(ready).gaps.map((g) => g.label)).not.toContain('No administrator');
+  });
+
+  it('names each gap in the order it has to be fixed', () => {
+    expect(captureReadiness({ ...ready, practitioners: 0 }).gaps.map((g) => g.label)).toEqual([
+      'No practitioner',
+    ]);
+    expect(captureReadiness({ ...ready, acceptedAffiliations: 0 }).gaps.map((g) => g.label)).toEqual([
+      'Nobody has accepted',
+    ]);
+    expect(captureReadiness({ ...ready, captureReadyAffiliations: 0 }).gaps.map((g) => g.label)).toEqual([
+      'No provider number or address',
+    ]);
+  });
+
+  it('gives every gap somewhere to go', () => {
+    /*
+     * The whole point. A status that names the work and does not say where to
+     * do it has moved the puzzle rather than solved it.
+     */
+    const r = captureReadiness({
+      activeLocations: 0,
+      practitioners: 0,
+      acceptedAffiliations: 0,
+      captureReadyAffiliations: 0,
+      administratorEnrolled: false,
+    });
+    expect(r.gaps.length).toBeGreaterThan(1);
+    for (const gap of r.gaps) {
+      expect(gap.href.startsWith('/')).toBe(true);
+      expect(gap.detail.length).toBeGreaterThan(gap.label.length);
+    }
+  });
+
+  it('gives every gap a full sentence beside it', () => {
+    const r = captureReadiness({ ...ready, administratorEnrolled: false });
+    // The chip is short; the card still has to explain. One without the other
+    // is either cryptic or unreadable at a glance.
+    expect(r.gaps).toHaveLength(1);
+    expect(r.blockers).toHaveLength(1);
+    expect(r.blockers[0].length).toBeGreaterThan(r.gaps[0].label.length);
+  });
+});

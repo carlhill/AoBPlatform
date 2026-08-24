@@ -36,11 +36,12 @@ export class SetupService {
 
   async hub(practiceId: string) {
     return this.prisma.withPractice(practiceId, async (tx) => {
-      const [practice, locations, affiliations, credentials] = await Promise.all([
+      const [practice, locations, affiliations, credentials, staff] = await Promise.all([
         tx.practice.findFirstOrThrow({ where: { id: practiceId } }),
         tx.practiceLocation.findMany({ orderBy: { createdAt: 'asc' } }),
         tx.affiliation.findMany({ include: { practitioner: true, location: true } }),
         tx.practiceCredential.findMany(),
+        tx.staffMember.findMany(),
       ]);
 
       const activeLocations = locations.filter((l) => l.active);
@@ -61,6 +62,23 @@ export class SetupService {
         practitioners: new Set(affiliations.map((a) => a.practitionerId)).size,
         acceptedAffiliations: accepted.length,
         captureReadyAffiliations: captureReady.length,
+        /*
+         * CAN ANYBODY HERE SIGN IN — measured on the STAFF ROWS, not on
+         * `practice.adminPasskeyEnrolledAt`.
+         *
+         * That column was the obvious choice and it is wrong. It is set only by
+         * the handover path, so a practice whose administrator was invited any
+         * other way has it null while a real account exists — and the first
+         * version of this told a practice administrator, who had signed in an
+         * hour earlier and was reading the sentence, that nobody at the
+         * practice could sign in. A blocker that the person reading it can
+         * personally disprove is worse than no blocker: it teaches them to
+         * disbelieve the next one.
+         *
+         * A live staff row with a Keycloak account IS somebody who can sign in.
+         * That is the claim being made, so that is the thing to measure.
+         */
+        administratorEnrolled: staff.some((m) => Boolean(m.keycloakUserId) && !m.deactivatedAt),
       });
 
       // --- 1. The entity ---------------------------------------------------

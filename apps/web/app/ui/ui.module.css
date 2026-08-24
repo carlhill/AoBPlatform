@@ -8,10 +8,66 @@
   flex-direction: column;
 }
 
+/*
+ * PINNED, so the context never scrolls away.
+ *
+ * Who you are signed in as, which practice you are acting for, the way back and
+ * the refresh all live up here -- and on a long roster they were the first
+ * things to disappear. "Whose console am I in" is not a question a page should
+ * be able to stop answering half way down.
+ */
 .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
   background: var(--surface);
   border-bottom: 1px solid var(--line);
   padding: 0 var(--s5);
+}
+
+/*
+ * The page's own title, pinned beneath the top bar.
+ *
+ * Deliberately NOT the whole page header -- the title and one sentence. Pinning
+ * more would eat the viewport on a laptop, and the part worth keeping is the
+ * part that says which page and which record this is.
+ */
+.banner {
+  position: sticky;
+  /* Exactly the top bar's height, so the two sit flush and nothing shows
+     through a gap while the page moves behind them. */
+  top: 52px;
+  z-index: 30;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  padding: var(--s4) var(--s5) var(--s3);
+}
+
+.bannerInner {
+  max-width: var(--shell-max);
+  margin: 0 auto;
+  width: 100%;
+}
+
+.bannerInner .pageTitle {
+  margin-bottom: var(--s2);
+}
+
+.bannerLead {
+  color: var(--ink-muted);
+  margin: 0;
+  max-width: 62ch;
+}
+
+/*
+ * ON A SHORT SCREEN THE SENTENCE GOES. Two pinned lines are context; on a
+ * laptop in a meeting they are a third of the window. The title stays, because
+ * that is the half that says where you are.
+ */
+@media (max-height: 720px) {
+  .bannerLead {
+    display: none;
+  }
 }
 
 .topbarInner {
