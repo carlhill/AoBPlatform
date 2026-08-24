@@ -473,11 +473,12 @@ export function PracticeList() {
            * deliberate act with a stated reason rather than the toll on the
            * only road in.
            */
+          const actingHere = actingOn === p.id;
           const href = !decided
             ? isOperator
               ? `/review/${p.id}`
               : '/practice/setup'
-            : isOperator
+            : isOperator && !actingHere
               ? `/platform/practices/${p.id}`
               : '/practice/setup';
 
@@ -546,6 +547,8 @@ export function PracticeList() {
                 <span className={styles.rowOpen}>
                   {isOperator && !decided
                     ? strings.practices.reviewIt
+                    : isOperator && actingOn === p.id
+                    ? strings.practices.openAsThem
                     : isOperator
                     ? strings.practices.viewSetup
                     : pending || rejected
@@ -559,13 +562,15 @@ export function PracticeList() {
 
           return (
             <li key={p.id}>
-              /*
-                EVERY ROW IS A LINK. It stopped being one while the only
-                destination was a page an operator would be bounced from; there
-                is now somewhere honest for each of them to go — the review for
-                an undecided application, the read-only view for a decided one,
-                the console for a practice user.
-              */
+              {/*
+                EVERY ROW IS A LINK: the review for an undecided application,
+                the read-only view for a decided one, the console for a
+                practice user — and the working console when the operator is
+                ACTING AS this practice, because the whole point of opening a
+                session is to make changes, and sending them to the view-only
+                twin while it is open answers "where do I edit" with a page
+                that cannot.
+              */}
               <Link
                 href={href}
                 className={styles.row}
@@ -639,7 +644,7 @@ export function PracticeList() {
               */}
               {isOperator && decided && (
                 <Link
-                  href={`/platform/practices/${p.id}/practitioners`}
+                  href={`/platform/practices/${p.id}/practitioners/check`}
                   className={ui.buttonLink}
                   data-testid={`platform-practitioners-${p.id}`}
                 >

@@ -421,7 +421,7 @@ export function QueueView() {
                       looking at another practice must read and resend within
                       THAT practice, or the scope silently reverts. */}
                   <PayloadViewer practiceId={orgId || practiceId} item={item} />
-                  <ResendControl practiceId={orgId || practiceId} item={item} onDone={load} />
+                  <ResendControl practiceId={orgId || practiceId} item={item} onDone={load} onCancel={() => setOpenItem(null)} />
                 </>
               )}
             </li>
@@ -551,10 +551,13 @@ function ResendControl({
   practiceId,
   item,
   onDone,
+  onCancel,
 }: {
   practiceId: string;
   item: QueueItem;
   onDone: () => void | Promise<void>;
+  /** The way OUT. A form with required fields and no cancel corners people. */
+  onCancel: () => void;
 }) {
   const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
@@ -673,6 +676,27 @@ function ResendControl({
         >
           <RefreshCw size={14} aria-hidden="true" />
           {busy ? strings.queue.resending : strings.queue.resend}
+        </Button>
+
+        {/*
+          THE WAY OUT. The form appears the moment a row is opened, with two
+          required fields -- so somebody who opened the row merely to READ the
+          message was standing in a half-filled form with no door. Cancel
+          clears what was typed and closes the row, so an abandoned resend
+          leaves nothing behind to be sent by the next person who opens it.
+        */}
+        <Button
+          variant="subtle"
+          onClick={() => {
+            setReason('');
+            setNote('');
+            setError(null);
+            onCancel();
+          }}
+          disabled={busy}
+          data-testid={`resend-cancel-${item.id}`}
+        >
+          {strings.queue.resendCancel}
         </Button>
       </div>
       {error && (

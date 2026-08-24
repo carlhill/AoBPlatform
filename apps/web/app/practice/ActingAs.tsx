@@ -23,7 +23,8 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { UserCheck, UserX } from 'lucide-react';
+import Link from 'next/link';
+import { UserCheck, UserX, ArrowRight } from 'lucide-react';
 import { Button, Field, Notice, SelectInput, TextInput, ui } from '../ui';
 import { apiHeaders } from '../auth';
 import { strings } from '../strings';
@@ -97,6 +98,18 @@ export function ActingAsBanner({ onChange }: { onChange?: () => void }) {
             new Date(session.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           )}
       </span>
+      {/*
+        THE DOOR THE SESSION OPENS. Carl, with a session running: "what is the
+        link to get to the page so I can make changes?" The banner said the
+        session existed and offered only the way to end it — the one thing an
+        operator who just started one does not want. The claim the session
+        grants is what makes the ordinary console work, so the link is simply
+        the console.
+      */}
+      <Link href="/practice/setup" className={styles.actingAsGo} data-testid="acting-as-console">
+        {strings.actingAs.openConsole}
+        <ArrowRight size={14} aria-hidden="true" />
+      </Link>
       <Button variant="subtle" onClick={() => void end()} disabled={busy} data-testid="acting-as-end">
         <UserX size={14} aria-hidden="true" />
         {busy ? strings.actingAs.ending : strings.actingAs.end}

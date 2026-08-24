@@ -100,6 +100,16 @@ interface Hub {
  * ANYTHING NOT NAMED HERE STILL APPEARS, at the end. A new card must not be
  * able to vanish by being forgotten in this list.
  */
+/*
+ * "Open the your application" was on screen, because the label was built as
+ * `"Open the" + title.toLowerCase()` and half the titles already begin with
+ * an article. English has one determiner slot; this fills it once.
+ */
+function openLabel(title: string): string {
+  const lowered = title.toLowerCase();
+  return /^(the|your) /.test(lowered) ? `Open ${lowered}` : `Open the ${lowered}`;
+}
+
 const CARD_ORDER: readonly string[] = ['entity', 'locations', 'practitioners', 'affiliations', 'channels'];
 
 const CARD_ICONS: Record<string, typeof Building2> = {
@@ -357,11 +367,7 @@ export function SetupHub({
 
               {card.href && (
                 <Link href={viewOnly ? toViewPath(card.href, practiceId) : card.href} className={styles.cardLink}>
-                  {/*
-                    The article is stripped, not the title edited: "The entity"
-                    is right as a heading and wrong after "Open the".
-                  */}
-                  {strings.setup.open} {card.title.toLowerCase().replace(/^the /, '')}
+                  {openLabel(card.title)}
                   <ArrowRight size={14} aria-hidden="true" />
                 </Link>
               )}
@@ -411,23 +417,31 @@ export function SetupHub({
             and what can I change".
           */}
           <Link href={viewOnly ? toViewPath('/practice/application', practiceId) : '/practice/application'} className={styles.cardLink} data-testid="hub-to-application">
-            {strings.setup.open} {strings.application.title.toLowerCase()}
+            {openLabel(strings.application.title)}
             <ArrowRight size={14} aria-hidden="true" />
           </Link>
           <Link href={viewOnly ? toViewPath('/practice/reports', practiceId) : '/practice/reports'} className={styles.cardLink} data-testid="hub-to-reports">
-            {strings.setup.open} {strings.reports.title.toLowerCase()}
+            {openLabel(strings.reports.title)}
             <ArrowRight size={14} aria-hidden="true" />
           </Link>
           <Link href={viewOnly ? toViewPath('/practice/users', practiceId) : '/practice/users'} className={styles.cardLink} data-testid="hub-to-users">
-            {strings.setup.open} {strings.users.title.toLowerCase()}
+            {openLabel(strings.users.title)}
             <ArrowRight size={14} aria-hidden="true" />
           </Link>
-          <Link href="/practice/reviews" className={styles.cardLink} data-testid="hub-to-reviews">
-            {strings.setup.open} {strings.reviews.title.toLowerCase()}
+          {/*
+            SCOPED TO THIS PRACTICE in view-only. These two used to point at the
+            global platform queues, which threw the reader out of the practice
+            they were examining and into everything at once -- and the Back
+            press from there lost the practice entirely. The twin routes carry
+            the id in the path, so the queue and the review list show this
+            practice's items and nobody else's.
+          */}
+          <Link href={viewOnly ? toViewPath('/practice/reviews', practiceId) : '/practice/reviews'} className={styles.cardLink} data-testid="hub-to-reviews">
+            {openLabel(strings.reviews.title)}
             <ArrowRight size={14} aria-hidden="true" />
           </Link>
-          <Link href="/practice/queue" className={styles.cardLink} data-testid="hub-to-queue">
-            {strings.setup.open} {strings.queue.title.toLowerCase()}
+          <Link href={viewOnly ? toViewPath('/practice/queue', practiceId) : '/practice/queue'} className={styles.cardLink} data-testid="hub-to-queue">
+            {openLabel(strings.queue.title)}
             <ArrowRight size={14} aria-hidden="true" />
           </Link>
         </section>

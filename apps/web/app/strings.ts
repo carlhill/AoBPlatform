@@ -701,6 +701,8 @@ export const strings = {
      * separate, deliberate press with a stated reason.
      */
     viewSetup: 'View their setup',
+    /* The working door, shown only while an acting-as session is open. */
+    openAsThem: 'Open their console to make changes',
     reviewIt: 'Review this application',
     checkAsPlatform: 'Check their practitioners (as AoBPlatform)',
     actAsFirst: 'Act as this practice',
@@ -1338,6 +1340,7 @@ export const strings = {
      * with nothing reminding anybody what they said they were doing.
      */
     bannerText: 'You are acting as {practice}. Everything you do is recorded against you and them.',
+    openConsole: 'Open their console',
     bannerReason: 'Reason given: {reason}.',
     bannerExpires: 'It stops by itself at {time}.',
     end: 'Stop acting as them',
@@ -1984,6 +1987,7 @@ export const strings = {
     filterSearch: 'Find',
     filterSearchWide: 'Name, address, or what it is about',
     resend: 'Send again',
+    resendCancel: 'Cancel — do not send it again',
     resending: 'Sending…',
     resendTitle: 'Send this again',
     resendBody:

@@ -939,3 +939,13 @@
   border-radius: 6px;
 }
 
+
+/* The banner's working door: quiet, but a link that looks like one. */
+.actingAsGo {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  font-weight: 600;
+  white-space: nowrap;
+  color: inherit;
+}
