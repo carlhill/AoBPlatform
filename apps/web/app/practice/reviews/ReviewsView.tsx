@@ -48,7 +48,7 @@ interface Task {
   subjectType: string;
   subjectId: string;
   summary: string;
-  detail: { reason?: string; changes?: Change[]; handover?: boolean };
+  detail: { reason?: string; changes?: Change[]; handover?: boolean; error?: string; adminEmail?: string | null };
   state: string;
   raisedBy: string;
   raisedAt: string;
@@ -279,8 +279,44 @@ function TaskCard({
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [retryResult, setRetryResult] = useState<string | null>(null);
 
   const decided = task.state === 'resolved' || task.state === 'dismissed';
+
+  /*
+   * THE FIX, ON THE TASK THAT REPORTS THE FAULT.
+   *
+   * An admin_invite_failed task says a practice was approved and nobody could
+   * be invited. The endpoint that fixes it has existed all along -- resend the
+   * invitation, safe to call repeatedly -- but the reviewer reading the task
+   * had no way to reach it: they read "the invitation failed", agreed, and had
+   * nowhere to press. A queue whose tasks can be understood but not acted on
+   * teaches people to stop reading it.
+   *
+   * The button does NOT resolve the task. Whether the retry worked is a fact
+   * the reviewer sees and then judges -- an error like "an account already
+   * exists with this email" will fail again identically, and THAT resolution
+   * is a decision about the practice, not a delivery problem.
+   */
+  async function retryInvitation() {
+    setBusy(true);
+    setError(null);
+    setRetryResult(null);
+    try {
+      const res = await fetch(`${CORE_URL}/organisations/${task.subjectId}/resend-invitation`, {
+        method: 'POST',
+        headers: apiHeaders(practiceId),
+        body: JSON.stringify({}),
+      });
+      const body = (await res.json().catch(() => ({}))) as { message?: string; detail?: string; invited?: boolean };
+      if (!res.ok) throw new Error(body.message ?? `That failed (${res.status}).`);
+      setRetryResult(body.detail ?? (body.invited ? strings.reviews.retrySent : strings.reviews.retryNotSent));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function act(path: string, body?: Record<string, unknown>) {
     setBusy(true);
@@ -326,6 +362,27 @@ function TaskCard({
         <p className={styles.cardNote}>
           <strong>{strings.reviews.theySaid}</strong> {task.detail.reason}
         </p>
+      )}
+
+      {task.kind === 'admin_invite_failed' && (
+        <>
+          {/* The provider's words, verbatim. "An account already exists with
+              this email" is actionable precisely because it is specific. */}
+          {task.detail?.error && (
+            <p className={styles.cardNote}>
+              <strong>{strings.reviews.inviteErrorLabel}</strong> {task.detail.error}
+            </p>
+          )}
+          {!decided && (
+            <div className={ui.rowActions}>
+              <Button variant="primary" onClick={() => void retryInvitation()} disabled={busy} data-testid={`retry-invite-${task.id}`}>
+                <RefreshCw size={14} aria-hidden="true" />
+                {busy ? strings.reviews.retrying : strings.reviews.retryInvite}
+              </Button>
+            </div>
+          )}
+          {retryResult && <Notice tone="ok" title={strings.reviews.retryOutcome}>{retryResult}</Notice>}
+        </>
       )}
 
       {/*

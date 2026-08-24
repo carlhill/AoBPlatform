@@ -13,13 +13,22 @@
  * for the code from the same message, because mail scanners, link previews
  * and antivirus gateways all issue GETs, and a backup that can confirm
  * itself with nobody involved is not a proof of anything.
+ *
+ * DRESSED LIKE /verify, ON PURPOSE. Both pages ask a stranger to type a code
+ * from an email, which is precisely the interaction a phishing site asks for
+ * — so both have to look like they were built by an organisation. Carl's
+ * words on the first draft: "this looks cheap". A page that looks improvised
+ * teaches people that improvised-looking pages are normal, which is the
+ * exact habit that makes phishing work. Same stylesheet, not a copy, so the
+ * two cannot drift apart.
  */
 
 import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { CheckCircle2, ShieldCheck } from 'lucide-react';
-import { Button, Field, Notice, Shell, TextInput, ui } from '../../ui';
+import { Button, Notice, Shell } from '../../ui';
 import { strings } from '../../strings';
+import styles from '../../verify/verify.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -29,6 +38,13 @@ export function ConfirmBackupView() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+
+  const Wordmark = (
+    <div className={styles.mark}>
+      <ShieldCheck size={20} aria-hidden="true" />
+      <span className={styles.markText}>{strings.appName}</span>
+    </div>
+  );
 
   async function submit() {
     setBusy(true);
@@ -54,10 +70,13 @@ export function ConfirmBackupView() {
   if (!token) {
     return (
       <Shell>
-        <h1 className={ui.pageTitle}>{strings.confirmBackup.title}</h1>
-        <Notice tone="stop" title={strings.confirmBackup.noTokenTitle}>
-          {strings.confirmBackup.noTokenBody}
-        </Notice>
+        <div className={styles.card}>
+          {Wordmark}
+          <h1 className={styles.title}>{strings.confirmBackup.title}</h1>
+          <Notice tone="stop" title={strings.confirmBackup.noTokenTitle}>
+            {strings.confirmBackup.noTokenBody}
+          </Notice>
+        </div>
       </Shell>
     );
   }
@@ -65,52 +84,76 @@ export function ConfirmBackupView() {
   if (done) {
     return (
       <Shell>
-        <h1 className={ui.pageTitle}>{strings.confirmBackup.title}</h1>
-        <Notice tone="ok" title={strings.confirmBackup.doneTitle}>
-          <CheckCircle2 size={15} aria-hidden="true" /> {done}
-        </Notice>
+        <div className={styles.card}>
+          {Wordmark}
+          <div className={styles.outcomeIcon}>
+            <CheckCircle2 size={40} aria-hidden="true" />
+          </div>
+          <h1 className={styles.title}>{strings.confirmBackup.doneTitle}</h1>
+          <p className={styles.lead}>{done}</p>
+        </div>
       </Shell>
     );
   }
 
   return (
     <Shell>
-      <h1 className={ui.pageTitle}>{strings.confirmBackup.title}</h1>
-      <p className={ui.lead}>{strings.confirmBackup.lead}</p>
+      <div className={styles.card}>
+        {Wordmark}
+        <h1 className={styles.title}>{strings.confirmBackup.title}</h1>
+        <p className={styles.lead}>{strings.confirmBackup.lead}</p>
 
-      <Field label={strings.confirmBackup.code} hint={strings.confirmBackup.codeHint} required>
-        {(props) => (
-          <TextInput
-            {...props}
+        {error && (
+          <Notice tone="stop" title={strings.confirmBackup.failed}>
+            {error}
+          </Notice>
+        )}
+
+        <div className={styles.codeWrap}>
+          <label className={styles.codeLabel} htmlFor="confirm-backup-code">
+            {strings.confirmBackup.code}
+          </label>
+          <input
+            id="confirm-backup-code"
+            className={`${styles.code} ${error ? styles.codeInvalid : ''}`}
             value={code}
-            onChange={(e) => setCode(e.target.value)}
+            placeholder="––––––"
             inputMode="numeric"
             autoComplete="one-time-code"
+            autoFocus
+            maxLength={6}
+            aria-describedby="confirm-backup-hint"
+            aria-invalid={error ? true : undefined}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && /^\d{6}$/.test(code)) void submit();
+            }}
             data-testid="confirm-backup-code"
           />
-        )}
-      </Field>
+          <p id="confirm-backup-hint" className={styles.codeHint}>
+            {strings.confirmBackup.codeHint}
+          </p>
+        </div>
 
-      <div className={ui.rowActions}>
         <Button
           variant="primary"
+          className={styles.submit}
+          disabled={busy || !/^\d{6}$/.test(code)}
           onClick={() => void submit()}
-          disabled={busy || code.trim().length !== 6}
           data-testid="confirm-backup-submit"
         >
-          <ShieldCheck size={14} aria-hidden="true" />
           {busy ? strings.confirmBackup.confirming : strings.confirmBackup.confirm}
         </Button>
+
+        {/* What they are agreeing to, before they agree to it. */}
+        <div className={styles.why}>
+          <div className={styles.whyHead}>
+            <ShieldCheck size={16} aria-hidden="true" />
+            {strings.confirmBackup.whatTitle}
+          </div>
+          {strings.confirmBackup.whatBody}
+        </div>
       </div>
-
-      {error && (
-        <Notice tone="stop" title={strings.confirmBackup.failed}>
-          {error}
-        </Notice>
-      )}
-
-      {/* What they are agreeing to, before they agree to it. */}
-      <Notice title={strings.confirmBackup.whatTitle}>{strings.confirmBackup.whatBody}</Notice>
     </Shell>
   );
 }

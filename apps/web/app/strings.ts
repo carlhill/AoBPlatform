@@ -1912,6 +1912,13 @@ export const strings = {
     emptyBody: 'No changes are waiting. An empty queue is the normal state.',
     highStakes: 'A person must decide',
     lowStakes: 'May be checked automatically',
+    /* The admin_invite_failed task's own controls. */
+    inviteErrorLabel: 'The provider said:',
+    retryInvite: 'Send the invitation again',
+    retrying: 'Sending…',
+    retryOutcome: 'What happened',
+    retrySent: 'The invitation went out.',
+    retryNotSent: 'It could not be sent — the reason above still stands.',
     theySaid: 'They said:',
     colField: 'Field',
     colFrom: 'Was',
