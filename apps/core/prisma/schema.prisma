@@ -275,6 +275,13 @@ model Practice {
 
   /// The practice's backup address — see `Practitioner.backupEmail` for why
   /// this exists. Never equal to `adminEmail`, by CHECK constraint.
+  ///
+  /// UNPROVED, unlike the practitioner's. Nothing in this codebase writes to a
+  /// practice's backup or reads it back, so there is nothing yet for a proof
+  /// ceremony to protect — adding the token/code/expiry columns here without a
+  /// caller was how core ended up querying a column the database never had.
+  /// The practitioner side (practitioner-email.service.ts) is the model to
+  /// follow when a practice-level version is actually built.
   backupEmail           String?
   backupEmailVerifiedAt DateTime?
 
@@ -645,6 +652,24 @@ model Practitioner {
    */
   backupEmail           String?
   backupEmailVerifiedAt DateTime?
+
+  /**
+   * PROVING the backup, rather than merely announcing it.
+   *
+   * `backupEmailVerifiedAt` existed from the start and nothing ever set it —
+   * the address was stored, a notice was sent, and that was the whole of it.
+   * A backup nobody has ever had an answer from is not a second channel; it
+   * is a guess, discovered to be one at exactly the moment somebody needs it,
+   * during a takeover when the primary is already gone. A typo is the common
+   * case, not an attack.
+   *
+   * Same shape as every other proof here: a token in the link, a code for the
+   * human, an expiry, and a count of attempts.
+   */
+  backupEmailToken     String?   @unique
+  backupEmailCode      String?
+  backupEmailExpiresAt DateTime?
+  backupEmailAttempts  Int       @default(0)
 
   /**
    * Which validated practice created this identity (CONVENTIONS.md §8b).

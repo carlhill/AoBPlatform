@@ -124,6 +124,10 @@ export const PAGES: Readonly<Record<string, PageRule>> = {
     audiences: ['public'],
     why: 'Stopping that change. Sent to the OLD address, whose holder may be losing access as we speak.',
   },
+  '/practice/confirm-backup': {
+    audiences: ['public'],
+    why: 'A backup address proving it works. Held by somebody who may have no account at all — being reachable is their entire role.',
+  },
 
   /*
    * PLATFORM. Note that three of these sit under /practice/ and are not

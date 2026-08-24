@@ -1668,6 +1668,29 @@ export const strings = {
     toHub: 'Their setup',
   },
 
+  /* The page a backup address's confirmation link opens. */
+  confirmBackup: {
+    title: 'Confirm this backup address',
+    lead:
+      'Somebody has named this address as their backup on AoBPlatform. Enter the code from the message to '
+      + 'confirm it works and that you agree to be it.',
+    code: 'The code from the message',
+    codeHint: 'Six digits. It proves a person read the message — a scanner opening the link cannot.',
+    confirm: 'Confirm this address',
+    confirming: 'Confirming…',
+    failed: 'That could not be confirmed',
+    doneTitle: 'Confirmed',
+    doneFallback: 'Thank you — that address is confirmed.',
+    noTokenTitle: 'This link is incomplete',
+    noTokenBody:
+      'It should carry a token, and this one does not — the address may have been typed by hand, or a mail '
+      + 'client shortened it. Open the link from the message again.',
+    whatTitle: 'What being a backup means',
+    whatBody:
+      'Nothing routine is ever sent here. If anybody asks to change the address we use for the person who '
+      + 'named you, we tell you — so a takeover cannot happen quietly. That is the whole of it.',
+  },
+
   practitioner: {
     audience: 'Practitioner',
     title: 'Your practice work',

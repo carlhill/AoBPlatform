@@ -8,11 +8,13 @@ import {
   assertNotChurning,
   assertStoppable,
   expiresAt as expiryOf,
+  MAX_CONFIRMATION_ATTEMPTS,
   warnedAddresses,
   withinCoolingOff,
 } from '@aobplatform/domain';
 import { PrismaService } from '../prisma/prisma.service';
 import { MESSAGING_GATEWAY, type MessagingGateway } from '../messaging/gateway';
+import { EmailComposer } from '../messaging/composer.service';
 
 /** The subject of a change, as resolved from a token before any scope exists. */
 export type ResolvedChange = {
@@ -70,6 +72,7 @@ export class PractitionerEmailService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     @Inject(MESSAGING_GATEWAY) private readonly messaging: MessagingGateway,
+    private readonly composer: EmailComposer,
   ) {}
 
   private consoleUrl(): string {
@@ -87,6 +90,23 @@ export class PractitionerEmailService {
     return String(randomInt(0, 1_000_000)).padStart(6, '0');
   }
 
+
+  /*
+   * WHY THIS PERSON RECEIVED THIS, in their own case.
+   *
+   * The default footer says "this address was given on an application to us",
+   * which is true of an applicant and false of a practitioner — and false in
+   * the one paragraph whose whole job is to make the message credible. A reader
+   * who catches us being wrong about why they got it has every reason to treat
+   * the rest as a scam.
+   */
+  private footerForPractitioner() {
+    return this.composer.footerFor(
+      'You received this because this address is on your practitioner record with us, or has been given as ' +
+        'a backup for it.',
+    );
+  }
+
   /** Their backup address, announced to itself so its holder knows. */
   async setBackup(practitionerId: string, backupEmail: string) {
     const practitioner = await this.prisma.practitioner.findFirst({ where: { id: practitionerId } });
@@ -101,44 +121,167 @@ export class PractitionerEmailService {
     }
 
     /*
-     * STORED UNVERIFIED, deliberately rather than as a shortcut. A backup
-     * nobody has answered at is still better than none — it is a second
-     * channel to try — but it must not be presented as proved until somebody
-     * has. The screen shows which of the two it is.
+     * STORED UNVERIFIED AND ASKED TO PROVE ITSELF.
+     *
+     * Unverified rather than refused, because a backup nobody has answered at
+     * is still better than none — it is a second channel to TRY. But it must
+     * not be presented as proved until somebody has answered, and until now
+     * nothing ever asked: `backupEmailVerifiedAt` existed and was never set by
+     * anything, so every backup on the platform read as unverified forever and
+     * the column said nothing at all.
+     *
+     * The commonest failure is a typo, not an attack — somebody's partner's
+     * address with a letter missing — and nothing would have told them, because
+     * nothing writes to it again until the day it matters.
      */
+    const code = this.newCode();
+    const token = randomBytes(32).toString('base64url');
+    const expires = expiryOf(new Date());
+
     const updated = await this.prisma.practitioner.update({
       where: { id: practitionerId },
-      data: { backupEmail: wanted, backupEmailVerifiedAt: null },
+      data: {
+        backupEmail: wanted,
+        backupEmailVerifiedAt: null,
+        backupEmailToken: token,
+        backupEmailCode: code,
+        backupEmailExpiresAt: expires,
+        backupEmailAttempts: 0,
+      },
     });
 
+    const confirmUrl = `${this.consoleUrl()}/practice/confirm-backup?token=${token}`;
+
+    const subject = 'Confirm you are a backup address on AoBPlatform';
+    const composed = this.composer.compose(
+      subject,
+      [
+        { text: `${practitioner.givenNames} ${practitioner.familyName} has given this address as their backup.` },
+        {
+          text:
+            'It means that if anybody asks to change the address we use for them, we will tell you here — ' +
+            'even if their main address has stopped working.',
+        },
+        { rule: true },
+        { heading: 'Please confirm this address' },
+        { text: 'Open the link below and enter this code, so we know the address works and you agree to it.' },
+        { code },
+        { button: { label: 'Confirm this address', url: confirmUrl } },
+        { url: confirmUrl },
+        {
+          small:
+            'A backup we have never had an answer from is a backup we cannot rely on, which is why we ask. ' +
+            'It expires in five days.',
+        },
+        { rule: true },
+        {
+          small:
+            'If you do not know who that is, please tell us — somebody has given your address as theirs, and ' +
+            'we would rather hear about it.',
+        },
+      ],
+      this.footerForPractitioner(),
+    );
+
     await this.messaging
-      .dispatch({
-        channel: 'email',
-        to: wanted,
-        subject: 'You are somebody’s backup address on AoBPlatform',
-        body:
-          `${practitioner.givenNames} ${practitioner.familyName} has given this address as their backup on ` +
-          'AoBPlatform.\n\n' +
-          'It means that if anybody asks to change the address we use for them, we will tell you here — even ' +
-          'if their main address has stopped working. You do not need to do anything now.\n\n' +
-          'If you do not know who that is, please tell us. Somebody has given your address as theirs.',
-      })
+      .dispatch({ channel: 'email', to: wanted, subject, body: composed.body, html: composed.html })
       .catch(() => {
         // Recorded regardless. A backup we could not write to is still a
         // backup, and refusing to store it would leave them with none.
         this.logger.warn(`Could not write to the new backup address for practitioner ${practitionerId}.`);
       });
 
-    return { backupEmail: updated.backupEmail, verified: false };
+    return {
+      backupEmail: updated.backupEmail,
+      verified: false,
+      detail:
+        `We have written to ${wanted} with a code. It counts as a backup once somebody answers there — until ` +
+        'then we will still try it, but we cannot promise it works.',
+    };
   }
 
   /** Remove it. Having none is the worse position, so the screen says so. */
   async clearBackup(practitionerId: string) {
     await this.prisma.practitioner.update({
       where: { id: practitionerId },
-      data: { backupEmail: null, backupEmailVerifiedAt: null },
+      data: {
+        backupEmail: null,
+        backupEmailVerifiedAt: null,
+        // The proof goes with it. A token left behind would confirm an address
+        // that is no longer anybody's backup.
+        backupEmailToken: null,
+        backupEmailCode: null,
+        backupEmailExpiresAt: null,
+        backupEmailAttempts: 0,
+      },
     });
     return { backupEmail: null, verified: false };
+  }
+
+  /**
+   * The backup address answers, from the link we sent it.
+   *
+   * PUBLIC BY NECESSITY. Whoever holds this link is not signed in and may have
+   * no account at all — a spouse, a colleague, a practice manager. Requiring a
+   * session would mean only the practitioner could confirm their own backup,
+   * which proves nothing about whether the OTHER inbox works.
+   *
+   * The token finds the row and the code proves a human. Same shape as every
+   * other proof here, for the same reason: a link alone is opened by scanners.
+   */
+  async confirmBackup(token: string, code: string) {
+    const [found] = await this.prisma.$queryRaw<
+      Array<{
+        id: string;
+        backupEmail: string | null;
+        backupEmailCode: string | null;
+        backupEmailExpiresAt: Date | null;
+        backupEmailAttempts: number;
+        backupEmailVerifiedAt: Date | null;
+      }>
+    >`SELECT * FROM core.practitioner_by_backup_token(${token})`;
+
+    if (!found) throw new NotFoundException('That link is not one of ours, or it has been replaced.');
+    if (found.backupEmailVerifiedAt) return { confirmed: true, detail: 'That address was already confirmed.' };
+
+    if (!found.backupEmailExpiresAt || found.backupEmailExpiresAt.getTime() <= Date.now()) {
+      throw new BadRequestException(
+        'That link has expired. Ask for the backup address to be saved again and we will send a new one.',
+      );
+    }
+
+    if (found.backupEmailAttempts >= MAX_CONFIRMATION_ATTEMPTS) {
+      throw new BadRequestException(
+        'That code has been tried too many times. Ask for the backup address to be saved again.',
+      );
+    }
+
+    if (found.backupEmailCode !== code.trim()) {
+      await this.prisma.practitioner.update({
+        where: { id: found.id },
+        data: { backupEmailAttempts: { increment: 1 } },
+      });
+      throw new BadRequestException('That code does not match the one we sent. Check the message and try again.');
+    }
+
+    await this.prisma.practitioner.update({
+      where: { id: found.id },
+      data: {
+        backupEmailVerifiedAt: new Date(),
+        // Spent. The link must not work twice.
+        backupEmailToken: null,
+        backupEmailCode: null,
+        backupEmailExpiresAt: null,
+      },
+    });
+
+    this.logger.log(`Backup address confirmed for practitioner ${found.id}.`);
+    return {
+      confirmed: true,
+      detail:
+        'Thank you — that address is confirmed. We will write to it if anybody asks to change where our ' +
+        'messages go, and not otherwise.',
+    };
   }
 
   /** Ask to change the address. Nothing moves until the new one answers. */
@@ -217,19 +360,40 @@ export class PractitionerEmailService {
     });
 
     const base = this.consoleUrl();
+    const confirmUrl = `${base}/practice/confirm-email?token=${confirmToken}`;
+    const stopUrl = `${base}/practice/stop-email-change?token=${stopToken}`;
+
+    const confirmSubject = 'Confirm your new AoBPlatform address';
+    const confirm = this.composer.compose(
+      confirmSubject,
+      [
+        { text: 'You asked us to use this address for you on AoBPlatform. Nothing has changed yet.' },
+        { heading: 'Enter this code to confirm' },
+        { code },
+        { button: { label: 'Confirm this address', url: confirmUrl } },
+        { url: confirmUrl },
+        {
+          small:
+            'The code is what confirms it — a scanner opening the link cannot confirm it for you. It expires ' +
+            'in five days.',
+        },
+        { rule: true },
+        {
+          small:
+            'If you were not expecting this, do nothing and it lapses. We have also told the address it would ' +
+            'replace, so somebody else can stop it.',
+        },
+      ],
+      this.footerForPractitioner(),
+    );
+
     await this.messaging
       .dispatch({
         channel: 'email',
         to: requested,
-        subject: 'Confirm your new AoBPlatform address',
-        body:
-          'Hello,\n\n' +
-          'You asked us to use this address for you on AoBPlatform. Nothing has changed yet.\n\n' +
-          `Open ${base}/practice/confirm-email?token=${confirmToken} and enter this code:\n\n` +
-          `    ${code}\n\n` +
-          'The code is what confirms it — a scanner opening the link cannot confirm it for you.\n\n' +
-          'If you were not expecting this, do nothing. It expires by itself, and we have also told the ' +
-          'address it would replace.',
+        subject: confirmSubject,
+        body: confirm.body,
+        html: confirm.html,
       })
       .catch(() => this.logger.error(`Could not write to the new address for practitioner ${practitionerId}.`));
 
@@ -244,22 +408,41 @@ export class PractitionerEmailService {
       requestedEmail: requested,
     });
 
+    const warnSubject = 'Somebody asked to change your AoBPlatform address';
+    const warning = this.composer.compose(
+      warnSubject,
+      [
+        { text: `${requestedByName} asked us to change the address we use for them to ${requested}.` },
+        {
+          text:
+            'Nothing has changed yet. It only takes effect if somebody confirms it from the new address, and ' +
+            'we are telling you first so that you can stop it.',
+        },
+        { button: { label: 'This was not me — stop it', url: stopUrl } },
+        { url: stopUrl },
+        {
+          small:
+            'That link keeps working for a week AFTER a change goes through, so if you are reading this late ' +
+            'it is not too late.',
+        },
+        { rule: true },
+        {
+          small:
+            'We tell you because changing where our messages go is the first step somebody would take to ' +
+            'receive a sign-in link in your name.',
+        },
+      ],
+      this.footerForPractitioner(),
+    );
+
     for (const address of warn) {
       await this.messaging
         .dispatch({
           channel: 'email',
           to: address,
-          subject: 'Somebody asked to change your AoBPlatform address',
-          body:
-            'Hello,\n\n' +
-            `${requestedByName} asked us to change the address we use for them to ${requested}.\n\n` +
-            'Nothing has changed yet. It only takes effect if somebody confirms it from the new address, and ' +
-            'we are telling you first so that you can stop it.\n\n' +
-            `If this was not you: ${base}/practice/stop-email-change?token=${stopToken}\n\n` +
-            'That link keeps working for a week AFTER the change goes through — so if you are reading this ' +
-            'late, it is not too late.\n\n' +
-            'We tell you because changing where our messages go is the first step somebody would take to ' +
-            'receive a sign-in link in your name.',
+          subject: warnSubject,
+          body: warning.body,
+          html: warning.html,
         })
         .catch(() => this.logger.error(`Could not warn an address about the change on ${practitionerId}.`));
     }

@@ -79,6 +79,21 @@ export class PendingEmailController {
   }
 
   /**
+   * A BACKUP address answers, from the link we sent it.
+   *
+   * Public for the same reason the confirm above is, and more so: whoever
+   * holds this link may have no account at all — a spouse, a colleague, a
+   * practice manager whose only involvement is agreeing to be the second
+   * channel. The token finds the row; the code proves a human read the
+   * message rather than a scanner GETting the link.
+   */
+  @Public()
+  @Post('confirm-backup')
+  confirmBackup(@Body() dto: ConfirmDto) {
+    return this.practitionerEmail.confirmBackup(dto.token, dto.code);
+  }
+
+  /**
    * What the practice's own screens show while a change waits. Practice-scoped
    * rather than public: this one is read from inside the console.
    */

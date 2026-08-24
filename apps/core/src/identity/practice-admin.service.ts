@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { KeycloakAdminClient, KeycloakAdminError } from '@aobplatform/auth-client';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
+import { ReviewTasksService } from '../review-tasks/review-tasks.service';
 import { KEYCLOAK_ADMIN } from './identity.tokens';
 import { MESSAGING_GATEWAY, type MessagingGateway } from '../messaging/gateway';
 import { PLATFORM_ADMIN } from '../auth/roles.decorator';
@@ -59,6 +60,9 @@ export class PracticeAdminService {
     private readonly config: ConfigService,
     @Inject(KEYCLOAK_ADMIN) private readonly keycloak: KeycloakAdminClient | null,
     @Inject(MESSAGING_GATEWAY) private readonly messaging: MessagingGateway,
+    // Global module: an approval that cannot invite anybody is work, and work
+    // belongs in the queue rather than in a log line.
+    private readonly reviewTasks: ReviewTasksService,
   ) {}
 
   private consoleUrl(): string {
