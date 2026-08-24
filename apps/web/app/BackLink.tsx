@@ -77,11 +77,26 @@ const PARENTS: Readonly<Record<string, string>> = {
 /** Pages with an id in the path. Longest match wins, so order matters. */
 const PREFIX_PARENTS: ReadonlyArray<readonly [string, string]> = [
   ['/practitioner/practices/', '/practitioner'],
-  // Up from a practice viewed AS THE PLATFORM is the organisation list, which
-  // is where an operator chose the practice in the first place.
-  ['/platform/practices/', '/practice'],
   ['/review/', '/review'],
 ];
+
+/**
+ * A practice viewed AS THE PLATFORM, where "up" depends how deep you are.
+ *
+ * `/platform/practices/<id>/practitioners` goes up to that practice's own hub,
+ * not out to the organisation list. Going straight out skipped the level the
+ * reader is actually working in: they came to look at ONE practice, and the
+ * first press of Back threw away the practice as well as the page.
+ *
+ * From the hub itself, up is the organisation list -- which is where they
+ * chose the practice in the first place.
+ */
+function platformPracticeParent(pathname: string): string | null {
+  const match = /^\/platform\/practices\/([^/]+)(\/.*)?$/.exec(pathname);
+  if (!match) return null;
+  const [, practiceId, rest] = match;
+  return rest && rest !== '/' ? `/platform/practices/${practiceId}` : '/practice';
+}
 
 function parentOf(pathname: string, hasPractice: boolean): string | null {
   /*
@@ -91,6 +106,8 @@ function parentOf(pathname: string, hasPractice: boolean): string | null {
    * somewhere they have never been.
    */
   if (pathname === '/practice/reports') return hasPractice ? '/practice/setup' : '/practice';
+  const platformPractice = platformPracticeParent(pathname);
+  if (platformPractice) return platformPractice;
   if (PARENTS[pathname]) return PARENTS[pathname];
   for (const [prefix, parent] of PREFIX_PARENTS) {
     if (pathname.startsWith(prefix) && pathname !== parent) return parent;
@@ -123,20 +140,32 @@ export function BackLink() {
   const isPlatform = audiences.includes('platform');
   const hasPractice = audiences.includes('practice');
 
-  const label =
-    parent === '/practice'
+  /*
+   * A PRACTICE'S OWN HUB is named for what it is rather than for the platform
+   * tree it sits in. "Their setup" is what the reader came to look at.
+   */
+  /*
+   * NAMED FOR THE DESTINATION, not for its path. A table rather than a ladder
+   * of ternaries: the ladder had grown to six rungs and the next person adding
+   * a parent would have had to find the right rung to put it on.
+   */
+  const LABELS: Record<string, string> = {
+    '/practice/setup': strings.nav.setup,
+    '/practice/queue': strings.nav.outbound,
+    '/review': strings.nav.reviewDossiers,
+    '/platform/acting-as': strings.nav.actingAsRegister,
+    '/practitioner': strings.nav.practitionerHub,
+  };
+
+  const label = parent.startsWith('/platform/practices/')
+    ? // A practice's own hub, named for what the reader came to look at rather
+      // than for the platform tree it sits in.
+      strings.viewOnly.toHub
+    : parent === '/practice'
       ? isPlatform && !hasPractice
         ? strings.nav.allOrganisations
         : strings.nav.yourPractices
-      : parent === '/practice/setup'
-        ? strings.nav.setup
-        : parent === '/practice/queue'
-          ? strings.nav.outbound
-          : parent === '/review'
-            ? strings.nav.reviewDossiers
-            : parent === '/platform/acting-as'
-              ? strings.nav.actingAsRegister
-              : strings.nav.practitionerHub;
+      : (LABELS[parent] ?? strings.nav.practitionerHub);
 
   return (
     <Link href={parent} className={styles.backLink} data-testid="shell-back">
