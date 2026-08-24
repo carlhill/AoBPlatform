@@ -54,6 +54,15 @@ export interface Session {
   practitionerId?: string;
   consoleRole?: string;
   roles: string[];
+  /**
+   * Kept SOLELY to renew the access token before it expires — never sent to
+   * any endpoint but Keycloak's own token endpoint, and like everything else
+   * here, memory-only. Absent for a session this build's flow did not obtain
+   * one for; the keep-alive below is a no-op in that case, not an error.
+   */
+  refreshToken?: string;
+  /** Which client the token belongs to, so a refresh asks the same one. */
+  clientId: string;
 }
 
 let session: Session | null = null;
@@ -93,6 +102,129 @@ export function clearSession(): void {
   // Cleared HERE and not on expiry: this is somebody actually leaving, so
   // there is no logout still to perform and nothing left to name.
   lastIdToken = undefined;
+  stopRefresh();
+}
+
+/*
+ * KEEPING THE SESSION ALIVE, so `currentSession()` almost never has to say no.
+ *
+ * WHY THIS HAD TO EXIST. `currentSession()` self-expires: once `expiresAt`
+ * passes, it silently clears itself and returns null. Nothing was refreshing
+ * it, and nothing was telling the person it had happened. The TOP BAR does not
+ * re-poll, so it went on showing "signed in" long after every write had
+ * quietly stopped carrying an Authorization header at all — and under
+ * AUTH_ENFORCE=false the server does not refuse an anonymous request, it just
+ * proceeds without an actor. A save that needed attribution then failed with
+ * a business-logic error ("must name the person making it") that had nothing
+ * to do with the real problem: the session was gone and nobody had been told.
+ *
+ * A HIDDEN-IFRAME `prompt=none` REDIRECT WOULD ALSO HAVE WORKED, and is the
+ * more common SPA pattern — but it means round-tripping through Keycloak's
+ * `/auth` endpoint on a timer, which is heavier and has its own failure modes
+ * (third-party-cookie blocking breaks a same-site-adjacent iframe in some
+ * browsers). Keycloak already returns a `refresh_token` for this client's
+ * standard flow; refreshing directly against the token endpoint is one POST,
+ * no navigation, no iframe, and it either works or it does not — there is
+ * nothing to silently fail inside a hidden frame nobody is watching.
+ *
+ * PROACTIVE, a minute before expiry, not reactive on 401. Waiting to be told
+ * the token is dead means the FIRST request after expiry always fails and has
+ * to be retried — which is invisible for a GET a component re-fetches anyway,
+ * and is exactly the kind of write this bug was found on: one press, one
+ * chance, gone before anybody could retry it.
+ */
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+function stopRefresh(): void {
+  if (refreshTimer) clearTimeout(refreshTimer);
+  refreshTimer = null;
+}
+
+function scheduleRefresh(): void {
+  stopRefresh();
+  if (!session?.refreshToken) return;
+
+  // A minute of margin, and never less than 15s from now — a token issued
+  // with an unusually short lifetime must not turn this into a tight loop.
+  const delay = Math.max(15_000, session.expiresAt - Date.now() - 60_000);
+  refreshTimer = setTimeout(() => void performRefresh(), delay);
+}
+
+async function performRefresh(): Promise<void> {
+  const current = session;
+  if (!current?.refreshToken) return;
+
+  try {
+    const res = await fetch(`${ISSUER}/protocol/openid-connect/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        client_id: current.clientId,
+        refresh_token: current.refreshToken,
+      }),
+    });
+
+    if (!res.ok) {
+      /*
+       * THE REFRESH TOKEN ITSELF IS DEAD — the SSO session ended, or somebody
+       * signed out elsewhere. Nothing to retry: clearing here is what makes
+       * `currentSession()` and the top bar agree with reality immediately,
+       * rather than both going on claiming a session that Keycloak has
+       * already forgotten.
+       */
+      clearSession();
+      return;
+    }
+
+    const body = (await res.json()) as {
+      access_token: string;
+      expires_in: number;
+      id_token?: string;
+      refresh_token?: string;
+    };
+    const claims = decodeClaims(body.access_token);
+
+    // Still the same session the caller started with, refreshed in place —
+    // an id captured elsewhere while this was in flight stays valid.
+    session = {
+      ...current,
+      accessToken: body.access_token,
+      idToken: body.id_token ?? current.idToken,
+      expiresAt: Date.now() + body.expires_in * 1000,
+      practiceId: claims.practice_id as string | undefined,
+      practitionerId: claims.practitioner_id as string | undefined,
+      consoleRole: claims.console_role as string | undefined,
+      roles: ((claims.realm_access as { roles?: string[] } | undefined)?.roles ?? []) as string[],
+      // Rotated if Keycloak rotates refresh tokens for this realm; kept
+      // otherwise, so a realm without rotation does not lose the ability to
+      // refresh again next time.
+      refreshToken: body.refresh_token ?? current.refreshToken,
+    };
+    lastIdToken = body.id_token ?? lastIdToken;
+    scheduleRefresh();
+  } catch {
+    /*
+     * A NETWORK BLIP, not a dead session. Retrying immediately would hammer a
+     * connection that is already struggling; the existing timer's own next
+     * firing (or the tab regaining focus, below) tries again soon enough, and
+     * the lazy expiry check in `currentSession()` is still the backstop if
+     * every attempt keeps failing until the token genuinely lapses.
+     */
+  }
+}
+
+/*
+ * BROWSERS THROTTLE `setTimeout` IN BACKGROUND TABS, sometimes past the point
+ * a scheduled refresh should have fired. A tab left open and unfocused for an
+ * hour must not come back to a session that quietly died while nobody was
+ * looking — so returning focus is a second trigger, not only the timer.
+ */
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || !session?.refreshToken) return;
+    if (session.expiresAt - Date.now() < 90_000) void performRefresh();
+  });
 }
 
 function base64url(bytes: Uint8Array): string {
@@ -342,7 +474,12 @@ async function exchangeCode(code: string, state: string): Promise<Session> {
   });
   if (!res.ok) throw new Error(`Token exchange failed: ${res.status} ${await res.text()}`);
 
-  const body = (await res.json()) as { access_token: string; expires_in: number; id_token?: string };
+  const body = (await res.json()) as {
+    access_token: string;
+    expires_in: number;
+    id_token?: string;
+    refresh_token?: string;
+  };
   const claims = decodeClaims(body.access_token);
   session = {
     accessToken: body.access_token,
@@ -365,12 +502,15 @@ async function exchangeCode(code: string, state: string): Promise<Session> {
     practitionerId: claims.practitioner_id as string | undefined,
     consoleRole: claims.console_role as string | undefined,
     roles: ((claims.realm_access as { roles?: string[] } | undefined)?.roles ?? []) as string[],
+    refreshToken: body.refresh_token,
+    clientId,
   };  // Remembered separately, so a later expiry cannot take it with it.
   lastIdToken = body.id_token ?? lastIdToken;
 
   // Remember that this browser has a live Keycloak session, so the NEXT cold
   // page load can restore silently instead of falling back to a chooser.
   rememberSignedIn(clientId);
+  scheduleRefresh();
   return session;
 }
 
