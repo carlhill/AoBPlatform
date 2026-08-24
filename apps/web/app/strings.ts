@@ -1761,9 +1761,7 @@ export const strings = {
       + 'somebody asked to move it.',
     backupUnverified: 'Set, but nobody has answered at it yet. We have written to it to say so.',
     backupSave: 'Save backup address',
-    backupClear: 'Remove it',
     backupSaved: 'Saved. We have written to it so its holder knows.',
-    backupCleared: 'Removed. You now have no second address for us to warn.',
 
     affiliationsTitle: 'Your affiliations',
     affiliationsBody:

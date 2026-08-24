@@ -170,26 +170,6 @@ export function PractitionerHub() {
     }
   }
 
-  async function clearBackup() {
-    setBusy(true);
-    setError(null);
-    setErrorKind('write');
-    setSaved(null);
-    try {
-      const res = await fetch(`${CORE_URL}/practitioner/me/backup-email`, {
-        method: 'DELETE',
-        headers: apiHeaders(),
-      });
-      const body = (await res.json().catch(() => ({}))) as { message?: string };
-      if (!res.ok) throw new Error(body.message ?? `That could not be removed (${res.status}).`);
-      setSaved(strings.practitioner.backupCleared);
-      await load();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
 
   /*
    * GROUPED BY PRACTICE, because the entities card answers "which entities do
@@ -402,6 +382,12 @@ export function PractitionerHub() {
               {me.backupEmail && !me.backupEmailVerifiedAt && (
                 <p className={ui.hint}>{strings.practitioner.backupUnverified}</p>
               )}
+              {/*
+                NO WAY BACK TO ZERO. There used to be a "Remove it" button
+                here. Carl's rule: "We always want a backup email" — once one
+                is set, the only path forward is to a DIFFERENT backup, never
+                to none. Save still works to replace it.
+              */}
               <div className={ui.rowActions}>
                 <Button
                   onClick={() => void saveBackup()}
@@ -410,11 +396,6 @@ export function PractitionerHub() {
                 >
                   {strings.practitioner.backupSave}
                 </Button>
-                {me.backupEmail && (
-                  <Button variant="subtle" onClick={() => void clearBackup()} disabled={busy} data-testid="practitioner-clear-backup">
-                    {strings.practitioner.backupClear}
-                  </Button>
-                )}
               </div>
 
               {saved && <p className={ui.hint}>{saved}</p>}

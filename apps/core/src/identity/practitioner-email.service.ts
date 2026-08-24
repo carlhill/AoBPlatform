@@ -252,24 +252,6 @@ export class PractitionerEmailService {
     };
   }
 
-  /** Remove it. Having none is the worse position, so the screen says so. */
-  async clearBackup(practitionerId: string) {
-    await this.prisma.practitioner.update({
-      where: { id: practitionerId },
-      data: {
-        backupEmail: null,
-        backupEmailVerifiedAt: null,
-        // The proof goes with it. A token left behind would confirm an address
-        // that is no longer anybody's backup.
-        backupEmailToken: null,
-        backupEmailCode: null,
-        backupEmailExpiresAt: null,
-        backupEmailAttempts: 0,
-      },
-    });
-    return { backupEmail: null, verified: false };
-  }
-
   /**
    * The backup address answers, from the link we sent it.
    *

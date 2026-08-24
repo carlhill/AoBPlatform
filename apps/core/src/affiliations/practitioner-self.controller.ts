@@ -2,7 +2,6 @@ import {
   BadRequestException,
   Body,
   Controller,
-  Delete,
   Get,
   NotFoundException,
   Param,
@@ -373,9 +372,12 @@ export class PractitionerSelfController {
     return this.practitionerEmail.setBackup(this.practitionerIdOf(actor), dto.email);
   }
 
-  /** Removing it. Allowed, and the screen says plainly what it costs. */
-  @Delete('me/backup-email')
-  clearBackupEmail(@SessionActor() actor: Actor | undefined) {
-    return this.practitionerEmail.clearBackup(this.practitionerIdOf(actor));
-  }
+  /*
+   * NO WAY BACK TO ZERO. There used to be a DELETE here. Carl's rule: "We
+   * always want a backup email" — not "removable, but discouraged". Having
+   * none is the exact state the backup exists to prevent being stuck in, so
+   * offering a one-press way back into it was the product arguing with
+   * itself. Changing to a DIFFERENT backup is still `PUT` above; there is no
+   * longer a path to having none once one has been set.
+   */
 }
