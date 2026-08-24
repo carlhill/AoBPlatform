@@ -620,6 +620,57 @@ signals. On its own it is a bad predictor; alongside "added five practitioners
 in a week", "none has ever captured consent" and "no register check recorded",
 it is one column in a picture that a person then reads.
 
+## TAUTALA — the assistant, and the reminders that come first
+
+Full design in **tautala_ai.md**. `tautala` is Samoan for "to speak".
+
+**Phase 0 first, and it needs no AI.** A practice approved and then stuck is the
+commonest failure we have — Throwaway Verification Clinic is approved with a
+signed-in administrator and no location; Sampletown has four locations and
+NOBODY who can sign in. Neither is hard. Both are somebody not finishing a
+four-concept task they will do once in their life.
+
+- [ ] Reminder email to the administrator, the manager and the group address,
+      naming the ONE thing outstanding and linking straight to it. The setup
+      gaps already carry a label, a sentence and a destination, so the email
+      writes itself
+- [ ] A decaying schedule — day 3, day 10, day 30, then stop. A reminder that
+      arrives forever is one nobody reads
+- [ ] How to reach a person, in every one
+- [ ] Measure completion. If this alone fixes it, TAUTALA is a convenience
+      rather than a rescue — better known before building it than after
+
+**Then TAUTALA, in the order that keeps it safe:**
+
+- [ ] Phase 1, READ ONLY: what is missing, why, who works here, what happened to
+      this affiliation. Write tools do not exist yet — absent, not disabled.
+      Most of the value, almost none of the risk
+- [ ] Phase 2, DRAFT: the model proposes a typed intent; the platform validates
+      it with the SAME rules the forms use; the user sees exactly what will be
+      created and presses a button; the server writes it as THEM, through the
+      ordinary endpoint
+- [ ] `createdVia: 'tautala'` on every record, so a reviewer can tell whether a
+      human typed an address or a model parsed one
+
+**Why this may act where the support chat may not:** the user is signed in and
+scoped, and TAUTALA grants no authority the session did not already hold. It is
+a faster path to something they can already do. That is the whole licence, and
+everything in the design exists to keep it true.
+
+**It can never accept an affiliation.** Only the practitioner can, from the
+invitation sent to their own address. If TAUTALA could create AND accept, the
+rule that a practice cannot accept on a practitioner's behalf collapses — and
+that rule is load-bearing for the fraud model. Enforced by the tool not
+existing, never by a prompt.
+
+Never touches a provider number or a Medicare card number, never records a
+register check (ours, not theirs), never approves a practice, never issues a
+credential.
+
+Needs Carl: an LLM in the request path (CLAUDE.md 7), transcript retention, and
+whether TAUTALA is offered beyond practice staff — recommendation is not at
+first.
+
 ## Support, lockouts and passkey recovery
 
 Full design in **support.md**. The short of it:
