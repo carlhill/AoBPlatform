@@ -58,7 +58,12 @@ export function Shell({
    */
   title?: React.ReactNode;
   lead?: React.ReactNode;
-  children: React.ReactNode;
+  /**
+   * OPTIONAL, because a page can be nothing but its banner. A refusal that says
+   * "that link does not match an application" has a title, a sentence, and
+   * genuinely nothing else -- requiring an empty body would mean writing one.
+   */
+  children?: React.ReactNode;
 }) {
   return (
     <div className={styles.shell}>

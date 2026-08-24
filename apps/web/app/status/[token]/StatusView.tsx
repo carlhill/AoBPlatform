@@ -61,9 +61,10 @@ export function StatusView({ token }: { token: string }) {
 
   if (missing) {
     return (
-      <Shell right={<SessionControl audience={strings.status.audience} />}>
-        <h1 className={ui.pageTitle}>{strings.status.notFound}</h1>
-        <p className={ui.pageLead}>{strings.status.notFoundBody}</p>
+      <Shell right={<SessionControl audience={strings.status.audience} />}
+      title={strings.status.notFound}
+      lead={strings.status.notFoundBody}
+    >
       </Shell>
     );
   }

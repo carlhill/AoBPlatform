@@ -31,7 +31,6 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
-  ArrowLeft,
   Building2,
   CheckCircle2,
   MapPin,
@@ -157,7 +156,7 @@ export function EntityView({ practiceId }: { practiceId: string }) {
 
   if (error) {
     return (
-      <Shell right={<SessionControl audience={strings.entity.audience} />}>
+      <Shell right={<SessionControl audience={strings.entity.audience} />} title={strings.entity.title}>
         <Notice tone="stop" title={strings.entity.notLoaded}>
           {error}
         </Notice>
@@ -180,15 +179,11 @@ export function EntityView({ practiceId }: { practiceId: string }) {
   const next = () => (n += 1);
 
   return (
-    <Shell right={<SessionControl audience={strings.entity.audience} />}>
-      <Link href="/practice/setup" className={styles.crumb} data-testid="entity-back">
-        <ArrowLeft size={15} aria-hidden="true" />
-        {strings.entity.backToSetup}
-      </Link>
-
-      <h1 className={ui.pageTitle}>{practice.name}</h1>
-      <p className={ui.pageLead}>{strings.entity.lead}</p>
-
+    <Shell
+      right={<SessionControl audience={strings.entity.audience} />}
+      title={practice.name}
+      lead={strings.entity.lead}
+    >
       {/* ---------------------------------------------------------------- */}
       <Section number={next()} title={strings.entity.title}>
         <div className={`${styles.card} ${attested ? styles.cardNeedsWork : styles.cardOk}`}>

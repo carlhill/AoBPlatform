@@ -124,9 +124,10 @@ export function ActingAsRegister() {
   const past = (rows ?? []).filter((r) => !r.live);
 
   return (
-    <Shell right={<SessionControl audience={strings.actingAsRegister.audience} />}>
-      <h1 className={ui.pageTitle}>{strings.actingAsRegister.title}</h1>
-      <p className={ui.pageLead}>{strings.actingAsRegister.lead}</p>
+    <Shell right={<SessionControl audience={strings.actingAsRegister.audience} />}
+      title={strings.actingAsRegister.title}
+      lead={strings.actingAsRegister.lead}
+    >
 
       {error && (
         <Notice tone="stop" title={strings.actingAsRegister.notLoaded}>

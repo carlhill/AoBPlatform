@@ -340,13 +340,14 @@ export function DossierView({ id }: { id: string }) {
 
   if (missing) {
     return (
-      <Shell right={<SessionControl audience={strings.review.audience} />}>
+      <Shell right={<SessionControl audience={strings.review.audience} />}
+      title={strings.review.notFound}
+      lead={strings.review.notFoundBody}
+    >
         <Link href="/review" className={styles.backLink}>
           <ArrowLeft size={15} aria-hidden="true" />
           {strings.review.back}
         </Link>
-        <h1 className={ui.pageTitle}>{strings.review.notFound}</h1>
-        <p className={ui.pageLead}>{strings.review.notFoundBody}</p>
       </Shell>
     );
   }

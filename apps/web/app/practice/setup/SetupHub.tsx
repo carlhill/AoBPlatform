@@ -100,6 +100,21 @@ interface Hub {
  * ANYTHING NOT NAMED HERE STILL APPEARS, at the end. A new card must not be
  * able to vanish by being forgotten in this list.
  */
+/**
+ * `/practice/locations` becomes `/platform/practices/<id>/locations`.
+ *
+ * A mapping rather than two sets of links, so a card added to the hub reaches
+ * its read-only twin without anybody remembering to add it in a second place.
+ * A page with no twin yet simply lands on the practice route and is refused
+ * there, which is the honest failure -- better than a link that silently goes
+ * somewhere else.
+ */
+function toViewPath(href: string, practiceId: string): string {
+  return href.startsWith('/practice')
+    ? `/platform/practices/${practiceId}${href.slice('/practice'.length) || ''}`
+    : href;
+}
+
 const CARD_ORDER: readonly string[] = ['entity', 'locations', 'practitioners', 'affiliations', 'channels'];
 
 const CARD_ICONS: Record<string, typeof Building2> = {
@@ -117,7 +132,28 @@ const STATE_TONE: Record<CardState, Tone> = {
   done: 'ok',
 };
 
-export function SetupHub({ practiceId }: { practiceId: string }) {
+export function SetupHub({
+  practiceId,
+  viewOnly = false,
+}: {
+  practiceId: string;
+  /**
+   * LOOKING, not working.
+   *
+   * A platform operator often wants to SEE a practice's setup -- what is
+   * missing, who works there, how far along it is -- and the only way in was to
+   * act as them: a recorded impersonation that tells the practice and forces a
+   * reapproval. That is a heavy price for reading, and a price heavy enough
+   * that people avoid looking, which is worse for everybody.
+   *
+   * So: the same hub, read-only, with the cards leading to read-only pages. It
+   * grants nothing new -- an operator has no practice claim, so every mutating
+   * endpoint behind these pages already refuses them. What it changes is that
+   * the console now SHOWS what the server would do, instead of offering
+   * controls that fail.
+   */
+  viewOnly?: boolean;
+}) {
   /*
    * Whether this person may look at any OTHER practice. A token claim fixes it
    * to one, so the chooser is not merely unnecessary for them — it is a page
@@ -235,7 +271,27 @@ export function SetupHub({ practiceId }: { practiceId: string }) {
   }
 
   return (
-    <Shell right={<SessionControl audience={strings.setup.audience} />}>
+    <Shell
+      right={<SessionControl audience={strings.setup.audience} />}
+      /*
+        THE TITLE AND ITS ONE LINE, handed to the Shell so they are PINNED.
+        Rendered inside `<main>` they scrolled away, and on a hub of six cards
+        that means losing which practice you are set up in half way down.
+      */
+      title={`${strings.setup.title} ${hub.practice.name}`}
+      lead={
+        <>
+          {hub.practice.validationState === 'validated' && hub.practice.validatedByName ? (
+            <>
+              {strings.setup.approvedBy} {hub.practice.validatedByName}
+              {hub.practice.validatedAt && <> · {new Date(hub.practice.validatedAt).toLocaleDateString('en-AU')}</>}
+              {' · '}
+            </>
+          ) : null}
+          ABN {hub.practice.abn ?? '—'} · {hub.practice.abnStatus ?? '—'}
+        </>
+      }
+    >
       {/*
         A group manager must never be stranded on one practice — but a SCOPED
         user has exactly one and the list would bounce them straight back here.
@@ -248,19 +304,6 @@ export function SetupHub({ practiceId }: { practiceId: string }) {
           {strings.setup.backToPractices}
         </Link>
       )}
-      <h1 className={ui.pageTitle}>
-        {strings.setup.title} {hub.practice.name}
-      </h1>
-      <p className={ui.pageLead}>
-        {hub.practice.validationState === 'validated' && hub.practice.validatedByName ? (
-          <>
-            {strings.setup.approvedBy} {hub.practice.validatedByName}
-            {hub.practice.validatedAt && <> · {new Date(hub.practice.validatedAt).toLocaleDateString('en-AU')}</>}
-            {' · '}
-          </>
-        ) : null}
-        ABN {hub.practice.abn ?? '—'} · {hub.practice.abnStatus ?? '—'}
-      </p>
 
       {/*
         THE FIRST THING ON THE PAGE, and never a count. Counts read as readiness
@@ -352,7 +395,7 @@ export function SetupHub({ practiceId }: { practiceId: string }) {
               </ul>
 
               {card.href && (
-                <Link href={card.href} className={styles.cardLink}>
+                <Link href={viewOnly ? toViewPath(card.href, practiceId) : card.href} className={styles.cardLink}>
                   {/*
                     The article is stripped, not the title edited: "The entity"
                     is right as a heading and wrong after "Open the".
@@ -382,7 +425,7 @@ export function SetupHub({ practiceId }: { practiceId: string }) {
           <p className={styles.cardRollup}>{hub.practice.pms}</p>
           <p className={ui.hint}>{strings.setup.pmsBody}</p>
           <p className={ui.hint}>{strings.setup.pmsUnsettled}</p>
-          <Link href="/practice/pms" className={styles.cardLink}>
+          <Link href={viewOnly ? toViewPath('/practice/pms', practiceId) : '/practice/pms'} className={styles.cardLink}>
             {strings.setup.open} {strings.pms.title.toLowerCase()}
             <ArrowRight size={14} aria-hidden="true" />
           </Link>
@@ -406,15 +449,15 @@ export function SetupHub({ practiceId }: { practiceId: string }) {
             dossier: that one is for reading, this is "what did we submit,
             and what can I change".
           */}
-          <Link href="/practice/application" className={styles.cardLink} data-testid="hub-to-application">
+          <Link href={viewOnly ? toViewPath('/practice/application', practiceId) : '/practice/application'} className={styles.cardLink} data-testid="hub-to-application">
             {strings.setup.open} {strings.application.title.toLowerCase()}
             <ArrowRight size={14} aria-hidden="true" />
           </Link>
-          <Link href="/practice/reports" className={styles.cardLink} data-testid="hub-to-reports">
+          <Link href={viewOnly ? toViewPath('/practice/reports', practiceId) : '/practice/reports'} className={styles.cardLink} data-testid="hub-to-reports">
             {strings.setup.open} {strings.reports.title.toLowerCase()}
             <ArrowRight size={14} aria-hidden="true" />
           </Link>
-          <Link href="/practice/users" className={styles.cardLink} data-testid="hub-to-users">
+          <Link href={viewOnly ? toViewPath('/practice/users', practiceId) : '/practice/users'} className={styles.cardLink} data-testid="hub-to-users">
             {strings.setup.open} {strings.users.title.toLowerCase()}
             <ArrowRight size={14} aria-hidden="true" />
           </Link>

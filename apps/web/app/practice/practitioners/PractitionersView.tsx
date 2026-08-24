@@ -26,7 +26,6 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
-  ArrowLeft,
   CheckCircle2,
   ExternalLink,
   ShieldAlert,
@@ -157,7 +156,10 @@ export function PractitionersView({
 
   if (loadError) {
     return (
-      <Shell right={<SessionControl audience={strings.setup.audience} />}>
+      <Shell right={<SessionControl audience={strings.setup.audience} />}
+      title={strings.practitioners.title}
+      lead={strings.practitioners.lead}
+    >
         <Notice tone="stop" title={strings.practitioners.notLoaded}>
           {loadError}
         </Notice>
@@ -175,13 +177,6 @@ export function PractitionersView({
 
   return (
     <Shell right={<SessionControl audience={strings.setup.audience} />}>
-      <Link href="/practice/setup" className={styles.crumb} data-testid="practitioners-back">
-        <ArrowLeft size={15} aria-hidden="true" />
-        {strings.practitioners.backToSetup}
-      </Link>
-
-      <h1 className={ui.pageTitle}>{strings.practitioners.title}</h1>
-      <p className={ui.pageLead}>{strings.practitioners.lead}</p>
 
       {mode === 'platform' && (
         /*

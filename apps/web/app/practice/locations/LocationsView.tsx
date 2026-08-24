@@ -25,8 +25,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
-import { AlertTriangle, ArrowLeft, Building2, CheckCircle2, MapPin, Pencil, Plus } from 'lucide-react';
+import { AlertTriangle, Building2, CheckCircle2, MapPin, Pencil, Plus } from 'lucide-react';
 import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui } from '../../ui';
 import { isPlatformOperator } from '@aobplatform/domain';
 import { useRefreshable } from '../../refresh';
@@ -141,7 +140,10 @@ export function LocationsView({ practiceId }: { practiceId: string }) {
 
   if (loadError) {
     return (
-      <Shell right={<SessionControl audience={strings.setup.audience} />}>
+      <Shell right={<SessionControl audience={strings.setup.audience} />}
+      title={strings.locations.title}
+      lead={strings.locations.lead}
+    >
         <Notice tone="stop" title={strings.locations.notLoaded}>
           {loadError}
         </Notice>
@@ -157,13 +159,6 @@ export function LocationsView({ practiceId }: { practiceId: string }) {
 
   return (
     <Shell right={<SessionControl audience={strings.setup.audience} />}>
-      <Link href="/practice/setup" className={styles.crumb} data-testid="locations-back">
-        <ArrowLeft size={15} aria-hidden="true" />
-        {strings.locations.backToSetup}
-      </Link>
-
-      <h1 className={ui.pageTitle}>{strings.locations.title}</h1>
-      <p className={ui.pageLead}>{strings.locations.lead}</p>
 
       {locations === null && <p className={ui.hint}>{strings.locations.loading}</p>}
 

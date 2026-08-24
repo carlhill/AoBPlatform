@@ -203,9 +203,10 @@ export function ApplyForm() {
 
   if (sentReference) {
     return (
-      <Shell right={<SessionControl audience={strings.apply.audience} />}>
-        <h1 className={ui.pageTitle}>{strings.apply.sentTitle}</h1>
-        <p className={ui.pageLead}>{strings.apply.sentBody}</p>
+      <Shell right={<SessionControl audience={strings.apply.audience} />}
+      title={strings.apply.sentTitle}
+      lead={strings.apply.sentBody}
+    >
         <GateLedger state={gates} />
         <p className={ui.hint}>
           {strings.apply.sentReference}: <span className={ui.mono}>{sentReference}</span>
@@ -215,9 +216,10 @@ export function ApplyForm() {
   }
 
   return (
-    <Shell right={<SessionControl audience={strings.apply.audience} />}>
-      <h1 className={ui.pageTitle}>{strings.apply.title}</h1>
-      <p className={ui.pageLead}>{strings.apply.lead}</p>
+    <Shell right={<SessionControl audience={strings.apply.audience} />}
+      title={strings.apply.title}
+      lead={strings.apply.lead}
+    >
 
       <GateLedger state={gates} />
 

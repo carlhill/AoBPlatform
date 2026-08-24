@@ -27,7 +27,6 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
-  ArrowLeft,
   CheckCircle2,
   Clock,
   Send,
@@ -196,7 +195,10 @@ export function AffiliationsView({ practiceId }: { practiceId: string }) {
 
   if (loadError) {
     return (
-      <Shell right={<SessionControl audience={strings.setup.audience} />}>
+      <Shell right={<SessionControl audience={strings.setup.audience} />}
+      title={strings.affiliations.title}
+      lead={strings.affiliations.lead}
+    >
         <Notice tone="stop" title={strings.affiliations.notLoaded}>
           {loadError}
         </Notice>
@@ -226,13 +228,6 @@ export function AffiliationsView({ practiceId }: { practiceId: string }) {
 
   return (
     <Shell right={<SessionControl audience={strings.setup.audience} />}>
-      <Link href="/practice/setup" className={styles.crumb} data-testid="affiliations-back">
-        <ArrowLeft size={15} aria-hidden="true" />
-        {strings.affiliations.backToSetup}
-      </Link>
-
-      <h1 className={ui.pageTitle}>{strings.affiliations.title}</h1>
-      <p className={ui.pageLead}>{strings.affiliations.lead}</p>
 
       {affiliations === null && <p className={ui.hint}>{strings.affiliations.loading}</p>}
 

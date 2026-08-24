@@ -100,9 +100,10 @@ export function ActingAsHistory() {
   }, [rows, query]);
 
   return (
-    <Shell right={<SessionControl audience={strings.actingAsHistory.audience} />}>
-      <h1 className={ui.pageTitle}>{strings.actingAsHistory.title}</h1>
-      <p className={ui.pageLead}>{strings.actingAsHistory.lead}</p>
+    <Shell right={<SessionControl audience={strings.actingAsHistory.audience} />}
+      title={strings.actingAsHistory.title}
+      lead={strings.actingAsHistory.lead}
+    >
 
       {error && (
         <Notice tone="stop" title={strings.actingAsHistory.notLoaded}>

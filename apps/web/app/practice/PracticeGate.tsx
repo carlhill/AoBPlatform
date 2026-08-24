@@ -22,7 +22,10 @@ export function PracticeGate({ children }: { children: (practiceId: string) => R
 
   if (!checked) {
     return (
-      <Shell right={<SessionControl audience={strings.setup.audience} />}>
+      <Shell right={<SessionControl audience={strings.setup.audience} />}
+      title={strings.setup.noPracticeTitle}
+      lead={scoped ? strings.setup.noPracticeScoped : strings.setup.noPracticeBody}
+    >
         <p className={ui.hint}>{strings.review.loading}</p>
       </Shell>
     );
@@ -31,8 +34,6 @@ export function PracticeGate({ children }: { children: (practiceId: string) => R
   if (!practiceId) {
     return (
       <Shell right={<SessionControl audience={strings.setup.audience} />}>
-        <h1 className={ui.pageTitle}>{strings.setup.noPracticeTitle}</h1>
-        <p className={ui.pageLead}>{scoped ? strings.setup.noPracticeScoped : strings.setup.noPracticeBody}</p>
         {/*
           The way out is a LIST, and only somebody entitled to a list is offered
           one. A scoped user has exactly one practice and cannot choose another,

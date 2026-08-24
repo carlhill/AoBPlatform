@@ -6,6 +6,16 @@
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+
+  /*
+   * The top bar's total height -- 52px of content plus its 1px border.
+   *
+   * Named once because two things depend on it and they must not drift: the bar
+   * itself, and the banner that pins directly beneath it. Written as 52px, the
+   * banner sat one pixel high and the page showed through the seam while
+   * scrolling.
+   */
+  --topbar-height: 53px;
 }
 
 /*
@@ -35,8 +45,8 @@
 .banner {
   position: sticky;
   /* Exactly the top bar's height, so the two sit flush and nothing shows
-     through a gap while the page moves behind them. */
-  top: 52px;
+     through the seam while the page moves behind them. */
+  top: var(--topbar-height);
   z-index: 30;
   background: var(--surface);
   border-bottom: 1px solid var(--line);
@@ -53,10 +63,18 @@
   margin-bottom: var(--s2);
 }
 
+/*
+ * FULL WIDTH, unlike the body lead it replaces.
+ *
+ * `max-width: 62ch` is right for a paragraph somebody READS -- a comfortable
+ * line length. This is not that: it is one line of context, and constraining it
+ * wrapped "Approved by ... ABN ... ACTIVE" onto three lines and pinned all
+ * three. Letting it use the page saves two or three lines of viewport on every
+ * screen, which is the whole point of pinning as little as possible.
+ */
 .bannerLead {
   color: var(--ink-muted);
   margin: 0;
-  max-width: 62ch;
 }
 
 /*

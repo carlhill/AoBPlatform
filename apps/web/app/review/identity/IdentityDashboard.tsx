@@ -212,7 +212,10 @@ export function IdentityDashboard() {
 
   if (error) {
     return (
-      <Shell right={<SessionControl audience={strings.identity.audience} />}>
+      <Shell right={<SessionControl audience={strings.identity.audience} />}
+      title={strings.identity.title}
+      lead={strings.identity.lead}
+    >
         <Notice tone="stop" title={strings.identity.notLoaded}>
           {error}
         </Notice>
@@ -232,8 +235,6 @@ export function IdentityDashboard() {
         <ArrowLeft size={14} aria-hidden="true" /> {strings.identity.backToQueue}
       </Link>
 
-      <h1 className={ui.pageTitle}>{strings.identity.title}</h1>
-      <p className={ui.pageLead}>{strings.identity.lead}</p>
 
       {/*
         Said before any number is shown, so a red score reads as information

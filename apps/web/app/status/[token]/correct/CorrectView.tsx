@@ -139,16 +139,20 @@ export function CorrectView({ token }: { token: string }) {
 
   if (missing) {
     return (
-      <Shell right={<SessionControl audience={strings.status.audience} />}>
-        <h1 className={ui.pageTitle}>{strings.status.notFound}</h1>
-        <p className={ui.pageLead}>{strings.status.notFoundBody}</p>
+      <Shell right={<SessionControl audience={strings.status.audience} />}
+      title={strings.status.notFound}
+      lead={strings.status.notFoundBody}
+    >
       </Shell>
     );
   }
 
   if (!payload) {
     return (
-      <Shell right={<SessionControl audience={strings.status.audience} />}>
+      <Shell right={<SessionControl audience={strings.status.audience} />}
+      title={strings.status.correctedTitle}
+      lead={strings.status.correctedBody}
+    >
         {error ? (
           <Notice tone="stop" title={strings.status.notLoaded}>
             {error}
@@ -162,9 +166,10 @@ export function CorrectView({ token }: { token: string }) {
 
   if (done) {
     return (
-      <Shell right={<SessionControl audience={strings.status.audience} />}>
-        <h1 className={ui.pageTitle}>{strings.status.correctedTitle}</h1>
-        <p className={ui.pageLead}>{strings.status.correctedBody}</p>
+      <Shell right={<SessionControl audience={strings.status.audience} />}
+      title={strings.status.correctTitle}
+      lead={strings.status.correctLead}
+    >
         <Link href={`/status/${token}`} className={ui.buttonLink}>
           <ArrowLeft size={15} aria-hidden="true" />
           {strings.status.backToStatus}
@@ -218,8 +223,6 @@ export function CorrectView({ token }: { token: string }) {
         <ArrowLeft size={15} aria-hidden="true" />
         {strings.status.backToStatus}
       </Link>
-      <h1 className={ui.pageTitle}>{strings.status.correctTitle}</h1>
-      <p className={ui.pageLead}>{strings.status.correctLead}</p>
 
       {/* What the reviewer actually asked for, in their words. Without this the
           applicant has a form and no idea which field is the problem. */}

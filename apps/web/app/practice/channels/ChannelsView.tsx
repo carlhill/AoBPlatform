@@ -23,8 +23,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, CheckCircle2, MessageSquare, Monitor, ShieldQuestion, Timer } from 'lucide-react';
+import { CheckCircle2, MessageSquare, Monitor, ShieldQuestion, Timer } from 'lucide-react';
 import {
   APPROVED_IDENTIFIER_TYPES,
   IDENTIFIER_COUNT_FLOOR,
@@ -84,7 +83,10 @@ export function ChannelsView({ practiceId }: { practiceId: string }) {
 
   if (loadError) {
     return (
-      <Shell right={<SessionControl audience={strings.setup.audience} />}>
+      <Shell right={<SessionControl audience={strings.setup.audience} />}
+      title={strings.channels.title}
+      lead={strings.channels.lead}
+    >
         <Notice tone="stop" title={strings.channels.notLoaded}>
           {loadError}
         </Notice>
@@ -134,13 +136,6 @@ export function ChannelsView({ practiceId }: { practiceId: string }) {
 
   return (
     <Shell right={<SessionControl audience={strings.setup.audience} />}>
-      <Link href="/practice/setup" className={styles.crumb} data-testid="channels-back">
-        <ArrowLeft size={15} aria-hidden="true" />
-        {strings.channels.backToSetup}
-      </Link>
-
-      <h1 className={ui.pageTitle}>{strings.channels.title}</h1>
-      <p className={ui.pageLead}>{strings.channels.lead}</p>
 
       {practice === null && <p className={ui.hint}>{strings.channels.loading}</p>}
 

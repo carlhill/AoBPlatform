@@ -107,9 +107,10 @@ export function ReviewerGate({ children }: { children: React.ReactNode }) {
     // wrong turn, not an attack, and is told so plainly.
     if (!session.roles.includes(REQUIRED_ROLE)) {
       return (
-        <Shell right={<SessionControl audience={strings.review.audience} />}>
-          <h1 className={ui.pageTitle}>{strings.reviewerGate.wrongRoleTitle}</h1>
-          <p className={ui.pageLead}>{strings.reviewerGate.wrongRoleBody}</p>
+        <Shell right={<SessionControl audience={strings.review.audience} />}
+      title={strings.reviewerGate.wrongRoleTitle}
+      lead={strings.reviewerGate.wrongRoleBody}
+    >
           <p className={ui.hint}>
             {strings.reviewerGate.signedInAs} <strong>{session.username}</strong>
             {session.roles.length > 0 && <> · {session.roles.join(', ')}</>}
@@ -146,14 +147,15 @@ export function ReviewerGate({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <Shell right={<SessionControl audience={strings.review.audience} />}>
+    <Shell right={<SessionControl audience={strings.review.audience} />}
+      title={strings.reviewerGate.heading}
+      lead={strings.reviewerGate.body}
+    >
       <div className={ui.signInCard} data-testid="reviewer-gate">
         <div className={ui.signInMark}>
           <ShieldCheck size={20} aria-hidden="true" />
           {strings.appName}
         </div>
-        <h1 className={ui.pageTitle}>{strings.reviewerGate.heading}</h1>
-        <p className={ui.pageLead}>{strings.reviewerGate.body}</p>
 
         <div className={ui.rowActions}>
           <Button variant="primary" onClick={() => void beginLogin(CONSOLE_CLIENT_ID)} data-testid="reviewer-sign-in">

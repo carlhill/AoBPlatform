@@ -125,9 +125,10 @@ export function QueueView() {
   }, [rows, filter]);
 
   return (
-    <Shell right={<SessionControl audience={strings.review.audience} />}>
-      <h1 className={ui.pageTitle}>{strings.review.queueTitle}</h1>
-      <p className={ui.pageLead}>{strings.review.queueLead}</p>
+    <Shell right={<SessionControl audience={strings.review.audience} />}
+      title={strings.review.queueTitle}
+      lead={strings.review.queueLead}
+    >
 
       {/*
         The queue answers "what is in front of me today". The dashboard answers

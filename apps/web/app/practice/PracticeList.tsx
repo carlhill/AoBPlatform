@@ -298,9 +298,10 @@ export function PracticeList() {
    */
   if (!session) {
     return (
-      <Shell right={<SessionControl audience={strings.setup.audience} />}>
-        <h1 className={ui.pageTitle}>{strings.auth.signedOutTitle}</h1>
-        <p className={ui.pageLead}>{strings.auth.signedOutBody}</p>
+      <Shell right={<SessionControl audience={strings.setup.audience} />}
+      title={strings.auth.signedOutTitle}
+      lead={strings.auth.signedOutBody}
+    >
         <button type="button" className={ui.buttonLink} onClick={() => void beginLogin()} data-testid="list-sign-in">
           {strings.auth.signIn}
         </button>
@@ -310,7 +311,10 @@ export function PracticeList() {
 
   if (error) {
     return (
-      <Shell right={<SessionControl audience={strings.setup.audience} />}>
+      <Shell right={<SessionControl audience={strings.setup.audience} />}
+      title={strings.practices.title}
+      lead={strings.practices.lead}
+    >
         <Notice tone="stop" title={strings.practices.notLoaded}>
           {error}
         </Notice>
@@ -320,8 +324,6 @@ export function PracticeList() {
 
   return (
     <Shell right={<SessionControl audience={strings.setup.audience} />}>
-      <h1 className={ui.pageTitle}>{strings.practices.title}</h1>
-      <p className={ui.pageLead}>{strings.practices.lead}</p>
 
       {practices !== null && practices.length > 0 && (
         <div className={styles.controls}>
