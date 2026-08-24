@@ -219,6 +219,19 @@ export function forcesReapproval(): boolean {
   return true;
 }
 
+/**
+ * Date AND time, for a notice about a session — a date alone reads as
+ * "24 August 2026" for both the start and the end of a session that lasted
+ * twenty minutes, which tells a practice nothing about how long somebody was
+ * actually in their console.
+ */
+function formatDateTimeUtc(d: Date): string {
+  return (
+    `${d.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })} at ` +
+    `${d.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC' })} UTC`
+  );
+}
+
 /** What the practice is told afterwards. Written once so every surface agrees. */
 export function noticeToPractice(input: {
   operatorName: string;
@@ -244,8 +257,7 @@ export function noticeToPractice(input: {
     subject: 'Somebody at AoBPlatform acted on your practice’s behalf',
     sessionId: input.sessionId,
     lines: [
-      `${input.operatorName} at AoBPlatform used your practice’s console on ` +
-        `${input.startedAt.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}.`,
+      `${input.operatorName} at AoBPlatform used your practice’s console on ${formatDateTimeUtc(input.startedAt)}.`,
       reason ? `Why: ${reason.label}.` : 'Why: not recorded.',
       ...(input.note ? [`They added: ${input.note}`] : []),
       'Everything they did is recorded against their name, not yours.',
@@ -325,12 +337,7 @@ export function noticeToPracticeOnEnd(input: {
   consoleUrl?: string;
   sessionId: string;
 }): { subject: string; lines: string[]; sessionId: string } {
-  // Date AND time — a date alone reads as "24 August 2026 to 24 August
-  // 2026" for a session that lasted twenty minutes, which tells a practice
-  // nothing about how long somebody was actually in their console.
-  const when = (d: Date) =>
-    `${d.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })} at ` +
-    `${d.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC' })} UTC`;
+  const when = formatDateTimeUtc;
 
   return {
     subject: 'AoBPlatform has finished acting on your practice’s behalf',
