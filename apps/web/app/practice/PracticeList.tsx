@@ -42,6 +42,7 @@ import {
 } from '@aobplatform/domain';
 import { Button, Chip, Field, Notice, Shell, TextInput, ui } from '../ui';
 import { useRefreshable } from '../refresh';
+import { toViewPath } from '../viewPath';
 import { strings } from '../strings';
 import { apiHeaders, attemptSilentLogin, currentSession, beginLogin } from '../auth';
 import styles from './practice.module.css';
@@ -440,7 +441,6 @@ export function PracticeList() {
            * An operator CAN open an undecided one — the review is theirs. What
            * they cannot open without acting-as is a decided practice's console.
            */
-          const canOpen = !isOperator || actingOn === p.id || !decided;
 
           /*
            * WHERE THE ROW GOES, and for an undecided application that is the
@@ -456,7 +456,30 @@ export function PracticeList() {
            * the practice get its administrator invitation and a passkey to
            * enrol. That is the work, so that is where the row leads.
            */
-          const href = isOperator && !decided ? `/review/${p.id}` : '/practice/setup';
+          /*
+           * WHERE THE ROW GOES.
+           *
+           * An undecided application goes to the REVIEW: that is the work, and
+           * there is no console yet to open.
+           *
+           * A decided practice goes to the operator's READ-ONLY view of it.
+           * Clicking a practice used to be the only way to reach its setup, and
+           * the only way to reach that was to act as them -- a recorded
+           * impersonation that tells the practice and forces a reapproval, paid
+           * for the sake of LOOKING. Carl's objection, and he was right: a
+           * price that heavy for reading means people stop reading.
+           *
+           * Acting as them is still one press away, below, where it is a
+           * deliberate act with a stated reason rather than the toll on the
+           * only road in.
+           */
+          const href = !decided
+            ? isOperator
+              ? `/review/${p.id}`
+              : '/practice/setup'
+            : isOperator
+              ? `/platform/practices/${p.id}`
+              : '/practice/setup';
 
           /*
            * CLICKING A PRACTICE MUST NOT BOUNCE YOU.
@@ -495,17 +518,23 @@ export function PracticeList() {
                   answers "and then what", which is the half that costs somebody
                   their afternoon.
 
-                  Only for a practice user, because the destinations are the
-                  practice's own pages -- an operator without a session would be
-                  offered links that refuse them, and the row already tells them
-                  to act as the practice.
+                  SHOWN TO EVERYBODY, including an operator. The first version
+                  hid this from them, because these are the practice's own pages
+                  and an operator has no claim to open one -- which meant the
+                  person most likely to ask "why does this say NO ADMINISTRATOR"
+                  was the one person not shown the answer.
+                  
+                  Now the read-only tree exists, so their links point at the
+                  version that cannot change anything. Same list, same order,
+                  same sentences; a destination that works for whoever is
+                  reading it.
                 */}
-                {!isOperator && p.gaps.length > 0 && (
+                {p.gaps.length > 0 && (
                   <ul className={styles.rowGaps}>
                     {p.gaps.map((gap) => (
                       <li key={gap.label}>
                         <Link
-                          href={gap.href}
+                          href={isOperator ? toViewPath(gap.href, p.id) : gap.href}
                           onClick={() => window.localStorage.setItem(SELECTION_KEY, p.id)}
                           data-testid={`gap-${p.id}-${gap.label}`}
                         >
@@ -551,8 +580,8 @@ export function PracticeList() {
                 <span className={styles.rowOpen}>
                   {isOperator && !decided
                     ? strings.practices.reviewIt
-                    : !canOpen
-                    ? strings.practices.actAsFirst
+                    : isOperator
+                    ? strings.practices.viewSetup
                     : pending || rejected
                       ? strings.practices.openPending
                       : strings.practices.open}
@@ -564,38 +593,21 @@ export function PracticeList() {
 
           return (
             <li key={p.id}>
-              {canOpen ? (
-                <Link
-                  href={href}
-                  className={styles.row}
-                  onClick={() => window.localStorage.setItem(SELECTION_KEY, p.id)}
-                  data-testid={`practice-${p.id}`}
-                >
-                  {body}
-                </Link>
-              ) : (
-                /*
-                  A BUTTON, NOT A LINK AND NOT AN INERT DIV.
-
-                  Not a link, because there is nowhere for it to go yet: an
-                  operator has no practice claim, so the console would turn them
-                  away. Not inert either — it said "Act as this practice" and
-                  did nothing when pressed, which is the same broken promise
-                  wearing different clothes.
-
-                  Pressing it opens the reason form below, which is the actual
-                  next step. The reason is still required; this only removes the
-                  guessing about where to click.
-                */
-                <button
-                  type="button"
-                  className={styles.row}
-                  onClick={() => setOpenActAs(p.id)}
-                  data-testid={`practice-${p.id}`}
-                >
-                  {body}
-                </button>
-              )}
+              /*
+                EVERY ROW IS A LINK. It stopped being one while the only
+                destination was a page an operator would be bounced from; there
+                is now somewhere honest for each of them to go — the review for
+                an undecided application, the read-only view for a decided one,
+                the console for a practice user.
+              */
+              <Link
+                href={href}
+                className={styles.row}
+                onClick={() => window.localStorage.setItem(SELECTION_KEY, p.id)}
+                data-testid={`practice-${p.id}`}
+              >
+                {body}
+              </Link>
 
               {/*
                 ACTING AS THIS PRACTICE, from the list.

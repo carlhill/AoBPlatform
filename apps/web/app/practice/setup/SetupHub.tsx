@@ -48,6 +48,7 @@ import {
 import { mayChoosePractice, type CardState } from '@aobplatform/domain';
 import { Chip, Notice, Shell, ui, type Tone } from '../../ui';
 import { useRefreshable } from '../../refresh';
+import { toViewPath } from '../../viewPath';
 import { strings } from '../../strings';
 import { apiHeaders, currentSession } from '../../auth';
 import styles from './setup.module.css';
@@ -100,21 +101,6 @@ interface Hub {
  * ANYTHING NOT NAMED HERE STILL APPEARS, at the end. A new card must not be
  * able to vanish by being forgotten in this list.
  */
-/**
- * `/practice/locations` becomes `/platform/practices/<id>/locations`.
- *
- * A mapping rather than two sets of links, so a card added to the hub reaches
- * its read-only twin without anybody remembering to add it in a second place.
- * A page with no twin yet simply lands on the practice route and is refused
- * there, which is the honest failure -- better than a link that silently goes
- * somewhere else.
- */
-function toViewPath(href: string, practiceId: string): string {
-  return href.startsWith('/practice')
-    ? `/platform/practices/${practiceId}${href.slice('/practice'.length) || ''}`
-    : href;
-}
-
 const CARD_ORDER: readonly string[] = ['entity', 'locations', 'practitioners', 'affiliations', 'channels'];
 
 const CARD_ICONS: Record<string, typeof Building2> = {

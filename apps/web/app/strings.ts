@@ -696,6 +696,11 @@ export const strings = {
      * WHAT AN OPERATOR ACTUALLY DOES with an application under review: decide
      * it. "See where it is up to" is the applicant's question, not ours.
      */
+    /*
+     * LOOKING IS NOT ACTING. Clicking a practice shows it; acting as them is a
+     * separate, deliberate press with a stated reason.
+     */
+    viewSetup: 'View their setup',
     reviewIt: 'Review this application',
     checkAsPlatform: 'Check their practitioners (as AoBPlatform)',
     actAsFirst: 'Act as this practice',
@@ -1651,6 +1656,17 @@ export const strings = {
      */
     clear: 'Clear the form',
     cleared: 'Cleared.',
+  },
+
+  /* The band on a practice page opened as the platform. */
+  viewOnly: {
+    title: 'You are looking at this practice, not working in it',
+    body:
+      'Everything here is theirs and is shown as they see it. Nothing you do on this page will save — you '
+      + 'hold no claim on this practice, and the server refuses a change from somebody who does not.',
+    hint: 'To change something, act as the practice from',
+    toList: 'the organisation list',
+    toHub: 'Back to their setup',
   },
 
   practitioner: {

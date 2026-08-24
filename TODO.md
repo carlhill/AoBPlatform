@@ -620,6 +620,48 @@ signals. On its own it is a bad predictor; alongside "added five practitioners
 in a week", "none has ever captured consent" and "no register check recorded",
 it is one column in a picture that a person then reads.
 
+## Can somebody read another practice by editing the URL?
+
+Carl asked about `/platform/practices/<uuid>/practitioners`. Answered here
+because the answer is not obvious and the obvious fix is the wrong one.
+
+**No, and the reason is not the URL.** `auth.guard.ts` line 193:
+
+    if (principal.practiceId) request.headers['x-practice-id'] = principal.practiceId;
+
+A practice user's token claim **overwrites** whatever practice id the request
+carried. So a practice administrator who edits the URL, or forges the header,
+gets their OWN practice back — the id they typed is discarded before any query
+runs. That is the control, and it is a good one: it cannot be forgotten at a
+call site, because it happens once, above all of them.
+
+A platform operator has no practice claim, so the header is not overwritten and
+they can read any practice. That is the intent of these routes.
+
+**Masking or encrypting the id would protect nothing.** It is security by
+obscurity: anybody who has a real id — from a support email, a screenshot, a
+previous session — defeats it, and it makes every log and bug report harder to
+read. A UUIDv4 is 122 unguessable bits, so the list cannot be walked; what stops
+a *known* id being misused is the guard, and it already does.
+
+**What is genuinely open, and should be closed:**
+
+- [ ] `AUTH_ENFORCE=false` in dev means a request with NO token passes and the
+      `x-practice-id` header is trusted as sent. So in DEV, anybody who can
+      reach the API can read any practice. That is the staging, deliberately —
+      but it means the dev environment is not evidence that production is safe,
+      and nobody should read it as such
+- [ ] Verify each read endpoint under `AUTH_ENFORCE=true` before launch. The
+      claim-overwrite protects everything that reads the header, but a query
+      taking a practice id from a PARAM rather than the header would bypass it —
+      audit for that shape specifically
+- [ ] `assertPracticeScope` only checks that a claim EXISTS, not that it matches
+      the request. Today that is sufficient because of the overwrite; if the
+      overwrite is ever removed or made conditional, this becomes the hole. Add
+      a test that pins the overwrite, so it cannot be deleted quietly
+- [ ] Nothing on a read-only practice page may show a provider number. The
+      guard `assertNoProviderNumber` exists; make sure these routes are covered
+
 ## TAUTALA — the assistant, and the reminders that come first
 
 Full design in **tautala_ai.md**. `tautala` is Samoan for "to speak".
