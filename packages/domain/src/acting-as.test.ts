@@ -160,6 +160,11 @@ describe('what the practice is told', () => {
     reasonKey: 'no_admin_access',
     startedAt: START,
     note: 'Fixed the Yagoona postcode.',
+    sessionId: '821709fb-7f89-4fcf-95c0-27c5eb55cec8',
+  });
+
+  it('carries the session id through, separately from the lines', () => {
+    expect(notice.sessionId).toBe('821709fb-7f89-4fcf-95c0-27c5eb55cec8');
   });
 
   it('names who, when and why', () => {

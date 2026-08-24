@@ -6,15 +6,18 @@ import {
   ActingAsError,
   actingAsReason,
   assertMayApproveAfterActingAs,
+  describeVaultEventType,
   forcesReapproval,
   isSessionLive,
   noticeToPractice,
+  noticeToPracticeOnEnd,
   sessionExpiresAt,
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { OutboundService } from '../outbound/outbound.service';
 import { EmailComposer } from '../messaging/composer.service';
+import type { EmailBlock } from '../messaging/template';
 import type { Actor } from '../auth/actor.decorator';
 
 /**
@@ -40,6 +43,112 @@ export class ActingAsService {
     private readonly composer: EmailComposer,
     private readonly config: ConfigService,
   ) {}
+
+  /**
+   * Lines plus a session id into blocks, with the id SET APART rather than
+   * folded into a sentence — Carl's ask: "put in email in bold the
+   * acting-as-id". Placed right after the opening line, because it is the
+   * thing a practice quotes back to us and needs to be found at a glance, not
+   * hunted for at the bottom of the message.
+   */
+  private blocksFor(notice: { lines: string[]; sessionId: string }): EmailBlock[] {
+    const [first, ...rest] = notice.lines;
+    return [
+      { text: first },
+      { emphasised: { before: 'Session reference: ', bold: notice.sessionId } },
+      ...rest.map((text) => ({ text })),
+    ];
+  }
+
+  /**
+   * "The session has stopped, and here is what happened in it" — told to the
+   * practice the same way the start of the session was, and for the same
+   * reason (rule 3: told afterwards, because nobody was there to ask
+   * beforehand). Best-effort: a notice that failed to compose or send must
+   * not undo the ending itself, which is why every step here is caught and
+   * logged rather than thrown.
+   */
+  private async notifyPracticeSessionEnded(open: {
+    id: string;
+    practiceId: string;
+    operatorName: string;
+    startedAt: Date;
+  }, endedAt: Date): Promise<void> {
+    try {
+      const practice = await this.prisma.withPractice(open.practiceId, (tx) =>
+        tx.practice.findFirst({ where: { id: open.practiceId } }),
+      );
+      const to = practice?.groupEmail ?? practice?.adminEmail;
+      if (!to) {
+        this.logger.error(`ALERT: session ${open.id} ended with no address to notify the practice on.`);
+        return;
+      }
+
+      /*
+       * READ THE LOCAL OUTBOX, NOT THE VAULT SERVICE. The vault only knows
+       * about an event once the relay has shipped it — every five seconds,
+       * by design (VaultRelayService). A session that ends moments after its
+       * last change would routinely be reported as having changed nothing,
+       * which is the wrong answer delivered confidently. `vault_outbox` is
+       * written SYNCHRONOUSLY, in the same transaction as the domain write
+       * (enqueueVaultEvent's whole contract) — so it is there immediately,
+       * whether or not the relay has caught up yet.
+       */
+      const rows = await this.prisma.vaultOutbox.findMany({ where: { occurredAt: { gte: open.startedAt } } });
+      const events = rows.filter(
+        (r) => (r.payload as Record<string, unknown> | null)?.actingAsSessionId === open.id,
+      );
+      const changeSummaries = events
+        // The session's OWN start/end events are not "changes" from the
+        // practice's point of view — they are the session itself.
+        .filter((e) => e.type !== 'acting_as.started' && e.type !== 'acting_as.ended')
+        .map((e) => describeVaultEventType(e.type));
+      // Deduplicated in the order first seen: three location edits in one
+      // session should read as one line, not three identical ones.
+      const summary = [...new Set(changeSummaries)];
+
+      const notice = noticeToPracticeOnEnd({
+        operatorName: open.operatorName,
+        startedAt: open.startedAt,
+        endedAt,
+        changeSummaries: summary,
+        consoleUrl: this.consoleUrl(),
+        sessionId: open.id,
+      });
+
+      const composed = {
+        subject: notice.subject,
+        ...this.composer.compose(notice.subject, this.blocksFor(notice)),
+      };
+
+      await this.prisma.withPractice(open.practiceId, (tx) =>
+        this.outbound.enqueue(tx, {
+          practiceId: open.practiceId,
+          channel: 'email',
+          destination: to,
+          subjectType: 'ActingAsSession',
+          subjectId: open.id,
+          /*
+           * WITHOUT THIS, THE STOP NOTICE NEVER SENDS. The start notice for
+           * this same session already queued under {practiceId, email,
+           * ActingAsSession, session.id} — enqueue's idempotency key is built
+           * from exactly those four fields, so a second call with the same
+           * ones is treated as a RETRY of the first and the upsert returns
+           * the original row untouched. `attemptGroup` is the field this
+           * table already has for "distinguishes a deliberate re-send from a
+           * retry of the same one" — this is a deliberate second, different
+           * message about the same subject, not a retry of the first.
+           */
+          attemptGroup: 'session-ended',
+          payload: composed as unknown as Record<string, unknown>,
+        }),
+      );
+    } catch (err) {
+      this.logger.error(
+        `Could not tell the practice that session ${open.id} ended: ${(err as Error).message}`,
+      );
+    }
+  }
 
   private consoleUrl(): string {
     return this.config.get<string>('CONSOLE_URL', 'http://localhost:21100');
@@ -132,13 +241,11 @@ export class ActingAsService {
           startedAt: session.startedAt,
           note: input.note?.trim(),
           consoleUrl: this.consoleUrl(),
+          sessionId: session.id,
         });
         const composed = {
           subject: notice.subject,
-          ...this.composer.compose(
-            notice.subject,
-            notice.lines.map((text) => ({ text })),
-          ),
+          ...this.composer.compose(notice.subject, this.blocksFor(notice)),
         };
         await this.outbound.enqueue(tx, {
           practiceId: input.practiceId,
@@ -254,6 +361,7 @@ export class ActingAsService {
     );
 
     this.logger.warn(`${actor.name} stopped ${open.operatorName}'s session on practice ${open.practiceId}.`);
+    await this.notifyPracticeSessionEnded(open, new Date());
     return {
       ended: true,
       detail: `${open.operatorName} is no longer acting as that practice. The reapproval it forced still stands.`,
@@ -280,6 +388,7 @@ export class ActingAsService {
       }),
     );
 
+    await this.notifyPracticeSessionEnded(open, new Date());
     return { ended: true, sessionId: open.id, practiceId: open.practiceId };
   }
 

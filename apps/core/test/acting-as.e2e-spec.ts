@@ -13,6 +13,7 @@
  *      the control that survives every other one failing, and it had no
  *      automated coverage at all until this file.
  */
+import { randomUUID } from 'node:crypto';
 import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
@@ -187,6 +188,102 @@ describe('acting as a practice (e2e)', () => {
         .expect(400);
       expect(refused.body.message).toMatch(/signed-in operator/);
       currentPrincipal = OPERATOR_A;
+    });
+  });
+
+  /**
+   * WHAT THE PRACTICE IS TOLD, both ends of the session. Carl's ask, verbatim:
+   * bold the acting-as-id in both the start notice and a new stop notice, and
+   * have the stop notice say what changed. Read from `outbound_items` rather
+   * than mocking the messaging gateway — every message is queued there
+   * regardless of whether delivery succeeds, and this file already prefers
+   * reading real state over mocking collaborators.
+   */
+  describe('what the practice is told, start and stop', () => {
+    let notifiedPracticeId: string;
+
+    beforeAll(async () => {
+      notifiedPracticeId = randomUUID();
+      await prisma.withPractice(notifiedPracticeId, (tx) =>
+        tx.practice.create({
+          data: {
+            id: notifiedPracticeId,
+            name: 'Acting-As Notice Test Practice',
+            validationState: 'validated',
+            adminEmail: 'admin@notice-test.invalid',
+            groupEmail: 'reception@notice-test.invalid',
+            website: 'https://old.example.invalid',
+          },
+        }),
+      );
+    });
+
+    afterAll(async () => {
+      await prisma.withPractice(notifiedPracticeId, async (tx) => {
+        await tx.outboundItem.deleteMany({ where: { practiceId: notifiedPracticeId } });
+        await tx.reviewTask.deleteMany({ where: { practiceId: notifiedPracticeId } });
+        // acting_as_sessions is append-only (a database trigger, not merely a
+        // convention) — an impersonation record can never be deleted, so this
+        // fixture practice's sessions outlive the test on purpose.
+        await tx.practice.deleteMany({ where: { id: notifiedPracticeId } });
+      });
+    });
+
+    function outboundEmails() {
+      return prisma.withPractice(notifiedPracticeId, (tx) =>
+        tx.outboundItem.findMany({ where: { practiceId: notifiedPracticeId, subjectType: 'ActingAsSession' } }),
+      );
+    }
+
+    it('bolds the session id in the start notice', async () => {
+      currentPrincipal = OPERATOR_A;
+      /*
+       * `req.principal = currentPrincipal` shares ONE object across every
+       * request, and `ActingAsInterceptor` writes `principal.practiceId`
+       * onto whatever it is given — so OPERATOR_A carries the practiceId
+       * from every session it has opened earlier in this file, permanently.
+       * The interceptor's own guard is "a principal that already has a
+       * practiceId is a practice user, not somebody acting for one" — true
+       * for a real token, false here, where it is leftover mutation. Cleared
+       * so the acting-as wrapping (and the vault tagging this test depends
+       * on) actually engages for the request below, the way it would for an
+       * operator's genuinely first session.
+       */
+      delete (currentPrincipal as Record<string, unknown>).practiceId;
+      const started = await api()
+        .post('/acting-as/start')
+        .send({ practiceId: notifiedPracticeId, reason: 'no_admin_access' })
+        .expect(201);
+      const sessionId = started.body.id as string;
+
+      const [item] = await outboundEmails();
+      const html = (item.payload as { html: string }).html;
+      expect(html).toContain(`<strong>${sessionId}</strong>`);
+
+      // Made a real change while acting-as, so the stop notice below has
+      // something genuine to report.
+      await api()
+        .patch(`/organisations/${notifiedPracticeId}`)
+        .send({ website: 'https://new.example.invalid', reason: 'Testing the acting-as stop notice.' })
+        .expect(200);
+
+      await api().post('/acting-as/end').send({}).expect(201);
+    });
+
+    it('tells the practice the session stopped, what changed, and bolds the id again', async () => {
+      const items = await outboundEmails();
+      const stopped = items.find((i) => (i.payload as { subject: string }).subject.includes('finished acting'));
+      expect(stopped).toBeTruthy();
+
+      const { html, body } = stopped!.payload as { html: string; body: string; subject: string };
+      // The id, set apart in the HTML part...
+      expect(html).toMatch(/<strong>[0-9a-f-]{36}<\/strong>/);
+      // ...and named as such in the text part, since plain text has no bold.
+      expect(body).toMatch(/Session reference:/);
+      // The session's own start/end are not reported as "changes" — only the
+      // amendment made while it was open is.
+      expect(body).toMatch(/contact detail was changed/i);
+      expect(body).not.toMatch(/acting_as/i);
     });
   });
 });

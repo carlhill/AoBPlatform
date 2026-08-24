@@ -231,10 +231,18 @@ export function noticeToPractice(input: {
    * rather than the function refusing to compose one at all.
    */
   consoleUrl?: string;
-}): { subject: string; lines: string[] } {
+  /**
+   * The session id — WHAT THE PRACTICE QUOTES BACK TO US if they call about
+   * this. Carried through separately from `lines` rather than baked into one
+   * of them, so the caller can render it set apart (bold, monospace) rather
+   * than buried mid-sentence where it is easy to mis-copy.
+   */
+  sessionId: string;
+}): { subject: string; lines: string[]; sessionId: string } {
   const reason = actingAsReason(input.reasonKey);
   return {
     subject: 'Somebody at AoBPlatform acted on your practice’s behalf',
+    sessionId: input.sessionId,
     lines: [
       `${input.operatorName} at AoBPlatform used your practice’s console on ` +
         `${input.startedAt.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}.`,
@@ -254,6 +262,89 @@ export function noticeToPractice(input: {
         : []),
       'If you did not expect this, tell us — the details above are enough for us to find exactly what ' +
         'happened.',
+    ],
+  };
+}
+
+/**
+ * A vault event TYPE, in the practice's own words — never the payload.
+ *
+ * REQ-LOG-08: a vault payload is content-free (hashes, versions, channels,
+ * outcomes, never a value), so "what changed" for a practice notice can only
+ * ever say WHAT KIND of thing happened, not what it changed to. That is a
+ * real limit and an intentional one — this function exists to describe the
+ * event type honestly within it, not to work around it.
+ */
+export function describeVaultEventType(type: string): string {
+  const known: Record<string, string> = {
+    'organisation.contacts_changed': 'A contact detail was changed',
+    'organisation.admin_handover': 'The administrator address was handed over',
+    'location.added': 'A location was added',
+    'location.address_confirmed': 'A location address was confirmed',
+    'location.address_rejected': 'A location address was rejected',
+    'location.address_corrected': 'A location address was corrected',
+    'practice_user.granted': 'Console access was granted to somebody',
+    'practice_user.invited': 'Somebody was invited to sign in',
+    'practice_user.role_changed': "Somebody's console role was changed",
+    'practice_user.deactivated': "Somebody's console access was deactivated",
+    'practice_user.reactivated': "Somebody's console access was reactivated",
+    'review_task.resolved': 'A flagged item was decided',
+    'affiliation.invited': 'A practitioner was invited to affiliate',
+    'affiliation.accepted': 'A practitioner accepted an affiliation',
+    'affiliation.rejected': 'A practitioner rejected an affiliation',
+    'affiliation.notice_given': 'A practitioner was given notice of departure',
+    'affiliation.notice_withdrawn': 'A departure notice was withdrawn',
+    'affiliation.ended': 'An affiliation ended',
+    'practitioner.deregistered': 'A practitioner was deregistered',
+  };
+  // A readable fallback rather than silence: "campaign.declared" becomes
+  // "campaign declared" for any type this list has not caught up with, so an
+  // unmapped event still says something rather than nothing.
+  return known[type] ?? type.replace(/[._]/g, ' ');
+}
+
+/**
+ * What the practice is told once the session ENDS — the second half of the
+ * pair with {@link noticeToPractice}.
+ *
+ * The start notice says somebody is in the console; on its own that leaves
+ * the practice not knowing when they left or what, specifically, changed
+ * before they did. Carl's words: "tell the practice that the practice has
+ * stopped, and tell the practice what changes were made."
+ */
+export function noticeToPracticeOnEnd(input: {
+  operatorName: string;
+  startedAt: Date;
+  endedAt: Date;
+  /**
+   * One line per change made during the session, already in the practice's
+   * own words (a review-task summary, say) — this function only lays them
+   * out, it does not know how to describe a change itself.
+   */
+  changeSummaries: string[];
+  consoleUrl?: string;
+  sessionId: string;
+}): { subject: string; lines: string[]; sessionId: string } {
+  const when = (d: Date) =>
+    d.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+  return {
+    subject: 'AoBPlatform has finished acting on your practice’s behalf',
+    sessionId: input.sessionId,
+    lines: [
+      `${input.operatorName} at AoBPlatform has stopped using your practice’s console. The session ran on ` +
+        `${when(input.startedAt)} and ended on ${when(input.endedAt)}.`,
+      input.changeSummaries.length > 0
+        ? 'What changed during that session:'
+        : 'Nothing was changed during that session — they looked without altering anything.',
+      ...input.changeSummaries.map((line) => `• ${line}`),
+      'Everything above is recorded against their name, not yours, and your practice needs to be approved ' +
+        'again before anything else changes.',
+      ...(input.consoleUrl
+        ? [`You can sign in to AoBPlatform at ${input.consoleUrl} to see this for yourself.`]
+        : []),
+      'If any of this is not what you expected, tell us — the session id above is enough for us to find ' +
+        'exactly what happened.',
     ],
   };
 }

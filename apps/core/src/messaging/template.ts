@@ -72,6 +72,13 @@ export interface EmailBlock {
   readonly url?: string;
   /** Quieter than body text — caveats, expiry notes. */
   readonly small?: string;
+  /**
+   * Body text with one value set in bold, e.g. a session id somebody may need
+   * to quote back to us. Kept apart from `text` rather than allowing markup
+   * inside it, because `text` is escaped-and-printed as a single unit — this
+   * is the one place two differently-weighted runs sit in the same paragraph.
+   */
+  readonly emphasised?: { readonly before: string; readonly bold: string; readonly after?: string };
   /** A visual break. */
   readonly rule?: boolean;
 }
@@ -93,6 +100,8 @@ export function renderText(blocks: readonly EmailBlock[], footer: EmailFooter): 
   for (const block of blocks) {
     if (block.heading) lines.push(block.heading.toUpperCase(), '');
     if (block.text) lines.push(block.text, '');
+    // Plain text has no bold, so the emphasis is carried by the words alone.
+    if (block.emphasised) lines.push(`${block.emphasised.before}${block.emphasised.bold}${block.emphasised.after ?? ''}`, '');
     if (block.code) lines.push(`    ${block.code}`, '');
     if (block.button) {
       lines.push(`${block.button.label}:`, `  ${block.button.url}`, '');
@@ -160,6 +169,12 @@ export function renderHtml(subject: string, blocks: readonly EmailBlock[], foote
         return `<tr><td style="padding:0 32px 16px;font-family:${SANS};font-size:13px;line-height:1.65;color:${MUTED};">${esc(
           block.small,
         )}</td></tr>`;
+      }
+      if (block.emphasised) {
+        const { before, bold, after } = block.emphasised;
+        return `<tr><td style="padding:0 32px 16px;font-family:${SANS};font-size:15px;line-height:1.65;color:${INK};">${esc(
+          before,
+        )}<strong>${esc(bold)}</strong>${esc(after ?? '')}</td></tr>`;
       }
       return `<tr><td style="padding:0 32px 16px;font-family:${SANS};font-size:15px;line-height:1.65;color:${INK};">${esc(
         block.text ?? '',
