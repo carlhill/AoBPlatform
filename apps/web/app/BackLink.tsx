@@ -51,6 +51,7 @@ const PARENTS: Readonly<Record<string, string>> = {
   '/practice/queuebyOrg': '/practice/queue',
   '/practice/queuebyOrgLocDepartment': '/practice/queue',
   '/review/identity': '/review',
+  '/platform/acting-as/history': '/platform/acting-as',
 
   '/practitioner/affiliations': '/practitioner',
   '/practitioner/messages': '/practitioner',
@@ -106,7 +107,9 @@ export function BackLink() {
           ? strings.nav.outbound
           : parent === '/review'
             ? strings.nav.reviewDossiers
-            : strings.nav.practitionerHub;
+            : parent === '/platform/acting-as'
+              ? strings.nav.actingAsRegister
+              : strings.nav.practitionerHub;
 
   return (
     <Link href={parent} className={styles.backLink} data-testid="shell-back">

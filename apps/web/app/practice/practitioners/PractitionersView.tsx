@@ -33,7 +33,7 @@ import {
   UserPlus,
   UserSquare,
 } from 'lucide-react';
-import { AHPRA_REGISTRATION_STATUSES, isValidAhpraNumberFormat, isPlatformOperator } from '@aobplatform/domain';
+import { AHPRA_REGISTRATION_STATUSES, EXTERNAL_LINKS, isValidAhpraNumberFormat, isPlatformOperator } from '@aobplatform/domain';
 import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui } from '../../ui';
 import { strings } from '../../strings';
 import styles from '../manage.module.css';
@@ -43,7 +43,13 @@ import { currentSession, apiHeaders } from '../../auth';
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
 /** Where a person goes to do the check this page records. */
-const AHPRA_REGISTER = 'https://www.ahpra.gov.au/registration/registers-of-practitioners.aspx';
+/*
+ * FROM THE SHARED FILE, not typed here. There were three spellings of this
+ * destination across two apps and the reviewer checklist, and two of them had
+ * drifted. When AHPRA moves the register the fix should be one line, changed by
+ * whoever noticed.
+ */
+const AHPRA_REGISTER = EXTERNAL_LINKS.ahpraRegister.url;
 
 const PROVIDER_TYPES = [
   'general_practitioner',

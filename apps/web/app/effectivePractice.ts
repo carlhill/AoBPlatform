@@ -100,7 +100,7 @@ export async function fetchActingAs(): Promise<ActingAs> {
  * an operator for the half-second before it learns they are acting as somebody
  * — a flash of "this page is not yours" at somebody it is.
  */
-export function useEffectivePractice(): { practiceId?: string; settled: boolean } {
+export function useEffectivePractice(): { practiceId?: string; practiceName?: string | null; settled: boolean } {
   const fromToken = currentSession()?.practiceId;
   const pathname = usePathname();
   const [acting, setActing] = useState<ActingAs>(null);
@@ -142,5 +142,7 @@ export function useEffectivePractice(): { practiceId?: string; settled: boolean 
     // `tick` because starting or ending a session changes it without navigating.
   }, [fromToken, pathname, tick]);
 
-  return { practiceId: fromToken ?? acting?.practiceId, settled };
+  // The NAME as well as the id, so callers that want to say whose console this
+  // is do not each have to fetch it again.
+  return { practiceId: fromToken ?? acting?.practiceId, practiceName: acting?.practiceName ?? null, settled };
 }

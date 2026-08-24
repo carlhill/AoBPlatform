@@ -72,7 +72,7 @@ const SECTIONS: { heading: string; note?: string; fields: { key: string; label: 
       { key: 'adminPosition', label: 'Position' },
       {
         key: 'groupEmail',
-        label: 'Shared practice address',
+        label: 'Shared practice email address',
         hint:
           'Where we send anything meant for the practice rather than for one person. Use an address that ' +
           'outlives whoever holds the job.',
@@ -110,6 +110,15 @@ export function ApplicationView() {
   const [practice, setPractice] = useState<Practice | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  /*
+   * WHICH FAILURE IT WAS. One `error` string served both loading and saving,
+   * under a notice headed "Your application could not be loaded" -- so a save
+   * refused with "Nothing was changed, so there is nothing to record" was
+   * presented as a failure to LOAD a page that was plainly on the screen. Two
+   * different problems wearing one label sends people to look in the wrong
+   * place entirely.
+   */
+  const [errorKind, setErrorKind] = useState<'load' | 'save'>('load');
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   /*
@@ -136,6 +145,7 @@ export function ApplicationView() {
       }
       setDraft(next);
     } catch (e) {
+      setErrorKind('load');
       setError(e instanceof TypeError ? strings.review.unreachableBody : (e as Error).message);
     }
   }, [practiceId]);
@@ -176,6 +186,7 @@ export function ApplicationView() {
       setReason('');
       await load();
     } catch (e) {
+      setErrorKind('save');
       setError((e as Error).message);
     } finally {
       setBusy(false);
@@ -205,7 +216,7 @@ export function ApplicationView() {
       <p className={ui.pageLead}>{strings.application.lead}</p>
 
       {error && (
-        <Notice tone="stop" title={strings.application.notLoaded}>
+        <Notice tone="stop" title={errorKind === 'save' ? strings.application.notSaved : strings.application.notLoaded}>
           {error}
         </Notice>
       )}

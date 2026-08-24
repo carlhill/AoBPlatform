@@ -252,6 +252,23 @@ export class AmendPracticeDto {
   @IsOptional() @IsString() managerPhone?: string;
   @IsOptional() @IsString() managerPosition?: string;
 
+  /*
+   * THE PRACTICE'S SHARED ADDRESS, and it was missing.
+   *
+   * `groupEmail` was added to AMENDABLE_FIELDS -- the domain's list of what a
+   * practice may correct about itself -- and never added here. `whitelist:
+   * true` strips a property the DTO does not declare, silently, so the request
+   * reached the service carrying nothing and was answered "Nothing was changed,
+   * so there is nothing to record". True of what arrived, and baffling to
+   * somebody who had just typed an address in.
+   *
+   * The comment below this block predicted exactly this failure for the LOCKED
+   * fields and was written to prevent it. It did not prevent it here, because
+   * nothing tied the two lists together -- so the test that now does is the
+   * actual fix, and this line is the symptom.
+   */
+  @IsOptional() @IsEmail() groupEmail?: string;
+
   @IsOptional() @IsString() headOfficeLine1?: string;
   @IsOptional() @IsString() headOfficeLine2?: string;
   @IsOptional() @IsString() headOfficeSuburb?: string;

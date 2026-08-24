@@ -56,7 +56,7 @@ export function MainMenu() {
    * absence with a note telling them to act as a practice, which they already
    * were.
    */
-  const { practiceId } = useEffectivePractice();
+  const { practiceId, practiceName: actingPracticeName } = useEffectivePractice();
 
   const audiences: Audience[] = audiencesOf({
     roles: session?.roles ?? [],
@@ -81,13 +81,26 @@ export function MainMenu() {
     {
       heading: strings.nav.platformHeading,
       items: [
-        { path: '/practice', label: practiceListLabel },
+        /*
+         * THE ORGANISATION LIST BELONGS TO WHICHEVER GROUP FITS, not to both.
+         *
+         * It used to be listed here unconditionally and then removed again
+         * afterwards by a step that indexed into the filtered array and could
+         * `shift()` it. That post-processing was fragile in a way that showed:
+         * an operator acting as a practice lost the entire Platform section.
+         *
+         * Deciding it HERE, once, removes the whole class of problem. A
+         * practice user finds the list under their practice; an operator with
+         * no practice claim finds it here.
+         */
+        ...(hasPractice ? [] : [{ path: '/practice', label: practiceListLabel }]),
         { path: '/review', label: strings.nav.reviewDossiers },
         { path: '/practice/reviews', label: strings.nav.reviewQueue },
         { path: '/practice/queue', label: strings.nav.outbound },
         { path: '/practice/queuebyOrg', label: strings.nav.outboundByOrg },
         { path: '/practice/queuebyOrgLocDepartment', label: strings.nav.outboundByPlace },
         { path: '/platform/acting-as', label: strings.nav.actingAsRegister },
+        { path: '/platform/acting-as/history', label: strings.nav.actingAsHistory },
       ],
     },
     {
@@ -136,16 +149,6 @@ export function MainMenu() {
     // is a different and untrue statement from "you have no such section".
     .filter((g) => g.items.length > 0);
 
-  /*
-   * `/practice` under BOTH headings when somebody holds both roles would list
-   * one page twice. Dropped from the platform group in that case, because the
-   * practice group is where a practice user looks for it.
-   */
-  if (hasPractice && visible[0]?.heading === strings.nav.platformHeading) {
-    visible[0] = { ...visible[0], items: visible[0].items.filter((i) => i.path !== '/practice') };
-    if (visible[0].items.length === 0) visible.shift();
-  }
-
   return (
     <RadixDialog.Root open={open} onOpenChange={setOpen}>
       <RadixDialog.Trigger asChild>
@@ -169,6 +172,18 @@ export function MainMenu() {
           <RadixDialog.Description className={styles.menuHint}>
             {session ? strings.nav.hint : strings.nav.hintSignedOut}
           </RadixDialog.Description>
+
+          {/*
+            WHY THE PRACTICE PAGES APPEARED. An operator's menu grows the moment
+            they start acting as somebody, and a menu that silently gains a
+            section is a menu you cannot trust to tell you where you are. It
+            says whose pages those are.
+          */}
+          {isPlatform && hasPractice && (
+            <p className={styles.menuHint} data-testid="menu-acting-as">
+              {strings.nav.actingAsNote.replace('{practice}', actingPracticeName ?? strings.nav.aPractice)}
+            </p>
+          )}
 
           {visible.map((group) => (
             <div key={group.heading} className={styles.menuGroup}>

@@ -19,7 +19,7 @@ import { SessionControl } from '../SessionControl';
  */
 
 import { useMemo, useState } from 'react';
-import {
+import { abnLookupUrl,
   AU_STATES,
   contactClash,
   isValidAbnChecksum,
@@ -474,7 +474,7 @@ export function ApplyForm() {
           </p>
           <p>
             <a
-              href={`https://abr.business.gov.au/ABN/View?abn=${encodeURIComponent(abnDigits)}`}
+              href={abnLookupUrl(abnDigits)}
               target="_blank"
               rel="noreferrer noopener"
             >

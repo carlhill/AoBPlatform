@@ -156,6 +156,10 @@ export const PAGES: Readonly<Record<string, PageRule>> = {
     audiences: ['platform'],
     why: 'The register of who is acting as which practice. Ours, and the one page that can stop a session early.',
   },
+  '/platform/acting-as/history': {
+    audiences: ['platform'],
+    why: 'Every acting-as session there has ever been, with its reason. Asked about months later, so it is a search rather than a dashboard.',
+  },
 
   /*
    * PRACTICE. A platform operator reaches these by ACTING AS somebody at the

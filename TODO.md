@@ -534,6 +534,92 @@ deliberately if we want it, not as a side effect of a queue viewer.
 - [ ] Decide the patient auth question FIRST — token-scoped view, or real accounts
 - [ ] A practitioner spanning practices needs a deliberate cross-tenant read; RLS forbids it by default and every exception is individually justified (CONVENTIONS.md §6)
 - [ ] A carer selecting a patient is an authority question, not a filter — who may act for whom has to be recorded before it can be offered
+## View-only view of a practice, cascading
+
+Carl: from `/practice` we may just want to LOOK at a practice and its
+relationships without acting as it — the same seven-card hub, read-only, and the
+read-only must cascade into practitioners, locations and everything below.
+
+Worth doing, and the cascade is the hard half: a read-only hub that links to
+editable children is worse than no read-only mode, because it looks safe and is
+not.
+
+- [ ] One flag carried in the URL is NOT enough — a page reached directly is
+      then editable. The scope has to be decided per request, not per link
+- [ ] Simplest honest shape: an operator with no acting-as session gets read-only
+      by construction, because every mutating endpoint already needs a practice
+      claim they do not have. The UI then reflects what the server would do
+      rather than inventing a second rule
+- [ ] Which means the work is mostly: let an operator READ a practice's pages,
+      and hide every control that would fail. Not a new permission — a truthful
+      rendering of one that exists
+- [ ] Cascade by rendering from the same "may I act" answer on every page,
+      sourced once (`effectivePractice.ts` is the natural home)
+- [ ] A banner saying plainly: viewing, not acting. With the way to start acting
+      if that is what they meant
+- [ ] Nothing read-only may show provider numbers or anything else that must not
+      cross a practice boundary — read-only is not a licence to read MORE
+
+## Practitioners working a long way from the practice
+
+Carl's question: if a practitioner is affiliated to a practice a long way from
+where they appear to work, flag it quietly? Or does that read as big-brother?
+
+**Both, and the resolution is in WHO it is shown to.**
+
+The signal is real. A practice adding practitioners who have no plausible
+connection to it is one of the clearest shapes of the fraud this platform
+exists to stop — provider identities collected to bill under, rather than
+people who actually see patients there. Ignoring geography throws away one of
+the few signals available before anything is billed.
+
+The fear is also real, and it is not paranoia. Australian practitioners
+legitimately work across enormous distances: locums, fly-in-fly-out, telehealth,
+rural outreach, a specialist rotating through four towns. A flag that treats
+distance as suspicion insults exactly the people doing the hardest work, and it
+would be **wrong far more often than it was right**.
+
+### What makes it safe
+
+**Never shown to the practice, and never named as suspicion.** A quiet flag that
+the practice can see is not quiet — it teaches somebody committing fraud which
+distance to stay under, and it accuses somebody innocent to their face.
+
+**It is a REVIEW input, not a decision.** It changes nothing about whether the
+affiliation works. Nobody is refused, nothing is blocked, no message is sent.
+It moves a practice up a reviewer's list, and a human decides.
+
+**It is only interesting in aggregate.** One practitioner 900 km away is a
+locum. Six practitioners at one practice, all far away, none sharing a
+location, added the same week, is a different object entirely — and the second
+is the one worth a person's time. Alerting on the first would bury the second.
+
+**Say it out loud in the collection notice.** "We look at how far affiliations
+are from the practice" is a sentence people accept when they read it up front
+and resent when they discover it. Quiet must mean "not shouted at the
+practitioner", never "concealed from them".
+
+### If it gets built
+
+- [ ] Compute from POSTCODES only. Never a street address, never a coordinate
+      for a person — HARD-03 territory in spirit: the least precise thing that
+      answers the question
+- [ ] Distance from the practice LOCATION they are affiliated to, not head office
+- [ ] Bands, not metres: same area / same state / interstate / remote. A number
+      invites a threshold, and a threshold is a thing to stay just under
+- [ ] Raise a review task ONLY on the aggregate pattern, never on one person
+- [ ] Absent from every practice-facing screen and from every message
+- [ ] Never blocks an affiliation, an invitation or a capture
+- [ ] In the collection notice before the first real applicant
+- [ ] Test the honest cases explicitly: the locum, the FIFO doctor, the
+      telehealth practitioner, the specialist across four towns. If the design
+      flags those individually, it is the wrong design
+
+**Recommendation:** worth building, and worth building last of the AI-checker
+signals. On its own it is a bad predictor; alongside "added five practitioners
+in a week", "none has ever captured consent" and "no register check recorded",
+it is one column in a picture that a person then reads.
+
 ## Support, lockouts and passkey recovery
 
 Full design in **support.md**. The short of it:

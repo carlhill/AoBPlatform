@@ -1185,6 +1185,8 @@ export const strings = {
       'What this practice told us, in the order it was asked. Contact details and the head office can be ' +
       'changed here; what the ABR said cannot.',
     notLoaded: 'Your application could not be loaded',
+    // Saving and loading are different failures and were sharing one heading.
+    notSaved: 'That change could not be saved',
     handoverWarnTitle: 'This will sign the administrator out',
     handoverWarnBody:
       'Changing the administrator’s email is treated as a HANDOVER, not a correction: the account belongs ' +
@@ -1486,6 +1488,7 @@ export const strings = {
       + 'works where.',
     absentSignedOut: 'The rest appears once you sign in.',
     actingAsNote: 'You are acting as {practice}, so its pages are listed here too.',
+    aPractice: 'a practice',
     backTo: 'Back to {page}',
 
     platformHeading: 'Platform',
@@ -1496,6 +1499,7 @@ export const strings = {
     outboundByOrg: 'Messages by organisation',
     outboundByPlace: 'Messages by location and department',
     actingAsRegister: 'Who is acting as a practice',
+    actingAsHistory: 'Acting-as history',
 
     practiceHeading: 'This practice',
     yourPractices: 'Your practices',
@@ -1521,6 +1525,49 @@ export const strings = {
     home: 'Home',
     apply: 'Apply to join',
     help: 'Help and contact',
+  },
+
+  /*
+   * THE HISTORY, which is a different page from the register on purpose.
+   * The register answers "who is doing this now"; this answers "who has ever
+   * done this, to whom, and why" -- a question asked months later, by somebody
+   * who needs to search rather than to act.
+   */
+  actingAsHistory: {
+    audience: 'Platform',
+    title: 'Every time somebody acted as a practice',
+    lead:
+      'The whole record, open and ended. Who acted, for which practice, the reason they gave, and how it '
+      + 'finished.',
+    loading: 'Reading the history…',
+    notLoaded: 'The history could not be read',
+    search: 'Search',
+    searchHint: 'Matches the operator, the practice, the reason and the note. One box, because the question that brings somebody here is never predictable.',
+    searchPlaceholder: 'A name, a practice, a reason…',
+    count: '{n} sessions.',
+    countFiltered: 'Showing {shown} of {total}.',
+    none: 'Nothing matches that.',
+    started: 'Started',
+    operator: 'Operator',
+    practice: 'Practice',
+    reason: 'Reason',
+    ended: 'Ended',
+    outcome: 'How it finished',
+    stillOpen: 'Still open',
+    expired: 'expired by itself',
+    reapproval: 'Forced a reapproval',
+    toRegister: 'Who is acting right now',
+    clear: 'Clear the search',
+    /*
+     * WHAT THIS PAGE DOES NOT CLAIM. A session names a practice; it does not
+     * record which pages were opened. Saying so is better than a "pages
+     * visited" column that looks authoritative and is not.
+     */
+    trailTitle: 'What was actually done during a session',
+    trailBody:
+      'This lists the sessions, not the acts. Everything done while acting as a practice is recorded against '
+      + 'that practice with its own actor and timestamp — open the practice to read its trail. A session that '
+      + 'forced a reapproval still forces it, whether it was ended early or expired on its own.',
   },
 
   /* The register of who is acting as whom. */

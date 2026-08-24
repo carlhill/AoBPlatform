@@ -74,8 +74,13 @@ export class ActingAsService {
     const open = await this.openFor(actor.id);
     if (open) {
       throw new ConflictException(
-        `You are already acting as another practice (since ${open.startedAt.toISOString()}). End that first — ` +
-          'two open sessions would mean requests that cannot be attributed without guessing.',
+        // NAMED, for the same reason the banner is. "another practice" leaves
+        // somebody hunting for a session they cannot see; the name tells them
+        // where to go and end it.
+        `You are already acting as ${open.practiceName ?? open.practiceId}, since ` +
+          `${open.startedAt.toISOString()}. End that one first — two open sessions would mean requests that ` +
+          'cannot be attributed to a practice without guessing, and guessing is not a thing this system may ' +
+          'do about impersonation.',
       );
     }
 

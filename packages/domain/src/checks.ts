@@ -1,3 +1,5 @@
+import { EXTERNAL_LINKS } from './external-links';
+
 /**
  * The validation checklist.
  *
@@ -100,7 +102,7 @@ export const CHECK_CATALOGUE: readonly CheckDefinition[] = [
       'transcript, together with a note that consent to record was obtained and read.',
     evidenceRequired: true,
     requiredFields: ['phoneNumber', 'numberSource', 'spokeWithName'],
-    verifyAt: { label: 'National Health Services Directory', url: 'https://www.healthdirect.gov.au/australian-health-services' },
+    verifyAt: EXTERNAL_LINKS.healthServicesDirectory,
   },
   {
     key: 'entitlement.video_call',
@@ -145,7 +147,7 @@ export const CHECK_CATALOGUE: readonly CheckDefinition[] = [
     whatItProves: 'That the Commonwealth already recognises this person as acting for this organisation.',
     evidenceGuidance: 'A screenshot of the confirmation, with the date and the reference given.',
     evidenceRequired: true,
-    verifyAt: { label: 'Health Professional Online Services (HPOS)', url: 'https://www.servicesaustralia.gov.au/hpos' },
+    verifyAt: EXTERNAL_LINKS.hpos,
   },
 
   // --- The entity ----------------------------------------------------------
@@ -157,7 +159,7 @@ export const CHECK_CATALOGUE: readonly CheckDefinition[] = [
     whatItProves: 'That the entity exists and trades under the name applied for. Not that the applicant represents it.',
     evidenceGuidance: 'Automatic when the ABR answers. When attested manually, a screenshot of the ABN Lookup record.',
     evidenceRequired: false,
-    verifyAt: { label: 'ABN Lookup', url: 'https://abr.business.gov.au/' },
+    verifyAt: EXTERNAL_LINKS.abnLookup,
   },
   {
     key: 'entity.abn_age',
@@ -167,7 +169,7 @@ export const CHECK_CATALOGUE: readonly CheckDefinition[] = [
     whatItProves: 'That the entity is not freshly minted for this application.',
     evidenceGuidance: 'The ABN Lookup record showing the registration date.',
     evidenceRequired: false,
-    verifyAt: { label: 'ABN Lookup', url: 'https://abr.business.gov.au/' },
+    verifyAt: EXTERNAL_LINKS.abnLookup,
   },
 
   // --- Address -------------------------------------------------------------
@@ -190,7 +192,7 @@ export const CHECK_CATALOGUE: readonly CheckDefinition[] = [
       'only check here that ties a PERSON to a PLACE.',
     evidenceGuidance: 'A screenshot of the register entry showing the suburb and postcode.',
     evidenceRequired: false,
-    verifyAt: { label: 'AHPRA Register of Practitioners', url: 'https://www.ahpra.gov.au/registration/registers-of-practitioners.aspx' },
+    verifyAt: EXTERNAL_LINKS.ahpraRegister,
   },
 
   // --- Credentials ---------------------------------------------------------
