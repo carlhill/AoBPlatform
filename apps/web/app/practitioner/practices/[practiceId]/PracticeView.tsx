@@ -121,7 +121,7 @@ export function PracticeView({ practiceId }: { practiceId: string }) {
 
   return (
     <Shell right={<SessionControl audience={strings.practitioner.audience} />}>
-      <Link href="/practitioner" className={ui.backLink} data-testid="practice-back">
+      <Link href="/practitioner" className={ui.pageBackLink} data-testid="practice-back">
         <ArrowLeft size={15} aria-hidden="true" />
         {strings.myAffiliations.back}
       </Link>

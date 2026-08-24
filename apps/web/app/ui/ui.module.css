@@ -735,7 +735,17 @@
   background: var(--accent-hover);
 }
 
-.backLink {
+/*
+ * THE PAGE-CONTENT BREADCRUMB — a back link sitting on its OWN LINE above a
+ * page's heading, not inline in the top bar. It used to share the name
+ * `.backLink` with the top-bar one in BackLink.tsx, which imports this same
+ * module: two rules for the same class, the later one winning on every
+ * property it redefined. `margin-bottom` from THIS rule leaked into the
+ * top-bar link, pushing it out of vertical alignment with the menu icon and
+ * the wordmark beside it — exactly what showed up misaligned in the header.
+ * Renamed so the two can never collide again, whichever one is edited next.
+ */
+.pageBackLink {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -745,7 +755,7 @@
   margin-bottom: var(--s3);
 }
 
-.backLink:hover {
+.pageBackLink:hover {
   color: var(--ink);
 }
 

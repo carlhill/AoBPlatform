@@ -194,7 +194,7 @@ export function CorrectView({ token }: { token: string }) {
 
     return (
       <Shell right={<SessionControl audience={strings.status.audience} />}>
-        <Link href={`/status/${token}`} className={ui.backLink}>
+        <Link href={`/status/${token}`} className={ui.pageBackLink}>
           <ArrowLeft size={15} aria-hidden="true" />
           {strings.status.backToStatus}
         </Link>
@@ -219,7 +219,7 @@ export function CorrectView({ token }: { token: string }) {
 
   return (
     <Shell right={<SessionControl audience={strings.status.audience} />}>
-      <Link href={`/status/${token}`} className={ui.backLink}>
+      <Link href={`/status/${token}`} className={ui.pageBackLink}>
         <ArrowLeft size={15} aria-hidden="true" />
         {strings.status.backToStatus}
       </Link>
