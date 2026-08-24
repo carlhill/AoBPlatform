@@ -20,7 +20,7 @@
  * the token says which practice, and the stored-selection branch goes away.
  */
 
-import { useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { mayChoosePractice } from '@aobplatform/domain';
 import { apiHeaders, attemptSilentLogin, currentSession } from '../auth';
 
@@ -39,12 +39,38 @@ export interface PracticeSelection {
   checked: boolean;
 }
 
+/*
+ * THE PRACTICE NAMED BY THE URL, for the platform's read-only routes.
+ *
+ * Those pages are about one practice chosen from a list, and the id is in the
+ * path — but `usePractice` answers from the session and a stored selection,
+ * neither of which knows anything about it. Without an override, a page like
+ * ApplicationView opened at /platform/practices/<id>/application would show
+ * whatever practice happened to be stored, or nothing at all.
+ *
+ * IT GRANTS NOTHING, and that is why taking an id from a URL is safe here. The
+ * routes that set it are platform-audience, so the browser guard keeps everyone
+ * else out; and the SERVER overwrites `x-practice-id` with the token's own
+ * claim whenever there is one, so a practice user who reached such a URL would
+ * still be answered about their own practice. This decides which practice a
+ * page is ABOUT, never what anybody may see.
+ */
+const PracticeOverrideContext = createContext<string | null>(null);
+
+export function PracticeOverride({ practiceId, children }: { practiceId: string; children: React.ReactNode }) {
+  return <PracticeOverrideContext.Provider value={practiceId}>{children}</PracticeOverrideContext.Provider>;
+}
+
 export function usePractice(): PracticeSelection {
+  const override = useContext(PracticeOverrideContext);
   const [practiceId, setPracticeId] = useState<string | null>(null);
   const [checked, setChecked] = useState(false);
   const [scoped, setScoped] = useState(false);
 
   useEffect(() => {
+    // Nothing to resolve: the URL already said which practice.
+    if (override) return;
+
     let live = true;
 
     const session = currentSession();
@@ -115,7 +141,14 @@ export function usePractice(): PracticeSelection {
     return () => {
       live = false;
     };
-  }, []);
+  }, [override]);
+
+  /*
+   * `scoped: true` for an override, so pages hide their practice CHOOSERS. On a
+   * page about one named practice a chooser is not merely useless, it is a
+   * control that would silently change what the URL says the page is about.
+   */
+  if (override) return { practiceId: override, checked: true, scoped: true };
 
   return { practiceId, checked, scoped };
 }

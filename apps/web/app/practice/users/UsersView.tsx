@@ -25,8 +25,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, KeyRound, RotateCcw, Send, UserMinus, UserPlus } from 'lucide-react';
+import { KeyRound, RotateCcw, Send, UserMinus, UserPlus } from 'lucide-react';
 import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui } from '../../ui';
 import { isPlatformOperator } from '@aobplatform/domain';
 import { SessionControl } from '../../SessionControl';
@@ -142,10 +141,6 @@ export function UsersView() {
 
   return (
     <Shell right={<SessionControl audience={strings.setup.audience} />}>
-      <Link href="/practice/setup" className={ui.backLink} data-testid="users-back">
-        <ArrowLeft size={15} aria-hidden="true" />
-        {strings.queue.back}
-      </Link>
       {/*
         THE BANNER FIRST, above everything. An operator acting as a practice is
         looking at a screen indistinguishable from that practice's own, so the

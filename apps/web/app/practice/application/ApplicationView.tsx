@@ -26,8 +26,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Lock, Save } from 'lucide-react';
+import { Lock, Save } from 'lucide-react';
 import { AMENDABLE_FIELDS } from '@aobplatform/domain';
 import { Button, Field, Notice, Shell, TextInput, ui } from '../../ui';
 import { SessionControl } from '../../SessionControl';
@@ -216,10 +215,6 @@ export function ApplicationView() {
 
   return (
     <Shell right={<SessionControl audience={strings.setup.audience} />}>
-      <Link href="/practice/setup" className={ui.backLink} data-testid="application-back">
-        <ArrowLeft size={15} aria-hidden="true" />
-        {strings.queue.back}
-      </Link>
       <h1 className={ui.pageTitle}>{strings.application.title}</h1>
       <p className={ui.pageLead}>{strings.application.lead}</p>
 

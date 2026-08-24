@@ -32,7 +32,6 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
-  ArrowLeft,
   ArrowRight,
   Building2,
   CheckCircle2,
@@ -45,12 +44,12 @@ import {
   UserSquare,
   Send,
 } from 'lucide-react';
-import { mayChoosePractice, type CardState } from '@aobplatform/domain';
+import { type CardState } from '@aobplatform/domain';
 import { Chip, Notice, Shell, ui, type Tone } from '../../ui';
 import { useRefreshable } from '../../refresh';
 import { toViewPath } from '../../viewPath';
 import { strings } from '../../strings';
-import { apiHeaders, currentSession } from '../../auth';
+import { apiHeaders } from '../../auth';
 import styles from './setup.module.css';
 import { SessionControl } from '../../SessionControl';
 
@@ -140,14 +139,6 @@ export function SetupHub({
    */
   viewOnly?: boolean;
 }) {
-  /*
-   * Whether this person may look at any OTHER practice. A token claim fixes it
-   * to one, so the chooser is not merely unnecessary for them — it is a page
-   * that redirects them back here.
-   */
-  const session = currentSession();
-  const scoped = session ? !mayChoosePractice({ roles: session.roles, practiceId: session.practiceId }) : false;
-
   const [hub, setHub] = useState<Hub | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -201,10 +192,6 @@ export function SetupHub({
     const refused = hub.practice.validationState === 'rejected';
     return (
       <Shell right={<SessionControl audience={strings.setup.audience} />}>
-        <Link href="/practice" className={ui.backLink} data-testid="hub-to-list">
-          <ArrowLeft size={15} aria-hidden="true" />
-          {strings.setup.backToPractices}
-        </Link>
         <h1 className={ui.pageTitle}>{hub.practice.name}</h1>
         <p className={ui.pageLead}>
           {refused ? strings.setup.reviewRejectedLead : strings.setup.reviewLead}
@@ -278,18 +265,6 @@ export function SetupHub({
         </>
       }
     >
-      {/*
-        A group manager must never be stranded on one practice — but a SCOPED
-        user has exactly one and the list would bounce them straight back here.
-        Offering a link that returns you to where you started is worse than
-        offering none.
-      */}
-      {!scoped && (
-        <Link href="/practice" className={ui.backLink} data-testid="hub-to-list">
-          <ArrowLeft size={15} aria-hidden="true" />
-          {strings.setup.backToPractices}
-        </Link>
-      )}
 
       {/*
         THE FIRST THING ON THE PAGE, and never a count. Counts read as readiness

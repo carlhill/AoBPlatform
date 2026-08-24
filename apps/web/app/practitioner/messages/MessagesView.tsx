@@ -18,8 +18,7 @@
  */
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import { matrix } from '@aobplatform/domain';
 import { Button, Field, Notice, SelectInput, Shell, ui } from '../../ui';
 import { SessionControl } from '../../SessionControl';
@@ -222,10 +221,6 @@ export function MessagesView() {
 
   return (
     <Shell right={<SessionControl audience={strings.practitioner.audience} />}>
-      <Link href="/practitioner" className={ui.backLink} data-testid="messages-back">
-        <ArrowLeft size={15} aria-hidden="true" />
-        {strings.myAffiliations.back}
-      </Link>
       <h1 className={ui.pageTitle}>{strings.myMessages.title}</h1>
       <p className={ui.pageLead}>{strings.myMessages.lead}</p>
 

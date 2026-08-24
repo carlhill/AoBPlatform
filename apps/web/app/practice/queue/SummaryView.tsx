@@ -16,8 +16,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { Button, Notice, Shell, ui } from '../../ui';
 import { SessionControl } from '../../SessionControl';
 import { apiHeaders } from '../../auth';
@@ -104,10 +103,6 @@ export function SummaryView({ groupBy }: { groupBy: 'org' | 'site' }) {
 
   return (
     <Shell right={<SessionControl audience={strings.setup.audience} />}>
-      <Link href="/practice/queue" className={ui.backLink} data-testid="summary-back">
-        <ArrowLeft size={15} aria-hidden="true" />
-        {strings.summary.backToQueue}
-      </Link>
       <h1 className={ui.pageTitle}>{title}</h1>
       <p className={`${ui.pageLead} ${styles.queueLead}`}>
         {groupBy === 'org' ? strings.summary.byOrgLead : strings.summary.bySiteLead}

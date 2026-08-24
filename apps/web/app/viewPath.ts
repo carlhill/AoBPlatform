@@ -23,7 +23,17 @@
  *
  * Adding a twin means adding one line here, next to the route that was created.
  */
-const TWINS: readonly string[] = ['', '/practitioners', '/entity', '/locations', '/affiliations', '/channels'];
+const TWINS: readonly string[] = [
+  '',
+  '/practitioners',
+  '/entity',
+  '/locations',
+  '/affiliations',
+  '/channels',
+  '/application',
+  '/users',
+  '/reports',
+];
 
 export function toViewPath(href: string, practiceId: string): string {
   if (!href.startsWith('/practice')) return href;

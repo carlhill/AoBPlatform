@@ -21,8 +21,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import { AlertTriangle, ArrowLeft, CheckCircle2, Clock, FileJson, FileText, Mail, RefreshCw, Search, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock, FileJson, FileText, Mail, RefreshCw, Search, XCircle } from 'lucide-react';
 import { isPlatformOperator } from '@aobplatform/domain';
 import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui } from '../../ui';
 import { SessionControl } from '../../SessionControl';
@@ -229,10 +228,6 @@ export function QueueView() {
   if (!practiceId) {
     return (
       <Shell right={<SessionControl audience={strings.setup.audience} />}>
-        <Link href="/practice/setup" className={ui.backLink} data-testid="queue-back">
-          <ArrowLeft size={15} aria-hidden="true" />
-          {strings.queue.back}
-        </Link>
         <h1 className={ui.pageTitle}>{strings.queue.title}</h1>
         <Notice tone="warn" title={strings.queue.chooseTitle}>
           {isOperator ? strings.queue.chooseBodyOperator : strings.queue.chooseBodyPractice}
@@ -243,10 +238,6 @@ export function QueueView() {
 
   return (
     <Shell right={<SessionControl audience={strings.setup.audience} />}>
-      <Link href="/practice/setup" className={ui.backLink} data-testid="queue-back">
-        <ArrowLeft size={15} aria-hidden="true" />
-        {strings.queue.back}
-      </Link>
       <h1 className={ui.pageTitle}>{strings.queue.title}</h1>
       <p className={`${ui.pageLead} ${styles.queueLead}`}>{strings.queue.lead}</p>
 

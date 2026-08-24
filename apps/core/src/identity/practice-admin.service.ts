@@ -607,16 +607,47 @@ export class PracticeAdminService {
        * we must still return the failure rather than throw over the top of it.
        */
       await this.prisma
-        .withPractice(input.organisationId, (tx) =>
-          tx.practice.update({
+        .withPractice(input.organisationId, async (tx) => {
+          await tx.practice.update({
             where: { id: input.organisationId },
             data: {
               adminInviteFailedAt: new Date(),
               adminInviteError: message,
               adminInviteAttempts: { increment: 1 },
             },
-          }),
-        )
+          });
+
+          /*
+           * AND RAISED AS WORK, because a column nobody queries is only a
+           * better log line.
+           *
+           * The queue is where somebody actually looks. An approved practice
+           * with nobody able to sign in is not a delivery failure to be
+           * shrugged at -- it is entitled to capture consent and cannot, and
+           * every day it sits there is a day it is either working without
+           * consent records or has gone elsewhere. From inside our console it
+           * looks like a practice that simply has not got started.
+           */
+          await this.reviewTasks.raise(tx, {
+            practiceId: input.organisationId,
+            kind: 'admin_invite_failed',
+            subjectType: 'Practice',
+            subjectId: input.organisationId,
+            summary: `${input.organisationName} was approved, but the administrator could not be invited`,
+            detail: {
+              reason:
+                'The approval stands and is correct -- an identity provider being unreachable is no reason ' +
+                'to un-approve a practice that passed its checks. But nobody at this practice can sign in ' +
+                'until an invitation succeeds.',
+              // Verbatim. The commonest of these is actionable precisely
+              // because it is specific.
+              error: message,
+              adminEmail: input.adminEmail,
+              approvedBy: input.approvedByName,
+            },
+            raisedBy: input.approvedByName,
+          });
+        })
         .catch(() => this.logger.error(`Could not even record the invitation failure for ${input.organisationId}.`));
 
       return {

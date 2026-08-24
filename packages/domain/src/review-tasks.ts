@@ -94,6 +94,26 @@ export const REVIEW_TASK_KINDS: readonly ReviewTaskKind[] = [
     stakes: 'high',
   }),
   kind({
+    key: 'admin_invite_failed',
+    label: 'A practice was approved but nobody was invited',
+    question: 'Why did the invitation fail, and can it be sent now?',
+    /*
+     * HIGH, which is not obvious for what looks like a delivery failure.
+     *
+     * The practice is APPROVED. It is entitled to capture consent and cannot,
+     * because not one person can sign in. Every day it sits here is a day the
+     * practice is either doing without consent records or has gone somewhere
+     * else — and neither is visible from inside our console, because from in
+     * here it looks like a practice that simply has not got started.
+     *
+     * It is also the shape a genuine problem hides in: "an account already
+     * exists with this email" means somebody else already holds the address
+     * this practice gave us, which is worth a person looking rather than a
+     * retry.
+     */
+    stakes: 'high',
+  }),
+  kind({
     key: 'recertification_due',
     label: 'A practice is due to recertify',
     question: 'Has the practice confirmed its details are still correct?',

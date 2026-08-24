@@ -21,8 +21,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, BarChart3, RefreshCw } from 'lucide-react';
+import { BarChart3, RefreshCw } from 'lucide-react';
 import {
   PACKED_BREAKDOWNS,
   PACKED_REPORTS,
@@ -241,10 +240,6 @@ export function ReportsView() {
 
   return (
     <Shell right={<SessionControl audience={strings.setup.audience} />}>
-      <Link href="/practice/queue" className={ui.backLink} data-testid="reports-back">
-        <ArrowLeft size={15} aria-hidden="true" />
-        {strings.queue.back}
-      </Link>
 
       <h1 className={ui.pageTitle}>{strings.reports.title}</h1>
       <p className={`${ui.pageLead} ${styles.queueLead}`}>{strings.reports.lead}</p>

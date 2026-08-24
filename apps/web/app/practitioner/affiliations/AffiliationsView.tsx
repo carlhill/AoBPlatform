@@ -14,8 +14,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, CalendarClock, LogOut } from 'lucide-react';
+import { CalendarClock, LogOut } from 'lucide-react';
 import { Button, Field, Notice, SelectInput, Shell, TextInput, ui } from '../../ui';
 import { SessionControl } from '../../SessionControl';
 import { apiHeaders, currentSession } from '../../auth';
@@ -75,10 +74,6 @@ export function AffiliationsView() {
 
   return (
     <Shell right={<SessionControl audience={strings.practitioner.audience} />}>
-      <Link href="/practitioner" className={ui.backLink} data-testid="affiliations-back">
-        <ArrowLeft size={15} aria-hidden="true" />
-        {strings.myAffiliations.back}
-      </Link>
       <h1 className={ui.pageTitle}>{strings.myAffiliations.title}</h1>
       <p className={ui.pageLead}>{strings.myAffiliations.lead}</p>
 
