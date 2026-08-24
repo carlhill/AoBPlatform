@@ -25,6 +25,7 @@ import * as RadixCheckbox from '@radix-ui/react-checkbox';
 import * as RadixDialog from '@radix-ui/react-dialog';
 import { MainMenu } from '../MainMenu';
 import { BackLink } from '../BackLink';
+import { RefreshButton } from '../RefreshButton';
 import { useId, useState } from 'react';
 import styles from './ui.module.css';
 
@@ -62,6 +63,17 @@ export function Shell({
           */}
           <BackLink />
           {nav && <nav className={styles.nav}>{nav}</nav>}
+          {/*
+            REFRESH, on every page that has anything to re-read. The token lives
+            in memory only — by design, so nothing a script can reach holds it —
+            which makes F5 throw the session away and ask somebody to sign in
+            again. This is how to say "ask the server again" without paying that
+            price. It hides itself when no page has registered a loader, because
+            a refresh button that does nothing teaches people to press F5.
+          */}
+          <span className={styles.topbarRight}>
+            <RefreshButton />
+          </span>
           {right && <span className={styles.topbarRight}>{right}</span>}
         </div>
       </header>

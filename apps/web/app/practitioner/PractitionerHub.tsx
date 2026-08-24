@@ -21,6 +21,7 @@ import { Building2, CalendarClock, IdCard, RefreshCw, Send, ShieldCheck } from '
 import { Button, Field, Notice, Shell, TextInput, ui } from '../ui';
 import { SessionControl } from '../SessionControl';
 import { apiHeaders, currentSession } from '../auth';
+import { useRefreshable } from '../refresh';
 import { strings } from '../strings';
 import styles from '../practice/setup/setup.module.css';
 import manage from '../practice/manage.module.css';
@@ -86,6 +87,13 @@ export function PractitionerHub() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /*
+   * REGISTERED WITH THE TOP-BAR REFRESH. The token is held in memory only, so
+   * a browser reload throws the session away and asks for a passkey again --
+   * this is the way to re-read without paying that.
+   */
+  useRefreshable(load);
 
   async function saveEmail() {
     setBusy(true);

@@ -27,6 +27,7 @@ import { isPlatformOperator } from '@aobplatform/domain';
 import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui } from '../../ui';
 import { SessionControl } from '../../SessionControl';
 import { apiHeaders, currentSession } from '../../auth';
+import { useRefreshable } from '../../refresh';
 import { strings } from '../../strings';
 import { usePractice } from '../usePractice';
 import { useLiveRefresh } from '../../useLiveRefresh';
@@ -194,6 +195,13 @@ export function QueueView() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /*
+   * REGISTERED WITH THE TOP-BAR REFRESH. The token is held in memory only, so
+   * a browser reload throws the session away and asks for a passkey again --
+   * this is the way to re-read without paying that.
+   */
+  useRefreshable(load);
 
   /*
    * Anything not yet sent is worth a count at the top. An operator opening this

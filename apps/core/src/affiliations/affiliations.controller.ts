@@ -299,6 +299,20 @@ export class AffiliationsController {
    *
    * Manual until PIE is bought.
    */
+  /**
+   * Every register check on one practitioner.
+   *
+   * PLATFORM ONLY, like recording one. This is our record of our own
+   * attestations; a practice that could read who checked and when could work
+   * out how closely it is being watched. What the practice needs — whether the
+   * check is done and what it says now — it already has on its roster.
+   */
+  @RequireRoles(PLATFORM_ADMIN)
+  @Get('practitioners/:practitionerId/registration/history')
+  registerCheckHistory(@Param('practitionerId', ParseUUIDPipe) practitionerId: string) {
+    return this.affiliations.registerCheckHistory(practitionerId);
+  }
+
   @RequireRoles(PLATFORM_ADMIN)
   @Post('practitioners/:practitionerId/registration')
   recordRegistration(

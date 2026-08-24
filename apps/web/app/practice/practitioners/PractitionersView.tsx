@@ -35,10 +35,12 @@ import {
 } from 'lucide-react';
 import { AHPRA_REGISTRATION_STATUSES, EXTERNAL_LINKS, isValidAhpraNumberFormat, isPlatformOperator } from '@aobplatform/domain';
 import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui } from '../../ui';
+import { useRefreshable } from '../../refresh';
 import { strings } from '../../strings';
 import styles from '../manage.module.css';
 import { SessionControl } from '../../SessionControl';
 import { currentSession, apiHeaders } from '../../auth';
+import { HistoryDisclosure } from '../../HistoryDisclosure';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -118,6 +120,13 @@ export function PractitionersView({ practiceId }: { practiceId: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /*
+   * REGISTERED WITH THE TOP-BAR REFRESH. The token is held in memory only, so
+   * a browser reload throws the session away and asks for a passkey again --
+   * this is the way to re-read without paying that.
+   */
+  useRefreshable(load);
 
   if (loadError) {
     return (
@@ -247,6 +256,48 @@ function PractitionerCard({
                     .replace('{who}', entry.registrationSightedByName ?? '—')
                     .replace('{when}', displayDate(entry.registrationSightedAt))}
             </p>
+          )}
+
+          {/*
+            EVERY CHECK, NOT JUST THE LATEST — and beside the latest, because
+            that is the fact somebody is looking at when the question occurs to
+            them.
+
+            The line above is a CACHE of the newest check. Until this existed
+            each new check overwrote the last, so a practitioner Registered in
+            March and Cancelled in August had one answer, and the March reading
+            — the one that explains why a capture in April was allowed — was
+            destroyed by the act of checking again.
+
+            PLATFORM ONLY. This is our record of our own attestations; a
+            practice that could read who checked and how often could work out
+            how closely it is being watched. What the practice needs, whether
+            the check is done and what it says now, is the line above.
+          */}
+          {canCheck && (
+            <HistoryDisclosure
+              url={`${CORE_URL}/practitioners/${entry.practitionerId}/registration/history`}
+              extract={(body) => ((body as { checks?: RegisterCheck[] }).checks ?? [])}
+              emptyMessage={strings.practitioners.historyEmpty}
+              label={strings.practitioners.historyShow}
+              testId={`register-history-${entry.practitionerId}`}
+              renderRow={(c: RegisterCheck) => (
+                <>
+                  <strong>{c.registrationStatus}</strong>
+                  {c.profession ? ` · ${c.profession}` : ''}
+                  <span className={ui.hint}>
+                    {' '}
+                    · {displayDate(c.sightedAt)} ·{' '}
+                    {c.source === 'pie_api'
+                      ? strings.practitioners.sourceApi
+                      : (c.sightedByName ?? strings.practitioners.historyNobody)}
+                  </span>
+                  {c.conditions && c.conditions.toLowerCase() !== 'none' && (
+                    <span className={ui.hint}> · {c.conditions}</span>
+                  )}
+                </>
+              )}
+            />
           )}
 
           {/* Conditions are the thing most easily skimmed past: somebody can be
@@ -608,6 +659,17 @@ function RegisterCheck({
 // ---------------------------------------------------------------------------
 // Adding one
 // ---------------------------------------------------------------------------
+
+type RegisterCheck = {
+  id: string;
+  registrationStatus: string;
+  profession: string | null;
+  division: string | null;
+  conditions: string | null;
+  source: string;
+  sightedByName: string | null;
+  sightedAt: string;
+};
 
 type DirectoryHit = {
   practitionerId: string;

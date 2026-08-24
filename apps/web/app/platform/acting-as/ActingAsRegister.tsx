@@ -34,6 +34,7 @@ import { Button, Chip, Notice, Shell, ui } from '../../ui';
 import { SessionControl } from '../../SessionControl';
 import { apiHeaders } from '../../auth';
 import { forgetActingAs } from '../../effectivePractice';
+import { useRefreshable } from '../../refresh';
 import { strings } from '../../strings';
 import styles from '../../practice/manage.module.css';
 
@@ -84,6 +85,9 @@ export function ActingAsRegister() {
       setError((e as Error).message);
     }
   }, []);
+
+  // Registered with the top-bar refresh; see refresh.ts.
+  useRefreshable(load);
 
   useEffect(() => {
     void load();

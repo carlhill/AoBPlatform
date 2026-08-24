@@ -25,6 +25,7 @@ import { RefreshCw, ShieldAlert, UserCheck, X } from 'lucide-react';
 import { Button, Chip, Field, Notice, Shell, TextInput, ui } from '../../../ui';
 import { SessionControl } from '../../../SessionControl';
 import { apiHeaders } from '../../../auth';
+import { useRefreshable } from '../../../refresh';
 import { strings } from '../../../strings';
 import styles from '../../../practice/manage.module.css';
 
@@ -72,6 +73,13 @@ export function ActingAsHistory() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /*
+   * REGISTERED WITH THE TOP-BAR REFRESH. The token is held in memory only, so
+   * a browser reload throws the session away and asks for a passkey again --
+   * this is the way to re-read without paying that.
+   */
+  useRefreshable(load);
 
   /*
    * SEARCHED OVER EVERYTHING SHOWN, because the question that brings somebody

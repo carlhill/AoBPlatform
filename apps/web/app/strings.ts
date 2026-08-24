@@ -1469,6 +1469,7 @@ export const strings = {
     title: 'Go to',
     open: 'Open the menu',
     close: 'Close the menu',
+    refresh: 'Ask the server again',
     hint: 'Only the pages you can actually open are listed here.',
     hintSignedOut: 'You are not signed in, so this is everything open to anybody.',
 
@@ -1603,6 +1604,23 @@ export const strings = {
     stopped: 'Stopped. The reapproval it forced still stands.',
     reapproval: 'Forced a reapproval',
     note: 'Note',
+  },
+
+  /* The two patterns that repeat across every screen. */
+  history: {
+    show: 'History',
+    loading: 'Reading the history…',
+    notLoaded: 'The history could not be read',
+  },
+
+  form: {
+    /*
+     * CLEARING IS NOT CANCELLING. "Cancel" implies leaving; this empties the
+     * fields and leaves you where you are, which is what somebody wants after
+     * a refusal they intend to answer by starting again.
+     */
+    clear: 'Clear the form',
+    cleared: 'Cleared.',
   },
 
   practitioner: {
@@ -2192,6 +2210,9 @@ export const strings = {
      * identifier that settles who somebody is, and got told to go elsewhere and
      * do something else.
      */
+    historyShow: 'Every check',
+    historyEmpty: 'No check has been recorded against this practitioner yet.',
+    historyNobody: 'nobody named',
     existsTitle: 'This practitioner is already on AoBPlatform',
     existsBody:
       'A practitioner is one identity across every practice they work at, so there is nothing to create. '

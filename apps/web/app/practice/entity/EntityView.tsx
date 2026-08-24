@@ -38,6 +38,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { Button, Chip, Notice, Section, Shell, ui } from '../../ui';
+import { useRefreshable } from '../../refresh';
 import { strings } from '../../strings';
 import { apiHeaders, currentSession } from '../../auth';
 import { AuditTrail } from '../../review/AuditTrail';
@@ -146,6 +147,9 @@ export function EntityView({ practiceId }: { practiceId: string }) {
       setError(e instanceof TypeError ? strings.review.unreachableBody : (e as Error).message);
     }
   }, [practiceId]);
+
+  // Registered with the top-bar refresh; see refresh.ts.
+  useRefreshable(load);
 
   useEffect(() => {
     void load();

@@ -29,6 +29,7 @@ import Link from 'next/link';
 import { AlertTriangle, ArrowLeft, Building2, CheckCircle2, MapPin, Pencil, Plus } from 'lucide-react';
 import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui } from '../../ui';
 import { isPlatformOperator } from '@aobplatform/domain';
+import { useRefreshable } from '../../refresh';
 import { strings } from '../../strings';
 import { apiHeaders, currentSession } from '../../auth';
 import styles from '../manage.module.css';
@@ -130,6 +131,13 @@ export function LocationsView({ practiceId }: { practiceId: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /*
+   * REGISTERED WITH THE TOP-BAR REFRESH. The token is held in memory only, so
+   * a browser reload throws the session away and asks for a passkey again --
+   * this is the way to re-read without paying that.
+   */
+  useRefreshable(load);
 
   if (loadError) {
     return (

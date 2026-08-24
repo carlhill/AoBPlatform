@@ -35,7 +35,9 @@ import {
   XCircle,
 } from 'lucide-react';
 import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui, type Tone, Checkbox } from '../../ui';
+import { useRefreshable } from '../../refresh';
 import { strings } from '../../strings';
+import { ClearForm } from '../../ClearForm';
 import styles from '../manage.module.css';
 import { SessionControl } from '../../SessionControl';
 import { currentSession, apiHeaders } from '../../auth';
@@ -160,6 +162,13 @@ export function AffiliationsView({ practiceId }: { practiceId: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /*
+   * REGISTERED WITH THE TOP-BAR REFRESH. The token is held in memory only, so
+   * a browser reload throws the session away and asks for a passkey again --
+   * this is the way to re-read without paying that.
+   */
+  useRefreshable(load);
 
   /*
    * AUTO-REFRESH WHILE SOMEBODY ELSE IS DECIDING.
@@ -493,7 +502,13 @@ function AffiliationCard({
           <p className={styles.cardTitle}>
             {a.practitioner.familyName}, {a.practitioner.givenNames}
           </p>
-          <p className={styles.cardSub}>
+          {/*
+            WHERE, IN FULL AND IN BOLD. An affiliation is to a PLACE -- s 65C(5)
+            identifies a practitioner by name and place of practice -- so the
+            location is not a subtitle under the name, it is half of what this
+            row says. Muted grey made the load-bearing half read as decoration.
+          */}
+          <p className={`${styles.cardSub} ${styles.cardWhere}`}>
             {a.location.code ? `${a.location.code} — ` : ''}
             {a.location.address}
             {a.department ? ` · ${a.department}` : ''}
@@ -968,6 +983,29 @@ function InviteForm({
         >
           {busy ? strings.affiliations.inviting : strings.affiliations.inviteAction}
         </Button>
+
+        {/*
+          CLEARING IS WHAT SOMEBODY WANTS RIGHT AFTER A REFUSAL: they chose a
+          practitioner and a location, were told that pair already exists, and
+          now want a different pair. Resetting four fields by hand means the one
+          they forget produces the same refusal again.
+
+          It clears the error too. Emptying the fields and leaving the red box
+          would tell somebody they are still wrong about something they have
+          just deleted.
+        */}
+        <ClearForm
+          dirty={Boolean(ahpra || locationId || departmentId || providerNumber || error)}
+          disabled={busy}
+          onClear={() => {
+            setAhpra('');
+            setLocationId('');
+            setDepartmentId('');
+            setProviderNumber('');
+            setError(null);
+          }}
+          testId="aff-clear"
+        />
       </div>
 
       {error && (

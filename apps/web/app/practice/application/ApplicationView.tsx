@@ -32,6 +32,7 @@ import { AMENDABLE_FIELDS } from '@aobplatform/domain';
 import { Button, Field, Notice, Shell, TextInput, ui } from '../../ui';
 import { SessionControl } from '../../SessionControl';
 import { apiHeaders } from '../../auth';
+import { useRefreshable } from '../../refresh';
 import { strings } from '../../strings';
 import { usePractice } from '../usePractice';
 import styles from '../manage.module.css';
@@ -153,6 +154,13 @@ export function ApplicationView() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /*
+   * REGISTERED WITH THE TOP-BAR REFRESH. The token is held in memory only, so
+   * a browser reload throws the session away and asks for a passkey again --
+   * this is the way to re-read without paying that.
+   */
+  useRefreshable(load);
 
   /*
    * Only what has actually changed, and only from the amendable set. Sending

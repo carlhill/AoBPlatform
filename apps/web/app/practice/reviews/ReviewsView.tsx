@@ -25,6 +25,7 @@ import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui } from '
 import { isPlatformOperator } from '@aobplatform/domain';
 import { SessionControl } from '../../SessionControl';
 import { apiHeaders, currentSession } from '../../auth';
+import { useRefreshable } from '../../refresh';
 import { strings } from '../../strings';
 import { usePractice } from '../usePractice';
 import { PracticePicker } from '../PracticePicker';
@@ -117,6 +118,13 @@ export function ReviewsView() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /*
+   * REGISTERED WITH THE TOP-BAR REFRESH. The token is held in memory only, so
+   * a browser reload throws the session away and asks for a passkey again --
+   * this is the way to re-read without paying that.
+   */
+  useRefreshable(load);
 
   // Tasks arrive from elsewhere — a practice amending its own record — so a
   // reviewer sitting on this screen should see them appear.

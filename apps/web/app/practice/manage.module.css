@@ -102,6 +102,21 @@
   overflow-wrap: anywhere;
 }
 
+/*
+ * THE PLACE OF PRACTICE, which is not a subtitle.
+ *
+ * s 65C(5) identifies a practitioner by name AND the address of the place of
+ * practice, or by the provider number for that place. So on an affiliation card
+ * the location is half the fact, not a caption under the name -- and muted grey
+ * read as decoration next to a bold name.
+ *
+ * Full ink as well as weight: bold in a muted colour still reads as secondary.
+ */
+.cardWhere {
+  color: var(--ink);
+  font-weight: 600;
+}
+
 /* The consequence sentence — what can or cannot happen because of this state. */
 .cardNote {
   font-size: var(--text-sm);

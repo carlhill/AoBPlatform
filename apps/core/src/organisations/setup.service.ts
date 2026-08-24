@@ -126,16 +126,39 @@ export class SetupService {
       const practitionerTrim = SetupService.trim(practitionerRows);
 
       // --- 4. Affiliations -------------------------------------------------
+      /*
+       * AN AFFILIATION THAT HAS ENDED IS NOT WORK OUTSTANDING.
+       *
+       * `needsWork` was `!isAccepted || !ready`, and `ended` and `rejected` are
+       * both "not accepted" -- so a practitioner who left, or an invitation
+       * somebody declined, marked the whole card NEEDS WORK for ever. Any
+       * practice that has ever had somebody leave could never show a clean
+       * card, which is the state where a status light stops being read at all.
+       *
+       * A departure is a completed thing. It is history, and history is not a
+       * task. Only a LIVE affiliation can be outstanding: one still waiting to
+       * be accepted, or one accepted but not yet able to capture.
+       */
+      const isFinished = (status: string) => status === 'ended' || status === 'rejected';
+
       const affiliationRows: SetupRow[] = affiliations.map((a) => {
         const ready = Boolean(a.providerNumber) || activeLocations.some((l) => l.id === a.locationId);
         const isAccepted = a.status === 'active' || a.status === 'ending';
+        const finished = isFinished(a.status);
         return {
           label: `${a.practitioner?.familyName ?? 'Practitioner'} @ ${a.location?.code ?? 'a location'}`,
           note: !isAccepted ? a.status : ready ? 'capture open' : 'no provider number or active location',
-          needsWork: !isAccepted || !ready,
+          needsWork: !finished && (!isAccepted || !ready),
         };
       });
       const affiliationTrim = SetupService.trim(affiliationRows);
+
+      /*
+       * THE ROLL-UP COUNTS LIVE ONES, for the same reason. "2 of 3 accepted"
+       * with one of the three ended reads as somebody still deciding, when in
+       * fact nobody is: it is two of two, plus a departure.
+       */
+      const live = affiliations.filter((a) => !isFinished(a.status));
 
       // --- 5. Capture channels ---------------------------------------------
       //
@@ -206,7 +229,11 @@ export class SetupService {
           rollup:
             affiliations.length === 0
               ? 'none yet'
-              : `${accepted.length} of ${affiliations.length} accepted · ${captureReady.length} capture open`,
+              : `${accepted.length} of ${live.length} accepted · ${captureReady.length} capture open` +
+                // Named rather than hidden. A practice looking for somebody who
+                // has left should find them, and a count that silently omitted
+                // them would look like the record had lost them.
+                (affiliations.length > live.length ? ` · ${affiliations.length - live.length} ended` : ''),
           ...affiliationTrim,
           href: '/practice/affiliations',
         },

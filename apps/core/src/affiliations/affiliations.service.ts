@@ -146,6 +146,42 @@ export class AffiliationsService {
   }
 
   /**
+   * Every register check on one practitioner, newest first.
+   *
+   * A PLATFORM READ. The practice does not get this: it is our record of our
+   * own attestations, and a practice that could read who checked and when could
+   * work out how closely it is being watched. What the practice needs — whether
+   * the check has been done, and what it currently says — it already has.
+   */
+  async registerCheckHistory(practitionerId: string) {
+    const practitioner = await this.prisma.practitioner.findUnique({ where: { id: practitionerId } });
+    if (!practitioner) throw new NotFoundException('Practitioner not found.');
+
+    const checks = await this.prisma.practitionerRegisterCheck.findMany({
+      where: { practitionerId },
+      orderBy: { sightedAt: 'desc' },
+      take: 50,
+    });
+
+    return {
+      practitionerId,
+      ahpraNumber: practitioner.ahpraNumber,
+      checks: checks.map((c) => ({
+        id: c.id,
+        registrationStatus: c.registrationStatus,
+        profession: c.profession,
+        division: c.division,
+        conditions: c.conditions,
+        source: c.source,
+        // NEVER "the system". A manual sighting names the person who read the
+        // register; assertSightingAttributable refuses one that does not.
+        sightedByName: c.sightedByName,
+        sightedAt: c.sightedAt.toISOString(),
+      })),
+    };
+  }
+
+  /**
    * The directory. AHPRA number only, exact match — see directory.ts for why
    * name browse is refused rather than merely unimplemented.
    */
@@ -256,6 +292,36 @@ export class AffiliationsService {
           registrationSource: input.source,
           registrationSightedByName: input.sightedByName,
           registrationSightedAt: sightedAt,
+        },
+      }),
+      /*
+       * THE CHECK ITSELF, KEPT.
+       *
+       * The columns above are OVERWRITTEN by each new check, so before this row
+       * existed "who checked, when, and what did it say" had one answer at a
+       * time and asking again destroyed the previous one. A check is somebody's
+       * statement that on a given day the register said a particular thing; it
+       * does not stop being true because a later one was made.
+       *
+       * It is also how a bad check used to hide: recording "Registered" over a
+       * previous "Cancelled" left no trace the earlier reading had existed. Now
+       * both stand, in the order they happened.
+       *
+       * In the SAME transaction as the overwrite, so the cache and the history
+       * cannot disagree about what the newest check said.
+       */
+      this.prisma.practitionerRegisterCheck.create({
+        data: {
+          practitionerId,
+          registrationStatus: input.registrationStatus,
+          profession: input.profession,
+          division: input.division,
+          conditions: input.conditions,
+          undertakings: input.undertakings,
+          reprimands: input.reprimands,
+          source: input.source,
+          sightedByName: input.sightedByName,
+          sightedAt,
         },
       }),
       this.prisma.practitionerRegistration.deleteMany({ where: { practitionerId } }),

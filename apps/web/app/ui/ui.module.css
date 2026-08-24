@@ -159,6 +159,44 @@
   color: var(--ink);
 }
 
+/*
+ * "SHOW ME THE HISTORY OF THIS ROW" -- the pattern, once. Indented under the
+ * fact it belongs to, so an open panel reads as part of that row rather than as
+ * a new record beneath it.
+ */
+@keyframes aobSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* Motion suppressed for anybody who asked for that; the disabled button still
+   says a refresh is in flight. */
+.spinning {
+  animation: aobSpin 900ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinning { animation: none; }
+}
+
+.historyBlock {
+  margin-top: var(--s2);
+}
+
+.historyPanel {
+  margin: var(--s2) 0 var(--s3) var(--s4);
+  padding-left: var(--s4);
+  border-left: 2px solid var(--line);
+}
+
+.historyList {
+  margin: 0;
+  padding-left: var(--s5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  font-size: var(--text-sm);
+}
+
 .topbarRight {
   margin-left: auto;
   font-size: var(--text-xs);
