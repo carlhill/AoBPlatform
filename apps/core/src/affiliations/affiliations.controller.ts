@@ -16,6 +16,7 @@ import { AffiliationsService } from './affiliations.service';
 import { InvitationService } from './invitation.service';
 import { PLATFORM_ADMIN, RequireRoles } from '../auth/roles.decorator';
 import { PracticeScoped } from '../auth/practice-scope.decorator';
+import { SessionActor, type Actor } from '../auth/actor.decorator';
 
 export class PreRegisterDto {
   @IsString()
@@ -377,8 +378,22 @@ export class AffiliationsController {
   }
 
   @Get('affiliations')
-  list(@Headers('x-practice-id') practiceId: string | undefined) {
-    return this.affiliations.listForPractice(requirePractice(practiceId));
+  list(@Headers('x-practice-id') practiceId: string | undefined, @SessionActor() actor: Actor | undefined) {
+    const scope = requirePractice(practiceId);
+    /*
+     * IS THE CALLER THE PRACTICE, or somebody looking at it?
+     *
+     * The token's own claim answers it. A practice user carries this practice;
+     * so does a platform operator with an acting-as session open, which is
+     * right -- acting as them IS being them, recorded. An operator reading
+     * read-only carries no claim at all, and gets the list without provider
+     * numbers.
+     *
+     * Decided here rather than in the view, because a screen that decides what
+     * to hide has already been sent the thing it is hiding.
+     */
+    const asPractice = actor?.practiceId === scope;
+    return this.affiliations.listForPractice(scope, { asPractice });
   }
 
   /**

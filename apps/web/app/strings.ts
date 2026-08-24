@@ -1662,11 +1662,10 @@ export const strings = {
   viewOnly: {
     title: 'You are looking at this practice, not working in it',
     body:
-      'Everything here is theirs and is shown as they see it. Nothing you do on this page will save — you '
-      + 'hold no claim on this practice, and the server refuses a change from somebody who does not.',
-    hint: 'To change something, act as the practice from',
-    toList: 'the organisation list',
-    toHub: 'Back to their setup',
+      'Everything here is theirs, shown as they see it. The controls are switched off rather than left to '
+      + 'fail — to change something, act as the practice from the organisation list.',
+    toList: 'All organisations',
+    toHub: 'Their setup',
   },
 
   practitioner: {

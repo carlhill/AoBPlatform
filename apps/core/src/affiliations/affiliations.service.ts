@@ -1372,8 +1372,25 @@ export class AffiliationsService {
     return roster;
   }
 
-  /** What a practice sees: its own affiliations, provider numbers included. */
-  async listForPractice(practiceId: string) {
+  /**
+   * What a practice sees: its own affiliations, provider numbers included.
+   *
+   * `asPractice` DECIDES THE PROVIDER NUMBERS, and it exists because the
+   * comment below used to be true by accident.
+   *
+   * It said "this is the only place it is ever returned", written when the only
+   * caller was the practice itself. A platform operator reading a practice
+   * read-only then became a second caller, and the sentence quietly stopped
+   * being true: provider numbers appeared on screen to somebody who is not the
+   * practice and has no need of them. Their job on that page is checking a
+   * register, not claiming a benefit.
+   *
+   * A provider number is the practice-and-place key that Medicare claims are
+   * made against. "Never crosses a practice boundary" has to mean the platform
+   * too, or the rule is only about other practices — and the platform is the
+   * one party that can see every practice.
+   */
+  async listForPractice(practiceId: string, opts: { asPractice: boolean } = { asPractice: true }) {
     return this.prisma.withPractice(practiceId, async (tx) => {
       const affiliations = await tx.affiliation.findMany({
         include: { practitioner: true, location: true, department: true },
@@ -1386,9 +1403,13 @@ export class AffiliationsService {
         practitioner: toDirectoryEntry(a.practitioner),
         location: { id: a.locationId, address: a.location.addressCanonical ?? a.location.address, code: a.location.code },
         department: a.department?.name ?? null,
-        // The practice's OWN provider number for its OWN practitioner. This is
-        // the only place it is ever returned.
-        providerNumber: a.providerNumber,
+        /*
+         * The practice's OWN provider number for its OWN practitioner, and only
+         * when the caller IS the practice. A platform operator viewing gets
+         * whether one exists, which is all the readiness question needs.
+         */
+        providerNumber: opts.asPractice ? a.providerNumber : null,
+        hasProviderNumber: Boolean(a.providerNumber),
         startedAt: a.startedAt,
         noticeGivenAt: a.noticeGivenAt,
         endsAt: a.endsAt,

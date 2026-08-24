@@ -511,40 +511,6 @@ export function PracticeList() {
                 */}
                 {p.headline && <p className={styles.rowHeadline}>{p.headline}</p>}
 
-                {/*
-                  EVERY GAP, WITH SOMEWHERE TO GO. Carl's words: "you have to
-                  list what work needs to be done and give a link to the page to
-                  do this work." One label in a chip answers "what"; this
-                  answers "and then what", which is the half that costs somebody
-                  their afternoon.
-
-                  SHOWN TO EVERYBODY, including an operator. The first version
-                  hid this from them, because these are the practice's own pages
-                  and an operator has no claim to open one -- which meant the
-                  person most likely to ask "why does this say NO ADMINISTRATOR"
-                  was the one person not shown the answer.
-                  
-                  Now the read-only tree exists, so their links point at the
-                  version that cannot change anything. Same list, same order,
-                  same sentences; a destination that works for whoever is
-                  reading it.
-                */}
-                {p.gaps.length > 0 && (
-                  <ul className={styles.rowGaps}>
-                    {p.gaps.map((gap) => (
-                      <li key={gap.label}>
-                        <Link
-                          href={isOperator ? toViewPath(gap.href, p.id) : gap.href}
-                          onClick={() => window.localStorage.setItem(SELECTION_KEY, p.id)}
-                          data-testid={`gap-${p.id}-${gap.label}`}
-                        >
-                          {gap.label}
-                        </Link>
-                        <span className={ui.hint}> — {gap.detail}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
                 {pending && <p className={styles.rowHeadline}>{strings.practices.pendingBody}</p>}
                 {rejected && <p className={styles.rowHeadline}>{strings.practices.rejectedBody}</p>}
               </div>
@@ -608,6 +574,42 @@ export function PracticeList() {
               >
                 {body}
               </Link>
+
+                {/*
+                EVERY GAP, WITH SOMEWHERE TO GO. Carl's words: "you have to
+                list what work needs to be done and give a link to the page to
+                do this work." One label in a chip answers "what"; this
+                answers "and then what", which is the half that costs somebody
+                their afternoon.
+
+                SHOWN TO EVERYBODY, including an operator. The first version
+                hid this from them, because these are the practice's own pages
+                and an operator has no claim to open one -- which meant the
+                person most likely to ask "why does this say NO ADMINISTRATOR"
+                was the one person not shown the answer.
+                
+                Now the read-only tree exists, so their links point at the
+                version that cannot change anything. Same list, same order,
+                same sentences; a destination that works for whoever is
+                reading it.
+              */}
+              {p.gaps.length > 0 && (
+                <ul className={styles.rowGaps}>
+                  {p.gaps.map((gap) => (
+                    <li key={gap.label}>
+                      <Link
+                        href={isOperator ? toViewPath(gap.href, p.id) : gap.href}
+                        onClick={() => window.localStorage.setItem(SELECTION_KEY, p.id)}
+                        data-testid={`gap-${p.id}-${gap.label}`}
+                      >
+                        {gap.label}
+                      </Link>
+                      <span className={ui.hint}> — {gap.detail}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
 
               {/*
                 ACTING AS THIS PRACTICE, from the list.

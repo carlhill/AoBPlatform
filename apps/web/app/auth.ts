@@ -284,7 +284,39 @@ export function silentLoginFailed(): void {
 }
 
 /** Completes the code exchange on /callback. */
-export async function completeLogin(code: string, state: string): Promise<Session> {
+/*
+ * ONE EXCHANGE PER CODE, and the guard lives here rather than in the callback
+ * page so that every caller gets it.
+ *
+ * An authorization code is single-use: Keycloak answers the second attempt with
+ * `invalid_grant / Code not valid`. That is correct of Keycloak and a disaster
+ * on screen, because the person is by then SIGNED IN and looking at
+ * "Sign-in failed".
+ *
+ * It happens for more reasons than one -- React re-running an effect in
+ * development, somebody reloading the callback URL, a dev server restarting
+ * mid-flow -- and they all end the same way. Rather than chase each, the
+ * exchange is made idempotent: the same code returns the same promise, and a
+ * code already spent returns the session it produced.
+ */
+const exchanges = new Map<string, Promise<Session>>();
+
+export function completeLogin(code: string, state: string): Promise<Session> {
+  const inFlight = exchanges.get(code);
+  if (inFlight) return inFlight;
+
+  const attempt = exchangeCode(code, state);
+  exchanges.set(code, attempt);
+  /*
+   * A FAILED exchange is forgotten, so a genuine retry is still possible. Only
+   * a success is worth remembering, and remembering it is what makes a second
+   * call return a session instead of an error.
+   */
+  attempt.catch(() => exchanges.delete(code));
+  return attempt;
+}
+
+async function exchangeCode(code: string, state: string): Promise<Session> {
   const verifier = sessionStorage.getItem(VERIFIER_KEY);
   const expectedState = sessionStorage.getItem(STATE_KEY);
   sessionStorage.removeItem(VERIFIER_KEY);

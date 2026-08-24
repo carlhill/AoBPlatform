@@ -573,6 +573,18 @@ export class PracticeAdminService {
         });
       });
 
+      /*
+       * A PAST FAILURE IS CLEARED BY A SUCCESS. Leaving it set would keep a
+       * practice on the rescue list forever after somebody had already rescued
+       * it, and a list with permanent residents is a list people stop reading.
+       */
+      await this.prisma.withPractice(input.organisationId, (tx) =>
+        tx.practice.update({
+          where: { id: input.organisationId },
+          data: { adminInviteFailedAt: null, adminInviteError: null },
+        }),
+      );
+
       return {
         accountCreated: true,
         invited: true,
@@ -581,6 +593,32 @@ export class PracticeAdminService {
     } catch (err) {
       const message = err instanceof KeycloakAdminError ? err.message : (err as Error).message;
       this.logger.error(`Could not create the practice-admin account for ${input.organisationName}: ${message}`);
+
+      /*
+       * WRITTEN DOWN, not merely returned.
+       *
+       * The approval stands -- it must, an identity provider being unreachable
+       * is not a reason to un-approve a practice that passed its checks. But
+       * until this was recorded the failure existed only in the response to a
+       * request nobody re-reads and in a log line nobody is watching, and the
+       * practice sat approved with nobody able to sign in.
+       *
+       * Best-effort, and deliberately so: if we cannot even record the failure
+       * we must still return the failure rather than throw over the top of it.
+       */
+      await this.prisma
+        .withPractice(input.organisationId, (tx) =>
+          tx.practice.update({
+            where: { id: input.organisationId },
+            data: {
+              adminInviteFailedAt: new Date(),
+              adminInviteError: message,
+              adminInviteAttempts: { increment: 1 },
+            },
+          }),
+        )
+        .catch(() => this.logger.error(`Could not even record the invitation failure for ${input.organisationId}.`));
+
       return {
         accountCreated: false,
         invited: false,

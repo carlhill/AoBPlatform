@@ -24,7 +24,7 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { landingPath } from '@aobplatform/domain';
-import { completeLogin, returnPath, silentLoginFailed } from '../auth';
+import { completeLogin, currentSession, returnPath, silentLoginFailed } from '../auth';
 import { strings } from '../strings';
 
 function CallbackInner() {
@@ -80,7 +80,24 @@ function CallbackInner() {
           }),
         );
       })
-      .catch((err) => setMessage(`${strings.auth.failed} ${String(err)}`));
+      .catch((err) => {
+        /*
+         * A SESSION THAT ALREADY EXISTS BEATS THE ERROR.
+         *
+         * An authorization code is single-use, so a second arrival at this page
+         * with the same code fails -- correctly -- with "Code not valid". By
+         * then the person IS signed in, and telling them "Sign-in failed" sends
+         * them off to fix something that already worked. `completeLogin` now
+         * de-duplicates the exchange itself; this is the belt to that braces,
+         * covering the case where the failure happened for some other reason
+         * but the session is nonetheless there.
+         */
+        if (currentSession()) {
+          router.replace(landingPath({ ...currentSession()!, intended: returnPath() }));
+          return;
+        }
+        setMessage(`${strings.auth.failed} ${String(err)}`);
+      });
     // `router` is stable across renders, so this runs once — which matters,
     // because the authorization code is single-use and a second attempt would
     // present a spent one.

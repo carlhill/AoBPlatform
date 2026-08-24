@@ -210,6 +210,21 @@ model Practice {
   // --- The practice admin's account (step 3) ---
   adminKeycloakUserId    String?
   adminInvitedAt         DateTime?
+
+  /// WHEN THE INVITATION DID NOT HAPPEN, and why.
+  ///
+  /// Validation and invitation are one act. When the second half fails the
+  /// first still stands -- correctly, an approval must not be rolled back
+  /// because an identity provider was unreachable -- and without this the
+  /// failure lived only in a log line. A practice then sits approved with
+  /// nobody able to sign in, discoverable only by noticing an absence.
+  adminInviteFailedAt DateTime?
+  /// Verbatim, in the identity provider's own words. The commonest of these
+  /// ("an account already exists with this email") is actionable precisely
+  /// because it is specific, and a paraphrase would take that away.
+  adminInviteError    String?
+  /// A first failure is a bounce. A fourth is a decision about this practice.
+  adminInviteAttempts Int       @default(0)
   adminPasskeyEnrolledAt DateTime?
   /**
    * Which registered name the operator's typed name matched, and how closely.
