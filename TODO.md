@@ -803,3 +803,43 @@ These block work and need Carl, not code.
   enrolment and refuse a non-UV provider there and then.
 - **Can a sole trader reach 6 points?** If not, the identity threshold quietly
   excludes them, which is a policy decision and not a scoring detail.
+
+## The MBS basic-service-description mapping (D6a)
+
+Raised 25 Aug 2026 from CONSULTATION-CAPTURE-PLAN.md §2.4 / Part 6 Q2. A
+pre-agreement needs a Basic Service Description from a versioned mapping, and
+**no MBS item → description mapping exists anywhere in the repo** —
+`basicServiceDescription` is a free-text DTO field and `mappingVersion` is
+recorded against nothing. Until this is settled the containment check
+("does the billed item fall inside the pre-agreement's description",
+plan §3.1) cannot be built, and a pre-agreement + a differently-billed item is
+treated as covered.
+
+- [ ] Decide: source the real quarterly MBS mapping (versioned, from the
+      Department's schedule) — or accept the practice-maintained interim list
+      (plan §2.4) for the first practices?
+- [ ] If interim: the list is a small versioned table per practice, and
+      `mappingVersion` records ITS version honestly rather than pretending to
+      be the MBS mapping.
+- [ ] Either way: the containment check is deferred, and the deferral is
+      stated in code with the REQ reference — never an implicit equality.
+
+## Reminding the practice to do its part
+
+Carl, 25 Aug 2026: "We need a solution to remind the PRACTICE to do this."
+The print channel (plan Part 8) depends on a human pressing Print — the
+morning appointment list and each invoice — and on the practice maintaining
+its interim description list above. Nothing today notices when they stop.
+
+- [ ] A daily "expected vs received" check per practice: appointments seen
+      this morning but no invoices arrived by evening ⇒ a nudge to the
+      practice's group address. Plan §8.6 limit 2 names this; it is not built.
+- [ ] No morning appointment list received by (configurable) 9am on a working
+      day ⇒ a nudge. Public-holiday aware — `public-holidays.ts` exists.
+- [ ] Where the PMS supports auto-print rules ("print invoice on finalise"),
+      the onboarding guide for that PMS says how to set them, so the reminder
+      is the fallback and not the mechanism.
+- [ ] The interim description list not reviewed in N days ⇒ a low-stakes
+      review task, not an email — it is housekeeping, not a breach.
+- [ ] Every nudge is Correspondence (plan §4.1) and follows CONVENTIONS.md §9d
+      like every other message.
