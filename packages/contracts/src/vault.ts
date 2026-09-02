@@ -41,6 +41,15 @@ export const VAULT_EVENT_TYPES = [
   'capture.completed',
   'capture.cancelled',
   'capture.expired',
+  /**
+   * The cascade looked at a service or an appointment and decided NOT to ask
+   * the patient for anything — covered by an enduring agreement, a
+   * confidentiality flag, the lodgement window closed, no way to reach them,
+   * or the assignor is a choice a human has to make. Recorded because a
+   * decision and a silence look identical in a table, and "why was this
+   * patient never asked" is a question somebody will put to the evidence.
+   */
+  'capture.suppressed',
   'signature.captured',
   'notice.composed',
   'notice.dispatched',

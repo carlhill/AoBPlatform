@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import type { PmsAdapter } from '@aobplatform/contracts';
 import type { IsoDate } from '@aobplatform/domain';
 import { PrismaService } from '../prisma/prisma.service';
@@ -37,49 +38,8 @@ export class PmsSyncService {
         const practice = await tx.practice.findFirst({});
         if (!practice) throw new NotFoundException('Practice not found.');
 
-        let patient = await tx.patient.findFirst({ where: { pmsLinkageKey: invoice.patientLinkageKey } });
-        if (!patient && this.adapter.capabilities.readPatient) {
-          const pmsPatient = await this.adapter.readPatient(invoice.patientLinkageKey);
-          if (pmsPatient) {
-            patient = await tx.patient.create({
-              data: {
-                practiceId,
-                familyName: pmsPatient.familyName,
-                givenNames: pmsPatient.givenNames,
-                dateOfBirth: new Date(pmsPatient.dateOfBirth),
-                genderAsIdentified: pmsPatient.genderAsIdentified,
-                address: pmsPatient.address,
-                patientRecordNumber: pmsPatient.patientRecordNumber,
-                ihi: pmsPatient.ihi,
-                preferredLanguage: pmsPatient.preferredLanguage,
-                mobile: pmsPatient.mobile,
-                email: pmsPatient.email,
-                pmsLinkageKey: pmsPatient.pmsLinkageKey,
-              },
-            });
-          }
-        }
-
-        let provider = await tx.provider.findFirst({ where: { pmsLinkageKey: invoice.providerLinkageKey } });
-        if (!provider) {
-          const pmsProviders = await this.adapter.readProviders();
-          const match = pmsProviders.find((p) => p.pmsProviderKey === invoice.providerLinkageKey);
-          if (match) {
-            provider = await tx.provider.create({
-              data: {
-                practiceId,
-                name: match.name,
-                // Provider type is not observable from the PMS invoice feed —
-                // defaulted and corrected at onboarding (FR-1.8). 'other' can
-                // never unlock enduring (GP-only is checked at draft time).
-                providerType: 'other',
-                placeOfPracticeAddress: match.locationAddress,
-                providerNumber: match.providerNumber,
-                pmsLinkageKey: match.pmsProviderKey,
-              },
-            });
-          }
-        }
+        const patient = await this.ensurePatient(tx, practiceId, invoice.patientLinkageKey);
+        const provider = await this.ensureProvider(tx, practiceId, invoice.providerLinkageKey);
 
         // An already-stored agreement for practitioner × patient × day links up.
         const serviceDate = new Date(invoice.serviceDate);
@@ -122,5 +82,58 @@ export class PmsSyncService {
     }
     this.logger.log(`PMS sync for practice ${practiceId}: ${created} created, ${updated} updated`);
     return { created, updated, total: invoices.length };
+  }
+
+  /**
+   * The mirror row for a PMS patient, created from the live record if absent.
+   *
+   * EXTRACTED, NOT COPIED, when the appointment sync needed the same thing:
+   * two mirrors of "who is this patient" that could drift would defeat the
+   * point of the PMS being the source of truth (REQ-DATA-10).
+   */
+  async ensurePatient(tx: Prisma.TransactionClient, practiceId: string, pmsLinkageKey: string) {
+    const existing = await tx.patient.findFirst({ where: { pmsLinkageKey } });
+    if (existing) return existing;
+    if (!this.adapter.capabilities.readPatient) return null;
+    const pmsPatient = await this.adapter.readPatient(pmsLinkageKey);
+    if (!pmsPatient) return null;
+    return tx.patient.create({
+      data: {
+        practiceId,
+        familyName: pmsPatient.familyName,
+        givenNames: pmsPatient.givenNames,
+        dateOfBirth: new Date(pmsPatient.dateOfBirth),
+        genderAsIdentified: pmsPatient.genderAsIdentified,
+        address: pmsPatient.address,
+        patientRecordNumber: pmsPatient.patientRecordNumber,
+        ihi: pmsPatient.ihi,
+        preferredLanguage: pmsPatient.preferredLanguage,
+        mobile: pmsPatient.mobile,
+        email: pmsPatient.email,
+        pmsLinkageKey: pmsPatient.pmsLinkageKey,
+      },
+    });
+  }
+
+  /** The mirror row for a PMS provider, created from the provider list if absent. */
+  async ensureProvider(tx: Prisma.TransactionClient, practiceId: string, providerLinkageKey: string) {
+    const existing = await tx.provider.findFirst({ where: { pmsLinkageKey: providerLinkageKey } });
+    if (existing) return existing;
+    const pmsProviders = await this.adapter.readProviders();
+    const match = pmsProviders.find((p) => p.pmsProviderKey === providerLinkageKey);
+    if (!match) return null;
+    return tx.provider.create({
+      data: {
+        practiceId,
+        name: match.name,
+        // Provider type is not observable from the PMS feed — defaulted and
+        // corrected at onboarding (FR-1.8). 'other' can never unlock enduring
+        // (GP-only is checked at draft time).
+        providerType: 'other',
+        placeOfPracticeAddress: match.locationAddress,
+        providerNumber: match.providerNumber,
+        pmsLinkageKey: match.pmsProviderKey,
+      },
+    });
   }
 }

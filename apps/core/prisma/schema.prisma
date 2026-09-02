@@ -1037,6 +1037,35 @@ model Patient {
   @@map("patients")
 }
 
+/**
+ * An appointment as the PMS reported it — the PRE-consultation trigger.
+ *
+ * Mirrored for one reason: idempotency. The appointment feed is read again
+ * and again (a morning list, then an arrival slip for the same patient, then
+ * tomorrow's list) and one appointment must never open two capture requests.
+ * `pmsAppointmentKey` is the handle the PMS gave it; everything about the
+ * person stays on `Patient`, mirrored by linkage key as the invoice sync does
+ * (REQ-DATA-10 — the PMS is the source of truth for who they are).
+ *
+ * `agreementId` is the pre-agreement drafted for it, or NULL where the
+ * cascade decided not to ask (recorded on a `capture.suppressed` event).
+ */
+model Appointment {
+  id                String    @id @default(uuid()) @db.Uuid
+  practiceId        String    @db.Uuid
+  pmsAppointmentKey String
+  patientId         String?   @db.Uuid
+  providerId        String?   @db.Uuid
+  date              DateTime  @db.Date
+  time              String?
+  agreementId       String?   @db.Uuid
+  createdAt         DateTime  @default(now())
+
+  @@unique([practiceId, pmsAppointmentKey])
+  @@index([practiceId, date])
+  @@map("appointments")
+}
+
 model Assignor {
   id                    String    @id @default(uuid()) @db.Uuid
   practiceId            String    @db.Uuid

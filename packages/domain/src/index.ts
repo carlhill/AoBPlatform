@@ -3,6 +3,7 @@ export * from './identifiers';
 export * from './parties';
 export * from './agreement';
 export * from './guards';
+export * from './auto-capture';
 export * from './lifecycle';
 export * from './chase';
 export * from './public-holidays';
