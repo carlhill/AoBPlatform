@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
-import type { PmsAdapter } from '@aobplatform/contracts';
+import type { PmsAdapter, PmsPatientRecord, PmsProvider } from '@aobplatform/contracts';
 import {
   autoAssignorDecision,
   chaseBandFor,
@@ -257,9 +257,16 @@ export class AutoCaptureService {
     return { date: day, total: appointments.length, created, captured, suppressed, suppressedByReason, alreadyKnown };
   }
 
-  private async captureForAppointment(
+  /**
+   * One appointment → a pre-agreement waiting on the kiosk, or a recorded
+   * reason why not. Public because a print job (Part 8) delivers appointments
+   * one document at a time, with the patient's and provider's records riding
+   * along in `known` so nothing has to be read from a PMS.
+   */
+  async captureForAppointment(
     practiceId: string,
     appointment: { pmsAppointmentKey: string; patientLinkageKey: string; providerLinkageKey: string; date: IsoDate; time?: string },
+    known: { patient?: PmsPatientRecord; provider?: PmsProvider } = {},
   ): Promise<Outcome | 'known'> {
     // PHASE 1 — mirror, record the appointment, decide; commit.
     const plan = await this.prisma.withPractice(practiceId, async (tx) => {
@@ -268,8 +275,8 @@ export class AutoCaptureService {
       });
       if (existing) return { go: false as const, outcome: 'known' as const };
 
-      const patient = await this.pmsSync.ensurePatient(tx, practiceId, appointment.patientLinkageKey);
-      const provider = await this.pmsSync.ensureProvider(tx, practiceId, appointment.providerLinkageKey);
+      const patient = await this.pmsSync.ensurePatient(tx, practiceId, appointment.patientLinkageKey, known.patient);
+      const provider = await this.pmsSync.ensureProvider(tx, practiceId, appointment.providerLinkageKey, known.provider);
 
       const row = await tx.appointment.create({
         data: {

@@ -18,6 +18,7 @@ import { CaptureModule } from './capture/capture.module';
 import { PracticesModule } from './practices/practices.module';
 import { PmsModule } from './pms/pms.module';
 import { AutoCaptureModule } from './auto-capture/auto-capture.module';
+import { InboundModule } from './inbound/inbound.module';
 import { ReconciliationModule } from './reconciliation/reconciliation.module';
 import { EnduringModule } from './enduring/enduring.module';
 import { NoticesModule } from './notices/notices.module';
@@ -57,6 +58,7 @@ import { ArtefactsModule } from './artefacts/artefacts.module';
     ArtefactsModule,
     PmsModule,
     AutoCaptureModule,
+    InboundModule,
     ReconciliationModule,
     EnduringModule,
     NoticesModule,

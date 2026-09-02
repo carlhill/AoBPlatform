@@ -1,6 +1,6 @@
 # Pre- and post-consultation capture, correspondence visibility, retention — plan
 
-**Status:** APPROVED 2026-08-25 by Carl — all eleven Part 6 decisions answered (three with amendments, recorded inline there). Build order in Part 7. Items 1 and 2 BUILT 2026-08-25 (AutoCaptureModule, e2e green); item 3 next.
+**Status:** APPROVED 2026-08-25 by Carl — all eleven Part 6 decisions answered (three with amendments, recorded inline there). Build order in Part 7. Items 1–3 BUILT 2026-08-25 (AutoCaptureModule, InboundModule; e2e green); item 4 next.
 **Written:** 2026-08-25, from Carl's brief plus claude-cowork's read of the design
 docs, then checked against the code that actually exists (every claim below
 names the file). **Revised the same day** for Carl's two corrections: the PMS
@@ -489,6 +489,16 @@ existing "degrade explicitly per missing capability" behaviour handles the
 absence of `claimEvents` (conservative retention clock, REQ-INT-04) and of
 `writeArtefact` (8.6) without a line of special-casing.
 
+**Refined in item 3 (2026-08-25): the payload IS the contract.** The desktop
+ships the parsed fields already shaped as `PmsPatientRecord` / `PmsProvider` /
+`PmsAppointment` / `PmsInvoice` (`contracts/print-capture.ts`), and the
+processor hands them straight to the same cascade the mock adapter feeds. An
+adapter *object* reading from the table would have needed a per-practice
+adapter registry — the interface is pull-shaped and practice-blind — for no
+gain: the seam the contract exists to protect (the core never learns a
+PMS-specific shape) is protected just as well by the wire format being the
+contract. `readAppointments`/`readInvoices` stay for adapters that pull.
+
 ### 8.4 Queues: two tiers, not three
 
 **No practice-server tier.** Not even for large practices. It is a server
@@ -602,7 +612,11 @@ machinery `NoticesService` already has (`noticeDeadline`, `escalationLevel`).
   fires a notification, the worker wakes in milliseconds. Native Postgres,
   no broker, and it is the difference between "under 5 seconds" being a
   design and being luck. Standard and fyi lanes poll on the existing
-  `@Interval` cadence.
+  `@Interval` cadence. **As built in item 3 (2026-08-25):** the critical
+  worker polls every second (`LANE_POLICIES.critical.pollMs`), which keeps the
+  worker hop inside the SLO; `LISTEN/NOTIFY` needs a raw `pg` connection,
+  a dependency the codebase does not carry, and adding one is a deliberate
+  change rather than a side effect of this item. The upgrade is one class.
 - **Under load, lower lanes yield.** If the critical lane has a backlog, the
   standard/fyi workers pause. Priority means preemption, or it is only
   ordering.

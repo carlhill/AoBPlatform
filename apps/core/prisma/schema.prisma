@@ -1604,6 +1604,61 @@ model OutboundItem {
 }
 
 /**
+ * Work arriving FROM a practice's desktop: a print job, already parsed down to
+ * the s 65C fields (CONSULTATION-CAPTURE-PLAN.md Parts 8 and 9).
+ *
+ * THE MIRROR IMAGE OF `outbound_items`, and built the same way on purpose:
+ * the same states, the same lease, the same backoff and attempt budget from
+ * `outbound-queue.ts`, the same "dead is kept, never deleted". What it adds is
+ * the LANE — critical / standard / fyi — declared per document type in
+ * `inbound-lanes.ts`, with one worker per lane so the morning appointment list
+ * can never sit in front of the patient standing at the desk.
+ *
+ * The payload is a `PrintJobEnvelope` (contracts/print-capture.ts): patients,
+ * providers, appointments, invoices in adapter shape. Never the document.
+ */
+model InboundPrintJob {
+  id         String @id @default(uuid()) @db.Uuid
+  practiceId String @db.Uuid
+
+  /**
+   * Which desktop (8.5), once devices enrol. NULL until then — the request is
+   * practice-scoped like every other, and `credentialKind` says which model
+   * authenticated it so attribution is never ambiguous about what it rests on
+   * (Part 6 Q9: device key AND shared practice key are both allowed).
+   */
+  deviceId       String?
+  credentialKind String  @default("practice") // device | practice
+
+  documentType          String
+  lane                  String
+  pms                   String
+  parserTemplateVersion String
+  /// SHA-256 of the source print job. Provenance without possession (8.2).
+  sourceSha256          String
+
+  payload Json
+
+  state          String    @default("pending") // pending | leased | done | failed | dead
+  attempts       Int       @default(0)
+  availableAt    DateTime  @default(now())
+  leasedBy       String?
+  leaseExpiresAt DateTime?
+  lastError      String?
+
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+  /// What processing produced — captured / suppressed tallies — so "what did
+  /// that print job do" is answerable from the row.
+  outcome     Json?
+
+  /// The same document printed twice is the same job. Same type, same bytes.
+  @@unique([practiceId, documentType, sourceSha256])
+  @@index([practiceId, lane, state])
+  @@map("inbound_print_jobs")
+}
+
+/**
  * A platform operator acting as a practice.
  *
  * NO RLS, deliberately — the one table where that is correct. A session

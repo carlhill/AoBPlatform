@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
-import type { PmsAdapter } from '@aobplatform/contracts';
+import type { PmsAdapter, PmsInvoice, PmsPatientRecord, PmsProvider } from '@aobplatform/contracts';
 import type { IsoDate } from '@aobplatform/domain';
 import { PrismaService } from '../prisma/prisma.service';
 import { PMS_ADAPTER } from './pms.tokens';
@@ -41,43 +41,9 @@ export class PmsSyncService {
         const patient = await this.ensurePatient(tx, practiceId, invoice.patientLinkageKey);
         const provider = await this.ensureProvider(tx, practiceId, invoice.providerLinkageKey);
 
-        // An already-stored agreement for practitioner × patient × day links up.
-        const serviceDate = new Date(invoice.serviceDate);
-        const agreement =
-          patient && provider
-            ? await tx.agreement.findFirst({
-                where: {
-                  patientId: patient.id,
-                  providerId: provider.id,
-                  status: 'stored',
-                },
-              })
-            : null;
-
-        const existing = await tx.serviceRecord.findFirst({ where: { pmsInvoiceKey: invoice.pmsInvoiceKey } });
-        if (existing) {
-          await tx.serviceRecord.update({
-            where: { id: existing.id },
-            data: { agreementId: existing.agreementId ?? agreement?.id ?? null },
-          });
-          updated += 1;
-        } else {
-          await tx.serviceRecord.create({
-            data: {
-              practiceId,
-              pmsInvoiceKey: invoice.pmsInvoiceKey,
-              patientId: patient?.id ?? null,
-              providerId: provider?.id ?? null,
-              serviceDate,
-              mbsItemNumbers: [...invoice.mbsItemNumbers],
-              agreementId: agreement?.id ?? null,
-              // claimEvents unobservable on this adapter — clock defaults
-              // conservatively to the service date (REQ-INT-04).
-              retentionClockSource: this.adapter.capabilities.claimEvents ? 'observed_claim' : 'conservative_default',
-            },
-          });
-          created += 1;
-        }
+        const result = await this.upsertServiceRecord(tx, practiceId, invoice, patient, provider);
+        if (result.created) created += 1;
+        else updated += 1;
       });
     }
     this.logger.log(`PMS sync for practice ${practiceId}: ${created} created, ${updated} updated`);
@@ -91,11 +57,21 @@ export class PmsSyncService {
    * two mirrors of "who is this patient" that could drift would defeat the
    * point of the PMS being the source of truth (REQ-DATA-10).
    */
-  async ensurePatient(tx: Prisma.TransactionClient, practiceId: string, pmsLinkageKey: string) {
+  async ensurePatient(
+    tx: Prisma.TransactionClient,
+    practiceId: string,
+    pmsLinkageKey: string,
+    /**
+     * The record as the caller already holds it — a print job carries the
+     * patient's fields with it (Part 8), so there is nothing to read from a
+     * PMS. Used only when no mirror row exists yet.
+     */
+    known?: PmsPatientRecord,
+  ) {
     const existing = await tx.patient.findFirst({ where: { pmsLinkageKey } });
     if (existing) return existing;
-    if (!this.adapter.capabilities.readPatient) return null;
-    const pmsPatient = await this.adapter.readPatient(pmsLinkageKey);
+    const pmsPatient =
+      known ?? (this.adapter.capabilities.readPatient ? await this.adapter.readPatient(pmsLinkageKey) : null);
     if (!pmsPatient) return null;
     return tx.patient.create({
       data: {
@@ -116,11 +92,16 @@ export class PmsSyncService {
   }
 
   /** The mirror row for a PMS provider, created from the provider list if absent. */
-  async ensureProvider(tx: Prisma.TransactionClient, practiceId: string, providerLinkageKey: string) {
+  async ensureProvider(
+    tx: Prisma.TransactionClient,
+    practiceId: string,
+    providerLinkageKey: string,
+    known?: PmsProvider,
+  ) {
     const existing = await tx.provider.findFirst({ where: { pmsLinkageKey: providerLinkageKey } });
     if (existing) return existing;
-    const pmsProviders = await this.adapter.readProviders();
-    const match = pmsProviders.find((p) => p.pmsProviderKey === providerLinkageKey);
+    const match =
+      known ?? (await this.adapter.readProviders()).find((p) => p.pmsProviderKey === providerLinkageKey);
     if (!match) return null;
     return tx.provider.create({
       data: {
@@ -135,5 +116,53 @@ export class PmsSyncService {
         pmsLinkageKey: match.pmsProviderKey,
       },
     });
+  }
+
+  /**
+   * One invoice → its service record (M7's raw material), created or brought
+   * up to date, and linked to an already-stored agreement for practitioner ×
+   * patient where one exists (REQ-SCOPE-01).
+   *
+   * Extracted from the sync loop when print jobs needed the same thing, so an
+   * invoice means the same service record whichever way it arrived.
+   */
+  async upsertServiceRecord(
+    tx: Prisma.TransactionClient,
+    practiceId: string,
+    invoice: PmsInvoice,
+    patient: { id: string } | null,
+    provider: { id: string } | null,
+  ): Promise<{ id: string; created: boolean }> {
+    const serviceDate = new Date(invoice.serviceDate);
+    const agreement =
+      patient && provider
+        ? await tx.agreement.findFirst({
+            where: { patientId: patient.id, providerId: provider.id, status: 'stored' },
+          })
+        : null;
+
+    const existing = await tx.serviceRecord.findFirst({ where: { pmsInvoiceKey: invoice.pmsInvoiceKey } });
+    if (existing) {
+      await tx.serviceRecord.update({
+        where: { id: existing.id },
+        data: { agreementId: existing.agreementId ?? agreement?.id ?? null },
+      });
+      return { id: existing.id, created: false };
+    }
+    const row = await tx.serviceRecord.create({
+      data: {
+        practiceId,
+        pmsInvoiceKey: invoice.pmsInvoiceKey,
+        patientId: patient?.id ?? null,
+        providerId: provider?.id ?? null,
+        serviceDate,
+        mbsItemNumbers: [...invoice.mbsItemNumbers],
+        agreementId: agreement?.id ?? null,
+        // claimEvents unobservable on this adapter — clock defaults
+        // conservatively to the service date (REQ-INT-04).
+        retentionClockSource: this.adapter.capabilities.claimEvents ? 'observed_claim' : 'conservative_default',
+      },
+    });
+    return { id: row.id, created: true };
   }
 }
