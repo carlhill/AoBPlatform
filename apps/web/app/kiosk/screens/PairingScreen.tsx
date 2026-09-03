@@ -37,7 +37,7 @@
 
 import type { ReactNode } from 'react';
 import { isPairingCodeShape } from '@aobplatform/domain';
-import { Blueprint, Kicker, Screen } from '../components/Chrome';
+import { Blueprint, Screen } from '../components/Chrome';
 import { GuardedButton, PrimaryButton } from '../components/Buttons';
 import { Field } from '../components/Field';
 import { strings } from '../strings';
@@ -117,7 +117,13 @@ export function PairingScreen({
   return (
     <Screen practiceName={strings.appName}>
       <div className={styles.centred}>
-        <Kicker label={strings.pairing.codeLabel} />
+        {/*
+          NO KICKER ABOVE THE HEADING. It read "PAIRING CODE" directly above a
+          field labelled "Pairing code" — the same words twice, six lines
+          apart, which is the fault K-2 was corrected for ("says the address
+          once"). The field carries the label; the heading says what the screen
+          is for.
+        */}
         <h1 className={styles.h1Small}>{strings.pairing.heading}</h1>
         <p className={styles.lede}>{strings.pairing.lede}</p>
 

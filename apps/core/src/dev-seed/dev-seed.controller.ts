@@ -93,6 +93,32 @@ export class DevSeedController {
     return this.devices.registerForDev(practiceId, body?.label?.trim() || 'Dev tablet');
   }
 
+  /**
+   * REVOKE ONE OF THOSE, dev only, and for the same reason as its sibling
+   * above: `POST /devices/:id/revoke` records who did it and refuses a request
+   * that carries no signed-in user, which is a property worth more than the
+   * convenience of testing it another way.
+   *
+   * The Playwright suite needs this because the interesting assertion is what
+   * happens to the TABLET — that a revoked device drops to "see reception" on
+   * its next poll, with no retry loop — and that cannot be seen without
+   * revoking one from outside the browser. That the real endpoint refuses an
+   * unattributed request is asserted in `device-pairing.e2e-spec.ts`, where it
+   * belongs.
+   */
+  @Post('kiosk-device/revoke')
+  async devRevokeKioskDevice(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Body() body: { deviceId?: string } | undefined,
+  ) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new ForbiddenException('Dev seeding does not exist in production.');
+    }
+    if (!practiceId) throw new BadRequestException('x-practice-id header is required.');
+    if (!body?.deviceId) throw new BadRequestException('deviceId is required.');
+    return this.devices.revokeForDev(practiceId, body.deviceId);
+  }
+
   /** Creates one sample practice with a GP, a patient and a self-assignor. Dev only. */
   @Post('seed')
   async seed() {

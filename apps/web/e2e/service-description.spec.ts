@@ -27,7 +27,7 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
 const CORE = process.env.KIOSK_CORE_URL ?? 'http://localhost:3001';
-const PRACTICE_ID = process.env.NEXT_PUBLIC_KIOSK_PRACTICE_ID ?? '821709fb-7f89-4fcf-95c0-27c5eb55cec8';
+const PRACTICE_ID = process.env.KIOSK_PRACTICE_ID ?? '821709fb-7f89-4fcf-95c0-27c5eb55cec8';
 const USER = process.env.E2E_PRACTICE_USER;
 const PASSWORD = process.env.E2E_PRACTICE_PASSWORD;
 
@@ -45,7 +45,29 @@ function headers() {
  * D6a; any waiting row will do.
  */
 async function stageDraftWithoutDescription(api: APIRequestContext): Promise<string> {
-  const list = await api.get(`${CORE}/kiosk/waiting-list`, { headers: headers() });
+  /*
+   * THE WAITING LIST NEEDS A PAIRED TABLET NOW (3 Sep 2026). `/kiosk/*`
+   * refuses a practice header outright — that header on a public route is what
+   * let anybody who found the URL read a practice's patient names — so this
+   * suite earns a credential the same way a tablet does. The dev endpoint
+   * stands in for the console button, which needs a signed-in user this API
+   * context does not have; see `kiosk-ceremony.spec.ts` for the full reasoning.
+   */
+  const device = await api.post(`${CORE}/dev/kiosk-device`, {
+    headers: headers(),
+    data: { label: 'Service-description staging tablet' },
+  });
+  expect(device.ok(), await device.text()).toBeTruthy();
+  const paired = await api.post(`${CORE}/devices/pair`, {
+    headers: { 'content-type': 'application/json' },
+    data: { code: (await device.json()).code },
+  });
+  expect(paired.ok(), await paired.text()).toBeTruthy();
+  const credential = (await paired.json()).credential as string;
+
+  const list = await api.get(`${CORE}/kiosk/waiting-list`, {
+    headers: { 'content-type': 'application/json', 'x-device-credential': credential },
+  });
   expect(list.ok(), 'core must be running on 3001 with a waiting list').toBeTruthy();
   const rows = (await list.json()).waiting as { agreementId: string }[];
   expect(rows.length, `seed a waiting patient in ${PRACTICE_ID} first`).toBeGreaterThan(0);

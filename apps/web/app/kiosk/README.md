@@ -1,7 +1,8 @@
 # The kiosk (C2) — `/kiosk`
 
-The waiting-room ceremony: **list → verify → who is signing → locked
-particulars → sign → done**. `episodic_pre` only, channel `in_practice` only.
+**Pair the tablet first**, then the waiting-room ceremony: **list → verify →
+who is signing → locked particulars → sign → done**. `episodic_pre` only,
+channel `in_practice` only.
 There is deliberately **no patient mobile app** — this is a practice-owned
 tablet, and this is a page of the web app rather than an app of its own.
 
@@ -25,23 +26,63 @@ npm run e2e:kiosk -w apps/web  # Playwright: the ceremony, against both servers
 npm run lint -w apps/web       # string-table guard + the zero-footprint rule
 ```
 
-Two `NEXT_PUBLIC_*` variables, both dev stand-ins for the device pairing that
-does not exist yet (see `.env.local`):
+### Pairing a browser as a tablet
+
+`/kiosk` shows the pairing screen until this browser holds a credential. Two
+ways to get one:
+
+- **The product path.** Sign in to the console, open **`/practice/setup` →
+  Tablets** (or go straight to `/practice/devices`), press *Add tablet*, name
+  it, and type the code it shows into `/kiosk`. The code lasts ten minutes and
+  works once.
+- **Dev only, no sign-in.** `POST /dev/kiosk-device` with `x-practice-id` and
+  `{ "label": "..." }` returns a code without a signed-in user. It exists
+  because `POST /devices` refuses an unattributed request by design, and the
+  Playwright suite has no Keycloak session:
+
+  ```bash
+  curl -s -X POST http://127.0.0.1:3001/dev/kiosk-device \
+    -H 'content-type: application/json' -H "x-practice-id: $PRACTICE_ID" \
+    -d '{"label":"Reception tablet 1"}'
+  ```
+
+To un-pair, **revoke it in the console** — there is deliberately no control on
+the device. (Clearing the browser's site data works too, and is the same act
+performed by somebody standing at the tablet, which is exactly why revoke does
+not live there.)
+
+### Environment
 
 | Variable | Meaning |
 |---|---|
 | `NEXT_PUBLIC_CORE_URL` | `apps/core`, default `http://localhost:3001` |
-| `NEXT_PUBLIC_KIOSK_PRACTICE_ID` | Dev stand-in for the practice claim on the staff session |
+| `NEXT_PUBLIC_BUILD_ID` | The build this tab is running. Shown in the footer, sent as `x-kiosk-build`, and compared against the practice's floor for the forced reload. `dev` locally |
 | `NEXT_PUBLIC_KIOSK_STAFF_ID` | Dev stand-in for `verifiedByStaffId` |
+
+`NEXT_PUBLIC_KIOSK_PRACTICE_ID` **is gone** (3 Sep 2026). It scoped a public
+route from the bundle, so anybody who reached the URL saw that practice's
+waiting list. The tablet no longer asserts a practice at all: it sends
+`x-device-credential`, the server resolves the practice, and `/kiosk/*` refuses
+an `x-practice-id` header outright.
 
 ## Decisions already made
 
-- **Trust is a staff passkey session on the device** (plan Part 6, decision 3).
-  No device credential, no enrolment ceremony for the tablet, no new auth
-  surface to revoke. Scope is the practice of the signed-in staff member.
-  `session.ts` holds it **in memory only** — never storage. `/kiosk` is
-  classified `public` in the domain's page-access map, in the same sense
-  `/patient/...` is: no Keycloak session exists or could.
+- **Trust is a paired device** (3 Sep 2026; this REVERSES plan Part 6 decision
+  3, which said "a staff passkey session in a big-buttons layout, no device
+  credential"). Like a payment terminal paired to a merchant: the console
+  registers a tablet and shows a code, the tablet exchanges it once for an
+  opaque credential, and the server resolves the practice from the credential
+  on every request thereafter. Revoke and rotate are **console** acts — a
+  tablet that can un-pair itself is a tablet a passer-by can un-pair.
+  **Pairing is not a Keycloak login**: there is no person to authenticate at a
+  tablet, and hard rule 15 (practitioner and admin auth is WebAuthn passkeys)
+  is untouched. `/kiosk` stays classified `public` in the page-access map, in
+  the same sense `/patient/...` is — no Keycloak session exists or could.
+- **The credential is the ONE thing that outlives the tab.** Everything else
+  the tablet knows it asks for on load and forgets: no practice name, no
+  patient, no draft, no step. That is what makes a tablet found in a taxi worth
+  nothing to whoever found it, and what makes "revoke it from the console" a
+  complete answer rather than a partial one.
 - **The sub-steps are component state, not routes.** One URL, one history
   entry: no back button can walk the next patient into the previous one's
   verification screen, and a reload starts at "Checking in?".
@@ -64,7 +105,8 @@ does not exist yet (see `.env.local`):
 | No capacity control anywhere | absence, asserted | `ui_never_asks_staff_to_assess_capacity` |
 | No amount, no practitioner signature field, no "certified/approved/accredited" | the `kiosk` branch of `app/strings.ts` | `no_dollar_amount_on_any_agreement_artefact`, `no_practitioner_signature_field`, `never_claims_certification_or_approval` |
 | Nothing blocks care (REQ-REC-04) | `screens/HandoverScreen.tsx` — every dead end has a door, and every ceremony screen has an exit | `nothing_blocks_care`, `a_way_out_on_every_ceremony_screen`, `leaving_changes_no_agreement_state`, `the_exit_hands_over_and_promises_nothing` |
-| Zero footprint (CLAUDE.md §7) | `session.ts` (in memory only), root ESLint `no-restricted-globals`/`no-restricted-syntax` scoped to `app/kiosk/**` | `kiosk_persists_nothing_but_pairing` |
+| Zero footprint (CLAUDE.md §7) | `session.ts` (in memory only); `pairing.ts` is the SINGLE module permitted to write, with a scoped `eslint-disable` naming the reason, and `PERSISTABLE_KEYS` holds its one key. Root ESLint `no-restricted-globals`/`no-restricted-syntax` still bite everywhere else under `app/kiosk/**` | `kiosk_persists_nothing_but_pairing`, `the_pairing_credential_is_the_only_thing_written` |
+| A public route is not a public waiting list | `apps/core/src/devices/device.guard.ts` deletes any client `x-practice-id` on `/kiosk/*` and requires a device; K-0 gates the browser | `kiosk_routes_require_device_credential`, `revoked_device_gets_401_and_no_data`, `kiosk_requires_a_paired_device` |
 | K-3 asks the patient for nothing | `screens/ParticularsScreen.tsx` — no input, select or textarea in any state | `k3_never_offers_a_field_to_the_patient` |
 | Back is navigation, not an exit | `Ceremony.tsx` (one `setStep`, no fetch) | `back_is_navigation_and_changes_no_agreement_state`, `back_is_withdrawn_once_a_signature_is_in_flight` |
 
@@ -95,9 +137,6 @@ of things the patient is being asked to fix.
 ## Not built here (and why)
 
 - **Enduring at the kiosk** — build-plan item 10, out of this scope.
-- **Device pairing** — the console will register a tablet and issue one opaque
-  credential. `session.ts` names the empty allow-list (`PERSISTABLE_KEYS`) it
-  will be the single exception to.
 - **Portal activation on K-6** — an optional account is a whole flow; half of
   one is worse than none.
 - **Vector/raster signature upload (REQ-SIG-02)** — the pad captures both
@@ -121,5 +160,7 @@ of things the patient is being asked to fix.
 - Bot-defence never challenges the patient (REQ-BOT-02); minimum dwell time
   before the signature control enables (REQ-BOT-05) — but only after the
   REQ-REG-06 gate passes.
-- Staged rollout with instant rollback, a version banner support can read, and
-  a forced-reload signal so a rollback reaches every open tab.
+- Staged rollout per practice. **Built**: the footer carries the build id, every
+  request sends `x-kiosk-build`, and a tab below the practice's
+  `minimumKioskBuild` hard-reloads — once per tab, and never mid-ceremony. The
+  floor is set on `/practice/devices`.

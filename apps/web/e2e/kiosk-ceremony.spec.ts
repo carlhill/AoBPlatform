@@ -19,6 +19,23 @@
  * number appears anywhere in this file, because there is no Medicare field to
  * put one in (hard rule 1).
  *
+ * IT PAIRS A TABLET FIRST, THROUGH THE REAL PAIRING SCREEN. `/kiosk` no
+ * longer takes a practice from anywhere but a device credential, so every run
+ * registers a device, types its code into K-0 in the browser, and only then
+ * begins. That means the gate in front of the waiting list is exercised on
+ * every run rather than asserted once and skipped.
+ *
+ * THE ONE THING IT STUBS IS THE CONSOLE BUTTON. `POST /devices` REFUSES an
+ * unattributed request by design — registering a tablet hands out the
+ * credential that opens a practice's waiting list, and an audit line naming
+ * nobody is worse than a refusal — and this suite has no Keycloak session
+ * (the console signs in with a passkey). Weakening that refusal so a test
+ * could pass would remove the property the suite exists to protect, so the
+ * DEV-ONLY `POST /dev/kiosk-device` issues the code instead, behind
+ * `NODE_ENV !== 'production'`, in the module that already conjures whole
+ * practices out of nothing. Everything after that — the exchange, the
+ * credential, the header, the guard — is the real path.
+ *
  *   npm run dev -w apps/web        # web on 3100
  *   npm run start:dev -w apps/core # core on 3001
  *   npm run e2e:kiosk -w apps/web
@@ -26,7 +43,14 @@
 import { expect, test, type Page, type APIRequestContext } from '@playwright/test';
 
 const CORE = process.env.KIOSK_CORE_URL ?? 'http://localhost:3001';
-const PRACTICE_ID = process.env.NEXT_PUBLIC_KIOSK_PRACTICE_ID ?? '821709fb-7f89-4fcf-95c0-27c5eb55cec8';
+/**
+ * WHICH PRACTICE THE FIXTURES BELONG TO — for the STAGING calls only.
+ *
+ * It is no longer the kiosk's scope: `NEXT_PUBLIC_KIOSK_PRACTICE_ID` is gone
+ * and `/kiosk/*` refuses a practice header outright. This is the staff side of
+ * the flow, calling `/agreements` and `/capture` the way the practice does.
+ */
+const PRACTICE_ID = process.env.KIOSK_PRACTICE_ID ?? '821709fb-7f89-4fcf-95c0-27c5eb55cec8';
 
 /** The staged waiting patient, and the three identifiers the practice challenges on. */
 const PATIENT = {
@@ -64,10 +88,69 @@ function headers() {
   return { 'content-type': 'application/json', 'x-practice-id': PRACTICE_ID };
 }
 
+/**
+ * A registered device and the code that pairs it. Dev-only, and the only
+ * stubbed step in the suite — see the file header for why the alternative
+ * (relaxing `POST /devices`) would be worse than a stub.
+ */
+async function issuePairingCode(api: APIRequestContext, label: string): Promise<string> {
+  const res = await api.post(`${CORE}/dev/kiosk-device`, { headers: headers(), data: { label } });
+  expect(res.ok(), await res.text()).toBeTruthy();
+  return (await res.json()).code as string;
+}
+
+/**
+ * A paired tablet for the API context, through the SAME public exchange the
+ * browser uses. The staging calls need to read the waiting list, and there is
+ * no longer any way to do that but as a device.
+ */
+async function apiCredential(api: APIRequestContext): Promise<string> {
+  const code = await issuePairingCode(api, 'Playwright staging tablet');
+  const res = await api.post(`${CORE}/devices/pair`, {
+    headers: { 'content-type': 'application/json' },
+    data: { code },
+  });
+  expect(res.ok(), await res.text()).toBeTruthy();
+  return (await res.json()).credential as string;
+}
+
+/** Set once per run, in `beforeAll`. Every kiosk read below carries it. */
+let deviceCredential = '';
+
+function kioskHeaders() {
+  return { 'content-type': 'application/json', 'x-device-credential': deviceCredential };
+}
+
 async function waitingList(api: APIRequestContext): Promise<WaitingRow[]> {
-  const res = await api.get(`${CORE}/kiosk/waiting-list`, { headers: headers() });
-  expect(res.ok(), 'core must be running on 3001 with a waiting list').toBeTruthy();
+  const res = await api.get(`${CORE}/kiosk/waiting-list`, { headers: kioskHeaders() });
+  expect(res.ok(), 'core must be running on 3001 with a paired device and a waiting list').toBeTruthy();
   return (await res.json()).waiting as WaitingRow[];
+}
+
+/**
+ * PAIR THE BROWSER, THROUGH K-0, exactly as a staff member does at a desk: a
+ * fresh code, typed into the field, one press.
+ *
+ * IT ASSERTS THE GATE ON THE WAY PAST. Before pairing there is no practice
+ * name, no waiting count and no way to start a check-in — which is the whole
+ * point of the screen, and is worth failing on rather than assuming.
+ */
+async function pairBrowser(page: Page, api: APIRequestContext) {
+  const code = await issuePairingCode(api, 'Playwright kiosk tablet');
+  await page.goto('/kiosk');
+
+  // The gate: an unpaired tablet offers nothing but pairing.
+  await expect(page.getByTestId('pairing-code')).toBeVisible();
+  await expect(page.getByTestId('start-check-in')).toHaveCount(0);
+  await expect(page.getByTestId('pairing-submit')).toBeDisabled();
+
+  await page.getByTestId('pairing-code').fill(code);
+  await expect(page.getByTestId('pairing-submit')).toBeEnabled();
+  await page.getByTestId('pairing-submit').click();
+
+  await expect(page.getByTestId('pairing-paired')).toBeVisible({ timeout: 20_000 });
+  await page.getByTestId('pairing-continue').click();
+  await expect(page.getByTestId('start-check-in')).toBeVisible({ timeout: 20_000 });
 }
 
 /**
@@ -145,9 +228,9 @@ async function stageWaitingPatient(
   };
 }
 
-/** idle → list → the staged patient → K-2, filled in and submitted. */
-async function verifyAs(page: Page, row: WaitingRow) {
-  await page.goto('/kiosk');
+/** pair → idle → list → the staged patient → K-2, filled in and submitted. */
+async function verifyAs(page: Page, row: WaitingRow, api: APIRequestContext) {
+  await pairBrowser(page, api);
   await page.getByTestId('start-check-in').click();
 
   const pick = page.getByTestId(`pick-${row.captureRequestId}`);
@@ -176,11 +259,75 @@ async function verifyAs(page: Page, row: WaitingRow) {
 }
 
 test.describe('the kiosk ceremony', () => {
+  // One credential for the staging reads. The browser pairs its own device per
+  // test, so a revoke in one test could never quietly disarm another.
+  test.beforeAll(async ({ request }) => {
+    deviceCredential = await apiCredential(request);
+  });
+
+  test('kiosk_requires_a_paired_device — the waiting list is not readable without one', async ({
+    request,
+  }) => {
+    /*
+     * THE OLD HOLE, ASSERTED SHUT FROM THE OUTSIDE. This is the exact request
+     * anybody who found the URL could make before 3 September 2026: a practice
+     * id in a header, on a public route, returning that practice's waiting
+     * room — patient names. It is now 401, and so is a request with nothing at
+     * all.
+     */
+    const withHeader = await request.get(`${CORE}/kiosk/waiting-list`, { headers: headers() });
+    expect(withHeader.status()).toBe(401);
+    expect(await withHeader.text()).not.toContain('waiting');
+
+    const withNothing = await request.get(`${CORE}/kiosk/waiting-list`);
+    expect(withNothing.status()).toBe(401);
+
+    // And with a device, it answers.
+    const paired = await request.get(`${CORE}/kiosk/waiting-list`, { headers: kioskHeaders() });
+    expect(paired.ok()).toBeTruthy();
+  });
+
+  test('a revoked tablet drops to the unpaired screen and stops asking', async ({ page, request }) => {
+    const code = await issuePairingCode(request, 'Playwright revocable tablet');
+    await page.goto('/kiosk');
+    await page.getByTestId('pairing-code').fill(code);
+    await page.getByTestId('pairing-submit').click();
+    await expect(page.getByTestId('pairing-paired')).toBeVisible({ timeout: 20_000 });
+    await page.getByTestId('pairing-continue').click();
+    await expect(page.getByTestId('start-check-in')).toBeVisible({ timeout: 20_000 });
+
+    /*
+     * REVOKED FROM THE CONSOLE SIDE, never on the device. The dev endpoint
+     * registers with a seed actor, so the revoke is made the same way — the
+     * point being asserted is what happens to the TABLET, and that
+     * `POST /devices/:id/revoke` refuses an unattributed request is asserted
+     * in `device-pairing.e2e-spec.ts` where it belongs.
+     */
+    const list = await request.get(`${CORE}/devices`, { headers: headers() });
+    expect(list.ok()).toBeTruthy();
+    const device = ((await list.json()).devices as { id: string; label: string }[]).find(
+      (d) => d.label === 'Playwright revocable tablet',
+    );
+    expect(device, 'the tablet just paired should be listed').toBeTruthy();
+    const revoked = await request.post(`${CORE}/dev/kiosk-device/revoke`, {
+      headers: headers(),
+      data: { deviceId: device!.id },
+    });
+    expect(revoked.ok(), await revoked.text()).toBeTruthy();
+
+    // On its next poll — seconds — the tablet says so, and offers no retry.
+    await expect(page.getByTestId('unpaired-heading')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('unpaired-body')).toContainText('appointment is not affected');
+    await expect(page.getByTestId('start-check-in')).toHaveCount(0);
+    // Nothing of the practice survives on the screen.
+    await expect(page.locator('main')).not.toContainText(PATIENT.name);
+  });
+
   test('the patient signs for themselves, and the ceremony completes', async ({ page, request }) => {
     // The staff side has already validated and locked the particulars, which
     // is the intended flow: a draft never reaches a device (REQ-REG-06).
     const row = await stageWaitingPatient(request, PATIENT.name, { lock: true });
-    await verifyAs(page, row);
+    await verifyAs(page, row, request);
 
     // THE TAP ITSELF ADVANCES — no Continue for the common case.
     await page.getByTestId('assignor-self').click();
@@ -233,7 +380,7 @@ test.describe('the kiosk ceremony', () => {
      * were hashed and bound to the signature event.
      */
     const row = await stageWaitingPatient(request, PATIENT.name, { lock: true });
-    await verifyAs(page, row);
+    await verifyAs(page, row, request);
     await page.getByTestId('assignor-self').click();
 
     await expect(page.getByTestId('artefact-hash')).toBeVisible({ timeout: 25_000 });
@@ -328,7 +475,7 @@ test.describe('the kiosk ceremony', () => {
      * staff-side lock. What that costs the test is stated plainly below.
      */
     const row = await stageWaitingPatient(request, PATIENT.name, { lock: false });
-    await verifyAs(page, row);
+    await verifyAs(page, row, request);
 
     await page.getByTestId('assignor-other').click();
     await expect(page.getByTestId('assignor-other-name')).toBeVisible();
@@ -381,7 +528,7 @@ test.describe('the kiosk ceremony', () => {
     request,
   }) => {
     const row = await stageWaitingPatient(request, PATIENT.name, { lock: false });
-    await verifyAs(page, row);
+    await verifyAs(page, row, request);
 
     await page.getByTestId('assignor-other').click();
     await page.getByTestId('assignor-other-name').fill(STAFF_MEMBER_NAME);

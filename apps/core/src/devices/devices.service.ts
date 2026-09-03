@@ -505,6 +505,19 @@ export class DevicesService {
     return { deviceId: registered.deviceId, code: registered.code, expiresAt: registered.expiresAt };
   }
 
+  /** DEV ONLY, and the twin of `registerForDev`. Same guard, same reasoning. */
+  async revokeForDev(practiceId: string, deviceId: string): Promise<{ deviceId: string; revokedAt: string }> {
+    if (process.env.NODE_ENV === 'production') {
+      throw new ForbiddenException('Dev device pairing does not exist in production.');
+    }
+    return this.revoke(practiceId, deviceId, 'dev seed', {
+      id: 'dev-seed',
+      name: 'dev seed (not a signed-in user)',
+      principalType: 'system',
+      roles: [],
+    });
+  }
+
   private requireActor(actor: Actor | undefined, message: string): Actor {
     if (!actor) throw new ForbiddenException(message);
     return actor;
