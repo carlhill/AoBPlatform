@@ -54,6 +54,21 @@ describe('device pairing (e2e, real Postgres)', () => {
 
   const http = () => request(app.getHttpServer());
 
+  /**
+   * Retry a read until it answers, for the ONE thing on this feature that is
+   * written outside the request that caused it. Bounded and short: a second is
+   * far longer than the write takes, and failing after it is a real failure
+   * rather than a slow machine.
+   */
+  async function waitFor<T>(read: () => Promise<T | null>, attempts = 20): Promise<T | null> {
+    for (let i = 0; i < attempts; i += 1) {
+      const value = await read();
+      if (value) return value;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    return read();
+  }
+
   /** Register a tablet as the signed-in administrator and hand back its code. */
   async function registerDevice(
     practiceId: string,
@@ -359,10 +374,22 @@ describe('device pairing (e2e, real Postgres)', () => {
       // cannot be told 304 and left on the old build.
       expect(fresh.headers.etag).not.toBe(stale.headers.etag);
 
-      // Support can read the build back without touching the device.
-      const device = await prisma.withPractice(practiceA, (tx) =>
-        tx.device.findFirst({ where: { id: deviceId } }),
-      );
+      /*
+       * Support can read the build back without touching the device.
+       *
+       * POLLED, NOT READ ONCE, and the reason is in the guard: the heartbeat
+       * is deliberately fire-and-forget (`void ... .catch()`) so that a slow
+       * or failing write can never fail a request for a patient standing at a
+       * tablet (REQ-REC-04). A test that read the row the instant the response
+       * came back was therefore racing the write it was asserting — it passed
+       * most of the time, which is the worst kind of flake.
+       */
+      const device = await waitFor(async () => {
+        const row = await prisma.withPractice(practiceA, (tx) =>
+          tx.device.findFirst({ where: { id: deviceId } }),
+        );
+        return row?.lastKioskBuild === '2026.09.03-2' ? row : null;
+      });
       expect(device?.lastKioskBuild).toBe('2026.09.03-2');
       expect(device?.lastSeenAt).toBeTruthy();
 
