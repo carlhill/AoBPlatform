@@ -1986,6 +1986,67 @@ export const strings = {
     decideFailed: 'That decision could not be recorded',
   },
 
+  /*
+   * D6a ON A STAFF SURFACE (CONSULTATION-CAPTURE-PLAN section 2.4).
+   *
+   * THE DESCRIPTIONS THEMSELVES ARE NOT HERE, and that is the one deliberate
+   * exception to REQ-LANG-01 in this table. They are the exact words the rules
+   * engine matches and the renderer prints -- versioned content served by the
+   * core API from `packages/domain/content/service-descriptions.json` -- so a
+   * copy here would be a second list that goes stale silently, and a
+   * translation here would change what C6 accepts. The screen renders what the
+   * server sends, in the order it sends it.
+   *
+   * Nothing below says certified, approved, accredited or government-approved
+   * (hard rule 12), and nothing below carries an amount (hard rule 4).
+   */
+  serviceDescription: {
+    title: 'Service description needed',
+    lead:
+      'These pre-agreements cannot be completed until somebody chooses the basic description of the ' +
+      'service. It is never asked for on the patient’s tablet — it is the practice’s answer, ' +
+      'recorded against the person who gives it.',
+    none: 'Nothing waiting. Every draft has its description.',
+    count: '{n} waiting',
+    colPatient: 'Patient',
+    colWhen: 'Appointment',
+    colDescription: 'Description',
+    colAction: 'Action',
+    selectLabel: 'Basic description of the service',
+    selectPlaceholder: 'Choose a description…',
+    listVersion: 'List {version}',
+    listVersionWhy:
+      'Checked against the s 65C data set. The version is recorded with the agreement, so a later question ' +
+      'about what was offered has an answer.',
+    set: 'Set description',
+    setting: 'Setting…',
+    setDone: 'Set',
+    setFailed: 'That description could not be set',
+    stale:
+      'Set from an earlier list and no longer offered. Choose again so the agreement can be completed.',
+    staleShort: 'From an earlier list',
+    noSession:
+      'Setting a description records who set it, so it needs a signed-in practice account. Sign in to ' +
+      'the practice to use this.',
+    viewOnly: 'Read-only. Setting a description is the practice’s own act.',
+    stillBlocked: 'Description set. Something else still blocks this draft: {rules}.',
+    notChecked: 'Description set. The rules engine could not be asked, so the draft has not been re-checked.',
+    cleared: 'Description set and the draft is ready.',
+    whyNotOnTablet:
+      'The tablet never presents this field. A description is a validated particular of a contract, and ' +
+      'the person standing at the kiosk is not the one who can answer it.',
+
+    // The practice default, applied when the PMS supplies no appointment type.
+    defaultTitle: 'Default service description',
+    defaultLead:
+      'Used when the practice management system supplies no appointment type, so most drafts arrive with ' +
+      'their description already set.',
+    defaultNone: 'No default — every draft waits for a person',
+    defaultSave: 'Save default',
+    defaultSaved: 'Saved',
+    defaultFailed: 'That default could not be saved',
+  },
+
   emailStatus: {
     verified: 'Verified',
     pending: 'Confirmation pending',

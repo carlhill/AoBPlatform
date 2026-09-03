@@ -965,3 +965,25 @@
   white-space: nowrap;
   color: inherit;
 }
+
+/*
+ * D6a — ONE DRAFT WAITING FOR A DESCRIPTION.
+ *
+ * A stack that becomes a row at tablet width, rather than reusing
+ * `.queueRowMain`'s five-column grid: this row is a name, a label, a select
+ * and a button, and the select needs room to show contractual wording in full
+ * — truncating "General practitioner attendance" to "General practition…" in a
+ * one-third column would hide the very thing being chosen.
+ */
+.sdRow {
+  display: grid;
+  gap: var(--s2);
+  padding: var(--s3) var(--s4);
+}
+
+@media (min-width: 900px) {
+  .sdRow {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.6fr) auto;
+    align-items: end;
+  }
+}

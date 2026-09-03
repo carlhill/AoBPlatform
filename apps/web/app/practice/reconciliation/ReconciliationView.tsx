@@ -30,6 +30,7 @@ import { apiHeaders } from '../../auth';
 import { useRefreshable } from '../../refresh';
 import { strings } from '../../strings';
 import { usePractice } from '../usePractice';
+import { ServiceDescriptionsNeeded } from './ServiceDescriptionsNeeded';
 import styles from '../manage.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
@@ -263,6 +264,16 @@ export function ReconciliationView() {
           {error}
         </Notice>
       )}
+
+      {/*
+        D6a FIRST, and above the outstanding list on purpose. These are drafts
+        that cannot be completed at all until somebody chooses the description
+        — work that is minutes old and blocks a patient's tablet now, as
+        against a lodgement window measured in months. The kiosk hands over for
+        exactly this and says "one more detail from reception"; this is the
+        screen reception is being sent to.
+      */}
+      <ServiceDescriptionsNeeded practiceId={practiceId} />
 
       <div className={styles.queueSummary} data-testid="reconciliation-summary">
         <Chip tone={items.length ? 'warn' : 'ok'}>{strings.reconciliation.open.replace('{n}', String(items.length))}</Chip>

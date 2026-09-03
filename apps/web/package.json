@@ -13,7 +13,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "//e2e:kiosk": "DELIBERATELY NOT `test:e2e`: root `npm run test:e2e` fans out across workspaces and CI has no core or web server running. This one needs both (core on 3001, web on 3100) and a staged waiting patient.",
-    "e2e:kiosk": "playwright test"
+    "e2e:kiosk": "playwright test kiosk-ceremony",
+    "//e2e:service-description": "Needs core on 3001, web on 3100, and E2E_PRACTICE_USER / E2E_PRACTICE_PASSWORD for the dev realm — the endpoint refuses an unattributed request by design, so the suite skips without them.",
+    "e2e:service-description": "playwright test service-description"
   },
   "dependencies": {
     "@aobplatform/contracts": "*",
