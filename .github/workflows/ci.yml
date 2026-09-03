@@ -62,4 +62,7 @@ jobs:
       - run: npm run build
       - run: npm run test
       - name: e2e (real Nest apps; core against real Postgres)
+        env:
+          # The artefact store defaults to /var/lib/aobplatform, which the runner cannot create.
+          ARTEFACT_STORE_ROOT: ${{ runner.temp }}/aob-artefacts
         run: npm run test:e2e
