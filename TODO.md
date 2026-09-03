@@ -1253,17 +1253,31 @@ deployment) rather than adding it.
       (CONVENTIONS section 9).
 - [ ] **Amend aob-tech-stack.md** section 1 "React Native (Expo)" row and
       section 2 "Tablet/kiosk app" -- still say Expo.
-- [ ] **URGENT before any real device: `/kiosk` is public and scoped by
-      `NEXT_PUBLIC_KIOSK_PRACTICE_ID`.** Anyone who reaches the URL sees the
-      practice's waiting list -- patient names. Acceptable on a dev machine
-      only. Device pairing (the one persisted credential) is what gates it;
-      until then the route must not be deployed anywhere reachable.
-- [ ] **REQ-SIG-02 gap, pre-existing: the drawn signature is not stored.** The
-      pad captures vector + raster; `SignDto` takes a method, a channel and a
-      capture request and no payload, so the stroke is discarded. Without it
-      the "drawn signature" is a tap-to-approve in disguise. Contract change
-      in apps/core: accept vector + PNG, store as a vault artefact, bind its
-      hash into the signature event.
+- [x] **Closed 3 Sep 2026: device pairing.** `NEXT_PUBLIC_KIOSK_PRACTICE_ID`
+      is deleted; a global guard resolves `x-device-credential` -> device ->
+      practice on `/kiosk/*` and strips any client practice header. Console
+      `/practice/devices` (Tablets card on the setup hub): add, revoke, rotate,
+      minimum kiosk build. Pairing code single-use, 10 min, rate-limited,
+      hashed; credential hashed at rest; every pairing/revoke/rotate a vault
+      event in the same transaction. The tablet persists exactly ONE key,
+      `aob.kiosk.pairing`, and nothing else. Core e2e 13 new, domain 8, web
+      Vitest 13. Dev-only `POST /dev/kiosk-device` for suites with no passkey
+      session.
+- [x] **Closed 3 Sep 2026: REQ-SIG-02 drawn-signature storage.** Vector +
+      raster stored as `signature_vector` / `signature_raster` artefacts of
+      the agreement, hashed; the signature event binds both hashes beside the
+      rendered-agreement hash in one transaction; display re-verifies and
+      refuses tampered bytes. Required for `drawn`, refused for every other
+      method; caps on decoded bytes; PNG admitted by signature bytes. The same
+      migration repaired `artefacts_purpose_known`, which had drifted from the
+      domain list since August.
+- [ ] Audit every DB constraint written as a literal list against its domain
+      enum (the purpose constraint drifted silently for a month).
+- [ ] Staged kiosk rollout needs a CI-set `NEXT_PUBLIC_BUILD_ID`; per-device
+      build override; pairing rate limit is in-memory per process and wants
+      Redis before core runs more than one Fargate task.
+- [ ] Playwright drawing test (`the patient DRAWS a signature`) has not run
+      live yet -- needs both servers, a paired device and staged patients.
 - [ ] `relationshipsVersion` rides the vault event, not a column; if it is
       ever needed as current state it wants a migration on Assignor.
 - [ ] **Decide: is "someone else" on the tablet dead code?** Who signs (D7) is
