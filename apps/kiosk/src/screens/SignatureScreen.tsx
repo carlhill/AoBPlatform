@@ -60,6 +60,7 @@ export function SignatureScreen({
       locationLine={locationLine}
       stepTag={strings.chrome.stepOf(4, 4)}
       context={strings.signature.footer}
+      onLeave={onSeeReception}
     >
       <View style={styles.stack}>
         {validation.state === 'valid' ? (
@@ -106,16 +107,14 @@ export function SignatureScreen({
         <Text style={styles.muted}>{strings.signature.tapToApproveHint}</Text>
         <Text style={styles.muted}>{strings.signature.binding}</Text>
 
-        {validation.state !== 'valid' ? (
-          <SecondaryButton label={strings.errors.seeReception} onPress={onSeeReception} />
-        ) : null}
+
       </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  stack: { flex: 1, gap: space.lg },
+  stack: { flex: 1, gap: space.md },
   banner: { paddingVertical: space.md },
   bannerText: { fontFamily: fonts.body, fontSize: type.bodySmall, color: colors.ink },
   actions: { flexDirection: 'row', gap: space.md, alignItems: 'flex-start' },

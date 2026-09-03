@@ -34,7 +34,7 @@
  */
 import { type ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Blueprint, Kicker, Screen, Tag, useOrientation } from '../components/Chrome';
+import { Blueprint, Kicker, Screen, Tag, useLayout } from '../components/Chrome';
 import { PrimaryButton, SecondaryButton } from '../components/Buttons';
 import { Field } from '../components/Field';
 import { SignatureControl, shortHash } from '../components/SignatureControl';
@@ -87,7 +87,7 @@ export function ParticularsScreen({
   onContinue: () => void;
   onSeeReception: () => void;
 }): ReactNode {
-  const orientation = useOrientation();
+  const { isWide } = useLayout();
   // Presentation only. The reasons a person reads may be the server's; whether
   // the control can enable is decided by `validation` and nothing else.
   const shown: SignatureValidation =
@@ -101,9 +101,10 @@ export function ParticularsScreen({
       locationLine={locationLine}
       stepTag={strings.chrome.stepOf(3, 4)}
       context={strings.particulars.footer}
+      onLeave={onSeeReception}
     >
-      <View style={orientation === 'landscape' ? styles.twoColumn : styles.oneColumn}>
-        <Blueprint style={styles.document}>
+      <View style={isWide ? styles.twoColumn : styles.oneColumn}>
+        <Blueprint style={[styles.document, isWide ? styles.documentWide : styles.documentNarrow]}>
           <View style={styles.documentHeader}>
             <Text style={styles.documentTitle}>{strings.particulars.documentTitle}</Text>
             {view.ruleSetVersion && view.mappingVersion ? (
@@ -136,7 +137,7 @@ export function ParticularsScreen({
           </View>
         </Blueprint>
 
-        <View style={styles.rail}>
+        <View style={isWide ? styles.rail : styles.railBelow}>
           {shown.state === 'valid' ? (
             <Blueprint>
               <Kicker label={strings.particulars.validatedHeading} />
@@ -203,9 +204,7 @@ export function ParticularsScreen({
               onPress={onContinue}
               testID="continue-to-sign"
             />
-          ) : (
-            <SecondaryButton label={strings.errors.seeReception} onPress={onSeeReception} />
-          )}
+          ) : null}
         </View>
       </View>
     </Screen>
@@ -224,12 +223,20 @@ function Row({ label, value }: { label: string; value: string | null }): ReactNo
 
 const styles = StyleSheet.create({
   twoColumn: { flex: 1, flexDirection: 'row', gap: space.xl },
-  oneColumn: { flex: 1, flexDirection: 'column', gap: space.lg },
-  document: { flex: 1, gap: space.md },
+  oneColumn: { flex: 1, flexDirection: 'column', gap: space.md },
+  document: { gap: space.sm, minHeight: 240 },
+  documentWide: { flex: 1 },
+  /*
+   * NOT `flex: 1` when the rail is beneath rather than beside. A flexed
+   * document eats the whole column and pushes the sign control — the thing the
+   * patient is here to reach — to the bottom of the screen behind a band of
+   * nothing. Bounded height, its own scroller inside, rail immediately after.
+   */
+  documentNarrow: { maxHeight: 420 },
   documentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap' },
   documentTitle: { fontFamily: fonts.heading, fontSize: 24, color: colors.ink },
   versions: { fontFamily: fonts.body, fontSize: 13, color: colors.neutral700 },
-  grid: { gap: space.md, paddingVertical: space.sm },
+  grid: { gap: space.sm, paddingVertical: space.xs },
   row: { gap: 2 },
   rowLabel: { fontFamily: fonts.body, fontSize: 13, color: colors.neutral700 },
   rowValue: { fontFamily: fonts.body, fontSize: type.bodySmall, color: colors.ink },
@@ -244,6 +251,7 @@ const styles = StyleSheet.create({
   },
   tags: { flexDirection: 'row', gap: space.xs, flexWrap: 'wrap' },
   rail: { width: 330, gap: space.md },
+  railBelow: { alignSelf: 'stretch', gap: space.sm },
   railText: { fontFamily: fonts.body, fontSize: type.footnote, color: colors.ink },
   hash: { marginTop: space.xs, fontFamily: fonts.body, fontSize: type.kicker, color: colors.neutral700 },
   reasonRow: { flexDirection: 'row', gap: space.xs, marginBottom: space.xs },

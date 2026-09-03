@@ -34,6 +34,7 @@ export function Field({
   onChangeText,
   testID,
   autoFocus,
+  style,
 }: {
   label: string;
   hint?: string;
@@ -41,10 +42,21 @@ export function Field({
   onChangeText: (next: string) => void;
   testID?: string;
   autoFocus?: boolean;
+  /**
+   * SIZING BELONGS TO THE CONTAINER, NOT TO THE FIELD.
+   *
+   * This used to carry `flexGrow: 1` so it would share a row nicely. In a
+   * COLUMN it did the opposite: each field grew to fill the leftover height,
+   * so portrait at 820x1180 put 196px of nothing between one input and the
+   * next, and Carl's 670px window looked like an unfinished form. A field has
+   * one height — its label plus a 64px input — and the row that wants two of
+   * them side by side is the thing that should say so.
+   */
+  style?: object;
 }): ReactNode {
   const [focused, setFocused] = useState(false);
   return (
-    <View style={styles.field}>
+    <View style={[styles.field, style]}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
         testID={testID}
@@ -94,7 +106,7 @@ export function Checkbox({
 }
 
 const styles = StyleSheet.create({
-  field: { gap: space.xs, flexGrow: 1, flexBasis: 240 },
+  field: { gap: space.xs },
   label: { fontFamily: fonts.bodyMedium, fontSize: type.label, color: colors.neutral700 },
   input: {
     minHeight: 64,

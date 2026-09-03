@@ -39,6 +39,17 @@ export const strings = {
     offline: 'No connection — the practice can still see you now',
     checkedAgainstDataSet: 'Checked against the s 65C data set',
     staffHelp: 'A staff member can help you at any point',
+    /*
+     * THE WAY OUT, on every screen of the ceremony (Carl, 3 Sep 2026).
+     * Neutral and short. It does not say "cancel" or "quit" — nothing is being
+     * cancelled, and a patient who wants to talk to a person is not abandoning
+     * anything. It also does not promise that leaving finishes the job.
+     */
+    leaveAction: 'See reception',
+    leaveHeading: 'Our reception staff can help',
+    leaveBody:
+      'They will finish this with you at the desk. Nothing has been signed, and your appointment is not '
+      + 'affected.',
   },
 
   idle: {

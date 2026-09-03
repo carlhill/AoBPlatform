@@ -147,6 +147,30 @@ export function Ceremony(): ReactNode {
     setStep('handover');
   }, []);
 
+  /**
+   * THE WAY OUT (Carl, 3 Sep 2026; REQ-REC-04, hard rule 8).
+   *
+   * Look at what this function does, because what it does NOT do is the rule.
+   * It sets two pieces of local state and stops. No fetch. No transition. No
+   * `completeCapture`, no `signAgreement`, no `lockParticulars`. The agreement
+   * the patient walked away from is in exactly the status it was in before
+   * they touched the tablet, the capture request is still open, and the next
+   * person — or the same person, at the desk — picks it up unchanged.
+   *
+   * It is deliberately NOT `reset()`. Resetting would drop somebody who asked
+   * for help back at "Checking in?" with no explanation, which is a dead end
+   * wearing a friendly face. They get a screen that says a person will help
+   * them and that nothing has been signed; that screen resets the device.
+   *
+   * A walk-away is not a decline. `declined` is a status with consequences —
+   * it ends the agreement and stops the chase ladder — and a patient who
+   * wanted to ask a question has declined nothing. If we ever want the
+   * walk-away recorded it goes to the vault as an ordinary event.
+   */
+  const leave = useCallback(() => {
+    toHandover(strings.chrome.leaveHeading, strings.chrome.leaveBody);
+  }, [toHandover]);
+
   /** Step 1 → 2: the staff member taps the arriving patient. */
   const pick = useCallback(
     async (picked: KioskWaitingRow) => {
@@ -359,7 +383,7 @@ export function Ceremony(): ReactNode {
           onChange={(t, v) => setStated((prev) => ({ ...prev, [t]: v }))}
           onContinue={() => void submitAttempt()}
           onRetry={() => setVerification((prev) => retryAfterMismatch(prev))}
-          onSeeReception={reset}
+          onSeeReception={leave}
         />
       );
     case 'assignor':
@@ -379,7 +403,7 @@ export function Ceremony(): ReactNode {
             setChoice((prev) => ({ ...prev, ...patch }));
           }}
           onContinue={continueAssignor}
-          onSeeReception={reset}
+          onSeeReception={leave}
         />
       );
     case 'particulars':
@@ -397,7 +421,7 @@ export function Ceremony(): ReactNode {
           onChangeStaffDescription={setStaffDescription}
           onRetryLock={() => void runLock()}
           onContinue={() => setStep('signature')}
-          onSeeReception={reset}
+          onSeeReception={leave}
         />
       );
     case 'signature':
@@ -417,7 +441,7 @@ export function Ceremony(): ReactNode {
           }}
           onSignDrawn={() => void sign('drawn')}
           onSignTap={() => void sign('tap_to_approve')}
-          onSeeReception={reset}
+          onSeeReception={leave}
         />
       );
     case 'complete':

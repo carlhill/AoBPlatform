@@ -19,7 +19,7 @@
  */
 import { type ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Blueprint, Kicker, Screen, useOrientation } from '../components/Chrome';
+import { Blueprint, Kicker, Screen, useLayout } from '../components/Chrome';
 import { PrimaryButton, SecondaryButton } from '../components/Buttons';
 import { Field } from '../components/Field';
 import { strings } from '../strings';
@@ -54,7 +54,7 @@ export function VerifyScreen({
   onRetry: () => void;
   onSeeReception: () => void;
 }): ReactNode {
-  const orientation = useOrientation();
+  const { isWide, contentMax } = useLayout();
   const stepTag = `${strings.chrome.stepOf(1, 4)} — ${strings.chrome.stepDetails}`;
 
   if (state.kind === 'locked') {
@@ -64,6 +64,7 @@ export function VerifyScreen({
         locationLine={locationLine}
         stepTag={strings.chrome.stepOf(1, 4)}
         context={strings.verify.lockedFooter}
+        onLeave={onSeeReception}
       >
         <Blueprint style={styles.panel}>
           <Text style={styles.h3}>{strings.verify.lockedHeading}</Text>
@@ -84,6 +85,7 @@ export function VerifyScreen({
         locationLine={locationLine}
         stepTag={stepTag}
         context={strings.verify.attemptOf(state.attempt, KIOSK_MAX_ATTEMPTS)}
+        onLeave={onSeeReception}
       >
         <Blueprint accented style={styles.panel}>
           <Text style={styles.h3} testID="mismatch-heading">
@@ -95,7 +97,6 @@ export function VerifyScreen({
         </Blueprint>
         <View style={styles.actions}>
           <PrimaryButton label={strings.verify.tryAgain} onPress={onRetry} size="standard" testID="verify-retry" />
-          <SecondaryButton label={strings.errors.seeReception} onPress={onSeeReception} />
         </View>
       </Screen>
     );
@@ -103,19 +104,40 @@ export function VerifyScreen({
 
   const attempt = state.kind === 'asking' ? state.attempt : 1;
 
+  /*
+   * ONE PANEL, TWO PLACES. Wide, it is a column beside the form. Narrow, it
+   * flows INSIDE the scroller directly under the Continue button — because a
+   * sibling of a `flex: 1` scroller gets pinned to the bottom of the screen,
+   * which is exactly the "marooned below a sea of empty space" Carl saw. Same
+   * element either way, so the two layouts cannot drift apart.
+   */
+  const annotation = (
+    <Blueprint style={isWide ? styles.annotation : styles.annotationBelow}>
+      <Kicker label={strings.verify.annotationKicker} />
+      <Text style={styles.annotationText}>{strings.verify.annotationBody}</Text>
+    </Blueprint>
+  );
+
   return (
     <Screen
       practiceName={practiceName}
       locationLine={locationLine}
       stepTag={stepTag}
       context={strings.verify.attemptOf(attempt, KIOSK_MAX_ATTEMPTS)}
+      onLeave={onSeeReception}
     >
-      <View style={orientation === 'landscape' ? styles.twoColumn : styles.oneColumn}>
-        <ScrollView contentContainerStyle={styles.form}>
+      <View style={isWide ? styles.twoColumn : styles.oneColumn}>
+        <ScrollView style={styles.scroll} contentContainerStyle={[styles.form, { maxWidth: contentMax }]}>
           <Text style={styles.h2}>{strings.verify.heading}</Text>
           <Text style={styles.lede}>{strings.verify.lede(fields.length)}</Text>
           {startError ? <Text style={styles.error}>{strings.verify.failedToStart}</Text> : null}
-          <View style={orientation === 'landscape' ? styles.fieldGrid : styles.fieldStack}>
+          {/*
+            THE SAME FIELD SET IN BOTH ORIENTATIONS — always. Only the number of
+            columns changes: two abreast where there is room for two, one where
+            there is not. Portrait never renders fewer inputs than landscape,
+            because a turned tablet must not be a different consent form.
+          */}
+          <View style={styles.fieldGrid}>
             {fields.map((field, index) => (
               <Field
                 key={field.type}
@@ -125,6 +147,7 @@ export function VerifyScreen({
                 onChangeText={(next) => onChange(field.type, next)}
                 testID={`identifier-${field.type}`}
                 autoFocus={index === 0}
+                style={isWide ? styles.gridCell : styles.stackCell}
               />
             ))}
           </View>
@@ -136,11 +159,9 @@ export function VerifyScreen({
               testID="verify-continue"
             />
           </View>
+          {isWide ? null : annotation}
         </ScrollView>
-        <Blueprint style={styles.annotation}>
-          <Kicker label={strings.verify.annotationKicker} />
-          <Text style={styles.annotationText}>{strings.verify.annotationBody}</Text>
-        </Blueprint>
+        {isWide ? annotation : null}
       </View>
     </Screen>
   );
@@ -148,13 +169,22 @@ export function VerifyScreen({
 
 const styles = StyleSheet.create({
   twoColumn: { flex: 1, flexDirection: 'row', gap: space.xl },
-  oneColumn: { flex: 1, flexDirection: 'column', gap: space.lg },
-  form: { gap: space.lg, paddingRight: space.md, flexGrow: 1 },
-  fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: space.lg },
-  fieldStack: { flexDirection: 'column', gap: space.lg },
+  oneColumn: { flex: 1, flexDirection: 'column', gap: space.md },
+  scroll: { flex: 1 },
+  /*
+   * NO `flexGrow: 1` HERE EITHER. On a content container it lets the children
+   * spread down the page, which is the same band-of-nothing defect one level
+   * up from the fields. The step should read as one group at the top of the
+   * content area, with the empty space beneath it rather than inside it.
+   */
+  form: { gap: space.md, paddingRight: space.xs, paddingBottom: space.lg },
+  fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: space.md },
+  gridCell: { flexGrow: 1, flexBasis: 260 },
+  stackCell: { width: '100%' },
   annotation: { width: 300, alignSelf: 'flex-start' },
+  annotationBelow: { alignSelf: 'stretch', marginTop: space.xs },
   annotationText: { fontFamily: fonts.body, fontSize: type.footnote, color: colors.ink },
-  h2: { fontFamily: fonts.heading, fontSize: type.h2, color: colors.ink },
+  h2: { fontFamily: fonts.heading, fontSize: type.h2, color: colors.ink, marginBottom: -space.xs },
   h3: { fontFamily: fonts.heading, fontSize: type.h3, color: colors.ink },
   lede: { fontFamily: fonts.body, fontSize: type.body, color: colors.neutral700 },
   body: { fontFamily: fonts.body, fontSize: type.bodySmall, color: colors.ink },

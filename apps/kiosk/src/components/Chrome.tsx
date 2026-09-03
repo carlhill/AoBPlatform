@@ -10,13 +10,53 @@
  * different consent form on a turned tablet.
  */
 import { type ReactNode } from 'react';
-import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { colors, fonts, layout, space, type } from '../theme';
 import { strings } from '../strings';
 
 export function useOrientation(): 'landscape' | 'portrait' {
   const { width, height } = useWindowDimensions();
   return width >= height ? 'landscape' : 'portrait';
+}
+
+/**
+ * WIDTH DECIDES THE COLUMNS, ORIENTATION DECIDES NOTHING ON ITS OWN.
+ *
+ * The first version branched on orientation alone, and it was wrong in a way
+ * that only showed up off-target: a 670px-wide window is "landscape" by
+ * orientation, so it got the two-column layout — a form column squeezed to
+ * ~330px beside a 300px annotation panel — and the fields stacked into bands
+ * of nothing. The tablet targets are 1024 and 820; anything under
+ * `TWO_COLUMN_MIN` gets one column, whichever way round it is.
+ *
+ * `contentMax` stops the other failure: on a very wide window a single column
+ * of 64px inputs stretched to 1600px reads as a form somebody abandoned.
+ */
+const TWO_COLUMN_MIN = 900;
+
+export interface KioskLayout {
+  readonly orientation: 'landscape' | 'portrait';
+  readonly width: number;
+  readonly height: number;
+  /** Two columns fit: form beside its annotation rail. */
+  readonly isWide: boolean;
+  /** Screen padding, tightened on narrow windows so content is not squeezed twice. */
+  readonly pad: number;
+  /** Comfortable measure for a column of fields. */
+  readonly contentMax: number;
+}
+
+export function useLayout(): KioskLayout {
+  const { width, height } = useWindowDimensions();
+  const isWide = width >= TWO_COLUMN_MIN;
+  return {
+    orientation: width >= height ? 'landscape' : 'portrait',
+    width,
+    height,
+    isWide,
+    pad: width >= 768 ? layout.screenPadding : space.lg,
+    contentMax: isWide ? 620 : 760,
+  };
 }
 
 export function Registration(): ReactNode {
@@ -68,25 +108,60 @@ export function Screen({
   locationLine,
   stepTag,
   context,
+  onLeave,
   children,
 }: {
   practiceName: string;
   locationLine?: string | null;
   stepTag?: string;
   context?: string;
+  /**
+   * THE WAY OUT (Carl, 3 Sep 2026; REQ-REC-04, hard rule 8).
+   *
+   * Every screen of the ceremony passes this, and the control it draws sits in
+   * the header — above the content, never inside a scroller, so it is reachable
+   * without scrolling on any window this app can be opened at.
+   *
+   * IT IS AN EXIT, NOT A SKIP. The handler behind it changes local screen state
+   * and nothing else: it calls no endpoint, advances no agreement, completes no
+   * capture request and bypasses neither verification nor signing. A patient
+   * who walks away leaves the record exactly as they found it. If a walk-away
+   * is ever worth recording it belongs in the vault as an ordinary event —
+   * never as a decline or a refusal, which are different things with different
+   * consequences for the practice.
+   *
+   * AND IT DOES NOT COMPETE. 44px, quiet, outline only, beside the step tag —
+   * the ceremony's own actions are 56 and 72px and filled. It is the calm
+   * option, not a second call to action.
+   */
+  onLeave?: () => void;
   children: ReactNode;
 }): ReactNode {
+  const { pad } = useLayout();
   return (
     <View style={styles.screen}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingHorizontal: pad }]}>
         <View style={styles.headerText}>
           <Text style={styles.practiceName}>{practiceName}</Text>
           {locationLine ? <Text style={styles.locationLine}>{locationLine}</Text> : null}
         </View>
-        {stepTag ? <Tag label={stepTag} tone="accent" /> : null}
+        <View style={styles.headerActions}>
+          {onLeave ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={strings.chrome.leaveAction}
+              testID="leave-for-reception"
+              onPress={onLeave}
+              style={({ pressed }) => [styles.leave, pressed ? styles.leavePressed : null]}
+            >
+              <Text style={styles.leaveLabel}>{strings.chrome.leaveAction}</Text>
+            </Pressable>
+          ) : null}
+          {stepTag ? <Tag label={stepTag} tone="accent" /> : null}
+        </View>
       </View>
-      <View style={styles.content}>{children}</View>
-      <View style={styles.footer}>
+      <View style={[styles.content, { padding: pad }]}>{children}</View>
+      <View style={[styles.footer, { paddingHorizontal: pad }]}>
         <Text style={styles.platformMark}>{strings.appName}</Text>
         {context ? <Text style={styles.footerContext}>{context}</Text> : null}
       </View>
@@ -100,21 +175,39 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: layout.screenPadding,
-    paddingVertical: space.xl,
+    gap: space.md,
+    paddingVertical: space.lg,
     borderBottomWidth: layout.borderWidth,
     borderBottomColor: colors.divider,
   },
   headerText: { flexShrink: 1 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: space.sm, flexShrink: 0 },
+  /*
+   * 44px exactly — the WCAG floor, deliberately the smallest target on the
+   * device. The ceremony's own controls are 56 and 72 and filled with accent;
+   * this one is an outline. A patient must be able to find it; they must not be
+   * drawn to it instead of to signing.
+   */
+  leave: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: space.md,
+    borderWidth: layout.borderWidth,
+    borderColor: colors.neutral400,
+    borderRadius: layout.radius,
+    backgroundColor: 'transparent',
+  },
+  leavePressed: { backgroundColor: colors.neutral200 },
+  leaveLabel: { fontFamily: fonts.bodyMedium, fontSize: type.label, color: colors.neutral700 },
   practiceName: { fontFamily: fonts.heading, fontSize: 26, color: colors.ink },
   locationLine: { fontFamily: fonts.body, fontSize: type.label, color: colors.neutral700 },
-  content: { flex: 1, padding: layout.screenPadding },
+  content: { flex: 1 },
   footer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
-    paddingHorizontal: layout.screenPadding,
-    paddingVertical: space.lg,
+    gap: space.md,
+    paddingVertical: space.md,
     borderTopWidth: layout.borderWidth,
     borderTopColor: colors.divider,
   },

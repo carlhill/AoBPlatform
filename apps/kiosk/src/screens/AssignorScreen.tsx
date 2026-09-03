@@ -26,7 +26,7 @@
  */
 import { type ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Blueprint, Kicker, Screen, useOrientation } from '../components/Chrome';
+import { Blueprint, Kicker, Screen, useLayout } from '../components/Chrome';
 import { PrimaryButton, SecondaryButton } from '../components/Buttons';
 import { Checkbox, Field } from '../components/Field';
 import { strings } from '../strings';
@@ -54,16 +54,36 @@ export function AssignorScreen({
   onContinue: () => void;
   onSeeReception: () => void;
 }): ReactNode {
-  const orientation = useOrientation();
+  const { isWide, contentMax } = useLayout();
+
+  /*
+   * The annotation rail, in one place. Wide it is a column; narrow it flows
+   * inside the scroller under the form, rather than being pinned to the foot
+   * of the screen by a `flex: 1` sibling.
+   */
+  const rail = (
+    <View style={isWide ? styles.rail : styles.railBelow}>
+      <Blueprint>
+        <Kicker label={strings.assignor.railAgeKicker} />
+        <Text style={styles.railText}>{strings.assignor.railAgeBody}</Text>
+      </Blueprint>
+      <Blueprint>
+        <Kicker label={strings.assignor.railAbsentKicker} />
+        <Text style={styles.railText}>{strings.assignor.railAbsentBody}</Text>
+      </Blueprint>
+    </View>
+  );
+
   return (
     <Screen
       practiceName={practiceName}
       locationLine={locationLine}
       stepTag={`${strings.chrome.stepOf(2, 4)} — ${strings.chrome.stepSigning}`}
       context={strings.chrome.staffHelp}
+      onLeave={onSeeReception}
     >
-      <View style={orientation === 'landscape' ? styles.twoColumn : styles.oneColumn}>
-        <ScrollView contentContainerStyle={styles.main}>
+      <View style={isWide ? styles.twoColumn : styles.oneColumn}>
+        <ScrollView style={styles.scroll} contentContainerStyle={[styles.main, { maxWidth: contentMax }]}>
           <Text style={styles.h2}>{strings.assignor.heading}</Text>
           <SecondaryButton
             label={strings.assignor.self(patientName)}
@@ -81,18 +101,20 @@ export function AssignorScreen({
           {!choice.assignorIsPatient ? (
             <Blueprint style={styles.panel}>
               <Text style={styles.panelHeading}>{strings.assignor.panelHeading}</Text>
-              <View style={orientation === 'landscape' ? styles.fieldGrid : styles.fieldStack}>
+              <View style={styles.fieldGrid}>
                 <Field
                   label={strings.assignor.otherName}
                   value={choice.otherName}
                   onChangeText={(next) => onChangeOther({ otherName: next })}
                   testID="assignor-other-name"
+                  style={isWide ? styles.gridCell : styles.stackCell}
                 />
                 <Field
                   label={strings.assignor.otherRelationship}
                   value={choice.otherRelationship}
                   onChangeText={(next) => onChangeOther({ otherRelationship: next })}
                   testID="assignor-other-relationship"
+                  style={isWide ? styles.gridCell : styles.stackCell}
                 />
               </View>
               <Checkbox
@@ -110,7 +132,6 @@ export function AssignorScreen({
               <Text style={styles.body} testID="assignor-refusal">
                 {refusal}
               </Text>
-              <SecondaryButton label={strings.errors.seeReception} onPress={onSeeReception} />
             </Blueprint>
           ) : null}
 
@@ -121,18 +142,10 @@ export function AssignorScreen({
               testID="assignor-continue"
             />
           </View>
+          {isWide ? null : rail}
         </ScrollView>
 
-        <View style={styles.rail}>
-          <Blueprint>
-            <Kicker label={strings.assignor.railAgeKicker} />
-            <Text style={styles.railText}>{strings.assignor.railAgeBody}</Text>
-          </Blueprint>
-          <Blueprint>
-            <Kicker label={strings.assignor.railAbsentKicker} />
-            <Text style={styles.railText}>{strings.assignor.railAbsentBody}</Text>
-          </Blueprint>
-        </View>
+        {isWide ? rail : null}
       </View>
     </Screen>
   );
@@ -140,14 +153,17 @@ export function AssignorScreen({
 
 const styles = StyleSheet.create({
   twoColumn: { flex: 1, flexDirection: 'row', gap: space.xl },
-  oneColumn: { flex: 1, flexDirection: 'column', gap: space.lg },
-  main: { gap: space.lg, flexGrow: 1 },
+  oneColumn: { flex: 1, flexDirection: 'column', gap: space.md },
+  scroll: { flex: 1 },
+  main: { gap: space.md, paddingBottom: space.lg },
   rail: { width: 320, gap: space.md },
+  railBelow: { alignSelf: 'stretch', gap: space.sm },
+  gridCell: { flexGrow: 1, flexBasis: 240 },
+  stackCell: { width: '100%' },
   railText: { fontFamily: fonts.body, fontSize: type.footnote, color: colors.ink },
   panel: { gap: space.md },
   panelHeading: { fontFamily: fonts.heading, fontSize: 17, color: colors.ink },
   fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: space.md },
-  fieldStack: { flexDirection: 'column', gap: space.md },
   h2: { fontFamily: fonts.heading, fontSize: type.h2, color: colors.ink },
   h3: { fontFamily: fonts.heading, fontSize: type.h3, color: colors.ink },
   body: { fontFamily: fonts.body, fontSize: type.bodySmall, color: colors.ink },
