@@ -40,6 +40,7 @@ import {
   ClipboardList,
   MapPin,
   Radio,
+  Tablet,
   Users,
   UserSquare,
   Send,
@@ -449,6 +450,25 @@ export function SetupHub({
           {canOpen('/practice/users') && (
             <Link href={viewOnly ? toViewPath('/practice/users', practiceId) : '/practice/users'} className={styles.cardLink} data-testid="hub-to-users">
               {openLabel(strings.users.title)}
+              <ArrowRight size={14} aria-hidden="true" />
+            </Link>
+          )}
+          {/*
+            THE TABLETS, GATED THE SAME WAY AND FOR THE SAME REASON. Registering
+            a waiting-room device hands out the credential that opens this
+            practice's list of patient names; revoking one takes it back. That
+            is the administrator's decision, not an ordinary setting — so it is
+            behind `canOpen`, the SAME rule the guard applies, rather than a
+            second copy of the judgement that could drift from it.
+          */}
+          {canOpen('/practice/devices') && (
+            <Link
+              href={viewOnly ? toViewPath('/practice/devices', practiceId) : '/practice/devices'}
+              className={styles.cardLink}
+              data-testid="hub-to-devices"
+            >
+              <Tablet size={14} aria-hidden="true" />
+              {openLabel(strings.devices.title)}
               <ArrowRight size={14} aria-hidden="true" />
             </Link>
           )}
