@@ -89,7 +89,7 @@ function ceremonyScreens(onLeave: () => void) {
           otherRelationship: '',
           otherDeclaredOfAge: false,
         }}
-        refusal={null}
+        guard={{ state: 'valid' }}
         onChoose={noop}
         onChangeOther={noop}
         onContinue={noop}

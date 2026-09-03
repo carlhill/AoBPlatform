@@ -22,9 +22,14 @@
  * it supplies: somebody signing for another person declares they are of age,
  * and that declaration is checked against the domain constant.
  *
- * THE REFUSAL COPY IS NEUTRAL. It points at the desk. It does not say "you are
- * staff", does not name REQ-VUL-04, and does not explain the rule to the
- * patient — a refusal that teaches the rule teaches how to get around it.
+ * THE REFUSAL NAMES THE RULE, NOT THE PERSON (revised, Carl, 3 Sep 2026 live
+ * test). Earlier copy pointed at the desk and stopped there, on the reasoning
+ * that naming the rule teaches how to get around it. Live testing surfaced the
+ * cost of that: a blocked practice-staff member has no way to tell a genuine
+ * refusal from a broken tablet. `blockedBody` now says plainly that practice
+ * staff cannot sign for a patient — it still never says WHICH name matched or
+ * how the match was made (that stays REQ-VER-04/-VUL-04 territory), so the
+ * part of the rule worth protecting is still protected.
  */
 import {
   canActAsAssignor,
@@ -61,10 +66,67 @@ export function matchesPracticeStaff(name: string, staffNames: readonly string[]
   return staffNames.some((staff) => normalise(staff) === candidate);
 }
 
+/**
+ * THE LIVE GATE FOR THE "SOMEONE ELSE" BRANCH — the single source of truth
+ * behind both the `GuardedButton` on K-5 (which must be disabled, with a
+ * reason, before anybody presses Continue — CLAUDE.md §6: blocked states are
+ * unreachable, not merely inert) and `decideAssignor`'s final allow/refuse
+ * call below, so the two can never drift apart on what counts as blocked.
+ *
+ * Every applicable reason is returned, not just the first — a person missing
+ * both their name and the 18+ tick should see both, the same way
+ * `SignatureControl`'s blocked state lists everything outstanding at once.
+ * `explanation`, unlike `reasons`, is the longer staff-refusal paragraph and
+ * is populated ONLY for the staff match — the incomplete-details and
+ * unticked-age cases need no more than their short reason.
+ */
+export type AssignorGate =
+  | { readonly state: 'valid' }
+  | {
+      readonly state: 'blocked';
+      readonly reasons: readonly string[];
+      readonly explanation: string | null;
+    };
+
+export function evaluateAssignorGate(input: {
+  readonly choice: AssignorChoice;
+  /** From `GET /practice-users`, held in memory for the session only. */
+  readonly practiceStaffNames: readonly string[];
+  readonly practiceName: string;
+}): AssignorGate {
+  const { choice, practiceStaffNames, practiceName } = input;
+
+  // The patient signing for themselves is never gated here: the kiosk holds
+  // no date of birth, so the only check it could ever run client-side is
+  // deferred to the server (see `decideAssignor`).
+  if (choice.assignorIsPatient) return { state: 'valid' };
+
+  const reasons: string[] = [];
+
+  const detailsMissing = choice.otherName.trim().length === 0 || choice.otherRelationship.trim().length === 0;
+  if (detailsMissing) reasons.push(strings.assignor.reasonDetailsNeeded);
+
+  // Staff match runs whether or not the age box is ticked, so a staff member
+  // who is also under-declared still gets told about the rule that actually
+  // stops them.
+  const staffBlocked = matchesPracticeStaff(choice.otherName, practiceStaffNames);
+  if (staffBlocked) reasons.push(strings.assignor.reasonStaffBlocked);
+
+  if (!choice.otherDeclaredOfAge) reasons.push(strings.assignor.reasonAgeNeeded);
+
+  if (reasons.length === 0) return { state: 'valid' };
+  return {
+    state: 'blocked',
+    reasons,
+    explanation: staffBlocked ? strings.assignor.blockedBody(practiceName) : null,
+  };
+}
+
 export function decideAssignor(input: {
   readonly choice: AssignorChoice;
   /** From `GET /practice-users`, held in memory for the session only. */
   readonly practiceStaffNames: readonly string[];
+  readonly practiceName: string;
   /** Null whenever the device does not hold it — which is always, by design. */
   readonly patientAgeYears: number | null;
 }): AssignorDecision {
@@ -87,25 +149,13 @@ export function decideAssignor(input: {
       : { allowed: false, message: strings.assignor.tooYoungSelf };
   }
 
-  if (choice.otherName.trim().length === 0 || choice.otherRelationship.trim().length === 0) {
-    return { allowed: false, message: strings.assignor.detailsNeeded };
-  }
-
-  // The staff block runs BEFORE the age gate, so a staff member who is also
-  // under age gets the staff refusal rather than a message that tells them
-  // their age was the problem.
-  if (matchesPracticeStaff(choice.otherName, input.practiceStaffNames)) {
-    return { allowed: false, message: strings.assignor.blockedBody };
-  }
-
-  const verdict = canActAsAssignor({
-    selfAssigning: false,
-    // The declaration is the input, mapped onto the domain threshold rather
-    // than compared against a number typed here.
-    ageYears: choice.otherDeclaredOfAge ? MIN_AGE_ASSIGN_FOR_OTHER : 0,
-    isPracticeStaffOfProvider: false,
+  const gate = evaluateAssignorGate({
+    choice,
+    practiceStaffNames: input.practiceStaffNames,
+    practiceName: input.practiceName,
   });
-  return verdict.allowed
-    ? { allowed: true, selfAssignAgeCheckedBy: 'kiosk' }
-    : { allowed: false, message: strings.assignor.tooYoungOther };
+  if (gate.state === 'blocked') {
+    return { allowed: false, message: gate.explanation ?? gate.reasons[0] ?? strings.assignor.detailsNeeded };
+  }
+  return { allowed: true, selfAssignAgeCheckedBy: 'kiosk' };
 }

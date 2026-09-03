@@ -102,20 +102,25 @@ export const strings = {
       ihi: 'Individual Healthcare Identifier',
     } as Record<string, string>,
     /*
-     * HINTS ARE FOR THE FREE-TEXT IDENTIFIERS ONLY, and there are no longer
-     * any that need one. Name, date of birth and address are structured
-     * controls now — a hint that has to teach somebody a date format is a
-     * field that should have been a picker. Kept as a table because
+     * HINTS ARE FOR THE FREE-TEXT IDENTIFIERS. Address is the one entry here
+     * (Carl, 3 Sep 2026 — back to a single line; see verify-fields.ts): a
+     * placeholder inside the box, not a second label, so it does not repeat
+     * `identifierNames.address` above it. Kept as a table because
      * `identifierFieldsFor` reads it by type.
      */
-    identifierHints: {} as Record<string, string>,
+    identifierHints: {
+      address: 'Street, suburb and postcode',
+    } as Record<string, string>,
 
     /*
-     * THE STRUCTURED SUB-FIELDS (Carl, 3 Sep 2026). Three of the six approved
+     * THE STRUCTURED SUB-FIELDS (Carl, 3 Sep 2026). Two of the six approved
      * identifiers are composite, and a single free-text box for each asked the
-     * patient to guess our formatting: "YYYY-MM-DD", one line for a whole
-     * address. The parts are collected separately and joined for the server —
-     * the wire contract still sends one string per identifier type.
+     * patient to guess our formatting: "YYYY-MM-DD". The parts are collected
+     * separately and joined for the server — the wire contract still sends
+     * one string per identifier type. Address was a third, structured the
+     * same way, for a few hours the same day — reverted back to the one free
+     * -text line above, because a server-side address-validation endpoint is
+     * coming and splitting it here would be redone there.
      */
     nameFamily: 'Family name',
     nameGiven: 'Given name(s)',
@@ -137,13 +142,6 @@ export const strings = {
       'November',
       'December',
     ] as readonly string[],
-    addressLine1: 'Address line 1',
-    addressLine2: 'Address line 2',
-    addressOptional: 'Optional',
-    suburb: 'Suburb',
-    addressState: 'State or territory',
-    postcode: 'Postcode',
-    country: 'Country',
     /**
      * The empty option on every picker, so nothing is pre-chosen on the
      * patient's behalf. ONE WORD on purpose: a closed `<select>` is only as
@@ -151,18 +149,6 @@ export const strings = {
      * day picker at 1024x768 — the one width where three pickers share a row.
      */
     chooseOption: 'Choose',
-    /** Australian states and territories, in the order the ABS lists them. */
-    stateOptions: [
-      { value: 'NSW', label: 'NSW — New South Wales' },
-      { value: 'VIC', label: 'VIC — Victoria' },
-      { value: 'QLD', label: 'QLD — Queensland' },
-      { value: 'SA', label: 'SA — South Australia' },
-      { value: 'WA', label: 'WA — Western Australia' },
-      { value: 'TAS', label: 'TAS — Tasmania' },
-      { value: 'NT', label: 'NT — Northern Territory' },
-      { value: 'ACT', label: 'ACT — Australian Capital Territory' },
-    ] as ReadonlyArray<{ value: string; label: string }>,
-    defaultCountry: 'Australia',
     /**
      * The disabled Continue label. It says what is missing in kind, never
      * which identifier — the same rule the mismatch copy obeys.
@@ -174,24 +160,54 @@ export const strings = {
     heading: 'Who is signing today?',
     self: (patientName: string) => `${patientName} — I am signing for myself`,
     other: (patientName: string) => `Someone else is signing for ${patientName}`,
-    panelHeading: 'If someone else signs',
-    otherName: 'Their full name',
-    otherRelationship: 'Relationship',
+    /**
+     * "About you" (Carl, 3 Sep 2026 live test), not "if someone else signs" —
+     * whoever is filling this in is holding the tablet, so the form addresses
+     * them directly, not a hypothetical third person.
+     */
+    panelHeading: 'About you',
+    otherName: 'Your full name',
+    /**
+     * Named to the patient on screen, not "the assignor" or "them" — the
+     * person typing already sees who they are signing for above this field.
+     */
+    otherRelationship: (patientName: string) => `Your relationship to ${patientName}`,
     /** Composed from MIN_AGE_ASSIGN_FOR_OTHER — the threshold is never typed here. */
-    otherAgeConfirm: (minimumAge: number) => `They are ${minimumAge} or over`,
+    otherAgeConfirm: (minimumAge: number) => `I am ${minimumAge} or over`,
     continueAction: 'Continue',
     /**
-     * NEUTRAL REFUSAL COPY. It does not explain the rule to the patient, does
-     * not say "staff", and does not accuse anybody of anything — it points at
-     * the desk and stops (REQ-VUL-04).
+     * THE GUARDED-BUTTON REASONS (Carl, 3 Sep 2026 live test). Live, before
+     * anybody presses Continue — a disabled control that only explains itself
+     * after a tap is inert, not unreachable (CLAUDE.md §6). `continueBlocked`
+     * is the label ON the button itself (mirrors `verify.continueBlocked` and
+     * `signature.signBlocked`); the three `reason*` strings are the itemised
+     * list beneath it, the same shape `SignatureControl` already uses. None of
+     * them name an identifier value or explain the staff rule at length —
+     * that fuller explanation is `blockedBody`, below, shown only for the
+     * staff match.
+     */
+    continueBlocked: (count: number) =>
+      count === 1 ? 'Continue — 1 detail still needed' : `Continue — ${count} details still needed`,
+    reasonDetailsNeeded: 'Your name and relationship are needed',
+    reasonAgeNeeded: 'Confirm you are 18 or over',
+    reasonStaffBlocked: 'Practice staff cannot sign for a patient',
+    /**
+     * THE STAFF REFUSAL, EXPLAINED (Carl, 3 Sep 2026 live test — see
+     * AssignorScreen.tsx). Earlier copy pointed at reception and stopped,
+     * on the reasoning that naming the rule teaches how to get around it
+     * (REQ-VUL-04). Live testing showed the cost of that: a blocked person
+     * has no idea why, including a practice-staff member who is legitimately
+     * refused and cannot tell whether the tablet is broken. This names the
+     * rule — staff cannot sign for a patient — without naming the person or
+     * how they were matched, which is the part REQ-VUL-04 actually protects.
      */
     blockedHeading: 'Please ask our reception staff',
-    blockedBody:
-      'This consent needs to be signed by the patient or by someone from outside the practice. '
-      + 'Please ask our reception staff.',
+    blockedBody: (practiceName: string) =>
+      `Practice staff cannot sign for a patient. If you work at ${practiceName}, please ask reception; `
+      + 'the patient, or someone from outside the practice, can sign.',
     tooYoungSelf: 'Please ask our reception staff to continue this with you.',
-    tooYoungOther: 'Please ask our reception staff to continue this at the desk.',
-    detailsNeeded: 'Please give their name and relationship.',
+    /** Fallback only — `evaluateAssignorGate` always returns at least one of the `reason*` strings above. */
+    detailsNeeded: 'Please give your name and relationship.',
     handoverHeading: 'Please ask our reception staff',
     handoverBody:
       'Someone else signing for the patient is completed at the desk, so the practice can record who they '

@@ -7,13 +7,19 @@
  * Medicare card field on this screen and no setting on this device that could
  * add one — the kiosk holds no configuration at all (REQ-VER-02).
  *
- * THE INPUTS ARE STRUCTURED; THE CONTRACT IS NOT (Carl, 3 Sep 2026). Three of
+ * THE INPUTS ARE STRUCTURED; THE CONTRACT IS NOT (Carl, 3 Sep 2026). Two of
  * the six approved identifiers are composite, and each used to be one free-text
- * box: a name, a date the patient had to render as "YYYY-MM-DD", and a whole
- * address on one line. They are now family/given, three pickers, and the parts
- * of an address — and `verify-fields.ts` composes each back into the single
- * string per identifier type that the attempt endpoint has always taken. The
- * server contract is untouched.
+ * box: a name, and a date the patient had to render as "YYYY-MM-DD". They are
+ * now family/given and three pickers — and `verify-fields.ts` composes each
+ * back into the single string per identifier type that the attempt endpoint
+ * has always taken. The server contract is untouched.
+ *
+ * ADDRESS IS NOT ONE OF THE TWO. It was, for a few hours the same day — this
+ * screen briefly asked for line 1, line 2, suburb, state, postcode and
+ * country as separate controls — and went back to one free-text line because
+ * a server-side address-validation endpoint is coming and the split would be
+ * redone there. It renders through the same plain-field branch as gender, the
+ * record number and the IHI.
  *
  * WHY THAT MATTERS MORE HERE THAN ON AN ORDINARY FORM: a failed attempt says
  * "some details don't match" and is not allowed to say which (REQ-SEC-07). So
@@ -46,7 +52,6 @@ import {
   isStructured,
   monthOptions,
   readyToSubmit,
-  stateOptions,
   yearOptions,
   type IdentifierParts,
 } from '../rules/verify-fields';
@@ -177,11 +182,10 @@ export function VerifyScreen({
   );
 }
 
-/** Which parts group composes which identifier type. */
+/** Which parts group composes which identifier type. Address is plain text now — see verify-fields.ts. */
 const GROUP_FOR_TYPE = {
   name: 'name',
   date_of_birth: 'dateOfBirth',
-  address: 'address',
 } as const;
 
 function VerifyForm({
@@ -300,64 +304,15 @@ function VerifyForm({
               </>
             ) : null}
 
-            {field.type === 'address' ? (
-              <>
-                <Field
-                  label={strings.verify.addressLine1}
-                  value={parts.address.line1}
-                  onChangeText={(line1) => update('address', { line1 })}
-                  testID="identifier-address-line1"
-                  autoFocus={index === 0}
-                  style={styles.fullCell}
-                />
-                <Field
-                  label={strings.verify.addressLine2}
-                  hint={strings.verify.addressOptional}
-                  value={parts.address.line2}
-                  onChangeText={(line2) => update('address', { line2 })}
-                  testID="identifier-address-line2"
-                  style={styles.fullCell}
-                />
-                <Field
-                  label={strings.verify.suburb}
-                  value={parts.address.suburb}
-                  onChangeText={(suburb) => update('address', { suburb })}
-                  testID="identifier-address-suburb"
-                  style={styles.addressPartCell}
-                />
-                <PickerField
-                  label={strings.verify.addressState}
-                  value={parts.address.state}
-                  options={stateOptions()}
-                  placeholder={strings.verify.chooseOption}
-                  onValueChange={(state) => update('address', { state })}
-                  testID="identifier-address-state"
-                  style={styles.addressPartCell}
-                />
-                <Field
-                  label={strings.verify.postcode}
-                  value={parts.address.postcode}
-                  onChangeText={(postcode) => update('address', { postcode })}
-                  testID="identifier-address-postcode"
-                  style={styles.postcodeCell}
-                />
-                {/*
-                  COLLECTED, NEVER SENT. `composeAddress` leaves the country
-                  out: the practice's record does not carry one, the server
-                  does not compare one, and its containment rule fails on any
-                  token the practice does not hold — so appending "Australia"
-                  would fail every attempt. See verify-fields.ts.
-                */}
-                <Field
-                  label={strings.verify.country}
-                  value={parts.address.country}
-                  onChangeText={(country) => update('address', { country })}
-                  testID="identifier-address-country"
-                  style={styles.countryCell}
-                />
-              </>
-            ) : null}
-
+            {/*
+              ADDRESS IS PLAIN TEXT, ONE LINE (Carl, 3 Sep 2026 — reverted
+              from the composed line1/line2/suburb/state/postcode/country
+              form the same day; see verify-fields.ts). It renders through
+              this same generic branch as gender, the record number and the
+              IHI — nothing here composes it — and always takes the full
+              width of its row rather than sharing one, because a home
+              address reads badly squeezed to half a column.
+            */}
             {isStructured(field.type) ? null : (
               <Field
                 label={field.label}
@@ -366,7 +321,7 @@ function VerifyForm({
                 onChangeText={(next) => onChange(field.type, next)}
                 testID={`identifier-${field.type}`}
                 autoFocus={index === 0}
-                style={isWide ? styles.pairCell : styles.fullCell}
+                style={field.type === 'address' || !isWide ? styles.fullCell : styles.pairCell}
               />
             )}
           </View>
@@ -422,9 +377,6 @@ const styles = StyleSheet.create({
   dobDayCell: { flexGrow: 2, flexBasis: 130 },
   dobMonthCell: { flexGrow: 3, flexBasis: 190 },
   dobYearCell: { flexGrow: 2, flexBasis: 150 },
-  addressPartCell: { flexGrow: 3, flexBasis: 180 },
-  postcodeCell: { flexGrow: 1, flexBasis: 120 },
-  countryCell: { flexGrow: 2, flexBasis: 160 },
   annotation: { width: 300, alignSelf: 'flex-start' },
   annotationBelow: { alignSelf: 'stretch', marginTop: space.xs },
   annotationText: { fontFamily: fonts.body, fontSize: type.footnote, color: colors.ink },

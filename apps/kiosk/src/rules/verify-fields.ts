@@ -1,18 +1,27 @@
 /**
- * The structured sub-fields of the three composite identifiers, and the pure
+ * The structured sub-fields of the two composite identifiers, and the pure
  * functions that turn them back into the one string per identifier type that
  * `POST /verification/challenges/:id/attempt` takes.
  *
  * THE WIRE CONTRACT DID NOT CHANGE. The server still receives
  * `stated: Record<identifierType, string>` — one value per type, exactly as
  * before. What changed is who does the formatting: the patient used to be
- * asked to produce "1962-08-04" and a one-line address in whatever shape the
- * practice happened to have typed it, and now the screen collects the parts
- * and composes the string itself.
+ * asked to produce "1962-08-04" in whatever shape they thought of it, and now
+ * three pickers produce it.
+ *
+ * ADDRESS IS DELIBERATELY NOT STRUCTURED HERE (Carl, 3 Sep 2026 — reversing
+ * the composed line1/line2/suburb/state/postcode/country form from earlier
+ * the same day). A server-side address-validation endpoint is coming; until
+ * it lands, splitting the address into parts on this device is work the
+ * server will redo. The field is one line, rendered through the same generic
+ * `Field` every non-composite identifier uses (`VerifyScreen`'s
+ * `isStructured(field.type) ? null : <Field .../>` branch) — nothing in this
+ * file composes it. The server's own token-containment match is what lets
+ * "2 Example St" match a held record of "2 Example Street, Sampletown NSW
+ * 2000" from a single stated line, so that match rule does not change either.
  *
  * COMPOSITION IS HERE, NOT IN THE SCREEN, because it is the half of the
- * verification behaviour that can be tested without rendering anything —
- * including the country rule below, which is easy to break by being helpful.
+ * verification behaviour that can be tested without rendering anything.
  *
  * NOTHING IS STORED. These are pure functions over component state that the
  * ceremony drops after the attempt (REQ-VER-04); no value reaches a log, a
@@ -33,29 +42,18 @@ export interface DateOfBirthParts {
   readonly year: string;
 }
 
-export interface AddressParts {
-  readonly line1: string;
-  readonly line2: string;
-  readonly suburb: string;
-  readonly state: string;
-  readonly postcode: string;
-  readonly country: string;
-}
-
 export interface IdentifierParts {
   readonly name: NameParts;
   readonly dateOfBirth: DateOfBirthParts;
-  readonly address: AddressParts;
 }
 
 export const EMPTY_PARTS: IdentifierParts = {
   name: { family: '', given: '' },
   dateOfBirth: { day: '', month: '', year: '' },
-  address: { line1: '', line2: '', suburb: '', state: '', postcode: '', country: strings.verify.defaultCountry },
 };
 
-/** The identifier types this module composes. Everything else is a plain text field. */
-export const STRUCTURED_IDENTIFIER_TYPES = ['name', 'date_of_birth', 'address'] as const;
+/** The identifier types this module composes. Everything else — address included — is a plain text field. */
+export const STRUCTURED_IDENTIFIER_TYPES = ['name', 'date_of_birth'] as const;
 
 export function isStructured(type: string): boolean {
   return (STRUCTURED_IDENTIFIER_TYPES as readonly string[]).includes(type);
@@ -85,29 +83,6 @@ export function composeDateOfBirth(parts: DateOfBirthParts): string {
   return `${parts.year}-${parts.month.padStart(2, '0')}-${parts.day.padStart(2, '0')}`;
 }
 
-/**
- * COUNTRY IS COLLECTED AND DELIBERATELY NOT SENT.
- *
- * The practice's record carries a street address, a suburb, a state and a
- * postcode; it does not carry a country, and the server does not compare one.
- * The server's address rule is token containment — every token the patient
- * states must appear in the value the practice holds — so appending
- * "Australia" would add a token that can never be matched and would fail every
- * single attempt. The field exists because an address form without a country
- * looks broken and because the day this product sees an overseas address the
- * value is already being collected.
- *
- * The parts are joined with single spaces. Punctuation is not added: the
- * server strips it on both sides anyway, and adding a comma here would only
- * invent a format nobody agreed to.
- */
-export function composeAddress(parts: AddressParts): string {
-  return [parts.line1, parts.line2, parts.suburb, parts.state, parts.postcode]
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .join(' ');
-}
-
 /** The composed value for one identifier type, or null when this type is not a composite. */
 export function composeIdentifier(type: string, parts: IdentifierParts): string | null {
   switch (type) {
@@ -115,34 +90,18 @@ export function composeIdentifier(type: string, parts: IdentifierParts): string 
       return composeName(parts.name);
     case 'date_of_birth':
       return composeDateOfBirth(parts.dateOfBirth);
-    case 'address':
-      return composeAddress(parts.address);
     default:
       return null;
   }
 }
 
-/**
- * WHICH PARTS ARE MANDATORY, and no more than that.
- *
- * Address line 2 is optional because most people do not have one, and the
- * state is optional because the server's containment rule treats a component
- * the patient omitted as a component that simply was not stated. Requiring
- * either would block somebody whose address genuinely lacks it — which on this
- * screen means routing a patient to the desk for no reason (REQ-REC-04).
- */
+/** WHICH PARTS ARE MANDATORY, and no more than that. */
 export function partsComplete(type: string, parts: IdentifierParts): boolean {
   switch (type) {
     case 'name':
       return parts.name.family.trim() !== '' && parts.name.given.trim() !== '';
     case 'date_of_birth':
       return composeDateOfBirth(parts.dateOfBirth) !== '';
-    case 'address':
-      return (
-        parts.address.line1.trim() !== ''
-        && parts.address.suburb.trim() !== ''
-        && parts.address.postcode.trim() !== ''
-      );
     default:
       return false;
   }
@@ -157,6 +116,24 @@ export function readyToSubmit(
   return types.every((type) =>
     isStructured(type) ? partsComplete(type, parts) : (stated[type] ?? '').trim() !== '',
   );
+}
+
+/**
+ * TRIMS WHAT LEAVES THE DEVICE, NEVER WHAT IS TYPED (Carl, 3 Sep 2026).
+ *
+ * The composite identifiers trim their own parts at compose time, safely,
+ * because the box on screen is bound to a local draft (`parts`) and only the
+ * OUTGOING composed string is trimmed. The plain free-text identifiers —
+ * address among them, since it went back to one line — have no such draft:
+ * the input's `value` and the `stated` record are the same state. Trimming
+ * that on every keystroke would strip the space between two words the instant
+ * it was typed, gluing them together. So this runs once, here, on the
+ * snapshot about to leave for `POST /verification/challenges/:id/attempt` —
+ * never wired to `onChangeText`. It trims and nothing else: no joining, no
+ * reordering, no reformatting.
+ */
+export function trimStatedValues(stated: Readonly<Record<string, string>>): Record<string, string> {
+  return Object.fromEntries(Object.entries(stated).map(([type, value]) => [type, value.trim()]));
 }
 
 export interface Option {
@@ -193,8 +170,4 @@ export function yearOptions(now: Date = new Date()): readonly Option[] {
     const value = String(thisYear - index);
     return { value, label: value };
   });
-}
-
-export function stateOptions(): readonly Option[] {
-  return strings.verify.stateOptions.map((entry) => ({ value: entry.value, label: entry.label }));
 }

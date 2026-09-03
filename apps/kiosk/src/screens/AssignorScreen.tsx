@@ -6,14 +6,35 @@
  * else in the platform (CLAUDE.md §3): the branch is a control the person
  * touches, never something the code infers from a name.
  *
+ * THE CHOICE IS UNMISTAKABLE (Carl, 3 Sep 2026 live test). Tapping "I am
+ * signing for myself" used to change nothing about how either button looked
+ * — the tap registered, but there was no way to tell. `SecondaryButton`'s
+ * `selected` prop now fills the chosen option and sets
+ * `accessibilityState.selected`.
+ *
+ * SELF ADVANCES ON THE TAP, NO CONTINUE NEEDED (same live test — fewest taps,
+ * the Tyro-terminal feel). The kiosk holds no date of birth, so self-assign is
+ * never blocked from this device — `decideAssignor`'s self branch always
+ * defers to the server — and there is nothing to gain by making the patient
+ * find and press Continue for a choice that cannot fail here. "Someone else"
+ * still reveals the form and keeps Continue, because that branch has real
+ * gates to pass (the age declaration, the staff block) before it can go
+ * anywhere.
+ *
  * WHAT IS NOT ON THIS SCREEN. No capacity question. No control that asks a
  * staff member to judge whether the patient can consent. Not hidden behind a
  * flag, not deferred — absent (REQ-VUL-05).
  *
- * THE REFUSALS ARE NEUTRAL. A blocked assignor is told to ask reception. They
- * are not told that they matched the staff list, and the rule is not explained
- * to them — a refusal that teaches the rule teaches how to get around it
- * (REQ-VUL-04).
+ * CONTINUE IS A `GuardedButton` (same live test, CLAUDE.md §6 — blocked states
+ * are unreachable, not merely inert). `guard` is computed live by the
+ * ceremony from `evaluateAssignorGate`, so the button is already disabled,
+ * with its reason, before anybody presses it — missing details, an unticked
+ * age box, or a practice-staff match all show up here as soon as they are
+ * true, not only after a press finds them. The staff match additionally gets
+ * the fuller explanation panel below: `blockedBody` now names the rule
+ * (practice staff cannot sign for a patient) rather than pointing at
+ * reception and stopping there, on the reasoning that naming the rule without
+ * naming the PERSON or the match still protects what REQ-VUL-04 protects.
  *
  * THE "SOMEONE ELSE" BRANCH ENDS AT THE DESK IN THIS MVP, and that is stated
  * plainly rather than mimed. Recording a different assignor means creating an
@@ -27,18 +48,18 @@
 import { type ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Blueprint, Kicker, Screen, useLayout } from '../components/Chrome';
-import { PrimaryButton, SecondaryButton } from '../components/Buttons';
+import { GuardedButton, SecondaryButton } from '../components/Buttons';
 import { Checkbox, Field } from '../components/Field';
 import { strings } from '../strings';
 import { colors, fonts, space, type } from '../theme';
-import { MIN_AGE_ASSIGN_FOR_OTHER, type AssignorChoice } from '../rules/assignor';
+import { MIN_AGE_ASSIGN_FOR_OTHER, type AssignorChoice, type AssignorGate } from '../rules/assignor';
 
 export function AssignorScreen({
   practiceName,
   locationLine,
   patientName,
   choice,
-  refusal,
+  guard,
   onChoose,
   onChangeOther,
   onContinue,
@@ -48,7 +69,8 @@ export function AssignorScreen({
   locationLine: string | null;
   patientName: string;
   choice: AssignorChoice;
-  refusal: string | null;
+  /** Live, from `evaluateAssignorGate` — the single source of truth behind this screen's Continue and its explanation panel. */
+  guard: AssignorGate;
   onChoose: (assignorIsPatient: boolean) => void;
   onChangeOther: (patch: Partial<AssignorChoice>) => void;
   onContinue: () => void;
@@ -88,12 +110,14 @@ export function AssignorScreen({
           <SecondaryButton
             label={strings.assignor.self(patientName)}
             align="left"
+            selected={choice.assignorIsPatient}
             onPress={() => onChoose(true)}
             testID="assignor-self"
           />
           <SecondaryButton
             label={strings.assignor.other(patientName)}
             align="left"
+            selected={!choice.assignorIsPatient}
             onPress={() => onChoose(false)}
             testID="assignor-other"
           />
@@ -110,7 +134,7 @@ export function AssignorScreen({
                   style={isWide ? styles.gridCell : styles.stackCell}
                 />
                 <Field
-                  label={strings.assignor.otherRelationship}
+                  label={strings.assignor.otherRelationship(patientName)}
                   value={choice.otherRelationship}
                   onChangeText={(next) => onChangeOther({ otherRelationship: next })}
                   testID="assignor-other-relationship"
@@ -126,18 +150,27 @@ export function AssignorScreen({
             </Blueprint>
           ) : null}
 
-          {refusal ? (
+          {guard.state === 'blocked' && guard.explanation ? (
             <Blueprint accented style={styles.panel}>
               <Text style={styles.h3}>{strings.assignor.blockedHeading}</Text>
               <Text style={styles.body} testID="assignor-refusal">
-                {refusal}
+                {guard.explanation}
               </Text>
             </Blueprint>
           ) : null}
 
           <View style={styles.actions}>
-            <PrimaryButton
+            <GuardedButton
               label={strings.assignor.continueAction}
+              state={
+                guard.state === 'valid'
+                  ? { disabled: false }
+                  : {
+                      disabled: true,
+                      disabledLabel: strings.assignor.continueBlocked(guard.reasons.length),
+                      reasons: guard.reasons,
+                    }
+              }
               onPress={onContinue}
               testID="assignor-continue"
             />

@@ -2,16 +2,17 @@
  * K-2's structured inputs, and the composition that keeps the SERVER CONTRACT
  * unchanged: `stated` is still one string per identifier type.
  *
- * The tests that matter here are the two that are easy to get wrong by being
- * helpful — sending the country the form collects, and letting a half-chosen
- * date go out as a whole one.
+ * The tests that matter here are the ones that are easy to get wrong by being
+ * helpful — letting a half-chosen date go out as a whole one, and trimming a
+ * free-text value somewhere that would strip the space between two words
+ * while it is still being typed.
  */
+import { useState } from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
 import { VerifyScreen } from '../screens/VerifyScreen';
 import { identifierFieldsFor } from './identifiers';
 import { firstAttempt } from './verification';
 import {
-  composeAddress,
   composeDateOfBirth,
   composeName,
   dayOptions,
@@ -19,7 +20,7 @@ import {
   monthOptions,
   partsComplete,
   readyToSubmit,
-  stateOptions,
+  trimStatedValues,
   YEAR_SPAN,
   yearOptions,
 } from './verify-fields';
@@ -28,36 +29,24 @@ import { strings } from '../strings';
 const CHROME = { practiceName: 'Sample Practice', locationLine: 'NSW' };
 const noop = () => undefined;
 
-const FULL_ADDRESS = {
-  line1: '2 Example St',
-  line2: '',
-  suburb: 'Sampletown',
-  state: 'NSW',
-  postcode: '2000',
-  country: 'Australia',
-};
-
 describe('composition — the parts become the one string per identifier', () => {
-  it('address_composed_without_country', () => {
-    // THE POINT OF THIS TEST. The practice's record has no country in it and
-    // the server compares tokens by containment, so a stated "Australia" is a
-    // token the practice cannot hold — it would fail every attempt, on a
-    // screen that is not allowed to say which detail was wrong.
-    const composed = composeAddress(FULL_ADDRESS);
-    expect(composed).toBe('2 Example St Sampletown NSW 2000');
-    expect(composed.toLowerCase()).not.toContain('australia');
-    // Any country, and a country the patient edited by hand, are both dropped.
-    expect(composeAddress({ ...FULL_ADDRESS, country: 'New Zealand' })).toBe(composed);
-    expect(composeAddress({ ...FULL_ADDRESS, country: '' })).toBe(composed);
-    // The default is Australia, and it still never reaches the wire.
-    expect(EMPTY_PARTS.address.country).toBe(strings.verify.defaultCountry);
-  });
-
-  it('joins the address components with single spaces and drops the empty ones', () => {
-    expect(composeAddress({ ...FULL_ADDRESS, line2: 'Unit 4' })).toBe('2 Example St Unit 4 Sampletown NSW 2000');
-    expect(composeAddress({ ...FULL_ADDRESS, state: '' })).toBe('2 Example St Sampletown 2000');
-    expect(composeAddress({ ...FULL_ADDRESS, line1: '  2 Example St  ' })).toBe('2 Example St Sampletown NSW 2000');
-    expect(composeAddress({ line1: '', line2: '', suburb: '', state: '', postcode: '', country: 'Australia' })).toBe('');
+  it('address_sent_trimmed_and_unchanged', () => {
+    // THE POINT OF THIS TEST. Address went back to one free-text line (Carl,
+    // 3 Sep 2026) — the server's own token-containment match is what lets a
+    // short stated line find a longer held record, so the only thing this
+    // device owes the server is the value the patient typed, trimmed of
+    // whatever whitespace surrounds it and otherwise untouched: no joining,
+    // no reordering, no reformatting.
+    const stated = { address: '  2 Example St Sampletown 2000  ', name: 'Jamie Sampleton' };
+    expect(trimStatedValues(stated)).toEqual({
+      address: '2 Example St Sampletown 2000',
+      name: 'Jamie Sampleton',
+    });
+    // Interior spacing — the words themselves — is untouched.
+    expect(trimStatedValues({ address: 'Unit 4 2 Example St' }).address).toBe('Unit 4 2 Example St');
+    // Nothing here invents a country, a comma, or any other token the
+    // practice's record does not hold.
+    expect(trimStatedValues({ address: ' Sampletown ' }).address.toLowerCase()).not.toContain('australia');
   });
 
   it('composes an ISO date, and nothing at all until all three parts are chosen', () => {
@@ -79,14 +68,15 @@ describe('composition — the parts become the one string per identifier', () =>
     expect(composeName({ given: '', family: '' })).toBe('');
   });
 
-  it('requires line 1, suburb and postcode — but not line 2 or the state', () => {
-    const parts = { ...EMPTY_PARTS, address: FULL_ADDRESS };
-    expect(partsComplete('address', parts)).toBe(true);
-    expect(partsComplete('address', { ...parts, address: { ...FULL_ADDRESS, line2: '' } })).toBe(true);
-    expect(partsComplete('address', { ...parts, address: { ...FULL_ADDRESS, state: '' } })).toBe(true);
-    for (const missing of ['line1', 'suburb', 'postcode'] as const) {
-      expect(partsComplete('address', { ...parts, address: { ...FULL_ADDRESS, [missing]: '' } })).toBe(false);
-    }
+  it('requires both name parts and a complete date — address is not composed here at all', () => {
+    expect(partsComplete('name', { ...EMPTY_PARTS, name: { given: 'Jamie', family: 'Sampleton' } })).toBe(true);
+    expect(partsComplete('name', { ...EMPTY_PARTS, name: { given: 'Jamie', family: '' } })).toBe(false);
+    expect(
+      partsComplete('date_of_birth', { ...EMPTY_PARTS, dateOfBirth: { day: '04', month: '08', year: '1962' } }),
+    ).toBe(true);
+    // Address is a plain field now (see VerifyScreen's generic branch); this
+    // module has no notion of it being "complete".
+    expect(partsComplete('address', EMPTY_PARTS)).toBe(false);
   });
 
   it('offers sensible picker ranges, with the month as a name', () => {
@@ -97,86 +87,101 @@ describe('composition — the parts become the one string per identifier', () =>
     expect(years).toHaveLength(YEAR_SPAN + 1);
     expect(years[0].value).toBe('2026');
     expect(years[years.length - 1].value).toBe(String(2026 - YEAR_SPAN));
-    // Every Australian state and territory, none invented.
-    expect(stateOptions().map((option) => option.value)).toEqual(
-      ['NSW', 'VIC', 'QLD', 'SA', 'WA', 'TAS', 'NT', 'ACT'],
-    );
   });
 });
 
 describe('K-2 — the structured verification screen', () => {
   const fields = identifierFieldsFor(['name', 'date_of_birth', 'address']);
 
-  function renderScreen(onChange: (type: string, value: string) => void, onContinue = noop) {
-    return render(
+  /**
+   * A THIN STAND-IN FOR THE CEREMONY. `address` is a plain field now — its
+   * readiness comes from `stated[type]` (see `readyToSubmit`), not from a
+   * local draft the way the composite identifiers work — so a test that
+   * wants Continue to react to what was typed into it has to behave like
+   * `Ceremony.tsx` actually does and feed `onChange` back into the `stated`
+   * prop, or the address box types into the void and Continue never sees it.
+   */
+  function Harness({
+    onContinue = noop,
+    onSent,
+  }: {
+    onContinue?: () => void;
+    onSent?: (sent: Readonly<Record<string, string>>) => void;
+  }) {
+    const [stated, setStated] = useState<Record<string, string>>({});
+    return (
       <VerifyScreen
         {...CHROME}
         fields={fields}
-        stated={{}}
+        stated={stated}
         state={firstAttempt()}
         busy={false}
         incomplete={false}
         startError={false}
-        onChange={onChange}
+        onChange={(type, value) => {
+          setStated((prev) => {
+            const next = { ...prev, [type]: value };
+            onSent?.(next);
+            return next;
+          });
+        }}
         onContinue={onContinue}
         onRetry={noop}
         onSeeReception={noop}
-      />,
+      />
     );
   }
 
-  it('renders a structured control for every composite identifier', async () => {
-    const screen = await renderScreen(noop);
+  function renderScreen(onContinue = noop, onSent?: (sent: Readonly<Record<string, string>>) => void) {
+    return render(<Harness onContinue={onContinue} onSent={onSent} />);
+  }
+
+  it('renders a structured control for both composite identifiers, and one plain line for address', async () => {
+    const screen = await renderScreen();
     for (const testID of [
       'identifier-name-given',
       'identifier-name-family',
       'identifier-dob-day',
       'identifier-dob-month',
       'identifier-dob-year',
-      'identifier-address-line1',
-      'identifier-address-line2',
-      'identifier-address-suburb',
-      'identifier-address-state',
-      'identifier-address-postcode',
-      'identifier-address-country',
+      'identifier-address',
     ]) {
       expect(screen.getByTestId(testID)).toBeTruthy();
     }
-    // The single free-text boxes they replaced are gone.
+    // The single free-text boxes name/DOB replaced are gone; address never
+    // grew line1/line2/suburb/state/postcode/country controls.
     expect(screen.queryByTestId('identifier-name')).toBeNull();
     expect(screen.queryByTestId('identifier-date_of_birth')).toBeNull();
-    expect(screen.queryByTestId('identifier-address')).toBeNull();
-    // The country defaults so nobody has to answer a question with one answer.
-    expect(screen.getByTestId('identifier-address-country').props.value).toBe(strings.verify.defaultCountry);
+    expect(screen.queryByTestId('identifier-address-line1')).toBeNull();
+    expect(screen.queryByTestId('identifier-address-state')).toBeNull();
+    expect(screen.queryByTestId('identifier-address-country')).toBeNull();
+    // The placeholder inside the box, not a second label.
+    expect(screen.getByTestId('identifier-address').props.placeholder).toBe(strings.verify.identifierHints.address);
     await screen.unmount();
   });
 
-  it('composes what the ceremony sends, and never sends the country', async () => {
-    const sent: Record<string, string> = {};
-    const screen = await renderScreen((type, value) => {
-      sent[type] = value;
+  it('composes what the ceremony sends', async () => {
+    let sent: Readonly<Record<string, string>> = {};
+    const screen = await renderScreen(noop, (next) => {
+      sent = next;
     });
 
     await fireEvent.changeText(screen.getByTestId('identifier-name-given'), 'Jamie');
     await fireEvent.changeText(screen.getByTestId('identifier-name-family'), 'Sampleton');
-    await fireEvent.changeText(screen.getByTestId('identifier-address-line1'), '2 Example St');
-    await fireEvent.changeText(screen.getByTestId('identifier-address-suburb'), 'Sampletown');
-    await fireEvent.changeText(screen.getByTestId('identifier-address-postcode'), '2000');
-    await fireEvent(screen.getByTestId('identifier-address-state'), 'valueChange', 'NSW');
+    await fireEvent.changeText(screen.getByTestId('identifier-address'), '2 Example St Sampletown 2000');
     await fireEvent(screen.getByTestId('identifier-dob-day'), 'valueChange', '04');
     await fireEvent(screen.getByTestId('identifier-dob-month'), 'valueChange', '08');
     await fireEvent(screen.getByTestId('identifier-dob-year'), 'valueChange', '1962');
 
     expect(sent.name).toBe('Jamie Sampleton');
     expect(sent.date_of_birth).toBe('1962-08-04');
-    expect(sent.address).toBe('2 Example St Sampletown NSW 2000');
-    expect(JSON.stringify(sent).toLowerCase()).not.toContain('australia');
+    expect(sent.address).toBe('2 Example St Sampletown 2000');
     await screen.unmount();
   });
 
   it('continue_disabled_until_the_mandatory_parts_are_filled', async () => {
     const onContinue = jest.fn();
-    const screen = await renderScreen(noop, onContinue);
+    const screen = await renderScreen(onContinue);
     const blocked = screen.getByTestId('verify-continue');
     // The disabled control is a View with no `onPress` at all — the same
     // primitive the signature gate uses — so there is nothing to press.
@@ -190,9 +195,7 @@ describe('K-2 — the structured verification screen', () => {
 
     await fireEvent.changeText(screen.getByTestId('identifier-name-given'), 'Jamie');
     await fireEvent.changeText(screen.getByTestId('identifier-name-family'), 'Sampleton');
-    await fireEvent.changeText(screen.getByTestId('identifier-address-line1'), '2 Example St');
-    await fireEvent.changeText(screen.getByTestId('identifier-address-suburb'), 'Sampletown');
-    await fireEvent.changeText(screen.getByTestId('identifier-address-postcode'), '2000');
+    await fireEvent.changeText(screen.getByTestId('identifier-address'), '2 Example St Sampletown 2000');
     // Still short of a date of birth: two of three pickers is not a date.
     await fireEvent(screen.getByTestId('identifier-dob-day'), 'valueChange', '04');
     await fireEvent(screen.getByTestId('identifier-dob-month'), 'valueChange', '08');
@@ -210,25 +213,22 @@ describe('K-2 — the structured verification screen', () => {
   it('the refusal names no identifier, exactly as the mismatch copy does not', () => {
     expect(strings.verify.continueBlocked.toLowerCase()).not.toMatch(/name|birth|address|gender|record|ihi/);
     expect(readyToSubmit(['name'], EMPTY_PARTS, {})).toBe(false);
-    // A non-composite identifier still comes from `stated`, as it always did.
+    // A non-composite identifier still comes from `stated`, as it always did
+    // — address included, now.
+    expect(readyToSubmit(['address'], EMPTY_PARTS, { address: '2 Example St' })).toBe(true);
     expect(readyToSubmit(['gender'], EMPTY_PARTS, { gender: 'Female' })).toBe(true);
     expect(readyToSubmit(['gender'], EMPTY_PARTS, { gender: '  ' })).toBe(false);
   });
 
   it('every field is labelled', async () => {
-    const screen = await renderScreen(noop);
+    const screen = await renderScreen();
     for (const [testID, label] of [
       ['identifier-name-given', strings.verify.nameGiven],
       ['identifier-name-family', strings.verify.nameFamily],
       ['identifier-dob-day', strings.verify.dobDay],
       ['identifier-dob-month', strings.verify.dobMonth],
       ['identifier-dob-year', strings.verify.dobYear],
-      ['identifier-address-line1', strings.verify.addressLine1],
-      ['identifier-address-line2', strings.verify.addressLine2],
-      ['identifier-address-suburb', strings.verify.suburb],
-      ['identifier-address-state', strings.verify.addressState],
-      ['identifier-address-postcode', strings.verify.postcode],
-      ['identifier-address-country', strings.verify.country],
+      ['identifier-address', strings.verify.identifierNames.address],
     ] as const) {
       expect(screen.getByTestId(testID).props.accessibilityLabel).toBe(label);
     }

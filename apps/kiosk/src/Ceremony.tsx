@@ -40,7 +40,8 @@ import {
 import { KioskApiError, type AgreementResponse, type KioskWaitingRow } from './api/types';
 import { useWaitingList } from './hooks/useWaitingList';
 import { identifierFieldsFor, challengeIsComplete, type IdentifierField } from './rules/identifiers';
-import { decideAssignor, type AssignorChoice } from './rules/assignor';
+import { trimStatedValues } from './rules/verify-fields';
+import { decideAssignor, evaluateAssignorGate, type AssignorChoice } from './rules/assignor';
 import { evaluateSignatureGate, type SignatureValidation } from './rules/signature-gate';
 import { afterAttempt, firstAttempt, retryAfterMismatch, type VerificationState } from './rules/verification';
 import { IdleScreen } from './screens/IdleScreen';
@@ -79,7 +80,6 @@ export function Ceremony(): ReactNode {
   const [startError, setStartError] = useState(false);
 
   const [choice, setChoice] = useState<AssignorChoice>(EMPTY_CHOICE);
-  const [refusal, setRefusal] = useState<string | null>(null);
 
   const [serverFailures, setServerFailures] = useState<readonly string[]>([]);
   const [staffEntryOpen, setStaffEntryOpen] = useState(false);
@@ -130,7 +130,6 @@ export function Ceremony(): ReactNode {
     setStated({});
     setVerification(firstAttempt());
     setChoice(EMPTY_CHOICE);
-    setRefusal(null);
     setServerFailures([]);
     setStaffEntryOpen(false);
     setStaffDescription('');
@@ -207,7 +206,10 @@ export function Ceremony(): ReactNode {
     setIncomplete(false);
     setVerifyBusy(true);
     try {
-      const result = await attemptChallenge(challengeId, stated);
+      // Trimmed at the point it leaves the device, never on a keystroke — see
+      // `trimStatedValues`. Address went back to a single free-text line and
+      // has no local draft state of its own to trim safely as it is typed.
+      const result = await attemptChallenge(challengeId, trimStatedValues(stated));
       const next = afterAttempt(verification, result);
       setVerification(next);
       // Whatever happened, the stated values leave this device's memory now.
@@ -228,28 +230,52 @@ export function Ceremony(): ReactNode {
     }
   }, [challengeId, fields, row, stated, verification, toHandover]);
 
-  /** Step 3: who is signing. The gates run here; the record is the server's. */
-  const continueAssignor = useCallback(() => {
-    const decision = decideAssignor({
-      choice,
-      practiceStaffNames: staffNames,
-      // Not on this device by design — the waiting row carries no date of
-      // birth, so the self-assign gate is the server's to make.
-      patientAgeYears: null,
-    });
-    if (!decision.allowed) {
-      setRefusal(decision.message);
-      return;
-    }
-    setRefusal(null);
-    if (!choice.assignorIsPatient) {
-      // Allowed, and still a desk job: nothing here can re-point the agreement
-      // at a new assignor, and inventing one would be worse than handing over.
-      toHandover(strings.assignor.handoverHeading, strings.assignor.handoverBody);
-      return;
-    }
-    setStep('particulars');
-  }, [choice, staffNames, toHandover]);
+  /**
+   * THE LIVE GATE BEHIND K-5's CONTINUE (Carl, 3 Sep 2026 live test). Recomputed
+   * on every change to the choice or the staff list, so the `GuardedButton` on
+   * `AssignorScreen` is disabled — with its reason — before anybody presses it,
+   * not only after (CLAUDE.md §6). `decideAssignor`, below, uses the same
+   * function for the "someone else" branch, so the two can never disagree about
+   * what counts as blocked.
+   */
+  const guard = useMemo(
+    () => evaluateAssignorGate({ choice, practiceStaffNames: staffNames, practiceName }),
+    [choice, staffNames, practiceName],
+  );
+
+  /**
+   * Step 3: who is signing. Takes the choice explicitly rather than reading
+   * `choice` from closure, so the self-assign shortcut below can advance on
+   * the SAME tap that sets `assignorIsPatient: true`, without waiting a
+   * render for state to catch up.
+   */
+  const advanceAssignor = useCallback(
+    (candidate: AssignorChoice) => {
+      const decision = decideAssignor({
+        choice: candidate,
+        practiceStaffNames: staffNames,
+        practiceName,
+        // Not on this device by design — the waiting row carries no date of
+        // birth, so the self-assign gate is the server's to make.
+        patientAgeYears: null,
+      });
+      // Defence in depth, not the primary gate: the button that calls this is
+      // already disabled while blocked, so `allowed` is false here only if
+      // this is ever wired up wrong — never as the patient's own experience.
+      if (!decision.allowed) return;
+      if (!candidate.assignorIsPatient) {
+        // Allowed, and still a desk job: nothing here can re-point the
+        // agreement at a new assignor, and inventing one would be worse than
+        // handing over.
+        toHandover(strings.assignor.handoverHeading, strings.assignor.handoverBody);
+        return;
+      }
+      setStep('particulars');
+    },
+    [staffNames, practiceName, toHandover],
+  );
+
+  const continueAssignor = useCallback(() => advanceAssignor(choice), [advanceAssignor, choice]);
 
   /** Step 4: lock, validate, render, hash — all server-side. */
   const runLock = useCallback(async () => {
@@ -393,13 +419,17 @@ export function Ceremony(): ReactNode {
           locationLine={locationLine}
           patientName={row?.patientName ?? ''}
           choice={choice}
-          refusal={refusal}
+          guard={guard}
           onChoose={(isPatient) => {
-            setRefusal(null);
-            setChoice((prev) => ({ ...prev, assignorIsPatient: isPatient }));
+            const next = { ...choice, assignorIsPatient: isPatient };
+            setChoice(next);
+            // Self-assign is never blocked from this device (see
+            // `advanceAssignor`), so the tap itself advances — fewest taps,
+            // no Continue needed for the common case. "Someone else" only
+            // reveals the form; it still has real gates to pass.
+            if (isPatient) advanceAssignor(next);
           }}
           onChangeOther={(patch) => {
-            setRefusal(null);
             setChoice((prev) => ({ ...prev, ...patch }));
           }}
           onContinue={continueAssignor}

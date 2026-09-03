@@ -8,12 +8,13 @@
  * still refuses; the identifier test hands the approved-set guard the excluded
  * name and proves it throws.
  */
-import { render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 import { APPROVED_IDENTIFIER_TYPES, MIN_AGE_ASSIGN_FOR_OTHER, MIN_AGE_SELF_ASSIGN } from '@aobplatform/domain';
 import { SignatureControl } from '../components/SignatureControl';
+import { AssignorScreen } from '../screens/AssignorScreen';
 import { evaluateSignatureGate, isSignable, type SignatureValidation } from './signature-gate';
 import { identifierFieldsFor } from './identifiers';
-import { decideAssignor, matchesPracticeStaff } from './assignor';
+import { decideAssignor, evaluateAssignorGate, matchesPracticeStaff } from './assignor';
 import { afterAttempt, firstAttempt, KIOSK_MAX_ATTEMPTS, mismatchMessage } from './verification';
 import { strings } from '../strings';
 
@@ -161,6 +162,8 @@ describe('verification failures are generic', () => {
   });
 });
 
+const PRACTICE_NAME = 'Sample Practice';
+
 describe('assignor rules', () => {
   it('practice_staff_hard_blocked_as_assignor', () => {
     const decision = decideAssignor({
@@ -171,14 +174,21 @@ describe('assignor rules', () => {
         otherDeclaredOfAge: true,
       },
       practiceStaffNames: ['Carl HILL', 'John Smith'],
+      practiceName: PRACTICE_NAME,
       patientAgeYears: null,
     });
     expect(decision.allowed).toBe(false);
     if (decision.allowed) throw new Error('unreachable');
-    // Neutral: it points at the desk and does not explain the rule.
-    expect(decision.message).toBe(strings.assignor.blockedBody);
+    // REVISED, Carl, 3 Sep 2026 live test (see assignor.ts's module doc). The
+    // block itself — the assertion above — is untouched; only the copy
+    // changed, from silent-and-neutral to naming the rule. It still never
+    // names WHICH name matched or how the match was made — that half of
+    // REQ-VUL-04 still holds.
+    expect(decision.message).toBe(strings.assignor.blockedBody(PRACTICE_NAME));
+    expect(decision.message).toContain(PRACTICE_NAME);
+    expect(decision.message.toLowerCase()).toContain('practice staff');
     expect(decision.message.toLowerCase()).not.toContain('req-vul');
-    expect(decision.message.toLowerCase()).not.toContain('staff list');
+    expect(decision.message.toLowerCase()).not.toContain('john smith');
     // Case and spacing must not walk through the block.
     expect(matchesPracticeStaff('  john   smith ', ['John Smith'])).toBe(true);
   });
@@ -186,6 +196,7 @@ describe('assignor rules', () => {
   it('assignor_for_another_must_be_of_full_age', () => {
     const base = {
       practiceStaffNames: [] as string[],
+      practiceName: PRACTICE_NAME,
       patientAgeYears: null,
     };
     const undeclared = decideAssignor({
@@ -217,12 +228,14 @@ describe('assignor rules', () => {
     const at14 = decideAssignor({
       choice: { ...EMPTY, assignorIsPatient: true },
       practiceStaffNames: [],
+      practiceName: PRACTICE_NAME,
       patientAgeYears: MIN_AGE_SELF_ASSIGN,
     });
     expect(at14.allowed).toBe(true);
     const below = decideAssignor({
       choice: { ...EMPTY, assignorIsPatient: true },
       practiceStaffNames: [],
+      practiceName: PRACTICE_NAME,
       patientAgeYears: MIN_AGE_SELF_ASSIGN - 1,
     });
     expect(below.allowed).toBe(false);
@@ -230,11 +243,86 @@ describe('assignor rules', () => {
     const deferred = decideAssignor({
       choice: { ...EMPTY, assignorIsPatient: true },
       practiceStaffNames: [],
+      practiceName: PRACTICE_NAME,
       patientAgeYears: null,
     });
     expect(deferred.allowed).toBe(true);
     if (!deferred.allowed) throw new Error('unreachable');
     expect(deferred.selfAssignAgeCheckedBy).toBe('server');
+  });
+
+  it('self_assign_tap_advances', async () => {
+    // K-5 (Carl, 3 Sep 2026 live test): tapping "I am signing for myself" must
+    // not require a separate Continue press for the common case. The DECISION
+    // side of that is already proved above — self-assign always defers to the
+    // server (`patient_14_may_self_assign`'s `deferred` case) and is never
+    // blocked by anything this device can check. This proves the SCREEN side
+    // of the contract: the self button fires the choice once, synchronously,
+    // with no Continue press anywhere in between — the ceremony (Ceremony.tsx)
+    // wires that single `onChoose(true)` straight into the same
+    // `decideAssignor` call Continue itself uses, which is what lets it
+    // advance on the tap.
+    const onChoose = jest.fn();
+    const onContinue = jest.fn();
+    const screen = await render(
+      <AssignorScreen
+        practiceName={PRACTICE_NAME}
+        locationLine={null}
+        patientName="Jamie Sampleton"
+        choice={EMPTY}
+        guard={evaluateAssignorGate({ choice: EMPTY, practiceStaffNames: [], practiceName: PRACTICE_NAME })}
+        onChoose={onChoose}
+        onChangeOther={jest.fn()}
+        onContinue={onContinue}
+        onSeeReception={jest.fn()}
+      />,
+    );
+    await fireEvent.press(screen.getByTestId('assignor-self'));
+    expect(onChoose).toHaveBeenCalledTimes(1);
+    expect(onChoose).toHaveBeenCalledWith(true);
+    // No Continue press was needed to convey the choice.
+    expect(onContinue).toHaveBeenCalledTimes(0);
+    await screen.unmount();
+  });
+
+  it('staff_assignor_block_disables_continue_with_reason', async () => {
+    // CLAUDE.md §6 — blocked states are unreachable, not merely inert. Before
+    // this fix Continue looked live and simply did nothing when pressed; now
+    // it is a `GuardedButton`, disabled with its reason, before anybody
+    // presses it.
+    const choice = {
+      assignorIsPatient: false,
+      otherName: 'Carl Hill',
+      otherRelationship: 'Friend',
+      otherDeclaredOfAge: true,
+    };
+    const guard = evaluateAssignorGate({
+      choice,
+      practiceStaffNames: ['Carl Hill'],
+      practiceName: PRACTICE_NAME,
+    });
+    const screen = await render(
+      <AssignorScreen
+        practiceName={PRACTICE_NAME}
+        locationLine={null}
+        patientName="Jamie Sampleton"
+        choice={choice}
+        guard={guard}
+        onChoose={jest.fn()}
+        onChangeOther={jest.fn()}
+        onContinue={jest.fn()}
+        onSeeReception={jest.fn()}
+      />,
+    );
+    const continueButton = screen.getByTestId('assignor-continue');
+    expect(continueButton.props.accessibilityState?.disabled).toBe(true);
+    // The same disabled-with-no-`onPress` primitive the signature gate uses.
+    expect(continueButton.props.onPress).toBeUndefined();
+    expect(String(continueButton.props.accessibilityLabel)).toMatch(/detail/i);
+    // The fuller explanation names the rule, not just "ask reception".
+    const explanation = screen.getByTestId('assignor-refusal');
+    expect(explanation.props.children).toBe(strings.assignor.blockedBody(PRACTICE_NAME));
+    await screen.unmount();
   });
 
   it('ui_never_asks_staff_to_assess_capacity', () => {

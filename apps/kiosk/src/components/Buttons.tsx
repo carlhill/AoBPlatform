@@ -48,37 +48,61 @@ export function PrimaryButton({
   );
 }
 
+/**
+ * `selected` is for a CHOICE among options — K-5's "who is signing" pair is
+ * the first user — not for a generic pressed/active state. Unselected and
+ * selected must never look the same: this fills the control and sets
+ * `accessibilityState.selected`, which react-native-web renders as
+ * `aria-selected` (Carl, 3 Sep 2026 live test — tapping "I am signing for
+ * myself" looked like it had done nothing, because nothing about the button
+ * changed).
+ */
 export function SecondaryButton({
   label,
   onPress,
   align = 'center',
+  selected = false,
   testID,
 }: {
   label: string;
   onPress: () => void;
   align?: 'center' | 'left';
+  selected?: boolean;
   testID?: string;
 }): ReactNode {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ selected }}
       testID={testID}
       onPress={onPress}
       style={({ pressed }) => [
         styles.base,
         styles.secondary,
+        selected ? styles.secondarySelected : null,
         styles.standardTarget,
         align === 'left' ? styles.alignLeft : null,
         pressed ? styles.pressed : null,
       ]}
     >
-      <Text style={[styles.label, styles.secondaryLabel, align === 'left' ? styles.labelLeft : null]}>
+      <Text
+        style={[
+          styles.label,
+          styles.secondaryLabel,
+          selected ? styles.secondaryLabelSelected : null,
+          align === 'left' ? styles.labelLeft : null,
+        ]}
+      >
+        {selected ? `${CHECK_MARK} ` : ''}
         {label}
       </Text>
     </Pressable>
   );
 }
+
+/** The same glyph `Checkbox` already uses for its ticked state — one mark, one meaning, across this device. */
+const CHECK_MARK = '✓';
 
 /**
  * The disabled-with-reason primitive.
@@ -142,6 +166,9 @@ const styles = StyleSheet.create({
   tallTarget: { minHeight: layout.primaryTarget },
   primary: { backgroundColor: colors.accent, borderColor: colors.accent700 },
   secondary: { backgroundColor: colors.surface, borderColor: colors.divider },
+  // Filled and accent-bordered, not a colour tint alone — the unmistakable
+  // state a choice control needs (Buttons.tsx doc comment, above).
+  secondarySelected: { backgroundColor: colors.accent100, borderColor: colors.accent, borderWidth: 2 },
   disabled: { backgroundColor: colors.neutral300, borderColor: colors.neutral400 },
   alignLeft: { alignItems: 'flex-start' },
   pressed: { opacity: 0.85 },
@@ -150,6 +177,7 @@ const styles = StyleSheet.create({
   labelLeft: { textAlign: 'left' },
   primaryLabel: { color: colors.white },
   secondaryLabel: { color: colors.ink },
+  secondaryLabelSelected: { color: colors.accent800, fontFamily: fonts.bodyBold },
   // Colour is never the sole carrier of state: the disabled label says what is
   // missing, in words, and the reasons are listed beneath it.
   disabledLabel: { color: colors.neutral800 },
