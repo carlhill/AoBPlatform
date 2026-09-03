@@ -901,6 +901,109 @@ rediscovered as a bug.
 - [ ] Nothing else needs touching: the label is composed from the agreement
       type carried on the row, never from a subject line.
 
+## Is that address a home, or a shopping centre?
+
+Carl, 3 Sep 2026, looking at the kiosk verification screen: "Need to be able to
+validate the address is correct and not the address of say shopping center or
+football stadium (checking for fraud)."
+
+Address is one of the six approved identifiers (REQ-VER-02), so a plausible-
+looking address that nobody lives at is a way to pass verification without
+being the patient. Today the field is compared as text and never questioned.
+
+- [ ] Decide what "valid" means here. Three different questions get bundled
+      together and they have different answers: is it a REAL address (exists in
+      a register), is it a RESIDENTIAL one (not a stadium, mall, airport or
+      PO box), and is it THIS PATIENT'S (matches what the PMS holds). The
+      third is the one verification actually asks; the first two are the fraud
+      signal Carl is describing.
+- [ ] **Decide before building: does a patient address leave the platform?**
+      Validating against a national address register means sending a patient's
+      home address to a third party, at the moment they are standing at a
+      kiosk. That is a privacy decision and an ADR, not an implementation
+      detail — CLAUDE.md requires asking before adding a runtime dependency
+      that reaches the network. An offline dataset avoids the question
+      entirely and may be the better answer.
+- [ ] A non-residential address is a FLAG, never a refusal. Plenty of people
+      legitimately give a workplace or a care address, and the platform never
+      blocks care (REQ-REC-04). It belongs in the risk signal beside the
+      agreement, for a human to weigh.
+- [ ] Never tell the patient WHICH detail looked wrong — the mismatch copy
+      stays generic (REQ-VER-04 keeps types and outcomes, never values).
+- [ ] Whatever is used gets a version recorded on the agreement, like every
+      other rule set and mapping (REQ-REG-03).
+
+## Walk-ins: the kiosk as the front door
+
+Carl, 3 Sep 2026. A patient with no appointment goes to the kiosk and enters
+name, date of birth, mobile, email and address, and ticks whether they have
+attended this practice before and how long ago. The kiosk then tells reception
+a new patient has arrived, and looks up whether they already have an active
+enduring agreement. Reception does the real checks in the PMS. If the patient
+is known and their enduring agreement is valid, nothing further is asked of
+them — reception simply queues them for the provider.
+
+That is a good shape: it uses the tablet to collect what only the patient
+knows, and leaves every judgement to a person.
+
+- [ ] Notify reception that somebody has arrived — via the PMS interface where
+      one exists, otherwise as an ordinary platform message.
+- [ ] Look up an active enduring agreement for this patient and provider.
+      Enduring is per practitioner x patient and GP-only (REQ-END-01/-01a), so
+      the answer is per provider and not per practice.
+- [ ] The patient is never told the answer. "You already have an agreement"
+      confirms to a stranger that a named person attends this practice.
+      Reception reads it; the kiosk says only that someone will be with them.
+- [ ] Nothing here may gate being seen (REQ-REC-04). A walk-in who enters
+      nothing at all still gets care.
+
+### One part of this cannot be built as written
+
+- [ ] **The Medicare card number and IRN, "only for validation, not stored".**
+      This conflicts with hard rule 1, which CLAUDE.md calls "the single most
+      likely design mistake in this product": the Medicare card number is NOT
+      an identity identifier, the approved set is name, date of birth, gender,
+      address, patient record number and IHI, and **the exclusion is
+      non-configurable** (REQ-VER-02). Not storing it does not resolve this --
+      the rule is about what may be USED to establish identity, not about what
+      is retained. An ESLint rule fails the build on the field name, and there
+      is a test named `medicare_number_rejected_as_identifier`.
+      **Carl to resolve before anyone builds it.** The distinction that may
+      rescue the idea: using the card to check MEDICARE ELIGIBILITY is a
+      different act from using it to verify WHO SOMEBODY IS, and the
+      requirement may only prohibit the second. That reading needs to come
+      from the requirements or from Services Australia, not from us.
+
+## Where this product could go: v2 and v3
+
+Carl, 3 Sep 2026: "Version two of AoBPlatform could morph from just a
+compliance and governance tool to also a Practice-AoB-Management-Tool and
+Version 3 could also add on features to make it a practice Front-Office,
+including scheduling. If we do all this, then we can do a whole lot more
+automation."
+
+Recorded as direction, not scope. Nothing here is committed and none of it is
+in the April 2027 GA.
+
+- **v1, now.** Capture, verify, validate, store and prove consent, and write
+  the evidence back. Deliberately narrow, because the statutory exposure is
+  narrow and the deadline is real.
+- **v2, practice AoB management.** The queue, chase and reconciliation
+  surfaces already lean this way -- the practice is doing work in our screens
+  because it does not get paid otherwise. Making that the product rather than
+  a side effect is a small step from here.
+- **v3, front office including scheduling.** A much larger step: it puts us in
+  the path of the appointment book, which is where the PMS lives. Worth noting
+  what it changes -- today an outage slows evidence and never service
+  (REQ-REC-04). Own the schedule and an outage stops the practice. That is a
+  different risk posture and a different support obligation, and it should be
+  decided with eyes open rather than arrived at feature by feature.
+- **The automation argument is the real prize** and is worth testing early:
+  each step upstream means fewer things the platform has to ask a human to
+  confirm.
+- Out of scope for all of this, and permanently: clinical features of any kind
+  (CLAUDE.md section 8).
+
 ## The message copy itself, in every channel
 
 Carl, 3 Sep 2026, looking at the correspondence log: "The email and SMS content
