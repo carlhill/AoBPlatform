@@ -1243,11 +1243,34 @@ deployment) rather than adding it.
       (vector + raster, REQ-SIG-02 unchanged). Route: `/kiosk`, public
       audience, device-paired, no Keycloak session. Zero-footprint rule
       applies: no service worker, no storage but the pairing credential.
-- [ ] The port: `apps/web/app/kiosk/*`, behaviour parity with the Expo build
-      as of its last commit (exit on every screen, self-tap advances, "your"
-      copy, disabled-with-reason Continue, single-line address, family + given
-      + DOB pickers), all 28+ kiosk tests re-homed under Vitest, Playwright
-      for the ceremony. Then delete `apps/kiosk` and its CI job.
+- [x] The port landed 3 Sep 2026: `apps/web/app/kiosk/*` at `/kiosk`, Expo
+      retired (`d3dec8c`, `0b58dca`, `53ec007`). Vitest 29 (every hard-rule
+      test name kept) + Playwright 3. Morgan Placeholder signed end to end on
+      it the same evening. Root ESLint rule bans localStorage / sessionStorage
+      / indexedDB / serviceWorker / document.cookie under `app/kiosk/**`;
+      `kiosk_persists_nothing_but_pairing`; `PERSISTABLE_KEYS` is the empty
+      allow-list device pairing will use. apps/web runs Vitest, not Jest
+      (CONVENTIONS section 9).
+- [ ] **Amend aob-tech-stack.md** section 1 "React Native (Expo)" row and
+      section 2 "Tablet/kiosk app" -- still say Expo.
+- [ ] **URGENT before any real device: `/kiosk` is public and scoped by
+      `NEXT_PUBLIC_KIOSK_PRACTICE_ID`.** Anyone who reaches the URL sees the
+      practice's waiting list -- patient names. Acceptable on a dev machine
+      only. Device pairing (the one persisted credential) is what gates it;
+      until then the route must not be deployed anywhere reachable.
+- [ ] **REQ-SIG-02 gap, pre-existing: the drawn signature is not stored.** The
+      pad captures vector + raster; `SignDto` takes a method, a channel and a
+      capture request and no payload, so the stroke is discarded. Without it
+      the "drawn signature" is a tap-to-approve in disguise. Contract change
+      in apps/core: accept vector + PNG, store as a vault artefact, bind its
+      hash into the signature event.
+- [ ] `relationshipsVersion` rides the vault event, not a column; if it is
+      ever needed as current state it wants a migration on Assignor.
+- [ ] **Decide: is "someone else" on the tablet dead code?** Who signs (D7) is
+      a particular and is locked with the rest. In the push model reception
+      locks before the tablet sees anything, so the tablet can never re-point.
+      If the push model is the product, remove the tablet-side re-point and
+      make "someone else" a hand-over; keep the server endpoint for the desk.
 
 ## Nothing on the patient surface is ever staff entry
 
