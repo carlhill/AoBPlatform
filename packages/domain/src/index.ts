@@ -47,3 +47,5 @@ export * from './correspondence-log';
 export * from './kiosk';
 export * from './chase-attempt';
 export * from './assignor';
+export * from './assignor-relationships';
+export * from './service-descriptions';
