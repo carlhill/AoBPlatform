@@ -347,7 +347,8 @@ export function ReconciliationView() {
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
-                        isOpen ? setOpenId(null) : void openDetail(item.serviceRecordId);
+                        if (isOpen) setOpenId(null);
+                        else void openDetail(item.serviceRecordId);
                       }
                     }}
                     data-testid={`reconciliation-row-${item.serviceRecordId}`}

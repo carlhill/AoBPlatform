@@ -67,6 +67,7 @@ const PARENTS: Readonly<Record<string, string>> = {
   '/review': '/practice',
   '/practice/reviews': '/practice',
   '/practice/queue': '/practice',
+  '/practice/reconciliation': '/practice',
   '/platform/acting-as': '/practice',
   '/practice/reports': '/practice',
 
