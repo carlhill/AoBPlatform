@@ -123,7 +123,7 @@ export function MessageLog({
                 <span className={styles.channel}>{entry.channel ?? '—'}</span>
                 <span className={styles.when}>{when(entry.at)}</span>
                 {/* The state is a WORD. Colour is secondary, never the carrier. */}
-                <span>
+                <span className={styles.delivery}>
                   <Chip tone={STATE_TONE[entry.state] ?? 'neutral'}>
                     {strings.correspondence.states[entry.state] ?? entry.state}
                     {entry.failureReason ? ` · ${entry.failureReason}` : ''}

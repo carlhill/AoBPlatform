@@ -13,7 +13,9 @@
 .head,
 .rowMain {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) 7rem 9rem 11rem auto;
+  /* Delivery may carry a failure reason of any length, so it GROWS rather than
+     spilling over the column beside it. */
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) 7rem 9rem minmax(11rem, 1.1fr) auto;
   align-items: center;
   gap: var(--s3);
 }
@@ -21,7 +23,7 @@
 /* The patient's own list drops the "who" column — it is all theirs. */
 .headAnonymous,
 .rowAnonymous {
-  grid-template-columns: minmax(0, 1.6fr) 7rem 9rem 11rem auto;
+  grid-template-columns: minmax(0, 1.6fr) 7rem 9rem minmax(11rem, 1.1fr) auto;
 }
 
 .head {
@@ -77,8 +79,29 @@
 }
 
 .action {
+  /* STACKED, not side by side. An 89AA row carries "nothing is asked of the
+     patient" beneath its link; in a row they overlapped each other. */
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  text-align: right;
+}
+
+/* The state, and whatever the transport said when it failed. The chip wraps
+   inside its own column instead of running into the action beside it. */
+.delivery {
+  min-width: 0;
+}
+
+.delivery > * {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+  height: auto;
 }
 
 /* "What we sent" — the exact text, beneath the row it belongs to. */
