@@ -28,6 +28,7 @@ import type { Prisma } from '@prisma/client';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { Actor } from '../auth/actor.decorator';
+import { CorrespondenceService } from '../correspondence/correspondence.service';
 
 /**
  * The outbound queue.
@@ -47,7 +48,10 @@ import type { Actor } from '../auth/actor.decorator';
 export class OutboundService {
   private readonly logger = new Logger(OutboundService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly correspondence: CorrespondenceService,
+  ) {}
 
   /**
    * Queue something to leave the platform.
@@ -114,7 +118,7 @@ export class OutboundService {
      * already queued must not be reset, rescheduled or have its attempt count
      * cleared by a duplicate enqueue.
      */
-    return tx.outboundItem.upsert({
+    const item = await tx.outboundItem.upsert({
       where: { practiceId_idempotencyKey: { practiceId: input.practiceId, idempotencyKey: key } },
       create: {
         practiceId: input.practiceId,
@@ -134,6 +138,17 @@ export class OutboundService {
       },
       update: {},
     });
+
+    /*
+     * THE EVIDENCE TWIN, in the same transaction (CONSULTATION-CAPTURE-PLAN.md
+     * Part 4). This table is transport and is pruned at thirty days; the
+     * correspondence row is what a practice, a doctor or a patient is shown
+     * for the retention period. Same transaction, so there is never a message
+     * that left without a record or a record of one that never left.
+     * Idempotent on the item id, so a retried enqueue is still one row.
+     */
+    await this.correspondence.recordForOutbound(tx, item);
+    return item;
   }
 
   /**
@@ -180,19 +195,22 @@ export class OutboundService {
 
   /** It went. Records when, and the provider's reference if there was one. */
   async markSent(practiceId: string, id: string, providerRef?: string) {
-    return this.prisma.withPractice(practiceId, (tx) =>
-      tx.outboundItem.update({
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const at = new Date();
+      const updated = await tx.outboundItem.update({
         where: { id },
         data: {
           state: 'sent',
-          sentAt: new Date(),
+          sentAt: at,
           providerRef: providerRef ?? null,
           leasedBy: null,
           leaseExpiresAt: null,
           lastError: null,
         },
-      }),
-    );
+      });
+      await this.correspondence.markSent(tx, id, at);
+      return updated;
+    });
   }
 
   /**
@@ -219,6 +237,7 @@ export class OutboundService {
           leaseExpiresAt: null,
         },
       });
+      await this.correspondence.markFailed(tx, id, error, outcome.exhausted);
 
       if (outcome.exhausted) {
         /*

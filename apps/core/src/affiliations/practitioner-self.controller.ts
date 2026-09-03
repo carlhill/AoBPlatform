@@ -238,9 +238,17 @@ export class PractitionerSelfController {
   async messages(@SessionActor() actor: Actor | undefined) {
     const practitionerId = this.practitionerIdOf(actor);
 
+    /*
+     * FROM CORRESPONDENCE, NOT THE QUEUE. `outbound_items` is transport and
+     * is pruned at thirty days; a practitioner reading it would watch their
+     * own history vanish. The correspondence table is the evidence twin,
+     * kept for the retention period, backfilled from the queue when it was
+     * introduced so nothing that was visible before is missing now. Same
+     * columns, so the screen did not change (CONSULTATION-CAPTURE-PLAN.md §4.1).
+     */
     const rows = await this.prisma.$queryRaw<
       Array<Record<string, unknown>>
-    >`SELECT * FROM core.practitioner_message_detail(${practitionerId}::uuid, 100)`;
+    >`SELECT * FROM core.practitioner_correspondence_detail(${practitionerId}::uuid, 100)`;
 
     return {
       messages: rows.map((r) => ({

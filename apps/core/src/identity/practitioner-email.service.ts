@@ -16,6 +16,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ReviewTasksService } from '../review-tasks/review-tasks.service';
 import { MESSAGING_GATEWAY, type MessagingGateway } from '../messaging/gateway';
 import { EmailComposer } from '../messaging/composer.service';
+import { CorrespondenceService } from '../correspondence/correspondence.service';
 
 /** The subject of a change, as resolved from a token before any scope exists. */
 export type ResolvedChange = {
@@ -78,6 +79,7 @@ export class PractitionerEmailService {
     @Inject(MESSAGING_GATEWAY) private readonly messaging: MessagingGateway,
     private readonly composer: EmailComposer,
     private readonly reviewTasks: ReviewTasksService,
+    private readonly correspondence: CorrespondenceService,
   ) {}
 
   private consoleUrl(): string {
@@ -135,8 +137,8 @@ export class PractitionerEmailService {
   ): Promise<void> {
     const now = new Date();
     await this.prisma
-      .withPractitioner(practitionerId, (tx) =>
-        tx.outboundItem.create({
+      .withPractitioner(practitionerId, async (tx) => {
+        const item = await tx.outboundItem.create({
           data: {
             practiceId: null,
             channel: 'email',
@@ -151,8 +153,11 @@ export class PractitionerEmailService {
             sentAt: now,
             idempotencyKey: `practitioner-personal:${practitionerId}:${now.toISOString()}:${input.to}`,
           },
-        }),
-      )
+        });
+        // The evidence twin, under the same practitioner scope — the
+        // practitioner_own_correspondence policy is what admits it.
+        await this.correspondence.recordForOutbound(tx, item);
+      })
       .catch(() =>
         this.logger.error(`Could not record a personal outbound message for practitioner ${practitionerId}.`),
       );

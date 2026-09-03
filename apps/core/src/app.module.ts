@@ -20,6 +20,7 @@ import { PmsModule } from './pms/pms.module';
 import { AutoCaptureModule } from './auto-capture/auto-capture.module';
 import { InboundModule } from './inbound/inbound.module';
 import { AgreeModule } from './agree/agree.module';
+import { CorrespondenceModule } from './correspondence/correspondence.module';
 import { ReconciliationModule } from './reconciliation/reconciliation.module';
 import { EnduringModule } from './enduring/enduring.module';
 import { NoticesModule } from './notices/notices.module';
@@ -42,6 +43,7 @@ import { ArtefactsModule } from './artefacts/artefacts.module';
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
     PrismaModule,
+    CorrespondenceModule,
     MessagingModule,
     AuthModule,
     OutboundModule,

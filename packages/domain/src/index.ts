@@ -41,3 +41,4 @@ export * from './outbound-queue';
 export * from './acting-as';
 export * from './review-tasks';
 export * from './inbound-lanes';
+export * from './retention';

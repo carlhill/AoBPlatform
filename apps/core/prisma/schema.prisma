@@ -1659,6 +1659,83 @@ model InboundPrintJob {
 }
 
 /**
+ * What was sent, as EVIDENCE — CONSULTATION-CAPTURE-PLAN.md Part 4.
+ *
+ * Two stores existed and neither fits. `outbound_items` is transport: it
+ * answers "did it leave, is it stuck" and is pruned after thirty days, so a
+ * patient or practitioner looking at it would watch their own history vanish.
+ * `Notice` is durable but is specifically the reg 89AA notice, with its claim
+ * reference and 24-hour clock. The pending-email confirmations, the acting-as
+ * notices, the invitations, the capture links — none is a Notice, and all of
+ * them are what a practice, a doctor and a patient must be able to see for
+ * the retention period.
+ *
+ * So: the evidence twin of every transport row, written in the same
+ * transaction as the send, kept for `retentionExpiryDate`, and — when that
+ * day comes — TOMBSTONED, not deleted: the text goes, the fact that a message
+ * was sent, to whom, about what, stays (`contentRemovedAt`). `legalHold` wins.
+ *
+ * NOT a rewrite of Notice: the 89AA notice keeps its statutory shape and also
+ * writes a row here, so one screen can show everything.
+ */
+model Correspondence {
+  id String @id @default(uuid()) @db.Uuid
+
+  /**
+   * NULL for exactly one shape, the same one as outbound_items: a message
+   * about a practitioner's own identity, addressed to them, with no practice
+   * to anchor it to. The CHECK constraint enforces that this is the only case.
+   */
+  practiceId String? @db.Uuid
+
+  /// practice | practitioner | patient | assignor — who it was for.
+  recipientType String?
+  /// The PERSON, never only the address, so a changed address does not orphan history.
+  recipientId   String? @db.Uuid
+  recipientName String?
+  /// The address at the time. NULL for a kiosk (`device`) item, which is addressed to a screen.
+  to String?
+
+  channel   String
+  mediaType String @default("email")
+
+  subject  String?
+  bodyText String?
+  bodyHtml String?
+  /// Who composed it: aobplatform | keycloak | a named person at the practice.
+  sentBy String?
+
+  /// What it was about — Agreement, CaptureRequest, PendingEmailChange, ActingAsSession, Notice, Practitioner …
+  subjectType String
+  subjectId   String @db.Uuid
+
+  /// The transport row it mirrors, while that row still exists. Unique: one evidence row per send.
+  outboundItemId String? @unique @db.Uuid
+  /// The 89AA notice it mirrors. Unique for the same reason.
+  noticeId String? @unique @db.Uuid
+
+  /// queued | sent | delivered | failed | dead — a projection of the transport's states, kept after the transport is pruned.
+  state         String    @default("queued")
+  queuedAt      DateTime  @default(now())
+  sentAt        DateTime?
+  deliveredAt   DateTime?
+  failedAt      DateTime?
+  failureReason String?
+
+  // --- Part 5: retention, soft ---
+  retentionExpiryDate DateTime? @db.Date
+  legalHold           Boolean   @default(false)
+  /// Set by the retention sweep when the text was removed. The row stays.
+  contentRemovedAt DateTime?
+
+  @@index([practiceId, queuedAt])
+  @@index([recipientType, recipientId, queuedAt])
+  @@index([subjectType, subjectId])
+  @@index([retentionExpiryDate])
+  @@map("correspondence")
+}
+
+/**
  * A platform operator acting as a practice.
  *
  * NO RLS, deliberately — the one table where that is correct. A session
