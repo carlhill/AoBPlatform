@@ -323,6 +323,16 @@ export function hasSignedInBefore(): string | null {
  * ONE ATTEMPT PER PAGE LOAD, tracked in sessionStorage. Without that, a
  * `login_required` answer would send us round the same loop for ever.
  */
+/**
+ * How long to keep believing a silent-login redirect is on its way.
+ *
+ * Long enough that a redirect which IS coming is never pre-empted by a flash of
+ * the sign-in prompt, short enough that a person facing a page which renders
+ * nothing is not left reading it. A same-machine Keycloak answers in tens of
+ * milliseconds.
+ */
+const SILENT_REDIRECT_GRACE_MS = 5000;
+
 export async function attemptSilentLogin(clientId: string = CLIENT_ID): Promise<boolean> {
   if (currentSession()) return false;
   // NOT gated on the hint. The hint is only written by a NEW sign-in, so
@@ -352,7 +362,31 @@ export async function attemptSilentLogin(clientId: string = CLIENT_ID): Promise<
     prompt: 'none',
   });
   window.location.assign(`${ISSUER}/protocol/openid-connect/auth?${params.toString()}`);
-  return true;
+
+  /*
+   * A REDIRECT THAT NEVER LANDS MUST NOT STRAND THE CALLER.
+   *
+   * `assign` does not navigate synchronously, and it has no way to report that
+   * the navigation never happened. Returning `true` unconditionally therefore
+   * told every caller "stop waiting, you are about to be torn down" on the
+   * strength of a request that may go nowhere. Both callers respond by
+   * rendering NOTHING until the teardown arrives, so a redirect that does not
+   * land is a permanently blank page — the exact failure the sign-out path
+   * below was already fixed to prevent, reached by a different route.
+   *
+   * The reachable cause is an origin Keycloak does not know. The client
+   * registers `localhost` only, so the same app opened on `127.0.0.1` asks for
+   * a `redirect_uri` that is not registered, Keycloak refuses to come back,
+   * and the browser simply stays where it is.
+   *
+   * So the claim is now bounded: if this page is still here after the grace
+   * period, the navigation is not coming and `false` sends the caller down its
+   * ordinary no-session path. When the redirect DOES land, this promise dies
+   * with the document and nothing is painted.
+   */
+  return new Promise<boolean>((resolve) => {
+    window.setTimeout(() => resolve(false), SILENT_REDIRECT_GRACE_MS);
+  });
 }
 
 /**
