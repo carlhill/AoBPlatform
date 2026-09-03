@@ -229,7 +229,14 @@ function VerifyForm({
       */}
       {fields.map((field, index) => (
         <div key={field.type} className={styles.group}>
-          <span className={styles.groupLabel}>{field.label}</span>
+          {/*
+            THE GROUP HEADING EXISTS TO NAME A SET OF SUB-FIELDS, and only the
+            two composite identifiers have any (Carl, 3 Sep 2026 live test).
+            "Your full name" over Given/Family and "Date of birth" over
+            Day/Month/Year are doing work. Over the address, which is one box,
+            the same heading was simply the field's own label printed twice.
+          */}
+          {isStructured(field.type) ? <span className={styles.groupLabel}>{field.label}</span> : null}
           <div className={styles.row}>
             {field.type === 'name' ? (
               <>
@@ -290,9 +297,20 @@ function VerifyForm({
               squeezed into half a column.
             */}
             {isStructured(field.type) ? null : (
+              /*
+                ONE LABEL AND ONE PLACEHOLDER, NEVER THE SAME WORDS TWICE
+                (Carl, 3 Sep 2026 live test). The address was carrying "Your
+                home address" as a heading AND as its label, and "Street,
+                suburb and postcode" as a placeholder AND as a hint line under
+                the box. Four pieces of chrome for one input, on a screen read
+                standing up by somebody who may be unwell. The hint is passed
+                as the PLACEHOLDER only — `Field` renders a hint line as well
+                when it is given one, which is right for a sentence of guidance
+                and wrong for three words that are already inside the box.
+              */
               <Field
                 label={field.label}
-                hint={field.hint}
+                placeholder={field.hint}
                 value={stated[field.type] ?? ''}
                 onChangeText={(next) => onChange(field.type, next)}
                 testId={`identifier-${field.type}`}
