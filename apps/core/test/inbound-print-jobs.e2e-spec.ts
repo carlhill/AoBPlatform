@@ -152,6 +152,9 @@ describe('inbound print jobs (e2e, real Postgres)', () => {
       // A Medicare number has no field to land in. `whitelist: true` strips it at the door.
       const smuggled = await post({
         ...base('invoice', 'inv-smuggle'),
+        // The ONE legitimate use: the test that proves the field is stripped has to
+        // name it. The assertions below are what make naming it safe.
+        // eslint-disable-next-line no-restricted-syntax
         patients: [{ ...adult, pmsLinkageKey: 'pj-pat-smuggle', medicareNumber: '2123 45670 1' }],
         providers: [provider],
         invoices: [{ pmsInvoiceKey: 'pj-inv-smuggle', patientLinkageKey: 'pj-pat-smuggle', providerLinkageKey: provider.pmsProviderKey, serviceDate: daysAgo(2), mbsItemNumbers: ['23'] }],

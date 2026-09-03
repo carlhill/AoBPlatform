@@ -226,7 +226,7 @@ describe('what a practice sees when the practitioner already exists', () => {
   });
 
   it('says NOTHING about where else they work, or how to reach them', () => {
-    const entry = toDirectoryEntry(record) as Record<string, unknown>;
+    const entry = toDirectoryEntry(record) as unknown as Record<string, unknown>;
     // The email is the practitioner's own and is how an invitation reaches
     // them. A practice that could read it could invite somebody without ever
     // being given their address.
