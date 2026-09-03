@@ -136,6 +136,25 @@ benefit amount is allowed to appear. The signed copies carry none.
 
   The first was hiding the second: the run died at typecheck, so lint, the
   realm guard, the tests and the e2e suite had **never executed at all**.
+
+  **CI IS STILL RED, on a third fault, and it is the honest kind.** With the
+  connection fixed, `reporting-isolation` now reaches its own guard and fails
+  there: *"has two practices with messages, or this test proves nothing"*. The
+  suite READS whatever is already in the database and picks the two busiest
+  practices. That works on your machine, which has hundreds of messages, and
+  cannot work on a fresh CI database, which has none — so the ids come back
+  empty and every query after them fails.
+
+  The guard is deliberate and the comment above it says why: every assertion in
+  the suite is "X cannot see Y", and all of them pass trivially against an
+  empty database. A green suite that proved nothing would be worse than a red
+  one. **So do not make this pass by relaxing the guard.** The suite needs to
+  create its own two practices with messages, and two practitioners, before it
+  asserts anything. That is real work on a security test and was not something
+  to rush in the last minutes before a reboot.
+
+  Everything before e2e is green: build, lint, typecheck, the realm guard and
+  the unit tests all pass now, and they had not run in a long time.
 - **Reconciliation had no back link** (`1fe25d2`) — missing from the parent
   map, the third map that page has been missed in. Also fixed a lint error in
   its keyboard handler that was blocking the whole web lint run.
@@ -187,7 +206,10 @@ hazard this file has been bitten by twice, but it fixed nothing you saw.
 
 ## Next
 
-Consultation-capture plan Part 7 **item 7: the kiosk MVP** — list, verify,
+**First, CI.** Give `reporting-isolation` its own fixtures so it stops
+depending on a populated database — see above, and do not weaken its guard.
+
+Then consultation-capture plan Part 7 **item 7: the kiosk MVP** — list, verify,
 render, sign, done, episodic pre-consultation only, with a fast poll while
 waiting. It depends on items 2 and 3, both built, and on the token-set decision
 above.
