@@ -15,6 +15,7 @@ import { AgreementsModule } from './agreements/agreements.module';
 import { DevSeedModule } from './dev-seed/dev-seed.module';
 import { VerificationModule } from './verification/verification.module';
 import { CaptureModule } from './capture/capture.module';
+import { KioskModule } from './kiosk/kiosk.module';
 import { PracticesModule } from './practices/practices.module';
 import { PmsModule } from './pms/pms.module';
 import { AutoCaptureModule } from './auto-capture/auto-capture.module';
@@ -55,6 +56,7 @@ import { RetentionModule } from './retention/retention.module';
     AgreementsModule,
     VerificationModule,
     CaptureModule,
+    KioskModule,
     PracticesModule,
     OrganisationsModule,
     AffiliationsModule,
