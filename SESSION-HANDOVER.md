@@ -1,7 +1,8 @@
 # Session handover — 3 September 2026, 14:42
 
-Written before a reboot. Everything below is either pushed or named as
-unfinished. Branch `feat/apply-ui`, last commit `a553115`, in sync with origin.
+Written before a reboot. Everything today is committed AND pushed; nothing is
+left in the working tree but your own `carls_notes_1.txt`. Branch
+`feat/apply-ui`, in sync with origin.
 
 Pull request: <https://github.com/carlhill/AoBPlatform/pull/1> — 152 commits
 into `main`, which holds nothing that is not on the branch, so it is a clean
@@ -46,7 +47,7 @@ around.
 |---|---|---|
 | 1 | Retention sweep (consultation-capture plan, Part 5) | Built, 8/8 e2e, pushed |
 | 2 | Correspondence log — practice screen and patient half | Built, pushed |
-| 3 | Correspondence seed data | **In progress, uncommitted** |
+| 3 | Correspondence seed data | Built, verified, pushed |
 
 ### Retention sweep — `53c3694`
 
@@ -86,40 +87,55 @@ and retention 18/18.
 
 ---
 
-## Unfinished, and the only thing at risk
+## The correspondence seed — `c3bb7fe`
 
-`apps/core/src/dev-seed/dev-seed.controller.ts` is **modified and
-uncommitted**. A background agent was building a dev-only seed that creates
-representative correspondence for practice `821709fb-7f89-4fcf-95c0-27c5eb55cec8`
-(XLEVELUP Medical), covering a capture link, a run of reminders on one subject
-so the attempt ordinal shows, a signed copy, an 89AA notice, a failed send, a
-postal item queued for print, and one message whose text retention has removed.
+Dev-only `POST /dev/seed-correspondence`, guarded like the existing seed. Takes
+the practice from `x-practice-id`, never creates one. Ids derive from the
+practice id, so re-running rewrites the same rows rather than piling up.
 
-**The agent dies with the reboot. The file edit survives on disk.** Pick it up
-by reading that file and finishing it, or discard it with
-`git checkout apps/core/src/dev-seed/dev-seed.controller.ts` and start again.
+Seed your practice, then open the screen:
 
-### Why the seed is needed
+```bash
+curl -X POST -H "x-practice-id: 821709fb-7f89-4fcf-95c0-27c5eb55cec8" http://localhost:3001/dev/seed-correspondence
+```
 
-The screen is fully wired — page, view, menu entry, page-access declaration,
-back link — and the endpoint returns rows. But the practice's 21 existing
-messages are all administrative notices, so every filter segment (capture,
-reminders, copies, 89AA, failed) and every delivery state renders empty. The
-screen works and shows nothing about itself.
+Nine messages plus one suppressed visit: a capture link, reminders two and
+three on the same subject so the attempt ordinal shows, two signed copies, an
+89AA notice, a failed send, a dead one, and a postal item still queued. One
+copy has had its text removed by retention, so the screen shows that the
+content is gone rather than a blank. Every filter segment now has something in
+it: capture 3, reminders 4, copies 2, notice 1, failed 2.
 
-`carls_notes_1.txt` is also modified — that is your own file, untouched by me.
+**A constraint it found and honoured.** The database enforces
+`correspondence_mirrors_a_send` — a correspondence row must point at an
+outbound item or a notice. The seed therefore writes the real original first
+rather than bypassing the check. Transport rows are parked far in the future so
+the outbound worker cannot retry a fixture and rewrite its state while you are
+looking at it. The postal row uses the `paper` channel, which no worker claims.
+
+The 89AA notice is the one row carrying a dollar amount, which is where a
+benefit amount is allowed to appear. The signed copies carry none.
+
+`carls_notes_1.txt` is modified — that is your own file, untouched by me.
 
 ---
 
 ## Fixed along the way
 
-- **CI was red and had been.** `a553115`. Lint and typecheck ran *before* the
-  packages they import were built, so every web file importing
-  `@aobplatform/domain` failed with TS2307 on a clean checkout. It passed
-  locally only because of a stale `dist`. The run died at typecheck, so lint,
-  the realm guard, the tests and the e2e suite **never executed at all**.
-  `build:packages` now runs first. **Confirm this run is green** — it had not
-  finished when this was written.
+- **CI was red, and had been, for two separate reasons.** Both fixed.
+  1. `a553115` — lint and typecheck ran *before* the packages they import were
+     built, so every web file importing `@aobplatform/domain` failed with
+     TS2307 on a clean checkout. It passed locally only because of a stale
+     `dist`. `build:packages` now runs first.
+  2. `94d00b0` — with the run finally reaching the end, the reporting-tenancy
+     suite failed on every test with "No such container:
+     aobplatform-postgres". Locally Postgres *is* that container; in CI it is a
+     service with no such name. It now connects over TCP under CI and keeps the
+     `docker exec` path everywhere else. 14/14 locally; what it asserts is
+     unchanged.
+
+  The first was hiding the second: the run died at typecheck, so lint, the
+  realm guard, the tests and the e2e suite had **never executed at all**.
 - **Reconciliation had no back link** (`1fe25d2`) — missing from the parent
   map, the third map that page has been missed in. Also fixed a lint error in
   its keyboard handler that was blocking the whole web lint run.
