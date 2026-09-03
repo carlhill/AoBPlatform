@@ -27,26 +27,34 @@ import { execFileSync } from 'node:child_process';
  * and a test that could not connect as that role would be testing nothing.
  */
 
+/*
+ * TWO WAYS IN, because the database is not reached the same way in both places.
+ *
+ * Locally it is a container and `docker exec` needs no psql on the host. In CI
+ * it is a SERVICE: there is no container called `aobplatform-postgres` to exec
+ * into, and every test here failed with "No such container" -- invisibly, for
+ * as long as the run was dying at typecheck before it ever got this far.
+ *
+ * The runner does have psql (the workflow initialises the schemas with it) and
+ * both environments publish the same host port, so CI connects over TCP. What
+ * is asserted does not change: the point is still to connect AS A DIFFERENT
+ * ROLE, which is why this goes through psql rather than Prisma at all.
+ */
+const PG_ARGS = ['psql', '-U', '{role}', '-d', 'aobplatform', '-A', '-t', '-c', '{sql}'];
+
+function psqlArgv(role: string, sql: string): { cmd: string; args: string[] } {
+  const base = PG_ARGS.map((a) => a.replace('{role}', role).replace('{sql}', sql));
+  if (process.env.CI) return { cmd: base[0], args: ['-h', 'localhost', '-p', '21020', ...base.slice(1)] };
+  return { cmd: 'docker', args: ['exec', '-e', `PGPASSWORD=${role}`, 'aobplatform-postgres', ...base] };
+}
+
 function psql(role: string, sql: string): string {
-  return execFileSync(
-    'docker',
-    [
-      'exec',
-      '-e',
-      `PGPASSWORD=${role}`,
-      'aobplatform-postgres',
-      'psql',
-      '-U',
-      role,
-      '-d',
-      'aobplatform',
-      '-A',
-      '-t',
-      '-c',
-      sql,
-    ],
-    { encoding: 'utf8', timeout: 30_000 },
-  )
+  const { cmd, args } = psqlArgv(role, sql);
+  return execFileSync(cmd, args, {
+    encoding: 'utf8',
+    timeout: 30_000,
+    env: { ...process.env, PGPASSWORD: role },
+  })
     .trim()
     /*
      * The LAST line, because `SET app.practice_id=...` prints "SET" of its own
