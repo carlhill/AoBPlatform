@@ -1,13 +1,39 @@
 {
   "name": "@aobplatform/kiosk",
   "version": "0.1.0",
-  "description": "In-practice tablet/kiosk app (C2) — Expo/React Native, offline-first encrypted local queue, kiosk lockdown, vector+raster signature capture. NOT a patient mobile app (there is none, deliberately). Expo scaffold to be generated with create-expo-app during Phase 1 — placeholder workspace until then.",
+  "description": "In-practice tablet/kiosk app (C2) — Expo/React Native. The waiting-room ceremony: list, verify, who is signing, locked particulars, sign, done. episodic_pre only. NOT a patient mobile app (there is none, deliberately).",
   "private": true,
   "license": "UNLICENSED",
+  "main": "index.ts",
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "start": "expo start",
+    "web": "expo start --web",
+    "export:web": "expo export --platform web",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "lint": "node check-strings.mjs && eslint src App.tsx --max-warnings=0",
+    "typecheck": "tsc --noEmit",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@aobplatform/domain": "*",
+    "@expo-google-fonts/barlow": "^0.4.1",
+    "@expo-google-fonts/barlow-condensed": "^0.4.1",
+    "@expo/metro-runtime": "~57.0.15",
+    "expo": "~57.0.19",
+    "expo-font": "~57.0.3",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-web": "~0.21.2"
   },
   "devDependencies": {
-    "typescript": "^5.6.3"
+    "@testing-library/react-native": "^14.0.1",
+    "@types/jest": "^29.5.14",
+    "@types/react": "~19.2.2",
+    "jest": "^29.7.0",
+    "jest-expo": "^57.0.5",
+    "typescript": "~6.0.3"
   }
 }

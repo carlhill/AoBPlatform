@@ -55,7 +55,13 @@ export default tseslint.config(
   {
     // Hard-rule tests must name the forbidden field in order to prove it is
     // rejected — the only legitimate places the word may appear.
-    files: ['packages/domain/src/**/*.test.ts', 'apps/vault/test/**/*.e2e-spec.ts'],
+    files: [
+      'packages/domain/src/**/*.test.ts',
+      'apps/vault/test/**/*.e2e-spec.ts',
+      // The kiosk's `medicare_number_rejected_as_identifier` test must name the
+      // forbidden field to prove the approved-set guard throws on it.
+      'apps/kiosk/src/**/*.test.tsx',
+    ],
     rules: { 'no-restricted-syntax': 'off' },
   },
 );
