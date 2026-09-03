@@ -42,7 +42,9 @@ describe('service descriptions — versioned content (hard rule 14)', () => {
   });
 
   describe('a bad edit fails at load rather than at a front desk', () => {
-    it.each([
+    // Typed as unknown on purpose: the parser's whole job is to refuse shapes
+    // the type system would otherwise reject before the test could run.
+    const badEdits: Array<[unknown, string]> = [
       [null, 'not an object'],
       [{ descriptions: ['A'] }, 'no version'],
       [{ version: ' ', descriptions: ['A'] }, 'blank version'],
@@ -52,7 +54,8 @@ describe('service descriptions — versioned content (hard rule 14)', () => {
       [{ version: 'v1', descriptions: [42] }, 'a description that is not a string'],
       [{ version: 'v1', descriptions: ['A ', 'B'] }, 'trailing whitespace C6 would refuse'],
       [{ version: 'v1', descriptions: ['A', 'A'] }, 'a duplicate'],
-    ])('refuses %j — %s', (raw) => {
+    ];
+    it.each(badEdits)('refuses %j — %s', (raw) => {
       expect(() => parseServiceDescriptionContent(raw)).toThrow(/service-descriptions\.json is not usable/);
     });
   });
