@@ -28,10 +28,18 @@
  * A FAILURE IS SHOWN, NOT SWALLOWED (REQ-REC-04). The hook reports the error
  * and keeps the last good list on screen; the screen offers reception. Nothing
  * here can stop a patient being seen.
+ *
+ * A 401 IS THE ONE FAILURE THAT STOPS THE LOOP. It means the device was
+ * revoked or rotated, and it will mean that for every future poll — so the
+ * hook reports `unpaired` and the timer is not re-armed. "No retry loop
+ * hammering the server" is the requirement (TODO.md, "Zero-footprint kiosk"),
+ * and a tablet retrying a dead credential every two seconds is a tablet
+ * somebody has to visit in order to quieten, which is the expense the whole
+ * decision exists to avoid.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { fetchWaitingList, type KioskWaitingRow, type WaitingListResponse } from './api';
+import { fetchWaitingList, isUnpaired, type KioskWaitingRow, type WaitingListResponse } from './api';
 
 export interface WaitingListState {
   readonly rows: readonly KioskWaitingRow[];
@@ -40,6 +48,10 @@ export interface WaitingListState {
   readonly revision: string | null;
   readonly loading: boolean;
   readonly error: string | null;
+  /** The server refused this tablet's credential. Terminal: the poll stops. */
+  readonly unpaired: boolean;
+  /** This tab is below the practice's build floor and must hard-reload. */
+  readonly reload: boolean;
   /** How many polls came back 304 — evidence the ETag path is doing its job. */
   readonly notModifiedCount: number;
   readonly refresh: () => void;
@@ -52,7 +64,11 @@ export function useWaitingList(enabled: boolean): WaitingListState {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notModifiedCount, setNotModifiedCount] = useState(0);
+  const [unpaired, setUnpaired] = useState(false);
   const etagRef = useRef<string | null>(null);
+  // Read by the loop as well as by the render, so the timer stops on the same
+  // tick the refusal arrives rather than one poll later.
+  const unpairedRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const visibleRef = useRef(true);
   const mountedRef = useRef(true);
@@ -70,6 +86,17 @@ export function useWaitingList(enabled: boolean): WaitingListState {
       setError(null);
     } catch (err) {
       if (!mountedRef.current) return;
+      /*
+       * REVOKED, AND THAT IS THE END OF IT. Not an error to show beside a
+       * stale list — the list on screen is a practice's patient names and the
+       * server has just said this tablet may not have them. The ceremony drops
+       * to the unpaired screen and nothing is polled again.
+       */
+      if (isUnpaired(err)) {
+        unpairedRef.current = true;
+        setUnpaired(true);
+        return;
+      }
       setError((err as Error).message);
     } finally {
       if (mountedRef.current) setLoading(false);
@@ -98,9 +125,9 @@ export function useWaitingList(enabled: boolean): WaitingListState {
     }
     let cancelled = false;
     const loop = async () => {
-      if (cancelled) return;
+      if (cancelled || unpairedRef.current) return;
       if (visibleRef.current) await poll();
-      if (cancelled) return;
+      if (cancelled || unpairedRef.current) return;
       timerRef.current = setTimeout(loop, pollMs ?? FALLBACK_POLL_MS);
     };
     void loop();
@@ -120,8 +147,12 @@ export function useWaitingList(enabled: boolean): WaitingListState {
     revision: body?.revision ?? null,
     loading,
     error,
+    unpaired,
+    reload: body?.reload === true,
     notModifiedCount,
     refresh: () => {
+      // A revoked tablet does not get a Try again that cannot work.
+      if (unpairedRef.current) return;
       void poll();
     },
   };

@@ -3329,6 +3329,120 @@ export const strings = {
    * six have entries, deliberately: there is no key for a card number because
    * there is no field for one (REQ-VER-02).
    */
+  /*
+   * THE PRACTICE'S TABLETS — the console side of device pairing.
+   *
+   * THE WORDS AVOID "LOGIN" AND "PASSWORD" THROUGHOUT, and that is a decision
+   * rather than a style. Pairing is a device credential, in the sense a
+   * payment terminal is paired to a merchant; calling it a login would invite
+   * somebody to reason about it as one — to share it, to write it down, to
+   * expect it to expire when a person leaves. It is a thing a device holds and
+   * a thing the practice takes back.
+   *
+   * AND IT NEVER SAYS "CERTIFIED", "APPROVED" OR "ACCREDITED" (hard rule 12).
+   */
+  devices: {
+    title: 'Tablets',
+    lead:
+      'The waiting-room tablets paired to this practice. Pairing is what lets a tablet see who is checking '
+      + 'in; revoking one takes that back on its next request.',
+    audience: 'Practice',
+    notLoaded: 'The tablets could not be loaded',
+    loading: 'Loading…',
+    none: 'No tablet is paired to this practice yet.',
+    noneHint: 'Add one, then type the code it shows into the tablet at /kiosk.',
+
+    addTitle: 'Add a tablet',
+    addHint: 'Give it a name somebody could find it by — "Reception tablet 1".',
+    labelLabel: 'What this tablet is called',
+    addAction: 'Add tablet',
+    addBlocked: 'Add tablet — give it a name first',
+    adding: 'Adding…',
+
+    /*
+     * THE CODE, SHOWN ONCE. The screen says so, because a code that cannot be
+     * fetched again is a surprise unless it was announced — and the way out of
+     * having lost it is Rotate, which is named here rather than left to be
+     * discovered.
+     */
+    codeHeading: 'Type this code into the tablet',
+    codeShownOnce: 'This code is shown once. If it is lost, rotate the tablet for a new one.',
+    codeWhere: 'On the tablet, open /kiosk and enter the code.',
+    codeExpires: (minutes: number) =>
+      minutes <= 0
+        ? 'This code has expired. Rotate the tablet for a new one.'
+        : minutes === 1
+          ? 'Expires in 1 minute'
+          : `Expires in ${minutes} minutes`,
+    codeDone: 'Done',
+
+    states: {
+      awaiting_pairing: 'Waiting to be paired',
+      paired: 'Paired',
+      revoked: 'Revoked',
+    } as Record<string, string>,
+
+    columnDevice: 'Tablet',
+    columnState: 'State',
+    columnLastSeen: 'Last seen',
+    columnBuild: 'Build',
+    addedBy: (name: string, when: string) => `Added by ${name} · ${when}`,
+    pairedAt: (when: string) => `Paired ${when}`,
+    revokedAt: (name: string, when: string) => `Revoked by ${name} · ${when}`,
+    neverSeen: 'Never',
+    noBuild: 'Not reported yet',
+    codeOutstanding: (when: string) => `A pairing code is outstanding until ${when}`,
+
+    revokeAction: 'Revoke',
+    /*
+     * REVOKING IS THE SECURITY ACT ON THIS PAGE, so it asks — and the
+     * confirmation says what actually happens rather than "are you sure". A
+     * revoked tablet stops on its NEXT REQUEST, which is seconds, and nothing
+     * about it touches whether patients can be seen.
+     */
+    revokeConfirm: (label: string) =>
+      `Revoke ${label}? It stops working on its next request. Reception carries on as normal — nothing about `
+      + 'this affects patients being seen or billed.',
+    revokeReasonLabel: 'Why (optional)',
+    revokeReasonHint: 'A tablet taken out of service and one lost in a taxi are different stories.',
+    revokeConfirmAction: 'Revoke this tablet',
+    cancelAction: 'Cancel',
+    revoking: 'Revoking…',
+
+    rotateAction: 'Rotate',
+    rotateConfirm: (label: string) =>
+      `Rotate ${label}? Its current credential stops working immediately and you will get a new code to type `
+      + 'into it.',
+    rotateConfirmAction: 'Rotate and show a new code',
+    rotating: 'Rotating…',
+
+    /*
+     * THE BUILD FLOOR — staged rollout with instant rollback. Written for
+     * somebody doing support, and it says what pressing it DOES: every tablet
+     * below the floor reloads within seconds.
+     */
+    buildTitle: 'Kiosk build',
+    buildLead:
+      'Tablets load the current build from the cloud on every session. Set a minimum build to make every '
+      + 'tablet below it reload — that is how a release is rolled back without touching a device.',
+    buildLabel: 'Minimum build',
+    buildHint: 'A release id such as 2026.09.03-2. Leave empty for no minimum, which reloads nothing.',
+    buildSave: 'Save minimum build',
+    buildSaving: 'Saving…',
+    buildSaved: 'Saved. Tablets below this build reload on their next poll.',
+    buildCleared: 'Cleared. No tablet will be asked to reload.',
+
+    /**
+     * THE THREAT MODEL, ON THE SCREEN. The person reading this page is the
+     * person who decides what to do when a tablet goes missing, and the
+     * answer — one revocable credential, nothing else on the device — is
+     * worth them knowing before it happens.
+     */
+    threatNote:
+      'A tablet holds one credential and nothing else: no patient details, no practice records, nothing that '
+      + 'survives being revoked. If one goes missing, revoke it here.',
+  },
+
   kiosk: {
     /** The wordmark in the tablet's footer. Repeated here so the ceremony reads one namespace. */
     appName: 'AoBPlatform',
@@ -3678,5 +3792,82 @@ export const strings = {
       seeReception: 'See reception',
       startOver: 'Start again',
     },
+
+    /*
+     * PAIRING — the screen a tablet shows before it is anybody's tablet.
+     *
+     * WRITTEN FOR A STAFF MEMBER, NOT A PATIENT, and it is the only screen in
+     * the kiosk that is. Nobody hands a patient an unpaired tablet: this is
+     * seen once, at a desk, by whoever is setting the device up. So it may say
+     * "practice console" and "pairing code", words the ceremony screens would
+     * never use — and it still says nothing about any practice, because an
+     * unpaired tablet does not know which practice it is and must not guess.
+     *
+     * IT NEVER SAYS WHY A CODE FAILED. Wrong, expired, already used and
+     * revoked are one sentence, because telling somebody their code was right
+     * but stale is telling them their guess was right.
+     */
+    pairing: {
+      heading: 'Pair this tablet',
+      lede:
+        'A staff member can set this up. In the practice console, open Tablets, add this device, and type '
+        + 'the code it shows below.',
+      codeLabel: 'Pairing code',
+      /** Eight characters, and the field says so rather than letting somebody discover it. */
+      codeHint: 'Eight letters and numbers. Capitals and hyphens do not matter.',
+      pairAction: 'Pair this tablet',
+      pairBlocked: 'Pair this tablet — enter the code first',
+      pairing: 'Pairing…',
+      /** One sentence for every way a code can fail. */
+      refused:
+        'That code cannot be used. Codes last ten minutes and work once — ask for a new one in the practice '
+        + 'console.',
+      unreachable: 'This tablet cannot reach the platform just now. Check the connection and try again.',
+      /*
+       * PAIRED, AND THE ONE THING WORTH SAYING ABOUT WHERE IT WENT: the
+       * credential is revocable from the console and nothing else is kept
+       * here. Said plainly because the person reading it is the person who
+       * will have to revoke it when the tablet goes missing.
+       */
+      paired: (practiceName: string) => `Paired to ${practiceName}.`,
+      pairedBody: 'This tablet can be revoked from the practice console at any time. Nothing else is stored on it.',
+      /*
+       * THE BROWSER REFUSED TO REMEMBER IT — private browsing, or a locked
+       * down profile. The tablet works for now and will need pairing again
+       * after a restart, which is worth knowing at the desk rather than on a
+       * Monday morning.
+       */
+      notRemembered:
+        'This browser would not remember the pairing, so the tablet will need pairing again after it '
+        + 'restarts. A staff member can check the browser is not in private mode.',
+      continueAction: 'Continue',
+    },
+
+    /*
+     * UNPAIRED — where a revoked tablet lands, mid-morning, with a patient
+     * possibly standing at it.
+     *
+     * IT ADDRESSES THE PATIENT, unlike the pairing screen, because this one
+     * can appear while somebody is holding the device. It says the appointment
+     * is unaffected (REQ-REC-04, hard rule 8), it offers reception, and it
+     * offers no retry: the credential is dead and pressing anything would only
+     * ask the server the same refused question again.
+     */
+    unpaired: {
+      heading: 'This tablet needs to be paired',
+      body: 'Please see reception. Your appointment is not affected, and nothing you did has been lost.',
+      /** For the staff member who comes over. Names no practice and no device. */
+      staffNote: 'Staff: pair this tablet again from the practice console.',
+      pairAction: 'Pair this tablet',
+    },
+
+    /**
+     * THE VERSION BANNER SUPPORT CAN READ (TODO.md "Zero-footprint kiosk").
+     * Small, in the footer, and the only reason it is on a patient-facing
+     * screen at all: when a practice rings up, the first question is which
+     * build the tablet is running, and the alternative is asking somebody to
+     * find it in a browser menu.
+     */
+    build: (build: string) => `build ${build}`,
   },
 } as const;

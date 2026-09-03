@@ -748,3 +748,49 @@
     padding-right: var(--s5);
   }
 }
+
+/* --------------------------------------------------------------------------
+ * PAIRING (K-0) and the version banner.
+ *
+ * THE CODE FIELD IS BIG BECAUSE OF WHERE IT IS TYPED: standing up, at a
+ * reception desk, on a tablet held in one hand, from a code being read off a
+ * console screen across the room. Eight characters at 2.5rem with wide
+ * tracking is a code somebody can check against the screen without leaning in,
+ * and the tracking is what stops `VW` reading as `W`.
+ *
+ * UPPERCASE IS A DISPLAY TRANSFORM, NOT AN INPUT RULE. The value in state is
+ * whatever was typed and the server normalises it, so nothing here has to know
+ * about the alphabet — `text-transform` only makes the box agree with the
+ * console.
+ * ------------------------------------------------------------------------ */
+
+.pairingCode {
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.pairingCode input {
+  min-height: 72px;
+  font-size: 2.5rem;
+  font-weight: 500;
+  letter-spacing: 0.28em;
+  /* The trailing letter-space would otherwise push the text off centre. */
+  text-indent: 0.28em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+/*
+ * THE VERSION BANNER SUPPORT CAN READ. Quiet enough that a patient never
+ * notices it, present enough that the first question on a support call — which
+ * build is that tablet running — is answered by looking at the tablet rather
+ * than by talking somebody through a browser menu.
+ */
+.buildMark {
+  margin: 0;
+  font-size: 0.6875rem;
+  letter-spacing: 1px;
+  color: var(--ink-muted);
+  opacity: 0.7;
+}

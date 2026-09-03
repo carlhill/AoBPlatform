@@ -12,12 +12,14 @@
  * that ends up writing during a real render. It stubs every storage surface
  * with a spy and drives the ceremony's screens.
  *
- * THE NAME IS `kiosk_persists_nothing_but_pairing` and it comes from the TODO
- * that asked for it. There is no pairing credential yet, so the exception it
- * names is empty: `PERSISTABLE_KEYS` is `[]` and the assertion is that
- * NOTHING is written. When pairing lands, that constant gains one key and this
- * test gains one permitted write — a narrow relaxation with a name, rather
- * than a deleted test.
+ * THE NAME IS `kiosk_persists_nothing_but_pairing` and it now means both
+ * halves of its own sentence. Device pairing landed on 3 September 2026, so
+ * `PERSISTABLE_KEYS` holds exactly ONE key — the opaque credential, revocable
+ * from the console — and this test asserts three things about it: that the
+ * list has one entry and it is that one; that rendering every screen of the
+ * ceremony writes nothing at all; and that the pairing module writes that key
+ * and no other. The relaxation is narrow and named, rather than a deleted
+ * test.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render } from '@testing-library/react';
@@ -31,7 +33,15 @@ import { HandoverScreen } from './screens/HandoverScreen';
 import { identifierFieldsFor } from './rules/identifiers';
 import { firstAttempt } from './rules/verification';
 import { EMPTY_CHOICE } from './rules/assignor';
+import { PairingScreen } from './screens/PairingScreen';
+import { UnpairedScreen } from './screens/UnpairedScreen';
 import { getSession, PERSISTABLE_KEYS, setSession } from './session';
+import {
+  PAIRING_CREDENTIAL_KEY,
+  clearPairingCredential,
+  readPairingCredential,
+  writePairingCredential,
+} from './pairing';
 import type { SignatureValidation } from './rules/signature-gate';
 
 const noop = () => undefined;
@@ -98,11 +108,13 @@ describe('CLAUDE.md §7 — nothing is written to the device', () => {
 
   it('kiosk_persists_nothing_but_pairing', () => {
     /*
-     * THE ALLOW-LIST IS EMPTY, AND SAYING SO IS THE POINT. There is no pairing
-     * credential yet, so the honest assertion is that NOTHING survives the tab
-     * — not "nothing except the things we happen to write".
+     * EXACTLY ONE KEY, AND IT IS THE PAIRING CREDENTIAL. Asserted as an
+     * equality rather than a `toContain`, so a second key cannot be added
+     * without changing a test whose name says what it is protecting. Nothing
+     * else about a practice, a patient or a ceremony may ever join it.
      */
-    expect(PERSISTABLE_KEYS).toEqual([]);
+    expect(PERSISTABLE_KEYS).toEqual([PAIRING_CREDENTIAL_KEY]);
+    expect(PERSISTABLE_KEYS).toHaveLength(1);
 
     const fields = identifierFieldsFor(['name', 'date_of_birth', 'address']);
     const screens = [
@@ -184,6 +196,35 @@ describe('CLAUDE.md §7 — nothing is written to the device', () => {
       />,
       <CompleteScreen key="complete" {...CHROME} givenName="Jamie" onDone={noop} />,
       <HandoverScreen key="handover" {...CHROME} heading="Heading" body="Body" onDone={noop} />,
+      /*
+       * THE TWO PAIRING SCREENS ARE IN THIS LIST DELIBERATELY. They are the
+       * screens NEAREST the one permitted write, so they are the ones most
+       * likely to acquire a second one — a remembered practice name to show on
+       * the next load, a "last paired at" for support. Rendering them here
+       * says: still nothing, and the credential is written by `pairing.ts`
+       * when the exchange succeeds, not by a screen.
+       */
+      <PairingScreen
+        key="pairing"
+        code=""
+        busy={false}
+        failure={null}
+        paired={null}
+        onChangeCode={noop}
+        onPair={noop}
+        onContinue={noop}
+      />,
+      <PairingScreen
+        key="paired"
+        code=""
+        busy={false}
+        failure="refused"
+        paired={{ practiceName: 'Sample Practice', remembered: true }}
+        onChangeCode={noop}
+        onPair={noop}
+        onContinue={noop}
+      />,
+      <UnpairedScreen key="unpaired" onPair={noop} />,
     ];
 
     for (const screen of screens) {
@@ -198,18 +239,72 @@ describe('CLAUDE.md §7 — nothing is written to the device', () => {
   });
 
   it('the_session_token_is_held_in_memory_only', () => {
-    // `app/kiosk/session.ts` is the one module that holds anything resembling a
-    // credential, and it holds it in a module-level variable — the same rule
-    // `app/auth.ts` keeps for the console's access token (CONVENTIONS.md §9b),
-    // and one that is not to be "improved". Setting one writes nothing anywhere.
-    setSession({ practiceId: 'practice-1', staffId: 'staff-1', accessToken: 'a-token' });
+    // `app/kiosk/session.ts` holds anything resembling a session in a
+    // module-level variable — the same rule `app/auth.ts` keeps for the
+    // console's access token (CONVENTIONS.md §9b), and one that is not to be
+    // "improved". Setting one writes nothing anywhere.
+    setSession({ staffId: 'staff-1', accessToken: 'a-token' });
     expect(getSession().accessToken).toBe('a-token');
     expect(writes).toEqual([]);
     expect(cookieWrites).toBe(0);
 
-    // And a sign-out to an empty scope is equally silent.
-    setSession({ practiceId: '', staffId: null, accessToken: null });
+    // And a sign-out is equally silent.
+    setSession({ staffId: null, accessToken: null });
     expect(getSession().accessToken).toBeNull();
     expect(writes).toEqual([]);
+  });
+
+  it('the_pairing_credential_is_the_only_thing_written', () => {
+    /*
+     * THE ONE SANCTIONED WRITE, and this is the test that keeps it one. If a
+     * future change makes `pairing.ts` remember a practice name, a device
+     * label or when it last paired, a second entry appears in `writes` and
+     * this fails by name.
+     */
+    const credential = 'opaque.credential-value';
+    writePairingCredential(credential);
+    expect(writes).toEqual([`localStorage.setItem:${PAIRING_CREDENTIAL_KEY}`]);
+    expect(cookieWrites).toBe(0);
+
+    // Clearing touches the same single key and nothing else. This runs only
+    // when the SERVER has refused the credential — there is deliberately no
+    // un-pair control on the device.
+    writes.length = 0;
+    clearPairingCredential();
+    expect(writes).toEqual([`localStorage.removeItem:${PAIRING_CREDENTIAL_KEY}`]);
+
+    // Every key it touches is on the allow-list, checked rather than assumed.
+    for (const write of [
+      `localStorage.setItem:${PAIRING_CREDENTIAL_KEY}`,
+      `localStorage.removeItem:${PAIRING_CREDENTIAL_KEY}`,
+    ]) {
+      expect(PERSISTABLE_KEYS).toContain(write.split(':')[1]);
+    }
+  });
+
+  it('an unreadable store means unpaired, not a broken tablet', () => {
+    /*
+     * Private browsing, a locked-down kiosk profile, a quota failure: all of
+     * them THROW rather than returning null. A tablet that white-screens
+     * because storage was disabled is a tablet somebody has to visit, which is
+     * the exact expense the zero-footprint rule exists to avoid.
+     */
+    vi.stubGlobal('localStorage', {
+      getItem: () => {
+        throw new Error('storage is disabled');
+      },
+      setItem: () => {
+        throw new Error('storage is disabled');
+      },
+      removeItem: () => {
+        throw new Error('storage is disabled');
+      },
+    } as unknown as Storage);
+
+    expect(readPairingCredential()).toBeNull();
+    // It reports the failure rather than pretending it worked, so the screen
+    // can say the tablet will need pairing again after a restart.
+    expect(writePairingCredential('anything')).toBe(false);
+    expect(() => clearPairingCredential()).not.toThrow();
   });
 });

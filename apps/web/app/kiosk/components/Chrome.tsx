@@ -25,6 +25,7 @@
 
 import type { ReactNode } from 'react';
 import { strings } from '../strings';
+import { kioskBuildId } from '../session';
 import styles from '../kiosk.module.css';
 
 export function Registration(): ReactNode {
@@ -130,7 +131,20 @@ export function Screen({
       </header>
       <main className={styles.content}>{children}</main>
       <footer className={styles.footer}>
-        <p className={styles.platformMark}>{strings.appName}</p>
+        <div>
+          <p className={styles.platformMark}>{strings.appName}</p>
+          {/*
+            THE VERSION BANNER SUPPORT CAN READ (TODO.md "Zero-footprint
+            kiosk"). It is on a patient-facing screen for one reason: when a
+            practice rings up, the first question is which build that tablet is
+            running, and the alternative is talking somebody through a browser
+            menu on a device in a waiting room. Quiet enough that nobody else
+            notices it; the forced reload is the half that acts on it.
+          */}
+          <p className={styles.buildMark} data-testid="kiosk-build">
+            {strings.build(kioskBuildId())}
+          </p>
+        </div>
         {context ? <p className={styles.footerContext}>{context}</p> : null}
       </footer>
     </div>

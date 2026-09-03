@@ -12,9 +12,19 @@
  * takes the stated values, hands them to the server and returns; nothing in
  * this module keeps them, and nothing in this module writes a request body to
  * a console.
+ *
+ * THE TABLET NO LONGER SAYS WHICH PRACTICE IT IS (3 Sep 2026). Every request
+ * carries `x-device-credential` and none carries `x-practice-id`: the server
+ * resolves the practice from the credential and refuses the header outright on
+ * `/kiosk/*`. That is what closed the hole where anybody who reached the URL
+ * could read a practice's waiting list by sending an id. The credential is
+ * read from `pairing.ts` on each call rather than captured at module load, so
+ * a tablet that pairs mid-session starts working without a reload.
  */
 import type { KioskWaitingRow } from '@aobplatform/domain';
-import { coreBaseUrl, getSession } from './session';
+import { coreBaseUrl, getSession, kioskBuildId } from './session';
+import { readPairingCredential } from './pairing';
+import type { SignRequestBody } from './rules/signature-payload';
 
 export type { KioskWaitingRow };
 
@@ -27,6 +37,13 @@ export interface WaitingListResponse {
   /** TYPES only, never values (REQ-VER-04). */
   readonly identifierTypes: readonly string[];
   readonly waiting: readonly KioskWaitingRow[];
+  /**
+   * This tab is below the practice's kiosk build floor and must hard-reload.
+   * It rides on the POLL rather than on a channel of its own, so a rollback
+   * reaches an open tab within the cadence the server already chose — and it
+   * is inside the ETag, so a quiet morning cannot answer 304 and swallow it.
+   */
+  readonly reload?: boolean;
 }
 
 /** `GET /agreements/:id` — only the fields the ceremony reads. */
@@ -56,12 +73,34 @@ export interface AttemptResponse {
   readonly message?: string;
 }
 
-export interface PracticeResponse {
-  readonly id: string;
-  readonly name: string;
+/**
+ * `GET /kiosk/me` — who this tablet is, answered by the server.
+ *
+ * IT REPLACED `GET /practices/:id`. The kiosk used to fetch a practice by an
+ * id baked into the bundle at build time; it now holds one opaque credential
+ * and asks. Nothing configurable comes back — a device with no settings is a
+ * device that cannot be configured to ask for a Medicare card number
+ * (REQ-VER-02).
+ */
+export interface KioskMeResponse {
+  readonly deviceId: string;
+  /** The name a person gave the tablet, for support to recognise it by. */
+  readonly deviceLabel: string;
+  readonly practiceId: string;
+  readonly practiceName: string;
   readonly state?: string | null;
-  /** The practice's configured challenge set — the approved six only (REQ-VER-02). */
+  /** TYPES only, never values (REQ-VER-04). */
   readonly identifierTypes?: readonly string[];
+  /** This tab is below the practice's build floor and must hard-reload. */
+  readonly reload: boolean;
+}
+
+/** `POST /devices/pair` — the one call made with no credential, because it earns one. */
+export interface PairingResponse {
+  readonly credential: string;
+  readonly deviceId: string;
+  readonly practiceName: string;
+  readonly label: string;
 }
 
 export interface PracticeUsersResponse {
@@ -79,16 +118,45 @@ export class KioskApiError extends Error {
   }
 }
 
+/**
+ * WHAT EVERY KIOSK REQUEST CARRIES, and what it deliberately does not.
+ *
+ * `x-device-credential` — the one thing this tablet holds. The server reads
+ * the practice off it; there is no `x-practice-id` here and there must not be,
+ * because a client that can assert a practice is a client that can assert
+ * somebody else's.
+ *
+ * `x-kiosk-build` — which build this tab is running, so a rollback can reach
+ * a tab that has been open since eight in the morning. A version string and
+ * nothing else: no device fingerprint, no user agent, nothing about a person.
+ *
+ * READ FRESH ON EVERY CALL rather than captured once at module load, so a
+ * tablet that has just paired starts working immediately and one that has just
+ * been revoked stops.
+ */
 function headers(extra?: Record<string, string>): Record<string, string> {
   const session = getSession();
   const base: Record<string, string> = {
     'Content-Type': 'application/json',
-    // The dev-time practice stand-in; the auth guard overwrites it from the
-    // token's practice claim whenever a verified principal is present.
-    'x-practice-id': session.practiceId,
+    'x-kiosk-build': kioskBuildId(),
   };
+  const credential = readPairingCredential();
+  if (credential) base['x-device-credential'] = credential;
   if (session.accessToken) base.Authorization = `Bearer ${session.accessToken}`;
   return { ...base, ...extra };
+}
+
+/**
+ * THE SERVER SAYS THIS TABLET IS NOT PAIRED — revoked, rotated, or holding a
+ * credential from a practice that no longer knows it.
+ *
+ * Every caller answers it the same way: drop to the unpaired screen and STOP.
+ * Not a retry, and above all not a retry loop — "no retry loop hammering the
+ * server" is the requirement (TODO.md), and a tablet that hammers a 401 every
+ * two seconds is a tablet somebody has to visit in order to quieten.
+ */
+export function isUnpaired(err: unknown): boolean {
+  return err instanceof KioskApiError && err.status === 401;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -139,14 +207,39 @@ export async function fetchWaitingList(etag: string | null): Promise<WaitingList
 }
 
 /**
- * The practice's own name and location line, for the header. One call at
- * start-up; the kiosk holds no configuration of its own (REQ-VER-02 — a device
- * with no settings is a device that cannot be configured to ask for a card
- * number).
+ * Who this tablet is: the practice name and state for the header, the label
+ * somebody gave the device, and whether this tab is below the build floor.
+ *
+ * ONE CALL AT START-UP, and it is also the paired/unpaired test — a 401 here
+ * is the whole answer to "may this tablet be used", which is why the ceremony
+ * asks it before it asks anything else.
  */
-export function fetchPractice(): Promise<PracticeResponse> {
-  const session = getSession();
-  return request<PracticeResponse>(`/practices/${session.practiceId}`);
+export function fetchKioskMe(): Promise<KioskMeResponse> {
+  return request<KioskMeResponse>('/kiosk/me');
+}
+
+/**
+ * THE ONE CALL MADE WITHOUT A CREDENTIAL, because it is the call that earns
+ * one. Deliberately NOT through `request`: sending a stale or revoked
+ * credential alongside a pairing code would have the attempt refused by the
+ * guard before the code was ever looked at — and that is exactly the state a
+ * tablet is in when somebody is standing there trying to re-pair it.
+ *
+ * The code is normalised server-side, so the screen never has to teach anybody
+ * about hyphens or capitals.
+ */
+export async function pairDevice(code: string): Promise<PairingResponse> {
+  const res = await fetch(`${coreBaseUrl()}/devices/pair`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  });
+  if (!res.ok) {
+    // The server's sentence is the same for every kind of failure by design;
+    // the screen shows its own copy regardless, and never the body.
+    throw new KioskApiError(res.statusText, res.status);
+  }
+  return (await res.json()) as PairingResponse;
 }
 
 export function fetchAgreement(agreementId: string): Promise<AgreementResponse> {
@@ -248,9 +341,23 @@ export function lockParticulars(
   });
 }
 
+/**
+ * THE DRAWN MARK TRAVELS WITH THE SIGN CALL (REQ-SIG-01/-02).
+ *
+ * `input` is composed by `rules/signature-payload.ts` and carries `signature`
+ * for a drawn signature and nothing for a tap-to-approve. The server stores
+ * the strokes and the image as artefacts of the agreement, hashes both, and
+ * binds both hashes into the signature event beside the rendered agreement's
+ * own hash — so what is on record is the mark the person made, not merely that
+ * a mark was reported.
+ *
+ * NOTHING HERE KEEPS A COPY. The body is built, sent and dropped; no data URL,
+ * no stroke and no request body is written to storage or a console
+ * (zero-footprint, CLAUDE.md §7).
+ */
 export function signAgreement(
   agreementId: string,
-  input: { method: 'drawn' | 'tap_to_approve'; captureRequestId: string },
+  input: SignRequestBody,
 ): Promise<AgreementResponse> {
   return request<AgreementResponse>(`/agreements/${agreementId}/sign`, {
     method: 'POST',
