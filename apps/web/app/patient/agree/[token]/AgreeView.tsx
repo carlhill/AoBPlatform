@@ -30,9 +30,9 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, Clock, FileCheck2, Lock, MailX, ShieldCheck, Wrench } from 'lucide-react';
-import { Button, Notice, Shell, ui } from '../../ui';
-import { strings } from '../../strings';
-import styles from '../../verify/verify.module.css';
+import { Button, Notice, Shell, ui } from '../../../ui';
+import { strings } from '../../../strings';
+import styles from '../../../verify/verify.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 

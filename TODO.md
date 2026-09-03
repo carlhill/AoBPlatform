@@ -843,3 +843,25 @@ its interim description list above. Nothing today notices when they stop.
       review task, not an email — it is housekeeping, not a breach.
 - [ ] Every nudge is Correspondence (plan §4.1) and follows CONVENTIONS.md §9d
       like every other message.
+
+## A platform-wide view of messages — states, not bodies
+
+Carl, 25 Aug 2026: "How does a platform-user see all messages — in queue /
+sent and so on?" Today: one practice at a time, through the view-only twin
+(`/platform/practices/[id]/queue` for transport state; the correspondence
+screen, item 9, will sit beside it). There is deliberately no cross-practice
+list of message CONTENT — `outbound.controller.ts` says why: a body search
+"would let somebody trawl for a patient name across a practice", and across
+every practice it is worse.
+
+- [ ] Build the platform view as an OPERATIONS view: per practice, per lane /
+      channel — queued, leased, sent, failed, dead, oldest age. Counts and
+      states, never subject lines or bodies. `outbound_timeseries` and
+      `/inbound/print-jobs/metrics` already give most of it.
+- [ ] Drill-down into ONE practice for content goes through the existing
+      view-only twin, and every read of a body is an `access.read` vault event
+      (REQ-LOG-07) — a platform operator reading a patient's message is
+      exactly the kind of read that has to be answerable later.
+- [ ] Cross-practice reads are individually justified SECURITY DEFINER
+      functions returning ids and counts (CONVENTIONS.md §6) — the same shape
+      as `outbound_due_practices`, never a weakened policy.

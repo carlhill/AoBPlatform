@@ -34,9 +34,13 @@ export class CaptureLinkDispatcher {
     return this.config.get<string>('CONSOLE_URL', 'http://localhost:21100');
   }
 
-  /** The patient-facing approval page — CONSULTATION-CAPTURE-PLAN.md §3.3. */
+  /**
+   * The patient-facing approval page — CONSULTATION-CAPTURE-PLAN.md §3.3.
+   * Under /patient, as every audience's pages sit under their prefix; the
+   * bare /agree path redirects here for links sent before the move.
+   */
   approvalUrl(token: string): string {
-    return `${this.consoleUrl()}/agree/${token}`;
+    return `${this.consoleUrl()}/patient/agree/${token}`;
   }
 
   async sendPostAgreementLink(

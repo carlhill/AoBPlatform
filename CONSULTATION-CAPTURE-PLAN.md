@@ -1,6 +1,6 @@
 # Pre- and post-consultation capture, correspondence visibility, retention — plan
 
-**Status:** APPROVED 2026-08-25 by Carl — all eleven Part 6 decisions answered (three with amendments, recorded inline there). Build order in Part 7. Items 1–5 BUILT 2026-08-25 (AutoCaptureModule, InboundModule, AgreeModule + /agree/[token], CorrespondenceModule; e2e green); item 6 next.
+**Status:** APPROVED 2026-08-25 by Carl — all eleven Part 6 decisions answered (three with amendments, recorded inline there). Build order in Part 7. Items 1–5 BUILT 2026-08-25 (AutoCaptureModule, InboundModule, AgreeModule + /patient/agree/[token], CorrespondenceModule; e2e green); item 6 next.
 **Written:** 2026-08-25, from Carl's brief plus claude-cowork's read of the design
 docs, then checked against the code that actually exists (every claim below
 names the file). **Revised the same day** for Carl's two corrections: the PMS
@@ -260,7 +260,7 @@ opens the single-use link, passes the verification challenge (floor 3,
 REQ-VER-06), sees the locked post-agreement — practitioner, date, item
 numbers, **no dollar amount** (Rule 4) — and approves with `tap_to_approve`.
 That is `openLink` → `verifyLink` → `sign` → `complete`, which exist. New here
-is only the patient-facing screen (a public `apps/web/app/agree/[token]/`
+is only the patient-facing screen (a public `apps/web/app/patient/agree/[token]/`
 route, styled like `/verify` and the confirm-email pages — the pattern Carl
 has already approved twice this week).
 
