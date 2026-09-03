@@ -1039,6 +1039,118 @@ verification event.
 - [ ] Touches the same screens as the kiosk MVP; do not start until that
       lands.
 
+## The practice flow, end to end: one touch per visit
+
+Carl, 3 Sep 2026, after seeing the kiosk: "too complex for a patient who is
+sick and/or old ... we want everything to be quick and easy for the patient
+and still satisfy the compliance rules." Three decisions were taken and are
+recorded here; the flow they produce is drawn below and is the shape every
+capture feature should be built to.
+
+**The principle.** The patient never types. Typing name and address is only
+required on the REMOTE link, where nobody has seen the person (REQ-VER-03).
+In the practice, verification is staff's job at check-in, recorded with the
+staff identity, and the tablet shows the details and asks only whether they
+are right. Most of the complexity in the first kiosk build was the fallback
+path shown as the main one.
+
+### Decisions (Carl, 3 Sep 2026)
+
+- [x] **(a) The name rule: family name + first given name.** The stated name
+      must contain the held family name and the first given name; order and
+      further given names are ignored. "Jamie Sampleton", "Sampleton Jamie" and
+      "Jamie Lee Sampleton" all match Sampleton / Jamie Lee. Hyphens and
+      apostrophes are spaces; multi-word family names must be whole. Built in
+      `apps/core/src/verification/identifier-matching.ts` (`nameMatches`),
+      named test `name_matches_on_family_and_first_given_in_any_order`.
+- [x] **(b) A staff-issued card is continuity of the staff check.** A plastic
+      card with a printed QR is an opaque single-use token (REQ-VER-05), never
+      the patient's identity: reception ASSIGNS card N to a session, scanning
+      it opens that session until it completes or expires, then card N is
+      free -- the Tyro pairing model. Scan, read, tap is a complete in-practice
+      ceremony because staff verified the person and handed them the card.
+      Emailing a QR buys nothing: it IS the link we already send, and from
+      home the three-identifier challenge still applies.
+- [x] **(c) The agreement gates the claim, never the consultation.** "If the
+      patient approves then they can see the Dr" is reworded as routing at the
+      desk: a patient who walks away from the tablet is still seen, and
+      reception chooses a private bill or an episodic agreement after the
+      service (REQ-REC-04, REQ-CHASE-07). Never a refusal at the door.
+
+### What the flow settles
+
+- **Steps 1-3 belong to the PMS.** The Medicare card finds the record and
+  confirms eligibility; asking name, DOB and address IS the three-identifier
+  check. The platform never sees the card (hard rule 1 holds without anyone
+  thinking about it).
+- **The push is the verification record** -- see the push-to-device item
+  above. "Print to AoBPlatform" is the inbound print-job interface, the D-01
+  workaround already built. Reception sees a STATUS (reading / signed / walked
+  away), not a live mirror: cheaper, and less on screen.
+- **One signature per episodic visit, not two.** If a pre-agreement exists and
+  the billed item falls inside its Basic Service Description, the visit is
+  covered and the patient does nothing at checkout (CONSULTATION-CAPTURE-PLAN
+  3.1). Post-service checkout is only for visits with no pre-agreement, or an
+  item that fell outside it.
+- **Enduring: nothing post-service for the patient.** The 89AA notice fires on
+  the CLAIM, within 24 hours, MyMedicare pathway only, one-way, never chased
+  (REQ-END-05, REQ-CHASE-02, hard rule 7).
+- **Reminders.** The 30-minute nudge is the first step of the automated
+  cascade; the cadence after it is banded by days left on the twelve-month
+  lodgement window, not elapsed time (REQ-CHASE-05); ladder to a human
+  (REQ-CHASE-04); never past the deadline (REQ-CHASE-08). "Three digital, then
+  the practice takes over" is the simplest instance and is the one to build.
+  The chase-attempt log is its audit trail.
+- **Preferred channel is per ASSIGNOR** (C7.2, D7), not per patient, because
+  the signer is not always the patient.
+
+### Still to build
+
+- [ ] Remote-link address matching: canonicalise both sides through an address
+      service (G-NAF / PAF) and compare number, street, postcode -- the same
+      work as the fraud check above. Interim: tolerant compare on those three
+      components, recorded as interim.
+- [ ] Card pairing: card registry per practice, assign-to-session, scan opens
+      the session, exit or expiry releases the card, short TTL, minimum on
+      screen. Shares its screen hygiene with push-to-device.
+- [ ] Post-service checkout at the kiosk: scan, read the locked post-agreement
+      (no dollar amount), tap approve; the 30-minute nudge into the cascade.
+- [ ] Reception status view of the tablet -- states, not a mirror.
+- [ ] Per-assignor channel preference on the `Assignor` record, honoured by
+      every sender.
+
+```mermaid
+flowchart TD
+  subgraph R[Reception - in the PMS, outside AoBPlatform]
+    A[Patient arrives and shows the Medicare card] --> B[Reception finds the PMS record<br/>card + IRN find the record and eligibility - never identity]
+    B --> C[Reception asks name, DOB, address<br/>three approved identifiers - REQ-VER-03<br/>new patients registered in the PMS here]
+    C --> D{Active enduring agreement<br/>with THIS provider?}
+    D -- yes --> E[Nothing to sign]
+    D -- no --> F[Reception pushes the visit to AoBPlatform<br/>print job today - the push IS the staff-verified record]
+  end
+  subgraph P[AoBPlatform]
+    F --> G[Rules engine validates and locks the particulars<br/>REQ-REG-06 - a draft can never reach a device]
+    G --> H[Locked agreement assigned to the reception tablet<br/>enduring for a GP, episodic otherwise<br/>reception sees status, not a mirror]
+  end
+  subgraph T[Tablet beside reception]
+    H --> I[Patient sees name, DOB, address, provider, service<br/>ticks these are correct - a data check, not a verification]
+    I --> J{Approve?}
+    J -- draws a signature or taps approve --> K[Signed - hash bound to the verification event, REQ-SIG-02<br/>copy sent by the assignor's preferred channel]
+    J -- See reception --> L[Exit - nothing signed, nothing changed<br/>reception chooses: private bill, or episodic after the service]
+  end
+  K --> E
+  L --> E
+  E --> M[Service with the provider<br/>never gated by any of this - REQ-REC-04]
+  M --> N{What covers the item?}
+  N -- enduring on the MyMedicare pathway --> O[Claim lodged, 89AA notice within 24 h<br/>one-way, nothing to approve, never chased - REQ-END-05, REQ-CHASE-02]
+  N -- episodic pre-agreement and the item is inside its description --> Q[Covered - nothing more from the patient]
+  N -- no pre-agreement, or the item fell outside it --> S[Post-service agreement drafted from the invoice<br/>D5 date, D6 items, no dollar amount]
+  S --> U[Check-out: scan the card at the kiosk, read, tap approve<br/>the card is an opaque single-use token, not the patient's identity]
+  U -- not done within 30 min --> V[Automated cascade on the preferred channel<br/>up to three reminders - cadence banded by days left on the 12-month window, REQ-CHASE-05]
+  V -- no response --> W[Hand back to the practice - staff call, each attempt logged<br/>urgent band presents the private-billing choice - REQ-CHASE-07]
+  W --> X[Never past the deadline - REQ-CHASE-08]
+```
+
 ## Where this product could go: v2 and v3
 
 Carl, 3 Sep 2026: "Version two of AoBPlatform could morph from just a

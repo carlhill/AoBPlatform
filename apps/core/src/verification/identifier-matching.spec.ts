@@ -1,4 +1,4 @@
-import { constantTimeMatch, evaluateChallenge, normaliseStatedValue, normalisedHeldValue } from './identifier-matching';
+import { constantTimeMatch, evaluateChallenge, nameMatches, normaliseStatedValue, normalisedHeldValue } from './identifier-matching';
 
 const record = {
   familyName: 'Testpatient',
@@ -45,6 +45,38 @@ describe('constantTimeMatch', () => {
     expect(constantTimeMatch('abc', 'abc')).toBe(true);
     expect(constantTimeMatch('abc', 'abd')).toBe(false);
     expect(constantTimeMatch('abc', 'abcdef')).toBe(false);
+  });
+});
+
+describe('name rule — family name + first given name', () => {
+  const held = { ...record, familyName: 'Sampleton', givenNames: 'Jamie Lee' };
+
+  it('name_matches_on_family_and_first_given_in_any_order', () => {
+    expect(nameMatches('Jamie Sampleton', held)).toBe(true);
+    expect(nameMatches('Sampleton Jamie', held)).toBe(true);
+    expect(nameMatches('Jamie Lee Sampleton', held)).toBe(true);
+    expect(nameMatches('  JAMIE   sampleton ', held)).toBe(true);
+  });
+
+  it('fails when the family name or the first given name is missing', () => {
+    expect(nameMatches('Lee Sampleton', held)).toBe(false);
+    expect(nameMatches('Jamie Smith', held)).toBe(false);
+    expect(nameMatches('Jamie', held)).toBe(false);
+    expect(nameMatches('', held)).toBe(false);
+  });
+
+  it('treats hyphens and apostrophes as spaces, and keeps multi-word family names whole', () => {
+    const hyphen = { ...record, familyName: 'Smith-Jones', givenNames: 'Pat' };
+    expect(nameMatches('Pat Smith Jones', hyphen)).toBe(true);
+    expect(nameMatches('Pat Smith', hyphen)).toBe(false);
+    const dutch = { ...record, familyName: 'van der Berg', givenNames: 'Anna' };
+    expect(nameMatches('Anna van der Berg', dutch)).toBe(true);
+    expect(nameMatches('Anna Berg', dutch)).toBe(false);
+  });
+
+  it('applies through evaluateChallenge', () => {
+    expect(evaluateChallenge(['name'] as never, { name: 'Jamie Sampleton' }, held)).toBe(true);
+    expect(evaluateChallenge(['name'] as never, { name: 'Lee Sampleton' }, held)).toBe(false);
   });
 });
 

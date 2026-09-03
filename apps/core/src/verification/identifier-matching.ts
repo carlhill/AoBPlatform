@@ -67,6 +67,32 @@ export function normaliseStatedValue(type: ApprovedIdentifierType, stated: strin
   }
 }
 
+/** Name tokens: case-folded, hyphens and apostrophes treated as spaces ("Smith-Jones" is "smith jones"). */
+function nameTokens(value: string): string[] {
+  return collapse(value.replace(/[-'’]/g, ' ')).split(' ').filter(Boolean);
+}
+
+/**
+ * The name rule (Carl, 3 Sep 2026): the stated name must contain the held
+ * FAMILY name and the FIRST given name. Order and any further given names are
+ * ignored — "Jamie Sampleton", "Sampleton Jamie" and "Jamie Lee Sampleton" all
+ * match a record of Sampleton / Jamie Lee. Extra tokens never help an attacker;
+ * a missing required token always fails. Every required token is checked, so
+ * a miss on the first costs the same as a miss on the last.
+ */
+export function nameMatches(stated: string, record: PatientIdentityRecord): boolean {
+  const required = [...nameTokens(record.familyName), ...nameTokens(record.givenNames).slice(0, 1)];
+  if (required.length === 0) return false;
+  const statedTokens = nameTokens(stated);
+  let all = true;
+  for (const token of required) {
+    let present = false;
+    for (const s of statedTokens) if (constantTimeMatch(s, token)) present = true;
+    if (!present) all = false;
+  }
+  return all;
+}
+
 /** Constant-time equality over the normalised values — no early exit an attacker can time. */
 export function constantTimeMatch(a: string, b: string): boolean {
   const ha = createHash('sha256').update(a, 'utf8').digest();
@@ -92,9 +118,10 @@ export function evaluateChallenge(
       allMatch = false;
       continue;
     }
-    if (!constantTimeMatch(held, normaliseStatedValue(type, statedRaw))) {
-      allMatch = false;
-    }
+    const matched = type === 'name'
+      ? nameMatches(statedRaw, record)
+      : constantTimeMatch(held, normaliseStatedValue(type, statedRaw));
+    if (!matched) allMatch = false;
   }
   return allMatch;
 }
