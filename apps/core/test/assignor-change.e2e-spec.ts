@@ -331,6 +331,79 @@ describe('re-pointing a draft agreement at another assignor (e2e, real Postgres)
     expect(shrug.body.message).toContain('REQ-VUL-01');
   });
 
+  it('relationship_and_authority_basis_are_recorded_separately', async () => {
+    /*
+     * REQ-VUL-01 NAMES THEM AS SEPARATE ATTRIBUTES, and until the kiosk's
+     * relationship dropdown landed the server only ever had one of them: the
+     * relationship was DERIVED from the basis (`RELATIONSHIP_BY_BASIS`), so a
+     * grandparent and a friend both came out as "other".
+     *
+     * The tablet now asks the person what they are — in words they recognise —
+     * derives the legal basis from that through versioned content, and sends
+     * both. The basis is the ground for acting; the relationship is the fact
+     * C8 prints on the agreement. Supplying the relationship overrides the
+     * derivation with the more specific answer.
+     */
+    const agreementId = await draft();
+
+    const res = await request(app.getHttpServer())
+      .post(`/agreements/${agreementId}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({
+        assignorIsPatient: false,
+        name: 'Kim Neighbour',
+        relationship: 'Grandparent',
+        relationshipsVersion: 'relationships-2026-09-1',
+        authorityBasis: 'other_with_note',
+        note: 'Grandparent',
+        declaresEighteenOrOver: true,
+        email: 'kim.neighbour@example.invalid',
+      })
+      .expect(201);
+
+    const assignor = await prisma.withPractice(practiceId, (tx) =>
+      tx.assignor.findFirst({ where: { id: res.body.assignorId } }),
+    );
+    // The word the person chose, not the category we filed them under.
+    expect(assignor?.relationshipToPatient).toBe('Grandparent');
+    expect(assignor?.authorityBasis).toBe('other_with_note');
+    expect(assignor?.authorityNote).toBe('Grandparent');
+
+    /*
+     * AND WHICH LIST THEY CHOSE FROM lands on the vault event rather than on a
+     * column (hard rule 14). The question asked months later is what the person
+     * was OFFERED at the time, which is evidence about a moment, not current
+     * state — and the outbox is where evidence about a moment goes.
+     */
+    const outbox = await prisma.vaultOutbox.findMany({
+      where: { type: 'agreement.assignor_changed', subjectId: agreementId },
+    });
+    const changed = outbox.find(
+      (row) => (row.payload as Record<string, unknown>).assignorId === res.body.assignorId,
+    );
+    expect((changed?.payload as Record<string, unknown>).relationshipsVersion).toBe(
+      'relationships-2026-09-1',
+    );
+
+    // OMITTING IT CHANGES NOTHING for every caller that predates the dropdown:
+    // the relationship is still derived from the basis, as it always was.
+    const derived = await request(app.getHttpServer())
+      .post(`/agreements/${await draft()}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({
+        assignorIsPatient: false,
+        name: 'Sam Parent',
+        authorityBasis: 'parent',
+        declaresEighteenOrOver: true,
+        email: 'sam.parent@example.invalid',
+      })
+      .expect(201);
+    const withoutRelationship = await prisma.withPractice(practiceId, (tx) =>
+      tx.assignor.findFirst({ where: { id: derived.body.assignorId } }),
+    );
+    expect(withoutRelationship?.relationshipToPatient).toBe('parent');
+  });
+
   it('practice_staff_rejected_as_assignor_server_side', async () => {
     const agreementId = await draft();
 

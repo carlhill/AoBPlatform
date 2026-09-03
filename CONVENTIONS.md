@@ -18,8 +18,8 @@ AoBPlatform/
 │   ├── core/        # NestJS modular monolith — modules M1–M8, M12–M14 (port 3001)
 │   ├── rules/       # Rules & Conformance service — zero PII, public tester (port 3002)  ⚠ human-authored zone
 │   ├── vault/       # Evidence Vault service — immudb, hash chain, anchoring (port 3003) ⚠ human-authored zone
-│   ├── web/         # Next.js — console (M12), portal (M8), public tester UI (port 3100)
-│   ├── kiosk/       # Expo/React Native tablet app (C2) — placeholder until Phase 1
+│   ├── web/         # Next.js — console (M12), portal (M8), tester UI, kiosk (C2) (port 3100)
+│   │                #   app/kiosk/ is the waiting-room tablet; apps/kiosk (Expo) was retired 3 Sep 2026
 │   └── connector/   # Site-installed Windows PMS connector — mock adapter until D-01
 ├── packages/
 │   ├── domain/      # Pure TS domain model + structural hard-rule guards. Zero deps.
@@ -153,9 +153,17 @@ stale-`wslrelay.exe` port-conflict note).
   `medicare_number_rejected_as_identifier`) — see
   `packages/domain/src/hard-rules.test.ts` for the pattern and CLAUDE.md §6
   for the obligation. Do not rename these tests; the names are traceability.
-- Playwright for web flows, Maestro for kiosk — added when the first real user
-  flow exists. k6 priority scenarios: the 8–10 am check-in burst and the 89AA
-  dispatch batch.
+- Playwright for web flows, INCLUDING the kiosk ceremony now that the kiosk is
+  a page of `apps/web` (`apps/web/e2e`, run by `npm run e2e:kiosk`). Maestro is
+  no longer used and no device or emulator is needed. That suite is
+  deliberately NOT in CI and is deliberately NOT called `test:e2e`: it needs a
+  live core on 3001 and a live web server on 3100, which CI has neither of.
+- `apps/web` runs **Vitest**, not Jest, and that is not a drift from the §3
+  pin. The repo-wide Jest 29 pin exists for `ts-jest` and `jest-expo`, both of
+  which left with `apps/kiosk`; Vitest reads the same `tsconfig.json` the dev
+  server and `npm run typecheck` read, so a test and the page under test cannot
+  disagree about how the code compiles. Every service and package stays on Jest.
+- k6 priority scenarios: the 8–10 am check-in burst and the 89AA dispatch batch.
 
 ## 8b. A practitioner identity is created by INVITATION only
 
