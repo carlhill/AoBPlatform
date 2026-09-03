@@ -1050,10 +1050,25 @@ rule: build only what it designs.
       item first — a `reconciliation.decided` event carrying the deciding
       person, the choice (private billing / forgo / keep chasing) and the
       reason. Then the screen.
-- [ ] **R-2's "Escalate to a person" / "Hand back"** are drawn; the ladder is
-      shown from the band policy but nothing records an AI or human chase
-      attempt yet (only capture requests and correspondence exist). Attempt
-      tracking is its own item.
+- [~] **R-2's "Escalate to a person" / "Hand back"** — the BACKEND landed
+      3 Sep 2026 (`1987d2f`): `chase_attempts` is append-only evidence of what
+      a person at the practice actually did — rang, texted, emailed, spoke at
+      the desk, posted — with the outcome, the acting person from the session,
+      a `chase.attempted` vault event through the outbox, and human and
+      automated attempts counted on ONE ladder via `attemptAllowed`. A chase
+      against an 89AA notice is refused by the database as well as the service.
+      Built because the practice is the party that does not get paid, so a
+      practice that chased and still failed needs evidence that it tried.
+      **The SCREEN is still to build.** `GET /chase-attempts/:subjectType/:subjectId`
+      already returns everything R-2 needs: the trail, the band, the
+      escalation, `attemptsMade` for "attempt 2 of 3", `nextStep` for the
+      Escalate and Hand back buttons, and `attemptAllowed` to disable the
+      record control. `CHASE_ATTEMPT_CHANNELS` and `CHASE_OUTCOMES_BY_CHANNEL`
+      are exported so the form narrows outcomes by channel without a second
+      copy of the rule; the labels themselves still need writing into
+      `apps/web/app/strings.ts`.
+- [ ] REQ-CHASE-10's cap raise is plumbed through the domain but nothing ever
+      sets it — no `practiceRaisedCapTo` store exists yet.
 - [x] **Practice correspondence screen (M-1)** — BUILT 3 Sep 2026 as
       `/practice/correspondence` and its view-only platform twin, off the
       existing `GET /correspondence`. The patient's half (P-1, Messages tab)
