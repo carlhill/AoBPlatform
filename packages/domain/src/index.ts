@@ -46,3 +46,4 @@ export * from './reconciliation-decision';
 export * from './correspondence-log';
 export * from './kiosk';
 export * from './chase-attempt';
+export * from './assignor';

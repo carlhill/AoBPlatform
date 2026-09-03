@@ -1,6 +1,12 @@
 import { BadRequestException, Body, Controller, Get, Headers, Ip, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { AgreementsService } from './agreements.service';
-import { CreateAgreementDto, LockParticularsDto, SignDto, TransitionDto } from './agreements.dto';
+import {
+  ChangeAssignorDto,
+  CreateAgreementDto,
+  LockParticularsDto,
+  SignDto,
+  TransitionDto,
+} from './agreements.dto';
 
 /**
  * Practice scope currently arrives via the x-practice-id header.
@@ -30,6 +36,26 @@ export class AgreementsController {
   @Get(':id')
   get(@Headers('x-practice-id') practiceId: string | undefined, @Param('id', ParseUUIDPipe) id: string) {
     return this.agreements.get(requirePractice(practiceId), id);
+  }
+
+  /**
+   * Somebody other than the patient is signing — or the patient is after all.
+   *
+   * ON THE AGREEMENT, NOT ON THE CAPTURE REQUEST, and deliberately: D7 is a
+   * particular of the AGREEMENT, one of the things the rule set validates and
+   * the renderer prints. A capture request is a channel — a link, a tablet, a
+   * piece of paper — and the same agreement may have several open at once
+   * (FR-2.7). Hanging "who signs" off one of them would let two channels
+   * disagree about the party to a single contract. So it sits beside
+   * `:id/particulars` and `:id/sign`, in the order the ceremony runs.
+   */
+  @Post(':id/assignor')
+  changeAssignor(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ChangeAssignorDto,
+  ) {
+    return this.agreements.changeAssignor(requirePractice(practiceId), id, dto);
   }
 
   @Post(':id/particulars')

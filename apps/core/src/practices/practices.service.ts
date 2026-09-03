@@ -111,6 +111,16 @@ export class PracticesService {
    * block is the Departmental position, not a preference.
    */
   async addAssignor(practiceId: string, dto: CreateAssignorDto) {
+    // "Other" WITHOUT ITS NOTE IS NOT A BASIS, it is a shrug — the note IS the
+    // basis on that branch (REQ-VUL-01). The database refuses it too
+    // (assignors_other_basis_has_note); this is the sentence a person can act
+    // on, said before the constraint has to say it.
+    if (dto.authorityBasis === 'other_with_note' && !dto.authorityNote?.trim()) {
+      throw new BadRequestException(
+        'REQ-VUL-01: an "other" authority basis carries a note saying what it is. A friend signing is ' +
+          'a legitimate answer; write "friend".',
+      );
+    }
     return this.prisma.withPractice(practiceId, async (tx) => {
       const staff = await tx.staffMember.findMany({ where: { active: true } });
       const candidateName = collapse(dto.name);

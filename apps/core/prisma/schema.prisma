@@ -1078,6 +1078,22 @@ model Assignor {
   contactMobile         String?
   contactEmail          String?
   preferredLanguage     String?
+  /**
+   * WHEN THE SELF-DECLARATION WAS MADE, not whether it was checked. Reg
+   * 65CB(5) makes authority self-declared (REQ-VUL-02); the platform records
+   * the declaration and never verifies it, and never asks about capacity
+   * (REQ-VUL-05).
+   */
+  authorityDeclaredAt   DateTime?
+  /**
+   * REQ-AGE-01 — the on-screen declaration that the person acting for another
+   * is of full age. A TIMESTAMP OF A DECLARATION, never a date of birth: we
+   * hold no DOB for a third-party assignor, and REQ-AGE-04 forbids trusting
+   * an attestation where one IS held.
+   */
+  declaredOfFullAgeAt   DateTime?
+  /** C7.2 — channel preference is per ASSIGNOR, because the signer is not always the patient. */
+  preferredChannel      String? // mobile | email
 
   agreements Agreement[]
 
@@ -1108,6 +1124,14 @@ model Agreement {
   assignorId            String       @db.Uuid
   assignor              Assignor     @relation(fields: [assignorId], references: [id])
   assignorIsPatient     Boolean // D7 — explicit, never inferred
+  /**
+   * The assignor this agreement pointed at while the patient was signing for
+   * themselves, remembered when it is re-pointed at somebody else so that
+   * reverting is exact rather than a guess. Without it "the patient is signing
+   * after all" would have to find a self-assignor by name, which is how one
+   * person ends up with three rows and the wrong one gets the copy.
+   */
+  patientAssignorId     String?      @db.Uuid
   enduringPathway       String? // mymedicare | residential_aged_care | accho_ams
   status                String       @default("draft")
   // Snapshot of the s 65C particulars as rendered and locked (REQ-DATA-11).

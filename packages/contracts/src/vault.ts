@@ -31,6 +31,18 @@ export const VAULT_EVENT_TYPES = [
   'agreement.stored',
   'agreement.written_back',
   'agreement.status_changed',
+  /**
+   * WHO SIGNS CHANGED, before the particulars were locked — the patient was
+   * the default and somebody else is actually signing, or the reverse.
+   *
+   * Recorded because D7 is a particular, and "this agreement was always going
+   * to be signed by the child's mother" and "it was re-pointed at her thirty
+   * seconds before it locked" are different histories that the agreement
+   * itself cannot tell apart. The payload carries the authority basis and the
+   * TYPE of contact channel — never the name, never the number or the address
+   * (REQ-LOG-08, REQ-VER-04): identifiers stay in the encrypted store.
+   */
+  'agreement.assignor_changed',
   'agreement.superseded',
   'agreement.ceased',
   'agreement.terminated',
