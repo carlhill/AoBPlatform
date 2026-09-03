@@ -101,17 +101,73 @@ export const strings = {
       patient_record_number: 'Patient record number — on your appointment reminder',
       ihi: 'Individual Healthcare Identifier',
     } as Record<string, string>,
-    identifierHints: {
-      /*
-       * YYYY-MM-DD, because that is what the server compares against: it takes
-       * the first ten characters of the stated value and matches them against
-       * the ISO date it holds. A hint that said DD/MM/YYYY would be a field
-       * that could never match, and the screen would only ever say 'some
-       * details don't match' — with no way for anyone to find out why.
-       */
-      date_of_birth: 'YYYY-MM-DD',
-      address: 'Street, suburb and postcode',
-    } as Record<string, string>,
+    /*
+     * HINTS ARE FOR THE FREE-TEXT IDENTIFIERS ONLY, and there are no longer
+     * any that need one. Name, date of birth and address are structured
+     * controls now — a hint that has to teach somebody a date format is a
+     * field that should have been a picker. Kept as a table because
+     * `identifierFieldsFor` reads it by type.
+     */
+    identifierHints: {} as Record<string, string>,
+
+    /*
+     * THE STRUCTURED SUB-FIELDS (Carl, 3 Sep 2026). Three of the six approved
+     * identifiers are composite, and a single free-text box for each asked the
+     * patient to guess our formatting: "YYYY-MM-DD", one line for a whole
+     * address. The parts are collected separately and joined for the server —
+     * the wire contract still sends one string per identifier type.
+     */
+    nameFamily: 'Family name',
+    nameGiven: 'Given name(s)',
+    dobDay: 'Day',
+    dobMonth: 'Month',
+    dobYear: 'Year',
+    /** Months by NAME. A patient reading "08" has to translate it; nobody should have to. */
+    monthNames: [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ] as readonly string[],
+    addressLine1: 'Address line 1',
+    addressLine2: 'Address line 2',
+    addressOptional: 'Optional',
+    suburb: 'Suburb',
+    addressState: 'State or territory',
+    postcode: 'Postcode',
+    country: 'Country',
+    /**
+     * The empty option on every picker, so nothing is pre-chosen on the
+     * patient's behalf. ONE WORD on purpose: a closed `<select>` is only as
+     * wide as its cell, and a longer placeholder was clipped mid-word in the
+     * day picker at 1024x768 — the one width where three pickers share a row.
+     */
+    chooseOption: 'Choose',
+    /** Australian states and territories, in the order the ABS lists them. */
+    stateOptions: [
+      { value: 'NSW', label: 'NSW — New South Wales' },
+      { value: 'VIC', label: 'VIC — Victoria' },
+      { value: 'QLD', label: 'QLD — Queensland' },
+      { value: 'SA', label: 'SA — South Australia' },
+      { value: 'WA', label: 'WA — Western Australia' },
+      { value: 'TAS', label: 'TAS — Tasmania' },
+      { value: 'NT', label: 'NT — Northern Territory' },
+      { value: 'ACT', label: 'ACT — Australian Capital Territory' },
+    ] as ReadonlyArray<{ value: string; label: string }>,
+    defaultCountry: 'Australia',
+    /**
+     * The disabled Continue label. It says what is missing in kind, never
+     * which identifier — the same rule the mismatch copy obeys.
+     */
+    continueBlocked: 'Continue — some details still needed',
   },
 
   assignor: {
