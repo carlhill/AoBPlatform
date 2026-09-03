@@ -44,12 +44,12 @@ import {
   UserSquare,
   Send,
 } from 'lucide-react';
-import { type CardState } from '@aobplatform/domain';
+import { audiencesOf, mayReach, type Audience, type CardState } from '@aobplatform/domain';
 import { Chip, Notice, Shell, ui, type Tone } from '../../ui';
 import { useRefreshable } from '../../refresh';
 import { toViewPath } from '../../viewPath';
 import { strings } from '../../strings';
-import { apiHeaders } from '../../auth';
+import { apiHeaders, currentSession } from '../../auth';
 import styles from './setup.module.css';
 import { SessionControl } from '../../SessionControl';
 
@@ -151,6 +151,21 @@ export function SetupHub({
 }) {
   const [hub, setHub] = useState<Hub | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  /*
+   * WHAT THIS READER MAY ACTUALLY OPEN, asked of the domain rather than guessed
+   * at here. An operator in view-only reaches these through the per-practice
+   * twins, which is a different question, so the check only governs a practice
+   * reading its own hub.
+   */
+  const session = currentSession();
+  const audiences: Audience[] = audiencesOf({
+    roles: session?.roles ?? [],
+    practiceId,
+    practitionerId: session?.practitionerId,
+    consoleRole: session?.consoleRole,
+  });
+  const canOpen = (path: string) => viewOnly || mayReach(path, audiences);
 
   // Hoisted so the top-bar refresh can re-run it. The hub is the page most
   // worth re-reading: it is a summary of work other people are doing.
@@ -424,10 +439,19 @@ export function SetupHub({
             {openLabel(strings.reports.title)}
             <ArrowRight size={14} aria-hidden="true" />
           </Link>
-          <Link href={viewOnly ? toViewPath('/practice/users', practiceId) : '/practice/users'} className={styles.cardLink} data-testid="hub-to-users">
-            {openLabel(strings.users.title)}
-            <ArrowRight size={14} aria-hidden="true" />
-          </Link>
+          {/*
+            THE ADMINISTRATOR'S ALONE. Deciding who may sign in is the one thing
+            on this hub an ordinary practice user may not do, and the hub used
+            to offer it to all of them — a card that could only ever refuse.
+            Gated by mayReach, the SAME rule the guard applies, so the card and
+            the page cannot drift apart the way the queue and reviews cards did.
+          */}
+          {canOpen('/practice/users') && (
+            <Link href={viewOnly ? toViewPath('/practice/users', practiceId) : '/practice/users'} className={styles.cardLink} data-testid="hub-to-users">
+              {openLabel(strings.users.title)}
+              <ArrowRight size={14} aria-hidden="true" />
+            </Link>
+          )}
           {/*
             SCOPED TO THIS PRACTICE in view-only. These two used to point at the
             global platform queues, which threw the reader out of the practice
