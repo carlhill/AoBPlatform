@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Prisma } from '@prisma/client';
 import { parseRetentionYears, retentionExpiryFor } from '@aobplatform/domain';
+import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** The transport row, as much of it as evidence needs. */
@@ -160,6 +161,35 @@ export class CorrespondenceService {
 
   async markDeliveredForNotice(tx: Prisma.TransactionClient, noticeId: string, at: Date) {
     await tx.correspondence.updateMany({ where: { noticeId }, data: { state: 'delivered', deliveredAt: at } });
+  }
+
+  /**
+   * Retention tombstone (Part 5): the text goes, the row stays — that a message
+   * was sent, to whom and about what remains evidence. Caller owns the scope
+   * (practice or practitioner). Refuses a hold; a no-op once already removed.
+   */
+  async tombstone(tx: Prisma.TransactionClient, id: string, now: Date): Promise<boolean> {
+    const row = await tx.correspondence.findFirst({
+      where: { id },
+      select: { id: true, legalHold: true, contentRemovedAt: true, retentionExpiryDate: true, subjectType: true, subjectId: true },
+    });
+    if (!row || row.legalHold || row.contentRemovedAt) return false;
+    await tx.correspondence.update({ where: { id }, data: { bodyText: null, bodyHtml: null, contentRemovedAt: now } });
+    await enqueueVaultEvent(tx, {
+      type: 'retention.crypto_shredded',
+      actor: { principalType: 'system', id: 'core' },
+      subject: { type: 'Correspondence', id },
+      payload: {
+        action: 'content_removed',
+        reason: 'retention_expired',
+        retentionExpiryDate: row.retentionExpiryDate?.toISOString().slice(0, 10) ?? '',
+        // The clock is the send itself, an observed moment — never a defaulted one (REQ-INT-04).
+        retentionClockSource: 'sent_at',
+        aboutType: row.subjectType,
+        aboutId: row.subjectId,
+      },
+    });
+    return true;
   }
 
   /** The practice's own correspondence — practice-scoped, newest first (plan §4.2). */

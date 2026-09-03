@@ -9,6 +9,7 @@ import {
   type EvidenceWarning,
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
+import type { VaultEventInput } from '@aobplatform/contracts';
 import { PrismaService } from '../prisma/prisma.service';
 import { extractText } from './extract-text';
 import { ARTEFACT_STORE, sha256Hex, type ArtefactStore } from './artefact-store';
@@ -192,7 +193,12 @@ export class ArtefactsService {
   }
 
   /** Removes the content; the row, hash and provenance survive by design. */
-  async tombstone(practiceId: string, artefactId: string, reason: string) {
+  async tombstone(
+    practiceId: string,
+    artefactId: string,
+    reason: string,
+    actor: VaultEventInput['actor'] = { principalType: 'staff', id: practiceId },
+  ) {
     if (!reason?.trim()) {
       throw new BadRequestException('Removing artefact content must record why.');
     }
@@ -213,7 +219,7 @@ export class ArtefactsService {
       });
       await enqueueVaultEvent(tx, {
         type: 'retention.crypto_shredded',
-        actor: { principalType: 'staff', id: practiceId },
+        actor,
         subject: { type: 'Artefact', id: artefactId },
         payload: { action: 'content_removed', sha256: artefact.sha256, reason: reason.trim() },
       });

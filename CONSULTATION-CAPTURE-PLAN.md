@@ -1,6 +1,6 @@
 # Pre- and post-consultation capture, correspondence visibility, retention — plan
 
-**Status:** APPROVED 2026-08-25 by Carl — all eleven Part 6 decisions answered (three with amendments, recorded inline there). Build order in Part 7. Items 1–5 BUILT 2026-08-25 (AutoCaptureModule, InboundModule, AgreeModule + /patient/agree/[token], CorrespondenceModule; e2e green); item 6 next.
+**Status:** APPROVED 2026-08-25 by Carl — all eleven Part 6 decisions answered (three with amendments, recorded inline there). Build order in Part 7. Items 1–5 BUILT 2026-08-25 (AutoCaptureModule, InboundModule, AgreeModule + /patient/agree/[token], CorrespondenceModule; e2e green). Item 6 BUILT 2026-09-03 (RetentionModule: hourly sweep, three SECURITY DEFINER due-lists, Correspondence + artefact tombstones, `retention.expiry_scheduled` with clock source; e2e green); item 7 next.
 **Written:** 2026-08-25, from Carl's brief plus claude-cowork's read of the design
 docs, then checked against the code that actually exists (every claim below
 names the file). **Revised the same day** for Carl's two corrections: the PMS
