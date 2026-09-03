@@ -467,26 +467,44 @@ export function SetupHub({
             "That page is not for this account" from a card the practice was
             invited to press: the guard was right and the link was wrong.
           */}
-          {viewOnly && (
-            <Link href={toViewPath('/practice/reviews', practiceId)} className={styles.cardLink} data-testid="hub-to-reviews">
+          {canOpen('/practice/reviews') && (
+            <Link
+              href={viewOnly ? toViewPath('/practice/reviews', practiceId) : '/practice/reviews'}
+              className={styles.cardLink}
+              data-testid="hub-to-reviews"
+            >
               {openLabel(strings.reviews.title)}
               <ArrowRight size={14} aria-hidden="true" />
             </Link>
           )}
           {/*
-            TWO DIFFERENT THINGS THAT BOTH GET CALLED "MESSAGES". The outbound
-            queue is transport across every practice and is platform-only; what
-            a practice means by its messages is what was sent in ITS name, which
-            is the correspondence log. Same card, the reader's own version of it.
+            TWO DIFFERENT THINGS THAT BOTH GET CALLED "MESSAGES", and whoever
+            may open each one gets it. The outbound queue is TRANSPORT across
+            every practice, so it is the platform's; the correspondence log is
+            what was sent in THIS practice's name, so it is the practice's. An
+            operator has business with both and now sees both -- gating the
+            queue on view-only alone took it away from them on their own hub.
           */}
-          <Link
-            href={viewOnly ? toViewPath('/practice/queue', practiceId) : '/practice/correspondence'}
-            className={styles.cardLink}
-            data-testid="hub-to-queue"
-          >
-            {openLabel(viewOnly ? strings.queue.title : strings.correspondence.title)}
-            <ArrowRight size={14} aria-hidden="true" />
-          </Link>
+          {canOpen('/practice/queue') && (
+            <Link
+              href={viewOnly ? toViewPath('/practice/queue', practiceId) : '/practice/queue'}
+              className={styles.cardLink}
+              data-testid="hub-to-queue"
+            >
+              {openLabel(strings.queue.title)}
+              <ArrowRight size={14} aria-hidden="true" />
+            </Link>
+          )}
+          {canOpen('/practice/correspondence') && (
+            <Link
+              href={viewOnly ? toViewPath('/practice/correspondence', practiceId) : '/practice/correspondence'}
+              className={styles.cardLink}
+              data-testid="hub-to-correspondence"
+            >
+              {openLabel(strings.correspondence.title)}
+              <ArrowRight size={14} aria-hidden="true" />
+            </Link>
+          )}
           <Link
             href={viewOnly ? toViewPath('/practice/reconciliation', practiceId) : '/practice/reconciliation'}
             className={styles.cardLink}
