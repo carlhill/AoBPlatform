@@ -12,8 +12,16 @@ const record = {
 
 describe('identifier normalisation', () => {
   it('treats family + given names as ONE identifier, case/whitespace-insensitive', () => {
-    expect(normalisedHeldValue('name', record)).toBe('testpatient alex');
-    expect(normaliseStatedValue('name', '  TESTPATIENT   alex ')).toBe('testpatient alex');
+    expect(normalisedHeldValue('name', record)).toBe('alex testpatient');
+    expect(normaliseStatedValue('name', '  TESTPATIENT   alex ')).toBe('alex testpatient');
+  });
+
+  it('name_matches_in_either_order', () => {
+    // The PMS holds family name first; a patient types given name first.
+    expect(normaliseStatedValue('name', 'Alex Testpatient')).toBe(normalisedHeldValue('name', record));
+    expect(normaliseStatedValue('name', 'Testpatient Alex')).toBe(normalisedHeldValue('name', record));
+    // A different name with the same first token is still a mismatch.
+    expect(normaliseStatedValue('name', 'Alex Other')).not.toBe(normalisedHeldValue('name', record));
   });
 
   it('normalises addresses through punctuation and case', () => {

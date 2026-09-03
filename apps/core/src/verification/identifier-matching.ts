@@ -21,12 +21,22 @@ function collapse(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+/**
+ * A name is one identifier whichever way round it is said. The PMS holds
+ * family name first; a patient types given name first. Sorting the tokens
+ * makes the two orderings compare equal without weakening the match — the
+ * same tokens still have to be present.
+ */
+function collapseName(value: string): string {
+  return collapse(value).split(' ').sort().join(' ');
+}
+
 /** Normalises a held or stated value for one identifier type. Returns null when the record has no value to match. */
 export function normalisedHeldValue(type: ApprovedIdentifierType, record: PatientIdentityRecord): string | null {
   switch (type) {
     case 'name':
       // Family + given names together count as ONE identifier (REQ-VER-02).
-      return collapse(`${record.familyName} ${record.givenNames}`);
+      return collapseName(`${record.familyName} ${record.givenNames}`);
     case 'date_of_birth':
       return record.dateOfBirth.toISOString().slice(0, 10);
     case 'gender':
@@ -43,7 +53,7 @@ export function normalisedHeldValue(type: ApprovedIdentifierType, record: Patien
 export function normaliseStatedValue(type: ApprovedIdentifierType, stated: string): string {
   switch (type) {
     case 'name':
-      return collapse(stated);
+      return collapseName(stated);
     case 'date_of_birth':
       return stated.trim().slice(0, 10);
     case 'gender':
