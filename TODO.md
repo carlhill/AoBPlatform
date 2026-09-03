@@ -867,6 +867,71 @@ every practice it is worse.
       functions returning ids and counts (CONVENTIONS.md §6) — the same shape
       as `outbound_due_practices`, never a weakened policy.
 
+## "Consultation" in the purpose labels, against the terminology rule
+
+Carl, 3 Sep 2026, specifying the correspondence log's purpose column:
+`Episodic-Agreement-Pre-Consultation`, `Episodic-Agreement-Post-Consultation`,
+`Enduring-Agreement-Pre-Consultation`, `Episodic-Notice-Post-Consultation`, and
+`-Reminder-1|2|3` on a reminder. Built exactly as asked.
+
+### Why it is written down rather than silently changed
+
+CLAUDE.md section 3 sets the terminology the domain model enforces:
+**"service", not "consult"** (REQ-MP-01), alongside "provider" not "GP". The
+labels above say Consultation, so they cut across a rule the rest of the
+product follows. It was raised once and Carl's wording stands -- he knows the
+regime, and the plan documents themselves talk about pre- and
+post-consultation capture, so the rule may well be aimed at the billable
+event rather than at the appointment.
+
+This entry exists so that the decision is FINDABLE if a reviewer asks why one
+screen says Consultation and everything else says service, rather than being
+rediscovered as a bug.
+
+### If it is ever reversed
+
+- [ ] It is a one-word change: every label is composed in
+      `apps/web/app/strings.ts` and nothing is inlined (REQ-LANG-01), so
+      Pre-Consultation becomes Pre-Service in one place per label.
+- [ ] The agreement TYPES do not change -- `episodic_pre` and `episodic_post`
+      are the domain's own names and are not user-facing text.
+- [ ] Check the patient's half of the log at the same time. The same labels
+      render there, and a patient reading "Pre-Service" may need plainer
+      words than a practice does; the two audiences share one string table.
+- [ ] Nothing else needs touching: the label is composed from the agreement
+      type carried on the row, never from a subject line.
+
+## The message copy itself, in every channel
+
+Carl, 3 Sep 2026, looking at the correspondence log: "The email and SMS content
+itself will have to be updated."
+
+The templates were written to prove the pipeline, not to be read by a patient.
+Seen side by side on one screen -- which is what the correspondence log made
+possible -- they are inconsistent in voice, and the SMS ones were written to a
+length nobody checked against a real segment count.
+
+- [ ] Every template reviewed as COPY, by channel: SMS, email, and the printed
+      letter, which has different constraints again.
+- [ ] SMS costs money per segment. Count segments and say so, rather than
+      discovering it on a practice's bill (REQ-SMS-06 already puts spend on
+      the console).
+- [ ] The guardrail words stay out: never "certified", "approved",
+      "accredited", "government-approved" (REQ-65C-05). A lint rule catches
+      these in the string table; templates must obey it too.
+- [ ] No benefit or dollar amount on anything about an agreement. The 89AA
+      notice is the one place an amount belongs (REQ-REG-04).
+- [ ] An 89AA notice never acquires approval semantics or a chase (REQ-END-05,
+      REQ-CHASE-02) -- its copy says a service WAS billed, and asks nothing.
+- [ ] Templates are versioned content like everything else here, and each
+      stored message already records the version it was sent under. Changing
+      copy must mint a new version rather than editing one in place.
+- [ ] Plain English, and the reading level checked. The audience is every
+      patient, not a confident one.
+
+Depends on nothing; blocked by nobody. It is a writing task with a review, and
+it should happen before a real practice sends any of them.
+
 ## From the Claude Design handoff (25 Aug 2026) — what was built, what was not, and why
 
 `.claude/claude_design/AoBPlatform UI Design Request.zip` covers the kiosk
