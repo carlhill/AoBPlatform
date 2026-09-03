@@ -279,22 +279,39 @@ export function AssignorScreen({
             </p>
           ) : null}
 
-          <div className={styles.actions}>
-            <GuardedButton
-              label={saving ? strings.particulars.validating : strings.assignor.continueAction}
-              state={
-                guard.state === 'valid'
-                  ? { disabled: false }
-                  : {
-                      disabled: true,
-                      disabledLabel: strings.assignor.continueBlocked(guard.reasons.length),
-                      reasons: guard.reasons,
-                    }
-              }
-              onPress={onContinue}
-              testId="assignor-continue"
-            />
-          </div>
+          {/*
+            CONTINUE BELONGS TO THE BRANCH THAT NEEDS IT, AND ONLY THAT ONE
+            (Carl, 3 Sep 2026 live test — "tapping 'I am signing for myself'
+            shows the selected state but a Continue is still shown and
+            required").
+            
+            The tap DOES advance, and always did. What was wrong was the
+            screen: a second control sitting under a choice that has already
+            been made reads as the thing you still have to press, so a person
+            waits for a step that is not there. Self needs no Continue —
+            nothing about it can fail on this device — so it is not drawn. The
+            "someone else" branch keeps it, because that branch has real gates
+            to pass and something has to submit them; so does the locked
+            branch, where the choice is fixed and Continue is the only way on.
+          */}
+          {!choice.assignorIsPatient || particularsLocked ? (
+            <div className={styles.actions}>
+              <GuardedButton
+                label={saving ? strings.particulars.validating : strings.assignor.continueAction}
+                state={
+                  guard.state === 'valid'
+                    ? { disabled: false }
+                    : {
+                        disabled: true,
+                        disabledLabel: strings.assignor.continueBlocked(guard.reasons.length),
+                        reasons: guard.reasons,
+                      }
+                }
+                onPress={onContinue}
+                testId="assignor-continue"
+              />
+            </div>
+          ) : null}
         </div>
 
         {rail}

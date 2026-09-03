@@ -308,6 +308,14 @@ describe('assignor rules', () => {
     expect(onChoose).toHaveBeenCalledWith(true);
     // No Continue press was needed to convey the choice.
     expect(onContinue).toHaveBeenCalledTimes(0);
+    /*
+     * AND NO CONTINUE IS EVEN OFFERED (Carl, 3 Sep 2026 live test). The tap
+     * always advanced; what was wrong was that a second control sat under a
+     * choice already made, which reads as the step you still have to take. A
+     * person waited for something that was not there. Self needs no Continue —
+     * nothing about it can fail on this device — so it is not drawn.
+     */
+    expect(view.queryByTestId('assignor-continue')).toBeNull();
     // And the choice is visible as well as recorded — a tap that changes
     // nothing on screen reads as a tap that did not register.
     view.unmount();
