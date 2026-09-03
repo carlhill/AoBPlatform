@@ -7,6 +7,7 @@ import {
   type KioskWaitingRow,
 } from '@aobplatform/domain';
 import { PrismaService } from '../prisma/prisma.service';
+import { DevicesService, type ResolvedDevice } from '../devices/devices.service';
 
 /**
  * WHO IS HERE, FOR THIS PRACTICE, RIGHT NOW — the one question a tablet in a
@@ -34,7 +35,51 @@ import { PrismaService } from '../prisma/prisma.service';
  */
 @Injectable()
 export class KioskService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly devices: DevicesService,
+  ) {}
+
+  /**
+   * WHO THIS TABLET IS. The practice name and state for the header, the label
+   * somebody gave the device, and whether it is below the practice's kiosk
+   * build floor.
+   *
+   * IT REPLACES THE ENV-VAR PRACTICE ID. The tablet used to be told which
+   * practice it belonged to at build time and to fetch that practice by id;
+   * now it holds one opaque credential and asks. Nothing configurable comes
+   * back — a device with no settings is a device that cannot be configured to
+   * ask for a Medicare card number (REQ-VER-02).
+   *
+   * NO PATIENT DATA, and nothing about the practice beyond what a waiting-room
+   * header shows: a name and a state.
+   */
+  async me(
+    device: ResolvedDevice,
+    kioskBuild: string | null,
+  ): Promise<{
+    deviceId: string;
+    deviceLabel: string;
+    practiceId: string;
+    practiceName: string;
+    state: string | null;
+    /** TYPES, never values (REQ-VER-04) — what the verify screen will ask for. */
+    identifierTypes: string[];
+    kioskBuild: string | null;
+    reload: boolean;
+  }> {
+    const practice = await this.prisma.withPractice(device.practiceId, (tx) => tx.practice.findFirst({}));
+    return {
+      deviceId: device.deviceId,
+      deviceLabel: device.label,
+      practiceId: device.practiceId,
+      practiceName: practice?.name ?? '',
+      state: practice?.state ?? null,
+      identifierTypes: practice?.identifierTypes ?? [],
+      kioskBuild,
+      reload: await this.devices.shouldReload(device.practiceId, kioskBuild),
+    };
+  }
 
   /**
    * The practice's `episodic_pre` drafts still waiting to be captured in
@@ -45,13 +90,18 @@ export class KioskService {
    * carrying another practice's id sees that practice and nothing of this
    * one, and a request carrying none sees zero rows rather than all of them.
    */
-  async waitingList(practiceId: string): Promise<{
+  async waitingList(
+    practiceId: string,
+    kioskBuild: string | null = null,
+  ): Promise<{
     practiceId: string;
     revision: string;
     pollMs: number;
     /** TYPES, never values (REQ-VER-04) — what the verify screen will ask for. */
     identifierTypes: string[];
     waiting: KioskWaitingRow[];
+    /** The tablet is below this practice's build floor and must reload. */
+    reload: boolean;
   }> {
     const rows = await this.prisma.withPractice(practiceId, async (tx) => {
       const requests = await tx.captureRequest.findMany({
@@ -153,12 +203,14 @@ export class KioskService {
       return { identifierTypes: practice?.identifierTypes ?? [], waiting };
     });
 
+    const reload = await this.devices.shouldReload(practiceId, kioskBuild);
     return {
       practiceId,
-      revision: revisionOf(rows.waiting),
+      revision: revisionOf(rows.waiting, reload),
       pollMs: kioskPollMs(rows.waiting.length),
       identifierTypes: rows.identifierTypes,
       waiting: rows.waiting,
+      reload,
     };
   }
 }
@@ -177,10 +229,19 @@ export class KioskService {
  * Status is part of the fingerprint, not just the set of ids: a patient
  * moving from `verification_pending` to `awaiting_signature` changes what the
  * row says and must change the token.
+ *
+ * AND SO IS THE RELOAD FLAG, for a reason that only shows up on a quiet
+ * morning. A practice rolling its kiosk build back changes nothing about who
+ * is waiting; if `reload` sat outside the fingerprint, every poll would answer
+ * 304 with no body and the rollback would never reach the tab it was issued
+ * for — the exact failure the forced reload exists to prevent.
  */
-function revisionOf(waiting: KioskWaitingRow[]): string {
+function revisionOf(waiting: KioskWaitingRow[], reload: boolean): string {
   const material = waiting
     .map((row) => `${row.captureRequestId}:${row.agreementStatus}:${row.appointmentTime ?? ''}`)
     .join('|');
-  return createHash('sha256').update(`${waiting.length}#${material}`).digest('hex').slice(0, 32);
+  return createHash('sha256')
+    .update(`${waiting.length}#${material}#reload:${reload}`)
+    .digest('hex')
+    .slice(0, 32);
 }

@@ -1,6 +1,7 @@
 import { BadRequestException, Body, Controller, ForbiddenException, Headers, Post } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { DevicesService } from '../devices/devices.service';
 
 /** Named honestly: nobody reviewed or composed these rows — a seed wrote them. */
 const DEV_SEED_AUTHOR = 'dev seed (not a human review)';
@@ -56,7 +57,41 @@ const TRANSPORT_STATE: Record<string, string> = {
 
 @Controller('dev')
 export class DevSeedController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly devices: DevicesService,
+  ) {}
+
+  /**
+   * A REGISTERED TABLET AND ITS PAIRING CODE, WITHOUT A SIGNED-IN USER — dev
+   * only, and the reason it exists is worth stating plainly.
+   *
+   * `POST /devices` REFUSES an unattributed request by design: registering a
+   * tablet hands out the credential that opens a practice's waiting list, and
+   * an audit line naming nobody is worse than a refusal. The Playwright kiosk
+   * suite has no Keycloak session — the console's sign-in is a passkey
+   * ceremony against the dev realm — so it cannot call that endpoint.
+   *
+   * The wrong fix would be to relax `POST /devices` so a test can pass, which
+   * removes the property the test suite exists to protect. So the DEV surface
+   * takes the weight instead: behind `NODE_ENV !== 'production'`, in the
+   * module that already conjures whole practices out of nothing, attributed
+   * honestly to a seed rather than to a person. The code it returns goes
+   * through the SAME public `POST /devices/pair` as a real tablet's, so the
+   * suite exercises the real pairing path and only the console button is
+   * stubbed.
+   */
+  @Post('kiosk-device')
+  async devKioskDevice(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Body() body: { label?: string } | undefined,
+  ) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new ForbiddenException('Dev seeding does not exist in production.');
+    }
+    if (!practiceId) throw new BadRequestException('x-practice-id header is required.');
+    return this.devices.registerForDev(practiceId, body?.label?.trim() || 'Dev tablet');
+  }
 
   /** Creates one sample practice with a GP, a patient and a self-assignor. Dev only. */
   @Post('seed')

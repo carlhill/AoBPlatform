@@ -173,6 +173,42 @@ export const VAULT_EVENT_TYPES = [
   // ambiently so no call site can forget it.
   'acting_as.started',
   'acting_as.ended',
+  /*
+   * A TABLET WAS GIVEN, OR LOST, THE ONE CREDENTIAL IT MAY HOLD.
+   *
+   * Evidence rather than configuration, and the reason is REQ-SIG-02: every
+   * signature event already binds a `deviceFingerprint`, and until now that
+   * fingerprint referred to nothing — a string with no registry behind it. A
+   * device that was registered by a named person, paired at a known moment and
+   * revoked at another turns it into a fact somebody can put a question to in
+   * 2028: which tablet was this signed on, who put it there, and was it still
+   * the practice's at the time?
+   *
+   * THE PAYLOAD NEVER CARRIES THE CREDENTIAL, nor its hash, nor the pairing
+   * code. It carries the device id, the label a human chose and the actor —
+   * ids and words, never secrets (REQ-LOG-08, and the spirit of REQ-VER-04:
+   * types and outcomes, never values). `device.paired` in particular is
+   * written in the SAME transaction as the credential it evidences, so a
+   * paired tablet with no record of being paired is structurally impossible
+   * (hard rule 11).
+   */
+  'device.registered',
+  'device.paired',
+  'device.revoked',
+  /**
+   * The credential was thrown away and a fresh pairing code issued — a device
+   * that stays the same device. Distinct from revoke-then-register because the
+   * history has to stay attached to the tablet on the desk: "this one was
+   * re-paired in March" and "this is a different tablet" are different facts.
+   */
+  'device.rotated',
+  /**
+   * The practice was moved to a newer kiosk build floor — the rollback signal
+   * that reaches a tab which has been open since eight in the morning. Every
+   * tablet below the floor reloads on its next poll, so this is one act with a
+   * fleet-wide effect, which is exactly the kind that has to be attributable.
+   */
+  'practice.minimum_kiosk_build_set',
   // Somebody -- or something -- decided about a change that needed a second
   // look. The payload always says WHICH, because "a person accepted this" and
   // "a model scored it and nobody looked" are different claims.

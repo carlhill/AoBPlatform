@@ -274,6 +274,23 @@ export const PAGES: Readonly<Record<string, PageRule>> = {
   },
 
   /*
+   * THE TABLETS, and the same audience as `/practice/users` for the same
+   * reason. Registering a device hands out the credential that lets a screen
+   * in a waiting room read the practice's waiting list; revoking one takes it
+   * back. That is the same class of decision as deciding who may sign in, not
+   * a setting — so it belongs to the administrator rather than to anybody with
+   * a practice claim.
+   *
+   * It is also the ONLY place a device is revoked or rotated. Never on the
+   * device: a tablet that can un-pair itself is a tablet a passer-by can
+   * un-pair (TODO.md "Zero-footprint kiosk").
+   */
+  '/practice/devices': {
+    audiences: ['practice_admin'],
+    why: 'The practice’s paired tablets. Registering one issues the credential that opens the waiting list, and revoking one closes it — the administrator’s alone, and never done on the device.',
+  },
+
+  /*
    * PRACTITIONER. Their own affiliations and the notices sent to them, and
    * nothing about a practice's other people. A practitioner works at several
    * practices over time and the platform must never become a directory of who

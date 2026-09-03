@@ -46,6 +46,20 @@ model Practice {
    * a person sets it, which is slower and true.
    */
   defaultServiceDescription String?
+  /**
+   * THE KIOSK BUILD FLOOR — staged rollout with instant rollback (TODO.md
+   * "Zero-footprint kiosk").
+   *
+   * The zero-footprint decision only holds if a rollback REACHES a tablet
+   * whose tab has been open since eight in the morning. Every kiosk request
+   * carries the build it is running; when it is below this string the server
+   * answers `reload: true` and the tab hard-reloads onto whatever the cloud is
+   * now serving. Per practice, because rollout is per practice.
+   *
+   * NULL MEANS NO FLOOR, and no tablet reloads. The absence of a setting is
+   * never a reason to restart every tablet in the country.
+   */
+  minimumKioskBuild  String?
   // Go-live gates (FR-1.7). Both flip via real integrations later; explicit
   // booleans so the checklist is honest, never inferred.
   writeBackProven    Boolean  @default(false)
@@ -1603,6 +1617,96 @@ model ChaseAttempt {
 
   @@index([practiceId, subjectType, subjectId, occurredAt])
   @@map("chase_attempts")
+}
+
+/**
+ * A PRACTICE'S PAIRED TABLET — the one credential the zero-footprint rule
+ * allows on a device (CLAUDE.md §7, TODO.md "Zero-footprint kiosk").
+ *
+ * Like a payment terminal paired to a merchant: the console registers a device
+ * and shows a short-lived code, somebody types it into the tablet once, and
+ * the tablet keeps an opaque credential from then on. `/kiosk` no longer takes
+ * a practice id from anybody — the server resolves the practice from the
+ * credential, and RLS re-checks it exactly as before.
+ *
+ * ONLY THE HASH IS STORED (the spirit of REQ-VER-04, and the same rule
+ * `capture_requests.tokenHash` already keeps): a database read cannot mint a
+ * working credential, and a credential cannot be recovered for somebody who
+ * lost it — rotate issues a new one.
+ *
+ * REVOKE AND ROTATE ARE CONSOLE ACTS, never device acts. A tablet that can
+ * un-pair itself is a tablet a passer-by can un-pair.
+ */
+model Device {
+  id         String @id @default(uuid()) @db.Uuid
+  practiceId String @db.Uuid
+
+  /// What a human calls it, in a list a human reads. "Reception tablet 1".
+  label String
+
+  /// sha256 of the credential's secret half. NEVER the credential itself.
+  /// Null before the first pairing, and again after a revoke or a rotate —
+  /// the credential on the device stops resolving the moment this clears.
+  credentialHash String? @unique
+
+  /// The person who registered it, from their session. Never from the body.
+  createdBy   String
+  createdById String
+  createdAt   DateTime @default(now())
+
+  pairedAt DateTime?
+
+  /// Updated at most once a minute, not on every two-second poll — a heartbeat
+  /// that wrote on every request would turn a quiet waiting room into a write
+  /// per tablet per two seconds, for a column a person reads once a fortnight.
+  lastSeenAt DateTime?
+
+  /// What the tablet last said it was running, so support can read it back
+  /// without asking somebody to look at the device.
+  lastKioskBuild String?
+
+  revokedAt   DateTime?
+  revokedBy   String?
+  /// Why. A device taken out of service and one lost in a taxi are different
+  /// stories, and only one of them is a security event.
+  revokedReason String?
+
+  @@index([practiceId])
+  @@map("devices")
+}
+
+/**
+ * THE SHORT-LIVED CODE, in its own table and deliberately NOT practice-scoped
+ * by RLS — for the same reason `vault_outbox` is not.
+ *
+ * `POST /devices/pair` is reached by a tablet that has no practice scope yet;
+ * establishing one is the entire point of the call. A policy on
+ * `app.practice_id` would fail closed against the one caller the row exists
+ * for. So the lookup is by hash on a table that carries no patient data at
+ * all — a hash, an expiry and two ids — and the FIRST thing the service does
+ * with the practice it finds is re-enter `withPractice` for every subsequent
+ * read and write.
+ *
+ * SINGLE USE IS ENFORCED BY THE UPDATE, not by a read-then-write: consuming a
+ * code is `updateMany` on `consumedAt IS NULL`, so two tablets racing on the
+ * same code produce one credential and one refusal.
+ */
+model DevicePairingCode {
+  id         String @id @default(uuid()) @db.Uuid
+  practiceId String @db.Uuid
+  deviceId   String @db.Uuid
+
+  /// sha256 of the normalised code. The code itself is shown once, on the
+  /// console screen that created it, and is never stored or re-displayed.
+  codeHash String @unique
+
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([deviceId])
+  @@index([expiresAt])
+  @@map("device_pairing_codes")
 }
 
 // FR-11.2 — the vault outbox. Rows are inserted in the SAME transaction as
