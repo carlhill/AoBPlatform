@@ -1671,6 +1671,78 @@ export const strings = {
 
   /* EmailStatusChip — CONVENTIONS.md §9d, used wherever an email address's
      verification state is shown. */
+  /* A patient approving their bulk-billing agreement from the link we sent. */
+  agree: {
+    audience: 'Approve your bulk-billing agreement',
+    checking: 'Loading…',
+
+    verifyTitle: 'First, confirm it is you',
+    verifyLead:
+      'Before we show you anything, we need three details that only you would know. They are compared with ' +
+      'your practice’s records and not kept.',
+    familyName: 'Family name',
+    givenNames: 'Given names',
+    dateOfBirth: 'Date of birth',
+    address: 'Address',
+    addressHint: 'As your practice has it — street, suburb, state and postcode.',
+    verify: 'Continue',
+    verifying: 'Checking…',
+    mismatchTitle: 'Those details did not match',
+    mismatch: 'One or more of those details did not match what the practice holds. Check them and try again.',
+    whyVerifyHeading: 'Why we ask before showing anything',
+    whyVerify:
+      'Links get forwarded, previewed and opened by mail scanners. Until a person has stated these details, ' +
+      'this page shows nothing about anybody — not the practice, not the doctor, not your name.',
+    assurance:
+      'We will never ask you for a Medicare number, a password, or bank details — on this page or by message.',
+
+    reviewTitle: 'Your bulk-billing agreement',
+    reviewLead:
+      'For Medicare to pay the practice directly for this visit — so that you do not pay and claim it back — ' +
+      'you assign your Medicare benefit to the practice. This is what you are agreeing to.',
+    patient: 'Patient',
+    practice: 'Practice',
+    practitioner: 'Practitioner',
+    serviceDate: 'Date of service',
+    item: 'Medicare item number',
+    items: 'Medicare item numbers',
+    noAmount:
+      'No amount is shown, deliberately. An assignment of benefit is about who Medicare pays, not how much; ' +
+      'the amount is fixed by the Medicare schedule for those item numbers.',
+    approve: 'I agree',
+    approving: 'Recording…',
+    approveFailed: 'That could not be recorded',
+    whyApproveHeading: 'What happens when you tap “I agree”',
+    whyApprove:
+      'Your agreement is recorded against exactly the details above, stamped with the time, and a copy is ' +
+      'placed in your practice’s records. The practice cannot change it afterwards, and neither can we.',
+    recordRef: 'Record reference:',
+
+    blockedTitle: 'This cannot be completed yet',
+    blockedBody:
+      'The rules that check an agreement before it is recorded are not switched on for this service yet, so we ' +
+      'have not recorded anything. Nothing is lost — the practice will send you a fresh link when it is ready.',
+
+    doneTitle: 'Thank you — your agreement is recorded',
+    doneBody:
+      'The practice can now bill Medicare directly for that visit. A copy has gone to your practice’s records.',
+    nothingElse: 'There is nothing else to do. You can close this page.',
+
+    lockedTitle: 'This link is locked',
+    lockedBody:
+      'Too many attempts did not match, so it has stopped accepting them. Contact the practice and they can send ' +
+      'you a new one.',
+    expiredTitle: 'This link has expired or already been used',
+    expiredBody:
+      'Links last a short time so that a copy in an old message cannot be used later, and each one works once. ' +
+      'If you have not yet agreed, contact the practice for a new link.',
+    invalidTitle: 'That link is not valid',
+    invalidBody:
+      'It may be incomplete — these links are long and messages sometimes break them across lines. Try copying ' +
+      'the whole thing into the address bar. If it still does not work, contact the practice.',
+    unreachableTitle: 'We could not reach the service',
+  },
+
   emailStatus: {
     verified: 'Verified',
     pending: 'Confirmation pending',

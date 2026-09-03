@@ -1,6 +1,6 @@
 # Pre- and post-consultation capture, correspondence visibility, retention — plan
 
-**Status:** APPROVED 2026-08-25 by Carl — all eleven Part 6 decisions answered (three with amendments, recorded inline there). Build order in Part 7. Items 1–3 BUILT 2026-08-25 (AutoCaptureModule, InboundModule; e2e green); item 4 next.
+**Status:** APPROVED 2026-08-25 by Carl — all eleven Part 6 decisions answered (three with amendments, recorded inline there). Build order in Part 7. Items 1–4 BUILT 2026-08-25 (AutoCaptureModule, InboundModule, AgreeModule + /agree/[token]; e2e green, live walk-through done); item 5 next.
 **Written:** 2026-08-25, from Carl's brief plus claude-cowork's read of the design
 docs, then checked against the code that actually exists (every claim below
 names the file). **Revised the same day** for Carl's two corrections: the PMS
