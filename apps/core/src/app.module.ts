@@ -16,6 +16,7 @@ import { DevSeedModule } from './dev-seed/dev-seed.module';
 import { VerificationModule } from './verification/verification.module';
 import { CaptureModule } from './capture/capture.module';
 import { KioskModule } from './kiosk/kiosk.module';
+import { ServiceDescriptionsModule } from './service-descriptions/service-descriptions.module';
 import { PracticesModule } from './practices/practices.module';
 import { PmsModule } from './pms/pms.module';
 import { AutoCaptureModule } from './auto-capture/auto-capture.module';
@@ -58,6 +59,7 @@ import { RetentionModule } from './retention/retention.module';
     VerificationModule,
     CaptureModule,
     KioskModule,
+    ServiceDescriptionsModule,
     PracticesModule,
     OrganisationsModule,
     AffiliationsModule,

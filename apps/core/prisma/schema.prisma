@@ -33,6 +33,19 @@ model Practice {
   identifierTypes    String[] @default(["name", "date_of_birth", "address"]) // floor 3, Medicare excluded non-configurably
   linkExpiryHours    Int      @default(48) // D-05 default
   channelsEnabled    String[] @default(["in_practice", "sms_link", "email_link", "paper"])
+  /**
+   * D6a WHEN THE PMS SUPPLIED NO APPOINTMENT TYPE (CONSULTATION-CAPTURE-PLAN
+   * §2.4). One of the current `service-descriptions` content list, applied to
+   * every pre-agreement the appointment sweep drafts, so most drafts never
+   * reach the kiosk missing the particular that C6 blocks on.
+   *
+   * NULL IS THE HONEST DEFAULT and stays the default. Guessing "General
+   * practitioner attendance" for a practice that has not said so would put a
+   * word the practice never chose onto a contract — the platform asserting a
+   * particular nobody declared. Unset means the draft arrives without D6a and
+   * a person sets it, which is slower and true.
+   */
+  defaultServiceDescription String?
   // Go-live gates (FR-1.7). Both flip via real integrations later; explicit
   // booleans so the checklist is honest, never inferred.
   writeBackProven    Boolean  @default(false)
@@ -1134,6 +1147,33 @@ model Agreement {
   patientAssignorId     String?      @db.Uuid
   enduringPathway       String? // mymedicare | residential_aged_care | accho_ams
   status                String       @default("draft")
+  /**
+   * D6a BEFORE THE LOCK — the Basic Service Description a staff member chose
+   * for a draft pre-agreement the PMS gave no appointment type for.
+   *
+   * IT IS NOT THE SNAPSHOT AND MUST NOT BE READ AS ONE. `particulars` below is
+   * the frozen, hashed, rendered contract; this is the one particular the
+   * server could not know, parked on the draft so that `lockParticulars`
+   * assembles it from the platform's OWN records like every other field
+   * (REQ-DATA-11) rather than taking it from whichever client happens to be
+   * locking. It is exactly why the kiosk sends no description: the tablet must
+   * never present a field a patient could fill on the practice's behalf
+   * (Carl, 3 Sep 2026).
+   *
+   * WHICH LIST IT CAME FROM IS ON THE VAULT EVENT, not here — the same
+   * reasoning as `relationshipsVersion`. What the practice was OFFERED at the
+   * time is evidence; what the agreement holds now is current state, and the
+   * lock records the rules engine's own `mappingVersion` beside it.
+   *
+   * Only ever set while the draft is unlocked; a database trigger refuses a
+   * change after `particularsLockedAt`, because after that the artefact has
+   * been rendered and hashed against these words (HARD-02: corrections
+   * supersede, they do not edit).
+   */
+  serviceDescription    String?
+  /** The staff member who chose it, by display name. The vault event holds their subject id. */
+  serviceDescriptionSetBy String?
+  serviceDescriptionSetAt DateTime?
   // Snapshot of the s 65C particulars as rendered and locked (REQ-DATA-11).
   particulars           Json?
   particularsLockedAt   DateTime?

@@ -6,6 +6,7 @@ import {
   chaseBandFor,
   daysRemainingInLodgementWindow,
   remoteChannelFor,
+  SERVICE_DESCRIPTIONS_VERSION,
   type AutoCaptureSuppressionReason,
   type IsoDate,
 } from '@aobplatform/domain';
@@ -320,7 +321,26 @@ export class AutoCaptureService {
       if (!decision.auto) return suppress('assignor_needs_human', { why: decision.reason });
 
       const assignor = await this.selfAssignorFor(tx, practiceId, patient);
-      return { go: true as const, row, patient, provider, assignorId: assignor.id };
+      /*
+       * D6a, WHERE THE PRACTICE HAS SAID WHAT TO USE (plan section 2.4).
+       *
+       * There is no MBS mapping yet, so nothing here can turn an appointment
+       * into the exact words s 65C(4) wants, and a draft without them is a
+       * draft C6 refuses and the kiosk hands over. A practice that has set a
+       * default has told us which of the current list to write; a practice
+       * that has not gets a draft with no description and a queue row asking
+       * a person to choose, which is slower and honest. The platform never
+       * guesses a particular of a contract.
+       */
+      const practice = await tx.practice.findFirst({});
+      return {
+        go: true as const,
+        row,
+        patient,
+        provider,
+        assignorId: assignor.id,
+        defaultServiceDescription: practice?.defaultServiceDescription ?? null,
+      };
     });
     if (!plan.go) return plan.outcome;
 
@@ -333,10 +353,36 @@ export class AutoCaptureService {
       assignorIsPatient: true,
     });
 
-    // PHASE 3 — link at once, for the same reason as the invoice path.
-    await this.prisma.withPractice(practiceId, (tx) =>
-      tx.appointment.update({ where: { id: plan.row.id }, data: { agreementId: draft.id } }),
-    );
+    // PHASE 3 — link at once, for the same reason as the invoice path, and
+    // write the practice's default description onto the draft where there is
+    // one. The domain check runs in ServiceDescriptionsService for a person's
+    // choice; here the value came from the practice's own setting, which that
+    // service validated when it was stored.
+    await this.prisma.withPractice(practiceId, async (tx) => {
+      await tx.appointment.update({ where: { id: plan.row.id }, data: { agreementId: draft.id } });
+      if (!plan.defaultServiceDescription) return;
+      await tx.agreement.update({
+        where: { id: draft.id },
+        data: {
+          serviceDescription: plan.defaultServiceDescription,
+          serviceDescriptionSetBy: null,
+          serviceDescriptionSetAt: new Date(),
+        },
+      });
+      await enqueueVaultEvent(tx, {
+        type: 'agreement.service_description_set',
+        // THE PLATFORM DID THIS, and the record says so rather than naming a
+        // staff member who was not there. A person's choice carries their
+        // subject id instead.
+        actor: SYSTEM_ACTOR,
+        subject: { type: 'Agreement', id: draft.id },
+        payload: {
+          serviceDescription: plan.defaultServiceDescription,
+          serviceDescriptionsVersion: SERVICE_DESCRIPTIONS_VERSION,
+          source: 'practice_default',
+        },
+      });
+    });
 
     // PHASE 4 — the in-practice request, and the kiosk's copy of it.
     const opened = await this.capture.open(practiceId, { agreementId: draft.id, channel: 'in_practice' });

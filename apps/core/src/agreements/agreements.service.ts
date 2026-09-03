@@ -353,7 +353,20 @@ export class AgreementsService {
         providerAddress: provider?.placeOfPracticeAddress ?? undefined,
         providerNumber: provider?.providerNumber ?? undefined,
         serviceDate: dto.serviceDate,
-        basicServiceDescription: dto.basicServiceDescription,
+        /*
+         * D6a FROM THE DRAFT WHEN THE CLIENT DID NOT SEND ONE, and that is the
+         * ordinary case now rather than the exception. The Basic Service
+         * Description is chosen by a staff member on a staff surface
+         * (`POST /service-descriptions/agreements/:id`) and parked on the
+         * agreement, because the kiosk must never present a field a patient
+         * could fill on the practice's behalf (Carl, 3 Sep 2026) — so the
+         * tablet sends nothing and the server reads its own record, exactly as
+         * it does for every other particular above (REQ-DATA-11).
+         *
+         * The DTO still wins where it is given, for the callers that predate
+         * the staff surface.
+         */
+        basicServiceDescription: dto.basicServiceDescription ?? agreement.serviceDescription ?? undefined,
         mbsItemNumbers: dto.mbsItemNumbers,
         assignorIsPatient: agreement.assignorIsPatient,
         assignorName: agreement.assignorIsPatient ? undefined : assignor?.name,

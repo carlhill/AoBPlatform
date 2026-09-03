@@ -43,6 +43,22 @@ export const VAULT_EVENT_TYPES = [
    * (REQ-LOG-08, REQ-VER-04): identifiers stay in the encrypted store.
    */
   'agreement.assignor_changed',
+  /**
+   * D6a WAS CHOSEN — the Basic Service Description a pre-agreement needs, set
+   * on a STAFF surface before the particulars were locked (hard rule 2), or
+   * written by the appointment sweep from the practice's own default.
+   *
+   * Recorded because it is the one particular no PMS field determines while
+   * the MBS mapping does not exist, and "a receptionist chose these words at
+   * 8:42" and "the platform applied the practice's standing default" are
+   * different histories the agreement cannot tell apart afterwards. The actor
+   * is the staff member's subject id for the first and the system for the
+   * second — never a name typed into a form. The payload carries the
+   * description, which is a contractual particular rather than an identifier,
+   * and the VERSION of the list it was chosen from (hard rule 14) so a
+   * question asked in 2028 has an answer.
+   */
+  'agreement.service_description_set',
   'agreement.superseded',
   'agreement.ceased',
   'agreement.terminated',
@@ -97,6 +113,14 @@ export const VAULT_EVENT_TYPES = [
   // Organisation and affiliation lifecycle. An affiliation ending is a
   // consent-relevant event — enduring agreements cease with it (65CA(8)) — so
   // it is evidence, not merely an admin action.
+  /**
+   * The practice chose the Basic Service Description to use when the PMS
+   * supplies no appointment type — a standing setting that decides a
+   * particular of every pre-agreement drafted afterwards, which is why it is
+   * evidence rather than configuration. Carries the list version it was chosen
+   * from, and the staff member who chose it.
+   */
+  'practice.default_service_description_set',
   'organisation.registered',
   'organisation.validated',
   'organisation.rejected',
