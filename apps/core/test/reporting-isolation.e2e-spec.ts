@@ -1,4 +1,8 @@
 import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { ConfigModule } from '@nestjs/config';
+import { Test, type TestingModule } from '@nestjs/testing';
+import { PrismaService } from '../src/prisma/prisma.service';
 
 /**
  * Can one practice see another's figures through the reporting layer?
@@ -69,19 +73,139 @@ function psql(role: string, sql: string): string {
     .pop() ?? '';
 }
 
+/*
+ * ITS OWN FIXTURES, because reading whatever the database happened to hold was
+ * never a test of anything — it was a test that only worked on a machine that
+ * had been used.
+ *
+ * This suite used to pick the two busiest practices and practitioners out of
+ * whatever was already there. On a fresh CI database nothing is busiest: the
+ * ids came back as empty strings, every query after them failed, and the guard
+ * went red for a reason that had nothing to do with tenancy. So the suite now
+ * CREATES the two practices and two practitioners it needs. It still READS
+ * them back through the database roles rather than trusting these constants,
+ * which is what keeps the guard worth having: if the fixtures were ever absent,
+ * the ids come back empty and the guard fails exactly as loudly as before.
+ *
+ * Written through Prisma inside withPractice(), like the rest of the suite
+ * family. RLS is fail-closed and FORCEd, so a fixture landing in the wrong
+ * practice could not be written at all. Every ASSERTION still goes through
+ * psql as a DIFFERENT role — that is the subject of this file and it does not
+ * change.
+ *
+ * Fresh ids per run, deleted afterwards. The database is shared with the other
+ * e2e suites, so nothing here assumes these are the only rows, or the busiest
+ * ones; the fixtures are found by id.
+ */
+const fixture = {
+  practiceA: randomUUID(),
+  practiceB: randomUUID(),
+  practitionerA: randomUUID(),
+  practitionerB: randomUUID(),
+};
+
+let moduleRef: TestingModule;
+let prisma: PrismaService;
+
+/** One already-sent message. `sent` keeps the queue worker out of the fixture. */
+const fixtureMessage = (practiceId: string, recipientId: string, recipientName: string) => ({
+  practiceId,
+  channel: 'email',
+  destination: 'nobody@example.invalid',
+  subjectType: 'ReportingIsolationFixture',
+  subjectId: randomUUID(),
+  recipientType: 'practitioner',
+  recipientId,
+  recipientName,
+  payload: { note: 'reporting isolation fixture' },
+  state: 'sent',
+  sentAt: new Date(),
+  idempotencyKey: `reporting-isolation:${randomUUID()}`,
+});
+
+beforeAll(async () => {
+  // ConfigModule alone, so DATABASE_URL is read from .env the way the app reads
+  // it. Nothing else of the app is booted; this file only needs to write rows.
+  moduleRef = await Test.createTestingModule({
+    imports: [ConfigModule.forRoot({ isGlobal: true })],
+    providers: [PrismaService],
+  }).compile();
+  await moduleRef.init();
+  prisma = moduleRef.get(PrismaService);
+
+  // Obviously fake people, and no real-format registration numbers.
+  for (const [id, name] of [
+    [fixture.practitionerA, 'Alpha'],
+    [fixture.practitionerB, 'Beta'],
+  ] as const) {
+    await prisma.practitioner.create({
+      data: {
+        id,
+        ahpraNumber: `RPTISO-${id.slice(0, 8)}`,
+        familyName: `Fixture${name}`,
+        givenNames: 'Not-Real',
+        providerType: 'general_practitioner',
+        email: `${name.toLowerCase()}.fixture@example.invalid`,
+      },
+    });
+  }
+
+  // Two practices with messages, addressed to two DIFFERENT practitioners —
+  // which is what makes both halves of this file answerable on an empty
+  // database. Names are set because one of the assertions is about names
+  // never crossing a practice boundary.
+  await prisma.withPractice(fixture.practiceA, async (tx) => {
+    await tx.practice.create({ data: { id: fixture.practiceA, name: 'Reporting Isolation Fixture A' } });
+    await tx.outboundItem.createMany({
+      data: [
+        fixtureMessage(fixture.practiceA, fixture.practitionerA, 'Not-Real FixtureAlpha'),
+        fixtureMessage(fixture.practiceA, fixture.practitionerA, 'Not-Real FixtureAlpha'),
+      ],
+    });
+  });
+  await prisma.withPractice(fixture.practiceB, async (tx) => {
+    await tx.practice.create({ data: { id: fixture.practiceB, name: 'Reporting Isolation Fixture B' } });
+    await tx.outboundItem.createMany({
+      data: [
+        fixtureMessage(fixture.practiceB, fixture.practitionerB, 'Not-Real FixtureBeta'),
+        fixtureMessage(fixture.practiceB, fixture.practitionerB, 'Not-Real FixtureBeta'),
+      ],
+    });
+  });
+});
+
+afterAll(async () => {
+  // Cleaned up, as the suite family does — the database is shared and serial.
+  // deleteMany({}) inside withPractice() removes this practice's rows only;
+  // RLS is what makes that safe rather than the empty filter.
+  for (const practiceId of [fixture.practiceA, fixture.practiceB]) {
+    await prisma?.withPractice(practiceId, async (tx) => {
+      await tx.outboundItem.deleteMany({});
+      await tx.practice.deleteMany({});
+    });
+  }
+  await prisma?.practitioner.deleteMany({ where: { id: { in: [fixture.practitionerA, fixture.practitionerB] } } });
+  await moduleRef?.close();
+});
+
 describe('reporting layer tenancy (e2e, real Postgres roles)', () => {
-  let busiestPractice: string;
+  let myPractice: string;
   let otherPractice: string;
 
   beforeAll(() => {
     // Found through the platform role, which is the one allowed to look across.
-    busiestPractice = psql(
+    // By id rather than by row count: other suites' rows may outnumber these,
+    // and "whose data is this" was never the interesting question here.
+    myPractice = psql(
       'cube_platform_reader',
-      'SELECT "practiceId" FROM reporting.outbound_messages GROUP BY 1 ORDER BY count(*) DESC LIMIT 1',
+      `SELECT "practiceId" FROM reporting.outbound_messages WHERE "practiceId"='${fixture.practiceA}' GROUP BY 1`,
     );
+    // Asked for separately rather than as "any practice that is not that one":
+    // with no fixture the first id is empty, and an empty string is not a uuid
+    // Postgres will compare — the guard below should be what goes red, not psql.
     otherPractice = psql(
       'cube_platform_reader',
-      `SELECT "practiceId" FROM reporting.outbound_messages WHERE "practiceId" <> '${busiestPractice}' LIMIT 1`,
+      `SELECT "practiceId" FROM reporting.outbound_messages WHERE "practiceId"='${fixture.practiceB}' GROUP BY 1`,
     );
   });
 
@@ -91,15 +215,15 @@ describe('reporting layer tenancy (e2e, real Postgres roles)', () => {
      * they all pass trivially against an empty database. A green suite that
      * proved nothing is worse than a red one.
      */
-    expect(busiestPractice).toMatch(/^[0-9a-f-]{36}$/);
+    expect(myPractice).toMatch(/^[0-9a-f-]{36}$/);
     expect(otherPractice).toMatch(/^[0-9a-f-]{36}$/);
-    expect(otherPractice).not.toBe(busiestPractice);
+    expect(otherPractice).not.toBe(myPractice);
   });
 
   it('shows a scoped reader its own practice, so the positive case is real', () => {
     const visible = psql(
       'cube_reader',
-      `SET app.practice_id='${busiestPractice}'; SELECT count(*) FROM reporting.outbound_messages`,
+      `SET app.practice_id='${myPractice}'; SELECT count(*) FROM reporting.outbound_messages`,
     );
     expect(Number(visible)).toBeGreaterThan(0);
   });
@@ -107,14 +231,14 @@ describe('reporting layer tenancy (e2e, real Postgres roles)', () => {
   it('SHOWS IT NOTHING FROM ANY OTHER PRACTICE', () => {
     const practices = psql(
       'cube_reader',
-      `SET app.practice_id='${busiestPractice}'; SELECT count(DISTINCT "practiceId") FROM reporting.outbound_messages`,
+      `SET app.practice_id='${myPractice}'; SELECT count(DISTINCT "practiceId") FROM reporting.outbound_messages`,
     );
     expect(Number(practices)).toBe(1);
 
     // Asked for another practice by name, in a session scoped to this one.
     const other = psql(
       'cube_reader',
-      `SET app.practice_id='${busiestPractice}'; ` +
+      `SET app.practice_id='${myPractice}'; ` +
         `SELECT count(*) FROM reporting.outbound_messages WHERE "practiceId"='${otherPractice}'`,
     );
     expect(Number(other)).toBe(0);
@@ -135,7 +259,7 @@ describe('reporting layer tenancy (e2e, real Postgres roles)', () => {
      */
     const other = psql(
       'cube_reader',
-      `SET app.practice_id='${busiestPractice}'; ` +
+      `SET app.practice_id='${myPractice}'; ` +
         `SELECT count(*) FROM core.outbound_items WHERE "practiceId"='${otherPractice}'`,
     );
     expect(Number(other)).toBe(0);
@@ -185,9 +309,9 @@ describe('reporting layer tenancy (e2e, real Postgres roles)', () => {
      */
     const foreignNames = psql(
       'cube_reader',
-      `SET app.practice_id='${busiestPractice}'; ` +
+      `SET app.practice_id='${myPractice}'; ` +
         `SELECT count(*) FROM reporting.outbound_messages ` +
-        `WHERE "recipientName" IS NOT NULL AND "practiceId" <> '${busiestPractice}'`,
+        `WHERE "recipientName" IS NOT NULL AND "practiceId" <> '${myPractice}'`,
     );
     expect(Number(foreignNames)).toBe(0);
 
@@ -195,8 +319,8 @@ describe('reporting layer tenancy (e2e, real Postgres roles)', () => {
     // that forgets the boundary.
     const foreignRaw = psql(
       'cube_reader',
-      `SET app.practice_id='${busiestPractice}'; ` +
-        `SELECT count(*) FROM core.outbound_items WHERE "practiceId" <> '${busiestPractice}'`,
+      `SET app.practice_id='${myPractice}'; ` +
+        `SELECT count(*) FROM core.outbound_items WHERE "practiceId" <> '${myPractice}'`,
     );
     expect(Number(foreignRaw)).toBe(0);
   });
@@ -218,6 +342,9 @@ describe('a practitioner reading their own figures (e2e, real Postgres roles)', 
      *
      * The subject of this test is RLS. Picking a practitioner who is actually
      * there is setup, and setup should not be the thing that breaks.
+     *
+     * It is now this file's OWN practitioner, and the join stays: it is what
+     * proves the fixture is really in the database when the assertions run.
      */
     mine = psql(
       // THE OWNER, for setup only. `cube_platform_reader` cannot read
@@ -227,13 +354,13 @@ describe('a practitioner reading their own figures (e2e, real Postgres roles)', 
       'aobplatform',
       `SELECT o."recipientId" FROM core.outbound_items o ` +
         `JOIN core.practitioners p ON p.id = o."recipientId" ` +
-        `WHERE o."recipientType"='practitioner' GROUP BY 1 ORDER BY count(*) DESC LIMIT 1`,
+        `WHERE o."recipientType"='practitioner' AND o."recipientId"='${fixture.practitionerA}' GROUP BY 1`,
     );
     theirs = psql(
       'aobplatform',
       `SELECT o."recipientId" FROM core.outbound_items o ` +
         `JOIN core.practitioners p ON p.id = o."recipientId" ` +
-        `WHERE o."recipientType"='practitioner' AND o."recipientId" <> '${mine}' LIMIT 1`,
+        `WHERE o."recipientType"='practitioner' AND o."recipientId"='${fixture.practitionerB}' GROUP BY 1`,
     );
   });
 
