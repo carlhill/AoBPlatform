@@ -1726,6 +1726,11 @@ export const strings = {
     doneTitle: 'Thank you — your agreement is recorded',
     doneBody:
       'The practice can now bill Medicare directly for that visit. A copy has gone to your practice’s records.',
+    // Write-back can be deferred (the practice's system unreachable, or the
+    // record not yet linked to it). Say "will be", not "has gone".
+    doneBodyPending:
+      'The practice can now bill Medicare directly for that visit. A copy will be placed in your practice’s ' +
+      'records — we keep trying until it is there.',
     nothingElse: 'There is nothing else to do. You can close this page.',
 
     lockedTitle: 'This link is locked',

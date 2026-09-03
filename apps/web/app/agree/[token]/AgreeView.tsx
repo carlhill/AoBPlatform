@@ -64,6 +64,9 @@ export function AgreeView({ token }: { token: string }) {
   const [particulars, setParticulars] = useState<Particulars | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Whether the copy has already landed in the practice's system, or is on
+  // its way. The done screen says which, because they are not the same claim.
+  const [writtenBack, setWrittenBack] = useState(false);
 
   // What the person states. Held only in component state and sent once.
   const [familyName, setFamilyName] = useState('');
@@ -156,6 +159,8 @@ export function AgreeView({ token }: { token: string }) {
         if (res.status === 404 || res.status === 410 || res.status === 423) return fail(res.status);
         throw new Error(body.message ?? strings.agree.approveFailed);
       }
+      const outcome = (await res.json().catch(() => ({}))) as { writtenBack?: boolean };
+      setWrittenBack(Boolean(outcome.writtenBack));
       setStage('done');
     } catch (e) {
       setError(e instanceof TypeError ? strings.status.unreachable : (e as Error).message);
@@ -203,7 +208,7 @@ export function AgreeView({ token }: { token: string }) {
               <CheckCircle2 size={30} aria-hidden="true" />
             </div>
             <h1 className={styles.title}>{strings.agree.doneTitle}</h1>
-            <p className={styles.lead}>{strings.agree.doneBody}</p>
+            <p className={styles.lead}>{writtenBack ? strings.agree.doneBody : strings.agree.doneBodyPending}</p>
             <p className={ui.hint}>{strings.agree.nothingElse}</p>
           </div>
         </div>

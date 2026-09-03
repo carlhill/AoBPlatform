@@ -26,12 +26,24 @@ export class DevSeedController {
           validatedAt: new Date(),
         },
       });
+      /*
+       * LINKED TO THE MOCK ADAPTER'S FIXTURES, on purpose. Without
+       * `pmsLinkageKey` the seeded patient looked complete and two things
+       * silently did not happen in the running stack: write-back
+       * (`WriteBackService.attempt` leaves an unlinked patient unwritten —
+       * "cannot land the artefact where an auditor looks") and verification
+       * against the live PMS record (ADR A-08). The values match
+       * apps/connector/src/mock-adapter.ts exactly, so the seeded practice
+       * behaves like a connected one end to end. Email and mobile are what
+       * let the capture cascade actually send this patient a link.
+       */
       const provider = await tx.provider.create({
         data: {
           practiceId,
           name: 'Dr Example Provider',
           providerType: 'general_practitioner',
           placeOfPracticeAddress: '1 Example Street, Sampletown NSW 2000',
+          pmsLinkageKey: 'mock-prov-001',
         },
       });
       const patient = await tx.patient.create({
@@ -43,6 +55,9 @@ export class DevSeedController {
           genderAsIdentified: 'male',
           address: '1 Example Street, Sampletown NSW 2000',
           patientRecordNumber: 'SAMPLE-0001',
+          pmsLinkageKey: 'mock-pat-001',
+          email: 'alex.testpatient@example.invalid',
+          mobile: '+61400000000',
         },
       });
       const assignor = await tx.assignor.create({

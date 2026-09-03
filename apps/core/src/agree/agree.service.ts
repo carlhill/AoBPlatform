@@ -130,6 +130,17 @@ export class AgreeService {
       captureRequestId: request.id,
       ipAddress,
     });
-    return { approved: true as const, agreementId: signed.id, status: signed.status };
+    return {
+      approved: true as const,
+      agreementId: signed.id,
+      status: signed.status,
+      /**
+       * Whether the copy has ALREADY landed in the practice's system. Write-back
+       * is attempted at once but can be deferred — a patient with no PMS
+       * linkage, a PMS that is down — and the FR-9.3 sweep retries. The page
+       * must not say "a copy has gone" when it has not; it says "will be placed".
+       */
+      writtenBack: signed.writtenBackAt !== null,
+    };
   }
 }

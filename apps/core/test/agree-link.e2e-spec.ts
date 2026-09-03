@@ -178,6 +178,9 @@ describe('approving an agreement from a link (e2e, real Postgres)', () => {
       .expect(201);
     expect(res.body.approved).toBe(true);
     expect(res.body.status).toBe('stored');
+    // The copy landed at once here (the patient is linked to the PMS record).
+    // The page reads this to say "has gone" rather than "will be placed".
+    expect(res.body.writtenBack).toBe(true);
 
     const signature = await prisma.withPractice(practiceId, (tx) => tx.signatureEvent.findFirst({ where: { agreementId } }));
     expect(signature?.method).toBe('tap_to_approve');
