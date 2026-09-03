@@ -1168,6 +1168,69 @@ flowchart TD
   W --> X[Never past the deadline - REQ-CHASE-08]
 ```
 
+## Zero-footprint kiosk: nothing on the device
+
+Carl, 3 Sep 2026: "As we could have 1000's of kiosks/tablets, ensure that
+nothing gets written to the kiosk/tablet. Everything must be in the cloud. We
+do not want any data or AoBPlatform app software on the device. We do not want
+the scenario where a bug is released and all kiosks are not working and the
+only way to fix it is to go to each device -- this will break the bank."
+
+**Recorded as a design rule in CLAUDE.md section 7.** It is an architecture
+decision, not a regulatory one, and it changes three things Carl's own
+requirements currently say. Flagged here so they are amended deliberately and
+not drift:
+
+- **C2.2 (MUST) offline-first, local queue, validate on sync** -- dropped.
+  The push model needs the server anyway; an offline kiosk cannot receive a
+  push. Outage posture becomes: the kiosk shows "see reception", the patient is
+  seen (REQ-REC-04), capture happens post-service or on paper.
+- **C2.3 "nothing persisted beyond the encrypted sync queue"** -- becomes
+  "nothing persisted, full stop", except the pairing credential.
+- **C2.5 (MUST) RACF visiting-provider offline batch mode** -- the one real
+  casualty. A visiting provider in an aged-care facility with no wifi cannot
+  use a cloud-only kiosk. Options: the provider's own online device (4G), or
+  the assignor-remote path (REQ-VUL-03) which RACFs need regardless. **Carl to
+  decide whether C2.5 stays a MUST with a different answer, or moves to
+  roadmap.**
+- **aob-tech-stack.md section 1 row "React Native (Expo)" and section 2
+  "Tablet/kiosk app"** -- the Expo native shell was chosen FOR offline-first,
+  kiosk lockdown and glass signature. Two of the three reasons remain valid
+  and are met without a native app: kiosk lockdown is a device-management
+  setting on the tablet's browser (the practice's or a managed service's, not
+  our software), and signature-on-glass works on a canvas. Amend the stack doc.
+
+### What is already true
+
+Today's `apps/kiosk` never writes anything to the device: `session.ts` holds
+the token in memory only (CONVENTIONS.md section 9b), and the offline engine
+was never built. The web export we have been testing on port 4174 IS a
+cloud-servable static build. So the decision costs nothing built; it removes
+work (the offline engine, native builds, store distribution, MDM app
+deployment) rather than adding it.
+
+### To build
+
+- [ ] Ship the kiosk as the web export only, served from the cloud under a
+      practice-agnostic URL; no native build targets in CI.
+- [ ] Root lint rule: no `AsyncStorage`, `SecureStore`, `localStorage`,
+      `sessionStorage`, `indexedDB`, `expo-file-system`, `expo-sqlite` or
+      service-worker registration anywhere in `apps/kiosk` except the pairing
+      module. Named test `kiosk_persists_nothing_but_pairing`.
+- [ ] Device pairing: the console registers a tablet and issues one opaque
+      credential; the tablet stores only that; revoke/rotate from the console,
+      never on the device. This is the same pairing the push-to-device item
+      needs -- build once.
+- [ ] Staged rollout per practice for the kiosk build, with instant rollback.
+      A version banner readable by support ("kiosk build 2026.09.03-2") and a
+      forced-reload signal from the server so a rollback reaches every open
+      tab without anyone touching it.
+- [ ] Outage screen: "Please see reception" with no retry loop that hammers
+      the server; reconnects quietly.
+- [ ] Decide `apps/kiosk` (Expo web) vs folding the kiosk into `apps/web`
+      (Next.js) long-term -- one codebase, one theme. Not urgent; the export
+      works today.
+
 ## Where this product could go: v2 and v3
 
 Carl, 3 Sep 2026: "Version two of AoBPlatform could morph from just a
