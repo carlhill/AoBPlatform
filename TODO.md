@@ -1249,6 +1249,38 @@ deployment) rather than adding it.
       + DOB pickers), all 28+ kiosk tests re-homed under Vitest, Playwright
       for the ceremony. Then delete `apps/kiosk` and its CI job.
 
+## Nothing on the patient surface is ever staff entry
+
+Carl, 3 Sep 2026, on seeing K-3 ask for a "Basic description of the service --
+staff entry" when a pre-agreement arrived without D6a: "The green box must be
+sent by the PMS, not entered by the patient."
+
+Rule: **the tablet never presents a field that a patient or a passer-by could
+fill on the practice's behalf.** D6a comes from the PMS appointment/booking
+type through the practice's versioned mapping (CONSULTATION-CAPTURE-PLAN
+2.4). If a pre-agreement reaches the tablet without a valid particular, the
+tablet hands over ("one more detail from reception") and makes no call; staff
+fix it on a staff surface -- the practice queue / reconciliation -- where
+their identity is recorded. Same for every other rule failure at K-3: state
+it, hand over, never offer a field.
+
+Second ruling the same test produced: **a verification mismatch stays on
+K-2** with the entered values kept and the attempt count shown; only the
+third failure leaves the screen. Sending the patient back to a blank form
+after a typo was the single worst thing the first build did to a sick or
+elderly patient.
+
+- [ ] Practice console: where D6a is set when the PMS did not supply it --
+      appointment-type to description mapping, versioned, per practice; the
+      queue row for a draft missing D6a says so and links there.
+- [ ] Kiosk port: no staff-entry control on any ceremony screen (test
+      `k3_never_offers_a_field_to_the_patient`); mismatch keeps values
+      (`mismatch_keeps_entered_values_on_screen`).
+- [ ] The dev mapping is a hand-typed stub whose own header says never to
+      ship one; the quarterly MBS Online ingest with human-reviewed diff is the
+      Phase-0/1 job (REQ-REG-03). Its D6a match is exact and case-sensitive by
+      design -- keep it that way and stop asking anyone to type it.
+
 ## Where this product could go: v2 and v3
 
 Carl, 3 Sep 2026: "Version two of AoBPlatform could morph from just a
