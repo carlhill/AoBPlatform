@@ -1063,14 +1063,24 @@ path shown as the main one.
       apostrophes are spaces; multi-word family names must be whole. Built in
       `apps/core/src/verification/identifier-matching.ts` (`nameMatches`),
       named test `name_matches_on_family_and_first_given_in_any_order`.
-- [x] **(b) A staff-issued card is continuity of the staff check.** A plastic
-      card with a printed QR is an opaque single-use token (REQ-VER-05), never
-      the patient's identity: reception ASSIGNS card N to a session, scanning
-      it opens that session until it completes or expires, then card N is
-      free -- the Tyro pairing model. Scan, read, tap is a complete in-practice
-      ceremony because staff verified the person and handed them the card.
-      Emailing a QR buys nothing: it IS the link we already send, and from
-      home the three-identifier challenge still applies.
+- [x] **(b) REVERSED the same day -- no QR card.** Carl: "forget the QR code
+      on the plastic." In most practices the patient comes back to reception
+      after the consultation, so the post-service step is a SECOND PUSH to the
+      reception tablet, not a self-service scan. Reception pushes the
+      post-service agreement drafted from the invoice; the patient reads the
+      locked particulars and taps approve. The QR idea is kept here only so
+      nobody re-proposes it without seeing why it went: it solved a problem
+      (the patient finding their own session) that the push already solves.
+      **One correction to the framing.** "The patient can tick approve as they
+      already signed on the pre step" -- the tap is not a confirmation of the
+      earlier signature, it is a SIGNATURE in its own right (REQ-REG-07: a
+      tick or APPROVE qualifies) on a NEW agreement for THIS service (D5 date,
+      D6 items). The pre-step signature covers only what its description
+      covered. What the pre-step DOES carry forward is that reception has
+      already verified this person; the second push records a fresh
+      staff-verified event with the same staff identity (REQ-VER-03), at zero
+      cost to the patient -- the receptionist is handing the tablet to the
+      person they checked in an hour ago.
 - [x] **(c) The agreement gates the claim, never the consultation.** "If the
       patient approves then they can see the Dr" is reworded as routing at the
       desk: a patient who walks away from the tablet is still seen, and
@@ -1095,8 +1105,9 @@ path shown as the main one.
 - **Enduring: nothing post-service for the patient.** The 89AA notice fires on
   the CLAIM, within 24 hours, MyMedicare pathway only, one-way, never chased
   (REQ-END-05, REQ-CHASE-02, hard rule 7).
-- **Reminders.** The 30-minute nudge is the first step of the automated
-  cascade; the cadence after it is banded by days left on the twelve-month
+- **Reminders are the fallback, not the flow.** They run only when the
+  patient did not come back to the desk (left another way, telehealth). The
+  30-minute nudge is the first step of the automated cascade; the cadence after it is banded by days left on the twelve-month
   lodgement window, not elapsed time (REQ-CHASE-05); ladder to a human
   (REQ-CHASE-04); never past the deadline (REQ-CHASE-08). "Three digital, then
   the practice takes over" is the simplest instance and is the one to build.
@@ -1110,11 +1121,17 @@ path shown as the main one.
       service (G-NAF / PAF) and compare number, street, postcode -- the same
       work as the fraud check above. Interim: tolerant compare on those three
       components, recorded as interim.
-- [ ] Card pairing: card registry per practice, assign-to-session, scan opens
-      the session, exit or expiry releases the card, short TTL, minimum on
-      screen. Shares its screen hygiene with push-to-device.
-- [ ] Post-service checkout at the kiosk: scan, read the locked post-agreement
-      (no dollar amount), tap approve; the 30-minute nudge into the cascade.
+- [ ] Post-service push: reception pushes the post-service agreement (drafted
+      from the invoice -- D5 date, D6 items, no dollar amount) to the tablet;
+      patient reads, taps approve; a fresh staff-verified event recorded by
+      the push. Same device pairing and screen hygiene as the pre-service push
+      -- one mechanism, two moments. The 30-minute nudge into the cascade
+      fires only if no post-service signature lands.
+- [ ] Which agreement to offer at the pre-step is a practice setting: for a
+      GP practice the strongest answer is ENDURING at first visit -- sign once,
+      nothing post-service ever (the 89AA notice is one-way); episodic pre +
+      post is for patients who decline enduring and for non-GP providers
+      (REQ-END-01a). Default accordingly.
 - [ ] Reception status view of the tablet -- states, not a mirror.
 - [ ] Per-assignor channel preference on the `Assignor` record, honoured by
       every sender.
@@ -1145,8 +1162,8 @@ flowchart TD
   N -- enduring on the MyMedicare pathway --> O[Claim lodged, 89AA notice within 24 h<br/>one-way, nothing to approve, never chased - REQ-END-05, REQ-CHASE-02]
   N -- episodic pre-agreement and the item is inside its description --> Q[Covered - nothing more from the patient]
   N -- no pre-agreement, or the item fell outside it --> S[Post-service agreement drafted from the invoice<br/>D5 date, D6 items, no dollar amount]
-  S --> U[Check-out: scan the card at the kiosk, read, tap approve<br/>the card is an opaque single-use token, not the patient's identity]
-  U -- not done within 30 min --> V[Automated cascade on the preferred channel<br/>up to three reminders - cadence banded by days left on the 12-month window, REQ-CHASE-05]
+  S --> U[Patient returns to reception - second push to the tablet<br/>fresh staff-verified event, same staff identity<br/>patient reads the locked particulars and taps approve - a signature, REQ-REG-07]
+  U -- patient did not come back to the desk, 30 min --> V[Automated cascade on the preferred channel<br/>up to three reminders - cadence banded by days left on the 12-month window, REQ-CHASE-05]
   V -- no response --> W[Hand back to the practice - staff call, each attempt logged<br/>urgent band presents the private-billing choice - REQ-CHASE-07]
   W --> X[Never past the deadline - REQ-CHASE-08]
 ```
