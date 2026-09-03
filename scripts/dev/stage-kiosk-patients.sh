@@ -69,5 +69,6 @@ done
 
 echo
 echo "Now waiting at /kiosk:"
-curl -sS -H "x-practice-id: ${PRACTICE_ID}" "${CORE}/kiosk/waiting-list" \
-  | python -c 'import sys,json; [print("  -", r.get("patientName")) for r in json.load(sys.stdin)["waiting"]]'
+# Once device pairing lands, /kiosk/* takes a device credential instead of the practice header;
+# this listing is a convenience and may fail without undoing the staging above.
+curl -sS -H "x-practice-id: ${PRACTICE_ID}" "${CORE}/kiosk/waiting-list" 2>/dev/null   | python -c 'import sys,json; [print("  -", r.get("patientName")) for r in json.load(sys.stdin)["waiting"]]'   || echo "  (list not readable this way any more - open http://localhost:3100/kiosk to see it)"
