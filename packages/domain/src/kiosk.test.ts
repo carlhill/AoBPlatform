@@ -34,7 +34,7 @@ const wholePatientRecord = {
 
 describe('the kiosk waiting list', () => {
   it('kiosk_waiting_list_carries_no_identifier_values — the projection drops everything but the name', () => {
-    const row = projectKioskWaitingRow(wholePatientRecord) as Record<string, unknown>;
+    const row = projectKioskWaitingRow(wholePatientRecord) as unknown as Record<string, unknown>;
 
     expect(Object.keys(row).sort()).toEqual([...KIOSK_WAITING_ROW_FIELDS].sort());
     for (const forbidden of [
@@ -57,7 +57,7 @@ describe('the kiosk waiting list', () => {
   });
 
   it('medicare_number_never_reaches_the_kiosk — not even when the source object carries one', () => {
-    const row = projectKioskWaitingRow(wholePatientRecord) as Record<string, unknown>;
+    const row = projectKioskWaitingRow(wholePatientRecord) as unknown as Record<string, unknown>;
     expect(row).not.toHaveProperty('medicareNumber');
     expect(JSON.stringify(row)).not.toContain('2950');
   });
