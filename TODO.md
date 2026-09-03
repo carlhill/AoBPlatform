@@ -865,3 +865,31 @@ every practice it is worse.
 - [ ] Cross-practice reads are individually justified SECURITY DEFINER
       functions returning ids and counts (CONVENTIONS.md §6) — the same shape
       as `outbound_due_practices`, never a weakened policy.
+
+## From the Claude Design handoff (25 Aug 2026) — what was built, what was not, and why
+
+`.claude/claude_design/AoBPlatform UI Design Request.zip` covers the kiosk
+and console at high fidelity and seven surfaces at wireframe level. Carl's
+rule: build only what it designs.
+
+- [x] **Reconciliation queue** (wireframe `1d`, R-1 list + R-2 item detail) —
+      BUILT as `/practice/reconciliation` and its view-only platform twin,
+      using the app's existing components. The cascade's "why this patient
+      was not asked" word sits beside each item (`service_records.captureSuppressedReason`).
+- [ ] **R-3 convert-or-forgo (FR-7.3)** is drawn but has NO backend: no
+      decision record, no vault event type, no endpoint. Needs a small domain
+      item first — a `reconciliation.decided` event carrying the deciding
+      person, the choice (private billing / forgo / keep chasing) and the
+      reason. Then the screen.
+- [ ] **R-2's "Escalate to a person" / "Hand back"** are drawn; the ladder is
+      shown from the band policy but nothing records an AI or human chase
+      attempt yet (only capture requests and correspondence exist). Attempt
+      tracking is its own item.
+- [ ] **Practice correspondence screen** — NOT in the handoff, so not built.
+      The endpoint (`GET /correspondence`) exists. Ask Claude Design for it
+      alongside the patient portal's history (P-1), which is the same list
+      from the other side.
+- [ ] **The Industry token set** (Barlow, `#5980a6`, square corners) — the
+      handoff asks for it to be ported into the theme layer. That re-themes
+      every screen and is a product decision, not a side effect of one page.
+      Decide before the kiosk build, where the hi-fi screens depend on it.

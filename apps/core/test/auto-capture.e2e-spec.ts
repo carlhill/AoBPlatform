@@ -265,6 +265,9 @@ describe('the platform-run capture cascade (e2e, real Postgres + fixture adapter
       const needing = queue.body.filter((i: { needsAgreement: boolean }) => i.needsAgreement);
       // child + nocontact + the expired one; the covered and the two asked are no longer "needs agreement".
       expect(needing).toHaveLength(3);
+      // And each says WHY it was left to a person — the word the queue shows beside the item.
+      const reasons = needing.map((i: { captureSuppressedReason: string }) => i.captureSuppressedReason).sort();
+      expect(reasons).toEqual(['assignor_needs_human', 'no_contact_channel', 'window_closed']);
     });
 
     it('is idempotent — a second sync asks nobody again and drafts nothing new', async () => {

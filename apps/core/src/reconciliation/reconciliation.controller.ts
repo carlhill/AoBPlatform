@@ -34,4 +34,18 @@ export class ReconciliationController {
   metrics(@Headers('x-practice-id') practiceId: string | undefined) {
     return this.reconciliation.metrics(requirePractice(practiceId));
   }
+
+  /**
+   * One item in full — what was tried, what the band allows, what comes next
+   * (queue wireframe R-2). DECLARED LAST, deliberately: Nest matches routes
+   * in declaration order, and a `:serviceRecordId` above `metrics` would try
+   * to parse the word "metrics" as a UUID and answer 400.
+   */
+  @Get(':serviceRecordId')
+  detail(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('serviceRecordId', ParseUUIDPipe) serviceRecordId: string,
+  ) {
+    return this.reconciliation.detail(requirePractice(practiceId), serviceRecordId);
+  }
 }

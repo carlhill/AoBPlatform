@@ -96,6 +96,7 @@ export function MainMenu() {
         ...(hasPractice ? [] : [{ path: '/practice', label: practiceListLabel }]),
         { path: '/review', label: strings.nav.reviewDossiers },
         { path: '/practice/reviews', label: strings.nav.reviewQueue },
+        { path: '/practice/reconciliation', label: strings.reconciliation.navLabel },
         { path: '/practice/queue', label: strings.nav.outbound },
         { path: '/practice/queuebyOrg', label: strings.nav.outboundByOrg },
         { path: '/practice/queuebyOrgLocDepartment', label: strings.nav.outboundByPlace },

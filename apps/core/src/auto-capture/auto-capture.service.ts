@@ -121,13 +121,20 @@ export class AutoCaptureService {
       if (!record) throw new NotFoundException('Service record not found.');
       if (record.agreementId) return { go: false as const, outcome: { captured: false as const, alreadyLinked: record.agreementId } };
 
-      const suppress = async (reason: AutoCaptureSuppressionReason, extra: Record<string, unknown> = {}) => ({
-        go: false as const,
-        outcome: await this.suppress(tx, practiceId, { type: 'ServiceRecord', id: record.id }, reason, {
-          serviceDate: record.serviceDate.toISOString().slice(0, 10),
-          ...extra,
-        }),
-      });
+      const suppress = async (reason: AutoCaptureSuppressionReason, extra: Record<string, unknown> = {}) => {
+        // The word the queue screen shows beside the item. The event is the record.
+        await tx.serviceRecord.update({
+          where: { id: record.id },
+          data: { captureSuppressedReason: reason, captureSuppressedAt: new Date() },
+        });
+        return {
+          go: false as const,
+          outcome: await this.suppress(tx, practiceId, { type: 'ServiceRecord', id: record.id }, reason, {
+            serviceDate: record.serviceDate.toISOString().slice(0, 10),
+            ...extra,
+          }),
+        };
+      };
 
       // REQ-CHASE-08 first: past the window the item is unbillable, permanently,
       // and a message about it is cost with no possible return.

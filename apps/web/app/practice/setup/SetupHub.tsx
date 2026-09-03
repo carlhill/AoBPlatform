@@ -444,6 +444,14 @@ export function SetupHub({
             {openLabel(strings.queue.title)}
             <ArrowRight size={14} aria-hidden="true" />
           </Link>
+          <Link
+            href={viewOnly ? toViewPath('/practice/reconciliation', practiceId) : '/practice/reconciliation'}
+            className={styles.cardLink}
+            data-testid="hub-to-reconciliation"
+          >
+            {openLabel(strings.reconciliation.title)}
+            <ArrowRight size={14} aria-hidden="true" />
+          </Link>
         </section>
       </div>
     </Shell>

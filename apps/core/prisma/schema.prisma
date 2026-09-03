@@ -1432,6 +1432,15 @@ model ServiceRecord {
   mbsItemNumbers       String[]
   agreementId          String?  @db.Uuid
   retentionClockSource String   @default("conservative_default") // observed_claim | practice_asserted | conservative_default
+  /**
+   * WHY THE CASCADE DID NOT ASK, the last time it looked (AutoCaptureSuppressionReason).
+   * The vault event is the record; this is the word the queue screen shows
+   * beside the item so a person can see at a glance what is left to them —
+   * "under 14", "no way to reach", "window closed" — rather than a bare
+   * "needs agreement". Cleared when an agreement is created.
+   */
+  captureSuppressedReason String?
+  captureSuppressedAt     DateTime?
   createdAt            DateTime @default(now())
 
   @@unique([practiceId, pmsInvoiceKey])

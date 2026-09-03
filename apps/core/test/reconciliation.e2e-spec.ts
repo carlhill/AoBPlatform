@@ -86,6 +86,33 @@ describe('M7 reconciliation queue (e2e, real Postgres + mock adapter)', () => {
     expect([...daysRemaining].sort((a, b) => a - b)).toEqual(daysRemaining);
     expect(res.body[0].revenueForgone).toBe(true);
     expect(res.body.every((i: { needsAgreement: boolean }) => i.needsAgreement)).toBe(true);
+    // The queue screen shows a person, not an id — initial and family name, as the wireframe draws it.
+    expect(res.body.every((i: { patientName: string }) => i.patientName === 'A. Testpatient')).toBe(true);
+    expect(res.body.every((i: { providerName: string }) => i.providerName === 'Dr Example Provider')).toBe(true);
+  });
+
+  it('one item in full — what was tried, what the band allows, what comes next (queue wireframe R-2)', async () => {
+    const queue = await request(app.getHttpServer()).get('/reconciliation/outstanding').set('x-practice-id', practiceId).expect(200);
+    const standard = queue.body.find((i: { band: string }) => i.band === 'standard');
+    const res = await request(app.getHttpServer())
+      .get(`/reconciliation/${standard.serviceRecordId}`)
+      .set('x-practice-id', practiceId)
+      .expect(200);
+    expect(res.body.band).toBe('standard');
+    expect(res.body.patient.name).toBe('Alex Testpatient');
+    expect(res.body.policy.escalation).toEqual(['ai', 'ai', 'human']);
+    expect(res.body.attemptsMade).toBe(0);
+    expect(res.body.nextStep).toBe('ai');
+    expect(res.body.attemptAllowed).toBe(true);
+    expect(res.body.attempts).toEqual([]);
+
+    const expired = queue.body.find((i: { band: string }) => i.band === 'expired');
+    const dead = await request(app.getHttpServer())
+      .get(`/reconciliation/${expired.serviceRecordId}`)
+      .set('x-practice-id', practiceId)
+      .expect(200);
+    expect(dead.body.nextStep).toBeNull(); // REQ-CHASE-08
+    expect(dead.body.attemptAllowed).toBe(false);
   });
 
   it('never_chase_past_the_deadline (REQ-CHASE-08) — resend on an expired item is refused', async () => {

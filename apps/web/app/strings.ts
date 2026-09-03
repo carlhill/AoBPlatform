@@ -1748,6 +1748,83 @@ export const strings = {
     unreachableTitle: 'We could not reach the service',
   },
 
+  /* The reconciliation queue — services without a stored agreement, ranked by the lodgement window (M7). */
+  reconciliation: {
+    title: 'Outstanding agreements',
+    lead:
+      'Every service billed without a stored agreement, ranked by days left on the twelve-month lodgement ' +
+      'window. Most urgent first, so nothing is discovered from a report.',
+    open: '{n} open',
+    none: 'Nothing outstanding. Every billed service has an agreement behind it.',
+    colPatient: 'Patient / service',
+    colBand: 'Band',
+    colDays: 'Days left',
+    colAction: 'Action',
+    bands: {
+      standard: 'Standard',
+      compressed: 'Compressed',
+      urgent: 'Urgent',
+      last_chance: 'Last chance',
+      expired: 'Expired',
+      suppressed: 'Chase suppressed',
+    } as Record<string, string>,
+    // Why the platform left it to a person. The word beside the item.
+    reasons: {
+      assignor_needs_human: 'Under 14 — who signs is a person’s choice',
+      no_contact_channel: 'No email or mobile on record',
+      window_closed: 'Window closed — cannot be billed',
+      confidentiality_flag: 'Confidentiality flag — not contacted',
+      patient_unresolved: 'Patient not matched',
+      provider_unresolved: 'Provider not matched',
+      enduring_covered: 'Covered by an enduring agreement',
+    } as Record<string, string>,
+    reasonUnknown: 'Not yet looked at',
+    confidential: 'confidential',
+    resend: 'Resend',
+    resending: 'Sending…',
+    resent: 'Sent',
+    resendFailed: 'Not sent',
+    needsAgreementAction: 'Needs an agreement',
+    needsAgreementWhy:
+      'There is no agreement to send a link for. Who signs is a person’s decision — it is made at the desk, ' +
+      'not from here.',
+    expiredAction: 'Record as revenue forgone',
+    expiredWhy: 'The twelve-month window has closed. This item cannot be billed and is never contacted again.',
+    byBand: 'All bands',
+    selectBand: 'Show one band',
+    bulkResend: 'Resend everything shown',
+    bulkResendDone: '{sent} sent, {skipped} skipped',
+    bulkSkippedWhy: 'Skipped: no agreement yet, expired, or confidentiality-flagged.',
+    footer: 'Reg 89AA notices never appear here — they are one-way and never chased.',
+
+    // R-2 — one item in full.
+    detailTitle: 'What has been tried',
+    attempts: 'Attempts',
+    noAttempts: 'Nothing has been sent yet.',
+    attemptLine: '{channel} · opened {when} · {status}',
+    messageLine: '{state} to {to}',
+    policy: 'What this band allows',
+    policyLine: '{attempts} attempt(s), {window} apart · ladder: {ladder} · handback {handback}',
+    policyNoWindow: 'no window',
+    ladder: { ai: 'automated', human: 'a person', handback: 'hand back to the practice' } as Record<string, string>,
+    nextStep: 'Next step',
+    nextNone: 'Nothing — past the deadline.',
+    nextExhausted: 'Attempts used up — hand back to the practice.',
+    attemptsRemaining: '{n} attempt(s) left in this band',
+    everyAttemptRecorded: 'Every attempt is a vault event.',
+    close: 'Close',
+    channelEmail: 'Email link',
+    channelSms: 'SMS link',
+    loading: 'Loading…',
+    unreachableTitle: 'We could not reach the service',
+    // On the setup hub and in the menu, pointing at this screen.
+    hubTitle: 'Outstanding agreements',
+    hubBody:
+      'Services billed without a stored agreement, ranked by days left to lodge. The platform asks every ' +
+      'patient it may; what is here is what it could not decide, and each says why.',
+    navLabel: 'Outstanding agreements',
+  },
+
   emailStatus: {
     verified: 'Verified',
     pending: 'Confirmation pending',
