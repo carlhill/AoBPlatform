@@ -1190,9 +1190,10 @@ not drift:
 - **C2.5 (MUST) RACF visiting-provider offline batch mode** -- the one real
   casualty. A visiting provider in an aged-care facility with no wifi cannot
   use a cloud-only kiosk. Options: the provider's own online device (4G), or
-  the assignor-remote path (REQ-VUL-03) which RACFs need regardless. **Carl to
-  decide whether C2.5 stays a MUST with a different answer, or moves to
-  roadmap.**
+  the assignor-remote path (REQ-VUL-03) which RACFs need regardless.
+  **Decided (Carl, 3 Sep 2026): C2.5 moves to roadmap (MAY).** C2.2 withdrawn
+  and C2.3 tightened in `AoB_requirements.md` the same day; struck through
+  rather than deleted so the history reads.
 - **aob-tech-stack.md section 1 row "React Native (Expo)" and section 2
   "Tablet/kiosk app"** -- the Expo native shell was chosen FOR offline-first,
   kiosk lockdown and glass signature. Two of the three reasons remain valid
