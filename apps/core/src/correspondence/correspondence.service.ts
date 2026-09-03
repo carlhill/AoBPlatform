@@ -217,41 +217,74 @@ export class CorrespondenceService {
   } as const;
 
   /**
-   * WHICH ATTEMPT EACH CAPTURE MESSAGE WAS.
+   * WHICH AGREEMENT EACH MESSAGE IS ABOUT, AND WHICH ATTEMPT IT WAS.
    *
-   * The design's M-1 distinguishes "Capture link" from "Reminder 2" — the same
-   * row type, told apart by how many went before it about the same agreement.
-   * Nothing stores that, because nothing needs to: the correspondence rows are
-   * the record and the ordinal is a reading of them.
+   * Two readings of the same rows, done together because they need the same
+   * join. Neither is stored, and neither needs to be.
    *
-   * The join to capture_requests is a READ, inside the practice's own RLS
-   * scope, exactly as `ReconciliationService` reads correspondence the other
-   * way round. Rows about anything else get no ordinal.
+   * THE AGREEMENT TYPE. The log labels a row `Episodic-Agreement-Pre-Consultation`
+   * — the agreement type, the artefact, the timing — so the type has to reach
+   * the screen. It is resolved from the record three ways, because a message is
+   * about an agreement three ways: a capture request points at one, an
+   * Agreement row IS one, and a reg 89AA notice names the one it reports. The
+   * subject line is never consulted: it is free text a person wrote.
+   *
+   * THE ORDINAL. The design's M-1 distinguishes a first capture link from the
+   * chases after it — the same row type, told apart by how many went before it
+   * about the same agreement. Counted over capture requests ONLY: a signed copy
+   * and a notice are not chases and must not advance the count.
+   *
+   * Every join is a READ inside the practice's own RLS scope, exactly as
+   * `ReconciliationService` reads correspondence the other way round.
    */
-  private async withAttempts<T extends { subjectType: string; subjectId: string; queuedAt: Date }>(
+  private async withAgreementContext<T extends { subjectType: string; subjectId: string; queuedAt: Date }>(
     tx: Prisma.TransactionClient,
     rows: T[],
-  ): Promise<Array<T & { attempt: number | null }>> {
-    const captureIds = rows.filter((r) => r.subjectType === 'CaptureRequest').map((r) => r.subjectId);
-    if (captureIds.length === 0) return rows.map((r) => ({ ...r, attempt: null }));
+  ): Promise<Array<T & { attempt: number | null; agreementType: string | null }>> {
+    const idsOf = (type: string) => rows.filter((r) => r.subjectType === type).map((r) => r.subjectId);
+    const captureIds = idsOf('CaptureRequest');
+    const noticeIds = idsOf('Notice');
+    const directIds = idsOf('Agreement');
 
-    const requests = await tx.captureRequest.findMany({
-      where: { id: { in: captureIds } },
-      select: { id: true, agreementId: true },
-    });
-    const agreementOf = new Map(requests.map((r) => [r.id, r.agreementId]));
+    const [requests, notices] = await Promise.all([
+      captureIds.length
+        ? tx.captureRequest.findMany({ where: { id: { in: captureIds } }, select: { id: true, agreementId: true } })
+        : Promise.resolve([]),
+      noticeIds.length
+        ? tx.notice.findMany({ where: { id: { in: noticeIds } }, select: { id: true, agreementId: true } })
+        : Promise.resolve([]),
+    ]);
+
+    // Only capture requests carry an ordinal; kept apart so nothing else counts.
+    const captureAgreementOf = new Map(requests.map((r) => [r.id, r.agreementId]));
+    const agreementOf = new Map<string, string>([
+      ...captureAgreementOf,
+      ...notices.map((n) => [n.id, n.agreementId] as const),
+      ...directIds.map((id) => [id, id] as const),
+    ]);
+
+    const agreementIds = [...new Set(agreementOf.values())];
+    const agreements = agreementIds.length
+      ? await tx.agreement.findMany({ where: { id: { in: agreementIds } }, select: { id: true, type: true } })
+      : [];
+    const typeOf = new Map(agreements.map((a) => [a.id, a.type]));
 
     // Oldest first inside each agreement, so the first send is attempt 1.
     const ordinal = new Map<string, number>();
     const counted = new Map<string, number>();
     for (const row of [...rows].sort((a, b) => a.queuedAt.getTime() - b.queuedAt.getTime())) {
-      const agreementId = agreementOf.get(row.subjectId);
+      const agreementId = captureAgreementOf.get(row.subjectId);
       if (!agreementId) continue;
       const next = (counted.get(agreementId) ?? 0) + 1;
       counted.set(agreementId, next);
       ordinal.set(`${row.subjectId}:${row.queuedAt.getTime()}`, next);
     }
-    return rows.map((r) => ({ ...r, attempt: ordinal.get(`${r.subjectId}:${r.queuedAt.getTime()}`) ?? null }));
+
+    return rows.map((r) => ({
+      ...r,
+      attempt: ordinal.get(`${r.subjectId}:${r.queuedAt.getTime()}`) ?? null,
+      agreementType: typeOf.get(agreementOf.get(r.subjectId) ?? '') ?? null,
+    }));
   }
 
   /** The practice's own correspondence — practice-scoped, newest first (plan §4.2). */
@@ -262,7 +295,7 @@ export class CorrespondenceService {
         take: limit,
         select: CorrespondenceService.LIST_SELECT,
       });
-      return this.withAttempts(tx, rows);
+      return this.withAgreementContext(tx, rows);
     });
   }
 
@@ -286,7 +319,7 @@ export class CorrespondenceService {
         take: limit,
         select: CorrespondenceService.LIST_SELECT,
       });
-      return this.withAttempts(tx, rows);
+      return this.withAgreementContext(tx, rows);
     });
   }
 

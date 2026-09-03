@@ -1787,6 +1787,33 @@ export const strings = {
     colState: 'Delivery',
     colAction: '',
 
+    /*
+     * THE PURPOSE SAYS WHAT THE THING ACTUALLY IS — Carl, on M-1. A label is
+     * three facts joined: the agreement TYPE, whether the artefact is the
+     * AGREEMENT or a reg 89AA NOTICE about one, and the TIMING. So
+     * `Episodic-Agreement-Pre-Consultation`, and a chase carries its ordinal:
+     * `Episodic-Agreement-Post-Consultation-Reminder-2`.
+     *
+     * The three facts come from the record (`describePurpose` in the domain,
+     * off the agreement type the server resolves). These are only the words.
+     */
+    purposeParts: {
+      episodic: 'Episodic',
+      enduring: 'Enduring',
+      treatment_plan: 'Treatment-Plan',
+      agreement: 'Agreement',
+      notice: 'Notice',
+      pre: 'Pre-Consultation',
+      post: 'Post-Consultation',
+    } as Record<string, string>,
+    purposeComposed: '{type}-{artefact}-{timing}',
+    purposeComposedReminder: '{type}-{artefact}-{timing}-Reminder-{n}',
+
+    /*
+     * The plain labels, still used where there is no agreement behind the
+     * message — a practice notice is not an agreement and is not forced into
+     * the scheme above.
+     */
     purposes: {
       capture: 'Capture link',
       reminder: 'Reminder',

@@ -1,5 +1,6 @@
 import {
   buildMessageLog,
+  describePurpose,
   matchesSegment,
   mayChase,
   purposeOf,
@@ -24,6 +25,99 @@ describe('one log, two audiences (design handoff M-1 / P-1)', () => {
     expect(purposeOf({ subjectType: 'Agreement' })).toBe('copy');
     expect(purposeOf({ subjectType: 'Notice' })).toBe('notice');
     expect(purposeOf({ subjectType: 'Affiliation' })).toBe('practice');
+  });
+
+  /**
+   * WHAT THE THING ACTUALLY IS — Carl, on M-1: the label reads
+   * `Episodic-Agreement-Pre-Consultation`, not "Capture link". Three facts,
+   * every one of them read from the record.
+   */
+  it('names the agreement type, the artefact and the timing, from the data', () => {
+    const of = (over: Record<string, unknown>) =>
+      describePurpose(buildMessageLog({ dispatches: [row(over)] })[0]);
+
+    expect(of({ agreementType: 'episodic_pre', attempt: 1 })).toEqual({
+      family: 'episodic',
+      artefact: 'agreement',
+      timing: 'pre',
+      attempt: null,
+    });
+    expect(of({ agreementType: 'episodic_post', attempt: 1 })).toMatchObject({
+      family: 'episodic',
+      artefact: 'agreement',
+      timing: 'post',
+    });
+    // A signed copy of the agreement is the same artefact, named the same way.
+    expect(of({ subjectType: 'Agreement', agreementType: 'enduring' })).toMatchObject({
+      family: 'enduring',
+      artefact: 'agreement',
+      timing: 'pre',
+    });
+    // A treatment plan is a multi-service episodic PRE agreement.
+    expect(of({ subjectType: 'Agreement', agreementType: 'treatment_plan' })).toMatchObject({
+      family: 'treatment_plan',
+      timing: 'pre',
+    });
+  });
+
+  it('carries the chase ordinal on a reminder, and on nothing else', () => {
+    const log = buildMessageLog({
+      dispatches: [
+        row({ id: 'first', agreementType: 'episodic_post', attempt: 1 }),
+        row({ id: 'chase', agreementType: 'episodic_post', attempt: 2, queuedAt: '2026-09-03T02:04:00.000Z', sentAt: '2026-09-03T02:04:00.000Z' }),
+      ],
+    });
+    // Episodic-Agreement-Post-Consultation, then …-Reminder-2.
+    expect(describePurpose(log.find((e) => e.id === 'first')!)!.attempt).toBeNull();
+    expect(describePurpose(log.find((e) => e.id === 'chase')!)).toMatchObject({
+      family: 'episodic',
+      artefact: 'agreement',
+      timing: 'post',
+      attempt: 2,
+    });
+  });
+
+  /**
+   * A reg 89AA notice reports a service already billed, so it is a NOTICE and
+   * it is always AFTER — the enduring agreement it is about supplies the
+   * family and never the timing.
+   */
+  it('names an 89AA notice as a notice, after the service, on the agreement it reports', () => {
+    const [entry] = buildMessageLog({
+      dispatches: [row({ subjectType: 'Notice', agreementType: 'enduring' })],
+    });
+    expect(entry.purpose).toBe('notice');
+    expect(describePurpose(entry)).toEqual({
+      family: 'enduring',
+      artefact: 'notice',
+      timing: 'post',
+      attempt: null,
+    });
+    // Still one-way. Naming it better does not give it an action.
+    expect(entry.chaseable).toBe(false);
+  });
+
+  it('leaves a message with no agreement behind it alone, rather than inventing one', () => {
+    // A practice message: an affiliation ending, a sign-in link.
+    const [practice] = buildMessageLog({ dispatches: [row({ subjectType: 'Affiliation' })] });
+    expect(practice.agreementType).toBeNull();
+    expect(describePurpose(practice)).toBeNull();
+
+    // A capture message whose agreement the server could not resolve.
+    const [unresolved] = buildMessageLog({ dispatches: [row({ attempt: 1 })] });
+    expect(describePurpose(unresolved)).toBeNull();
+
+    // A type this domain does not know is dropped, not half-rendered.
+    const [unknown] = buildMessageLog({ dispatches: [row({ agreementType: 'something_new' })] });
+    expect(unknown.agreementType).toBeNull();
+    expect(describePurpose(unknown)).toBeNull();
+
+    // And a suppressed send names no artefact, because none was composed.
+    const [suppressed] = buildMessageLog({
+      dispatches: [],
+      suppressed: [{ serviceRecordId: 's1', patientName: 'Robert Blake', reason: 'confidentiality_flag', suppressedAt: '2026-09-02T00:00:00.000Z' }],
+    });
+    expect(describePurpose(suppressed)).toBeNull();
   });
 
   /**

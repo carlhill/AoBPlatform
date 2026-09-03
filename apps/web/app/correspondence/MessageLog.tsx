@@ -24,7 +24,7 @@
 
 import { Fragment, useState } from 'react';
 import { ChevronDown, ChevronRight, HelpCircle } from 'lucide-react';
-import { type LogAudience, type LogEntry, showsBodies } from '@aobplatform/domain';
+import { type LogAudience, type LogEntry, describePurpose, showsBodies } from '@aobplatform/domain';
 import { Button, Chip, Notice, type Tone, ui } from '../ui';
 import { strings } from '../strings';
 import styles from './messageLog.module.css';
@@ -59,8 +59,32 @@ function when(iso: string | null): string {
     : d.toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
-/** "Capture link", "Reminder 2", "89AA notice · one-way" — the word, always. */
+/**
+ * WHAT THE ROW ACTUALLY IS — `Episodic-Agreement-Pre-Consultation`, and
+ * `Episodic-Agreement-Post-Consultation-Reminder-2` for the second chase.
+ *
+ * The three facts are read from the record by `describePurpose`; this only
+ * joins the words. NOTHING HERE READS A SUBJECT LINE — a subject is free text
+ * a person typed, and it must not be able to change what the log says an
+ * agreement was.
+ *
+ * When there is no agreement behind the message — a practice notice, an
+ * affiliation ending, a sign-in link — the plain label stands rather than a
+ * composite invented for it.
+ */
 export function purposeLabel(entry: LogEntry): string {
+  const parts = describePurpose(entry);
+  if (parts) {
+    const word = strings.correspondence.purposeParts;
+    const template = parts.attempt
+      ? strings.correspondence.purposeComposedReminder
+      : strings.correspondence.purposeComposed;
+    return template
+      .replace('{type}', word[parts.family] ?? parts.family)
+      .replace('{artefact}', word[parts.artefact] ?? parts.artefact)
+      .replace('{timing}', word[parts.timing] ?? parts.timing)
+      .replace('{n}', String(parts.attempt ?? ''));
+  }
   if (entry.purpose === 'reminder' && entry.attempt) {
     return strings.correspondence.reminderNumbered.replace('{n}', String(entry.attempt));
   }

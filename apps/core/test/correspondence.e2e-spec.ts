@@ -2,7 +2,7 @@ import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
-import { buildMessageLog, mayChase, purposeOf } from '@aobplatform/domain';
+import { buildMessageLog, describePurpose, mayChase, purposeOf } from '@aobplatform/domain';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { OutboundService } from '../src/outbound/outbound.service';
@@ -75,6 +75,9 @@ describe('correspondence (e2e, real Postgres)', () => {
       await tx.correspondence.deleteMany({});
       await tx.outboundItem.deleteMany({});
       await tx.captureRequest.deleteMany({});
+      await tx.notice.deleteMany({});
+      await tx.agreement.deleteMany({});
+      await tx.assignor.deleteMany({});
       await tx.patient.deleteMany({});
       await tx.practice.deleteMany({});
     });
@@ -182,8 +185,32 @@ describe('correspondence (e2e, real Postgres)', () => {
   describe('the log both screens read (design handoff M-1 / P-1)', () => {
     let agreementId: string;
 
-    it('tells a capture link from the chases that followed it', async () => {
-      agreementId = randomUUID();
+    /**
+     * A REAL AGREEMENT BEHIND THE MESSAGES, because the log names what the
+     * thing actually is — `Episodic-Agreement-Pre-Consultation` — and the type
+     * has to come from the agreement rather than from the subject line.
+     */
+    const createAgreement = (type: string) =>
+      prisma.withPractice(practiceId, async (tx) => {
+        const assignor = await tx.assignor.create({
+          data: { practiceId, name: 'Pat Letters', authorityBasis: 'self' },
+        });
+        return (
+          await tx.agreement.create({
+            data: {
+              practiceId,
+              type,
+              anchorKind: 'provider',
+              patientId,
+              assignorId: assignor.id,
+              assignorIsPatient: true,
+            },
+          })
+        ).id;
+      });
+
+    it('tells a capture link from the chases that followed it, and names the agreement', async () => {
+      agreementId = await createAgreement('episodic_pre');
       const requests = await prisma.withPractice(practiceId, async (tx) => [
         await tx.captureRequest.create({ data: { practiceId, agreementId, channel: 'email_link' } }),
         await tx.captureRequest.create({ data: { practiceId, agreementId, channel: 'sms_link' } }),
@@ -197,6 +224,39 @@ describe('correspondence (e2e, real Postgres)', () => {
       expect(second.attempt).toBe(2);
       expect(purposeOf({ subjectType: first.subjectType, attempt: first.attempt })).toBe('capture');
       expect(purposeOf({ subjectType: second.subjectType, attempt: second.attempt })).toBe('reminder');
+
+      // The third fact reaches the row: Episodic-Agreement-Pre-Consultation,
+      // and …-Reminder-2 for the chase after it.
+      expect(first.agreementType).toBe('episodic_pre');
+      expect(second.agreementType).toBe('episodic_pre');
+      expect(describePurpose(buildMessageLog({ dispatches: [{ ...second, queuedAt: second.queuedAt.toISOString() } as never] })[0])).toMatchObject({
+        family: 'episodic',
+        artefact: 'agreement',
+        timing: 'pre',
+        attempt: 2,
+      });
+    });
+
+    it('names a signed copy off the agreement it is a copy of', async () => {
+      const enduringId = await createAgreement('enduring');
+      await prisma.withPractice(practiceId, (tx) =>
+        outbound.enqueue(tx, {
+          practiceId,
+          channel: 'email',
+          destination: 'pat@example.invalid',
+          subjectType: 'Agreement',
+          subjectId: enduringId,
+          recipientType: 'patient',
+          recipientId: patientId,
+          recipientName: 'Pat Letters',
+          payload: { subject: 'Your signed agreement', body: 'A copy for your records.' },
+        }),
+      );
+      const rows = await correspondence.listForPractice(practiceId, 500);
+      const copy = rows.find((r) => r.subjectId === enduringId)!;
+      expect(copy.agreementType).toBe('enduring');
+      // A chase ordinal belongs to capture messages; a copy is not a chase.
+      expect(copy.attempt).toBeNull();
     });
 
     /**
@@ -206,6 +266,24 @@ describe('correspondence (e2e, real Postgres)', () => {
      */
     it('eightynineAA_rows_have_no_chase_action', async () => {
       const noticeId = randomUUID();
+      const enduringId = await createAgreement('enduring');
+      await prisma.withPractice(practiceId, (tx) =>
+        tx.notice.create({
+          data: {
+            id: noticeId,
+            practiceId,
+            agreementId: enduringId,
+            claimReference: 'CORR-E2E-0001',
+            claimLodgedAt: new Date(),
+            practitionerName: 'Dr Letters',
+            patientName: 'Pat Letters',
+            serviceDate: new Date(),
+            benefitAmountCents: 0,
+            agreementMethod: 'email',
+            payloadHash: 'e2e',
+          },
+        }),
+      );
       await prisma.withPractice(practiceId, (tx) =>
         correspondence.recordForNotice(tx, {
           noticeId,
@@ -222,11 +300,18 @@ describe('correspondence (e2e, real Postgres)', () => {
       );
 
       const rows = await request(app.getHttpServer()).get('/correspondence?limit=500').set('x-practice-id', practiceId).expect(200);
-      const notice = (rows.body as Array<{ subjectType: string; attempt: number | null; subjectId: string }>).find(
+      const notice = (
+        rows.body as Array<{ subjectType: string; attempt: number | null; subjectId: string; agreementType: string | null }>
+      ).find(
         (r) => r.subjectId === noticeId,
       )!;
       expect(purposeOf(notice)).toBe('notice');
       expect(mayChase(purposeOf(notice))).toBe(false);
+      /*
+       * Named off the agreement it reports — Enduring-Notice-Post-Consultation.
+       * A notice is always AFTER the service: it says one was billed.
+       */
+      expect(notice.agreementType).toBe('enduring');
 
       // And every other row on the same list still may be chased, so this is a
       // property of the notice rather than of the screen being read-only.

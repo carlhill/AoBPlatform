@@ -10,28 +10,66 @@
   gap: var(--s2);
 }
 
+/* ONE GRID, TWO BOXES THAT MUST MATCH — and measurement, not the eye, is how
+   this was found. The header and the data row are drawn on the same template
+   but live in different boxes, and there were TWO reasons the headings sat off
+   their columns. Measured on a 1024px viewport, the header's left edge against
+   the first cell in its column, before:
+
+     Patient -1px · Purpose +37px · Channel, Sent, Delivery +82px each ·
+     action +98px. After: 0px on every column, at 1400, 1024 and 375.
+
+   FIRST, the last track was `auto`. A row's action cell holds a button; the
+   header's last cell is EMPTY. So the same template gave the row a ~97px final
+   column and the header a 0px one, and the fr columns before it absorbed the
+   whole difference — at every width, and worse the more the button says. The
+   track is now a definite width in both, so neither grid can be sized by what
+   happens to be inside it.
+
+   SECOND, the row sits inside a BORDERED card and the header does not, so the
+   row's content box was 2px narrower and began 1px further in. The header
+   spends the same 1px as a TRANSPARENT border and takes the same horizontal
+   padding, which puts both content boxes at the same origin and width.
+
+   Both grids are then laid out identically at every width. Change the
+   template, the padding or that 1px — change it in both, and re-measure. */
 .head,
 .rowMain {
   display: grid;
   /* Delivery may carry a failure reason of any length, so it GROWS rather than
-     spilling over the column beside it. */
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) 7rem 9rem minmax(11rem, 1.1fr) auto;
+     spilling over the column beside it. The purpose column is wide because the
+     label now names the thing in full — Episodic-Agreement-Post-Consultation-Reminder-2.
+     The action column is DEFINITE, never `auto`: see above. */
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 2fr) 7rem 9rem minmax(11rem, 1.1fr) 9rem;
   align-items: center;
   gap: var(--s3);
+  /* Shared, so the two grids start from the same inset. */
+  padding: var(--s3) var(--s4);
 }
 
 /* The patient's own list drops the "who" column — it is all theirs. */
 .headAnonymous,
 .rowAnonymous {
-  grid-template-columns: minmax(0, 1.6fr) 7rem 9rem minmax(11rem, 1.1fr) auto;
+  grid-template-columns: minmax(0, 2.2fr) 7rem 9rem minmax(11rem, 1.1fr) 9rem;
 }
 
 .head {
-  padding: var(--s2) var(--s4);
+  /* The 1px the data row spends on `.row`'s border, matched exactly — this is
+     what puts each heading over its own column rather than 1-3px left of it.
+     Only the vertical padding differs: a heading sits tighter than a row. */
+  border: 1px solid transparent;
+  padding-block: var(--s2);
   font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--ink-muted);
+  /* Every heading starts at its column's left edge, at every width. */
+  text-align: left;
+}
+
+.head > * {
+  min-width: 0;
+  justify-self: start;
 }
 
 .row {
@@ -43,7 +81,6 @@
 
 .rowMain {
   width: 100%;
-  padding: var(--s3) var(--s4);
   font-size: var(--text-sm);
 }
 
