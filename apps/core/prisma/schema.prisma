@@ -1477,6 +1477,70 @@ model ReconciliationDecision {
   @@map("reconciliation_decisions")
 }
 
+/**
+ * What a PERSON at the practice did to chase an agreement — rang the patient,
+ * texted them, caught them at the desk, put a letter in the post — and what
+ * came of it.
+ *
+ * Carl, 3 Sep 2026: "we need an audit-trail to show that a practice-user
+ * called the Patient, sent SMS / email and so on ... The Practice will chase
+ * as they will not get paid otherwise." The platform's own attempts are
+ * already evidence (capture requests, correspondence rows); this is the half
+ * that happens off the platform, and it is the half a practice needs when
+ * somebody asks why an item was closed unbilled.
+ *
+ * NO IDENTIFIER VALUES (REQ-VER-04): the row says which KIND of contact was
+ * used and WHO was contacted by role — never the number, never the address.
+ * No dollar amount anywhere (rule 4).
+ *
+ * SUBJECT IS ServiceRecord OR Agreement, ENFORCED BY A CHECK CONSTRAINT. A
+ * reg 89AA notice is never chased (rule 7, REQ-CHASE-02, REQ-END-05), so
+ * "Notice" is not a value the column will take.
+ *
+ * APPEND-ONLY, like reconciliation_decisions: a correction is a new row
+ * pointing at the one it replaces. The database refuses UPDATE and DELETE,
+ * and the runtime role does not hold either privilege on this table.
+ */
+model ChaseAttempt {
+  id         String @id @default(uuid()) @db.Uuid
+  practiceId String @db.Uuid
+
+  /// ServiceRecord | Agreement. Never Notice — see the CHECK constraint.
+  subjectType String
+  subjectId   String @db.Uuid
+
+  /// phone | sms | email | in_person | post
+  channel String
+  /// reached | no_answer | left_message | refused | wrong_contact
+  outcome String
+  /// patient | assignor | other — a ROLE, never a name (REQ-VER-04).
+  contactedPartyType String?
+  /// What was said. Never a number, an address or an amount.
+  note String?
+
+  /// The person, from their session. Never from the request body.
+  attemptedBy   String
+  /// Their realm subject — the thing to join on when a display name changes.
+  attemptedById String
+
+  /// When the contact happened, which may be before it was written down.
+  occurredAt DateTime @default(now())
+  recordedAt DateTime @default(now())
+
+  /// What the ladder said at the time (REQ-CHASE-05) — evidence of the rule, not just the act.
+  band           String
+  daysRemaining  Int
+  attemptOrdinal Int
+
+  /// A correction points at the row it replaces. One correction per row.
+  supersedesId String?       @unique @db.Uuid
+  supersedes   ChaseAttempt? @relation("ChaseAttemptCorrection", fields: [supersedesId], references: [id])
+  supersededBy ChaseAttempt? @relation("ChaseAttemptCorrection")
+
+  @@index([practiceId, subjectType, subjectId, occurredAt])
+  @@map("chase_attempts")
+}
+
 // FR-11.2 — the vault outbox. Rows are inserted in the SAME transaction as
 // the domain write they evidence; the relay publishes them to the Evidence
 // Vault with backoff and no permanent give-up (packages/vault-client).

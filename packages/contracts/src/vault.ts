@@ -58,6 +58,17 @@ export const VAULT_EVENT_TYPES = [
    * reason are the record.
    */
   'reconciliation.decided',
+  /**
+   * A PERSON at the practice chased the patient — rang them, texted them,
+   * caught them at the desk, put a letter in the post — and said what came of
+   * it. The platform's own attempts are already evidenced by
+   * `capture.requested` and the correspondence rows; this is the half that
+   * happens off the platform, and without it a practice that chased
+   * diligently and still got nothing has no evidence it tried. Payload
+   * carries channel, outcome and the band at the time — never a number, an
+   * address, or a note's text.
+   */
+  'chase.attempted',
   'notice.composed',
   'notice.dispatched',
   'notice.delivered',

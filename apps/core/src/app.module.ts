@@ -23,6 +23,7 @@ import { InboundModule } from './inbound/inbound.module';
 import { AgreeModule } from './agree/agree.module';
 import { CorrespondenceModule } from './correspondence/correspondence.module';
 import { ReconciliationModule } from './reconciliation/reconciliation.module';
+import { ChaseAttemptsModule } from './chase-attempts/chase-attempts.module';
 import { EnduringModule } from './enduring/enduring.module';
 import { NoticesModule } from './notices/notices.module';
 import { OrganisationsModule } from './organisations/organisations.module';
@@ -68,6 +69,7 @@ import { RetentionModule } from './retention/retention.module';
     InboundModule,
     AgreeModule,
     ReconciliationModule,
+    ChaseAttemptsModule,
     EnduringModule,
     NoticesModule,
     DevSeedModule,
