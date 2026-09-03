@@ -216,6 +216,110 @@ test.describe('the kiosk ceremony', () => {
     await expect(page.getByTestId('complete-heading')).toContainText(PATIENT.given);
   });
 
+  test('the patient DRAWS a signature, and both halves of it are stored (REQ-SIG-01/-02)', async ({
+    page,
+    request,
+  }) => {
+    /*
+     * THE OTHER REAL SIGNATURE. The run above takes the tap, which is the
+     * accessible path; this one draws on the glass, which is the path the gap
+     * was in — the pad captured a vector and a raster and the ceremony
+     * uploaded neither, so a signature recorded as `drawn` bound the rendered
+     * agreement's hash and not the mark anybody made.
+     *
+     * WHAT IS ASSERTED IS BOTH ENDS OF THE WIRE. That the request carried the
+     * strokes AND the image with the pad's logical size, and that afterwards
+     * both halves come back out of the server — which they can only do if both
+     * were hashed and bound to the signature event.
+     */
+    const row = await stageWaitingPatient(request, PATIENT.name, { lock: true });
+    await verifyAs(page, row);
+    await page.getByTestId('assignor-self').click();
+
+    await expect(page.getByTestId('artefact-hash')).toBeVisible({ timeout: 25_000 });
+    await page.getByTestId('continue-to-sign').click();
+
+    const pad = page.getByTestId('signature-pad');
+    await expect(pad).toBeVisible();
+
+    // The drawn control is refused until there is ink — a signature with
+    // nothing in it is not a signature (REQ-SIG-02).
+    await expect(page.getByTestId('sign-control')).toBeDisabled();
+
+    // REAL POINTER EVENTS, in a real browser. Playwright's mouse produces
+    // pointerdown/pointermove/pointerup, which is the same path a finger takes
+    // — and the small waits between moves are what give the stored points
+    // distinct timings to carry.
+    const box = (await pad.boundingBox())!;
+    const draw = async (points: Array<[number, number]>) => {
+      await page.mouse.move(box.x + points[0][0], box.y + points[0][1]);
+      await page.mouse.down();
+      for (const [dx, dy] of points.slice(1)) {
+        await page.mouse.move(box.x + dx, box.y + dy, { steps: 4 });
+        await page.waitForTimeout(20);
+      }
+      await page.mouse.up();
+    };
+    await draw([
+      [40, 60],
+      [90, 100],
+      [140, 50],
+    ]);
+    await page.waitForTimeout(120); // a real gap between strokes; it is data
+    await draw([
+      [180, 55],
+      [230, 105],
+    ]);
+
+    const sign = page.getByTestId('sign-control');
+    await expect(sign).toBeEnabled();
+
+    const signRequest = page.waitForRequest(
+      (req) => req.url().includes('/sign') && req.method() === 'POST',
+    );
+    await sign.click();
+
+    /*
+     * THE REQUEST CARRIED THE MARK. This is the assertion that would have
+     * failed before the wiring existed, in the surface where it mattered.
+     */
+    const body = JSON.parse((await signRequest).postData() ?? '{}');
+    expect(body.method).toBe('drawn');
+    expect(body.signature.vector.length).toBeGreaterThanOrEqual(2);
+    expect(body.signature.vector[0].points[0]).toHaveProperty('t');
+    expect(body.signature.rasterPngBase64.length).toBeGreaterThan(100);
+    expect(body.signature.padWidth).toBeGreaterThan(0);
+    expect(body.signature.padHeight).toBeGreaterThan(0);
+    // No amount and no practitioner signature travel with it (rules 3 and 4).
+    expect(JSON.stringify(body)).not.toMatch(/practitionerSignature|benefitAmount/i);
+
+    await expect(page.getByTestId('complete-heading')).toBeVisible({ timeout: 25_000 });
+
+    /*
+     * AND BOTH HALVES COME BACK OUT, each re-verified against the hash the
+     * signature event bound at signing (rule 13). A 200 on both is only
+     * reachable if `signatureRasterSha256` and `signatureVectorSha256` are
+     * both on the event and both still match their stored bytes.
+     */
+    const raster = await request.get(
+      `${CORE}/agreements/${row.agreementId}/signature/raster/content`,
+      { headers: headers() },
+    );
+    expect(raster.status(), await raster.text()).toBe(200);
+    expect(raster.headers()['content-type']).toContain('image/png');
+    expect((await raster.body()).subarray(0, 4).toString('hex')).toBe('89504e47'); // PNG
+
+    const vector = await request.get(
+      `${CORE}/agreements/${row.agreementId}/signature/vector/content`,
+      { headers: headers() },
+    );
+    expect(vector.status(), await vector.text()).toBe(200);
+    const strokes = JSON.parse(await vector.text()).strokes;
+    expect(strokes.length).toBeGreaterThanOrEqual(2);
+    // The timing survived the round trip, unsmoothed and unresampled.
+    expect(strokes[0].points[0]).toHaveProperty('t');
+  });
+
   test('someone else signs, and the agreement is re-pointed at them', async ({ page, request }) => {
     /*
      * ON A DRAFT, NECESSARILY. Who signs is one of the locked particulars, so

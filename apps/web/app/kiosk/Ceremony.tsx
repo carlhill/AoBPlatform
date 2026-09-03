@@ -28,11 +28,21 @@
  *      renders and hashes. Only then can the signature control enable.
  *   6. `POST /agreements/:id/sign`, then `POST /capture/:id/complete`.
  *
- * NOTHING PERSISTS ON THE DEVICE. No token, no identifier value, no patient
- * record: every piece of ceremony state lives in this component and is dropped
- * on reset. There is no `localStorage`, no `sessionStorage`, no `indexedDB`,
- * no cookie and no service worker anywhere under `app/kiosk/**`, and the root
- * ESLint config fails the build if one appears (CLAUDE.md §7).
+ * IT BEGINS BEFORE THE CEREMONY, AT PAIRING. `/kiosk` is a public URL, and
+ * its practice scope used to come from a build-time environment variable — so
+ * anybody who reached the address saw a practice's waiting list. A tablet now
+ * holds one opaque credential, the server resolves the practice from it, and
+ * this component will not show a name to anybody until it has one. No
+ * credential means the pairing screen; a credential the server refuses means
+ * the unpaired screen, and no retry.
+ *
+ * NOTHING PERSISTS ON THE DEVICE BUT THAT CREDENTIAL. No token, no identifier
+ * value, no patient record, no practice name: every piece of ceremony state
+ * lives in this component and is dropped on reset. There is no
+ * `localStorage`, `sessionStorage`, `indexedDB`, cookie or service worker
+ * anywhere under `app/kiosk/**` except the single sanctioned read/write in
+ * `pairing.ts`, and the root ESLint config fails the build if one appears
+ * elsewhere (CLAUDE.md §7).
  *
  * EVERY FAILURE ROUTES TO THE DESK, never to a dead end (REQ-REC-04).
  */
@@ -43,9 +53,11 @@ import {
   changeAssignor,
   completeCapture,
   fetchAgreement,
-  fetchPractice,
+  fetchKioskMe,
   fetchPracticeStaffNames,
+  isUnpaired,
   KioskApiError,
+  pairDevice,
   lockParticulars,
   signAgreement,
   startChallenge,
@@ -54,7 +66,9 @@ import {
   type KioskWaitingRow,
 } from './api';
 import { useWaitingList } from './useWaitingList';
+import { clearPairingCredential, readPairingCredential, writePairingCredential } from './pairing';
 import { challengeIsComplete, identifierFieldsFor, type IdentifierField } from './rules/identifiers';
+import { composeSignRequest } from './rules/signature-payload';
 import { trimStatedValues } from './rules/verify-fields';
 import {
   assignorRequestFrom,
@@ -73,13 +87,34 @@ import { ParticularsScreen, type ParticularsView } from './screens/ParticularsSc
 import { SignatureScreen } from './screens/SignatureScreen';
 import { CompleteScreen } from './screens/CompleteScreen';
 import { HandoverScreen } from './screens/HandoverScreen';
+import { PairingScreen, type PairedOutcome, type PairingFailure } from './screens/PairingScreen';
+import { UnpairedScreen } from './screens/UnpairedScreen';
 import type { SignaturePadHandle } from './components/SignaturePad';
 import { strings } from './strings';
 
-type Step = 'idle' | 'list' | 'verify' | 'assignor' | 'particulars' | 'signature' | 'complete' | 'handover';
+/**
+ * `booting` IS A REAL STATE, not a loading spinner nobody thought about. On
+ * the very first paint the tablet does not yet know whether it is paired, and
+ * the two wrong answers are both visible: flashing the pairing screen at a
+ * paired tablet every morning teaches staff that the pairing was lost, and
+ * flashing the idle screen at an unpaired one shows a practice's chrome to a
+ * device that has no practice.
+ */
+type Step =
+  | 'booting'
+  | 'pairing'
+  | 'unpaired'
+  | 'idle'
+  | 'list'
+  | 'verify'
+  | 'assignor'
+  | 'particulars'
+  | 'signature'
+  | 'complete'
+  | 'handover';
 
 export function Ceremony(): ReactNode {
-  const [step, setStep] = useState<Step>('idle');
+  const [step, setStep] = useState<Step>('booting');
   const [practiceName, setPracticeName] = useState('');
   const [locationLine, setLocationLine] = useState<string | null>(null);
   const [staffNames, setStaffNames] = useState<readonly string[]>([]);
@@ -114,19 +149,81 @@ export function Ceremony(): ReactNode {
     body: strings.errors.generic,
   });
 
+  /*
+   * PAIRING STATE, and every field of it is in memory. The code somebody types
+   * is never stored; the credential it earns goes to `pairing.ts`, which is
+   * the one module permitted to persist anything on this device.
+   */
+  const [pairingCode, setPairingCode] = useState('');
+  const [pairingBusy, setPairingBusy] = useState(false);
+  const [pairingFailure, setPairingFailure] = useState<PairingFailure | null>(null);
+  const [paired, setPaired] = useState<PairedOutcome | null>(null);
+
+  /**
+   * A FORCED RELOAD HAPPENS ONCE PER TAB, and the ref is the reason it is
+   * safe.
+   *
+   * The server answers `reload: true` while this tab is below the practice's
+   * build floor. If the reload does not actually change the build — a cached
+   * bundle, a CDN that has not caught up, a floor set above anything that was
+   * ever deployed — the next poll says `reload: true` again, and a tablet that
+   * reloads every two seconds is unusable and is exactly the kind of device
+   * somebody has to physically visit. So: one attempt, then leave the tablet
+   * working on the build it has. A stale kiosk is a worse tablet; a looping
+   * one is no tablet at all.
+   */
+  const reloadedRef = useRef(false);
+
   // The list is polled only while the tablet is between patients. Mid-ceremony
   // the screen is not showing it, and a poll that nobody can see is noise.
   const list = useWaitingList(step === 'idle' || step === 'list');
 
+  /**
+   * WHO IS THIS TABLET — asked before anything else is shown.
+   *
+   * NO CREDENTIAL, NO REQUEST. An unpaired tablet does not call the server at
+   * all: there is nothing to ask with, and a 401 on every load is noise in a
+   * log that somebody will one day have to read.
+   *
+   * A 401 CLEARS THE CREDENTIAL. It means revoked or rotated, and it will mean
+   * that on every future attempt — so the dead value is dropped rather than
+   * re-offered forever (TODO.md: "no retry loop hammering the server"). This
+   * is the ONLY place the kiosk clears it: there is deliberately no un-pair
+   * control on the device, because a tablet that can un-pair itself is a
+   * tablet a passer-by can un-pair.
+   *
+   * ANY OTHER FAILURE IS COSMETIC and the ceremony carries on with an empty
+   * header. A tablet that refuses to work because it could not read a practice
+   * name would be blocking care over a caption (REQ-REC-04).
+   */
+  const loadIdentity = useCallback(async (): Promise<boolean> => {
+    if (!readPairingCredential()) {
+      setStep('pairing');
+      return false;
+    }
+    try {
+      const me = await fetchKioskMe();
+      setPracticeName(me.practiceName);
+      setLocationLine(me.state ?? null);
+      setStep((current) => (current === 'booting' || current === 'unpaired' ? 'idle' : current));
+      return true;
+    } catch (err) {
+      if (isUnpaired(err)) {
+        clearPairingCredential();
+        setPracticeName('');
+        setLocationLine(null);
+        setStep('unpaired');
+        return false;
+      }
+      setStep((current) => (current === 'booting' ? 'idle' : current));
+      return true;
+    }
+  }, []);
+
   useEffect(() => {
     void (async () => {
-      try {
-        const practice = await fetchPractice();
-        setPracticeName(practice.name);
-        setLocationLine(practice.state ?? null);
-      } catch {
-        // A missing header is cosmetic. It never stops the ceremony.
-      }
+      const usable = await loadIdentity();
+      if (!usable) return;
       try {
         setStaffNames(await fetchPracticeStaffNames());
       } catch {
@@ -141,6 +238,93 @@ export function Ceremony(): ReactNode {
         setStaffNames([]);
       }
     })();
+  }, [loadIdentity]);
+
+  /**
+   * THE TABLET WAS REVOKED WHILE IT WAS SITTING THERE.
+   *
+   * The poll reports it, the poll has already stopped itself, and the screen
+   * drops here. Everything the ceremony was holding goes with it: this is the
+   * one transition that must not leave a previous patient's name in a header.
+   */
+  useEffect(() => {
+    if (!list.unpaired) return;
+    clearPairingCredential();
+    setPracticeName('');
+    setLocationLine(null);
+    setStep('unpaired');
+  }, [list.unpaired]);
+
+  /**
+   * A ROLLBACK REACHES A TAB THAT HAS BEEN OPEN SINCE EIGHT IN THE MORNING.
+   *
+   * `location.reload()` rather than a router refresh, because the thing that
+   * must change is the BUNDLE — a client-side navigation would re-render the
+   * same broken build. Only between patients: reloading a tab mid-signature
+   * would throw away the ceremony somebody is standing at, and a build floor
+   * is never urgent enough to justify that. The next reset lands on idle and
+   * the reload happens a few seconds later.
+   */
+  useEffect(() => {
+    if (!list.reload || reloadedRef.current) return;
+    if (step !== 'idle' && step !== 'list') return;
+    reloadedRef.current = true;
+    window.location.reload();
+  }, [list.reload, step]);
+
+  /**
+   * THE EXCHANGE: a code in, a credential out, once.
+   *
+   * The credential is handed straight to `pairing.ts` and never held here.
+   * `writePairingCredential` reports whether the browser actually kept it — a
+   * private window or a locked-down profile silently refuses — and the screen
+   * says so, because the person standing at the desk is the only one who can
+   * do anything about it.
+   */
+  const submitPairing = useCallback(async () => {
+    setPairingBusy(true);
+    setPairingFailure(null);
+    try {
+      const result = await pairDevice(pairingCode);
+      const remembered = writePairingCredential(result.credential);
+      setPairingCode('');
+      setPaired({ practiceName: result.practiceName, remembered });
+    } catch (err) {
+      /*
+       * A REFUSED CODE AND AN UNREACHABLE SERVER ARE DIFFERENT PROBLEMS with
+       * different fixes — ask for a new code, or check the network — and the
+       * screen says which. Beyond that the refusal never explains itself:
+       * wrong, expired, spent and revoked are one sentence, because telling
+       * somebody their code was right but stale is telling them their guess
+       * was right.
+       */
+      setPairingFailure(err instanceof KioskApiError ? 'refused' : 'unreachable');
+    } finally {
+      setPairingBusy(false);
+    }
+  }, [pairingCode]);
+
+  /** Leaving the confirmation: ask who we are now, and start the morning. */
+  const finishPairing = useCallback(() => {
+    setPaired(null);
+    setStep('booting');
+    void (async () => {
+      if (await loadIdentity()) {
+        try {
+          setStaffNames(await fetchPracticeStaffNames());
+        } catch {
+          setStaffNames([]);
+        }
+      }
+    })();
+  }, [loadIdentity]);
+
+  /** A staff member choosing to pair again from the unpaired screen. */
+  const startPairing = useCallback(() => {
+    setPairingCode('');
+    setPairingFailure(null);
+    setPaired(null);
+    setStep('pairing');
   }, []);
 
   const reset = useCallback(() => {
@@ -209,7 +393,18 @@ export function Ceremony(): ReactNode {
           identifierTypes: built.map((field) => field.type),
         });
         setChallengeId(challenge.challengeId);
-      } catch {
+      } catch (err) {
+        /*
+         * REVOKED MID-CEREMONY. Rare, and it has to be handled here rather
+         * than left to the poll, because the poll is stopped while a patient
+         * is being served — otherwise the tablet would sit on a verification
+         * screen that can never succeed.
+         */
+        if (isUnpaired(err)) {
+          clearPairingCredential();
+          setStep('unpaired');
+          return;
+        }
         // A challenge set the domain guard refuses, or a core that did not
         // answer. Either way the patient is not stuck at a tablet.
         setStartError(true);
@@ -265,7 +460,12 @@ export function Ceremony(): ReactNode {
         setAgreement(moved);
         setStep('assignor');
       }
-    } catch {
+    } catch (err) {
+      if (isUnpaired(err)) {
+        clearPairingCredential();
+        setStep('unpaired');
+        return;
+      }
       toHandover(strings.verify.lockedHeading, strings.errors.generic);
     } finally {
       setVerifyBusy(false);
@@ -440,17 +640,32 @@ export function Ceremony(): ReactNode {
       setSignBusy(true);
       setSignError(null);
       /*
-       * BOTH REPRESENTATIONS ARE CAPTURED AND NEITHER IS UPLOADED, because
-       * `SignDto` takes a method, a channel and a capture request and no
-       * payload. Reading them here is what keeps that gap visible rather than
-       * letting it look like a decision nobody made: the vector and the raster
-       * exist at the moment of signing, and wiring them through is a change to
-       * the contract in `apps/core`.
+       * BOTH REPRESENTATIONS NOW GO WITH THE CALL (REQ-SIG-01/-02). The gap
+       * this used to document is closed: `SignDto` carries a `signature`, and
+       * the server stores the strokes and the image as artefacts of the
+       * agreement and binds both hashes into the signature event.
+       *
+       * A DRAWN SIGNATURE WITH NOTHING TO SEND IS NOT DOWNGRADED TO A TAP.
+       * `composeSignRequest` answers null, and the ceremony stops and says the
+       * signature failed rather than filing a tap-to-approve under `drawn`.
+       * Nobody is blocked from being seen or billed (rule 8): tap-to-approve
+       * is still on screen, is still a real signature, and the way out to
+       * reception never moved.
        */
-      void padRef.current?.strokes();
-      void padRef.current?.toPngDataUrl();
+      const body = composeSignRequest(
+        method,
+        row.captureRequestId,
+        method === 'drawn' ? (padRef.current?.capture() ?? null) : null,
+      );
+      if (!body) {
+        // Never rendered — K-4 shows its own copy for any failure — so this
+        // string is for a developer, and names no patient detail either way.
+        setSignError('The signature pad produced nothing to send.');
+        setSignBusy(false);
+        return;
+      }
       try {
-        await signAgreement(agreement.id, { method, captureRequestId: row.captureRequestId });
+        await signAgreement(agreement.id, body);
         // `sign` already completes the capture request when it is given one;
         // this is the belt-and-braces close for the case where it was not.
         await completeCapture(row.captureRequestId).catch(() => undefined);
@@ -496,6 +711,31 @@ export function Ceremony(): ReactNode {
   }, [agreement, row]);
 
   switch (step) {
+    /*
+     * BEFORE ANYTHING ELSE. Deliberately blank rather than a spinner or a
+     * skeleton of the idle screen: this lasts one request, and showing a
+     * practice's chrome to a tablet that may not belong to a practice — even
+     * for a moment — is the thing pairing exists to stop.
+     */
+    case 'booting':
+      return null;
+    case 'pairing':
+      return (
+        <PairingScreen
+          code={pairingCode}
+          busy={pairingBusy}
+          failure={pairingFailure}
+          paired={paired}
+          onChangeCode={(next) => {
+            setPairingFailure(null);
+            setPairingCode(next);
+          }}
+          onPair={() => void submitPairing()}
+          onContinue={finishPairing}
+        />
+      );
+    case 'unpaired':
+      return <UnpairedScreen onPair={startPairing} />;
     case 'idle':
     case 'list':
       return (
