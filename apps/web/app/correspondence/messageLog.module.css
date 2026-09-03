@@ -1,0 +1,111 @@
+/* One log, two audiences — shared by M-1, the P-1 Messages tab and the
+   practitioner's own list. One stylesheet for the same reason there is one
+   query: three copies of a row drift apart. */
+
+.list {
+  list-style: none;
+  margin: 0 0 var(--s4);
+  padding: 0;
+  display: grid;
+  gap: var(--s2);
+}
+
+.head,
+.rowMain {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) 7rem 9rem 11rem auto;
+  align-items: center;
+  gap: var(--s3);
+}
+
+/* The patient's own list drops the "who" column — it is all theirs. */
+.headAnonymous,
+.rowAnonymous {
+  grid-template-columns: minmax(0, 1.6fr) 7rem 9rem 11rem auto;
+}
+
+.head {
+  padding: var(--s2) var(--s4);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-muted);
+}
+
+.row {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.rowMain {
+  width: 100%;
+  padding: var(--s3) var(--s4);
+  font-size: var(--text-sm);
+}
+
+.who {
+  color: var(--ink);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.purpose {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.subject {
+  color: var(--ink-muted);
+  font-size: var(--text-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.when {
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.channel {
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.action {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* "What we sent" — the exact text, beneath the row it belongs to. */
+.detail {
+  border-top: 1px solid var(--line);
+  padding: var(--s3) var(--s4);
+  background: var(--surface-sunken);
+}
+
+.detailHead {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-muted);
+  margin: 0 0 var(--s2);
+}
+
+.body {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.meta {
+  margin: var(--s2) 0 0;
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+}

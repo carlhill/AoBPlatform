@@ -5,6 +5,7 @@ import request from 'supertest';
 import type { ValidationResponse } from '@aobplatform/contracts';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { OutboundService } from '../src/outbound/outbound.service';
 import { RULES_CLIENT } from '../src/rules-client/rules-client.module';
 import { MESSAGING_GATEWAY, type MessagingGateway } from '../src/messaging/gateway';
 
@@ -31,6 +32,7 @@ const passingRules = {
 describe('approving an agreement from a link (e2e, real Postgres)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let outbound: OutboundService;
   const practiceId = randomUUID();
   let providerId: string;
   let patientId: string;
@@ -50,6 +52,7 @@ describe('approving an agreement from a link (e2e, real Postgres)', () => {
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
     await app.init();
     prisma = app.get(PrismaService);
+    outbound = app.get(OutboundService);
 
     await prisma.withPractice(practiceId, async (tx) => {
       await tx.practice.create({ data: { id: practiceId, name: 'Agree Link Test Practice' } });
@@ -112,6 +115,7 @@ describe('approving an agreement from a link (e2e, real Postgres)', () => {
       // Signature events are NOT deleted: the database refuses ("append-only
       // evidence, REQ-SIG-02"), and that refusal is the feature. They stay,
       // as they would for any real signature.
+      await tx.correspondence.deleteMany({});
       await tx.captureRequest.deleteMany({});
       await tx.verificationChallenge.deleteMany({});
       await tx.serviceRecord.deleteMany({});
@@ -127,6 +131,9 @@ describe('approving an agreement from a link (e2e, real Postgres)', () => {
 
   it('shows NOTHING before the person has proved who they are (REQ-CHILD-04)', async () => {
     await request(app.getHttpServer()).get(`/agree/${token}`).expect(409);
+    // Their message log names them and what was said to them, so it is closed
+    // by the same rule (design P-1, Messages tab).
+    await request(app.getHttpServer()).get(`/agree/${token}/messages`).expect(409);
   });
 
   it('a made-up token names nothing', async () => {
@@ -199,5 +206,61 @@ describe('approving an agreement from a link (e2e, real Postgres)', () => {
   it('a used link is a dead link', async () => {
     await request(app.getHttpServer()).get(`/agree/${token}`).expect(410);
     await request(app.getHttpServer()).post(`/agree/${token}/approve`).send({ method: 'tap_to_approve' }).expect(410);
+  });
+
+  /*
+   * P-1, Messages tab — "the same rows for their own records ... one log with
+   * two audiences, not two logs".
+   *
+   * Deliberately AFTER signing: reading what was sent to you is the one thing
+   * that stays useful once the link has done its job, so a completed request
+   * still answers here where `/agree/:token` is a dead link.
+   */
+  it('the patient reads their own half of the log, still, after signing — and only theirs', async () => {
+    const otherPatientId = await prisma.withPractice(practiceId, async (tx) =>
+      (
+        await tx.patient.create({
+          data: { practiceId, familyName: 'Notthem', givenNames: 'Someone', dateOfBirth: new Date('1980-01-01') },
+        })
+      ).id,
+    );
+    // Through the sender, because the database refuses a correspondence row
+    // that mirrors no send — that constraint is the whole point of the table.
+    await prisma.withPractice(practiceId, async (tx) => {
+      await outbound.enqueue(tx, {
+        practiceId,
+        channel: 'email',
+        destination: 'alex.testpatient@example.invalid',
+        subjectType: 'CaptureRequest',
+        subjectId: captureRequestId,
+        recipientType: 'patient',
+        recipientId: patientId,
+        recipientName: 'Alex Testpatient',
+        payload: { subject: 'Please confirm your bulk-billing agreement', body: 'Open the link.' },
+      });
+      await outbound.enqueue(tx, {
+        practiceId,
+        channel: 'email',
+        destination: 'someone@example.invalid',
+        subjectType: 'CaptureRequest',
+        subjectId: randomUUID(),
+        recipientType: 'patient',
+        recipientId: otherPatientId,
+        recipientName: 'Someone Notthem',
+        payload: { subject: 'Not for Alex', body: 'Not for Alex.' },
+      });
+    });
+
+    const res = await request(app.getHttpServer()).get(`/agree/${token}/messages`).expect(200);
+    expect(res.body.practiceName).toBe('Agree Link Test Practice');
+    expect(res.body.messages.length).toBeGreaterThan(0);
+    expect(res.body.messages.every((m: { recipientId: string }) => m.recipientId === patientId)).toBe(true);
+    // Not a word about anybody else, and not a cost.
+    expect(JSON.stringify(res.body)).not.toContain('Notthem');
+    expect(JSON.stringify(res.body)).not.toMatch(/cost|\$/i);
+  });
+
+  it('a made-up token reads nobody’s messages', async () => {
+    await request(app.getHttpServer()).get('/agree/not-a-token/messages').expect(404);
   });
 });

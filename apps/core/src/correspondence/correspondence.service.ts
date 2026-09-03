@@ -192,37 +192,102 @@ export class CorrespondenceService {
     return true;
   }
 
+  private static readonly LIST_SELECT = {
+    id: true,
+    recipientType: true,
+    recipientId: true,
+    recipientName: true,
+    to: true,
+    channel: true,
+    mediaType: true,
+    subject: true,
+    bodyText: true,
+    sentBy: true,
+    subjectType: true,
+    subjectId: true,
+    state: true,
+    queuedAt: true,
+    sentAt: true,
+    deliveredAt: true,
+    failedAt: true,
+    failureReason: true,
+    retentionExpiryDate: true,
+    legalHold: true,
+    contentRemovedAt: true,
+  } as const;
+
+  /**
+   * WHICH ATTEMPT EACH CAPTURE MESSAGE WAS.
+   *
+   * The design's M-1 distinguishes "Capture link" from "Reminder 2" — the same
+   * row type, told apart by how many went before it about the same agreement.
+   * Nothing stores that, because nothing needs to: the correspondence rows are
+   * the record and the ordinal is a reading of them.
+   *
+   * The join to capture_requests is a READ, inside the practice's own RLS
+   * scope, exactly as `ReconciliationService` reads correspondence the other
+   * way round. Rows about anything else get no ordinal.
+   */
+  private async withAttempts<T extends { subjectType: string; subjectId: string; queuedAt: Date }>(
+    tx: Prisma.TransactionClient,
+    rows: T[],
+  ): Promise<Array<T & { attempt: number | null }>> {
+    const captureIds = rows.filter((r) => r.subjectType === 'CaptureRequest').map((r) => r.subjectId);
+    if (captureIds.length === 0) return rows.map((r) => ({ ...r, attempt: null }));
+
+    const requests = await tx.captureRequest.findMany({
+      where: { id: { in: captureIds } },
+      select: { id: true, agreementId: true },
+    });
+    const agreementOf = new Map(requests.map((r) => [r.id, r.agreementId]));
+
+    // Oldest first inside each agreement, so the first send is attempt 1.
+    const ordinal = new Map<string, number>();
+    const counted = new Map<string, number>();
+    for (const row of [...rows].sort((a, b) => a.queuedAt.getTime() - b.queuedAt.getTime())) {
+      const agreementId = agreementOf.get(row.subjectId);
+      if (!agreementId) continue;
+      const next = (counted.get(agreementId) ?? 0) + 1;
+      counted.set(agreementId, next);
+      ordinal.set(`${row.subjectId}:${row.queuedAt.getTime()}`, next);
+    }
+    return rows.map((r) => ({ ...r, attempt: ordinal.get(`${r.subjectId}:${r.queuedAt.getTime()}`) ?? null }));
+  }
+
   /** The practice's own correspondence — practice-scoped, newest first (plan §4.2). */
   async listForPractice(practiceId: string, limit = 100) {
-    return this.prisma.withPractice(practiceId, (tx) =>
-      tx.correspondence.findMany({
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const rows = await tx.correspondence.findMany({
         orderBy: { queuedAt: 'desc' },
         take: limit,
-        select: {
-          id: true,
-          recipientType: true,
-          recipientId: true,
-          recipientName: true,
-          to: true,
-          channel: true,
-          mediaType: true,
-          subject: true,
-          bodyText: true,
-          sentBy: true,
-          subjectType: true,
-          subjectId: true,
-          state: true,
-          queuedAt: true,
-          sentAt: true,
-          deliveredAt: true,
-          failedAt: true,
-          failureReason: true,
-          retentionExpiryDate: true,
-          legalHold: true,
-          contentRemovedAt: true,
-        },
-      }),
-    );
+        select: CorrespondenceService.LIST_SELECT,
+      });
+      return this.withAttempts(tx, rows);
+    });
+  }
+
+  /**
+   * The patient's half of the same log — the design's P-1 Messages tab.
+   *
+   * ONE QUERY, TWO AUDIENCES. Same table, same rows, same shaping; the only
+   * difference is the WHERE. Scoped to the patient by their id inside the
+   * practice's own RLS scope, so there is no cross-practice read here and no
+   * SECURITY DEFINER function needed — the caller has already been resolved to
+   * one practice by the token they hold.
+   *
+   * NO COST FIELD, and there would be nothing to send if there were: what a
+   * message cost the practice is the practice's business (design, M-1).
+   */
+  async listForPatient(practiceId: string, patientId: string, limit = 100) {
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const rows = await tx.correspondence.findMany({
+        where: { recipientType: 'patient', recipientId: patientId },
+        orderBy: { queuedAt: 'desc' },
+        take: limit,
+        select: CorrespondenceService.LIST_SELECT,
+      });
+      return this.withAttempts(tx, rows);
+    });
   }
 
   /**

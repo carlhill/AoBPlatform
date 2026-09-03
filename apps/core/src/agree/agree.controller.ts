@@ -35,6 +35,13 @@ export class AgreeController {
     return this.agree.read(token);
   }
 
+  /** The patient's half of the correspondence log (design P-1, Messages tab). */
+  @Public()
+  @Get(':token/messages')
+  messages(@Param('token') token: string) {
+    return this.agree.messages(token);
+  }
+
   @Public()
   @Post(':token/approve')
   approve(@Param('token') token: string, @Body() dto: ApproveDto, @Ip() ip: string) {

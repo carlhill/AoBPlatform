@@ -1746,6 +1746,121 @@ export const strings = {
       'It may be incomplete — these links are long and messages sometimes break them across lines. Try copying ' +
       'the whole thing into the address bar. If it still does not work, contact the practice.',
     unreachableTitle: 'We could not reach the service',
+
+    // The patient's own half of the correspondence log, from the done screen.
+    messagesLink: 'See every message we have sent you',
+  },
+
+  /*
+   * ONE LOG, TWO AUDIENCES — the design handoff's M-1 (practice) and the
+   * Messages tab of P-1 (patient). The same dispatch records, read by
+   * different people, so the same strings: "same wording, same timestamps,
+   * from their point of view".
+   */
+  correspondence: {
+    navLabel: 'Correspondence',
+    title: 'Correspondence',
+    lead:
+      'Every message sent in this practice’s name, what it said, and whether it arrived. The patient sees ' +
+      'their own half of this same list.',
+    audience: 'Practice',
+    loading: 'Reading the log…',
+    unreachableTitle: 'The log could not be read',
+    none: 'Nothing has been sent yet.',
+    summary: '{n} messages · {failures} not delivered',
+
+    // The filter segment across the top of M-1.
+    segment: 'Show',
+    segments: {
+      all: 'All',
+      capture: 'Capture',
+      reminder: 'Reminders',
+      copy: 'Copies',
+      notice: '89AA notices',
+      failed: 'Failed',
+    } as Record<string, string>,
+
+    colWho: 'Patient',
+    colPurpose: 'Purpose',
+    colChannel: 'Channel',
+    colSent: 'Sent',
+    colState: 'Delivery',
+    colAction: '',
+
+    purposes: {
+      capture: 'Capture link',
+      reminder: 'Reminder',
+      copy: 'Signed copy',
+      // One-way, and the words say so wherever the row appears.
+      notice: '89AA notice · one-way',
+      practice: 'Practice message',
+    } as Record<string, string>,
+    reminderNumbered: 'Reminder {n}',
+
+    states: {
+      queued: 'Queued',
+      sent: 'Sent',
+      delivered: 'Delivered',
+      failed: 'Failed',
+      dead: 'Failed — not retried',
+      suppressed: 'Suppressed — confidential visit',
+    } as Record<string, string>,
+
+    // A suppressed visit is a row that says why, never a row left out.
+    why: 'Why',
+    suppressedWhy:
+      'This visit is flagged confidential, so no message was composed and none was sent. It was suppressed ' +
+      'before a message existed — not filtered out of this list afterwards.',
+
+    view: 'What we sent',
+    hide: 'Close',
+    noBody: 'No text was kept for this one.',
+    removedTitle: 'The text was removed',
+    removedBody:
+      'This message reached the end of its retention period, so the words were removed. That it was sent, to ' +
+      'whom, when and whether it arrived stays on the record.',
+    bodiesWithheldTitle: 'States, not bodies',
+    bodiesWithheldBody:
+      'This is a read-only window onto one practice’s log. It shows what was sent and whether it arrived. ' +
+      'What a message said belongs to the practice that sent it and the person who received it.',
+
+    // No resend on an 89AA notice, on any surface, ever (CLAUDE.md rule 7).
+    noticeNoAction: 'Nothing is asked of the patient',
+    footer:
+      'A reg 89AA notice is a record, not a request: nothing is asked of the patient, and it is never ' +
+      'chased. The patient’s own view of this list carries the same rows and the same words.',
+    costNote:
+      'Per-message cost is not shown yet — nothing records what a send cost. It is the practice’s figure ' +
+      'alone when it arrives, and never the patient’s.',
+  },
+
+  /* P-1, Messages tab — the same log, read by the person who received it. */
+  patientMessages: {
+    title: 'Messages we sent you',
+    lead: 'The same log the practice sees — your half of it.',
+    loading: 'Reading your messages…',
+    none: 'We have not sent you anything yet.',
+    view: 'Read exactly what we sent',
+    hide: 'Close',
+    invalidTitle: 'That link is not valid',
+    invalidBody:
+      'It may be incomplete, or it may have been closed. Contact the practice and they can send you a new one.',
+    verifyTitle: 'Confirm your details first',
+    verifyBody:
+      'This list names you and what was said to you, so it stays closed until the details on your link have ' +
+      'been confirmed. Open the link you were sent and answer the questions on it first.',
+    unreachableTitle: 'We could not reach the service',
+    checkerNote: 'If a message is not listed here, it did not come from us. That is what the checker is for.',
+    footer: 'Every send and receipt, as recorded.',
+
+    stopTitle: 'Stop messages',
+    stopBody: 'You can stop reminders at any time and still be billed as usual.',
+    stop: 'Stop reminders',
+    // Disabled WITH ITS REASON rather than a control that records nothing.
+    stopUnavailable:
+      'This cannot be done from here yet. Nothing on the platform records a stop across every channel at ' +
+      'once, and a button that stopped only some of them would be worse than none. Reply STOP to any text, ' +
+      'or tell the practice, and every channel stops.',
   },
 
   /* The reconciliation queue — services without a stored agreement, ranked by the lodgement window (M7). */

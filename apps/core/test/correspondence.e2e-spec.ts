@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
+import { buildMessageLog, mayChase, purposeOf } from '@aobplatform/domain';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { OutboundService } from '../src/outbound/outbound.service';
@@ -73,6 +74,7 @@ describe('correspondence (e2e, real Postgres)', () => {
     await prisma.withPractice(practiceId, async (tx) => {
       await tx.correspondence.deleteMany({});
       await tx.outboundItem.deleteMany({});
+      await tx.captureRequest.deleteMany({});
       await tx.patient.deleteMany({});
       await tx.practice.deleteMany({});
     });
@@ -169,5 +171,117 @@ describe('correspondence (e2e, real Postgres)', () => {
 
     const theirs = await request(app.getHttpServer()).get('/correspondence').set('x-practice-id', otherPracticeId).expect(200);
     expect(theirs.body).toHaveLength(0);
+  });
+
+  /*
+   * ONE LOG, TWO AUDIENCES — the design handoff's M-1 and the P-1 Messages
+   * tab. The rows below are what both screens read; the shaping is
+   * `@aobplatform/domain`'s, so the tests exercise the same functions the
+   * screens do rather than a copy of the reasoning.
+   */
+  describe('the log both screens read (design handoff M-1 / P-1)', () => {
+    let agreementId: string;
+
+    it('tells a capture link from the chases that followed it', async () => {
+      agreementId = randomUUID();
+      const requests = await prisma.withPractice(practiceId, async (tx) => [
+        await tx.captureRequest.create({ data: { practiceId, agreementId, channel: 'email_link' } }),
+        await tx.captureRequest.create({ data: { practiceId, agreementId, channel: 'sms_link' } }),
+      ]);
+      for (const r of requests) await enqueueToPatient(r.id);
+
+      const rows = await correspondence.listForPractice(practiceId, 500);
+      const first = rows.find((r) => r.subjectId === requests[0].id)!;
+      const second = rows.find((r) => r.subjectId === requests[1].id)!;
+      expect(first.attempt).toBe(1);
+      expect(second.attempt).toBe(2);
+      expect(purposeOf({ subjectType: first.subjectType, attempt: first.attempt })).toBe('capture');
+      expect(purposeOf({ subjectType: second.subjectType, attempt: second.attempt })).toBe('reminder');
+    });
+
+    /**
+     * CLAUDE.md rule 7, REQ-END-05 / REQ-CHASE-02. A reg 89AA notice appears on
+     * the log as a record and carries no chase action on any surface. Named
+     * after the rule so that removing it is a deliberate act.
+     */
+    it('eightynineAA_rows_have_no_chase_action', async () => {
+      const noticeId = randomUUID();
+      await prisma.withPractice(practiceId, (tx) =>
+        correspondence.recordForNotice(tx, {
+          noticeId,
+          practiceId,
+          patientId,
+          patientName: 'Pat Letters',
+          to: 'pat@example.invalid',
+          channel: 'email',
+          subject: 'A service was billed to Medicare',
+          bodyText: 'Nothing is needed from you.',
+          accepted: true,
+          at: new Date(),
+        }),
+      );
+
+      const rows = await request(app.getHttpServer()).get('/correspondence?limit=500').set('x-practice-id', practiceId).expect(200);
+      const notice = (rows.body as Array<{ subjectType: string; attempt: number | null; subjectId: string }>).find(
+        (r) => r.subjectId === noticeId,
+      )!;
+      expect(purposeOf(notice)).toBe('notice');
+      expect(mayChase(purposeOf(notice))).toBe(false);
+
+      // And every other row on the same list still may be chased, so this is a
+      // property of the notice rather than of the screen being read-only.
+      const log = buildMessageLog({
+        dispatches: rows.body as Parameters<typeof buildMessageLog>[0]['dispatches'],
+      });
+      expect(log.find((e) => e.id === notice.subjectId || e.purpose === 'notice')!.chaseable).toBe(false);
+      expect(log.some((e) => e.chaseable)).toBe(true);
+    });
+
+    it('the patient sees their own half of it, and nobody else’s', async () => {
+      const otherPatientId = await prisma.withPractice(practiceId, async (tx) =>
+        (
+          await tx.patient.create({
+            data: { practiceId, familyName: 'Elsewhere', givenNames: 'Someone', dateOfBirth: new Date('1980-01-01') },
+          })
+        ).id,
+      );
+      await prisma.withPractice(practiceId, (tx) =>
+        outbound.enqueue(tx, {
+          practiceId,
+          channel: 'email',
+          destination: 'someone@example.invalid',
+          subjectType: 'CaptureRequest',
+          subjectId: randomUUID(),
+          recipientType: 'patient',
+          recipientId: otherPatientId,
+          recipientName: 'Someone Elsewhere',
+          payload: { subject: 'Not for Pat', body: 'Not for Pat.' },
+        }),
+      );
+
+      const mine = await correspondence.listForPatient(practiceId, patientId, 500);
+      expect(mine.length).toBeGreaterThan(0);
+      expect(mine.every((r) => r.recipientId === patientId)).toBe(true);
+      // Same rows as the practice's list, filtered to one person — one log.
+      const practiceView = await correspondence.listForPractice(practiceId, 500);
+      expect(practiceView.some((r) => r.recipientId === otherPatientId)).toBe(true);
+      expect(mine.some((r) => r.recipientId === otherPatientId)).toBe(false);
+    });
+
+    it('a message whose text retention removed stays a row, and says so', async () => {
+      const item = await enqueueToPatient(randomUUID());
+      const removed = await prisma.withPractice(practiceId, async (tx) => {
+        const row = await tx.correspondence.findFirst({ where: { outboundItemId: item.id } });
+        await correspondence.tombstone(tx, row!.id, new Date());
+        return row!.id;
+      });
+
+      const rows = await correspondence.listForPractice(practiceId, 500);
+      const row = rows.find((r) => r.id === removed)!;
+      expect(row.bodyText).toBeNull();
+      expect(row.contentRemovedAt).not.toBeNull();
+      const [entry] = buildMessageLog({ dispatches: [{ ...row, queuedAt: row.queuedAt.toISOString() } as never] });
+      expect(entry.contentRemoved).toBe(true);
+    });
   });
 });

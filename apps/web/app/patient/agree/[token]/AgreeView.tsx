@@ -210,6 +210,11 @@ export function AgreeView({ token }: { token: string }) {
             <h1 className={styles.title}>{strings.agree.doneTitle}</h1>
             <p className={styles.lead}>{writtenBack ? strings.agree.doneBody : strings.agree.doneBodyPending}</p>
             <p className={ui.hint}>{strings.agree.nothingElse}</p>
+            {/* Their half of the log (P-1, Messages). The same link they hold
+                already, so nothing new to keep. */}
+            <a className={ui.buttonLink} href={`/patient/messages/${token}`} data-testid="agree-messages-link">
+              {strings.agree.messagesLink}
+            </a>
           </div>
         </div>
       </Shell>

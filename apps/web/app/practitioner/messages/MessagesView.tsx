@@ -17,14 +17,15 @@
  * result if it tried.
  */
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
-import { matrix } from '@aobplatform/domain';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
+import { buildMessageLog, matrix } from '@aobplatform/domain';
 import { Button, Field, Notice, SelectInput, Shell, ui } from '../../ui';
 import { useRefreshable } from '../../refresh';
 import { SessionControl } from '../../SessionControl';
 import { apiHeaders, currentSession } from '../../auth';
 import { strings } from '../../strings';
+import { MessageLog } from '../../correspondence/MessageLog';
 import styles from '../../practice/manage.module.css';
 
 const CUBE_URL = process.env.NEXT_PUBLIC_CUBE_URL ?? 'http://localhost:21030';
@@ -114,7 +115,6 @@ type Message = {
 export function MessagesView() {
   const [grain, setGrain] = useState<GrainKey>('month');
   const [messages, setMessages] = useState<Message[] | null>(null);
-  const [openId, setOpenId] = useState<string | null>(null);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -209,6 +209,31 @@ export function MessagesView() {
       .map((r) => ({ at: new Date(r.at), count: r.count }));
     return matrix(counted, grain === 'month_by_week' ? 'month_by_week' : 'month_by_day');
   }, [rows, grain]);
+
+  /*
+   * THE SAME SHAPE THE PRACTICE AND PATIENT LOGS USE. `practitioner_correspondence_detail`
+   * answers a different query — across practices, through the SECURITY DEFINER
+   * function — and then the rows are the same dispatch records, so they are
+   * rendered by the same component rather than by a table of their own.
+   */
+  const log = useMemo(
+    () =>
+      buildMessageLog({
+        dispatches: (messages ?? []).map((m) => ({
+          id: m.id,
+          subjectType: 'Practitioner',
+          channel: m.channel,
+          state: m.state,
+          queuedAt: String(m.occurredAt),
+          sentAt: String(m.occurredAt),
+          // Who it came FROM: a practitioner's own list asks that, not who it went to.
+          recipientName: m.practice ?? strings.practitioner.unnamedPractice,
+          subject: m.subject ?? strings.myMessages.noSubject,
+        })),
+      }),
+    [messages],
+  );
+  const byId = useMemo(() => new Map((messages ?? []).map((m) => [m.id, m])), [messages]);
 
   const totals = useMemo(() => {
     if (!rows) return null;
@@ -360,68 +385,30 @@ export function MessagesView() {
           <h2 className={styles.applicationHeading}>{strings.myMessages.listTitle}</h2>
           <p className={ui.hint}>{strings.myMessages.listHint}</p>
 
-          <div className={styles.tableScroll}>
-            <table className={styles.totalsTable}>
-              <thead>
-                <tr>
-                  <th scope="col">{strings.myMessages.when}</th>
-                  <th scope="col">{strings.myMessages.practice}</th>
-                  <th scope="col">{strings.myMessages.subject}</th>
-                  <th scope="col">{strings.myMessages.state}</th>
-                  <th scope="col" />
-                </tr>
-              </thead>
-              <tbody>
-                {messages.map((m) => (
-                  <Fragment key={m.id}>
-                    <tr>
-                      <th scope="row">{String(m.occurredAt).slice(0, 10)}</th>
-                      <td>{m.practice ?? strings.practitioner.unnamedPractice}</td>
-                      <td>{m.subject ?? strings.myMessages.noSubject}</td>
-                      <td>{m.state}</td>
-                      <td>
-                        <Button
-                          variant="subtle"
-                          onClick={() => setOpenId(openId === m.id ? null : m.id)}
-                          data-testid={`message-${m.id}`}
-                        >
-                          {openId === m.id ? (
-                            <ChevronDown size={14} aria-hidden="true" />
-                          ) : (
-                            <ChevronRight size={14} aria-hidden="true" />
-                          )}
-                          {openId === m.id ? strings.myMessages.hide : strings.myMessages.view}
-                        </Button>
-                      </td>
-                    </tr>
-
-                    {openId === m.id && (
-                      <tr>
-                        {/* The detail spans the table, so it reads as belonging
-                            to the row above rather than as a new record. */}
-                        <td colSpan={5}>
-                          {m.body ? (
-                            <pre className={styles.messageBody}>{m.body}</pre>
-                          ) : (
-                            /*
-                              NOT A BLANK. A sign-in link is composed and sent by
-                              Keycloak, so we record that it went and hold the
-                              subject, never the text. Rendering nothing would
-                              read as a message with nothing in it, which is a
-                              different and false thing to say.
-                            */
-                            <Notice title={strings.myMessages.noBodyTitle}>
-                              {strings.myMessages.noBodyBody.replace('{who}', m.sentBy)}
-                            </Notice>
-                          )}
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {/*
+            THE SAME COMPONENT THE PRACTICE AND THE PATIENT READ. This table was
+            the first of the four and the reason there was something to extract:
+            "one log, two audiences" (design handoff) is really four readers of
+            one set of dispatch records, and four copies of a row would drift.
+            The practice named in `who` is the sender here rather than the
+            recipient, which is what a practitioner's own list is asking about.
+          */}
+          <MessageLog
+            audience="practitioner"
+            entries={log}
+            whoLabel={strings.myMessages.practice}
+            emptyText={strings.myMessages.emptyBody}
+            bodyOf={(entry) => {
+              const m = byId.get(entry.id);
+              if (!m) return null;
+              return {
+                subject: m.subject,
+                body: m.body,
+                missingTitle: strings.myMessages.noBodyTitle,
+                missingBody: strings.myMessages.noBodyBody.replace('{who}', m.sentBy),
+              };
+            }}
+          />
         </section>
       )}
 

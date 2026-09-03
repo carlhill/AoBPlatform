@@ -848,8 +848,9 @@ its interim description list above. Nothing today notices when they stop.
 
 Carl, 25 Aug 2026: "How does a platform-user see all messages — in queue /
 sent and so on?" Today: one practice at a time, through the view-only twin
-(`/platform/practices/[id]/queue` for transport state; the correspondence
-screen, item 9, will sit beside it). There is deliberately no cross-practice
+(`/platform/practices/[id]/queue` for transport state, and since 3 Sep 2026
+`/platform/practices/[id]/correspondence` beside it — which passes the
+`platform` audience, so it shows states and never bodies). There is deliberately no cross-practice
 list of message CONTENT — `outbound.controller.ts` says why: a body search
 "would let somebody trawl for a patient name across a practice", and across
 every practice it is worse.
@@ -885,10 +886,41 @@ rule: build only what it designs.
       shown from the band policy but nothing records an AI or human chase
       attempt yet (only capture requests and correspondence exist). Attempt
       tracking is its own item.
-- [ ] **Practice correspondence screen** — NOT in the handoff, so not built.
-      The endpoint (`GET /correspondence`) exists. Ask Claude Design for it
-      alongside the patient portal's history (P-1), which is the same list
-      from the other side.
+- [x] **Practice correspondence screen (M-1)** — BUILT 3 Sep 2026 as
+      `/practice/correspondence` and its view-only platform twin, off the
+      existing `GET /correspondence`. The patient's half (P-1, Messages tab)
+      was built with it at `/patient/messages/[token]`, off
+      `GET /agree/:token/messages` — one query, one string table, one
+      component (`apps/web/app/correspondence/MessageLog.tsx`), which the
+      practitioner's own list now uses too. Purpose, chase-ability and
+      audience rules are `packages/domain/src/correspondence-log.ts`
+      (`eightynineAA_rows_have_no_chase_action`). Three parts of the drawing
+      are NOT built, each for want of a source rather than for want of a
+      screen:
+      - **Per-message cost** (the M-1 Cost column and "$18.40 this week").
+        Nothing records what a send cost — no rate card, no gateway price on
+        the row. The column is absent and the page says so; a made-up figure
+        would be worse. Needs REQ-SMS-06 pricing before it can be drawn.
+      - **"Stop reminders"** (P-1). No cross-channel stop/opt-out mechanism
+        exists anywhere — grep found no STOP handling in `outbound/`,
+        `capture/` or `messaging/`. The control renders disabled with its
+        reason. STOP must apply across every channel at once, so this is one
+        item: a stop record on the patient, honoured by every sender.
+      - **"Reminder 2 of 3"** — the ordinal is derived and shown ("Reminder
+        2"); the *of 3* is the chase band's allowance and would need the band
+        policy on this screen.
+      M-1's two header buttons are also not built: **Export** (the log as a
+      file) has no endpoint behind it, and **Message templates** is a settings
+      screen of its own, not part of the log. Both are their own items.
+      P-1's Agreements and Access tabs are not built: there is no patient
+      portal session (REQ-PORT-08 — no account), so the Messages tab is
+      reached by the same link the patient already holds.
+- [ ] **A forbidden-word lint rule** for "certified", "approved",
+      "accredited", "government-approved" in user-facing strings. The design
+      handoff and CLAUDE.md rule 12 both assume it exists; `eslint.config.mjs`
+      only carries the `medicareNumber` identifier rule. Needs a pass over
+      `strings.ts` first — the patient's own approval copy uses "approve"
+      legitimately, so the rule needs to be about our forms, not every use.
 - [ ] **The Industry token set** (Barlow, `#5980a6`, square corners) — the
       handoff asks for it to be ported into the theme layer. That re-themes
       every screen and is a product decision, not a side effect of one page.

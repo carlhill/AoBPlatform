@@ -120,6 +120,9 @@ export function MainMenu() {
         // A PRACTICE screen, unlike /practice/reviews and /practice/queue
         // beside it in the platform group, which span practices.
         { path: '/practice/reconciliation', label: strings.reconciliation.navLabel },
+        // Every message sent in this practice's name (M-1). A PRACTICE screen
+        // for the same reason: /practice/queue beside it spans practices.
+        { path: '/practice/correspondence', label: strings.correspondence.navLabel },
         { path: '/practice/channels', label: strings.nav.channels },
         { path: '/practice/pms', label: strings.nav.pms },
         { path: '/practice/users', label: strings.nav.users },

@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AgreementsService } from '../agreements/agreements.service';
+import { CorrespondenceService } from '../correspondence/correspondence.service';
 import { parseCaptureToken } from '../capture/capture-token';
 
 /**
@@ -36,6 +37,8 @@ export class AgreeService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly agreements: AgreementsService,
+    // Global module — the one log both audiences read from.
+    private readonly correspondence: CorrespondenceService,
   ) {}
 
   /** The token names one open, unexpired request, or it names nothing. */
@@ -141,6 +144,53 @@ export class AgreeService {
        * must not say "a copy has gone" when it has not; it says "will be placed".
        */
       writtenBack: signed.writtenBackAt !== null,
+    };
+  }
+
+  /**
+   * The patient's half of the correspondence log — the design's P-1 Messages
+   * tab. "The patient's portal shows the same rows for their own records —
+   * same wording, same timestamps, from their point of view. It is one log
+   * with two audiences, not two logs."
+   *
+   * AUTHENTICATED THE ONLY WAY A PATIENT IS TODAY: by the link they were sent.
+   * There is no patient account (REQ-PORT-08), so this follows `/agree/:token`
+   * exactly — the token names one practice and one agreement, and the practice
+   * scope comes from the token rather than from a header a caller could
+   * choose. The rows are then scoped to that agreement's patient by the
+   * database.
+   *
+   * IT WILL NOT ANSWER BEFORE THE PERSON HAS PROVED WHO THEY ARE. Links get
+   * forwarded, previewed and scanned; the log names a patient and what was
+   * said to them, so it stays closed until the identity challenge behind this
+   * token has passed (REQ-CHILD-04). Unlike `read()`, a COMPLETED request is
+   * still allowed — reading what was sent to you is the one thing that stays
+   * useful after you have signed — and an expired link is not.
+   */
+  async messages(token: string) {
+    const parsed = parseCaptureToken(token);
+    if (!parsed) throw new NotFoundException('This link is not valid.');
+
+    const context = await this.prisma.withPractice(parsed.practiceId, async (tx) => {
+      const request = await tx.captureRequest.findFirst({ where: { tokenHash: parsed.tokenHash } });
+      if (!request) throw new NotFoundException('This link is not valid.');
+      if (request.status !== 'open' && request.status !== 'completed') {
+        throw new GoneException('This link has been closed.');
+      }
+      if (request.expiresAt && request.expiresAt < new Date()) {
+        throw new GoneException('This link has expired. Contact the practice for a new one.');
+      }
+      const agreement = await tx.agreement.findFirst({ where: { id: request.agreementId } });
+      if (!agreement) throw new NotFoundException('This link is not valid.');
+      if (agreement.status === 'verification_failed') throw new HttpException('Verification is locked. Contact the practice.', 423);
+      if (!agreement.verificationEventId) throw new ConflictException('Confirm your details first.');
+      const practice = await tx.practice.findFirst({});
+      return { agreement, practiceName: practice?.name ?? null };
+    });
+
+    return {
+      practiceName: context.practiceName,
+      messages: await this.correspondence.listForPatient(parsed.practiceId, context.agreement.patientId, 100),
     };
   }
 }

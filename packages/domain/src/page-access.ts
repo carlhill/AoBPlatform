@@ -116,6 +116,21 @@ export const PAGES: Readonly<Record<string, PageRule>> = {
     why: 'Confirming an email address. Held by whoever received it, which is the whole test.',
     matchesChildren: true,
   },
+  /*
+   * THE PATIENT'S PAGES, and they were not here at all — so the guard answered
+   * "There is no such page" for the approval screen every patient is sent to.
+   * The same omission as `/practice/reconciliation` before it: the page moved
+   * under `/patient` and nobody classified it.
+   *
+   * Public in the token-bearing sense above: no session, and none possible
+   * (REQ-PORT-08). Each page refuses without a token, and the server refuses a
+   * token whose identity challenge has not passed.
+   */
+  '/patient': {
+    audiences: ['public'],
+    why: 'A patient approving from the link they were sent, and their own half of the correspondence log. No account exists to sign in with — the token is the authorisation.',
+    matchesChildren: true,
+  },
   '/practice/confirm-email': {
     audiences: ['public'],
     why: 'Confirming a NEW administrator address. Held by somebody who by definition cannot yet sign in as this practice.',
@@ -221,6 +236,10 @@ export const PAGES: Readonly<Record<string, PageRule>> = {
   '/practice/reconciliation': {
     audiences: ['practice', 'platform'],
     why: 'Services billed without an agreement, ranked by the lodgement window (M7). The practice’s own, scoped by its token; the platform reaches one practice’s through the view-only twin.',
+  },
+  '/practice/correspondence': {
+    audiences: ['practice', 'platform'],
+    why: 'Every message sent in the practice’s name (M-1). The practice’s own, scoped by its token; the platform reaches one practice’s through the view-only twin, which shows states and never bodies.',
   },
 
   '/practice/reports': {

@@ -43,3 +43,4 @@ export * from './review-tasks';
 export * from './inbound-lanes';
 export * from './retention';
 export * from './reconciliation-decision';
+export * from './correspondence-log';
