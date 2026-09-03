@@ -974,6 +974,71 @@ knows, and leaves every judgement to a person.
       requirement may only prohibit the second. That reading needs to come
       from the requirements or from Services Australia, not from us.
 
+## Push-to-device capture: reception hands the patient a locked screen
+
+Carl, 3 Sep 2026. Instead of the patient finding themselves on the kiosk,
+reception pushes the request to the tablet. The patient sees their name, date
+of birth, mobile and address, ticks a box beside each, and presses approve --
+"a bit like a Tyro terminal", so that everything is fast.
+
+The push is right and is a small delta on the kiosk, which already polls for
+a waiting patient. Three parts of it are sound; one part cannot mean what it
+looks like it means.
+
+**Why the push is better than the pull, on the hard rule.** REQ-REG-06:
+particulars complete and locked before the signature control enables. In a
+push model the payload is assembled and validated on the server before any
+device sees it, so a tablet structurally cannot hold a draft. That is stronger
+than a device that assembles and then asks.
+
+**Tap-to-approve is lawful.** REQ-REG-07: no cryptographic or certificate
+requirement, the test is intention under the ETA 1999, and "a tick-box, an
+APPROVE button, or a drawn signature all qualify". REQ-SIG-03 says do not
+over-engineer. But REQ-SIG-01 records the decision as **drawn signature on
+tablet**, tap-to-approve on the remote link -- chosen as the highest
+evidentiary quality at near-zero cost. Switching the tablet to a tap reverses
+a recorded decision to save about a second. Keep the stroke; take the speed
+out of the steps before it.
+
+**The ticks are not verification, and must not be written as one.** In
+practice, verification is performed **by staff at check-in** against three
+approved identifiers and recorded with the staff member's identity
+(REQ-VER-03). The remote channel bans exactly this screen shape -- "input
+fields, never an 'is this you? Y/N' confirmation screen" -- and the reason
+does not change indoors: a displayed value confirmed by whoever holds the
+tablet proves nothing about who is holding it. If reception has verified, the
+ticks add no evidence; if it has not, they do not substitute.
+
+The framing that keeps the flow fast and compliant: **the push IS the
+verification record.** Reception cannot push until the staff-verified check is
+recorded, and the push carries the staff identity (REQ-VER-04). Staff verify
+at the counter the way they already do; the patient gets a screen with nothing
+to fill in. The ticks survive as a data-accuracy confirmation -- "these
+particulars are correct" -- which is part of the agreement ceremony, not a
+verification event.
+
+- [ ] **Mobile and email are contact details, not identifiers.** The set is
+      name, DOB, gender, address, patient record number, IHI (REQ-VER-02).
+      Show and confirm them; never count them toward the three or log them as
+      an identifier type. The Medicare-number mistake, one step sideways.
+- [ ] **Device pairing.** A tablet registered to a practice with its own
+      credential -- the terminal-paired-to-a-merchant analogy, literally. No
+      device identity exists today. It also makes the `deviceFingerprint`
+      that REQ-SIG-02 already binds into every signature event meaningful
+      rather than incidental, which is a real evidentiary gain.
+- [ ] **Session handoff.** Reception assigns one validated, locked payload to
+      one named device. The device renders that and nothing else; the push
+      endpoint refuses a payload that has not passed the rules engine.
+- [ ] **Screen hygiene** -- the work the pull model never had to do. A tablet
+      in a waiting room showing somebody's DOB and address: blank when idle,
+      clear on completion, abandon timeout, no back-navigation to the previous
+      patient, and the exit-to-reception that every ceremony screen now has.
+- [ ] **Degradation (REQ-REC-04).** Tablet flat, offline or occupied:
+      reception carries on and capture falls back to the SMS link or the
+      post-consultation cascade. A busy tablet never holds up a check-in.
+- [ ] Touches the same screens as the kiosk MVP; do not start until that
+      lands.
+
 ## Where this product could go: v2 and v3
 
 Carl, 3 Sep 2026: "Version two of AoBPlatform could morph from just a
