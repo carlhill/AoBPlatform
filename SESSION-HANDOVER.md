@@ -122,7 +122,8 @@ benefit amount is allowed to appear. The signed copies carry none.
 
 ## Fixed along the way
 
-- **CI was red, and had been, for two separate reasons.** Both fixed.
+- **CI was red, and had been, for three separate reasons.** All fixed; the
+  pipeline is green as of `8d3e68f`.
   1. `a553115` — lint and typecheck ran *before* the packages they import were
      built, so every web file importing `@aobplatform/domain` failed with
      TS2307 on a clean checkout. It passed locally only because of a stale
@@ -137,21 +138,27 @@ benefit amount is allowed to appear. The signed copies carry none.
   The first was hiding the second: the run died at typecheck, so lint, the
   realm guard, the tests and the e2e suite had **never executed at all**.
 
-  **CI IS STILL RED, on a third fault, and it is the honest kind.** With the
-  connection fixed, `reporting-isolation` now reaches its own guard and fails
-  there: *"has two practices with messages, or this test proves nothing"*. The
-  suite READS whatever is already in the database and picks the two busiest
-  practices. That works on your machine, which has hundreds of messages, and
-  cannot work on a fresh CI database, which has none — so the ids come back
-  empty and every query after them fails.
+  **Third fault, also fixed — `8d3e68f`. CI IS NOW GREEN.** With the connection
+  working, `reporting-isolation` reached its own guard and failed there: *"has
+  two practices with messages, or this test proves nothing"*. The suite READ
+  whatever was already in the database and picked the two busiest practices.
+  That worked on your machine, with hundreds of messages, and could never work
+  on a fresh CI database.
 
-  The guard is deliberate and the comment above it says why: every assertion in
-  the suite is "X cannot see Y", and all of them pass trivially against an
-  empty database. A green suite that proved nothing would be worse than a red
-  one. **So do not make this pass by relaxing the guard.** The suite needs to
-  create its own two practices with messages, and two practitioners, before it
-  asserts anything. That is real work on a security test and was not something
-  to rush in the last minutes before a reboot.
+  It now creates its own fixtures: two practices, two practitioners, and sent
+  outbound items addressed to each practice's own practitioner. Discovery
+  filters by fixture id instead of ordering by count, so another suite's rows
+  cannot outvote it. The guard and every assertion are otherwise unchanged, and
+  the two clauses that were dropped were in discovery queries, not assertions.
+
+  **The guard was proved to still bite.** Fixture creation was temporarily
+  made a no-op and the suite re-run against the fully populated dev database:
+  8 of 14 failed, the guard first and on its own assertion. The five that still
+  passed are exactly the trivially-true ones the guard exists to catch. That is
+  evidence rather than assurance, which is what a security test deserves.
+
+  Not covered: nobody ran it against a genuinely empty database locally, since
+  the only Postgres here is your dev container. CI is that test, and CI passes.
 
   Everything before e2e is green: build, lint, typecheck, the realm guard and
   the unit tests all pass now, and they had not run in a long time.
@@ -206,10 +213,7 @@ hazard this file has been bitten by twice, but it fixed nothing you saw.
 
 ## Next
 
-**First, CI.** Give `reporting-isolation` its own fixtures so it stops
-depending on a populated database — see above, and do not weaken its guard.
-
-Then consultation-capture plan Part 7 **item 7: the kiosk MVP** — list, verify,
+Consultation-capture plan Part 7 **item 7: the kiosk MVP** — list, verify,
 render, sign, done, episodic pre-consultation only, with a fast poll while
 waiting. It depends on items 2 and 3, both built, and on the token-set decision
 above.
