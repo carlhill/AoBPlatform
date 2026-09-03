@@ -1293,9 +1293,25 @@ third failure leaves the screen. Sending the patient back to a blank form
 after a typo was the single worst thing the first build did to a sick or
 elderly patient.
 
-- [ ] Practice console: where D6a is set when the PMS did not supply it --
-      appointment-type to description mapping, versioned, per practice; the
-      queue row for a draft missing D6a says so and links there.
+- [x] **Built 3 Sep 2026: "Service description needed" on
+      `/practice/reconciliation`.** A draft missing D6a shows a select of the
+      exact descriptions (list version shown); "Set description" calls
+      `POST /service-descriptions/agreements/:id`, which sets the particular
+      WITHOUT locking (so the assignor can still be re-pointed), refuses any
+      request with no signed-in staff actor, and commits the row plus an
+      `agreement.service_description_set` vault event in one outbox
+      transaction. The list is `packages/domain/content/service-descriptions.json`
+      served by `GET /service-descriptions` -- apps/rules publishes version
+      strings only, so a domain test fails if the two lists ever diverge. The
+      view-only platform twin sees the state with the control inert.
+      Practice default (`practices.defaultServiceDescription`, `PUT
+      /service-descriptions/default`) is applied by the appointment sweep --
+      core and tests only, **no console control yet**.
+- [ ] Console control for the practice's default service description.
+- [ ] Reconciliation is a stopgap host; when a real practice pre-agreement
+      queue exists, move the section there and add its twin route.
+- [ ] Console Playwright needs a signed-in-session fixture
+      (`E2E_PRACTICE_USER` / `_PASSWORD` in env); the spec skips without it.
 - [ ] Kiosk port: no staff-entry control on any ceremony screen (test
       `k3_never_offers_a_field_to_the_patient`); mismatch keeps values
       (`mismatch_keeps_entered_values_on_screen`).
