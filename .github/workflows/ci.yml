@@ -50,6 +50,11 @@ jobs:
           npm run prisma:generate -w apps/vault
           DATABASE_URL="$ADMIN_DATABASE_URL" npm run prisma:deploy -w apps/core
           VAULT_DATABASE_URL="postgresql://aobplatform:aobplatform@localhost:21020/aobplatform?schema=vault" npm run prisma:deploy -w apps/vault
+      # The workspaces consume the packages' BUILD OUTPUT, not their source, so
+      # a clean checkout cannot typecheck until the packages exist: every web
+      # file importing @aobplatform/domain failed with TS2307, and the run died
+      # before lint or the realm guard had reported anything at all.
+      - run: npm run build:packages
       - run: npm run lint
       - run: npm run typecheck
       - name: Realm guard (rule 15 — passkey required, no password path)
