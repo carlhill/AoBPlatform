@@ -51,6 +51,13 @@ export const VAULT_EVENT_TYPES = [
    */
   'capture.suppressed',
   'signature.captured',
+  /**
+   * FR-7.3 — a person decided what happens to a service that never got its
+   * agreement: convert to private billing, forgo the benefit, or keep
+   * chasing. Nothing happens by default; the choice, the chooser and the
+   * reason are the record.
+   */
+  'reconciliation.decided',
   'notice.composed',
   'notice.dispatched',
   'notice.delivered',

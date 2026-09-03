@@ -96,7 +96,6 @@ export function MainMenu() {
         ...(hasPractice ? [] : [{ path: '/practice', label: practiceListLabel }]),
         { path: '/review', label: strings.nav.reviewDossiers },
         { path: '/practice/reviews', label: strings.nav.reviewQueue },
-        { path: '/practice/reconciliation', label: strings.reconciliation.navLabel },
         { path: '/practice/queue', label: strings.nav.outbound },
         { path: '/practice/queuebyOrg', label: strings.nav.outboundByOrg },
         { path: '/practice/queuebyOrgLocDepartment', label: strings.nav.outboundByPlace },
@@ -117,6 +116,10 @@ export function MainMenu() {
         { path: '/practice/locations', label: strings.nav.locations },
         { path: '/practice/practitioners', label: strings.nav.practitioners },
         { path: '/practice/affiliations', label: strings.nav.affiliations },
+        // The practice's own queue of services with no agreement behind them.
+        // A PRACTICE screen, unlike /practice/reviews and /practice/queue
+        // beside it in the platform group, which span practices.
+        { path: '/practice/reconciliation', label: strings.reconciliation.navLabel },
         { path: '/practice/channels', label: strings.nav.channels },
         { path: '/practice/pms', label: strings.nav.pms },
         { path: '/practice/users', label: strings.nav.users },

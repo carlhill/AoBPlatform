@@ -218,6 +218,10 @@ export const PAGES: Readonly<Record<string, PageRule>> = {
   '/practice/pms': { audiences: ['practice'], why: 'The practice management system connection.' },
   '/practice/practitioners': { audiences: ['practice'], why: 'Who works here.' },
   '/practice/affiliations': { audiences: ['practice'], why: 'Inviting practitioners, and recording departures.' },
+  '/practice/reconciliation': {
+    audiences: ['practice', 'platform'],
+    why: 'Services billed without an agreement, ranked by the lodgement window (M7). The practice’s own, scoped by its token; the platform reaches one practice’s through the view-only twin.',
+  },
 
   '/practice/reports': {
     audiences: ['practice', 'platform'],

@@ -1823,6 +1823,25 @@ export const strings = {
       'Services billed without a stored agreement, ranked by days left to lodge. The platform asks every ' +
       'patient it may; what is here is what it could not decide, and each says why.',
     navLabel: 'Outstanding agreements',
+
+    // R-3 — convert-or-forgo (FR-7.3).
+    decisionTitle: 'Decision needed',
+    decisionLead: 'Choose explicitly. Nothing happens by default, and either choice is recorded.',
+    reasonLabel: 'Reason (optional, kept with the decision)',
+    convert: 'Convert to private billing',
+    forgo: 'Forgo the benefit',
+    keepChasing: 'Keep chasing ({n} attempt(s) left)',
+    keepChasingBlockedShort: 'Nothing left to chase for',
+    keepChasingBlocked: 'The lodgement window has closed or this band’s attempts are used up, so there is nothing to chase for.',
+    careNeverBlocked: 'Care is never blocked by this screen. The patient has already been seen.',
+    recordedWithIdentity: 'Recorded with the deciding person’s identity.',
+    decisionRecorded: '{decision} — {by}, {when}',
+    decisionNames: {
+      convert_to_private: 'Converted to private billing',
+      forgo_benefit: 'Benefit forgone',
+      keep_chasing: 'Keep chasing',
+    } as Record<string, string>,
+    decideFailed: 'That decision could not be recorded',
   },
 
   emailStatus: {

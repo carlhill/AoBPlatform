@@ -1,12 +1,19 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+  assertDecisionAllowed,
   attemptAllowed,
   chaseBandFor,
   chaseNextStep,
+  closesItem,
   daysRemainingInLodgementWindow,
+  isReconciliationDecision,
+  ReconciliationDecisionError,
   VERBAL_FALLBACK_END_DATE,
   type ChaseBand,
+  type ReconciliationDecision,
 } from '@aobplatform/domain';
+import { enqueueVaultEvent } from '@aobplatform/vault-client';
+import type { Actor } from '../auth/actor.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { CaptureService } from '../capture/capture.service';
 
@@ -73,10 +80,21 @@ export class ReconciliationService {
       const providers = providerIds.length ? await tx.provider.findMany({ where: { id: { in: providerIds } } }) : [];
       const providerById = new Map(providers.map((p) => [p.id, p]));
 
+      /*
+       * FR-7.3: a service somebody has converted to private billing or
+       * forgone is DECIDED, and leaves the queue. The decision row is the
+       * record; the queue simply no longer asks anybody about it.
+       */
+      const decisions = await tx.reconciliationDecision.findMany({ orderBy: { decidedAt: 'desc' } });
+      const latestDecision = new Map<string, (typeof decisions)[number]>();
+      for (const d of decisions) if (!latestDecision.has(d.serviceRecordId)) latestDecision.set(d.serviceRecordId, d);
+
       const items: OutstandingItem[] = [];
       for (const record of records) {
         const agreement = record.agreementId ? agreementById.get(record.agreementId) : undefined;
         if (agreement && agreement.status === 'stored') continue; // covered — not outstanding
+        const decided = latestDecision.get(record.id);
+        if (decided && closesItem(decided.decision as ReconciliationDecision)) continue; // converted or forgone — decided
         const daysRemaining = daysRemainingInLodgementWindow(record.serviceDate);
         const band = chaseBandFor(daysRemaining).band;
         const patient = record.patientId ? patientById.get(record.patientId) : undefined;
@@ -203,7 +221,20 @@ export class ReconciliationService {
       for (const c of correspondence) byRequest.set(c.subjectId, [...(byRequest.get(c.subjectId) ?? []), c]);
 
       const attemptsMade = requests.length;
+      const decisions = await tx.reconciliationDecision.findMany({
+        where: { serviceRecordId: record.id },
+        orderBy: { decidedAt: 'desc' },
+      });
+      const latest = decisions[0] ?? null;
       return {
+        alreadyClosed: latest ? closesItem(latest.decision as ReconciliationDecision) : false,
+        decisions: decisions.map((d) => ({
+          id: d.id,
+          decision: d.decision,
+          reason: d.reason,
+          decidedBy: d.decidedBy,
+          decidedAt: d.decidedAt.toISOString(),
+        })),
         serviceRecordId: record.id,
         serviceDate: record.serviceDate.toISOString().slice(0, 10),
         mbsItemNumbers: record.mbsItemNumbers,
@@ -248,6 +279,76 @@ export class ReconciliationService {
             failureReason: c.failureReason,
           })),
         })),
+      };
+    });
+  }
+
+  /**
+   * FR-7.3 — convert-or-forgo (design R-3). A person decides what happens to
+   * a service that never got its agreement. The rules live in
+   * `reconciliation-decision.ts`; this records the decision, with the
+   * deciding person from their session — never from the request body — and
+   * a vault event that carries everything the decision was made against.
+   */
+  async decide(
+    practiceId: string,
+    serviceRecordId: string,
+    input: { decision: string; reason?: string },
+    actor?: Actor,
+  ) {
+    if (!isReconciliationDecision(input.decision)) {
+      throw new BadRequestException(`"${input.decision}" is not a decision. One of: convert_to_private, forgo_benefit, keep_chasing.`);
+    }
+    const decision = input.decision;
+
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const record = await tx.serviceRecord.findFirst({ where: { id: serviceRecordId } });
+      if (!record) throw new NotFoundException('Service record not found.');
+
+      const prior = await tx.reconciliationDecision.findMany({
+        where: { serviceRecordId },
+        orderBy: { decidedAt: 'desc' },
+      });
+      const alreadyClosed = prior.length > 0 && closesItem(prior[0].decision as ReconciliationDecision);
+      const attemptsMade = record.agreementId
+        ? await tx.captureRequest.count({ where: { agreementId: record.agreementId } })
+        : 0;
+      const daysRemaining = daysRemainingInLodgementWindow(record.serviceDate);
+
+      try {
+        assertDecisionAllowed({ decision, decidedBy: actor?.name, daysRemaining, attemptsMade, alreadyClosed });
+      } catch (err) {
+        if (err instanceof ReconciliationDecisionError) throw new BadRequestException(err.message);
+        throw err;
+      }
+
+      const reason = input.reason?.trim() || null;
+      const row = await tx.reconciliationDecision.create({
+        data: { practiceId, serviceRecordId, decision, reason, decidedBy: actor!.name },
+      });
+      await enqueueVaultEvent(tx, {
+        type: 'reconciliation.decided',
+        actor: { principalType: 'staff', id: actor!.id },
+        subject: { type: 'ServiceRecord', id: serviceRecordId },
+        payload: {
+          decision,
+          reason: reason ?? '',
+          decidedBy: actor!.name,
+          band: chaseBandFor(daysRemaining).band,
+          daysRemaining,
+          attemptsMade,
+          closesItem: closesItem(decision),
+          serviceDate: record.serviceDate.toISOString().slice(0, 10),
+        },
+      });
+
+      return {
+        id: row.id,
+        decision,
+        reason,
+        decidedBy: row.decidedBy,
+        decidedAt: row.decidedAt.toISOString(),
+        closesItem: closesItem(decision),
       };
     });
   }

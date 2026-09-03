@@ -1443,10 +1443,38 @@ model ServiceRecord {
   captureSuppressedAt     DateTime?
   createdAt            DateTime @default(now())
 
+  decisions ReconciliationDecision[]
+
   @@unique([practiceId, pmsInvoiceKey])
   @@index([practiceId])
   @@index([serviceDate])
   @@map("service_records")
+}
+
+/**
+ * FR-7.3 — convert-or-forgo. A service was billed, the patient was seen, and
+ * no agreement was captured; a PERSON decides what happens to the benefit:
+ * bill privately, write it off, or keep trying. "Choose explicitly. Nothing
+ * happens by default, and either choice is recorded." (design, R-3).
+ *
+ * APPEND-ONLY. A decision is not edited or deleted; a later one supersedes
+ * it, with its own reason and its own name. The database refuses UPDATE and
+ * DELETE the way it does for signature events.
+ */
+model ReconciliationDecision {
+  id              String        @id @default(uuid()) @db.Uuid
+  practiceId      String        @db.Uuid
+  serviceRecordId String        @db.Uuid
+  serviceRecord   ServiceRecord @relation(fields: [serviceRecordId], references: [id])
+  /// convert_to_private | forgo_benefit | keep_chasing
+  decision  String
+  reason    String?
+  /// The deciding person, from their session. Never free text.
+  decidedBy String
+  decidedAt DateTime @default(now())
+
+  @@index([practiceId, serviceRecordId, decidedAt])
+  @@map("reconciliation_decisions")
 }
 
 // FR-11.2 — the vault outbox. Rows are inserted in the SAME transaction as

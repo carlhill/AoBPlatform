@@ -57,7 +57,11 @@ type Item = {
 
 type Metrics = { outstanding: number; byBand: Record<Band, number>; captureRate: number | null };
 
+type Decision = { id: string; decision: string; reason: string | null; decidedBy: string; decidedAt: string };
+
 type Detail = {
+  alreadyClosed: boolean;
+  decisions: Decision[];
   band: Band;
   daysRemaining: number;
   patient: { name: string } | null;
@@ -119,6 +123,7 @@ export function ReconciliationView() {
   const [bulk, setBulk] = useState<{ sent: number; skipped: number } | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
+  const [decideError, setDecideError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!practiceId) return;
@@ -201,7 +206,21 @@ export function ReconciliationView() {
 
   const right = <SessionControl audience={strings.setup.audience} />;
 
-  if (!checked || items === null) {
+  if (!checked) return null;
+
+  // No practice to ask about — not signed in, or an operator with no practice
+  // chosen. Say so, the way the queue page does, rather than loading for ever.
+  if (!practiceId) {
+    return (
+      <Shell right={right} title={strings.reconciliation.title} lead={strings.reconciliation.lead}>
+        <Notice tone="warn" title={strings.queue.chooseTitle}>
+          {strings.queue.chooseBodyPractice}
+        </Notice>
+      </Shell>
+    );
+  }
+
+  if (items === null) {
     return (
       <Shell right={right} title={strings.reconciliation.title} lead={strings.reconciliation.lead}>
         {error ? (
@@ -213,6 +232,28 @@ export function ReconciliationView() {
         )}
       </Shell>
     );
+  }
+
+  async function decide(serviceRecordId: string, decision: string, reason: string) {
+    if (!practiceId) return;
+    setBusyId(serviceRecordId);
+    setDecideError(null);
+    try {
+      const res = await fetch(`${CORE_URL}/reconciliation/${serviceRecordId}/decide`, {
+        method: 'POST',
+        headers: { ...apiHeaders(practiceId), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decision, reason: reason || undefined }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { message?: string; closesItem?: boolean };
+      if (!res.ok) throw new Error(body.message ?? strings.reconciliation.decideFailed);
+      await load();
+      if (body.closesItem) setOpenId(null);
+      else await openDetail(serviceRecordId);
+    } catch (e) {
+      setDecideError(e instanceof TypeError ? strings.status.unreachable : (e as Error).message);
+    } finally {
+      setBusyId(null);
+    }
   }
 
   return (
@@ -356,7 +397,13 @@ export function ReconciliationView() {
                       {!detail ? (
                         <p className={ui.hint}>{strings.reconciliation.loading}</p>
                       ) : (
-                        <DetailPanel detail={detail} onClose={() => setOpenId(null)} />
+                        <DetailPanel
+                          detail={detail}
+                          busy={busyId !== null}
+                          error={decideError}
+                          onDecide={(decision, reason) => void decide(item.serviceRecordId, decision, reason)}
+                          onClose={() => setOpenId(null)}
+                        />
                       )}
                     </div>
                   )}
@@ -372,9 +419,23 @@ export function ReconciliationView() {
   );
 }
 
-/** R-2 — what has been tried, what the band allows, what comes next. */
-function DetailPanel({ detail, onClose }: { detail: Detail; onClose: () => void }) {
+/** R-2 — what has been tried, what the band allows, what comes next; R-3 — the decision. */
+function DetailPanel({
+  detail,
+  busy,
+  error,
+  onDecide,
+  onClose,
+}: {
+  detail: Detail;
+  busy: boolean;
+  error: string | null;
+  onDecide: (decision: 'convert_to_private' | 'forgo_benefit' | 'keep_chasing', reason: string) => void;
+  onClose: () => void;
+}) {
   const s = strings.reconciliation;
+  const [reason, setReason] = useState('');
+  const latest = detail.decisions[0] ?? null;
   const remaining = Math.max(detail.policy.attempts - detail.attemptsMade, 0);
   const windowText =
     detail.policy.attemptWindowHours === null
@@ -445,6 +506,54 @@ function DetailPanel({ detail, onClose }: { detail: Detail; onClose: () => void 
         <p className={ui.hint}>{s.reasons[detail.captureSuppressedReason] ?? detail.captureSuppressedReason}</p>
       )}
       <p className={ui.hint}>{s.everyAttemptRecorded}</p>
+
+      {/* R-3 — convert-or-forgo (FR-7.3). Nothing happens by default; either choice is recorded. */}
+      <h3 className={ui.label}>{s.decisionTitle}</h3>
+      {latest && (
+        <p data-testid="reconciliation-decision-recorded">
+          {s.decisionRecorded
+            .replace('{decision}', s.decisionNames[latest.decision] ?? latest.decision)
+            .replace('{by}', latest.decidedBy)
+            .replace('{when}', when(latest.decidedAt))}
+          {latest.reason ? ` — ${latest.reason}` : ''}
+        </p>
+      )}
+      {!detail.alreadyClosed && (
+        <>
+          <p className={ui.hint}>{s.decisionLead}</p>
+          {error && (
+            <Notice tone="stop" title={s.decideFailed}>
+              {error}
+            </Notice>
+          )}
+          <div className={ui.field}>
+            <label className={ui.label} htmlFor="recon-reason">
+              {s.reasonLabel}
+            </label>
+            <input id="recon-reason" className={ui.input} value={reason} maxLength={1000} onChange={(e) => setReason(e.target.value)} />
+          </div>
+          <div className={ui.rowActions ?? ''}>
+            <Button onClick={() => onDecide('convert_to_private', reason)} disabled={busy} data-testid="decide-convert">
+              {s.convert}
+            </Button>
+            <Button onClick={() => onDecide('forgo_benefit', reason)} disabled={busy} data-testid="decide-forgo">
+              {s.forgo}
+            </Button>
+            {/* Disabled WITH ITS REASON when the band no longer permits an attempt (REQ-CHASE-08/-09). */}
+            <Button
+              variant="subtle"
+              onClick={() => onDecide('keep_chasing', reason)}
+              disabled={busy || !detail.attemptAllowed}
+              title={detail.attemptAllowed ? undefined : s.keepChasingBlocked}
+              data-testid="decide-keep"
+            >
+              {detail.attemptAllowed ? s.keepChasing.replace('{n}', String(remaining)) : s.keepChasingBlockedShort}
+            </Button>
+          </div>
+          <p className={ui.hint}>{s.careNeverBlocked}</p>
+          <p className={ui.hint}>{s.recordedWithIdentity}</p>
+        </>
+      )}
     </div>
   );
 }

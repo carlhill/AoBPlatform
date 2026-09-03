@@ -876,7 +876,7 @@ rule: build only what it designs.
       BUILT as `/practice/reconciliation` and its view-only platform twin,
       using the app's existing components. The cascade's "why this patient
       was not asked" word sits beside each item (`service_records.captureSuppressedReason`).
-- [ ] **R-3 convert-or-forgo (FR-7.3)** is drawn but has NO backend: no
+- [x] **R-3 convert-or-forgo (FR-7.3)** — BUILT 25 Aug 2026: append-only decision record, `reconciliation.decided` vault event, `POST /reconciliation/:id/decide`, the R-3 panel in the item detail. (Was: drawn but had NO backend: no
       decision record, no vault event type, no endpoint. Needs a small domain
       item first — a `reconciliation.decided` event carrying the deciding
       person, the choice (private billing / forgo / keep chasing) and the
