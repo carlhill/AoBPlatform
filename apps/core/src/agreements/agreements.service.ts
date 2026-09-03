@@ -15,14 +15,21 @@ import {
   assertNoForbiddenAgreementFields,
   assertRepointAllowed,
   assertSignatureAllowed,
+  assertSignatureCaptureAcceptable,
   buildAssignorForAnother,
   canTransition,
   HardRuleViolation,
+  SignatureCaptureError,
+  SIGNATURE_RASTER_PURPOSE,
+  SIGNATURE_VECTOR_PURPOSE,
   validAnchorKindFor,
+  type AcceptedSignatureCapture,
   type AgreementStatus,
+  type DrawnSignatureCapture,
   type EnduringPathway,
   type ProviderType,
 } from '@aobplatform/domain';
+import { ArtefactsService } from '../artefacts/artefacts.service';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RULES_CLIENT, RulesClientError } from '../rules-client/rules-client.module';
@@ -30,6 +37,15 @@ import { assertEnduringAllowed } from '@aobplatform/domain';
 import type { ChangeAssignorDto, CreateAgreementDto, LockParticularsDto } from './agreements.dto';
 
 const SYSTEM_ACTOR = { principalType: 'system', id: 'core' } as const;
+
+/**
+ * WHO "UPLOADED" A SIGNATURE ARTEFACT. Not a name — the artefact rule requires
+ * an attribution and the honest one here is the ceremony, not a person typing.
+ * Who signed is bound through the agreement's assignor record, where it is
+ * scoped and encrypted; repeating it on an artefact row would spread a name
+ * for no evidential gain (REQ-LOG-08).
+ */
+const SIGNATURE_ATTRIBUTION = 'signature ceremony';
 
 function prune(value: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined));
@@ -43,6 +59,7 @@ export class AgreementsService {
     private readonly renderers: RendererRegistry,
     private readonly capture: CaptureService,
     private readonly writeBack: WriteBackService,
+    private readonly artefacts: ArtefactsService,
   ) {}
 
   /**
@@ -454,6 +471,7 @@ export class AgreementsService {
       captureRequestId?: string;
       deviceFingerprint?: string;
       ipAddress?: string;
+      signature?: DrawnSignatureCapture;
     },
   ): Promise<DbAgreement> {
     // Storage-time re-validation (REQ-65C-01: "and again at storage").
@@ -471,6 +489,29 @@ export class AgreementsService {
       if (err instanceof HardRuleViolation) throw new BadRequestException(err.message);
       throw err;
     }
+
+    /*
+     * THE MARK ITSELF (REQ-SIG-01/-02).
+     *
+     * A `drawn` signature must arrive with the strokes and the image they
+     * produced, and no other method may carry them. Checked here — after the
+     * cheap facts about the agreement's own state, before the rules call and
+     * the re-render — so a malformed body never costs a validation round trip
+     * or a rendered PDF, and so a draft is still refused for being a draft
+     * rather than for the shape of its payload.
+     *
+     * THE REFUSAL NEVER QUOTES THE PAYLOAD. The strokes are the assignor's own
+     * hand: identifier-grade, encrypted store only, and never a log line or an
+     * error message.
+     */
+    let capture: AcceptedSignatureCapture | null;
+    try {
+      capture = assertSignatureCaptureAcceptable({ method: dto.method, signature: dto.signature });
+    } catch (err) {
+      if (err instanceof SignatureCaptureError) throw new BadRequestException(err.message);
+      throw err;
+    }
+
     // Storage pass (REQ-65C-01 "and again at storage"): the stored snapshot
     // plus the signature and lock facts, against the SAME rule-set version
     // that validated the lock (rule 14).
@@ -509,7 +550,56 @@ export class AgreementsService {
       );
     }
 
+    /*
+     * THE BYTES GO TO THE STORE BEFORE THE TRANSACTION OPENS; the ROWS go
+     * inside it (`ArtefactsService.stage` / `recordStaged`).
+     *
+     * That ordering is the same one every artefact upload has always used, and
+     * for the same reason: content with no row is merely orphaned and
+     * identifiable by its hash, whereas a row pointing at content that was
+     * never written is a broken reference. Writing to object storage inside a
+     * transaction would also hold a database transaction open across a network
+     * call, which is how a slow store turns into a locked table.
+     */
+    const stagedRaster = capture
+      ? await this.artefacts.stage(practiceId, {
+          bytes: capture.rasterBytes,
+          purpose: SIGNATURE_RASTER_PURPOSE,
+          filename: `signature-${agreementId}.png`,
+          // NOT the assignor's name. The identity of the signer is bound
+          // through the agreement and its assignor record, where it is
+          // scoped and encrypted; copying it onto an artefact row would put a
+          // name in a second place for no evidential gain (REQ-LOG-08).
+          uploadedByName: SIGNATURE_ATTRIBUTION,
+          subjectType: 'Agreement',
+          subjectId: agreementId,
+        })
+      : null;
+    const stagedVector = capture
+      ? await this.artefacts.stage(practiceId, {
+          bytes: capture.vectorBytes,
+          purpose: SIGNATURE_VECTOR_PURPOSE,
+          filename: `signature-${agreementId}.strokes.json`,
+          // Deliberately no declaredContentType: the strokes are UTF-8 JSON
+          // and the detector calls that `text/plain`. Claiming
+          // `application/json` would flag a "mismatch" on every signature and
+          // train a real one to be ignored.
+          uploadedByName: SIGNATURE_ATTRIBUTION,
+          subjectType: 'Agreement',
+          subjectId: agreementId,
+        })
+      : null;
+
     await this.prisma.withPractice(practiceId, async (tx) => {
+      /*
+       * ONE TRANSACTION: the two artefact rows, their vault events, the
+       * signature event that binds their hashes, and every agreement event
+       * after it (rule 11). A signature bound to an artefact row that rolled
+       * back would be evidence pointing at nothing.
+       */
+      const raster = stagedRaster ? await this.artefacts.recordStaged(tx, practiceId, stagedRaster) : null;
+      const vector = stagedVector ? await this.artefacts.recordStaged(tx, practiceId, stagedVector) : null;
+
       const signatureEvent = await tx.signatureEvent.create({
         data: {
           practiceId,
@@ -524,6 +614,14 @@ export class AgreementsService {
           verificationEventId: agreementBefore.verificationEventId,
           deviceFingerprint: dto.deviceFingerprint ?? null,
           ipAddress: dto.ipAddress ?? null,
+          signatureRasterArtefactId: raster?.id ?? null,
+          signatureRasterSha256: raster?.sha256 ?? null,
+          signatureVectorArtefactId: vector?.id ?? null,
+          signatureVectorSha256: vector?.sha256 ?? null,
+          padWidth: capture?.padWidth ?? null,
+          padHeight: capture?.padHeight ?? null,
+          strokeCount: capture?.strokeCount ?? null,
+          pointCount: capture?.pointCount ?? null,
         },
       });
       await enqueueVaultEvent(tx, {
@@ -536,6 +634,19 @@ export class AgreementsService {
           channel: dto.channel,
           artefactSha256: rerendered.sha256,
           hasVerificationEvent: agreementBefore.verificationEventId !== null,
+          // BOTH HALVES OF THE MARK, alongside the rendered agreement's hash
+          // (REQ-SIG-02). Hashes and shape only — never the strokes, never the
+          // image, never anything a log could leak. Pruned rather than sent as
+          // nulls, so a tap-to-approve's event carries no empty signature keys
+          // suggesting a drawing that was lost.
+          ...prune({
+            signatureRasterSha256: raster?.sha256,
+            signatureVectorSha256: vector?.sha256,
+            strokeCount: capture?.strokeCount,
+            pointCount: capture?.pointCount,
+            padWidth: capture?.padWidth,
+            padHeight: capture?.padHeight,
+          }),
         },
       });
 
@@ -569,6 +680,63 @@ export class AgreementsService {
     // sweep retries on failure, so a PMS outage slows evidence, never care.
     await this.writeBack.attempt(practiceId, agreementId);
     return this.get(practiceId, agreementId);
+  }
+
+  /**
+   * SHOW THE SIGNATURE — and re-verify it on the way out (rule 13).
+   *
+   * The agreement's own artefact is re-verified by RE-RENDERING it under the
+   * renderer version that produced it and comparing hashes; a signature cannot
+   * be re-rendered, because it is not derived from anything — so the same rule
+   * is honoured the way the artefact path already honours it: the stored bytes
+   * are hashed again on the way out and refused if they no longer match. That
+   * check lives in `ArtefactsService.download` and is reused rather than
+   * copied, so there is one definition of "these bytes are still the bytes".
+   *
+   * ONE EXTRA LINK IS CHECKED HERE, which download alone cannot: that the hash
+   * the SIGNATURE EVENT bound at signing is still the hash on the artefact
+   * row. Download proves the content matches its row; this proves the row is
+   * the one the signature was bound to. Both must hold, or what is displayed
+   * is not what was signed.
+   */
+  async signatureArtefact(
+    practiceId: string,
+    agreementId: string,
+    kind: 'raster' | 'vector',
+    readByName: string,
+  ): Promise<{ bytes: Uint8Array; headers: Record<string, string> }> {
+    const agreement = await this.get(practiceId, agreementId);
+    if (!agreement.signatureEventId) {
+      throw new NotFoundException('This agreement has not been signed.');
+    }
+    const event = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.signatureEvent.findFirst({ where: { id: agreement.signatureEventId as string, agreementId } }),
+    );
+    if (!event) throw new NotFoundException('Signature event not found for this agreement.');
+
+    const artefactId = kind === 'raster' ? event.signatureRasterArtefactId : event.signatureVectorArtefactId;
+    const boundHash = kind === 'raster' ? event.signatureRasterSha256 : event.signatureVectorSha256;
+    if (!artefactId || !boundHash) {
+      throw new NotFoundException(
+        `This signature was captured by ${event.method} and has no drawn mark to show. Only a drawn ` +
+          'signature stores strokes and an image (REQ-SIG-01).',
+      );
+    }
+
+    const stored = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.artefact.findFirst({ where: { id: artefactId } }),
+    );
+    if (!stored) throw new NotFoundException('The stored signature artefact is missing.');
+    if (stored.sha256 !== boundHash) {
+      throw new BadRequestException(
+        'The stored signature no longer matches the hash the signature event bound at signing, so it will ' +
+          'not be shown. That is a tamper signal, not a transient error (rule 13).',
+      );
+    }
+
+    // Re-hashes the bytes and refuses on a mismatch — the same path, and the
+    // same refusal, as every other artefact display.
+    return this.artefacts.download(practiceId, artefactId, readByName);
   }
 
   /** Status changes route through the domain transition map — nothing else. */

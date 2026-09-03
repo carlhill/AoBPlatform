@@ -1,14 +1,18 @@
 import {
+  ArrayMinSize,
   IsArray,
   IsBoolean,
   IsIn,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
   MaxLength,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
-import { AUTHORITY_BASES_FOR_ANOTHER } from '@aobplatform/domain';
+import { Type } from 'class-transformer';
+import { AUTHORITY_BASES_FOR_ANOTHER, MAX_SIGNATURE_RASTER_BYTES } from '@aobplatform/domain';
 
 export class CreateAgreementDto {
   @IsIn(['episodic_pre', 'episodic_post', 'treatment_plan', 'enduring'])
@@ -164,6 +168,70 @@ export class TransitionDto {
   to!: string;
 }
 
+/**
+ * One captured point of a drawn signature.
+ *
+ * KEPT EXACTLY AS THE POINTER EVENT DELIVERED IT — no rounding here and no
+ * smoothing anywhere downstream. The timing is a signal the record stores and
+ * never judges; see `packages/domain/src/signature.ts` for why, and for why no
+ * biometric template is derived from any of this.
+ */
+export class SignaturePointDto {
+  @IsNumber()
+  x!: number;
+
+  @IsNumber()
+  y!: number;
+
+  /** Milliseconds since the first point of the first stroke. Never a wall clock. */
+  @IsNumber()
+  t!: number;
+
+  /** Reported pressure, absent entirely on devices that report none. */
+  @IsOptional()
+  @IsNumber()
+  p?: number;
+}
+
+export class SignatureStrokeDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => SignaturePointDto)
+  points!: SignaturePointDto[];
+}
+
+/**
+ * The drawn mark itself (REQ-SIG-01: vector + raster).
+ *
+ * THE PAD'S LOGICAL SIZE TRAVELS WITH THE POINTS, because the coordinates mean
+ * nothing without it — a pad swapped for a larger one next year would
+ * otherwise reinterpret every stroke ever stored.
+ *
+ * The size caps and the "is this really a PNG" test live in the domain
+ * (`assertSignatureCaptureAcceptable`), applied to the DECODED bytes: base64
+ * understates its own size by a third, so a cap written here would be a cap on
+ * the wrong number.
+ */
+export class DrawnSignatureDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => SignatureStrokeDto)
+  vector!: SignatureStrokeDto[];
+
+  /** Base64 PNG. A `data:` URL prefix is tolerated and stripped. */
+  @IsString()
+  @MaxLength(Math.ceil((MAX_SIGNATURE_RASTER_BYTES * 4) / 3) + 64)
+  rasterPngBase64!: string;
+
+  @IsNumber()
+  padWidth!: number;
+
+  @IsNumber()
+  padHeight!: number;
+}
+
 export class SignDto {
   @IsIn(['drawn', 'tap_to_approve', 'typed_name', 'wet_ink_scan', 'verbal_recorded'])
   method!: string;
@@ -178,4 +246,19 @@ export class SignDto {
   @IsOptional()
   @IsString()
   deviceFingerprint?: string;
+
+  /**
+   * ADDITIVE AND OPTIONAL HERE, MANDATORY IN THE DOMAIN. Every caller that
+   * predates this field keeps working — the remote link signs by
+   * tap-to-approve (REQ-SIG-01) and sends nothing — while
+   * `assertSignatureCaptureAcceptable` refuses a `drawn` signature that
+   * arrives without one, and refuses one sent with any other method. The
+   * coupling is a rule about two fields, so it lives where a rule can be
+   * tested (`drawn_signature_requires_strokes`) rather than in a decorator
+   * that only this class would honour.
+   */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DrawnSignatureDto)
+  signature?: DrawnSignatureDto;
 }

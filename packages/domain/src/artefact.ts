@@ -40,6 +40,13 @@ export const ARTEFACT_PURPOSES = [
   'credential', // an accreditation letter, HPI-O confirmation
   'identity_document', // something tying a person to the entity
   'address_evidence', // a lease, rates notice, register extract or letterhead for a site
+  /**
+   * The two halves of a drawn signature (REQ-SIG-01, `signature.ts`). Both are
+   * the assignor's own hand and are therefore identifier-grade: encrypted
+   * store only, never a log line, never an error message.
+   */
+  'signature_raster', // the PNG the pad produced
+  'signature_vector', // the strokes, with their timing, exactly as captured
   'other',
 ] as const;
 export type ArtefactPurpose = (typeof ARTEFACT_PURPOSES)[number];

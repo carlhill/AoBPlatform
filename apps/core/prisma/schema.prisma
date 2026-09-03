@@ -1371,6 +1371,33 @@ model SignatureEvent {
   ipAddress           String?
   createdAt           DateTime @default(now())
 
+  /**
+   * THE MARK ITSELF (REQ-SIG-01/-02). A `drawn` signature stores two
+   * artefacts — the PNG the pad produced and the strokes with their timing,
+   * exactly as captured — and the event binds BOTH hashes alongside
+   * `artefactHash`, which is the rendered agreement's. Null for every method
+   * that has no mark to store: tap-to-approve is a real signature and draws
+   * nothing.
+   *
+   * THE HASHES ARE HERE, THE BYTES ARE NOT. Same division as
+   * `renderedArtefactHash` on an agreement: the encrypted artefact store holds
+   * the content, this row and the vault event hold its identity. The strokes
+   * are the assignor's own hand and never appear in a log or an error.
+   */
+  signatureRasterArtefactId String? @db.Uuid
+  signatureRasterSha256     String?
+  signatureVectorArtefactId String? @db.Uuid
+  signatureVectorSha256     String?
+  /**
+   * The pad's logical size the coordinates were captured against, without
+   * which the vector cannot be redrawn at any other size.
+   */
+  padWidth                  Float?
+  padHeight                 Float?
+  /** Shape only — how many strokes and points. Never a score, never a judgement. */
+  strokeCount               Int?
+  pointCount                Int?
+
   @@index([practiceId])
   @@index([agreementId])
   @@map("signature_events")

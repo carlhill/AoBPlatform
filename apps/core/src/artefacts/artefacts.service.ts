@@ -10,9 +10,35 @@ import {
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import type { VaultEventInput } from '@aobplatform/contracts';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { extractText } from './extract-text';
 import { ARTEFACT_STORE, sha256Hex, type ArtefactStore } from './artefact-store';
+
+export interface UploadInput {
+  bytes: Uint8Array;
+  declaredContentType?: string;
+  filename?: string;
+  purpose: string;
+  uploadedByName: string;
+  subjectType?: string;
+  subjectId?: string;
+}
+
+/** Bytes already written and hashed; the metadata row has not been made yet. */
+export interface StagedArtefact {
+  readonly sha256: string;
+  readonly storageKey: string;
+  readonly sizeBytes: number;
+  readonly detectedContentType: string;
+  readonly declaredContentType: string | null;
+  readonly declaredTypeMismatch: boolean;
+  readonly filename: string;
+  readonly purpose: string;
+  readonly subjectType: string | null;
+  readonly subjectId: string | null;
+  readonly uploadedByName: string;
+}
 
 /**
  * Evidence artefacts.
@@ -31,18 +57,21 @@ export class ArtefactsService {
     @Inject(ARTEFACT_STORE) private readonly store: ArtefactStore,
   ) {}
 
-  async upload(
-    practiceId: string,
-    input: {
-      bytes: Uint8Array;
-      declaredContentType?: string;
-      filename?: string;
-      purpose: string;
-      uploadedByName: string;
-      subjectType?: string;
-      subjectId?: string;
-    },
-  ) {
+  /**
+   * PHASE ONE — validate the bytes, hash them, and write them to the store.
+   *
+   * Split out of `upload()` so that a caller which is ALREADY inside a
+   * transaction can put the metadata row in that same transaction (see
+   * `recordStaged`). The signature capture needs exactly that: the artefact
+   * rows, the signature event and every vault event for them commit together
+   * or not at all (rule 11) — a signature bound to an artefact row that rolled
+   * back would be evidence pointing at nothing.
+   *
+   * Bytes first, as before. A metadata row pointing at content that was never
+   * written is a broken reference; content with no row is merely orphaned, and
+   * the hash makes it identifiable.
+   */
+  async stage(practiceId: string, input: UploadInput): Promise<StagedArtefact> {
     let accepted;
     try {
       accepted = assertUploadAcceptable(input);
@@ -62,57 +91,78 @@ export class ArtefactsService {
       );
     }
 
-    // Bytes first. A metadata row pointing at content that was never written
-    // is a broken reference; content with no row is merely orphaned, and the
-    // hash makes it identifiable.
     const storageKey = await this.store.put(practiceId, sha256, input.bytes);
 
-    return this.prisma.withPractice(practiceId, async (tx) => {
-      const artefact = await tx.artefact.create({
-        data: {
-          practiceId,
-          sha256,
-          sizeBytes: accepted.sizeBytes,
-          declaredContentType: input.declaredContentType ?? null,
-          detectedContentType: accepted.detectedContentType,
-          declaredTypeMismatch: accepted.declaredTypeMismatch,
-          filename: accepted.filename,
-          purpose: accepted.purpose,
-          subjectType: input.subjectType ?? null,
-          subjectId: input.subjectId ?? null,
-          uploadedByName: input.uploadedByName.trim(),
-          storageKey,
-        },
-      });
+    return {
+      sha256,
+      storageKey,
+      sizeBytes: accepted.sizeBytes,
+      detectedContentType: accepted.detectedContentType,
+      declaredContentType: input.declaredContentType ?? null,
+      declaredTypeMismatch: accepted.declaredTypeMismatch,
+      filename: accepted.filename,
+      purpose: accepted.purpose,
+      subjectType: input.subjectType ?? null,
+      subjectId: input.subjectId ?? null,
+      uploadedByName: input.uploadedByName.trim(),
+    };
+  }
 
-      // The HASH goes to the vault, never the bytes (REQ-LOG-08). Same
-      // division as `renderedArtefactHash` on an agreement.
-      await enqueueVaultEvent(tx, {
-        type: 'artefact.accessed',
-        actor: { principalType: 'staff', id: practiceId },
-        subject: { type: 'Artefact', id: artefact.id },
-        payload: {
-          action: 'uploaded',
-          sha256,
-          sizeBytes: accepted.sizeBytes,
-          contentType: accepted.detectedContentType,
-          purpose: accepted.purpose,
-          uploadedBy: input.uploadedByName.trim(),
-          declaredTypeMismatch: accepted.declaredTypeMismatch,
-        },
-      });
-
-      return {
-        id: artefact.id,
-        sha256,
-        sizeBytes: artefact.sizeBytes,
-        contentType: artefact.detectedContentType,
-        filename: artefact.filename,
-        purpose: artefact.purpose,
-        declaredTypeMismatch: artefact.declaredTypeMismatch,
-        uploadedAt: artefact.uploadedAt,
-      };
+  /**
+   * PHASE TWO — the metadata row and its vault event, in the CALLER'S
+   * transaction. The two are written together here for the same reason they
+   * always were: an artefact with no event is evidence outside the chain.
+   */
+  async recordStaged(tx: Prisma.TransactionClient, practiceId: string, staged: StagedArtefact) {
+    const artefact = await tx.artefact.create({
+      data: {
+        practiceId,
+        sha256: staged.sha256,
+        sizeBytes: staged.sizeBytes,
+        declaredContentType: staged.declaredContentType,
+        detectedContentType: staged.detectedContentType,
+        declaredTypeMismatch: staged.declaredTypeMismatch,
+        filename: staged.filename,
+        purpose: staged.purpose,
+        subjectType: staged.subjectType,
+        subjectId: staged.subjectId,
+        uploadedByName: staged.uploadedByName,
+        storageKey: staged.storageKey,
+      },
     });
+
+    // The HASH goes to the vault, never the bytes (REQ-LOG-08). Same
+    // division as `renderedArtefactHash` on an agreement.
+    await enqueueVaultEvent(tx, {
+      type: 'artefact.accessed',
+      actor: { principalType: 'staff', id: practiceId },
+      subject: { type: 'Artefact', id: artefact.id },
+      payload: {
+        action: 'uploaded',
+        sha256: staged.sha256,
+        sizeBytes: staged.sizeBytes,
+        contentType: staged.detectedContentType,
+        purpose: staged.purpose,
+        uploadedBy: staged.uploadedByName,
+        declaredTypeMismatch: staged.declaredTypeMismatch,
+      },
+    });
+
+    return {
+      id: artefact.id,
+      sha256: artefact.sha256,
+      sizeBytes: artefact.sizeBytes,
+      contentType: artefact.detectedContentType,
+      filename: artefact.filename,
+      purpose: artefact.purpose,
+      declaredTypeMismatch: artefact.declaredTypeMismatch,
+      uploadedAt: artefact.uploadedAt,
+    };
+  }
+
+  async upload(practiceId: string, input: UploadInput) {
+    const staged = await this.stage(practiceId, input);
+    return this.prisma.withPractice(practiceId, (tx) => this.recordStaged(tx, practiceId, staged));
   }
 
   async list(practiceId: string, filter: { subjectType?: string; subjectId?: string } = {}) {

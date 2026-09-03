@@ -1,4 +1,18 @@
-import { BadRequestException, Body, Controller, Get, Headers, Ip, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Headers,
+  Ip,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  Res,
+} from '@nestjs/common';
+import { Response } from 'express';
+import { SessionActor, type Actor } from '../auth/actor.decorator';
 import { AgreementsService } from './agreements.service';
 import {
   ChangeAssignorDto,
@@ -75,6 +89,39 @@ export class AgreementsController {
     @Ip() ip: string,
   ) {
     return this.agreements.sign(requirePractice(practiceId), id, { ...dto, ipAddress: ip });
+  }
+
+  /**
+   * The drawn mark, re-verified on every display (rule 13).
+   *
+   * `kind` is `raster` (the PNG) or `vector` (the strokes as captured). Served
+   * as an attachment with the DETECTED content type and `nosniff`, through the
+   * artefact download path — one definition of how evidence is served, and one
+   * definition of how it is re-hashed before it is served.
+   *
+   * A method that draws nothing 404s and says why. Tap-to-approve is a real
+   * signature (REQ-SIG-01); it simply has no image.
+   */
+  @Get(':id/signature/:kind/content')
+  async signatureArtefact(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Headers('x-read-by') readBy: string | undefined,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('kind') kind: string,
+    @SessionActor() actor: Actor | undefined,
+    @Res() res: Response,
+  ) {
+    if (kind !== 'raster' && kind !== 'vector') {
+      throw new BadRequestException('A signature has two parts: "raster" and "vector".');
+    }
+    const { bytes, headers } = await this.agreements.signatureArtefact(
+      requirePractice(practiceId),
+      id,
+      kind,
+      actor?.name ?? readBy ?? 'unattributed',
+    );
+    for (const [key, value] of Object.entries(headers)) res.setHeader(key, value);
+    res.send(Buffer.from(bytes));
   }
 
   @Post(':id/transition')

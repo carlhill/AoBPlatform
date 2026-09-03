@@ -50,3 +50,4 @@ export * from './chase-attempt';
 export * from './assignor';
 export * from './assignor-relationships';
 export * from './service-descriptions';
+export * from './signature';

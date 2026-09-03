@@ -5,9 +5,16 @@ import { RulesClientModule } from '../rules-client/rules-client.module';
 import { CaptureModule } from '../capture/capture.module';
 import { RenderModule } from '../render/render.module';
 import { PmsModule } from '../pms/pms.module';
+import { ArtefactsModule } from '../artefacts/artefacts.module';
 
+/**
+ * ArtefactsModule, not the artefacts TABLE. A drawn signature stores its
+ * strokes and its image through the evidence-artefact service that already
+ * validates, hashes and vault-events every other piece of evidence — module to
+ * module, never a second path into somebody else's rows (CLAUDE.md §4).
+ */
 @Module({
-  imports: [RulesClientModule, CaptureModule, RenderModule, PmsModule],
+  imports: [RulesClientModule, CaptureModule, RenderModule, PmsModule, ArtefactsModule],
   controllers: [AgreementsController],
   providers: [AgreementsService],
   exports: [AgreementsService],

@@ -137,7 +137,13 @@ describe('M9 PMS wiring (e2e, real Postgres + mock adapter)', () => {
     const signed = await request(app.getHttpServer())
       .post(`/agreements/${agreementId}/sign`)
       .set('x-practice-id', practiceId)
-      .send({ method: 'drawn', channel: 'in_practice' })
+      /*
+       * TAP-TO-APPROVE, because this suite is about WRITE-BACK and not about
+       * the mark. A `drawn` signature must now arrive with the strokes and the
+       * image it produced (REQ-SIG-01/-02) and is refused without them, which
+       * would make this a test of the signature payload by accident.
+       */
+      .send({ method: 'tap_to_approve', channel: 'in_practice' })
       .expect(201);
 
     expect(signed.body.status).toBe('stored');
