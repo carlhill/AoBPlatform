@@ -52,7 +52,7 @@ These are legal/regulatory invariants. Each MUST be enforced **in code** (valida
 
 TypeScript everywhere. NestJS modular monolith (M1–M8, M12–M14 as enforced modules — no cross-module table access) + two satellite services: **Rules & Conformance** (zero PII, hosts the public tester) and **Evidence Vault** (immudb, hash chain, RFC 3161 anchoring, S3 Object Lock). Next.js + Radix (console, portal, tester; WCAG 2.2 AA). The kiosk is a **cloud-served web app with zero device footprint** — no native build, no installer, nothing persisted on the tablet beyond one revocable pairing credential (Carl, 3 Sep 2026; supersedes the Expo offline-first native shell — see §7 and TODO.md). There is **no patient mobile app**. Postgres with RLS (practice scoping at the DB layer), Redis, SQS. Keycloak (OIDC, passkeys). Site-installed Windows connector for Medtech Evolution, outbound-only mTLS. AWS Sydney, ECS Fargate, Terraform, account-per-environment, GitHub Actions. Tests: Vitest, Playwright, Maestro, k6.
 
-Repo shape (suggested, adjust with a recorded decision): monorepo — `apps/core`, `apps/rules`, `apps/vault`, `apps/web`, `apps/kiosk`, `apps/connector`, `packages/domain`, `packages/contracts` (OpenAPI + shared types), `infra/` (Terraform).
+Repo shape (suggested, adjust with a recorded decision): monorepo — `apps/core`, `apps/rules`, `apps/vault`, `apps/web` (console, portal, tester and — from 3 Sep 2026 — the kiosk at `/kiosk`; `apps/kiosk` is retired once the port lands), `apps/connector`, `packages/domain`, `packages/contracts` (OpenAPI + shared types), `infra/` (Terraform).
 
 ## 5. Build order and current blockers
 

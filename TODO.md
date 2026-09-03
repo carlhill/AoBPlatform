@@ -1228,9 +1228,26 @@ deployment) rather than adding it.
       tab without anyone touching it.
 - [ ] Outage screen: "Please see reception" with no retry loop that hammers
       the server; reconnects quietly.
-- [ ] Decide `apps/kiosk` (Expo web) vs folding the kiosk into `apps/web`
-      (Next.js) long-term -- one codebase, one theme. Not urgent; the export
-      works today.
+- [x] **Decided (Carl, 3 Sep 2026): fold the kiosk into `apps/web`
+      (Next.js).** One codebase, one theme, one string table, one lint config,
+      one test runner. `apps/kiosk` (Expo) is retired once the port lands.
+      Why it is faster to build and test: Next dev has hot reload (an edit is
+      on screen in about a second, against a one-to-two-minute `expo export`
+      per look); Vitest and Playwright already run the rest of the web app,
+      against Jest with React Native mocks and the react-version pinning the
+      kiosk needed; no Metro, no react-native-web, no picker dependency. What
+      moves unchanged: the pure-TS rule modules (`src/rules/*` -- identifiers,
+      assignor, verification, verify-fields, way-out) and their named
+      hard-rule tests. What is rewritten: the six screens and the ceremony
+      state machine as React components; the signature pad as a canvas
+      (vector + raster, REQ-SIG-02 unchanged). Route: `/kiosk`, public
+      audience, device-paired, no Keycloak session. Zero-footprint rule
+      applies: no service worker, no storage but the pairing credential.
+- [ ] The port: `apps/web/app/kiosk/*`, behaviour parity with the Expo build
+      as of its last commit (exit on every screen, self-tap advances, "your"
+      copy, disabled-with-reason Continue, single-line address, family + given
+      + DOB pickers), all 28+ kiosk tests re-homed under Vitest, Playwright
+      for the ceremony. Then delete `apps/kiosk` and its CI job.
 
 ## Where this product could go: v2 and v3
 
