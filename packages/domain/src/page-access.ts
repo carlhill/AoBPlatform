@@ -131,6 +131,27 @@ export const PAGES: Readonly<Record<string, PageRule>> = {
     why: 'A patient approving from the link they were sent, and their own half of the correspondence log. No account exists to sign in with — the token is the authorisation.',
     matchesChildren: true,
   },
+  /*
+   * THE KIOSK. Public in exactly the sense the token-bearing pages above are:
+   * no session is required, and none is possible.
+   *
+   * The tablet is trusted because a staff member signed in on it and it is
+   * scoped to their practice (Part 6 decision 3) — not because the browser
+   * carries a Keycloak session, which it does not and which the Expo build it
+   * replaces never had either. Scope reaches the server as `x-practice-id`,
+   * where RLS re-checks it: a wrong or absent id yields nothing rather than
+   * leaking somebody else's waiting room.
+   *
+   * There is no `matchesChildren` here, and that is deliberate. The ceremony's
+   * steps are component state rather than routes, so there are no children —
+   * and if somebody later adds one it must be classified rather than inherit
+   * this entry.
+   */
+  '/kiosk': {
+    audiences: ['public'],
+    why: 'The waiting-room tablet. A practice-owned device with no sign-in of its own; scope is the practice header, re-checked by RLS. There is deliberately no patient mobile app.',
+  },
+
   '/practice/confirm-email': {
     audiences: ['public'],
     why: 'Confirming a NEW administrator address. Held by somebody who by definition cannot yet sign in as this practice.',

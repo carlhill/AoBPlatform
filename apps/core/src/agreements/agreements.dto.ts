@@ -116,6 +116,38 @@ export class ChangeAssignorDto {
    * than here so the rule holds for every caller. CONTACT, never identity: a
    * mobile number is not one of the six approved identifiers (hard rule 1).
    */
+  /**
+   * WHAT THE PERSON SAID THEY ARE, in their own vocabulary — "Grandparent",
+   * "Carer", "Friend" — as against `authorityBasis`, which is reg 65CB(5)'s.
+   *
+   * REQ-VUL-01 NAMES THEM AS SEPARATE ATTRIBUTES and they are: the basis is
+   * the legal ground for acting, the relationship is the fact C8 prints on the
+   * agreement. The tablet derives the basis from the relationship through
+   * versioned content (`@aobplatform/domain`'s `authorityBasisFor`) and sends
+   * BOTH, so the record keeps the words the person actually chose rather than
+   * only the category we filed them under.
+   *
+   * OPTIONAL, because every caller that predates the kiosk's dropdown omits it
+   * and `buildAssignorForAnother` still derives a relationship from the basis
+   * (`RELATIONSHIP_BY_BASIS`). Supplying it overrides that derivation with the
+   * more specific answer; omitting it changes nothing.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  relationship?: string;
+
+  /**
+   * WHICH VERSION OF THE RELATIONSHIP LIST PRODUCED THAT ANSWER (hard rule 14).
+   * Not a column: it is recorded on the vault event, where it belongs — a
+   * question asked months later is "what were they offered when they chose",
+   * and that is evidence, not current state.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  relationshipsVersion?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(30)

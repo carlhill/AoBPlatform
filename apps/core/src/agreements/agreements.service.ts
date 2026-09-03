@@ -210,7 +210,10 @@ export class AgreementsService {
           data: {
             practiceId,
             name: party.name,
-            relationshipToPatient: party.relationshipToPatient,
+            // The caller's own word when it gave one (the kiosk's dropdown),
+            // otherwise the one derived from the basis. REQ-VUL-01 keeps
+            // relationship and authority basis as separate attributes.
+            relationshipToPatient: dto.relationship?.trim() || party.relationshipToPatient,
             authorityBasis: party.authorityBasis,
             authorityNote: party.authorityNote,
             contactMobile: party.contactMobile,
@@ -252,6 +255,12 @@ export class AgreementsService {
             // says so rather than implying anybody checked.
             authoritySelfDeclared: true,
             declaredOfFullAge: true,
+            // WHICH LIST THEY CHOSE FROM (hard rule 14). A relationship word is
+            // versioned content; the question asked months later is what the
+            // person was offered at the time, which is evidence rather than
+            // current state — so it lives on the event, not on a column. Absent
+            // for callers that do not use a list.
+            ...(dto.relationshipsVersion ? { relationshipsVersion: dto.relationshipsVersion } : {}),
           },
         });
 

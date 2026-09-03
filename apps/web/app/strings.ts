@@ -3236,4 +3236,386 @@ export const strings = {
       'Consent records can be exported from AoBPlatform and kept alongside your own records. Nothing is ' +
       'written into your PMS automatically, and nothing will be until that decision is made and told to you.',
   },
+  /**
+   * THE KIOSK (C2) — the waiting-room ceremony at `/kiosk`.
+   *
+   * Ported from `apps/kiosk` (Expo), which is retired: one codebase, one theme,
+   * one string table, one lint config (Carl, 3 Sep 2026). Every word the tablet
+   * can render lives under this key and nowhere else (REQ-LANG-01).
+   *
+   * THREE RULES ARE ENFORCED OVER THIS SUBTREE BY NAMED TESTS, and they are
+   * asserted against `strings.kiosk` alone rather than the whole table, because
+   * this is the surface a patient reads:
+   *
+   *   NO "certified", "approved", "accredited" or "government-approved" about
+   *   our forms (REQ-65C-05, hard rule 12). The permitted phrasings are
+   *   "checked against the s 65C data set" and "self-assessment", and they are
+   *   used below. "Approve" as the PATIENT'S action is a different word doing a
+   *   different job and is fine.
+   *
+   *   NO DOLLAR AMOUNT anywhere (REQ-REG-04, hard rule 4). Not a fee, not a
+   *   benefit, not a gap. The 89AA notice is the one artefact in the platform
+   *   that carries one and the kiosk never shows an 89AA notice.
+   *
+   *   NO PRACTITIONER SIGNATURE FIELD (rule 3, abolished 1 July 2026). The one
+   *   permitted mention is the tag that says there is not one.
+   *
+   * UK/AU spelling throughout (CLAUDE.md §3). "Provider", not GP; "service",
+   * not consult; "assignor" is never silently called the patient.
+   *
+   * `identifierNames` is read dynamically by type — the server sends
+   * `identifierTypes` and the screen renders from that list. Only the approved
+   * six have entries, deliberately: there is no key for a card number because
+   * there is no field for one (REQ-VER-02).
+   */
+  kiosk: {
+    /** The wordmark in the tablet's footer. Repeated here so the ceremony reads one namespace. */
+    appName: 'AoBPlatform',
+    chrome: {
+      stepOf: (step: number, total: number) => `Step ${step} of ${total}`,
+      stepDetails: 'your details',
+      stepSigning: 'who is signing',
+      complete: 'Complete',
+      allSynced: 'All signatures sent',
+      offline: 'No connection — the practice can still see you now',
+      checkedAgainstDataSet: 'Checked against the s 65C data set',
+      staffHelp: 'A staff member can help you at any point',
+      /*
+       * THE WAY OUT, on every screen of the ceremony (Carl, 3 Sep 2026).
+       * Neutral and short. It does not say "cancel" or "quit" — nothing is being
+       * cancelled, and a patient who wants to talk to a person is not abandoning
+       * anything. It also does not promise that leaving finishes the job.
+       */
+      leaveAction: 'See reception',
+      leaveHeading: 'Our reception staff can help',
+      leaveBody:
+        'They will finish this with you at the desk. Nothing has been signed, and your appointment is not '
+        + 'affected.',
+      /*
+       * BACK IS NAVIGATION, NOT AN EXIT (Carl, 3 Sep 2026 live test). It moves
+       * one step up the ceremony and calls nothing — a different thing from
+       * `leaveAction`, which hands the patient to a person. It sits beside the
+       * step's own primary rather than in the header, so it can never be
+       * mistaken for the way out, and it never reaches a PREVIOUS patient:
+       * the done screen and the idle reset clear everything before the tablet
+       * is handed on.
+       */
+      backAction: 'Back',
+    },
+
+    idle: {
+      heading: 'Checking in?',
+      lede: 'Tap below to confirm your details and read your bulk-billing consent. Our staff can help at any point.',
+      start: 'Start check-in',
+      waitingCount: (count: number) =>
+        count === 1 ? '1 person is ready to check in' : `${count} people are ready to check in`,
+      nobodyWaiting: 'Nobody is waiting to check in just now.',
+      listHeading: 'Who is checking in?',
+      listHint: 'Tap your name. If it is not here, please see reception.',
+      walkIn: 'No appointment time',
+      backToIdle: 'Back',
+      loadFailed: 'The list could not be loaded. Please see reception — your appointment is not affected.',
+      retry: 'Try again',
+    },
+
+    verify: {
+      heading: 'Confirm your details',
+      lede: (count: number) => `${count} details, so we know it is you before anything is shown.`,
+      continueAction: 'Continue',
+      attemptOf: (attempt: number, total: number) =>
+        `Attempt ${attempt} of ${total} · a staff member can help you unlock this`,
+      /**
+       * THE ONLY THING A FAILED ATTEMPT EVER SAYS. It does not name the
+       * identifier that did not match — naming it tells whoever is standing
+       * there which of the details they guessed right (REQ-SEC-07).
+       */
+      mismatchHeading: "Some details don't match",
+      mismatchBody: 'Please check them and try again, or ask our reception staff to help.',
+      tryAgain: 'Try again',
+      lockedHeading: 'Please see our reception staff',
+      lockedBody: 'They can confirm your identity in person and continue this on the desk.',
+      lockedReassurance: 'Your appointment is not affected.',
+      lockedFooter: 'Practice notified · staff-assisted unlock available at the desk',
+      incomplete: 'Please fill in every detail above.',
+      failedToStart:
+        'We could not start the check just now. Please see reception — your appointment is not affected.',
+      annotationKicker: 'REQ-VER-02',
+      annotationBody:
+        'There is no Medicare card field on this screen, and no setting that adds one. The identifiers we '
+        + 'may use are name, date of birth, gender, address, patient record number and IHI.',
+      /** The six permitted types and no others (REQ-VER-02). There is deliberately no card-number entry. */
+      identifierNames: {
+        name: 'Your full name',
+        date_of_birth: 'Date of birth',
+        gender: 'Gender, as you identify it',
+        address: 'Your home address',
+        patient_record_number: 'Patient record number — on your appointment reminder',
+        ihi: 'Individual Healthcare Identifier',
+      } as Record<string, string>,
+      /*
+       * HINTS ARE FOR THE FREE-TEXT IDENTIFIERS. Address is the one entry here
+       * (Carl, 3 Sep 2026 — a single line; see kiosk/rules/verify-fields.ts): a
+       * placeholder inside the box, not a second label, so it does not repeat
+       * `identifierNames.address` above it. Kept as a table because
+       * `identifierFieldsFor` reads it by type.
+       */
+      identifierHints: {
+        address: 'Street, suburb and postcode',
+      } as Record<string, string>,
+
+      /*
+       * THE STRUCTURED SUB-FIELDS (Carl, 3 Sep 2026). Two of the six approved
+       * identifiers are composite, and a single free-text box for each asked the
+       * patient to guess our formatting: "YYYY-MM-DD". The parts are collected
+       * separately and joined for the server — the wire contract still sends
+       * one string per identifier type. Address is NOT one of them: a
+       * server-side address-validation endpoint is coming and splitting it here
+       * would be redone there.
+       */
+      nameFamily: 'Family name',
+      nameGiven: 'Given name(s)',
+      dobDay: 'Day',
+      dobMonth: 'Month',
+      dobYear: 'Year',
+      /** Months by NAME. A patient reading "08" has to translate it; nobody should have to. */
+      monthNames: [
+        'January',
+        'February',
+        'March',
+        'April',
+        'May',
+        'June',
+        'July',
+        'August',
+        'September',
+        'October',
+        'November',
+        'December',
+      ] as readonly string[],
+      /** The empty option on every picker, so nothing is pre-chosen on the patient's behalf. */
+      chooseOption: 'Choose',
+      /**
+       * The disabled Continue label. It says what is missing in kind, never
+       * which identifier — the same rule the mismatch copy obeys.
+       */
+      continueBlocked: 'Continue — some details still needed',
+    },
+
+    assignor: {
+      heading: 'Who is signing today?',
+      self: (patientName: string) => `${patientName} — I am signing for myself`,
+      other: (patientName: string) => `Someone else is signing for ${patientName}`,
+      /**
+       * "About you" (Carl, 3 Sep 2026 live test), not "if someone else signs" —
+       * whoever is filling this in is holding the tablet, so the form addresses
+       * them directly, not a hypothetical third person.
+       */
+      panelHeading: 'About you',
+      otherName: 'Your full name',
+      /**
+       * THE PERSON IS ASKED WHAT THEY ARE, NOT WHAT THE STATUTE CALLS IT
+       * (Carl, 3 Sep 2026). The screen used to show reg 65CB(5)'s own list —
+       * "co-resident relative 18+", "enduring power of attorney (health)" — to
+       * a daughter who had driven her father to the surgery, and asked her to
+       * classify herself under it. The two answers a form gets out of that are
+       * a guess and a wrong guess.
+       *
+       * THE OPTIONS AND THEIR ORDER ARE NOT HERE. They come from
+       * `packages/domain/content/assignor-relationships.json` — versioned
+       * content, so the list and the legal mapping behind it change without a
+       * code change (hard rule 14). This table holds only the WORDS, keyed by
+       * the content file's key, because the words will be translated and a
+       * translated word must never be able to move a legal mapping
+       * (REQ-LANG-01/-02). A key with no entry here renders its raw key, which
+       * is ugly and visible — the right failure for a missing translation.
+       */
+      relationship: (patientName: string) => `Your relationship to ${patientName}`,
+      relationshipNames: {
+        father: 'Father',
+        mother: 'Mother',
+        spouse: 'Spouse',
+        carer: 'Carer',
+        grandparent: 'Grandparent',
+        family_member: 'Family member',
+        friend: 'Friend',
+        other: 'Other',
+      } as Record<string, string>,
+      /** Revealed by the one option the content file marks `freeText`. */
+      relationshipDescribeLabel: 'Please describe',
+      /** Composed from MIN_AGE_ASSIGN_FOR_OTHER — the threshold is never typed here. */
+      otherAgeConfirm: (minimumAge: number) => `I am ${minimumAge} or over`,
+      /**
+       * CONTACT, FRAMED AS CONTACT (C7.2 / REQ-REG-08). A mobile number is not
+       * one of the six approved identifiers and this copy must never imply it
+       * is: it says what the number is FOR — your copy of the agreement, and
+       * anything that follows — and nothing about proving who you are.
+       */
+      contactHeading: 'So we can send you your copy',
+      contactHint:
+        'One of these is enough. Your copy of the agreement, and anything we need to send you afterwards, '
+        + 'goes here. It is not used to identify you.',
+      mobileLabel: 'Mobile number',
+      emailLabel: 'Email address',
+      continueAction: 'Continue',
+      /**
+       * THE GUARDED-BUTTON REASONS (Carl, 3 Sep 2026 live test). Live, before
+       * anybody presses Continue — a disabled control that only explains itself
+       * after a tap is inert, not unreachable (CLAUDE.md §6). `continueBlocked`
+       * is the label ON the button; the `reason*` strings are the itemised list
+       * beneath it. None of them name an identifier value.
+       */
+      continueBlocked: (count: number) =>
+        count === 1 ? 'Continue — 1 detail still needed' : `Continue — ${count} details still needed`,
+      reasonNameNeeded: 'Your full name is needed',
+      reasonRelationshipNeeded: (patientName: string) => `Your relationship to ${patientName}`,
+      reasonDescribeNeeded: 'Please describe your relationship',
+      reasonContactNeeded: 'A mobile number or an email address is needed',
+      reasonAgeNeeded: 'Confirm you are 18 or over',
+      reasonStaffBlocked: 'Practice staff cannot sign for a patient',
+      /**
+       * THE STAFF REFUSAL (Carl, 3 Sep 2026). The match is NAME-BASED and can
+       * hit an innocent namesake, so the copy states the match rather than
+       * making an accusation — and it still never says WHICH name matched or
+       * how, which is the half of REQ-VUL-04 worth protecting. Earlier copy
+       * pointed at reception and stopped there, which left a legitimately
+       * refused staff member unable to tell a rule from a broken tablet.
+       */
+      blockedHeading: 'Please ask our reception staff',
+      blockedBody:
+        'That name matches a member of practice staff, who cannot sign for a patient. If that is not you, '
+        + 'please see reception.',
+      tooYoungSelf: 'Please ask our reception staff to continue this with you.',
+      /** Fallback only — `evaluateAssignorGate` always returns at least one of the `reason*` strings above. */
+      detailsNeeded: 'Please give your name and your relationship to the patient.',
+      /**
+       * The server refused the change. It names the rule and never echoes the
+       * name that was typed; the tablet shows its own sentence and offers the
+       * desk, because a refusal here must not become a dead end (REQ-REC-04).
+       */
+      saveFailed:
+        'We could not record that here. Please see reception — your appointment is not affected.',
+      /**
+       * REACHED BY PRESSING BACK FROM K-3 AFTER THE PARTICULARS LOCKED.
+       *
+       * Who signs is one of the locked particulars (REQ-REG-06), so the server
+       * refuses to re-point the agreement once they are locked — and a screen
+       * that offers a choice the server will refuse is worse than one that
+       * explains why it cannot. The controls are disabled, this says what
+       * happened, and reception is the route. When the lock has NOT happened —
+       * which is the case whenever it failed — the choice is fully live, which
+       * is the reason Back exists at all.
+       */
+      lockedNotice:
+        'Who is signing is part of this agreement, which is already locked, so it cannot be changed here. '
+        + 'Our reception staff can change it for you.',
+      railAgeKicker: 'Age gates',
+      railAgeBody:
+        'A patient of the qualifying age or over may sign for themselves. Anyone signing for another person '
+        + 'must be of full age — checked before the branch continues.',
+      railAbsentKicker: 'Not on this screen',
+      railAbsentBody:
+        'No capacity question, and nothing that asks staff to judge whether the patient can consent.',
+    },
+
+    particulars: {
+      heading: 'Assignment of benefit — please read',
+      documentTitle: 'Assignment of Medicare benefit',
+      patient: 'Patient',
+      provider: 'Provider',
+      placeOfPractice: 'Place of practice',
+      serviceDate: 'Date of service',
+      service: 'Service',
+      agreementDate: 'Date of this agreement',
+      assignor: 'Signing',
+      assignorIsPatient: 'The patient is signing',
+      assignorIsOther: (name: string, relationship: string) => `${name} · ${relationship}`,
+      consentText:
+        'I assign my right to the Medicare benefit for the service described above to the provider named '
+        + 'above, who accepts that assigned benefit as full payment for that service.',
+      versions: (ruleSet: string, mapping: string) => `Rule set ${ruleSet} · mapping ${mapping}`,
+      hashLine: (hash: string) => `SHA-256 ${hash}`,
+      tagNoAmount: 'No amount shown',
+      tagNoProviderSignature: 'No provider signature field',
+      tagHashBeforeSigning: 'Hash written before signing',
+      validating: 'Checking the details…',
+      validatedHeading: 'Ready to sign',
+      validatedBody: 'Particulars are locked. Changing one voids this render and produces a new hash.',
+      /** THE ONE PRIMARY ON K-3. Reading is a step; signing is the next one. */
+      continueToSign: 'Continue to sign',
+      continueNotReady: 'Continue to sign — not ready yet',
+      /**
+       * K-3 NEVER ASKS THE PATIENT FOR A PARTICULAR (Carl, 3 Sep 2026 — this
+       * supersedes the staff-entry box the Expo build carried).
+       *
+       * D6a comes from the PMS appointment type through the practice's
+       * versioned mapping (CONSULTATION-CAPTURE-PLAN §2.4). It does not come
+       * from the tablet, and it must not: the box that used to sit here was a
+       * free-text field on a patient-facing screen, in a waiting room, that
+       * wrote a validated particular of a contract. Anyone walking past could
+       * type into it, and what they typed was matched exactly against a
+       * mapping they could not see — so the honest outcomes were a refusal
+       * nobody understood or, worse, a particular somebody guessed.
+       *
+       * EVERY C-RULE FAILURE ON K-3 IS TREATED THE SAME WAY: state the
+       * situation, hand over, change nothing. Staff fix it on a STAFF surface
+       * — the practice queue or reconciliation — where the mapping, the
+       * booking and the audit trail all are.
+       */
+      needsReceptionHeading: 'One more detail is needed from reception',
+      needsReceptionBody:
+        'We need one more detail from reception before this can be signed. Please see reception — your '
+        + 'appointment is not affected.',
+      /**
+       * A FAULT ON OUR SIDE IS NOT A DETAIL THE PATIENT CAN FIX (Carl, 3 Sep
+       * 2026 live test). The Expo build rendered a core 500 as "1 detail still
+       * needed — 01 Internal server error": it put our failure in the list of
+       * things the person standing at the tablet was being asked to correct,
+       * and it printed the server's own words at them. The raw message never
+       * reaches the screen — it is not written for a patient, and nobody has
+       * checked that it is free of detail we would not want in a waiting room.
+       */
+      serverFaultHeading: 'Something went wrong on our side',
+      serverFault:
+        'This is not something you can fix, and it is not about your details. Please see reception — your '
+        + 'appointment is not affected.',
+      footer: 'Checked against the s 65C data set',
+    },
+
+    signature: {
+      heading: 'Sign here',
+      validatedBanner: 'All particulars are complete and locked. Checked against the s 65C data set.',
+      padHint: 'Sign with your finger above this line',
+      padLabel: 'Signature area. Sign with your finger, or use approve by tapping below.',
+      clear: 'Clear',
+      /** The enabled label. The disabled one is composed by GuardedButton from the reasons. */
+      signAction: 'I agree and sign',
+      signBlocked: (count: number) =>
+        count === 1 ? 'Sign — 1 detail still needed' : `Sign — ${count} details still needed`,
+      signBlockedGeneric: 'Sign — not ready yet',
+      tapToApprove: 'Or tap to approve instead',
+      tapToApproveAction: 'I agree — approve by tapping',
+      tapToApproveHint: 'Offered where signing on glass is difficult. Either way is a signature.',
+      binding:
+        'Signing records the document you were shown, the check we did on your details, the time, and this tablet.',
+      needsInk: 'Please sign above, or use approve by tapping.',
+      submitting: 'Recording your signature…',
+      failed: 'Your signature was not recorded. Please see reception — your appointment is not affected.',
+      footer: 'Vector and raster capture · tap-to-approve offered where signing on glass is difficult',
+    },
+
+    complete: {
+      heading: (givenName: string) => `Signed. Thank you, ${givenName}.`,
+      body: 'Reception has been told you are ready. A copy is on its way to you.',
+      done: 'Done',
+      returning: (seconds: number) => `Returns to the start in ${seconds}s`,
+      writeBackQueued: 'Being written back to the practice system',
+    },
+
+    errors: {
+      /** Never blocks care (REQ-REC-04): every failure ends at the desk, not at a dead end. */
+      generic: 'Something went wrong here. Please see reception — your appointment is not affected.',
+      seeReception: 'See reception',
+      startOver: 'Start again',
+    },
+  },
 } as const;

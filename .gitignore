@@ -69,3 +69,9 @@ apps/web/.env.local
 # identity system, and a repository is the wrong place to keep one.
 backups/
 *.sql.gz
+
+# Playwright output for the kiosk ceremony spec (apps/web/e2e). Artefacts of a
+# run, never source: traces, screenshots and the HTML report.
+apps/web/test-results/
+apps/web/playwright-report/
+apps/web/blob-report/
