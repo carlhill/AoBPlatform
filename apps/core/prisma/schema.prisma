@@ -1698,6 +1698,7 @@ model Device {
   /// stories, and only one of them is a security event.
   revokedReason String?
 
+
   @@index([practiceId])
   @@map("devices")
 }
@@ -1736,20 +1737,6 @@ model DevicePairingCode {
   @@map("device_pairing_codes")
 }
 
-// FR-11.2 — the vault outbox. Rows are inserted in the SAME transaction as
-// the domain write they evidence; the relay publishes them to the Evidence
-// Vault with backoff and no permanent give-up (packages/vault-client).
-// Deliberately NOT practice-scoped by RLS: the relay runs as a system job
-// across all practices, and rows carry IDs only, never content (REQ-LOG-08).
-model VaultOutbox {
-  id            String    @id @default(uuid()) @db.Uuid
-  type          String
-  actor         Json
-  subjectType   String
-  subjectId     String
-  payload       Json
-  occurredAt    DateTime  @default(now())
-  publishedAt   DateTime?
 /**
  * ONE LOCKED AGREEMENT, ASSIGNED TO ONE NAMED TABLET (TODO.md "Push-to-device
  * capture" / "Two front doors", Carl 4 Sep 2026).
@@ -1825,6 +1812,20 @@ model TabletSession {
   @@map("tablet_sessions")
 }
 
+// FR-11.2 — the vault outbox. Rows are inserted in the SAME transaction as
+// the domain write they evidence; the relay publishes them to the Evidence
+// Vault with backoff and no permanent give-up (packages/vault-client).
+// Deliberately NOT practice-scoped by RLS: the relay runs as a system job
+// across all practices, and rows carry IDs only, never content (REQ-LOG-08).
+model VaultOutbox {
+  id            String    @id @default(uuid()) @db.Uuid
+  type          String
+  actor         Json
+  subjectType   String
+  subjectId     String
+  payload       Json
+  occurredAt    DateTime  @default(now())
+  publishedAt   DateTime?
   attempts      Int       @default(0)
   lastError     String?
   nextAttemptAt DateTime?
