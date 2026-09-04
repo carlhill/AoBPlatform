@@ -1345,7 +1345,32 @@ device from the console (never a tick-box on the tablet) and renders under a
    to read and approve the agreement.
 
 ### Build (in flight from 4 Sep 2026)
-- [ ] Core: tablet sessions -- `POST /devices/:id/push { agreementId }`
+- [x] **Built 4 Sep 2026 (`b3c689e`): core tablet sessions and the
+      `/practice/tablet` console.** `POST /devices/:id/push`, `GET
+      /tablet-sessions?active=true`, `GET /tablet-sessions/pushable` (states
+      the push's own preconditions), `POST /tablet-sessions/:id/recall`;
+      device side `GET /kiosk/session`, `confirm-details`, `state`. Payload
+      type `packages/domain/src/tablet-session.ts`. Core e2e 24, domain 5,
+      web 17. **Tablet side not yet built.**
+- [ ] **ENDURING CANNOT BE PUSHED YET -- the s 65C rule set has no enduring
+      path.** `apps/rules/src/rules/rule-set-2026-08.draft.ts`: `isPre`/`isPost`
+      exclude enduring, so C6 passes trivially without D6a; C5 demands a single
+      `serviceDate` a standing agreement has no honest value for; nothing
+      asserts pathway, per-practitioner x patient, or GP-only (that lives in
+      the domain at draft creation); `rule-set.contract.ts` has no enduring
+      fixture. Render is content-agnostic and fine. The rules engine is
+      human-authored: **Carl writes the enduring branch**; until then the push
+      refuses with `enduring_not_supported` and the console says so. This is
+      on the M1 critical path (GA-PLAN B5).
+- [ ] Rebuild the vault container (`docker compose up -d --build vault`)
+      whenever `VAULT_EVENT_TYPES` gains a literal -- the relay 400s silently
+      otherwise. Better: a startup check in core that the vault accepts every
+      type it knows, failing loudly.
+- [ ] Reconcile the two device flags before either ships: `showsWaitingList`
+      (test device, walk-up list visible) and the intended per-device MODE
+      (walk-up enabled / push only). One setting, three values, is probably
+      right: `push_only | walk_up | test_shows_list`.
+- [ ] (superseded detail kept for the record) Core: tablet sessions -- `POST /devices/:id/push { agreementId }`
       (staff actor required; records the staff-verified verification event
       with the staff identity; validates and locks particulars first, so a
       draft never reaches a device -- REQ-REG-06); `GET /kiosk/session`
