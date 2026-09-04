@@ -1682,9 +1682,15 @@ console builds land -- they are in the same files):
       tablet already on Begin is a no-op. Named tests:
       `return_to_begin_clears_a_walk_up_mid_verify`,
       `reset_command_expires_after_two_minutes`.
-- [ ] Consequence, accepted: Return to Begin during a walk-up throws that
-      patient off mid-flow with no message. Reception is standing there and
-      has decided the tablet is needed; care is not blocked (rule 8).
+- [ ] Return to Begin during a walk-up or a pushed ceremony does NOT drop the
+      patient straight onto Begin. The tablet first shows "Please see
+      reception. Your appointment is not affected." (same handover screen
+      family as the timed-out variant, string-table copy), then lands on
+      Begin after a short hold or on tap -- so the person holding the tablet
+      is told what happened rather than watching their screen vanish (Carl,
+      4 Sep 2026). Reception is standing there and has decided the tablet is
+      needed; care is not blocked (rule 8). Named test:
+      `return_to_begin_shows_see_reception_before_idle`.
 - [ ] Zero-footprint unchanged: nothing about the heartbeat is stored on the
       device. OpenAPI contract updated; estimate ~half a day of agent time
       across core, console and tablet.
