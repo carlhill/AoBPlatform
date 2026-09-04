@@ -1510,6 +1510,22 @@ practice-reception-user will correct the incorrect detail and re-push."
 - [ ] Sequenced after the inactivity/Back build, which is editing the same
       screen.
 
+**The caveat, kept verbatim at Carl's request (4 Sep 2026):** One thing to be
+clear-eyed about. The PMS is the source of truth for patient details, and until
+the Medtech write-back (D-01) exists, a correction made in our console lives on
+our mirror. That's fine for the agreement being signed today -- the particulars
+are right and locked -- but reception should still fix it in the PMS too, or the
+next sync will bring the old address back. The write-back item is what
+eventually carries our correction home.
+
+- [ ] When D-01 lands: corrections made on the mirror are written back to the
+      PMS (or flagged for reception if the mechanism cannot carry them), and
+      the next sync must not silently overwrite a staff correction newer than
+      the PMS value -- record the correction's timestamp and compare.
+- [ ] Until then, the console's correction control says so on screen: "Also
+      update this in your practice software -- the next sync will bring the old
+      value back otherwise."
+
 ## Nothing on the patient surface is ever staff entry
 
 Carl, 3 Sep 2026, on seeing K-3 ask for a "Basic description of the service --
