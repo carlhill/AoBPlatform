@@ -226,22 +226,7 @@ export const VAULT_EVENT_TYPES = [
   'campaign.declared',
   'key.used',
   'access.read', // REQ-LOG-07: reads are logged, not only writes
-] as const;
-
-export type VaultEventType = (typeof VAULT_EVENT_TYPES)[number];
-
-export interface VaultEventInput {
-  readonly type: VaultEventType;
-  /** Who did it — staff/provider/system principal ID, never a name. */
-  readonly actor: { readonly principalType: string; readonly id: string };
-  /** What it concerns — entity type + ID only, never content (REQ-LOG-08). */
-  readonly subject: { readonly type: string; readonly id: string };
-  /** Content-free structured detail (hashes, versions, channels, outcomes). */
-  readonly payload?: Record<string, string | number | boolean>;
-}
-
-export interface VaultEventRecord extends VaultEventInput {
-  /*
+  /**
    * PUSH-TO-DEVICE CAPTURE — reception handed the patient a locked screen
    * (TODO.md "Push-to-device capture" / "Two front doors", Carl 4 Sep 2026).
    *
@@ -285,6 +270,21 @@ export interface VaultEventRecord extends VaultEventInput {
    * attempt would imply values were compared that never existed.
    */
   'verification.staff_verified',
+] as const;
+
+export type VaultEventType = (typeof VAULT_EVENT_TYPES)[number];
+
+export interface VaultEventInput {
+  readonly type: VaultEventType;
+  /** Who did it — staff/provider/system principal ID, never a name. */
+  readonly actor: { readonly principalType: string; readonly id: string };
+  /** What it concerns — entity type + ID only, never content (REQ-LOG-08). */
+  readonly subject: { readonly type: string; readonly id: string };
+  /** Content-free structured detail (hashes, versions, channels, outcomes). */
+  readonly payload?: Record<string, string | number | boolean>;
+}
+
+export interface VaultEventRecord extends VaultEventInput {
   readonly id: VaultEventId;
   /** Server-authoritative time (REQ-VAULT-03). */
   readonly recordedAt: IsoTimestamp;
