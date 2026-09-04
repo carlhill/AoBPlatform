@@ -23,6 +23,7 @@ import { ServiceDescriptionsModule } from './service-descriptions/service-descri
 import { PracticesModule } from './practices/practices.module';
 import { PmsModule } from './pms/pms.module';
 import { AutoCaptureModule } from './auto-capture/auto-capture.module';
+import { ArrivalsModule } from './arrivals/arrivals.module';
 import { InboundModule } from './inbound/inbound.module';
 import { AgreeModule } from './agree/agree.module';
 import { CorrespondenceModule } from './correspondence/correspondence.module';
@@ -75,6 +76,7 @@ import { PortalModule } from './portal/portal.module';
     RetentionModule,
     PmsModule,
     AutoCaptureModule,
+    ArrivalsModule,
     InboundModule,
     AgreeModule,
     ReconciliationModule,
