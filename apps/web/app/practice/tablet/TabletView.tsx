@@ -44,7 +44,8 @@
  * bills privately or asks again after the service.
  */
 
-import { ArrowRight, ClipboardList, Tablet } from 'lucide-react';
+import Link from 'next/link';
+import { ArrowRight, ClipboardList, Tablet, Users } from 'lucide-react';
 import { Button, Chip, Notice, Section, Shell, ui } from '../../ui';
 import { strings } from '../../strings';
 import { SessionControl } from '../../SessionControl';
@@ -143,6 +144,18 @@ export function TabletView({ practiceId }: { practiceId: string }) {
           {strings.viewOnly.body}
         </Notice>
       )}
+
+      {/*
+        THE OTHER DOOR, NAMED WHERE SOMEBODY IS ALREADY STANDING (Carl, 4 Sep
+        2026). This page is organised by TABLET; the work list is organised by
+        PATIENT, which is how reception actually works — one person at a time.
+      */}
+      <p className={ui.hint}>
+        <Users size={12} aria-hidden="true" />{' '}
+        <Link href="/practice/patients" data-testid="tablet-to-patients">
+          {strings.patients.fromTablet}
+        </Link>
+      </p>
 
       <Section number={1} title={strings.tablet.todayTitle}>
         <p className={ui.hint}>{strings.tablet.todayLead}</p>

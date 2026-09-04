@@ -3906,6 +3906,12 @@ export const strings = {
     toReconciliationForD6a: 'Or open the record on the reconciliation screen →',
     toReconciliationRow: 'Open it on the reconciliation screen →',
     toDevices: 'Open Tablets →',
+    /**
+     * THE CONFIDENTIAL FLAG HAS SOMEWHERE TO GO NOW (Carl, 4 Sep 2026). Until
+     * the work page existed there was no per-patient page in this console, so
+     * that band carried no link on purpose rather than one that would 404.
+     */
+    toPatient: 'Open this patient →',
 
     /**
      * ENDURING IS GP-ONLY (REQ-END-01/-01a, hard rule 6). Per practitioner ×
@@ -3915,6 +3921,165 @@ export const strings = {
     enduringGpOnly:
       'Enduring agreements are for general practitioners only. For this provider, offer an episodic '
       + 'agreement or a Treatment Plan Assignment.',
+  },
+
+  /**
+   * RECEPTION'S OWN WORK LIST — the patients with something open today, and
+   * everything about one of them in one place (TODO.md "Reception-centric: the
+   * patient work page", Carl 4 Sep 2026).
+   *
+   * THE WORDS FOR THE TABLET CONTROLS ARE NOT REPEATED HERE. Send, Recall,
+   * Re-send, Correct, "Patient says wrong", every refusal — all of them read
+   * from `strings.tablet`, because they are the same controls rendered by the
+   * same components (`pushDesk.tsx`). A second set of words for one button is
+   * how two screens come to describe one act differently.
+   *
+   * NOTHING HERE NAMES A DOLLAR AMOUNT (hard rule 4) OR A MEDICARE NUMBER
+   * (hard rule 1), and no copy claims anything is certified, approved or
+   * accredited (hard rule 12).
+   */
+  patients: {
+    title: 'Patients',
+    navLabel: 'Patients',
+    audience: 'Practice',
+    lead:
+      'The patients with something open today. Open one to do everything for them in one place — their '
+      + 'details, their agreements, the tablet, follow-up and what has been sent.',
+    /** On `/practice/tablet`, pointing at the same work organised by person. */
+    fromTablet: 'Work one patient at a time →',
+    /** On the work page, back to the list. */
+    toQueue: '← All patients with something open today',
+    loading: 'Loading…',
+    notLoaded: 'This page could not be loaded',
+    refresh: 'Refresh',
+    count: (n: number) => (n === 1 ? '1 patient' : `${n} patients`),
+    none: 'Nobody has anything open today.',
+    noneHint: 'A patient appears here as soon as an agreement is waiting or a tablet session starts.',
+    /**
+     * TYPE-TO-FIND, AND THE LIST IS ALREADY THIS PRACTICE'S OWN. The filter
+     * runs in the browser over rows the server already scoped by RLS — it
+     * narrows what is on screen and asks the server nothing, so it can never
+     * become a way to search for somebody who is not on the list.
+     */
+    findLabel: 'Find a patient',
+    findPlaceholder: 'Start typing a name',
+    noMatch: (term: string) => `No patient waiting today matches “${term}”.`,
+    /** Two people share a name; the date of birth is how reception tells them apart. */
+    born: (date: string) => `Born ${date}`,
+    open: (n: number) => (n === 1 ? '1 thing open' : `${n} things open`),
+
+    /*
+     * THE ONE LINE ON A ROW — the freshest true thing about this patient. Each
+     * of these has a matching control on the work page, so the line says what
+     * is happening rather than where to go (CLAUDE.md §7).
+     */
+    summaryAwaiting: 'Awaiting signature · not yet sent',
+    summaryBlocked: 'Awaiting signature · cannot be sent yet',
+    summaryEnded: (state: string) => `Last session: ${state}`,
+    summaryNothing: 'Nothing open',
+
+    /* The work page's cards. */
+    workLead: 'Everything open for this patient. Nothing here holds up their appointment.',
+    notFound: 'That patient has nothing open today.',
+    notFoundHint: 'They may have been seen already, or the agreement has moved on.',
+
+    identityTitle: 'Their details',
+    identityLead:
+      'What we hold, and what the tablet shows them. Correcting one here records who did it — the type '
+      + 'only, never the value.',
+    identityCorrect: 'Correct a detail',
+    identityClose: 'Close',
+    identityNotHeld: 'Not held',
+    /**
+     * THE RECORD NUMBER IS AN IDENTIFIER TYPE ON THE APPROVED SET (REQ-VER-02),
+     * and the Medicare card number is not one and is not held anywhere in this
+     * platform (hard rule 1). Neither value is shown here: this card carries
+     * the five details the patient is asked to check, and nothing else.
+     */
+
+    agreementsTitle: 'Agreements',
+    agreementsLead: 'What is waiting to be signed today, and the tablet it can go to.',
+    agreementsNone: 'Nothing is waiting to be signed for this patient today.',
+    /**
+     * ENDURING IS PER PRACTITIONER × PATIENT, NEVER PER PRACTICE (hard rule 6,
+     * REQ-END-01). The card lists an enduring agreement UNDER ITS PROVIDER for
+     * that reason: a heading that read "practice-wide" would be the rule
+     * broken in the one place a receptionist would believe it.
+     */
+    enduringUnder: (provider: string) => `Enduring · ${provider}`,
+    enduringNoProvider: 'Enduring · provider not set',
+    episodicToday: 'Episodic · today’s service',
+    treatmentPlan: 'Treatment Plan Assignment',
+    sessionsTitle: 'On the tablet',
+    sessionsNone: 'No tablet session for this patient today.',
+    sessionOn: (device: string, state: string) => `${device} — ${state}`,
+
+    followUpTitle: 'Follow-up',
+    followUpLead: 'Where managed follow-up has got to for this patient’s open agreements.',
+    followUpNone: 'Nothing is being followed up for this patient.',
+    /**
+     * THE BAND IS THE DEADLINE, NOT THE ELAPSED TIME (REQ-CHASE-05/-06). It
+     * rises as the twelve-month lodgement window closes, and nothing is chased
+     * past it (REQ-CHASE-08).
+     */
+    followUpBands: {
+      standard: 'Standard',
+      compressed: 'Compressed',
+      urgent: 'Urgent',
+      last_chance: 'Last chance',
+      expired: 'Window closed — not chased',
+    } as Record<string, string>,
+    followUpDays: (days: number) => `${days} days left to lodge`,
+    followUpAttempts: (made: number, allowed: number) => `${made} of ${allowed} attempts made`,
+    followUpNext: (step: string) => `Next: ${step}`,
+    followUpSteps: {
+      ai: 'an automated reminder',
+      human: 'somebody at the practice',
+      handback: 'hand back to the practice',
+    } as Record<string, string>,
+    followUpNoneLeft: 'No further attempt is due.',
+    followUpLast: (when: string, channel: string, outcome: string) =>
+      `Last attempt ${when} · ${channel} · ${outcome}`,
+    /**
+     * RECORDING AN ATTEMPT IS THE RECONCILIATION SCREEN'S, and this says so
+     * with a link rather than duplicating a form. A reg 89AA notice is never
+     * chased and never appears here (hard rule 7, REQ-CHASE-02).
+     */
+    followUpToReconciliation: 'Record an attempt on the reconciliation screen →',
+
+    correspondenceTitle: 'Messages',
+    correspondenceLead:
+      'What has been sent to this patient, and what happened to it. States only — open the message log '
+      + 'to read one.',
+    correspondenceNone: 'Nothing has been sent to this patient.',
+    correspondenceRow: (channel: string, state: string, when: string) => `${channel} · ${state} · ${when}`,
+    correspondenceToLog: 'Open the message log →',
+
+    historyTitle: 'History',
+    historyLead: 'What has happened, most recent first. Types and times — never the details themselves.',
+    historyNone: 'Nothing has happened for this patient yet.',
+    /**
+     * THE WORDS FOR EACH TIMELINE TYPE. The server sends a CODE and these are
+     * the words (REQ-LANG-01); an unmapped code is shown AS the code rather
+     * than swallowed, so a type added later is visible instead of invisible.
+     */
+    historyTypes: {
+      agreement_created: 'Agreement started',
+      agreement_superseded: 'Replaced by a corrected agreement',
+      particulars_locked: 'Particulars completed and locked',
+      agreement_signed: 'Signed',
+      capture_opened: 'Asked to sign',
+      capture_closed: 'Request closed',
+      verification: 'Identity checked',
+      session_pushed: 'Sent to a tablet',
+      session_details_confirmed: 'Patient confirmed their details',
+      session_details_disputed: 'Patient said a detail was wrong',
+      session_dispute_resolved: 'Reception answered it',
+      session_ended: 'Tablet session ended',
+      details_corrected: 'A detail was corrected here',
+    } as Record<string, string>,
+    historyDetail: (detail: string) => `· ${detail}`,
+    historyTypesList: (types: string) => `· ${types}`,
   },
 
   kiosk: {

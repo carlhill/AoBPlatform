@@ -43,6 +43,7 @@ import {
   Tablet,
   Users,
   UserSquare,
+  UserRound,
   Send,
 } from 'lucide-react';
 import { audiencesOf, mayReach, type Audience, type CardState, type DeviceRow } from '@aobplatform/domain';
@@ -472,6 +473,42 @@ export function SetupHub({
             </section>
           );
         })}
+
+        {/*
+          THE PATIENTS CARD -- reception's own work list (Carl, 4 Sep 2026).
+          FIRST OF THE TWO, because it is the screen somebody stands in front
+          of all morning: one patient at a time, with their details, their
+          agreements, the tablet, follow-up and what was sent, all on one page.
+          The Tablets card below it answers the other question -- what are my
+          devices doing -- and both are the same acts underneath.
+        */}
+        <section className={styles.card} aria-label={strings.patients.title} data-testid="card-patients">
+          <div className={styles.cardHead}>
+            <span className={styles.cardIcon}>
+              <UserRound size={16} aria-hidden="true" />
+            </span>
+            <h2 className={styles.cardTitle}>{strings.patients.title}</h2>
+          </div>
+
+          <p className={ui.hint}>{strings.patients.lead}</p>
+
+          {/*
+            THE SAME `canOpen` THE PAGE ITSELF APPLIES (`mayReach`), so the card
+            and the page cannot drift apart the way the queue and reviews cards
+            once did.
+          */}
+          {canOpen('/practice/patients') && (
+            <Link
+              href={viewOnly ? toViewPath('/practice/patients', practiceId) : '/practice/patients'}
+              className={styles.cardLink}
+              data-testid="hub-to-patients"
+            >
+              <UserRound size={14} aria-hidden="true" />
+              {openLabel(strings.patients.title)}
+              <ArrowRight size={14} aria-hidden="true" />
+            </Link>
+          )}
+        </section>
 
         {/*
           THE TABLETS CARD. Placed straight after Capture channels rather than

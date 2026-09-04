@@ -1,0 +1,621 @@
+'use client';
+
+/**
+ * ONE PATIENT, EVERYTHING OPEN, ONE PAGE (TODO.md "Reception-centric: the
+ * patient work page", Carl 4 Sep 2026).
+ *
+ * THE PROBLEM IT ANSWERS. A patient is standing at the desk. Their agreement
+ * is on `/practice/tablet`, the message that did not arrive is on
+ * `/practice/correspondence`, the reminder is on the reconciliation screen and
+ * their details are somewhere else again. Reception does not work in screens;
+ * they work in people. This is the person.
+ *
+ * IT ADDS NO CONTROLS OF ITS OWN. Every tablet control here is the SAME
+ * component `/practice/tablet` renders (`pushDesk.tsx`) — Send with its device
+ * picker, the live session, Recall, Correct, "No change needed", Re-send, Send
+ * again, and every refusal mapped to copy plus a destination. That is what
+ * makes the two screens incapable of disagreeing, and it is what the named test
+ * `work_page_tablet_controls_match_tablet_page` pins.
+ *
+ * THE EXISTING PAGES STAY. `/practice/tablet`, `/practice/correspondence` and
+ * `/practice/reconciliation` are unchanged and each card links to the one it
+ * summarises: this is the fast path, not a replacement for the full tooling.
+ *
+ * WHY THE FIVE DETAILS ARE ON SCREEN HERE AND NOT ON `/practice/tablet`. That
+ * page is a list of everybody, polled every three seconds at the front
+ * counter, so it carries a STATUS and fetches values only when somebody opens
+ * a correction. This page is one patient, opened deliberately, about the
+ * person already standing there — and the five details are the very thing the
+ * patient is being asked to check. They are read ONCE when the page opens and
+ * again after a correction; they are never on the poll.
+ *
+ * NEVER A MEDICARE NUMBER (hard rule 1, REQ-VER-02 — there is no column for
+ * one), never a dollar amount (hard rule 4), never an identifier VALUE in the
+ * history (REQ-VER-04), and nothing here claims anything is certified,
+ * approved or accredited (hard rule 12).
+ */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
+import { ArrowRight, ClipboardList, History, Mail, PencilLine, Tablet, UserRound } from 'lucide-react';
+import {
+  audiencesOf,
+  mayReach,
+  type Audience,
+  type PatientTimelineEntry,
+  type TabletSessionRow,
+} from '@aobplatform/domain';
+import { Button, Chip, Notice, Section, Shell, ui } from '../../ui';
+import { strings } from '../../strings';
+import { apiHeaders, currentSession } from '../../auth';
+import { SessionControl } from '../../SessionControl';
+import styles from '../manage.module.css';
+import {
+  AgreementRow,
+  CorrectOutcomeNotice,
+  CorrectionPanel,
+  SEND_AGAIN_ENDINGS,
+  SendAgain,
+  SessionActions,
+  SessionDisputeNotices,
+  SessionOutcomeNotice,
+  SessionTag,
+  STATE_TONE,
+  subjectForPatient,
+  subjectForSession,
+  usePushDesk,
+  when,
+  type PatientDetails,
+  type PushableRow,
+} from '../tablet/pushDesk';
+import { bornOn } from './PatientsQueueView';
+
+const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
+
+/** What the follow-up card reads — the trail endpoint's own shape. */
+interface ChaseTrail {
+  agreementId: string | null;
+  daysRemaining: number;
+  band: string;
+  policy: { attempts: number };
+  attemptsMade: number;
+  nextStep: string | null;
+  attempts: Array<{
+    id: string;
+    channel: string;
+    outcome: string;
+    occurredAt: string;
+    superseded: boolean;
+  }>;
+}
+
+/** What the messages card reads. STATES, never bodies — the card draws no text. */
+interface MessageRow {
+  id: string;
+  channel: string | null;
+  state: string;
+  queuedAt: string;
+  sentAt: string | null;
+}
+
+/**
+ * HOW ONE AGREEMENT IS NAMED ON THIS PAGE.
+ *
+ * ENDURING IS PER PRACTITIONER × PATIENT AND GP-ONLY (hard rule 6,
+ * REQ-END-01/-01a), so an enduring agreement is named UNDER ITS PROVIDER and
+ * never as anything practice-wide. Getting this heading wrong would be the
+ * rule broken in the one place a receptionist would believe it.
+ */
+export function agreementHeading(row: Pick<PushableRow, 'agreementType' | 'providerName'>): string {
+  if (row.agreementType === 'enduring') {
+    return row.providerName
+      ? strings.patients.enduringUnder(row.providerName)
+      : strings.patients.enduringNoProvider;
+  }
+  if (row.agreementType === 'treatment_plan') return strings.patients.treatmentPlan;
+  return strings.patients.episodicToday;
+}
+
+/** One history line: the words for the type, then whatever short codes it carries. */
+export function historyLine(entry: PatientTimelineEntry): string {
+  // AN UNMAPPED TYPE SHOWS ITS OWN CODE rather than being swallowed — the same
+  // rule the refusal mapping follows (CLAUDE.md §7).
+  const head = strings.patients.historyTypes[entry.type] ?? entry.type;
+  const parts = [head];
+  if (entry.detailTypes?.length) {
+    parts.push(
+      strings.patients.historyTypesList(
+        entry.detailTypes
+          .map((type) => strings.kiosk.checkDetails.detailNames[type] ?? type)
+          .join(', '),
+      ),
+    );
+  }
+  if (entry.detail) parts.push(strings.patients.historyDetail(entry.detail));
+  return parts.join(' ');
+}
+
+export function PatientWorkView({ practiceId, patientId }: { practiceId: string; patientId: string }) {
+  const desk = usePushDesk(practiceId);
+  const subject = subjectForPatient(patientId);
+
+  const [identity, setIdentity] = useState<PatientDetails | null>(null);
+  const [identityError, setIdentityError] = useState<string | null>(null);
+  const [trails, setTrails] = useState<Record<string, ChaseTrail>>({});
+  const [messages, setMessages] = useState<MessageRow[] | null>(null);
+  const [timeline, setTimeline] = useState<PatientTimelineEntry[] | null>(null);
+
+  const audiences: Audience[] = useMemo(() => {
+    const session = currentSession();
+    return audiencesOf({
+      roles: session?.roles,
+      practiceId: session?.practiceId ?? null,
+      practitionerId: session?.practitionerId,
+    });
+  }, []);
+  const canAct = mayReach('/practice/patients', audiences) && audiences.includes('practice');
+
+  /*
+   * THE FIVE DETAILS AND THE HISTORY, READ WHEN THE PAGE OPENS AND AFTER A
+   * CORRECTION — never on the three-second poll that the tablet controls run
+   * on. A correction changes both, which is why they are re-read together.
+   */
+  const readPatient = useCallback(async () => {
+    try {
+      const [d, t] = await Promise.all([
+        fetch(`${CORE_URL}/patients/${patientId}/details`, { headers: apiHeaders(practiceId) }),
+        fetch(`${CORE_URL}/patients/${patientId}/timeline`, { headers: apiHeaders(practiceId) }),
+      ]);
+      if (!d.ok) throw new Error(String(d.status));
+      setIdentity((await d.json()) as PatientDetails);
+      setIdentityError(null);
+      if (t.ok) setTimeline(((await t.json()) as { entries: PatientTimelineEntry[] }).entries);
+    } catch (e) {
+      setIdentityError(e instanceof TypeError ? strings.status.unreachable : (e as Error).message);
+    }
+  }, [practiceId, patientId]);
+
+  useEffect(() => {
+    void readPatient();
+  }, [readPatient]);
+
+  /*
+   * A CORRECTION MOVED SOMETHING, SO THE PAGE RE-READS IT. Keyed on the
+   * outcome's identity rather than on a counter, so a failed save does not
+   * quietly refresh as though it had worked.
+   */
+  const lastCorrection = desk.correctOutcome?.ok ? `${desk.correctOutcome.id}:${desk.correctOutcome.text}` : null;
+  const seenCorrection = useRef<string | null>(null);
+  useEffect(() => {
+    if (!lastCorrection || seenCorrection.current === lastCorrection) return;
+    seenCorrection.current = lastCorrection;
+    void readPatient();
+  }, [lastCorrection, readPatient]);
+
+  /* What has been sent to this patient — states and times, never bodies. */
+  useEffect(() => {
+    void fetch(`${CORE_URL}/correspondence?patientId=${patientId}`, { headers: apiHeaders(practiceId) })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((body: MessageRow[]) => setMessages(Array.isArray(body) ? body : []))
+      .catch(() => setMessages([]));
+  }, [practiceId, patientId]);
+
+  const rows = (desk.rows ?? []).filter((row) => row.patientId === patientId);
+  const sessions = desk.sessions.filter((session) => session.patientId === patientId);
+
+  /*
+   * THE FOLLOW-UP STATE FOR THIS PATIENT'S OPEN AGREEMENTS. Keyed on the IDS,
+   * joined, so the poll refreshing the rows array does not re-fetch a trail
+   * every three seconds for data that changes when somebody makes a call.
+   */
+  const agreementIds = [...new Set(rows.map((row) => row.agreementId))].sort();
+  const agreementKey = agreementIds.join(',');
+  useEffect(() => {
+    if (agreementKey.length === 0) {
+      setTrails({});
+      return;
+    }
+    let live = true;
+    void Promise.all(
+      agreementKey.split(',').map(async (id) => {
+        try {
+          const res = await fetch(`${CORE_URL}/chase-attempts/Agreement/${id}`, {
+            headers: apiHeaders(practiceId),
+          });
+          return res.ok ? ((await res.json()) as ChaseTrail) : null;
+        } catch {
+          return null;
+        }
+      }),
+    ).then((results) => {
+      if (!live) return;
+      const next: Record<string, ChaseTrail> = {};
+      for (const trail of results) {
+        if (trail?.agreementId) next[trail.agreementId] = trail;
+      }
+      setTrails(next);
+    });
+    return () => {
+      live = false;
+    };
+  }, [practiceId, agreementKey]);
+
+  /*
+   * THE NAME AT THE TOP comes from the patient record once it is read, and
+   * from the row that named them until then — so the page has a title from its
+   * first paint rather than saying "Loading…" over a person's own page.
+   */
+  const name =
+    (identity && `${identity.givenNames} ${identity.familyName}`) ??
+    rows[0]?.patientName ??
+    sessions[0]?.patientName ??
+    strings.patients.title;
+
+  const detailValue = (value: string | null | undefined) =>
+    value && value.length > 0 ? value : strings.patients.identityNotHeld;
+
+  return (
+    <Shell
+      right={<SessionControl audience={strings.patients.audience} />}
+      title={name}
+      lead={strings.patients.workLead}
+    >
+      <p className={ui.hint}>
+        <Link href="/practice/patients" data-testid="work-to-queue">
+          {strings.patients.toQueue}
+        </Link>
+      </p>
+
+      {!canAct && (
+        <Notice tone="warn" title={strings.viewOnly.title} data-testid="work-view-only">
+          {strings.viewOnly.body}
+        </Notice>
+      )}
+
+      {desk.loadError && (
+        <Notice tone="warn" title={strings.patients.notLoaded}>
+          {desk.loadError}
+        </Notice>
+      )}
+
+      {/* -------------------------------------------------------------- */}
+      <Section
+        number={1}
+        title={strings.patients.identityTitle}
+        aside={
+          <span className={styles.cardIcon}>
+            <UserRound size={16} aria-hidden="true" />
+          </span>
+        }
+      >
+        <p className={ui.hint}>{strings.patients.identityLead}</p>
+
+        {identityError && (
+          <Notice tone="stop" title={strings.patients.notLoaded} data-testid="identity-error">
+            {identityError}
+          </Notice>
+        )}
+
+        {identity === null && !identityError && <p className={ui.hint}>{strings.patients.loading}</p>}
+
+        {identity && (
+          <>
+            <ul className={styles.list} data-testid="identity-list">
+              {/*
+                THE FIVE DETAILS THE PATIENT IS ASKED TO CHECK, in the order the
+                tablet draws them. Name is two columns and one question, which
+                is why it reads as one row here and marks two fields in the
+                correction panel.
+              */}
+              <li className={styles.card} data-testid="identity-name">
+                <p className={styles.cardSub}>{strings.kiosk.checkDetails.detailNames.name}</p>
+                <p className={styles.cardTitle}>{`${identity.givenNames} ${identity.familyName}`}</p>
+              </li>
+              <li className={styles.card} data-testid="identity-date_of_birth">
+                <p className={styles.cardSub}>{strings.kiosk.checkDetails.detailNames.date_of_birth}</p>
+                <p className={styles.cardTitle}>{bornOn(identity.dateOfBirth)}</p>
+              </li>
+              <li className={styles.card} data-testid="identity-address">
+                <p className={styles.cardSub}>{strings.kiosk.checkDetails.detailNames.address}</p>
+                <p className={styles.cardTitle}>{detailValue(identity.address)}</p>
+              </li>
+              <li className={styles.card} data-testid="identity-mobile">
+                <p className={styles.cardSub}>{strings.kiosk.checkDetails.detailNames.mobile}</p>
+                <p className={styles.cardTitle}>{detailValue(identity.mobile)}</p>
+              </li>
+              <li className={styles.card} data-testid="identity-email">
+                <p className={styles.cardSub}>{strings.kiosk.checkDetails.detailNames.email}</p>
+                <p className={styles.cardTitle}>{detailValue(identity.email)}</p>
+              </li>
+            </ul>
+
+            {identity.detailsCorrectedAt && (
+              <p className={ui.hint} data-testid="identity-corrected-at">
+                {strings.tablet.correctedAt(when(identity.detailsCorrectedAt))}
+              </p>
+            )}
+
+            <div className={styles.formActions}>
+              {/*
+                THE SAME CORRECTION THE TABLET PAGE MAKES — same component, same
+                endpoint, same refusal of any Medicare-shaped field, same
+                supersession of a locked agreement whose particular moved
+                (HARD-02). What is missing here is the dispute resolution,
+                because there is no cross to close: nobody crossed anything.
+              */}
+              <Button
+                disabled={!canAct || desk.correctBusy}
+                onClick={() => {
+                  if (desk.correctFor === subject.key) {
+                    desk.closeCorrect();
+                    return;
+                  }
+                  void desk.openCorrect(subject);
+                }}
+                data-testid="identity-correct-open"
+              >
+                <PencilLine size={14} aria-hidden="true" />
+                {desk.correctFor === subject.key
+                  ? strings.patients.identityClose
+                  : strings.patients.identityCorrect}
+              </Button>
+            </div>
+
+            <CorrectionPanel desk={desk} subject={subject} />
+            <CorrectOutcomeNotice desk={desk} subjectKey={subject.key} testId="identity-correct-outcome" />
+          </>
+        )}
+      </Section>
+
+      {/* -------------------------------------------------------------- */}
+      <Section
+        number={2}
+        title={strings.patients.agreementsTitle}
+        aside={
+          <span className={styles.cardIcon}>
+            <ClipboardList size={16} aria-hidden="true" />
+          </span>
+        }
+      >
+        <p className={ui.hint}>{strings.patients.agreementsLead}</p>
+
+        {desk.rows !== null && rows.length === 0 && (
+          <div className={styles.empty}>
+            <ClipboardList size={22} aria-hidden="true" />
+            <p className={styles.emptyTitle}>{strings.patients.agreementsNone}</p>
+          </div>
+        )}
+
+        {/*
+          THE ROWS THEMSELVES ARE THE TABLET PAGE'S ROWS, unchanged. The
+          patient's name is not repeated -- the page is already about them and
+          their name is at the top of it -- and the heading in its place says
+          what KIND of agreement this is.
+        */}
+        <ul className={styles.queueList} data-testid="work-agreements">
+          {rows.map((row) => (
+            <AgreementRow
+              key={row.agreementId}
+              desk={desk}
+              row={row}
+              showPatientName={false}
+              heading={agreementHeading(row)}
+            />
+          ))}
+        </ul>
+
+        <p className={ui.hint}>
+          <Tablet size={12} aria-hidden="true" />{' '}
+          <Link href="/practice/tablet" data-testid="work-to-tablet">
+            {strings.tablet.title} <ArrowRight size={12} aria-hidden="true" />
+          </Link>
+        </p>
+      </Section>
+
+      {/* -------------------------------------------------------------- */}
+      <Section
+        number={3}
+        title={strings.patients.sessionsTitle}
+        aside={
+          <span className={styles.cardIcon}>
+            <Tablet size={16} aria-hidden="true" />
+          </span>
+        }
+      >
+        {sessions.length === 0 && <p className={ui.hint}>{strings.patients.sessionsNone}</p>}
+
+        <ul className={styles.list} data-testid="work-sessions">
+          {sessions.map((session: TabletSessionRow) => {
+            const live = session.endedAt === null;
+            const canSendAgain = !live && SEND_AGAIN_ENDINGS.includes(session.state);
+            return (
+              <li key={session.id} className={styles.card} data-testid={`work-session-${session.id}`}>
+                <div className={styles.cardHead}>
+                  <span className={styles.cardIcon}>
+                    <Tablet size={18} aria-hidden="true" />
+                  </span>
+                  <div className={styles.cardMain}>
+                    <p className={styles.cardTitle}>
+                      {strings.patients.sessionOn(
+                        session.deviceLabel,
+                        strings.tablet.states[session.state] ?? session.state,
+                      )}
+                    </p>
+                    <p className={styles.cardSub}>
+                      {strings.tablet.pushedAt(session.pushedBy, when(session.pushedAt))}
+                      {' · '}
+                      <SessionTag id={session.id} testId={`work-session-id-${session.id}`} />
+                    </p>
+                  </div>
+                  <div className={styles.cardAside}>
+                    <Chip tone={STATE_TONE[session.state] ?? 'neutral'}>
+                      {strings.tablet.states[session.state] ?? session.state}
+                    </Chip>
+                  </div>
+                </div>
+
+                <SessionDisputeNotices session={session} />
+                {live && <SessionActions desk={desk} session={session} />}
+                {canSendAgain && <SendAgain desk={desk} ended={session} />}
+                <CorrectionPanel desk={desk} subject={subjectForSession(session)} />
+                <CorrectOutcomeNotice
+                  desk={desk}
+                  subjectKey={session.id}
+                  testId={`work-correct-outcome-${session.id}`}
+                />
+                <SessionOutcomeNotice
+                  desk={desk}
+                  id={session.id}
+                  testId={`work-session-outcome-${session.id}`}
+                  linkTestId={`work-session-link-${session.id}`}
+                  recallTestId={`work-session-recall-${session.id}`}
+                />
+              </li>
+            );
+          })}
+        </ul>
+      </Section>
+
+      {/* -------------------------------------------------------------- */}
+      <Section number={4} title={strings.patients.followUpTitle}>
+        <p className={ui.hint}>{strings.patients.followUpLead}</p>
+
+        {Object.keys(trails).length === 0 && (
+          <p className={ui.hint} data-testid="follow-up-none">
+            {strings.patients.followUpNone}
+          </p>
+        )}
+
+        <ul className={styles.list} data-testid="work-follow-up">
+          {Object.values(trails).map((trail) => {
+            const last = [...trail.attempts].reverse().find((attempt) => !attempt.superseded);
+            return (
+              <li
+                key={trail.agreementId ?? 'none'}
+                className={styles.card}
+                data-testid={`follow-up-${trail.agreementId}`}
+              >
+                <div className={styles.cardHead}>
+                  <div className={styles.cardMain}>
+                    <p className={styles.cardTitle}>
+                      {strings.patients.followUpBands[trail.band] ?? trail.band}
+                    </p>
+                    <p className={styles.cardSub}>{strings.patients.followUpDays(trail.daysRemaining)}</p>
+                    <p className={styles.cardSub}>
+                      {strings.patients.followUpAttempts(trail.attemptsMade, trail.policy.attempts)}
+                    </p>
+                    {/*
+                      NOTHING IS CHASED PAST THE DEADLINE (REQ-CHASE-08), so a
+                      closed window says there is no next step rather than
+                      naming one. A reg 89AA notice is never chased at all and
+                      never reaches this card (hard rule 7, REQ-CHASE-02).
+                    */}
+                    <p className={styles.cardSub} data-testid={`follow-up-next-${trail.agreementId}`}>
+                      {trail.nextStep
+                        ? strings.patients.followUpNext(
+                            strings.patients.followUpSteps[trail.nextStep] ?? trail.nextStep,
+                          )
+                        : strings.patients.followUpNoneLeft}
+                    </p>
+                    {last && (
+                      <p className={styles.cardSub}>
+                        {strings.patients.followUpLast(when(last.occurredAt), last.channel, last.outcome)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+
+        {/*
+          RECORDING AN ATTEMPT BELONGS TO THE RECONCILIATION SCREEN, which has
+          the form and the rules around it. A second form here would be a second
+          place for the same rule to be enforced differently.
+        */}
+        <p className={ui.hint}>
+          <Link href="/practice/reconciliation" data-testid="work-to-reconciliation">
+            {strings.patients.followUpToReconciliation}
+          </Link>
+        </p>
+      </Section>
+
+      {/* -------------------------------------------------------------- */}
+      <Section
+        number={5}
+        title={strings.patients.correspondenceTitle}
+        aside={
+          <span className={styles.cardIcon}>
+            <Mail size={16} aria-hidden="true" />
+          </span>
+        }
+      >
+        <p className={ui.hint}>{strings.patients.correspondenceLead}</p>
+
+        {messages !== null && messages.length === 0 && (
+          <p className={ui.hint} data-testid="messages-none">
+            {strings.patients.correspondenceNone}
+          </p>
+        )}
+
+        <ul className={styles.list} data-testid="work-messages">
+          {(messages ?? []).map((message) => (
+            <li key={message.id} className={styles.card} data-testid={`message-${message.id}`}>
+              {/*
+                STATES, NOT BODIES. What a message said belongs on the message
+                log, behind its own control; this card answers "was it sent, and
+                did it arrive".
+              */}
+              <p className={styles.cardSub}>
+                {strings.patients.correspondenceRow(
+                  message.channel ?? '—',
+                  strings.correspondence.states[message.state] ?? message.state,
+                  when(message.sentAt ?? message.queuedAt),
+                )}
+              </p>
+            </li>
+          ))}
+        </ul>
+
+        <p className={ui.hint}>
+          <Link href="/practice/correspondence" data-testid="work-to-correspondence">
+            {strings.patients.correspondenceToLog}
+          </Link>
+        </p>
+      </Section>
+
+      {/* -------------------------------------------------------------- */}
+      <Section
+        number={6}
+        title={strings.patients.historyTitle}
+        collapsible
+        defaultOpen={false}
+        summary={<span className={ui.hint}>{strings.patients.historyLead}</span>}
+        aside={
+          <span className={styles.cardIcon}>
+            <History size={16} aria-hidden="true" />
+          </span>
+        }
+      >
+        <p className={ui.hint}>{strings.patients.historyLead}</p>
+
+        {timeline !== null && timeline.length === 0 && (
+          <p className={ui.hint} data-testid="history-none">
+            {strings.patients.historyNone}
+          </p>
+        )}
+
+        <ul className={styles.list} data-testid="work-history">
+          {(timeline ?? []).map((entry, index) => (
+            <li key={`${entry.at}-${entry.type}-${index}`} className={styles.card}>
+              <p className={styles.cardSub}>
+                {when(entry.at)} · {historyLine(entry)}
+              </p>
+            </li>
+          ))}
+        </ul>
+      </Section>
+    </Shell>
+  );
+}

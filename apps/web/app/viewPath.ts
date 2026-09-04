@@ -38,6 +38,7 @@ const TWINS: readonly string[] = [
   '/reconciliation',
   '/devices',
   '/tablet',
+  '/patients',
 ];
 
 export function toViewPath(href: string, practiceId: string): string {

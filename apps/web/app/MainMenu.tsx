@@ -110,6 +110,13 @@ export function MainMenu() {
         // list of their own practices belongs beside their practice pages, not
         // under a heading about the platform.
         ...(hasPractice ? [{ path: '/practice', label: practiceListLabel }] : []),
+        /*
+         * RECEPTION'S OWN WORK LIST, FIRST AMONG THE PRACTICE'S PAGES (Carl,
+         * 4 Sep 2026). It is the screen somebody is on all morning -- one
+         * patient at a time -- and the rest of this group is set-up and
+         * records, opened occasionally.
+         */
+        { path: '/practice/patients', label: strings.patients.navLabel },
         { path: '/practice/setup', label: strings.nav.setup },
         { path: '/practice/entity', label: strings.nav.entity },
         { path: '/practice/application', label: strings.nav.application },
