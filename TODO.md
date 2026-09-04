@@ -1403,7 +1403,15 @@ device from the console (never a tick-box on the tablet) and renders under a
       the queue, who-is-signing set at the desk BEFORE the push (the
       set-assignor endpoint serves the desk -- this settles TODO's B14 for the
       push path), pick a paired tablet, push, watch the state, recall.
-- [ ] Tablet: a pushed session takes precedence over the walk-up idle screen.
+- [x] Built 4 Sep 2026 (`2988d15`): the pushed ceremony on the tablet --
+      `useTabletSession` polls `GET /kiosk/session`; a session takes over idle;
+      "Please check your details" (K-P1) with a tick per detail, types only
+      sent back; then the existing K-3 -> K-4 -> done; "See reception" posts
+      `walked_away` and changes nothing; recall returns the tablet to idle.
+      Web Vitest 137. Playwright for the push signs in to the console and
+      skips without `E2E_PRACTICE_USER`/`_PASSWORD` -- no dev seam for
+      `POST /devices/:id/push` by design.
+- [ ] (original) Tablet: a pushed session takes precedence over the walk-up idle screen.
       "Please check your details": name, DOB, address, mobile, email, each
       with a tick "This is correct" (a data check, never a verification;
       untickable -> "See reception"); all ticked -> K-3 (type-specific
