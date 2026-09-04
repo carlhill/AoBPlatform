@@ -34,12 +34,22 @@ export function CompleteScreen({
   practiceName,
   locationLine,
   givenName,
+  enduringProviderName,
   sessionId,
   onDone,
 }: {
   practiceName: string;
   locationLine: string | null;
   givenName: string;
+  /**
+   * WHAT IS DIFFERENT ABOUT HAVING SIGNED AN ONGOING AGREEMENT (Carl, 4 Sep
+   * 2026). Passed only for that type, and it carries the PROVIDER'S name
+   * because that is where hard rule 6 would otherwise be quietly broken in the
+   * patient's head: an ongoing agreement is per practitioner x patient and
+   * never practice-wide (REQ-END-01), and "you will not be asked again here"
+   * would say the opposite.
+   */
+  enduringProviderName?: string | null;
   /** The pushed session's own id — an audit/testing aid in the footer. See `Chrome.tsx`'s `Screen`. */
   sessionId?: string | null;
   onDone: () => void;
@@ -68,6 +78,11 @@ export function CompleteScreen({
           {strings.complete.heading(givenName)}
         </h1>
         <p className={styles.lede}>{strings.complete.body}</p>
+        {enduringProviderName ? (
+          <p className={styles.lede} data-testid="complete-enduring">
+            {strings.complete.enduringBody(enduringProviderName)}
+          </p>
+        ) : null}
         <PrimaryButton label={strings.complete.done} onPress={onDone} testId="complete-done" />
         <p className={styles.muted}>{strings.complete.returning(remaining)}</p>
       </div>

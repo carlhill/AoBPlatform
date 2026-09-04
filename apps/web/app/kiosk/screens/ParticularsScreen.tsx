@@ -109,6 +109,7 @@ export function ParticularsScreen({
   validation,
   onContinue,
   onBack,
+  onDeclineEnduring,
   blueprintPanels = false,
   sessionId,
   onSeeReception,
@@ -118,6 +119,20 @@ export function ParticularsScreen({
   view: ParticularsView;
   validation: SignatureValidation;
   onContinue: () => void;
+  /**
+   * "I'D RATHER AGREE EACH VISIT" — the ongoing agreement's quiet second
+   * option (Carl, 4 Sep 2026; GA-PLAN B5).
+   *
+   * DRAWN ONLY WHEN IT IS GIVEN, AND ONLY ON AN ONGOING AGREEMENT, on exactly
+   * the reasoning the Back control follows above: a screen draws a control
+   * when it is handed a handler, and there is no episodic equivalent to
+   * decline — declining "this visit" is what "See reception" already is.
+   *
+   * IT IS NOT A REFUSAL OF BULK BILLING and the copy says so. The patient is
+   * offered an agreement for today's visit instead, and nothing about their
+   * appointment moves (hard rule 8, REQ-REC-04).
+   */
+  onDeclineEnduring?: () => void;
   /**
    * K-5. Navigation, never a mutation — see the module note. OMITTED on a
    * locked agreement, because K-5 was skipped and there is nothing behind it.
@@ -146,6 +161,14 @@ export function ParticularsScreen({
    * in the rail (test device) or under the document (every other tablet), so
    * the two layouts cannot drift into offering different controls.
    */
+  /**
+   * ONE READING OF THE TYPE, USED TWICE. The coverage explanation and the
+   * decline both belong to an ONGOING agreement and to nothing else, and a
+   * component that asked the question twice would eventually answer it
+   * differently in the two places.
+   */
+  const isEnduring = view.agreementType === 'enduring';
+
   const actions = (
     <div className={styles.actions}>
       {onBack ? (
@@ -163,6 +186,18 @@ export function ParticularsScreen({
           testId="continue-to-sign"
         />
       </div>
+      {/*
+        AFTER THE PRIMARY, NEVER BEFORE IT. Signing is what this screen is for;
+        the alternative is real and is offered, and it does not compete for the
+        eye of somebody who already knows what they want.
+      */}
+      {isEnduring && onDeclineEnduring ? (
+        <SecondaryButton
+          label={strings.particulars.enduringDeclineAction}
+          onPress={onDeclineEnduring}
+          testId="decline-enduring"
+        />
+      ) : null}
     </div>
   );
   return (
@@ -214,6 +249,30 @@ export function ParticularsScreen({
               <p className={styles.fieldHint} data-testid="assignor-locked-note">
                 {strings.particulars.assignorLockedNote}
               </p>
+            ) : null}
+            {/*
+              WHAT AN ONGOING AGREEMENT ACTUALLY COVERS (Carl, 4 Sep 2026;
+              REQ-PORT-03's plain-language explanation, at the moment it is
+              being agreed rather than afterwards).
+
+              ABOVE THE CONSENT SENTENCE, because it explains the thing the
+              sentence assigns. Every line is a documented fact -- the scope
+              and its open end (REQ-END-06a), how either party ends it and
+              when that takes effect (REQ-END-06), and that it is with ONE
+              provider and not the practice (REQ-END-01, hard rule 6).
+
+              NO AMOUNT ANYWHERE IN IT (hard rule 4). There is no field here
+              for one and no sentence that implies one.
+            */}
+            {isEnduring ? (
+              <div className={styles.grid} data-testid="enduring-coverage">
+                <span className={styles.docRowLabel}>{strings.particulars.enduringCoverageHeading}</span>
+                {strings.particulars.enduringCoverage.map((line) => (
+                  <p key={line} className={styles.docRowValue}>
+                    {line}
+                  </p>
+                ))}
+              </div>
             ) : null}
             <p className={styles.consent}>{strings.particulars.consentText}</p>
           </div>

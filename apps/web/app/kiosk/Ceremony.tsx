@@ -659,6 +659,41 @@ export function Ceremony(): ReactNode {
   }, [pushed, toHandover]);
 
   /**
+   * "I'D RATHER AGREE EACH VISIT" — the ongoing agreement's second option
+   * (Carl, 4 Sep 2026; GA-PLAN B5).
+   *
+   * IT IS NOT A WALK-AWAY AND IT IS NOT A REFUSAL. The patient did not leave
+   * and did not decline bulk billing; they read a STANDING agreement and said
+   * they would rather be asked each time. So it posts its own state,
+   * `declined_enduring`, which reception's screen turns into one press that
+   * offers an agreement for today's visit instead. Recording it as
+   * `walked_away` would lose exactly the fact reception needs.
+   *
+   * NOTHING ON THE AGREEMENT CHANGES — the same as every other ending on this
+   * tablet. The particulars stay locked, the status does not move, and the
+   * patient is seen and can still be bulk billed today (hard rule 8,
+   * REQ-REC-04); the confirmation screen says so in those words.
+   *
+   * FIRE AND FORGET, like the exit and the timeout. A patient who has answered
+   * must not be made to wait on a request, and a failed one costs nothing: the
+   * session expires on its own and reception can recall it meanwhile.
+   *
+   * NO REASON IS ASKED FOR. There is no field on this screen to type one into
+   * and no parameter on the call to carry one — "why" is a conversation at the
+   * desk, not a form in a waiting room.
+   */
+  const declineEnduring = useCallback(() => {
+    if (!pushed) return;
+    void setTabletSessionState(pushed.id, 'declined_enduring').catch(() => undefined);
+    releasedSessionRef.current = pushed.id;
+    setPushed(null);
+    setAnswers({});
+    setDisputeSent(false);
+    postedAnswersRef.current = '';
+    toHandover(strings.particulars.enduringDeclinedHeading, strings.particulars.enduringDeclinedBody);
+  }, [pushed, toHandover]);
+
+  /**
    * NOBODY HAS TOUCHED THIS TABLET FOR THE PRACTICE'S N MINUTES (Carl, 4
    * September 2026).
    *
@@ -1752,6 +1787,14 @@ export function Ceremony(): ReactNode {
                   ? undefined
                   : () => setStep('assignor')
             }
+            /*
+              THE SECOND OPTION EXISTS ONLY ON A PUSHED ONGOING AGREEMENT. The
+              walk-up kiosk never lists one (its waiting list is `episodic_pre`
+              only), and declining is an act on a SESSION — there is nothing to
+              tell the server about, and nothing for reception to answer, when
+              there is no session.
+            */
+            onDeclineEnduring={pushed ? declineEnduring : undefined}
             blueprintPanels={testDevice}
             sessionId={pushed?.id ?? null}
             onSeeReception={leave}
@@ -1791,6 +1834,16 @@ export function Ceremony(): ReactNode {
             // directly, which is a better source than splitting a display name.
             givenName={
               (pushed?.patient.givenNames ?? row?.patientName ?? '').trim().split(' ')[0] ?? ''
+            }
+            /*
+              ONLY ON AN ONGOING AGREEMENT, and it names the PROVIDER rather
+              than the practice — an ongoing agreement is per practitioner x
+              patient (hard rule 6, REQ-END-01), and the one place a patient
+              would assume otherwise is the sentence telling them they will not
+              be asked again.
+            */
+            enduringProviderName={
+              view.agreementType === 'enduring' ? (view.providerName ?? null) : null
             }
             sessionId={pushed?.id ?? null}
             onDone={reset}

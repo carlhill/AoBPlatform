@@ -3721,7 +3721,42 @@ export const strings = {
       timed_out: 'Timed out',
       recalled: 'recalled',
       expired: 'Ended by the server',
+      /*
+       * NOT "DECLINED" ON ITS OWN, AND NOT "REFUSED" (Carl, 4 Sep 2026). The
+       * patient declined the ONGOING agreement and nothing else -- they have
+       * not refused bulk billing, they have not refused care, and the next
+       * thing to do is offer them today's visit, which is the button beside
+       * this word. A receptionist who reads "declined" alone would reasonably
+       * reach for a private bill.
+       */
+      declined_enduring: 'Declined ongoing — offer today’s visit instead',
     } as Record<string, string>,
+
+    /**
+     * AND THE ONE PRESS THAT ANSWERS IT (Carl, 4 Sep 2026; GA-PLAN B5).
+     *
+     * "Shortcuts to the answer, not directions to a screen" (CLAUDE.md
+     * section 7): the row that says the patient would rather agree each visit
+     * carries the control that makes that happen -- a fresh agreement for
+     * today's visit, for the same provider and patient, sent to the same
+     * tablet they are still standing at.
+     */
+    offerEpisodicAction: 'Create agreement for today’s visit',
+    offerEpisodicBusy: 'Creating…',
+    offerEpisodicLead:
+      'They would rather agree each visit. This creates an agreement for today’s visit with the same '
+      + 'provider and sends it to the same tablet. Their appointment is not affected and they can still be '
+      + 'bulk billed today.',
+    offerEpisodicDone: 'Sent. They can sign for today’s visit now.',
+
+    /**
+     * ONGOING AGREEMENTS ARE NAMED UNDER THEIR PROVIDER, NEVER PRACTICE-WIDE
+     * (hard rule 6, REQ-END-01). The row heading is the one place a
+     * receptionist would otherwise read "this practice", so it says the
+     * provider or says plainly that none is set.
+     */
+    enduringRow: (provider: string) => `Ongoing agreement · ${provider}`,
+    enduringRowNoProvider: 'Ongoing agreement · provider not set',
 
     /*
      * WHAT THE PATIENT SAID IS WRONG (Carl, 4 Sep 2026: "the
@@ -3913,8 +3948,29 @@ export const strings = {
       patient_confidential:
         'This patient’s record is flagged confidential, so nothing about them goes on a waiting-room screen. '
         + 'Take this one on paper or after the service.',
-      enduring_not_supported:
-        'Enduring agreements cannot be sent to a tablet yet. Offer an episodic agreement for this visit.',
+      /**
+       * THE BOUNDARY, IN A RECEPTIONIST'S WORDS AND WITH SOMEWHERE TO GO
+       * (Carl, 4 Sep 2026; GA-PLAN B5 -- it replaces the blanket
+       * `enduring_not_supported`).
+       *
+       * It says WHAT is missing rather than "not supported", because the two
+       * suggest different things to the person reading: one is a feature
+       * nobody built, the other is a rule set waiting to be written, and only
+       * the second explains why the same practice can send episodic
+       * agreements all morning. The link lands on the rule-set versions,
+       * which is where the answer changes.
+       */
+      enduring_rules_not_authored:
+        'Ongoing agreements are not yet enabled — the enduring rule set is awaiting authoring. Send an '
+        + 'agreement for this visit instead.',
+      /** Hard rule 6 / REQ-END-01a: permanent, not pending. */
+      enduring_not_gp:
+        'Ongoing agreements are for general practitioners only. For this provider, send an agreement for '
+        + 'this visit or a Treatment Plan Assignment.',
+      /** Hard rule 6 / REQ-END-01: one provider, one patient, never practice-wide. */
+      enduring_not_per_provider:
+        'An ongoing agreement is between one provider and one patient, and this one names no single '
+        + 'provider. Send an agreement for this visit instead.',
       /** A code this build has not met yet. Shown, never swallowed (Carl, 4 Sep 2026). */
       other: (code: string) => `Could not send (${code}). Please tell support this code.`,
       /** The rarer case of a refusal that carries no code at all — the server's own sentence, as it came. */
@@ -4698,6 +4754,58 @@ export const strings = {
       serverFault:
         'This is not something you can fix, and it is not about your details. Please see reception — your '
         + 'appointment is not affected.',
+      /**
+       * WHAT AN ONGOING AGREEMENT ACTUALLY COVERS, in the words a patient
+       * reads standing at a desk (Carl, 4 Sep 2026; GA-PLAN B5; REQ-PORT-03
+       * "plain-language explanation").
+       *
+       * IT IS ON THE SCREEN BECAUSE THE COMMITMENT IS BIGGER THAN THE VISIT.
+       * An episodic agreement covers today. This one covers every in-scope
+       * service this provider bulk bills from today until somebody ends it
+       * (REQ-END-06a), which is a thing a person should be told plainly before
+       * they sign it rather than after.
+       *
+       * EVERY LINE IS A DOCUMENTED FACT, not reassurance:
+       *  - the scope and its open end — REQ-END-06a;
+       *  - ending it, by either party, in writing, effective two BUSINESS days
+       *    later, and the patient may end it even where somebody else entered
+       *    it for them — REQ-END-06. "Any time" without "two business days"
+       *    would be a promise the regulation does not make;
+       *  - one provider, not the practice — REQ-END-01, hard rule 6. A patient
+       *    who read this as "bulk billed at this clinic" would be wrong in the
+       *    way that costs them money.
+       *
+       * NO BENEFIT AND NO DOLLAR AMOUNT (hard rule 4, REQ-REG-04): "bulk
+       * billed" is what is promised, and there is no figure anywhere near it.
+       * Nothing here calls the form certified or approved (hard rule 12).
+       */
+      enduringCoverageHeading: 'What you are agreeing to',
+      enduringCoverage: [
+        'This covers the bulk-billed services this provider gives you, from today until it is ended. You do '
+          + 'not have to agree again each visit.',
+        'You can end it whenever you like. Tell us in writing and it stops two business days later. The '
+          + 'provider can end it the same way. If someone else agreed to this for you, you can still end it '
+          + 'yourself.',
+        'It is with this one provider. It does not cover other providers here, and it does not cover other '
+          + 'practices.',
+      ] as readonly string[],
+      /**
+       * THE QUIET SECOND OPTION (Carl, 4 Sep 2026). A patient who would rather
+       * be asked each time may say so, and it costs them nothing: reception is
+       * told, and offers an agreement for today's visit instead.
+       *
+       * SECONDARY AND UNDERSTATED, deliberately. It sits beside Continue and
+       * is not styled to compete with it — but it IS on the screen, because a
+       * standing agreement offered with no way to say "not that one" is not
+       * really being offered. It is not a refusal of bulk billing and not a
+       * refusal of care, and the confirmation says so (hard rule 8,
+       * REQ-REC-04).
+       */
+      enduringDeclineAction: 'I’d rather agree each visit',
+      enduringDeclinedHeading: 'No problem — reception will sort this out',
+      enduringDeclinedBody:
+        'You will be asked to agree for each visit instead. Please hand the tablet back — your appointment '
+        + 'is not affected, and you can still be bulk billed today.',
       footer: 'Checked against the s 65C data set',
     },
 
@@ -4726,6 +4834,27 @@ export const strings = {
     complete: {
       heading: (givenName: string) => `Signed. Thank you, ${givenName}.`,
       body: 'Reception has been told you are ready. A copy is on its way to you.',
+      /**
+       * AND WHAT IT MEANS FOR NEXT TIME, on an ONGOING agreement only (Carl,
+       * 4 Sep 2026, wording kept as given).
+       *
+       * It is the one thing that is different about having signed this rather
+       * than an agreement for the visit, and the moment to say it is now. It
+       * names the PROVIDER, because that is the whole of hard rule 6 in the
+       * one place a patient would otherwise assume "this practice": an ongoing
+       * agreement is per practitioner × patient and never practice-wide
+       * (REQ-END-01).
+       *
+       * "UNLESS SOMETHING CHANGES" is deliberately not a list. An ongoing
+       * agreement also ends automatically on events the tablet cannot see —
+       * MyMedicare deregistration or transfer, leaving an ACCHO/AMS, discharge
+       * from residential care, the patient turning 14 (REQ-END-07, 65CA(8)) —
+       * and reciting them at a waiting-room screen would be a page of law
+       * where a sentence belongs. The patient's own page carries the full
+       * explanation (REQ-PORT-03).
+       */
+      enduringBody: (providerName: string) =>
+        `You will not be asked again for ${providerName} at this practice unless something changes.`,
       done: 'Done',
       returning: (seconds: number) => `Returns to the start in ${seconds}s`,
       writeBackQueued: 'Being written back to the practice system',

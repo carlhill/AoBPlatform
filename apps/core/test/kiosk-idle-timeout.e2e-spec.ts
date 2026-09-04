@@ -150,6 +150,56 @@ describe('the kiosk inactivity reset (e2e, real Postgres)', () => {
     expect(again).toHaveLength(1);
   });
 
+  /**
+   * WHICH AGREEMENT THE PRE-STEP OFFERS FIRST (Carl, 4 Sep 2026; GA-PLAN B6).
+   * The same surface, the same whole-form save, and the same treatment of a
+   * setting that changes what patients are asked: evidenced when it moves,
+   * silent when it does not.
+   */
+  it('enduring_by_default_is_a_practice_setting_and_its_change_is_evidenced', async () => {
+    /*
+     * TRUE WITHOUT ANYBODY SETTING IT. For a GP practice the strongest answer
+     * at the desk is an ongoing agreement -- sign once, nothing post-service
+     * ever -- so that is the default. It is a DEFAULT rather than a
+     * permission: enduring stays GP-only and per practitioner x patient
+     * however this is set (hard rule 6, REQ-END-01/-01a).
+     */
+    const before = await http().get(`/practices/${practiceId}`).set('x-practice-id', practiceId).expect(200);
+    expect(before.body.enduringByDefault).toBe(true);
+
+    currentPrincipal = { ...ADMIN, practiceId };
+    const saved = await http()
+      .patch(`/practices/${practiceId}/config`)
+      .set('x-practice-id', practiceId)
+      .send({ enduringByDefault: false })
+      .expect(200);
+    expect(saved.body.enduringByDefault).toBe(false);
+
+    const events = await prisma.vaultOutbox.findMany({
+      where: { subjectId: practiceId, type: 'practice.enduring_by_default_set' },
+    });
+    expect(events).toHaveLength(1);
+    const payload = events[0].payload as Record<string, unknown>;
+    expect(payload.enduringByDefault).toBe(false);
+    expect(payload.previous).toBe(true);
+    // A boolean and a name. No patient, no identifier value, no amount.
+    expect(JSON.stringify(payload)).not.toMatch(/medicare|date_of_birth|\$\s?\d/i);
+
+    // SAVING THE SAME ANSWER AGAIN WRITES NOTHING -- a whole-form save must
+    // not make the trail say somebody changed this on the morning they
+    // changed something else.
+    await http()
+      .patch(`/practices/${practiceId}/config`)
+      .set('x-practice-id', practiceId)
+      .send({ enduringByDefault: false, linkExpiryHours: 24 })
+      .expect(200);
+    currentPrincipal = null;
+    const again = await prisma.vaultOutbox.findMany({
+      where: { subjectId: practiceId, type: 'practice.enduring_by_default_set' },
+    });
+    expect(again).toHaveLength(1);
+  });
+
   it('idle_timeout_is_bounded', async () => {
     currentPrincipal = { ...ADMIN, practiceId };
     for (const refused of [0, 1, 30, KIOSK_IDLE_TIMEOUT_MIN_SECONDS - 1, KIOSK_IDLE_TIMEOUT_MAX_SECONDS + 1, 86_400]) {

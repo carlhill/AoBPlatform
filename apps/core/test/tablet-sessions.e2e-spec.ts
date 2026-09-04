@@ -442,11 +442,19 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
       expect(after!.particularsLockedAt).toBeNull();
     });
 
-    it('refuses an enduring agreement, and says why — the s 65C rule set has no enduring path', async () => {
+    it('refuses an enduring agreement while the rule set has no enduring branch', async () => {
+      /*
+       * THE REFUSAL MOVED FROM BLANKET TO SPECIFIC (Carl, 4 Sep 2026; GA-PLAN
+       * B5). The push now checks what is permanent -- GP-only and one provider
+       * x one patient (hard rule 6) -- and then ASKS the rule set. This
+       * suite's stub answers with C-rule verdicts and nothing about reg 65CB,
+       * exactly as the registered draft set does, so silence is not a pass and
+       * the refusal names what is actually missing.
+       */
       const agreementId = await draft({ type: 'enduring' });
 
       const res = await pushTo(tabletA, agreementId).expect(409);
-      expect(res.body.reason).toBe('enduring_not_supported');
+      expect(res.body.reason).toBe('enduring_rules_not_authored');
 
       const after = await prisma.withPractice(practiceA, (tx) =>
         tx.agreement.findFirst({ where: { id: agreementId } }),
@@ -918,7 +926,10 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
         pushable: false,
         blockedReason: 'service_description_missing',
       });
-      expect(find(enduring)).toMatchObject({ pushable: false, blockedReason: 'enduring_not_supported' });
+      expect(find(enduring)).toMatchObject({
+        pushable: false,
+        blockedReason: 'enduring_rules_not_authored',
+      });
       // Blocked rows are LISTED rather than hidden — reception must be able to
       // see who needs fixing (TODO.md, 4 Sep 2026).
       expect(rows.length).toBeGreaterThanOrEqual(3);

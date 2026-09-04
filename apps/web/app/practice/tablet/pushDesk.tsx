@@ -315,15 +315,34 @@ export function describeRefusal(
         text: strings.tablet.blocked.device_not_paired,
         link: { href: '/practice/devices', label: strings.tablet.toDevices },
       };
-    case 'enduring_not_supported': {
-      const nonGp = ctx.providerType != null && ctx.providerType !== 'general_practitioner';
+    /*
+     * THREE ENDURING REFUSALS NOW, AND THE DIFFERENCE MATTERS TO THE PERSON
+     * READING (Carl, 4 Sep 2026; GA-PLAN B5 -- they replace the single
+     * `enduring_not_supported`).
+     *
+     * `enduring_rules_not_authored` is PENDING: the platform is waiting on the
+     * s 65C rule set's enduring branch, which is human-authored (CLAUDE.md
+     * section 7). It will change.
+     *
+     * `enduring_not_gp` and `enduring_not_per_provider` are PERMANENT (hard
+     * rule 6, REQ-END-01/-01a). Nothing is coming that will make an ongoing
+     * agreement available for a specialist, and telling somebody to wait for
+     * it would be sending them to wait for something that will never arrive.
+     *
+     * ALL THREE SAY WHAT TO DO INSTEAD, in the same breath. None of them
+     * carries a link: there is no rule-set screen in this console to point at
+     * yet, and a link that 404s is worse than none (the reasoning
+     * `patient_confidential` used to carry).
+     */
+    case 'enduring_rules_not_authored':
+      return { reason, text: strings.tablet.blocked.enduring_rules_not_authored };
+    case 'enduring_not_gp':
       return {
         reason,
-        text: nonGp
-          ? `${strings.tablet.blocked.enduring_not_supported} ${strings.tablet.enduringOfferOther}`
-          : strings.tablet.blocked.enduring_not_supported,
+        text: `${strings.tablet.blocked.enduring_not_gp} ${strings.tablet.enduringOfferOther}`,
       };
-    }
+    case 'enduring_not_per_provider':
+      return { reason, text: strings.tablet.blocked.enduring_not_per_provider };
     case 'who_is_signing_unset':
       return { reason, text: strings.tablet.blocked.who_is_signing_unset };
     case 'patient_confidential':
@@ -614,6 +633,12 @@ export interface PushDesk {
   free: DeviceRow[];
   load: () => Promise<unknown>;
   recall: (sessionId: string) => Promise<void>;
+  /**
+   * THE PATIENT WOULD RATHER AGREE EACH VISIT — so offer them this one (Carl,
+   * 4 Sep 2026; GA-PLAN B5). One press: a fresh agreement for today's visit
+   * with the same provider and patient, sent to the same tablet.
+   */
+  offerEpisodic: (sessionId: string) => Promise<void>;
   send: (row: PushableRow) => Promise<void>;
   sendAgain: (ended: TabletSessionRow) => Promise<void>;
   resend: (session: TabletSessionRow) => Promise<void>;
@@ -1264,6 +1289,45 @@ export function usePushDesk(practiceId: string): PushDesk {
     }
   }
 
+  /**
+   * THE ONE PRESS THAT ANSWERS A DECLINED ONGOING AGREEMENT (Carl, 4 Sep
+   * 2026). It is the SERVER'S act end to end — create the draft, carry the
+   * description of the service, push it — because every part of that is
+   * evidence and none of it may be assembled by a screen.
+   *
+   * IT REFUSES THE SAME WAY THE PUSH DOES, and lands in the same outcome band
+   * on the same row, so a description that is not set or a tablet somebody
+   * else grabbed reads exactly as it does on every other send.
+   */
+  async function offerEpisodic(sessionId: string) {
+    setBusyId(sessionId);
+    setPushOutcome(null);
+    try {
+      const res = await fetch(`${CORE_URL}/tablet-sessions/${sessionId}/offer-episodic`, {
+        method: 'POST',
+        headers: apiHeaders(practiceId),
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) {
+        const info = await refusal(res);
+        setPushOutcome({ id: sessionId, ok: false, text: info.message, info: describeRefusal(info.reason, {
+          rawMessage: info.message,
+        }) });
+        return;
+      }
+      setPushOutcome({ id: sessionId, ok: true, text: strings.tablet.offerEpisodicDone });
+      await load();
+    } catch (e) {
+      setPushOutcome({
+        id: sessionId,
+        ok: false,
+        text: e instanceof TypeError ? strings.status.unreachable : (e as Error).message,
+      });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   /** Recalled by SESSION ID, so both the tablet card's own button and a
    *  `device_busy` refusal's inline Recall (which knows only the id) can
    *  call the same function. */
@@ -1324,6 +1388,7 @@ export function usePushDesk(practiceId: string): PushDesk {
     free,
     load,
     recall,
+    offerEpisodic,
     send,
     sendAgain,
     resend,
@@ -1459,7 +1524,20 @@ export function AgreementRow({
       <div className={rowStyles.identity}>
         {showPatientName && <strong>{row.patientName}</strong>}
         {heading && <strong data-testid={`agreement-heading-${row.agreementId}`}>{heading}</strong>}
-        <div className={ui.hint}>{[row.providerName, whenLabel(row)].filter(Boolean).join(' · ')}</div>
+        {/*
+          AN ONGOING AGREEMENT IS NAMED UNDER ITS PROVIDER (hard rule 6,
+          REQ-END-01): "Ongoing agreement · Dr Example Provider", never
+          anything that reads as practice-wide. And no appointment time,
+          because a standing agreement is not about a booking -- printing
+          "9:00" beside it would say the opposite of what it is.
+        */}
+        <div className={ui.hint} data-testid={`row-line-${row.agreementId}`}>
+          {row.agreementType === 'enduring'
+            ? row.providerName
+              ? strings.tablet.enduringRow(row.providerName)
+              : strings.tablet.enduringRowNoProvider
+            : [row.providerName, whenLabel(row)].filter(Boolean).join(' · ')}
+        </div>
         {live && (
           <Chip tone={STATE_TONE[live.state] ?? 'neutral'}>
             {strings.tablet.onTabletNow(live.deviceLabel)} ·{' '}
@@ -1947,6 +2025,19 @@ export function CorrectionPanel({ desk, subject }: { desk: PushDesk; subject: Co
  */
 export function SendAgain({ desk, ended }: { desk: PushDesk; ended: TabletSessionRow }) {
   /*
+   * A DECLINED ONGOING AGREEMENT IS NOT A SEND-AGAIN (Carl, 4 Sep 2026;
+   * GA-PLAN B5). The patient read that agreement and said they would rather be
+   * asked each visit; handing them the same one back is the one thing they
+   * have already answered. The right next act is a different agreement -- for
+   * today's visit -- so this row carries THAT control instead.
+   *
+   * IT LIVES IN THIS SHARED COMPONENT, not on either page, so the tablet page
+   * and the patient work page cannot come to offer different answers to the
+   * same row (the reason every other control here is shared).
+   */
+  if (ended.state === 'declined_enduring') return <OfferEpisodic desk={desk} ended={ended} />;
+
+  /*
    * WHETHER IT COULD ACTUALLY GO, read from the list this page already polls —
    * dead until valid (CLAUDE.md §6). An agreement no longer on the pushable
    * list has moved on: signed, superseded, or captured another way, which is
@@ -2000,6 +2091,43 @@ export function SendAgain({ desk, ended }: { desk: PushDesk; ended: TabletSessio
           />
         </Notice>
       )}
+    </>
+  );
+}
+
+/**
+ * "CREATE AGREEMENT FOR TODAY'S VISIT" — reception's one press after a patient
+ * declines an ongoing agreement (Carl, 4 Sep 2026; GA-PLAN B5).
+ *
+ * SHORTCUTS TO THE ANSWER, NOT DIRECTIONS TO A SCREEN (CLAUDE.md section 7).
+ * The row already says what happened; without this it would also have to say
+ * "now go and make a different agreement somewhere else", which is the failure
+ * that principle is named after. The server does the whole act -- draft, the
+ * description of the service, push -- and refuses in exactly the same
+ * vocabulary as every other send, so a description that is not set lands in
+ * the band below with the inline fix reception already knows.
+ *
+ * NOTHING HERE BLOCKS CARE. If it cannot go, the draft is still on the list
+ * with its reason on it and the patient is seen either way (hard rule 8,
+ * REQ-REC-04).
+ */
+export function OfferEpisodic({ desk, ended }: { desk: PushDesk; ended: TabletSessionRow }) {
+  return (
+    <>
+      <p className={ui.hint}>{strings.tablet.offerEpisodicLead}</p>
+      <div className={styles.cardActions}>
+        <Button
+          variant="primary"
+          disabled={!desk.canSend || desk.busyId !== null}
+          onClick={() => void desk.offerEpisodic(ended.id)}
+          data-testid={`offer-episodic-${ended.id}`}
+        >
+          <Send size={14} aria-hidden="true" />
+          {desk.busyId === ended.id
+            ? strings.tablet.offerEpisodicBusy
+            : strings.tablet.offerEpisodicAction}
+        </Button>
+      </div>
     </>
   );
 }

@@ -159,6 +159,30 @@ const ENDED: TabletSessionRow = {
   endedAt: '2026-09-04T09:20:00.000Z',
 };
 
+/**
+ * THE PATIENT READ THE ONGOING AGREEMENT AND SAID THEY WOULD RATHER AGREE EACH
+ * VISIT (Carl, 4 Sep 2026; GA-PLAN B5). An ENDING like the others -- nothing
+ * on the agreement moved -- with its own word, because reception's next act
+ * depends on knowing the difference between this and a walk-away.
+ */
+const DECLINED: TabletSessionRow = {
+  ...SESSION,
+  id: '8ff09d7b-3333-4000-8000-000000000003',
+  agreementId: 'agreement-enduring',
+  agreementType: 'enduring',
+  state: 'declined_enduring',
+  endedAt: '2026-09-04T09:22:00.000Z',
+};
+
+/** The enduring row itself, for the heading assertions. */
+const ENDURING_ROW = {
+  ...READY,
+  agreementId: 'agreement-enduring',
+  agreementType: 'enduring',
+  serviceDescription: null,
+  serviceDescriptionValid: false,
+};
+
 const TABLET_TWO: DeviceRow = { ...TABLET, id: 'device-2', label: 'Reception tablet 2' };
 
 /** The SERVER giving up after thirty minutes, on a different tablet. */
@@ -953,6 +977,66 @@ describe('the reception-push loop -- set, resolve, send again', () => {
     expect(push.body).toEqual({ agreementId: ENDED.agreementId });
   });
 
+  it('declining_enduring_offers_episodic_for_the_visit', async () => {
+    signedInAtPractice();
+    stubFetch({ sessions: [DECLINED], rows: [] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    /*
+     * THE ROW SAYS WHAT HAPPENED IN WORDS A RECEPTIONIST CAN ACT ON, and not
+     * "declined" on its own -- the patient has refused neither bulk billing
+     * nor care, and the next thing to do is beside the sentence.
+     */
+    const last = await screen.findByTestId(`tablet-last-${TABLET.id}`);
+    expect(last.textContent).toContain(strings.tablet.states.declined_enduring);
+
+    /*
+     * AND IT IS NOT "SEND AGAIN". Handing the patient back the ongoing
+     * agreement they have just answered is the one offer they have already
+     * declined; the control on this row is a DIFFERENT agreement.
+     */
+    expect(screen.queryByTestId(`send-again-${DECLINED.id}`)).toBeNull();
+
+    const offer = (await screen.findByTestId(`offer-episodic-${DECLINED.id}`)) as HTMLButtonElement;
+    expect(offer.disabled).toBe(false);
+    expect(offer.textContent).toContain(strings.tablet.offerEpisodicAction);
+
+    fireEvent.click(offer);
+
+    /*
+     * ONE PRESS, ONE SERVER ACT. The draft, the description of the service and
+     * the push are all the server's -- a screen that assembled an agreement
+     * would be a screen asserting a contract.
+     */
+    await waitFor(() =>
+      expect(calls.some((c) => c.method === 'POST' && c.url.includes('/offer-episodic'))).toBe(true),
+    );
+    const offered = calls.find((c) => c.url.includes('/offer-episodic'))!;
+    expect(offered.url).toContain(`/tablet-sessions/${DECLINED.id}/offer-episodic`);
+    // NOT a push composed here, and not a draft composed here.
+    expect(calls.some((c) => c.method === 'POST' && c.url.includes('/devices/'))).toBe(false);
+    expect(JSON.stringify(offered.body ?? {})).not.toContain('Jamie');
+  });
+
+  it('enduring_is_per_provider_and_patient_never_per_practice', async () => {
+    signedInAtPractice();
+    stubFetch({ rows: [ENDURING_ROW] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    /*
+     * THE ROW NAMES THE PROVIDER (hard rule 6, REQ-END-01). This is the one
+     * line where a receptionist would otherwise read an ongoing agreement as
+     * something the PRACTICE has with the patient, which is the rule broken in
+     * the one place somebody would believe it.
+     */
+    const line = await screen.findByTestId(`row-line-${ENDURING_ROW.agreementId}`);
+    expect(line.textContent).toBe(strings.tablet.enduringRow('Dr Example Provider'));
+    expect(line.textContent).toContain('Dr Example Provider');
+    expect(line.textContent).not.toMatch(/practice|clinic/i);
+    // And no appointment time: a standing agreement is not about a booking.
+    expect(line.textContent).not.toContain('09:00');
+  });
+
   it('a send-again whose agreement has moved on is dead, and says why', async () => {
     signedInAtPractice();
     // The pushable list no longer holds it -- signed, superseded, or captured
@@ -1130,7 +1214,12 @@ describe('the gate on who may sign — the same refusals the server makes', () =
 
 describe('the refusal words', () => {
   it('renders every reason the server can send, and falls back rather than going silent', () => {
-    expect(blockedMessage('enduring_not_supported')).toBe(strings.tablet.blocked.enduring_not_supported);
+    expect(blockedMessage('enduring_rules_not_authored')).toBe(
+      strings.tablet.blocked.enduring_rules_not_authored,
+    );
+    expect(blockedMessage('enduring_not_per_provider')).toBe(
+      strings.tablet.blocked.enduring_not_per_provider,
+    );
     expect(blockedMessage('who_is_signing_unset')).toBe(strings.tablet.blocked.who_is_signing_unset);
     // A reason this build has not met yet still shows its own CODE — never
     // swallowed into a sentence that sends somebody looking for a screen
@@ -1157,7 +1246,14 @@ describe('the refusal words', () => {
       strings.tablet.blocked.service_description_missing,
       strings.tablet.blocked.who_is_signing_unset,
       strings.tablet.blocked.patient_confidential,
-      strings.tablet.blocked.enduring_not_supported,
+      strings.tablet.blocked.enduring_rules_not_authored,
+      strings.tablet.blocked.enduring_not_gp,
+      strings.tablet.blocked.enduring_not_per_provider,
+      strings.tablet.offerEpisodicAction,
+      strings.tablet.offerEpisodicLead,
+      strings.tablet.offerEpisodicDone,
+      strings.tablet.enduringRow('Dr Example Provider'),
+      strings.tablet.enduringRowNoProvider,
       strings.tablet.blocked.other('some_code'),
       strings.tablet.blocked.otherNoCode,
       strings.tablet.enduringOfferOther,
