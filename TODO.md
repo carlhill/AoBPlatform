@@ -1414,6 +1414,39 @@ column goes.
       on the people screen (or username `admin.<practice-id-prefix>`); say so
       where the account is described.
 
+## The administrator audience was unreachable: no console_role claim existed
+
+Found 4 Sep 2026. `audiencesOf` grants `practice_admin` only when the token
+carries `console_role = admin`; the realm had mappers for `practice_id`,
+`practitioner_id` and `principal_type` and NONE for `console_role`, and no
+code ever set that attribute on a Keycloak user. So `/practice/users` and
+`/practice/devices` have never been reachable by a signed-in administrator --
+only through the platform's view-only twin. Fixed on the running realm (and in
+`realm-export.json`) by adding a `console-role` attribute mapper to the `web`
+and `console` clients and setting `console_role=admin` on XLEVELUP's
+administrator account.
+
+- [ ] Core must write `console_role` to the Keycloak user whenever a staff
+      row's `consoleRole` is set or changed, and backfill existing admins; a
+      named test `admin_token_carries_console_role`.
+- [ ] Declare `console_role` in the declarative user-profile config in
+      `transform-realm.mjs` (unmanaged attributes are disabled there -- see the
+      21 Aug note about `practice_id` vanishing) so the attribute cannot be
+      silently dropped.
+- [ ] `npm run validate:realm` should assert every claim `audiencesOf` reads
+      has a mapper.
+
+## Tablets: make one inactive from the send-to-tablet page (Carl, 4 Sep 2026)
+
+- [ ] On `/practice/tablet`, reception needs to take a tablet OUT OF USE
+      (flat battery, gone for repair, wrong desk) without being the
+      administrator. Distinguish: **inactive** (reception; no pushes go to it,
+      its session is recalled, it shows "This tablet is out of use -- please
+      see reception", reversible from the same page) from **revoke** (admin
+      only, on `/practice/devices`; the credential dies). Device state gains
+      `inactive`; the kiosk's poll shows the out-of-use screen; a vault event
+      either way.
+
 ## Nothing on the patient surface is ever staff entry
 
 Carl, 3 Sep 2026, on seeing K-3 ask for a "Basic description of the service --
