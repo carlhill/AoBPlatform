@@ -21,10 +21,16 @@ import {
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import type { Actor } from '../auth/actor.decorator';
 import { PrismaService } from '../prisma/prisma.service';
-import { AgreementsService, type PreparedLock } from '../agreements/agreements.service';
+import {
+  AgreementsService,
+  EnduringRulesNotAuthoredError,
+  type PreparedLock,
+} from '../agreements/agreements.service';
+import type { LockParticularsDto } from '../agreements/agreements.dto';
 import { CaptureService } from '../capture/capture.service';
 import { VerificationService } from '../verification/verification.service';
 import { DevicesService, type ResolvedDevice } from '../devices/devices.service';
+import { ServiceDescriptionsService } from '../service-descriptions/service-descriptions.service';
 import { pushRefusals } from './push-refusal';
 import type { DisputeResolutionOutcome } from './dispute-resolution.dto';
 
@@ -128,6 +134,13 @@ export class TabletSessionsService {
     private readonly capture: CaptureService,
     private readonly verification: VerificationService,
     private readonly devices: DevicesService,
+    /**
+     * D6a IS THE SERVICE-DESCRIPTIONS MODULE'S WRITE, not this one's — the
+     * same rule every other cross-module write here follows. Used only by
+     * `offerEpisodicAfterDecline`, to carry the description onto the draft it
+     * creates.
+     */
+    private readonly serviceDescriptions: ServiceDescriptionsService,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -187,9 +200,21 @@ export class TabletSessionsService {
      * re-push records a FRESH staff-verified event (reception has the person
      * in front of them again) and touches nothing else about the contract.
      */
+    /*
+     * THE ENDURING BOUNDARY IS INSIDE THE LOCK, so this is where it surfaces
+     * (Carl, 4 Sep 2026; GA-PLAN B5). `prepareLock` asks the rule set about
+     * the enduring content set and throws when it gets silence back; the push
+     * turns that into its own CODE, which the console renders in a
+     * receptionist's words with somewhere to go.
+     *
+     * A RE-PUSH NEVER REACHES IT, and correctly: an agreement that is already
+     * locked was validated by a rule set that DID answer, so handing the same
+     * patient the tablet again is not the moment to re-litigate it (HARD-02 —
+     * a locked agreement is corrected by superseding, never by editing).
+     */
     const prepared: PreparedLock | null = context.agreement.particularsLockedAt
       ? null
-      : await this.agreements.prepareLock(
+      : await this.prepareLockOrRefuse(
           practiceId,
           agreementId,
           {
@@ -403,6 +428,125 @@ export class TabletSessionsService {
   }
 
   /**
+   * THE PATIENT DECLINED THE ONGOING AGREEMENT — SO OFFER THEM TODAY'S VISIT
+   * (Carl, 4 Sep 2026; GA-PLAN B5).
+   *
+   * ONE PRESS AT THE DESK, and it is the whole of reception's reply to a
+   * decline: a fresh `episodic_pre` draft for the SAME patient, the SAME
+   * provider and the same description of the service, pushed to the same
+   * tablet the patient is still standing at. Without it the receptionist would
+   * have to leave this screen, find the patient somewhere else and build a
+   * draft by hand, which is the "directions to a screen" failure the design
+   * principle names (CLAUDE.md §7).
+   *
+   * IT IS A NEW AGREEMENT AND NOT A CONVERSION, and it could not be anything
+   * else. The declined one is an ENDURING agreement — a standing commitment
+   * under reg 65CB — and the new one is an episodic pre-agreement for one
+   * service under s 65C(4). They have different content sets and, in a moment,
+   * different rendered artefacts; turning one into the other by changing a
+   * column would produce an agreement whose type does not match its own
+   * evidence.
+   *
+   * THE DECLINED AGREEMENT IS NOT TOUCHED. It was never signed, nothing was
+   * locked against it that this can change, and a decline is not a deletion —
+   * it is a fact somebody may be asked about later. Its capture request closed
+   * with its session.
+   *
+   * D6a IS COPIED WHERE THERE IS ONE AND OTHERWISE LEFT UNSET, deliberately.
+   * An enduring agreement has no basic service description (that is a
+   * pre-agreement element, REQ-REG-01 D6a), so in practice the source is the
+   * practice's own default. Where there is neither, the new draft arrives
+   * without D6a and the push refuses with `service_description_missing` — a
+   * refusal the console already fixes INLINE on the row. Guessing a
+   * description would put a word the practice never chose onto a contract.
+   *
+   * NOTHING HERE BLOCKS CARE. If the push cannot go — the tablet was taken,
+   * the description is unset — the draft still exists on reception's list with
+   * its reason on it, and the patient is seen either way (hard rule 8,
+   * REQ-REC-04).
+   */
+  async offerEpisodicAfterDecline(
+    practiceId: string,
+    sessionId: string,
+    actor: Actor | undefined,
+  ): Promise<TabletSessionRow & { agreementId: string }> {
+    if (!actor) throw pushRefusals.noActor();
+
+    const found = await this.prisma.withPractice(practiceId, async (tx) => {
+      const session = await tx.tabletSession.findFirst({ where: { id: sessionId } });
+      if (!session) return null;
+      const agreement = await tx.agreement.findFirst({ where: { id: session.agreementId } });
+      if (!agreement) return null;
+      const practice = await tx.practice.findFirst({});
+      return { session, agreement, practiceDefaultD6a: practice?.defaultServiceDescription ?? null };
+    });
+    if (!found) throw new NotFoundException('That tablet session was not found.');
+    const { session, agreement, practiceDefaultD6a } = found;
+
+    /*
+     * ONLY A DECLINE HAS THIS REPLY. A session that ended some other way — the
+     * patient walked away, the clock ran out, reception recalled it — is not a
+     * decline, and offering "instead of the ongoing agreement" against it
+     * would put a sentence in the record about a conversation that never
+     * happened. The ordinary Send on the row is the right control there.
+     */
+    if (session.state !== 'declined_enduring') {
+      throw new ConflictException(
+        'This offer replaces an ongoing agreement the patient declined. That session ended some other way, ' +
+          'so use the ordinary Send on the row instead.',
+      );
+    }
+    if (agreement.type !== 'enduring') {
+      throw new ConflictException('Only an ongoing agreement can be declined in favour of one for the visit.');
+    }
+    if (agreement.anchorKind !== 'provider' || !agreement.providerId) {
+      throw pushRefusals.enduringNotPerProvider();
+    }
+    // Held once, after the guard: the same provider carries onto the new
+    // agreement and onto its event (HARD-01 — a replacement offer is the SAME
+    // provider seeing the SAME patient; a different one would need its own
+    // consent).
+    const providerId = agreement.providerId;
+
+    // The agreements module owns its own table: the draft is created through
+    // its API, which re-asserts the anchor and D7 rules and writes its own
+    // `agreement.created` event.
+    const replacement = await this.agreements.createDraft(practiceId, {
+      type: 'episodic_pre',
+      providerId,
+      patientId: agreement.patientId,
+      assignorId: agreement.assignorId,
+      assignorIsPatient: agreement.assignorIsPatient,
+    });
+
+    const d6a = agreement.serviceDescription ?? practiceDefaultD6a;
+    if (d6a && isServiceDescription(d6a)) {
+      await this.serviceDescriptions.setFor(practiceId, replacement.id, d6a, actor);
+    }
+
+    await this.prisma.withPractice(practiceId, (tx) =>
+      enqueueVaultEvent(tx, {
+        type: 'tablet.episodic_offered_after_decline',
+        actor: { principalType: 'staff', id: actor.id },
+        subject: { type: 'Agreement', id: replacement.id },
+        // Ids and types. No patient, no identifier value, no amount.
+        payload: {
+          declinedSessionId: session.id,
+          declinedAgreementId: agreement.id,
+          offeredAgreementId: replacement.id,
+          offeredType: 'episodic_pre',
+          providerId,
+          serviceDescriptionCarried: Boolean(d6a && isServiceDescription(d6a)),
+          offeredBy: actor.name,
+        },
+      }),
+    );
+
+    const row = await this.push(practiceId, session.deviceId, replacement.id, actor);
+    return { ...row, agreementId: replacement.id };
+  }
+
+  /**
    * HOW THE DISPUTE ENDED — the other half of the cross (Carl, 4 Sep 2026).
    *
    * WHY THE RECORD NEEDS THIS AT ALL. `tablet.details_disputed` says that at a
@@ -576,6 +720,36 @@ export class TabletSessionsService {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
+    const rows = await this.readPushableRows(practiceId, startOfDay);
+
+    /*
+     * AND THEN THE ONE QUESTION THE ROWS CANNOT ANSWER THEMSELVES: has the
+     * rule set's enduring branch been authored? (Carl, 4 Sep 2026; GA-PLAN B5.)
+     *
+     * ASKED ONCE PER LIST, NOT ONCE PER ROW, and OUTSIDE the transaction —
+     * holding a database transaction across a network call is how a slow
+     * dependency becomes a locked table, which is the same judgement
+     * `prepareLock` makes about the rules service and the renderer.
+     *
+     * ASKED ONLY WHERE IT MATTERS. A practice with no enduring drafts on
+     * screen never calls the rules service at all, and a row already blocked
+     * for a permanent reason (not a GP, no single provider) keeps that reason:
+     * telling somebody the rules are pending, when the real answer is that
+     * this provider has no enduring pathway at all, would send them to wait
+     * for something that will not help them.
+     */
+    const undecided = rows.filter((row) => row.agreementType === 'enduring' && row.pushable);
+    if (undecided.length === 0) return rows;
+    if (await this.agreements.enduringRulesAuthored()) return rows;
+    for (const row of undecided) {
+      row.pushable = false;
+      row.blockedReason = 'enduring_rules_not_authored';
+    }
+    return rows;
+  }
+
+  /** The rows themselves — one transaction, no network calls. See `pushable`. */
+  private async readPushableRows(practiceId: string, startOfDay: Date): Promise<PushableRow[]> {
     return this.prisma.withPractice(practiceId, async (tx) => {
       const candidates = await tx.agreement.findMany({
         where: { status: { in: [...PUSHABLE_STATUSES] }, signatureEventId: null },
@@ -646,6 +820,7 @@ export class TabletSessionsService {
           agreement,
           assignorName: assignor?.name ?? null,
           confidential: patient.confidentialityFlag,
+          providerType: provider?.providerType ?? null,
         });
 
         // The same D6a read `lockParticulars` does, and the same one
@@ -990,9 +1165,9 @@ export class TabletSessionsService {
   async setState(
     device: ResolvedDevice,
     sessionId: string,
-    state: 'reading' | 'walked_away' | 'timed_out',
+    state: 'reading' | 'walked_away' | 'timed_out' | 'declined_enduring',
   ): Promise<{ id: string; state: TabletSessionState }> {
-    if (state === 'walked_away' || state === 'timed_out') {
+    if (state === 'walked_away' || state === 'timed_out' || state === 'declined_enduring') {
       const ended = await this.end(device.practiceId, sessionId, state, {
         principalType: 'device',
         id: device.deviceId,
@@ -1100,7 +1275,7 @@ export class TabletSessionsService {
   private async end(
     practiceId: string,
     sessionId: string,
-    to: 'walked_away' | 'timed_out' | 'recalled',
+    to: 'walked_away' | 'timed_out' | 'recalled' | 'declined_enduring',
     actor: { principalType: string; id: string },
     deviceId?: string,
   ): Promise<TabletSession> {
@@ -1137,6 +1312,37 @@ export class TabletSessionsService {
           agreementChanged: false,
         },
       });
+      /*
+       * AND THE DECLINE GETS ITS OWN EVENT, IN THE SAME TRANSACTION (Carl,
+       * 4 Sep 2026).
+       *
+       * `tablet.session_ended` says a screen finished and names the word it
+       * finished on. That is not enough for this one: "the patient read a
+       * standing agreement and said they would rather agree each visit" is a
+       * fact about the AGREEMENT OFFER, and the next thing that happens —
+       * reception offering an episodic agreement for the visit — is a reply to
+       * it. Two events, one transaction, so neither can exist without the
+       * other (hard rule 11).
+       *
+       * NOTHING ON THE AGREEMENT MOVED and the payload says so, for the same
+       * reason the walk-away event does: declining an ongoing agreement
+       * declines neither bulk billing nor care (hard rule 8, REQ-REC-04).
+       */
+      if (to === 'declined_enduring') {
+        await enqueueVaultEvent(tx, {
+          type: 'tablet.enduring_declined',
+          actor,
+          subject: { type: 'TabletSession', id: session.id },
+          payload: {
+            agreementId: session.agreementId,
+            agreementType: 'enduring',
+            agreementChanged: false,
+            // No reason is asked for and none is recorded. The tablet has one
+            // quiet secondary action and no field to type into.
+            offeredInstead: 'episodic_pre',
+          },
+        });
+      }
       return ended;
     });
   }
@@ -1164,6 +1370,13 @@ export class TabletSessionsService {
         confidential: patient?.confidentialityFlag ?? false,
         assignorName: assignor?.name ?? null,
         providerName: provider?.name ?? null,
+        /*
+         * THE DISCIPLINE, BECAUSE ENDURING IS GP-ONLY (hard rule 6,
+         * REQ-END-01a). Read here rather than inferred anywhere later, and
+         * `null` where no provider row was found — which the GP check treats
+         * as "not a GP", never as "probably fine".
+         */
+        providerType: provider?.providerType ?? null,
         appointmentDate: appointment ? appointment.date.toISOString().slice(0, 10) : null,
       };
     });
@@ -1175,12 +1388,17 @@ export class TabletSessionsService {
     agreement: DbAgreement;
     assignorName: string | null;
     confidential: boolean;
+    providerType: string | null;
   }): void {
     const reason = this.blockingReason(context);
     if (!reason) return;
     switch (reason) {
-      case 'enduring_not_supported':
-        throw pushRefusals.enduringNotSupported();
+      case 'enduring_not_gp':
+        throw pushRefusals.enduringNotGp(context.providerType);
+      case 'enduring_not_per_provider':
+        throw pushRefusals.enduringNotPerProvider();
+      case 'enduring_rules_not_authored':
+        throw pushRefusals.enduringRulesNotAuthored();
       case 'agreement_not_pushable':
         throw pushRefusals.agreementNotPushable(context.agreement.status);
       case 'patient_confidential':
@@ -1195,6 +1413,29 @@ export class TabletSessionsService {
   }
 
   /**
+   * `prepareLock`, WITH THE ONE FAILURE THIS SURFACE HAS ITS OWN WORD FOR.
+   *
+   * The rule set's enduring branch is a human-authored zone (CLAUDE.md §7) and
+   * `AgreementsService` reports its absence as a fact rather than as an HTTP
+   * status, because each caller says it differently. Here it becomes
+   * `enduring_rules_not_authored` — a CODE the console maps to copy and a
+   * destination, never a rules-engine sentence shown to a receptionist.
+   */
+  private async prepareLockOrRefuse(
+    practiceId: string,
+    agreementId: string,
+    dto: LockParticularsDto,
+    overrides: { verificationPassed?: true },
+  ): Promise<PreparedLock> {
+    try {
+      return await this.agreements.prepareLock(practiceId, agreementId, dto, overrides);
+    } catch (err) {
+      if (err instanceof EnduringRulesNotAuthoredError) throw pushRefusals.enduringRulesNotAuthored();
+      throw err;
+    }
+  }
+
+  /**
    * THE PUSH'S PRECONDITIONS, IN ONE FUNCTION, so the list the console renders
    * and the refusal the push gives cannot drift apart. The console shows the
    * reason before anybody presses anything; the server refuses regardless,
@@ -1204,18 +1445,37 @@ export class TabletSessionsService {
     agreement: DbAgreement;
     assignorName: string | null;
     confidential: boolean;
+    /** The provider's discipline, or null where none is recorded. Missing is NOT a GP. */
+    providerType: string | null;
   }): PushBlockedReason | null {
     const { agreement } = context;
 
     /*
-     * ENDURING FIRST, because it is the one refusal that is about US rather
-     * than about this agreement. The push flow's normal case is meant to be an
-     * enduring agreement for a GP (REQ-END-01/-01a) — the renderer handles the
-     * type, and the s 65C rule set does not have an enduring path at all. The
-     * rule set is a human-authored zone (CLAUDE.md §7), so this is reported
-     * and refused rather than filled in by an agent writing regulation.
+     * ENDURING FIRST, and it is now THREE questions rather than one blanket
+     * refusal (Carl, 4 Sep 2026; GA-PLAN B5). Two of them are permanent rules
+     * and are answered here; the third is about the rule set and is answered
+     * by asking it (`enduringRulesAuthored`), because this function is
+     * synchronous and must stay so — it is called once per row of a list.
+     *
+     * GP-ONLY, PERMANENTLY (hard rule 6, REQ-END-01a). Specialists, allied
+     * health and optometry have no enduring pathway and never will; the offer
+     * there is an episodic agreement or a Treatment Plan Assignment. A
+     * provider with NO discipline recorded fails closed — the cost of guessing
+     * is a standing commitment to bulk bill entered by somebody with no
+     * pathway to enter it.
+     *
+     * PER PRACTITIONER × PATIENT, NEVER PER PRACTICE (hard rule 6,
+     * REQ-END-01). One agreement names one provider and one patient. An
+     * organisation anchor (the ACCHO/AMS pathway) is a real thing and is not a
+     * thing a waiting-room tablet may collect a signature on: the screen could
+     * not tell the person signing who they are agreeing with.
      */
-    if (agreement.type === 'enduring') return 'enduring_not_supported';
+    if (agreement.type === 'enduring') {
+      if (agreement.anchorKind !== 'provider' || !agreement.providerId) {
+        return 'enduring_not_per_provider';
+      }
+      if (context.providerType !== 'general_practitioner') return 'enduring_not_gp';
+    }
 
     if (!(PUSHABLE_STATUSES as readonly string[]).includes(agreement.status)) {
       return 'agreement_not_pushable';

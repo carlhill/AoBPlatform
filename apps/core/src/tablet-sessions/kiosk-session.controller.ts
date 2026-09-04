@@ -92,7 +92,11 @@ export class KioskSessionController {
    * `walked_away` IS THE EXIT BUTTON that every ceremony screen has, and
    * `timed_out` is the client-side clock firing on a pushed session (Carl,
    * 4 Sep 2026) — same effect on the record, different stored state, so
-   * reception can tell the two apart. BOTH change NOTHING on the agreement
+   * reception can tell the two apart. `declined_enduring` is the third of the
+   * same kind: the patient read a STANDING agreement and chose "I'd rather
+   * agree each visit". They did not walk away, and the difference is the whole
+   * point — reception's next move is to offer an agreement for today's visit.
+   * ALL THREE change NOTHING on the agreement
    * (hard rule 8, REQ-REC-04). The patient is still seen; reception chooses a
    * private bill or an episodic agreement after the service. Named tests:
    * `walked_away_changes_nothing_on_the_agreement`,
@@ -104,6 +108,10 @@ export class KioskSessionController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: SetSessionStateDto,
   ) {
-    return this.sessions.setState(device!, id, dto.state as 'reading' | 'walked_away' | 'timed_out');
+    return this.sessions.setState(
+      device!,
+      id,
+      dto.state as 'reading' | 'walked_away' | 'timed_out' | 'declined_enduring',
+    );
   }
 }

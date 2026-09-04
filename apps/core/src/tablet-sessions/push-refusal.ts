@@ -106,25 +106,69 @@ export const pushRefusals = {
     ),
 
   /**
-   * THE REPORTED GAP, STATED ON THE SCREEN RATHER THAN GUESSED AT.
+   * ENDURING IS GP-ONLY, PERMANENTLY (hard rule 6, REQ-END-01a).
    *
-   * The push flow's normal case is meant to be an ENDURING agreement for a GP
-   * (REQ-END-01/-01a). The renderer handles the type — it is content-agnostic
-   * and renders whatever particulars it is given. The s 65C RULE SET does not:
-   * it has no enduring path at all. C6 skips D6a for the type, C5 still demands
-   * the single service date a standing agreement does not have, and the
-   * conformance suite (`apps/rules/src/rules/rule-set.contract.ts`) has no
-   * enduring case to check any of it against.
+   * A specialist, allied health or optometry provider has NO enduring
+   * pathway — this is not a gap waiting to be filled, it is the rule. The
+   * offer for those providers is an episodic agreement or a Treatment Plan
+   * Assignment (REQ-PLAN-06), and the console says so on the row.
    *
-   * The rule set is a HUMAN-AUTHORED ZONE (CLAUDE.md §7). Writing enduring
-   * rules to make this button work would be an agent authoring regulation, so
-   * the push refuses and says so, and the gap is reported rather than filled.
+   * MISSING IS NOT GP. A provider whose discipline was never recorded fails
+   * this check rather than passing it: the cost of guessing wrong is a
+   * standing commitment to bulk bill, entered by a provider with no pathway to
+   * enter it.
    */
-  enduringNotSupported: () =>
+  enduringNotGp: (providerType: string | null) =>
     new PushRefusal(
-      'enduring_not_supported',
-      'Enduring agreements cannot be sent to a tablet yet: the s 65C rule set has no enduring path, so the ' +
-        'particulars cannot be validated or locked. Offer an episodic agreement for this visit.',
+      'enduring_not_gp',
+      `Ongoing agreements are for general practitioners only (REQ-END-01a); this provider is recorded as ` +
+        `"${providerType ?? 'no discipline set'}". Offer an agreement for this visit, or a Treatment Plan ` +
+        'Assignment.',
+      new ConflictException().getStatus(),
+    ),
+
+  /**
+   * ENDURING IS PER PRACTITIONER × PATIENT, NEVER PER PRACTICE (hard rule 6,
+   * REQ-END-01). An agreement that names no single provider — an organisation
+   * anchor on the ACCHO/AMS pathway, or a provider that was never set — cannot
+   * be signed on a tablet, because the screen could not tell the person
+   * signing who they are agreeing with.
+   */
+  enduringNotPerProvider: () =>
+    new PushRefusal(
+      'enduring_not_per_provider',
+      'An ongoing agreement is between one provider and one patient, never practice-wide (REQ-END-01). ' +
+        'This one names no single provider, so it cannot be sent to a tablet.',
+      new ConflictException().getStatus(),
+    ),
+
+  /**
+   * THE REPORTED GAP, STATED ON THE SCREEN RATHER THAN GUESSED AT — and it is
+   * now the LAST thing in the way rather than the first (Carl, 4 Sep 2026;
+   * GA-PLAN B5).
+   *
+   * Everything else an enduring push needs exists: the practice setting, the
+   * GP and per-provider checks, the ceremony, the decline path. What does not
+   * exist is the s 65C rule set's ENDURING BRANCH — reg 65CB's content set has
+   * no rules written against it, C5 still demands the single service date a
+   * standing agreement has no honest value for, and the conformance suite
+   * (`apps/rules/src/rules/rule-set.contract.ts`) has no enduring case.
+   *
+   * SO THE PLATFORM ASKS THE RULE SET AND BELIEVES THE ANSWER. It sends the
+   * enduring payload, and if the registered set returns no verdict on the
+   * enduring family then silence is not a pass and this is the refusal. The
+   * rule set is a HUMAN-AUTHORED ZONE (CLAUDE.md §7): writing that branch to
+   * make this button work would be an agent authoring regulation. The contract
+   * it is authored against is written out as a pending spec,
+   * `apps/rules/test/enduring-ruleset.pending.spec.ts`, and the moment it
+   * passes this refusal stops happening without another line of code.
+   */
+  enduringRulesNotAuthored: () =>
+    new PushRefusal(
+      'enduring_rules_not_authored',
+      'Ongoing agreements are not yet enabled: the s 65C rule set returns no verdict on the enduring ' +
+        'content set (reg 65CB), so the particulars cannot be validated or locked. Offer an agreement for ' +
+        'this visit instead.',
       new ConflictException().getStatus(),
     ),
 

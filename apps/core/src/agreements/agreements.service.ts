@@ -7,7 +7,7 @@ import {
   NotImplementedException,
 } from '@nestjs/common';
 import type { Agreement as DbAgreement, Prisma } from '@prisma/client';
-import type { RulesEngineClient } from '@aobplatform/contracts';
+import { answersEnduringRules, type RulesEngineClient } from '@aobplatform/contracts';
 import { RendererRegistry } from '../render/renderer-registry';
 import { CaptureService } from '../capture/capture.service';
 import { WriteBackService } from '../pms/write-back.service';
@@ -47,6 +47,13 @@ const SYSTEM_ACTOR = { principalType: 'system', id: 'core' } as const;
  */
 const SIGNATURE_ATTRIBUTION = 'signature ceremony';
 
+/**
+ * HOW LONG THE "IS THE ENDURING BRANCH AUTHORED?" ANSWER IS REUSED. A minute:
+ * long enough that a console list of a dozen enduring rows costs one call,
+ * short enough that registering the rule set is visible without a restart.
+ */
+const ENDURING_PROBE_TTL_MS = 60_000;
+
 function prune(value: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined));
 }
@@ -61,6 +68,38 @@ function prune(value: Record<string, unknown>): Record<string, unknown> {
  * flow prepares first and then commits alongside its verification event and
  * its session, atomically (hard rule 11).
  */
+/**
+ * THE RULE SET WAS ASKED ABOUT AN ENDURING AGREEMENT AND DID NOT ANSWER
+ * (Carl, 4 Sep 2026; GA-PLAN B5).
+ *
+ * NOT AN HTTP EXCEPTION, deliberately. Every caller of `prepareLock` has its
+ * own vocabulary for a refusal — the tablet push has a CODE the console maps
+ * to a receptionist's words (`enduring_rules_not_authored`), and a direct API
+ * caller wants a status. Throwing a `ConflictException` from here would decide
+ * that for both of them and would put a sentence written for one surface on
+ * the other. So the fact travels as a fact and each caller says it its own way.
+ *
+ * WHY IT IS A REFUSAL AND NOT A PASS. The registered rule set has no enduring
+ * branch: C6 skips D6a for the type and passes trivially, and NOTHING asserts
+ * reg 65CB's content set, the pathway, the GP-only rule or the per-practitioner
+ * anchor. A `valid: true` from that set means "none of the episodic rules
+ * failed", not "this standing commitment to bulk bill is sound" — and silence
+ * is not a pass (the same idiom `setAssignor` applies to a missing C8 verdict).
+ *
+ * IT IS A GAP, NOT A FAULT, and nothing here blocks care (hard rule 8): the
+ * patient is seen, and reception offers an agreement for the visit instead.
+ */
+export class EnduringRulesNotAuthoredError extends Error {
+  constructor(readonly ruleSetVersion: string) {
+    super(
+      `Rule set ${ruleSetVersion} returns no verdict on the enduring content set (reg 65CB), so an enduring ` +
+        'agreement cannot be validated or locked. The s 65C rule set is a human-authored zone (CLAUDE.md §7); ' +
+        'apps/rules/test/enduring-ruleset.pending.spec.ts is the contract the branch is authored against.',
+    );
+    this.name = 'EnduringRulesNotAuthoredError';
+  }
+}
+
 export interface PreparedLock {
   readonly particulars: Record<string, unknown>;
   readonly ruleSetVersion: string;
@@ -80,6 +119,9 @@ export class AgreementsService {
     private readonly writeBack: WriteBackService,
     private readonly artefacts: ArtefactsService,
   ) {}
+
+  /** See `enduringRulesAuthored`. In-process and per-instance, which is all a hint needs to be. */
+  private enduringProbe: { at: number; authored: boolean } | null = null;
 
   /**
    * Creates a draft agreement. Domain guards enforced up front: anchor kind
@@ -516,6 +558,28 @@ export class AgreementsService {
         ? await tx.provider.findFirst({ where: { id: agreement.providerId } })
         : null;
       const assignor = await tx.assignor.findFirst({ where: { id: agreement.assignorId } });
+      /*
+       * AN ENDURING AGREEMENT'S CONTENT SET IS reg 65CB'S, NOT D5/D6a's
+       * (REQ-END-02, REQ-TEST-02: "for enduring forms, reg 65CB").
+       *
+       * D5 is "the date the service will be (pre) or was (post) rendered" and
+       * D6a is "basic description — PRE-AGREEMENTS ONLY" (REQ-REG-01). A
+       * standing agreement is neither: it has no single service date to state
+       * and no one description, which is exactly why the rule set's C5/C6 do
+       * not fit it and why the enduring branch has to be authored rather than
+       * inferred. So neither is assembled here — a serviceDate invented for an
+       * enduring agreement would be a particular the platform made up, hashed
+       * into an artefact and rendered at a patient.
+       *
+       * READ, NOT WRITTEN. The enduring detail is the enduring module's table
+       * and this only reads it, on the precedent every other assembly here
+       * follows: the snapshot has to state what the agreement says, and one
+       * module's tables cannot say it alone.
+       */
+      const enduring =
+        agreement.type === 'enduring'
+          ? await tx.enduringDetail.findFirst({ where: { agreementId } })
+          : null;
 
       // undefined values are pruned: they vanish in the JSON round-trip
       // through Postgres, and rule 13 requires the stored snapshot to
@@ -527,7 +591,7 @@ export class AgreementsService {
         providerName: provider?.name,
         providerAddress: provider?.placeOfPracticeAddress ?? undefined,
         providerNumber: provider?.providerNumber ?? undefined,
-        serviceDate: dto.serviceDate,
+        serviceDate: agreement.type === 'enduring' ? undefined : dto.serviceDate,
         /*
          * D6a FROM THE DRAFT WHEN THE CLIENT DID NOT SEND ONE, and that is the
          * ordinary case now rather than the exception. The Basic Service
@@ -541,8 +605,33 @@ export class AgreementsService {
          * The DTO still wins where it is given, for the callers that predate
          * the staff surface.
          */
-        basicServiceDescription: dto.basicServiceDescription ?? agreement.serviceDescription ?? undefined,
-        mbsItemNumbers: dto.mbsItemNumbers,
+        basicServiceDescription:
+          agreement.type === 'enduring'
+            ? undefined
+            : (dto.basicServiceDescription ?? agreement.serviceDescription ?? undefined),
+        mbsItemNumbers: agreement.type === 'enduring' ? undefined : dto.mbsItemNumbers,
+        /*
+         * reg 65CB'S OWN CONTENT SET, carried only on the type it belongs to
+         * (REQ-END-02). The pathway decides which cessation triggers apply and
+         * whether an 89AA notice is ever sent (REQ-END-05, REQ-END-07); the
+         * covered service classes are the SCOPE the provider is committing to
+         * bulk bill until termination (REQ-END-06a); the notification and
+         * termination methods are how either party reaches the other
+         * (REQ-END-06).
+         *
+         * NO BENEFIT OR DOLLAR AMOUNT, here or anywhere on the artefact (hard
+         * rule 4) — the scope is a list of service classes, never a price.
+         *
+         * ABSENT UNTIL THE ENDURING DETAIL EXISTS, and absent is honest: the
+         * rule set's enduring branch is what decides whether an agreement
+         * missing them may be locked, and it says so with a named failure
+         * rather than this function guessing a default.
+         */
+        enduringPathway: agreement.type === 'enduring' ? (agreement.enduringPathway ?? undefined) : undefined,
+        coveredServiceClasses: enduring ? [...enduring.scopeValues] : undefined,
+        coveredServiceScopeType: enduring?.scopeType ?? undefined,
+        notificationMethod: enduring?.notificationMethod ?? undefined,
+        terminationMethod: enduring?.terminationMethod ?? undefined,
         assignorIsPatient: agreement.assignorIsPatient,
         assignorName: agreement.assignorIsPatient ? undefined : assignor?.name,
         assignorRelationship: agreement.assignorIsPatient ? undefined : (assignor?.relationshipToPatient ?? undefined),
@@ -569,6 +658,22 @@ export class AgreementsService {
       }
       throw err;
     });
+
+    /*
+     * SILENCE IS NOT A PASS — the enduring boundary, checked BEFORE the
+     * ordinary verdict (Carl, 4 Sep 2026; GA-PLAN B5).
+     *
+     * BEFORE, because the honest answer matters more than the first failure.
+     * An enduring payload put through today's set fails C5 (no service date —
+     * correctly, since a standing agreement has none), and reporting that
+     * would send somebody looking for a date that does not exist instead of
+     * telling them the branch has not been written. The order of these two
+     * lines IS the "shortcuts to the answer" rule (CLAUDE.md §7).
+     */
+    if (particulars.agreementType === 'enduring' && !answersEnduringRules(validation.results)) {
+      throw new EnduringRulesNotAuthoredError(validation.ruleSetVersion);
+    }
+
     if (!validation.valid) {
       const failures = validation.results.filter((r) => r.outcome === 'fail').map((r) => `${r.rule}: ${r.message}`);
       throw new BadRequestException({ message: 's 65C validation failed', failures });
@@ -588,6 +693,47 @@ export class AgreementsService {
       rendererVersion: rendered.rendererVersion,
       languages: [...languages],
     };
+  }
+
+  /**
+   * HAS THE ENDURING BRANCH BEEN AUTHORED YET? — the same question
+   * `prepareLock` asks, asked cheaply enough for a LIST (Carl, 4 Sep 2026).
+   *
+   * WHY THE LIST NEEDS TO ASK AT ALL. The console shows the reason a row
+   * cannot go BEFORE anybody presses anything, and a row that says nothing and
+   * then refuses is the fault Carl found on 4 September ("Cannot be sent yet
+   * ... see the practice queue"). So the enduring rows say what they are
+   * waiting for, in the same words the refusal would use.
+   *
+   * ONE PROBE, NOT ONE PER ROW. The question is about the registered RULE SET,
+   * not about any agreement, so the payload is a type and nothing else — no
+   * patient, no provider, nothing that could be PII in a service that holds
+   * none (ADR A-07) — and the answer is cached briefly. A practice with twelve
+   * enduring drafts on screen costs one call, and a rule set registered while
+   * a console tab is open is picked up within the minute.
+   *
+   * FALSE ON ANY DOUBT. An unreachable rules service, a 501, a malformed
+   * answer: all of them mean "this cannot be validated right now", and the
+   * console says so rather than offering a Send that would refuse. Nothing
+   * here blocks care (hard rule 8) — it blocks a screen.
+   */
+  async enduringRulesAuthored(): Promise<boolean> {
+    const now = Date.now();
+    if (this.enduringProbe && this.enduringProbe.at > now - ENDURING_PROBE_TTL_MS) {
+      return this.enduringProbe.authored;
+    }
+    let authored = false;
+    try {
+      const validation = await this.rules.validate({
+        payload: { agreementType: 'enduring' },
+        stage: 'pre_signature',
+      });
+      authored = answersEnduringRules(validation.results);
+    } catch {
+      authored = false;
+    }
+    this.enduringProbe = { at: now, authored };
+    return authored;
   }
 
   /**

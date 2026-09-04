@@ -146,6 +146,33 @@ export class TabletSessionsController {
   }
 
   /**
+   * THE PATIENT WOULD RATHER AGREE EACH VISIT — SO OFFER THEM THIS ONE
+   * (Carl, 4 Sep 2026; GA-PLAN B5).
+   *
+   * The one press that answers a declined ongoing agreement: a fresh
+   * `episodic_pre` draft for the same patient, provider and description of the
+   * service, pushed to the tablet the patient is still standing at.
+   *
+   * IT REFUSES THE SAME WAY THE PUSH DOES, with the same `reason` codes,
+   * because the second half of it IS a push. A draft that reaches the list but
+   * not the tablet — no description of the service, somebody else took the
+   * device — is still on reception's screen with its reason on it, and the
+   * patient is seen regardless (hard rule 8, REQ-REC-04).
+   *
+   * THE RESPONSE NAMES THE NEW AGREEMENT, so the console can follow it rather
+   * than reload and guess which row appeared.
+   */
+  @Post('tablet-sessions/:id/offer-episodic')
+  @PracticeScoped()
+  offerEpisodic(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('id', ParseUUIDPipe) id: string,
+    @SessionActor() actor: Actor | undefined,
+  ) {
+    return this.sessions.offerEpisodicAfterDecline(requirePractice(practiceId), id, actor);
+  }
+
+  /**
    * HOW THE DISPUTE ENDED (Carl, 4 Sep 2026) — reception says what they did
    * about the row the patient crossed.
    *
