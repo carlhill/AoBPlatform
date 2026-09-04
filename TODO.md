@@ -1904,10 +1904,21 @@ Left at practice level for v1. Before it is built (v2):
       scope; sits with the v3 front-office ideas below.
 
 ### 5. Housekeeping agreed for the end of the 4 Sep session
-- [ ] Migrate `core.tablet_sessions` timestamps to `timestamptz` (the whole
-      table, not the three new dispute columns alone -- Carl, 4 Sep 2026).
-      Reversible migration; check what Prisma's client needs for the mapping;
-      apply by hand to the dev DB as usual.
+- [x] **DONE (4 Sep 2026).** Migrated `core.tablet_sessions` timestamps to
+      `timestamptz(3)` -- the whole table, not the three dispute columns
+      alone. All six timestamp columns (`detailsConfirmedAt`, `pushedAt`,
+      `lastStateAt`, `endedAt`, `detailsDisputedAt`, `disputeResolvedAt`,
+      enumerated from `\d core.tablet_sessions` -- there is no `expiresAt`,
+      `createdAt` or `updatedAt` column on this table). Migration
+      `20260904080000_tablet_sessions_timestamptz` (idempotent up, with a
+      `down.sql`); `schema.prisma`'s `TabletSession` model carries
+      `@db.Timestamptz(3)`; applied by hand to the dev DB and verified
+      idempotent both directions. Core tablet-sessions e2e (53) and the web
+      tablet suite (37) stay green.
+      **Open for Carl:** the portal tables added today (`20260904070000_patient_portal`)
+      default to `timestamp without time zone` -- same class of bug this
+      closes. Left alone here since that model belongs to the concurrent
+      portal build; worth the same migration once it lands.
 
 ## The patient's own page: "what do you do with my data" (Carl, 4 Sep 2026)
 

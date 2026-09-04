@@ -1843,7 +1843,7 @@ model TabletSession {
   /// verification (REQ-VER-03/-04). `mobile` and `email` appear here and are
   /// CONTACT details, never identity identifiers (REQ-VER-02).
   detailsConfirmedTypes String[] @default([])
-  detailsConfirmedAt    DateTime?
+  detailsConfirmedAt    DateTime? @db.Timestamptz(3)
 
   /// WHICH DETAILS THE PATIENT SAID WERE WRONG — TYPES ONLY, on the same five
   /// permitted words and the same CHECK constraint as the confirmed list
@@ -1852,7 +1852,7 @@ model TabletSession {
   /// Disjoint from `detailsConfirmedTypes` by construction — a row is ticked
   /// or crossed, never both.
   detailsDisputedTypes String[] @default([])
-  detailsDisputedAt    DateTime?
+  detailsDisputedAt    DateTime? @db.Timestamptz(3)
 
   /// HOW THE DISPUTE ENDED — `corrected` or `patient_error`, and NULL while a
   /// cross is still unanswered (Carl, 4 Sep 2026).
@@ -1872,23 +1872,23 @@ model TabletSession {
   /// When, and WHO BY — the staff principal id, never a name. The display name
   /// belongs on the event (which carries it for an audit line); a name in a
   /// column goes stale the moment somebody is renamed, and joins to nothing.
-  disputeResolvedAt            DateTime?
+  disputeResolvedAt            DateTime? @db.Timestamptz(3)
   disputeResolvedByPrincipalId String?
 
   /// Who pushed it, from their verified session — never from the body. The
   /// same act is the verification record, so an unattributed push is refused.
   pushedBy   String
   pushedById String
-  pushedAt   DateTime @default(now())
+  pushedAt   DateTime @default(now()) @db.Timestamptz(3)
 
   /// Moves on every state change; the thirty-minute idle expiry measures from
   /// here rather than from `pushedAt`, so a patient part-way through a long
   /// read is not thrown off the screen.
-  lastStateAt DateTime @default(now())
+  lastStateAt DateTime @default(now()) @db.Timestamptz(3)
 
   /// Set exactly once, when the session ends. NULL is what makes it active,
   /// and what the partial unique index keys on.
-  endedAt DateTime?
+  endedAt DateTime? @db.Timestamptz(3)
 
   @@index([practiceId])
   @@index([deviceId])
