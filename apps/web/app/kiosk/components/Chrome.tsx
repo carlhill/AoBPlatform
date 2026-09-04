@@ -123,6 +123,7 @@ export function Screen({
   locationLine,
   stepTag,
   context,
+  sessionId,
   onLeave,
   children,
 }: {
@@ -130,6 +131,16 @@ export function Screen({
   locationLine?: string | null;
   stepTag?: string;
   context?: string;
+  /**
+   * THE PUSHED SESSION'S OWN ID, AN AUDIT/TESTING AID — passed only on the
+   * screens a pushed ceremony can show (K-P1, K-3, K-4, done), and only while
+   * `Ceremony.tsx` holds a live session. Reception sees the same id on the
+   * console row that pushed it, so a support call or a test run can match
+   * what is on the tablet to what reception is looking at. An opaque id, not
+   * a name or a value — never withheld for that reason, unlike everything
+   * else this footer stays quiet about.
+   */
+  sessionId?: string | null;
   /**
    * THE WAY OUT (Carl, 3 Sep 2026; REQ-REC-04, hard rule 8).
    *
@@ -198,6 +209,18 @@ export function Screen({
           {identity ? (
             <p className={styles.buildMark} data-testid="kiosk-device-identity">
               {strings.chrome.deviceIdentity(identity.label, identity.idPrefix)}
+            </p>
+          ) : null}
+          {/*
+            THE SESSION'S OWN LINE — separate from the device identity above
+            rather than appended to it, so it still appears if the device
+            identity fetch has failed (cosmetic-only, see `useDeviceIdentity`)
+            and disappears the instant `sessionId` does, independent of that
+            fetch's own timing.
+          */}
+          {sessionId ? (
+            <p className={styles.buildMark} data-testid="kiosk-session-identity">
+              {strings.chrome.sessionIdentity(sessionId.slice(0, 8))}
             </p>
           ) : null}
         </div>

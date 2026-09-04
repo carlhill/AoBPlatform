@@ -90,3 +90,58 @@ describe('kiosk_footer_names_the_tablet', () => {
     expect(testScreen.queryByTestId('kiosk-device-identity')).toBeNull();
   });
 });
+
+describe('footer_shows_the_pushed_session_id', () => {
+  beforeEach(() => {
+    fetchKioskMe.mockReset();
+    credential = 'fake-device-credential';
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('shows the first eight characters of a pushed session id, beside the device identity', async () => {
+    fetchKioskMe.mockResolvedValue({
+      deviceId: 'e1e2c073-1111-2222-3333-444444444444',
+      deviceLabel: 'Carl browser tablet',
+      practiceId: 'practice-1',
+      practiceName: 'Sample Practice',
+      reload: false,
+    });
+
+    render(
+      <Screen practiceName="Sample Practice" sessionId="8ff09d7b-aaaa-bbbb-cccc-dddddddddddd">
+        <p>content</p>
+      </Screen>,
+    );
+
+    await waitFor(() => expect(testScreen.getByTestId('kiosk-session-identity')).toBeTruthy());
+    const line = testScreen.getByTestId('kiosk-session-identity');
+    expect(line.textContent).toBe(strings.chrome.sessionIdentity('8ff09d7b'));
+    // AN OPAQUE ID, EIGHT CHARACTERS OF IT — the same trim the device
+    // identity already applies, and the whole id never reaches the screen.
+    expect(line.textContent).not.toContain('8ff09d7b-aaaa-bbbb-cccc-dddddddddddd');
+  });
+
+  it('shows nothing when there is no pushed session — a walk-up ceremony has none', async () => {
+    fetchKioskMe.mockResolvedValue({
+      deviceId: 'e1e2c073-1111-2222-3333-444444444444',
+      deviceLabel: 'Carl browser tablet',
+      practiceId: 'practice-1',
+      practiceName: 'Sample Practice',
+      reload: false,
+    });
+
+    render(
+      <Screen practiceName="Sample Practice" sessionId={null}>
+        <p>content</p>
+      </Screen>,
+    );
+
+    // Give the device-identity fetch a turn, so this is not a false negative
+    // from the footer not having rendered anything at all yet.
+    await waitFor(() => expect(testScreen.getByTestId('kiosk-device-identity')).toBeTruthy());
+    expect(testScreen.queryByTestId('kiosk-session-identity')).toBeNull();
+  });
+});

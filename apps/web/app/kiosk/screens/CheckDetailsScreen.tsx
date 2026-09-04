@@ -121,6 +121,7 @@ export function CheckDetailsScreen({
   disputed,
   saving,
   saveError,
+  sessionId,
   onAnswer,
   onContinue,
   onSeeReception,
@@ -135,6 +136,8 @@ export function CheckDetailsScreen({
   disputed: boolean;
   saving: boolean;
   saveError: boolean;
+  /** The pushed session's own id — an audit/testing aid in the footer. See `Chrome.tsx`'s `Screen`. */
+  sessionId?: string | null;
   onAnswer: (type: string, answer: DetailAnswer) => void;
   onContinue: () => void;
   onSeeReception: () => void;
@@ -147,6 +150,7 @@ export function CheckDetailsScreen({
       locationLine={locationLine}
       stepTag={strings.chrome.stepOf(1, 3)}
       context={strings.checkDetails.footer}
+      sessionId={sessionId}
       onLeave={onSeeReception}
     >
       <div className={styles.twoColumn}>

@@ -110,6 +110,7 @@ export function ParticularsScreen({
   onContinue,
   onBack,
   blueprintPanels = false,
+  sessionId,
   onSeeReception,
 }: {
   practiceName: string;
@@ -136,6 +137,8 @@ export function ParticularsScreen({
    * under it.
    */
   blueprintPanels?: boolean;
+  /** The pushed session's own id — an audit/testing aid in the footer. See `Chrome.tsx`'s `Screen`. */
+  sessionId?: string | null;
   onSeeReception: () => void;
 }): ReactNode {
   /*
@@ -168,6 +171,7 @@ export function ParticularsScreen({
       locationLine={locationLine}
       stepTag={strings.chrome.stepOf(3, 4)}
       context={strings.particulars.footer}
+      sessionId={sessionId}
       onLeave={onSeeReception}
     >
       <div className={blueprintPanels ? styles.twoColumn : styles.oneColumn}>

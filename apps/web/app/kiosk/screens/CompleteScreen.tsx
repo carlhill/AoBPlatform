@@ -34,11 +34,14 @@ export function CompleteScreen({
   practiceName,
   locationLine,
   givenName,
+  sessionId,
   onDone,
 }: {
   practiceName: string;
   locationLine: string | null;
   givenName: string;
+  /** The pushed session's own id — an audit/testing aid in the footer. See `Chrome.tsx`'s `Screen`. */
+  sessionId?: string | null;
   onDone: () => void;
 }): ReactNode {
   const [remaining, setRemaining] = useState(RETURN_SECONDS);
@@ -58,6 +61,7 @@ export function CompleteScreen({
       locationLine={locationLine}
       stepTag={strings.chrome.complete}
       context={strings.complete.writeBackQueued}
+      sessionId={sessionId}
     >
       <div className={styles.centred}>
         <h1 className={styles.h1Small} data-testid="complete-heading">

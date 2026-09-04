@@ -1598,6 +1598,7 @@ export function Ceremony(): ReactNode {
             disputed={rowsDisputed}
             saving={confirmBusy}
             saveError={confirmError}
+            sessionId={pushed?.id ?? null}
             onAnswer={answerDetail}
             onContinue={() => void confirmDetails()}
             onSeeReception={leave}
@@ -1698,6 +1699,7 @@ export function Ceremony(): ReactNode {
                   : () => setStep('assignor')
             }
             blueprintPanels={testDevice}
+            sessionId={pushed?.id ?? null}
             onSeeReception={leave}
           />
         );
@@ -1722,6 +1724,7 @@ export function Ceremony(): ReactNode {
             // NAVIGATION, NOT AN EXIT — and offered only while nothing has been
             // signed; the screen hides it once a signature is in flight.
             onBack={() => setStep('particulars')}
+            sessionId={pushed?.id ?? null}
             onSeeReception={leave}
           />
         );
@@ -1735,6 +1738,7 @@ export function Ceremony(): ReactNode {
             givenName={
               (pushed?.patient.givenNames ?? row?.patientName ?? '').trim().split(' ')[0] ?? ''
             }
+            sessionId={pushed?.id ?? null}
             onDone={reset}
           />
         );

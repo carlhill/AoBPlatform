@@ -49,6 +49,7 @@ export function SignatureScreen({
   onSignDrawn,
   onSignTap,
   onBack,
+  sessionId,
   onSeeReception,
 }: {
   practiceName: string;
@@ -72,6 +73,8 @@ export function SignatureScreen({
   onSignTap: () => void;
   /** K-3. Offered only while nothing has been signed; navigation, never a mutation. */
   onBack: () => void;
+  /** The pushed session's own id — an audit/testing aid in the footer. See `Chrome.tsx`'s `Screen`. */
+  sessionId?: string | null;
   onSeeReception: () => void;
 }): ReactNode {
   return (
@@ -80,6 +83,7 @@ export function SignatureScreen({
       locationLine={locationLine}
       stepTag={strings.chrome.stepOf(4, 4)}
       context={strings.signature.footer}
+      sessionId={sessionId}
       onLeave={onSeeReception}
     >
       <div className={styles.stack}>
