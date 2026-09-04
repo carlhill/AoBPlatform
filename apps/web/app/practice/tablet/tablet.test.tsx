@@ -316,9 +316,12 @@ describe('/practice/tablet — send to the tablet', () => {
     render(<TabletView practiceId={PRACTICE} />);
 
     await waitFor(() => expect(screen.getByTestId('tablet-view-only')).toBeTruthy());
-    expect((screen.getByTestId(`send-${READY.agreementId}`) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByTestId(`recall-${SESSION.id}`) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByTestId(`who-open-${READY.agreementId}`) as HTMLButtonElement).disabled).toBe(true);
+    // The view-only marker renders before the pushable list has resolved, so
+    // wait for each control rather than assume it is already there (flaked once
+    // in CI on exactly this ordering).
+    expect(((await screen.findByTestId(`send-${READY.agreementId}`)) as HTMLButtonElement).disabled).toBe(true);
+    expect(((await screen.findByTestId(`recall-${SESSION.id}`)) as HTMLButtonElement).disabled).toBe(true);
+    expect(((await screen.findByTestId(`who-open-${READY.agreementId}`)) as HTMLButtonElement).disabled).toBe(true);
     // The STATE is still readable — the person asked "why has that tablet not
     // got it" is the one person who needs the answer.
     expect(screen.getByTestId(`tablet-state-${TABLET.id}`).textContent).toContain(strings.tablet.states.reading);
