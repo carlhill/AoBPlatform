@@ -61,8 +61,13 @@ describe('idle_hides_begin_when_nobody_is_waiting', () => {
     expect(view.container.textContent).not.toMatch(/\d+ (person|people)/);
   });
 
-  it('keeps Begin while the first poll is still in flight (null) and when somebody is waiting', () => {
+  // One render per test: queries are scoped to document.body, so two mounted
+  // screens would make the second query ambiguous.
+  it('keeps Begin while the first poll is still in flight (null)', () => {
     expect(renderIdle({ anyoneWaiting: null }).queryByTestId('start-check-in')).not.toBeNull();
+  });
+
+  it('keeps Begin when somebody is waiting', () => {
     expect(renderIdle({ anyoneWaiting: true }).queryByTestId('start-check-in')).not.toBeNull();
   });
 });
