@@ -1,0 +1,866 @@
+import { Test } from '@nestjs/testing';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import request from 'supertest';
+import { PORTAL_SESSION_COOKIE } from '@aobplatform/contracts';
+import { AppModule } from '../src/app.module';
+import { PrismaService } from '../src/prisma/prisma.service';
+import { RendererRegistry } from '../src/render/renderer-registry';
+
+/**
+ * THE PATIENT'S OWN PAGE (C8 — REQ-PORT-01..08, FR-8.1/8.2, FR-1.14,
+ * FR-1.19/-1.23, FR-5.3). TODO.md "The patient's own page", Carl 4 Sep 2026.
+ *
+ * WHAT THIS SUITE PINS, and every one is a rule rather than a behaviour
+ * somebody liked:
+ *
+ *  - A TOKEN ALONE NEVER OPENS THE PORTAL. A valid, unexpired, unused
+ *    invitation with wrong identifiers yields no session and no data — the
+ *    family-phone rule made testable (REQ-VUL, addendum v4).
+ *  - THE MEDICARE CARD NUMBER IS NOT AN IDENTIFIER, on the way in or the way
+ *    out. Offering one to `activate` is a 400; no read can produce one
+ *    (hard rule 1, REQ-VER-02).
+ *  - NO AMOUNT ON AN AGREEMENT, ANYWHERE. The whole agreements payload is
+ *    searched for a cents key and for the seeded figure (hard rule 4). The one
+ *    card that carries one is the 89AA notice, and that is asserted too.
+ *  - TENANCY FAILS CLOSED, and BOTH fences are live while it does. The service
+ *    connects as `aob_app`, which holds neither SUPERUSER nor BYPASSRLS, so the
+ *    RLS policies are really being exercised here rather than described. On top
+ *    of them, the account's own links are the application filter — and another
+ *    account's records are a 404 indistinguishable from a record that never
+ *    existed.
+ *  - RULE 13 ON THE PATIENT'S COPY. The artefact is re-rendered under the
+ *    recorded renderer version and refused with 409 when the hash moves.
+ *  - THE TERMINATION IS TWO BUSINESS DAYS AND THE NOTICE IS A DRAFT. The
+ *    effective date comes from the enduring module's calendar, and the written
+ *    notice is `draft_pending_review` with a review task beside it, because its
+ *    wording is human-authored regulatory copy that does not exist yet.
+ */
+describe('M8 patient portal (e2e, real Postgres)', () => {
+  let app: INestApplication;
+  let prisma: PrismaService;
+  let renderers: RendererRegistry;
+
+  const practiceA = randomUUID();
+  const practiceB = randomUUID();
+
+  let patientA = '';
+  let patientB = '';
+  let providerA = '';
+  let assignorA = '';
+  let signedAgreement = '';
+  let enduringAgreement = '';
+  let agreementB = '';
+  let mismatchedAgreement = '';
+  let captureRequestA = '';
+
+  const STATED_CORRECT = {
+    name: 'Sampleton Jamie',
+    date_of_birth: '1962-11-02',
+    address: '2 Example Street, Sampletown NSW 2000',
+  };
+
+  /** A benefit figure that appears in exactly one place, so a leak is findable. */
+  const BENEFIT_CENTS = 4275;
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = moduleRef.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    await app.init();
+    prisma = app.get(PrismaService);
+    renderers = app.get(RendererRegistry);
+
+    const renderer = renderers.current();
+
+    await prisma.withPractice(practiceA, async (tx) => {
+      await tx.practice.create({ data: { id: practiceA, name: 'Portal Test Practice', state: 'NSW' } });
+      await tx.practiceLocation.create({
+        data: { practiceId: practiceA, address: '2 Example Street, Sampletown NSW 2000' },
+      });
+      const patient = await tx.patient.create({
+        data: {
+          practiceId: practiceA,
+          familyName: 'Sampleton',
+          givenNames: 'Jamie',
+          dateOfBirth: new Date('1962-11-02'),
+          address: '2 Example Street, Sampletown NSW 2000',
+          mobile: '0400 000 000',
+          email: 'jamie@example.invalid',
+          patientRecordNumber: 'PRN-0001',
+        },
+      });
+      patientA = patient.id;
+
+      const provider = await tx.provider.create({
+        data: { practiceId: practiceA, name: 'Dr Example Provider', providerType: 'general_practitioner' },
+      });
+      providerA = provider.id;
+
+      const selfAssignor = await tx.assignor.create({
+        data: { practiceId: practiceA, name: 'Jamie Sampleton', authorityBasis: 'self' },
+      });
+      const carer = await tx.assignor.create({
+        data: {
+          practiceId: practiceA,
+          name: 'Alex Sampleton',
+          authorityBasis: 'other_with_note',
+          // The basis that needs a note gets one — a DB check constraint says
+          // so, and rightly: `other_with_note` where the note is the basis.
+          authorityNote: 'carer',
+          relationshipToPatient: 'carer',
+        },
+      });
+      assignorA = carer.id;
+
+      /*
+       * A SIGNED EPISODIC AGREEMENT, WITH A REAL HASH. The particulars are
+       * rendered through the registry rather than hand-written, so the artefact
+       * test exercises rule 13 for real instead of comparing a made-up string.
+       * NOTE WHAT IS NOT IN THE PARTICULARS: no amount of any kind (hard rule 4)
+       * and no Medicare number (hard rule 1).
+       */
+      const particulars = {
+        agreementType: 'episodic_post',
+        agreementDate: '2026-09-01',
+        serviceDate: '2026-09-01',
+        basicServiceDescription: 'General practitioner attendance',
+        mbsItemNumbers: ['23'],
+        patientName: 'Jamie Sampleton',
+        providerName: 'Dr Example Provider',
+      };
+      const rendered = await renderer.render(particulars, ['en']);
+
+      const agreement = await tx.agreement.create({
+        data: {
+          practiceId: practiceA,
+          type: 'episodic_post',
+          anchorKind: 'provider',
+          providerId: provider.id,
+          patientId: patient.id,
+          assignorId: carer.id,
+          assignorIsPatient: false,
+          // Created as a DRAFT and moved to `stored` in the same breath as the
+          // signature below. HARD-02 refuses any change to `signatureEventId`
+          // once the status is a signed one, which is exactly right and means a
+          // fixture has to walk the same order the real ceremony does.
+          status: 'draft',
+          serviceDescription: 'General practitioner attendance',
+          particulars,
+          particularsLockedAt: new Date('2026-09-01T01:00:00Z'),
+          ruleSetVersion: 'test-rules-1',
+          mappingVersion: 'test-mapping-1',
+          renderedLanguages: ['en'],
+          renderedArtefactHash: rendered.sha256,
+          rendererVersion: rendered.rendererVersion,
+        },
+      });
+      signedAgreement = agreement.id;
+
+      const signature = await tx.signatureEvent.create({
+        data: {
+          practiceId: practiceA,
+          agreementId: agreement.id,
+          method: 'tap_to_approve',
+          channel: 'sms_link',
+          artefactHash: rendered.sha256,
+          rendererVersion: rendered.rendererVersion,
+        },
+      });
+      await tx.agreement.update({
+        where: { id: agreement.id },
+        data: { signatureEventId: signature.id, status: 'stored' },
+      });
+
+      /*
+       * A SECOND LOCKED AGREEMENT WHOSE RECORDED HASH IS WRONG FROM BIRTH.
+       *
+       * The 409 path could not be reached by editing the first one — HARD-02
+       * refuses to let a signed agreement's hash be changed, which is the rule
+       * working. So the tamper case is seeded rather than simulated: an
+       * agreement whose stored hash does not describe its own particulars,
+       * which is precisely what rule 13 exists to catch on display.
+       */
+      const mismatched = await tx.agreement.create({
+        data: {
+          practiceId: practiceA,
+          type: 'episodic_post',
+          anchorKind: 'provider',
+          providerId: provider.id,
+          patientId: patient.id,
+          assignorId: carer.id,
+          assignorIsPatient: false,
+          status: 'draft',
+          particulars: { ...particulars, agreementDate: '2026-09-03' },
+          particularsLockedAt: new Date('2026-09-03T01:00:00Z'),
+          renderedLanguages: ['en'],
+          renderedArtefactHash: 'f'.repeat(64),
+          rendererVersion: rendered.rendererVersion,
+        },
+      });
+      mismatchedAgreement = mismatched.id;
+
+      // An enduring agreement, in force, to terminate.
+      const enduring = await tx.agreement.create({
+        data: {
+          practiceId: practiceA,
+          type: 'enduring',
+          anchorKind: 'provider',
+          providerId: provider.id,
+          patientId: patient.id,
+          assignorId: selfAssignor.id,
+          assignorIsPatient: true,
+          enduringPathway: 'mymedicare',
+          status: 'stored',
+        },
+      });
+      enduringAgreement = enduring.id;
+      await tx.enduringDetail.create({
+        data: {
+          practiceId: practiceA,
+          agreementId: enduring.id,
+          notificationMethod: 'sms',
+          terminationMethod: 'portal',
+          scopeType: 'category',
+          scopeValues: ['1'],
+          enteredIntoAt: new Date('2026-08-01T00:00:00Z'),
+        },
+      });
+
+      // A dispatched 89AA notice — the one artefact with an amount on it.
+      await tx.notice.create({
+        data: {
+          practiceId: practiceA,
+          agreementId: enduring.id,
+          claimReference: 'CLAIM-TEST-1',
+          claimLodgedAt: new Date('2026-09-02T01:00:00Z'),
+          practitionerName: 'Dr Example Provider',
+          patientName: 'Jamie Sampleton',
+          serviceDate: new Date('2026-09-01'),
+          benefitAmountCents: BENEFIT_CENTS,
+          agreementMethod: 'sms',
+          dispatchChannel: 'sms',
+          payloadHash: 'test-payload-hash',
+          dispatchedAt: new Date('2026-09-02T02:00:00Z'),
+        },
+      });
+
+      // An open capture request and the message that carried it — `pending`.
+      const capture = await tx.captureRequest.create({
+        data: {
+          practiceId: practiceA,
+          agreementId: agreement.id,
+          channel: 'sms_link',
+          status: 'open',
+          expiresAt: new Date(Date.now() + 86_400_000),
+        },
+      });
+      captureRequestA = capture.id;
+      /*
+       * A CORRESPONDENCE ROW MIRRORS A SEND, and a CHECK constraint says so:
+       * it must point at a transport row or at a notice. That is the rule the
+       * evidence layer is built on — no record of a message that never left —
+       * so the fixture makes the transport row too rather than working round it.
+       */
+      const outbound = await tx.outboundItem.create({
+        data: {
+          practiceId: practiceA,
+          channel: 'sms',
+          destination: '0400 000 000',
+          subjectType: 'CaptureRequest',
+          subjectId: capture.id,
+          payload: { kind: 'capture_link' },
+          idempotencyKey: `portal-e2e-${capture.id}`,
+          mediaType: 'sms',
+          recipientType: 'patient',
+          recipientId: patient.id,
+          recipientName: 'Jamie Sampleton',
+          state: 'sent',
+          sentAt: new Date('2026-09-02T03:00:00Z'),
+        },
+      });
+      await tx.correspondence.create({
+        data: {
+          outboundItemId: outbound.id,
+          practiceId: practiceA,
+          recipientType: 'patient',
+          recipientId: patient.id,
+          recipientName: 'Jamie Sampleton',
+          channel: 'sms',
+          subject: 'A request from your practice',
+          bodyText: 'THIS BODY MUST NEVER REACH THE PORTAL',
+          subjectType: 'CaptureRequest',
+          subjectId: capture.id,
+          state: 'sent',
+          sentAt: new Date('2026-09-02T03:00:00Z'),
+        },
+      });
+    });
+
+    // A SECOND PRACTICE WITH A SECOND PATIENT, who this account never links.
+    await prisma.withPractice(practiceB, async (tx) => {
+      await tx.practice.create({ data: { id: practiceB, name: 'Other Practice', state: 'VIC' } });
+      const patient = await tx.patient.create({
+        data: {
+          practiceId: practiceB,
+          familyName: 'Otherperson',
+          givenNames: 'Robin',
+          dateOfBirth: new Date('1970-01-01'),
+          address: '9 Other Road, Elsewhere VIC 3000',
+        },
+      });
+      patientB = patient.id;
+      const provider = await tx.provider.create({
+        data: { practiceId: practiceB, name: 'Dr Other', providerType: 'general_practitioner' },
+      });
+      const assignor = await tx.assignor.create({
+        data: { practiceId: practiceB, name: 'Robin Otherperson', authorityBasis: 'self' },
+      });
+      const agreement = await tx.agreement.create({
+        data: {
+          practiceId: practiceB,
+          type: 'episodic_post',
+          anchorKind: 'provider',
+          providerId: provider.id,
+          patientId: patient.id,
+          assignorId: assignor.id,
+          assignorIsPatient: true,
+          status: 'stored',
+        },
+      });
+      agreementB = agreement.id;
+    });
+  });
+
+  afterAll(async () => {
+    for (const practiceId of [practiceA, practiceB]) {
+      await prisma.withPractice(practiceId, async (tx) => {
+        await tx.portalTerminationNotice.deleteMany({});
+        await tx.portalAssignorRevocation.deleteMany({});
+        await tx.portalActivationToken.deleteMany({});
+        await tx.reviewTask.deleteMany({});
+        await tx.correspondence.deleteMany({});
+        await tx.outboundItem.deleteMany({});
+        await tx.captureRequest.deleteMany({});
+        await tx.notice.deleteMany({});
+        await tx.enduringDetail.deleteMany({});
+        await tx.agreement.deleteMany({});
+        await tx.assignor.deleteMany({});
+        await tx.provider.deleteMany({});
+        await tx.patient.deleteMany({});
+        await tx.practiceLocation.deleteMany({});
+        await tx.practice.deleteMany({});
+      });
+    }
+    // Portal accounts are not practice-scoped; signature and verification
+    // events are append-only by trigger and stay, which is the behaviour.
+    await prisma.$executeRawUnsafe('DELETE FROM portal_sessions');
+    await prisma.$executeRawUnsafe('DELETE FROM portal_account_patients');
+    await prisma.$executeRawUnsafe('DELETE FROM portal_accounts');
+    await prisma.vaultOutbox.deleteMany({});
+    await app.close();
+  });
+
+  /** Mint one invitation the way the practice does. Returns the one-time token. */
+  async function mintInvitation(agreementId = signedAgreement): Promise<string> {
+    const res = await request(app.getHttpServer())
+      .post(`/agreements/${agreementId}/portal-invitation`)
+      .set('x-practice-id', practiceA)
+      .expect(201);
+    return res.body.activationToken;
+  }
+
+  /** The `aob_portal` cookie from a response, in the form supertest wants back. */
+  function cookieFrom(res: request.Response): string {
+    const raw = res.headers['set-cookie'] as unknown as string[] | undefined;
+    const found = (raw ?? []).find((c) => c.startsWith(`${PORTAL_SESSION_COOKIE}=`));
+    if (!found) throw new Error('no portal cookie was set');
+    return found.split(';')[0];
+  }
+
+  async function activatedCookie(): Promise<string> {
+    const token = await mintInvitation();
+    const res = await request(app.getHttpServer())
+      .post('/portal/activate')
+      .send({ agreementId: signedAgreement, activationToken: token, stated: STATED_CORRECT })
+      .expect(201);
+    return cookieFrom(res);
+  }
+
+  // -------------------------------------------------------------------------
+  // Getting in
+  // -------------------------------------------------------------------------
+
+  it('offers activation only after a signature (FR-1.14)', async () => {
+    const res = await request(app.getHttpServer())
+      .post(`/agreements/${enduringAgreement}/portal-invitation`)
+      .set('x-practice-id', practiceA)
+      .expect(400);
+    expect(res.body.message).toContain('signed');
+  });
+
+  it('portal_activation_rejects_medicare_number_as_identifier', async () => {
+    const token = await mintInvitation();
+    const res = await request(app.getHttpServer())
+      .post('/portal/activate')
+      .send({
+        agreementId: signedAgreement,
+        activationToken: token,
+        stated: { ...STATED_CORRECT, medicare_number: '1234567891' },
+      })
+      .expect(400);
+    expect(res.body.message).toContain('not an approved patient identifier');
+    expect(res.body.message).toContain('not configurable');
+    // And nothing was opened by the attempt.
+    expect(res.headers['set-cookie']).toBeUndefined();
+  });
+
+  it('a_token_alone_never_opens_the_portal', async () => {
+    const token = await mintInvitation();
+
+    const res = await request(app.getHttpServer())
+      .post('/portal/activate')
+      .send({
+        agreementId: signedAgreement,
+        activationToken: token,
+        stated: { ...STATED_CORRECT, date_of_birth: '1990-01-01' },
+      })
+      .expect(401);
+
+    // NO SESSION…
+    expect(res.headers['set-cookie']).toBeUndefined();
+    // …AND NO DATA. Not even which identifier was wrong (REQ-SEC-07).
+    const body = JSON.stringify(res.body);
+    expect(body).not.toContain('Sampleton');
+    expect(body).not.toContain('Example Street');
+
+    // …AND THE READS STAY SHUT to a caller holding only the token.
+    await request(app.getHttpServer()).get('/portal/agreements').expect(401);
+    await request(app.getHttpServer()).get('/portal/details').expect(401);
+  });
+
+  it('locks an invitation after three wrong answers, and says so with 423', async () => {
+    const token = await mintInvitation();
+    const wrong = { ...STATED_CORRECT, name: 'Wrongname Person' };
+    const attempt = () =>
+      request(app.getHttpServer())
+        .post('/portal/activate')
+        .send({ agreementId: signedAgreement, activationToken: token, stated: wrong });
+
+    await attempt().expect(401);
+    await attempt().expect(401);
+    await attempt().expect(423);
+    // And it stays locked even for the RIGHT answers — the invitation is spent.
+    await request(app.getHttpServer())
+      .post('/portal/activate')
+      .send({ agreementId: signedAgreement, activationToken: token, stated: STATED_CORRECT })
+      .expect(423);
+  });
+
+  it('activates on three correct identifiers, links the practice and issues a session', async () => {
+    const token = await mintInvitation();
+    const res = await request(app.getHttpServer())
+      .post('/portal/activate')
+      .send({ agreementId: signedAgreement, activationToken: token, stated: STATED_CORRECT })
+      .expect(201);
+
+    expect(res.body.activated).toBe(true);
+    expect(res.body.links).toHaveLength(1);
+    expect(res.body.links[0]).toMatchObject({ practiceId: practiceA, patientId: patientA });
+    expect(res.body.links[0].practiceName).toBe('Portal Test Practice');
+
+    const cookie = cookieFrom(res);
+    const session = await request(app.getHttpServer()).get('/portal/session').set('Cookie', cookie).expect(200);
+    expect(session.body.accountId).toBe(res.body.accountId);
+
+    // The activation and the access are both in the chain (FR-8.2, hard rule 11).
+    const events = await prisma.vaultOutbox.findMany({ where: { type: { startsWith: 'portal.' } } });
+    expect(events.map((e) => e.type)).toEqual(expect.arrayContaining(['portal.activated', 'portal.accessed']));
+    // TYPES ONLY, never values (REQ-VER-04, hard rule 9).
+    const serialised = JSON.stringify(events);
+    expect(serialised).toContain('date_of_birth');
+    expect(serialised).not.toContain('Sampleton');
+    expect(serialised).not.toContain('1962-11-02');
+  });
+
+  it('spends the invitation — a used one cannot be replayed', async () => {
+    const token = await mintInvitation();
+    await request(app.getHttpServer())
+      .post('/portal/activate')
+      .send({ agreementId: signedAgreement, activationToken: token, stated: STATED_CORRECT })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post('/portal/activate')
+      .send({ agreementId: signedAgreement, activationToken: token, stated: STATED_CORRECT })
+      .expect(410);
+  });
+
+  // -------------------------------------------------------------------------
+  // The reads
+  // -------------------------------------------------------------------------
+
+  it('portal_details_never_include_a_medicare_number', async () => {
+    const cookie = await activatedCookie();
+    const res = await request(app.getHttpServer()).get('/portal/details').set('Cookie', cookie).expect(200);
+
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0]).toMatchObject({
+      practiceId: practiceA,
+      patientId: patientA,
+      familyName: 'Sampleton',
+      givenNames: 'Jamie',
+      dateOfBirth: '1962-11-02',
+      patientRecordNumber: 'PRN-0001',
+    });
+
+    // No such KEY, under any spelling, and no such value.
+    const keys = Object.keys(res.body[0]).map((k) => k.toLowerCase());
+    for (const key of keys) {
+      expect(key).not.toContain('medicare');
+      expect(key).not.toContain('card');
+    }
+    expect(JSON.stringify(res.body).toLowerCase()).not.toContain('medicare');
+  });
+
+  it('portal_agreements_carry_no_amount', async () => {
+    const cookie = await activatedCookie();
+    const res = await request(app.getHttpServer()).get('/portal/agreements').set('Cookie', cookie).expect(200);
+
+    const agreement = res.body.find((a: { id: string }) => a.id === signedAgreement);
+    expect(agreement).toMatchObject({
+      practiceName: 'Portal Test Practice',
+      providerName: 'Dr Example Provider',
+      type: 'episodic_post',
+      serviceDate: '2026-09-01',
+      serviceDescription: 'General practitioner attendance',
+      channel: 'sms_link',
+      artefactAvailable: true,
+    });
+    expect(agreement.signedAt).toBeTruthy();
+
+    const serialised = JSON.stringify(res.body).toLowerCase();
+    for (const forbidden of ['amount', 'cents', 'benefit', 'fee', 'price', '$']) {
+      expect(serialised).not.toContain(forbidden);
+    }
+    expect(serialised).not.toContain(String(BENEFIT_CENTS));
+  });
+
+  it('serves the copy as signed, re-verifying the hash first (REQ-PORT-02, rule 13)', async () => {
+    const cookie = await activatedCookie();
+    const res = await request(app.getHttpServer())
+      .get(`/portal/agreements/${signedAgreement}/artefact`)
+      .set('Cookie', cookie)
+      .expect(200);
+
+    expect(res.headers['content-disposition']).toContain('attachment');
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+
+    const stored = await prisma.withPractice(practiceA, (tx) =>
+      tx.agreement.findFirst({ where: { id: signedAgreement } }),
+    );
+    expect(res.headers['x-artefact-sha256']).toBe(stored!.renderedArtefactHash);
+
+    // Reading evidence is itself evidence (REQ-LOG-07).
+    const reads = await prisma.vaultOutbox.findMany({
+      where: { type: 'artefact.accessed', subjectId: signedAgreement },
+    });
+    expect(reads.length).toBeGreaterThan(0);
+  });
+
+  it('refuses the copy with 409 when the recorded hash does not match (rule 13)', async () => {
+    const cookie = await activatedCookie();
+    const res = await request(app.getHttpServer())
+      .get(`/portal/agreements/${mismatchedAgreement}/artefact`)
+      .set('Cookie', cookie)
+      .expect(409);
+    expect(res.body.message).toContain('tamper signal');
+  });
+
+  it('shows 89AA notices with the amount — the one card that has one (REQ-PORT-04, hard rule 7)', async () => {
+    const cookie = await activatedCookie();
+    const res = await request(app.getHttpServer()).get('/portal/notices').set('Cookie', cookie).expect(200);
+
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0]).toMatchObject({
+      date: '2026-09-01',
+      providerName: 'Dr Example Provider',
+      practiceName: 'Portal Test Practice',
+      benefitAmountCents: BENEFIT_CENTS,
+    });
+
+    // NOTHING THAT COULD READ AS A DECISION. A notice is one-way and is never
+    // chased; a status field here would be an invitation to build a button.
+    const keys = Object.keys(res.body[0]).map((k) => k.toLowerCase());
+    for (const forbidden of ['status', 'state', 'approved', 'accepted', 'action', 'consent']) {
+      expect(keys).not.toContain(forbidden);
+    }
+  });
+
+  it('lists visits from service dates only, never a clinical fact', async () => {
+    const cookie = await activatedCookie();
+    const res = await request(app.getHttpServer()).get('/portal/visits').set('Cookie', cookie).expect(200);
+    expect(res.body[0]).toMatchObject({
+      date: '2026-09-01',
+      practiceName: 'Portal Test Practice',
+      locationLine: '2 Example Street, Sampletown NSW 2000',
+    });
+    expect(Object.keys(res.body[0]).sort()).toEqual(['date', 'locationLine', 'practiceId', 'practiceName']);
+  });
+
+  it('lists messages with a purpose key and a pending flag, and NEVER a body (REQ-PORT-06)', async () => {
+    const cookie = await activatedCookie();
+    const res = await request(app.getHttpServer()).get('/portal/messages').set('Cookie', cookie).expect(200);
+
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0]).toMatchObject({
+      channel: 'sms',
+      state: 'sent',
+      purposeKey: 'capture_request',
+      practiceName: 'Portal Test Practice',
+      pending: true,
+    });
+    const serialised = JSON.stringify(res.body);
+    expect(serialised).not.toContain('THIS BODY MUST NEVER REACH THE PORTAL');
+    expect(serialised).not.toContain('A request from your practice');
+  });
+
+  it('shows who acts for the patient, and an empty iActFor until FR-1.19 exists', async () => {
+    const cookie = await activatedCookie();
+    const res = await request(app.getHttpServer()).get('/portal/assignors').set('Cookie', cookie).expect(200);
+    expect(res.body.actsForMe).toHaveLength(1);
+    expect(res.body.actsForMe[0]).toMatchObject({
+      assignorId: assignorA,
+      name: 'Alex Sampleton',
+      relationshipKey: 'carer',
+      active: true,
+    });
+    expect(res.body.iActFor).toEqual([]);
+  });
+
+  it('revokes an assignor with no justification asked for or accepted (FR-1.23)', async () => {
+    const cookie = await activatedCookie();
+    await request(app.getHttpServer())
+      .post(`/portal/assignors/${assignorA}/revoke`)
+      .set('Cookie', cookie)
+      // A reason in the body is stripped by the whitelist and reaches nothing.
+      .send({ reason: 'none of your business' })
+      .expect(201);
+
+    const after = await request(app.getHttpServer()).get('/portal/assignors').set('Cookie', cookie).expect(200);
+    expect(after.body.actsForMe[0].active).toBe(false);
+
+    const events = await prisma.vaultOutbox.findMany({ where: { type: 'portal.assignor_revoked' } });
+    expect(events).toHaveLength(1);
+    expect(JSON.stringify(events)).not.toContain('none of your business');
+
+    // THE AGREEMENT DID NOT MOVE. Revoking says who may act from now on; it
+    // does not unmake a validly signed contract (HARD-02).
+    const agreement = await prisma.withPractice(practiceA, (tx) =>
+      tx.agreement.findFirst({ where: { id: signedAgreement } }),
+    );
+    expect(agreement!.status).toBe('stored');
+    expect(agreement!.assignorId).toBe(assignorA);
+
+    await prisma.withPractice(practiceA, (tx) => tx.portalAssignorRevocation.deleteMany({}));
+  });
+
+  it('raises a correction request that carries a field type and no new value', async () => {
+    const cookie = await activatedCookie();
+    const res = await request(app.getHttpServer())
+      .post('/portal/details/correction-request')
+      .set('Cookie', cookie)
+      .send({ practiceId: practiceA, fieldType: 'address', newValue: '7 Somewhere Else' })
+      .expect(201);
+
+    expect(res.body).toMatchObject({ raised: true, fieldType: 'address', practiceId: practiceA });
+
+    const task = await prisma.withPractice(practiceA, (tx) =>
+      tx.reviewTask.findFirst({ where: { id: res.body.reviewTaskId } }),
+    );
+    expect(task!.kind).toBe('portal_correction_requested');
+    expect(task!.subjectId).toBe(patientA);
+    // The proposed value was stripped by the whitelist and is nowhere.
+    expect(JSON.stringify(task)).not.toContain('Somewhere Else');
+
+    const events = await prisma.vaultOutbox.findMany({ where: { type: 'portal.correction_requested' } });
+    expect(JSON.stringify(events)).not.toContain('Somewhere Else');
+    expect(JSON.stringify(events)).not.toContain('Example Street');
+  });
+
+  it('refuses a correction request for a practice the account never linked', async () => {
+    const cookie = await activatedCookie();
+    await request(app.getHttpServer())
+      .post('/portal/details/correction-request')
+      .set('Cookie', cookie)
+      .send({ practiceId: practiceB, fieldType: 'address' })
+      .expect(404);
+  });
+
+  it('builds an access log of keys, never values (FR-8.2)', async () => {
+    const cookie = await activatedCookie();
+    const res = await request(app.getHttpServer()).get('/portal/access-log').set('Cookie', cookie).expect(200);
+
+    expect(res.body.length).toBeGreaterThan(0);
+    for (const entry of res.body) {
+      expect(Object.keys(entry).sort()).toEqual(['actionKey', 'actorType', 'at', 'practiceId', 'practiceName']);
+      expect(['practice_staff', 'patient', 'system']).toContain(entry.actorType);
+      expect(entry.practiceName).toBe('Portal Test Practice');
+    }
+    const serialised = JSON.stringify(res.body);
+    expect(serialised).not.toContain('Sampleton');
+    expect(serialised).not.toContain('Example Street');
+  });
+
+  // -------------------------------------------------------------------------
+  // Ending an enduring agreement
+  // -------------------------------------------------------------------------
+
+  it('terminates an enduring agreement two BUSINESS days out, with a DRAFT notice (REQ-PORT-05, FR-5.3)', async () => {
+    const cookie = await activatedCookie();
+
+    const before = await request(app.getHttpServer()).get('/portal/enduring').set('Cookie', cookie).expect(200);
+    expect(before.body).toHaveLength(1);
+    expect(before.body[0]).toMatchObject({
+      agreementId: enduringAgreement,
+      providerName: 'Dr Example Provider',
+      activeSince: '2026-08-01',
+    });
+
+    const res = await request(app.getHttpServer())
+      .post(`/portal/enduring/${enduringAgreement}/terminate`)
+      .set('Cookie', cookie)
+      .expect(201);
+
+    expect(res.body.noticeStatus).toBe('draft_pending_review');
+    expect(res.body.noticeTemplateKey).toBe('enduring_termination_notice_v1');
+    expect(res.body.calendar).toContain('NSW');
+
+    // TWO BUSINESS DAYS, not two calendar days: strictly later than the notice,
+    // and never landing on a weekend.
+    const noticeAt = new Date(res.body.noticeAt);
+    const effectiveAt = new Date(res.body.effectiveAt);
+    expect(effectiveAt.getTime()).toBeGreaterThan(noticeAt.getTime());
+    expect([0, 6]).not.toContain(effectiveAt.getUTCDay());
+    expect(effectiveAt.getTime() - noticeAt.getTime()).toBeGreaterThanOrEqual(2 * 86_400_000);
+
+    const notice = await prisma.withPractice(practiceA, (tx) =>
+      tx.portalTerminationNotice.findFirst({ where: { agreementId: enduringAgreement } }),
+    );
+    expect(notice!.status).toBe('draft_pending_review');
+    expect(notice!.templateVersion).toContain('DRAFT');
+
+    const task = await prisma.withPractice(practiceA, (tx) =>
+      tx.reviewTask.findFirst({ where: { id: notice!.reviewTaskId! } }),
+    );
+    expect(task!.kind).toBe('portal_enduring_terminated');
+
+    const events = await prisma.vaultOutbox.findMany({ where: { type: 'portal.enduring_terminated' } });
+    expect(events).toHaveLength(1);
+    // The event carries no amount and no name.
+    expect(JSON.stringify(events).toLowerCase()).not.toContain('sampleton');
+  });
+
+  // -------------------------------------------------------------------------
+  // Tenancy
+  // -------------------------------------------------------------------------
+
+  it('portal_reads_are_scoped_to_the_accounts_own_links', async () => {
+    const mine = await activatedCookie();
+
+    // A second account, linked to the OTHER practice's patient through the dev
+    // seam — the same shape the real path produces, without a second ceremony.
+    const other = await request(app.getHttpServer())
+      .post('/dev/portal-session')
+      .send({ patientIds: [patientB], practiceIds: [practiceB] })
+      .expect(201);
+    const theirs = cookieFrom(other);
+
+    // Each sees only their own.
+    const mineAgreements = await request(app.getHttpServer())
+      .get('/portal/agreements')
+      .set('Cookie', mine)
+      .expect(200);
+    expect(mineAgreements.body.map((a: { id: string }) => a.id)).not.toContain(agreementB);
+    expect(mineAgreements.body.every((a: { practiceId: string }) => a.practiceId === practiceA)).toBe(true);
+
+    const theirAgreements = await request(app.getHttpServer())
+      .get('/portal/agreements')
+      .set('Cookie', theirs)
+      .expect(200);
+    expect(theirAgreements.body.map((a: { id: string }) => a.id)).toEqual([agreementB]);
+
+    const theirDetails = await request(app.getHttpServer())
+      .get('/portal/details')
+      .set('Cookie', theirs)
+      .expect(200);
+    expect(JSON.stringify(theirDetails.body)).not.toContain('Sampleton');
+
+    // FAILS CLOSED, AND INDISTINGUISHABLY. Somebody else's agreement is a 404,
+    // the same answer an id that never existed gets.
+    await request(app.getHttpServer())
+      .get(`/portal/agreements/${agreementB}/artefact`)
+      .set('Cookie', mine)
+      .expect(404);
+    await request(app.getHttpServer())
+      .get(`/portal/agreements/${randomUUID()}/artefact`)
+      .set('Cookie', mine)
+      .expect(404);
+    await request(app.getHttpServer())
+      .post(`/portal/enduring/${enduringAgreement}/terminate`)
+      .set('Cookie', theirs)
+      .expect(404);
+    await request(app.getHttpServer())
+      .post(`/portal/assignors/${assignorA}/revoke`)
+      .set('Cookie', theirs)
+      .expect(404);
+  });
+
+  it('a revoked session stops working at once', async () => {
+    const cookie = await activatedCookie();
+    await request(app.getHttpServer()).get('/portal/session').set('Cookie', cookie).expect(200);
+    await request(app.getHttpServer()).post('/portal/sign-out').set('Cookie', cookie).expect(201);
+    await request(app.getHttpServer()).get('/portal/session').set('Cookie', cookie).expect(401);
+  });
+
+  it('a made-up cookie is a 401, not a database error', async () => {
+    await request(app.getHttpServer())
+      .get('/portal/session')
+      .set('Cookie', `${PORTAL_SESSION_COOKIE}=not-a-uuid`)
+      .expect(401);
+    await request(app.getHttpServer())
+      .get('/portal/session')
+      .set('Cookie', `${PORTAL_SESSION_COOKIE}=${randomUUID()}`)
+      .expect(401);
+  });
+
+  it('adds a second practice to the SAME account rather than making a second one', async () => {
+    // Deliberately reuses the first practice's own invitation flow: the point
+    // under test is that an existing cookie is honoured, not that two practices
+    // exist. A second link from the same practice is idempotent.
+    const cookie = await activatedCookie();
+    const token = await mintInvitation();
+    const res = await request(app.getHttpServer())
+      .post('/portal/activate')
+      .set('Cookie', cookie)
+      .send({ agreementId: signedAgreement, activationToken: token, stated: STATED_CORRECT })
+      .expect(201);
+
+    const before = await request(app.getHttpServer()).get('/portal/session').set('Cookie', cookie).expect(200);
+    expect(res.body.accountId).toBe(before.body.accountId);
+    expect(res.body.links).toHaveLength(1);
+  });
+
+  it('the dev portal session writes its access event like the real one', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/dev/portal-session')
+      .set('x-practice-id', practiceA)
+      .send({ patientIds: [patientA] })
+      .expect(201);
+    expect(res.body.links).toHaveLength(1);
+    const events = await prisma.vaultOutbox.findMany({ where: { type: 'portal.accessed' } });
+    expect(events.length).toBeGreaterThan(0);
+    // Unused in the assertions above but pinned so the fixture stays honest.
+    expect(captureRequestA).toBeTruthy();
+    expect(providerA).toBeTruthy();
+  });
+});
