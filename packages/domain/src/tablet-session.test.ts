@@ -62,8 +62,9 @@ describe('the push-to-device session', () => {
     for (const state of ACTIVE_TABLET_SESSION_STATES) {
       expect(isActiveTabletSessionState(state)).toBe(true);
       expect(canChangeTabletSessionState(state, 'walked_away')).toBe(true);
+      expect(canChangeTabletSessionState(state, 'timed_out')).toBe(true);
     }
-    for (const ended of ['signed', 'walked_away', 'recalled', 'expired'] as const) {
+    for (const ended of ['signed', 'walked_away', 'timed_out', 'recalled', 'expired'] as const) {
       expect(isActiveTabletSessionState(ended)).toBe(false);
       expect(canChangeTabletSessionState(ended, 'reading')).toBe(false);
       expect(canChangeTabletSessionState(ended, 'signed')).toBe(false);
@@ -72,13 +73,19 @@ describe('the push-to-device session', () => {
     expect(canChangeTabletSessionState('reading', 'reading')).toBe(false);
   });
 
-  it('a device may say it is reading or that somebody walked away, and nothing else', () => {
+  it('a device may say it is reading, that somebody walked away, or that its own clock timed out, and nothing else', () => {
     expect(isDeviceSettableTabletSessionState('reading')).toBe(true);
     expect(isDeviceSettableTabletSessionState('walked_away')).toBe(true);
+    // `timed_out` is distinct from `walked_away`: same effect on the record,
+    // different label, so reception can tell "asked for help" from "the
+    // inactivity clock fired" (Carl, 4 Sep 2026).
+    expect(isDeviceSettableTabletSessionState('timed_out')).toBe(true);
     // A device that could declare itself signed could declare a contract.
     expect(isDeviceSettableTabletSessionState('signed')).toBe(false);
     // Recall is a console act, like revoke.
     expect(isDeviceSettableTabletSessionState('recalled')).toBe(false);
+    // `expired` is the SERVER's own word for giving up; a device cannot
+    // assert it about itself.
     expect(isDeviceSettableTabletSessionState('expired')).toBe(false);
   });
 

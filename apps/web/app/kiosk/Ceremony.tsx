@@ -627,11 +627,14 @@ export function Ceremony(): ReactNode {
    * tablet left on "our reception staff can help" is a tablet still saying
    * something to a room. Idle is the honest screen for an empty counter.
    *
-   * A PUSHED SESSION IS ENDED FIRST, and only a pushed session. `walked_away`
-   * releases the tablet so reception can push the next patient to it and shows
-   * in the console's status column — the same state the exit posts, because
-   * from the server's point of view it is the same event: the patient is not
-   * at the screen any more. It changes NOTHING on the agreement (hard rule 8,
+   * A PUSHED SESSION IS ENDED FIRST, and only a pushed session, with
+   * `timed_out` — NOT `walked_away` (Carl's ruling, 4 Sep 2026). The two have
+   * the identical effect on the record: the session ends, the agreement is
+   * untouched, the device is released so reception can push the next patient
+   * to it. But this is the CLOCK ending the session, not a press on "See
+   * reception", and the console's status column needs to say which — a
+   * receptionist who sees "asked for help" goes and looks for someone who
+   * isn't there. It changes NOTHING on the agreement either way (hard rule 8,
    * REQ-REC-04). A WALK-UP ceremony posts nothing, because nothing was started
    * server-side beyond a verification event, and that event stands: it records
    * an identity check that genuinely happened, and deleting it because nobody
@@ -643,7 +646,7 @@ export function Ceremony(): ReactNode {
    */
   const resetForInactivity = useCallback(() => {
     if (pushed) {
-      void setTabletSessionState(pushed.id, 'walked_away').catch(() => undefined);
+      void setTabletSessionState(pushed.id, 'timed_out').catch(() => undefined);
     }
     reset();
   }, [pushed, reset]);

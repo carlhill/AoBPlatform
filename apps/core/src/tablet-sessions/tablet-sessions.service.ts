@@ -782,21 +782,26 @@ export class TabletSessionsService {
   }
 
   /**
-   * THE TABLET SAYS WHAT IT IS SHOWING — reading, or that the person left.
+   * THE TABLET SAYS WHAT IT IS SHOWING — reading, that the person left, or
+   * that its own inactivity clock ended the session with nobody there.
    *
-   * `walked_away` IS THE EXIT BUTTON, and it changes NOTHING on the agreement.
-   * That is hard rule 8 in one line: a patient who declines a screen is still
-   * seen, and reception chooses a private bill or an episodic agreement after
-   * the service (REQ-CHASE-07). Named test:
-   * `walked_away_changes_nothing_on_the_agreement`.
+   * `walked_away` IS THE EXIT BUTTON, and `timed_out` IS THE CLOCK
+   * (`useInactivityReset`, Carl 4 Sep 2026) — a pushed session the tablet's
+   * own five-minute-by-default timer ended with no request from the patient
+   * at all. BOTH change NOTHING on the agreement. That is hard rule 8 in one
+   * line: a patient who declines a screen, or who is no longer at it, is
+   * still seen, and reception chooses a private bill or an episodic agreement
+   * after the service (REQ-CHASE-07). Named tests:
+   * `walked_away_changes_nothing_on_the_agreement`,
+   * `timed_out_ends_the_session_and_changes_nothing_on_the_agreement`.
    */
   async setState(
     device: ResolvedDevice,
     sessionId: string,
-    state: 'reading' | 'walked_away',
+    state: 'reading' | 'walked_away' | 'timed_out',
   ): Promise<{ id: string; state: TabletSessionState }> {
-    if (state === 'walked_away') {
-      const ended = await this.end(device.practiceId, sessionId, 'walked_away', {
+    if (state === 'walked_away' || state === 'timed_out') {
+      const ended = await this.end(device.practiceId, sessionId, state, {
         principalType: 'device',
         id: device.deviceId,
       }, device.deviceId);
@@ -893,11 +898,17 @@ export class TabletSessionsService {
    * agreement" is a property of the code rather than of three callers
    * remembering it. There is no `tx.agreement` write anywhere in this method
    * and there must never be one.
+   *
+   * `timed_out` RUNS THROUGH HERE TOO (Carl, 4 Sep 2026), exactly the same
+   * path as `walked_away` — same idempotency, same one-session-per-device
+   * ownership check, same `agreementChanged: false` on the vault event. Only
+   * the stored `state` differs, which is the whole of the feature: reception
+   * reads a different word for the same outcome.
    */
   private async end(
     practiceId: string,
     sessionId: string,
-    to: 'walked_away' | 'recalled',
+    to: 'walked_away' | 'timed_out' | 'recalled',
     actor: { principalType: string; id: string },
     deviceId?: string,
   ): Promise<TabletSession> {

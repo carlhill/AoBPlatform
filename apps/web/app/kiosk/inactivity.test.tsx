@@ -14,11 +14,13 @@
  *   A reset that changed the step and kept the state would pass a screenshot
  *   and fail the requirement.
  *
- *   IT TELLS THE SERVER ON THE PUSHED PATH AND ONLY THERE. `walked_away`
- *   releases the tablet so reception can push the next patient and shows in
- *   their status column. A walk-up posts NOTHING — nothing was started
- *   server-side beyond a verification event, and that event stands, because it
- *   records an identity check that genuinely happened.
+ *   IT TELLS THE SERVER ON THE PUSHED PATH AND ONLY THERE, WITH `timed_out` —
+ *   NOT `walked_away` (Carl's ruling, 4 Sep 2026: same effect on the record,
+ *   different word, so reception can tell "asked for help" from "the clock
+ *   fired"). It releases the tablet so reception can push the next patient and
+ *   shows in their status column. A walk-up posts NOTHING — nothing was
+ *   started server-side beyond a verification event, and that event stands,
+ *   because it records an identity check that genuinely happened.
  *
  *   IT NEVER TOUCHES THE AGREEMENT. Every mutating call is asserted at zero,
  *   for the same reason `way-out.test.tsx` asserts it about the exit: a
@@ -318,7 +320,7 @@ describe('inactivity_reset_returns_to_idle_and_clears_state', () => {
   });
 });
 
-describe('inactivity_reset_posts_walked_away_for_a_pushed_session', () => {
+describe('inactivity_reset_posts_timed_out_for_a_pushed_session', () => {
   it('ends the SESSION and leaves the agreement exactly where it was', async () => {
     await aPushedCeremony();
 
@@ -327,12 +329,12 @@ describe('inactivity_reset_posts_walked_away_for_a_pushed_session', () => {
     expect(screen.getByTestId('start-check-in')).toBeTruthy();
 
     /*
-     * `walked_away` — the same state the exit posts, because from the server's
-     * point of view it is the same event: the patient is not at the screen any
-     * more. It releases the tablet for the next push and shows in reception's
-     * status column, which is why they find out rather than wondering.
+     * `timed_out` — NOT `walked_away`. Same effect on the record as the exit
+     * button (releases the tablet for the next push, shows in reception's
+     * status column), but a different word, because this time nobody pressed
+     * anything: the tablet's own clock ended it (Carl's ruling, 4 Sep 2026).
      */
-    expect(setTabletSessionState).toHaveBeenCalledWith(SESSION.id, 'walked_away');
+    expect(setTabletSessionState).toHaveBeenCalledWith(SESSION.id, 'timed_out');
 
     /*
      * AND NOTHING ELSE MOVED. Not a transition, not a lock, not a decline, not
@@ -397,7 +399,7 @@ describe('activity_cancels_the_pending_reset', () => {
     // deadline, the ceremony is still on screen.
     await advance(KIOSK_IDLE_WARNING_SECONDS + 5);
     expect(screen.getByTestId('check-details-heading')).toBeTruthy();
-    expect(setTabletSessionState).not.toHaveBeenCalledWith(SESSION.id, 'walked_away');
+    expect(setTabletSessionState).not.toHaveBeenCalledWith(SESSION.id, 'timed_out');
 
     // A KEY COUNTS TOO — K-2 is used with a keyboard and nothing else for
     // whole minutes at a time.
@@ -451,7 +453,7 @@ describe('timeout_comes_from_the_practice_setting', () => {
     await advance(KIOSK_IDLE_WARNING_SECONDS);
     await settle();
     expect(screen.getByTestId('start-check-in')).toBeTruthy();
-    expect(setTabletSessionState).toHaveBeenCalledWith(SESSION.id, 'walked_away');
+    expect(setTabletSessionState).toHaveBeenCalledWith(SESSION.id, 'timed_out');
   });
 
   it('falls back to the default rather than to no clock when the server says nothing', async () => {
@@ -506,10 +508,10 @@ describe('the reset clears a ceremony that had already got somewhere', () => {
     expect(document.body.textContent).not.toContain('Riley Example');
 
     /*
-     * AND THE SESSION WAS ENDED, from K-3 exactly as it would have been from
-     * K-P1 — the clock covers every screen of the ceremony, not only its
-     * first.
+     * AND THE SESSION WAS ENDED WITH `timed_out`, from K-3 exactly as it would
+     * have been from K-P1 — the clock covers every screen of the ceremony, not
+     * only its first.
      */
-    expect(setTabletSessionState).toHaveBeenCalledWith(SESSION.id, 'walked_away');
+    expect(setTabletSessionState).toHaveBeenCalledWith(SESSION.id, 'timed_out');
   });
 });

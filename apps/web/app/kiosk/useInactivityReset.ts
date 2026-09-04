@@ -33,10 +33,12 @@
  * reloaded tab is showing nobody's details.
  *
  * IT NEVER BLOCKS CARE (hard rule 8, REQ-REC-04). Expiry drops the screen back
- * to idle and, on a pushed session, tells the server the patient walked away.
- * It changes NOTHING about the agreement: no transition, no lock, no decline.
- * The patient is still seen, and reception still chooses what to do after the
- * service.
+ * to idle and, on a pushed session, tells the server the session `timed_out`
+ * — the same effect as the patient pressing "See reception" and walking away,
+ * but a different word, so reception can tell the two apart (Carl's ruling,
+ * 4 Sep 2026). It changes NOTHING about the agreement: no transition, no
+ * lock, no decline. The patient is still seen, and reception still chooses
+ * what to do after the service.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -86,7 +88,7 @@ export function useInactivityReset({
 
   /*
    * THE CALLBACK IN A REF, and this is load-bearing rather than tidy. `onExpire`
-   * closes over the pushed session so it can post `walked_away`, so it is a new
+   * closes over the pushed session so it can post `timed_out`, so it is a new
    * function on almost every render. If the arming effect depended on it, every
    * render would restart the clock and the tablet would never time out at all —
    * the exact failure this feature exists to prevent, arriving silently.

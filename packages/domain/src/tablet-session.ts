@@ -65,21 +65,42 @@ export const ACTIVE_TABLET_SESSION_STATES = [
 ] as const;
 
 /**
- * THE FOUR WAYS A SESSION ENDS, and only ONE of them touches the agreement.
+ * THE FIVE WAYS A SESSION ENDS, and only ONE of them touches the agreement.
  *
  *  - `signed`      — the assignor signed. The agreement moved; the session
  *                    merely records that it did.
- *  - `walked_away` — the exit button on the tablet. NOTHING on the agreement
+ *  - `walked_away` — the "See reception" exit on the tablet, pressed by
+ *                    somebody standing at it. NOTHING on the agreement
  *                    changes, and that is REQ-REC-04 in a single word: the
  *                    patient is still seen, and reception chooses a private
  *                    bill or an episodic agreement after the service. A flow
  *                    that punished walking away would be a flow that blocks
  *                    care.
+ *  - `timed_out`   — the CLIENT-SIDE inactivity clock fired on a pushed
+ *                    session; nobody pressed anything (Carl, 4 Sep 2026).
+ *                    Same effect on the record as `walked_away` — the session
+ *                    ends, the agreement is untouched, the device is
+ *                    released back to idle — but a different stored state, so
+ *                    reception can tell "the patient asked for help" from
+ *                    "the patient's record sat on the screen until the clock
+ *                    reset it". Distinct from `expired` below: that is the
+ *                    SERVER giving up after thirty minutes of no request at
+ *                    all; this is the tablet's own five-minute-by-default
+ *                    clock (`useInactivityReset`), which almost always fires
+ *                    first and posts this state itself.
  *  - `recalled`    — reception took it back from the console. Same: nothing on
  *                    the agreement changes.
- *  - `expired`     — thirty minutes with nothing happening. Same again.
+ *  - `expired`     — thirty minutes with no request reaching the SERVER at
+ *                    all — the backstop for a tablet that never got to post
+ *                    its own timeout (killed, offline, crashed). Same again.
  */
-export const ENDED_TABLET_SESSION_STATES = ['signed', 'walked_away', 'recalled', 'expired'] as const;
+export const ENDED_TABLET_SESSION_STATES = [
+  'signed',
+  'walked_away',
+  'timed_out',
+  'recalled',
+  'expired',
+] as const;
 
 export const TABLET_SESSION_STATES = [
   ...ACTIVE_TABLET_SESSION_STATES,
@@ -101,13 +122,18 @@ export function isActiveTabletSessionState(value: string): value is ActiveTablet
 /**
  * THE STATES THE TABLET MAY SET ITSELF, which is deliberately not all of them.
  *
- * A device may say it is showing the agreement, and it may say the person
- * walked away. It may NOT declare itself signed — that is what a signature
- * event says, and a device that could assert it would be a device that could
- * assert a contract. It may not recall itself either; recall is a console act,
- * for the same reason revoke is (TODO.md "Zero-footprint kiosk").
+ * A device may say it is showing the agreement, that the person walked away,
+ * or that its own inactivity clock ended the session with nobody there
+ * (`timed_out`, Carl 4 Sep 2026 — same effect as `walked_away`, different
+ * label, so reception can tell the two apart). It may NOT declare itself
+ * signed — that is what a signature event says, and a device that could
+ * assert it would be a device that could assert a contract. It may not
+ * recall itself either; recall is a console act, for the same reason revoke
+ * is (TODO.md "Zero-footprint kiosk"). And it may not declare itself
+ * `expired` — that is the SERVER's own word for giving up on a screen nobody
+ * asked it to watch; a device cannot assert that about itself.
  */
-export const DEVICE_SETTABLE_TABLET_SESSION_STATES = ['reading', 'walked_away'] as const;
+export const DEVICE_SETTABLE_TABLET_SESSION_STATES = ['reading', 'walked_away', 'timed_out'] as const;
 export type DeviceSettableTabletSessionState = (typeof DEVICE_SETTABLE_TABLET_SESSION_STATES)[number];
 
 export function isDeviceSettableTabletSessionState(

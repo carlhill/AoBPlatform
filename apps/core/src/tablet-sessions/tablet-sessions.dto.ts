@@ -63,12 +63,17 @@ export class ConfirmDetailsDto {
 /**
  * `POST /kiosk/session/:id/state` — the tablet says what it is showing.
  *
- * TWO STATES, AND THE OMISSIONS ARE THE DESIGN. A device may say it is showing
- * the agreement, and it may say the person walked away. It may not declare
+ * THREE STATES, AND THE OMISSIONS ARE THE DESIGN. A device may say it is
+ * showing the agreement, that the person pressed "See reception" and left
+ * (`walked_away`), or that its own inactivity clock ended the session with
+ * nobody there (`timed_out`, Carl 4 Sep 2026 — same effect as `walked_away`,
+ * a different label so reception can tell the two apart). It may not declare
  * itself SIGNED — a signature event says that, and a device that could assert
  * it could assert a contract. It may not RECALL itself either: recall is a
  * console act, for the same reason revoke is (a tablet that can un-pair itself
- * is a tablet a passer-by can un-pair).
+ * is a tablet a passer-by can un-pair). And it may not declare itself
+ * EXPIRED — that is the server's own word for giving up on a screen after
+ * thirty minutes of silence, not something a device asserts about itself.
  */
 export class SetSessionStateDto {
   @IsIn(DEVICE_SETTABLE_TABLET_SESSION_STATES as unknown as string[])

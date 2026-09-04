@@ -85,13 +85,18 @@ export class KioskSessionController {
   }
 
   /**
-   * The tablet says what it is showing — `reading`, or that the person left.
+   * The tablet says what it is showing — `reading`, that the person pressed
+   * "See reception" and left, or that its own inactivity clock ended the
+   * session with nobody there.
    *
-   * `walked_away` IS THE EXIT BUTTON that every ceremony screen has, and it
-   * changes NOTHING on the agreement (hard rule 8, REQ-REC-04). The patient is
-   * still seen; reception chooses a private bill or an episodic agreement
-   * after the service. Named test:
-   * `walked_away_changes_nothing_on_the_agreement`.
+   * `walked_away` IS THE EXIT BUTTON that every ceremony screen has, and
+   * `timed_out` is the client-side clock firing on a pushed session (Carl,
+   * 4 Sep 2026) — same effect on the record, different stored state, so
+   * reception can tell the two apart. BOTH change NOTHING on the agreement
+   * (hard rule 8, REQ-REC-04). The patient is still seen; reception chooses a
+   * private bill or an episodic agreement after the service. Named tests:
+   * `walked_away_changes_nothing_on_the_agreement`,
+   * `timed_out_ends_the_session_and_changes_nothing_on_the_agreement`.
    */
   @Post('session/:id/state')
   setState(
@@ -99,6 +104,6 @@ export class KioskSessionController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: SetSessionStateDto,
   ) {
-    return this.sessions.setState(device!, id, dto.state as 'reading' | 'walked_away');
+    return this.sessions.setState(device!, id, dto.state as 'reading' | 'walked_away' | 'timed_out');
   }
 }

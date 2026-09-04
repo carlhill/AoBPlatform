@@ -1836,7 +1836,7 @@ model TabletSession {
   /// values (REQ-VER-04) — the event itself lives in `verification_events`.
   verificationEventId String? @db.Uuid
 
-  /// pushed | reading | details_confirmed | details_disputed | signed | walked_away | recalled | expired
+  /// pushed | reading | details_confirmed | details_disputed | signed | walked_away | timed_out | recalled | expired
   state String @default("pushed")
 
   /// WHICH DETAILS THE PATIENT TICKED AS CORRECT — TYPES ONLY, and it is not a

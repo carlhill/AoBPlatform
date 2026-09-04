@@ -665,6 +665,98 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
       expect(idle.body).toEqual({ session: null });
     });
 
+    it('timed_out_ends_the_session_and_changes_nothing_on_the_agreement', async () => {
+      // `timed_out` is what the tablet's own inactivity clock posts, never a
+      // person's press — but the endpoint takes the caller's word for which
+      // one happened, so the assertions are identical to `walked_away`'s
+      // (Carl, 4 Sep 2026).
+      const agreementId = await draft();
+      const pushed = await pushTo(tabletA, agreementId).expect(201);
+
+      const before = await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.findFirst({ where: { id: agreementId } }),
+      );
+
+      const res = await http()
+        .post(`/kiosk/session/${pushed.body.id}/state`)
+        .set('x-device-credential', tabletACredential)
+        .send({ state: 'timed_out' })
+        .expect(201);
+      expect(res.body.state).toBe('timed_out');
+
+      const after = await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.findFirst({ where: { id: agreementId } }),
+      );
+      // FIELD BY FIELD, exactly as `walked_away` is checked — hard rule 8,
+      // REQ-REC-04.
+      expect(after).toEqual(before);
+      const captureRequest = await prisma.withPractice(practiceA, (tx) =>
+        tx.captureRequest.findFirst({ where: { agreementId, channel: 'in_practice' } }),
+      );
+      expect(captureRequest!.status).toBe('open');
+      // The device is free again immediately, exactly as after a walk-away.
+      const idle = await http()
+        .get('/kiosk/session')
+        .set('x-device-credential', tabletACredential)
+        .expect(200);
+      expect(idle.body).toEqual({ session: null });
+
+      const event = await prisma.vaultOutbox.findFirst({
+        where: { subjectId: pushed.body.id, type: 'tablet.session_ended' },
+      });
+      expect(event).not.toBeNull();
+      const payload = event!.payload as Record<string, unknown>;
+      expect(payload.to).toBe('timed_out');
+      expect(payload.agreementChanged).toBe(false);
+    });
+
+    it('timed_out_is_distinct_from_walked_away_and_expired', async () => {
+      // Same effect on the record, different word — the one thing this whole
+      // feature is (Carl's ruling, 4 Sep 2026). Three sessions, three ways of
+      // ending, three different stored states, so reception can tell "asked
+      // for help" from "left the screen running" from "the server gave up".
+      // One device, used in sequence: each session is ended before the next
+      // is pushed, so `device_busy` never gets in the way.
+      const walkedAgreement = await draft();
+      const walked = await pushTo(tabletA, walkedAgreement).expect(201);
+      await http()
+        .post(`/kiosk/session/${walked.body.id}/state`)
+        .set('x-device-credential', tabletACredential)
+        .send({ state: 'walked_away' })
+        .expect(201);
+
+      const timedOutAgreement = await draft();
+      const timedOut = await pushTo(tabletA, timedOutAgreement).expect(201);
+      await http()
+        .post(`/kiosk/session/${timedOut.body.id}/state`)
+        .set('x-device-credential', tabletACredential)
+        .send({ state: 'timed_out' })
+        .expect(201);
+
+      const expiredAgreement = await draft();
+      const expired = await pushTo(tabletA, expiredAgreement).expect(201);
+      await prisma.withPractice(practiceA, (tx) =>
+        tx.tabletSession.update({
+          where: { id: expired.body.id },
+          data: { lastStateAt: new Date(Date.now() - TABLET_SESSION_IDLE_MS - 1000) },
+        }),
+      );
+      // A poll settles the server-side expiry — the same mechanism as the
+      // existing thirty-minute test above.
+      await http().get('/kiosk/session').set('x-device-credential', tabletACredential).expect(200);
+
+      const rows = await http()
+        .get('/tablet-sessions?active=false')
+        .set('x-practice-id', practiceA)
+        .expect(200);
+      const stateById = new Map((rows.body as Array<{ id: string; state: string }>).map((r) => [r.id, r.state]));
+      expect(stateById.get(walked.body.id)).toBe('walked_away');
+      expect(stateById.get(timedOut.body.id)).toBe('timed_out');
+      expect(stateById.get(expired.body.id)).toBe('expired');
+      // Three distinct words, none of them equal to another.
+      expect(new Set([stateById.get(walked.body.id), stateById.get(timedOut.body.id), stateById.get(expired.body.id)]).size).toBe(3);
+    });
+
     it('recall_changes_nothing_on_the_agreement', async () => {
       const agreementId = await draft();
       const pushed = await pushTo(tabletA, agreementId).expect(201);
@@ -1364,6 +1456,158 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
         .expect(200);
       expect(shown.body.session.agreementId).toBe(replacement!.id);
       expect(shown.body.session.patient.address).toBe('1 Corrected Way, Sampletown NSW 2000');
+    });
+
+    it('superseding_agreement_keeps_d6a_and_is_pushable', async () => {
+      /*
+       * A LIVE BUG, CAUGHT ON RE-SEND (Carl, 4 Sep 2026). D6a can live in the
+       * `serviceDescription` COLUMN (the staff surface,
+       * `POST /service-descriptions/agreements/:id`) or in
+       * `particulars.basicServiceDescription` (the lock's own DTO field, for a
+       * caller that predates the staff surface — `prepareLock`'s own comment
+       * says "the DTO still wins where it is given"). This agreement is locked
+       * the SECOND way, with the column left null throughout, which is exactly
+       * the shape that slipped through `supersedeForCorrection` when it copied
+       * `agreement.serviceDescription` (the column) rather than reading D6a
+       * the way `pushable` does.
+       */
+      const { patientId, assignorId } = await freshPatient('Nadia');
+      const agreementId = await draft({ patientId, assignorId, description: null });
+
+      const preLock = await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.findFirst({ where: { id: agreementId } }),
+      );
+      expect(preLock!.serviceDescription).toBeNull();
+
+      // Locked directly, D6a arriving only through the DTO — never through the
+      // column-writing staff surface.
+      await http()
+        .post(`/agreements/${agreementId}/particulars`)
+        .set('x-practice-id', practiceA)
+        .send({ serviceDate: '2026-09-04', basicServiceDescription: D6A })
+        .expect(201);
+
+      const locked = await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.findFirst({ where: { id: agreementId } }),
+      );
+      expect(locked!.serviceDescription).toBeNull();
+      expect((locked!.particulars as Record<string, unknown>).basicServiceDescription).toBe(D6A);
+
+      // Push the already-locked agreement (the re-push branch), dispute the
+      // address, and correct it — the everyday path to a supersession.
+      const first = await pushTo(tabletA, agreementId).expect(201);
+      await answer(first.body.id, {
+        confirmed: ['name', 'date_of_birth', 'mobile', 'email'],
+        disputed: ['address'],
+      }).expect(201);
+      await http()
+        .patch(`/patients/${patientId}/details`)
+        .set('x-practice-id', practiceA)
+        .send({ address: '2 Fixed Avenue, Sampletown NSW 2000' })
+        .expect(200);
+
+      /*
+       * THE ASSERTION THAT MATTERS. `resend` supersedes and then immediately
+       * pushes the replacement (`this.push(...)` at the end of `resend`), so
+       * if the new draft lost D6a this call itself fails 409
+       * `service_description_missing` — the exact symptom Carl saw at the
+       * desk ("Service: Not set / Cannot be sent yet").
+       */
+      const resent = await http()
+        .post(`/tablet-sessions/${first.body.id}/resend`)
+        .set('x-practice-id', practiceA)
+        .expect(201);
+      expect(resent.body.supersededAgreementId).toBe(agreementId);
+
+      const replacement = await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.findFirst({ where: { id: resent.body.agreementId } }),
+      );
+      // D6a now lives on the COLUMN of the new row, carried across from
+      // wherever the old row actually held it.
+      expect(replacement!.serviceDescription).toBe(D6A);
+      // And the new lock's own particulars agree — a description that
+      // "arrived" is one the fresh lock could read and validate against C6.
+      expect((replacement!.particulars as Record<string, unknown>).basicServiceDescription).toBe(D6A);
+      expect(replacement!.particularsLockedAt).not.toBeNull();
+      expect(replacement!.status).toBe('awaiting_signature');
+
+      // The tablet is showing the replacement, ready to sign — not stuck on
+      // "Not set".
+      const shown = await http()
+        .get('/kiosk/session')
+        .set('x-device-credential', tabletACredential)
+        .expect(200);
+      expect(shown.body.session.agreementId).toBe(replacement!.id);
+    });
+
+    it('the superseding row copies the anchor, D7, provider, patient and type — nothing drifts across a correction', async () => {
+      /*
+       * WHAT SHOULD AND SHOULD NOT MOVE ACROSS A SUPERSESSION (HARD-01,
+       * hard rule 6, D7). This is deliberately NOT an exhaustive "differs only
+       * in id/lock-state/supersedesAgreementId" comparison — `resend` re-locks
+       * the replacement in the same call (a fresh `particulars` snapshot,
+       * hash, renderer version, rule-set and mapping version, and a NEW
+       * staff-verified verification event, because reception has the person in
+       * front of them again, REQ-VER-03), so those fields are SUPPOSED to
+       * differ from the old row and asserting otherwise would just be wrong
+       * about the design. What must never differ is the identity of the
+       * contract: which provider, which patient, who is signing, and what kind
+       * of agreement this is.
+       */
+      const { patientId, assignorId } = await freshPatient('Oakley');
+      const agreementId = await draft({ patientId, assignorId });
+      const first = await pushTo(tabletA, agreementId).expect(201);
+
+      const before = await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.findFirst({ where: { id: agreementId } }),
+      );
+
+      await answer(first.body.id, {
+        confirmed: ['name', 'date_of_birth', 'mobile', 'email'],
+        disputed: ['address'],
+      }).expect(201);
+      await http()
+        .patch(`/patients/${patientId}/details`)
+        .set('x-practice-id', practiceA)
+        .send({ address: '3 Steady Street, Sampletown NSW 2000' })
+        .expect(200);
+
+      const resent = await http()
+        .post(`/tablet-sessions/${first.body.id}/resend`)
+        .set('x-practice-id', practiceA)
+        .expect(201);
+
+      const after = await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.findFirst({ where: { id: resent.body.agreementId } }),
+      );
+
+      // THE CONTRACT'S IDENTITY, UNCHANGED (HARD-01 — the SAME provider seeing
+      // the SAME patient; a different one would need fresh consent).
+      expect(after!.type).toBe(before!.type);
+      expect(after!.anchorKind).toBe(before!.anchorKind);
+      expect(after!.providerId).toBe(before!.providerId);
+      expect(after!.affiliationId).toBe(before!.affiliationId);
+      expect(after!.organisationId).toBe(before!.organisationId);
+      expect(after!.patientId).toBe(before!.patientId);
+      expect(after!.practiceId).toBe(before!.practiceId);
+      // D7, unchanged — a correction to an address is not a correction to who
+      // is signing.
+      expect(after!.assignorId).toBe(before!.assignorId);
+      expect(after!.assignorIsPatient).toBe(before!.assignorIsPatient);
+      expect(after!.patientAssignorId).toBe(before!.patientAssignorId);
+      expect(after!.enduringPathway).toBe(before!.enduringPathway);
+      // D6a, unchanged — nobody touched the service description.
+      expect(after!.serviceDescription).toBe(before!.serviceDescription);
+
+      // AND THE LINK AND THE OLD ROW'S OWN TRUTH, exactly the shape HARD-02
+      // describes.
+      expect(after!.supersedesAgreementId).toBe(agreementId);
+      expect(after!.id).not.toBe(before!.id);
+      const untouched = await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.findFirst({ where: { id: agreementId } }),
+      );
+      expect(untouched!.particulars).toEqual(before!.particulars);
+      expect(untouched!.renderedArtefactHash).toBe(before!.renderedArtefactHash);
     });
 
     it('the re-send refuses an unattributed caller, like every other act on this page', async () => {

@@ -198,7 +198,19 @@ export class AgreementsService {
         assignorIsPatient: agreement.assignorIsPatient,
         patientAssignorId: agreement.patientAssignorId,
         enduringPathway: agreement.enduringPathway,
-        serviceDescription: agreement.serviceDescription,
+        /*
+         * THE SAME D6a READ `pushable` USES (`d6aOf`, this file's own copy of
+         * `tablet-sessions.service.ts`'s helper — Carl flagged this live, 4
+         * Sep 2026). D6a can live in the COLUMN or, when it arrived through
+         * `lockParticulars`'s own DTO rather than the staff surface that
+         * writes the column, in `particulars.basicServiceDescription`. The old
+         * agreement's `particulars` is never copied (see below — it belongs to
+         * the LOCK this draft has not gone through yet), so a description that
+         * only ever lived there must be read out and copied across as a plain
+         * column value now, or it is gone: the new draft would show "Not set"
+         * and refuse to push over a detail nobody changed.
+         */
+        serviceDescription: d6aOf(agreement),
         serviceDescriptionSetBy: agreement.serviceDescriptionSetBy,
         serviceDescriptionSetAt: agreement.serviceDescriptionSetAt,
         status: 'draft',
@@ -1031,4 +1043,26 @@ export class AgreementsService {
       tx.agreement.findMany({ where: status ? { status } : undefined, orderBy: { createdAt: 'desc' } }),
     );
   }
+}
+
+/**
+ * D6a, READ THE SAME WAY EVERYWHERE IT MATTERS (Carl flagged the gap live, 4
+ * Sep 2026, over `supersedeForCorrection` losing it). The description lives in
+ * the COLUMN when a staff member set it through the reconciliation surface, or
+ * in `particulars.basicServiceDescription` when it arrived through
+ * `lockParticulars`'s own DTO instead — `tablet-sessions.service.ts` has its
+ * own copy of this exact function for `pushable`'s identical read, and
+ * `kiosk.service.ts`'s waiting-list read makes the same check inline. This
+ * copy exists so `supersedeForCorrection` can carry the value forward as a
+ * plain column on the NEW draft — the new agreement never inherits the old
+ * one's `particulars` (that belongs to the lock this draft has not gone
+ * through), so a description that only ever lived there must be resolved and
+ * copied now or it is silently gone.
+ */
+function d6aOf(agreement: Pick<DbAgreement, 'serviceDescription' | 'particulars'>): string | undefined {
+  if (agreement.serviceDescription) return agreement.serviceDescription;
+  const particulars = agreement.particulars as Record<string, unknown> | null;
+  return typeof particulars?.basicServiceDescription === 'string'
+    ? (particulars.basicServiceDescription as string)
+    : undefined;
 }
