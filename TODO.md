@@ -1643,6 +1643,52 @@ Now a working rule in CLAUDE.md section 7.
       `recovery_returns_to_idle_and_clears_state`. Sequenced after the
       `timed_out` build, which is editing Ceremony.tsx.
 
+## Tablet heartbeat and "Return to Begin" (Carl, 4 Sep 2026)
+
+Carl: reception needs one more option -- force a tablet back to the Begin
+page -- and "the tablet must know what it is on": is it on Begin, or is a
+patient part-way through, and on which page. Today the tablet knows its own
+screen but never tells the server, so a walk-up mid-verify is invisible from
+the console and a tablet on Begin looks the same as one that is switched off.
+Recall only reaches a pushed session; the session poll is deliberately off
+during a walk-up, so recall cannot clear a walk-up.
+
+Design (agreed in principle 4 Sep 2026; build after the outage/dispute and
+console builds land -- they are in the same files):
+
+- [ ] **Heartbeat, every poll, on every screen.** Turn the outage
+      heartbeat (`/kiosk/me` at the server's `pollMs`) into
+      `POST /kiosk/heartbeat { screen, sessionId }` answering
+      `{ command }`. `screen` is one of a fixed list of names -- begin, list,
+      verify, assignor, particulars, signature, check-details, complete,
+      handover, outage -- never a typed value, never a name (REQ-VER-04,
+      hard rule 9). `sessionId` is the opaque pushed-session id or null.
+      Server records `lastSeenAt`, `currentScreen`, `currentSessionId` on the
+      device. Named test: `heartbeat_carries_screen_names_not_values`.
+- [ ] **Console shows it** on `/practice/devices` and `/practice/tablet`
+      rows: "On Begin · seen 4 s ago", "Checking details · Riley Example ·
+      session f431e2a4", "Walk-up in progress · verifying identity",
+      "Not seen for 3 min" after two missed heartbeats. The stale state is
+      most of "Tablets: make one inactive" above, and it tells reception why
+      a push is still waiting.
+- [ ] **Return to Begin** -- a button on the device row. It recalls any live
+      pushed session (the tablet already handles `session: null`) AND sets a
+      reset command on the device; the next heartbeat delivers it, the tablet
+      runs the same clearing routine as inactivity and lands on Begin (not on
+      a timed-out or error screen), then acknowledges on its following
+      heartbeat. Vault event `tablet.reset_requested` with who and when; no
+      PII. Guard rails: the command is served for two minutes only, so a
+      tablet that was asleep does not reset tomorrow's patient; a reset on a
+      tablet already on Begin is a no-op. Named tests:
+      `return_to_begin_clears_a_walk_up_mid_verify`,
+      `reset_command_expires_after_two_minutes`.
+- [ ] Consequence, accepted: Return to Begin during a walk-up throws that
+      patient off mid-flow with no message. Reception is standing there and
+      has decided the tablet is needed; care is not blocked (rule 8).
+- [ ] Zero-footprint unchanged: nothing about the heartbeat is stored on the
+      device. OpenAPI contract updated; estimate ~half a day of agent time
+      across core, console and tablet.
+
 ## Nothing on the patient surface is ever staff entry
 
 Carl, 3 Sep 2026, on seeing K-3 ask for a "Basic description of the service --
