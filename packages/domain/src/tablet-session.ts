@@ -43,7 +43,26 @@ import type { AgreementType } from './agreement';
  * nothing. That is what makes "one session per device" a fact about the
  * database rather than a hope about the callers.
  */
-export const ACTIVE_TABLET_SESSION_STATES = ['pushed', 'reading', 'details_confirmed'] as const;
+/**
+ * `details_disputed` IS LIVE, NOT AN ENDING (Carl, 4 Sep 2026). The patient
+ * crossed at least one row, so the ceremony stops — Continue is dead on the
+ * tablet — but the SESSION does not, and neither does the device's claim on
+ * it. Reception sees the cross, corrects the detail at the desk and re-sends;
+ * a patient who then changes their mind and ticks it after all moves the same
+ * session back to `details_confirmed` without anybody pushing twice.
+ *
+ * ENDING IT WOULD BE THE WRONG SHAPE for two reasons that both bite. The
+ * device would be released, so the tablet in the patient's hands would fall
+ * back to the idle screen mid-conversation; and reception's live list is built
+ * from ACTIVE sessions, so the one row they need to act on is the one row that
+ * would vanish. A dispute is a fact about the details, not about the session.
+ */
+export const ACTIVE_TABLET_SESSION_STATES = [
+  'pushed',
+  'reading',
+  'details_confirmed',
+  'details_disputed',
+] as const;
 
 /**
  * THE FOUR WAYS A SESSION ENDS, and only ONE of them touches the agreement.
@@ -145,6 +164,122 @@ export type ConfirmableDetailType = (typeof CONFIRMABLE_DETAIL_TYPES)[number];
 
 export function isConfirmableDetailType(value: string): value is ConfirmableDetailType {
   return (CONFIRMABLE_DETAIL_TYPES as readonly string[]).includes(value);
+}
+
+/**
+ * THE THREE THAT ARE PARTICULARS, AND THE TWO THAT ARE NOT (Carl, 4 Sep 2026).
+ *
+ * Name, date of birth and address are the patient's own particulars — the
+ * D-set facts the agreement is about. A mobile number and an email address are
+ * CONTACT details: they say where a copy of the agreement goes, and they say
+ * nothing about the contract. So correcting one of the first three on a LOCKED
+ * agreement means the artefact that was rendered and hashed no longer states
+ * what the platform holds, and the correction supersedes rather than edits
+ * (HARD-02). Correcting a mobile or an email never does.
+ *
+ * ONE HONEST CAVEAT, STATED HERE BECAUSE IT WILL BE MISREAD OTHERWISE. Of the
+ * three, only the NAME actually reaches the rendered artefact today —
+ * `prepareLock` assembles `patientName` and nothing else about the person, so
+ * a corrected date of birth or address changes no hashed byte as the renderer
+ * currently stands. This list is deliberately WIDER than that: it is the
+ * D-set as Carl named it, it fails toward superseding rather than toward
+ * quietly re-using a locked contract, and a renderer that grows a date of
+ * birth later must not silently turn a safe rule into an unsafe one. Narrowing
+ * it is a decision for Carl, not a tidy-up.
+ */
+export const PARTICULAR_DETAIL_TYPES = ['name', 'date_of_birth', 'address'] as const;
+
+export type ParticularDetailType = (typeof PARTICULAR_DETAIL_TYPES)[number];
+
+export function isParticularDetailType(value: string): value is ParticularDetailType {
+  return (PARTICULAR_DETAIL_TYPES as readonly string[]).includes(value);
+}
+
+/** Does correcting any of these types mean the locked agreement must be superseded? */
+export function correctionTouchesParticulars(types: readonly string[]): boolean {
+  return types.some(isParticularDetailType);
+}
+
+/**
+ * WHAT RECEPTION MAY CORRECT ON THE PLATFORM'S MIRROR, and the list is the
+ * whole of it (TODO.md "Check-your-details", Carl 4 Sep 2026).
+ *
+ * SIX FIELDS, FIVE DETAIL TYPES — the name is two columns and one row on the
+ * tablet, because a patient does not read "given names" and "family name" as
+ * two questions.
+ *
+ * THERE IS NO MEDICARE FIELD HERE AND THERE IS NO WAY TO ADD ONE. The card
+ * number is not an identity identifier, the exclusion is non-configurable
+ * (hard rule 1, REQ-VER-02), and the correction endpoint refuses any field
+ * name matching /medicare/i before it looks at this list at all — the ESLint
+ * rule would fail the build on the identifier as well.
+ *
+ * NOR IS THERE A GENDER, PATIENT RECORD NUMBER OR IHI. Those are identifiers
+ * the patient was never shown and never asked about, so a dispute cannot be
+ * about them and a correction here would be reception editing an identifier
+ * off the back of a screen that did not mention it.
+ */
+export const CORRECTABLE_PATIENT_FIELDS = [
+  'givenNames',
+  'familyName',
+  'dateOfBirth',
+  'address',
+  'mobile',
+  'email',
+] as const;
+
+export type CorrectablePatientField = (typeof CORRECTABLE_PATIENT_FIELDS)[number];
+
+export function isCorrectablePatientField(value: string): value is CorrectablePatientField {
+  return (CORRECTABLE_PATIENT_FIELDS as readonly string[]).includes(value);
+}
+
+/**
+ * WHICH TICK-BOX A CORRECTED COLUMN ANSWERS. The vault event records the TYPE
+ * (REQ-VER-04) — `name`, not "Jamie Sampleton" and not `givenNames` — so the
+ * evidence reads in the same vocabulary the patient's cross did.
+ */
+const DETAIL_TYPE_BY_FIELD: Readonly<Record<CorrectablePatientField, ConfirmableDetailType>> = {
+  givenNames: 'name',
+  familyName: 'name',
+  dateOfBirth: 'date_of_birth',
+  address: 'address',
+  mobile: 'mobile',
+  email: 'email',
+};
+
+export function detailTypeForPatientField(field: CorrectablePatientField): ConfirmableDetailType {
+  return DETAIL_TYPE_BY_FIELD[field];
+}
+
+/**
+ * WHICH ROWS THE TABLET DREW, DECIDED BY THE SERVER RATHER THAN TAKEN FROM THE
+ * DEVICE.
+ *
+ * A row the practice holds nothing for is not drawn — nobody is shown a blank
+ * line and asked whether it is correct — so "every row answered" means exactly
+ * "every type in this list". The tablet derives the same set from the same
+ * payload, and `confirm-details` CHECKS the two agree instead of trusting the
+ * device's arithmetic: a session that reached `details_confirmed` having
+ * answered three of five rows would be a ceremony record that says more than
+ * happened.
+ */
+export function shownDetailTypesFor(patient: TabletSessionPatient): readonly ConfirmableDetailType[] {
+  const shown: ConfirmableDetailType[] = [];
+  for (const type of CONFIRMABLE_DETAIL_TYPES) {
+    const value =
+      type === 'name'
+        ? [patient.givenNames, patient.familyName].map((part) => (part ?? '').trim()).join(' ')
+        : type === 'date_of_birth'
+          ? (patient.dateOfBirth ?? '')
+          : type === 'address'
+            ? (patient.address ?? '')
+            : type === 'mobile'
+              ? (patient.mobile ?? '')
+              : (patient.email ?? '');
+    if (value.trim().length > 0) shown.push(type);
+  }
+  return shown;
 }
 
 /**
@@ -306,8 +441,23 @@ export interface TabletSessionRow {
   agreementId: string;
   agreementType: AgreementType;
   patientName: string;
+  /**
+   * SO RECEPTION CAN CORRECT A DISPUTED DETAIL FROM THIS ROW. An id, not a
+   * detail: the values themselves are fetched on demand when somebody opens
+   * the correction control, never carried on the three-second poll — this list
+   * stays a status rather than becoming a mirror of the tablet's screen.
+   */
+  patientId: string;
   providerName: string | null;
   state: TabletSessionState;
+  /**
+   * WHICH DETAILS THE PATIENT CROSSED — TYPES, never the values behind them
+   * (REQ-VER-04, hard rule 9). Reception reads "Patient says wrong: address,
+   * mobile" and looks up the values on their own screen, which they may see
+   * because it is a staff surface and they asked for them at the desk minutes
+   * ago. The wire never carries them.
+   */
+  disputedDetails: string[];
   /** The staff member who pushed it, by display name. */
   pushedBy: string;
   pushedAt: string;

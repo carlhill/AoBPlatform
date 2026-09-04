@@ -114,4 +114,33 @@ export class TabletSessionsController {
   ) {
     return this.sessions.recall(requirePractice(practiceId), id, actor);
   }
+
+  /**
+   * SEND IT AGAIN, NOW THAT THE DETAIL IS FIXED (Carl, 4 Sep 2026).
+   *
+   * The patient crossed a row on the tablet, reception corrected it at the
+   * desk, and this recalls the old screen and hands the SAME tablet a fresh
+   * session for the same visit — re-read from the platform's records, so the
+   * corrected detail is what the patient sees.
+   *
+   * IT REFUSES THE SAME WAY THE PUSH DOES, with the same `reason` codes, for
+   * the good reason that it IS a push: a tablet revoked between the dispute
+   * and the fix, or an agreement that has moved on, must read the same on this
+   * button as on the other one.
+   *
+   * IF A PARTICULAR WAS CORRECTED ON A LOCKED AGREEMENT, THE RESPONSE SAYS SO.
+   * `supersededAgreementId` names the agreement that was replaced (HARD-02 —
+   * corrections supersede, they do not edit), so the console can tell
+   * reception plainly rather than leaving them to wonder why the row's id
+   * changed under them.
+   */
+  @Post('tablet-sessions/:id/resend')
+  @PracticeScoped()
+  resend(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('id', ParseUUIDPipe) id: string,
+    @SessionActor() actor: Actor | undefined,
+  ) {
+    return this.sessions.resend(requirePractice(practiceId), id, actor);
+  }
 }

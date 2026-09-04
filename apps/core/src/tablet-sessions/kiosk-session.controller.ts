@@ -58,7 +58,8 @@ export class KioskSessionController {
   }
 
   /**
-   * The patient ticked their details as correct.
+   * THE PATIENT'S ANSWER TO EVERY DETAIL ON THE SCREEN — a tick, or a cross
+   * (Carl, 4 Sep 2026).
    *
    * TYPES ONLY, AND IT IS NOT A VERIFICATION. The route is named
    * `confirm-details` and not `verify` for the reason TODO.md gives: a value
@@ -66,6 +67,13 @@ export class KioskSessionController {
    * nothing about who is holding it. The verification was the staff check
    * across the desk, which the push already recorded with the staff member's
    * identity (REQ-VER-03/-04).
+   *
+   * A CROSS POSTS IMMEDIATELY AND ASKS THE PATIENT FOR NOTHING FURTHER. The
+   * point of the cross is that reception learns about it without the patient
+   * having to explain it across a waiting room, so the tablet sends the answer
+   * the moment every row has one and Continue goes dead. Nothing about the
+   * agreement moves either way — a dispute stops a ceremony, not a visit
+   * (hard rule 8, REQ-REC-04).
    */
   @Post('session/:id/confirm-details')
   confirmDetails(
@@ -73,7 +81,7 @@ export class KioskSessionController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ConfirmDetailsDto,
   ) {
-    return this.sessions.confirmDetails(device!, id, dto.confirmed);
+    return this.sessions.confirmDetails(device!, id, dto.confirmed, dto.disputed ?? []);
   }
 
   /**

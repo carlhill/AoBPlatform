@@ -3660,11 +3660,83 @@ export const strings = {
       pushed: 'sent, not opened yet',
       reading: 'reading',
       details_confirmed: 'details confirmed',
+      /*
+       * NOT "FAILED" AND NOT "REJECTED". The patient did exactly what the
+       * screen asked and told us something we hold is wrong — which is useful
+       * work, not an error. The word reception reads decides whether they turn
+       * to the patient with an apology or with a correction.
+       */
+      details_disputed: 'a detail is wrong',
       signed: 'signed',
       walked_away: 'walked away',
       recalled: 'recalled',
       expired: 'timed out',
     } as Record<string, string>,
+
+    /*
+     * WHAT THE PATIENT SAID IS WRONG (Carl, 4 Sep 2026: "the
+     * practice-reception-user ... should be able to see the same screen and be
+     * told what the patient did not agree to").
+     *
+     * THE TYPES, IN OUR WORDS, AND NEVER THE VALUES ON THE WIRE. The server
+     * sends `address,mobile`; the words are here, keyed by the same five types
+     * the tick-boxes use (REQ-LANG-01). The VALUES are fetched only when
+     * somebody opens the correction control — reception is watching a status,
+     * not mirroring a tablet at the front counter.
+     */
+    disputedTitle: 'Patient says wrong',
+    disputedList: (details: string) => `Patient says wrong: ${details}`,
+    disputedLead:
+      'They have been told to see you. Fix the detail below and send it again — their appointment is not '
+      + 'affected either way.',
+
+    correctAction: 'Correct',
+    correctClose: 'Close',
+    correctHeading: 'Correct the details the patient says are wrong',
+    correctLoading: 'Reading the current details…',
+    correctSave: 'Save the correction',
+    correctSaving: 'Saving…',
+    correctSaved: 'Saved. Now send it to the tablet again.',
+    correctNoChange: 'Nothing was changed.',
+    correctBlockedEmpty: 'Change at least one detail first.',
+    correctedAt: (when: string) => `Last corrected here at ${when}`,
+    /**
+     * CARL'S CAVEAT, VERBATIM AND ON THE SCREEN (TODO.md, 4 Sep 2026 — "the
+     * console's correction control says so on screen"). It is here rather than
+     * in help because the person who needs it is the person typing, at the
+     * moment they type: the PMS is the source of truth (REQ-DATA-10) and until
+     * the Medtech write-back exists (D-01) nothing carries this correction
+     * home.
+     *
+     * DO NOT SOFTEN IT. "The next sync will bring the old value back" is the
+     * consequence, stated plainly; anything vaguer would be a warning nobody
+     * acts on.
+     */
+    correctPmsCaveat:
+      'Also update this in your practice software — the next sync will bring the old value back otherwise.',
+    /** The six correctable columns, by the words a receptionist reads. */
+    correctFields: {
+      givenNames: 'Given names',
+      familyName: 'Family name',
+      dateOfBirth: 'Date of birth',
+      address: 'Address',
+      mobile: 'Mobile',
+      email: 'Email',
+    } as Record<string, string>,
+
+    resendAction: 'Re-send',
+    resending: 'Sending again…',
+    /**
+     * HARD-02 IN THE WORDS OF SOMEBODY AT A DESK. A locked agreement whose
+     * particulars have been corrected cannot be edited — the artefact was
+     * rendered and hashed against the old ones — so a fresh agreement replaces
+     * it. Reception is told, because the row's id changes under them and a
+     * silent replacement is how people stop trusting a screen.
+     */
+    resendSuperseded:
+      'Sent again. The details are part of the agreement, so a new agreement replaced the old one — the old '
+      + 'one is kept exactly as it was.',
+    resent: 'Sent to the tablet again.',
 
     /**
      * WHY A PUSH WAS REFUSED — one sentence per reason, each naming the rule
@@ -3880,13 +3952,39 @@ export const strings = {
         mobile: 'Mobile number',
         email: 'Email address',
       } as Record<string, string>,
-      /** The tick control on each row. Large, and selection is shown by fill AND `aria-pressed`. */
-      tick: 'This is correct',
-      /** The same control once it is ticked, so the state is in the label as well as the fill. */
-      ticked: 'Confirmed',
+      /**
+       * THE TWO ANSWERS, ONE PER BUTTON (Carl, 4 Sep 2026). Short, because
+       * they sit under a glyph on a control roughly a thumb wide, and because
+       * a patient scanning five rows should read four words in total rather
+       * than forty.
+       *
+       * THE CROSS IS NOT AN APOLOGY AND NOT A WARNING. "That's wrong" is what
+       * somebody would say out loud; anything softer ("this needs checking")
+       * would make a patient hesitate to press the button that is the entire
+       * point of the screen.
+       */
+      right: "That's right",
+      wrong: "That's wrong",
       continueAction: 'Continue',
       continueBlocked: (count: number) =>
         count === 1 ? 'Continue — 1 detail still to check' : `Continue — ${count} details still to check`,
+      /**
+       * WHY CONTINUE IS DEAD AFTER A CROSS, in the label of the dead control
+       * itself (CLAUDE.md §6 — blocked states are unreachable, and a control
+       * disabled without a reason sends the patient to a staff member who also
+       * cannot see why).
+       */
+      continueDisputed: 'Continue — reception is fixing a detail',
+      /**
+       * THE BAND, and it is deliberately in the present tense. By the time it
+       * shows, the crossed types have already reached reception's screen, so
+       * the patient is not being given an errand — they are being told what is
+       * happening. And it says the appointment is unaffected, because that is
+       * the question somebody who has just been stopped by a screen actually
+       * has (hard rule 8, REQ-REC-04).
+       */
+      disputeBand:
+        'Please see reception — they will fix this and send it again. Your appointment is not affected.',
       /**
        * THE WAY OUT, STATED WHERE THE PATIENT IS DECIDING (REQ-REC-04). If a
        * row is wrong there is nothing to correct on this device — the tablet

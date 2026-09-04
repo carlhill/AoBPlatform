@@ -142,6 +142,95 @@ export class AgreementsService {
   }
 
   /**
+   * A LOCKED AGREEMENT WHOSE PARTICULARS HAVE BEEN CORRECTED — SUPERSEDE IT
+   * (HARD-02, and Carl's ruling of 4 Sep 2026 on re-sending a disputed
+   * tablet session).
+   *
+   * WHY THERE IS NO OTHER ANSWER. Once `lockParticulars` has run, the s 65C
+   * snapshot has been validated, rendered and HASHED, and rule 13 says any
+   * later display re-verifies that hash. Editing the snapshot would break it;
+   * editing the patient row and re-rendering would produce a second artefact
+   * for one agreement, which is the same thing wearing a hat. So a corrected
+   * particular produces a NEW agreement carrying `supersedesAgreementId`, and
+   * the old one keeps its own true record of what it said and when.
+   *
+   * WHAT IS COPIED, AND WHY EACH. The anchor (HARD-01 — a superseding
+   * agreement is the SAME provider seeing the SAME patient; a different
+   * provider would be a different agreement needing fresh consent), the
+   * patient, the assignor and D7, the enduring pathway, and D6a — because the
+   * Basic Service Description was chosen by a staff member on a staff surface
+   * and losing it would send reception back to the reconciliation screen to
+   * re-choose something nobody changed (hard rule 14: the version it validates
+   * under is recorded at the new lock, so nothing is smuggled forward).
+   *
+   * WHAT IS NOT COPIED: everything about the LOCK. No particulars, no hash, no
+   * rule-set or mapping version, no verification event, no signature. The new
+   * agreement is a draft, and the push that follows validates and locks it
+   * from scratch against the corrected records (REQ-DATA-11) — which is the
+   * point of the exercise.
+   *
+   * THE OLD AGREEMENT'S STATUS IS LEFT ALONE, deliberately. There is no
+   * `superseded` status in the lifecycle (`packages/domain/src/lifecycle.ts`)
+   * and inventing a transition to `expired` or `declined` here would file this
+   * under a word that means something else — a patient declined nothing and no
+   * clock ran out. What stops the old one being signed is that the caller
+   * closes its capture requests; what records why is the event below. A real
+   * `superseded` status is worth adding and is a domain decision, not a
+   * side-effect of this endpoint.
+   */
+  async supersedeForCorrection(
+    tx: Prisma.TransactionClient,
+    practiceId: string,
+    agreement: DbAgreement,
+    correctedTypes: readonly string[],
+    actor: { id: string; name: string },
+  ): Promise<DbAgreement> {
+    const replacement = await tx.agreement.create({
+      data: {
+        practiceId,
+        type: agreement.type,
+        anchorKind: agreement.anchorKind,
+        providerId: agreement.providerId,
+        affiliationId: agreement.affiliationId,
+        organisationId: agreement.organisationId,
+        patientId: agreement.patientId,
+        assignorId: agreement.assignorId,
+        assignorIsPatient: agreement.assignorIsPatient,
+        patientAssignorId: agreement.patientAssignorId,
+        enduringPathway: agreement.enduringPathway,
+        serviceDescription: agreement.serviceDescription,
+        serviceDescriptionSetBy: agreement.serviceDescriptionSetBy,
+        serviceDescriptionSetAt: agreement.serviceDescriptionSetAt,
+        status: 'draft',
+        supersedesAgreementId: agreement.id,
+      },
+    });
+
+    await enqueueVaultEvent(tx, {
+      type: 'agreement.superseded',
+      // A PERSON, NOT THE SYSTEM. A staff member corrected a detail and asked
+      // for the agreement to go out again; that act is theirs and the record
+      // says so.
+      actor: { principalType: 'staff', id: actor.id },
+      subject: { type: 'Agreement', id: agreement.id },
+      payload: {
+        supersededBy: replacement.id,
+        reason: 'patient_details_corrected',
+        /*
+         * WHICH KINDS OF DETAIL, never the values (REQ-VER-04) — `name`,
+         * `date_of_birth`, `address`: the same five words the tablet's
+         * tick-boxes use.
+         */
+        correctedTypes: [...correctedTypes].sort().join(','),
+        correctedBy: actor.name,
+        agreementType: agreement.type,
+      },
+    });
+
+    return replacement;
+  }
+
+  /**
    * SOMEBODY OTHER THAN THE PATIENT IS SIGNING — re-point a draft agreement
    * at them (REQ-VUL-01/-02/-04, REQ-AGE-01, C7.2, D7).
    *

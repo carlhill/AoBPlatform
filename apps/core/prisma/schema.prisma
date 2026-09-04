@@ -1076,6 +1076,29 @@ model Patient {
   myMedicareRegistered Boolean?
   pmsLinkageKey        String?
 
+  /// WHEN A STAFF MEMBER LAST CORRECTED A DETAIL ON THIS MIRROR ROW, and which
+  /// columns (TODO.md "Check-your-details", Carl 4 Sep 2026).
+  ///
+  /// THE PMS IS STILL THE SOURCE OF TRUTH (REQ-DATA-10). Until the Medtech
+  /// write-back exists (D-01) a correction made in our console lives here and
+  /// the next sync would bring the old value back — which is exactly why the
+  /// timestamp is recorded rather than only the value. When D-01 lands the
+  /// sync compares per FIELD and must not silently overwrite a staff
+  /// correction that is newer than the PMS's own value.
+  ///
+  /// TWO COLUMNS, TWO QUESTIONS. The row-level timestamp answers "has anybody
+  /// touched this mirror since the last sync" cheaply and sortably; the map
+  /// answers "which field, and when" — `{ "address": "2026-09-04T03:11:00Z" }`
+  /// — which is the comparison the sync actually has to make. Six nullable
+  /// timestamp columns would answer the same thing and add six columns to
+  /// every query that reads a patient.
+  ///
+  /// NEITHER HOLDS A VALUE. Field names and times only; what changed lives in
+  /// the encrypted column it changed, and who changed it is on the
+  /// `patient.details_corrected` vault event.
+  detailsCorrectedAt     DateTime?
+  detailsCorrectedFields Json?
+
   agreements Agreement[]
 
   @@index([practiceId])
@@ -1813,7 +1836,7 @@ model TabletSession {
   /// values (REQ-VER-04) — the event itself lives in `verification_events`.
   verificationEventId String? @db.Uuid
 
-  /// pushed | reading | details_confirmed | signed | walked_away | recalled | expired
+  /// pushed | reading | details_confirmed | details_disputed | signed | walked_away | recalled | expired
   state String @default("pushed")
 
   /// WHICH DETAILS THE PATIENT TICKED AS CORRECT — TYPES ONLY, and it is not a
@@ -1821,6 +1844,15 @@ model TabletSession {
   /// CONTACT details, never identity identifiers (REQ-VER-02).
   detailsConfirmedTypes String[] @default([])
   detailsConfirmedAt    DateTime?
+
+  /// WHICH DETAILS THE PATIENT SAID WERE WRONG — TYPES ONLY, on the same five
+  /// permitted words and the same CHECK constraint as the confirmed list
+  /// (REQ-VER-04, hard rule 9). Reception reads these on `/practice/tablet`
+  /// and looks the values up on their own screen; the column never holds one.
+  /// Disjoint from `detailsConfirmedTypes` by construction — a row is ticked
+  /// or crossed, never both.
+  detailsDisputedTypes String[] @default([])
+  detailsDisputedAt    DateTime?
 
   /// Who pushed it, from their verified session — never from the body. The
   /// same act is the verification record, so an unattributed push is refused.

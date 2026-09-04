@@ -95,23 +95,72 @@ export function detailRowsFor(patient: TabletSessionPatient): readonly DetailRow
 }
 
 /**
- * WHAT GOES ON THE WIRE — the TICKED TYPES, in the domain's order, and nothing
- * else (REQ-VER-04, hard rule 9).
+ * A TICK OR A CROSS, AND THERE IS NO THIRD ANSWER (Carl, 4 Sep 2026).
  *
- * The return type is `ConfirmableDetailType[]`, so a value cannot be smuggled
- * into the request body by a later edit: `'address'` type-checks and
- * "2 Example Street" does not. The named test
+ * WHY A PAIR OF BUTTONS AND NOT A TOGGLE. The screen this replaces had one
+ * control per row that a patient tapped if the detail was right. An untouched
+ * row therefore meant two different things — "wrong" and "not looked at yet" —
+ * and only the patient could tell them apart. Reception, watching from the
+ * desk, could not. Making the answer explicit is what lets a cross be sent
+ * anywhere at all.
+ *
+ * `undefined` STILL EXISTS AND IS STILL MEANINGFUL: it is "not answered yet",
+ * and it is what keeps Continue dead until every row has been read. It is now
+ * distinguishable from "wrong", which is the whole point.
+ */
+export type DetailAnswer = 'right' | 'wrong';
+
+export type DetailAnswers = Readonly<Record<string, DetailAnswer>>;
+
+/** Every row on screen has an answer. Rows that are not shown are not asked about. */
+export function allAnswered(rows: readonly DetailRow[], answers: DetailAnswers): boolean {
+  return rows.length > 0 && rows.every((row) => answers[row.type] !== undefined);
+}
+
+/** At least one cross — which disables Continue and summons reception. */
+export function anyDisputed(rows: readonly DetailRow[], answers: DetailAnswers): boolean {
+  return rows.some((row) => answers[row.type] === 'wrong');
+}
+
+/**
+ * WHAT GOES ON THE WIRE — the ANSWERED TYPES, in the domain's order, split
+ * into the ticked and the crossed, and nothing else (REQ-VER-04, hard rule 9).
+ *
+ * The return types are `ConfirmableDetailType[]`, so a value cannot be
+ * smuggled into the request body by a later edit: `'address'` type-checks and
+ * "2 Example Street" does not. A CROSS carries no correction either — the
+ * patient was never asked what the right value is, the screen has no field to
+ * take one, and the person who answers that question is a staff member at the
+ * desk whose identity is recorded when they do. The named test
  * `details_confirmation_sends_types_not_values` asserts the same thing about
  * the request that actually leaves the device.
  */
-export function confirmedTypes(
+export function answeredTypes(
   rows: readonly DetailRow[],
-  ticked: ReadonlySet<string>,
-): readonly ConfirmableDetailType[] {
-  return rows.filter((row) => ticked.has(row.type)).map((row) => row.type);
+  answers: DetailAnswers,
+): { confirmed: ConfirmableDetailType[]; disputed: ConfirmableDetailType[] } {
+  const confirmed: ConfirmableDetailType[] = [];
+  const disputed: ConfirmableDetailType[] = [];
+  for (const row of rows) {
+    if (answers[row.type] === 'right') confirmed.push(row.type);
+    else if (answers[row.type] === 'wrong') disputed.push(row.type);
+  }
+  return { confirmed, disputed };
 }
 
-/** Every row on screen has been ticked. Rows that are not shown are not required. */
-export function allTicked(rows: readonly DetailRow[], ticked: ReadonlySet<string>): boolean {
-  return rows.length > 0 && rows.every((row) => ticked.has(row.type));
+/**
+ * ONE STRING FOR ONE SET OF ANSWERS, so the screen can tell whether what it is
+ * about to send is what it already sent.
+ *
+ * A CROSS IS POSTED THE MOMENT EVERY ROW HAS AN ANSWER, without the patient
+ * pressing anything, so that reception learns about it without the patient
+ * having to explain it across a waiting room. That means the same answers can
+ * be reached twice — flip a cross to a tick and back, or come back from K-3
+ * with Back — and re-sending them would write a second identical event into
+ * the vault for nothing. Comparing this is cheaper and more honest than
+ * remembering how many times a button was pressed.
+ */
+export function answerSignature(rows: readonly DetailRow[], answers: DetailAnswers): string {
+  const { confirmed, disputed } = answeredTypes(rows, answers);
+  return `${confirmed.join(',')}|${disputed.join(',')}`;
 }

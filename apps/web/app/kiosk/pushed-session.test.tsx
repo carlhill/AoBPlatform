@@ -311,6 +311,202 @@ describe('pushed_session_takes_over_idle', () => {
   });
 });
 
+/**
+ * K-P1's REDESIGN — a tick and a cross per row, to the right of the text
+ * (Carl, 4 Sep 2026: "Make the big buttons to the right of the text (in case
+ * we are using small tablets). We need a button with a tick and another with a
+ * cross. The practice-reception-user ... should be able to see the same screen
+ * and be told what the patient did not agree to.").
+ *
+ * WHAT THESE PIN, and none of it is cosmetic. Two controls, so an unanswered
+ * row is distinguishable from a wrong one — which is the whole reason a
+ * dispute can be carried at all. The buttons AFTER the text in document order,
+ * because "to the right" is a reading order before it is a layout, and a
+ * screen reader must hear the detail before the answer. A word under each
+ * mark, because roughly one man in twelve cannot tell the green from the red.
+ * And a cross that reaches the server with no further tap, because the patient
+ * has just been told to see reception and must not also have to press Send.
+ */
+describe('kp1_tick_and_cross_per_row_right_of_the_text', () => {
+  it('draws two large controls per row, after the value, each with a word and not colour alone', async () => {
+    asPairedTablet();
+    fetchTabletSession.mockResolvedValue({ session: SESSION });
+
+    render(<Ceremony />);
+    await waitFor(() => expect(screen.getByTestId('check-details-heading')).toBeTruthy());
+
+    for (const type of CONFIRMABLE_DETAIL_TYPES) {
+      const row = screen.getByTestId(`detail-row-${type}`);
+      const value = screen.getByTestId(`detail-value-${type}`);
+      const tick = screen.getByTestId(`detail-tick-${type}`);
+      const cross = screen.getByTestId(`detail-cross-${type}`);
+
+      // BOTH CONTROLS EXIST, on every row.
+      expect(row.contains(tick)).toBe(true);
+      expect(row.contains(cross)).toBe(true);
+
+      /*
+       * AND THEY COME AFTER THE TEXT. `DOCUMENT_POSITION_FOLLOWING` is the
+       * reading order, which is the half of "to the right of the text" that
+       * survives the layout collapsing to one column on a small tablet —
+       * below 600px the pair drops UNDER the value, and it must still be read
+       * second.
+       */
+      const order = value.compareDocumentPosition(tick);
+      expect(order & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(tick.compareDocumentPosition(cross) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+      // A WORD UNDER THE MARK, never colour alone (WCAG 1.4.1) — and the state
+      // is announced as well as filled.
+      expect(tick.textContent).toContain(strings.checkDetails.right);
+      expect(cross.textContent).toContain(strings.checkDetails.wrong);
+      expect(tick.getAttribute('aria-pressed')).toBe('false');
+      expect(cross.getAttribute('aria-pressed')).toBe('false');
+    }
+
+    // STILL NO FIELD ON THE SCREEN. A cross says "that is wrong" and offers
+    // nowhere to say what is right (Carl, 3 Sep 2026).
+    expect(document.querySelectorAll('main input, main select, main textarea')).toHaveLength(0);
+  });
+
+  it('an answer is a choice between two, and pressing the same one twice does not clear it', async () => {
+    asPairedTablet();
+    fetchTabletSession.mockResolvedValue({ session: SESSION });
+
+    render(<Ceremony />);
+    await waitFor(() => expect(screen.getByTestId('check-details-heading')).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId('detail-cross-address'));
+    await waitFor(() =>
+      expect(screen.getByTestId('detail-cross-address').getAttribute('aria-pressed')).toBe('true'),
+    );
+    expect(screen.getByTestId('detail-tick-address').getAttribute('aria-pressed')).toBe('false');
+
+    // Changing your mind is pressing the OTHER button.
+    fireEvent.click(screen.getByTestId('detail-tick-address'));
+    await waitFor(() =>
+      expect(screen.getByTestId('detail-tick-address').getAttribute('aria-pressed')).toBe('true'),
+    );
+    expect(screen.getByTestId('detail-cross-address').getAttribute('aria-pressed')).toBe('false');
+
+    /*
+     * AND A SECOND PRESS OF THE SAME BUTTON IS NOT A TOGGLE. A stray
+     * double-tap that quietly returned the row to unanswered would disable
+     * Continue with no visible cause.
+     */
+    fireEvent.click(screen.getByTestId('detail-tick-address'));
+    await waitFor(() =>
+      expect(screen.getByTestId('detail-tick-address').getAttribute('aria-pressed')).toBe('true'),
+    );
+  });
+});
+
+describe('any_cross_disables_continue_and_reports_disputes', () => {
+  it('posts the crossed TYPES without a further tap, and will not let the patient continue', async () => {
+    asPairedTablet();
+    fetchTabletSession.mockResolvedValue({ session: SESSION });
+    fetchAgreement.mockResolvedValue(AGREEMENT);
+    confirmSessionDetails.mockResolvedValue({ id: SESSION.id, state: 'details_disputed' });
+
+    render(<Ceremony />);
+    await waitFor(() => expect(screen.getByTestId('check-details-heading')).toBeTruthy());
+
+    // Three right, two wrong — every row answered, which is what makes the
+    // answer complete enough to send.
+    for (const type of ['name', 'date_of_birth', 'email']) {
+      fireEvent.click(screen.getByTestId(`detail-tick-${type}`));
+    }
+    for (const type of ['address', 'mobile']) {
+      fireEvent.click(screen.getByTestId(`detail-cross-${type}`));
+    }
+
+    /*
+     * IT WENT WITHOUT ANYBODY PRESSING CONTINUE. The patient has just been
+     * told reception will fix this; if they also had to press Send, the ones
+     * who did not would be standing at a desk explaining something the screen
+     * already knew.
+     */
+    await waitFor(() => expect(confirmSessionDetails).toHaveBeenCalledTimes(1));
+    const [sessionId, confirmed, disputed] = confirmSessionDetails.mock.calls[0] as [
+      string,
+      string[],
+      string[],
+    ];
+    expect(sessionId).toBe(SESSION.id);
+    expect(confirmed).toEqual(['name', 'date_of_birth', 'email']);
+    expect(disputed).toEqual(['address', 'mobile']);
+
+    /*
+     * TYPES, AND NOT ONE VALUE — and in particular no replacement for the
+     * crossed rows, because the patient was never asked for one and the screen
+     * has no field to take it (REQ-VER-04, hard rule 9).
+     */
+    const wire = JSON.stringify({ confirmed, disputed });
+    for (const value of [
+      SESSION.patient.givenNames,
+      SESSION.patient.familyName,
+      SESSION.patient.dateOfBirth as string,
+      SESSION.patient.address as string,
+      SESSION.patient.mobile as string,
+      SESSION.patient.email as string,
+      '9 March 1988',
+    ]) {
+      expect(wire).not.toContain(value);
+    }
+    expect(wire).not.toMatch(/medicare|\$\s?\d/i);
+
+    // THE BAND, IN THE PRESENT TENSE, and it says the appointment is safe.
+    const band = await screen.findByTestId('check-details-dispute');
+    expect(band.textContent).toBe(strings.checkDetails.disputeBand);
+
+    /*
+     * AND CONTINUE IS UNREACHABLE — a real `button[disabled]` with no handler,
+     * not a live control that ignores the press (CLAUDE.md §6). Pressing it
+     * moves nothing.
+     */
+    const cont = screen.getByTestId('check-details-continue') as HTMLButtonElement;
+    expect(cont.disabled).toBe(true);
+    expect(cont.textContent).toBe(strings.checkDetails.continueDisputed);
+    fireEvent.click(cont);
+    expect(fetchAgreement).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('particulars-heading')).toBeNull();
+
+    // The way out is still there, and nothing about the agreement moved.
+    expect(screen.getByTestId('leave-for-reception')).toBeTruthy();
+    for (const mutator of AGREEMENT_MUTATORS) expect(mutator).not.toHaveBeenCalled();
+  });
+
+  it('sends the corrected answer once when the patient changes their mind, and then continues', async () => {
+    asPairedTablet();
+    fetchTabletSession.mockResolvedValue({ session: SESSION });
+    fetchAgreement.mockResolvedValue(AGREEMENT);
+
+    render(<Ceremony />);
+    await waitFor(() => expect(screen.getByTestId('check-details-heading')).toBeTruthy());
+
+    for (const type of CONFIRMABLE_DETAIL_TYPES) {
+      if (type === 'mobile') fireEvent.click(screen.getByTestId('detail-cross-mobile'));
+      else fireEvent.click(screen.getByTestId(`detail-tick-${type}`));
+    }
+    await waitFor(() => expect(confirmSessionDetails).toHaveBeenCalledTimes(1));
+
+    // They look again and press the tick after all.
+    fireEvent.click(screen.getByTestId('detail-tick-mobile'));
+    await waitFor(() =>
+      expect((screen.getByTestId('check-details-continue') as HTMLButtonElement).disabled).toBe(false),
+    );
+    fireEvent.click(screen.getByTestId('check-details-continue'));
+
+    await waitFor(() => expect(screen.getByTestId('particulars-heading')).toBeTruthy());
+    // TWICE, NOT THREE TIMES: the dispute, then the all-ticks answer. The same
+    // answers are never sent twice.
+    expect(confirmSessionDetails).toHaveBeenCalledTimes(2);
+    const [, confirmed, disputed] = confirmSessionDetails.mock.calls[1] as [string, string[], string[]];
+    expect(confirmed).toEqual([...CONFIRMABLE_DETAIL_TYPES]);
+    expect(disputed).toEqual([]);
+  });
+});
+
 describe('details_confirmation_sends_types_not_values', () => {
   it('posts the five TYPES and nothing that could identify anybody', async () => {
     asPairedTablet();
@@ -594,7 +790,7 @@ describe('pushed_k3_back_returns_to_check_details_with_ticks_kept', () => {
     for (const type of CONFIRMABLE_DETAIL_TYPES) {
       const tick = screen.getByTestId(`detail-tick-${type}`);
       expect(tick.getAttribute('aria-pressed')).toBe('true');
-      expect(tick.textContent).toBe(strings.checkDetails.ticked);
+      expect(tick.textContent).toContain(strings.checkDetails.right);
     }
     expect((screen.getByTestId('check-details-continue') as HTMLButtonElement).disabled).toBe(false);
 

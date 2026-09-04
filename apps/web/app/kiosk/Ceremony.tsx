@@ -114,7 +114,15 @@ import {
 } from './rules/assignor';
 import { evaluateSignatureGate, type SignatureValidation } from './rules/signature-gate';
 import { afterAttempt, firstAttempt, retryAfterMismatch, type VerificationState } from './rules/verification';
-import { allTicked, confirmedTypes, detailRowsFor } from './rules/pushed-details';
+import {
+  allAnswered,
+  answerSignature,
+  answeredTypes,
+  anyDisputed,
+  detailRowsFor,
+  type DetailAnswer,
+  type DetailAnswers,
+} from './rules/pushed-details';
 import { IdleScreen } from './screens/IdleScreen';
 import { CheckDetailsScreen } from './screens/CheckDetailsScreen';
 import { VerifyScreen } from './screens/VerifyScreen';
@@ -198,10 +206,31 @@ export function Ceremony(): ReactNode {
    * anybody.
    */
   const [pushed, setPushed] = useState<TabletSessionPayload | null>(null);
-  /** Which TYPES have been ticked on K-P1. Never the values behind them (REQ-VER-04). */
-  const [ticked, setTicked] = useState<ReadonlySet<string>>(() => new Set());
+  /**
+   * THE PATIENT'S ANSWER TO EACH ROW ON K-P1 — a tick or a cross, keyed by
+   * TYPE. Never the values behind them (REQ-VER-04), and never a suggested
+   * replacement: a cross says "that is wrong" and the screen has no field to
+   * say what is right (Carl, 3 Sep 2026 — the tablet presents no field a
+   * patient or a passer-by could fill on the practice's behalf).
+   *
+   * AN ABSENT KEY IS "NOT ANSWERED YET" and is what keeps Continue dead. That
+   * is a different thing from a cross, which is the whole reason the screen
+   * has two buttons rather than one toggle.
+   */
+  const [answers, setAnswers] = useState<DetailAnswers>({});
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [confirmError, setConfirmError] = useState(false);
+  /**
+   * WHAT WAS LAST SENT, so the same answers are never sent twice.
+   *
+   * A cross is posted the moment every row has an answer — reception must not
+   * have to wait for the patient to press anything, and there is nothing left
+   * for the patient to press. So the same set of answers can be arrived at
+   * more than once: flip a cross to a tick and back, or come back from K-3
+   * with Back. Re-posting would write a second identical event into the vault
+   * for nothing.
+   */
+  const postedAnswersRef = useRef('');
 
   const [challengeId, setChallengeId] = useState<string | null>(null);
   const [fields, setFields] = useState<readonly IdentifierField[]>([]);
@@ -416,7 +445,8 @@ export function Ceremony(): ReactNode {
     setLocationLine(null);
     setMeShowsWaitingList(false);
     setPushed(null);
-    setTicked(new Set());
+    setAnswers({});
+    postedAnswersRef.current = '';
     setStep('unpaired');
   }, [list.unpaired, tabletSession.unpaired]);
 
@@ -510,7 +540,8 @@ export function Ceremony(): ReactNode {
      * survived this line would be exactly the residual patient data C2 forbids.
      */
     setPushed(null);
-    setTicked(new Set());
+    setAnswers({});
+    postedAnswersRef.current = '';
     setConfirmBusy(false);
     setConfirmError(false);
     setChallengeId(null);
@@ -574,7 +605,8 @@ export function Ceremony(): ReactNode {
       void setTabletSessionState(pushed.id, 'walked_away').catch(() => undefined);
       releasedSessionRef.current = pushed.id;
       setPushed(null);
-      setTicked(new Set());
+      setAnswers({});
+      postedAnswersRef.current = '';
     }
     toHandover(strings.chrome.leaveHeading, strings.chrome.leaveBody);
   }, [pushed, toHandover]);
@@ -702,7 +734,8 @@ export function Ceremony(): ReactNode {
     setMismatch(false);
     setChoice(EMPTY_CHOICE);
     autoLockedRef.current = null;
-    setTicked(new Set());
+    setAnswers({});
+    postedAnswersRef.current = '';
     setConfirmError(false);
     setPushed(session);
     pushedIdRef.current = session.id;
@@ -737,37 +770,102 @@ export function Ceremony(): ReactNode {
     [pushed],
   );
 
-  const toggleDetail = useCallback((type: string) => {
+  /**
+   * ONE TAP, ONE ANSWER — and pressing the same button again does NOT clear
+   * it.
+   *
+   * A toggle was right when there was one control per row and an untouched row
+   * meant "not yet". With a tick and a cross the answer is always one of two
+   * things, and a stray double-tap that quietly returned a row to unanswered
+   * would disable Continue with no visible cause. Changing your mind means
+   * pressing the OTHER button, which is what somebody would do anyway.
+   */
+  const answerDetail = useCallback((type: string, answer: DetailAnswer) => {
     setConfirmError(false);
-    setTicked((prev) => {
-      const next = new Set(prev);
-      if (next.has(type)) next.delete(type);
-      else next.add(type);
-      return next;
-    });
+    setAnswers((prev) => (prev[type] === answer ? prev : { ...prev, [type]: answer }));
   }, []);
 
+  const rowsAllAnswered = allAnswered(detailRows, answers);
+  const rowsDisputed = anyDisputed(detailRows, answers);
+
   /**
-   * K-P1 → K-3. TYPES ON THE WIRE, VALUES NOWHERE.
+   * SEND THE ANSWERS. TYPES ON THE WIRE, VALUES NOWHERE.
    *
-   * `confirmedTypes` maps the ticked rows to the five words the domain allows,
-   * and the request body is that array and nothing else — no name, no date of
-   * birth, no address (REQ-VER-04, hard rule 9). Named test:
+   * `answeredTypes` maps the answered rows to the five words the domain
+   * allows, and the request body is those two arrays and nothing else — no
+   * name, no date of birth, no address, and no replacement value for a crossed
+   * row (REQ-VER-04, hard rule 9). Named test:
    * `details_confirmation_sends_types_not_values`.
    *
-   * THEN THE AGREEMENT IS FETCHED AND K-3 IS THE WALK-UP'S OWN SCREEN. There
-   * is no K-5 on this path and there could not be: who signs was settled at the
-   * desk before the push, and the push locked the particulars, so there is
-   * nothing to choose. K-3 states who signs and carries the one-line note under
-   * it exactly as it does for a locked walk-up agreement.
+   * IT IS IDEMPOTENT AGAINST THE ANSWER SET, so Continue after an automatic
+   * post does not write the same event twice.
    */
-  const confirmDetails = useCallback(async () => {
-    if (!pushed) return;
-    if (!allTicked(detailRows, ticked)) return;
+  const sendAnswers = useCallback(async (): Promise<boolean> => {
+    if (!pushed) return false;
+    if (!allAnswered(detailRows, answers)) return false;
+    const signature = answerSignature(detailRows, answers);
+    if (postedAnswersRef.current === signature) return true;
+
     setConfirmBusy(true);
     setConfirmError(false);
     try {
-      await confirmSessionDetails(pushed.id, confirmedTypes(detailRows, ticked));
+      const { confirmed, disputed } = answeredTypes(detailRows, answers);
+      await confirmSessionDetails(pushed.id, confirmed, disputed);
+      postedAnswersRef.current = signature;
+      return true;
+    } catch (err) {
+      if (isUnpaired(err)) {
+        clearPairingCredential();
+        setStep('unpaired');
+        return false;
+      }
+      // Never a dead end (REQ-REC-04): the message offers the desk, the
+      // answers stay on screen, and nothing about the agreement has moved.
+      setConfirmError(true);
+      return false;
+    } finally {
+      setConfirmBusy(false);
+    }
+  }, [pushed, detailRows, answers]);
+
+  /**
+   * A CROSS REACHES RECEPTION WITHOUT THE PATIENT DOING ANYTHING FURTHER
+   * (Carl, 4 Sep 2026).
+   *
+   * This is the half of the ruling that is easy to miss. The patient has just
+   * been told a detail is wrong and that reception will fix it — if they then
+   * had to press a button to SEND that, the ones who did not press it would be
+   * standing at a desk explaining something the screen already knew. So the
+   * moment every row has an answer and at least one is a cross, the set goes.
+   *
+   * ONLY WHEN THERE IS A CROSS. An all-ticks answer is the patient saying
+   * "yes, carry on", and carrying on is Continue — posting it before they
+   * press anything would record a ceremony step they had not taken yet.
+   */
+  useEffect(() => {
+    if (step !== 'check-details') return;
+    if (!rowsAllAnswered || !rowsDisputed) return;
+    void sendAnswers();
+  }, [step, rowsAllAnswered, rowsDisputed, sendAnswers]);
+
+  /**
+   * K-P1 → K-3, and only on an all-ticks answer.
+   *
+   * THE AGREEMENT IS FETCHED AND K-3 IS THE WALK-UP'S OWN SCREEN. There is no
+   * K-5 on this path and there could not be: who signs was settled at the desk
+   * before the push, and the push locked the particulars, so there is nothing
+   * to choose. K-3 states who signs and carries the one-line note under it
+   * exactly as it does for a locked walk-up agreement.
+   */
+  const confirmDetails = useCallback(async () => {
+    if (!pushed) return;
+    if (!allAnswered(detailRows, answers)) return;
+    // Dead as well as disabled: a crossed row means the particulars on screen
+    // are not the ones to sign, and the control that would carry the patient
+    // past them must not work even if something presses it.
+    if (anyDisputed(detailRows, answers)) return;
+    if (!(await sendAnswers())) return;
+    try {
       const current = await fetchAgreement(pushed.agreementId);
       setAgreement(current);
       setStep('particulars');
@@ -777,13 +875,9 @@ export function Ceremony(): ReactNode {
         setStep('unpaired');
         return;
       }
-      // Never a dead end (REQ-REC-04): the message offers the desk, the ticks
-      // stay on screen, and nothing about the agreement has moved.
       setConfirmError(true);
-    } finally {
-      setConfirmBusy(false);
     }
-  }, [pushed, detailRows, ticked]);
+  }, [pushed, detailRows, answers, sendAnswers]);
 
   /**
    * ONCE VERIFICATION HAS PASSED, WHATEVER DOOR IT CAME THROUGH.
@@ -1416,10 +1510,11 @@ export function Ceremony(): ReactNode {
             locationLine={locationLine}
             agreementType={pushed?.agreementType ?? 'episodic_pre'}
             rows={detailRows}
-            ticked={ticked}
+            answers={answers}
+            disputed={rowsDisputed}
             saving={confirmBusy}
             saveError={confirmError}
-            onToggle={toggleDetail}
+            onAnswer={answerDetail}
             onContinue={() => void confirmDetails()}
             onSeeReception={leave}
           />

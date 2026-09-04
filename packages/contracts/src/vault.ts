@@ -280,6 +280,21 @@ export const VAULT_EVENT_TYPES = [
    */
   'tablet.session_pushed',
   'tablet.details_confirmed',
+  /**
+   * THE PATIENT SAID SOMETHING WE HOLD IS WRONG (Carl, 4 Sep 2026).
+   *
+   * Its own event rather than a flag on the confirmation, because it is its
+   * own fact and somebody will be asked about it: at this moment, the person
+   * the particulars are about looked at them and said one or more were not
+   * theirs. It carries the disputed TYPES and nothing else — never the value
+   * shown, never the value they believe is right (REQ-VER-04); the patient was
+   * never asked for a replacement and the tablet has no field to take one.
+   *
+   * THE AGREEMENT IS UNTOUCHED. A dispute stops a ceremony, not a visit: the
+   * payload says `agreementChanged: false` for the same reason the walked-away
+   * event does (hard rule 8, REQ-REC-04).
+   */
+  'tablet.details_disputed',
   'tablet.session_state_changed',
   /**
    * Signed, walked away, recalled or expired. Three of the four change NOTHING
@@ -299,6 +314,25 @@ export const VAULT_EVENT_TYPES = [
    * attempt would imply values were compared that never existed.
    */
   'verification.staff_verified',
+  /**
+   * RECEPTION CORRECTED A DETAIL ON THE PLATFORM'S MIRROR (Carl, 4 Sep 2026),
+   * after the patient crossed it on the tablet.
+   *
+   * THE TYPE AND THE STAFF MEMBER, NEVER THE VALUE. `name`, `address`,
+   * `mobile` — the same five words the tick-boxes use — plus the identity of
+   * the person who typed it, which is the whole evidentiary point: a patient
+   * detail that changed and nobody to ask about it is the shape this platform
+   * exists to prevent. The value itself lives only in the encrypted store
+   * (REQ-VER-04's rule about identifier values, applied to the mirror).
+   *
+   * IT SAYS NOTHING ABOUT THE PMS, WHICH IS STILL THE SOURCE OF TRUTH
+   * (REQ-DATA-10). Until the Medtech write-back exists (D-01) a correction
+   * here lives on our copy, the next sync would bring the old value back, and
+   * the console says so on screen. The event's timestamp is what a later sync
+   * compares against so a staff correction newer than the PMS value is not
+   * silently overwritten.
+   */
+  'patient.details_corrected',
   // Somebody -- or something -- decided about a change that needed a second
   // look. The payload always says WHICH, because "a person accepted this" and
   // "a model scored it and nobody looked" are different claims.

@@ -5,8 +5,12 @@ import {
   TABLET_SESSION_IDLE_MS,
   canChangeTabletSessionState,
   computeSignability,
+  correctionTouchesParticulars,
+  detailTypeForPatientField,
+  isCorrectablePatientField,
   isServiceDescription,
   projectTabletSessionPatient,
+  shownDetailTypesFor,
   type AgreementType,
   type ConfirmableDetailType,
   type PushBlockedReason,
@@ -283,6 +287,111 @@ export class TabletSessionsService {
     return this.decorate(practiceId, [ended]).then((rows) => rows[0]);
   }
 
+  /**
+   * SEND IT AGAIN, WITH THE CORRECTED DETAILS (Carl, 4 Sep 2026).
+   *
+   * The patient crossed a row, reception fixed it at the desk
+   * (`PATCH /patients/:id/details`), and this is the one button that finishes
+   * the loop: take the old screen back, and hand the same tablet a fresh
+   * session for the same visit, built from the records as they now stand.
+   *
+   * IT IS RECALL + PUSH, AND DELIBERATELY NOT A THIRD MECHANISM. Both halves
+   * already carry their own rules and their own evidence — the recall changes
+   * nothing on the agreement and says so on its event; the push re-reads the
+   * patient (REQ-DATA-11), re-validates, re-locks where it must, and records a
+   * FRESH staff-verified event because reception has the person in front of
+   * them again (REQ-VER-03). Writing a bespoke path would mean a second copy
+   * of both, and the second copy is the one that drifts.
+   *
+   * THE ONE GENUINELY NEW DECISION: WHETHER TO SUPERSEDE.
+   *
+   *  - NOT LOCKED YET → nothing to supersede. The push locks it for the first
+   *    time, assembling the particulars from the corrected records.
+   *  - LOCKED, AND ONLY A CONTACT DETAIL CHANGED → the same agreement goes out
+   *    again. A mobile number and an email address are not particulars: they
+   *    say where a copy goes and nothing about the contract, so the artefact
+   *    that was rendered and hashed still states exactly what it stated
+   *    (REQ-VER-02 keeps them out of the identity set for the same reason).
+   *  - LOCKED, AND A PARTICULAR CHANGED → SUPERSEDE (HARD-02). The old
+   *    particulars are hashed in; correcting them means a new agreement
+   *    carrying `supersedesAgreementId`, and the old one keeps its own true
+   *    record. `AgreementsService.supersedeForCorrection` owns that write — it
+   *    is the agreements module's table and its rule.
+   *
+   * "A PARTICULAR CHANGED" MEANS "SINCE THE LOCK", not "ever". A patient whose
+   * address was corrected last March and whose mobile was corrected two
+   * minutes ago must not spawn a superseding agreement over the address: the
+   * lock happened after it and already carries it. That is what the per-field
+   * timestamps on the patient row are for.
+   *
+   * NOTHING HERE BLOCKS CARE. If the re-send cannot go — the tablet was
+   * revoked, somebody else grabbed it, the agreement moved on — reception gets
+   * the same refusal code the push gives, the patient is still seen, and the
+   * visit can be billed privately or captured after the service (hard rule 8,
+   * REQ-REC-04).
+   */
+  async resend(
+    practiceId: string,
+    sessionId: string,
+    actor: Actor | undefined,
+  ): Promise<TabletSessionRow & { supersededAgreementId: string | null }> {
+    if (!actor) throw pushRefusals.noActor();
+
+    const found = await this.prisma.withPractice(practiceId, async (tx) => {
+      const session = await tx.tabletSession.findFirst({ where: { id: sessionId } });
+      if (!session) return null;
+      const agreement = await tx.agreement.findFirst({ where: { id: session.agreementId } });
+      if (!agreement) return null;
+      const patient = await tx.patient.findFirst({ where: { id: agreement.patientId } });
+      return { session, agreement, patient };
+    });
+    if (!found) throw new NotFoundException('That tablet session was not found.');
+    const { session, agreement, patient } = found;
+
+    /*
+     * TAKE THE SCREEN BACK FIRST. `end` is idempotent, so a session that has
+     * already walked away or expired is not an error — reception pressing
+     * Re-send on a row that ended a second ago should get a fresh session, not
+     * a lecture. And the device must be free before the push, because one
+     * session per device is a database fact.
+     */
+    if (!session.endedAt) {
+      await this.end(practiceId, session.id, 'recalled', { principalType: 'staff', id: actor.id });
+    }
+
+    const correctedTypes = particularsCorrectedSince(patient, agreement.particularsLockedAt);
+    const mustSupersede =
+      agreement.particularsLockedAt !== null && correctionTouchesParticulars(correctedTypes);
+
+    let targetAgreementId = agreement.id;
+    let supersededAgreementId: string | null = null;
+
+    if (mustSupersede) {
+      targetAgreementId = await this.prisma.withPractice(practiceId, async (tx) => {
+        const replacement = await this.agreements.supersedeForCorrection(
+          tx,
+          practiceId,
+          agreement,
+          correctedTypes,
+          { id: actor.id, name: actor.name },
+        );
+        /*
+         * AND NOTHING MAY STILL BE SIGNED AGAINST THE OLD ONE. Its evidence
+         * stays exactly as it is — the artefact, the hash, the verification —
+         * but every channel that could still collect a signature on the stale
+         * particulars is closed, on every channel at once rather than only the
+         * tablet's (FR-2.7's instinct: one visit, one live capture).
+         */
+        await this.capture.cancelOpenFor(tx, agreement.id, 'agreement_superseded');
+        return replacement.id;
+      });
+      supersededAgreementId = agreement.id;
+    }
+
+    const row = await this.push(practiceId, session.deviceId, targetAgreementId, actor);
+    return { ...row, supersededAgreementId };
+  }
+
   /** What is on the practice's tablets right now — states, never a mirror. */
   async list(practiceId: string, activeOnly: boolean): Promise<TabletSessionRow[]> {
     await this.settle(practiceId);
@@ -534,39 +643,118 @@ export class TabletSessionsService {
     device: ResolvedDevice,
     sessionId: string,
     confirmed: string[],
-  ): Promise<{ id: string; state: TabletSessionState; confirmed: ConfirmableDetailType[] }> {
-    const types = [...new Set(confirmed)] as ConfirmableDetailType[];
+    disputed: string[] = [],
+  ): Promise<{
+    id: string;
+    state: TabletSessionState;
+    confirmed: ConfirmableDetailType[];
+    disputed: ConfirmableDetailType[];
+  }> {
+    const ticked = [...new Set(confirmed)] as ConfirmableDetailType[];
+    const crossed = [...new Set(disputed)] as ConfirmableDetailType[];
+
+    /*
+     * TICKED OR CROSSED, NEVER BOTH. A record saying the patient agreed AND
+     * disagreed about their address is not a record of anything, and the
+     * database refuses it too (`tablet_sessions_answers_disjoint`) so this
+     * cannot be got round by another caller.
+     */
+    const both = ticked.filter((type) => crossed.includes(type));
+    if (both.length > 0) {
+      throw new BadRequestException('A detail is either right or wrong, never both.');
+    }
 
     return this.prisma.withPractice(device.practiceId, async (tx) => {
       const session = await this.requireDeviceSession(tx, device, sessionId);
-      if (!canChangeTabletSessionState(session.state, 'details_confirmed')) {
+      const to: TabletSessionState = crossed.length > 0 ? 'details_disputed' : 'details_confirmed';
+      /*
+       * SAYING THE SAME THING TWICE IS NOT AN ERROR. The tablet posts whenever
+       * the answers change and every row has one, so a patient who crosses a
+       * second row sends `details_disputed` again — and reception must see the
+       * longer list, not a refusal. The update below is what carries it; only
+       * an ENDED session is refused.
+       */
+      if (session.state !== to && !canChangeTabletSessionState(session.state, to)) {
         throw new BadRequestException(sessionIsOver());
       }
+      if (session.endedAt) throw new BadRequestException(sessionIsOver());
 
+      /*
+       * EVERY ROW THE TABLET DREW HAS AN ANSWER, CHECKED HERE AND NOT TAKEN ON
+       * TRUST. The server knows which rows it sent — a detail it holds nothing
+       * for is not drawn, because nobody is shown a blank line and asked
+       * whether it is correct — so it can tell a complete answer from a
+       * partial one. A session recorded as `details_confirmed` having answered
+       * three of five rows would be a ceremony record that says more than
+       * happened (REQ-REG-06's instinct, applied to the ceremony rather than
+       * to the contract).
+       */
+      const agreement = await tx.agreement.findFirst({ where: { id: session.agreementId } });
+      const patient = agreement
+        ? await tx.patient.findFirst({ where: { id: agreement.patientId } })
+        : null;
+      if (patient) {
+        const shown = shownDetailTypesFor(
+          projectTabletSessionPatient({
+            ...patient,
+            dateOfBirth: patient.dateOfBirth.toISOString().slice(0, 10),
+          }),
+        );
+        const answered = new Set<string>([...ticked, ...crossed]);
+        const unanswered = shown.filter((type) => !answered.has(type));
+        const unknown = [...answered].filter((type) => !(shown as readonly string[]).includes(type));
+        if (unanswered.length > 0 || unknown.length > 0) {
+          // The TYPES are safe to name back — that is the whole vocabulary of
+          // this endpoint — and naming them is what makes a client bug
+          // findable rather than mysterious.
+          throw new BadRequestException(
+            `Every detail shown must be answered exactly once. Expected: ${shown.join(', ')}.`,
+          );
+        }
+      }
+
+      const now = new Date();
       const updated = await tx.tabletSession.update({
         where: { id: session.id },
         data: {
-          state: 'details_confirmed',
-          detailsConfirmedTypes: types,
-          detailsConfirmedAt: new Date(),
-          lastStateAt: new Date(),
+          state: to,
+          detailsConfirmedTypes: ticked,
+          detailsConfirmedAt: ticked.length > 0 ? now : null,
+          detailsDisputedTypes: crossed,
+          detailsDisputedAt: crossed.length > 0 ? now : null,
+          lastStateAt: now,
         },
       });
+
       await enqueueVaultEvent(tx, {
-        // NAMED FOR WHAT IT IS. Not `verification.*` — see above.
-        type: 'tablet.details_confirmed',
+        /*
+         * A DISPUTE IS ITS OWN EVENT, not a flag on the confirmation. Somebody
+         * will be asked about it later: at this moment the person the
+         * particulars are about looked at them and said one or more were not
+         * theirs. Filing that inside a "details confirmed" event would bury the
+         * one fact worth finding.
+         *
+         * NEITHER IS NAMED `verification.*`. See above — a value displayed on a
+         * tablet and answered by whoever holds it proves nothing about who is
+         * holding it.
+         */
+        type: crossed.length > 0 ? 'tablet.details_disputed' : 'tablet.details_confirmed',
         actor: { principalType: 'device', id: device.deviceId },
         subject: { type: 'TabletSession', id: session.id },
         payload: {
           agreementId: session.agreementId,
           /*
-           * THE TYPES THE PATIENT TICKED, never the values behind them
-           * (REQ-VER-04). Joined into one string because a vault payload holds
-           * scalars, and sorted so the same five ticks compare equal whichever
+           * THE TYPES, never the values behind them (REQ-VER-04) — and on the
+           * dispute event, never what the patient believes the right value to
+           * be either: they were not asked, and the tablet has no field to
+           * take it. Joined into one string because a vault payload holds
+           * scalars, and sorted so the same answers compare equal whichever
            * order the tablet listed them in.
            */
-          confirmedTypes: [...types].sort().join(','),
-          confirmedCount: types.length,
+          confirmedTypes: [...ticked].sort().join(','),
+          confirmedCount: ticked.length,
+          disputedTypes: [...crossed].sort().join(','),
+          disputedCount: crossed.length,
           /*
            * STATED ON THE RECORD, because it is the single most likely thing
            * for somebody to misread later. This is a DATA-ACCURACY check by
@@ -574,9 +762,22 @@ export class TabletSessionsService {
            * check across the desk, recorded on its own event (REQ-VER-03).
            */
           isVerification: false,
+          /*
+           * AND THE CONTRACT DID NOT MOVE. A cross stops the ceremony and
+           * changes nothing about the agreement — reception corrects the
+           * detail and sends it again, or bills privately after the service
+           * (hard rule 8, REQ-REC-04).
+           */
+          agreementChanged: false,
         },
       });
-      return { id: updated.id, state: updated.state as TabletSessionState, confirmed: types };
+
+      return {
+        id: updated.id,
+        state: updated.state as TabletSessionState,
+        confirmed: ticked,
+        disputed: crossed,
+      };
     });
   }
 
@@ -887,8 +1088,13 @@ export class TabletSessionsService {
           // of birth, no address, no contact detail: reception is watching a
           // state, not mirroring a screen.
           patientName: patient ? `${patient.givenNames} ${patient.familyName}` : '',
+          patientId: agreement?.patientId ?? '',
           providerName: provider?.name ?? null,
           state: session.state as TabletSessionState,
+          // TYPES, never the values behind them (REQ-VER-04). Reception reads
+          // "Patient says wrong: address, mobile" and looks the values up on
+          // their own screen.
+          disputedDetails: [...session.detailsDisputedTypes],
           pushedBy: session.pushedBy,
           pushedAt: session.pushedAt.toISOString(),
           lastStateAt: session.lastStateAt.toISOString(),
@@ -910,8 +1116,10 @@ export class TabletSessionsService {
       agreementId: session.agreementId,
       agreementType: context.agreement.type as AgreementType,
       patientName: context.patientName,
+      patientId: context.agreement.patientId,
       providerName: context.providerName,
       state: session.state as TabletSessionState,
+      disputedDetails: [...session.detailsDisputedTypes],
       pushedBy: session.pushedBy,
       pushedAt: session.pushedAt.toISOString(),
       lastStateAt: session.lastStateAt.toISOString(),
@@ -940,6 +1148,42 @@ export class TabletSessionsService {
 /** Today, as the ISO date every particular in this system is written in. */
 function today(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * WHICH DETAIL TYPES A STAFF MEMBER CORRECTED AFTER THIS AGREEMENT WAS LOCKED.
+ *
+ * SINCE THE LOCK, NOT EVER, and the difference decides whether a superseding
+ * agreement is created. `patients.detailsCorrectedFields` is a per-field map of
+ * `{ field: isoTimestamp }` (schema.prisma says why it is a map rather than six
+ * columns); a correction made BEFORE the lock is already inside the hashed
+ * snapshot, and treating it as a reason to supersede would mint a fresh
+ * agreement on every re-send for the rest of the patient's life.
+ *
+ * AN UNLOCKED AGREEMENT ANSWERS THE EMPTY LIST, because there is nothing to
+ * supersede: the push is about to assemble the particulars from these very
+ * records for the first time.
+ *
+ * FIELD NAMES AND TIMES ONLY. Nothing here reads a value, and there is no
+ * value in the map to read (REQ-VER-04).
+ */
+function particularsCorrectedSince(
+  patient: { detailsCorrectedFields: unknown } | null,
+  lockedAt: Date | null,
+): ConfirmableDetailType[] {
+  if (!patient || !lockedAt) return [];
+  const map = patient.detailsCorrectedFields;
+  if (!map || typeof map !== 'object') return [];
+
+  const types = new Set<ConfirmableDetailType>();
+  for (const [field, at] of Object.entries(map as Record<string, unknown>)) {
+    if (typeof at !== 'string') continue;
+    if (!isCorrectablePatientField(field)) continue;
+    const when = new Date(at);
+    if (Number.isNaN(when.getTime()) || when <= lockedAt) continue;
+    types.add(detailTypeForPatientField(field));
+  }
+  return [...types];
 }
 
 /**

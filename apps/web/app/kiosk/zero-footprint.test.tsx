@@ -223,10 +223,11 @@ describe('CLAUDE.md §7 — nothing is written to the device', () => {
           { type: 'mobile', label: 'Mobile number', value: '0400 000 000' },
           { type: 'email', label: 'Email address', value: 'jamie@example.invalid' },
         ]}
-        ticked={new Set(['name'])}
+        answers={{ name: 'right', address: 'wrong' }}
+        disputed
         saving={false}
         saveError={false}
-        onToggle={noop}
+        onAnswer={noop}
         onContinue={noop}
         onSeeReception={noop}
       />,

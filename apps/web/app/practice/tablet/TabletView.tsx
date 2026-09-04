@@ -49,7 +49,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, ClipboardList, RotateCcw, Send, Tablet, UserRound } from 'lucide-react';
+import { ArrowRight, ClipboardList, PencilLine, RotateCcw, Send, Tablet, UserRound } from 'lucide-react';
 import {
   ASSIGNOR_RELATIONSHIPS_VERSION,
   ASSIGNOR_RELATIONSHIP_OPTIONS,
@@ -60,6 +60,7 @@ import {
   mayReach,
   relationshipNeedsFreeText,
   type Audience,
+  type CorrectablePatientField,
   type DeviceRow,
   type PushBlockedReason,
   type TabletSessionRow,
@@ -118,6 +119,9 @@ const STATE_TONE: Record<string, Tone> = {
   pushed: 'warn',
   reading: 'warn',
   details_confirmed: 'warn',
+  // STOP, NOT WARN. Every other live state is "carry on watching"; this one is
+  // the only one that needs somebody to get up and do something.
+  details_disputed: 'stop',
   signed: 'ok',
   walked_away: 'neutral',
   recalled: 'neutral',
@@ -127,6 +131,54 @@ const STATE_TONE: Record<string, Tone> = {
 /** The words for a relationship key — the kiosk's own, read from one place. */
 function relationshipLabel(key: string): string {
   return strings.kiosk.assignor.relationshipNames[key] ?? key;
+}
+
+/**
+ * WHAT THE PATIENT CROSSED, IN WORDS — "address, mobile number".
+ *
+ * THE WORDS ARE THE KIOSK'S OWN, read from one place. The patient tapped a
+ * button labelled "Address"; reception must read the same word, or the two
+ * halves of one conversation are describing different things. The wire carries
+ * `address` and never a value (REQ-VER-04), which is why this maps a TYPE
+ * rather than rendering something the server sent.
+ */
+export function disputedLabels(types: readonly string[]): string {
+  return types.map((type) => strings.kiosk.checkDetails.detailNames[type] ?? type).join(', ');
+}
+
+/**
+ * WHICH COLUMNS ANSWER A CROSSED ROW. The patient crossed "Name"; reception
+ * corrects given names AND family name, because a person does not read their
+ * name as two questions and the platform stores it as two columns.
+ */
+export const FIELDS_FOR_DISPUTED_TYPE: Readonly<Record<string, readonly CorrectablePatientField[]>> = {
+  name: ['givenNames', 'familyName'],
+  date_of_birth: ['dateOfBirth'],
+  address: ['address'],
+  mobile: ['mobile'],
+  email: ['email'],
+};
+
+export function fieldsToCorrect(types: readonly string[]): CorrectablePatientField[] {
+  const fields: CorrectablePatientField[] = [];
+  for (const type of types) {
+    for (const field of FIELDS_FOR_DISPUTED_TYPE[type] ?? []) {
+      if (!fields.includes(field)) fields.push(field);
+    }
+  }
+  return fields;
+}
+
+/** The six correctable details, as the server hands them back. */
+export interface PatientDetails {
+  id: string;
+  givenNames: string;
+  familyName: string;
+  dateOfBirth: string;
+  address: string | null;
+  mobile: string | null;
+  email: string | null;
+  detailsCorrectedAt: string | null;
 }
 
 /**
@@ -267,6 +319,21 @@ export function TabletView({ practiceId }: { practiceId: string }) {
   const [who, setWho] = useState<WhoDraft>(EMPTY_WHO);
   const [whoBusy, setWhoBusy] = useState(false);
   const [whoOutcome, setWhoOutcome] = useState<{ id: string; text: string; ok: boolean } | null>(null);
+
+  /**
+   * THE CORRECTION PANEL — which session's is open, the details as the server
+   * last gave them, and what reception has typed.
+   *
+   * THE VALUES ARE FETCHED ON OPEN AND DROPPED ON CLOSE, never carried on the
+   * three-second poll. A date of birth and a home address must not sit on a
+   * monitor at the front counter, facing the room, all morning: reception is
+   * watching a STATUS, and only becomes a corrector when they choose to.
+   */
+  const [correctFor, setCorrectFor] = useState<string | null>(null);
+  const [details, setDetails] = useState<PatientDetails | null>(null);
+  const [draft, setDraft] = useState<Partial<Record<CorrectablePatientField, string>>>({});
+  const [correctBusy, setCorrectBusy] = useState(false);
+  const [correctOutcome, setCorrectOutcome] = useState<{ id: string; text: string; ok: boolean } | null>(null);
 
   /** Which tablet each row would go to, and what happened when it went. */
   const [target, setTarget] = useState<Record<string, string>>({});
@@ -424,6 +491,133 @@ export function TabletView({ practiceId }: { practiceId: string }) {
     } catch (e) {
       setPushOutcome({
         id: row.agreementId,
+        text: e instanceof TypeError ? strings.status.unreachable : (e as Error).message,
+        ok: false,
+      });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  /**
+   * OPEN THE CORRECTION PANEL FOR ONE DISPUTED SESSION — and read the values
+   * at that moment, from the server, rather than from anything this page was
+   * already holding.
+   */
+  async function openCorrect(session: TabletSessionRow) {
+    setCorrectOutcome(null);
+    setCorrectFor(session.id);
+    setDetails(null);
+    setDraft({});
+    try {
+      const res = await fetch(`${CORE_URL}/patients/${session.patientId}/details`, {
+        headers: apiHeaders(practiceId),
+      });
+      if (!res.ok) throw new Error((await refusal(res)).message);
+      const body = (await res.json()) as PatientDetails;
+      setDetails(body);
+      // Pre-filled with what we hold, because a correction is almost always an
+      // edit of one character in an address rather than a re-typing of it.
+      const seed: Partial<Record<CorrectablePatientField, string>> = {};
+      for (const field of fieldsToCorrect(session.disputedDetails)) {
+        seed[field] = (body[field] as string | null) ?? '';
+      }
+      setDraft(seed);
+    } catch (e) {
+      setCorrectOutcome({
+        id: session.id,
+        text: e instanceof TypeError ? strings.status.unreachable : (e as Error).message,
+        ok: false,
+      });
+    }
+  }
+
+  /**
+   * SAVE THE CORRECTION. Only the fields reception actually changed are sent —
+   * the server records one `patient.details_corrected` event per changed
+   * field, with the TYPE and the staff member and never the value, and a
+   * request full of unchanged fields would put events in the vault saying
+   * somebody changed something when nobody did.
+   */
+  async function saveCorrection(session: TabletSessionRow) {
+    if (!details) return;
+    const body: Record<string, string> = {};
+    for (const [field, value] of Object.entries(draft)) {
+      const current =
+        field === 'dateOfBirth'
+          ? details.dateOfBirth
+          : ((details[field as keyof PatientDetails] as string | null) ?? '');
+      if ((value ?? '') !== current) body[field] = value ?? '';
+    }
+    if (Object.keys(body).length === 0) {
+      setCorrectOutcome({ id: session.id, text: strings.tablet.correctNoChange, ok: false });
+      return;
+    }
+
+    setCorrectBusy(true);
+    setCorrectOutcome(null);
+    try {
+      const res = await fetch(`${CORE_URL}/patients/${session.patientId}/details`, {
+        method: 'PATCH',
+        headers: apiHeaders(practiceId),
+        body: JSON.stringify(body),
+      });
+      // THE SERVER'S OWN RULE TEXT, shown as it came. A refusal here is a rule
+      // — the Medicare exclusion, a field that may not be corrected — and
+      // paraphrasing it on the client would be a second copy of a rule that
+      // has one home.
+      if (!res.ok) throw new Error((await refusal(res)).message);
+      setCorrectOutcome({ id: session.id, text: strings.tablet.correctSaved, ok: true });
+      setCorrectFor(null);
+      setDetails(null);
+      setDraft({});
+      await load();
+    } catch (e) {
+      setCorrectOutcome({
+        id: session.id,
+        text: e instanceof TypeError ? strings.status.unreachable : (e as Error).message,
+        ok: false,
+      });
+    } finally {
+      setCorrectBusy(false);
+    }
+  }
+
+  /**
+   * SEND IT AGAIN. One press: the old screen is recalled and the same tablet
+   * gets a fresh session for the same visit, re-read from the corrected
+   * records.
+   *
+   * IF THE CORRECTION TOUCHED A PARTICULAR ON A LOCKED AGREEMENT the server
+   * supersedes rather than edits (HARD-02) and says so in the response, and
+   * reception is told in words — the row's id changes under them, and a silent
+   * replacement is how people stop trusting a screen.
+   */
+  async function resend(session: TabletSessionRow) {
+    setBusyId(session.id);
+    setCorrectOutcome(null);
+    setPushOutcome(null);
+    try {
+      const res = await fetch(`${CORE_URL}/tablet-sessions/${session.id}/resend`, {
+        method: 'POST',
+        headers: apiHeaders(practiceId),
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) {
+        const { reason, message } = await refusal(res);
+        throw new Error(reason ? blockedMessage(reason) : message);
+      }
+      const body = (await res.json()) as { supersededAgreementId: string | null };
+      setPushOutcome({
+        id: session.id,
+        text: body.supersededAgreementId ? strings.tablet.resendSuperseded : strings.tablet.resent,
+        ok: true,
+      });
+      setCorrectFor(null);
+      await load();
+    } catch (e) {
+      setPushOutcome({
+        id: session.id,
         text: e instanceof TypeError ? strings.status.unreachable : (e as Error).message,
         ok: false,
       });
@@ -843,6 +1037,24 @@ export function TabletView({ practiceId }: { practiceId: string }) {
                   </div>
                 </div>
 
+                {/*
+                  WHAT THE PATIENT SAID IS WRONG (Carl, 4 Sep 2026). TYPES, in
+                  our words — "Patient says wrong: address, mobile" — and never
+                  the values, which stay off a screen that faces the room and
+                  refreshes every three seconds. The values arrive when
+                  somebody opens Correct, and go again when they close it.
+                */}
+                {session && session.disputedDetails.length > 0 && (
+                  <Notice
+                    tone="stop"
+                    title={strings.tablet.disputedTitle}
+                    data-testid={`disputed-${session.id}`}
+                  >
+                    <p>{strings.tablet.disputedList(disputedLabels(session.disputedDetails))}</p>
+                    <p className={ui.hint}>{strings.tablet.disputedLead}</p>
+                  </Notice>
+                )}
+
                 {session && (
                   <div className={styles.cardActions}>
                     {/*
@@ -859,11 +1071,125 @@ export function TabletView({ practiceId }: { practiceId: string }) {
                       <RotateCcw size={14} aria-hidden="true" />
                       {busyId === session.id ? strings.tablet.recalling : strings.tablet.recallAction}
                     </Button>
+
+                    {session.disputedDetails.length > 0 && (
+                      <>
+                        <Button
+                          disabled={!canSend || correctBusy}
+                          onClick={() => {
+                            if (correctFor === session.id) {
+                              setCorrectFor(null);
+                              setDetails(null);
+                              setDraft({});
+                              return;
+                            }
+                            void openCorrect(session);
+                          }}
+                          data-testid={`correct-open-${session.id}`}
+                        >
+                          <PencilLine size={14} aria-hidden="true" />
+                          {correctFor === session.id
+                            ? strings.tablet.correctClose
+                            : strings.tablet.correctAction}
+                        </Button>
+                        {/*
+                          RE-SEND IS RECALL + PUSH, and the server does both.
+                          It re-reads the patient, so the corrected detail is
+                          what the patient sees; and if a PARTICULAR changed on
+                          a locked agreement it supersedes rather than edits
+                          (HARD-02) and says so, which is why the outcome below
+                          has two sentences.
+                        */}
+                        <Button
+                          variant="primary"
+                          disabled={!canSend || busyId !== null}
+                          onClick={() => void resend(session)}
+                          data-testid={`resend-${session.id}`}
+                        >
+                          <Send size={14} aria-hidden="true" />
+                          {busyId === session.id ? strings.tablet.resending : strings.tablet.resendAction}
+                        </Button>
+                      </>
+                    )}
                   </div>
                 )}
 
+                {/*
+                  THE CORRECTION PANEL — one field per crossed detail, and
+                  nothing else. A patient who crossed their address is not an
+                  occasion to open their whole record: the fields shown are
+                  derived from what they actually disputed.
+
+                  AND CARL'S CAVEAT SITS ON IT, VERBATIM. The PMS is the source
+                  of truth (REQ-DATA-10) and until the Medtech write-back
+                  exists (D-01) nothing carries this correction home, so the
+                  sentence is in front of the person typing rather than in a
+                  help page they will not open.
+                */}
+                {session && correctFor === session.id && (
+                  <div className={styles.form} data-testid={`correct-panel-${session.id}`}>
+                    <p className={ui.hint}>{strings.tablet.correctHeading}</p>
+                    <Notice
+                      tone="warn"
+                      title={strings.tablet.correctAction}
+                      data-testid={`correct-caveat-${session.id}`}
+                    >
+                      {strings.tablet.correctPmsCaveat}
+                    </Notice>
+                    {details === null ? (
+                      <p className={ui.hint}>{strings.tablet.correctLoading}</p>
+                    ) : (
+                      <>
+                        {details.detailsCorrectedAt && (
+                          <p className={ui.hint} data-testid={`corrected-at-${session.id}`}>
+                            {strings.tablet.correctedAt(when(details.detailsCorrectedAt))}
+                          </p>
+                        )}
+                        {fieldsToCorrect(session.disputedDetails).map((field) => (
+                          <Field key={field} label={strings.tablet.correctFields[field] ?? field}>
+                            {(p) => (
+                              <TextInput
+                                {...p}
+                                type={field === 'dateOfBirth' ? 'date' : 'text'}
+                                value={draft[field] ?? ''}
+                                maxLength={field === 'address' ? 500 : 254}
+                                onChange={(e) => setDraft((d) => ({ ...d, [field]: e.target.value }))}
+                                data-testid={`correct-${field}-${session.id}`}
+                              />
+                            )}
+                          </Field>
+                        ))}
+                        <div className={styles.formActions}>
+                          <Button
+                            variant="primary"
+                            disabled={!canSend || correctBusy}
+                            onClick={() => void saveCorrection(session)}
+                            data-testid={`correct-save-${session.id}`}
+                          >
+                            {correctBusy ? strings.tablet.correctSaving : strings.tablet.correctSave}
+                          </Button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {session && correctOutcome?.id === session.id && (
+                  <Notice
+                    tone={correctOutcome.ok ? 'ok' : 'stop'}
+                    title={strings.tablet.correctAction}
+                    data-testid={`correct-outcome-${device.id}`}
+                  >
+                    {correctOutcome.text}
+                  </Notice>
+                )}
+
                 {outcome && (
-                  <Notice tone="stop" title={strings.tablet.recallAction} data-testid={`recall-outcome-${device.id}`}>
+                  <Notice
+                    tone={outcome.ok ? 'ok' : 'stop'}
+                    title={strings.tablet.recallAction}
+                    data-testid={`recall-outcome-${device.id}`}
+                  >
                     {outcome.text}
                   </Notice>
                 )}

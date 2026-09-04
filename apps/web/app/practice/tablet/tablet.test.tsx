@@ -28,7 +28,16 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MIN_AGE_ASSIGN_FOR_OTHER, type DeviceRow, type TabletSessionRow } from '@aobplatform/domain';
-import { TabletView, blockedMessage, mayPush, serviceFact, signingFact, whoIsBlocked } from './TabletView';
+import {
+  TabletView,
+  blockedMessage,
+  disputedLabels,
+  fieldsToCorrect,
+  mayPush,
+  serviceFact,
+  signingFact,
+  whoIsBlocked,
+} from './TabletView';
 import { strings } from '../../strings';
 
 const PRACTICE = 'practice-1';
@@ -85,12 +94,37 @@ const SESSION: TabletSessionRow = {
   agreementId: READY.agreementId,
   agreementType: 'episodic_pre',
   patientName: 'Jamie Sampleton',
+  patientId: 'patient-1',
   providerName: 'Dr Example Provider',
   state: 'reading',
+  disputedDetails: [],
   pushedBy: 'Mai Frontdesk',
   pushedAt: '2026-09-04T09:05:00.000Z',
   lastStateAt: '2026-09-04T09:06:00.000Z',
   endedAt: null,
+};
+
+/**
+ * THE SAME SESSION, AFTER THE PATIENT CROSSED TWO ROWS. `disputedDetails`
+ * carries TYPES and never values (REQ-VER-04) — reception reads "address,
+ * mobile" and the values arrive only when they open the correction control.
+ */
+const DISPUTED: TabletSessionRow = {
+  ...SESSION,
+  state: 'details_disputed',
+  disputedDetails: ['address', 'mobile'],
+};
+
+/** What `GET /patients/:id/details` answers — the six correctable fields. */
+const DETAILS = {
+  id: 'patient-1',
+  givenNames: 'Jamie',
+  familyName: 'Sampleton',
+  dateOfBirth: '1957-03-14',
+  address: '404 Wrongway Parade, Sampletown NSW 2000',
+  mobile: '+61400000404',
+  email: 'jamie.sampleton@example.invalid',
+  detailsCorrectedAt: null,
 };
 
 const calls: Array<{ url: string; method: string; body: unknown }> = [];
@@ -101,6 +135,7 @@ function stubFetch(
     devices?: DeviceRow[];
     sessions?: TabletSessionRow[];
     staff?: string[];
+    details?: unknown;
     onPost?: (url: string) => { ok: boolean; status?: number; payload?: unknown };
   } = {},
 ) {
@@ -111,7 +146,9 @@ function stubFetch(
       calls.push({ url, method, body: init?.body ? JSON.parse(init.body as string) : undefined });
 
       if (method === 'GET') {
-        const payload = url.includes('/tablet-sessions/pushable')
+        const payload = url.includes('/patients/')
+          ? (opts.details ?? DETAILS)
+          : url.includes('/tablet-sessions/pushable')
           ? (opts.rows ?? [READY, BLOCKED])
           : url.includes('/tablet-sessions')
             ? (opts.sessions ?? [])
@@ -381,6 +418,177 @@ describe('/practice/tablet — send to the tablet', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: strings.tablet.whoPatient }));
 
     expect(document.body.textContent ?? '').not.toMatch(/capacity|competent|understands/i);
+  });
+});
+
+/**
+ * RECEPTION SEES WHAT THE PATIENT DID NOT AGREE TO, AND CAN FIX IT
+ * (Carl, 4 Sep 2026: "The practice-reception-user is sitting behind the desk
+ * and should be able to see the same screen and be told what the patient did
+ * not agree to. Then the practice-reception-user will correct the incorrect
+ * detail and re-push.").
+ *
+ * WHAT THIS PINS:
+ *
+ *  - THE DISPUTED TYPES ARE ON THE ROW, IN OUR WORDS, and the VALUES are not —
+ *    this page is a status, not a mirror of a tablet, and a date of birth on a
+ *    monitor facing the waiting room is a disclosure nobody asked for. The
+ *    values arrive only when somebody opens Correct.
+ *  - THE CORRECTION CONTROL CARRIES CARL'S CAVEAT VERBATIM. The PMS is the
+ *    source of truth (REQ-DATA-10) and until D-01 lands the next sync would
+ *    undo this, so the sentence sits in front of the person typing.
+ *  - ONLY THE CHANGED FIELDS ARE SENT, so the vault does not fill with events
+ *    saying somebody changed something when nobody did.
+ *  - RE-SEND IS ONE PRESS, and when the server says a locked agreement was
+ *    superseded (HARD-02) reception is told in words rather than watching an
+ *    id change under them.
+ */
+describe('console_shows_disputed_details_and_offers_correct_and_resend', () => {
+  /*
+   * ITS OWN RESET. `session` and `calls` are module-level, and the last test
+   * of the suite above leaves a signed-in practice user behind — which would
+   * quietly grant the practice audience to the view-only test below and make
+   * it assert nothing.
+   */
+  beforeEach(() => {
+    calls.length = 0;
+    session = null;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('names the crossed details as TYPES, never the values, on the live row', async () => {
+    signedInAtPractice();
+    stubFetch({ sessions: [DISPUTED] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    const banner = await screen.findByTestId(`disputed-${DISPUTED.id}`);
+    expect(banner.textContent).toContain(strings.tablet.disputedList('Address, Mobile number'));
+    // The state reads as work to do rather than as a failure — the patient did
+    // exactly what the screen asked.
+    expect(screen.getByTestId(`tablet-state-${TABLET.id}`).textContent).toContain(
+      strings.tablet.states.details_disputed,
+    );
+
+    /*
+     * AND NOT ONE VALUE IS ON THE PAGE BEFORE ANYBODY ASKS FOR IT. Nothing has
+     * fetched the patient's details, because reception is watching a status.
+     */
+    const page = document.body.textContent ?? '';
+    expect(page).not.toContain('404 Wrongway Parade');
+    expect(page).not.toContain('+61400000404');
+    expect(page).not.toContain('1957-03-14');
+    expect(calls.some((c) => c.url.includes('/patients/'))).toBe(false);
+    // Nor a dollar amount (hard rule 4) or a claim of certification (rule 12).
+    expect(page).not.toMatch(/\$\s?\d/);
+    expect(page).not.toMatch(/certified|accredited|government-approved/i);
+  });
+
+  it('opens a field per crossed detail, shows the PMS caveat verbatim, and sends only what changed', async () => {
+    signedInAtPractice();
+    stubFetch({ sessions: [DISPUTED] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    fireEvent.click(await screen.findByTestId(`correct-open-${DISPUTED.id}`));
+
+    // ONE FIELD PER CROSSED DETAIL, and nothing else: a crossed address is not
+    // an occasion to open the whole record.
+    const address = (await screen.findByTestId(`correct-address-${DISPUTED.id}`)) as HTMLInputElement;
+    const mobile = screen.getByTestId(`correct-mobile-${DISPUTED.id}`) as HTMLInputElement;
+    expect(address.value).toBe(DETAILS.address);
+    expect(mobile.value).toBe(DETAILS.mobile);
+    expect(screen.queryByTestId(`correct-email-${DISPUTED.id}`)).toBeNull();
+    expect(screen.queryByTestId(`correct-dateOfBirth-${DISPUTED.id}`)).toBeNull();
+
+    // CARL'S CAVEAT, WORD FOR WORD.
+    expect(screen.getByTestId(`correct-caveat-${DISPUTED.id}`).textContent).toContain(
+      'Also update this in your practice software — the next sync will bring the old value back otherwise.',
+    );
+
+    fireEvent.change(address, { target: { value: '1 Corrected Way, Sampletown NSW 2000' } });
+    fireEvent.click(screen.getByTestId(`correct-save-${DISPUTED.id}`));
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'PATCH')).toBe(true));
+    const patch = calls.find((c) => c.method === 'PATCH')!;
+    expect(patch.url).toContain(`/patients/${DISPUTED.patientId}/details`);
+    // ONLY THE CHANGED FIELD. The mobile was opened, read and left alone, and
+    // an unchanged field must not become a correction event.
+    expect(patch.body).toEqual({ address: '1 Corrected Way, Sampletown NSW 2000' });
+  });
+
+  it('re-sends in one press and says plainly when a locked agreement was superseded', async () => {
+    signedInAtPractice();
+    stubFetch({
+      sessions: [DISPUTED],
+      onPost: (url) =>
+        url.includes('/resend')
+          ? { ok: true, payload: { supersededAgreementId: 'agreement-ready' } }
+          : { ok: true, payload: {} },
+    });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    fireEvent.click(await screen.findByTestId(`resend-${DISPUTED.id}`));
+
+    await waitFor(() => expect(calls.some((c) => c.url.includes('/resend'))).toBe(true));
+    const resend = calls.find((c) => c.url.includes('/resend'))!;
+    expect(resend.method).toBe('POST');
+    expect(resend.url).toContain(`/tablet-sessions/${DISPUTED.id}/resend`);
+
+    /*
+     * HARD-02 IN WORDS AT THE DESK. The agreement's id changes under
+     * reception, and a silent replacement is how people stop trusting a
+     * screen.
+     */
+    const outcome = await screen.findByTestId(`recall-outcome-${TABLET.id}`);
+    expect(outcome.textContent).toContain(strings.tablet.resendSuperseded);
+  });
+
+  it('shows the server’s own rule text when a correction is refused', async () => {
+    signedInAtPractice();
+    const refusal =
+      'The Medicare card number is not an identity identifier and is never held here — the exclusion is ' +
+      'not configurable (REQ-VER-02).';
+    stubFetch({
+      sessions: [DISPUTED],
+      onPost: () => ({ ok: false, status: 400, payload: { message: refusal } }),
+    });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    fireEvent.click(await screen.findByTestId(`correct-open-${DISPUTED.id}`));
+    const address = (await screen.findByTestId(`correct-address-${DISPUTED.id}`)) as HTMLInputElement;
+    fireEvent.change(address, { target: { value: '2 Anywhere Street' } });
+    fireEvent.click(screen.getByTestId(`correct-save-${DISPUTED.id}`));
+
+    // THE SERVER'S SENTENCE, AS IT CAME. A rule has one home, and paraphrasing
+    // it here would be a second copy of it.
+    const outcome = await screen.findByTestId(`correct-outcome-${TABLET.id}`);
+    expect(outcome.textContent).toContain('not an identity identifier');
+  });
+
+  it('offers neither control to a reader without the practice’s own claim', async () => {
+    // No session at all: `audiencesOf` gives nothing, so `mayPush` is false.
+    stubFetch({ sessions: [DISPUTED] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    expect(((await screen.findByTestId(`correct-open-${DISPUTED.id}`)) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(((await screen.findByTestId(`resend-${DISPUTED.id}`)) as HTMLButtonElement).disabled).toBe(true);
+    // But they can still SEE what is wrong — the person asked "why has that
+    // tablet not finished" is the one person who needs the answer.
+    expect(screen.getByTestId(`disputed-${DISPUTED.id}`).textContent).toContain('Address');
+  });
+
+  it('maps a crossed type to the columns that answer it — a name is two columns and one row', () => {
+    expect(disputedLabels(['address', 'mobile'])).toBe('Address, Mobile number');
+    // The patient reads one question; the platform stores two columns.
+    expect(fieldsToCorrect(['name'])).toEqual(['givenNames', 'familyName']);
+    expect(fieldsToCorrect(['name', 'address'])).toEqual(['givenNames', 'familyName', 'address']);
+    // An unknown type contributes nothing rather than throwing — a server that
+    // grows a sixth detail must not blank the correction panel.
+    expect(fieldsToCorrect(['something_new'])).toEqual([]);
   });
 });
 

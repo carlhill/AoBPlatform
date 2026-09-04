@@ -119,6 +119,41 @@ export class CaptureService {
   }
 
   /**
+   * CLOSE EVERY OPEN CHANNEL ON AN AGREEMENT THAT HAS BEEN SUPERSEDED, inside
+   * the caller's transaction (HARD-02: a correction supersedes, it never
+   * edits).
+   *
+   * WHY THIS AND NOT A STATUS CHANGE ON THE AGREEMENT. The superseded
+   * agreement is a real thing that really happened — it was validated, locked,
+   * rendered and hashed, and its evidence stays exactly as it is. What must
+   * stop is somebody being asked to SIGN it, on any channel, now that a
+   * corrected version exists. Closing its capture requests is precisely that,
+   * and it is the codebase's own idiom: `pushable` already treats an agreement
+   * with no open capture request as one that has nowhere left to go.
+   *
+   * IT IS THE SAME SHAPE AS `complete`'s sibling cancellation, with a
+   * different reason on the event — a reader asking "why did that link stop
+   * working" gets an answer either way.
+   */
+  async cancelOpenFor(
+    tx: Prisma.TransactionClient,
+    agreementId: string,
+    reason: string,
+  ): Promise<string[]> {
+    const open = await tx.captureRequest.findMany({ where: { agreementId, status: 'open' } });
+    for (const request of open) {
+      await tx.captureRequest.update({ where: { id: request.id }, data: { status: 'cancelled' } });
+      await enqueueVaultEvent(tx, {
+        type: 'capture.cancelled',
+        actor: SYSTEM_ACTOR,
+        subject: { type: 'CaptureRequest', id: request.id },
+        payload: { reason, agreementId, channel: request.channel },
+      });
+    }
+    return open.map((request) => request.id);
+  }
+
+  /**
    * Public landing: resolves a token to a verification challenge. The
    * response is CONTENT-BLIND (REQ-CHILD-04): it names no patient, no
    * provider, no practice — only what the person must state to proceed.

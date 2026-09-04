@@ -123,6 +123,8 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
       type?: string;
       assignorIsPatient?: boolean;
       assignorId?: string;
+      /** A patient of this practice other than the suite's shared one. */
+      patientId?: string;
     } = {},
   ): Promise<string> {
     const practiceId = opts.practiceId ?? practiceA;
@@ -134,7 +136,7 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
           type: opts.type ?? 'episodic_pre',
           anchorKind: 'provider',
           providerId: isB ? providerB : providerA,
-          patientId: isB ? patientB : patientA,
+          patientId: opts.patientId ?? (isB ? patientB : patientA),
           assignorId: opts.assignorId ?? (isB ? assignorB : assignorA),
           assignorIsPatient: opts.assignorIsPatient ?? true,
           enduringPathway: (opts.type ?? 'episodic_pre') === 'enduring' ? 'mymedicare' : null,
@@ -909,6 +911,32 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
       expect((theirs.body as unknown[]).length).toBe(0);
     });
 
+    it('a correction across a practice boundary finds nothing', async () => {
+      /*
+       * FAILS CLOSED, AND SAYS NOTHING. Practice A, signed in as itself, asks
+       * to correct practice B's patient. RLS filters on the transaction-local
+       * scope, so the row is NOT FOUND rather than refused — a refusal would
+       * confirm that the id names somebody, somewhere.
+       */
+      const before = await prisma.withPractice(practiceB, (tx) =>
+        tx.patient.findFirst({ where: { id: patientB } }),
+      );
+
+      const res = await http()
+        .patch(`/patients/${patientB}/details`)
+        .set('x-practice-id', practiceA)
+        .send({ address: '99 Trespass Lane, Nowhere NSW 2000' })
+        .expect(404);
+      expect(JSON.stringify(res.body)).not.toContain('Alex');
+      expect(JSON.stringify(res.body)).not.toContain('9 Other Road');
+
+      const after = await prisma.withPractice(practiceB, (tx) =>
+        tx.patient.findFirst({ where: { id: patientB } }),
+      );
+      expect(after!.address).toBe(before!.address);
+      expect(after!.detailsCorrectedAt).toBeNull();
+    });
+
     it('recall across a practice boundary finds nothing', async () => {
       const mine = await draft();
       const pushed = await pushTo(tabletA, mine).expect(201);
@@ -920,6 +948,459 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
         .expect(404);
 
       // Still live, and still practice A's.
+      const session = await prisma.withPractice(practiceA, (tx) =>
+        tx.tabletSession.findFirst({ where: { id: pushed.body.id } }),
+      );
+      expect(session!.endedAt).toBeNull();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+
+  /**
+   * TICK OR CROSS PER ROW, AND RECEPTION SEES WHICH (Carl, 4 Sep 2026).
+   *
+   * The four things this describes, and each is a rule rather than a behaviour
+   * somebody liked:
+   *
+   *  - A CROSS TRAVELS AS A TYPE. `address`, never "12 Example Street", and
+   *    never the value the patient believes is right — they were not asked
+   *    (REQ-VER-04, hard rule 9).
+   *  - A DISPUTE CHANGES NOTHING ON THE AGREEMENT. It stops a ceremony, not a
+   *    visit (hard rule 8, REQ-REC-04) — asserted field by field, because
+   *    "nothing blocks care" is only true if nothing actually moves.
+   *  - A CORRECTION NAMES THE FIELD AND THE PERSON AND NEVER THE VALUE, and
+   *    refuses a Medicare field out loud rather than dropping it silently
+   *    (hard rule 1, REQ-VER-02).
+   *  - A RE-SEND SUPERSEDES A LOCKED AGREEMENT WHOSE PARTICULARS MOVED
+   *    (HARD-02) and re-uses it when only a contact detail did.
+   */
+  describe('a detail the patient says is wrong', () => {
+    /**
+     * A PATIENT OF THIS PRACTICE THAT NO OTHER TEST SHARES. These tests
+     * CHANGE the patient row, and the suite's own `patientA` is asserted
+     * against by name and address in half the file above.
+     */
+    async function freshPatient(givenNames: string) {
+      return prisma.withPractice(practiceA, async (tx) => {
+        const patient = await tx.patient.create({
+          data: {
+            practiceId: practiceA,
+            familyName: 'Crossfield',
+            givenNames,
+            // Obviously fake, and deliberately distinctive: every assertion
+            // below is that these strings do NOT appear somewhere.
+            dateOfBirth: new Date('1969-11-02'),
+            genderAsIdentified: 'male',
+            address: '404 Wrongway Parade, Sampletown NSW 2000',
+            mobile: '+61400000404',
+            email: 'wrong.address@example.invalid',
+          },
+        });
+        const assignor = await tx.assignor.create({
+          data: { practiceId: practiceA, name: `${givenNames} Crossfield`, authorityBasis: 'self' },
+        });
+        return { patientId: patient.id, assignorId: assignor.id };
+      });
+    }
+
+    const answer = (sessionId: string, body: { confirmed: string[]; disputed?: string[] }) =>
+      http()
+        .post(`/kiosk/session/${sessionId}/confirm-details`)
+        .set('x-device-credential', tabletACredential)
+        .send(body);
+
+    it('disputed_details_are_types_not_values', async () => {
+      const { patientId, assignorId } = await freshPatient('Dana');
+      const agreementId = await draft({ patientId, assignorId });
+      const pushed = await pushTo(tabletA, agreementId).expect(201);
+
+      const res = await answer(pushed.body.id, {
+        confirmed: ['name', 'date_of_birth', 'email'],
+        disputed: ['address', 'mobile'],
+      }).expect(201);
+      expect(res.body.state).toBe('details_disputed');
+      expect([...res.body.disputed].sort()).toEqual(['address', 'mobile']);
+
+      const session = await prisma.withPractice(practiceA, (tx) =>
+        tx.tabletSession.findFirst({ where: { id: pushed.body.id } }),
+      );
+      expect(session!.detailsDisputedTypes.sort()).toEqual(['address', 'mobile']);
+      expect(session!.detailsConfirmedTypes.sort()).toEqual(['date_of_birth', 'email', 'name']);
+      expect(session!.detailsDisputedAt).not.toBeNull();
+      // A LIVE STATE, NOT AN ENDING: the device keeps the session and
+      // reception's live list still shows the one row they must act on.
+      expect(session!.endedAt).toBeNull();
+
+      const event = await prisma.vaultOutbox.findFirst({
+        where: { subjectId: pushed.body.id, type: 'tablet.details_disputed' },
+      });
+      expect(event).not.toBeNull();
+      const payload = event!.payload as Record<string, unknown>;
+      expect(payload.disputedTypes).toBe('address,mobile');
+      expect(payload.disputedCount).toBe(2);
+      expect(payload.isVerification).toBe(false);
+      expect(payload.agreementChanged).toBe(false);
+
+      // NOT ONE VALUE, ANYWHERE NEAR IT — not the one shown, and not a
+      // replacement, because the patient was never asked for one.
+      const serialised = JSON.stringify(event);
+      for (const value of [
+        '404 Wrongway Parade',
+        '+61400000404',
+        'wrong.address@example.invalid',
+        '1969-11-02',
+        'Dana',
+        'Crossfield',
+      ]) {
+        expect(serialised).not.toContain(value);
+      }
+
+      // AND RECEPTION IS TOLD WHICH, as types, on their own list.
+      const list = await http()
+        .get('/tablet-sessions?active=true')
+        .set('x-practice-id', practiceA)
+        .expect(200);
+      const row = (list.body as Array<Record<string, unknown>>).find((r) => r.id === pushed.body.id);
+      expect((row!.disputedDetails as string[]).sort()).toEqual(['address', 'mobile']);
+      expect(row!.state).toBe('details_disputed');
+      expect(JSON.stringify(row)).not.toContain('404 Wrongway Parade');
+    });
+
+    it('dispute_leaves_the_agreement_untouched', async () => {
+      const { patientId, assignorId } = await freshPatient('Emery');
+      const agreementId = await draft({ patientId, assignorId });
+      const pushed = await pushTo(tabletA, agreementId).expect(201);
+
+      const before = await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.findFirst({ where: { id: agreementId } }),
+      );
+
+      await answer(pushed.body.id, {
+        confirmed: ['name', 'date_of_birth', 'mobile', 'email'],
+        disputed: ['address'],
+      }).expect(201);
+
+      const after = await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.findFirst({ where: { id: agreementId } }),
+      );
+      /*
+       * FIELD BY FIELD. A dispute stops a ceremony, not a visit: the
+       * particulars stay locked exactly as they were, the artefact keeps its
+       * hash, the status does not move, and nothing is declined or expired
+       * (hard rule 8, REQ-REC-04).
+       */
+      expect(after).toEqual(before);
+
+      // The capture request is still open, so the patient can sign by any
+      // channel — or be handed the tablet again once the detail is fixed.
+      const capture = await prisma.withPractice(practiceA, (tx) =>
+        tx.captureRequest.findFirst({ where: { agreementId, channel: 'in_practice' } }),
+      );
+      expect(capture!.status).toBe('open');
+    });
+
+    it('refuses an answer that does not cover every row the tablet drew', async () => {
+      const { patientId, assignorId } = await freshPatient('Frankie');
+      const agreementId = await draft({ patientId, assignorId });
+      const pushed = await pushTo(tabletA, agreementId).expect(201);
+
+      // Four of five. A session recorded as answered having answered four
+      // would be a ceremony record that says more than happened.
+      await answer(pushed.body.id, { confirmed: ['name', 'date_of_birth', 'address'], disputed: ['mobile'] })
+        .expect(400);
+
+      // And a row cannot be both right and wrong.
+      await answer(pushed.body.id, {
+        confirmed: ['name', 'date_of_birth', 'address', 'mobile', 'email'],
+        disputed: ['address'],
+      }).expect(400);
+
+      const session = await prisma.withPractice(practiceA, (tx) =>
+        tx.tabletSession.findFirst({ where: { id: pushed.body.id } }),
+      );
+      expect(session!.state).toBe('pushed');
+    });
+
+    it('correction_emits_type_and_staff_never_value', async () => {
+      const { patientId } = await freshPatient('Gale');
+
+      const res = await http()
+        .patch(`/patients/${patientId}/details`)
+        .set('x-practice-id', practiceA)
+        .send({ address: '7 Rightway Street, Sampletown NSW 2000', mobile: '+61400000707' })
+        .expect(200);
+      expect(res.body.fields.sort()).toEqual(['address', 'mobile']);
+      expect(res.body.types.sort()).toEqual(['address', 'mobile']);
+
+      const patient = await prisma.withPractice(practiceA, (tx) =>
+        tx.patient.findFirst({ where: { id: patientId } }),
+      );
+      expect(patient!.address).toBe('7 Rightway Street, Sampletown NSW 2000');
+      expect(patient!.detailsCorrectedAt).not.toBeNull();
+      // Per FIELD, so a later PMS sync can tell which value of its own is
+      // older than our correction (D-01).
+      const stamps = patient!.detailsCorrectedFields as Record<string, string>;
+      expect(Object.keys(stamps).sort()).toEqual(['address', 'mobile']);
+
+      const events = await prisma.vaultOutbox.findMany({
+        where: { subjectId: patientId, type: 'patient.details_corrected' },
+      });
+      // ONE EVENT PER FIELD. "Somebody corrected two things" is a worse record
+      // than two records naming the two things.
+      expect(events.length).toBe(2);
+      const byField = new Map(events.map((e) => [(e.payload as Record<string, unknown>).field, e]));
+      expect([...byField.keys()].sort()).toEqual(['address', 'mobile']);
+
+      for (const event of events) {
+        const payload = event.payload as Record<string, unknown>;
+        expect(payload.detailType).toBe(payload.field === 'address' ? 'address' : 'mobile');
+        expect(payload.mirrorOnly).toBe(true);
+        expect(payload.writtenBackToPms).toBe(false);
+        // THE STAFF MEMBER, from the verified session and never the body.
+        expect((event.actor as Record<string, unknown>).id).toBe(RECEPTIONIST.sub);
+        expect((event.actor as Record<string, unknown>).principalType).toBe('staff');
+
+        // AND NOT ONE CHARACTER OF THE VALUE — neither the old one nor the new.
+        const serialised = JSON.stringify(event);
+        for (const value of [
+          '404 Wrongway Parade',
+          '7 Rightway Street',
+          '+61400000404',
+          '+61400000707',
+          'wrong.address@example.invalid',
+        ]) {
+          expect(serialised).not.toContain(value);
+        }
+      }
+    });
+
+    it('the correction refuses an unattributed caller — a change nobody can be asked about', async () => {
+      const { patientId } = await freshPatient('Harper');
+      currentPrincipal = null;
+
+      await http()
+        .patch(`/patients/${patientId}/details`)
+        .set('x-practice-id', practiceA)
+        .send({ mobile: '+61400000808' })
+        .expect(400);
+
+      const patient = await prisma.withPractice(practiceA, (tx) =>
+        tx.patient.findFirst({ where: { id: patientId } }),
+      );
+      expect(patient!.mobile).toBe('+61400000404');
+      expect(patient!.detailsCorrectedAt).toBeNull();
+    });
+
+    it('correction_refuses_medicare_field', async () => {
+      const { patientId } = await freshPatient('Indigo');
+
+      /*
+       * THE KEY IS A QUOTED STRING RATHER THAN AN IDENTIFIER, deliberately.
+       * The ESLint rule fails the build on an identifier with "medicare" in
+       * its name anywhere outside the hard-rule test files, and this suite is
+       * not one of them — so the test proves the SERVER refuses it without the
+       * word ever becoming a name in this codebase (hard rule 1, REQ-VER-02).
+       *
+       * IT MUST BE REFUSED, NOT DROPPED. The global validation pipe strips
+       * unknown fields, which would have made this a silent success — so the
+       * controller passes the RAW body's keys to the service, and the service
+       * says no out loud.
+       */
+      const res = await http()
+        .patch(`/patients/${patientId}/details`)
+        .set('x-practice-id', practiceA)
+        .send({ 'medicareNumber': '0000 00000 0', address: '8 Should Not Save Street' })
+        .expect(400);
+      expect(String(res.body.message)).toMatch(/not an identity identifier/i);
+      expect(String(res.body.message)).toMatch(/not configurable/i);
+
+      // AND NOTHING ELSE IN THE REQUEST LANDED EITHER. A body carrying a
+      // forbidden field is refused whole; accepting the rest would teach a
+      // caller that sending it is harmless.
+      const patient = await prisma.withPractice(practiceA, (tx) =>
+        tx.patient.findFirst({ where: { id: patientId } }),
+      );
+      expect(patient!.address).toBe('404 Wrongway Parade, Sampletown NSW 2000');
+      expect(patient!.detailsCorrectedAt).toBeNull();
+      // There is no column for one, so nothing could have been written even
+      // if the guard had let it through.
+      expect(JSON.stringify(patient)).not.toContain('0000 00000 0');
+    });
+
+    it('resend_pushes_fresh_session_with_corrected_details', async () => {
+      const { patientId, assignorId } = await freshPatient('Jules');
+      const agreementId = await draft({ patientId, assignorId });
+      const first = await pushTo(tabletA, agreementId).expect(201);
+
+      await answer(first.body.id, {
+        confirmed: ['name', 'date_of_birth', 'address', 'email'],
+        disputed: ['mobile'],
+      }).expect(201);
+
+      // A CONTACT DETAIL, NOT A PARTICULAR (REQ-VER-02). It says where a copy
+      // goes and nothing about the contract, so the locked agreement stands.
+      await http()
+        .patch(`/patients/${patientId}/details`)
+        .set('x-practice-id', practiceA)
+        .send({ mobile: '+61400000909' })
+        .expect(200);
+
+      const resent = await http()
+        .post(`/tablet-sessions/${first.body.id}/resend`)
+        .set('x-practice-id', practiceA)
+        .expect(201);
+
+      expect(resent.body.supersededAgreementId).toBeNull();
+      expect(resent.body.agreementId).toBe(agreementId);
+      expect(resent.body.id).not.toBe(first.body.id);
+      expect(resent.body.state).toBe('pushed');
+      expect(resent.body.deviceId).toBe(tabletA);
+      expect(resent.body.disputedDetails).toEqual([]);
+
+      // THE OLD SESSION IS OVER, and it was RECALLED — reception took the
+      // screen back; the patient did not walk away.
+      const old = await prisma.withPractice(practiceA, (tx) =>
+        tx.tabletSession.findFirst({ where: { id: first.body.id } }),
+      );
+      expect(old!.state).toBe('recalled');
+      expect(old!.endedAt).not.toBeNull();
+
+      // AND THE TABLET IS SHOWING THE CORRECTED VALUE — the payload is built
+      // from the platform's own records at read time (REQ-DATA-11), which is
+      // the whole reason a re-send is worth pressing.
+      const shown = await http()
+        .get('/kiosk/session')
+        .set('x-device-credential', tabletACredential)
+        .expect(200);
+      expect(shown.body.session.id).toBe(resent.body.id);
+      expect(shown.body.session.patient.mobile).toBe('+61400000909');
+    });
+
+    it('resend_supersedes_a_locked_agreement_when_a_particular_changed', async () => {
+      const { patientId, assignorId } = await freshPatient('Kit');
+      const agreementId = await draft({ patientId, assignorId });
+      const first = await pushTo(tabletA, agreementId).expect(201);
+
+      const locked = await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.findFirst({ where: { id: agreementId } }),
+      );
+      expect(locked!.particularsLockedAt).not.toBeNull();
+
+      await answer(first.body.id, {
+        confirmed: ['name', 'date_of_birth', 'mobile', 'email'],
+        disputed: ['address'],
+      }).expect(201);
+
+      await http()
+        .patch(`/patients/${patientId}/details`)
+        .set('x-practice-id', practiceA)
+        .send({ address: '1 Corrected Way, Sampletown NSW 2000' })
+        .expect(200);
+
+      const resent = await http()
+        .post(`/tablet-sessions/${first.body.id}/resend`)
+        .set('x-practice-id', practiceA)
+        .expect(201);
+
+      /*
+       * HARD-02: THE LOCKED PARTICULARS ARE HASHED IN, so a corrected
+       * particular produces a NEW agreement rather than an edited one.
+       */
+      expect(resent.body.supersededAgreementId).toBe(agreementId);
+      expect(resent.body.agreementId).not.toBe(agreementId);
+
+      const replacement = await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.findFirst({ where: { id: resent.body.agreementId } }),
+      );
+      expect(replacement!.supersedesAgreementId).toBe(agreementId);
+      expect(replacement!.patientId).toBe(patientId);
+      // The anchor is carried, never changed — a different provider would be a
+      // different agreement needing fresh consent (HARD-01).
+      expect(replacement!.providerId).toBe(locked!.providerId);
+      expect(replacement!.assignorIsPatient).toBe(locked!.assignorIsPatient);
+      // D6a comes with it, so reception is not sent back to re-choose a
+      // description nobody changed.
+      expect(replacement!.serviceDescription).toBe(locked!.serviceDescription);
+      // And it was locked afresh, against the CORRECTED records.
+      expect(replacement!.particularsLockedAt).not.toBeNull();
+      expect(replacement!.id).not.toBe(agreementId);
+
+      /*
+       * THE OLD ONE IS KEPT EXACTLY AS IT WAS. Its particulars, its hash and
+       * its verification are evidence and are never rewritten — what stops it
+       * being signed is that every channel that could still collect a
+       * signature on the stale particulars is closed.
+       */
+      const before = await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.findFirst({ where: { id: agreementId } }),
+      );
+      expect(before!.particulars).toEqual(locked!.particulars);
+      expect(before!.renderedArtefactHash).toBe(locked!.renderedArtefactHash);
+      expect(before!.verificationEventId).toBe(locked!.verificationEventId);
+      expect(before!.signatureEventId).toBeNull();
+
+      const oldCaptures = await prisma.withPractice(practiceA, (tx) =>
+        tx.captureRequest.findMany({ where: { agreementId } }),
+      );
+      expect(oldCaptures.every((r) => r.status !== 'open')).toBe(true);
+
+      const superseded = await prisma.vaultOutbox.findFirst({
+        where: { subjectId: agreementId, type: 'agreement.superseded' },
+      });
+      expect(superseded).not.toBeNull();
+      const payload = superseded!.payload as Record<string, unknown>;
+      expect(payload.supersededBy).toBe(replacement!.id);
+      expect(payload.reason).toBe('patient_details_corrected');
+      expect(payload.correctedTypes).toBe('address');
+      // The TYPE, never the value (REQ-VER-04).
+      expect(JSON.stringify(superseded)).not.toContain('1 Corrected Way');
+      expect(JSON.stringify(superseded)).not.toContain('404 Wrongway Parade');
+
+      // The tablet is showing the replacement, with the corrected address.
+      const shown = await http()
+        .get('/kiosk/session')
+        .set('x-device-credential', tabletACredential)
+        .expect(200);
+      expect(shown.body.session.agreementId).toBe(replacement!.id);
+      expect(shown.body.session.patient.address).toBe('1 Corrected Way, Sampletown NSW 2000');
+    });
+
+    it('the re-send refuses an unattributed caller, like every other act on this page', async () => {
+      const { patientId, assignorId } = await freshPatient('Lior');
+      const agreementId = await draft({ patientId, assignorId });
+      const pushed = await pushTo(tabletA, agreementId).expect(201);
+
+      currentPrincipal = null;
+      /*
+       * 403 RATHER THAN 400, and from the SCOPE guard rather than the service:
+       * a caller with no verified session has no practice claim, so the act is
+       * refused before anything reads the body. Exactly as the push is
+       * (asserted above) — the two buttons must refuse the same way, because
+       * they are the same act.
+       */
+      await http()
+        .post(`/tablet-sessions/${pushed.body.id}/resend`)
+        .set('x-practice-id', practiceA)
+        .expect(403);
+
+      const session = await prisma.withPractice(practiceA, (tx) =>
+        tx.tabletSession.findFirst({ where: { id: pushed.body.id } }),
+      );
+      expect(session!.endedAt).toBeNull();
+    });
+
+    it('a re-send across a practice boundary finds nothing', async () => {
+      const { patientId, assignorId } = await freshPatient('Marlow');
+      const agreementId = await draft({ patientId, assignorId });
+      const pushed = await pushTo(tabletA, agreementId).expect(201);
+
+      signedInAt(practiceB);
+      await http()
+        .post(`/tablet-sessions/${pushed.body.id}/resend`)
+        .set('x-practice-id', practiceB)
+        .expect(404);
+
       const session = await prisma.withPractice(practiceA, (tx) =>
         tx.tabletSession.findFirst({ where: { id: pushed.body.id } }),
       );

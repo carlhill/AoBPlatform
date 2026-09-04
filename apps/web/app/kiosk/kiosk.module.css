@@ -898,3 +898,125 @@
 .mainFull {
   max-width: 100%;
 }
+
+/* --------------------------------------------------------------------------
+ * K-P1's ROWS — the text on the left, a tick and a cross on the right
+ * (Carl, 4 Sep 2026: "Make the big buttons to the right of the text (in case
+ * we are using small tablets). We need a button with a tick and another with
+ * a cross.").
+ *
+ * THE BREAKPOINT IS ABOUT THE TOUCH TARGET, not about taste. A 7-inch tablet
+ * in portrait cannot hold a wrapped street address and a pair of 56px controls
+ * on one line without one of them shrinking, and the one that must never
+ * shrink is the thing a shaky hand has to hit. So below 600px the pair drops
+ * under the value and goes full width, which makes it BIGGER on the smallest
+ * screen rather than smaller.
+ *
+ * NEVER COLOUR ALONE (WCAG 1.4.1). Green and red carry the tone, and a glyph,
+ * a word, a fill and `aria-pressed` all carry the answer as well — because
+ * roughly one man in twelve cannot use the first pair to tell these apart.
+ * ------------------------------------------------------------------------ */
+
+.detailRow {
+  display: flex;
+  gap: var(--s4);
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding: var(--s3) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.detailText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.detailAnswers {
+  display: flex;
+  gap: var(--s3);
+  flex: 0 0 auto;
+}
+
+.answerButton {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  /* The floor Carl asked for, and the floor WCAG 2.2 AA (2.5.8) asks for. */
+  min-height: 56px;
+  min-width: 96px;
+  padding: var(--s2) var(--s4);
+  border: 2px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.answerGlyph {
+  font-size: 1.375rem;
+  line-height: 1;
+}
+
+/* The WORD, under the mark. It is the accessible name, not decoration. */
+.answerLabel {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.answerRight {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.answerWrong {
+  border-color: var(--stop);
+  color: var(--stop);
+}
+
+.answerRight.answerChosen {
+  background: var(--ok-wash);
+  border-width: 3px;
+}
+
+.answerWrong.answerChosen {
+  background: var(--stop-wash);
+  border-width: 3px;
+}
+
+/*
+ * THE BAND A CROSS PRODUCES. It is a status rather than an instruction: by the
+ * time it renders, the cross has already reached reception, so the patient is
+ * told what is happening and that their appointment is unaffected (hard rule
+ * 8, REQ-REC-04) rather than being sent to go and arrange something.
+ */
+.disputeBand {
+  margin: 0;
+  padding: var(--s4) var(--s5);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  background: var(--warn-wash);
+  color: var(--ink);
+  font-size: 1.0625rem;
+  line-height: 1.6;
+}
+
+@media (max-width: 600px) {
+  .detailRow {
+    align-items: stretch;
+  }
+
+  .detailAnswers {
+    flex: 1 1 100%;
+  }
+
+  .answerButton {
+    flex: 1 1 0;
+  }
+}

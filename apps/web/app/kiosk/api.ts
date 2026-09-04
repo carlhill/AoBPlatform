@@ -490,21 +490,28 @@ export function fetchTabletSession(): Promise<TabletSessionResponse> {
 }
 
 /**
- * THE TICKS — TYPES ONLY, NEVER VALUES (REQ-VER-04, hard rule 9).
+ * THE TICKS AND THE CROSSES — TYPES ONLY, NEVER VALUES (REQ-VER-04, hard
+ * rule 9).
  *
- * The parameter is typed `ConfirmableDetailType[]`, so a value cannot be
- * passed here even by mistake: `'name'` type-checks and the name does not.
- * And it is NOT a verification — a displayed value confirmed by whoever holds
+ * Both parameters are typed `ConfirmableDetailType[]`, so a value cannot be
+ * passed here even by mistake: `'name'` type-checks and the name does not. A
+ * CROSS carries no replacement either — there is no third parameter and there
+ * must never be one. The patient says a detail is wrong; the person who says
+ * what is right is a staff member at the desk, and their identity is recorded
+ * when they say it (`PATCH /patients/:id/details`).
+ *
+ * AND IT IS NOT A VERIFICATION — a displayed value answered by whoever holds
  * the tablet proves nothing about who is holding it. The verification was the
  * staff check across the desk that the push already recorded (REQ-VER-03).
  */
 export function confirmSessionDetails(
   sessionId: string,
   confirmed: readonly ConfirmableDetailType[],
+  disputed: readonly ConfirmableDetailType[] = [],
 ): Promise<{ id: string; state: TabletSessionState }> {
   return request(`/kiosk/session/${sessionId}/confirm-details`, {
     method: 'POST',
-    body: JSON.stringify({ confirmed }),
+    body: JSON.stringify({ confirmed, disputed }),
   });
 }
 

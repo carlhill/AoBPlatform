@@ -116,10 +116,11 @@ function ceremonyScreens(onLeave: () => void): ReadonlyArray<readonly [string, R
         {...CHROME}
         agreementType="episodic_pre"
         rows={DETAIL_ROWS}
-        ticked={new Set()}
+        answers={{}}
+        disputed={false}
         saving={false}
         saveError={false}
-        onToggle={noop}
+        onAnswer={noop}
         onContinue={noop}
         onSeeReception={onLeave}
       />,
