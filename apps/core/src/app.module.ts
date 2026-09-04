@@ -37,6 +37,7 @@ import { DatabaseExceptionFilter } from './common/database-exception.filter';
 import { MessagingModule } from './messaging/messaging.module';
 import { ArtefactsModule } from './artefacts/artefacts.module';
 import { RetentionModule } from './retention/retention.module';
+import { PortalModule } from './portal/portal.module';
 
 /**
  * Thin wiring only. Feature modules (M1 onboarding, M2 capture, M3
@@ -80,6 +81,7 @@ import { RetentionModule } from './retention/retention.module';
     ChaseAttemptsModule,
     EnduringModule,
     NoticesModule,
+    PortalModule,
     DevSeedModule,
     HealthModule,
   ],
