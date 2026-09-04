@@ -66,4 +66,47 @@ export class PortalScope {
       return fn(tx);
     });
   }
+
+  /**
+   * ONE PASSKEY CHALLENGE, BY PRIMARY KEY — the `withSession` shape again, and
+   * for the same reason (FR-8.2 passkeys, D-2026-09-04-02).
+   *
+   * A SIGN-IN CHALLENGE BELONGS TO NOBODY YET. It is minted before the person
+   * has identified themselves — that is what "sign in without a username" means
+   * — so there is no account key to fence it with. The verify call names the row
+   * it is finishing and this scopes to exactly that row.
+   *
+   * IT IS ALSO WHAT LETS THE ROW BE INSERTED. The policy's `WITH CHECK` is the
+   * same clause as its `USING`, so the service generates the id, sets it here,
+   * and writes. A challenge is a nonce, two timestamps and a purpose; there is
+   * nothing in the row to disclose.
+   */
+  withChallenge<T>(challengeId: string, fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.portal_challenge_id', ${challengeId}, true)`;
+      return fn(tx);
+    });
+  }
+
+  /**
+   * ONE CREDENTIAL, BY THE CREDENTIAL ID THE AUTHENTICATOR SENT.
+   *
+   * THE FIRST THING A DISCOVERABLE SIGN-IN NEEDS is to turn a credential id
+   * into an account, and at that moment there is no account scope to be inside.
+   * So this names one row by its unique key, exactly as `withSession` names one
+   * session by its.
+   *
+   * WHAT IT DISCLOSES, SAID PLAINLY: a caller holding a credential id can read
+   * that credential's PUBLIC key, its counter and its account id. None of those
+   * is a patient identifier, none is a name, and none of them lets anybody in —
+   * the assertion still has to verify against that public key and the counter
+   * check still has to pass. RLS is the floor under the application's scoping
+   * here, not the thing doing the authenticating.
+   */
+  withCredential<T>(credentialId: string, fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.portal_credential_id', ${credentialId}, true)`;
+      return fn(tx);
+    });
+  }
 }

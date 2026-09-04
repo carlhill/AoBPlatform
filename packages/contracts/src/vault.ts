@@ -411,6 +411,38 @@ export const VAULT_EVENT_TYPES = [
   'portal.correction_requested',
   'portal.enduring_terminated',
   'portal.assignor_revoked',
+  /*
+   * PASSKEYS — the second half of FR-8.2 (Carl, 4 Sep 2026: "Implement";
+   * D-2026-09-04-02, passkeys in core rather than in Keycloak).
+   *
+   * WHY THESE ARE VAULT EVENTS AND NOT LOG LINES. "Who could sign in as me,
+   * from when, and who removed it" is the question the access-log card exists
+   * to answer, and an authentication factor that appeared and vanished
+   * without a trace would be the one gap in it. It is also the question an
+   * auditor asks after a disputed agreement: a credential enrolled two
+   * minutes before a signature is a different story from one enrolled a year
+   * earlier, and only these events can tell them apart.
+   *
+   * `portal.passkey_registered` IS ALWAYS PRECEDED BY A `portal.activated` OR
+   * A `portal.passkey_signed_in` FOR THE SAME ACCOUNT, structurally:
+   * registration is reachable only inside a live session, so the chain always
+   * shows which verified session bound the credential. That is the whole
+   * evidential value of doing the bootstrap first.
+   *
+   * `portal.passkey_rejected` IS THE ONE WORTH ALERTING ON. A signature that
+   * verifies but whose counter went BACKWARDS is the signature of a cloned
+   * authenticator, and it is the only event in this group that says somebody
+   * may be attacking a patient rather than using their phone.
+   *
+   * NONE OF THE FOUR CARRIES A PUBLIC KEY, A CREDENTIAL ID, A NAME OR A LABEL.
+   * A credential's own row id, a transport hint and an authenticator MODEL id
+   * (aaguid — a device type, never a device instance) are the whole payload
+   * (REQ-LOG-08, REQ-VER-04).
+   */
+  'portal.passkey_registered',
+  'portal.passkey_signed_in',
+  'portal.passkey_rejected',
+  'portal.passkey_revoked',
 ] as const;
 
 export type VaultEventType = (typeof VAULT_EVENT_TYPES)[number];

@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "description": "AoBPlatform monorepo root. Read CLAUDE.md and CONVENTIONS.md before adding anything here.",
+  "//jsdom": "WHY jsdom IS A ROOT devDependency. Vitest is hoisted here, and it resolves 'jsdom' from its own location — this directory — not from apps/web, which is where the dependency is declared and where npm nests it. Until 4 September 2026 that mismatch was masked: the retired apps/kiosk pulled jest-environment-jsdom, which left a jsdom@20 hoisted here that vitest quietly used. The first npm install after the kiosk left pruned that copy and every web test stopped collecting with ERR_MODULE_NOT_FOUND. Declaring it here is the honest version of what was true by accident. apps/web keeps its own declaration: it is the package that actually uses a DOM.",
   "engines": {
     "node": ">=20.0.0",
     "npm": ">=10.0.0"
@@ -35,6 +36,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.8.1",
+    "jsdom": "^25.0.1",
     "prettier": "^3.3.3",
     "typescript": "^5.6.3",
     "typescript-eslint": "^8.67.0"

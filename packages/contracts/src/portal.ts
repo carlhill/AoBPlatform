@@ -297,3 +297,129 @@ export const PORTAL_SESSION_MINUTES = 30;
  * token is finished. A fresh invitation is a practice act, at the counter.
  */
 export const PORTAL_ACTIVATION_MAX_ATTEMPTS = 3;
+
+// ---------------------------------------------------------------------------
+// FR-8.2 — passkeys (Carl, 4 Sep 2026: "Implement"; D-2026-09-04-02)
+// ---------------------------------------------------------------------------
+
+/**
+ * THE SECOND HALF OF FR-8.2, and the shapes say what it is and is not.
+ *
+ * PASSKEYS IN CORE, NOT IN KEYCLOAK (D-2026-09-04-02). Patients are not staff:
+ * hard rule 15 and the Keycloak realm are about practitioners and admins, the
+ * portal already owns the account and the server-side session, and the thing
+ * that BINDS a credential to a verified person is the three-identifier
+ * bootstrap that core performs. A second realm for patients would put patient
+ * PII in Keycloak and buy nothing.
+ *
+ * THE ORDER IS BOOTSTRAP FIRST, ALWAYS. Registration is reachable only inside a
+ * live portal session, so every credential is enrolled by somebody a practice
+ * verified across its own counter. A passkey enrolled before that check would
+ * be bound to whoever was holding the phone — the family-phone failure
+ * (REQ-VUL, addendum v4) with a cryptographic key on the end of it.
+ *
+ * A PASSKEY IS NEVER A PRECONDITION (REQ-PORT-08). Losing every device costs
+ * the patient a fresh invitation at the practice and nothing else; it never
+ * costs them the ability to sign an agreement, because signing has never
+ * needed this page.
+ *
+ * NOTHING HERE CARRIES A NAME. A credential has a public key, a counter, a
+ * transport hint and — if the patient typed one — their own word for their own
+ * device. There is no field for an email, a mobile or a display name, and the
+ * WebAuthn user handle is the account id, so a passkey manager showing the
+ * entry shows an opaque id rather than a patient's identity.
+ */
+
+/** One enrolled credential, as the patient's own "Sign-in and security" card lists it. */
+export interface PortalPasskey {
+  readonly id: string;
+  /** The patient's own words for their own device, or null if they named none. */
+  readonly label: string | null;
+  readonly createdAt: PortalTimestamp;
+  readonly lastUsedAt: PortalTimestamp | null;
+}
+
+/**
+ * `PublicKeyCredentialCreationOptionsJSON` / `PublicKeyCredentialRequestOptionsJSON`
+ * as an opaque object.
+ *
+ * TYPED LOOSELY ON PURPOSE. `@aobplatform/contracts` is imported by the browser
+ * bundle and by three services; giving it a WebAuthn library's type would make
+ * that library a dependency of all of them to describe a payload that is passed
+ * straight through to `navigator.credentials` and never inspected by us. The
+ * web surface casts once, at the call site, where the library is already
+ * imported.
+ */
+export type PortalPasskeyOptions = Readonly<Record<string, unknown>>;
+
+/**
+ * What an options call returns.
+ *
+ * `challengeId` IS RETURNED RATHER THAN THE CHALLENGE BEING RE-DERIVED. The
+ * verify call names the row it is finishing, so the server can spend it by
+ * primary key — one conditional update, one winner if two requests race. The
+ * alternative, digging the challenge out of `clientDataJSON` before it has been
+ * verified, means trusting the payload to find the thing that decides whether
+ * to trust the payload.
+ */
+export interface PortalPasskeyChallenge {
+  readonly challengeId: string;
+  readonly options: PortalPasskeyOptions;
+}
+
+/** What the browser posts back. `response` is the credential, verbatim. */
+export interface PortalPasskeyRegistrationVerification {
+  readonly challengeId: string;
+  readonly response: Readonly<Record<string, unknown>>;
+  /** Optional, the patient's own words. Never generated from a user agent. */
+  readonly label?: string;
+}
+
+export interface PortalPasskeyAuthenticationVerification {
+  readonly challengeId: string;
+  readonly response: Readonly<Record<string, unknown>>;
+}
+
+export interface PortalPasskeyRegistrationResult {
+  readonly registered: true;
+  readonly passkey: PortalPasskey;
+}
+
+/** A sign-in that worked. The same shape activation returns, for the same reason. */
+export interface PortalPasskeySignInResult {
+  readonly signedIn: true;
+  readonly accountId: string;
+  readonly links: readonly PortalLink[];
+}
+
+export interface PortalPasskeyRevocationResult {
+  readonly revoked: true;
+  readonly passkeyId: string;
+  /**
+   * TRUE WHEN THAT WAS THE LAST ONE, and it is allowed (REQ-PORT-08). The
+   * portal is never a precondition; a patient who removes every passkey
+   * re-bootstraps from a fresh invitation at the practice. The flag exists so
+   * the screen can SAY that, not so it can refuse.
+   */
+  readonly noPasskeysRemain: boolean;
+}
+
+/**
+ * FIVE MINUTES, SINGLE USE. Long enough for a person to find their phone and
+ * short enough that a challenge captured off a screen is worthless by the time
+ * anyone acts on it. Single use is the property that matters; the clock is the
+ * belt to its braces.
+ */
+export const PORTAL_PASSKEY_CHALLENGE_MINUTES = 5;
+
+/**
+ * The sign-in attempts one address gets per window, before it is asked to wait.
+ *
+ * LOOSER THAN THE KIOSK'S THREE, and deliberately. A discoverable sign-in that
+ * fails is usually a person picking the wrong passkey or cancelling the
+ * prompt, not an attack — and unlike the kiosk there is no staff member two
+ * metres away to fall back on. What it stops is a script grinding assertions
+ * against the endpoint; a signature it cannot forge is the actual defence.
+ */
+export const PORTAL_PASSKEY_ATTEMPT_LIMIT = 10;
+export const PORTAL_PASSKEY_ATTEMPT_WINDOW_MINUTES = 10;

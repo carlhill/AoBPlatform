@@ -19,12 +19,36 @@ import { Injectable } from '@nestjs/common';
  * interface with one implementation costs nothing now and is the difference
  * later.
  *
- * WHAT THE PASSKEY IMPLEMENTATION WILL DO HERE, when Carl says go: return
- * `satisfied: false` with `nextStepKey: 'passkey_required'` for an account that
- * has enrolled one, so `PortalService.activate` issues no session until the
- * assertion comes back. The bootstrap stays exactly where it is — it is what
- * BINDS the passkey to a verified person, and skipping it would bind a
- * credential to whoever was holding the phone.
+ * WHAT ACTUALLY HAPPENED, 4 SEPTEMBER 2026 (Carl: "Implement";
+ * D-2026-09-04-02). The passkey half landed — `portal-passkey.service.ts`,
+ * `portal-passkey.controller.ts`, `@simplewebauthn/server` behind the
+ * `PORTAL_WEBAUTHN` seam — and IT DID NOT ARRIVE THROUGH THIS INTERFACE. That
+ * is worth writing down, because the note above predicted it would.
+ *
+ * The prediction was that this authenticator would return `satisfied: false`
+ * with `nextStepKey: 'passkey_required'` for an account that had enrolled one,
+ * so the bootstrap alone would stop being enough. Building it made clear that
+ * would be wrong. A patient who has enrolled a passkey and then lost, sold or
+ * broken the phone would be locked out of the identifier path — the only path
+ * that does not need the phone — and re-entry would depend on us noticing and
+ * clearing a flag. REQ-PORT-08 says the portal is never a precondition of
+ * anything; a second factor that can strand a patient behind a lost device is
+ * exactly that, one layer down. So the two doors stay independent: three
+ * approved identifiers against a practice's own record, or a signature from a
+ * credential that door itself enrolled.
+ *
+ * WHAT THE SEAM IS STILL FOR. It is where a factor that must be satisfied
+ * IN ADDITION to the identifier check would go — a practice-level policy, say,
+ * or a step-up for an account flagged in a dispute. That is a real possibility
+ * and it is not this one, so the interface stays and the implementation stays
+ * honest about being the only one.
+ *
+ * WHAT THE BOOTSTRAP DOES FOR PASSKEYS, WHICH IS THE WHOLE POINT: registration
+ * is reachable only INSIDE a live portal session. So every credential is
+ * enrolled by somebody a practice verified across its own counter, and a
+ * passkey enrolled before that check would be bound to whoever was holding the
+ * phone. The bootstrap is not the fallback to the passkey; it is what makes the
+ * passkey mean anything.
  *
  * WHAT IT MUST NEVER DO. No password path (hard rule 15 is about practitioners
  * and admins; a patient portal with a password would be worse, not exempt), and

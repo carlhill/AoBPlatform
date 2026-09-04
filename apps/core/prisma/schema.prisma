@@ -2568,3 +2568,116 @@ model PortalAssignorRevocation {
   @@index([practiceId])
   @@map("portal_assignor_revocations")
 }
+
+/// FR-8.2 — THE PASSKEY HALF OF PORTAL AUTHENTICATION (Carl, 4 Sep 2026:
+/// "Implement"; recorded as D-2026-09-04-02).
+///
+/// WHAT A ROW IS. One WebAuthn credential a patient enrolled on one device,
+/// bound to their portal account by the three-identifier bootstrap that was
+/// live when they enrolled it. The bootstrap is what makes the binding mean
+/// something: a credential registered without it would be bound to whoever was
+/// holding the phone, which is the family-phone failure (REQ-VUL, addendum v4)
+/// wearing a nicer hat. So registration is only reachable INSIDE a live portal
+/// session.
+///
+/// WHAT IS NOT HERE. No name, no email, no mobile, no date of birth — the
+/// portal account holds none of those and neither does a credential. A public
+/// key, a counter, a transport hint and an authenticator model id are the whole
+/// of it, and none of them is a patient identifier. `label` is the ONE free-text
+/// field and it is the patient's own words for their own device ("my phone"),
+/// nullable because a patient who names nothing is the normal case.
+///
+/// NO PASSWORD COLUMN AND NO RECOVERY QUESTION, ever. Hard rule 15 is written
+/// about practitioners and admins; a patient portal with a password would be
+/// worse than that rule contemplates, not exempt from it. When a patient loses
+/// every device they re-bootstrap from a fresh invitation at the practice —
+/// which is the same door they came in through, and REQ-PORT-08 means losing
+/// the portal never costs them the ability to sign anything.
+///
+/// `revokedAt` RATHER THAN A DELETE. "This credential was removed in March" and
+/// "this credential never existed" are different facts, and a sign-in attempt
+/// with a revoked credential is worth seeing.
+model PortalCredential {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// The portal account this credential signs in to. No Prisma relation on
+  /// purpose — the foreign key is in the migration; declaring the relation here
+  /// would mean editing `PortalAccount`, and this model is appended.
+  accountId String @db.Uuid
+
+  /// The authenticator's own credential id, base64url. UNIQUE ACROSS THE TABLE:
+  /// a discoverable sign-in arrives with nothing but this, so it is the key the
+  /// account is resolved from, and two accounts sharing one would be an
+  /// ambiguity with a session on the end of it.
+  credentialId String @unique
+
+  /// COSE public key bytes. Public by definition; stored raw because verifying
+  /// a signature needs exactly these bytes and re-encoding them is a way to get
+  /// a verification failure that looks like an attack.
+  publicKey Bytes
+
+  /// The authenticator's signature counter. A value that goes BACKWARDS means
+  /// the credential has been cloned; the service refuses and writes
+  /// `portal.passkey_rejected`. Many modern authenticators pin this at zero,
+  /// which is why the check is "regression", not "no increase".
+  counter BigInt @default(0)
+
+  /// `internal`, `hybrid`, `usb`… A hint for the next sign-in prompt, nothing more.
+  transports String[] @default([])
+
+  /// The authenticator MODEL id — a device type, never a device instance and
+  /// never a person. Kept because "every failure is on one model of phone" is
+  /// otherwise an unanswerable support question.
+  aaguid String @default("")
+
+  /// The patient's own words for their own device. Never generated from a user
+  /// agent string, which is a fingerprint dressed up as a convenience.
+  label String?
+
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+
+  @@index([accountId])
+  @@map("portal_credentials")
+}
+
+/// THE SERVER-STORED CHALLENGE — five minutes, single use, and the reason a
+/// captured registration or sign-in cannot be replayed.
+///
+/// WHY A ROW AND NOT A SIGNED COOKIE. A cookie the client holds cannot be
+/// consumed; the whole property being bought here is that the SECOND use of a
+/// challenge fails, and only a server-side row can be spent. `consumedAt` is
+/// set by a conditional update, so two requests racing on one challenge produce
+/// one winner and one refusal rather than two sessions.
+///
+/// `accountId` AND `sessionId` ARE SET FOR REGISTRATION AND NULL FOR SIGN-IN,
+/// and that asymmetry is the point. Registration happens inside a live session
+/// and the challenge is bound to it, so a registration challenge minted for one
+/// person cannot be finished by another. A sign-in challenge has nobody yet —
+/// resolving who it was is the job of the signature.
+///
+/// IT CARRIES NO PII AND CANNOT: a purpose, a nonce, two timestamps and two
+/// nullable ids.
+model PortalPasskeyChallenge {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// `registration` | `authentication`. A registration challenge presented to
+  /// the sign-in verifier is refused — one nonce, one job.
+  purpose String
+
+  /// The base64url challenge the authenticator signed over.
+  challenge String @unique
+
+  /// Set for registration (bound to the live session), null for sign-in.
+  accountId String? @db.Uuid
+  sessionId String? @db.Uuid
+
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+  consumedAt DateTime?
+
+  @@index([accountId])
+  @@index([expiresAt])
+  @@map("portal_passkey_challenges")
+}
