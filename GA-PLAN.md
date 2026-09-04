@@ -49,6 +49,24 @@ compliance product until a signed artefact lands in a Medtech patient record.**
 
 ---
 
+### Update — 4 September 2026 (one day of agent builds; CI green at `17e6e4e`)
+
+| Row | State |
+|---|---|
+| B1 drawn-signature storage | **Built** |
+| B2 device pairing, `/practice/devices`, forced reload | **Built** |
+| B4 appointment sync → draft + request | **Our half built**: `POST /arrivals` (the arrival contract, idempotent, practice-scoped, no Medicare field) + versioned visit policy `visit-policy-1` decides enduring/episodic/none; `scripts/dev/arrive.sh`. Medtech half still waits on A1 |
+| B5 enduring at the kiosk | **Built up to the human-authored boundary**: practice setting, GP-only + per-provider guards, push asks the rule set, kiosk coverage screen with no amount, decline → episodic offer. **Remaining: Carl authors the enduring branch of the s 65C rule set** against `apps/rules/test/enduring-ruleset.pending.spec.ts` (E1–E8) |
+| B6 practice setting for the pre-step | **Built** (`enduringByDefault`, default true) |
+| B7 push-to-device | **Built** |
+| B8 post-service second push | Re-send/Send again built; a distinct post-service flow not yet |
+| B9 reception status view | **Built** (states + short session id; dispute loop; Resolved row) |
+| B14 tablet-side "someone else" | Still a decision |
+| C8 portal | **Built well past v1**: nine cards, PDF as signed, enduring termination (draft notice), 89AA card, passkeys in core (D-2026-09-04-02), record id `AoBPlatform-PatientId-…` in the bar and every message. Open: activation page, notice wording review, standing assignors |
+| C2 message copy | Started: invitation template, record-id line in every portal message |
+| New | Reception queue + patient work page (`/practice/patients`, `/practice/patients/[id]`); kiosk outage screen; dispute lock; ABN Lookup live (register confirmed on the wire); `tablet_sessions` on timestamptz |
+| Next | Tablet heartbeat + Return to Begin (TODO); portal activation page; "covered by an ongoing agreement" queue line; portal tables to timestamptz |
+
 ## 2. The critical path
 
 Rows are in dependency order. "Gate" rows are external or decision-bound and
@@ -185,4 +203,5 @@ outbox, RLS fail-closed test, strings in the table, OpenAPI updated.
 
 | Version | Date | Change |
 |---|---|---|
+| 1.1 | 4 Sep 2026 | §1 update table: arrivals, enduring to the rule-set boundary, portal + passkeys, work page, ABN live. |
 | 1.0 | 3 Sep 2026 | First re-baseline against the code. Kiosk moved to Next.js; C2.2 withdrawn, C2.5 to roadmap; signature storage and pairing in build. |
