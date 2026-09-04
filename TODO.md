@@ -1582,6 +1582,25 @@ eventually carries our correction home.
       (GA-PLAN D5) are the natural homes. API first (the practice's own tooling
       can pull it), report second (CSV/PDF from the same query).
 
+## Shortcuts to the answer (design principle, Carl, 4 Sep 2026)
+
+Carl pushed Jamie and got "Cannot be sent yet. This one cannot be sent yet.
+Please see the practice queue." -- the console's generic fallback for a server
+refusal it did not map (most likely the 409 "this tablet already has a live
+session"; the list itself said Jamie was pushable). Two faults: the real reason
+was hidden, and the user was sent to navigate a screen instead of to the fix.
+Now a working rule in CLAUDE.md section 7.
+
+- [ ] `/practice/tablet`: map every push refusal to its copy AND a destination:
+      device busy -> "Carl browser tablet is still showing Alex Fictional" with a
+      Recall control right there; D6a missing -> link to that agreement's row on
+      `/practice/reconciliation`; enduring -> the rule-set explanation;
+      confidential -> the patient's flag; not pushable -> the agreement page.
+      The fallback shows the raw reason code. In flight 4 Sep.
+- [ ] Audit every other "see X" message in the console for the same pattern
+      (queue, reconciliation, correspondence, devices) and give each a link
+      with the item id.
+
 ## Nothing on the patient surface is ever staff entry
 
 Carl, 3 Sep 2026, on seeing K-3 ask for a "Basic description of the service --
