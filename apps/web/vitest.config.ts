@@ -11,7 +11,8 @@
  *
  * SCOPED, AND THE SCOPE IS NAMED. The kiosk, the console screens that have
  * tests -- currently the practice reconciliation surface and the setup hub --
- * and their platform read-only twins under `app/platform`. There is no
+ * and their platform read-only twins under `app/platform`, and the patient
+ * portal under `app/patient`. There is no
  * pretence that the whole console is covered; this names exactly what is, so
  * nobody reads a green run as more than it is.
  *
@@ -34,6 +35,8 @@ export default defineConfig({
       'app/practice/**/*.test.tsx',
       'app/platform/**/*.test.ts',
       'app/platform/**/*.test.tsx',
+      'app/patient/**/*.test.ts',
+      'app/patient/**/*.test.tsx',
     ],
     exclude: ['**/node_modules/**', 'e2e/**'],
     restoreMocks: true,

@@ -1991,6 +1991,39 @@ gate in GA-PLAN.md: the artefact download and enduring termination are MUSTs
 with statutory sections behind them. Estimate: ~4 agent-days for cards +
 access, plus the human-authored termination-notice template review.
 
+### BUILT (web) — 4 Sep 2026
+The nine cards and the page are built at `/patient/portal` (`apps/web/app/
+patient/portal`). All nine render, each with its own loading, error and empty
+state, so one failing service cannot blank the page. The signed-out state says
+the REQ-PORT-08 sentence: signing an agreement never needs an account.
+
+- Cards, in order: my details (per practice, correction requests, never a
+  Medicare number), my agreements (no amount anywhere, "view as signed"),
+  ongoing agreements (per provider, end-this-agreement with the two-business-day
+  confirm), 89AA notices (the one place an amount appears, no controls at all),
+  where I have been, messages sent to me (the "Waiting for you" anti-phishing
+  strip), people who act for me / I act for, what happens to my data (+ the
+  access-log timeline), and a quiet "coming later" card.
+- 62 Vitest tests across 10 files, including the named ones:
+  `portal_details_never_show_medicare`, `portal_agreements_show_no_amount`,
+  `portal_copy_never_claims_approval`, `portal_notices_are_one_way`,
+  `portal_revoke_asks_for_no_reason`, `portal_data_retention_is_not_invented`,
+  `portal_one_failed_card_does_not_blank_the_page`.
+- The fetch layer (`api.ts`) holds the whole contract and answers from
+  `fixtures.ts` until the server side lands. One line switches it:
+  `NEXT_PUBLIC_PORTAL_FIXTURES=false`. Nothing else changes.
+
+TWO THINGS FOR CARL TO DECIDE, both deliberately left rather than guessed:
+1. **The retention sentence.** `portal.data.retentionPeriod` renders the
+   placeholder "[retention period — from requirements]". aob-requirements.md
+   states two years from the date of the RELATED CLAIM, not the service date,
+   and the clock is anchored to an event we may not observe — so the sentence a
+   patient reads needs writing by a person, not by an agent.
+2. **The termination wording.** The dialog says "It ends two business days from
+   now" and "We will send you a written notice, and tell the practice", taken
+   from REQ-END-06 and FR-5.3. The actual notice TEMPLATE is still the
+   human-authored piece the estimate above names.
+
 ## Where this product could go: v2 and v3
 
 Carl, 3 Sep 2026: "Version two of AoBPlatform could morph from just a
