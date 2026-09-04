@@ -1816,6 +1816,37 @@ the deeper pages.
       `work_page_never_shows_medicare_or_amounts`; cross-practice fails closed
       on any new endpoint.
 
+**BUILT 4 Sep 2026 (`5f7c894`, `3644d5b`, `5cf6621`, `2089225`).** Both pages
+are up. `/practice/patients` lists the patients with something open today, one
+row per person, type-to-find in the browser over rows RLS already scoped;
+`/practice/patients/[patientId]` carries Identity (five details, inline
+Correct), Agreements, the tablet sessions, Follow-up, Messages and History.
+Server: `GET /patients?open=today` and `GET /patients/:id/timeline` in
+`apps/core/src/patients` (both compose `TabletSessionsService`, so "today"
+has one definition), `GET /correspondence?patientId=`, and `patientId` added to
+the pushable row. The tablet controls were EXTRACTED to
+`apps/web/app/practice/tablet/pushDesk.tsx` and both pages render the same
+components -- `/practice/tablet` is unchanged and its 36 tests still pass.
+Platform twins for both routes; Patients card on the setup hub; nav entry.
+Core e2e 53, web Vitest 200.
+
+Left open by it, for Carl:
+- **The date of birth is on the queue row** because Carl asked for it by name,
+  and it is the only patient detail there. It sits against the tablet page's
+  own rule that a front-counter list polled every three seconds carries a
+  STATUS and no values. Ruling wanted: keep it, or show it only on the work
+  page (where the five details are read once, on open, not on the poll).
+- **Follow-up is read-only.** No "send now" control exists in any chase UI
+  today -- recording an attempt is the reconciliation screen's form -- so the
+  card summarises the band, the days left, attempts made and the next step,
+  and links there. Nothing 89AA can reach it (hard rule 7).
+- **`patient_confidential` now carries a link** to the patient's work page.
+  The refusal band deliberately had none because no per-patient page existed;
+  there is one now.
+- **The correction from the identity card records no dispute resolution** --
+  nobody crossed anything. A correction is now about a SUBJECT (a session, or
+  a bare patient), which is what makes that structural rather than remembered.
+
 ### 2. The PMS push -- our side only, until D-01 resolves
 - [ ] An **arrival** contract we own: `{ patient five details, provider,
       arrivedAt }` from the site connector -- or from a dev script until
