@@ -569,6 +569,49 @@ describe('the kiosk waiting list (e2e, real Postgres)', () => {
       expect(typeof res.body.pollMs).toBe('number');
     });
 
+    it('hidden_waiting_list_says_whether_anyone_is_waiting_without_a_count', async () => {
+      /*
+       * CARL, 4 SEP 2026: the idle screen needs to know whether Begin should
+       * be offered at all, without being told who or how many. `anyoneWaiting`
+       * is a second boolean beside `hidden` — present on the same hidden
+       * response, carrying no name and no length to infer a count from.
+       */
+      const walkUpTablet = await pairTablet(practiceA, 'Walk-up tablet A (anyoneWaiting)', false);
+
+      // PracticeA already has two open in-practice rows seeded above.
+      const someone = await request(app.getHttpServer())
+        .get('/kiosk/waiting-list')
+        .set('x-device-credential', walkUpTablet)
+        .expect(200);
+      expect(someone.body.hidden).toBe(true);
+      expect(someone.body.waiting).toEqual([]);
+      expect(someone.body.anyoneWaiting).toBe(true);
+      // STILL A BOOLEAN, NOT A COUNT — no length field rides along beside it.
+      expect(someone.body.waitingCount).toBeUndefined();
+      expect(someone.body.count).toBeUndefined();
+      expect(JSON.stringify(someone.body)).not.toContain('Robin Reachable');
+      expect(JSON.stringify(someone.body)).not.toContain('Casey Walkin');
+
+      // Empty the practice's open rows and ask again: the boolean flips and
+      // nothing else about the (still empty, still nameless) response does.
+      await prisma.withPractice(practiceA, (tx) =>
+        tx.captureRequest.updateMany({ data: { status: 'cancelled' } }),
+      );
+      const nobody = await request(app.getHttpServer())
+        .get('/kiosk/waiting-list')
+        .set('x-device-credential', walkUpTablet)
+        .expect(200);
+      expect(nobody.body.hidden).toBe(true);
+      expect(nobody.body.waiting).toEqual([]);
+      expect(nobody.body.anyoneWaiting).toBe(false);
+      // THE ETAG MOVED WITH IT — the one thing that could change on a hidden
+      // poll is this boolean, so it has to be inside the fingerprint or the
+      // first patient staged after a quiet morning would answer 304 forever.
+      expect(nobody.headers.etag).not.toBe(someone.headers.etag);
+
+      await prisma.withPractice(practiceA, (tx) => tx.captureRequest.updateMany({ data: { status: 'open' } }));
+    });
+
     it('the same practice, the same moment, a test device — and the names are there', async () => {
       const res = await request(app.getHttpServer())
         .get('/kiosk/waiting-list')

@@ -18,9 +18,13 @@
  * that happens to it happens here.
  *
  * THE CODE IS SHOWN ONCE AND THE SCREEN SAYS SO. It is not stored, emailed or
- * fetchable — a code that could be retrieved later would be a password with a
- * nicer name. The way out of having lost one is Rotate, which is named on the
- * screen rather than left to be discovered.
+ * fetchable from the server — a code that could be retrieved later would be a
+ * password with a nicer name. It lives ON THE ROW it belongs to for as long as
+ * THIS page has held it in memory (Carl, 4 Sep 2026 — "how do I pair these
+ * tablets?"): large, monospaced, copyable, with its expiry beside it. Reload
+ * the page, or lose the code before it is typed in, and the way out is New
+ * code — the same rotate underneath, named for what it is at the point
+ * someone has never paired at all.
  *
  * THE BUILD FLOOR IS ON THIS PAGE AND NOT IN A SETTINGS DRAWER. It is the
  * rollback mechanism the zero-footprint decision depends on ("a bad release is
@@ -58,7 +62,12 @@ interface DevicesResponse {
   minimumKioskBuild: string | null;
 }
 
-/** A freshly issued code. Held in memory for as long as the panel is open, and never re-fetched. */
+/**
+ * A freshly issued code, keyed by device id. Held in memory for as long as
+ * this page is open, and never re-fetched — the server does not hold the
+ * value either (see the file banner). A page reload forgets it exactly like
+ * the server does; New code is the way back either way.
+ */
 interface IssuedCode {
   deviceId: string;
   label: string;
@@ -93,8 +102,16 @@ export function DevicesView({ practiceId }: { practiceId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  /*
+   * "ADD A TABLET" IS A BUTTON AT THE TOP, NOT A SECTION AT THE FOOT (Carl, 4
+   * Sep 2026 — "Add a tablet is buried"). Closed by default for the same
+   * reason the list stays the thing a reader sees first; opening it reveals
+   * the same one-field form inline.
+   */
+  const [addOpen, setAddOpen] = useState(false);
   const [label, setLabel] = useState('');
-  const [issued, setIssued] = useState<IssuedCode | null>(null);
+  /** Every code this page has been shown this session, by device id. */
+  const [issuedCodes, setIssuedCodes] = useState<Record<string, IssuedCode>>({});
 
   /** Which device a confirmation is open for, and which act it confirms. */
   const [confirming, setConfirming] = useState<{ device: DeviceRow; act: 'revoke' | 'rotate' } | null>(null);
@@ -145,10 +162,11 @@ export function DevicesView({ practiceId }: { practiceId: string }) {
   const addDevice = () =>
     act(async () => {
       const created = await post<IssuedCode>('/devices', { label: label.trim() });
-      // The ONE time the code exists outside a hash. Straight onto the screen,
-      // never into state that outlives the panel and never back to the server.
-      setIssued(created);
+      // Onto the new row, not into a top-of-page panel: the code lives beside
+      // the tablet it belongs to, never into state that survives a hash.
+      setIssuedCodes((prev) => ({ ...prev, [created.deviceId]: created }));
       setLabel('');
+      setAddOpen(false);
     });
 
   const revoke = (device: DeviceRow) =>
@@ -172,7 +190,21 @@ export function DevicesView({ practiceId }: { practiceId: string }) {
     act(async () => {
       const next = await post<IssuedCode>(`/devices/${device.id}/rotate`, {});
       setConfirming(null);
-      setIssued(next);
+      setIssuedCodes((prev) => ({ ...prev, [next.deviceId]: next }));
+    });
+
+  /**
+   * NEW CODE, WITHOUT A CONFIRMATION — the same `rotate` endpoint, called
+   * directly. A device still awaiting its first pairing has no live
+   * credential to lose, so asking "are you sure?" before replacing a code
+   * nobody has typed in yet would be a question with only one sensible
+   * answer. Confirming still guards `rotate` above wherever a device IS
+   * paired: that call replaces a credential a tablet is actively using.
+   */
+  const requestNewCode = (device: DeviceRow) =>
+    act(async () => {
+      const next = await post<IssuedCode>(`/devices/${device.id}/rotate`, {});
+      setIssuedCodes((prev) => ({ ...prev, [next.deviceId]: next }));
     });
 
   const saveBuildFloor = () =>
@@ -196,7 +228,14 @@ export function DevicesView({ practiceId }: { practiceId: string }) {
     );
   }
 
-  const devices = data?.devices ?? [];
+  /*
+   * NEWEST FIRST. The server lists devices oldest-first (it is the order
+   * they were registered, which is the order an audit trail wants); this page
+   * wants the opposite — "After Add tablet succeeds, the new row appears at
+   * the top" (Carl, 4 Sep 2026) — so it is reordered here rather than asking
+   * the one list endpoint to serve two different readers two different ways.
+   */
+  const devices = [...(data?.devices ?? [])].sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
 
   return (
     <Shell
@@ -220,27 +259,75 @@ export function DevicesView({ practiceId }: { practiceId: string }) {
         </Notice>
       )}
 
-      {/*
-        THE CODE PANEL. Above the list because it is the only thing on this
-        page with a clock on it: ten minutes, and it is never shown again.
-      */}
-      {issued && (
-        <Notice tone="warn" title={strings.devices.codeHeading} data-testid="devices-code">
-          <p className={ui.pageTitle} data-testid="devices-code-value" style={{ letterSpacing: '0.2em' }}>
-            {formatPairingCode(issued.code)}
-          </p>
-          <p>{strings.devices.codeWhere}</p>
-          <p className={ui.hint}>{strings.devices.codeExpires(minutesUntil(issued.expiresAt))}</p>
-          <p className={ui.hint}>{strings.devices.codeShownOnce}</p>
-          <div className={styles.formActions}>
-            <Button onClick={() => setIssued(null)} data-testid="devices-code-done">
-              {strings.devices.codeDone}
-            </Button>
+      <Section
+        number={1}
+        title={strings.devices.title}
+        aside={
+          <Button
+            variant="primary"
+            onClick={() => setAddOpen((open) => !open)}
+            aria-expanded={addOpen}
+            data-testid="add-tablet-toggle"
+          >
+            {strings.devices.addToggleAction}
+          </Button>
+        }
+      >
+        {/*
+          "ADD A TABLET" AT THE TOP, RIGHT OF THE HEADING (Carl, 4 Sep 2026 —
+          "Add a tablet is buried"). Reveals the same one-field form inline,
+          above the list, rather than in a section people had to scroll past
+          the whole list to find.
+        */}
+        {addOpen && (
+          <div className={`${styles.addPanel} ${styles.addInline}`} data-testid="device-add-panel">
+            <p className={ui.hint}>{strings.devices.addHint}</p>
+            <div className={styles.addGrid}>
+              <Field label={strings.devices.labelLabel} required>
+                {(p) => (
+                  <TextInput
+                    {...p}
+                    value={label}
+                    maxLength={60}
+                    placeholder="Reception tablet 1"
+                    onChange={(e) => setLabel(e.target.value)}
+                    data-testid="device-label"
+                  />
+                )}
+              </Field>
+            </div>
+            <div className={styles.formActions}>
+              {/*
+                DEAD UNTIL VALID. The button does not pretend a nameless tablet
+                could be added — the server refuses one, and a control that can
+                only fail is a control that teaches people the page is broken.
+              */}
+              <Button
+                variant="primary"
+                disabled={busy || label.trim().length === 0}
+                onClick={() => void addDevice()}
+                data-testid="device-add"
+              >
+                {busy
+                  ? strings.devices.adding
+                  : label.trim().length === 0
+                    ? strings.devices.addBlocked
+                    : strings.devices.addAction}
+              </Button>
+              <Button
+                variant="subtle"
+                onClick={() => {
+                  setAddOpen(false);
+                  setLabel('');
+                }}
+                data-testid="device-add-cancel"
+              >
+                {strings.devices.cancelAction}
+              </Button>
+            </div>
           </div>
-        </Notice>
-      )}
+        )}
 
-      <Section number={1} title={strings.devices.title}>
         {data === null && <p className={ui.hint}>{strings.devices.loading}</p>}
 
         {data !== null && devices.length === 0 && (
@@ -294,6 +381,15 @@ export function DevicesView({ practiceId }: { practiceId: string }) {
                   </span>
                 </div>
               </div>
+
+              {device.state === 'awaiting_pairing' && (
+                <PairingCodePanel
+                  device={device}
+                  issued={issuedCodes[device.id]}
+                  busy={busy}
+                  onNewCode={() => void requestNewCode(device)}
+                />
+              )}
 
               {confirming?.device.id === device.id ? (
                 <div className={styles.cardBody}>
@@ -393,47 +489,7 @@ export function DevicesView({ practiceId }: { practiceId: string }) {
         </ul>
       </Section>
 
-      {/*
-        THE ADD FORM AT THE FOOT, not the head: what already exists is what the
-        reader came to check, and the form is what they do next. The same
-        judgement every other practice list on this console makes.
-      */}
-      <Section number={2} title={strings.devices.addTitle}>
-        <div className={styles.addPanel}>
-          <p className={ui.hint}>{strings.devices.addHint}</p>
-          <div className={styles.addGrid}>
-            <Field label={strings.devices.labelLabel} required>
-              {(p) => (
-                <TextInput
-                  {...p}
-                  value={label}
-                  maxLength={60}
-                  placeholder="Reception tablet 1"
-                  onChange={(e) => setLabel(e.target.value)}
-                  data-testid="device-label"
-                />
-              )}
-            </Field>
-          </div>
-          <div className={styles.formActions}>
-            {/*
-              DEAD UNTIL VALID. The button does not pretend a nameless tablet
-              could be added — the server refuses one, and a control that can
-              only fail is a control that teaches people the page is broken.
-            */}
-            <Button
-              variant="primary"
-              disabled={busy || label.trim().length === 0}
-              onClick={() => void addDevice()}
-              data-testid="device-add"
-            >
-              {busy ? strings.devices.adding : label.trim().length === 0 ? strings.devices.addBlocked : strings.devices.addAction}
-            </Button>
-          </div>
-        </div>
-      </Section>
-
-      <Section number={3} title={strings.devices.buildTitle}>
+      <Section number={2} title={strings.devices.buildTitle}>
         <p className={ui.hint}>{strings.devices.buildLead}</p>
         <div className={styles.addPanel}>
           <div className={styles.addGrid}>
@@ -468,5 +524,85 @@ export function DevicesView({ practiceId }: { practiceId: string }) {
         </div>
       </Section>
     </Shell>
+  );
+}
+
+/**
+ * THE CODE, ON THE ROW IT BELONGS TO (Carl, 4 Sep 2026 — "how do I pair these
+ * tablets?"). Three states, and the state decides what is shown — never a
+ * value this page does not actually hold:
+ *
+ *  1. THIS PAGE HOLDS A LIVE CODE (`issued`, unexpired). Shown large,
+ *     monospaced and copyable, with its expiry and the one-line instruction.
+ *  2. THE SERVER SAYS NO CODE IS LIVE (`device.pairingExpiresAt` is null).
+ *     "Code expired", and New code — the same rotate `DevicesView` already
+ *     has, offered without a confirmation because nothing is being revoked:
+ *     a device still awaiting its first pairing has no credential to lose.
+ *  3. A CODE IS LIVE SERVER-SIDE BUT THIS PAGE NEVER HELD ITS VALUE — issued
+ *     in an earlier session, say. The row says a code is outstanding and
+ *     offers the same New code action, because the original is genuinely not
+ *     retrievable (the file banner's whole point) and a fresh, visible one is
+ *     one tap away.
+ */
+function PairingCodePanel({
+  device,
+  issued,
+  busy,
+  onNewCode,
+}: {
+  device: DeviceRow;
+  issued: IssuedCode | undefined;
+  busy: boolean;
+  onNewCode: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const issuedLive = issued !== undefined && new Date(issued.expiresAt).getTime() > Date.now();
+
+  if (issuedLive) {
+    const formatted = formatPairingCode(issued.code);
+    return (
+      <div className={styles.cardBody} data-testid={`device-code-${device.id}`}>
+        <div className={styles.codeRow}>
+          <span className={styles.codeValue} data-testid={`device-code-value-${device.id}`}>
+            {formatted}
+          </span>
+          <Button
+            onClick={() => {
+              setCopied(true);
+              void navigator.clipboard?.writeText(formatted).catch(() => undefined);
+            }}
+            data-testid={`device-code-copy-${device.id}`}
+          >
+            {copied ? strings.devices.codeCopied : strings.devices.codeCopyAction}
+          </Button>
+        </div>
+        <p className={ui.hint}>{strings.devices.codeExpires(minutesUntil(issued.expiresAt))}</p>
+        <p className={ui.hint}>{strings.devices.codeWhere}</p>
+      </div>
+    );
+  }
+
+  if (!device.pairingExpiresAt) {
+    return (
+      <div className={styles.cardBody} data-testid={`device-code-${device.id}`}>
+        <p data-testid={`device-code-expired-${device.id}`}>{strings.devices.codeExpiredLabel}</p>
+        <div className={styles.formActions}>
+          <Button disabled={busy} onClick={onNewCode} data-testid={`device-new-code-${device.id}`}>
+            {strings.devices.newCodeAction}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.cardBody} data-testid={`device-code-${device.id}`}>
+      <p className={ui.hint}>{strings.devices.codeOutstanding(when(device.pairingExpiresAt))}</p>
+      <div className={styles.formActions}>
+        <Button disabled={busy} onClick={onNewCode} data-testid={`device-new-code-${device.id}`}>
+          {strings.devices.newCodeAction}
+        </Button>
+      </div>
+    </div>
   );
 }

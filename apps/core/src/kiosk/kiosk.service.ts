@@ -331,6 +331,14 @@ export class KioskService {
    * simply whether this call answered. A hidden response is exactly the
    * lightweight heartbeat that job wants: no names, no count, one boolean, and
    * a 304 most of the time.
+   *
+   * `anyoneWaiting` IS A SECOND BOOLEAN, NOT A COUNT (Carl, 4 Sep 2026). The
+   * idle screen needs to know whether Begin should be offered at all — a
+   * tablet with nobody staged should say so rather than open a ceremony with
+   * nothing to sign — and a boolean answers that without naming how many or
+   * who. It is a far smaller disclosure than the count Carl removed: "someone
+   * is here" carries nothing a bystander could not already see by looking
+   * around the room.
    */
   async waitingList(
     device: ResolvedDevice,
@@ -344,6 +352,14 @@ export class KioskService {
     waiting: KioskWaitingRow[];
     /** True when this device is not a test device: no rows, and no count either. */
     hidden: boolean;
+    /**
+     * TRUE IFF AT LEAST ONE OPEN IN-PRACTICE ROW EXISTS FOR THIS PRACTICE.
+     * Present on every response, hidden or not — a caller reading this field
+     * never has to branch on `hidden` first. On a visible (test) response it
+     * is redundant with `waiting.length > 0`; it exists there too only so the
+     * shape is the one shape.
+     */
+    anyoneWaiting: boolean;
     /** The tablet is below this practice's build floor and must reload. */
     reload: boolean;
   }> {
@@ -352,36 +368,47 @@ export class KioskService {
 
     if (!device.showsWaitingList) {
       /*
-       * NOT A FILTERED LIST — A LIST THAT WAS NEVER READ. The rows are not
-       * fetched and then dropped; the query does not run at all. A disclosure
-       * that depends on a caller remembering to filter is a disclosure waiting
-       * for the next caller.
+       * STILL NOT A FILTERED LIST. No row is fetched, no name is read, and
+       * nothing here can be projected into a `KioskWaitingRow`. The one query
+       * this branch now runs is an EXISTENCE check — "is there at least one"
+       * — capped at a single row and read for its presence, never its
+       * content. A disclosure that depends on a caller remembering to filter
+       * is a disclosure waiting for the next caller; this one has nothing to
+       * filter because it never selects a name, a time or a status.
        */
-      const identifierTypes = await this.prisma.withPractice(practiceId, async (tx) => {
+      const { identifierTypes, anyoneWaiting } = await this.prisma.withPractice(practiceId, async (tx) => {
         const practice = await tx.practice.findFirst({});
-        return practice?.identifierTypes ?? [];
+        const openRow = await tx.captureRequest.findFirst({
+          where: { channel: 'in_practice', status: 'open' },
+          select: { id: true },
+        });
+        return { identifierTypes: practice?.identifierTypes ?? [], anyoneWaiting: openRow !== null };
       });
       return {
         practiceId,
-        revision: revisionOf([], reload, true),
-        // Nothing to keep fresh but the reload flag, so ask at the quiet
-        // cadence. A walk-up patient does not wait on this call at all.
-        pollMs: kioskPollMs(0),
+        revision: revisionOf([], reload, true, anyoneWaiting),
+        // Faster while somebody is staged — the same cadence a visible
+        // tablet gets — so Begin appears within one poll of somebody being
+        // ready rather than waiting out the idle cadence first.
+        pollMs: kioskPollMs(anyoneWaiting ? 1 : 0),
         identifierTypes,
         waiting: [],
         hidden: true,
+        anyoneWaiting,
         reload,
       };
     }
 
     const rows = await this.collectWaiting(practiceId);
+    const anyoneWaiting = rows.waiting.length > 0;
     return {
       practiceId,
-      revision: revisionOf(rows.waiting, reload, false),
+      revision: revisionOf(rows.waiting, reload, false, anyoneWaiting),
       pollMs: kioskPollMs(rows.waiting.length),
       identifierTypes: rows.identifierTypes,
       waiting: rows.waiting,
       hidden: false,
+      anyoneWaiting,
       reload,
     };
   }
@@ -587,8 +614,14 @@ export class KioskService {
  * is waiting; if `reload` sat outside the fingerprint, every poll would answer
  * 304 with no body and the rollback would never reach the tab it was issued
  * for — the exact failure the forced reload exists to prevent.
+ *
+ * AND SO IS `anyoneWaiting`, for the identical reason on a hidden tablet. It
+ * is the ONLY thing that can change on a walk-up tablet's poll — no rows, no
+ * count, nothing else material — so leaving it out of the fingerprint would
+ * mean a quiet morning's Begin never appearing: the first patient to be
+ * staged would answer 304 forever, on a token computed before they arrived.
  */
-function revisionOf(waiting: KioskWaitingRow[], reload: boolean, hidden: boolean): string {
+function revisionOf(waiting: KioskWaitingRow[], reload: boolean, hidden: boolean, anyoneWaiting: boolean): string {
   const material = waiting
     .map(
       (row) =>
@@ -597,7 +630,7 @@ function revisionOf(waiting: KioskWaitingRow[], reload: boolean, hidden: boolean
     )
     .join('|');
   return createHash('sha256')
-    .update(`${waiting.length}#${material}#reload:${reload}#hidden:${hidden}`)
+    .update(`${waiting.length}#${material}#reload:${reload}#hidden:${hidden}#anyoneWaiting:${anyoneWaiting}`)
     .digest('hex')
     .slice(0, 32);
 }

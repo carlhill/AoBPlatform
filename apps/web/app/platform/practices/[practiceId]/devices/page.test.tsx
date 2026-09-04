@@ -11,7 +11,7 @@
  * `DevicesView`'s own behaviour and already has its test.
  */
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import type { DeviceRow } from '@aobplatform/domain';
 import { DevicesView } from '../../../../practice/devices/DevicesView';
 import { ViewOnly } from '../ViewOnly';
@@ -80,11 +80,20 @@ describe('the devices twin — read-only, never a live control', () => {
      * IDL property — jsdom does not implement the fieldset-disabled cascade
      * onto descendant controls the way a real browser does, so asserting
      * `.disabled` here would test jsdom rather than the page.
+     *
+     * "ADD A TABLET" IS NOW A TOGGLE (Carl, 4 Sep 2026) — `DevicesView` opens
+     * an inline form rather than showing one permanently, so the toggle
+     * itself is the first control an operator meets and must be inert too;
+     * clicking it here only reaches `device-add` because jsdom does not
+     * enforce the fieldset's `disabled` cascade, exactly as the comment above
+     * already notes for the other controls.
      */
+    const addToggle = screen.getByTestId('add-tablet-toggle') as HTMLButtonElement;
+    fireEvent.click(addToggle);
     const addButton = screen.getByTestId('device-add') as HTMLButtonElement;
     const rotateButton = screen.getByTestId(`rotate-${PAIRED.id}`) as HTMLButtonElement;
     const revokeButton = screen.getByTestId(`revoke-${PAIRED.id}`) as HTMLButtonElement;
-    for (const control of [addButton, rotateButton, revokeButton]) {
+    for (const control of [addToggle, addButton, rotateButton, revokeButton]) {
       expect(fieldset?.contains(control)).toBe(true);
     }
   });

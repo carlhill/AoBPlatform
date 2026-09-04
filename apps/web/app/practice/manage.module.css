@@ -987,3 +987,40 @@
     align-items: end;
   }
 }
+
+/* --- The tablets page: a pairing code on its own row -------------------- */
+
+/*
+ * "HOW DO I PAIR THESE TABLETS?" (Carl, 4 Sep 2026). A waiting-to-be-paired
+ * row used to say only that a code was outstanding, never the code itself.
+ * Large and monospaced so it can be read off a screen from across a desk, and
+ * grouped by `formatPairingCode` the same way the (now retired) top-of-page
+ * panel grouped it.
+ */
+.codeRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex-wrap: wrap;
+}
+
+.codeValue {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  padding: var(--s2) var(--s4);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink);
+}
+
+/*
+ * "ADD A TABLET" AT THE TOP OF THE PAGE, beside the section heading rather
+ * than in a block of its own at the foot — the one place on this page where
+ * the newest thing, not the existing list, is what the reader came to do.
+ */
+.addInline {
+  margin-bottom: var(--s5);
+}

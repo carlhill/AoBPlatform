@@ -3384,6 +3384,13 @@ export const strings = {
     none: 'No tablet is paired to this practice yet.',
     noneHint: 'Add one, then type the code it shows into the tablet at /kiosk.',
 
+    /*
+     * "ADD A TABLET" AT THE TOP, RIGHT OF THE HEADING (Carl, 4 Sep 2026 —
+     * "Add a tablet is buried"). The list is what the reader came to check;
+     * the button opens the same name form inline, above the list, rather than
+     * in a section people had to scroll past everything else to find.
+     */
+    addToggleAction: 'Add a tablet',
     addTitle: 'Add a tablet',
     addHint: 'Give it a name somebody could find it by — "Reception tablet 1".',
     labelLabel: 'What this tablet is called',
@@ -3407,6 +3414,18 @@ export const strings = {
           ? 'Expires in 1 minute'
           : `Expires in ${minutes} minutes`,
     codeDone: 'Done',
+    codeCopyAction: 'Copy',
+    codeCopied: 'Copied',
+    /*
+     * A WAITING ROW NAMED ITS CODE (Carl, 4 Sep 2026 — "how do I pair these
+     * tablets?"). The row used to say only that a code was outstanding, never
+     * the code itself, which left the person reading it with nothing to type
+     * into the tablet. This is shown only for as long as THIS page has held
+     * the code in memory — never fetched back from the server, which still
+     * shows it exactly once.
+     */
+    codeExpiredLabel: 'Code expired',
+    newCodeAction: 'New code',
 
     states: {
       awaiting_pairing: 'Waiting to be paired',
@@ -3694,6 +3713,16 @@ export const strings = {
        * is handed on.
        */
       backAction: 'Back',
+      /*
+       * WHICH TABLET AM I (Carl, 4 Sep 2026). Support fielding a call about a
+       * tablet already asks "which one is this" — the label a person gave it
+       * on `/practice/devices`, and enough of its id to tell two tablets with
+       * the same label apart without reading a whole UUID down the phone.
+       * Quiet, muted, at the foot of every screen — never a disclosure of
+       * anything a patient did not already know just by looking at the
+       * tablet in front of them.
+       */
+      deviceIdentity: (label: string, idPrefix: string) => `${label} · ${idPrefix}`,
     },
 
     idle: {
@@ -3726,6 +3755,16 @@ export const strings = {
        * as broken.
        */
       nobodyWaiting: 'Nobody is waiting to sign just now.',
+      /*
+       * BEGIN, REPLACED RATHER THAN DISABLED (Carl, 4 Sep 2026). A walk-up
+       * tablet with nobody staged has nothing for Begin to open, and a
+       * greyed-out button invites a tap that goes nowhere. `/kiosk/me`'s poll
+       * answers `anyoneWaiting` as a boolean only — no count, no name — so
+       * this message is the honest state of the room without being a second
+       * disclosure. Begin returns on its own, no reload, the moment the next
+       * poll finds somebody staged.
+       */
+      beginUnavailable: 'Nobody is waiting to sign just now. Please see reception.',
       /** Matches `assignor.heading` below deliberately — K-1's list and K-5 ask the same question. */
       listHeading: 'Who is signing today?',
       listHint: 'Tap your name. If it is not here, please see reception.',

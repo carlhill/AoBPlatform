@@ -23,10 +23,55 @@
  * consent form.
  */
 
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { strings } from '../strings';
 import { kioskBuildId } from '../session';
+import { readPairingCredential } from '../pairing';
+import { fetchKioskMe } from '../api';
 import styles from '../kiosk.module.css';
+
+/**
+ * WHICH TABLET IS THIS — asked of the server, never remembered (Carl, 4 Sep
+ * 2026, "which tablet am I?"). `GET /kiosk/me` already carries `deviceLabel`
+ * and `deviceId`; nothing before this asked for them, so a support call had
+ * to talk somebody through a browser menu to find out which physical tablet
+ * they were holding.
+ *
+ * IN MEMORY ONLY, and that is not a detail — it is CLAUDE.md §7. The zero-
+ * footprint lint rule bans every storage surface under `app/kiosk/**`, and
+ * this hook writes to none of them: `useState` here is a React render, not a
+ * write to disk, and the identity is asked for again on every reload exactly
+ * like the practice name already is (`Ceremony.tsx`'s own `GET /kiosk/me`
+ * call). No credential, no request: an unpaired tablet has nothing to ask
+ * with, so this stays silent on the pairing and unpaired screens rather than
+ * adding a 401 to a log nobody benefits from reading.
+ *
+ * A FAILURE HERE IS COSMETIC, on the same reasoning `loadIdentity` in
+ * `Ceremony.tsx` already applies to the practice name: the footer simply says
+ * nothing rather than the ceremony refusing to render (REQ-REC-04, hard rule
+ * 8 — nothing here may block care).
+ */
+function useDeviceIdentity(): { label: string; idPrefix: string } | null {
+  const [identity, setIdentity] = useState<{ label: string; idPrefix: string } | null>(null);
+
+  useEffect(() => {
+    if (!readPairingCredential()) return;
+    let cancelled = false;
+    fetchKioskMe()
+      .then((me) => {
+        if (cancelled) return;
+        setIdentity({ label: me.deviceLabel, idPrefix: me.deviceId.slice(0, 8) });
+      })
+      .catch(() => {
+        /* Cosmetic only — see the comment above. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return identity;
+}
 
 export function Registration(): ReactNode {
   return (
@@ -107,6 +152,7 @@ export function Screen({
   onLeave?: () => void;
   children: ReactNode;
 }): ReactNode {
+  const identity = useDeviceIdentity();
   return (
     <div className={styles.screen}>
       <header className={styles.header}>
@@ -144,6 +190,16 @@ export function Screen({
           <p className={styles.buildMark} data-testid="kiosk-build">
             {strings.build(kioskBuildId())}
           </p>
+          {/*
+            WHICH TABLET THIS IS (Carl, 4 Sep 2026). Same treatment as the
+            build mark right above it — quiet, muted, and answering the second
+            question a support call asks straight after the first.
+          */}
+          {identity ? (
+            <p className={styles.buildMark} data-testid="kiosk-device-identity">
+              {strings.chrome.deviceIdentity(identity.label, identity.idPrefix)}
+            </p>
+          ) : null}
         </div>
         {context ? <p className={styles.footerContext}>{context}</p> : null}
       </footer>
