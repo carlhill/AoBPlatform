@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Agreement as DbAgreement, Prisma, TabletSession } from '@prisma/client';
 import {
 
@@ -773,13 +773,52 @@ export class TabletSessionsService {
 
     return this.prisma.withPractice(device.practiceId, async (tx) => {
       const session = await this.requireDeviceSession(tx, device, sessionId);
+
+      /*
+       * ONE CROSS ENDS THE TABLET'S PART IN IT (Carl, 4 Sep 2026).
+       *
+       * THIS REVERSES WHAT THIS METHOD USED TO ALLOW, and the reversal is the
+       * ruling. It used to accept a second answer on a disputed session —
+       * reasoning that a patient who crosses a second row should extend the
+       * list, and one who changes their mind should be able to tick it after
+       * all. Carl's ruling from live testing is that the moment a cross
+       * reaches reception the SCREEN IS DISABLED: the patient is told to wait,
+       * and the only route forward is reception's re-send, which builds a
+       * fresh session. A screen that kept accepting answers after reception
+       * had been called would let the record move under the person who is
+       * already acting on it.
+       *
+       * THE UI HALF IS THE TABLET'S; THIS IS THE OTHER HALF. "Blocked states
+       * are unreachable, not merely inert" (CLAUDE.md §6) is only true when
+       * the server refuses as well — a control disabled on glass is a
+       * suggestion.
+       *
+       * IT WRITES NOTHING AND EMITS NOTHING. The refusal happens before the
+       * update and before the event, so a locked-out device cannot add to the
+       * evidence by retrying.
+       *
+       * 409 AND A CODE, because this is a thing that exists and is in the
+       * wrong state rather than a malformed request — the same judgement
+       * `push-refusal.ts` makes at length. The ENDED states below keep the
+       * refusal they have always had: they were already refused, nothing about
+       * them changed today, and giving them a new status would move a
+       * contract nobody asked to move.
+       */
+      if (session.state === 'details_disputed') {
+        throw new ConflictException({
+          statusCode: 409,
+          message:
+            'A detail on this session is with reception. Ask them to send the agreement again.',
+          reason: 'session_disputed',
+        });
+      }
+
       const to: TabletSessionState = crossed.length > 0 ? 'details_disputed' : 'details_confirmed';
       /*
-       * SAYING THE SAME THING TWICE IS NOT AN ERROR. The tablet posts whenever
-       * the answers change and every row has one, so a patient who crosses a
-       * second row sends `details_disputed` again — and reception must see the
-       * longer list, not a refusal. The update below is what carries it; only
-       * an ENDED session is refused.
+       * SAYING THE SAME THING TWICE IS NOT AN ERROR, on the confirmed side. The
+       * tablet posts whenever the answers change, so a repeat of an
+       * all-ticked answer must not fail. The update below is what carries it;
+       * an ENDED session is refused here, and a DISPUTED one above.
        */
       if (session.state !== to && !canChangeTabletSessionState(session.state, to)) {
         throw new BadRequestException(sessionIsOver());

@@ -1159,6 +1159,91 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
       expect(JSON.stringify(row)).not.toContain('404 Wrongway Parade');
     });
 
+    /**
+     * ONE CROSS ENDS THE TABLET'S PART IN IT (Carl, 4 Sep 2026).
+     *
+     * The moment a crossed row reaches reception, the screen is disabled and
+     * the patient is told to wait: the only route forward is reception's
+     * re-send, which builds a fresh session. This is the SERVER half of that.
+     * "Blocked states are unreachable, not merely inert" (CLAUDE.md section 6)
+     * is only true if the server refuses too -- a control disabled on glass is
+     * a suggestion, and this endpoint is reachable by anything holding the
+     * device credential.
+     *
+     * IT REVERSES WHAT THIS ENDPOINT USED TO ALLOW, deliberately. A second
+     * answer used to extend the disputed list or take a cross back. It cannot
+     * now, because reception is already acting on the first one and a record
+     * that moves under the person acting on it is worse than a refusal.
+     */
+    it('disputed_session_refuses_a_second_confirm_details', async () => {
+      const { patientId, assignorId } = await freshPatient('Quinn');
+      const agreementId = await draft({ patientId, assignorId });
+      const pushed = await pushTo(tabletA, agreementId).expect(201);
+
+      await answer(pushed.body.id, {
+        confirmed: ['name', 'date_of_birth', 'mobile', 'email'],
+        disputed: ['address'],
+      }).expect(201);
+
+      const eventsBefore = await prisma.vaultOutbox.findMany({ where: { subjectId: pushed.body.id } });
+
+      // THE PATIENT CHANGES THEIR MIND AND TICKS EVERYTHING. Too late: the
+      // cross is with reception, and the way forward is their re-send.
+      const refused = await answer(pushed.body.id, {
+        confirmed: ['name', 'date_of_birth', 'address', 'mobile', 'email'],
+      }).expect(409);
+      expect(refused.body.reason).toBe('session_disputed');
+
+      // Crossing a SECOND row is refused the same way, for the same reason.
+      await answer(pushed.body.id, {
+        confirmed: ['name', 'date_of_birth', 'email'],
+        disputed: ['address', 'mobile'],
+      }).expect(409);
+
+      // NOTHING WAS WRITTEN. The state, the answers and their timestamps are
+      // exactly as the first answer left them.
+      const session = await prisma.withPractice(practiceA, (tx) =>
+        tx.tabletSession.findFirst({ where: { id: pushed.body.id } }),
+      );
+      expect(session!.state).toBe('details_disputed');
+      expect(session!.detailsDisputedTypes).toEqual(['address']);
+      expect(session!.detailsConfirmedTypes.sort()).toEqual(['date_of_birth', 'email', 'mobile', 'name']);
+      expect(session!.endedAt).toBeNull();
+
+      // AND NOTHING WAS EMITTED. A locked-out device cannot add to the
+      // evidence by retrying.
+      const eventsAfter = await prisma.vaultOutbox.findMany({ where: { subjectId: pushed.body.id } });
+      expect(eventsAfter).toHaveLength(eventsBefore.length);
+
+      /*
+       * RECEPTION'S OWN ACTS ARE UNAFFECTED. Resolving the dispute and
+       * re-sending are staff acts on a staff surface, not the tablet's, and
+       * the lock on the glass was never about them.
+       */
+      await http()
+        .post(`/tablet-sessions/${pushed.body.id}/dispute-resolution`)
+        .set('x-practice-id', practiceA)
+        .send({ outcome: 'patient_error', details: ['address'] })
+        .expect(201);
+      const fresh = await http()
+        .post(`/tablet-sessions/${pushed.body.id}/resend`)
+        .set('x-practice-id', practiceA)
+        .expect(201);
+      // A NEW SESSION, and the patient may answer on that one.
+      expect(fresh.body.id).not.toBe(pushed.body.id);
+      expect(fresh.body.state).toBe('pushed');
+      // AND THE SAME AGREEMENT: nothing was corrected, so nothing supersedes.
+      expect(fresh.body.supersededAgreementId).toBeNull();
+      await answer(fresh.body.id, {
+        confirmed: ['name', 'date_of_birth', 'address', 'mobile', 'email'],
+      }).expect(201);
+
+      await http()
+        .post(`/tablet-sessions/${fresh.body.id}/recall`)
+        .set('x-practice-id', practiceA)
+        .expect(201);
+    });
+
     it('dispute_leaves_the_agreement_untouched', async () => {
       const { patientId, assignorId } = await freshPatient('Emery');
       const agreementId = await draft({ patientId, assignorId });
