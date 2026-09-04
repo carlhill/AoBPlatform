@@ -1,8 +1,11 @@
 # The kiosk (C2) — `/kiosk`
 
-**Pair the tablet first**, then the waiting-room ceremony: **verify → (who is
-signing) → locked particulars → sign → done**. `episodic_pre` only, channel
-`in_practice` only.
+**Pair the tablet first**, then one of TWO ceremonies on the same device.
+**Walk-up**: **verify → (who is signing) → locked particulars → sign →
+done**, `episodic_pre` only, channel `in_practice` only. **Pushed** (reception
+sends it from `/practice/tablet`): **check your details → locked particulars
+→ sign → done** — no verification form, no list, no "who is signing". See
+"The second front door" below.
 
 **There is no list at the front of it any more** (Carl, 4 Sep 2026). Begin
 opens K-2, the patient types three details, and `POST /kiosk/claim` finds the
@@ -145,6 +148,113 @@ for the same reason — there is nothing behind it. When the agreement is
 This is also the shape the reception-push flow wants: a pushed agreement is
 always locked before it reaches a device, so the tablet will never show K-5 for
 one.
+
+## The second front door: reception pushes it (Carl, 4 September 2026)
+
+> "Reception has checked the patient across the desk and pushes the agreement
+> from `/practice/tablet` to the paired tablet beside them. The patient never
+> searches or types: they tick their details as correct, read the agreement,
+> approve/sign, done."
+
+The walk-up ceremony above **stays exactly as built**. This is a second USE
+CASE on the same paired tablet, not a second kiosk — and the two converge at
+K-3, so there is one reading screen, one signing step and one `POST
+/agreements/:id/sign` in the whole product.
+
+**Why the push is stronger on the hard rule, not merely faster.** REQ-REG-06
+says the particulars must be complete and locked before the signature control
+can enable. In a PULL model a device assembles a payload and then asks; in a
+PUSH model the payload is validated and locked on the SERVER before any device
+sees it, so a tablet structurally cannot hold a draft.
+
+**The push is the verification record.** Reception cannot push without a
+signed-in staff identity, and the push writes the staff-verified event
+(REQ-VER-03/-04). The patient's ticks that follow are **not** a verification
+and must never be recorded as one: a displayed value confirmed by whoever holds
+the tablet proves nothing about who is holding it. They are a data-accuracy
+confirmation, which is part of the agreement ceremony.
+
+### The screens
+
+| Step | Screen | What it does |
+|---|---|---|
+| K-P1 | `screens/CheckDetailsScreen.tsx` | "Please check your details" — name, DOB (d MMMM yyyy), address, mobile, email, each with a large "This is correct". A row we hold nothing for is not drawn, and is not required. `reading` is posted as it renders. |
+| K-3 | `screens/ParticularsScreen.tsx` | Unchanged. Locked particulars, versions, hash, who signs read-only with the "Set at reception" note. |
+| K-4 | `screens/SignatureScreen.tsx` | Unchanged. Drawn on glass, or tap to approve. |
+| K-6 | `screens/CompleteScreen.tsx` | Unchanged, then back to idle. |
+
+There is **no verification form, no list and no K-5** on this path. Who signs
+was set at the desk before the push, and the particulars are locked, so there
+is nothing to choose — the same reasoning that already skips K-5 for a locked
+walk-up agreement.
+
+### How the session reaches the tablet
+
+`GET /kiosk/session` is polled by `useTabletSession.ts` **at the cadence the
+waiting list was told** (`pollMs` from the list response), so the server still
+owns the number. It is a SECOND poll rather than a field on the first because
+`GET /kiosk/waiting-list` does not carry a session and giving it one would be a
+change to `apps/core`. It runs while the tablet is idle (so a push can arrive)
+and throughout the pushed ceremony (so a RECALL can arrive), and stops on the
+done and hand-over screens, where a `{ session: null }` answering our own
+signature must not yank the screen away.
+
+- **Precedence.** A pushed session takes the tablet over from the IDLE screen
+  only. It never interrupts a walk-up ceremony in flight — the poll is not even
+  running there — so the push waits and lands the moment the tablet is idle.
+- **Disappearance.** Recalled, expired or signed elsewhere all look the same
+  from here: everything is cleared and the tablet returns to idle. A FAILED
+  poll does not clear anything; only an explicit `{ session: null }` does.
+- **The exit** on every pushed screen posts `walked_away`, which ends the
+  SESSION and changes nothing on the agreement (hard rule 8, REQ-REC-04).
+
+### The hard rules on this path
+
+| Rule | Where | Test |
+|---|---|---|
+| REQ-VER-04 / rule 9 — types, never values | `rules/pushed-details.ts` (`confirmedTypes` returns `ConfirmableDetailType[]`); `api.ts`'s `confirmSessionDetails` takes the same type | `details_confirmation_sends_types_not_values` |
+| The ticks are not a verification | copy in `strings.checkDetails.lede`; the endpoint is `confirm-details`; the vault event carries `isVerification: false` | `pushed_flow_skips_verification_and_who_signs` |
+| REQ-REG-06 — a tablet cannot hold a draft | the push locks server-side; `Ceremony.tsx` hands over rather than locking a pushed agreement itself | `pushed_flow_skips_verification_and_who_signs` |
+| Rule 8 / REQ-REC-04 — nothing blocks care | `leave` posts `walked_away` and calls nothing else | `walked_away_posts_state_and_changes_nothing_else`, `the_exit_hands_over_and_promises_nothing` |
+| Screen hygiene — no particulars left on a tablet nobody is at | the disappearance effect; `TABLET_SESSION_IDLE_MS` on the server | `recalled_session_returns_tablet_to_idle` |
+| Rule 14 — the type decides the words | `strings.particulars.headingByAgreementType`, keyed off the session | `pushed_k3_uses_type_specific_heading` |
+| Zero footprint | the session lives in `Ceremony`'s state and is dropped by `reset` | `kiosk_persists_nothing_but_pairing` |
+| Rules 1 and 4 — no card number, no amount | no field for either in `TabletSessionPayload`, the row list or the string table | `details_confirmation_sends_types_not_values` |
+
+### Driving it by hand
+
+1. **Pair a browser tablet** (an ORDINARY one — no waiting list):
+
+   ```bash
+   curl -s -X POST http://127.0.0.1:3001/dev/kiosk-device \
+     -H 'content-type: application/json' -H "x-practice-id: $PRACTICE_ID" \
+     -d '{"label":"Carl browser tablet"}'
+   ```
+
+   Type the code into `/kiosk` on the browser you want to be the tablet.
+2. **Sign in to the console** and open **`/practice/tablet`**.
+3. Find today's row for the patient, choose **Carl browser tablet** in the
+   picker, press **Send to the tablet**.
+4. The tablet shows "Please check your details" on its next poll. Tick every
+   row, Continue, read K-3, tap approve.
+5. **Recall** from the same console page puts the tablet straight back to idle.
+
+The Playwright run does exactly this, and **pushes live** — it signs in to the
+console and presses the real button, because `POST /devices/:id/push` refuses
+an unattributed caller by design and there is no dev seam for it. It therefore
+skips without `E2E_PRACTICE_USER` / `E2E_PRACTICE_PASSWORD`.
+
+### Not built here
+
+- **Enduring cannot be pushed yet.** The push refuses with
+  `enduring_not_supported` because the s 65C rule set has no enduring path, and
+  the rules engine is a human-authored zone (CLAUDE.md §7). The tablet is
+  already right for the day it lands: it takes the heading from the session's
+  own `agreementType` rather than assuming episodic.
+- **Per-device mode** (walk-up enabled / push only) — still one flag,
+  `showsWaitingList`, doing a different job. See TODO.md.
+- **Out-of-use tablets** — reception cannot yet take a tablet out of service
+  from `/practice/tablet`. See TODO.md.
 
 ## Decisions already made
 

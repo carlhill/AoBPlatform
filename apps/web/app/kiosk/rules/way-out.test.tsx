@@ -24,6 +24,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { ReactElement } from 'react';
 import { fireEvent, render } from '@testing-library/react';
+import { CheckDetailsScreen } from '../screens/CheckDetailsScreen';
 import { VerifyScreen } from '../screens/VerifyScreen';
 import { AssignorScreen } from '../screens/AssignorScreen';
 import { ParticularsScreen, type ParticularsView } from '../screens/ParticularsScreen';
@@ -78,9 +79,44 @@ const CHROME = {
   heading: strings.particulars.headingByAgreementType.episodic_pre,
 };
 
+/**
+ * The rows K-P1 draws for a pushed session. Values a patient is being shown
+ * about themselves, which is the one screen in the product where that is right
+ * — and the exit still has to be on it (TODO.md "Two front doors").
+ */
+const DETAIL_ROWS = [
+  { type: 'name', label: 'Name', value: 'Jamie Sampleton' },
+  { type: 'date_of_birth', label: 'Date of birth', value: '4 August 1962' },
+  { type: 'address', label: 'Address', value: '2 Example Street, Sampletown NSW 2000' },
+] as const;
+
 /** One entry per screen of the ceremony. Adding a screen without an exit fails here. */
 function ceremonyScreens(onLeave: () => void): ReadonlyArray<readonly [string, ReactElement]> {
   return [
+    [
+      /*
+       * K-P1, THE PUSHED CEREMONY'S FIRST SCREEN. It is in this list for the
+       * same reason every other screen is: a patient holding a tablet must
+       * always be able to ask a person instead. On the pushed path the exit
+       * additionally posts `walked_away`, which ends the SESSION and changes
+       * nothing on the agreement — asserted where it happens, in
+       * `pushed-session.test.tsx`'s `walked_away_posts_state_and_changes_
+       * nothing_else`. What is asserted HERE is what this file asserts about
+       * every screen: the control exists, and the screen itself calls nothing.
+       */
+      'K-P1 check your details',
+      <CheckDetailsScreen
+        {...CHROME}
+        agreementType="episodic_pre"
+        rows={DETAIL_ROWS}
+        ticked={new Set()}
+        saving={false}
+        saveError={false}
+        onToggle={noop}
+        onContinue={noop}
+        onSeeReception={onLeave}
+      />,
+    ],
     [
       'K-2 verification',
       <VerifyScreen
@@ -196,6 +232,20 @@ describe('REQ-REC-04 — nothing blocks care', () => {
     expect(strings.chrome.leaveBody).toMatch(/not affected/i);
     expect(`${strings.chrome.leaveAction} ${strings.chrome.leaveHeading} ${strings.chrome.leaveBody}`)
       .not.toMatch(/declin|refus|cancel|reject/i);
+
+    /*
+     * AND IT COVERS THE PUSHED PATH, which is the same words on a screen that
+     * DOES call something — `POST /kiosk/session/:id/state { walked_away }`.
+     * The distinction the copy has to keep true is that ending the screen is
+     * not ending the agreement: the session releases the tablet so reception
+     * can push the next patient, and the contract is untouched. So K-P1's own
+     * copy points at reception and says the appointment is unaffected, and the
+     * hand-over the patient lands on is the same one every other screen uses.
+     */
+    expect(strings.checkDetails.somethingWrong).toMatch(/see reception/i);
+    expect(strings.checkDetails.somethingWrong).toMatch(/not affected/i);
+    expect(strings.checkDetails.somethingWrong).not.toMatch(/declin|refus|cancel|reject/i);
+    expect(strings.checkDetails.saveFailed).toMatch(/not affected/i);
   });
 
   it('back_is_navigation_and_changes_no_agreement_state', () => {

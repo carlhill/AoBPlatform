@@ -21,12 +21,18 @@
  * read from `pairing.ts` on each call rather than captured at module load, so
  * a tablet that pairs mid-session starts working without a reload.
  */
-import type { KioskWaitingRow } from '@aobplatform/domain';
+import type {
+  ConfirmableDetailType,
+  DeviceSettableTabletSessionState,
+  KioskWaitingRow,
+  TabletSessionPayload,
+  TabletSessionState,
+} from '@aobplatform/domain';
 import { coreBaseUrl, getSession, kioskBuildId } from './session';
 import { readPairingCredential } from './pairing';
 import type { SignRequestBody } from './rules/signature-payload';
 
-export type { KioskWaitingRow };
+export type { KioskWaitingRow, TabletSessionPayload };
 
 /** `GET /kiosk/waiting-list`. */
 export interface WaitingListResponse {
@@ -436,4 +442,73 @@ export function completeCapture(captureRequestId: string): Promise<unknown> {
 export async function fetchPracticeStaffNames(): Promise<readonly string[]> {
   const body = await request<PracticeUsersResponse>('/practice-users');
   return body.users.map((user) => user.name).filter((name) => typeof name === 'string');
+}
+
+/* -------------------------------------------------------------------------
+ * THE SECOND FRONT DOOR — reception pushes one locked agreement to this
+ * tablet (TODO.md "Two front doors", Carl 4 Sep 2026).
+ *
+ * THREE CALLS AND NO FOURTH. The tablet asks what it is showing, says it is
+ * reading, says the person left, and ticks the details. It CANNOT declare
+ * itself signed — that is the existing `POST /agreements/:id/sign`, exactly as
+ * the walk-up K-4 does it — and it cannot recall itself, because recall is a
+ * console act for the same reason revoke is.
+ *
+ * THE PAYLOAD TYPE IS THE DOMAIN'S. `TabletSessionPayload` comes from
+ * `packages/domain/src/tablet-session.ts`, which the server builds its
+ * response from, so the tablet and the server cannot hold different opinions
+ * about what a session is. Nothing is re-declared here.
+ * ---------------------------------------------------------------------- */
+
+/** `GET /kiosk/session` — the one pushed session, or none. */
+export interface TabletSessionResponse {
+  readonly session: TabletSessionPayload | null;
+}
+
+/**
+ * WHAT IS ON THIS TABLET RIGHT NOW.
+ *
+ * `Cache-Control: no-store` is the server's, and it matters more here than on
+ * the waiting list: that response carries names, this one carries a date of
+ * birth and an address. Nothing in this module keeps a copy — the payload goes
+ * to component state and is dropped when the session ends.
+ */
+export function fetchTabletSession(): Promise<TabletSessionResponse> {
+  return request<TabletSessionResponse>('/kiosk/session');
+}
+
+/**
+ * THE TICKS — TYPES ONLY, NEVER VALUES (REQ-VER-04, hard rule 9).
+ *
+ * The parameter is typed `ConfirmableDetailType[]`, so a value cannot be
+ * passed here even by mistake: `'name'` type-checks and the name does not.
+ * And it is NOT a verification — a displayed value confirmed by whoever holds
+ * the tablet proves nothing about who is holding it. The verification was the
+ * staff check across the desk that the push already recorded (REQ-VER-03).
+ */
+export function confirmSessionDetails(
+  sessionId: string,
+  confirmed: readonly ConfirmableDetailType[],
+): Promise<{ id: string; state: TabletSessionState }> {
+  return request(`/kiosk/session/${sessionId}/confirm-details`, {
+    method: 'POST',
+    body: JSON.stringify({ confirmed }),
+  });
+}
+
+/**
+ * WHAT THE TABLET IS SHOWING — `reading`, or that the person walked away.
+ *
+ * `walked_away` ENDS THE SESSION AND CHANGES NOTHING ON THE AGREEMENT. That is
+ * hard rule 8 on the wire: the patient is still seen, and reception chooses a
+ * private bill or an episodic agreement after the service.
+ */
+export function setTabletSessionState(
+  sessionId: string,
+  state: DeviceSettableTabletSessionState,
+): Promise<{ id: string; state: TabletSessionState }> {
+  return request(`/kiosk/session/${sessionId}/state`, {
+    method: 'POST',
+    body: JSON.stringify({ state }),
+  });
 }

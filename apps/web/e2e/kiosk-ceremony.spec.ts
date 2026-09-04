@@ -93,7 +93,18 @@ function headers() {
  * stubbed step in the suite — see the file header for why the alternative
  * (relaxing `POST /devices`) would be worse than a stub.
  */
-async function issuePairingCode(api: APIRequestContext, label: string): Promise<string> {
+async function issuePairingCode(
+  api: APIRequestContext,
+  label: string,
+  /**
+   * A TEST DEVICE SEES THE WALK-UP LIST; AN ORDINARY ONE DOES NOT. The suite's
+   * walk-up runs need the list (they stage a patient and tap their name); the
+   * PUSHED run must not have it, because a tablet beside reception is exactly
+   * the tablet Carl's ruling was about. Defaulting to `true` keeps every
+   * existing caller behaving as it did.
+   */
+  showsWaitingList = true,
+): Promise<string> {
   const res = await api.post(`${CORE}/dev/kiosk-device`, {
     headers: headers(),
     /*
@@ -107,7 +118,7 @@ async function issuePairingCode(api: APIRequestContext, label: string): Promise<
      * request and this suite has no Keycloak session, so the dev endpoint sets
      * it at registration.
      */
-    data: { label, showsWaitingList: true },
+    data: { label, showsWaitingList },
   });
   expect(res.ok(), await res.text()).toBeTruthy();
   return (await res.json()).code as string;
@@ -593,5 +604,215 @@ test.describe('the kiosk ceremony', () => {
     // It never names the person or says how the match was made.
     await expect(page.getByTestId('assignor-refusal')).not.toContainText(STAFF_MEMBER_NAME);
     await expect(page.locator('main')).not.toContainText('REQ-VUL');
+  });
+});
+
+/* ===========================================================================
+ * THE SECOND FRONT DOOR — reception pushes, the patient ticks and approves
+ * (TODO.md "Two front doors", Carl 4 September 2026).
+ *
+ * "Reception has checked the patient across the desk and pushes the agreement
+ * from `/practice/tablet` to the paired tablet beside them. The patient never
+ * searches or types."
+ *
+ * IT PUSHES FOR REAL, AND THAT IS WHY IT SKIPS WITHOUT CREDENTIALS.
+ * `POST /devices/:id/push` REFUSES an unattributed caller by design — the push
+ * IS the verification record (REQ-VER-03), and a staff-verified event naming
+ * nobody is worse than a refusal. There is no dev seam for it and this build
+ * did not add one: a stub that pushed as nobody would delete the property the
+ * refusal exists to protect, and `apps/core` is out of scope here. So the run
+ * signs in to the console as a real practice user and presses the real Send
+ * button, exactly as reception does:
+ *
+ *   E2E_PRACTICE_USER=... E2E_PRACTICE_PASSWORD=... npm run e2e:kiosk -w apps/web
+ *
+ * Without them it SKIPS rather than fails — a missing credential in somebody's
+ * shell is not a defect in the product — and the Vitest suite
+ * (`app/kiosk/pushed-session.test.tsx`) covers the same behaviours against the
+ * real `Ceremony` with the API mocked.
+ *
+ * TWO PAGES, ONE BROWSER. `page` is reception's console; `tablet` is the
+ * paired device on the counter beside them. That is the actual physical
+ * arrangement, and running both is the only way to prove the push crosses.
+ * ======================================================================== */
+
+const CONSOLE_USER = process.env.E2E_PRACTICE_USER;
+const CONSOLE_PASSWORD = process.env.E2E_PRACTICE_PASSWORD;
+
+/**
+ * Through Keycloak's own form. Nothing is typed into the product's screens:
+ * the console has no password field of its own and never will (hard rule 15).
+ */
+async function signInToConsole(page: Page) {
+  await page.goto('/practice/tablet');
+  const button = page.getByRole('button', { name: /sign in/i }).first();
+  if (await button.isVisible().catch(() => false)) await button.click();
+  const username = page.locator('#username');
+  if (await username.isVisible({ timeout: 15_000 }).catch(() => false)) {
+    await username.fill(CONSOLE_USER as string);
+    await page.locator('#password').fill(CONSOLE_PASSWORD as string);
+    await page.locator('#kc-login, input[type="submit"]').first().click();
+  }
+  await page.waitForURL(/\/practice\/tablet/, { timeout: 30_000 });
+}
+
+/**
+ * An ORDINARY tablet — no waiting list — paired through the real K-0 exchange.
+ * A tablet beside reception must not offer the walk-up list, which is the
+ * whole reason `showsWaitingList` exists.
+ */
+async function pairPushTablet(tablet: Page, api: APIRequestContext, label: string) {
+  const code = await issuePairingCode(api, label, false);
+  await tablet.goto('/kiosk');
+  await expect(tablet.getByTestId('pairing-code')).toBeVisible();
+  await tablet.getByTestId('pairing-code').fill(code);
+  await tablet.getByTestId('pairing-submit').click();
+  await expect(tablet.getByTestId('pairing-paired')).toBeVisible({ timeout: 20_000 });
+  await tablet.getByTestId('pairing-continue').click();
+  await expect(tablet.getByTestId('pairing-code')).toHaveCount(0, { timeout: 20_000 });
+}
+
+test.describe('the pushed ceremony', () => {
+  test.skip(
+    !CONSOLE_USER || !CONSOLE_PASSWORD,
+    'Set E2E_PRACTICE_USER and E2E_PRACTICE_PASSWORD — POST /devices/:id/push refuses an unattributed caller by design.',
+  );
+
+  test('reception pushes it, and the patient ticks, reads and approves', async ({
+    page,
+    context,
+    request,
+  }) => {
+    // The staff side has already validated and locked the particulars, which
+    // is what the push does anyway: a draft can never reach a device
+    // (REQ-REG-06). This one is the re-push case, and is pushable as it is.
+    const row = await stageWaitingPatient(request, PATIENT.name, { lock: true });
+
+    // A label unique to this run, so the console's device picker cannot land
+    // on a tablet some earlier run left lying about.
+    const label = `Pushed ceremony tablet ${Date.now()}`;
+    const tablet = await context.newPage();
+    await pairPushTablet(tablet, request, label);
+
+    // NOTHING IS ON THE TABLET YET. The idle screen names nobody, and there is
+    // no list on an ordinary device.
+    await expect(tablet.getByTestId('check-details-heading')).toHaveCount(0);
+    await expect(tablet.locator('main')).not.toContainText(PATIENT.name);
+
+    // Reception: sign in, find today's row, choose the tablet, send.
+    await signInToConsole(page);
+    await expect(page.getByTestId(`pushable-${row.agreementId}`)).toBeVisible({ timeout: 25_000 });
+    await page.getByTestId(`target-${row.agreementId}`).selectOption({ label });
+    const send = page.getByTestId(`send-${row.agreementId}`);
+    await expect(send).toBeEnabled();
+    await send.click();
+    await expect(page.getByTestId(`push-outcome-${row.agreementId}`)).toBeVisible({ timeout: 25_000 });
+
+    /*
+     * K-P1 ARRIVES ON THE TABLET ON ITS NEXT POLL. Nobody touched the device;
+     * the patient is handed a screen that is already showing their details.
+     */
+    await expect(tablet.getByTestId('check-details-heading')).toBeVisible({ timeout: 40_000 });
+    await expect(tablet.getByTestId('detail-value-name')).toContainText(PATIENT.family);
+    // The date of birth is in words, to its owner, at the moment they were
+    // asked for it across the desk.
+    await expect(tablet.getByTestId('detail-value-date_of_birth')).toContainText('August');
+
+    // NO VERIFICATION FORM, NO LIST, NO K-5, AND NO FIELD OF ANY KIND. The
+    // patient neither searches nor types.
+    await expect(tablet.locator('main input, main select, main textarea')).toHaveCount(0);
+    await expect(tablet.getByTestId('identifier-name-given')).toHaveCount(0);
+    await expect(tablet.getByTestId('assignor-self')).toHaveCount(0);
+
+    // Continue is unreachable until every row on screen is ticked.
+    await expect(tablet.getByTestId('check-details-continue')).toBeDisabled();
+
+    /*
+     * THE TICKS, AND WHAT THEY PUT ON THE WIRE. Types only — never the values
+     * the screen is displaying (REQ-VER-04, hard rule 9). Asserted on the real
+     * request rather than on a mock, which is what this suite is for.
+     */
+    const ticks = tablet.locator('[data-testid^="detail-tick-"]');
+    const count = await ticks.count();
+    expect(count).toBeGreaterThanOrEqual(3);
+    for (let i = 0; i < count; i += 1) await ticks.nth(i).click();
+
+    const confirmRequest = tablet.waitForRequest(
+      (req) => req.url().includes('/confirm-details') && req.method() === 'POST',
+    );
+    await expect(tablet.getByTestId('check-details-continue')).toBeEnabled();
+    await tablet.getByTestId('check-details-continue').click();
+
+    const confirmBody = JSON.parse((await confirmRequest).postData() ?? '{}');
+    expect(Array.isArray(confirmBody.confirmed)).toBe(true);
+    for (const type of confirmBody.confirmed as string[]) {
+      expect(['name', 'date_of_birth', 'address', 'mobile', 'email']).toContain(type);
+    }
+    const wire = JSON.stringify(confirmBody);
+    expect(wire).not.toContain(PATIENT.family);
+    expect(wire).not.toContain(PATIENT.dob.year);
+    expect(wire).not.toContain('Example Street');
+    expect(wire).not.toMatch(/medicare|\$\s?\d/i);
+
+    // K-3: locked, versioned, hashed, no amount, no provider signature field.
+    await expect(tablet.getByTestId('artefact-hash')).toBeVisible({ timeout: 25_000 });
+    await expect(tablet.getByTestId('versions')).toBeVisible();
+    await expect(tablet.getByTestId('assignor-locked-note')).toBeVisible();
+    await expect(tablet.locator('main')).not.toContainText(/\$\s?\d/);
+    await expect(tablet.getByText('No provider signature field')).toBeVisible();
+
+    // K-4: tap to approve is a signature in its own right (REQ-REG-07).
+    await tablet.getByTestId('continue-to-sign').click();
+    await expect(tablet.getByTestId('signature-pad')).toBeVisible();
+    await tablet.getByTestId('sign-control-tap').click();
+
+    await expect(tablet.getByTestId('complete-heading')).toBeVisible({ timeout: 25_000 });
+    await expect(tablet.getByTestId('complete-heading')).toContainText(PATIENT.given);
+
+    // The session ended on the SERVER's authority, off the signature event —
+    // the tablet never declared itself signed.
+    const after = await request.get(`${CORE}/agreements/${row.agreementId}`, { headers: headers() });
+    expect((await after.json()).status).toBe('signed');
+  });
+
+  test('the exit ends the session and changes nothing on the agreement', async ({
+    page,
+    context,
+    request,
+  }) => {
+    /*
+     * REQ-REC-04 AND HARD RULE 8, ON THE PUSHED PATH. A patient who walks away
+     * is still seen; reception chooses a private bill or an episodic agreement
+     * after the service. The SCREEN ends — the tablet is free for the next
+     * push — and the CONTRACT does not move.
+     */
+    const row = await stageWaitingPatient(request, PATIENT.name, { lock: true });
+    const before = await (
+      await request.get(`${CORE}/agreements/${row.agreementId}`, { headers: headers() })
+    ).json();
+
+    const label = `Walk-away tablet ${Date.now()}`;
+    const tablet = await context.newPage();
+    await pairPushTablet(tablet, request, label);
+
+    await signInToConsole(page);
+    await expect(page.getByTestId(`pushable-${row.agreementId}`)).toBeVisible({ timeout: 25_000 });
+    await page.getByTestId(`target-${row.agreementId}`).selectOption({ label });
+    await page.getByTestId(`send-${row.agreementId}`).click();
+
+    await expect(tablet.getByTestId('check-details-heading')).toBeVisible({ timeout: 40_000 });
+    await tablet.getByTestId('leave-for-reception').click();
+
+    // The hand-over promises nothing and says the appointment is unaffected.
+    await expect(tablet.getByTestId('handover-body')).toContainText('not affected');
+    await expect(tablet.locator('main')).not.toContainText(PATIENT.name);
+
+    const after = await (
+      await request.get(`${CORE}/agreements/${row.agreementId}`, { headers: headers() })
+    ).json();
+    expect(after.status).toBe(before.status);
+    expect(after.particularsLockedAt).toBe(before.particularsLockedAt);
+    expect(after.renderedArtefactHash).toBe(before.renderedArtefactHash);
+    expect(after.signatureEventId ?? null).toBeNull();
   });
 });

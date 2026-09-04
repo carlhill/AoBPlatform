@@ -24,6 +24,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { IdleScreen } from './screens/IdleScreen';
+import { CheckDetailsScreen } from './screens/CheckDetailsScreen';
 import { VerifyScreen } from './screens/VerifyScreen';
 import { AssignorScreen } from './screens/AssignorScreen';
 import { ParticularsScreen, type ParticularsView } from './screens/ParticularsScreen';
@@ -201,6 +202,32 @@ describe('CLAUDE.md §7 — nothing is written to the device', () => {
         onSignDrawn={noop}
         onSignTap={noop}
         onBack={noop}
+        onSeeReception={noop}
+      />,
+      /*
+       * K-P1 IS THE SCREEN THIS RULE IS MOST EXPOSED ON (TODO.md "Two front
+       * doors", 4 Sep 2026). It is the only screen in the product that renders
+       * a patient’s date of birth, address, mobile and email at once, and it
+       * is exactly the screen somebody would be tempted to make "resilient" by
+       * caching the session so a reload does not lose it. Nothing is written:
+       * the payload lives in React state and dies with the session.
+       */
+      <CheckDetailsScreen
+        key="check-details"
+        {...CHROME}
+        agreementType="episodic_pre"
+        rows={[
+          { type: 'name', label: 'Name', value: 'Jamie Sampleton' },
+          { type: 'date_of_birth', label: 'Date of birth', value: '4 August 1962' },
+          { type: 'address', label: 'Address', value: '2 Example Street, Sampletown NSW 2000' },
+          { type: 'mobile', label: 'Mobile number', value: '0400 000 000' },
+          { type: 'email', label: 'Email address', value: 'jamie@example.invalid' },
+        ]}
+        ticked={new Set(['name'])}
+        saving={false}
+        saveError={false}
+        onToggle={noop}
+        onContinue={noop}
         onSeeReception={noop}
       />,
       <CompleteScreen key="complete" {...CHROME} givenName="Jamie" onDone={noop} />,

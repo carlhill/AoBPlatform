@@ -77,6 +77,7 @@ import {
   changeAssignor,
   claimWaitingRow,
   completeCapture,
+  confirmSessionDetails,
   fetchAgreement,
   fetchKioskMe,
   fetchPracticeStaffNames,
@@ -84,13 +85,16 @@ import {
   KioskApiError,
   pairDevice,
   lockParticulars,
+  setTabletSessionState,
   signAgreement,
   startChallenge,
   transitionAgreement,
   type AgreementResponse,
   type KioskWaitingRow,
+  type TabletSessionPayload,
 } from './api';
 import { useWaitingList } from './useWaitingList';
+import { useTabletSession } from './useTabletSession';
 import { clearPairingCredential, readPairingCredential, writePairingCredential } from './pairing';
 import { challengeIsComplete, identifierFieldsFor, type IdentifierField } from './rules/identifiers';
 import { composeSignRequest } from './rules/signature-payload';
@@ -105,7 +109,9 @@ import {
 } from './rules/assignor';
 import { evaluateSignatureGate, type SignatureValidation } from './rules/signature-gate';
 import { afterAttempt, firstAttempt, retryAfterMismatch, type VerificationState } from './rules/verification';
+import { allTicked, confirmedTypes, detailRowsFor } from './rules/pushed-details';
 import { IdleScreen } from './screens/IdleScreen';
+import { CheckDetailsScreen } from './screens/CheckDetailsScreen';
 import { VerifyScreen } from './screens/VerifyScreen';
 import { AssignorScreen } from './screens/AssignorScreen';
 import { ParticularsScreen, type ParticularsView } from './screens/ParticularsScreen';
@@ -131,6 +137,13 @@ type Step =
   | 'unpaired'
   | 'idle'
   | 'list'
+  /**
+   * K-P1, and the ONLY step the pushed ceremony adds. Everything after it —
+   * K-3, K-4, done, hand-over — is the walk-up's own screens with the pushed
+   * session's agreement in them, which is the point: one ceremony, two front
+   * doors (TODO.md, Carl 4 Sep 2026).
+   */
+  | 'check-details'
   | 'verify'
   | 'assignor'
   | 'particulars'
@@ -159,6 +172,20 @@ export function Ceremony(): ReactNode {
   const [staffNames, setStaffNames] = useState<readonly string[]>([]);
   const [row, setRow] = useState<KioskWaitingRow | null>(null);
   const [agreement, setAgreement] = useState<AgreementResponse | null>(null);
+
+  /**
+   * THE PUSHED SESSION, IN MEMORY AND NOWHERE ELSE (CLAUDE.md §7).
+   *
+   * This is the only place on the device a patient's date of birth and address
+   * exist, it is React state rather than storage, and `reset` drops it. A
+   * tablet found in a taxi holds one revocable credential and nothing about
+   * anybody.
+   */
+  const [pushed, setPushed] = useState<TabletSessionPayload | null>(null);
+  /** Which TYPES have been ticked on K-P1. Never the values behind them (REQ-VER-04). */
+  const [ticked, setTicked] = useState<ReadonlySet<string>>(() => new Set());
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const [confirmError, setConfirmError] = useState(false);
 
   const [challengeId, setChallengeId] = useState<string | null>(null);
   const [fields, setFields] = useState<readonly IdentifierField[]>([]);
@@ -216,6 +243,27 @@ export function Ceremony(): ReactNode {
   // The list is polled only while the tablet is between patients. Mid-ceremony
   // the screen is not showing it, and a poll that nobody can see is noise.
   const list = useWaitingList(step === 'idle' || step === 'list');
+
+  /**
+   * THE PUSHED-SESSION POLL, AND WHEN IT RUNS.
+   *
+   * A SECOND POLL RATHER THAN A FIELD ON THE FIRST, because the waiting list
+   * does not carry a session and giving it one would be a change to
+   * `apps/core`. It runs at the cadence the waiting list was told, so the
+   * server still owns the number (see `useTabletSession`).
+   *
+   * BETWEEN PATIENTS, so a push can arrive — and THROUGHOUT the pushed
+   * ceremony, so a RECALL can arrive. Those are the two things that must reach
+   * a tablet nobody is touching and a tablet somebody is standing at
+   * respectively. It stops on `complete` and `handover`: by then this tablet
+   * ended the session itself, and a `{ session: null }` answering our own
+   * signature must not yank the thank-you screen away.
+   */
+  const pushedCeremony = step === 'check-details' || (pushed !== null && (step === 'particulars' || step === 'signature'));
+  const tabletSession = useTabletSession(
+    step === 'idle' || step === 'list' || pushedCeremony,
+    list.pollMs,
+  );
 
   /**
    * IS THIS A TEST DEVICE — ANSWERED BY THE POLL, NOT BY START-UP (Carl, 4 Sep
@@ -321,13 +369,18 @@ export function Ceremony(): ReactNode {
    * one transition that must not leave a previous patient's name in a header.
    */
   useEffect(() => {
-    if (!list.unpaired) return;
+    // EITHER POLL CAN BE THE ONE THAT HEARS IT. The session poll runs where the
+    // list poll does not — throughout a pushed ceremony — so a tablet revoked
+    // while a patient is reading finds out from that one, and lands here.
+    if (!list.unpaired && !tabletSession.unpaired) return;
     clearPairingCredential();
     setPracticeName('');
     setLocationLine(null);
     setMeShowsWaitingList(false);
+    setPushed(null);
+    setTicked(new Set());
     setStep('unpaired');
-  }, [list.unpaired]);
+  }, [list.unpaired, tabletSession.unpaired]);
 
   /**
    * A ROLLBACK REACHES A TAB THAT HAS BEEN OPEN SINCE EIGHT IN THE MORNING.
@@ -405,6 +458,16 @@ export function Ceremony(): ReactNode {
     setStep('idle');
     setRow(null);
     setAgreement(null);
+    /*
+     * THE PUSHED SESSION GOES WITH EVERYTHING ELSE. It is the only patient
+     * data this device ever holds, and the reset is the moment the tablet is
+     * handed to the next person — a name, a date of birth or an address that
+     * survived this line would be exactly the residual patient data C2 forbids.
+     */
+    setPushed(null);
+    setTicked(new Set());
+    setConfirmBusy(false);
+    setConfirmError(false);
     setChallengeId(null);
     setFields([]);
     setStated({});
@@ -447,8 +510,140 @@ export function Ceremony(): ReactNode {
    * wanted to ask a question has declined nothing.
    */
   const leave = useCallback(() => {
+    /*
+     * ON THE PUSHED PATH IT TELLS THE SERVER, AND THAT IS THE ONLY DIFFERENCE.
+     * `POST /kiosk/session/:id/state { walked_away }` ends the SCREEN: it
+     * releases the tablet so reception can push the next patient to it, and it
+     * writes a vault event saying what happened. It changes NOTHING on the
+     * agreement — the particulars stay locked, the capture request stays open,
+     * the status does not move — so the patient is still seen and reception
+     * still chooses a private bill or an episodic agreement after the service
+     * (hard rule 8, REQ-REC-04).
+     *
+     * FIRE AND FORGET, DELIBERATELY. A patient asking for a person must not be
+     * made to wait on a request, and a failed one costs nothing: the session
+     * expires on its own after thirty minutes (`TABLET_SESSION_IDLE_MS`), and
+     * reception can recall it from the console in the meantime.
+     */
+    if (pushed) {
+      void setTabletSessionState(pushed.id, 'walked_away').catch(() => undefined);
+      setPushed(null);
+      setTicked(new Set());
+    }
     toHandover(strings.chrome.leaveHeading, strings.chrome.leaveBody);
-  }, [toHandover]);
+  }, [pushed, toHandover]);
+
+  /**
+   * A PUSHED SESSION TAKES OVER THE TABLET — from the IDLE screen, and only
+   * from there (TODO.md, Carl 4 Sep 2026).
+   *
+   * IT WILL NOT INTERRUPT A WALK-UP CEREMONY. Somebody is standing at this
+   * tablet part-way through proving who they are; replacing their screen with
+   * a stranger's date of birth would be both a disclosure and a theft of their
+   * session. The poll is not even running mid-walk-up, so the push simply
+   * waits: the moment the tablet returns to idle it is seen and shown. The
+   * server does not need to know which screen is up, and a server that did
+   * would be one the tablet could lie to.
+   *
+   * `reading` IS POSTED HERE, as K-P1 first renders, which is what reception's
+   * status column is watching for.
+   */
+  useEffect(() => {
+    const session = tabletSession.session;
+    if (!session) return;
+    if (pushed?.id === session.id) return;
+    if (step !== 'idle' && step !== 'list') return;
+
+    setRow(null);
+    setAgreement(null);
+    setChallengeId(null);
+    setFields([]);
+    setStated({});
+    setVerification(firstAttempt());
+    setMismatch(false);
+    setChoice(EMPTY_CHOICE);
+    autoLockedRef.current = null;
+    setTicked(new Set());
+    setConfirmError(false);
+    setPushed(session);
+    setStep('check-details');
+    if (session.state === 'pushed') {
+      void setTabletSessionState(session.id, 'reading').catch(() => undefined);
+    }
+  }, [tabletSession.session, pushed, step]);
+
+  /**
+   * THE SESSION WENT AWAY — recalled from the console, expired after thirty
+   * minutes, or signed somewhere else. All three mean the same thing to this
+   * tablet: it is nobody's screen any more, so it clears everything and goes
+   * back to idle. That is the screen-hygiene half of the push model — a tablet
+   * in a waiting room must never be left showing somebody's particulars after
+   * they have gone.
+   *
+   * ONLY ON AN EXPLICIT ANSWER. `answered` guards the first render, and the
+   * poll keeps the last session through a failed request, so one timed-out
+   * poll cannot tear down a ceremony somebody is standing at.
+   */
+  useEffect(() => {
+    if (!pushed) return;
+    if (!tabletSession.answered || tabletSession.session !== null) return;
+    if (!pushedCeremony) return;
+    reset();
+  }, [pushed, tabletSession.answered, tabletSession.session, pushedCeremony, reset]);
+
+  /** The rows K-P1 draws — the domain's five types, minus the ones we hold nothing for. */
+  const detailRows = useMemo(
+    () => (pushed ? detailRowsFor(pushed.patient) : []),
+    [pushed],
+  );
+
+  const toggleDetail = useCallback((type: string) => {
+    setConfirmError(false);
+    setTicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
+      return next;
+    });
+  }, []);
+
+  /**
+   * K-P1 → K-3. TYPES ON THE WIRE, VALUES NOWHERE.
+   *
+   * `confirmedTypes` maps the ticked rows to the five words the domain allows,
+   * and the request body is that array and nothing else — no name, no date of
+   * birth, no address (REQ-VER-04, hard rule 9). Named test:
+   * `details_confirmation_sends_types_not_values`.
+   *
+   * THEN THE AGREEMENT IS FETCHED AND K-3 IS THE WALK-UP'S OWN SCREEN. There
+   * is no K-5 on this path and there could not be: who signs was settled at the
+   * desk before the push, and the push locked the particulars, so there is
+   * nothing to choose. K-3 states who signs and carries the one-line note under
+   * it exactly as it does for a locked walk-up agreement.
+   */
+  const confirmDetails = useCallback(async () => {
+    if (!pushed) return;
+    if (!allTicked(detailRows, ticked)) return;
+    setConfirmBusy(true);
+    setConfirmError(false);
+    try {
+      await confirmSessionDetails(pushed.id, confirmedTypes(detailRows, ticked));
+      const current = await fetchAgreement(pushed.agreementId);
+      setAgreement(current);
+      setStep('particulars');
+    } catch (err) {
+      if (isUnpaired(err)) {
+        clearPairingCredential();
+        setStep('unpaired');
+        return;
+      }
+      // Never a dead end (REQ-REC-04): the message offers the desk, the ticks
+      // stay on screen, and nothing about the agreement has moved.
+      setConfirmError(true);
+    } finally {
+      setConfirmBusy(false);
+    }
+  }, [pushed, detailRows, ticked]);
 
   /**
    * ONCE VERIFICATION HAS PASSED, WHATEVER DOOR IT CAME THROUGH.
@@ -685,6 +880,30 @@ export function Ceremony(): ReactNode {
   const patientName = row?.patientName ?? '';
 
   /**
+   * WHICH CAPTURE REQUEST THIS SIGNATURE CLOSES, whichever door it came
+   * through. The walk-up takes it from the waiting row; the push takes it from
+   * the session, where the server put the `in_practice` request it opened. K-4
+   * does not know or care which — one signing step, one contract with
+   * `POST /agreements/:id/sign`, and no fork in the code that produces a
+   * signature (FR-2.7).
+   */
+  const captureRequestId = pushed?.captureRequestId ?? row?.captureRequestId ?? null;
+
+  /**
+   * THE NAME K-3 AND K-6 USE ON THE PUSHED PATH, composed from the session's
+   * own two fields. It is only ever a fallback: the locked particulars carry
+   * `patientName` and the agreement's own copy wins wherever it exists, which
+   * keeps the words on the reading screen the words that were rendered and
+   * hashed (rule 13).
+   */
+  const pushedPatientName = pushed
+    ? [pushed.patient.givenNames, pushed.patient.familyName]
+        .map((part) => (part ?? '').trim())
+        .filter((part) => part.length > 0)
+        .join(' ')
+    : '';
+
+  /**
    * THE LIVE GATE BEHIND K-5's CONTINUE (Carl, 3 Sep 2026 live test).
    * Recomputed on every change to the choice or the staff list, so the
    * `GuardedButton` is disabled — with its reason — before anybody presses it,
@@ -846,15 +1065,30 @@ export function Ceremony(): ReactNode {
   useEffect(() => {
     if (step !== 'particulars' || !agreement) return;
     if (agreement.particularsLockedAt || lockBusy) return;
+    /*
+     * A PUSHED AGREEMENT IS ALREADY LOCKED, AND IF IT IS NOT, THE TABLET DOES
+     * NOT LOCK IT.
+     *
+     * The push validates and locks on the SERVER before any device sees the
+     * payload — that is the whole reason the push is stronger on REQ-REG-06
+     * than a pull would be, because a tablet structurally cannot hold a draft.
+     * So an unlocked agreement arriving here is not a state to recover from by
+     * locking it from a waiting-room device; it is a fault on our side, and it
+     * says so and hands over.
+     */
+    if (pushed) {
+      toHandover(strings.particulars.serverFaultHeading, strings.particulars.serverFault);
+      return;
+    }
     if (autoLockedRef.current === agreement.id) return;
     autoLockedRef.current = agreement.id;
     void runLock();
-  }, [step, agreement, lockBusy, runLock]);
+  }, [step, agreement, lockBusy, runLock, pushed, toHandover]);
 
   /** Step 5: sign, then close the capture request. */
   const sign = useCallback(
     async (method: 'drawn' | 'tap_to_approve') => {
-      if (!row || !agreement) return;
+      if (!agreement || !captureRequestId) return;
       setSignBusy(true);
       setSignError(null);
       /*
@@ -872,7 +1106,7 @@ export function Ceremony(): ReactNode {
        */
       const body = composeSignRequest(
         method,
-        row.captureRequestId,
+        captureRequestId,
         method === 'drawn' ? (padRef.current?.capture() ?? null) : null,
       );
       if (!body) {
@@ -886,7 +1120,14 @@ export function Ceremony(): ReactNode {
         await signAgreement(agreement.id, body);
         // `sign` already completes the capture request when it is given one;
         // this is the belt-and-braces close for the case where it was not.
-        await completeCapture(row.captureRequestId).catch(() => undefined);
+        await completeCapture(captureRequestId).catch(() => undefined);
+        /*
+         * ON THE PUSHED PATH THE SERVER ENDS THE SESSION AS `signed` — the
+         * tablet never asserts that state itself, because a device that could
+         * assert it could assert a contract. The next poll would answer
+         * `{ session: null }`; the poll is off on this screen, so the thank-you
+         * is not yanked away by our own success.
+         */
         setStep('complete');
       } catch (err) {
         setSignError((err as Error).message);
@@ -894,7 +1135,7 @@ export function Ceremony(): ReactNode {
         setSignBusy(false);
       }
     },
-    [agreement, row],
+    [agreement, captureRequestId],
   );
 
   const validation: SignatureValidation = useMemo(() => {
@@ -921,8 +1162,20 @@ export function Ceremony(): ReactNode {
        * `episodic_pre` — the only type the kiosk ever lists — is the last
        * one, so this can never be `undefined` and force a component to guess.
        */
-      agreementType: row?.agreementType ?? (agreement?.type as AgreementType | undefined) ?? 'episodic_pre',
-      patientName: str('patientName') ?? row?.patientName ?? '',
+      /*
+       * THE PUSHED SESSION'S TYPE FIRST, then the row's, then the agreement's.
+       * The session states it explicitly ("so the ceremony picks its own
+       * heading" — `TabletSessionPayload`), and on the pushed path there is no
+       * waiting row at all, so without this K-3 and K-4 would fall through to
+       * the `episodic_pre` default and an enduring agreement would be read
+       * under an episodic heading.
+       */
+      agreementType:
+        pushed?.agreementType
+        ?? row?.agreementType
+        ?? (agreement?.type as AgreementType | undefined)
+        ?? 'episodic_pre',
+      patientName: str('patientName') ?? row?.patientName ?? pushedPatientName,
       providerName: str('providerName') ?? row?.providerName ?? null,
       providerAddress: str('providerAddress'),
       serviceDate: str('serviceDate'),
@@ -942,7 +1195,7 @@ export function Ceremony(): ReactNode {
       mappingVersion: agreement?.mappingVersion ?? null,
       artefactHash: agreement?.renderedArtefactHash ?? null,
     };
-  }, [agreement, row]);
+  }, [agreement, row, pushed, pushedPatientName]);
 
   switch (step) {
     /*
@@ -994,6 +1247,31 @@ export function Ceremony(): ReactNode {
           onBack={() => setStep('idle')}
           onPick={(picked) => void pick(picked)}
           onRetry={list.refresh}
+        />
+      );
+    /*
+     * K-P1 — THE PUSHED CEREMONY'S ONLY NEW SCREEN.
+     *
+     * No verification form and no list: reception did the checking, and the
+     * patient neither searches nor types. No K-5 either — who signs was set at
+     * the desk before the push and the particulars are locked, so there is
+     * nothing to choose and K-3 states it read-only, exactly as it does for a
+     * locked walk-up agreement (Carl, 4 Sep 2026: never render an
+     * option-shaped box that is not an option).
+     */
+    case 'check-details':
+      return (
+        <CheckDetailsScreen
+          practiceName={practiceName}
+          locationLine={locationLine}
+          agreementType={pushed?.agreementType ?? 'episodic_pre'}
+          rows={detailRows}
+          ticked={ticked}
+          saving={confirmBusy}
+          saveError={confirmError}
+          onToggle={toggleDetail}
+          onContinue={() => void confirmDetails()}
+          onSeeReception={leave}
         />
       );
     case 'verify':
@@ -1100,7 +1378,11 @@ export function Ceremony(): ReactNode {
         <CompleteScreen
           practiceName={practiceName}
           locationLine={locationLine}
-          givenName={(row?.patientName ?? '').split(' ')[0] ?? ''}
+          // The push has no waiting row; its session carries the given names
+          // directly, which is a better source than splitting a display name.
+          givenName={
+            (pushed?.patient.givenNames ?? row?.patientName ?? '').trim().split(' ')[0] ?? ''
+          }
           onDone={reset}
         />
       );

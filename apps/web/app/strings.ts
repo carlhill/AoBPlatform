@@ -3799,6 +3799,66 @@ export const strings = {
       testDeviceBanner: 'TEST DEVICE — names visible',
     },
 
+    /*
+     * K-P1 — "Please check your details", the FIRST screen of the pushed
+     * ceremony (TODO.md "Two front doors", Carl 4 Sep 2026).
+     *
+     * IT IS A DATA CHECK AND THE COPY MUST NEVER READ AS AN IDENTITY CHECK,
+     * which is the single thing most likely to go wrong in this wording. The
+     * verification already happened, across the desk, with a named staff
+     * member's identity on it (REQ-VER-03) — the push refuses without it. A
+     * value displayed on a screen and ticked by whoever is holding the tablet
+     * proves nothing about who is holding it, so `lede` says out loud that
+     * staff have already confirmed who this is and that what is being asked
+     * for here is whether the details are RIGHT.
+     *
+     * TWO OF THE FIVE ROWS ARE CONTACT DETAILS, NEVER IDENTIFIERS. A mobile
+     * number and an email address are shown and confirmed here, and are never
+     * counted toward the statutory three — that would be the Medicare-number
+     * mistake one step sideways (REQ-VER-02, hard rule 1). Nothing in this
+     * namespace calls any of them an identifier.
+     *
+     * THE HEADING IS NOT HERE. It is `particulars.headingByAgreementType`,
+     * keyed by the session's own agreement type, so reading and signing carry
+     * the same words as the screens that follow rather than a fourth variant.
+     */
+    checkDetails: {
+      lede: 'Please check these are right. Our staff have already confirmed who you are.',
+      /**
+       * The five confirmable types, by the words a patient reads. Keyed by
+       * `CONFIRMABLE_DETAIL_TYPES` so a screen renders the domain's list and
+       * never a list of its own — a key with no entry here renders its raw key,
+       * which is ugly and visible, and is the right failure for a missing word.
+       */
+      detailNames: {
+        name: 'Name',
+        date_of_birth: 'Date of birth',
+        address: 'Address',
+        mobile: 'Mobile number',
+        email: 'Email address',
+      } as Record<string, string>,
+      /** The tick control on each row. Large, and selection is shown by fill AND `aria-pressed`. */
+      tick: 'This is correct',
+      /** The same control once it is ticked, so the state is in the label as well as the fill. */
+      ticked: 'Confirmed',
+      continueAction: 'Continue',
+      continueBlocked: (count: number) =>
+        count === 1 ? 'Continue — 1 detail still to check' : `Continue — ${count} details still to check`,
+      /**
+       * THE WAY OUT, STATED WHERE THE PATIENT IS DECIDING (REQ-REC-04). If a
+       * row is wrong there is nothing to correct on this device — the tablet
+       * offers no field, on the same reasoning K-3 offers none — so the honest
+       * instruction is the one person standing a metre away.
+       */
+      somethingWrong:
+        'If anything here is wrong, please see reception. Your appointment is not affected.',
+      saveFailed:
+        'We could not record that here. Please see reception — your appointment is not affected.',
+      /** d MMMM yyyy — "4 September 1962". Month by NAME; nobody should have to translate "09". */
+      dateFormat: (day: string, monthName: string, year: string) => `${day} ${monthName} ${year}`,
+      footer: 'A check that your details are right — our staff confirmed who you are at the desk',
+    },
+
     verify: {
       heading: 'Confirm your details',
       lede: (count: number) => `${count} details, so we know it is you before anything is shown.`,
