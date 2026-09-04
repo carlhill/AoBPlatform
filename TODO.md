@@ -1525,6 +1525,15 @@ eventually carries our correction home.
 - [ ] Until then, the console's correction control says so on screen: "Also
       update this in your practice software -- the next sync will bring the old
       value back otherwise."
+- [ ] **We will need to provide an API or report to the practice to reconcile
+      against their PMS** (Carl, 4 Sep 2026). Every patient detail corrected on
+      our mirror, every agreement stored, every write-back that did or did not
+      land -- exportable per practice so they can compare with what the PMS
+      holds and fix the differences. The three-way reconciliation deck
+      (`.claude/docs/AoB-Three-Way-Reconciliation.pptx`) is the shape; the
+      existing `/practice/reconciliation` screen and the retention-gap report
+      (GA-PLAN D5) are the natural homes. API first (the practice's own tooling
+      can pull it), report second (CSV/PDF from the same query).
 
 ## Nothing on the patient surface is ever staff entry
 
