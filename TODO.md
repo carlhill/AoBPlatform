@@ -1286,6 +1286,25 @@ deployment) rather than adding it.
       If the push model is the product, remove the tablet-side re-point and
       make "someone else" a hand-over; keep the server endpoint for the desk.
 
+## Two rulings from pairing day (Carl, 4 Sep 2026)
+
+- [ ] **Copy for the paired tablet, on the pairing-success and idle screens
+      and in the console's device row:** "This tablet can be revoked from the
+      practice console at any time. Nothing else is stored on it." Both halves
+      are literally true (one credential, revocable, nothing else persisted) and
+      that is why the sentence is allowed on a patient-facing surface.
+- [ ] **Signability is checked BEFORE the patient does anything, and the
+      hand-over names the patient.** Carl verified as Jamie, passed all three
+      identifiers, and only then saw "One more detail is needed from reception"
+      -- on a screen with no name on it. Wrong place twice over: the patient
+      did work for nothing, and reception cannot tell who to fix. The waiting
+      list must carry a per-row `signable` (server-computed: particulars
+      present including D6a from the current mapping, nothing else blocking);
+      the list marks unsignable rows "Please see reception"; tapping one shows
+      the hand-over WITH the patient's name and no verification step. K-3 keeps
+      its own check as the last line of defence, and when it fires it also
+      names the patient.
+
 ## Nothing on the patient surface is ever staff entry
 
 Carl, 3 Sep 2026, on seeing K-3 ask for a "Basic description of the service --
