@@ -1482,6 +1482,34 @@ administrator account.
       link challenge and `POST /kiosk/claim`. The floor of three is enforced
       server-side today; the test pins it against a future "just this once".
 
+## Check-your-details: tick or cross per row, and reception sees which (Carl, 4 Sep 2026)
+
+"Make the big buttons to the right of the text (in case we are using small
+tablets). We need a button with a tick and another with a cross. The
+practice-reception-user is sitting behind the desk and should be able to see
+the same screen and be told what the patient did not agree to. Then the
+practice-reception-user will correct the incorrect detail and re-push."
+
+- [ ] K-P1 redesign: one row per detail -- label and value on the left, two
+      large buttons on the right: tick ("That's right") and cross ("That's
+      wrong"). Every row answered enables Continue; any cross disables it and
+      shows "Please see reception -- they will fix this and send it again."
+      Works on a small tablet: buttons stack under the value below ~600px.
+- [ ] Server: `confirm-details` takes `{ confirmed: [types], disputed: [types] }`
+      (types only, never values); any dispute -> session state
+      `details_disputed`, vault event carrying the disputed TYPES; the
+      agreement is untouched.
+- [ ] Console `/practice/tablet`: the tablet's row shows "Patient says: address,
+      mobile are wrong" live; reception corrects the detail (address / mobile /
+      email / name / DOB) on the platform's patient record -- each correction a
+      staff-attributed `patient.details_corrected` event with the TYPE, value in
+      the encrypted store only -- then **Re-send**, which recalls the old session
+      and pushes a fresh one with the corrected particulars. Until D-01 lands the
+      correction is on our mirror; the PMS remains the source of truth and the
+      write-back item carries it home.
+- [ ] Sequenced after the inactivity/Back build, which is editing the same
+      screen.
+
 ## Nothing on the patient surface is ever staff entry
 
 Carl, 3 Sep 2026, on seeing K-3 ask for a "Basic description of the service --
