@@ -1127,11 +1127,30 @@ path shown as the main one.
       the push. Same device pairing and screen hygiene as the pre-service push
       -- one mechanism, two moments. The 30-minute nudge into the cascade
       fires only if no post-service signature lands.
-- [ ] Which agreement to offer at the pre-step is a practice setting: for a
-      GP practice the strongest answer is ENDURING at first visit -- sign once,
-      nothing post-service ever (the 89AA notice is one-way); episodic pre +
-      post is for patients who decline enduring and for non-GP providers
-      (REQ-END-01a). Default accordingly.
+- [x] **BUILT 4 Sep 2026 (`219d913` and the two before it) -- enduring at the
+      kiosk, up to the human-authored boundary (GA-PLAN B5/B6).**
+      `practices.enduringByDefault` (default true) on `/practice/channels`,
+      vault event on change. The push no longer refuses enduring outright: it
+      checks what is PERMANENT -- GP-only and one provider x one patient (hard
+      rule 6, REQ-END-01/-01a, refusals `enduring_not_gp` /
+      `enduring_not_per_provider`) -- then ASKS the rule set, sending reg
+      65CB's content set and NOT D5/D6a (episodic elements, REQ-REG-01).
+      Silence is not a pass: a set returning no verdict on the enduring family
+      refuses with `enduring_rules_not_authored`, mapped in the console to
+      "Ongoing agreements are not yet enabled". The kiosk explains the
+      coverage (scope, how it ends, one provider, no amount) and offers "I'd
+      rather agree each visit"; that records `declined_enduring`, and
+      reception has one press that creates and sends an agreement for today's
+      visit. Core e2e 60, web 302.
+      **What remains is CARL'S:** write the enduring branch of the s 65C rule
+      set against the skipped conformance suite
+      `apps/rules/test/enduring-ruleset.pending.spec.ts` (E1-E8, from
+      REQ-END-* and reg 65CB) in a NEW rule-set version. Nothing else changes
+      when it lands. Left open by this build: no rule-set/versions screen
+      exists in the console, so the refusal carries copy and no link; the
+      "authored?" probe is cached in-process for 60s (fine for one Fargate
+      task, revisit with more); E6's 14+ declaration may belong in the domain
+      rather than the rule set -- flagged in the pending spec.
 - [ ] Reception status view of the tablet -- states, not a mirror.
 - [ ] Per-assignor channel preference on the `Assignor` record, honoured by
       every sender.
