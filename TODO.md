@@ -1511,16 +1511,42 @@ practice-reception-user is sitting behind the desk and should be able to see
 the same screen and be told what the patient did not agree to. Then the
 practice-reception-user will correct the incorrect detail and re-push."
 
-- [ ] K-P1 redesign: one row per detail -- label and value on the left, two
+**BUILT 4 Sep 2026 (`cf491c2`).** K-P1 tick/cross right of the text (stack
+below 600px, >=56px targets, glyph + word + aria-pressed); `confirm-details`
+takes `{ confirmed, disputed }` with a server-side coverage check; new live
+state `details_disputed`; console shows "Patient says wrong: ...", inline
+Correct with the caveat verbatim, and Re-send (recall + push). A locked
+agreement whose particular (name/DOB/address) changed since the lock is
+SUPERSEDED (`supersedesAgreementId`), old particulars and hash untouched, old
+capture requests cancelled; mobile/email never supersede. `PATCH
+/patients/:id/details` refuses any /medicare/i key from the RAW body. Core e2e
+415, web 168, domain 858. Three things it surfaced for Carl:
+
+- [ ] **Only `patientName` reaches the rendered artefact today** -- `prepareLock`
+      assembles no DOB and no address, so correcting either changes no hashed
+      byte as the renderer stands. The supersession rule still treats the full
+      D-set as particulars (fails toward superseding); narrowing it to `name`
+      is a decision, not a tidy-up. Better: the renderer should include the
+      D-set it is supposed to (REQ-REG-01/-06 -- check what D1-D7 requires on
+      the artefact) -- Carl to confirm which particulars must appear.
+- [ ] **No `superseded` agreement status exists** -- the superseded row keeps
+      `awaiting_signature` with its capture requests closed (the codebase's
+      idiom). Add a real `superseded` status to `lifecycle.ts`.
+- [ ] `detailsCorrectedAt` is a row timestamp PLUS a per-field JSON map; the
+      D-01 write-back comparison depends on the map.
+- [ ] Reception's list stays a status, not a mirror: disputed TYPES ride the
+      3-second poll; VALUES are fetched only when Correct is opened.
+
+- [x] K-P1 redesign: one row per detail -- label and value on the left, two
       large buttons on the right: tick ("That's right") and cross ("That's
       wrong"). Every row answered enables Continue; any cross disables it and
       shows "Please see reception -- they will fix this and send it again."
       Works on a small tablet: buttons stack under the value below ~600px.
-- [ ] Server: `confirm-details` takes `{ confirmed: [types], disputed: [types] }`
+- [x] Server: `confirm-details` takes `{ confirmed: [types], disputed: [types] }`
       (types only, never values); any dispute -> session state
       `details_disputed`, vault event carrying the disputed TYPES; the
       agreement is untouched.
-- [ ] Console `/practice/tablet`: the tablet's row shows "Patient says: address,
+- [x] Console `/practice/tablet`: the tablet's row shows "Patient says: address,
       mobile are wrong" live; reception corrects the detail (address / mobile /
       email / name / DOB) on the platform's patient record -- each correction a
       staff-attributed `patient.details_corrected` event with the TYPE, value in
@@ -1528,7 +1554,7 @@ practice-reception-user will correct the incorrect detail and re-push."
       and pushes a fresh one with the corrected particulars. Until D-01 lands the
       correction is on our mirror; the PMS remains the source of truth and the
       write-back item carries it home.
-- [ ] Sequenced after the inactivity/Back build, which is editing the same
+- [x] Sequenced after the inactivity/Back build, which is editing the same
       screen.
 
 **The caveat, kept verbatim at Carl's request (4 Sep 2026):** One thing to be
