@@ -75,7 +75,6 @@ const TABLET: DeviceRow = {
   revokedAt: null,
   revokedBy: null,
   pairingExpiresAt: null,
-  showsWaitingList: false,
 };
 
 const SESSION: TabletSessionRow = {
