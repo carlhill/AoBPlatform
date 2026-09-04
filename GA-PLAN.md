@@ -98,7 +98,7 @@ ingested · sender ID in flight · interviews support the thesis.
 | B7 | Push-to-device from reception (pre-service): reception pushes a locked payload to a paired tablet; the push is the staff-verified record | B2 | 1.5 days | TODO "Push-to-device" |
 | B8 | Post-service push (second push, same tablet), fresh staff-verified event, tap-to-approve signature | B7 | 1 day | TODO "practice flow" |
 | B9 | Reception status view of the tablet (states, not a mirror) | B7 | 0.5 day | |
-| B10 | Console control for the practice default D6a; appointment-type → description mapping per practice | — | 0.5 day | Core done today |
+| B10 | Console control for the practice default D6a; appointment-type → description mapping per practice | — | 0.5 day | **Console half BUILT 5 Sep 2026** — select on `/practice/channels` from the versioned list, own save, pending count deep-linked to `/practice/tablet`; per-appointment-type mapping still to do |
 | B11 | Rules-engine D6a check stays exact; remove every remaining place a human types a description | B10 | 0.25 day | Ruling: no staff entry on the patient surface |
 | B12 | AoBPrinterApp v1 — virtual printer, local parse, lane-aware outbox, device enrolment | A1 decides whether this is the write-back path or just the ingest path | 3–4 days, **separate codebase** | Plan row 8 |
 | B13 | Import-folder write-back in the desktop app | A1, B12 | 1 day | Plan row 11 |

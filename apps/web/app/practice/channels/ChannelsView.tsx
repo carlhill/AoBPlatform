@@ -35,7 +35,7 @@ import {
   type Audience,
   type DeviceRow,
 } from '@aobplatform/domain';
-import { Button, Checkbox, Chip, Field, Notice, Shell, TextInput, ui } from '../../ui';
+import { Button, Checkbox, Chip, Field, Notice, SelectInput, Shell, TextInput, ui } from '../../ui';
 import { strings } from '../../strings';
 import styles from '../manage.module.css';
 import { SessionControl } from '../../SessionControl';
@@ -94,6 +94,28 @@ interface DevicesSummary {
 const DEVICES_LOADING: DevicesSummary = { status: 'loading', total: 0, paired: 0, revoked: 0 };
 const DEVICES_UNAVAILABLE: DevicesSummary = { status: 'unavailable', total: 0, paired: 0, revoked: 0 };
 
+/**
+ * D6a — THE PRACTICE'S DEFAULT BASIC SERVICE DESCRIPTION, AND THE LIST IT IS
+ * CHOSEN FROM.
+ *
+ * THE WORDS ARE NOT IN THIS FILE AND NEVER WILL BE. They are versioned content
+ * (`packages/domain/content/service-descriptions.json`, hard rule 14) and the
+ * rules engine's C6 match against them is exact and case-sensitive — so a copy
+ * in a component is a copy that goes stale the moment the mapping moves, and
+ * the practice discovers it as a refusal at a tablet rather than as a failing
+ * build. The select renders what the server sent, in the order it sent it.
+ *
+ * ONE ROUND TRIP. `GET /service-descriptions/settings` IS the list plus this
+ * practice's default — the service spreads `list()` into it — and it exists
+ * precisely for this control, so the screen cannot show a default chosen from
+ * one version of the list beside options from another.
+ */
+interface DescriptionSettings {
+  version: string;
+  descriptions: string[];
+  defaultDescription: string | null;
+}
+
 async function refusalMessage(res: Response): Promise<string> {
   const body = (await res.json().catch(() => ({}))) as { message?: string | string[] };
   if (Array.isArray(body.message)) return body.message.join(' ');
@@ -122,6 +144,23 @@ export function ChannelsView({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
+  /*
+   * D6a KEEPS ITS OWN STATE, ITS OWN BUTTON AND ITS OWN REFUSAL. It is a
+   * different endpoint (`PUT /service-descriptions/default`, not the practice
+   * config PATCH), and it refuses a caller with no signed-in user outright —
+   * because a setting that decides a particular of every future agreement is
+   * recorded against the person who changed it. A 403 on that belongs beside
+   * the control that earned it, not on a button that also saves five other
+   * settings and would then be lying about them.
+   */
+  const [descriptions, setDescriptions] = useState<DescriptionSettings | null>(null);
+  const [d6aChoice, setD6aChoice] = useState('');
+  const [d6aBusy, setD6aBusy] = useState(false);
+  const [d6aError, setD6aError] = useState<string | null>(null);
+  const [d6aSaved, setD6aSaved] = useState(false);
+  /** How many drafts are still waiting on one. `null` = not known, never "0". */
+  const [pendingCount, setPendingCount] = useState<number | null>(null);
+
   const session = currentSession();
   const audiences: Audience[] = audiencesOf({
     roles: session?.roles ?? [],
@@ -130,6 +169,30 @@ export function ChannelsView({
     consoleRole: session?.consoleRole,
   });
   const canOpen = (path: string) => viewOnly || mayReach(path, audiences);
+
+  /**
+   * How many drafts still have no description.
+   *
+   * READ SEPARATELY, AND RE-READ AFTER EVERY SAVE. Saving a default does NOT
+   * reach back into drafts that already exist — see `saveDefault` — so this is
+   * the only honest way to say what saving one did and did not do.
+   *
+   * `null` RATHER THAN ZERO when it cannot be read: a platform operator with no
+   * practice claim is refused this list, and "0 waiting" would read as "nothing
+   * to do", which may simply be untrue.
+   */
+  const refreshPending = useCallback(async () => {
+    try {
+      const res = await fetch(`${CORE_URL}/service-descriptions/pending`, {
+        headers: apiHeaders(practiceId),
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      const rows = (await res.json()) as unknown;
+      setPendingCount(Array.isArray(rows) ? rows.length : null);
+    } catch {
+      setPendingCount(null);
+    }
+  }, [practiceId]);
 
   const load = useCallback(async () => {
     try {
@@ -174,7 +237,38 @@ export function ChannelsView({
     } catch {
       setDevices(DEVICES_UNAVAILABLE);
     }
-  }, [practiceId]);
+
+    /*
+     * D6a: THE LIST AND THIS PRACTICE'S DEFAULT. Independent of the two reads
+     * above for the same reason they are independent of each other — an older
+     * core that does not serve this route says nothing about whether the
+     * practice's own settings loaded.
+     *
+     * A RESPONSE WITHOUT A LIST IS NOT A LIST. The control is withdrawn rather
+     * than rendered empty: an empty select would invite somebody to save "no
+     * default" onto a practice that had one.
+     */
+    try {
+      const res = await fetch(`${CORE_URL}/service-descriptions/settings`, {
+        headers: apiHeaders(practiceId),
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      const body = (await res.json()) as Partial<DescriptionSettings>;
+      if (typeof body.version !== 'string' || !Array.isArray(body.descriptions)) {
+        throw new Error('no list');
+      }
+      setDescriptions({
+        version: body.version,
+        descriptions: body.descriptions,
+        defaultDescription: body.defaultDescription ?? null,
+      });
+      setD6aChoice(body.defaultDescription ?? '');
+    } catch {
+      setDescriptions(null);
+    }
+
+    await refreshPending();
+  }, [practiceId, refreshPending]);
 
   useEffect(() => {
     void load();
@@ -244,6 +338,43 @@ export function ChannelsView({
       setError((e as Error).message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  /**
+   * The practice's default D6a.
+   *
+   * IT DOES NOT TOUCH DRAFTS THAT ALREADY EXIST, deliberately and permanently.
+   * Sweeping the new default across every waiting draft would be this screen
+   * deciding a particular of contracts already drafted for named patients —
+   * the exact act the D6a design moved off the tablet and onto a staff surface
+   * so that a person's identity is on it. If a bulk action is ever wanted it is
+   * a separate decision with its own attribution, not a side effect of saving a
+   * setting. What the save does instead is SAY how many are still waiting, and
+   * link to where each one is fixed.
+   *
+   * The empty option sends an explicit `null` — "we have not chosen one" — which
+   * is what the server stores. It is not the same as leaving the setting alone.
+   */
+  async function saveDefault() {
+    setD6aBusy(true);
+    setD6aError(null);
+    setD6aSaved(false);
+    try {
+      const res = await fetch(`${CORE_URL}/service-descriptions/default`, {
+        method: 'PUT',
+        headers: { ...apiHeaders(practiceId), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: d6aChoice === '' ? null : d6aChoice }),
+      });
+      // THE SERVER'S OWN SENTENCE, not a paraphrase. Its 403 explains why an
+      // unattributed caller is refused, and that reason is the answer.
+      if (!res.ok) throw new Error(await refusalMessage(res));
+      setD6aSaved(true);
+      await load();
+    } catch (e) {
+      setD6aError(e instanceof TypeError ? strings.review.unreachableBody : (e as Error).message);
+    } finally {
+      setD6aBusy(false);
     }
   }
 
@@ -436,6 +567,91 @@ export function ChannelsView({
                 hint={strings.channels.enduringHint}
               />
               <p className={styles.cardNote}>{strings.channels.enduringLead}</p>
+            </div>
+            {/*
+              --- D6a: WHAT AN ARRIVAL'S AGREEMENT IS LOCKED WITH (Carl, 5 Sep
+              2026; GA-PLAN B10). Beside the setting above because between them
+              the two decide what the agreement drafted for a patient who has
+              just walked up already says, before anybody touches a tablet.
+
+              THE OPTIONS ARE THE SERVER'S, IN THE SERVER'S ORDER. This file
+              knows none of the words — see `DescriptionSettings`. There is no
+              free-text path to this setting anywhere, because C6 matches
+              exactly and a typed description is a refusal waiting to happen at
+              a tablet (TODO.md: "stop asking anyone to type it").
+            */}
+            <div className={styles.cardBody}>
+              <p className={styles.cardTitle}>{strings.channels.d6aTitle}</p>
+              {descriptions === null ? (
+                <p className={ui.hint}>{strings.channels.d6aUnavailable}</p>
+              ) : (
+                <>
+                  <div className={styles.inlineForm}>
+                    <Field label={strings.channels.d6aLabel} hint={strings.channels.d6aHint}>
+                      {(props) => (
+                        <SelectInput
+                          {...props}
+                          value={d6aChoice}
+                          onChange={(e) => {
+                            setD6aChoice(e.target.value);
+                            setD6aSaved(false);
+                          }}
+                          data-testid="channels-d6a"
+                        >
+                          {/* An explicit "we have not chosen one", which sends null. */}
+                          <option value="">{strings.channels.d6aNone}</option>
+                          {descriptions.descriptions.map((description) => (
+                            <option key={description} value={description}>
+                              {description}
+                            </option>
+                          ))}
+                        </SelectInput>
+                      )}
+                    </Field>
+                    {/* WHICH LIST THESE WORDS CAME FROM, beside them (hard rule 14). */}
+                    <Chip tone="neutral">{strings.channels.d6aVersion(descriptions.version)}</Chip>
+                    <Button
+                      onClick={() => void saveDefault()}
+                      disabled={d6aBusy}
+                      data-testid="channels-d6a-save"
+                    >
+                      {d6aBusy ? strings.channels.d6aSaving : strings.channels.d6aSave}
+                    </Button>
+                  </div>
+                  <p className={styles.cardNote}>{strings.channels.d6aLead}</p>
+
+                  {d6aError && (
+                    <Notice tone="stop" title={strings.channels.d6aFailed} data-testid="channels-d6a-error">
+                      {d6aError}
+                    </Notice>
+                  )}
+                  {d6aSaved && !d6aError && <Notice tone="ok">{strings.channels.d6aSaved}</Notice>}
+
+                  {/*
+                    THE CONSEQUENCE, SHOWN RATHER THAN LEFT TO BE DISCOVERED.
+                    Saving a default changes nothing about the drafts already
+                    waiting, so the count says so and the link lands on the page
+                    that holds them — never "see the practice queue" in prose
+                    (Carl, 4 Sep 2026).
+                  */}
+                  {pendingCount !== null && pendingCount > 0 && (
+                    <Notice tone="warn" data-testid="channels-d6a-pending">
+                      {strings.channels.d6aPending(pendingCount)}
+                      {canOpen('/practice/tablet') && (
+                        <>
+                          {' '}
+                          <Link
+                            href={viewOnly ? toViewPath('/practice/tablet', practiceId) : '/practice/tablet'}
+                            data-testid="channels-d6a-pending-link"
+                          >
+                            {strings.channels.d6aPendingLink}
+                          </Link>
+                        </>
+                      )}
+                    </Notice>
+                  )}
+                </>
+              )}
             </div>
             {canOpen('/practice/devices') && (
               <div className={styles.cardBody}>

@@ -41,14 +41,33 @@ const nowIso = () => new Date().toISOString();
  *    JSON body no compiler sees (hard rule 1).
  *  - Another practice's arrival is invisible, by RLS, not by a filter.
  */
+/**
+ * The receptionist who sets the practice default, when one is needed.
+ *
+ * `null` for every other test in this suite: an arrival is a machine-to-machine
+ * push from the PMS connector and carries no signed-in person, which is
+ * precisely why the default exists.
+ */
+const RECEPTIONIST = {
+  sub: '00000000-0000-4000-8000-0000000d6a02',
+  principalType: 'staff',
+  roles: [],
+  preferredUsername: 'mai.frontdesk',
+  raw: {},
+};
+let currentPrincipal: Record<string, unknown> | null = null;
+
 describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
   const practiceId = randomUUID();
   const otherPracticeId = randomUUID();
+  /** A practice that has NOT chosen a default D6a. See the B10 test below. */
+  const noDefaultPracticeId = randomUUID();
   let gpProviderId: string;
   let alliedProviderId: string;
+  let noDefaultProviderId: string;
 
   const arrival = (over: Record<string, unknown> = {}) => ({
     pmsPatientRecordNumber: 'ARR-0001',
@@ -74,6 +93,13 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
       .useValue(passingRules)
       .compile();
     app = moduleRef.createNestApplication();
+    // Middleware runs before the guards and cannot be forged by a client — the
+    // same seam the service-descriptions and acting-as suites use. Every
+    // arrival below runs with no principal, as a connector push does.
+    app.use((req: { principal?: unknown }, _res: unknown, next: () => void) => {
+      if (currentPrincipal) req.principal = currentPrincipal;
+      next();
+    });
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
     await app.init();
     prisma = app.get(PrismaService);
@@ -103,10 +129,28 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
     await prisma.withPractice(otherPracticeId, async (tx) => {
       await tx.practice.create({ data: { id: otherPracticeId, name: 'Another Practice' } });
     });
+
+    // NO `defaultServiceDescription`, and its own provider — the B10 test needs
+    // a practice that has genuinely not chosen one, not one whose default this
+    // suite quietly cleared out from under the other tests.
+    await prisma.withPractice(noDefaultPracticeId, async (tx) => {
+      await tx.practice.create({ data: { id: noDefaultPracticeId, name: 'No Default Yet Medical' } });
+      noDefaultProviderId = (
+        await tx.provider.create({
+          data: { practiceId: noDefaultPracticeId, name: 'Kim Sample', providerType: 'allied_health' },
+        })
+      ).id;
+    });
+  });
+
+  beforeEach(() => {
+    // An arrival is a connector push and carries nobody. Tests that need a
+    // signed-in staff member say so.
+    currentPrincipal = null;
   });
 
   afterAll(async () => {
-    for (const scope of [practiceId, otherPracticeId]) {
+    for (const scope of [practiceId, otherPracticeId, noDefaultPracticeId]) {
       await prisma.withPractice(scope, async (tx) => {
         await tx.arrival.deleteMany({});
         await tx.outboundItem.deleteMany({});
@@ -391,5 +435,100 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
     // And an arrival pointed at another practice's provider finds nothing
     // rather than reaching across.
     await post(arrival({ pmsPatientRecordNumber: 'ARR-SCOPE-2' }), otherPracticeId).expect(404);
+  });
+
+  /**
+   * D6a, THE PRACTICE DEFAULT, END TO END (GA-PLAN B10; Carl, 5 Sep 2026) —
+   * the console control's other half, asserted through the endpoint the console
+   * actually calls.
+   *
+   * WHAT IT PINS. Before a practice chooses one, an arrival draft is honestly
+   * stuck: no default means no D6a, no D6a means no lock (hard rule 2 —
+   * particulars complete and locked before signature), and the queue says
+   * exactly why rather than presenting a tablet with a blank particular. After
+   * a NAMED staff member sets one, the next arrival is locked and pushable with
+   * no further human act.
+   *
+   * AND IT PINS THE THING THE CONSOLE DELIBERATELY DOES NOT DO: saving a default
+   * does not reach back into the draft that was already waiting. Sweeping it
+   * would be the platform deciding a particular of a contract already drafted
+   * for a named patient, with nobody's identity on the decision — which is the
+   * entire reason D6a moved to a staff surface. That draft stays on the queue
+   * until somebody sets it on the row.
+   */
+  it('arrival_locks_with_the_practice_default_d6a_once_set', async () => {
+    const arriveHere = (record: string) =>
+      request(app.getHttpServer())
+        .post('/arrivals')
+        .set('x-practice-id', noDefaultPracticeId)
+        .send(arrival({ pmsPatientRecordNumber: record, providerId: noDefaultProviderId }));
+    const pushableHere = () =>
+      request(app.getHttpServer())
+        .get('/tablet-sessions/pushable')
+        .set('x-practice-id', noDefaultPracticeId);
+
+    // --- No default. The draft exists, and it is blocked, and it says why.
+    const before = await arriveHere('ARR-B10-BEFORE').expect(201);
+    expect(before.body.decision.type).toBe('episodic_pre');
+
+    await prisma.withPractice(noDefaultPracticeId, async (tx) => {
+      const agreement = await tx.agreement.findFirst({ where: { id: before.body.agreementId } });
+      expect(agreement?.serviceDescription).toBeNull();
+      // NOT LOCKED, and not moved to `awaiting_signature` either — an unlocked
+      // agreement sitting at that status is the shape hard rule 2 forbids. It
+      // waits at `verification_pending`, where the in-practice capture request
+      // left it.
+      expect(agreement?.particularsLockedAt).toBeNull();
+      expect(agreement?.status).not.toBe('awaiting_signature');
+    });
+
+    const blockedRow = (await pushableHere().expect(200)).body.find(
+      (r: { agreementId: string }) => r.agreementId === before.body.agreementId,
+    );
+    expect(blockedRow.pushable).toBe(false);
+    expect(blockedRow.blockedReason).toBe('service_description_missing');
+
+    // --- The console's own call. Refused without a signed-in person, because a
+    // setting that decides a particular of every future agreement is recorded
+    // against whoever changed it.
+    await request(app.getHttpServer())
+      .put('/service-descriptions/default')
+      .set('x-practice-id', noDefaultPracticeId)
+      .send({ description: D6A })
+      .expect(403);
+
+    currentPrincipal = RECEPTIONIST;
+    const saved = await request(app.getHttpServer())
+      .put('/service-descriptions/default')
+      .set('x-practice-id', noDefaultPracticeId)
+      .send({ description: D6A })
+      .expect(200);
+    expect(saved.body.defaultDescription).toBe(D6A);
+    currentPrincipal = null;
+
+    // --- The next arrival, from a connector carrying nobody, is locked and
+    // ready with no further human act.
+    const after = await arriveHere('ARR-B10-AFTER').expect(201);
+    await prisma.withPractice(noDefaultPracticeId, async (tx) => {
+      const agreement = await tx.agreement.findFirst({ where: { id: after.body.agreementId } });
+      expect(agreement?.serviceDescription).toBe(D6A);
+      expect(agreement?.particularsLockedAt).not.toBeNull();
+      expect(agreement?.status).toBe('awaiting_signature');
+      // THE PLATFORM DID IT, and the record says so rather than naming a staff
+      // member who was not standing there.
+      expect(agreement?.serviceDescriptionSetBy).toBeNull();
+
+      // The earlier draft was NOT swept up by the new default.
+      const earlier = await tx.agreement.findFirst({ where: { id: before.body.agreementId } });
+      expect(earlier?.serviceDescription).toBeNull();
+    });
+
+    const rows = (await pushableHere().expect(200)).body;
+    const readyRow = rows.find((r: { agreementId: string }) => r.agreementId === after.body.agreementId);
+    expect(readyRow.pushable).toBe(true);
+    expect(readyRow.serviceDescription).toBe(D6A);
+    // And the one that was already waiting is still waiting, with its reason.
+    const stillBlocked = rows.find((r: { agreementId: string }) => r.agreementId === before.body.agreementId);
+    expect(stillBlocked.blockedReason).toBe('service_description_missing');
   });
 });

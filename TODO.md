@@ -1787,7 +1787,20 @@ elderly patient.
       Practice default (`practices.defaultServiceDescription`, `PUT
       /service-descriptions/default`) is applied by the appointment sweep --
       core and tests only, **no console control yet**.
-- [ ] Console control for the practice's default service description.
+- [x] **Built 5 Sep 2026: the console control for the practice's default D6a**
+      on `/practice/channels`, beside "what the tablet offers first" -- a select
+      whose options are `GET /service-descriptions/settings` (the versioned list
+      plus this practice's default, in file order) with the mapping version
+      beside them and "No default" sending an explicit null; saving is `PUT
+      /service-descriptions/default` with its own button and its own refusal, so
+      the server's 403 for an unattributed caller is shown whole. Saving does NOT
+      sweep drafts that already exist -- the screen says how many are still
+      waiting and links to `/practice/tablet`; a bulk apply would be an agent
+      deciding a particular and is a separate decision. Inert on the platform
+      twin. Tests: `default_d6a_options_come_from_the_versioned_list_not_code`,
+      `default_d6a_save_shows_the_servers_refusal_when_unattributed`,
+      `default_d6a_shows_how_many_rows_still_need_one`, and core e2e
+      `arrival_locks_with_the_practice_default_d6a_once_set`.
 - [ ] Reconciliation is a stopgap host; when a real practice pre-agreement
       queue exists, move the section there and add its twin route.
 - [ ] Console Playwright needs a signed-in-session fixture

@@ -3189,6 +3189,52 @@ export const strings = {
       'An ongoing agreement is signed once and covers that provider’s bulk-billed services from that day '
       + 'until the patient or the provider ends it, so there is nothing to sign after each visit. Turn this '
       + 'off and the tablet offers an agreement for the visit every time.',
+
+    /**
+     * --- D6a, THE PRACTICE DEFAULT (Carl, 5 Sep 2026; GA-PLAN B10).
+     *
+     * THE WORDS THEMSELVES ARE NOT IN HERE, and that is the point. The
+     * descriptions are versioned content served by `GET
+     * /service-descriptions` — the exact strings the rules engine matches,
+     * case-sensitively — so they cannot live in a string table or a component
+     * (hard rule 14). What is here is the copy AROUND the list: what the
+     * setting does, and what happens when it is not set.
+     *
+     * THE LEAD SAYS THE CONSEQUENCE, not the mechanism. "Without one, arrivals
+     * wait on the queue" is the sentence a practice manager needs; "the
+     * appointment sweep does not populate `serviceDescription`" is not.
+     *
+     * NOTHING HERE CLAIMS ANY OF IT IS CERTIFIED, APPROVED OR ACCREDITED (hard
+     * rule 12): the permitted phrase is "checked against the s 65C data set",
+     * and there is no benefit or dollar amount anywhere in it (hard rule 4).
+     */
+    d6aTitle: 'Default service description for agreements made at reception',
+    d6aLead:
+      'Every agreement created when a patient arrives is locked with this description. Without one, '
+      + 'arrivals wait on the queue until reception sets it on the row.',
+    d6aLabel: 'Description',
+    d6aHint:
+      'Chosen from the current list, which is checked against the s 65C data set. The version is recorded '
+      + 'with every agreement it decides, so a later question about which list was in force has an answer.',
+    d6aNone: 'No default',
+    /** Which list these words came from — shown beside them, never inferred. */
+    d6aVersion: (version: string) => `from mapping ${version}`,
+    d6aSave: 'Save default',
+    d6aSaving: 'Saving…',
+    d6aSaved: 'Default saved',
+    d6aFailed: 'That default could not be saved',
+    d6aUnavailable: 'The service descriptions could not be loaded, so the default cannot be changed here.',
+    /*
+     * SHORTCUTS TO THE ANSWER, NOT DIRECTIONS TO A SCREEN (Carl, 4 Sep 2026).
+     * The count is the specific reason and the link lands on the page holding
+     * the rows — saving a default does NOT reach back and change drafts that
+     * already exist, so this says how many are still waiting rather than
+     * letting the practice assume they were swept up.
+     */
+    d6aPending: (n: number) =>
+      `${n} agreement${n === 1 ? '' : 's'} on the queue ${n === 1 ? 'has' : 'have'} no description yet — `
+      + 'set them on their rows.',
+    d6aPendingLink: 'Open the queue',
   },
   /**
    * The two identity dashboards (IDENTITY-STRENGTH-DESIGN.md §7).
