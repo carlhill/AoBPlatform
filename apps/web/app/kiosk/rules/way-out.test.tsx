@@ -118,6 +118,7 @@ function ceremonyScreens(onLeave: () => void): ReadonlyArray<readonly [string, R
         rows={DETAIL_ROWS}
         answers={{}}
         disputed={false}
+        disputeSent={false}
         saving={false}
         saveError={false}
         onAnswer={noop}

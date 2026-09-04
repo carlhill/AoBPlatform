@@ -220,6 +220,17 @@ export function Ceremony(): ReactNode {
    * has two buttons rather than one toggle.
    */
   const [answers, setAnswers] = useState<DetailAnswers>({});
+  /**
+   * THE SCREEN LOCKS ONCE A DISPUTE HAS REACHED RECEPTION (Carl, 4 Sep 2026):
+   * "the tablet would be signing against details mid-correction" if a patient
+   * could tick a crossed row back after the cross had already gone. True the
+   * moment either (a) `sendAnswers` below posts a set with at least one cross,
+   * or (b) the polled session itself already says `details_disputed` — the
+   * second covers a reload or an HMR remount mid-session, where this
+   * component's own memory of having sent anything is gone but the server's
+   * is not. It resets with the session, in the same places the ticks do.
+   */
+  const [disputeSent, setDisputeSent] = useState(false);
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [confirmError, setConfirmError] = useState(false);
   /**
@@ -560,6 +571,7 @@ export function Ceremony(): ReactNode {
      */
     setPushed(null);
     setAnswers({});
+    setDisputeSent(false);
     postedAnswersRef.current = '';
     setConfirmBusy(false);
     setConfirmError(false);
@@ -640,6 +652,7 @@ export function Ceremony(): ReactNode {
       releasedSessionRef.current = pushed.id;
       setPushed(null);
       setAnswers({});
+      setDisputeSent(false);
       postedAnswersRef.current = '';
     }
     toHandover(strings.chrome.leaveHeading, strings.chrome.leaveBody);
@@ -807,6 +820,10 @@ export function Ceremony(): ReactNode {
     setChoice(EMPTY_CHOICE);
     autoLockedRef.current = null;
     setAnswers({});
+    // THE LOCK RESETS WITH THE SESSION, same as the ticks (Carl's ruling, 4
+    // Sep 2026). The sync effect just below reinstates it immediately if the
+    // NEW session also already reads `details_disputed`.
+    setDisputeSent(false);
     postedAnswersRef.current = '';
     setConfirmBusy(false);
     setConfirmError(false);
@@ -817,6 +834,24 @@ export function Ceremony(): ReactNode {
       void setTabletSessionState(session.id, 'reading').catch(() => undefined);
     }
   }, [tabletSession.session, pushed, step, pushedCeremony]);
+
+  /**
+   * THE OTHER HALF OF THE LOCK: A RELOAD OR AN HMR REMOUNT MID-SESSION (Carl's
+   * ruling, 4 Sep 2026). This component's own memory of having posted a
+   * dispute is gone the moment it remounts, but the server's is not — every
+   * poll of the CURRENT session re-reads `state`, and `details_disputed`
+   * relocks the screen without this device sending anything. It only ever
+   * turns the lock ON; the take-over effect above is the only place it turns
+   * off, because turning it off here on some OTHER answer would race a post
+   * still in flight from `sendAnswers`.
+   */
+  useEffect(() => {
+    if (!pushed) return;
+    const session = tabletSession.session;
+    if (session && session.id === pushed.id && session.state === 'details_disputed') {
+      setDisputeSent(true);
+    }
+  }, [pushed, tabletSession.session]);
 
   /**
    * THE SESSION WENT AWAY — recalled from the console, expired after thirty
@@ -853,10 +888,19 @@ export function Ceremony(): ReactNode {
    * would disable Continue with no visible cause. Changing your mind means
    * pressing the OTHER button, which is what somebody would do anyway.
    */
-  const answerDetail = useCallback((type: string, answer: DetailAnswer) => {
-    setConfirmError(false);
-    setAnswers((prev) => (prev[type] === answer ? prev : { ...prev, [type]: answer }));
-  }, []);
+  const answerDetail = useCallback(
+    (type: string, answer: DetailAnswer) => {
+      /*
+       * BELT AND BRACES (Carl, 4 Sep 2026). `CheckDetailsScreen` already
+       * disables every button while `disputeSent`, but this is the guard that
+       * cannot be bypassed by anything that reaches this function directly.
+       */
+      if (disputeSent) return;
+      setConfirmError(false);
+      setAnswers((prev) => (prev[type] === answer ? prev : { ...prev, [type]: answer }));
+    },
+    [disputeSent],
+  );
 
   const rowsAllAnswered = allAnswered(detailRows, answers);
   const rowsDisputed = anyDisputed(detailRows, answers);
@@ -885,6 +929,9 @@ export function Ceremony(): ReactNode {
       const { confirmed, disputed } = answeredTypes(detailRows, answers);
       await confirmSessionDetails(pushed.id, confirmed, disputed);
       postedAnswersRef.current = signature;
+      // THE SCREEN LOCKS THE MOMENT A CROSS HAS ACTUALLY REACHED RECEPTION —
+      // not before, and never for an all-ticks post (Carl's ruling, 4 Sep 2026).
+      if (disputed.length > 0) setDisputeSent(true);
       return true;
     } catch (err) {
       if (isUnpaired(err)) {
@@ -937,6 +984,12 @@ export function Ceremony(): ReactNode {
     // are not the ones to sign, and the control that would carry the patient
     // past them must not work even if something presses it.
     if (anyDisputed(detailRows, answers)) return;
+    // BELT AND BRACES, and it catches a case `anyDisputed` cannot: a reload
+    // mid-dispute, where this component's local `answers` are empty but the
+    // polled session already says `details_disputed` (Carl's ruling, 4 Sep
+    // 2026). Continue is not even rendered then, but this function must
+    // refuse too, for the same reason `onAnswer` does.
+    if (disputeSent) return;
     if (!(await sendAnswers())) return;
     try {
       const current = await fetchAgreement(pushed.agreementId);
@@ -950,7 +1003,7 @@ export function Ceremony(): ReactNode {
       }
       setConfirmError(true);
     }
-  }, [pushed, detailRows, answers, sendAnswers]);
+  }, [pushed, detailRows, answers, disputeSent, sendAnswers]);
 
   /**
    * ONCE VERIFICATION HAS PASSED, WHATEVER DOOR IT CAME THROUGH.
@@ -1596,6 +1649,7 @@ export function Ceremony(): ReactNode {
             rows={detailRows}
             answers={answers}
             disputed={rowsDisputed}
+            disputeSent={disputeSent}
             saving={confirmBusy}
             saveError={confirmError}
             sessionId={pushed?.id ?? null}

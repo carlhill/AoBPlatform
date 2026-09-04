@@ -80,6 +80,7 @@ function AnswerButton({
   label,
   tone,
   chosen,
+  disabled,
   onPress,
   testId,
 }: {
@@ -87,6 +88,16 @@ function AnswerButton({
   label: string;
   tone: 'right' | 'wrong';
   chosen: boolean;
+  /**
+   * THE SCREEN IS LOCKED — a dispute has already reached reception (Carl's
+   * ruling, 4 Sep 2026). A REAL `button[disabled]`, not a handler that quietly
+   * does nothing: `Ceremony.tsx`'s `onAnswer` refuses too, belt and braces,
+   * but the control itself must say it cannot be pressed. `chosen` is left
+   * alone — the crossed row still shows red and the ticked rows still show
+   * green, because the answers themselves have not changed, only whether they
+   * can be.
+   */
+  disabled?: boolean;
   onPress: () => void;
   testId: string;
 }): ReactNode {
@@ -101,6 +112,7 @@ function AnswerButton({
         .filter(Boolean)
         .join(' ')}
       aria-pressed={chosen}
+      disabled={disabled}
       onClick={onPress}
       data-testid={testId}
     >
@@ -119,6 +131,7 @@ export function CheckDetailsScreen({
   rows,
   answers,
   disputed,
+  disputeSent,
   saving,
   saveError,
   sessionId,
@@ -134,6 +147,15 @@ export function CheckDetailsScreen({
   answers: DetailAnswers;
   /** At least one cross: Continue is dead and the band below says what happens next. */
   disputed: boolean;
+  /**
+   * THE DISPUTE HAS REACHED RECEPTION — the screen locks (Carl's ruling, 4 Sep
+   * 2026). Every answer button disables, Continue stays absent, and the band
+   * switches from `disputeBand` (the moment between the cross and the post
+   * landing) to `waitBand` ("please wait for reception"). The only way off is
+   * a re-send, a recall, See reception, or inactivity — never a changed
+   * answer on this screen.
+   */
+  disputeSent: boolean;
   saving: boolean;
   saveError: boolean;
   /** The pushed session's own id — an audit/testing aid in the footer. See `Chrome.tsx`'s `Screen`. */
@@ -164,6 +186,16 @@ export function CheckDetailsScreen({
 
           {rows.map((row) => {
             const answer = answers[row.type];
+            /*
+             * ONCE LOCKED, ONLY THE CHOSEN BUTTON REMAINS — NOT DISABLED AND
+             * GREYED, NOT RENDERED (Carl, 4 Sep 2026, on seeing the locked
+             * K-P1: "so only the chosen answer remains — a green 'That's
+             * right' alone on the four confirmed rows, a red 'That's wrong'
+             * alone on the disputed row. That makes what the patient selected
+             * unmistakable."). Before the lock, both always show.
+             */
+            const showTick = !disputeSent || answer === 'right';
+            const showCross = !disputeSent || answer === 'wrong';
             return (
               <div key={row.type} className={styles.detailRow} data-testid={`detail-row-${row.type}`}>
                 {/* THE TEXT KEEPS THE LEFT EDGE. */}
@@ -179,37 +211,58 @@ export function CheckDetailsScreen({
                   cannot hold a long address and a 56px pair on one line
                   without shrinking one of them, and the one that must not
                   shrink is the touch target.
+
+                  EACH SLOT KEEPS ITS COLUMN even when its button is not
+                  rendered — `.answerPlaceholder` is the same box with nothing
+                  in it, so the remaining button never slides into the other
+                  one's position.
                 */}
                 <div className={styles.detailAnswers} role="group" aria-label={row.label}>
-                  <AnswerButton
-                    glyph="✓"
-                    label={strings.checkDetails.right}
-                    tone="right"
-                    chosen={answer === 'right'}
-                    onPress={() => onAnswer(row.type, 'right')}
-                    testId={`detail-tick-${row.type}`}
-                  />
-                  <AnswerButton
-                    glyph="✕"
-                    label={strings.checkDetails.wrong}
-                    tone="wrong"
-                    chosen={answer === 'wrong'}
-                    onPress={() => onAnswer(row.type, 'wrong')}
-                    testId={`detail-cross-${row.type}`}
-                  />
+                  {showTick ? (
+                    <AnswerButton
+                      glyph="✓"
+                      label={strings.checkDetails.right}
+                      tone="right"
+                      chosen={answer === 'right'}
+                      disabled={disputeSent}
+                      onPress={() => onAnswer(row.type, 'right')}
+                      testId={`detail-tick-${row.type}`}
+                    />
+                  ) : (
+                    <span className={styles.answerPlaceholder} aria-hidden="true" />
+                  )}
+                  {showCross ? (
+                    <AnswerButton
+                      glyph="✕"
+                      label={strings.checkDetails.wrong}
+                      tone="wrong"
+                      chosen={answer === 'wrong'}
+                      disabled={disputeSent}
+                      onPress={() => onAnswer(row.type, 'wrong')}
+                      testId={`detail-cross-${row.type}`}
+                    />
+                  ) : (
+                    <span className={styles.answerPlaceholder} aria-hidden="true" />
+                  )}
                 </div>
               </div>
             );
           })}
 
           {/*
-            THE BAND, AND IT REPLACES NOTHING THE PATIENT HAS TO DO. By the
-            time it shows, the cross has already been sent — reception can see
-            which detail is wrong and is fixing it. So it says what is
-            happening, not what the patient must go and arrange, and it says
-            the appointment is unaffected (hard rule 8, REQ-REC-04).
+            THE BAND. `disputeSent` wins — reception already has the cross,
+            and the screen is now locked until they act — and `disputed` alone
+            covers only the moment between the cross and that post landing
+            (`disputeBand`), which is unlikely to even be visible. Neither
+            replaces anything the patient has to do; both say what is
+            happening and that the appointment is unaffected (hard rule 8,
+            REQ-REC-04).
           */}
-          {disputed ? (
+          {disputeSent ? (
+            <p className={styles.disputeBand} role="status" data-testid="check-details-wait">
+              {strings.checkDetails.waitBand}
+            </p>
+          ) : disputed ? (
             <p className={styles.disputeBand} role="status" data-testid="check-details-dispute">
               {strings.checkDetails.disputeBand}
             </p>
@@ -223,12 +276,15 @@ export function CheckDetailsScreen({
 
           {/*
             NO CONTROL THAT CANNOT DO ANYTHING (Carl, 4 Sep 2026). The band
-            above already says reception is fixing it and the appointment is
-            unaffected; a second, disabled box repeating that — and a press
-            that does nothing — has no business on a patient screen. Changing
-            a cross back to a tick clears `disputed` and this returns.
+            above already says reception is fixing it (or is now asked to) and
+            the appointment is unaffected; a second, disabled box repeating
+            that — and a press that does nothing — has no business on a
+            patient screen. Changing a cross back to a tick clears `disputed`
+            and this returns — but only before the post lands: once
+            `disputeSent`, the only ways off are a re-send, a recall, See
+            reception, or inactivity (Carl's ruling, 4 Sep 2026).
           */}
-          {disputed ? null : (
+          {disputed || disputeSent ? null : (
             <div className={styles.actions}>
               <div className={styles.grow}>
                 <GuardedButton

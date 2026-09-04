@@ -455,9 +455,15 @@ describe('any_cross_removes_continue_and_reports_disputes', () => {
     }
     expect(wire).not.toMatch(/medicare|\$\s?\d/i);
 
-    // THE BAND, IN THE PRESENT TENSE, and it says the appointment is safe.
-    const band = await screen.findByTestId('check-details-dispute');
-    expect(band.textContent).toBe(strings.checkDetails.disputeBand);
+    /*
+     * THE BAND, IN THE PRESENT TENSE, and it says the appointment is safe.
+     * By the time this reads it, the post has already landed, so the screen
+     * has moved from `disputeBand` to the LOCKED `waitBand` — see
+     * `dispute_locks_the_screen_until_reception_resends`, right below, for
+     * everything the lock itself does.
+     */
+    const band = await screen.findByTestId('check-details-wait');
+    expect(band.textContent).toBe(strings.checkDetails.waitBand);
 
     /*
      * AND CONTINUE IS ABSENT, NOT MERELY DISABLED (Carl, 4 Sep 2026). The
@@ -476,8 +482,17 @@ describe('any_cross_removes_continue_and_reports_disputes', () => {
     for (const mutator of AGREEMENT_MUTATORS) expect(mutator).not.toHaveBeenCalled();
   });
 
-  it('sends the corrected answer once when the patient changes their mind, and then continues', async () => {
-    asPairedTablet();
+  /**
+   * THE SCREEN LOCKS, once the cross has actually reached reception (Carl's
+   * ruling, 4 Sep 2026: "the tablet would be signing against details
+   * mid-correction" if a patient could still change an answer after
+   * reception has started fixing it). This test used to be the one that
+   * proved a patient COULD tick a crossed row back after the post landed —
+   * that behaviour is now the bug the lock exists to close. The only ways
+   * off are a re-send (proved here), a recall, See reception, or inactivity.
+   */
+  it('dispute_locks_the_screen_until_reception_resends', async () => {
+    asPairedTablet(20);
     fetchTabletSession.mockResolvedValue({ session: SESSION });
     fetchAgreement.mockResolvedValue(AGREEMENT);
 
@@ -490,20 +505,89 @@ describe('any_cross_removes_continue_and_reports_disputes', () => {
     }
     await waitFor(() => expect(confirmSessionDetails).toHaveBeenCalledTimes(1));
 
-    // They look again and press the tick after all.
-    fireEvent.click(screen.getByTestId('detail-tick-mobile'));
-    await waitFor(() =>
-      expect((screen.getByTestId('check-details-continue') as HTMLButtonElement).disabled).toBe(false),
-    );
-    fireEvent.click(screen.getByTestId('check-details-continue'));
+    // THE BAND CHANGES TENSE — reception already has the cross and is acting
+    // on it, so this is no longer "please see reception", it is "please wait".
+    await waitFor(() => expect(screen.getByTestId('check-details-wait')).toBeTruthy());
+    expect(screen.getByTestId('check-details-wait').textContent).toBe(strings.checkDetails.waitBand);
+    expect(screen.queryByTestId('check-details-dispute')).toBeNull();
+    // NO CONTROL THAT CANNOT DO ANYTHING — Continue is absent, not disabled.
+    expect(screen.queryByTestId('check-details-continue')).toBeNull();
 
-    await waitFor(() => expect(screen.getByTestId('particulars-heading')).toBeTruthy());
-    // TWICE, NOT THREE TIMES: the dispute, then the all-ticks answer. The same
-    // answers are never sent twice.
-    expect(confirmSessionDetails).toHaveBeenCalledTimes(2);
-    const [, confirmed, disputed] = confirmSessionDetails.mock.calls[1] as [string, string[], string[]];
-    expect(confirmed).toEqual([...CONFIRMABLE_DETAIL_TYPES]);
-    expect(disputed).toEqual([]);
+    /*
+     * ONLY THE CHOSEN BUTTON REMAINS ON EACH ROW — NOT DISABLED AND GREYED,
+     * NOT RENDERED (Carl, 4 Sep 2026, on seeing the locked screen: "so only
+     * the chosen answer remains ... that makes what the patient selected
+     * unmistakable"). A real `disabled`, and pressing it anyway moves nothing
+     * and sends nothing a second time.
+     */
+    for (const type of CONFIRMABLE_DETAIL_TYPES) {
+      const wasCrossed = type === 'mobile';
+      const shown = screen.getByTestId(
+        wasCrossed ? `detail-cross-${type}` : `detail-tick-${type}`,
+      ) as HTMLButtonElement;
+      expect(shown.disabled).toBe(true);
+      expect(shown.textContent).toContain(
+        wasCrossed ? strings.checkDetails.wrong : strings.checkDetails.right,
+      );
+      expect(screen.queryByTestId(wasCrossed ? `detail-tick-${type}` : `detail-cross-${type}`)).toBeNull();
+    }
+    fireEvent.click(screen.getByTestId('detail-cross-mobile'));
+    expect(confirmSessionDetails).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('detail-cross-mobile').getAttribute('aria-pressed')).toBe('true');
+
+    // See reception is still there, and nothing about the agreement moved.
+    expect(screen.getByTestId('leave-for-reception')).toBeTruthy();
+    for (const mutator of AGREEMENT_MUTATORS) expect(mutator).not.toHaveBeenCalled();
+
+    /*
+     * ONLY A RE-SEND FREES IT. Reception fixes the mobile number and pushes a
+     * new session id — the take-over effect drops the lock along with
+     * everything else about the superseded screen (`resend-session.test.tsx`
+     * proves the take-over itself; this proves the lock rides along with it).
+     * AND BOTH BUTTONS ARE BACK ON EVERY ROW — the hidden one is not merely
+     * re-enabled, it exists again.
+     */
+    fetchTabletSession.mockResolvedValue({ session: { ...SESSION, id: 'resent-session-id' } });
+    await waitFor(() => expect(screen.queryByTestId('detail-tick-mobile')).not.toBeNull(), {
+      timeout: 3_000,
+    });
+    for (const type of CONFIRMABLE_DETAIL_TYPES) {
+      expect((screen.getByTestId(`detail-tick-${type}`) as HTMLButtonElement).disabled).toBe(false);
+      expect((screen.getByTestId(`detail-cross-${type}`) as HTMLButtonElement).disabled).toBe(false);
+    }
+    expect(screen.queryByTestId('check-details-wait')).toBeNull();
+  });
+
+  /**
+   * THE OTHER WAY IN: A RELOAD OR AN HMR REMOUNT MID-SESSION. This tab's own
+   * memory of having sent a dispute is gone, but the server's is not — the
+   * very FIRST poll of a session already reading `details_disputed` locks the
+   * screen without this device posting anything.
+   */
+  it('reloaded_tablet_relocks_from_polled_state', async () => {
+    asPairedTablet();
+    fetchTabletSession.mockResolvedValue({ session: { ...SESSION, state: 'details_disputed' } });
+    fetchAgreement.mockResolvedValue(AGREEMENT);
+
+    render(<Ceremony />);
+    await waitFor(() => expect(screen.getByTestId('check-details-wait')).toBeTruthy());
+    expect(screen.getByTestId('check-details-wait').textContent).toBe(strings.checkDetails.waitBand);
+    expect(screen.queryByTestId('check-details-continue')).toBeNull();
+
+    /*
+     * NEITHER BUTTON REMAINS ON ANY ROW — this tab's own memory of what the
+     * patient answered is gone with the reload, so there is no "chosen"
+     * button to keep. `answers` is empty and stays empty: nothing here
+     * invents an answer the patient did not give on THIS mount.
+     */
+    for (const type of CONFIRMABLE_DETAIL_TYPES) {
+      expect(screen.queryByTestId(`detail-tick-${type}`)).toBeNull();
+      expect(screen.queryByTestId(`detail-cross-${type}`)).toBeNull();
+    }
+
+    // NOTHING WAS SENT TO GET HERE — the lock came from the poll alone.
+    expect(confirmSessionDetails).not.toHaveBeenCalled();
+    for (const mutator of AGREEMENT_MUTATORS) expect(mutator).not.toHaveBeenCalled();
   });
 });
 

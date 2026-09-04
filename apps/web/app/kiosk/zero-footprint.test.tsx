@@ -226,6 +226,7 @@ describe('CLAUDE.md §7 — nothing is written to the device', () => {
         ]}
         answers={{ name: 'right', address: 'wrong' }}
         disputed
+        disputeSent={false}
         saving={false}
         saveError={false}
         onAnswer={noop}
