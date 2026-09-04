@@ -115,6 +115,18 @@ const DISPUTED: TabletSessionRow = {
   disputedDetails: ['address', 'mobile'],
 };
 
+/**
+ * A DIFFERENT LIVE SESSION ON THE SAME TABLET — the one in the way of a
+ * `device_busy` refusal. A different patient name from `SESSION`/`READY` on
+ * purpose, so a test can tell the refusal named THIS session rather than
+ * merely echoing the row being sent.
+ */
+const BUSY_SESSION: TabletSessionRow = {
+  ...SESSION,
+  id: 'session-busy',
+  patientName: 'Alex Otherpatient',
+};
+
 /** What `GET /patients/:id/details` answers — the six correctable fields. */
 const DETAILS = {
   id: 'patient-1',
@@ -133,7 +145,13 @@ function stubFetch(
   opts: {
     rows?: unknown[];
     devices?: DeviceRow[];
-    sessions?: TabletSessionRow[];
+    /**
+     * A PLAIN LIST, OR A FUNCTION READ FRESH ON EVERY POLL — the function
+     * form is for a test that wants a session to appear BETWEEN two reads
+     * (the same race `device_busy` is named for), rather than being present
+     * from the very first load.
+     */
+    sessions?: TabletSessionRow[] | (() => TabletSessionRow[]);
     staff?: string[];
     details?: unknown;
     onPost?: (url: string) => { ok: boolean; status?: number; payload?: unknown };
@@ -146,12 +164,13 @@ function stubFetch(
       calls.push({ url, method, body: init?.body ? JSON.parse(init.body as string) : undefined });
 
       if (method === 'GET') {
+        const liveSessions = typeof opts.sessions === 'function' ? opts.sessions() : (opts.sessions ?? []);
         const payload = url.includes('/patients/')
           ? (opts.details ?? DETAILS)
           : url.includes('/tablet-sessions/pushable')
           ? (opts.rows ?? [READY, BLOCKED])
           : url.includes('/tablet-sessions')
-            ? (opts.sessions ?? [])
+            ? liveSessions
             : url.includes('/practice-users')
               ? { users: (opts.staff ?? []).map((name) => ({ name })) }
               : { devices: opts.devices ?? [TABLET] };
@@ -295,7 +314,10 @@ describe('/practice/tablet — send to the tablet', () => {
   it('sends to the chosen tablet, and shows the server’s reason in our words when it refuses', async () => {
     signedInAtPractice();
     stubFetch({
-      onPost: () => ({ ok: false, status: 409, payload: { reason: 'device_busy', message: 'raw server text' } }),
+      onPost: (url) =>
+        url.includes('/push')
+          ? { ok: false, status: 409, payload: { reason: 'device_busy', message: 'raw server text' } }
+          : { ok: true, payload: {} },
     });
     render(<TabletView practiceId={PRACTICE} />);
 
@@ -305,13 +327,117 @@ describe('/practice/tablet — send to the tablet', () => {
 
     await waitFor(() => expect(screen.getByTestId(`push-outcome-${READY.agreementId}`)).toBeTruthy());
     const outcome = screen.getByTestId(`push-outcome-${READY.agreementId}`);
-    expect(outcome.textContent).toContain(strings.tablet.blocked.device_busy);
-    // NOT the server's own sentence — the console renders its own words.
+    // OUR words, naming the tablet reception just chose — never the server's
+    // own sentence, and never "the practice queue" (Carl's live test, 4 Sep
+    // 2026 — that fallback sent reception looking for a screen that does not
+    // exist).
+    expect(outcome.textContent).toContain(
+      strings.tablet.blocked.device_busy(TABLET.label, strings.tablet.blocked.device_busySomeone),
+    );
     expect(outcome.textContent).not.toContain('raw server text');
+    expect(outcome.textContent).not.toMatch(/practice queue/i);
 
-    const push = calls.find((c) => c.method === 'POST');
+    const push = calls.find((c) => c.method === 'POST' && c.url.includes('/push'));
     expect(push!.url).toContain(`/devices/${TABLET.id}/push`);
     expect(push!.body).toEqual({ agreementId: READY.agreementId });
+  });
+
+  /**
+   * CARL'S OWN LIVE TEST, THE ONE THIS COMMIT EXISTS FOR (4 Sep 2026): Jamie
+   * Sampleton was pushable, Send refused with a 409, and the band read "This
+   * one cannot be sent yet. Please see the practice queue" — a sentence with
+   * nothing true in it, sending reception to a screen that does not exist.
+   * `device_busy` names the tablet AND the patient already on it, and offers
+   * Recall right there so Send can be pressed again without reception going
+   * to find the tablet themselves.
+   */
+  it('busy_tablet_refusal_offers_recall_inline', async () => {
+    signedInAtPractice();
+    /*
+     * THE RACE, MADE CONCRETE. `device_busy` fires because the device just
+     * became busy on the SERVER since this screen's last poll — so the
+     * tablet reads as free here (Send is reachable), and `BUSY_SESSION`
+     * exists only from the moment the push is refused, exactly as it would
+     * on the real one-session-per-device unique index
+     * (`apps/core/src/tablet-sessions/tablet-sessions.service.ts`). The
+     * refusal triggers a fresh read, which is what actually finds the name.
+     */
+    let liveSessions: TabletSessionRow[] = [];
+    stubFetch({
+      sessions: () => liveSessions,
+      onPost: (url) => {
+        if (url.includes('/push')) {
+          liveSessions = [BUSY_SESSION];
+          return { ok: false, status: 409, payload: { reason: 'device_busy', sessionId: BUSY_SESSION.id } };
+        }
+        return { ok: true, payload: {} };
+      },
+    });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    await waitFor(() => expect(screen.getByTestId(`target-${READY.agreementId}`)).toBeTruthy());
+    fireEvent.change(screen.getByTestId(`target-${READY.agreementId}`), { target: { value: TABLET.id } });
+    fireEvent.click(screen.getByTestId(`send-${READY.agreementId}`));
+
+    const outcome = await screen.findByTestId(`push-outcome-${READY.agreementId}`);
+    // NAMES THE TABLET AND WHO IS ON IT, found from the sessions this page
+    // already polls — never a message with nothing true in it.
+    expect(outcome.textContent).toContain(TABLET.label);
+    expect(outcome.textContent).toContain(BUSY_SESSION.patientName);
+    expect(outcome.textContent).not.toMatch(/practice queue/i);
+
+    // RECALL IS RIGHT THERE — reception need not go and find the tablet.
+    const recallButton = screen.getByTestId(`push-outcome-recall-${READY.agreementId}`);
+    fireEvent.click(recallButton);
+
+    await waitFor(() =>
+      expect(calls.some((c) => c.method === 'POST' && c.url.includes(`/tablet-sessions/${BUSY_SESSION.id}/recall`))).toBe(
+        true,
+      ),
+    );
+  });
+
+  /**
+   * A REFUSAL WITH SOMEWHERE REAL TO GO. `service_description_missing` links
+   * to the reconciliation screen, which is where D6a is actually set — never
+   * a dead end and never a vague "see the practice queue".
+   */
+  it('d6a_refusal_links_to_the_reconciliation_row', async () => {
+    stubFetch();
+    render(<TabletView practiceId={PRACTICE} />);
+
+    const band = await screen.findByTestId(`blocked-${BLOCKED.agreementId}`);
+    expect(band.textContent).toContain(strings.tablet.blocked.service_description_missing);
+
+    const link = within(band).getByTestId(`blocked-link-${BLOCKED.agreementId}`) as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('/practice/reconciliation');
+    expect(link.textContent).toBe(strings.tablet.toReconciliationForD6a);
+  });
+
+  /**
+   * A REASON THIS BUILD HAS NOT MET YET STILL SHOWS ITS OWN CODE, rather than
+   * a generic sentence that swallows it. Support cannot act on "cannot be
+   * sent yet"; they can act on a code.
+   */
+  it('unmapped_refusal_shows_its_code', async () => {
+    signedInAtPractice();
+    stubFetch({
+      onPost: (url) =>
+        url.includes('/push')
+          ? { ok: false, status: 409, payload: { reason: 'a_reason_from_a_newer_server' } }
+          : { ok: true, payload: {} },
+    });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    await waitFor(() => expect(screen.getByTestId(`target-${READY.agreementId}`)).toBeTruthy());
+    fireEvent.change(screen.getByTestId(`target-${READY.agreementId}`), { target: { value: TABLET.id } });
+    fireEvent.click(screen.getByTestId(`send-${READY.agreementId}`));
+
+    const outcome = await screen.findByTestId(`push-outcome-${READY.agreementId}`);
+    // THE RAW CODE, ON SCREEN — never swallowed into a sentence that sends
+    // somebody to look for a page that does not exist.
+    expect(outcome.textContent).toContain('a_reason_from_a_newer_server');
+    expect(outcome.textContent).not.toMatch(/practice queue/i);
   });
 
   it('shows what each tablet is doing as a STATE, and never the particulars on its screen', async () => {
@@ -635,14 +761,38 @@ describe('the refusal words', () => {
   it('renders every reason the server can send, and falls back rather than going silent', () => {
     expect(blockedMessage('enduring_not_supported')).toBe(strings.tablet.blocked.enduring_not_supported);
     expect(blockedMessage('who_is_signing_unset')).toBe(strings.tablet.blocked.who_is_signing_unset);
-    // A reason this build has not met yet still tells somebody to go and look.
-    expect(blockedMessage('a_reason_from_a_newer_server')).toBe(strings.tablet.blocked.other);
-    expect(blockedMessage(null)).toBe(strings.tablet.blocked.other);
+    // A reason this build has not met yet still shows its own CODE — never
+    // swallowed into a sentence that sends somebody looking for a screen
+    // that does not exist (Carl's live test, 4 Sep 2026).
+    expect(blockedMessage('a_reason_from_a_newer_server')).toBe(
+      strings.tablet.blocked.other('a_reason_from_a_newer_server'),
+    );
+    expect(blockedMessage('a_reason_from_a_newer_server')).toContain('a_reason_from_a_newer_server');
+    // No code at all (e.g. a 403 that carries no `reason`) still tells
+    // somebody to go and look, rather than going silent.
+    expect(blockedMessage(null)).toBe(strings.tablet.blocked.otherNoCode);
+    expect(blockedMessage(null)).not.toMatch(/practice queue/i);
   });
 
   it('never_claims_certification_or_approval', () => {
     const words = [
-      ...Object.values(strings.tablet.blocked),
+      strings.tablet.blocked.device_unknown,
+      strings.tablet.blocked.device_revoked,
+      strings.tablet.blocked.device_not_paired,
+      strings.tablet.blocked.device_busy('Reception tablet 1', 'Jamie Sampleton'),
+      strings.tablet.blocked.device_busySomeone,
+      strings.tablet.blocked.agreement_not_found,
+      strings.tablet.blocked.agreement_not_pushable,
+      strings.tablet.blocked.service_description_missing,
+      strings.tablet.blocked.who_is_signing_unset,
+      strings.tablet.blocked.patient_confidential,
+      strings.tablet.blocked.enduring_not_supported,
+      strings.tablet.blocked.other('some_code'),
+      strings.tablet.blocked.otherNoCode,
+      strings.tablet.enduringOfferOther,
+      strings.tablet.toReconciliationForD6a,
+      strings.tablet.toReconciliationRow,
+      strings.tablet.toDevices,
       ...Object.values(strings.tablet.states),
       strings.tablet.title,
       strings.tablet.lead,

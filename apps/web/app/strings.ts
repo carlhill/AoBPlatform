@@ -3743,25 +3743,51 @@ export const strings = {
      * and what to do about it, and none of them repeating anything about the
      * patient. The server sends a CODE; these are the words (hard rule 9's
      * reasoning applied to a staff surface).
+     *
+     * EVERY REASON POINTS SOMEWHERE, not just at a sentence (Carl, 4 Sep
+     * 2026 — the tablet was pushable, the push refused, and the band told
+     * reception nothing true and sent them to "the practice queue", which
+     * does not exist). `device_busy` names the tablet and the patient
+     * already on it and offers Recall inline; `service_description_missing`
+     * and `agreement_not_pushable` link to the reconciliation screen;
+     * `device_revoked` and `device_not_paired` link to Tablets. A reason
+     * this build has not met yet still shows its own CODE — never swallowed
+     * into a sentence that sends somebody looking for a screen that is not
+     * there.
      */
     blocked: {
       device_unknown: 'That tablet is not registered to this practice.',
-      device_revoked: 'That tablet has been revoked. Rotate it under Tablets to bring it back.',
-      device_not_paired: 'That tablet has not been paired yet. Type its code into it first.',
-      device_busy: 'That tablet is already showing an agreement. Recall it first — one tablet, one patient.',
+      device_revoked: 'That tablet has been revoked and holds no credential.',
+      device_not_paired: 'That tablet has not been paired yet.',
+      /** "Reception tablet 1 is still showing Jamie Sampleton — recall it to send this one." */
+      device_busy: (deviceLabel: string, patientName: string) =>
+        `${deviceLabel} is still showing ${patientName} — recall it to send this one.`,
+      /** Used only when a busy refusal cannot be matched to a live session by id or by device. */
+      device_busySomeone: 'another patient',
       agreement_not_found: 'That agreement is no longer available.',
       agreement_not_pushable: 'This agreement has moved on and cannot be sent to a tablet.',
       service_description_missing:
-        'This still needs a service description from the current list. Set it on the reconciliation screen — '
-        + 'the tablet never asks a patient for it.',
-      who_is_signing_unset: 'Say who is signing before you send this one.',
+        'This agreement still needs a description of the service, chosen from the current list — the tablet '
+        + 'never asks a patient for it.',
+      who_is_signing_unset:
+        'Say who is signing before you send this one — use “Who is signing?” on this row.',
       patient_confidential:
         'This patient’s record is flagged confidential, so nothing about them goes on a waiting-room screen. '
         + 'Take this one on paper or after the service.',
       enduring_not_supported:
         'Enduring agreements cannot be sent to a tablet yet. Offer an episodic agreement for this visit.',
-      other: 'This one cannot be sent yet. Please see the practice queue.',
-    } as Record<string, string>,
+      /** A code this build has not met yet. Shown, never swallowed (Carl, 4 Sep 2026). */
+      other: (code: string) => `Could not send (${code}). Please tell support this code.`,
+      /** The rarer case of a refusal that carries no code at all — the server's own sentence, as it came. */
+      otherNoCode: 'Could not send. Please tell support what you were doing.',
+    },
+
+    /** Enduring's own extra line where the provider is not a GP (hard rule 6, REQ-END-01a). */
+    enduringOfferOther: 'Offer an episodic agreement or a Treatment Plan Assignment instead.',
+    /** Where each linked refusal sends reception. */
+    toReconciliationForD6a: 'Set the service description →',
+    toReconciliationRow: 'Open it on the reconciliation screen →',
+    toDevices: 'Open Tablets →',
 
     /**
      * ENDURING IS GP-ONLY (REQ-END-01/-01a, hard rule 6). Per practitioner ×

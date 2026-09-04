@@ -49,6 +49,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { ArrowRight, ClipboardList, PencilLine, RotateCcw, Send, Tablet, UserRound } from 'lucide-react';
 import {
   ASSIGNOR_RELATIONSHIPS_VERSION,
@@ -182,13 +183,106 @@ export interface PatientDetails {
 }
 
 /**
- * WHY THE PUSH WAS REFUSED, in our words. A code we do not recognise renders as
- * `other` rather than as nothing — an unhandled reason must still tell somebody
- * to go and look, never leave a silent button.
+ * WHAT ONE REFUSAL SHOWS: the sentence, and — where there is somewhere to go
+ * — a link or a Recall action right there in the band (Carl, 4 Sep 2026: a
+ * pushable row that the server then refused told reception nothing true and
+ * pointed at a screen that does not exist).
+ *
+ * A LINK ONLY WHERE ONE EXISTS. `agreement_not_pushable` and
+ * `patient_confidential` have no page of their own yet — no
+ * `/practice/agreements/:id` and no per-patient page exist in this app — so
+ * `agreement_not_pushable` still links to the reconciliation screen (the
+ * closest real place to look) and `patient_confidential` carries no link at
+ * all, on purpose, rather than one that would 404.
  */
-export function blockedMessage(reason: string | null | undefined): string {
-  if (!reason) return strings.tablet.blocked.other;
-  return strings.tablet.blocked[reason] ?? strings.tablet.blocked.other;
+export interface RefusalDescription {
+  text: string;
+  link?: { href: string; label: string };
+  /** Present only for `device_busy`, and only once a live session id is known. */
+  recallSessionId?: string;
+  /** Present only for the unmapped fallback, so a caller can assert the code was not swallowed. */
+  code?: string;
+}
+
+/**
+ * WHY THE PUSH WAS REFUSED, in our words, with somewhere to go.
+ *
+ * `ctx` carries what only the CALLER knows at the moment of a refusal — which
+ * tablet was chosen, who is on it right now, and the row's own provider type
+ * — never guessed at here. A code this build has not met yet still renders
+ * with the raw CODE on screen (`other`), never a sentence that sends
+ * reception looking for "the practice queue".
+ */
+export function describeRefusal(
+  reason: string | null | undefined,
+  ctx: {
+    deviceLabel?: string;
+    patientName?: string;
+    sessionId?: string;
+    providerType?: string | null;
+    rawMessage?: string;
+  } = {},
+): RefusalDescription {
+  switch (reason) {
+    case 'device_busy':
+      return {
+        text: strings.tablet.blocked.device_busy(
+          ctx.deviceLabel ?? strings.tablet.blocked.device_busySomeone,
+          ctx.patientName ?? strings.tablet.blocked.device_busySomeone,
+        ),
+        recallSessionId: ctx.sessionId,
+      };
+    case 'service_description_missing':
+      return {
+        text: strings.tablet.blocked.service_description_missing,
+        link: { href: '/practice/reconciliation', label: strings.tablet.toReconciliationForD6a },
+      };
+    case 'agreement_not_pushable':
+      return {
+        text: strings.tablet.blocked.agreement_not_pushable,
+        link: { href: '/practice/reconciliation', label: strings.tablet.toReconciliationRow },
+      };
+    case 'device_revoked':
+      return {
+        text: strings.tablet.blocked.device_revoked,
+        link: { href: '/practice/devices', label: strings.tablet.toDevices },
+      };
+    case 'device_not_paired':
+      return {
+        text: strings.tablet.blocked.device_not_paired,
+        link: { href: '/practice/devices', label: strings.tablet.toDevices },
+      };
+    case 'enduring_not_supported': {
+      const nonGp = ctx.providerType != null && ctx.providerType !== 'general_practitioner';
+      return {
+        text: nonGp
+          ? `${strings.tablet.blocked.enduring_not_supported} ${strings.tablet.enduringOfferOther}`
+          : strings.tablet.blocked.enduring_not_supported,
+      };
+    }
+    case 'who_is_signing_unset':
+      return { text: strings.tablet.blocked.who_is_signing_unset };
+    case 'patient_confidential':
+      // No per-patient page exists in this app yet — carrying no link here is
+      // deliberate rather than an oversight (see the doc comment above).
+      return { text: strings.tablet.blocked.patient_confidential };
+    case 'device_unknown':
+      return { text: strings.tablet.blocked.device_unknown };
+    case 'agreement_not_found':
+      return { text: strings.tablet.blocked.agreement_not_found };
+    default: {
+      if (reason) return { text: strings.tablet.blocked.other(reason), code: reason };
+      return { text: ctx.rawMessage ?? strings.tablet.blocked.otherNoCode };
+    }
+  }
+}
+
+/** The sentence alone, for the places that show only text (a dead button's tooltip). */
+export function blockedMessage(
+  reason: string | null | undefined,
+  ctx?: { providerType?: string | null },
+): string {
+  return describeRefusal(reason, ctx).text;
 }
 
 /**
@@ -297,14 +391,74 @@ export function whoIsBlocked(draft: WhoDraft, staffNames: readonly string[]): st
   return null;
 }
 
-async function refusal(res: Response): Promise<{ message: string; reason?: string }> {
-  const body = (await res.json().catch(() => ({}))) as { message?: string | string[]; reason?: string };
+/**
+ * `sessionId` ONLY ARRIVES ON `device_busy` (`pushRefusals.deviceBusy`, in
+ * `apps/core/src/tablet-sessions/push-refusal.ts`) — the live session that is
+ * in the way, so the console can offer Recall rather than leaving reception
+ * to work out why the button did nothing. Every other refusal carries only a
+ * `reason` code and a message; nothing here is invented when the body does
+ * not have it.
+ */
+async function refusal(res: Response): Promise<{ message: string; reason?: string; sessionId?: string }> {
+  const body = (await res.json().catch(() => ({}))) as {
+    message?: string | string[];
+    reason?: string;
+    sessionId?: string;
+  };
   const message = Array.isArray(body.message) ? body.message.join(' ') : (body.message ?? String(res.status));
-  return { message, reason: body.reason };
+  return { message, reason: body.reason, sessionId: body.sessionId };
 }
 
 function when(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
+}
+
+/**
+ * ONE REFUSAL, RENDERED — the sentence, and whatever the reason carries: a
+ * link (`service_description_missing`, `agreement_not_pushable`,
+ * `device_revoked`, `device_not_paired`) or a Recall button right in the band
+ * (`device_busy`). Shared between the row's own outcome band and the tablet
+ * card's, so a busy refusal met from either control (Send or Re-send) reads
+ * and behaves the same way.
+ */
+function RefusalOutcomeBody({
+  info,
+  canSend,
+  busy,
+  onRecall,
+  linkTestId,
+  recallTestId,
+}: {
+  info: RefusalDescription;
+  canSend: boolean;
+  busy: boolean;
+  onRecall: (sessionId: string) => void;
+  linkTestId: string;
+  recallTestId: string;
+}) {
+  return (
+    <>
+      <p>{info.text}</p>
+      {info.link && (
+        <Link href={info.link.href} data-testid={linkTestId}>
+          {info.link.label}
+        </Link>
+      )}
+      {info.recallSessionId && (
+        <div className={styles.formActions}>
+          <Button
+            variant="subtle"
+            disabled={!canSend || busy}
+            onClick={() => onRecall(info.recallSessionId!)}
+            data-testid={recallTestId}
+          >
+            <RotateCcw size={14} aria-hidden="true" />
+            {strings.tablet.recallAction}
+          </Button>
+        </div>
+      )}
+    </>
+  );
 }
 
 export function TabletView({ practiceId }: { practiceId: string }) {
@@ -335,10 +489,23 @@ export function TabletView({ practiceId }: { practiceId: string }) {
   const [correctBusy, setCorrectBusy] = useState(false);
   const [correctOutcome, setCorrectOutcome] = useState<{ id: string; text: string; ok: boolean } | null>(null);
 
-  /** Which tablet each row would go to, and what happened when it went. */
+  /**
+   * Which tablet each row would go to, and what happened when it went.
+   *
+   * A REFUSAL CARRIES `info` RATHER THAN JUST `text` — the structured
+   * sentence-plus-link-plus-Recall the band renders — so a refusal that has
+   * somewhere to go actually shows it, not merely names it (Carl, 4 Sep
+   * 2026). `text` alone still covers the unreachable-network case, which is
+   * not a refusal the server sent at all.
+   */
   const [target, setTarget] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [pushOutcome, setPushOutcome] = useState<{ id: string; text: string; ok: boolean } | null>(null);
+  const [pushOutcome, setPushOutcome] = useState<{
+    id: string;
+    ok: boolean;
+    text?: string;
+    info?: RefusalDescription;
+  } | null>(null);
 
   /*
    * THE SESSION'S OWN CLAIM, NEVER THE PAGE'S `practiceId` PROP. The prop says
@@ -357,6 +524,17 @@ export function TabletView({ practiceId }: { practiceId: string }) {
   }, []);
   const canSend = mayPush(audiences);
 
+  /**
+   * RETURNS WHAT IT FETCHED, as well as setting state, so a refusal can read
+   * FRESH sessions rather than the closure's stale ones. `device_busy` is, by
+   * construction, a race: the device this screen still shows as free just
+   * became busy on the server in the last few seconds (the same reasoning
+   * `push()` itself gives for the unique-index race, in
+   * `apps/core/src/tablet-sessions/tablet-sessions.service.ts`) — so the
+   * session that is in the way is almost never in the array this closure
+   * already holds, and re-reading it is the only honest way to name who is on
+   * the tablet rather than fall back to `device_busySomeone`.
+   */
   const load = useCallback(async () => {
     try {
       const [p, d, s] = await Promise.all([
@@ -365,12 +543,17 @@ export function TabletView({ practiceId }: { practiceId: string }) {
         fetch(`${CORE_URL}/tablet-sessions?active=true`, { headers: apiHeaders(practiceId) }),
       ]);
       if (!p.ok || !d.ok || !s.ok) throw new Error(String(p.ok ? (d.ok ? s.status : d.status) : p.status));
-      setRows((await p.json()) as PushableRow[]);
-      setDevices(((await d.json()) as { devices: DeviceRow[] }).devices);
-      setSessions((await s.json()) as TabletSessionRow[]);
+      const freshRows = (await p.json()) as PushableRow[];
+      const freshDevices = ((await d.json()) as { devices: DeviceRow[] }).devices;
+      const freshSessions = (await s.json()) as TabletSessionRow[];
+      setRows(freshRows);
+      setDevices(freshDevices);
+      setSessions(freshSessions);
       setLoadError(null);
+      return { rows: freshRows, devices: freshDevices, sessions: freshSessions };
     } catch (e) {
       setLoadError(e instanceof TypeError ? strings.status.unreachable : (e as Error).message);
+      return null;
     }
   }, [practiceId]);
 
@@ -483,9 +666,35 @@ export function TabletView({ practiceId }: { practiceId: string }) {
         body: JSON.stringify({ agreementId: row.agreementId }),
       });
       if (!res.ok) {
-        // THE SERVER'S REASON, IN OUR WORDS — a rule, never the patient's data.
-        const { reason } = await refusal(res);
-        throw new Error(blockedMessage(reason));
+        /*
+         * THE SERVER'S REASON, IN OUR WORDS, WITH SOMEWHERE TO GO. `device_busy`
+         * carries the live session's id (`pushRefusals.deviceBusy`); the
+         * chosen tablet's own label is already on this screen (it is what
+         * was just picked from the dropdown), and the patient on it is found
+         * from the sessions this page already polls — the session id first,
+         * the device id as a fallback if the id it named is not one we hold.
+         */
+        const { reason, sessionId } = await refusal(res);
+        // A FRESH READ, because a `device_busy` session is almost never in
+        // what this closure already holds (see the doc comment on `load`).
+        const fresh = await load();
+        const freshDevices = fresh?.devices ?? devices ?? [];
+        const freshSessions = fresh?.sessions ?? sessions;
+        const chosenDevice = freshDevices.find((d) => d.id === deviceId);
+        const busySession = sessionId
+          ? (freshSessions.find((s) => s.id === sessionId) ?? freshSessions.find((s) => s.deviceId === deviceId))
+          : freshSessions.find((s) => s.deviceId === deviceId);
+        setPushOutcome({
+          id: row.agreementId,
+          ok: false,
+          info: describeRefusal(reason, {
+            deviceLabel: chosenDevice?.label,
+            patientName: busySession?.patientName,
+            sessionId: sessionId ?? busySession?.id,
+            providerType: row.providerType,
+          }),
+        });
+        return;
       }
       await load();
     } catch (e) {
@@ -604,8 +813,25 @@ export function TabletView({ practiceId }: { practiceId: string }) {
         body: JSON.stringify({}),
       });
       if (!res.ok) {
-        const { reason, message } = await refusal(res);
-        throw new Error(reason ? blockedMessage(reason) : message);
+        // RESEND REFUSES THE SAME WAY THE PUSH DOES — same codes, same
+        // treatment, and the same tablet is already known (it is this row's).
+        const { reason, message, sessionId } = await refusal(res);
+        const fresh = await load();
+        const freshSessions = fresh?.sessions ?? sessions;
+        const busySession = sessionId
+          ? (freshSessions.find((s) => s.id === sessionId) ?? freshSessions.find((s) => s.deviceId === session.deviceId))
+          : freshSessions.find((s) => s.deviceId === session.deviceId);
+        setPushOutcome({
+          id: session.id,
+          ok: false,
+          info: describeRefusal(reason, {
+            deviceLabel: session.deviceLabel,
+            patientName: busySession?.patientName ?? session.patientName,
+            sessionId: sessionId ?? busySession?.id,
+            rawMessage: message,
+          }),
+        });
+        return;
       }
       const body = (await res.json()) as { supersededAgreementId: string | null };
       setPushOutcome({
@@ -626,11 +852,14 @@ export function TabletView({ practiceId }: { practiceId: string }) {
     }
   }
 
-  async function recall(session: TabletSessionRow) {
-    setBusyId(session.id);
+  /** Recalled by SESSION ID, so both the tablet card's own button and a
+   *  `device_busy` refusal's inline Recall (which knows only the id) can
+   *  call the same function. */
+  async function recall(sessionId: string) {
+    setBusyId(sessionId);
     setPushOutcome(null);
     try {
-      const res = await fetch(`${CORE_URL}/tablet-sessions/${session.id}/recall`, {
+      const res = await fetch(`${CORE_URL}/tablet-sessions/${sessionId}/recall`, {
         method: 'POST',
         headers: apiHeaders(practiceId),
         body: JSON.stringify({}),
@@ -639,7 +868,7 @@ export function TabletView({ practiceId }: { practiceId: string }) {
       await load();
     } catch (e) {
       setPushOutcome({
-        id: session.id,
+        id: sessionId,
         text: e instanceof TypeError ? strings.status.unreachable : (e as Error).message,
         ok: false,
       });
@@ -817,7 +1046,11 @@ export function TabletView({ practiceId }: { practiceId: string }) {
                   <Button
                     variant="primary"
                     disabled={!canSend || !row.pushable || !target[row.agreementId] || busyId !== null}
-                    title={row.pushable ? undefined : blockedMessage(row.blockedReason)}
+                    title={
+                      row.pushable
+                        ? undefined
+                        : blockedMessage(row.blockedReason, { providerType: row.providerType })
+                    }
                     onClick={() => void send(row)}
                     data-testid={`send-${row.agreementId}`}
                   >
@@ -840,7 +1073,14 @@ export function TabletView({ practiceId }: { practiceId: string }) {
                 {!row.pushable && (
                   <div className={rowStyles.band}>
                     <Notice tone="warn" title={strings.tablet.sendBlocked} data-testid={`blocked-${row.agreementId}`}>
-                      {blockedMessage(row.blockedReason)}
+                      <RefusalOutcomeBody
+                        info={describeRefusal(row.blockedReason, { providerType: row.providerType })}
+                        canSend={canSend}
+                        busy={busyId !== null}
+                        onRecall={(sessionId) => void recall(sessionId)}
+                        linkTestId={`blocked-link-${row.agreementId}`}
+                        recallTestId={`blocked-recall-${row.agreementId}`}
+                      />
                     </Notice>
                   </div>
                 )}
@@ -852,7 +1092,26 @@ export function TabletView({ practiceId }: { practiceId: string }) {
                       title={strings.tablet.sendBlocked}
                       data-testid={`push-outcome-${row.agreementId}`}
                     >
-                      {outcome.text}
+                      {/*
+                        A REFUSAL WITH SOMEWHERE TO GO SHOWS IT, right here —
+                        never only a sentence (Carl, 4 Sep 2026: a pushable row
+                        that the server then refused sent reception looking for
+                        "the practice queue", which does not exist). `device_busy`
+                        offers Recall inline, so pressing it re-enables Send
+                        without reception hunting the tablet down themselves.
+                      */}
+                      {outcome.info ? (
+                        <RefusalOutcomeBody
+                          info={outcome.info}
+                          canSend={canSend}
+                          busy={busyId !== null}
+                          onRecall={(sessionId) => void recall(sessionId)}
+                          linkTestId={`push-outcome-link-${row.agreementId}`}
+                          recallTestId={`push-outcome-recall-${row.agreementId}`}
+                        />
+                      ) : (
+                        outcome.text
+                      )}
                     </Notice>
                   </div>
                 )}
@@ -1065,7 +1324,7 @@ export function TabletView({ practiceId }: { practiceId: string }) {
                     */}
                     <Button
                       disabled={!canSend || busyId !== null}
-                      onClick={() => void recall(session)}
+                      onClick={() => void recall(session.id)}
                       data-testid={`recall-${session.id}`}
                     >
                       <RotateCcw size={14} aria-hidden="true" />
@@ -1190,7 +1449,18 @@ export function TabletView({ practiceId }: { practiceId: string }) {
                     title={strings.tablet.recallAction}
                     data-testid={`recall-outcome-${device.id}`}
                   >
-                    {outcome.text}
+                    {outcome.info ? (
+                      <RefusalOutcomeBody
+                        info={outcome.info}
+                        canSend={canSend}
+                        busy={busyId !== null}
+                        onRecall={(sessionId) => void recall(sessionId)}
+                        linkTestId={`recall-outcome-link-${device.id}`}
+                        recallTestId={`recall-outcome-recall-${device.id}`}
+                      />
+                    ) : (
+                      outcome.text
+                    )}
                   </Notice>
                 )}
               </li>
