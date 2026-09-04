@@ -328,3 +328,20 @@
 .signInWithPasskey {
   margin-top: var(--s5);
 }
+
+/*
+ * THE RECORD ID IN THE SESSION BAR, IN FULL (Carl, 4 Sep 2026: "make it
+ * longer so we can see the full id"). The shared .sessionAffiliation clips at
+ * 28ch, which is right for a practice name and wrong for an id whose whole
+ * point is to be compared character by character with one in a message or a
+ * passkey manager. Monospace, never clipped, never upper-cased.
+ */
+.recordId {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  color: var(--ink);
+  white-space: nowrap;
+  text-transform: none;
+  letter-spacing: 0;
+  user-select: all;
+}

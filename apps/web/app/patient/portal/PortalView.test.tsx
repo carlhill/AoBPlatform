@@ -212,7 +212,7 @@ describe('portal_header_names_the_person_and_offers_sign_out', () => {
 
     // THE RECORD ID BESIDE SIGN OUT, in full, so the page can be checked
     // against a message that quoted it (Carl: "so we know it is not a scam").
-    expect(screen.getByTestId('portal-record-id').textContent).toMatch(/Your record ID a$/);
+    expect(screen.getByTestId('portal-record-id').textContent).toMatch(/Your record ID AoBPlatform-PatientId-a$/);
 
     // SIGN OUT: the server-side revoke is called, then the session is re-asked
     // — and a 401 on that re-ask is the signed-out screen, not an error.

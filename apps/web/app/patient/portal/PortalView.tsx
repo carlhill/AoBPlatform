@@ -30,6 +30,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { LogIn, LogOut } from 'lucide-react';
+import { portalRecordId } from '@aobplatform/contracts';
 import { Shell, ui } from '../../ui';
 import { strings } from '../../strings';
 import { useRefreshable } from '../../refresh';
@@ -200,9 +201,7 @@ export function PortalView() {
           <span className={ui.sessionAudience}>{strings.portal.session.audience}</span>
           {accountId && (
             <span className={ui.sessionIdentity} data-testid="portal-record-id">
-              <span className={ui.sessionAffiliation} title={accountId}>
-                {strings.portal.session.recordId(accountId)}
-              </span>
+              <span className={styles.recordId}>{strings.portal.session.recordId(portalRecordId(accountId))}</span>
             </span>
           )}
           <button

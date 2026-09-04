@@ -5,6 +5,7 @@ import {
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
 } from '@simplewebauthn/server';
+import { portalRecordId } from '@aobplatform/contracts';
 import type { PortalRelyingParty } from './portal-passkey-config';
 
 /**
@@ -120,8 +121,14 @@ export class SimpleWebAuthnAdapter implements PortalWebAuthn {
        * portal account holds none of those anyway (by design — the practice's
        * patient row is the master), so the honest value is the opaque id. What
        * the patient actually reads in the prompt is `rpName`.
+       *
+       * PREFIXED SO THE PATIENT RECOGNISES IT (Carl, 4 Sep 2026): a bare UUID
+       * in a passkey manager means nothing to anyone; `AoBPlatform-PatientId-…`
+       * is the same string the portal shows beside Sign out and quotes in its
+       * messages, so the three can be matched by eye.
        */
-      userName: input.accountId,
+      userName: portalRecordId(input.accountId),
+      userDisplayName: portalRecordId(input.accountId),
       userID: new Uint8Array(Buffer.from(input.accountId, 'utf8')),
       /*
        * `residentKey: 'required'` IS WHAT MAKES SIGN-IN POSSIBLE WITHOUT A

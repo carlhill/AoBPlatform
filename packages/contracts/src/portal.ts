@@ -423,3 +423,17 @@ export const PORTAL_PASSKEY_CHALLENGE_MINUTES = 5;
  */
 export const PORTAL_PASSKEY_ATTEMPT_LIMIT = 10;
 export const PORTAL_PASSKEY_ATTEMPT_WINDOW_MINUTES = 10;
+
+/**
+ * THE RECORD ID A PATIENT CAN RECOGNISE (Carl, 4 Sep 2026). The portal
+ * account's opaque id, prefixed so it reads as ours wherever it appears: in
+ * the passkey manager on the patient's phone (WebAuthn `userName`), in the
+ * session bar beside Sign out, and in every message we send them — so a page
+ * or a text that quotes it can be checked against the others. It carries no
+ * name, no contact detail and no practice; it is an id and a label, nothing
+ * else. One definition, used by core and web alike.
+ */
+export const PORTAL_RECORD_ID_PREFIX = 'AoBPlatform-PatientId-';
+export function portalRecordId(accountId: string): string {
+  return `${PORTAL_RECORD_ID_PREFIX}${accountId}`;
+}
