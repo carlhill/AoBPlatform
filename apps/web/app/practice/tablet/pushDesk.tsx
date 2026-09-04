@@ -583,9 +583,20 @@ export function subjectForSession(session: TabletSessionRow): CorrectionSubject 
   };
 }
 
-/** A patient with nothing on a tablet -- a correction with no dispute to close. */
-export function subjectForPatient(patientId: string): CorrectionSubject {
-  return { key: `patient:${patientId}`, patientId, disputedDetails: [] };
+/**
+ * A patient with nothing on a tablet -- a correction with no dispute to close.
+ *
+ * `disputedDetails` IS STILL MEANINGFUL HERE, AND IT IS NOT A CROSS ON A
+ * TABLET (Carl, 4 Sep 2026). A patient who pressed "ask the practice to correct
+ * this" on their own page has named a detail exactly as a cross does, so the
+ * work page passes the requested type through and the correction panel MARKS
+ * that field -- the same marking, from a different door. What it does NOT do is
+ * record a dispute resolution: there is no session and nobody crossed anything,
+ * and inventing one would put a resolution in the vault for a cross that was
+ * never made. The patient's request is closed on its own review task instead.
+ */
+export function subjectForPatient(patientId: string, disputedDetails: readonly string[] = []): CorrectionSubject {
+  return { key: `patient:${patientId}`, patientId, disputedDetails };
 }
 
 export interface PushDesk {

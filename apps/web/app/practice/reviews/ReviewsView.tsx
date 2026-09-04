@@ -19,6 +19,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { ArrowRight, Bot, Check, RefreshCw, ShieldAlert } from 'lucide-react';
 import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui } from '../../ui';
 import { isPlatformOperator } from '@aobplatform/domain';
@@ -361,6 +362,21 @@ function TaskCard({
       {task.detail?.reason && (
         <p className={styles.cardNote}>
           <strong>{strings.reviews.theySaid}</strong> {task.detail.reason}
+        </p>
+      )}
+
+      {/*
+        A SHORTCUT TO THE ANSWER, NOT DIRECTIONS TO A SCREEN (CLAUDE.md §7,
+        Carl 4 Sep 2026). A patient's correction request is dealt with ON THAT
+        PATIENT'S PAGE — where their five details are, where the correction is
+        made and where the same request appears as a banner. This queue is
+        where it is noticed; that page is where it is finished.
+      */}
+      {task.kind === 'portal_correction_requested' && task.subjectType === 'Patient' && (
+        <p className={ui.hint}>
+          <Link href={`/practice/patients/${task.subjectId}`} data-testid={`review-to-patient-${task.id}`}>
+            {strings.patients.correctionRequestToPatient}
+          </Link>
         </p>
       )}
 

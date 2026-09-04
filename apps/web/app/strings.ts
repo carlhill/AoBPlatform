@@ -3997,6 +3997,14 @@ export const strings = {
      * of these has a matching control on the work page, so the line says what
      * is happening rather than where to go (CLAUDE.md §7).
      */
+    /*
+     * THE PATIENT ASKED FOR SOMETHING, FROM THEIR OWN PAGE (Carl, 4 Sep 2026).
+     * The row names the DETAIL they say is wrong, because "a patient asked for
+     * a correction" tells reception nothing they can act on and "their mobile
+     * number" tells them what to ask about across the desk. The value itself is
+     * never here: they were not asked for one.
+     */
+    summaryCorrection: (detail: string) => `Patient asked for a correction: ${detail}`,
     summaryAwaiting: 'Awaiting signature · not yet sent',
     summaryBlocked: 'Awaiting signature · cannot be sent yet',
     summaryEnded: (state: string) => `Last session: ${state}`,
@@ -4006,6 +4014,30 @@ export const strings = {
     workLead: 'Everything open for this patient. Nothing here holds up their appointment.',
     notFound: 'That patient has nothing open today.',
     notFoundHint: 'They may have been seen already, or the agreement has moved on.',
+
+    /*
+     * WHAT HAPPENS WHEN THE PATIENT PRESSES THE BUTTON (Carl, 4 Sep 2026): it
+     * appears at the top of their own work page, naming the detail and when
+     * they asked, with the correction already open on that field.
+     *
+     * IT SAYS "asked", NOT "reported an error". The patient may be right or the
+     * PMS may be; what is certain is that they asked, and the person at the
+     * desk is the one who finds out which. Nothing here asks staff to judge
+     * anybody, and nothing shows a value the patient never gave us.
+     */
+    correctionRequestTitle: 'The patient asked for a correction',
+    correctionRequestBody: (detail: string, when: string) =>
+      `The patient asked for a correction to their ${detail}, ${when}.`,
+    correctionRequestLead:
+      'They asked from their own page and were not asked for a new value — check it with them, change it '
+      + 'here and in your practice software, then mark it done.',
+    correctionRequestOpen: 'Correct it now',
+    correctionRequestDone: 'Mark as done',
+    correctionRequestDoing: 'Marking…',
+    correctionRequestDoneOutcome: 'Marked as done. The patient’s request is closed.',
+    correctionRequestFailed: 'That could not be marked as done',
+    /** On the review queue, straight to the patient this is about. */
+    correctionRequestToPatient: 'Open this patient’s page →',
 
     identityTitle: 'Their details',
     identityLead:
@@ -4101,6 +4133,8 @@ export const strings = {
       session_dispute_resolved: 'Reception answered it',
       session_ended: 'Tablet session ended',
       details_corrected: 'A detail was corrected here',
+      portal_correction_requested: 'The patient asked for a correction',
+      portal_correction_resolved: 'The patient’s request was dealt with',
     } as Record<string, string>,
     historyDetail: (detail: string) => `· ${detail}`,
     historyTypesList: (types: string) => `· ${types}`,

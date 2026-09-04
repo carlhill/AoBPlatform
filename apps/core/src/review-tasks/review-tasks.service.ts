@@ -69,6 +69,51 @@ export class ReviewTasksService {
     });
   }
 
+  /**
+   * THE PATIENT-SUBJECT TASKS OF ONE KIND, FOR THE SCREEN THAT IS ABOUT A
+   * PERSON (Carl, 4 Sep 2026: "what happens when the button is pressed" — the
+   * answer must be that it appears on that patient's work page, not only on
+   * the review queue).
+   *
+   * IT IS A METHOD RATHER THAN A QUERY IN `PatientsModule`, because module
+   * boundaries are enforced and `review_tasks` is this module's table
+   * (CLAUDE.md §4). Reception's queue asks a question; it does not reach in.
+   *
+   * OPEN MEANS OPEN OR CLAIMED — a task somebody has picked up is still work
+   * the patient is waiting on, and hiding it the moment a colleague claimed it
+   * would make the desk think it was done.
+   */
+  async openForPatients(practiceId: string, kind: string, patientIds?: readonly string[]) {
+    return this.prisma.withPractice(practiceId, (tx) =>
+      tx.reviewTask.findMany({
+        where: {
+          practiceId,
+          kind,
+          subjectType: 'Patient',
+          state: { in: ['open', 'claimed'] },
+          ...(patientIds ? { subjectId: { in: [...patientIds] } } : {}),
+        },
+        orderBy: { raisedAt: 'asc' },
+      }),
+    );
+  }
+
+  /**
+   * EVERY TASK OF ONE KIND ABOUT ONE PATIENT, open or decided — what the work
+   * page's history reads. The RESOLUTION is the half that matters there: "a
+   * patient asked and somebody dealt with it" is a different fact from "a
+   * detail was corrected", and only the first answers what the patient will
+   * ask next time.
+   */
+  async forPatient(practiceId: string, kind: string, patientId: string) {
+    return this.prisma.withPractice(practiceId, (tx) =>
+      tx.reviewTask.findMany({
+        where: { practiceId, kind, subjectType: 'Patient', subjectId: patientId },
+        orderBy: { raisedAt: 'asc' },
+      }),
+    );
+  }
+
   /** The queue, for a reviewer. */
   async list(practiceId: string | undefined, filter: { state?: string; kind?: string; take?: number } = {}) {
     if (!practiceId) throw new BadRequestException('Choose a practice first.');
@@ -178,6 +223,53 @@ export class ReviewTasksService {
 
       return updated;
     });
+  }
+
+  /**
+   * THE CORRECTION WAS MADE, SO THE PATIENT'S REQUEST IS ANSWERED (Carl,
+   * 4 Sep 2026).
+   *
+   * WHY SAVING CLOSES IT RATHER THAN LEAVING A SECOND STEP. Reception confirmed
+   * the value with the patient and typed it in; asking them to then find the
+   * task and tick it as well is how a queue fills up with work that was
+   * actually done. The "Mark as done" control on the work page still exists for
+   * the other outcome — the value we hold turned out to be right, or the change
+   * belongs in the PMS alone.
+   *
+   * ONLY THE TASKS THIS CORRECTION ANSWERS. A patient who asked about their
+   * mobile and had their address corrected is still waiting, and the task says
+   * so. The match is on the detail TYPE the request carried, never on a value.
+   *
+   * IT RESOLVES THROUGH `resolve`, so every closure is a person's, is recorded
+   * against them, and writes the same `review_task.resolved` event as any
+   * other. There is no second closing path with weaker evidence.
+   */
+  async resolveCorrectionRequests(
+    practiceId: string,
+    patientId: string,
+    detailTypes: readonly string[],
+    actor: Actor | undefined,
+  ): Promise<string[]> {
+    if (!actor || detailTypes.length === 0) return [];
+    const open = await this.openForPatients(practiceId, 'portal_correction_requested', [patientId]);
+    const closed: string[] = [];
+    for (const task of open) {
+      const detail = (task.detail ?? {}) as Record<string, unknown>;
+      const fieldType = typeof detail.fieldType === 'string' ? detail.fieldType : null;
+      if (!fieldType || !detailTypes.includes(fieldType)) continue;
+      await this.resolve(
+        practiceId,
+        task.id,
+        {
+          resolution: 'corrected',
+          // A NOTE ABOUT THE TYPE, NEVER THE VALUE (REQ-VER-04, hard rule 9).
+          note: `Corrected at the practice: ${fieldType.replace(/_/g, ' ')}.`,
+        },
+        actor,
+      );
+      closed.push(task.id);
+    }
+    return closed;
   }
 
   /**

@@ -24,13 +24,15 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { DeviceRow, PatientQueueRow, TabletSessionRow } from '@aobplatform/domain';
 import { TabletView } from '../tablet/TabletView';
-import { PatientsQueueView, matchesTerm, queueSummary } from './PatientsQueueView';
-import { PatientWorkView, agreementHeading, historyLine } from './PatientWorkView';
+import { PatientsQueueView, matchesTerm, queueSummary, queueTone } from './PatientsQueueView';
+import { PatientWorkView, agreementHeading, askedAt, detailInSentence, historyLine } from './PatientWorkView';
 import { strings } from '../../strings';
 
 const PRACTICE = 'practice-1';
 const PATIENT = '11111111-1111-4000-8000-000000000001';
 const OTHER_PATIENT = '22222222-2222-4000-8000-000000000002';
+/** The review task a patient's own correction request raises. */
+const TASK = '33333333-3333-4000-8000-000000000003';
 
 /** A row that can go to a tablet, and one that cannot — the same pair the tablet suite uses. */
 const READY = {
@@ -445,6 +447,128 @@ describe('/practice/patients/<id> — one patient, everything open', () => {
     expect(verification).toContain('passed');
     // Never swallowed: a type this build has not met shows itself.
     expect(historyLine({ at: '', type: 'something_new' as never })).toBe('something_new');
+  });
+
+  it('queue_shows_patient_correction_requests', async () => {
+    /*
+     * WHAT HAPPENS WHEN THE PATIENT PRESSES THE BUTTON (Carl, 4 Sep 2026). It
+     * is on the queue, in the row's one line, naming the DETAIL they asked
+     * about — "see the review queue" would be a defect, and so would a line
+     * that said only "a correction was requested".
+     */
+    const asked: PatientQueueRow = {
+      patientId: OTHER_PATIENT,
+      patientName: 'Casey Walkin',
+      dateOfBirth: '1988-02-02',
+      items: [
+        {
+          kind: 'portal_correction_requested',
+          reviewTaskId: TASK,
+          fieldType: 'mobile',
+          requestedAt: '2026-09-04T10:31:00.000Z',
+        },
+      ],
+    };
+
+    expect(queueSummary(asked)).toBe(
+      strings.patients.summaryCorrection(strings.kiosk.checkDetails.detailNames.mobile),
+    );
+    // It ranks with the things somebody has to get up for.
+    expect(queueTone(asked)).toBe('warn');
+
+    stubFetch({ queue: [asked] });
+    render(<PatientsQueueView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`patient-${OTHER_PATIENT}`)).toBeTruthy());
+    const row = screen.getByTestId(`patient-summary-${OTHER_PATIENT}`);
+    expect(row.textContent).toContain('Patient asked for a correction');
+    expect(row.textContent).toContain(strings.kiosk.checkDetails.detailNames.mobile);
+    // THE TYPE, NEVER A VALUE. They were never asked for a replacement.
+    expect(screen.getByTestId(`patient-${OTHER_PATIENT}`).textContent).not.toContain('+61400');
+  });
+
+  it('work_page_shows_the_patients_correction_request_and_resolves_it', async () => {
+    const request = {
+      kind: 'portal_correction_requested' as const,
+      reviewTaskId: TASK,
+      fieldType: 'mobile',
+      requestedAt: '2026-09-04T10:31:00.000Z',
+    };
+    stubFetch({
+      queue: [{ ...QUEUE[0], items: [...QUEUE[0].items, request] }],
+    });
+    render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+
+    // THE BANNER IS AT THE TOP OF THEIR OWN PAGE, and it names the detail and
+    // when they asked — not "somebody asked for something".
+    const banner = await screen.findByTestId(`correction-request-${TASK}`);
+    expect(banner.textContent).toContain('The patient asked for a correction');
+    expect(banner.textContent).toContain(detailInSentence('mobile'));
+    // THE DAY AS WELL AS THE TIME: a request made on Sunday night must not read
+    // as though somebody is standing at the desk right now.
+    expect(banner.textContent).toContain(askedAt('2026-09-04T10:31:00.000Z'));
+    expect(banner.textContent).toContain('2026');
+
+    /*
+     * AND THE FIX IS RIGHT THERE: the same correction panel `/practice/tablet`
+     * uses, with the detail they named MARKED exactly as a crossed row is —
+     * and every other field still editable, because they may mention a second
+     * one while somebody is on the phone to them.
+     */
+    fireEvent.click(screen.getByTestId(`correction-request-open-${TASK}`));
+    const subjectKey = `patient:${PATIENT}`;
+    await waitFor(() => expect(screen.getByTestId(`correct-panel-${subjectKey}`)).toBeTruthy());
+    expect(
+      screen.getByTestId(`correct-field-mobile-${subjectKey}`).getAttribute('data-disputed'),
+    ).toBe('true');
+    expect(
+      screen.getByTestId(`correct-field-address-${subjectKey}`).getAttribute('data-disputed'),
+    ).toBe('false');
+
+    /*
+     * MARK AS DONE GOES THROUGH THE REVIEW-TASKS MODULE'S OWN RESOLVE
+     * ENDPOINT — practice-scoped, a named staff member, and a
+     * `review_task.resolved` event. There is no second closing path.
+     */
+    fireEvent.click(screen.getByTestId(`correction-request-done-${TASK}`));
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (call) => call.method === 'POST' && call.url.includes(`/review-tasks/${TASK}/resolve`),
+        ),
+      ).toBe(true),
+    );
+    const resolve = calls.find((call) => call.url.includes(`/review-tasks/${TASK}/resolve`))!;
+    expect((resolve.body as { resolution: string }).resolution).toBe('no_change_needed');
+  });
+
+  it('a patient with no request has no banner, and a view-only visitor cannot answer one', async () => {
+    stubFetch();
+    render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+    await waitFor(() => expect(screen.getByTestId('identity-list')).toBeTruthy());
+    expect(screen.queryByTestId(/^correction-request-/)).toBeNull();
+    cleanup();
+
+    // LOOKING, NOT WORKING. The server would refuse them anyway — this is the
+    // screen agreeing with it rather than offering a button that fails.
+    session = { roles: ['platform_operator'], practiceId: null };
+    stubFetch({
+      queue: [
+        {
+          ...QUEUE[0],
+          items: [
+            {
+              kind: 'portal_correction_requested',
+              reviewTaskId: TASK,
+              fieldType: 'mobile',
+              requestedAt: '2026-09-04T10:31:00.000Z',
+            },
+          ],
+        },
+      ],
+    });
+    render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+    const done = await screen.findByTestId(`correction-request-done-${TASK}`);
+    expect((done as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('work_page_never_shows_medicare_or_amounts', async () => {

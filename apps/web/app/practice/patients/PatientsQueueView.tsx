@@ -78,6 +78,21 @@ export function queueSummary(row: Pick<PatientQueueRow, 'items'>): string {
   if (unanswered) return strings.tablet.disputedList(disputedLabels(unanswered.disputedDetails ?? []));
 
   /*
+   * A REQUEST THE PATIENT MADE THEMSELVES, which nobody here has answered. It
+   * outranks everything except an unanswered cross because it is the only line
+   * on this list that somebody is waiting on us for -- possibly since a day
+   * they were nowhere near the practice.
+   */
+  const correction = items.find((item) => item.kind === 'portal_correction_requested');
+  if (correction) {
+    return strings.patients.summaryCorrection(
+      correction.fieldType
+        ? (strings.kiosk.checkDetails.detailNames[correction.fieldType] ?? correction.fieldType)
+        : strings.patients.identityTitle,
+    );
+  }
+
+  /*
    * AN ANSWERED CROSS OUTRANKS THE LIVE SESSION IT IS STILL SITTING ON. The
    * session stays `details_disputed` after reception answers -- a resolution
    * is a fact about the dispute, not a new state -- and the thing left to do
@@ -112,6 +127,8 @@ export function queueTone(row: Pick<PatientQueueRow, 'items'>): Tone {
   if (row.items.some((item) => (item.disputedDetails?.length ?? 0) > 0 && !item.disputeResolution)) {
     return 'stop';
   }
+  // Somebody is waiting on us, and has been since they pressed the button.
+  if (row.items.some((item) => item.kind === 'portal_correction_requested')) return 'warn';
   if (row.items.some((item) => item.kind === 'session' && item.endedAt === null)) return 'warn';
   return 'neutral';
 }

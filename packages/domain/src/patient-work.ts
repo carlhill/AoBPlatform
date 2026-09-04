@@ -34,12 +34,20 @@ import type { PushBlockedReason, TabletSessionState, DisputeResolutionOutcome } 
  * `session` is "this one is on a tablet, or was this morning" — live or ended,
  * with what the patient said about their details.
  */
-export type PatientQueueItemKind = 'awaiting_signature' | 'session';
+export type PatientQueueItemKind = 'awaiting_signature' | 'session' | 'portal_correction_requested';
 
 export interface PatientQueueItem {
   kind: PatientQueueItemKind;
-  agreementId: string;
-  agreementType: AgreementType;
+  /**
+   * THE AGREEMENT THE ITEM IS ABOUT, where the item is about one. A patient's
+   * correction request is about the PERSON and not about any agreement -- they
+   * pressed a button on their own page, possibly on a day they were nowhere
+   * near the practice -- so these are optional rather than filled with a
+   * plausible id. A screen that grouped by agreement would have had to invent
+   * one.
+   */
+  agreementId?: string;
+  agreementType?: AgreementType;
 
   /** `awaiting_signature` only — whether it could go to a tablet, and why not. */
   pushable?: boolean;
@@ -54,6 +62,19 @@ export interface PatientQueueItem {
   /** TYPES the patient crossed, never the values behind them (REQ-VER-04). */
   disputedDetails?: string[];
   disputeResolution?: DisputeResolutionOutcome | null;
+
+  /*
+   * `portal_correction_requested` ONLY -- the patient pressed "ask the practice
+   * to correct this" on their own page (REQ-PORT, APP 13 routed to the record
+   * owner). It carries the review task it raised, so the work page can resolve
+   * exactly that task, and the TYPE of the detail they say is wrong. It never
+   * carries a replacement value: they were not asked for one and the portal has
+   * no box to take one, because an unverified channel must not write into a
+   * clinical system.
+   */
+  reviewTaskId?: string;
+  fieldType?: string;
+  requestedAt?: string;
 }
 
 /**
@@ -98,6 +119,14 @@ export const PATIENT_TIMELINE_TYPES = [
   'session_dispute_resolved',
   'session_ended',
   'details_corrected',
+  /*
+   * THE PATIENT ASKED, FROM THEIR OWN PAGE, AND SOMEBODY HERE ANSWERED. Both
+   * halves are on the timeline because "a correction was made" and "a patient
+   * asked for one and it was dealt with" are different facts, and only the
+   * second answers the question the patient will ask next time.
+   */
+  'portal_correction_requested',
+  'portal_correction_resolved',
 ] as const;
 
 export type PatientTimelineType = (typeof PATIENT_TIMELINE_TYPES)[number];

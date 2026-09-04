@@ -2240,5 +2240,172 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
       expect(JSON.stringify(res.body)).not.toContain('Jamie');
       signedInAt(practiceA);
     });
+
+    /*
+     * WHAT HAPPENS WHEN THE PATIENT PRESSES THE BUTTON (Carl, 4 Sep 2026).
+     *
+     * `POST /portal/details/correction-request` raises a review task for the
+     * practice, and until now the only place it appeared was
+     * `/practice/reviews` — a queue nobody is standing at while the patient is
+     * at the desk. The answer has to be that it lands on THAT PATIENT'S work
+     * page, which means the queue, the timeline and the resolve path.
+     *
+     * THE TASK IS WRITTEN DIRECTLY HERE rather than driven through the portal,
+     * because the portal's own suite already proves the button raises it; what
+     * is under test is what reception then sees.
+     */
+    async function correctionRequest(
+      patientId: string,
+      fieldType: string,
+      practiceId = practiceA,
+    ): Promise<string> {
+      const task = await prisma.withPractice(practiceId, (tx) =>
+        tx.reviewTask.create({
+          data: {
+            practiceId,
+            kind: 'portal_correction_requested',
+            subjectType: 'Patient',
+            subjectId: patientId,
+            summary: `A patient says the ${fieldType.replace(/_/g, ' ')} we hold is wrong.`,
+            detail: { fieldType, raisedFrom: 'patient_portal' },
+            raisedBy: 'patient_portal',
+          },
+        }),
+      );
+      return task.id;
+    }
+
+    it('queue_shows_patient_correction_requests', async () => {
+      const { patientId } = await workPatient('Asker');
+      const taskId = await correctionRequest(patientId, 'mobile');
+
+      const res = await workList().expect(200);
+      const rows = res.body as Array<{ patientId: string; items: Array<Record<string, unknown>> }>;
+      const mine = rows.find((row) => row.patientId === patientId);
+
+      /*
+       * A PATIENT WITH NOTHING ELSE OPEN IS ON THE LIST BECAUSE OF THIS ALONE —
+       * no agreement waiting, no tablet session. An unanswered request that
+       * only showed up beside other work would be invisible on exactly the day
+       * it mattered.
+       */
+      expect(mine).toBeDefined();
+      expect(mine!.items).toContainEqual(
+        expect.objectContaining({
+          kind: 'portal_correction_requested',
+          reviewTaskId: taskId,
+          fieldType: 'mobile',
+        }),
+      );
+
+      // THE TYPE, AND NOT ONE CHARACTER OF THE VALUE. They were never asked for
+      // a replacement (APP 13 routes a correction to the record owner).
+      const json = JSON.stringify(mine);
+      expect(json).not.toContain('+61400000777');
+      expect(json).not.toContain('Neverseen');
+      expect(json).not.toMatch(/medicare/i);
+
+      // And it is on the patient's own timeline, as a type.
+      const timeline = await http()
+        .get(`/patients/${patientId}/timeline`)
+        .set('x-practice-id', practiceA)
+        .expect(200);
+      const entries = timeline.body.entries as Array<{ type: string; detailTypes?: string[] }>;
+      const requested = entries.find((entry) => entry.type === 'portal_correction_requested');
+      expect(requested).toBeDefined();
+      expect(requested!.detailTypes).toEqual(['mobile']);
+    });
+
+    it('correcting the detail resolves the patient’s request, and the timeline says so', async () => {
+      const { patientId } = await workPatient('Answered');
+      const taskId = await correctionRequest(patientId, 'mobile');
+
+      await http()
+        .patch(`/patients/${patientId}/details`)
+        .set('x-practice-id', practiceA)
+        .send({ mobile: '+61400000123' })
+        .expect(200);
+
+      const task = await prisma.withPractice(practiceA, (tx) =>
+        tx.reviewTask.findFirst({ where: { id: taskId } }),
+      );
+      expect(task!.state).toBe('resolved');
+      expect(task!.resolution).toBe('corrected');
+      // A PERSON CLOSED IT, and the record says who — never `system`.
+      expect(task!.resolvedAutomatically).toBe(false);
+      expect(task!.resolvedBy).toBeTruthy();
+
+      const timeline = await http()
+        .get(`/patients/${patientId}/timeline`)
+        .set('x-practice-id', practiceA)
+        .expect(200);
+      const types = (timeline.body.entries as Array<{ type: string }>).map((e) => e.type);
+      expect(types).toContain('portal_correction_requested');
+      expect(types).toContain('portal_correction_resolved');
+
+      // And the request is no longer waiting on the queue.
+      const res = await workList().expect(200);
+      const mine = (res.body as Array<{ patientId: string; items: Array<{ kind: string }> }>).find(
+        (row) => row.patientId === patientId,
+      );
+      expect((mine?.items ?? []).some((item) => item.kind === 'portal_correction_requested')).toBe(false);
+    });
+
+    it('correcting a DIFFERENT detail leaves the request open', async () => {
+      /*
+       * A patient who asked about their mobile and had their address corrected
+       * is still waiting, and the queue must keep saying so. The match is on
+       * the detail TYPE the request carried.
+       */
+      const { patientId } = await workPatient('Halfway');
+      const taskId = await correctionRequest(patientId, 'mobile');
+
+      await http()
+        .patch(`/patients/${patientId}/details`)
+        .set('x-practice-id', practiceA)
+        .send({ address: '9 Otherplace Street, Sampletown NSW 2000' })
+        .expect(200);
+
+      const task = await prisma.withPractice(practiceA, (tx) =>
+        tx.reviewTask.findFirst({ where: { id: taskId } }),
+      );
+      expect(task!.state).toBe('open');
+    });
+
+    it('marks a request done through the review-tasks resolve endpoint, and fails closed across practices', async () => {
+      const { patientId } = await workPatient('MarkDone');
+      const taskId = await correctionRequest(patientId, 'address');
+
+      // ANOTHER PRACTICE CANNOT CLOSE IT. RLS filters on the caller's own
+      // scope, so the task is NOT FOUND rather than refused.
+      signedInAt(practiceB);
+      await http()
+        .post(`/review-tasks/${taskId}/resolve`)
+        .set('x-practice-id', practiceB)
+        .send({ resolution: 'no_change_needed' })
+        .expect(404);
+      signedInAt(practiceA);
+
+      await http()
+        .post(`/review-tasks/${taskId}/resolve`)
+        .set('x-practice-id', practiceA)
+        .send({ resolution: 'no_change_needed', note: 'Confirmed with the patient at the desk.' })
+        .expect(201);
+
+      const task = await prisma.withPractice(practiceA, (tx) =>
+        tx.reviewTask.findFirst({ where: { id: taskId } }),
+      );
+      expect(task!.state).toBe('resolved');
+
+      // THE DECISION IS THE EVIDENCE, so it is in the chain (hard rule 11).
+      const events = await prisma.vaultOutbox.findMany({ where: { type: 'review_task.resolved' } });
+      expect(events.some((e) => JSON.stringify(e.payload).includes(taskId))).toBe(true);
+
+      const res = await workList().expect(200);
+      const mine = (res.body as Array<{ patientId: string; items: Array<{ kind: string }> }>).find(
+        (row) => row.patientId === patientId,
+      );
+      expect((mine?.items ?? []).some((item) => item.kind === 'portal_correction_requested')).toBe(false);
+    });
   });
 });

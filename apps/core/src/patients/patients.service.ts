@@ -17,6 +17,7 @@ import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import type { Actor } from '../auth/actor.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { TabletSessionsService } from '../tablet-sessions/tablet-sessions.service';
+import { ReviewTasksService } from '../review-tasks/review-tasks.service';
 
 /**
  * ANY FIELD NAME WITH "MEDICARE" IN IT IS REFUSED, WHATEVER IT IS FOR.
@@ -91,6 +92,16 @@ export class PatientsService {
      * its tables (CLAUDE.md §4).
      */
     private readonly tabletSessions: TabletSessionsService,
+    /**
+     * THE PATIENT'S OWN REQUESTS, ASKED FOR RATHER THAN READ (Carl, 4 Sep
+     * 2026). A patient who presses "ask the practice to correct this" on their
+     * own page raises a review task, and until now the only place it appeared
+     * was `/practice/reviews` — a queue nobody stands at while a patient is at
+     * the desk. It belongs on that patient's work page, so this module asks the
+     * module that owns the table for it (CLAUDE.md §4) rather than joining to
+     * `review_tasks` itself.
+     */
+    private readonly reviewTasks: ReviewTasksService,
   ) {}
 
   /**
@@ -183,7 +194,7 @@ export class PatientsService {
       throw new BadRequestException('Nothing to correct — send at least one detail.');
     }
 
-    return this.prisma.withPractice(practiceId, async (tx) => {
+    const outcome = await this.prisma.withPractice(practiceId, async (tx) => {
       // A cross-practice id finds nothing: RLS filters on the
       // transaction-local scope, so this fails closed rather than admitting
       // the patient exists somewhere else.
@@ -285,6 +296,25 @@ export class PatientsService {
 
       return { patientId: patient.id, fields: changed, types, correctedAt: now.toISOString() };
     });
+
+    /*
+     * AND THE PATIENT WHO ASKED FOR THIS IS NO LONGER WAITING (Carl, 4 Sep
+     * 2026). Saving a correction to a detail a patient asked about closes their
+     * request, because reception has just done the thing the request was for --
+     * leaving them to find the task afterwards is how a queue fills with work
+     * that was already done.
+     *
+     * AFTER THE TRANSACTION, NOT INSIDE IT. The review-tasks module opens its
+     * own practice-scoped transaction, and nesting one inside this one would be
+     * two connections holding rows for one act. The consequence is honest and
+     * small: a correction that saved and a task that did not close leaves the
+     * request open, which is the safe direction -- somebody looks again.
+     */
+    if (outcome.types.length > 0) {
+      await this.reviewTasks.resolveCorrectionRequests(practiceId, patientId, outcome.types, actor);
+    }
+
+    return outcome;
   }
 
   // ---------------------------------------------------------------------------
@@ -318,10 +348,19 @@ export class PatientsService {
    * NO AMOUNTS, ANYWHERE (hard rule 4). Nothing in the shape could carry one.
    */
   async openToday(practiceId: string): Promise<PatientQueueRow[]> {
-    const [pushable, sessions] = await Promise.all([
+    const [pushable, sessions, corrections] = await Promise.all([
       this.tabletSessions.pushable(practiceId),
       // `false` = the last twenty-four hours, so an ended session still shows.
       this.tabletSessions.list(practiceId, false),
+      /*
+       * A PATIENT'S OWN CORRECTION REQUEST IS "SOMETHING OPEN" (Carl, 4 Sep
+       * 2026), AND IT IS NOT BOUNDED BY TODAY. Somebody pressed a button on
+       * their own page — possibly on a Sunday, possibly weeks ago — and nobody
+       * here has answered it. Ageing it out of this list would make an
+       * unanswered request invisible on the one screen reception actually uses,
+       * which is how it stays unanswered.
+       */
+      this.reviewTasks.openForPatients(practiceId, 'portal_correction_requested'),
     ]);
 
     const itemsByPatient = new Map<string, PatientQueueItem[]>();
@@ -348,6 +387,24 @@ export class PatientsService {
         endedAt: session.endedAt,
         disputedDetails: session.disputedDetails,
         disputeResolution: session.disputeResolution as DisputeResolutionOutcome | null,
+      });
+    }
+
+    /*
+     * THE REQUESTS FIRST AFTER THE SESSIONS, because they are the only item on
+     * this list that a patient raised THEMSELVES and the only one nobody at the
+     * practice has yet acknowledged. The TYPE of the detail travels; no value
+     * does, and none was ever asked for (APP 13 routes a correction to the
+     * record owner — it does not let an unverified channel write to a clinical
+     * system).
+     */
+    for (const task of corrections) {
+      const detail = (task.detail ?? {}) as Record<string, unknown>;
+      push(task.subjectId, {
+        kind: 'portal_correction_requested',
+        reviewTaskId: task.id,
+        fieldType: typeof detail.fieldType === 'string' ? detail.fieldType : undefined,
+        requestedAt: task.raisedAt.toISOString(),
       });
     }
 
@@ -385,8 +442,11 @@ export class PatientsService {
         (item) => (item.disputedDetails?.length ?? 0) > 0 && !item.disputeResolution,
       );
       if (unanswered) return 0;
-      if (row.items.some((item) => item.kind === 'session' && item.endedAt === null)) return 1;
-      return 2;
+      // A REQUEST THE PATIENT MADE AND NOBODY HAS ANSWERED ranks with the
+      // things a person has to get up for, above a tablet that is simply busy.
+      if (row.items.some((item) => item.kind === 'portal_correction_requested')) return 1;
+      if (row.items.some((item) => item.kind === 'session' && item.endedAt === null)) return 2;
+      return 3;
     };
     rows.sort((a, b) => rank(a) - rank(b) || a.patientName.localeCompare(b.patientName, 'en-AU'));
     return rows;
@@ -416,6 +476,16 @@ export class PatientsService {
     practiceId: string,
     patientId: string,
   ): Promise<{ patientId: string; entries: PatientTimelineEntry[] }> {
+    /*
+     * THE PATIENT'S OWN REQUESTS, READ BEFORE THE TRANSACTION OPENS, because
+     * they belong to another module and are asked for through its service
+     * rather than joined to (CLAUDE.md §4).
+     */
+    const correctionRequests = await this.reviewTasks.forPatient(
+      practiceId,
+      'portal_correction_requested',
+      patientId,
+    );
     return this.prisma.withPractice(practiceId, async (tx) => {
       // A cross-practice id finds nothing rather than being refused - RLS
       // filters on the transaction-local scope, so this fails closed.
@@ -549,6 +619,32 @@ export class PatientsService {
       for (const [field, when] of Object.entries(corrected)) {
         if (typeof when !== 'string' || !isCorrectablePatientField(field)) continue;
         add(when, { type: 'details_corrected', detailTypes: [detailTypeForPatientField(field)] });
+      }
+
+      /*
+       * WHAT THE PATIENT ASKED FOR, AND WHAT WE DID ABOUT IT. Two entries and
+       * not one: "somebody corrected the mobile" and "the patient asked us to
+       * and we answered" are different facts, and only the second says whether
+       * the person who asked was ever dealt with.
+       *
+       * TYPES ONLY, as everywhere else on this timeline (REQ-VER-04). The
+       * request never carried a replacement value — the portal has no box for
+       * one — so there is none here to leak.
+       */
+      for (const task of correctionRequests) {
+        const detail = (task.detail ?? {}) as Record<string, unknown>;
+        const fieldType = typeof detail.fieldType === 'string' ? detail.fieldType : null;
+        add(task.raisedAt, {
+          type: 'portal_correction_requested',
+          ...(fieldType ? { detailTypes: [fieldType] } : {}),
+        });
+        if (task.resolvedAt) {
+          add(task.resolvedAt, {
+            type: 'portal_correction_resolved',
+            ...(fieldType ? { detailTypes: [fieldType] } : {}),
+            ...(task.resolution ? { detail: task.resolution } : {}),
+          });
+        }
       }
 
       entries.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));

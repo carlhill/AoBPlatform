@@ -37,11 +37,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, ClipboardList, History, Mail, PencilLine, Tablet, UserRound } from 'lucide-react';
+import { ArrowRight, Check, ClipboardList, History, Mail, PencilLine, Tablet, UserRound } from 'lucide-react';
 import {
   audiencesOf,
   mayReach,
   type Audience,
+  type PatientQueueItem,
+  type PatientQueueRow,
   type PatientTimelineEntry,
   type TabletSessionRow,
 } from '@aobplatform/domain';
@@ -116,6 +118,28 @@ export function agreementHeading(row: Pick<PushableRow, 'agreementType' | 'provi
   return strings.patients.episodicToday;
 }
 
+/**
+ * "4 Sep 2026 at 8:31 pm" — when the patient asked.
+ *
+ * NOT `when()`, WHICH IS TIME ONLY. That is right for a tablet session
+ * happening now and wrong for a request a patient may have made on Sunday
+ * night: "8:31 pm" with no day reads as this evening, and reception would
+ * think somebody was standing there.
+ */
+export function askedAt(iso: string): string {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return iso;
+  const day = parsed.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+  return `${day} at ${parsed.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })}`;
+}
+
+/** The detail's own label, as it reads inside a sentence rather than above a field. */
+export function detailInSentence(fieldType: string | undefined): string {
+  const label = fieldType ? (strings.kiosk.checkDetails.detailNames[fieldType] ?? fieldType) : '';
+  if (!label) return strings.patients.identityTitle.toLowerCase();
+  return label.charAt(0).toLowerCase() + label.slice(1);
+}
+
 /** One history line: the words for the type, then whatever short codes it carries. */
 export function historyLine(entry: PatientTimelineEntry): string {
   // AN UNMAPPED TYPE SHOWS ITS OWN CODE rather than being swallowed — the same
@@ -137,10 +161,21 @@ export function historyLine(entry: PatientTimelineEntry): string {
 
 export function PatientWorkView({ practiceId, patientId }: { practiceId: string; patientId: string }) {
   const desk = usePushDesk(practiceId);
-  const subject = subjectForPatient(patientId);
 
   const [identity, setIdentity] = useState<PatientDetails | null>(null);
   const [identityError, setIdentityError] = useState<string | null>(null);
+  /*
+   * WHAT THE PATIENT ASKED FOR THEMSELVES (Carl, 4 Sep 2026). Read from the
+   * queue endpoint — the same one the list reads, so the row at the counter and
+   * the banner on this page can never disagree — and re-read after anything
+   * that could close it. It is NOT on the three-second poll: a request that
+   * arrived while somebody stood here does not need to appear within a breath,
+   * and this page keeps patient values off the poll on purpose.
+   */
+  const [corrections, setCorrections] = useState<PatientQueueItem[]>([]);
+  const [markBusy, setMarkBusy] = useState<string | null>(null);
+  const [markError, setMarkError] = useState<string | null>(null);
+  const [markDone, setMarkDone] = useState(false);
   const [trails, setTrails] = useState<Record<string, ChaseTrail>>({});
   const [messages, setMessages] = useState<MessageRow[] | null>(null);
   const [timeline, setTimeline] = useState<PatientTimelineEntry[] | null>(null);
@@ -162,18 +197,74 @@ export function PatientWorkView({ practiceId, patientId }: { practiceId: string;
    */
   const readPatient = useCallback(async () => {
     try {
-      const [d, t] = await Promise.all([
+      const [d, t, q] = await Promise.all([
         fetch(`${CORE_URL}/patients/${patientId}/details`, { headers: apiHeaders(practiceId) }),
         fetch(`${CORE_URL}/patients/${patientId}/timeline`, { headers: apiHeaders(practiceId) }),
+        fetch(`${CORE_URL}/patients?open=today`, { headers: apiHeaders(practiceId) }),
       ]);
       if (!d.ok) throw new Error(String(d.status));
       setIdentity((await d.json()) as PatientDetails);
       setIdentityError(null);
       if (t.ok) setTimeline(((await t.json()) as { entries: PatientTimelineEntry[] }).entries);
+      if (q.ok) {
+        const rows = (await q.json()) as PatientQueueRow[];
+        const mine = Array.isArray(rows) ? rows.find((row) => row.patientId === patientId) : undefined;
+        setCorrections(
+          (mine?.items ?? []).filter((item) => item.kind === 'portal_correction_requested'),
+        );
+      }
     } catch (e) {
       setIdentityError(e instanceof TypeError ? strings.status.unreachable : (e as Error).message);
     }
   }, [practiceId, patientId]);
+
+  /**
+   * MARK THE PATIENT'S REQUEST DONE.
+   *
+   * IT GOES THROUGH THE REVIEW-TASKS MODULE'S OWN RESOLVE ENDPOINT, which is
+   * practice-scoped, needs a signed-in staff member and writes the
+   * `review_task.resolved` event. There is no second closing path with weaker
+   * evidence, and this control is the one for the OTHER outcome — the value we
+   * hold turned out to be right, or the change belongs in the PMS alone. Saving
+   * a correction to the same detail closes it on the server without anybody
+   * pressing this.
+   */
+  const markAsDone = useCallback(
+    async (reviewTaskId: string) => {
+      setMarkBusy(reviewTaskId);
+      setMarkError(null);
+      try {
+        const res = await fetch(`${CORE_URL}/review-tasks/${reviewTaskId}/resolve`, {
+          method: 'POST',
+          headers: { ...apiHeaders(practiceId), 'content-type': 'application/json' },
+          body: JSON.stringify({ resolution: 'no_change_needed' }),
+        });
+        if (!res.ok) throw new Error(String(res.status));
+        setMarkDone(true);
+        await readPatient();
+      } catch (e) {
+        setMarkError(e instanceof TypeError ? strings.status.unreachable : (e as Error).message);
+      } finally {
+        setMarkBusy(null);
+      }
+    },
+    [practiceId, readPatient],
+  );
+
+  /*
+   * THE FIELDS THE PATIENT NAMED, PASSED TO THE SAME CORRECTION PANEL THE
+   * TABLET PAGE USES, so the detail they asked about is MARKED exactly as a
+   * crossed row is. Every field stays editable — the patient may mention a
+   * second one while they are on the phone.
+   */
+  const subject = useMemo(
+    () =>
+      subjectForPatient(
+        patientId,
+        corrections.map((item) => item.fieldType).filter((type): type is string => Boolean(type)),
+      ),
+    [patientId, corrections],
+  );
 
   useEffect(() => {
     void readPatient();
@@ -288,6 +379,70 @@ export function PatientWorkView({ practiceId, patientId }: { practiceId: string;
           </span>
         }
       >
+        {/*
+          THE ANSWER TO "WHAT HAPPENS WHEN THE PATIENT PRESSES THE BUTTON"
+          (Carl, 4 Sep 2026). It is at the top of their own page, it names the
+          detail and when they asked, and both routes out of it are right here:
+          correct it, or mark it done. Nothing about it blocks anything else on
+          the page.
+        */}
+        {corrections.map((request) => (
+          <Notice
+            key={request.reviewTaskId}
+            tone="warn"
+            title={strings.patients.correctionRequestTitle}
+            data-testid={`correction-request-${request.reviewTaskId}`}
+          >
+            <p>
+              {strings.patients.correctionRequestBody(
+                detailInSentence(request.fieldType),
+                request.requestedAt ? askedAt(request.requestedAt) : '',
+              )}
+            </p>
+            <p className={ui.hint}>{strings.patients.correctionRequestLead}</p>
+            <div className={styles.formActions}>
+              <Button
+                disabled={!canAct || desk.correctBusy}
+                onClick={() => {
+                  if (desk.correctFor === subject.key) {
+                    desk.closeCorrect();
+                    return;
+                  }
+                  void desk.openCorrect(subject);
+                }}
+                data-testid={`correction-request-open-${request.reviewTaskId}`}
+              >
+                <PencilLine size={14} aria-hidden="true" />
+                {desk.correctFor === subject.key
+                  ? strings.patients.identityClose
+                  : strings.patients.correctionRequestOpen}
+              </Button>
+              <Button
+                disabled={!canAct || markBusy !== null}
+                onClick={() => void markAsDone(request.reviewTaskId!)}
+                data-testid={`correction-request-done-${request.reviewTaskId}`}
+              >
+                <Check size={14} aria-hidden="true" />
+                {markBusy === request.reviewTaskId
+                  ? strings.patients.correctionRequestDoing
+                  : strings.patients.correctionRequestDone}
+              </Button>
+            </div>
+          </Notice>
+        ))}
+
+        {markError && (
+          <Notice tone="stop" title={strings.patients.correctionRequestFailed} data-testid="correction-request-error">
+            {markError}
+          </Notice>
+        )}
+
+        {markDone && corrections.length === 0 && (
+          <Notice tone="ok" title={strings.patients.correctionRequestTitle} data-testid="correction-request-done-notice">
+            {strings.patients.correctionRequestDoneOutcome}
+          </Notice>
+        )}
+
         <p className={ui.hint}>{strings.patients.identityLead}</p>
 
         {identityError && (
