@@ -3964,8 +3964,6 @@ export const strings = {
     findLabel: 'Find a patient',
     findPlaceholder: 'Start typing a name',
     noMatch: (term: string) => `No patient waiting today matches “${term}”.`,
-    /** Two people share a name; the date of birth is how reception tells them apart. */
-    born: (date: string) => `Born ${date}`,
     open: (n: number) => (n === 1 ? '1 thing open' : `${n} things open`),
 
     /*
@@ -5033,13 +5031,22 @@ export const strings = {
       whyWeHold: 'We hold it for one reason: to make and keep the record that you agreed to bulk billing, and to prove it later if anybody asks. We hold nothing about your health.',
       whoSeesIt: 'Your practice sees its own record of you and nothing from any other practice. We never sell it, and we never use it for advertising.',
       /*
-       * PLACEHOLDER, ON PURPOSE (CLAUDE.md §7 — never invent a regulatory
-       * fact). The requirements state a period and anchor it to an event this
-       * system may not observe directly, so the sentence a patient reads has
-       * to be written from the requirement by a person. It renders visibly
-       * unfinished rather than plausibly wrong.
+       * WRITTEN BY CARL, 4 SEPTEMBER 2026, and sourced rather than inferred.
+       * REQ-REG-09 (aob-requirements.md line 110): "2 years from the date of
+       * the related claim — not from the service date". The placeholder that
+       * stood here until now was the right answer while nobody had read that
+       * line; it is the wrong answer once somebody has.
+       *
+       * THE ANCHOR IS AN EVENT WE MAY NOT OBSERVE (REQ-INT-04). The sentence
+       * therefore says what the law requires of the practice, which is true
+       * whatever our claim linkage turns out to see — it does not promise a
+       * deletion date this platform can compute today. How the retention
+       * module handles an unobserved claim is its own item (TODO.md).
+       *
+       * Held word-for-word by `portal_data_retention_is_not_invented`.
        */
-      retentionPeriod: 'How long we keep it: [retention period — from requirements]. After that it is destroyed or de-identified.',
+      retentionPeriod:
+        'We keep the record of each bulk-billing agreement for two years from the date of the related Medicare claim, as the law requires. After that it is destroyed or de-identified.',
       yourRights: 'You can ask your practice to correct anything it holds about you, and you can end an ongoing agreement from this page at any time.',
       accessLogHeading: 'Who has looked',
       accessLogLead: 'Every time somebody opens or changes your record, it is written down. This is that list.',

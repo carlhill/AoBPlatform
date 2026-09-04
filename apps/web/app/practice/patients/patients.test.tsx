@@ -268,6 +268,25 @@ describe('/practice/patients — who has something open today', () => {
     expect(screen.queryByTestId(`patient-${PATIENT}`)).toBeNull();
   });
 
+  it('queue_rows_show_no_patient_values_but_the_name', async () => {
+    /*
+     * A FRONT-COUNTER LIST POLLED EVERY THREE SECONDS IS A STATUS, NOT A
+     * MIRROR (Carl, 4 Sep 2026). The date of birth disambiguates two people
+     * who share a name, but that happens on the work page, read once when it
+     * opens — not here, on a screen facing the room all morning.
+     */
+    stubFetch();
+    render(<PatientsQueueView practiceId={PRACTICE} />);
+
+    await waitFor(() => expect(screen.getByTestId(`patient-${PATIENT}`)).toBeTruthy());
+    const row = screen.getByTestId(`patient-${PATIENT}`);
+
+    expect(row.textContent).toContain('Jamie Sampleton');
+    expect(row.textContent).not.toContain('1957');
+    expect(row.textContent).not.toContain('March');
+    expect(row.textContent).not.toMatch(/born/i);
+  });
+
   it('the one line says what somebody has to do, not what happened last', () => {
     /*
      * AN UNANSWERED CROSS OUTRANKS A LIVE TABLET. A row that led with "on a

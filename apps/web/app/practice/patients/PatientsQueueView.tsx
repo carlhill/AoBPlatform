@@ -21,12 +21,14 @@
  * nothing, which is what stops a filter box from quietly becoming a search
  * endpoint for people who are not on the list.
  *
- * WHAT A ROW SAYS, AND WHAT IT NEVER SAYS. A name, a date of birth — because
- * two people share a name and reception asked for it at the desk minutes ago —
- * and ONE LINE about what is open. Never a Medicare number, which is not an
- * identity identifier and is not held here at all (hard rule 1, REQ-VER-02),
- * and never a dollar amount (hard rule 4). The disputed details are TYPES, in
- * our words (REQ-VER-04).
+ * WHAT A ROW SAYS, AND WHAT IT NEVER SAYS. A name, and ONE LINE about what is
+ * open — no other patient value, not even a date of birth (Carl, 4 Sep 2026:
+ * a front-counter list polled every three seconds is a STATUS, not a mirror
+ * of the patient record — TODO.md). The date of birth stays on the work page,
+ * read once when it opens, not on the poll. Never a Medicare number, which is
+ * not an identity identifier and is not held here at all (hard rule 1,
+ * REQ-VER-02), and never a dollar amount (hard rule 4). The disputed details
+ * are TYPES, in our words (REQ-VER-04).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -254,7 +256,6 @@ export function PatientsQueueView({ practiceId }: { practiceId: string }) {
                 </span>
                 <div className={styles.cardMain}>
                   <p className={styles.cardTitle}>{row.patientName}</p>
-                  <p className={styles.cardSub}>{strings.patients.born(bornOn(row.dateOfBirth))}</p>
                   <p className={styles.cardSub} data-testid={`patient-summary-${row.patientId}`}>
                     {queueSummary(row)}
                   </p>

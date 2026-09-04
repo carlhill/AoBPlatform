@@ -1831,11 +1831,11 @@ Platform twins for both routes; Patients card on the setup hub; nav entry.
 Core e2e 53, web Vitest 200.
 
 Left open by it, for Carl:
-- **The date of birth is on the queue row** because Carl asked for it by name,
-  and it is the only patient detail there. It sits against the tablet page's
-  own rule that a front-counter list polled every three seconds carries a
-  STATUS and no values. Ruling wanted: keep it, or show it only on the work
-  page (where the five details are read once, on open, not on the poll).
+- **RULED (Carl, 4 Sep 2026): the date of birth leaves the queue row.** The
+  queue at `/practice/patients` (and its platform twin) shows no patient value
+  beyond the name -- no DOB. It stays on the work page's identity card, which
+  reads the five details once on open, not on the three-second poll. Named
+  test `queue_rows_show_no_patient_values_but_the_name`.
 - **Follow-up is read-only.** No "send now" control exists in any chase UI
   today -- recording an attempt is the reconciliation screen's form -- so the
   card summarises the band, the days left, attempts made and the next step,
