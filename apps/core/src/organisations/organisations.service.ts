@@ -147,6 +147,178 @@ export class OrganisationsService {
   }
 
   /**
+   * WHAT THIS ABN RESOLVES TO, before anybody commits to an application.
+   *
+   * The applicant types eleven digits and, until now, learned nothing until
+   * they had filled in two contacts and pressed send — at which point a
+   * mistyped digit came back as a refusal against an entity they had never
+   * seen. This shows them the entity while the field still has focus: the
+   * legal name, the status, the entity type, the registered business names.
+   *
+   * IT DECIDES NOTHING. Registration consults the register again on the server
+   * at submission, and the gate runs there; this is a preview, and a preview
+   * that went stale between here and send is caught by the real check.
+   *
+   * WHAT IT DELIBERATELY DOES NOT SAY: whether this ABN is already registered
+   * on the platform. That would turn an unauthenticated endpoint into a way to
+   * enumerate our customers — the same rule the rejection reasons already
+   * follow.
+   */
+  async abnLookup(rawAbn: string) {
+    const abn = normaliseAbn(rawAbn);
+
+    // Arithmetic first, and locally, exactly as registration does it: a typo
+    // should never cost a network round trip, and "the check digits do not
+    // agree" is a better answer than anything the register would return.
+    if (!isValidAbnChecksum(abn)) {
+      return { abn, checksumValid: false, outcome: 'invalid_checksum' as const };
+    }
+
+    const probe = await this.abr.probe(abn);
+    if (probe.status !== 'found') {
+      return { abn, checksumValid: true, outcome: probe.status, reason: probe.reason };
+    }
+
+    const found = probe.lookup;
+    return {
+      abn: found.abn,
+      checksumValid: true,
+      outcome: 'found' as const,
+      abnStatus: found.abnStatus,
+      /** The gate's own rule, computed once here so the form cannot disagree. */
+      active: found.abnStatus === 'ACTIVE',
+      legalName: found.legalName,
+      /*
+       * BUSINESS names. The ABR stopped collecting TRADING names in May 2012,
+       * so anything still carrying that label is a historical record and must
+       * never be used to decide that a typed name identifies this entity.
+       */
+      businessNames: found.businessNames ?? [],
+      entityType: found.entityType,
+      gstRegistered: found.gstRegistered ?? false,
+      abnStatusEffectiveFrom: found.abnStatusEffectiveFrom ?? null,
+      acn: found.acn ?? null,
+      mainBusinessState: found.mainBusinessState ?? null,
+      mainBusinessPostcode: found.mainBusinessPostcode ?? null,
+    };
+  }
+
+  /**
+   * Ask the register again about a practice already on the platform.
+   *
+   * WHY IT EXISTS. An ABN check is a fact about a day, not a property of an
+   * entity. A practice approved in March against an ACTIVE ABN can be trading
+   * on a cancelled one by September, and the platform would have gone on
+   * showing the March answer for ever. It also upgrades a manual attestation:
+   * an application that fell back to a typed attestation because the register
+   * was down can be re-checked once it is up, and the provenance moves from
+   * "a colleague said the register said so" to "the register said so".
+   *
+   * WHAT IT MAY CHANGE, and what it may not:
+   *   - status, legal name, business names, GST, and the verification stamp —
+   *     yes. These ARE what the register says, and holding a stale copy of
+   *     them is the problem this solves.
+   *   - the ABN — never. A different ABN is a different legal entity and
+   *     therefore a new application, which is the rule the whole entity page
+   *     is built on.
+   *   - the entity type — reported, not rewritten. It feeds the ACN derivation
+   *     the application was gated on, so a change to it is a fact for a human
+   *     to look at rather than something to silently restate.
+   */
+  async recheckAbn(practiceId: string, actor?: Actor) {
+    if (!actor) {
+      throw new BadRequestException(
+        'Re-checking an ABN records who asked and what the register answered, so it requires a signed-in ' +
+          'administrator. No verified session was presented with this request.',
+      );
+    }
+
+    const practice = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.practice.findFirstOrThrow({ where: { id: practiceId } }),
+    );
+    if (!practice.abn) {
+      throw new BadRequestException(
+        'This practice has no ABN recorded, so there is nothing to re-check against the register.',
+      );
+    }
+
+    const probe = await this.abr.probe(practice.abn);
+    if (probe.status !== 'found') {
+      /*
+       * NOTHING IS WRITTEN AND NOTHING IS OVERWRITTEN. A failed re-check is
+       * not evidence about the entity, it is evidence about our afternoon —
+       * and blanking a good stored answer because the register was briefly
+       * unreachable would make the platform less accurate every time the ABR
+       * had an outage.
+       */
+      this.logger.warn(`ABN re-check for practice ${practiceId} could not be completed: ${probe.reason}.`);
+      return { rechecked: false, outcome: probe.status, reason: probe.reason };
+    }
+
+    const found = probe.lookup;
+    const before = {
+      abnStatus: practice.abnStatus,
+      legalName: practice.legalName,
+      entityType: practice.entityType,
+      source: practice.abnVerificationSource,
+    };
+    const statusChanged = (before.abnStatus ?? '') !== found.abnStatus;
+    const entityTypeChanged = Boolean(before.entityType) && before.entityType !== found.entityType;
+    const verifiedAt = new Date();
+
+    const updated = await this.prisma.withPractice(practiceId, async (tx) => {
+      const row = await tx.practice.update({
+        where: { id: practiceId },
+        data: {
+          abnStatus: found.abnStatus,
+          legalName: found.legalName || practice.legalName,
+          // The column is named `tradingNames` for historical reasons; what it
+          // holds, and all it may ever hold, is REGISTERED BUSINESS NAMES.
+          tradingNames: [...(found.businessNames ?? [])],
+          gstRegistered: found.gstRegistered ?? practice.gstRegistered,
+          abnVerifiedAt: verifiedAt,
+          abnVerificationSource: 'abr_api',
+        },
+      });
+
+      await enqueueVaultEvent(tx, {
+        type: 'organisation.abn_rechecked',
+        actor: { principalType: 'staff', id: actor.id },
+        subject: { type: 'Organisation', id: practiceId },
+        payload: {
+          abnStatus: found.abnStatus,
+          previousAbnStatus: before.abnStatus ?? 'unknown',
+          statusChanged,
+          entityTypeChanged,
+          registerEntityType: found.entityType,
+          previousVerificationSource: before.source ?? 'unknown',
+          verificationSource: 'abr_api',
+          checkedBy: actor.name,
+          checkedBySub: actor.id,
+        },
+      });
+      return row;
+    });
+
+    return {
+      rechecked: true,
+      outcome: 'found' as const,
+      abnStatus: updated.abnStatus,
+      active: updated.abnStatus === 'ACTIVE',
+      statusChanged,
+      entityTypeChanged,
+      registerEntityType: found.entityType,
+      legalName: updated.legalName,
+      businessNames: updated.tradingNames,
+      gstRegistered: updated.gstRegistered,
+      abnVerifiedAt: updated.abnVerifiedAt,
+      abnVerificationSource: updated.abnVerificationSource,
+      /** True when this re-check replaced a typed attestation with the register's own answer. */
+      provenanceUpgraded: before.source === 'manual_attestation',
+    };
+  }
+
+  /**
    * Gate 1 + 2. Creates the organisation in `pending`, which can do nothing
    * until a human validates it.
    */
@@ -214,8 +386,30 @@ export class OrganisationsService {
     // The API wins whenever it can answer. A human attestation is a FALLBACK
     // for environments with no GUID, never an override — otherwise "the ABR
     // says CANCELLED" could be talked around by retyping it.
-    let lookup = await this.abr.lookup(abn);
+    const probe = await this.abr.probe(abn);
+    let lookup = probe.status === 'found' ? probe.lookup : null;
     let source: 'abr_api' | 'manual_attestation' = 'abr_api';
+
+    /*
+     * AN ATTESTATION ANSWERS SILENCE, NOT A NO.
+     *
+     * The register positively saying "No record found" is an ANSWER, and a
+     * typed attestation over the top of it is precisely the override this
+     * fallback was never meant to be — somebody retyping their way past a
+     * register that has just told us the entity is not there. Only
+     * `unreachable` — no GUID, an outage, a timeout, our own credential
+     * refused — opens the attestation path.
+     */
+    if (!lookup && probe.status === 'not_found') {
+      throw new BadRequestException({
+        reason: probe.reason,
+        message:
+          `The Australian Business Register has no record of ABN ${abn}. The check digits agree, so this is a ` +
+          'real ABN pattern that has never been issued, or has been retyped from a different number. Check it ' +
+          'against the register and apply again — there is no way to attest past this, because the register ' +
+          'has answered.',
+      });
+    }
 
     if (!lookup && input.abrAttestation) {
       const attested = input.abrAttestation;
@@ -235,14 +429,27 @@ export class OrganisationsService {
     }
 
     if (!lookup) {
-      throw new BadRequestException(
-        this.abr.kind === 'offline'
-          ? `ABN ${abn} passed its check digits, but no ABN lookup is configured in this environment, so it ` +
-            'cannot be verified against the ABR — and an organisation is never created on an unverified ABN. ' +
-            'Either register for an ABN Lookup GUID at abr.business.gov.au and set ABR_API_GUID, or use one ' +
-            'of the offline fixtures: 53004085616, 51824753556, 13824753558.'
-          : `The ABR returned no record for ABN ${abn}. Check the number, or refer to human validation.`,
-      );
+      /*
+       * THE REGISTER COULD NOT ANSWER, and the two reasons want different
+       * words. An environment with no GUID is a SETUP problem and the reader
+       * is a developer; a live client that could not reach the ABR is an
+       * OUTAGE and the reader is an applicant, who needs the attestation panel
+       * and no mention of environment variables. The `reason` code travels
+       * with both so the form routes on the code rather than on prose.
+       */
+      throw new BadRequestException({
+        reason: probe.status === 'unreachable' ? probe.reason : 'unreachable',
+        message:
+          this.abr.kind === 'offline'
+            ? `ABN ${abn} passed its check digits, but no ABN lookup is configured in this environment, so it ` +
+              'cannot be verified against the ABR — and an organisation is never created on an unverified ABN. ' +
+              'Either register for an ABN Lookup GUID at abr.business.gov.au and set ABR_API_GUID, or use one ' +
+              'of the offline fixtures: 53004085616, 51824753556, 13824753558.'
+            : `ABN ${abn} passed its check digits, but the Australian Business Register could not be reached to ` +
+              'check it, and an organisation is never created on an unverified ABN. Nothing is wrong with the ' +
+              'application: type what the register shows and your name below, and it goes to review with that ' +
+              'noted, or come back and send it once the register is answering again.',
+      });
     }
 
     let gate;

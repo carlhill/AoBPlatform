@@ -178,6 +178,20 @@ export interface AbrLookup {
   /** ABR entity type, mapped to our vocabulary. */
   readonly entityType: string;
   readonly gstRegistered?: boolean;
+  /**
+   * The rest of what the register answers with, all optional because the gate
+   * reads none of it — it exists so the applicant and the practice can see
+   * WHICH entity was matched before anyone commits to it. A manual attestation
+   * supplies none of these, which is the honest difference between the two
+   * provenances rather than a gap to be filled in by hand.
+   */
+  /** ISO date the current ABN status took effect, as the register states it. */
+  readonly abnStatusEffectiveFrom?: string;
+  /** The ACN the register itself holds, where the entity has one. */
+  readonly acn?: string;
+  /** Main business location. State and postcode only — the ABR publishes no more. */
+  readonly mainBusinessState?: string;
+  readonly mainBusinessPostcode?: string;
 }
 
 export interface OrganisationApplication {

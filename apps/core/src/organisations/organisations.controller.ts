@@ -4,6 +4,9 @@ import {
   Controller,
   Get,
   Headers,
+  HttpException,
+  HttpStatus,
+  Ip,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -21,6 +24,7 @@ import {
   ADDRESS_REJECTION_REASONS,
 } from '@aobplatform/domain';
 import { SessionActor, type Actor } from '../auth/actor.decorator';
+import { AbnLookupRateLimit } from './abn-lookup-rate-limit';
 import {
   Equals,
   IsArray,
@@ -589,6 +593,15 @@ export class OrganisationsController {
   ) {}
 
   /**
+   * Per-process, per-address budget for the applicant ABN preview.
+   *
+   * Held on the controller rather than injected because it is one counter with
+   * no dependencies and a documented lifetime — see the file for why it is in
+   * memory, and what changes when core runs more than one task.
+   */
+  private readonly lookupLimit = new AbnLookupRateLimit();
+
+  /**
    * The catalogue a reviewer works from. Public: it is the definition of the
    * process, not a secret — what stays private is the SCORING, because "you
    * need six points and here is what scores" is a fraud playbook.
@@ -645,6 +658,70 @@ export class OrganisationsController {
   @Post()
   register(@Body() dto: RegisterOrganisationDto) {
     return this.organisations.register(dto);
+  }
+
+  /**
+   * WHICH ENTITY IS THIS ABN, asked from the application form.
+   *
+   * Reachable by an applicant who has no account, exactly like `POST
+   * /organisations` above and for the same reason: the person filling in the
+   * form has not been onboarded yet, and requiring a session to check an ABN
+   * would mean checking it after they had committed to the application rather
+   * than before. It is also `@Get` and side-effect-free, so it neither creates
+   * nor changes anything.
+   *
+   * IT SAYS NOTHING ABOUT US. The response is what the Australian Business
+   * Register holds — public information, retrievable by anyone at
+   * abr.business.gov.au — and never whether that ABN is known to this
+   * platform, which would make this an enumeration of our customers.
+   *
+   * RATE LIMITED PER ADDRESS, because every call spends an outbound request
+   * against a Commonwealth service under a GUID that can be revoked. See
+   * abn-lookup-rate-limit.ts for what that limit is and is not.
+   */
+  @Get('abn-lookup')
+  async abnLookup(@Query('abn') abn: string | undefined, @Ip() ip: string) {
+    if (!abn || abn.trim().length === 0) {
+      throw new BadRequestException('An `abn` query parameter is required.');
+    }
+    /*
+     * THE KEY IS THE SOURCE ADDRESS AS EXPRESS REPORTS IT. Behind a load
+     * balancer that is the balancer unless `trust proxy` is set, which would
+     * make this one shared bucket for every applicant — noted rather than
+     * hidden, because the fix belongs with the proxy configuration and the
+     * Redis-backed counter, not here.
+     */
+    const key = ip || 'unknown';
+    if (this.lookupLimit.isLimited(key)) {
+      const retryAfter = this.lookupLimit.retryAfterSeconds(key);
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.TOO_MANY_REQUESTS,
+          reason: 'rate_limited',
+          retryAfterSeconds: retryAfter,
+          message:
+            'That is a lot of ABN checks from one place in a short time. Wait a few minutes and try again — ' +
+            'and note that you can still send the application without this check: the register is consulted ' +
+            'again when it arrives.',
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    this.lookupLimit.record(key);
+    return this.organisations.abnLookup(abn);
+  }
+
+  /**
+   * Ask the register again about a practice already on the platform.
+   *
+   * Practice-scoped through the header like the rest of the entity surface,
+   * and it refuses an unattributed request: it writes an append-only vault
+   * event saying who asked and what the register answered, and an event naming
+   * nobody cannot be questioned, corrected or relied on.
+   */
+  @Post('abn-recheck')
+  recheckAbn(@Headers('x-practice-id') practiceId: string | undefined, @SessionActor() actor: Actor | undefined) {
+    return this.organisations.recheckAbn(requirePractice(practiceId), actor);
   }
 
   /**
