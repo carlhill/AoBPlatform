@@ -1305,6 +1305,69 @@ deployment) rather than adding it.
       its own check as the last line of defence, and when it fires it also
       names the patient.
 
+## Two front doors: the walk-up kiosk stays; reception push is a second use case
+
+Carl, 4 Sep 2026. What is at `/kiosk` is the WALK-UP kiosk: an unsupported
+patient finds their name and types their details to prove it is them. It
+stays as built. The reception-push flow is a SEPARATE use case on the same
+paired tablet: reception has already checked the Medicare card, matched the
+patient in the PMS and asked DOB / mobile / email / address, so the patient
+never searches and never types -- they tick their details as correct, read,
+and approve. Confirmation, approval and signature are identical in both.
+
+Queued verbatim at Carl's request: "In the push model none of this arises --
+reception pushes one locked payload to one tablet, and the screen shows
+exactly one patient. Type-to-find is the pull-model fallback, and it should
+stay that way."
+
+**Accepted risk, recorded, not fixed:** the walk-up list shows every waiting
+patient's name and provider to whoever is at the kiosk. Carl chose to leave it
+for now. The recommended fix when it is picked up: Begin -> K-2 directly, and
+the server finds the one waiting row that matches all three identifiers, so no
+list is ever sent to the tablet; a per-device console flag (never a tick-box on
+the tablet) shows the list for test devices under a banner.
+
+### Reception push -- the workflow (Carl)
+1. Patient arrives, shows the Medicare card; reception asks which number on
+   the card they are -- the name exactly as on the card. (PMS side; the
+   platform never sees the card. Hard rule 1.)
+2. Reception matches the name, asks DOB, mobile, email, home address; matches
+   or registers the patient in the PMS. (This IS the three-identifier staff
+   check, REQ-VER-03.)
+3. No active enduring agreement -> reception sends the visit to the
+   AoBPlatform queue (print to queue). The agreement appears on the tablet
+   beside reception; reception sees the same on their own screen.
+4. Reception asks the patient to tick their personal details as correct and
+   to read and approve the agreement.
+
+### Build (in flight from 4 Sep 2026)
+- [ ] Core: tablet sessions -- `POST /devices/:id/push { agreementId }`
+      (staff actor required; records the staff-verified verification event
+      with the staff identity; validates and locks particulars first, so a
+      draft never reaches a device -- REQ-REG-06); `GET /kiosk/session`
+      (device-auth, the one pushed agreement or none); `POST
+      /kiosk/session/confirm-details` (which details were ticked -- TYPES
+      only, no values, a vault event); recall/cancel from the console; a
+      device shows at most one session; session state visible to reception
+      (pushed / reading / details confirmed / signed / walked away / recalled).
+- [ ] Console `/practice/tablet` ("Send to the tablet"): today's drafts from
+      the queue, who-is-signing set at the desk BEFORE the push (the
+      set-assignor endpoint serves the desk -- this settles TODO's B14 for the
+      push path), pick a paired tablet, push, watch the state, recall.
+- [ ] Tablet: a pushed session takes precedence over the walk-up idle screen.
+      "Please check your details": name, DOB, address, mobile, email, each
+      with a tick "This is correct" (a data check, never a verification;
+      untickable -> "See reception"); all ticked -> K-3 (type-specific
+      heading) -> K-4 -> done -> back to idle. Exit on every screen.
+- [ ] Enduring on the tablet: the push flow's normal case is ENDURING (GP
+      only, per practitioner x patient, REQ-END-01/-01a; offer Treatment Plan
+      Assignment instead for non-GP). Core creates enduring drafts today; the
+      agent must confirm the renderer and the rules engine handle the type --
+      the rules engine is human-authored, so a gap there is reported, not
+      filled.
+- [ ] Per-device mode in the console: walk-up enabled / push only. A tablet
+      beside reception should not offer the walk-up list.
+
 ## Nothing on the patient surface is ever staff entry
 
 Carl, 3 Sep 2026, on seeing K-3 ask for a "Basic description of the service --
