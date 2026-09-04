@@ -473,6 +473,28 @@ export function SetupHub({
             </Link>
           )}
           {/*
+            SEND TO THE TABLET, and the audience is deliberately WIDER than the
+            card above it. Registering a device hands out the credential that
+            opens this practice's waiting list — an administrator's decision.
+            USING a tablet that is already paired is the front desk's ordinary
+            work, done dozens of times a morning by whoever is standing at it.
+            So this one is gated on `/practice/tablet` rather than on
+            `/practice/devices`: the same `canOpen`, asking about the page it
+            actually leads to, which is what stops the card and the guard
+            drifting apart.
+          */}
+          {canOpen('/practice/tablet') && (
+            <Link
+              href={viewOnly ? toViewPath('/practice/tablet', practiceId) : '/practice/tablet'}
+              className={styles.cardLink}
+              data-testid="hub-to-tablet"
+            >
+              <Send size={14} aria-hidden="true" />
+              {openLabel(strings.tablet.title)}
+              <ArrowRight size={14} aria-hidden="true" />
+            </Link>
+          )}
+          {/*
             SCOPED TO THIS PRACTICE in view-only. These two used to point at the
             global platform queues, which threw the reader out of the practice
             they were examining and into everything at once -- and the Back

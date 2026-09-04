@@ -241,6 +241,50 @@ export interface VaultEventInput {
 }
 
 export interface VaultEventRecord extends VaultEventInput {
+  /*
+   * PUSH-TO-DEVICE CAPTURE — reception handed the patient a locked screen
+   * (TODO.md "Push-to-device capture" / "Two front doors", Carl 4 Sep 2026).
+   *
+   * `tablet.session_pushed` IS THE HEAVIEST OF THE FOUR, because it is the
+   * moment the whole act happens: a named staff member, having checked the
+   * patient across the desk, sends ONE agreement — validated, locked and
+   * rendered — to ONE paired tablet. It is written in the same transaction as
+   * the lock, the staff-verified verification event and the session row, so a
+   * tablet holding an agreement with no record of who put it there is
+   * structurally impossible (hard rule 11).
+   *
+   * THE VERIFICATION IS A SEPARATE EVENT AND SO ARE THE TICKS, and the naming
+   * keeps them apart on purpose. `verification.staff_verified` is the identity
+   * check (REQ-VER-03), carrying TYPES and an outcome and never a value.
+   * `tablet.details_confirmed` is the patient saying their particulars are
+   * right — a DATA-ACCURACY check, part of the ceremony, and never evidence of
+   * who was holding the tablet. Recording the second as the first is the
+   * mistake this vocabulary exists to prevent.
+   *
+   * NONE OF THEM CARRIES A VALUE, a patient's name or an amount: ids, a device
+   * label, states and identifier TYPES (REQ-LOG-08, REQ-VER-04, hard rule 4).
+   */
+  'tablet.session_pushed',
+  'tablet.details_confirmed',
+  'tablet.session_state_changed',
+  /**
+   * Signed, walked away, recalled or expired. Three of the four change NOTHING
+   * on the agreement, and the payload says so in a field — a patient who walks
+   * away from a screen is still seen and still billable by another route
+   * (REQ-REC-04).
+   */
+  'tablet.session_ended',
+  /**
+   * THE STAFF CHECK ACROSS THE DESK, recorded as its own kind of event.
+   *
+   * Distinct from `verification.attempted` because the act is distinct: nobody
+   * stated anything into a form and nothing was compared. A receptionist with
+   * the patient in front of them checked the card in the PMS and asked the
+   * approved identifiers (REQ-VER-03), and what the platform can record is
+   * WHICH TYPES were checked, that they matched, and BY WHOM. Filing it as an
+   * attempt would imply values were compared that never existed.
+   */
+  'verification.staff_verified',
   readonly id: VaultEventId;
   /** Server-authoritative time (REQ-VAULT-03). */
   readonly recordedAt: IsoTimestamp;

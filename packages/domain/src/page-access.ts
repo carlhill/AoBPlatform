@@ -291,6 +291,27 @@ export const PAGES: Readonly<Record<string, PageRule>> = {
   },
 
   /*
+   * SENDING AN AGREEMENT TO A TABLET IS RECEPTION'S JOB, so it is `practice`
+   * and NOT `practice_admin` — and the difference from `/practice/devices`
+   * just above is the whole reasoning. Registering a device hands out the
+   * credential that opens a practice's waiting list; that is a decision about
+   * who may reach patient records, and it belongs to the administrator. Using
+   * a tablet that is already paired is the ordinary work of the front desk,
+   * performed dozens of times a morning by the person standing at it. An
+   * administrator-only page here would mean either that reception cannot do
+   * its job or that every receptionist is an administrator, and the second is
+   * how access controls die.
+   *
+   * The acts behind it are `@PracticeScoped` on the server, so a platform
+   * operator reaches them only by acting as the practice — which leaves a
+   * record of on whose behalf, and forces a re-approval by somebody else.
+   */
+  '/practice/tablet': {
+    audiences: ['practice'],
+    why: 'Sending a locked agreement to a paired tablet beside reception, and watching what it does. The front desk’s own work — the practice checked the patient across the counter, and the push is what records that.',
+  },
+
+  /*
    * PRACTITIONER. Their own affiliations and the notices sent to them, and
    * nothing about a practice's other people. A practitioner works at several
    * practices over time and the platform must never become a directory of who

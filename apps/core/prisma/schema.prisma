@@ -1750,6 +1750,81 @@ model VaultOutbox {
   payload       Json
   occurredAt    DateTime  @default(now())
   publishedAt   DateTime?
+/**
+ * ONE LOCKED AGREEMENT, ASSIGNED TO ONE NAMED TABLET (TODO.md "Push-to-device
+ * capture" / "Two front doors", Carl 4 Sep 2026).
+ *
+ * WHAT A ROW MEANS. Reception has checked the Medicare card in the PMS,
+ * matched the patient, and asked date of birth, mobile, email and address
+ * across the desk — the three-identifier staff check (REQ-VER-03). The push
+ * then validates and LOCKS the particulars server-side and hands the result to
+ * the tablet beside them, so a draft can never reach a device (REQ-REG-06).
+ * The row is the handle both halves hold: the tablet polls for it, the console
+ * watches its state, and recall ends it.
+ *
+ * ONE SESSION PER DEVICE IS A PARTIAL UNIQUE INDEX, not a check in a service.
+ * `tablet_sessions_one_active_per_device` is UNIQUE on `deviceId` WHERE
+ * `endedAt IS NULL`. Two receptionists pushing to the same tablet in the same
+ * second produce one session and one refusal, and the refusal carries the
+ * live session's id so the console can offer Recall. A read-then-write would
+ * produce two sessions and a screen nobody could explain.
+ *
+ * IT HOLDS NO PATIENT DATA. Ids, a state, a staff name and timestamps. The
+ * particulars live on the agreement, where they are locked and hashed; the
+ * person's details are read live from `patients` for the one screen that shows
+ * them and are never copied here.
+ *
+ * ENDING A SESSION NEVER TOUCHES THE AGREEMENT. Walked away, recalled and
+ * expired all leave the agreement exactly as the push left it — the platform
+ * never blocks care (REQ-REC-04), and a patient who declines a screen is still
+ * seen and still billable by another route.
+ */
+model TabletSession {
+  id         String @id @default(uuid()) @db.Uuid
+  practiceId String @db.Uuid
+  deviceId   String @db.Uuid
+
+  agreementId String @db.Uuid
+
+  /// The `in_practice` capture request this session signs against. Opened by
+  /// the push where the agreement had none, so the tablet passes it straight
+  /// back to the EXISTING `POST /agreements/:id/sign`.
+  captureRequestId String? @db.Uuid
+
+  /// The staff-verified event the push recorded. TYPES and an outcome, never
+  /// values (REQ-VER-04) — the event itself lives in `verification_events`.
+  verificationEventId String? @db.Uuid
+
+  /// pushed | reading | details_confirmed | signed | walked_away | recalled | expired
+  state String @default("pushed")
+
+  /// WHICH DETAILS THE PATIENT TICKED AS CORRECT — TYPES ONLY, and it is not a
+  /// verification (REQ-VER-03/-04). `mobile` and `email` appear here and are
+  /// CONTACT details, never identity identifiers (REQ-VER-02).
+  detailsConfirmedTypes String[] @default([])
+  detailsConfirmedAt    DateTime?
+
+  /// Who pushed it, from their verified session — never from the body. The
+  /// same act is the verification record, so an unattributed push is refused.
+  pushedBy   String
+  pushedById String
+  pushedAt   DateTime @default(now())
+
+  /// Moves on every state change; the thirty-minute idle expiry measures from
+  /// here rather than from `pushedAt`, so a patient part-way through a long
+  /// read is not thrown off the screen.
+  lastStateAt DateTime @default(now())
+
+  /// Set exactly once, when the session ends. NULL is what makes it active,
+  /// and what the partial unique index keys on.
+  endedAt DateTime?
+
+  @@index([practiceId])
+  @@index([deviceId])
+  @@index([agreementId])
+  @@map("tablet_sessions")
+}
+
   attempts      Int       @default(0)
   lastError     String?
   nextAttemptAt DateTime?

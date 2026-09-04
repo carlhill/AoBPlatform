@@ -51,6 +51,25 @@ function prune(value: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined));
 }
 
+/**
+ * EVERYTHING THE LOCK DECIDED, BEFORE IT WROTE ANYTHING — the snapshot, the
+ * two versions that validated it (hard rule 14) and the hash of the artefact
+ * rendered from it (rule 13).
+ *
+ * It exists so that the writes can be handed to a caller's transaction:
+ * `lockParticulars` prepares and commits in one call, and the push-to-device
+ * flow prepares first and then commits alongside its verification event and
+ * its session, atomically (hard rule 11).
+ */
+export interface PreparedLock {
+  readonly particulars: Record<string, unknown>;
+  readonly ruleSetVersion: string;
+  readonly mappingVersion: string;
+  readonly renderedArtefactHash: string;
+  readonly rendererVersion: string;
+  readonly languages: readonly string[];
+}
+
 @Injectable()
 export class AgreementsService {
   constructor(
@@ -341,8 +360,46 @@ export class AgreementsService {
    * locked BEFORE the signature control can ever enable. A rules-engine fail
    * blocks the lock; while no rule set is registered the rules service
    * returns 501 and locking is impossible — blocked states stay unreachable.
+   *
+   * SPLIT INTO `prepareLock` AND `commitLock` (4 Sep 2026), and this method is
+   * now the two of them in a row. The behaviour is unchanged for every existing
+   * caller; what the split buys is that the push-to-device flow can do its
+   * WRITES in the SAME transaction as the staff-verified verification event
+   * and the tablet session (hard rule 11 — a locked agreement with no evidence
+   * of who verified the patient, or evidence of a push that did not happen,
+   * are both structurally impossible). It could not do that while the only
+   * entry point owned its own transaction.
    */
   async lockParticulars(practiceId: string, agreementId: string, dto: LockParticularsDto): Promise<DbAgreement> {
+    const prepared = await this.prepareLock(practiceId, agreementId, dto);
+    return this.prisma.withPractice(practiceId, (tx) => this.commitLock(tx, agreementId, prepared));
+  }
+
+  /**
+   * EVERYTHING THE LOCK DOES BEFORE IT WRITES ANYTHING: assemble the
+   * particulars from the platform's own records, assert the forbidden fields
+   * are absent, ask the rules engine, and render.
+   *
+   * IT DELIBERATELY HOLDS NO TRANSACTION. Two of the three steps are network
+   * calls — the rules service and (in time) the renderer's fonts — and holding
+   * a database transaction open across a network call is how a slow dependency
+   * turns into a locked table. The same reasoning `sign` gives for staging
+   * artefact bytes before it opens its transaction.
+   *
+   * `overrides` EXISTS FOR EXACTLY ONE CALLER and says so. The push records a
+   * staff-verified verification event in the same transaction as the lock, so
+   * at the moment the particulars are assembled the agreement does not yet
+   * carry the event id — and `verificationPassed` would read false for a
+   * patient who was verified across the desk a second ago. The override states
+   * the fact the caller is about to make true, atomically. Nothing else may
+   * use it, and nothing else does.
+   */
+  async prepareLock(
+    practiceId: string,
+    agreementId: string,
+    dto: LockParticularsDto,
+    overrides: { verificationPassed?: true } = {},
+  ): Promise<PreparedLock> {
     // Assemble the particulars from the platform's OWN records (REQ-DATA-11:
     // cache the person, snapshot the agreement) — the client supplies only
     // what the server cannot know; it can never assert a fact the server owns.
@@ -388,7 +445,8 @@ export class AgreementsService {
         assignorIsPatient: agreement.assignorIsPatient,
         assignorName: agreement.assignorIsPatient ? undefined : assignor?.name,
         assignorRelationship: agreement.assignorIsPatient ? undefined : (assignor?.relationshipToPatient ?? undefined),
-        verificationPassed: agreement.verificationEventId !== null ? true : undefined,
+        verificationPassed:
+          overrides.verificationPassed ?? (agreement.verificationEventId !== null ? true : undefined),
       });
     });
 
@@ -421,38 +479,136 @@ export class AgreementsService {
     const languages = ['en'] as const; // bilingual rendering (REQ-LANG-02) arrives with M14
     const rendered = await this.renderers.current().render(particulars, languages);
 
-    return this.prisma.withPractice(practiceId, async (tx) => {
-      const agreement = await tx.agreement.findFirst({ where: { id: agreementId } });
-      if (!agreement) throw new NotFoundException('Agreement not found.');
-      if (agreement.particularsLockedAt) {
-        throw new BadRequestException('Particulars are already locked — corrections supersede (HARD-02).');
+    return {
+      particulars,
+      ruleSetVersion: validation.ruleSetVersion,
+      mappingVersion: validation.mappingVersion,
+      renderedArtefactHash: rendered.sha256,
+      rendererVersion: rendered.rendererVersion,
+      languages: [...languages],
+    };
+  }
+
+  /**
+   * THE LOCK'S WRITES, inside a transaction the caller owns.
+   *
+   * The re-read and the already-locked guard happen HERE rather than only in
+   * `prepareLock`, because between preparing and committing anything could
+   * have happened — including another lock. HARD-02 is that corrections
+   * supersede rather than edit, and this is the line that holds it.
+   */
+  async commitLock(
+    tx: Prisma.TransactionClient,
+    agreementId: string,
+    prepared: PreparedLock,
+    extra: Prisma.AgreementUncheckedUpdateInput = {},
+  ): Promise<DbAgreement> {
+    const agreement = await tx.agreement.findFirst({ where: { id: agreementId } });
+    if (!agreement) throw new NotFoundException('Agreement not found.');
+    if (agreement.particularsLockedAt) {
+      throw new BadRequestException('Particulars are already locked — corrections supersede (HARD-02).');
+    }
+    const updated = await tx.agreement.update({
+      where: { id: agreementId },
+      data: {
+        particulars: prepared.particulars as Prisma.InputJsonValue,
+        particularsLockedAt: new Date(),
+        ruleSetVersion: prepared.ruleSetVersion,
+        mappingVersion: prepared.mappingVersion,
+        renderedArtefactHash: prepared.renderedArtefactHash,
+        rendererVersion: prepared.rendererVersion,
+        renderedLanguages: [...prepared.languages],
+        ...extra,
+      },
+    });
+    await enqueueVaultEvent(tx, {
+      type: 'agreement.particulars_locked',
+      actor: SYSTEM_ACTOR,
+      subject: { type: 'Agreement', id: agreementId },
+      payload: { ruleSetVersion: prepared.ruleSetVersion, mappingVersion: prepared.mappingVersion },
+    });
+    await enqueueVaultEvent(tx, {
+      type: 'agreement.rendered',
+      actor: SYSTEM_ACTOR,
+      subject: { type: 'Agreement', id: agreementId },
+      payload: { artefactSha256: prepared.renderedArtefactHash, rendererVersion: prepared.rendererVersion },
+    });
+    return updated;
+  }
+
+  /**
+   * THE PUSH'S LOCK — the same commit, plus the two facts that only the push
+   * knows, in the same row update (TODO.md "Push-to-device capture").
+   *
+   * The verification event id, because THE PUSH IS THE VERIFICATION RECORD:
+   * reception cannot push until the staff-verified check has been recorded,
+   * and the agreement carries the id of the event that records it (REQ-VER-03,
+   * REQ-SIG-02 binds it into the signature later).
+   *
+   * And `awaiting_signature`, because the whole point of a push is that the
+   * tablet receives something ready to sign. Doing it here rather than in a
+   * second call is what makes "a draft can never reach a device" true of the
+   * database rather than of the caller's good intentions (REQ-REG-06).
+   */
+  async commitPushLock(
+    tx: Prisma.TransactionClient,
+    agreementId: string,
+    /**
+     * `null` IS THE RE-PUSH, and it is an ordinary thing rather than an edge
+     * case. A session that was recalled, walked away from or expired leaves
+     * the agreement locked at `awaiting_signature`; handing the tablet back to
+     * the same patient must NOT lock it a second time, because a locked
+     * agreement is corrected by superseding and never by editing (HARD-02).
+     * What the re-push does record is a FRESH staff-verified event — reception
+     * has the person in front of them again — and the agreement points at the
+     * newest one, which is what REQ-SIG-02 will bind into the signature.
+     */
+    prepared: PreparedLock | null,
+    verificationEventId: string,
+  ): Promise<DbAgreement> {
+    const before = await tx.agreement.findFirst({ where: { id: agreementId } });
+    if (!before) throw new NotFoundException('Agreement not found.');
+    const from = before.status as AgreementStatus;
+
+    if (!prepared) {
+      if (!before.particularsLockedAt) {
+        // Belt and braces: a caller that skipped the lock on an UNLOCKED
+        // agreement would be putting a draft on a tablet, which is the one
+        // thing this whole flow exists to make impossible (REQ-REG-06).
+        throw new BadRequestException(
+          'Particulars are not locked, so this agreement cannot be sent to a tablet (REQ-REG-06).',
+        );
       }
       const updated = await tx.agreement.update({
         where: { id: agreementId },
-        data: {
-          particulars: particulars as Prisma.InputJsonValue,
-          particularsLockedAt: new Date(),
-          ruleSetVersion: validation.ruleSetVersion,
-          mappingVersion: validation.mappingVersion,
-          renderedArtefactHash: rendered.sha256,
-          rendererVersion: rendered.rendererVersion,
-          renderedLanguages: [...languages],
-        },
+        data: { verificationEventId },
       });
       await enqueueVaultEvent(tx, {
-        type: 'agreement.particulars_locked',
+        type: 'agreement.status_changed',
         actor: SYSTEM_ACTOR,
         subject: { type: 'Agreement', id: agreementId },
-        payload: { ruleSetVersion: validation.ruleSetVersion, mappingVersion: validation.mappingVersion },
-      });
-      await enqueueVaultEvent(tx, {
-        type: 'agreement.rendered',
-        actor: SYSTEM_ACTOR,
-        subject: { type: 'Agreement', id: agreementId },
-        payload: { artefactSha256: rendered.sha256, rendererVersion: rendered.rendererVersion },
+        payload: { from, to: from, verificationEventId, repushed: true },
       });
       return updated;
+    }
+
+    if (!canTransition(from, 'awaiting_signature')) {
+      throw new BadRequestException(`Illegal status transition ${from} → awaiting_signature (REQ-REC-02).`);
+    }
+
+    const updated = await this.commitLock(tx, agreementId, prepared, {
+      verificationEventId,
+      status: 'awaiting_signature',
     });
+    await enqueueVaultEvent(tx, {
+      type: 'agreement.status_changed',
+      actor: SYSTEM_ACTOR,
+      subject: { type: 'Agreement', id: agreementId },
+      // Ids and facts. The verification event holds TYPES and an outcome and
+      // never a value (REQ-VER-04); nothing about the person is here.
+      payload: { from, to: 'awaiting_signature', verificationEventId },
+    });
+    return updated;
   }
 
   /**

@@ -3443,6 +3443,169 @@ export const strings = {
       + 'survives being revoked. If one goes missing, revoke it here.',
   },
 
+  /*
+   * SEND TO THE TABLET — reception's half of the push (`/practice/tablet`).
+   *
+   * WRITTEN FOR A RECEPTIONIST WITH A PATIENT IN FRONT OF THEM, which sets the
+   * tone for everything below: short sentences, no rule numbers on screen, and
+   * every refusal followed by what to do instead. The words a PATIENT reads are
+   * in the `kiosk` branch; nothing here is ever shown on a tablet.
+   *
+   * NOTHING HERE CLAIMS CERTIFICATION — not "approved", not "certified", not
+   * "accredited" (REQ-65C-05, hard rule 12). Note in particular that a session
+   * state is "signed" and never "approved": nothing on this platform is
+   * approved by anybody official, and the word would be a claim we may not
+   * make.
+   */
+  tablet: {
+    title: 'Send to the tablet',
+    lead:
+      'You have checked the patient at the desk. Send their agreement to the tablet beside you — they '
+      + 'check their details, read it, and approve. They never have to find themselves or type anything.',
+    audience: 'Practice',
+    notLoaded: 'This page could not be loaded',
+    loading: 'Loading…',
+    refresh: 'Refresh',
+
+    /*
+     * WHAT SENDING ACTUALLY DOES, on the screen, because the person pressing
+     * the button is making a legal record and should know it. Two facts: the
+     * check they just did across the desk is what gets recorded against their
+     * name (REQ-VER-03/-04), and the patient cannot be handed an unfinished
+     * agreement (REQ-REG-06).
+     */
+    whatItDoes:
+      'Sending records that you checked this patient’s name, date of birth and address at the desk, against '
+      + 'your name. The agreement is completed and locked before it reaches the tablet, so nobody can be '
+      + 'asked to sign a draft.',
+    /** Hard rule 8 in the words a receptionist needs: none of this holds anybody up. */
+    neverBlocks:
+      'None of this affects the patient being seen. If they walk away, the visit carries on and you can bill '
+      + 'privately or ask again after the service.',
+
+    todayTitle: 'Waiting to be signed today',
+    todayLead: 'Today’s agreements. The ones that cannot go yet say what they are waiting for.',
+    todayNone: 'Nothing is waiting to be signed today.',
+    todayCount: (n: number) => (n === 1 ? '1 agreement' : `${n} agreements`),
+    unbooked: 'No appointment time',
+    d6aLabel: 'Service',
+    d6aMissing: 'Not set',
+    d6aStale: 'From an older list',
+    signingLabel: 'Signing',
+    signingPatient: 'The patient',
+    signingOther: (name: string, relationship: string) => (relationship ? `${name} · ${relationship}` : name),
+    signingUnset: 'Not decided yet',
+    onTabletNow: (label: string) => `On ${label} now`,
+
+    /*
+     * WHO IS SIGNING — set at the DESK, before the push, and never on the
+     * tablet. D7 is explicit and is never inferred (CLAUDE.md §3): the patient
+     * signs for themselves, or somebody with them signs for them, and the
+     * agreement prints whichever it is.
+     *
+     * THE SCREEN ASKS THE RELATIONSHIP, NEVER THE AUTHORITY BASIS, for the same
+     * reason the tablet does: "co-resident relative 18+" is the statute's
+     * vocabulary and nobody else's. The options and their order come from
+     * versioned content, not from this table (hard rule 14) — only the WORDS
+     * live here, and they are the kiosk's own, read from one place so a
+     * translation cannot mean two different things on two screens.
+     */
+    whoTitle: 'Who is signing',
+    whoOpen: 'Who is signing?',
+    whoClose: 'Close',
+    whoPatient: 'The patient is signing',
+    whoOther: 'Someone else is signing for them',
+    whoName: 'Their full name',
+    whoRelationship: 'Their relationship to the patient',
+    whoRelationshipPlaceholder: 'Choose…',
+    whoDescribe: 'Please describe',
+    /** Composed from MIN_AGE_ASSIGN_FOR_OTHER — the threshold is never typed here. */
+    whoAgeConfirm: (minimumAge: number) => `They confirm they are ${minimumAge} or over`,
+    whoContactHint: 'A mobile or an email, so their copy of the agreement can reach them.',
+    whoMobile: 'Mobile',
+    whoEmail: 'Email',
+    whoSave: 'Save who is signing',
+    whoSaving: 'Saving…',
+    whoSaved: 'Saved.',
+    /*
+     * EACH REFUSAL SAYS WHAT TO DO NEXT. The staff block is NAME-BASED and can
+     * therefore hit an innocent namesake, so it states the match and offers the
+     * desk rather than accusing anybody — and it never says which name matched
+     * (REQ-VUL-04, and Carl's ruling of 3 Sep 2026).
+     */
+    whoBlockedName: 'Enter their full name.',
+    whoBlockedRelationship: 'Choose their relationship to the patient.',
+    whoBlockedDescribe: 'Describe the relationship.',
+    whoBlockedAge: 'They must confirm they are old enough to sign for someone else.',
+    whoBlockedContact: 'Enter a mobile or an email.',
+    whoBlockedStaff:
+      'That name matches a member of practice staff, who cannot sign on a patient’s behalf. If this is a '
+      + 'different person with the same name, take this one at the desk.',
+
+    tabletsTitle: 'Your tablets',
+    tabletsLead: 'What each paired tablet is showing right now. This is a status, not a copy of the screen.',
+    tabletsNone: 'No tablet is paired to this practice yet.',
+    tabletsNoneHint: 'Pair one under Tablets, then it will appear here.',
+    tabletIdle: 'Ready',
+    tabletRevoked: 'Revoked — rotate it under Tablets to bring it back',
+    tabletUnpaired: 'Waiting to be paired',
+    /** "Showing to Jamie Sampleton — reading". A name on a staff screen, and nothing else about them. */
+    tabletShowing: (patientName: string, state: string) => `Showing to ${patientName} — ${state}`,
+    pushedAt: (name: string, when: string) => `Sent by ${name} · ${when}`,
+
+    sendAction: 'Send to tablet',
+    sendChoose: 'Choose a tablet',
+    sending: 'Sending…',
+    sendBlocked: 'Cannot be sent yet',
+    recallAction: 'Recall',
+    recalling: 'Recalling…',
+
+    /** The session states, as reception reads them. */
+    states: {
+      pushed: 'sent, not opened yet',
+      reading: 'reading',
+      details_confirmed: 'details confirmed',
+      signed: 'signed',
+      walked_away: 'walked away',
+      recalled: 'recalled',
+      expired: 'timed out',
+    } as Record<string, string>,
+
+    /**
+     * WHY A PUSH WAS REFUSED — one sentence per reason, each naming the rule
+     * and what to do about it, and none of them repeating anything about the
+     * patient. The server sends a CODE; these are the words (hard rule 9's
+     * reasoning applied to a staff surface).
+     */
+    blocked: {
+      device_unknown: 'That tablet is not registered to this practice.',
+      device_revoked: 'That tablet has been revoked. Rotate it under Tablets to bring it back.',
+      device_not_paired: 'That tablet has not been paired yet. Type its code into it first.',
+      device_busy: 'That tablet is already showing an agreement. Recall it first — one tablet, one patient.',
+      agreement_not_found: 'That agreement is no longer available.',
+      agreement_not_pushable: 'This agreement has moved on and cannot be sent to a tablet.',
+      service_description_missing:
+        'This still needs a service description from the current list. Set it on the reconciliation screen — '
+        + 'the tablet never asks a patient for it.',
+      who_is_signing_unset: 'Say who is signing before you send this one.',
+      patient_confidential:
+        'This patient’s record is flagged confidential, so nothing about them goes on a waiting-room screen. '
+        + 'Take this one on paper or after the service.',
+      enduring_not_supported:
+        'Enduring agreements cannot be sent to a tablet yet. Offer an episodic agreement for this visit.',
+      other: 'This one cannot be sent yet. Please see the practice queue.',
+    } as Record<string, string>,
+
+    /**
+     * ENDURING IS GP-ONLY (REQ-END-01/-01a, hard rule 6). Per practitioner ×
+     * patient, never per practice, and never offered for a specialist, allied
+     * health or optometry — the offer there is a Treatment Plan Assignment.
+     */
+    enduringGpOnly:
+      'Enduring agreements are for general practitioners only. For this provider, offer an episodic '
+      + 'agreement or a Treatment Plan Assignment.',
+  },
+
   kiosk: {
     /** The wordmark in the tablet's footer. Repeated here so the ceremony reads one namespace. */
     appName: 'AoBPlatform',

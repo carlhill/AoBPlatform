@@ -1,5 +1,6 @@
 import { BadRequestException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
+import type { Prisma } from '@prisma/client';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { VerificationService } from '../verification/verification.service';
@@ -70,6 +71,51 @@ export class CaptureService {
     // The raw token appears exactly once, in this response, for the message
     // dispatcher — it is not recoverable afterwards (only its hash is held).
     return { captureRequestId: request.id, channel: request.channel, token: minted?.token, expiresAt: request.expiresAt };
+  }
+
+  /**
+   * THE IN-PRACTICE CHANNEL, OPENED INSIDE A CALLER'S TRANSACTION — for the
+   * push to a paired tablet (TODO.md "Push-to-device capture").
+   *
+   * WHY NOT `open` ABOVE. Two differences, and both matter. `open` owns its own
+   * transaction, and the push must commit the capture request, the lock, the
+   * staff-verified verification event and the session together or not at all
+   * (hard rule 11). And `open` refuses an agreement that is not `draft` or
+   * `verification_pending` — a sensible guard for a channel being opened
+   * speculatively, and the wrong one here: the push has just verified the
+   * patient across the desk and is moving the agreement to
+   * `awaiting_signature` in the same breath. The push's own preconditions,
+   * which are stricter, decide whether this may happen at all.
+   *
+   * IDEMPOTENT ON PURPOSE. An agreement that already has an open `in_practice`
+   * request — a patient who was on the walk-up list and has now come to the
+   * desk — gets that one back rather than a second. Two open requests on one
+   * channel is exactly what FR-2.7's duplicate guard exists to prevent.
+   *
+   * IT NEVER MINTS A TOKEN. `in_practice` is not a remote channel: there is no
+   * link, so there is nothing to hash and nothing that could be forwarded.
+   */
+  async openInPractice(
+    tx: Prisma.TransactionClient,
+    practiceId: string,
+    agreementId: string,
+  ): Promise<{ id: string; reused: boolean }> {
+    const existing = await tx.captureRequest.findFirst({
+      where: { agreementId, channel: 'in_practice', status: 'open' },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (existing) return { id: existing.id, reused: true };
+
+    const created = await tx.captureRequest.create({
+      data: { practiceId, agreementId, channel: 'in_practice', tokenHash: null, expiresAt: null },
+    });
+    await enqueueVaultEvent(tx, {
+      type: 'capture.requested',
+      actor: SYSTEM_ACTOR,
+      subject: { type: 'CaptureRequest', id: created.id },
+      payload: { channel: 'in_practice', agreementId },
+    });
+    return { id: created.id, reused: false };
   }
 
   /**

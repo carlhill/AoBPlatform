@@ -17,6 +17,7 @@ import { VerificationModule } from './verification/verification.module';
 import { CaptureModule } from './capture/capture.module';
 import { KioskModule } from './kiosk/kiosk.module';
 import { DevicesModule } from './devices/devices.module';
+import { TabletSessionsModule } from './tablet-sessions/tablet-sessions.module';
 import { ServiceDescriptionsModule } from './service-descriptions/service-descriptions.module';
 import { PracticesModule } from './practices/practices.module';
 import { PmsModule } from './pms/pms.module';
@@ -61,6 +62,7 @@ import { RetentionModule } from './retention/retention.module';
     CaptureModule,
     DevicesModule,
     KioskModule,
+    TabletSessionsModule,
     ServiceDescriptionsModule,
     PracticesModule,
     OrganisationsModule,

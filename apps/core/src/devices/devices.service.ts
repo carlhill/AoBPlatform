@@ -306,6 +306,29 @@ export class DevicesService {
           })
         : [];
       const liveCodeFor = new Map<string, Date>();
+  /**
+   * ONE TABLET, BY ID, WITHIN THE PRACTICE — the module API another module
+   * asks before it does anything to a device (`tablet-sessions` pushes to one).
+   *
+   * It answers `null` for a device belonging to another practice, because RLS
+   * filters on the transaction-local scope: the caller cannot tell a
+   * cross-practice id from a made-up one, which is the correct amount to
+   * learn from a refusal.
+   *
+   * NO CREDENTIAL AND NO HASH. There is nothing to show, and no caller has
+   * business with one.
+   */
+  async find(
+    practiceId: string,
+    deviceId: string,
+  ): Promise<{ id: string; label: string; state: DeviceRow['state'] } | null> {
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const device = await tx.device.findFirst({ where: { id: deviceId } });
+      if (!device) return null;
+      return { id: device.id, label: device.label, state: deviceState(device) };
+    });
+  }
+
       for (const code of codes) {
         if (code.expiresAt.getTime() <= Date.now()) continue;
         if (!liveCodeFor.has(code.deviceId)) liveCodeFor.set(code.deviceId, code.expiresAt);

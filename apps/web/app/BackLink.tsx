@@ -47,6 +47,10 @@ const PARENTS: Readonly<Record<string, string>> = {
   '/practice/affiliations': '/practice/setup',
   '/practice/users': '/practice/setup',
   '/practice/devices': '/practice/setup',
+  // "Send to the tablet" sits beside the tablets themselves: a receptionist
+  // who has just paired one is one press from using it, and the one who
+  // wonders why a push refused goes the other way.
+  '/practice/tablet': '/practice/setup',
   // '/practice/reports' is decided per audience in parentOf -- it belongs under
   // the practice hub for a practice user and under the organisation list for an
   // operator, because those are the places each of them came from.
