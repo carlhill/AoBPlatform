@@ -357,7 +357,10 @@ describe('/practice/patients/<id> — one patient, everything open', () => {
     const panel = await screen.findByTestId(`correct-panel-patient:${PATIENT}`);
     expect(panel).toBeTruthy();
 
-    fireEvent.change(screen.getByTestId(`correct-address-patient:${PATIENT}`), {
+    // THE FIELDS ARRIVE WITH THE DETAILS FETCH, not with the panel: the panel
+    // opens at once and shows "loading" until GET /patients/:id/details lands,
+    // so wait for the input rather than grabbing it (flaked on a slow CI runner).
+    fireEvent.change(await screen.findByTestId(`correct-address-patient:${PATIENT}`), {
       target: { value: '1 Right Street, Sampletown NSW 2000' },
     });
     fireEvent.click(screen.getByTestId(`correct-save-patient:${PATIENT}`));
