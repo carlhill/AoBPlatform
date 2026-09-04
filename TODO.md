@@ -1482,6 +1482,27 @@ administrator account.
       link challenge and `POST /kiosk/claim`. The floor of three is enforced
       server-side today; the test pins it against a future "just this once".
 
+## Return to the start when untouched, and Back -- BUILT (4 Sep 2026, `6ffbbde`, `a199718`)
+
+Carl's ruling: per practice, default 5 minutes. `practices.kioskIdleTimeoutSeconds`
+(60..1800), edited in minutes on `/practice/channels` through `PATCH
+/practices/:id/config`, carried on `GET /kiosk/me`, vault event
+`practice.kiosk_idle_timeout_set` on change. Tablet: `useInactivityReset` on
+every screen but idle/pairing; pointer/touch/key re-arm; a 30 s "Still there?"
+overlay; expiry posts `walked_away` for a pushed session and nothing for a
+walk-up, then clears everything to idle. Back: K-2 -> idle (fields cleared),
+pushed K-3 -> K-P1 (ticks kept), K-4 -> K-3. Blueprint / REQ-id panels now
+render on test devices only. Domain 858, core e2e 46, web 158.
+
+- [ ] A released session is skipped by id until the server answers
+      `{ session: null }` -- closes a bounce after exit/Done; revisit if session
+      states are reworked.
+- [ ] `PATCH /practices/:id/config` still accepts an unattributed caller
+      (predates SessionActor); tighten when AUTH_ENFORCE goes true.
+- [ ] Carl to say whether K-4's "All particulars are complete and locked" banner
+      and K-P1's "see reception" rail should also be test-device only; left
+      because both read as patient copy and cite no requirement id.
+
 ## Check-your-details: tick or cross per row, and reception sees which (Carl, 4 Sep 2026)
 
 "Make the big buttons to the right of the text (in case we are using small
