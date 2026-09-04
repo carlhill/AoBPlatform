@@ -483,6 +483,121 @@ describe('M8 patient portal (e2e, real Postgres)', () => {
     expect(serialised).not.toContain('1962-11-02');
   });
 
+  it('portal_invitation_message_quotes_the_record_id', async () => {
+    const token = await mintInvitation();
+
+    const [invitation, queued] = await prisma.withPractice(practiceA, async (tx) => [
+      await tx.portalActivationToken.findFirst({ orderBy: { createdAt: 'desc' } }),
+      await tx.outboundItem.findFirst({
+        where: { subjectType: 'PortalActivationToken' },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    /*
+     * THE ACCOUNT EXISTS BEFORE THE PATIENT DOES ANYTHING. That is what lets the
+     * FIRST message quote the id they will later see on the page and in their
+     * password manager — the check is worthless if the id only appears afterwards.
+     */
+    expect(invitation?.accountId).toBeTruthy();
+    const recordId = `AoBPlatform-PatientId-${invitation!.accountId}`;
+
+    // THE BODY THE SANDBOX GATEWAY IS HANDED. The worker passes this payload
+    // straight through — composition happens at enqueue, delivery moves bytes.
+    expect(queued).toBeTruthy();
+    const payload = queued!.payload as Record<string, string>;
+    const body = `${payload.subject ?? ''}
+${payload.body ?? ''}`;
+
+    expect(body).toContain(recordId);
+    expect(body).toContain(
+      'Every genuine message from us about your record quotes it, and you will see it on the page after you sign in.',
+    );
+    // THE LINK, IN FULL, because people forward and paste — and a bare
+    // "click here" is the exact shape of a phishing message.
+    expect(body).toContain(`/patient/portal/activate/${token}`);
+    expect(payload.templateKey).toBe('portal_invitation_v1');
+    expect(payload.templateVersion).toBeTruthy();
+
+    /*
+     * AND NOTHING ELSE ABOUT THEM. The given name and the practice's name are
+     * what makes a message readable as ours; every other patient value stays
+     * out — no date of birth, no address, no record number, no Medicare number
+     * (there is no such column), no amount of any kind (hard rule 4).
+     */
+    expect(body).not.toContain('1962-11-02');
+    expect(body).not.toContain('2 Example Street');
+    expect(body).not.toContain('PRN-0001');
+    /*
+     * THE CARD NUMBER IS MENTIONED ONCE AND ONLY IN THE FOOTER'S PROMISE NOT TO
+     * ASK FOR ONE, which is the line doing the most work in the whole message:
+     * it hands the reader a rule they can apply to the NEXT message, including
+     * one we did not send. Nothing anywhere asks for one (hard rule 1).
+     */
+    expect(body).toContain('We will never ask you for a password, a Medicare number, or bank details');
+    expect(body).not.toMatch(/(send|reply with|enter|provide|confirm)[^.]{0,40}medicare/i);
+    expect(body).not.toMatch(/[$]|\bAUD\b|\bdollars?\b/i);
+    // Hard rule 12 — never about our forms.
+    expect(body).not.toMatch(/\b(certified|approved|accredited|government-approved)\b/i);
+  });
+
+  it('activates into the account the invitation already named, and still needs the three identifiers', async () => {
+    const token = await mintInvitation();
+    const invitation = await prisma.withPractice(practiceA, (tx) =>
+      tx.portalActivationToken.findFirst({ orderBy: { createdAt: 'desc' } }),
+    );
+    const preMinted = invitation!.accountId!;
+
+    /*
+     * A TOKEN NAMING AN ACCOUNT IS STILL NOT A DOOR. Wrong identifiers open
+     * nothing: no session, no new link, and the invitation is not spent
+     * (REQ-VUL, addendum v4 — the family-phone rule). The link COUNT is what is
+     * asserted rather than zero, because this patient has activated earlier in
+     * this suite and the mint deliberately reuses the account they already have.
+     */
+    const linksBefore = await prisma.withPractice(practiceA, (tx) =>
+      tx.portalAccountPatient.count({ where: { accountId: preMinted } }),
+    );
+    const refused = await request(app.getHttpServer())
+      .post('/portal/activate')
+      .send({
+        agreementId: signedAgreement,
+        activationToken: token,
+        stated: { ...STATED_CORRECT, address: '99 Nowhere Road, Sampletown NSW 2000' },
+      })
+      .expect(401);
+    expect(refused.headers['set-cookie']).toBeUndefined();
+    const afterRefusal = await prisma.withPractice(practiceA, async (tx) => ({
+      links: await tx.portalAccountPatient.count({ where: { accountId: preMinted } }),
+      spent: (await tx.portalActivationToken.findFirst({ where: { id: invitation!.id } }))?.usedAt ?? null,
+    }));
+    expect(afterRefusal.links).toBe(linksBefore);
+    expect(afterRefusal.spent).toBeNull();
+
+    const res = await request(app.getHttpServer())
+      .post('/portal/activate')
+      .send({ agreementId: signedAgreement, activationToken: token, stated: STATED_CORRECT })
+      .expect(201);
+
+    // THE ID IN THE MESSAGE IS THE ID ON THE PAGE.
+    expect(res.body.accountId).toBe(preMinted);
+    const session = await request(app.getHttpServer())
+      .get('/portal/session')
+      .set('Cookie', cookieFrom(res))
+      .expect(200);
+    expect(session.body.accountId).toBe(preMinted);
+    expect(session.body.links.some((l: { patientId: string }) => l.patientId === patientA)).toBe(true);
+  });
+
+  it('gives one patient one record id, however many invitations they are sent', async () => {
+    await mintInvitation();
+    await mintInvitation();
+    const tokens = await prisma.withPractice(practiceA, (tx) =>
+      tx.portalActivationToken.findMany({ where: { patientId: patientA }, orderBy: { createdAt: 'desc' }, take: 2 }),
+    );
+    expect(tokens[0].accountId).toBe(tokens[1].accountId);
+  });
+
   it('spends the invitation — a used one cannot be replayed', async () => {
     const token = await mintInvitation();
     await request(app.getHttpServer())
@@ -611,14 +726,23 @@ describe('M8 patient portal (e2e, real Postgres)', () => {
     const cookie = await activatedCookie();
     const res = await request(app.getHttpServer()).get('/portal/messages').set('Cookie', cookie).expect(200);
 
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0]).toMatchObject({
+    /*
+     * THE CAPTURE REQUEST IS THE ROW UNDER TEST. Since 4 Sep 2026 every
+     * `mintInvitation` also QUEUES the invitation itself, so this list legitimately
+     * carries one `portal_invitation` row per invitation minted in this suite —
+     * which is the behaviour, not noise: the first message we send a patient is
+     * the one they are most likely to check.
+     */
+    const captures = res.body.filter((m: { purposeKey: string }) => m.purposeKey === 'capture_request');
+    expect(captures).toHaveLength(1);
+    expect(captures[0]).toMatchObject({
       channel: 'sms',
       state: 'sent',
       purposeKey: 'capture_request',
       practiceName: 'Portal Test Practice',
       pending: true,
     });
+    expect(res.body.some((m: { purposeKey: string }) => m.purposeKey === 'portal_invitation')).toBe(true);
     const serialised = JSON.stringify(res.body);
     expect(serialised).not.toContain('THIS BODY MUST NEVER REACH THE PORTAL');
     expect(serialised).not.toContain('A request from your practice');

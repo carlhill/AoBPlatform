@@ -54,3 +54,4 @@ export * from './assignor-relationships';
 export * from './service-descriptions';
 export * from './enduring-termination-notice';
 export * from './signature';
+export * from './patient-message-templates';

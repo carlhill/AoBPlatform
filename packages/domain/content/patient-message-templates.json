@@ -1,0 +1,36 @@
+{
+  "$comment": "VERSIONED CONTENT, NOT CODE (hard rule 14). The words of the messages this platform sends a PATIENT about their own portal record. They live here rather than inline in a dispatcher for the same reason the enduring termination notice does: this regime moved twice and reversed once, copy must be editable without a code change, and the version must travel with every message produced from it. THE RECORD ID LINE IS ITS OWN TEMPLATE because it appears in every portal-related message, not only the invitation -- one set of words appended by one helper, so a patient comparing two messages sees the same sentence both times. That sameness IS the anti-scam check (Carl, 4 Sep 2026): a page, a passkey and a message all quoting one id. WHAT THESE WORDS MAY NEVER SAY. No benefit and no dollar amount of any kind (hard rule 4) -- reg 89AA notices are the one place an amount belongs and they are a different document. Never 'certified', 'approved', 'accredited' or 'government-approved' (hard rule 12, REQ-65C-05). Never a Medicare card number, which is not an identity identifier and is not held here at all (hard rule 1, REQ-VER-02). Never a suggestion that care, an appointment or billing depends on opening the portal -- it never does (hard rule 8; REQ-PORT-08: portal access is never a precondition of signing). PLACEHOLDERS ARE KEYS, NEVER VALUES. A name, a practice name and a link are substituted at send time; nothing personal is written into this file. UK/AU spelling and plain language, because the audience is every patient rather than a confident one.",
+  "version": "patient-messages-2026-09-04",
+  "placeholders": [
+    "givenNames",
+    "practiceName",
+    "activationUrl",
+    "expiresOn",
+    "recordId"
+  ],
+  "templates": [
+    {
+      "key": "portal_invitation_v1",
+      "note": "FR-1.14 -- the offer of portal activation, made after a completed signature and never before. It is an OFFER: the second paragraph says plainly that nothing depends on accepting it.",
+      "subject": "See your bulk-billing record with {{practiceName}}",
+      "paragraphs": [
+        "Hello {{givenNames}},",
+        "{{practiceName}} has offered you a way to see your own bulk-billing record with them: the agreements you have signed, the messages we have sent you, and what we hold about you.",
+        "It is up to you whether you use it. You never need an account to sign a bulk-billing agreement, and nothing about your care, your appointments or your billing depends on this."
+      ],
+      "actionLabel": "Open your record",
+      "smallPrint": [
+        "The link works until {{expiresOn}}. You will be asked a few details about yourself first, so that nobody else can open your record in your name.",
+        "Your AoBPlatform record ID is {{recordId}}. Every genuine message from us about your record quotes it, and you will see it on the page after you sign in."
+      ],
+      "sms": "{{practiceName}} has offered you a way to see your bulk-billing record with them. Open {{activationUrl}} (the link works until {{expiresOn}}). Your AoBPlatform record ID is {{recordId}}. Every genuine message from us about your record quotes it, and you will see it on the page after you sign in."
+    },
+    {
+      "key": "portal_record_id_line_v1",
+      "note": "APPENDED TO EVERY PORTAL-RELATED MESSAGE, by one helper, so the sentence is identical everywhere and a patient can compare two messages and a page. Its words are the whole point: they hand the reader a rule they can apply to the NEXT message, including one we did not send.",
+      "paragraphs": [
+        "Your AoBPlatform record ID is {{recordId}}. Every genuine message from us about your record quotes it, and you will see it on the page after you sign in."
+      ]
+    }
+  ]
+}

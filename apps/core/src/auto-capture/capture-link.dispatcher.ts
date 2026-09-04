@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import type { Prisma } from '@prisma/client';
 import { OutboundService } from '../outbound/outbound.service';
 import { EmailComposer } from '../messaging/composer.service';
+import { PortalRecordIdLine } from '../messaging/portal-record-id.service';
+import type { EmailBlock } from '../messaging/template';
 
 /**
  * Sends the patient the link that lets them approve an agreement.
@@ -21,12 +23,20 @@ import { EmailComposer } from '../messaging/composer.service';
  *
  * NO DOLLAR AMOUNTS, no Medicare number, no benefit figure — Rule 4 applies
  * to the message as it does to the artefact (REQ-REG-04).
+ *
+ * THE RECORD ID LINE IS APPENDED WHERE THE PATIENT HAS A PORTAL RECORD (Carl,
+ * 4 Sep 2026). This message kind predates the portal and is otherwise
+ * untouched: `PortalRecordIdLine` adds one sentence when — and only when — the
+ * recipient has an account, so a patient can check that every genuine message
+ * about their record quotes the id they see on the page and in their password
+ * manager. A patient with no account gets exactly the message they got before.
  */
 @Injectable()
 export class CaptureLinkDispatcher {
   constructor(
     private readonly outbound: OutboundService,
     private readonly composer: EmailComposer,
+    private readonly recordIdLine: PortalRecordIdLine,
     private readonly config: ConfigService,
   ) {}
 
@@ -70,10 +80,13 @@ export class CaptureLinkDispatcher {
     const items = input.mbsItemNumbers.join(', ');
 
     if (input.channel === 'sms_link') {
-      const body =
+      const body = await this.recordIdLine.appendToText(
+        tx,
+        input.patient.id,
         `${input.practiceName}: please confirm your Medicare bulk-billing agreement for your visit on ${when} ` +
-        `with ${input.providerName}. Open ${url}` +
-        (closes ? ` (link works until ${closes}).` : '.');
+          `with ${input.providerName}. Open ${url}` +
+          (closes ? ` (link works until ${closes}).` : '.'),
+      );
       return this.outbound.enqueue(tx, {
         practiceId: input.practiceId,
         channel: 'sms',
@@ -88,9 +101,7 @@ export class CaptureLinkDispatcher {
     }
 
     const subject = `Please confirm your bulk-billing agreement with ${input.practiceName}`;
-    const composed = this.composer.compose(
-      subject,
-      [
+    const blocks: EmailBlock[] = await this.recordIdLine.appendToBlocks(tx, input.patient.id, [
         { text: `Hello ${input.patient.givenNames},` },
         {
           text:
@@ -117,7 +128,10 @@ export class CaptureLinkDispatcher {
             'If you did not attend this practice on that date, do nothing — the link expires on its own — and ' +
             'let the practice know.',
         },
-      ],
+    ]);
+    const composed = this.composer.compose(
+      subject,
+      blocks,
       this.composer.footerFor(
         `You received this because ${input.practiceName} asked us to record your agreement for a Medicare ` +
           'bulk-billed service.',

@@ -53,6 +53,27 @@ describe('portal_messages_answer_is_this_genuine', () => {
     expect(region?.getAttribute('aria-labelledby')).toBe('portal-messages-waiting');
   });
 
+  it('portal_messages_card_shows_the_record_id', () => {
+    /*
+     * THE CHECK A PATIENT CAN ACTUALLY DO, on their phone, to a message we
+     * never see: the id here is the id in the header of this page and the id
+     * their password manager shows beside the passkey. A message about their
+     * record that does not quote it is not ours.
+     */
+    const id = 'AoBPlatform-PatientId-11111111-2222-3333-4444-555555555555';
+    const view = render(<MessagesCard state={ready([done, waiting])} recordId={id} />);
+    const line = view.getByTestId('portal-messages-record-id').textContent ?? '';
+    expect(line).toContain(`Every genuine message from us quotes your record ID ${id}`);
+    expect(line).toContain('If a message about your record does not, do not act on it — ask your practice.');
+  });
+
+  it('draws no record-id line while the id is unknown', () => {
+    // Better no sentence than one telling somebody to check for something we
+    // did not show them.
+    const view = render(<MessagesCard state={ready([done])} />);
+    expect(view.queryByTestId('portal-messages-record-id')).toBeNull();
+  });
+
   it('shows no strip when nothing is waiting', () => {
     const view = render(<MessagesCard state={ready([done])} />);
     expect(view.container.querySelector('[role="region"]')).toBeNull();

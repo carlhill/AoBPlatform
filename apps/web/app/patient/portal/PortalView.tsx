@@ -228,7 +228,7 @@ export function PortalView() {
         <EnduringCard state={cards.enduring} onTerminate={terminateEnduring} />
         <NoticesCard state={cards.notices} />
         <VisitsCard state={cards.visits} />
-        <MessagesCard state={cards.messages} />
+        <MessagesCard state={cards.messages} recordId={accountId ? portalRecordId(accountId) : null} />
         <PeopleCard state={cards.people} onRevoke={revokeAssignor} />
         <DataCard state={cards.access} />
         <PasskeysCard

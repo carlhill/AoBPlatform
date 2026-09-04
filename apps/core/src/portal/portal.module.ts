@@ -7,6 +7,7 @@ import { PortalInvitationController } from './portal-invitation.controller';
 import { PortalDevController } from './portal-dev.controller';
 import { PortalPasskeyController } from './portal-passkey.controller';
 import { PortalService } from './portal.service';
+import { PortalInvitationDispatcher } from './portal-invitation.dispatcher';
 import { PortalReadsService } from './portal-reads.service';
 import { PortalPasskeyService } from './portal-passkey.service';
 import { PortalScope } from './portal-scope';
@@ -65,6 +66,13 @@ import { PORTAL_WEBAUTHN, SimpleWebAuthnAdapter } from './portal-webauthn';
   providers: [
     PortalScope,
     PortalService,
+    /*
+     * THE INVITATION IS NOW SENT, not merely minted (Carl, 4 Sep 2026). The
+     * dispatcher composes `portal_invitation_v1` and queues it through the
+     * GLOBAL outbound and messaging modules — which is why neither is imported
+     * here — in the same transaction as the mint.
+     */
+    PortalInvitationDispatcher,
     PortalReadsService,
     PortalPasskeyService,
     { provide: PORTAL_AUTHENTICATOR, useClass: ThreeIdentifierBootstrapAuthenticator },

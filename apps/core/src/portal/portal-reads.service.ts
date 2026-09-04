@@ -846,6 +846,14 @@ function purposeKeyFor(subjectType: string, noticeId: string | null): string {
       return 'agreement_copy';
     case 'Notice':
       return 'notice_89aa';
+    /*
+     * THE INVITATION TO THIS VERY PAGE. It shows in the list because a patient
+     * checking "did that message come from my practice?" is most likely to be
+     * checking THAT one — it is the first message we ever send them about
+     * their record, and the one carrying a link.
+     */
+    case 'PortalActivationToken':
+      return 'portal_invitation';
     default:
       return 'other';
   }

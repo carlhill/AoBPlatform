@@ -4980,8 +4980,21 @@ export const strings = {
        */
       genuineQuestion: 'Is this message genuine?',
       genuineAnswer: 'If it is listed here, it came from your practice through AoBPlatform.',
+      /*
+       * THE SECOND HALF OF THE ANSWER (Carl, 4 Sep 2026). The listing above
+       * proves a message we DID send; this proves one we did NOT. Every
+       * genuine message about this record quotes the same id that is at the
+       * top of this page and in the password manager beside the passkey, so a
+       * message without it is not ours -- a check the reader can apply on
+       * their phone, to a message we never see.
+       */
+      recordIdCheck: (id: string) =>
+        `Every genuine message from us quotes your record ID ${id}. If a message about your record does not, `
+        + 'do not act on it — ask your practice.',
       purposes: {
         signature_request: 'Asking you to sign an agreement',
+        capture_request: 'Asking you to sign an agreement',
+        portal_invitation: 'The invitation to this page',
         agreement_copy: 'Your copy of an agreement',
         reminder: 'A reminder to sign',
         notice_89aa: 'A Medicare claim notice',

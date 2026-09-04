@@ -19,6 +19,15 @@
  * A PURPOSE OR CHANNEL WITH NO COPY SHOWS AS ITS OWN KEY rather than as a blank
  * — an unmapped code you can read out to support beats a row that says nothing
  * (Carl, 4 Sep 2026).
+ *
+ * AND THE OTHER HALF OF THE ANSWER, UNDER THE STRIP (Carl, 4 Sep 2026): the
+ * record id. The listing proves a message we DID send; the id proves one we did
+ * NOT. It is the same string the page's own header shows and the same one the
+ * password manager holds beside the passkey, so a patient holding a text
+ * message can check all three against each other — and a forger who has never
+ * seen this page cannot quote it. The line is drawn only when the id is known,
+ * because a sentence telling somebody to check for something we did not show
+ * them is worse than no sentence.
  */
 
 import type { PortalMessage } from '../api';
@@ -47,7 +56,14 @@ function Row({ message }: { message: PortalMessage }) {
   );
 }
 
-export function MessagesCard({ state }: { state: Loadable<readonly PortalMessage[]> }) {
+export function MessagesCard({
+  state,
+  recordId,
+}: {
+  state: Loadable<readonly PortalMessage[]>;
+  /** The account's own record id, from `GET /portal/session`. */
+  recordId?: string | null;
+}) {
   const pending = state.status === 'ready' ? state.data.filter((m) => m.pending) : [];
   const rest = state.status === 'ready' ? state.data.filter((m) => !m.pending) : [];
 
@@ -68,6 +84,12 @@ export function MessagesCard({ state }: { state: Loadable<readonly PortalMessage
           <p className={styles.waitingNote}>{strings.portal.messages.genuineQuestion}</p>
           <p className={styles.waitingNote}>{strings.portal.messages.genuineAnswer}</p>
         </div>
+      )}
+
+      {recordId && (
+        <p className={styles.waitingNote} data-testid="portal-messages-record-id">
+          {strings.portal.messages.recordIdCheck(recordId)}
+        </p>
       )}
 
       {state.status !== 'ready' ? (

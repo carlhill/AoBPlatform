@@ -29,6 +29,7 @@ import {
   parsePortalActivationToken,
 } from './portal-token';
 import { PORTAL_AUTHENTICATOR, type PortalAuthenticator } from './portal-authenticator';
+import { PortalInvitationDispatcher } from './portal-invitation.dispatcher';
 
 /**
  * WHO THE PATIENT IS, AND WHAT THEY MAY SEE — the identity half of C8.
@@ -60,6 +61,7 @@ export class PortalService {
     private readonly prisma: PrismaService,
     private readonly scope: PortalScope,
     private readonly verification: VerificationService,
+    private readonly invitations: PortalInvitationDispatcher,
     @Inject(PORTAL_AUTHENTICATOR) private readonly authenticator: PortalAuthenticator,
   ) {}
 
@@ -68,17 +70,31 @@ export class PortalService {
   // -------------------------------------------------------------------------
 
   /**
-   * Mint one activation invitation for a signed agreement.
+   * Mint one activation invitation for a signed agreement, and send it.
    *
    * ONLY FOR AN AGREEMENT THAT HAS BEEN SIGNED, and the reason is that the
    * invitation's whole authority comes from the verification that preceded the
    * signature. An invitation minted against a draft would be an offer to link a
    * record that nobody has yet proved belongs to the person holding it.
    *
-   * THE TOKEN IS RETURNED ONCE AND NEVER AGAIN — only its hash is stored. It
-   * goes to the patient through the messaging module on the sandbox gateway;
-   * this method mints and records, and writes no message copy (the web surface
-   * owns the strings, REQ-LANG-01).
+   * THE TOKEN IS RETURNED ONCE AND NEVER AGAIN — only its hash is stored. Since
+   * 4 September 2026 it is also DELIVERED: the message goes through the
+   * outbound queue in this same transaction, composed from the versioned
+   * template `portal_invitation_v1`, so an invitation is no longer a secret
+   * that appeared once in an API response and was gone.
+   *
+   * THE ACCOUNT IS MINTED HERE, NOT AT ACTIVATION (Carl, 4 Sep 2026). The
+   * record id `AoBPlatform-PatientId-<accountId>` is what a patient checks a
+   * message, a page and a passkey against, and the check is worthless unless
+   * the FIRST message quotes the id they will actually see. So the id exists
+   * before the message does. LINKING STILL HAPPENS AT ACTIVATION and only
+   * after the three-identifier check: the account row carries no patient data,
+   * and an account with no `portal_account_patients` row can read nothing.
+   *
+   * ONE PATIENT, ONE ID. A second invitation reuses the account this patient
+   * already has — from a live link, or from an earlier invitation — because two
+   * messages quoting two different ids would be exactly the confusion the id
+   * exists to remove.
    */
   async mintInvitation(
     practiceId: string,
@@ -87,8 +103,15 @@ export class PortalService {
   ): Promise<PortalInvitationResult> {
     const minted = mintPortalActivationToken(practiceId);
     const expiresAt = new Date(Date.now() + PORTAL_ACTIVATION_EXPIRY_HOURS * 3600_000);
+    /*
+     * RESERVED BEFORE THE TRANSACTION OPENS, because `portal_accounts` is
+     * fenced on `app.portal_account_id` — a row may only be written by a
+     * transaction that already names it. Discarded unhesitatingly below if
+     * this patient already has an account.
+     */
+    const candidateAccountId = randomUUID();
 
-    return this.prisma.withPractice(practiceId, async (tx) => {
+    return this.scope.withAccountAtPractice(candidateAccountId, practiceId, async (tx) => {
       const agreement = await tx.agreement.findFirst({ where: { id: agreementId } });
       if (!agreement) throw new NotFoundException('Agreement not found in this practice.');
       if (!agreement.signatureEventId) {
@@ -97,11 +120,33 @@ export class PortalService {
         );
       }
 
+      /*
+       * THE ID THIS PATIENT ALREADY HAS, if they have one: an activated link
+       * first, then the most recent earlier invitation. Both are visible under
+       * the practice key, and neither discloses anything about another
+       * practice — the link row read here is this practice's own.
+       */
+      const existingLink = await tx.portalAccountPatient.findFirst({
+        where: { patientId: agreement.patientId, practiceId },
+        orderBy: { linkedAt: 'asc' },
+      });
+      const earlierInvitation = existingLink
+        ? null
+        : await tx.portalActivationToken.findFirst({
+            where: { patientId: agreement.patientId, accountId: { not: null } },
+            orderBy: { createdAt: 'desc' },
+          });
+      const accountId = existingLink?.accountId ?? earlierInvitation?.accountId ?? candidateAccountId;
+      if (accountId === candidateAccountId) {
+        await tx.portalAccount.create({ data: { id: accountId } });
+      }
+
       const row = await tx.portalActivationToken.create({
         data: {
           practiceId,
           agreementId,
           patientId: agreement.patientId,
+          accountId,
           tokenHash: minted.tokenHash,
           mintedById,
           expiresAt,
@@ -109,15 +154,54 @@ export class PortalService {
       });
 
       /*
-       * THE EVENT CARRIES NO TOKEN AND NO HASH. An outbox row is not a secret
-       * store; what is evidential is that an invitation was offered for this
-       * agreement, by whom, and when it dies (REQ-LOG-08).
+       * THE MESSAGE, IN THIS TRANSACTION. The enqueue writes its correspondence
+       * twin beside it, so there is never an invitation nobody was told about
+       * or a message with no invitation behind it. A patient with no email and
+       * no mobile gets no message and the mint still succeeds — the portal is
+       * never a precondition of anything (REQ-PORT-08).
+       */
+      const [practice, patient] = await Promise.all([
+        tx.practice.findFirst({ where: { id: practiceId } }),
+        tx.patient.findFirst({ where: { id: agreement.patientId } }),
+      ]);
+      let sent: { channel: string; templateKey: string } | null = null;
+      if (practice && patient) {
+        sent = await this.invitations.sendInvitation(tx, {
+          practiceId,
+          practiceName: practice.name,
+          patient: {
+            id: patient.id,
+            givenNames: patient.givenNames,
+            familyName: patient.familyName,
+            email: patient.email,
+            mobile: patient.mobile,
+          },
+          invitationId: row.id,
+          accountId,
+          token: minted.token,
+          expiresAt,
+        });
+      }
+
+      /*
+       * THE EVENT CARRIES NO TOKEN, NO HASH AND NO CONTACT DETAIL. An outbox
+       * row is not a secret store; what is evidential is that an invitation was
+       * offered for this agreement, by whom, on which channel, under which
+       * template version, and when it dies (REQ-LOG-08). The account id is the
+       * patient's own record id and is not a patient detail.
        */
       await enqueueVaultEvent(tx, {
         type: 'portal.invitation_minted',
         actor: { principalType: mintedById === 'system' ? 'system' : 'staff', id: mintedById },
         subject: { type: 'Agreement', id: agreementId },
-        payload: { invitationId: row.id, expiresAt: expiresAt.toISOString(), offered: true },
+        payload: {
+          invitationId: row.id,
+          expiresAt: expiresAt.toISOString(),
+          offered: true,
+          accountId,
+          deliveredBy: sent?.channel ?? 'none',
+          ...(sent ? { templateKey: sent.templateKey } : {}),
+        },
       });
 
       return {
@@ -243,7 +327,24 @@ export class PortalService {
       throw new ForbiddenException(authenticated.nextStepKey ?? 'portal_additional_factor_required');
     }
 
-    const accountId = input.existingAccountId ?? randomUUID();
+    /*
+     * WHICH ACCOUNT THIS LINK JOINS, in the order that keeps the record id
+     * true (Carl, 4 Sep 2026):
+     *
+     *  1. THE SIGNED-IN ACCOUNT WINS. A patient activating a second practice's
+     *     invitation while already signed in is adding a practice to the hub
+     *     they already have; sending them to the invitation's own account would
+     *     split one person across two, and neither would hold everything.
+     *  2. OTHERWISE THE ACCOUNT THE INVITATION NAMED — the one whose id the
+     *     patient has been reading in our messages since the invitation went
+     *     out. Its row already exists; only the LINK is new, and it is written
+     *     here because this is the first moment three identifiers have passed.
+     *  3. AND FOR AN INVITATION MINTED BEFORE ANY OF THIS EXISTED, the old
+     *     behaviour: a fresh account, created below.
+     */
+    const preMintedAccountId = invitation.accountId ?? null;
+    const accountId = input.existingAccountId ?? preMintedAccountId ?? randomUUID();
+    const accountExists = input.existingAccountId !== null || preMintedAccountId !== null;
     const sessionId = randomUUID();
     const now = new Date();
     const expiresAt = new Date(now.getTime() + PORTAL_SESSION_MINUTES * 60_000);
@@ -256,7 +357,7 @@ export class PortalService {
      * the database so the row can be written under its own RLS scope.
      */
     await this.scope.withAccountAtPractice(accountId, parsed.practiceId, async (tx) => {
-      if (!input.existingAccountId) {
+      if (!accountExists) {
         await tx.portalAccount.create({ data: { id: accountId, lastSeenAt: now } });
       } else {
         await tx.portalAccount.update({ where: { id: accountId }, data: { lastSeenAt: now } });

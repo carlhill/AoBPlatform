@@ -2438,8 +2438,9 @@ model PortalAccount {
   /// without reading the session table. Never a request-level clock.
   lastSeenAt DateTime?
 
-  links    PortalAccountPatient[]
-  sessions PortalSession[]
+  links       PortalAccountPatient[]
+  sessions    PortalSession[]
+  invitations PortalActivationToken[]
 
   @@map("portal_accounts")
 }
@@ -2491,19 +2492,27 @@ model PortalSession {
 /// that agreement's own practice, which is what stops a forwarded message on a
 /// shared family phone opening somebody else's record (REQ-VUL, addendum v4).
 model PortalActivationToken {
-  id          String    @id @default(uuid()) @db.Uuid
-  practiceId  String    @db.Uuid
-  agreementId String    @db.Uuid
-  patientId   String    @db.Uuid
-  tokenHash   String    @unique
+  id          String         @id @default(uuid()) @db.Uuid
+  practiceId  String         @db.Uuid
+  agreementId String         @db.Uuid
+  patientId   String         @db.Uuid
+  /// THE ACCOUNT THIS INVITATION WILL LINK INTO, minted with the invitation so
+  /// that the record id in the very first message is the one the patient will
+  /// see on the page (Carl, 4 Sep 2026). Linking still happens at activation
+  /// and only after the three-identifier check; a minted account with no
+  /// `portal_account_patients` row can read nothing. NULL for every invitation
+  /// issued before this existed, which still activates the old way.
+  accountId   String?        @db.Uuid
+  account     PortalAccount? @relation(fields: [accountId], references: [id])
+  tokenHash   String         @unique
   /// The staff member's principal id, or `system` when minted after signature.
   mintedById  String
-  createdAt   DateTime  @default(now())
+  createdAt   DateTime       @default(now())
   expiresAt   DateTime
   usedAt      DateTime?
   /// Three wrong answers and this token is finished (423). A fresh invitation
   /// is a practice act, at the counter.
-  attempts    Int       @default(0)
+  attempts    Int            @default(0)
   lockedAt    DateTime?
 
   @@index([practiceId])
