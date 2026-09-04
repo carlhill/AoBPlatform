@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import {
+  computeSignability,
+  isServiceDescription,
   KIOSK_CAPTURABLE_STATUSES,
   kioskPollMs,
   projectKioskWaitingRow,
@@ -157,6 +159,30 @@ export class KioskService {
         const appointment = appointmentByAgreement.get(agreement.id);
 
         /*
+         * SIGNABLE, CHECKED BEFORE THE PATIENT DOES ANYTHING (TODO.md, "Two
+         * rulings from pairing day", 4 Sep 2026). Carl chose a name, passed
+         * all three identifiers, and only then reached a hand-over screen
+         * that named nobody — the patient's effort spent for nothing, and
+         * reception with no way to tell who needed fixing. `computeSignability`
+         * is the same D6a read `lockParticulars` does
+         * (`dto.basicServiceDescription ?? agreement.serviceDescription`,
+         * here without a DTO to prefer), matched against the identical
+         * `isServiceDescription` list `GET /service-descriptions` serves —
+         * cheap and structural, not a rules-engine call per row per poll. K-3's
+         * full validation at lock time is still the last line of defence.
+         */
+        const particulars = agreement.particulars as Record<string, unknown> | null;
+        const basicServiceDescription =
+          agreement.serviceDescription ??
+          (typeof particulars?.basicServiceDescription === 'string'
+            ? (particulars.basicServiceDescription as string)
+            : undefined);
+        const signability = computeSignability(
+          { particularsLockedAt: agreement.particularsLockedAt, basicServiceDescription },
+          isServiceDescription,
+        );
+
+        /*
          * The projection is what keeps this honest: it is handed the patient
          * row and takes only the permitted fields, so a date of birth or an
          * IHI cannot reach the response even if somebody spreads the record
@@ -173,7 +199,10 @@ export class KioskService {
             appointmentDate: appointment ? appointment.date.toISOString().slice(0, 10) : null,
             appointmentTime: appointment?.time ?? null,
             agreementStatus: agreement.status,
+            agreementType: agreement.type,
             waitingSince: request.createdAt.toISOString(),
+            signable: signability.signable,
+            blockedReason: signability.signable ? null : signability.blockedReason,
           }),
         );
       }
@@ -228,7 +257,10 @@ export class KioskService {
  *
  * Status is part of the fingerprint, not just the set of ids: a patient
  * moving from `verification_pending` to `awaiting_signature` changes what the
- * row says and must change the token.
+ * row says and must change the token. `signable`/`blockedReason` too — the
+ * whole point of computing them per row is that reception setting a Basic
+ * Service Description while a practice-staff member is fixing it must reach
+ * a tablet the patient is standing at, not wait behind a 304.
  *
  * AND SO IS THE RELOAD FLAG, for a reason that only shows up on a quiet
  * morning. A practice rolling its kiosk build back changes nothing about who
@@ -238,7 +270,11 @@ export class KioskService {
  */
 function revisionOf(waiting: KioskWaitingRow[], reload: boolean): string {
   const material = waiting
-    .map((row) => `${row.captureRequestId}:${row.agreementStatus}:${row.appointmentTime ?? ''}`)
+    .map(
+      (row) =>
+        `${row.captureRequestId}:${row.agreementStatus}:${row.appointmentTime ?? ''}:` +
+        `${row.signable}:${row.blockedReason ?? ''}`,
+    )
     .join('|');
   return createHash('sha256')
     .update(`${waiting.length}#${material}#reload:${reload}`)

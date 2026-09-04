@@ -2,7 +2,7 @@ import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
-import { KIOSK_POLL_MS } from '@aobplatform/domain';
+import { KIOSK_POLL_MS, SERVICE_DESCRIPTIONS } from '@aobplatform/domain';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { DevicesService } from '../src/devices/devices.service';
@@ -222,6 +222,12 @@ describe('the kiosk waiting list (e2e, real Postgres)', () => {
         appointmentDate: '2026-09-03',
         appointmentTime: '09:00',
         agreementStatus: 'verification_pending',
+        agreementType: 'episodic_pre',
+        // Seeded with no D6a and unlocked — the pairing-day ruling's own
+        // case (TODO.md, 4 Sep 2026): unsignable, and the tablet can say so
+        // before the patient does any work.
+        signable: false,
+        blockedReason: 'service_description_missing',
       });
       expect(typeof booked.waitingSince).toBe('string');
     });
@@ -260,12 +266,15 @@ describe('the kiosk waiting list (e2e, real Postgres)', () => {
         expect(Object.keys(row).sort()).toEqual([
           'agreementId',
           'agreementStatus',
+          'agreementType',
           'appointmentDate',
           'appointmentTime',
+          'blockedReason',
           'captureRequestId',
           'patientId',
           'patientName',
           'providerName',
+          'signable',
           'waitingSince',
         ]);
       }
@@ -321,6 +330,88 @@ describe('the kiosk waiting list (e2e, real Postgres)', () => {
       // any more: an unpaired tablet is refused outright, which is what lets
       // this route be reachable from the internet at all.
       await request(app.getHttpServer()).get('/kiosk/waiting-list').expect(401);
+    });
+  });
+
+  describe('waiting_row_says_whether_it_is_signable — checked before the patient does anything (TODO.md, 4 Sep 2026)', () => {
+    /*
+     * CARL'S OWN CASE, LIVE. He chose Jamie on the list, passed all three
+     * identifiers on K-2, and only then saw "One more detail is needed from
+     * reception" — on a screen with no name on it. The waiting patient did
+     * work for nothing, and reception had no way to tell who needed fixing.
+     * `bookedRequestId`'s row already asserts `signable: false` above,
+     * seeded with no D6a; this block adds the two rows that show the flag is
+     * a real precheck rather than always-false.
+     */
+    it('is signable once a Basic Service Description from the current mapping is set', async () => {
+      const signableAgreementId = await prisma.withPractice(practiceA, async (tx) => {
+        const provider = await tx.provider.findFirst({});
+        const patient = await tx.patient.create({
+          data: { practiceId: practiceA, familyName: 'Signable', givenNames: 'Sam', dateOfBirth: new Date('1990-01-01') },
+        });
+        const assignor = await tx.assignor.create({
+          data: { practiceId: practiceA, name: 'Sam Signable', authorityBasis: 'self', dateOfBirth: new Date('1990-01-01') },
+        });
+        const agreement = await tx.agreement.create({
+          data: {
+            practiceId: practiceA,
+            type: 'episodic_pre',
+            anchorKind: 'provider',
+            providerId: provider!.id,
+            patientId: patient.id,
+            assignorId: assignor.id,
+            assignorIsPatient: true,
+            status: 'draft',
+            // The staff surface's write (`POST /service-descriptions/agreements/:id`)
+            // — not something the tablet could ever set.
+            serviceDescription: SERVICE_DESCRIPTIONS[0],
+          },
+        });
+        await tx.captureRequest.create({
+          data: { practiceId: practiceA, agreementId: agreement.id, channel: 'in_practice' },
+        });
+        return agreement.id;
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/kiosk/waiting-list')
+        .set('x-device-credential', tabletA)
+        .expect(200);
+      const row = res.body.waiting.find((r: { agreementId: string }) => r.agreementId === signableAgreementId);
+      expect(row).toMatchObject({ signable: true, blockedReason: null });
+
+      await prisma.withPractice(practiceA, (tx) =>
+        tx.captureRequest.deleteMany({ where: { agreementId: signableAgreementId } }),
+      );
+      await prisma.withPractice(practiceA, (tx) => tx.agreement.deleteMany({ where: { id: signableAgreementId } }));
+    });
+
+    it('is signable, D6a or not, once particulars are already locked — the lock already asked the rules engine', async () => {
+      // `bookedAgreementId` is unlocked with no D6a and asserted unsignable
+      // above; flipping the status to `awaiting_signature` with a locked
+      // timestamp (without actually running the lock, which needs a rule
+      // set registered) is enough to show the precheck defers to it rather
+      // than re-litigating.
+      await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.update({
+          where: { id: bookedAgreementId },
+          data: { status: 'awaiting_signature', particularsLockedAt: new Date() },
+        }),
+      );
+
+      const res = await request(app.getHttpServer())
+        .get('/kiosk/waiting-list')
+        .set('x-device-credential', tabletA)
+        .expect(200);
+      const row = res.body.waiting.find((r: { captureRequestId: string }) => r.captureRequestId === bookedRequestId);
+      expect(row).toMatchObject({ signable: true, blockedReason: null });
+
+      await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.update({
+          where: { id: bookedAgreementId },
+          data: { status: 'verification_pending', particularsLockedAt: null },
+        }),
+      );
     });
   });
 

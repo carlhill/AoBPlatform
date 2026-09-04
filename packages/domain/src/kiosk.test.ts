@@ -2,10 +2,12 @@ import {
   KIOSK_CAPTURABLE_STATUSES,
   KIOSK_POLL_MS,
   KIOSK_WAITING_ROW_FIELDS,
+  computeSignability,
   isKioskCapturableStatus,
   kioskPollMs,
   projectKioskWaitingRow,
 } from './kiosk';
+import { isServiceDescription, SERVICE_DESCRIPTIONS } from './service-descriptions';
 
 /**
  * A patient record as the database holds one — everything the kiosk must not
@@ -98,5 +100,50 @@ describe('the kiosk waiting list', () => {
     // An idle tablet still asks: a walk-in nobody booked is the case the
     // critical lane exists for.
     expect(KIOSK_POLL_MS.idleMs).toBeGreaterThan(0);
+  });
+
+  describe('waiting_row_says_whether_it_is_signable — the pairing-day ruling (TODO.md, 4 Sep 2026)', () => {
+    it('is unsignable, with a code and no free text, when D6a is missing', () => {
+      const result = computeSignability(
+        { particularsLockedAt: null, basicServiceDescription: null },
+        isServiceDescription,
+      );
+      expect(result).toEqual({ signable: false, blockedReason: 'service_description_missing' });
+    });
+
+    it('is unsignable when D6a is set but does not match the current mapping', () => {
+      const result = computeSignability(
+        { particularsLockedAt: null, basicServiceDescription: 'Not a real description' },
+        isServiceDescription,
+      );
+      expect(result).toEqual({ signable: false, blockedReason: 'service_description_missing' });
+    });
+
+    it('is signable once D6a is set to a description the current mapping actually offers', () => {
+      const result = computeSignability(
+        { particularsLockedAt: null, basicServiceDescription: SERVICE_DESCRIPTIONS[0] },
+        isServiceDescription,
+      );
+      expect(result).toEqual({ signable: true });
+    });
+
+    it('is signable once particulars are already locked, regardless of D6a — the lock already asked the rules engine', () => {
+      const result = computeSignability(
+        { particularsLockedAt: '2026-09-04T00:00:00.000Z', basicServiceDescription: null },
+        isServiceDescription,
+      );
+      expect(result).toEqual({ signable: true });
+    });
+
+    it('never produces a message, only a code — this is what keeps a rules sentence off a waiting-room list', () => {
+      const result = computeSignability(
+        { particularsLockedAt: null, basicServiceDescription: undefined },
+        isServiceDescription,
+      );
+      expect(result.signable).toBe(false);
+      if (!result.signable) {
+        expect(['service_description_missing', 'particulars_incomplete', 'other']).toContain(result.blockedReason);
+      }
+    });
   });
 });

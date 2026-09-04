@@ -20,7 +20,7 @@
  * and the plan's own device payload (2.1, phase 4) already carries it.
  */
 
-import type { AgreementStatus } from './agreement';
+import type { AgreementStatus, AgreementType } from './agreement';
 
 /**
  * The statuses a pre-agreement can be in while it is still waiting for the
@@ -54,10 +54,25 @@ export const KIOSK_WAITING_ROW_FIELDS = [
   'appointmentDate',
   'appointmentTime',
   'agreementStatus',
+  'agreementType',
   'waitingSince',
+  'signable',
+  'blockedReason',
 ] as const;
 
 export type KioskWaitingRowField = (typeof KIOSK_WAITING_ROW_FIELDS)[number];
+
+/**
+ * A CODE, NEVER FREE TEXT — and never a rule message with data folded into it
+ * (hard rule 9's reasoning applied to a new surface: this screen is read by
+ * whoever is in the waiting room, so it must say "signable or not" without
+ * ever repeating a rules-engine sentence that might, some day, carry a detail
+ * it should not). `apps/web` maps each code to its own string-table entry;
+ * `'other'` is the fallback for a structural block this precheck did not
+ * anticipate, so an unrecognised reason still renders as "please see
+ * reception" rather than nothing at all.
+ */
+export type KioskBlockedReason = 'service_description_missing' | 'particulars_incomplete' | 'other';
 
 export interface KioskWaitingRow {
   captureRequestId: string;
@@ -69,8 +84,67 @@ export interface KioskWaitingRow {
   appointmentDate: string | null;
   appointmentTime: string | null;
   agreementStatus: KioskCapturableStatus;
+  /**
+   * Which of the four agreement types this row is (`packages/domain/src/agreement.ts`).
+   * Every kiosk row is `episodic_pre` today — enduring at the kiosk is not
+   * built (README.md, "Not built here") — but the field is carried so K-3 can
+   * pick its type-specific heading ("Agree to bulk billing for today's
+   * visit" vs the enduring wording) without a second call (TODO.md, "Two
+   * rulings from pairing day", 4 Sep 2026 copy follow-up).
+   */
+  agreementType: AgreementType;
   /** ISO timestamp — when the request was opened, so the screen can show the oldest first. */
   waitingSince: string;
+  /**
+   * CAN THIS AGREEMENT BE SIGNED RIGHT NOW — asked and answered BEFORE the
+   * patient does anything (TODO.md, "Two rulings from pairing day", 4 Sep
+   * 2026). Carl tapped a name, passed all three identifiers, and only then
+   * discovered the agreement had no Basic Service Description — the patient's
+   * time spent for nothing, and the hand-over that followed named nobody, so
+   * reception had no idea who to fix. `computeSignability` answers this from
+   * the agreement alone, cheaply, on every poll; K-3's full rules-engine
+   * validation at lock time remains the last line of defence and is not
+   * replaced by this precheck.
+   */
+  signable: boolean;
+  /** Set only when `signable` is false. See `KioskBlockedReason`. */
+  blockedReason: KioskBlockedReason | null;
+}
+
+/**
+ * THE CHEAP, STRUCTURAL PRECHECK BEHIND `signable` — deliberately not a call
+ * to the rules engine. The rules service (`apps/rules`) is the only authority
+ * on whether a payload passes s 65C, and asking it once per row on every
+ * two-second poll would multiply a waiting room's traffic by its headcount for
+ * no reason: the one particular this list can usefully check without it is
+ * the one the kiosk itself cannot supply (D6a — see `README.md`'s "What K-3
+ * does when the rules engine refuses").
+ *
+ * ALREADY LOCKED MEANS ALREADY SIGNABLE. `particularsLockedAt` being set means
+ * the rules engine has already accepted this agreement's particulars once
+ * (REQ-REG-06) — re-litigating that here would be a second, weaker copy of a
+ * check the lock already made honestly.
+ *
+ * `isValidServiceDescription` IS INJECTED rather than imported from
+ * `./service-descriptions` here, so this stays a pure function over plain
+ * data — easy to unit test, and the same function core and any future caller
+ * can share without agreeing on where the content file lives.
+ */
+export function computeSignability(
+  agreement: {
+    readonly particularsLockedAt: string | Date | null;
+    /** `agreement.serviceDescription ?? particulars.basicServiceDescription` — the same read `lockParticulars` does. */
+    readonly basicServiceDescription: string | null | undefined;
+  },
+  isValidServiceDescription: (value: string) => boolean,
+): { readonly signable: true } | { readonly signable: false; readonly blockedReason: KioskBlockedReason } {
+  if (agreement.particularsLockedAt) return { signable: true };
+
+  const d6a = agreement.basicServiceDescription;
+  if (!d6a || !isValidServiceDescription(d6a)) {
+    return { signable: false, blockedReason: 'service_description_missing' };
+  }
+  return { signable: true };
 }
 
 /**
