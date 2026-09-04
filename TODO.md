@@ -1601,6 +1601,24 @@ Now a working rule in CLAUDE.md section 7.
       (queue, reconciliation, correspondence, devices) and give each a link
       with the item id.
 
+## Outage screen on the tablet (Carl, 4 Sep 2026)
+
+"When the server is down, hide everything and say, Please contact reception."
+
+- [ ] Kiosk: a single outage state driven by the polls (`/kiosk/me`, waiting
+      list, session) -- after N consecutive failures (say 2, ~10 s) on ANY
+      screen, replace the whole screen with "Please contact reception. Your
+      appointment is not affected." and nothing else: no fields, no half-drawn
+      agreement, no patient details left visible. Keep polling quietly at the
+      existing cadence (no hammering). On the first success: clear all
+      in-memory state and return to idle -- a pushed session re-appears on its
+      own from the session poll; a walk-up ceremony starts over (nothing
+      server-side was lost beyond a verification event that stands). Footer
+      keeps naming the tablet so support can identify it. Zero-footprint rule
+      unchanged. Named tests: `outage_replaces_every_screen_with_see_reception`,
+      `recovery_returns_to_idle_and_clears_state`. Sequenced after the
+      `timed_out` build, which is editing Ceremony.tsx.
+
 ## Nothing on the patient surface is ever staff entry
 
 Carl, 3 Sep 2026, on seeing K-3 ask for a "Basic description of the service --
