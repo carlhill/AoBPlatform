@@ -21,6 +21,7 @@ Read in this order before writing code. All are provided alongside this file.
 | `aob-build-plan.md` | Phase order, gates, and the cost-aware agent-build policy |
 | `aob-faq-reconciliation.md`, addenda v2–v5, `aob-threat-model.md` | Background: why the rules below exist. Consult when a requirement seems arbitrary |
 | `glossary.md` | Every acronym. If you introduce a new acronym in code docs, add it here |
+| `DECISIONS.md` | Running log of product and regulatory decisions from working sessions, dated and attributed, with what would reopen each. Check it before proposing a change to something already decided |
 
 Requirement language: MUST = release-blocking, SHOULD = deferrable with a recorded decision, MAY = roadmap.
 

@@ -1460,6 +1460,13 @@ administrator account.
       `inactive`; the kiosk's poll shows the out-of-use screen; a vault event
       either way.
 
+## Verification stays at three identifiers (DECISIONS.md D-2026-09-04-01)
+
+- [ ] Named test `two_matching_identifiers_do_not_pass`: name + DOB matching
+      with address failing must return the generic mismatch through both the
+      link challenge and `POST /kiosk/claim`. The floor of three is enforced
+      server-side today; the test pins it against a future "just this once".
+
 ## Nothing on the patient surface is ever staff entry
 
 Carl, 3 Sep 2026, on seeing K-3 ask for a "Basic description of the service --
