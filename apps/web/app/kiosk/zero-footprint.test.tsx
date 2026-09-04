@@ -36,6 +36,7 @@ import { firstAttempt } from './rules/verification';
 import { EMPTY_CHOICE } from './rules/assignor';
 import { PairingScreen } from './screens/PairingScreen';
 import { UnpairedScreen } from './screens/UnpairedScreen';
+import { OutageScreen } from './screens/OutageScreen';
 import { getSession, PERSISTABLE_KEYS, setSession } from './session';
 import {
   PAIRING_CREDENTIAL_KEY,
@@ -262,6 +263,13 @@ describe('CLAUDE.md §7 — nothing is written to the device', () => {
         onContinue={noop}
       />,
       <UnpairedScreen key="unpaired" onPair={noop} />,
+      /*
+       * THE OUTAGE SCREEN — the newest way "the tablet holds nothing" is
+       * tested (TODO.md "Outage screen on the tablet"). It has no field and no
+       * button, so there is nothing here to write on a tap; this render only
+       * checks that mounting and unmounting it is as silent as everything else.
+       */
+      <OutageScreen key="outage" {...CHROME} />,
     ];
 
     for (const screen of screens) {

@@ -4573,6 +4573,19 @@ export const strings = {
       pairAction: 'Pair this tablet',
     },
 
+    /*
+     * OUTAGE — core stopped answering (TODO.md "Outage screen on the
+     * tablet", Carl 4 Sep 2026: "hide everything and say, Please contact
+     * reception."). Two sentences and nothing else: no field, no half-drawn
+     * agreement, no patient detail. No retry — the screen offers nothing to
+     * press, because there is nothing on this device that pressing anything
+     * could fix; it clears itself the moment the server answers again.
+     */
+    outage: {
+      heading: 'Please contact reception',
+      body: 'Your appointment is not affected.',
+    },
+
     /**
      * THE VERSION BANNER SUPPORT CAN READ (TODO.md "Zero-footprint kiosk").
      * Small, in the footer, and the only reason it is on a patient-facing

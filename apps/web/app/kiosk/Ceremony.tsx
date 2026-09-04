@@ -100,6 +100,7 @@ import {
 import { useWaitingList } from './useWaitingList';
 import { useTabletSession } from './useTabletSession';
 import { useInactivityReset } from './useInactivityReset';
+import { useOutageState } from './useOutageState';
 import { clearPairingCredential, readPairingCredential, writePairingCredential } from './pairing';
 import { challengeIsComplete, identifierFieldsFor, type IdentifierField } from './rules/identifiers';
 import { composeSignRequest } from './rules/signature-payload';
@@ -133,6 +134,7 @@ import { CompleteScreen } from './screens/CompleteScreen';
 import { HandoverScreen } from './screens/HandoverScreen';
 import { PairingScreen, type PairedOutcome, type PairingFailure } from './screens/PairingScreen';
 import { UnpairedScreen } from './screens/UnpairedScreen';
+import { OutageScreen } from './screens/OutageScreen';
 import type { SignaturePadHandle } from './components/SignaturePad';
 import { InactivityWarning } from './components/InactivityWarning';
 import { strings } from './strings';
@@ -522,20 +524,37 @@ export function Ceremony(): ReactNode {
     setStep('pairing');
   }, []);
 
-  const reset = useCallback(() => {
-    // Whatever session was up, this tablet is done with it. Read from a ref so
-    // `reset` stays dependency-free — it is itself a dependency of the recall
-    // effect, and recreating it on every poll would churn that effect.
-    if (pushedIdRef.current) {
+  /**
+   * EVERY IN-MEMORY CEREMONY STATE, WALK-UP AND PUSHED — the one clearing
+   * routine behind both `reset()` and outage recovery (TODO.md "Outage screen
+   * on the tablet"), so the two can never quietly drift apart on what "the
+   * tablet holds nothing" means.
+   *
+   * `releaseSession` IS THE ONE THING THAT DIFFERS. An ordinary reset has
+   * either told the server the session is over (`leave`, `resetForInactivity`)
+   * or is closing one this tablet itself completed (`sign`, `CompleteScreen`)
+   * — in every one of those cases a still-live session with the same id must
+   * NOT be re-entered from a stale poll, so `releasedSessionRef` is set.
+   * Recovering from an outage has told the server nothing at all — the tablet
+   * could not reach it — so a pushed session that is still live must be free
+   * to reappear on this device's own next successful poll (TODO.md: "a pushed
+   * session re-appears on its own from the session poll"), and setting the
+   * guard here would lock it out for no reason this device ever earned.
+   */
+  const clearCeremonyState = useCallback((options: { releaseSession: boolean }) => {
+    // Whatever session was up, read from a ref so this stays dependency-free
+    // — it is itself a dependency of the recall effect, and recreating it on
+    // every poll would churn that effect.
+    if (options.releaseSession && pushedIdRef.current) {
       releasedSessionRef.current = pushedIdRef.current;
-      pushedIdRef.current = null;
     }
+    pushedIdRef.current = null;
     setStep('idle');
     setRow(null);
     setAgreement(null);
     /*
      * THE PUSHED SESSION GOES WITH EVERYTHING ELSE. It is the only patient
-     * data this device ever holds, and the reset is the moment the tablet is
+     * data this device ever holds, and this is the moment the tablet is
      * handed to the next person — a name, a date of birth or an address that
      * survived this line would be exactly the residual patient data C2 forbids.
      */
@@ -559,6 +578,21 @@ export function Ceremony(): ReactNode {
     setIncomplete(false);
     setStartError(false);
   }, []);
+
+  const reset = useCallback(
+    () => clearCeremonyState({ releaseSession: true }),
+    [clearCeremonyState],
+  );
+
+  /**
+   * OUTAGE RECOVERY'S OWN CLEARING CALL — same state, session left claimable.
+   * See the doc comment on `clearCeremonyState` for why this must not be
+   * `reset()`.
+   */
+  const clearForOutageRecovery = useCallback(
+    () => clearCeremonyState({ releaseSession: false }),
+    [clearCeremonyState],
+  );
 
   const toHandover = useCallback((heading: string, body: string) => {
     setHandover({ heading, body });
@@ -652,6 +686,17 @@ export function Ceremony(): ReactNode {
   }, [pushed, reset]);
 
   /**
+   * THE OUTAGE HEARTBEAT (TODO.md "Outage screen on the tablet"). Runs on
+   * every screen but the three with no patient standing at them — see
+   * `useOutageState`'s own comment for the mechanics, and `clearCeremonyState`
+   * for why recovery is not `reset()`. `list.pollMs` is read here rather than
+   * re-derived, so this obeys the exact cadence the server already settled on
+   * for the waiting list and the pushed-session poll.
+   */
+  const outageEnabled = step !== 'booting' && step !== 'pairing' && step !== 'unpaired';
+  const outage = useOutageState(outageEnabled, list.pollMs, clearForOutageRecovery);
+
+  /**
    * THE CLOCK, ON EVERY SCREEN BUT THE ONES WITH NOBODY'S DETAILS ON THEM.
    *
    * `idle` is excluded because it holds nothing and is already where this
@@ -661,9 +706,14 @@ export function Ceremony(): ReactNode {
    * test device's `list` IS included: it is the one screen in the product that
    * shows other patients' names, so it is the last one that should sit there
    * unattended.
+   *
+   * AND NOT WHILE THE OUTAGE SCREEN IS UP. Nothing is visible for a countdown
+   * to warn about, and firing `timed_out` at a server this tablet cannot
+   * reach would be a pointless request racing the recovery poll.
    */
   const inactivity = useInactivityReset({
-    enabled: step !== 'idle' && step !== 'booting' && step !== 'pairing' && step !== 'unpaired',
+    enabled:
+      step !== 'idle' && step !== 'booting' && step !== 'pairing' && step !== 'unpaired' && !outage.active,
     timeoutSeconds: idleTimeoutSeconds,
     onExpire: resetForInactivity,
   });
@@ -698,19 +748,36 @@ export function Ceremony(): ReactNode {
   }, []);
 
   /**
-   * A PUSHED SESSION TAKES OVER THE TABLET — from the IDLE screen, and only
-   * from there (TODO.md, Carl 4 Sep 2026).
+   * A PUSHED SESSION TAKES OVER THE TABLET — from the IDLE screen, or
+   * SUPERSEDES THE ONE ALREADY ON GLASS (Carl, 4 Sep 2026; the second half
+   * added the same day after a live bug: a patient crossed "Mobile number" on
+   * K-P1, reception corrected it and pressed Re-send, and the tablet stayed on
+   * the old, disputed screen).
    *
-   * IT WILL NOT INTERRUPT A WALK-UP CEREMONY. Somebody is standing at this
-   * tablet part-way through proving who they are; replacing their screen with
-   * a stranger's date of birth would be both a disclosure and a theft of their
-   * session. The poll is not even running mid-walk-up, so the push simply
-   * waits: the moment the tablet returns to idle it is seen and shown. The
-   * server does not need to know which screen is up, and a server that did
-   * would be one the tablet could lie to.
+   * RE-SEND IS A RECALL AND A NEW PUSH, and the two can land inside one poll
+   * interval — this device's poll then never sees `{ session: null }` in
+   * between, only a DIFFERENT session id where the old one was. The id is
+   * what this effect keys on, not "is there a session": whenever the polled
+   * id differs from the one this screen is showing, that screen is stale,
+   * whatever step it is on, and everything about it — the ticks, the cached
+   * agreement, who was chosen to sign — is dropped in favour of the new
+   * session's own. THE NEW AGREEMENT ID IS PART OF THAT. Reception may have
+   * re-sent the very same agreement, corrected, or superseded it with a new
+   * one entirely; either way `setPushed(session)` below replaces the whole
+   * payload, and K-P1 reads from it fresh rather than from anything this
+   * effect does not explicitly clear.
    *
-   * `reading` IS POSTED HERE, as K-P1 first renders, which is what reception's
-   * status column is watching for.
+   * IT WILL NOT INTERRUPT A WALK-UP CEREMONY. Somebody standing at this
+   * tablet proving who they are, with no push behind them (`pushed === null`),
+   * is on `verify` or `assignor` — screens the poll does not even run on (see
+   * `pushedCeremony`, above) — or is on `particulars`/`signature` with
+   * `pushed` still null, which `pushedCeremony` also reads as false. So the
+   * eligible steps are exactly `idle`, `list`, and `pushedCeremony`'s own
+   * screens: the ordinary take-over from idle, PLUS every screen a pushed
+   * ceremony can be showing when it is superseded.
+   *
+   * `reading` IS POSTED HERE, as K-P1 first renders for the new session,
+   * which is what reception's status column is watching for.
    */
   useEffect(() => {
     const session = tabletSession.session;
@@ -725,8 +792,10 @@ export function Ceremony(): ReactNode {
     }
     if (!session) return;
     if (releasedSessionRef.current === session.id) return;
+    // THE SAME SESSION THIS SCREEN ALREADY SHOWS — not a supersede, and
+    // re-running this block would wipe out ticks the patient has already made.
     if (pushed?.id === session.id) return;
-    if (step !== 'idle' && step !== 'list') return;
+    if (step !== 'idle' && step !== 'list' && !pushedCeremony) return;
 
     setRow(null);
     setAgreement(null);
@@ -739,6 +808,7 @@ export function Ceremony(): ReactNode {
     autoLockedRef.current = null;
     setAnswers({});
     postedAnswersRef.current = '';
+    setConfirmBusy(false);
     setConfirmError(false);
     setPushed(session);
     pushedIdRef.current = session.id;
@@ -746,7 +816,7 @@ export function Ceremony(): ReactNode {
     if (session.state === 'pushed') {
       void setTabletSessionState(session.id, 'reading').catch(() => undefined);
     }
-  }, [tabletSession.session, pushed, step]);
+  }, [tabletSession.session, pushed, step, pushedCeremony]);
 
   /**
    * THE SESSION WENT AWAY — recalled from the console, expired after thirty
@@ -1433,6 +1503,17 @@ export function Ceremony(): ReactNode {
       artefactHash: agreement?.renderedArtefactHash ?? null,
     };
   }, [agreement, row, pushed, pushedPatientName]);
+
+  /**
+   * THE OUTAGE SCREEN REPLACES EVERYTHING BELOW IT (TODO.md "Outage screen on
+   * the tablet"). Every hook above this line has already run unconditionally,
+   * so returning here is safe; nothing after it is a hook. Whatever step the
+   * ceremony was on stays in state, untouched and unseen, until
+   * `clearForOutageRecovery` runs on the first successful poll.
+   */
+  if (outage.active) {
+    return <OutageScreen practiceName={practiceName} locationLine={locationLine} />;
+  }
 
   /**
    * THE SCREEN, AND THEN THE ONE THING THAT SITS OVER IT.
