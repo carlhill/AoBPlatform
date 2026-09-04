@@ -4791,8 +4791,11 @@ export const strings = {
    */
   portal: {
     title: 'Your bulk-billing record',
+    /** THE PERSON'S NAME IN THE HEADER (Carl, 4 Sep 2026), once the details have loaded. */
+    titleFor: (name: string) => `${name} — your bulk-billing record`,
     lead: 'Everything AoBPlatform holds about you, and what we do with it.',
     loading: 'Loading…',
+    signOut: 'Sign out',
     /*
      * ONE CARD FAILED, NOT THE PAGE. Said inside the card that failed, and it
      * says the rest still works — because somebody who came here to check

@@ -36,6 +36,10 @@ export function openFixtureSession(): void {
   signedIn = true;
 }
 
+export function closeFixtureSession(): void {
+  signedIn = false;
+}
+
 export function fixtureSession(): PortalSession {
   if (!signedIn) throw new PortalApiError('Not signed in', 401);
   return {

@@ -306,6 +306,20 @@ export function artefactUrl(agreementId: string): string {
 }
 
 /**
+ * SIGN OUT — a server-side revoke, not only a cleared cookie (Carl, 4 Sep
+ * 2026: "no sign-out button"). The session row is revoked on the server, so a
+ * copied cookie is dead too; the browser then re-asks `/portal/session` and
+ * lands on the signed-out screen.
+ */
+export async function signOut(): Promise<void> {
+  if (PORTAL_FIXTURES) {
+    (await fixtures()).closeFixtureSession();
+    return;
+  }
+  await request<{ signedOut: true }>('/portal/sign-out', { method: 'POST' });
+}
+
+/**
  * DEV ONLY — mint a portal session for named patients without a passkey.
  *
  * Guarded exactly like the console's own bypass (`AuthGate`,

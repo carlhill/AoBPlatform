@@ -44,6 +44,7 @@ vi.mock('./api', async () => {
     registerPasskey: vi.fn(),
     revokePasskey: vi.fn(),
     signInWithPasskey: vi.fn(),
+    signOut: vi.fn(),
   };
 });
 
@@ -181,5 +182,39 @@ describe('portal_one_failed_card_does_not_blank_the_page', () => {
 
     expect(window.localStorage.length).toBe(0);
     expect(window.sessionStorage.length).toBe(0);
+  });
+});
+
+describe('portal_header_names_the_person_and_offers_sign_out', () => {
+  it('puts the name from the first practice record in the header, and Sign out revokes then re-checks', async () => {
+    allCardsAnswer();
+    api.fetchDetails.mockResolvedValue([
+      {
+        practiceId: 'p1',
+        practiceName: 'Wattle Street Medical',
+        familyName: 'Sampleton',
+        givenNames: 'Jamie',
+        dateOfBirth: '1962-08-04',
+        address: '2 Example Street, Sampletown NSW 2000',
+        mobile: '+61400000999',
+        email: 'jamie-sampleton@example.invalid',
+        patientRecordNumber: 'DEV-JAMIE-SAMPLETON',
+      },
+    ]);
+
+    render(<PortalView />);
+
+    // THE NAME IN THE HEADER (Carl, 4 Sep 2026), once the details have loaded.
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { level: 1 }).textContent).toContain('Jamie Sampleton'),
+    );
+
+    // SIGN OUT: the server-side revoke is called, then the session is re-asked
+    // — and a 401 on that re-ask is the signed-out screen, not an error.
+    api.fetchSession.mockRejectedValue(new PortalApiError('no', 401));
+    fireEvent.click(screen.getByTestId('portal-sign-out'));
+    await waitFor(() => expect(actual.signOut).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByTestId('portal-sign-out')).toBeNull());
+    expect(screen.getByText(/You never need to sign in/)).toBeTruthy();
   });
 });

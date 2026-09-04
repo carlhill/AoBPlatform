@@ -51,6 +51,7 @@ import {
   revokeAssignor,
   revokePasskey,
   signInWithPasskey,
+  signOut,
   terminateEnduring,
   type PortalAccessEntry,
   type PortalAgreement,
@@ -175,8 +176,35 @@ export function PortalView() {
     return <SignedOut unreachable={session === 'unreachable'} onSignedIn={checkSession} />;
   }
 
+  // THE PERSON'S NAME IN THE HEADER, from the first practice's record once the
+  // details card has loaded; the generic title until then, and if it failed.
+  const first = cards.details.status === 'ready' ? cards.details.data[0] : undefined;
+  const displayName = first ? `${first.givenNames} ${first.familyName}`.trim() : '';
+
   return (
-    <Shell title={strings.portal.title} lead={strings.portal.lead}>
+    <Shell
+      title={displayName ? strings.portal.titleFor(displayName) : strings.portal.title}
+      lead={strings.portal.lead}
+      right={
+        // SIGN OUT, IN THE TOP BAR ON EVERY SIGNED-IN VIEW. A server-side
+        // revoke; the page then re-asks the server and shows the signed-out
+        // screen (a failed revoke still re-checks, so a dead cookie shows as
+        // signed out rather than as a stale page).
+        <PortalButton
+          variant="quiet"
+          data-testid="portal-sign-out"
+          onClick={async () => {
+            try {
+              await signOut();
+            } finally {
+              checkSession();
+            }
+          }}
+        >
+          {strings.portal.signOut}
+        </PortalButton>
+      }
+    >
       <div className={styles.page}>
         <DetailsCard state={cards.details} onRequestCorrection={requestDetailCorrection} />
         <AgreementsCard state={cards.agreements} />
