@@ -722,7 +722,10 @@ export class AgreementsService {
     if (this.enduringProbe && this.enduringProbe.at > now - ENDURING_PROBE_TTL_MS) {
       return this.enduringProbe.authored;
     }
-    let authored = false;
+    // Declared without an initial value on purpose: both branches below assign
+    // it, and a `false` here would be a value nothing ever reads
+    // (`no-useless-assignment`).
+    let authored: boolean;
     try {
       const validation = await this.rules.validate({
         payload: { agreementType: 'enduring' },
