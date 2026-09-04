@@ -2362,3 +2362,93 @@ rule: build only what it designs.
       handoff asks for it to be ported into the theme layer. That re-themes
       every screen and is a product decision, not a side effect of one page.
       Decide before the kiosk build, where the hi-fi screens depend on it.
+
+---
+
+## ABN Lookup live (4 Sep 2026)
+
+Carl was granted ABN Lookup web-services access, and organisation onboarding
+now asks the real Australian Business Register. What is true today, and what
+deliberately is not.
+
+### What is live
+
+`AbrWebServicesClient` calls the document-style JSON service — method
+`AbnDetails` at `https://abr.business.gov.au/json/AbnDetails.aspx` — with a
+5-second timeout and **no retries in the request path**. The response is JSONP
+(`callback({…})`) at content type `text/javascript`, and **every refusal
+arrives as HTTP 200** with the reason in `Message`; all three refusals were
+observed against the live service on 4 September 2026:
+
+| `Message` | Means | Our reason code |
+|---|---|---|
+| `No record found` | the ABN is unknown | `no_record` (not found) |
+| `Search text is not a valid ABN or ACN` | not an ABN at all | `invalid_search_text` (not found) |
+| `The GUID entered is not recognised as a Registered Party` | **our** credential | `register_refused` (unreachable) |
+
+One real response is recorded in
+`apps/core/src/organisations/__fixtures__/abr-ato.json` (the ATO's own ABN — a
+public body, chosen so no live test ever queries a person) and the mapper is
+unit-tested against it. `apps/core/test/abr.live.e2e-spec.ts` is the only thing
+in the repo that calls the real service; it runs only when a GUID is set **and**
+`ABR_LIVE_TEST=1`, so CI never touches it.
+
+Two surfaces use it: `/apply` previews the entity as soon as the check digits
+agree, and `/practice/entity` shows the provenance and date and offers
+**Re-check with the Australian Business Register**.
+
+### The manual-attestation fallback, and what it may not do
+
+Unreachable — no GUID, an outage, a timeout, our own credential refused —
+routes to the attestation panel, where a named human types what the register
+shows. Onboarding is delayed, never blocked.
+
+**An attestation answers silence, not a no.** From this change, a register that
+positively says `No record found` refuses the application and the attestation
+panel is not offered: attesting past an answered register is the override the
+fallback was never meant to be.
+
+### The trading-name rule
+
+The ABR **stopped collecting trading names in May 2012**. Only `BusinessName`
+(registered business names, current by construction) is read, stored or matched
+on. A name a practice has traded under for twenty years may simply not be in
+the register — that is a gap in the register, and the form says so rather than
+letting it read as a problem with the practice.
+
+### The GUID
+
+`ABR_API_GUID`, in `apps/core/.env` only. Never in code, a fixture, a test or a
+commit; never logged — not the value, not a prefix, not its length.
+`.env.example` carries the empty key and the note. **Unset is safe and is the
+default**: the client runs offline against three fixtures and makes no network
+calls, and core says which mode it is in at startup.
+
+### Not built, and why
+
+- [ ] **A queued re-check.** An application that fell back to attestation
+      because the ABR was down should be re-checked automatically once it is
+      up, and its provenance upgraded from `manual_attestation` to `abr_api`.
+      Deferred because retrying in the request path is the wrong place — an
+      applicant is waiting — and a queue is a scheduler concern, not a client
+      one. The manual button on `/practice/entity` does the same job today, one
+      practice at a time. Depends on nothing; it is scope, not a blocker.
+- [ ] **A scheduled re-check of approved practices.** Same mechanism, different
+      trigger: an ABN cancelled after approval is invisible until somebody
+      presses the button. Needs a decision on cadence and on what a cancellation
+      should DO — it must not suspend capture on its own (hard rule 8), so it is
+      a review task, not an automatic block.
+- [ ] **Redis for the per-IP lookup limiter.** In memory and per process today,
+      and said so out loud in `abn-lookup-rate-limit.ts`. It also keys on
+      `req.ip`, which behind a load balancer is the balancer unless `trust
+      proxy` is set — the fix belongs with the proxy configuration and the
+      shared counter, together.
+- [ ] **`AcnDetails` is not implemented.** It exists and answers, but nothing
+      needs it: onboarding is always entered with an ABN, the ACN is derived by
+      the domain gate, and `AbnDetails` already returns the register's own
+      `Acn` to check that derivation against.
+- [ ] **The offline fixtures use real ABNs.** `53004085616` is BP Australia's
+      and `51824753556` is the ATO's, both dressed as invented practices, which
+      contradicts CLAUDE.md §7 ("no real Medicare-format numbers in fixtures" —
+      same principle). Left alone here because several e2e suites depend on
+      those exact numbers; changing them is a small, separate job.
