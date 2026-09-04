@@ -1288,6 +1288,13 @@ deployment) rather than adding it.
 
 ## Two rulings from pairing day (Carl, 4 Sep 2026)
 
+- [x] Built 4 Sep (`e38a113`, `2986e24`): "Add a tablet" is a button at the
+      top of `/practice/devices`; an unpaired row shows its pairing code large
+      and copyable with expiry, "New code" re-issues via `POST
+      /devices/:id/rotate` (works in any device state); every kiosk screen's
+      footer names the tablet ("label · id[:8]" from `/kiosk/me`); the idle
+      screen hides Begin over an empty queue using a server boolean
+      `anyoneWaiting`, never a count.
 - [ ] **Copy for the paired tablet, on the pairing-success and idle screens
       and in the console's device row:** "This tablet can be revoked from the
       practice console at any time. Nothing else is stored on it." Both halves
