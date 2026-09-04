@@ -25,8 +25,11 @@ export function VisitsCard({ state }: { state: Loadable<readonly PortalVisit[]> 
         <CardState state="empty" empty={strings.portal.visits.empty} />
       ) : (
         <ul className={styles.rows}>
-          {state.data.map((visit) => (
-            <li className={styles.row} key={`${visit.date}-${visit.practiceName}`}>
+          {state.data.map((visit, index) => (
+            // TWO VISITS TO ONE PRACTICE ON ONE DAY ARE ORDINARY (a service and
+            // a follow-up), so date + practice is not a key; the row's position
+            // in a read-only, server-ordered list is.
+            <li className={styles.row} key={`${visit.date}-${visit.practiceName}-${index}`}>
               <span className={styles.rowMain}>
                 <span className={styles.rowValue}>{visit.practiceName}</span>
                 <span className={styles.rowMeta}>{visit.locationLine}</span>

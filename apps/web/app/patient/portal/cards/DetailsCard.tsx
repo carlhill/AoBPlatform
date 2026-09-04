@@ -84,7 +84,9 @@ export function DetailsCard({
         <CardState state="empty" empty={strings.portal.details.empty} />
       ) : (
         state.data.map((practice) => (
-          <div key={practice.practiceId}>
+          {/* ONE ACCOUNT CAN HOLD TWO RECORDS AT THE SAME PRACTICE (a test
+              account did, 4 Sep 2026), so the practice id alone is not a key. */}
+          <div key={`${practice.practiceId}:${practice.patientRecordNumber}`}>
             <h3 className={styles.groupTitle}>{practice.practiceName}</h3>
             <ul className={styles.rows}>
               {FIELDS.map((field) => {
