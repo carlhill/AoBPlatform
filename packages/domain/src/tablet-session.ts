@@ -47,9 +47,13 @@ import type { AgreementType } from './agreement';
  * `details_disputed` IS LIVE, NOT AN ENDING (Carl, 4 Sep 2026). The patient
  * crossed at least one row, so the ceremony stops — Continue is dead on the
  * tablet — but the SESSION does not, and neither does the device's claim on
- * it. Reception sees the cross, corrects the detail at the desk and re-sends;
- * a patient who then changes their mind and ticks it after all moves the same
- * session back to `details_confirmed` without anybody pushing twice.
+ * it. Reception sees the cross, corrects the detail at the desk (or records
+ * "no change needed") and re-sends, and the re-send is a NEW session. Once the
+ * cross has reached reception the patient cannot tick it after all: the tablet
+ * locks with "please wait for reception", and a second `confirm-details` on a
+ * disputed session is refused with 409 `session_disputed` (Carl, 4 Sep 2026,
+ * later the same day — reception may already be correcting the record, so the
+ * tablet must not carry on against details mid-correction).
  *
  * ENDING IT WOULD BE THE WRONG SHAPE for two reasons that both bite. The
  * device would be released, so the tablet in the patient's hands would fall
