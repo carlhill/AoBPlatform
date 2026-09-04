@@ -1996,6 +1996,19 @@ portal.
       WCAG 2.2 AA, UK/AU plain language, never "certified/approved/accredited".
       Zero PII in logs.
 
+- [ ] **REVIEW (Carl, 4 Sep 2026): the patient passkey implementation.**
+      Patient passkeys implemented in core with WebAuthn directly, not as
+      Keycloak users. Registration is only possible inside a live portal
+      session, so the three-identifier check remains what binds a credential
+      to a verified person. Sign-in is by discoverable passkey with no
+      username. Challenges are single-use and expire in five minutes, counter
+      regression is refused, and removing the last passkey is allowed since
+      the portal is never a precondition (REQ-PORT-08). Recorded as
+      DECISIONS.md D-2026-09-04-02 with what would reopen it, namely federated
+      patient identity such as myGov. Carl to review the decision, the
+      `PortalAuthenticator` seam, the challenge store, and the rate limiting
+      before the portal is exposed beyond dev; aob-tech-stack.md needs a line.
+
 ### Sequencing
 After the reception work page and the arrival contract, and before the M2
 gate in GA-PLAN.md: the artefact download and enduring termination are MUSTs
@@ -2026,8 +2039,8 @@ surface builds to those exported types.
   `draft: true`; every notice row is `draft_pending_review` (a DB CHECK
   constraint, not a convention) with a high-stakes review task beside it.
   **This is the human-authored piece the estimate above called out.**
-- **Passkey seam only.** `PortalAuthenticator` is where FR-8.2's passkey half
-  slots in; nothing touches Keycloak, which needs Carl's go.
+- ~~**Passkey seam only.**~~ **BUILT, 4 Sep 2026** (Carl: "Implement"). See
+  "Passkeys" below.
 - **Not built, and it is a schema fact rather than a gap:** `iActFor` is empty.
   `Assignor` has no link to the acting person's own patient record, so the
   question is only answerable by matching on a name. FR-1.19 creates that link.
@@ -2054,6 +2067,60 @@ the REQ-PORT-08 sentence: signing an agreement never needs an account.
 - The fetch layer (`api.ts`) holds the whole contract and answers from
   `fixtures.ts` until the server side lands. One line switches it:
   `NEXT_PUBLIC_PORTAL_FIXTURES=false`. Nothing else changes.
+
+### BUILT — passkeys (FR-8.2), 4 Sep 2026
+
+Carl: "Implement". Recorded as **D-2026-09-04-02**: patient passkeys are core's,
+implemented with WebAuthn directly (`@simplewebauthn/server@14.0.0` in core,
+`@simplewebauthn/browser@14.0.0` in web, both pinned), **not** Keycloak users.
+Patients are not staff, the portal already owns the account and the session, and
+the thing that binds a credential to a verified person is the three-identifier
+bootstrap core performs — Keycloak could not do it, and a patient realm would
+put PII there for no gain.
+
+- **Six routes**, `apps/core/src/portal/portal-passkey.controller.ts`:
+  `GET /portal/passkeys`, `POST /portal/passkeys/registration/options|verify`,
+  `POST /portal/passkeys/authentication/options|verify`,
+  `POST /portal/passkeys/:id/revoke`. Registration and the list need a live
+  session; the two sign-in routes are the only unauthenticated writes in the
+  portal and are rate-limited by address.
+- **The bootstrap comes first, always.** A credential can only be enrolled
+  inside a session the three-identifier check issued, so every passkey is bound
+  to somebody a practice verified across its counter.
+- **What the seam did NOT become.** `portal-authenticator.ts` predicted that an
+  enrolled passkey would make the identifier path insufficient. It does not: a
+  patient who loses the phone would be locked out of the one path that does not
+  need it. The two doors stay independent (REQ-PORT-08).
+- **Tables** `portal_credentials`, `portal_passkey_challenges` (migration
+  `20260904090000_portal_passkeys`), with two new RLS keys —
+  `app.portal_challenge_id` and `app.portal_credential_id`, both the
+  `app.portal_session_id` idiom: a sign-in names a row before there is any
+  account to scope by.
+- **Web:** a tenth card, "Sign-in and security", plus a "Sign in with a passkey"
+  button on the signed-out screen that renders only where the browser can do it.
+  13 core e2e tests and 17 web tests, including
+  `passkey_registration_requires_a_bootstrapped_session`,
+  `passkey_challenge_cannot_be_replayed`,
+  `passkey_counter_regression_is_refused`,
+  `portal_passkey_is_offered_never_required`,
+  `portal_passkey_last_one_warns_and_does_not_refuse`.
+
+Left for a person:
+- [ ] **`apps/core/.env` needs `PORTAL_RP_ID`, `PORTAL_ORIGIN` and (optionally)
+      `PORTAL_RP_NAME`.** `.env.example` has them with dev defaults; the agent
+      does not edit `.env`. A credential is bound to the RP ID at creation and
+      can never be moved, so getting this wrong in a deployed environment is not
+      recoverable for the patients who enrolled under it.
+- [ ] **The vault container needs a rebuild** — four new event types
+      (`portal.passkey_registered|signed_in|rejected|revoked`) were appended to
+      `VAULT_EVENT_TYPES`.
+- [ ] **`aob-tech-stack.md` line.** It says "Keycloak (OIDC, passkeys)" without
+      distinguishing staff from patients. Carl to add the line; not edited by the
+      agent that made the change.
+- [ ] **The rate limiter is in memory, per process.** Redis is already in the
+      stack and is the right home the moment core runs more than one Fargate
+      task. Noted in `portal-passkey-rate-limit.ts` beside the same caveat the
+      kiosk and pairing limiters carry.
 
 TWO THINGS FOR CARL TO DECIDE — both now answered (Carl, 4 Sep 2026):
 
