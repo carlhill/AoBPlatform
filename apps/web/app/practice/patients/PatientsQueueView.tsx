@@ -75,6 +75,15 @@ export function queueSummary(row: Pick<PatientQueueRow, 'items'>): string {
   );
   if (unanswered) return strings.tablet.disputedList(disputedLabels(unanswered.disputedDetails ?? []));
 
+  /*
+   * AN ANSWERED CROSS OUTRANKS THE LIVE SESSION IT IS STILL SITTING ON. The
+   * session stays `details_disputed` after reception answers -- a resolution
+   * is a fact about the dispute, not a new state -- and the thing left to do
+   * is send it again, which is what the row should say.
+   */
+  const resolved = items.find((item) => item.disputeResolution);
+  if (resolved) return strings.tablet.resolvedTitle;
+
   const live = items.find((item) => item.kind === 'session' && item.endedAt === null);
   if (live) {
     const where = strings.tablet.onTabletNow(live.deviceLabel ?? '');
@@ -82,9 +91,6 @@ export function queueSummary(row: Pick<PatientQueueRow, 'items'>): string {
       ? `${where} · ${strings.tablet.sessionTag(shortSessionId(live.sessionId))}`
       : where;
   }
-
-  const resolved = items.find((item) => item.disputeResolution);
-  if (resolved) return strings.tablet.resolvedTitle;
 
   const waiting = items.find((item) => item.kind === 'awaiting_signature');
   if (waiting) return waiting.pushable ? strings.patients.summaryAwaiting : strings.patients.summaryBlocked;
