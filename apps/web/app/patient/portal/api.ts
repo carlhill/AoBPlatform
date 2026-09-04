@@ -313,14 +313,19 @@ export function artefactUrl(agreementId: string): string {
  * not render unless the build was made with the flag set, and core answers
  * `/dev/*` only in a development configuration. It is not a second way in.
  */
-export async function openDevPortalSession(patientIds: readonly string[]): Promise<void> {
+export async function openDevPortalSession(
+  patientIds: readonly string[],
+  practiceIds: readonly string[] = [],
+): Promise<void> {
   if (PORTAL_FIXTURES) {
     (await fixtures()).openFixtureSession();
     return;
   }
+  // RLS IS LIVE IN DEV, so the seam has to be told which practices to look
+  // in — it has no back door across the fence (see portal-dev.controller.ts).
   await request<void>('/dev/portal-session', {
     method: 'POST',
-    body: JSON.stringify({ patientIds }),
+    body: JSON.stringify({ patientIds, practiceIds }),
   });
 }
 

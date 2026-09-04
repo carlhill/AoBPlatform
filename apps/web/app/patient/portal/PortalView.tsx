@@ -227,6 +227,7 @@ export function PortalView() {
 function SignedOut({ unreachable, onSignedIn }: { unreachable: boolean; onSignedIn: () => void }) {
   const [failed, setFailed] = useState(false);
   const [patientIds, setPatientIds] = useState<readonly string[]>([]);
+  const [practiceIds, setPracticeIds] = useState<readonly string[]>([]);
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [passkeyFailed, setPasskeyFailed] = useState(false);
 
@@ -257,14 +258,19 @@ function SignedOut({ unreachable, onSignedIn }: { unreachable: boolean; onSigned
     if (!DEV_SEAM_ALLOWED) return;
     // Read from the address bar rather than `useSearchParams`, which would put
     // this whole page behind a Suspense boundary for one dev-only control.
-    const raw = new URLSearchParams(window.location.search).get('patientIds') ?? '';
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get('patientIds') ?? '';
     setPatientIds(raw.split(',').map((id) => id.trim()).filter(Boolean));
+    // WHICH PRACTICES TO LOOK IN: RLS is live in dev and the seam refuses to
+    // guess (`?practiceIds=…`, comma-separated, alongside `patientIds`).
+    const rawPractices = params.get('practiceIds') ?? '';
+    setPracticeIds(rawPractices.split(',').map((id) => id.trim()).filter(Boolean));
   }, []);
 
   const openDev = async () => {
     setFailed(false);
     try {
-      await openDevPortalSession(patientIds);
+      await openDevPortalSession(patientIds, practiceIds);
       onSignedIn();
     } catch {
       setFailed(true);
