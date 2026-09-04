@@ -1522,6 +1522,28 @@ capture requests cancelled; mobile/email never supersede. `PATCH
 /patients/:id/details` refuses any /medicare/i key from the RAW body. Core e2e
 415, web 168, domain 858. Three things it surfaced for Carl:
 
+**Rulings later on 4 Sep 2026, all landed:**
+- Continue is absent, not disabled, while a cross is open -- the band already
+  says reception is fixing it and a press did nothing (`7fddab0`).
+- Once the dispute has REACHED reception the page locks: "Please wait for
+  reception -- they are fixing this and will send it again. Your appointment
+  is not affected." Every answer button disabled; the button the patient did
+  NOT choose on each row is hidden so the choice is unmistakable; a reloaded
+  tablet re-locks from the polled `details_disputed`; `Ceremony` refuses
+  further answers; core refuses a second `confirm-details` with 409
+  `session_disputed` (`52d5176`, `412e45c`). Off the screen only by re-send
+  (new session), recall/expiry, See reception or inactivity. Rationale:
+  reception may already be correcting the record; the tablet must not carry
+  on against details mid-correction.
+- A cross that has not yet been posted (fewer than five rows answered) can
+  still be changed -- one honest moment to fix a slip, none after.
+- Reception closes a dispute with Correct (all five shown, crossed ones
+  marked) or No change needed (patient error); resolution persisted on the
+  session with its vault event (in flight); the row then reads "Resolved --
+  ready to re-send" (`e28f33f`).
+- Session id (short) on the kiosk footer during a pushed session and on the
+  console rows, so the two screens can be matched by eye (`5ad708c`).
+
 - [ ] **Only `patientName` reaches the rendered artefact today** -- `prepareLock`
       assembles no DOB and no address, so correcting either changes no hashed
       byte as the renderer stands. The supersession rule still treats the full
@@ -1625,9 +1647,19 @@ Now a working rule in CLAUDE.md section 7.
       five details, "No change needed" (patient error) recorded with types and
       staff, Send again on ended rows, the `timed_out` console label.
 
-## Outage screen on the tablet (Carl, 4 Sep 2026)
+## Outage screen on the tablet (Carl, 4 Sep 2026) -- BUILT (`8ce921f`)
 
 "When the server is down, hide everything and say, Please contact reception."
+
+**Landed 4 Sep 2026.** `useOutageState` polls `/kiosk/me` at the server's
+cadence on every screen but pairing/unpaired; two consecutive network/5xx
+failures (never 401/4xx) replace the whole screen with the outage copy; the
+first success clears in-memory state and returns to idle WITHOUT releasing a
+still-live pushed session, which re-appears from the session poll. Same commit
+fixed the re-send bug: the take-over effect keys on the session id, so a
+recall-and-push landing inside one poll interval replaces the screen from
+K-P1/K-3/K-4 as well as from idle. Successor: the heartbeat below, which turns
+this poll into `POST /kiosk/heartbeat`.
 
 - [ ] Kiosk: a single outage state driven by the polls (`/kiosk/me`, waiting
       list, session) -- after N consecutive failures (say 2, ~10 s) on ANY
