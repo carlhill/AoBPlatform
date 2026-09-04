@@ -43,6 +43,7 @@ const PAIRED: DeviceRow = {
   revokedAt: null,
   revokedBy: null,
   pairingExpiresAt: null,
+  showsWaitingList: false,
 };
 
 const REVOKED: DeviceRow = {
@@ -132,6 +133,46 @@ describe('/practice/devices — the practice’s tablets', () => {
     const post = calls.find((c) => c.method === 'POST');
     expect(post?.url).toContain('/devices');
     expect(post?.body).toEqual({ label: 'Reception tablet 2' });
+  });
+
+  it('test_device_toggle_warns_that_it_shows_patient_names', async () => {
+    /*
+     * CARL, 4 SEPTEMBER 2026: "a toggle for test data to be shown in the list
+     * if on; if off show what the user will see at the kiosk."
+     *
+     * WHAT IS PINNED HERE IS THAT IT IS A DISCLOSURE SWITCH AND SAYS SO. Off
+     * by default; the warning names patient names in plain words and is
+     * attached to the control rather than filed under it; and the write is a
+     * PATCH carrying exactly the one boolean. Everything downstream — the
+     * poll, the ETag, the tablet's banner — depends on nothing more than that.
+     */
+    stubFetch([PAIRED], () => ({ deviceId: PAIRED.id, showsWaitingList: true }));
+    render(<DevicesView practiceId={PRACTICE} />);
+
+    await waitFor(() => expect(screen.getByTestId(`test-device-${PAIRED.id}`)).toBeTruthy());
+    const panel = screen.getByTestId(`test-device-${PAIRED.id}`);
+    expect(panel.textContent).toContain(strings.devices.testDeviceLabel);
+    // The warning is the hint on the control, and it says what it exposes.
+    expect(panel.textContent).toMatch(/other patients.{0,3} names/i);
+    expect(panel.textContent).toMatch(/next poll/i);
+
+    // OFF BY DEFAULT. A disclosure is something somebody turns on.
+    const box = panel.querySelector('button[role="checkbox"]') as HTMLElement;
+    expect(box.getAttribute('aria-checked')).toBe('false');
+
+    fireEvent.click(box);
+    await waitFor(() => expect(calls.some((c) => c.method === 'PATCH')).toBe(true));
+    const patch = calls.find((c) => c.method === 'PATCH');
+    expect(patch?.url).toContain(`/devices/${PAIRED.id}`);
+    // Exactly the one boolean — no label, no practice, nothing else.
+    expect(patch?.body).toEqual({ showsWaitingList: true });
+  });
+
+  it('does not offer the toggle on a revoked tablet — it holds no credential to show anything with', async () => {
+    stubFetch([PAIRED, REVOKED]);
+    render(<DevicesView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`device-${REVOKED.id}`)).toBeTruthy());
+    expect(screen.queryByTestId(`test-device-${REVOKED.id}`)).toBeNull();
   });
 
   it('revoking asks first, and says that nothing about it blocks care', async () => {

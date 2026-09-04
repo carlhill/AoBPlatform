@@ -32,6 +32,12 @@ export interface ResolvedDevice {
   deviceId: string;
   practiceId: string;
   label: string;
+  /**
+   * A TEST DEVICE — the only kind shown the waiting list (Carl, 4 Sep 2026).
+   * Resolved with the credential so `/kiosk/waiting-list` never has to make a
+   * second read to find out whether it may answer with names.
+   */
+  showsWaitingList: boolean;
 }
 
 /**
@@ -257,7 +263,12 @@ export class DevicesService {
         where: { credentialHash: parsed.credentialHash, revokedAt: null },
       });
       if (!device) return null;
-      return { deviceId: device.id, practiceId: device.practiceId, label: device.label };
+      return {
+        deviceId: device.id,
+        practiceId: device.practiceId,
+        label: device.label,
+        showsWaitingList: device.showsWaitingList,
+      };
     });
   }
 
@@ -295,6 +306,29 @@ export class DevicesService {
     return kioskBuildIsStale(kioskBuild, practice?.minimumKioskBuild ?? null);
   }
 
+  /**
+   * ONE TABLET, BY ID, WITHIN THE PRACTICE — the module API another module
+   * asks before it does anything to a device (`tablet-sessions` pushes to one).
+   *
+   * It answers `null` for a device belonging to another practice, because RLS
+   * filters on the transaction-local scope: the caller cannot tell a
+   * cross-practice id from a made-up one, which is the correct amount to
+   * learn from a refusal.
+   *
+   * NO CREDENTIAL AND NO HASH. There is nothing to show, and no caller has
+   * business with one.
+   */
+  async find(
+    practiceId: string,
+    deviceId: string,
+  ): Promise<{ id: string; label: string; state: DeviceRow['state'] } | null> {
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const device = await tx.device.findFirst({ where: { id: deviceId } });
+      if (!device) return null;
+      return { id: device.id, label: device.label, state: deviceState(device) };
+    });
+  }
+
   /** The console's list. No credential and no hash — there is nothing to show. */
   async list(practiceId: string): Promise<{ devices: DeviceRow[]; minimumKioskBuild: string | null }> {
     return this.prisma.withPractice(practiceId, async (tx) => {
@@ -325,6 +359,7 @@ export class DevicesService {
           revokedAt: device.revokedAt?.toISOString() ?? null,
           revokedBy: device.revokedBy,
           pairingExpiresAt: liveCodeFor.get(device.id)?.toISOString() ?? null,
+          showsWaitingList: device.showsWaitingList,
         })),
       };
     });
@@ -442,6 +477,62 @@ export class DevicesService {
   }
 
   /**
+   * TURN THE WAITING LIST ON FOR ONE TABLET, FROM THE CONSOLE (Carl, 4 Sep
+   * 2026 — "the list page is only for testing purposes").
+   *
+   * WHAT IT ACTUALLY SWITCHES ON IS A DISCLOSURE. A device with this flag is
+   * shown other patients' names; every other device is shown nobody's, and
+   * finds its one patient by what that patient types. So this is a security
+   * setting wearing the clothes of a convenience toggle, and it is treated as
+   * one: console only, staff actor required, and an event in the vault for
+   * every change.
+   *
+   * NEVER FROM THE TABLET. There is no endpoint a device credential can reach
+   * that sets this, for the same reason there is no un-pair control on the
+   * device: a tablet that can widen its own disclosure is a tablet a
+   * passer-by can widen.
+   *
+   * IT IS IDEMPOTENT AND SAYS SO IN THE EVENT. Setting a flag to the value it
+   * already has writes no event — an audit trail of non-changes is an audit
+   * trail nobody reads.
+   */
+  async setShowsWaitingList(
+    practiceId: string,
+    deviceId: string,
+    showsWaitingList: boolean,
+    actor: Actor | undefined,
+  ): Promise<{ deviceId: string; showsWaitingList: boolean }> {
+    const named = this.requireActor(
+      actor,
+      'Showing a tablet the waiting list puts other patients’ names on a screen anybody in the room can ' +
+        'read, so it is recorded against the person who did it. This request carries no signed-in user, so ' +
+        'it is refused rather than recorded as nobody.',
+    );
+
+    const value = await this.prisma.withPractice(practiceId, async (tx) => {
+      const device = await tx.device.findFirst({ where: { id: deviceId } });
+      // A cross-practice id finds nothing — RLS filters on the
+      // transaction-local scope, so this fails closed as a 404 rather than
+      // admitting the device exists somewhere else.
+      if (!device) throw new NotFoundException('Device not found.');
+      if (device.showsWaitingList === showsWaitingList) return device.showsWaitingList;
+
+      const updated = await tx.device.update({ where: { id: deviceId }, data: { showsWaitingList } });
+      await enqueueVaultEvent(tx, {
+        type: 'device.waiting_list_visibility_set',
+        actor: { principalType: 'staff', id: named.id },
+        subject: { type: 'Device', id: deviceId },
+        // The label, the new value and who set it. No patient data — this
+        // event is about a device setting, and there is no name to carry.
+        payload: { label: device.label, showsWaitingList, setBy: named.name },
+      });
+      return updated.showsWaitingList;
+    });
+
+    return { deviceId, showsWaitingList: value };
+  }
+
+  /**
    * The build floor for this practice's tablets — staged rollout with instant
    * rollback (TODO.md "Zero-footprint kiosk").
    *
@@ -492,17 +583,60 @@ export class DevicesService {
    * that already creates whole practices out of nothing, and attributed
    * honestly to a seed rather than to a person.
    */
-  async registerForDev(practiceId: string, label: string): Promise<{ deviceId: string; code: string; expiresAt: string }> {
+  async registerForDev(
+    practiceId: string,
+    label: string,
+    /**
+     * A DEV TABLET THAT SHOWS THE LIST. The Playwright ceremony suite drives
+     * the list path, and Carl pairs his own tablet from the command line —
+     * both need the test-device flag, and neither has a console session to
+     * set it with. Default false, so a dev device is a walk-up device unless
+     * somebody asks for the other thing.
+     */
+    showsWaitingList = false,
+  ): Promise<{ deviceId: string; code: string; expiresAt: string; showsWaitingList: boolean }> {
     if (process.env.NODE_ENV === 'production') {
       throw new ForbiddenException('Dev device pairing does not exist in production.');
     }
-    const registered = await this.register(practiceId, label, {
+    const seed: Actor = {
+      id: 'dev-seed',
+      name: 'dev seed (not a signed-in user)',
+      principalType: 'system',
+      roles: [],
+    };
+    const registered = await this.register(practiceId, label, seed);
+    if (showsWaitingList) {
+      await this.setShowsWaitingList(practiceId, registered.deviceId, true, seed);
+    }
+    return {
+      deviceId: registered.deviceId,
+      code: registered.code,
+      expiresAt: registered.expiresAt,
+      showsWaitingList,
+    };
+  }
+
+  /**
+   * DEV ONLY — flip an already-paired tablet's test-device flag without a
+   * console session. The twin of `registerForDev`, same guard, same reasoning:
+   * `PATCH /devices/:id` refuses an unattributed request by design, and a
+   * developer watching a live `/kiosk` tab has no passkey session to satisfy
+   * it with. The vault event is the same one the console act writes.
+   */
+  async setShowsWaitingListForDev(
+    practiceId: string,
+    deviceId: string,
+    showsWaitingList: boolean,
+  ): Promise<{ deviceId: string; showsWaitingList: boolean }> {
+    if (process.env.NODE_ENV === 'production') {
+      throw new ForbiddenException('Dev device pairing does not exist in production.');
+    }
+    return this.setShowsWaitingList(practiceId, deviceId, showsWaitingList, {
       id: 'dev-seed',
       name: 'dev seed (not a signed-in user)',
       principalType: 'system',
       roles: [],
     });
-    return { deviceId: registered.deviceId, code: registered.code, expiresAt: registered.expiresAt };
   }
 
   /** DEV ONLY, and the twin of `registerForDev`. Same guard, same reasoning. */
@@ -544,28 +678,5 @@ export class DevicesService {
     return new UnauthorizedException(
       'That pairing code is not usable. Ask reception for a new one — codes last ten minutes and work once.',
     );
-  }
-
-  /**
-   * ONE TABLET, BY ID, WITHIN THE PRACTICE — the module API another module
-   * asks before it does anything to a device (`tablet-sessions` pushes to one).
-   *
-   * It answers `null` for a device belonging to another practice, because RLS
-   * filters on the transaction-local scope: the caller cannot tell a
-   * cross-practice id from a made-up one, which is the correct amount to
-   * learn from a refusal.
-   *
-   * NO CREDENTIAL AND NO HASH. There is nothing to show, and no caller has
-   * business with one.
-   */
-  async find(
-    practiceId: string,
-    deviceId: string,
-  ): Promise<{ id: string; label: string; state: DeviceRow['state'] } | null> {
-    return this.prisma.withPractice(practiceId, async (tx) => {
-      const device = await tx.device.findFirst({ where: { id: deviceId } });
-      if (!device) return null;
-      return { id: device.id, label: device.label, state: deviceState(device) };
-    });
   }
 }

@@ -1,8 +1,24 @@
-import { Controller, Get, Headers, Res } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Post, Res } from '@nestjs/common';
+import { IsObject } from 'class-validator';
 import type { Response } from 'express';
 import { KioskService } from './kiosk.service';
 import { CallingDevice, KioskBuild, RequiresDevice } from '../devices/device.decorator';
 import type { ResolvedDevice } from '../devices/devices.service';
+
+export class KioskClaimDto {
+  /**
+   * The details the patient typed, keyed by identifier TYPE — the same
+   * `stated` shape `POST /verification/challenges/:id/attempt` has always
+   * taken, so one comparator serves both doors. Name arrives composed
+   * ("given family"); `nameMatches` handles either order.
+   *
+   * VALUES ARE COMPARED AND DISCARDED. Nothing below this DTO stores, logs or
+   * echoes one (REQ-VER-04), and there is no Medicare card number among the
+   * types this practice may ask for (REQ-VER-02, hard rule 1).
+   */
+  @IsObject()
+  stated!: Record<string, string>;
+}
 
 /**
  * THE TABLET'S OWN ENDPOINTS, and the practice scope now comes from the DEVICE.
@@ -66,6 +82,15 @@ export class KioskController {
    * an intermediary serving a stale waiting room, or holding a list of
    * patient names in a cache somewhere between here and the tablet.
    */
+  /**
+   * WHO IS HERE — and only for a TEST device (Carl, 4 Sep 2026).
+   *
+   * An ordinary tablet is answered `{ waiting: [], hidden: true }` with no
+   * count, because the count was itself the disclosure. The walk-up patient
+   * never sees this list: they type three details and `POST /kiosk/claim`
+   * finds their row. The list survives for testing, behind a flag the CONSOLE
+   * sets — never a tick-box on the tablet.
+   */
   @Get('waiting-list')
   async waitingList(
     @CallingDevice() device: ResolvedDevice | undefined,
@@ -73,7 +98,7 @@ export class KioskController {
     @Headers('if-none-match') ifNoneMatch: string | undefined,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.kiosk.waitingList(device!.practiceId, kioskBuild);
+    const result = await this.kiosk.waitingList(device!, kioskBuild);
     const etag = `"${result.revision}"`;
     res.setHeader('ETag', etag);
     res.setHeader('Cache-Control', 'no-store');
@@ -82,5 +107,33 @@ export class KioskController {
       return undefined;
     }
     return result;
+  }
+
+  /**
+   * THE WALK-UP FRONT DOOR — "Confirm your details", and the server finds you.
+   *
+   * The patient types their name, date of birth and address; the server
+   * evaluates every waiting row of THIS practice against all three and, if
+   * exactly one matches, verifies them in the same step and returns that row.
+   * Nothing about anybody else comes back, ever — not a name, not a count, and
+   * not a hint about why a refusal was a refusal.
+   *
+   * NO PRACTICE COMES FROM THE CALLER. The guard has already deleted any
+   * `x-practice-id` and resolved the practice from the device credential, so
+   * the search space is this tablet's own waiting room and cannot be widened
+   * by anything in the request.
+   *
+   * `Cache-Control: no-store` for the same reason the list has it: the success
+   * body carries a patient's name, and no intermediary has any business
+   * holding it.
+   */
+  @Post('claim')
+  async claim(
+    @CallingDevice() device: ResolvedDevice | undefined,
+    @Body() dto: KioskClaimDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    res.setHeader('Cache-Control', 'no-store');
+    return this.kiosk.claim(device!, dto.stated ?? {});
   }
 }

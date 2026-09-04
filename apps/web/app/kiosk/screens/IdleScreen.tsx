@@ -1,20 +1,31 @@
 'use client';
 
 /**
- * K-1 — idle, and the waiting list behind it.
+ * K-1 — idle. A heading, a button, and nothing else on it.
  *
- * WHY THE LIST IS NOT ON THE IDLE SCREEN. The plan's step 1 is "today's list,
- * staff taps the arriving patient" and the handoff's K-1 is a centred
- * invitation with one button. Both are right, and they resolve the same way:
- * the idle state shows the invitation and a COUNT, and the list of names
- * appears only after somebody taps. A tablet sitting on a counter all morning
- * displaying who is in the waiting room is a screen anyone in the room can
- * read — the same exposure the confidentiality flag exists to prevent, made
- * ambient. The count is not identifying; the names are.
+ * WHAT WAS REMOVED, AND WHY IT WAS NOT ENOUGH TO SOFTEN IT (Carl, 4 Sep 2026:
+ * "Remove the 'x people ready to sign' text — this is a security feature").
  *
- * A FAILED LOAD ENDS AT THE DESK, NOT AT A DEAD END (REQ-REC-04). The error
- * says the appointment is unaffected, offers a retry, and the last good list
- * stays on screen.
+ * This screen used to carry a COUNT — "3 people are ready to sign" — on the
+ * reasoning that a count is not identifying and the names are. That reasoning
+ * held for three people and failed for one: "1 person is ready to sign", on a
+ * tablet, with one person standing at the desk, is not anonymous. And a tablet
+ * on a counter announcing how busy the waiting room is tells everyone in the
+ * room something about the people in it. It is gone, not reworded.
+ *
+ * BEGIN NO LONGER OPENS A LIST. On an ordinary tablet it goes straight to K-2,
+ * "Confirm your details": the patient types three details and the SERVER finds
+ * the one waiting row that matches (`POST /kiosk/claim`). Nobody's name is
+ * displayed before somebody has proved it is theirs.
+ *
+ * THE LIST SURVIVES FOR TESTING ONLY, on a device the CONSOLE has flagged —
+ * never a tick-box on the tablet — and it renders under a permanent banner
+ * saying so. `mode: 'list'` is that screen.
+ *
+ * A FAILED LOAD ENDS AT THE DESK, NOT AT A DEAD END (REQ-REC-04). `error`
+ * comes from the poll, which is now a heartbeat rather than a list read: a
+ * hidden response carries no names and no count, only the reload flag and the
+ * fact that the server answered. That is the health signal Begin is gated on.
  */
 
 import type { ReactNode } from 'react';
@@ -31,6 +42,7 @@ export function IdleScreen({
   rows,
   error,
   online,
+  testDevice,
   onStart,
   onBack,
   onPick,
@@ -42,6 +54,12 @@ export function IdleScreen({
   rows: readonly KioskWaitingRow[];
   error: string | null;
   online: boolean;
+  /**
+   * THE CONSOLE SAID THIS TABLET MAY SHOW NAMES. It is the ONLY thing that
+   * puts `mode: 'list'` on screen, and the banner below is drawn from it — a
+   * device showing patient names must always say why (Carl, 4 Sep 2026).
+   */
+  testDevice: boolean;
   onStart: () => void;
   onBack: () => void;
   onPick: (row: KioskWaitingRow) => void;
@@ -70,13 +88,20 @@ export function IdleScreen({
               {strings.idle.loadFailed}
             </p>
           ) : (
-            <>
-              <PrimaryButton label={strings.idle.start} onPress={onStart} testId="start-check-in" />
-              <p className={styles.muted} data-testid="waiting-count">
-                {rows.length > 0 ? strings.idle.waitingCount(rows.length) : strings.idle.nobodyWaiting}
-              </p>
-            </>
+            /*
+              A HEADING AND A BUTTON. Nothing under it: no count, no "nobody is
+              waiting", nothing that describes the room to the room. What the
+              button opens depends on the device — K-2 on an ordinary tablet,
+              the list on a test device — and the screen looks identical
+              either way, which is right: the patient's next tap is the same.
+            */
+            <PrimaryButton label={strings.idle.start} onPress={onStart} testId="start-check-in" />
           )}
+          {testDevice ? (
+            <p className={styles.error} data-testid="test-device-banner">
+              {strings.idle.testDeviceBanner}
+            </p>
+          ) : null}
         </div>
       </Screen>
     );
@@ -89,6 +114,17 @@ export function IdleScreen({
       stepTag={strings.idle.listHeading}
       context={context}
     >
+      {/*
+        THE BANNER IS PERMANENT AND IT IS ABOVE THE NAMES (Carl, 4 Sep 2026 —
+        "the list page is only for testing purposes"). Not dismissible: a
+        banner that can be closed is a banner that is closed, and the thing it
+        is warning about is a screen full of patients' names. Anybody walking
+        past should be able to tell in one glance whether this tablet is a test
+        rig or a misconfiguration.
+      */}
+      <p className={styles.error} data-testid="test-device-banner">
+        {strings.idle.testDeviceBanner}
+      </p>
       <div className={styles.listHeader}>
         <h1 className={styles.h2}>{strings.idle.listHeading}</h1>
         <p className={styles.muted}>{strings.idle.listHint}</p>

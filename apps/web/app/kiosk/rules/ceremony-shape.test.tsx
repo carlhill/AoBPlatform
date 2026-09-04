@@ -180,6 +180,7 @@ const VIEW: ParticularsView = {
   assignorIsPatient: true,
   assignorName: null,
   assignorRelationship: null,
+  particularsLocked: false,
   ruleSetVersion: 'draft-2026-08',
   mappingVersion: 'dev-mapping-1',
   artefactHash: 'b'.repeat(64),

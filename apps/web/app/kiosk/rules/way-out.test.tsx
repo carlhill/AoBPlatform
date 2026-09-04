@@ -64,6 +64,7 @@ const VIEW: ParticularsView = {
   assignorIsPatient: true,
   assignorName: null,
   assignorRelationship: null,
+  particularsLocked: false,
   ruleSetVersion: 'draft-2026-08',
   mappingVersion: 'dev-mapping-1',
   artefactHash: 'b'.repeat(64),
@@ -105,7 +106,6 @@ function ceremonyScreens(onLeave: () => void): ReadonlyArray<readonly [string, R
         guard={{ state: 'valid' }}
         saveError={false}
         saving={false}
-        particularsLocked={false}
         onChoose={noop}
         onChangeOther={noop}
         onContinue={noop}

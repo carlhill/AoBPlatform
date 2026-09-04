@@ -214,7 +214,6 @@ function renderAssignor(props: Partial<ComponentProps<typeof AssignorScreen>> = 
       guard={props.guard ?? evaluateAssignorGate({ choice, practiceStaffNames: [], patientName: PATIENT })}
       saveError={false}
       saving={false}
-      particularsLocked={false}
       onChoose={props.onChoose ?? noop}
       onChangeOther={noop}
       onContinue={props.onContinue ?? noop}

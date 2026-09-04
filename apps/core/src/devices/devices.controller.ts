@@ -7,10 +7,11 @@ import {
   Ip,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Put,
 } from '@nestjs/common';
-import { IsOptional, IsString, MaxLength, MinLength, ValidateIf } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, MaxLength, MinLength, ValidateIf } from 'class-validator';
 import { DEVICE_LABEL_MAX_LENGTH } from '@aobplatform/domain';
 import { DevicesService } from './devices.service';
 import { SessionActor, type Actor } from '../auth/actor.decorator';
@@ -46,6 +47,17 @@ export class RevokeDeviceDto {
   @IsString()
   @MaxLength(200)
   reason?: string;
+}
+
+export class DeviceSettingsDto {
+  /**
+   * A TEST DEVICE — the only kind shown the waiting list (Carl, 4 Sep 2026).
+   * Required rather than optional: this is a disclosure switch, and "the
+   * caller forgot to send it" must never be indistinguishable from "the
+   * caller asked for false".
+   */
+  @IsBoolean()
+  showsWaitingList!: boolean;
 }
 
 export class MinimumKioskBuildDto {
@@ -142,6 +154,29 @@ export class DevicesController {
     @SessionActor() actor: Actor | undefined,
   ) {
     return this.devices.setMinimumKioskBuild(requirePractice(practiceId), dto.build ?? null, actor);
+  }
+
+  /**
+   * PER-DEVICE SETTINGS — today exactly one, and it is a disclosure switch.
+   *
+   * `showsWaitingList` puts other patients' names on that tablet's screen.
+   * Every ordinary tablet has it off and finds its one patient from what that
+   * patient types into "Confirm your details"; a device with it on is a TEST
+   * device and says so in a permanent banner.
+   *
+   * IT IS HERE AND NOT ON THE TABLET, deliberately (Carl, 4 Sep 2026: "never
+   * a tick-box on the tablet"). Same reasoning as revoke: a device that can
+   * widen its own disclosure is a device a passer-by can widen.
+   */
+  @Patch(':id')
+  @PracticeScoped()
+  updateSettings(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: DeviceSettingsDto,
+    @SessionActor() actor: Actor | undefined,
+  ) {
+    return this.devices.setShowsWaitingList(requirePractice(practiceId), id, dto.showsWaitingList, actor);
   }
 
   /** Take the credential back. The tablet learns on its next request. */

@@ -1,4 +1,14 @@
-import { BadRequestException, Body, Controller, ForbiddenException, Headers, Post } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  ForbiddenException,
+  Headers,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+} from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { DevicesService } from '../devices/devices.service';
@@ -84,13 +94,59 @@ export class DevSeedController {
   @Post('kiosk-device')
   async devKioskDevice(
     @Headers('x-practice-id') practiceId: string | undefined,
-    @Body() body: { label?: string } | undefined,
+    /**
+     * `showsWaitingList` IS HOW A DEV TABLET GETS THE LIST (Carl, 4 Sep 2026).
+     * The walk-up kiosk shows nobody's name; the list screen survives only on
+     * a device the console has flagged as a test device, and neither Carl at a
+     * command line nor the Playwright ceremony suite has a console session to
+     * flag one with. Omitted means false, which is what a real tablet is.
+     */
+    @Body() body: { label?: string; showsWaitingList?: boolean } | undefined,
   ) {
     if (process.env.NODE_ENV === 'production') {
       throw new ForbiddenException('Dev seeding does not exist in production.');
     }
     if (!practiceId) throw new BadRequestException('x-practice-id header is required.');
-    return this.devices.registerForDev(practiceId, body?.label?.trim() || 'Dev tablet');
+    return this.devices.registerForDev(
+      practiceId,
+      body?.label?.trim() || 'Dev tablet',
+      body?.showsWaitingList === true,
+    );
+  }
+
+  /**
+   * FLIP AN EXISTING DEV TABLET'S TEST-DEVICE FLAG — dev only, and it exists
+   * for one situation that is entirely real.
+   *
+   * `PATCH /devices/:id` is the product path and it REFUSES an unattributed
+   * request by design: showing a tablet the waiting list puts other patients'
+   * names on a screen anybody in the room can read, and an audit line naming
+   * nobody would be worse than a refusal. But the developer watching a paired
+   * browser at `/kiosk` has no Keycloak session, and re-pairing the device to
+   * change one boolean would throw away the very state being tested.
+   *
+   * So the DEV surface takes the weight, exactly as `POST /dev/kiosk-device`
+   * does: behind `NODE_ENV !== 'production'`, attributed honestly to a seed
+   * rather than to a person, and writing the same vault event the console act
+   * writes. Everything downstream — the poll, the ETag, the banner — is the
+   * real path.
+   */
+  @Patch('kiosk-device/:id')
+  async devSetKioskDeviceFlag(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { showsWaitingList?: boolean } | undefined,
+  ) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new ForbiddenException('Dev seeding does not exist in production.');
+    }
+    if (!practiceId) throw new BadRequestException('x-practice-id header is required.');
+    if (typeof body?.showsWaitingList !== 'boolean') {
+      // Required rather than defaulted: this is a disclosure switch, and "the
+      // caller forgot" must never look like "the caller asked for false".
+      throw new BadRequestException('showsWaitingList must be true or false.');
+    }
+    return this.devices.setShowsWaitingListForDev(practiceId, id, body.showsWaitingList);
   }
 
   /**

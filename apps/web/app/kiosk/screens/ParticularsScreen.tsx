@@ -38,9 +38,18 @@
  * patient could reasonably think they had signed on the reading step. Reading
  * is a step; signing is the next one.
  *
- * BACK RETURNS TO K-5 (Carl, 3 Sep 2026 live test). It is NAVIGATION, not the
- * way out: it calls nothing, changes no agreement, and sits beside the primary
- * rather than in the header where "See reception" lives.
+ * BACK RETURNS TO K-5, WHEN THERE IS A K-5 TO RETURN TO (Carl, 3 Sep 2026
+ * live test; narrowed 4 Sep 2026). It is NAVIGATION, not the way out: it calls
+ * nothing, changes no agreement, and sits beside the primary rather than in
+ * the header where "See reception" lives. On a LOCKED agreement the ceremony
+ * skips K-5 entirely — there is nothing to choose — so `onBack` is not passed
+ * and the control is not drawn. A Back that leads to a screen offering a
+ * choice the server will refuse is worse than no Back at all.
+ *
+ * WHO SIGNS IS STATED HERE INSTEAD. The "Signing" line already says it, and on
+ * a locked agreement a one-line note under it says where it was decided and
+ * who can change it. That is where K-5's locked panel went, and one line under
+ * an existing statement cannot be mistaken for an option (Carl, 4 Sep 2026).
  *
  * NO DOLLAR AMOUNT AND NO PRACTITIONER SIGNATURE FIELD appear anywhere on this
  * screen (rules 3 and 4); the three tags along the bottom say so out loud,
@@ -69,6 +78,12 @@ export interface ParticularsView {
   readonly assignorIsPatient: boolean;
   readonly assignorName: string | null;
   readonly assignorRelationship: string | null;
+  /**
+   * Who signs was decided before the tablet could offer a choice — at
+   * reception, or by the staff-side lock. Draws the one-line note under the
+   * "Signing" row, and is the same fact that made the ceremony skip K-5.
+   */
+  readonly particularsLocked: boolean;
   readonly ruleSetVersion: string | null;
   readonly mappingVersion: string | null;
   readonly artefactHash: string | null;
@@ -88,8 +103,11 @@ export function ParticularsScreen({
   view: ParticularsView;
   validation: SignatureValidation;
   onContinue: () => void;
-  /** K-5. Navigation, never a mutation — see the module note. */
-  onBack: () => void;
+  /**
+   * K-5. Navigation, never a mutation — see the module note. OMITTED on a
+   * locked agreement, because K-5 was skipped and there is nothing behind it.
+   */
+  onBack?: () => void;
   onSeeReception: () => void;
 }): ReactNode {
   return (
@@ -130,6 +148,17 @@ export function ParticularsScreen({
                     )
               }
             />
+            {/*
+              ONE LINE, UNDER A STATEMENT THAT IS ALREADY BEING MADE. K-5 is
+              skipped on a locked agreement, so this is where the fact lands —
+              and it points at a person rather than at a control, because there
+              is nothing here for the patient to do (Carl, 4 Sep 2026).
+            */}
+            {view.particularsLocked ? (
+              <p className={styles.fieldHint} data-testid="assignor-locked-note">
+                {strings.particulars.assignorLockedNote}
+              </p>
+            ) : null}
             <p className={styles.consent}>{strings.particulars.consentText}</p>
           </div>
           <div className={styles.tags}>
@@ -166,7 +195,9 @@ export function ParticularsScreen({
             not the way out, which lives in the header and looks like neither.
           */}
           <div className={styles.actions}>
-            <SecondaryButton label={strings.chrome.backAction} onPress={onBack} testId="particulars-back" />
+            {onBack ? (
+              <SecondaryButton label={strings.chrome.backAction} onPress={onBack} testId="particulars-back" />
+            ) : null}
             <div className={styles.grow}>
               <GuardedButton
                 label={strings.particulars.continueToSign}

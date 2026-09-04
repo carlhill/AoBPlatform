@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { KioskController } from './kiosk.controller';
 import { KioskService } from './kiosk.service';
 import { DevicesModule } from '../devices/devices.module';
+import { VerificationModule } from '../verification/verification.module';
 
 /**
  * The server half of the kiosk (CONSULTATION-CAPTURE-PLAN.md item 7): the
@@ -18,7 +19,18 @@ import { DevicesModule } from '../devices/devices.module';
   // Device pairing: the tablet's practice scope, and the build floor behind
   // the forced reload. Behaviour through a module API, never another module
   // reaching into the `devices` tables.
-  imports: [DevicesModule],
+  imports: [
+    DevicesModule,
+    /*
+     * VERIFICATION IS REUSED, NOT REBUILT. `POST /kiosk/claim` finds the one
+     * matching waiting row and then records the check through
+     * `VerificationService` — the same challenge, attempt, event and vault
+     * event the old list-then-verify flow produced, including the ADR A-08
+     * read against PMS-held values. A module API for behaviour, never another
+     * module reaching into the `verification` tables.
+     */
+    VerificationModule,
+  ],
   controllers: [KioskController],
   providers: [KioskService],
   exports: [KioskService],

@@ -1,0 +1,20 @@
+-- THE TEST-DEVICE FLAG (Carl, 4 Sep 2026 — "the list page is only for testing
+-- purposes").
+--
+-- The walk-up kiosk must never display other patients' names. The idle screen
+-- no longer shows a count, Begin goes straight to "Confirm your details", and
+-- the server finds the ONE waiting row that matches what the patient typed.
+-- The list of names survives only behind this column, and only for testing.
+--
+-- IT IS SET FROM THE CONSOLE, NEVER FROM THE TABLET (`PATCH /devices/:id`),
+-- for the same reason revoke lives there: a device that can turn its own
+-- disclosure on is a device a passer-by can turn on.
+--
+-- DEFAULT FALSE, so every device that already exists — and every device a
+-- practice registers from here on — is a walk-up tablet that shows nobody's
+-- name. Widening a disclosure is an act somebody has to perform; it is never
+-- the value a migration leaves behind.
+--
+-- Idempotent (DEV-LOOP.md): a migration that only works once passes in
+-- development and then breaks `prisma migrate deploy` on the next start.
+ALTER TABLE "devices" ADD COLUMN IF NOT EXISTS "showsWaitingList" BOOLEAN NOT NULL DEFAULT false;

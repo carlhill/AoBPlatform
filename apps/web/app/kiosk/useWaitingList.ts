@@ -50,6 +50,19 @@ export interface WaitingListState {
   readonly error: string | null;
   /** The server refused this tablet's credential. Terminal: the poll stops. */
   readonly unpaired: boolean;
+  /**
+   * THE SERVER'S LIVE ANSWER TO "MAY THIS TABLET SEE NAMES" (Carl, 4 Sep
+   * 2026). `true` on an ordinary tablet: no rows and no count. `false` on a
+   * test device. `null` before the first response, when the tablet only has
+   * `/kiosk/me`'s answer from start-up to go on.
+   *
+   * IT RIDES THE POLL SO THE CONSOLE TOGGLE IS LIVE. A staff member flipping
+   * "Test device" on `/practice/devices` must reach a tablet already sitting
+   * on its idle screen — within one poll, with no re-pairing and no reload —
+   * and `hidden` is inside the ETag (see the server's `revisionOf`), so the
+   * change cannot be swallowed by a 304 on a quiet morning.
+   */
+  readonly hidden: boolean | null;
   /** This tab is below the practice's build floor and must hard-reload. */
   readonly reload: boolean;
   /** How many polls came back 304 — evidence the ETag path is doing its job. */
@@ -148,6 +161,7 @@ export function useWaitingList(enabled: boolean): WaitingListState {
     loading,
     error,
     unpaired,
+    hidden: body === null ? null : body.hidden !== false,
     reload: body?.reload === true,
     notModifiedCount,
     refresh: () => {

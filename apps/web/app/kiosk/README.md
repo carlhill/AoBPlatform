@@ -1,8 +1,15 @@
 # The kiosk (C2) — `/kiosk`
 
-**Pair the tablet first**, then the waiting-room ceremony: **list → verify →
-who is signing → locked particulars → sign → done**. `episodic_pre` only,
-channel `in_practice` only.
+**Pair the tablet first**, then the waiting-room ceremony: **verify → (who is
+signing) → locked particulars → sign → done**. `episodic_pre` only, channel
+`in_practice` only.
+
+**There is no list at the front of it any more** (Carl, 4 Sep 2026). Begin
+opens K-2, the patient types three details, and `POST /kiosk/claim` finds the
+one waiting row of this practice that matches all of them — verifying in the
+same call. Nobody's name is on the screen until somebody has proved it is
+theirs. The list survives only on a **test device**, flagged from the console,
+under a permanent banner. See "The walk-up front door" below.
 There is deliberately **no patient mobile app** — this is a practice-owned
 tablet, and this is a page of the web app rather than an app of its own.
 
@@ -46,6 +53,23 @@ ways to get one:
     -d '{"label":"Reception tablet 1"}'
   ```
 
+`showsWaitingList: true` in that body makes it a **test device** — the only
+kind that still sees the list. Without it you get what a patient gets.
+
+To flip an **already-paired** dev tablet without re-pairing it (no console
+session needed):
+
+  ```bash
+  # the device id comes from GET /devices, or from the POST above
+  curl -s -X PATCH http://127.0.0.1:3001/dev/kiosk-device/$DEVICE_ID \
+    -H 'content-type: application/json' -H "x-practice-id: $PRACTICE_ID" \
+    -d '{"showsWaitingList":true}'
+  ```
+
+The tablet picks it up on its **next poll** — no reload, no re-pairing. The
+product path is the toggle on `/practice/devices`, which does the same thing
+through `PATCH /devices/:id` with a signed-in staff member attached.
+
 To un-pair, **revoke it in the console** — there is deliberately no control on
 the device. (Clearing the browser's site data works too, and is the same act
 performed by somebody standing at the tablet, which is exactly why revoke does
@@ -64,6 +88,63 @@ route from the bundle, so anybody who reached the URL saw that practice's
 waiting list. The tablet no longer asserts a practice at all: it sends
 `x-device-credential`, the server resolves the practice, and `/kiosk/*` refuses
 an `x-practice-id` header outright.
+
+## The walk-up front door (Carl, 4 September 2026)
+
+> "Remove the 'x people ready to sign' text — this is a security feature. Then
+> on the next page do not show the list. Go straight to 'Confirm your details',
+> match these details to the list on AoBPlatform and then go to the next page.
+> The list page is only for testing purposes."
+
+Three things follow, and all three are enforced on the SERVER rather than only
+in the UI.
+
+1. **No count on the idle screen.** `waitingCount` is deleted from the string
+   table, not softened. A count names nobody, which is why it survived the
+   first pass; "1 person is ready to sign" beside one person at the desk is not
+   anonymous, and a tablet on a counter announcing how busy the waiting room is
+   still describes the room to the room.
+2. **Begin goes to K-2.** `POST /kiosk/claim` takes the same `stated` shape the
+   attempt endpoint has always taken, evaluates **every** open `in_practice`
+   waiting row of the device's practice against it with the existing matchers,
+   and — on exactly one match — records the verification through
+   `VerificationService` (the ordinary in-practice path, PMS read and all) and
+   returns that one row. **Zero matches and several matches are the same
+   generic refusal**, both spend an attempt, and both point at reception:
+   "nobody by that name" and "two people here match" are equally facts about
+   other people. Three failures per **device** and the tablet hands over
+   (`kiosk/claim-rate-limit.ts` — per device, because a failed claim has
+   identified nobody to key a counter to).
+3. **The list is test-only.** `GET /kiosk/waiting-list` answers a device without
+   `showsWaitingList` `{ waiting: [], hidden: true }` — no rows and no count —
+   and the query is not run at all rather than run and filtered. The flag is set
+   from the console (`PATCH /devices/:id`), never from the tablet, and the list
+   renders under a permanent "TEST DEVICE — names visible" banner. `hidden` is
+   inside the ETag, so the toggle reaches a tablet on its next poll.
+
+The poll survives all of this as a **heartbeat**: it carries the forced reload
+and it is how the idle screen knows the platform is reachable. It just no
+longer carries names.
+
+## K-5 is skipped on a locked agreement (Carl, 4 September 2026)
+
+K-5 used to render the self option, then — exactly where "Someone else is
+signing for …" belongs — a panel explaining that who signs is locked, then a
+Continue. Carl read the panel as the second option, which is the only sensible
+reading of a box sitting in an option's slot.
+
+The fix was not better wording. **When the particulars are locked there is
+nothing to choose**, so the ceremony goes from verification straight to K-3,
+whose "Signing" line already states who signs; a one-line note under it says
+"Set at reception — ask our staff if this is wrong". Back is withdrawn on K-3
+for the same reason — there is nothing behind it. When the agreement is
+**not** locked, K-5 renders both options as real options exactly as before.
+
+**The rule:** never render an option-shaped box that is not an option.
+
+This is also the shape the reception-push flow wants: a pushed agreement is
+always locked before it reaches a device, so the tablet will never show K-5 for
+one.
 
 ## Decisions already made
 
@@ -107,6 +188,8 @@ an `x-practice-id` header outright.
 | Nothing blocks care (REQ-REC-04) | `screens/HandoverScreen.tsx` — every dead end has a door, and every ceremony screen has an exit | `nothing_blocks_care`, `a_way_out_on_every_ceremony_screen`, `leaving_changes_no_agreement_state`, `the_exit_hands_over_and_promises_nothing` |
 | Zero footprint (CLAUDE.md §7) | `session.ts` (in memory only); `pairing.ts` is the SINGLE module permitted to write, with a scoped `eslint-disable` naming the reason, and `PERSISTABLE_KEYS` holds its one key. Root ESLint `no-restricted-globals`/`no-restricted-syntax` still bite everywhere else under `app/kiosk/**` | `kiosk_persists_nothing_but_pairing`, `the_pairing_credential_is_the_only_thing_written` |
 | A public route is not a public waiting list | `apps/core/src/devices/device.guard.ts` deletes any client `x-practice-id` on `/kiosk/*` and requires a device; K-0 gates the browser | `kiosk_routes_require_device_credential`, `revoked_device_gets_401_and_no_data`, `kiosk_requires_a_paired_device` |
+| A walk-up tablet shows no other patient | `apps/core/src/kiosk/kiosk.service.ts` (`claim`, and the list's `hidden` gate); `screens/IdleScreen.tsx` | `claim_matches_exactly_one_waiting_row_of_this_practice`, `claim_failure_is_generic_for_none_and_for_many`, `claim_never_returns_other_rows`, `claim_records_types_not_values`, `claim_locks_out_after_three_per_device`, `waiting_list_hidden_unless_device_is_a_test_device`, `begin_goes_to_verify_not_the_list`, `idle_shows_no_count`, `list_only_on_a_test_device_and_bannered` |
+| No option-shaped box that is not an option | `Ceremony.tsx` skips K-5 when `particularsLockedAt` is set; `screens/ParticularsScreen.tsx` carries the one-line note | `k5_is_skipped_when_particulars_are_locked`, `k5_shows_both_options_when_unlocked` |
 | K-3 asks the patient for nothing | `screens/ParticularsScreen.tsx` — no input, select or textarea in any state | `k3_never_offers_a_field_to_the_patient` |
 | Back is navigation, not an exit | `Ceremony.tsx` (one `setStep`, no fetch) | `back_is_navigation_and_changes_no_agreement_state`, `back_is_withdrawn_once_a_signature_is_in_flight` |
 

@@ -1,10 +1,28 @@
 'use client';
 
 /**
- * The ceremony: list → verify → who is signing → locked particulars → sign →
- * done. `episodic_pre` only, in practice only, and nothing else — no enduring
- * (that is build-plan item 10), no offline queue (withdrawn with the
- * zero-footprint decision), no portal activation.
+ * The ceremony: verify → (who is signing) → locked particulars → sign → done.
+ * `episodic_pre` only, in practice only, and nothing else — no enduring (that
+ * is build-plan item 10), no offline queue (withdrawn with the zero-footprint
+ * decision), no portal activation.
+ *
+ * THE LIST IS GONE FROM THE FRONT OF IT (Carl, 4 Sep 2026): "Remove the 'x
+ * people ready to sign' text — this is a security feature. Then on the next
+ * page do not show the list. Go straight to 'Confirm your details', match
+ * these details to the list on AoBPlatform and then go to the next page. The
+ * list page is only for testing purposes."
+ *
+ * So Begin opens K-2, the patient types the three details they were going to
+ * type anyway, and `POST /kiosk/claim` finds the ONE waiting row of this
+ * practice that matches all of them — verifying in the same call. A bystander
+ * sees no names and no count. The list survives only on a device the CONSOLE
+ * has flagged as a test device, under a permanent banner.
+ *
+ * AND K-5 IS SKIPPED ON A LOCKED AGREEMENT (Carl, 4 Sep 2026). Who signs is
+ * one of the locked particulars, so on a locked agreement there is nothing to
+ * choose — verification goes straight to K-3, which states who signs and adds
+ * a line saying it was set at reception. The screen that used to render an
+ * explanation box in the second option's slot is not shown at all.
  *
  * THE SUB-STEPS ARE COMPONENT STATE, NOT ROUTES, and that is a requirement
  * rather than a preference. One `/kiosk` URL, one history entry: there is no
@@ -17,9 +35,14 @@
  * to skip a step:
  *
  *   1. `GET /kiosk/waiting-list` — polled at the SERVER's cadence, with an
- *      ETag, so a quiet morning costs 304s.
- *   2. `POST /verification/challenges` then `/attempt` — the identifier TYPES
- *      come from that same response; the values are sent once and dropped.
+ *      ETag, so a quiet morning costs 304s. On an ordinary tablet it answers
+ *      `hidden: true` with no rows and no count: what still rides on it is the
+ *      forced reload and the tablet's own health signal.
+ *   2. `POST /kiosk/claim` — the walk-up door: three stated details in, one
+ *      matched row out, verified in the same step. (On a TEST device the old
+ *      pair still runs: `POST /verification/challenges` then `/attempt`,
+ *      against the row somebody tapped.) The identifier TYPES come from
+ *      `/kiosk/me`; the values are sent once and dropped.
  *   3. `POST /agreements/:id/transition` to `awaiting_signature`.
  *   4. `POST /agreements/:id/assignor` when somebody other than the patient is
  *      signing. NEW since the Expo build, and it is what turns that build's
@@ -52,6 +75,7 @@ import type { AgreementType } from '@aobplatform/domain';
 import {
   attemptChallenge,
   changeAssignor,
+  claimWaitingRow,
   completeCapture,
   fetchAgreement,
   fetchKioskMe,
@@ -118,6 +142,20 @@ export function Ceremony(): ReactNode {
   const [step, setStep] = useState<Step>('booting');
   const [practiceName, setPracticeName] = useState('');
   const [locationLine, setLocationLine] = useState<string | null>(null);
+  /**
+   * WHICH FRONT DOOR BEGIN OPENS, answered by `/kiosk/me` before the screen is
+   * drawn. False — the walk-up flow — is the default and stays the default
+   * through every failure: a tablet that could not read its own identity must
+   * not fall back to showing patient names (Carl, 4 Sep 2026).
+   */
+  const [meShowsWaitingList, setMeShowsWaitingList] = useState(false);
+  /**
+   * TYPES, NEVER VALUES (REQ-VER-04) — from `/kiosk/me`, because the waiting
+   * list no longer answers on an ordinary tablet and K-2 is now the FIRST
+   * screen a patient sees. The list's copy is the fallback for a test device
+   * whose identity read failed.
+   */
+  const [identifierTypes, setIdentifierTypes] = useState<readonly string[]>([]);
   const [staffNames, setStaffNames] = useState<readonly string[]>([]);
   const [row, setRow] = useState<KioskWaitingRow | null>(null);
   const [agreement, setAgreement] = useState<AgreementResponse | null>(null);
@@ -180,6 +218,36 @@ export function Ceremony(): ReactNode {
   const list = useWaitingList(step === 'idle' || step === 'list');
 
   /**
+   * IS THIS A TEST DEVICE — ANSWERED BY THE POLL, NOT BY START-UP (Carl, 4 Sep
+   * 2026, watching the toggle live).
+   *
+   * `/kiosk/me` answers it once, at boot, which is what the very first render
+   * has to go on. But the console toggle has to REACH a tablet already sitting
+   * on its idle screen — Carl flips "Test device" on `/practice/devices` and
+   * expects the next poll to change what Begin opens, with no re-pairing and
+   * no reload. So the poll's own `hidden` wins as soon as there is one, and it
+   * is inside the ETag, so a quiet morning cannot answer 304 and swallow it.
+   *
+   * FAIL CLOSED IN BOTH DIRECTIONS. `hidden === null` (no answer yet) falls
+   * back to the start-up value; anything that is not an explicit "the server
+   * sent rows" is a walk-up tablet, and a walk-up tablet shows nobody's name.
+   */
+  const testDevice = list.hidden === null ? meShowsWaitingList : list.hidden === false;
+
+  /**
+   * THE TOGGLE WAS TURNED OFF WHILE THE LIST WAS ON SCREEN.
+   *
+   * A tablet sitting on the list when a staff member revokes its test status
+   * must not keep showing the names it already has. The poll answers `hidden`
+   * within its cadence, the rows empty out on their own — and this drops the
+   * screen back to idle so what is left is not a bannerless empty list that
+   * looks like a broken morning.
+   */
+  useEffect(() => {
+    if (step === 'list' && !testDevice) setStep('idle');
+  }, [step, testDevice]);
+
+  /**
    * WHO IS THIS TABLET — asked before anything else is shown.
    *
    * NO CREDENTIAL, NO REQUEST. An unpaired tablet does not call the server at
@@ -206,6 +274,9 @@ export function Ceremony(): ReactNode {
       const me = await fetchKioskMe();
       setPracticeName(me.practiceName);
       setLocationLine(me.state ?? null);
+      // FAIL CLOSED. Anything but an explicit `true` is a walk-up tablet.
+      setMeShowsWaitingList(me.showsWaitingList === true);
+      setIdentifierTypes(me.identifierTypes ?? []);
       setStep((current) => (current === 'booting' || current === 'unpaired' ? 'idle' : current));
       return true;
     } catch (err) {
@@ -213,6 +284,7 @@ export function Ceremony(): ReactNode {
         clearPairingCredential();
         setPracticeName('');
         setLocationLine(null);
+        setMeShowsWaitingList(false);
         setStep('unpaired');
         return false;
       }
@@ -253,6 +325,7 @@ export function Ceremony(): ReactNode {
     clearPairingCredential();
     setPracticeName('');
     setLocationLine(null);
+    setMeShowsWaitingList(false);
     setStep('unpaired');
   }, [list.unpaired]);
 
@@ -377,7 +450,76 @@ export function Ceremony(): ReactNode {
     toHandover(strings.chrome.leaveHeading, strings.chrome.leaveBody);
   }, [toHandover]);
 
-  /** Step 1 → 2: the staff member taps the arriving patient. */
+  /**
+   * ONCE VERIFICATION HAS PASSED, WHATEVER DOOR IT CAME THROUGH.
+   *
+   * Both front doors converge here: the walk-up claim, which found the row by
+   * what the patient typed, and the test device's list, where somebody tapped
+   * a name and then proved it. From this point the ceremony is identical, and
+   * writing it once is what keeps it identical.
+   *
+   * K-5 IS SKIPPED ON A LOCKED AGREEMENT (Carl, 4 Sep 2026). Who signs is one
+   * of the locked particulars, so there is nothing to choose — and the screen
+   * that used to render an explanation in the second option's slot read as an
+   * option. K-3 states who signs and adds one line saying it was set at
+   * reception.
+   */
+  const afterVerified = useCallback(
+    async (verifiedRow: KioskWaitingRow) => {
+      const current = await fetchAgreement(verifiedRow.agreementId);
+      const moved =
+        current.status === 'awaiting_signature'
+          ? current
+          : await transitionAgreement(verifiedRow.agreementId, 'awaiting_signature');
+      setAgreement(moved);
+      setStep(moved.particularsLockedAt != null ? 'particulars' : 'assignor');
+    },
+    [],
+  );
+
+  /**
+   * BEGIN, ON AN ORDINARY TABLET: straight to K-2 (Carl, 4 Sep 2026).
+   *
+   * No row is chosen, because choosing one would mean showing the list. The
+   * fields come from `/kiosk/me`'s identifier TYPES, and `challengeId` stays
+   * null — which is what tells `submitAttempt` this is a claim rather than an
+   * attempt against a challenge somebody already opened.
+   *
+   * A CHALLENGE SET THE DOMAIN GUARD REFUSES ENDS AT THE DESK, not at a blank
+   * screen: `identifierFieldsFor` throws on anything outside the approved six
+   * or on fewer than the statutory floor of three (REQ-VER-02).
+   */
+  const beginClaim = useCallback(() => {
+    setRow(null);
+    setAgreement(null);
+    setChallengeId(null);
+    setStated({});
+    setVerification(firstAttempt());
+    setMismatch(false);
+    setStartError(false);
+    setStep('verify');
+    try {
+      setFields(identifierFieldsFor(identifierTypes.length > 0 ? identifierTypes : list.identifierTypes));
+    } catch {
+      setStartError(true);
+      setFields([]);
+    }
+  }, [identifierTypes, list.identifierTypes]);
+
+  /**
+   * BEGIN OPENS ONE OF TWO DOORS, and the device decides which. An ordinary
+   * tablet goes to K-2 and never shows a name; a test device gets the old list
+   * under its banner, which is the path the ceremony spec drives.
+   */
+  const begin = useCallback(() => {
+    if (testDevice) {
+      setStep('list');
+      return;
+    }
+    beginClaim();
+  }, [testDevice, beginClaim]);
+
+  /** TEST DEVICE ONLY — the staff member taps the arriving patient. */
   const pick = useCallback(
     async (picked: KioskWaitingRow) => {
       setRow(picked);
@@ -406,7 +548,9 @@ export function Ceremony(): ReactNode {
 
       setStep('verify');
       try {
-        const built = identifierFieldsFor(list.identifierTypes);
+        const built = identifierFieldsFor(
+          identifierTypes.length > 0 ? identifierTypes : list.identifierTypes,
+        );
         setFields(built);
         const challenge = await startChallenge({
           patientId: picked.patientId,
@@ -431,12 +575,25 @@ export function Ceremony(): ReactNode {
         setFields([]);
       }
     },
-    [list.identifierTypes, toHandover],
+    [identifierTypes, list.identifierTypes, toHandover],
   );
 
-  /** Step 2: one attempt. Values go out once and are not kept here. */
+  /**
+   * K-2's ONE SUBMIT, AND IT SERVES BOTH DOORS.
+   *
+   * `challengeId === null` means nobody has been chosen: this is the walk-up
+   * claim, and `POST /kiosk/claim` finds the row and verifies in one call. A
+   * challenge id means a test device's list picked somebody first, and the
+   * ordinary attempt runs against that challenge.
+   *
+   * THE FAILURE BEHAVIOUR IS IDENTICAL EITHER WAY, and it has to be: the
+   * screen does not move, the values stay on it, the message is the one
+   * generic sentence, and the third failure hands over. A patient who mistyped
+   * one letter must not be told which door they came through, let alone which
+   * detail was wrong (REQ-SEC-07).
+   */
   const submitAttempt = useCallback(async () => {
-    if (!challengeId || !row) return;
+    if (!challengeId && row) return;
     if (!challengeIsComplete(fields, stated)) {
       setIncomplete(true);
       return;
@@ -446,7 +603,15 @@ export function Ceremony(): ReactNode {
     try {
       // Trimmed at the point it leaves the device, never on a keystroke — see
       // `trimStatedValues`.
-      const result = await attemptChallenge(challengeId, trimStatedValues(stated));
+      const values = trimStatedValues(stated);
+      /*
+       * ONE CALL OR THE OTHER, AND THE SHAPE COMING BACK IS THE SAME.
+       * `claimWaitingRow` answers the verify path's own `{ outcome,
+       * verificationEventId, message }` plus the row it matched, so the ladder
+       * below does not need to know which door this was.
+       */
+      const claimed = challengeId === null ? await claimWaitingRow(values) : null;
+      const result = claimed ?? (await attemptChallenge(challengeId as string, values));
       const next = afterAttempt(verification, result);
 
       /*
@@ -472,13 +637,37 @@ export function Ceremony(): ReactNode {
       // Passed or locked out, the stated values leave this device's memory now.
       setStated({});
       if (next.kind === 'passed') {
-        const current = await fetchAgreement(row.agreementId);
-        const moved =
-          current.status === 'awaiting_signature'
-            ? current
-            : await transitionAgreement(row.agreementId, 'awaiting_signature');
-        setAgreement(moved);
-        setStep('assignor');
+        /*
+         * THE ROW THE CLAIM FOUND, or the row somebody tapped on a test
+         * device. On the walk-up path this is the FIRST moment a name exists
+         * on this tablet, and it is a name the person standing here has just
+         * proved is theirs.
+         */
+        const verifiedRow = claimed?.row ?? row;
+        if (!verifiedRow) {
+          // A pass with no row is not a state the server produces; treating it
+          // as a fault rather than pressing on is the only safe reading.
+          toHandover(strings.particulars.serverFaultHeading, strings.particulars.serverFault);
+          return;
+        }
+        setRow(verifiedRow);
+
+        /*
+         * UNSIGNABLE, AND NOW WE KNOW WHO (TODO.md, "Two rulings from pairing
+         * day"). On the list path this was checked before the patient did any
+         * work; on the walk-up path it cannot be — finding the row IS the
+         * work — so the check lands here instead, before any transition or
+         * lock is attempted. The hand-over names them, which is safe for the
+         * same reason K-3's does: they have just proved who they are.
+         */
+        if (verifiedRow.signable === false) {
+          toHandover(
+            strings.particulars.needsReceptionHeading(verifiedRow.patientName),
+            strings.particulars.needsReceptionBody,
+          );
+          return;
+        }
+        await afterVerified(verifiedRow);
       }
     } catch (err) {
       if (isUnpaired(err)) {
@@ -490,7 +679,7 @@ export function Ceremony(): ReactNode {
     } finally {
       setVerifyBusy(false);
     }
-  }, [challengeId, fields, row, stated, verification, toHandover]);
+  }, [afterVerified, challengeId, fields, row, stated, verification, toHandover]);
 
   const particularsLocked = agreement?.particularsLockedAt != null;
   const patientName = row?.patientName ?? '';
@@ -502,17 +691,15 @@ export function Ceremony(): ReactNode {
    * not only after (CLAUDE.md §6). `decideAssignor`, below, uses the same
    * function, so the two can never disagree about what counts as blocked.
    *
-   * ONCE THE PARTICULARS ARE LOCKED THE GATE IS MOOT. Nothing on the screen
-   * can change who signs any more (REQ-REG-06 — who signs is one of them, and
-   * the server refuses), so K-5 is reachable by Back purely to read that
-   * sentence, and Continue simply returns to K-3.
+   * IT NO LONGER HAS A LOCKED BRANCH (Carl, 4 Sep 2026). It used to answer
+   * `valid` on a locked agreement, because K-5 was still rendered there with
+   * its choice disabled and a Continue that simply returned to K-3. K-5 is now
+   * SKIPPED on a locked agreement, so the only gate this has to compute is the
+   * real one.
    */
   const guard: AssignorGate = useMemo(
-    () =>
-      particularsLocked
-        ? { state: 'valid' }
-        : evaluateAssignorGate({ choice, practiceStaffNames: staffNames, patientName }),
-    [choice, staffNames, particularsLocked, patientName],
+    () => evaluateAssignorGate({ choice, practiceStaffNames: staffNames, patientName }),
+    [choice, staffNames, patientName],
   );
 
   /**
@@ -523,6 +710,13 @@ export function Ceremony(): ReactNode {
    */
   const advanceAssignor = useCallback(
     async (candidate: AssignorChoice) => {
+      /*
+       * DEFENCE IN DEPTH, AND IT SHOULD NEVER FIRE. The ceremony does not
+       * route a locked agreement to K-5 at all any more; if some future path
+       * did, the right answer is still to move on rather than to POST a change
+       * the server will refuse (REQ-REG-06 — who signs is a locked
+       * particular).
+       */
       if (particularsLocked) {
         setStep('particulars');
         return;
@@ -737,6 +931,13 @@ export function Ceremony(): ReactNode {
       assignorIsPatient: agreement?.assignorIsPatient ?? true,
       assignorName: str('assignorName'),
       assignorRelationship: str('assignorRelationship'),
+      /*
+       * WHY K-3 IS TOLD (Carl, 4 Sep 2026). On a locked agreement K-5 was
+       * skipped, so the "Signing" line here is the only place the patient is
+       * told who signs — and one line under it says where that was decided and
+       * who can change it. It never draws a control.
+       */
+      particularsLocked: agreement?.particularsLockedAt != null,
       ruleSetVersion: agreement?.ruleSetVersion ?? null,
       mappingVersion: agreement?.mappingVersion ?? null,
       artefactHash: agreement?.renderedArtefactHash ?? null,
@@ -777,9 +978,18 @@ export function Ceremony(): ReactNode {
           locationLine={locationLine}
           mode={step}
           rows={list.rows}
+          /*
+            THE HEALTH SIGNAL IS THE POLL ANSWERING, NOT THE POLL RETURNING
+            NAMES (Carl, 4 Sep 2026). On an ordinary tablet the response is
+            `hidden: true` with no rows — an empty list is now the normal
+            answer, so it can no longer mean "something is wrong". `error` is
+            the only thing that does, and it still hides Begin over a server
+            nobody can reach.
+          */
           error={list.error}
           online={list.error === null}
-          onStart={() => setStep('list')}
+          testDevice={testDevice}
+          onStart={begin}
           onBack={() => setStep('idle')}
           onPick={(picked) => void pick(picked)}
           onRetry={list.refresh}
@@ -823,7 +1033,6 @@ export function Ceremony(): ReactNode {
           guard={guard}
           saveError={assignorError}
           saving={assignorBusy}
-          particularsLocked={particularsLocked}
           onChoose={(isPatient) => {
             const next = { ...choice, assignorIsPatient: isPatient };
             setChoice(next);
@@ -850,8 +1059,14 @@ export function Ceremony(): ReactNode {
           view={view}
           validation={validation}
           onContinue={() => setStep('signature')}
-          // NAVIGATION, NOT AN EXIT. One `setStep` and nothing else.
-          onBack={() => setStep('assignor')}
+          /*
+            NAVIGATION, NOT AN EXIT — one `setStep` and nothing else — AND NOT
+            OFFERED AT ALL ON A LOCKED AGREEMENT (Carl, 4 Sep 2026). K-5 was
+            skipped, so there is nothing behind Back; a control that leads to a
+            screen offering a choice the server will refuse is worse than no
+            control.
+          */
+          onBack={particularsLocked ? undefined : () => setStep('assignor')}
           onSeeReception={leave}
         />
       );

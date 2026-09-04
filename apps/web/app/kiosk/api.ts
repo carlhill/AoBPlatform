@@ -38,6 +38,14 @@ export interface WaitingListResponse {
   readonly identifierTypes: readonly string[];
   readonly waiting: readonly KioskWaitingRow[];
   /**
+   * TRUE WHEN THIS DEVICE IS NOT A TEST DEVICE, which is every tablet a real
+   * practice uses (Carl, 4 Sep 2026). `waiting` is then empty and there is no
+   * count anywhere in the body — the count was the first disclosure removed.
+   * The poll still runs: it carries `reload` and it is the tablet's health
+   * signal, which is all the walk-up flow needs from it.
+   */
+  readonly hidden?: boolean;
+  /**
    * This tab is below the practice's kiosk build floor and must hard-reload.
    * It rides on the POLL rather than on a channel of its own, so a rollback
    * reaches an open tab within the cadence the server already chose — and it
@@ -91,8 +99,30 @@ export interface KioskMeResponse {
   readonly state?: string | null;
   /** TYPES only, never values (REQ-VER-04). */
   readonly identifierTypes?: readonly string[];
+  /**
+   * A TEST DEVICE — the only kind shown the waiting list (Carl, 4 Sep 2026).
+   * Answered on the first call the tablet makes, so K-1 knows which front door
+   * Begin opens before anybody presses it. Absent or false means the walk-up
+   * flow, which is the safe default when an older server answers this call.
+   */
+  readonly showsWaitingList?: boolean;
   /** This tab is below the practice's build floor and must hard-reload. */
   readonly reload: boolean;
+}
+
+/**
+ * `POST /kiosk/claim` — the walk-up front door.
+ *
+ * `passed` carries the one row the server matched. `failed` and `locked_out`
+ * carry a message and NOTHING ELSE: zero matches and several matches are the
+ * same answer, because "nobody by that name" and "two people here match" are
+ * both facts about other people (REQ-SEC-07).
+ */
+export interface KioskClaimResponse {
+  readonly outcome: 'passed' | 'failed' | 'locked_out';
+  readonly verificationEventId?: string;
+  readonly message?: string;
+  readonly row?: KioskWaitingRow;
 }
 
 /** `POST /devices/pair` — the one call made with no credential, because it earns one. */
@@ -257,6 +287,27 @@ export function startChallenge(input: {
       channel: 'in_practice',
       identifierTypes: input.identifierTypes,
     }),
+  });
+}
+
+/**
+ * THE WALK-UP CLAIM: three details in, one row out — or the generic refusal.
+ *
+ * WHAT IT REPLACED. The tablet used to show the waiting list, the patient
+ * tapped their name, and only then proved it was them. That put a list of
+ * patient names on a screen in a waiting room. Now the patient types the same
+ * three details they were going to type anyway and the SERVER does the
+ * finding, so a bystander sees nothing at all.
+ *
+ * ONE CALL DOES BOTH. There is no separate challenge to open first — there is
+ * no patient to open it against until the match is made — so this is the whole
+ * of K-2's server conversation. The values go out once and nothing in this
+ * module keeps them.
+ */
+export function claimWaitingRow(stated: Record<string, string>): Promise<KioskClaimResponse> {
+  return request<KioskClaimResponse>('/kiosk/claim', {
+    method: 'POST',
+    body: JSON.stringify({ stated }),
   });
 }
 

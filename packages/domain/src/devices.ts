@@ -132,6 +132,21 @@ export interface DeviceRow {
   revokedBy: string | null;
   /** When the outstanding pairing code dies. Null once paired or once it has. */
   pairingExpiresAt: string | null;
+  /**
+   * A TEST DEVICE, AND THE ONLY THING THAT SHOWS THE WAITING LIST (Carl, 4 Sep
+   * 2026 — "the list page is only for testing purposes").
+   *
+   * The walk-up tablet must never display other patients' names: Begin goes
+   * straight to "Confirm your details" and the SERVER finds the one waiting
+   * row that matches what was typed. The list of names survives only behind
+   * this flag, set from the CONSOLE — never a tick-box on the tablet, because
+   * a device that can turn its own disclosure on is a device a passer-by can
+   * turn it on from.
+   *
+   * Default false, and it stays false on every device a practice actually
+   * uses.
+   */
+  showsWaitingList: boolean;
 }
 
 export const DEVICE_STATES = ['awaiting_pairing', 'paired', 'revoked'] as const;

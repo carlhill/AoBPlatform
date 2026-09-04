@@ -48,11 +48,19 @@ describe('the kiosk waiting list (e2e, real Postgres)', () => {
    * A registered, paired tablet, through the service rather than the console
    * endpoints: `POST /devices` refuses an unattributed request by design, and
    * this suite is about the waiting list rather than about who registered what.
+   *
+   * `showsWaitingList: true` — A TEST DEVICE (Carl, 4 Sep 2026). Since the
+   * pairing-day reversal the list is returned ONLY to a device the console has
+   * flagged, because a tablet displaying who is in the waiting room is a
+   * disclosure to everybody in the room. Every tablet in this suite is
+   * therefore a test device, which is exactly what the flag is for; the
+   * ordinary walk-up device's answer is asserted in its own block below, and
+   * the walk-up flow that replaced the list is `kiosk-claim.e2e-spec.ts`.
    */
-  async function pairTablet(practiceId: string, label: string): Promise<string> {
+  async function pairTablet(practiceId: string, label: string, showsWaitingList = true): Promise<string> {
     const devices = app.get(DevicesService);
-    const { code } = await devices.registerForDev(practiceId, label);
-    const { credential } = await devices.pair(code, `kiosk-waiting-list-${practiceId}`);
+    const { code } = await devices.registerForDev(practiceId, label, showsWaitingList);
+    const { credential } = await devices.pair(code, `kiosk-waiting-list-${label}`);
     return credential;
   }
 
@@ -205,6 +213,7 @@ describe('the kiosk waiting list (e2e, real Postgres)', () => {
         .expect(200);
 
       expect(res.body.practiceId).toBe(practiceA);
+      expect(res.body.hidden).toBe(false);
       expect(res.body.waiting).toHaveLength(2);
       // 09:00 before the walk-in, who has no time at all.
       expect(res.body.waiting.map((r: { captureRequestId: string }) => r.captureRequestId)).toEqual([
@@ -517,6 +526,56 @@ describe('the kiosk waiting list (e2e, real Postgres)', () => {
         .get('/kiosk/waiting-list')
         .set('x-practice-id', randomUUID())
         .expect(401);
+    });
+  });
+
+  describe('the list is for testing only (Carl, 4 Sep 2026)', () => {
+    /*
+     * "REMOVE THE 'X PEOPLE READY TO SIGN' TEXT — THIS IS A SECURITY FEATURE.
+     * Then on the next page do not show the list. … The list page is only for
+     * testing purposes."
+     *
+     * A tablet on a counter is a screen anybody in the waiting room can read,
+     * so the walk-up flow inverted: the patient states three details and
+     * `POST /kiosk/claim` finds their row. What is asserted here is that the
+     * old answer is not merely hidden in the UI — the SERVER stops sending it,
+     * to any device a console has not deliberately flagged.
+     */
+    it('waiting_list_hidden_unless_device_is_a_test_device', async () => {
+      const walkUpTablet = await pairTablet(practiceA, 'Walk-up tablet A', false);
+
+      const res = await request(app.getHttpServer())
+        .get('/kiosk/waiting-list')
+        .set('x-device-credential', walkUpTablet)
+        .expect(200);
+
+      expect(res.body.hidden).toBe(true);
+      expect(res.body.waiting).toEqual([]);
+      // NOT A NAME AND NOT A COUNT. The count was the first disclosure Carl
+      // named, and an empty array with a length field beside it would simply
+      // move it.
+      expect(JSON.stringify(res.body)).not.toContain('Robin Reachable');
+      expect(JSON.stringify(res.body)).not.toContain('Casey Walkin');
+      expect(res.body.waitingCount).toBeUndefined();
+      expect(res.body.count).toBeUndefined();
+
+      // The verify screen still learns WHICH identifiers to ask for — types,
+      // never values (REQ-VER-04) — because K-2 is now the first screen a
+      // walk-up patient sees.
+      expect(res.body.identifierTypes).toEqual(['name', 'date_of_birth', 'address']);
+      // And the rollback signal still rides the poll: it is the one thing the
+      // hidden response is still carrying, and the tablet's health signal.
+      expect(res.body.reload).toBe(false);
+      expect(typeof res.body.pollMs).toBe('number');
+    });
+
+    it('the same practice, the same moment, a test device — and the names are there', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/kiosk/waiting-list')
+        .set('x-device-credential', tabletA)
+        .expect(200);
+      expect(res.body.hidden).toBe(false);
+      expect(JSON.stringify(res.body)).toContain('Robin Reachable');
     });
   });
 

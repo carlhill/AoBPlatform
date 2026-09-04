@@ -94,7 +94,21 @@ function headers() {
  * (relaxing `POST /devices`) would be worse than a stub.
  */
 async function issuePairingCode(api: APIRequestContext, label: string): Promise<string> {
-  const res = await api.post(`${CORE}/dev/kiosk-device`, { headers: headers(), data: { label } });
+  const res = await api.post(`${CORE}/dev/kiosk-device`, {
+    headers: headers(),
+    /*
+     * A TEST DEVICE (Carl, 4 Sep 2026 — "the list page is only for testing
+     * purposes"). Since the pairing-day reversal the waiting list is returned
+     * ONLY to a device the console has flagged: an ordinary tablet's Begin
+     * goes straight to K-2 and the server finds the row from what the patient
+     * typed. This suite drives the LIST path — it stages a patient and then
+     * taps their name — so it pairs itself a test device, which is exactly
+     * what the flag exists for. `POST /devices` refuses an unattributed
+     * request and this suite has no Keycloak session, so the dev endpoint sets
+     * it at registration.
+     */
+    data: { label, showsWaitingList: true },
+  });
   expect(res.ok(), await res.text()).toBeTruthy();
   return (await res.json()).code as string;
 }
@@ -139,8 +153,10 @@ async function pairBrowser(page: Page, api: APIRequestContext) {
   const code = await issuePairingCode(api, 'Playwright kiosk tablet');
   await page.goto('/kiosk');
 
-  // The gate: an unpaired tablet offers nothing but pairing.
+  // The gate: an unpaired tablet offers nothing but pairing — and there is no
+  // count to leak either, because the idle screen no longer carries one.
   await expect(page.getByTestId('pairing-code')).toBeVisible();
+  await expect(page.getByTestId('waiting-count')).toHaveCount(0);
   await expect(page.getByTestId('start-check-in')).toHaveCount(0);
   await expect(page.getByTestId('pairing-submit')).toBeDisabled();
 
@@ -233,6 +249,10 @@ async function verifyAs(page: Page, row: WaitingRow, api: APIRequestContext) {
   await pairBrowser(page, api);
   await page.getByTestId('start-check-in').click();
 
+  // A TEST DEVICE SAYS SO, PERMANENTLY. Anybody walking past a tablet showing
+  // patient names should be able to tell a test rig from a misconfiguration.
+  await expect(page.getByTestId('test-device-banner')).toBeVisible();
+
   const pick = page.getByTestId(`pick-${row.captureRequestId}`);
   await expect(pick).toBeVisible();
   await pick.click();
@@ -253,9 +273,17 @@ async function verifyAs(page: Page, row: WaitingRow, api: APIRequestContext) {
   const cont = page.getByTestId('verify-continue');
   await expect(cont).toBeEnabled();
   await cont.click();
+}
 
-  // K-5.
+/**
+ * K-5, WHICH ONLY EXISTS ON AN UNLOCKED AGREEMENT (Carl, 4 Sep 2026). Who
+ * signs is one of the locked particulars, so on a locked agreement there is
+ * nothing to choose and the ceremony goes from verification straight to K-3.
+ */
+async function expectWhoIsSigning(page: Page) {
   await expect(page.getByTestId('assignor-self')).toBeVisible({ timeout: 20_000 });
+  // BOTH options are real options — never a box in an option's slot.
+  await expect(page.getByTestId('assignor-other')).toBeVisible();
 }
 
 test.describe('the kiosk ceremony', () => {
@@ -305,10 +333,19 @@ test.describe('the kiosk ceremony', () => {
      */
     const list = await request.get(`${CORE}/devices`, { headers: headers() });
     expect(list.ok()).toBeTruthy();
-    const device = ((await list.json()).devices as { id: string; label: string }[]).find(
-      (d) => d.label === 'Playwright revocable tablet',
-    );
-    expect(device, 'the tablet just paired should be listed').toBeTruthy();
+    /*
+     * THE LAST STILL-LIVE ONE, NOT THE FIRST BY LABEL. Every run of this suite
+     * registers another tablet with this label and revokes it, so by the
+     * second run of the day `find` returned a device that was ALREADY revoked
+     * — the revoke became a no-op, the browser's tablet kept working, and the
+     * test failed on an assertion about the tablet rather than about the
+     * revoke. Devices come back oldest first, so the live one is the last that
+     * still holds a credential.
+     */
+    const device = ((await list.json()).devices as { id: string; label: string; revokedAt: string | null }[])
+      .filter((d) => d.label === 'Playwright revocable tablet' && !d.revokedAt)
+      .at(-1);
+    expect(device, 'the tablet just paired should be listed and not already revoked').toBeTruthy();
     const revoked = await request.post(`${CORE}/dev/kiosk-device/revoke`, {
       headers: headers(),
       data: { deviceId: device!.id },
@@ -329,8 +366,13 @@ test.describe('the kiosk ceremony', () => {
     const row = await stageWaitingPatient(request, PATIENT.name, { lock: true });
     await verifyAs(page, row, request);
 
-    // THE TAP ITSELF ADVANCES — no Continue for the common case.
-    await page.getByTestId('assignor-self').click();
+    /*
+     * K-5 IS SKIPPED (Carl, 4 Sep 2026). The staff side already locked the
+     * particulars, so who signs is one of them and there is nothing to choose.
+     * The screen that used to render an explanation box in the second option's
+     * slot — which read as an option — is not drawn at all.
+     */
+    await expect(page.getByTestId('assignor-self')).toHaveCount(0);
 
     // K-3: locked, versioned, hashed, and offering the patient no field at all.
     await expect(page.getByTestId('artefact-hash')).toBeVisible({ timeout: 25_000 });
@@ -381,7 +423,8 @@ test.describe('the kiosk ceremony', () => {
      */
     const row = await stageWaitingPatient(request, PATIENT.name, { lock: true });
     await verifyAs(page, row, request);
-    await page.getByTestId('assignor-self').click();
+    // Locked, so K-5 is skipped and K-3 states who signs with a one-line note.
+    await expect(page.getByTestId('assignor-locked-note')).toBeVisible({ timeout: 25_000 });
 
     await expect(page.getByTestId('artefact-hash')).toBeVisible({ timeout: 25_000 });
     await page.getByTestId('continue-to-sign').click();
@@ -476,6 +519,7 @@ test.describe('the kiosk ceremony', () => {
      */
     const row = await stageWaitingPatient(request, PATIENT.name, { lock: false });
     await verifyAs(page, row, request);
+    await expectWhoIsSigning(page);
 
     await page.getByTestId('assignor-other').click();
     await expect(page.getByTestId('assignor-other-name')).toBeVisible();
@@ -529,6 +573,7 @@ test.describe('the kiosk ceremony', () => {
   }) => {
     const row = await stageWaitingPatient(request, PATIENT.name, { lock: false });
     await verifyAs(page, row, request);
+    await expectWhoIsSigning(page);
 
     await page.getByTestId('assignor-other').click();
     await page.getByTestId('assignor-other-name').fill(STAFF_MEMBER_NAME);

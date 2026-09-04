@@ -813,6 +813,26 @@ export const strings = {
     pmsUnsettled:
       'How results are written back to the PMS is not settled yet, so this promises a download and nothing ' +
       'more. Better an unfinished card than a finished-looking one that does not work.',
+
+    /*
+     * THE TABLETS CARD. It used to be two links buried in the Messages card at
+     * the foot of the hub — "Open the tablets" and "Open the send to the
+     * tablet" — which put a device's own card under a card about
+     * correspondence, and told nobody whether anything was actually paired.
+     * This one reads the same `/devices` list both target pages do, so its
+     * rollup and Capture channels' Kiosk row can never disagree.
+     */
+    tabletsRollupNone: 'No tablet paired yet',
+    tabletsRollup: (paired: number, revoked: number) => `${paired} paired · ${revoked} revoked`,
+    // WHAT AN OPERATOR SEES INSTEAD OF A COUNT. `GET /devices` is
+    // `@PracticeScoped` — handing out the credential that opens a waiting
+    // list is the practice's own act — so a platform session with no practice
+    // claim is refused. Naming that plainly beats guessing at a number: a
+    // wrong "0 paired" reads as "this practice has no tablets", which may
+    // simply be untrue.
+    tabletsUnavailableAsPlatform: 'Act as the practice to see which tablets are paired.',
+    kioskPaired: (n: number) => (n === 1 ? '1 tablet paired' : `${n} tablets paired`),
+    kioskUnpaired: 'unpaired',
   },
   status: {
     audience: 'Your application',
@@ -3045,11 +3065,23 @@ export const strings = {
     } as Record<string, string>,
 
     // --- Kiosk ---
+    //
+    // Reads the same `/devices` list the setup hub's Tablets card does, so
+    // the two can never disagree about how many tablets are paired (see
+    // `DevicesSummary` in ChannelsView.tsx). This used to say "Not built
+    // yet" long after pairing existed and tablets were actually paired.
     kioskTitle: 'Kiosk',
-    kioskState: 'Not built yet',
-    kioskBody:
-      'A tablet at reception for patients who are already in the building. Nothing to pair yet — this is ' +
-      'listed so the card is honest about what exists, rather than quietly leaving it out.',
+    kioskDone: 'Paired',
+    kioskNeedsWork: 'Needs work',
+    kioskNone: 'No tablet paired yet',
+    kioskSummary: (paired: number, revoked: number) =>
+      `${paired} tablet${paired === 1 ? '' : 's'} paired · ${revoked} revoked`,
+    // WHAT AN OPERATOR SEES INSTEAD OF A COUNT, viewing this read-only.
+    // `GET /devices` is `@PracticeScoped`, so a platform session with no
+    // practice claim is refused — and a wrong "0 paired" would read as "no
+    // tablets", which may simply be untrue.
+    kioskUnavailable: 'Act as the practice to see which tablets are paired.',
+    kioskManage: 'Manage tablets',
   },
   /**
    * The two identity dashboards (IDENTITY-STRENGTH-DESIGN.md §7).
@@ -3393,6 +3425,29 @@ export const strings = {
     noBuild: 'Not reported yet',
     codeOutstanding: (when: string) => `A pairing code is outstanding until ${when}`,
 
+    /*
+     * THE TEST-DEVICE TOGGLE (Carl, 4 Sep 2026 — "a toggle for test data to be
+     * shown in the list if on; if off show what the user will see at the
+     * kiosk").
+     *
+     * IT IS A DISCLOSURE SWITCH, AND THE COPY SAYS SO IN ITS FIRST BREATH. The
+     * warning is not a footnote under the control; it is the point of the
+     * control. What it turns on is other patients' names on a screen anybody
+     * in a waiting room can read, and the person flipping it should be told
+     * that before they flip it rather than discover it afterwards.
+     *
+     * "Next poll" is a promise this page can keep: `hidden` rides the tablet's
+     * existing poll and is inside its ETag, so the change reaches a tablet
+     * already sitting on its idle screen within seconds — no re-pairing, no
+     * reload, nobody walking to the device.
+     */
+    testDeviceLabel: 'Test device: shows the waiting list',
+    testDeviceWarning:
+      'On, this tablet displays other patients’ names in a list. Off — the default, and what a patient '
+      + 'actually sees — it shows nobody and finds the one person by the details they type. Takes effect on '
+      + 'the tablet’s next poll.',
+    testDeviceSaving: 'Saving…',
+
     revokeAction: 'Revoke',
     /*
      * REVOKING IS THE SECURITY ACT ON THIS PAGE, so it asks — and the
@@ -3653,8 +3708,23 @@ export const strings = {
       heading: 'Agree to bulk billing',
       // No subtitle: heading and Begin are the whole screen (Carl, 4 Sep 2026) -- the steps explain themselves.
       start: 'Begin',
-      waitingCount: (count: number) =>
-        count === 1 ? '1 person is ready to sign' : `${count} people are ready to sign`,
+      /*
+       * THERE IS NO COUNT ON THIS SCREEN, AND THAT IS THE ENTRY (Carl, 4 Sep
+       * 2026): "Remove the 'x people ready to sign' text — this is a security
+       * feature."
+       *
+       * `waitingCount` used to live here and said "3 people are ready to
+       * sign". It named nobody, which is why it survived the first pass — but
+       * a tablet on a counter announcing how many patients are in the room is
+       * still telling everyone in the room something about the people in it,
+       * and on a quiet morning "1 person is ready to sign" plus one person
+       * standing at the desk is not anonymous at all. It is gone rather than
+       * softened; this comment is what stops it coming back.
+       *
+       * `nobodyWaiting` STAYS, and only appears on the test-device list where
+       * names appear anyway — a list with a heading and no rows under it reads
+       * as broken.
+       */
       nobodyWaiting: 'Nobody is waiting to sign just now.',
       /** Matches `assignor.heading` below deliberately — K-1's list and K-5 ask the same question. */
       listHeading: 'Who is signing today?',
@@ -3672,6 +3742,20 @@ export const strings = {
        * hands them over cleanly, no verification attempted for nothing.
        */
       pleaseSeeReception: 'Please see reception',
+      /**
+       * THE PERMANENT BANNER OVER THE LIST (Carl, 4 Sep 2026 — "the list page
+       * is only for testing purposes").
+       *
+       * A device the console has flagged still shows the waiting room, and it
+       * says so, permanently, in the plainest words available. Anybody who
+       * walks past a tablet showing patient names should be able to tell at a
+       * glance whether that is a configuration mistake or a test rig — and
+       * "TEST DEVICE" is the sentence that answers it without a manual.
+       *
+       * It is deliberately NOT a dismissible notice: a banner that can be
+       * closed is a banner that is closed.
+       */
+      testDeviceBanner: 'TEST DEVICE — names visible',
     },
 
     verify: {
@@ -3850,20 +3934,23 @@ export const strings = {
        */
       saveFailed:
         'We could not record that here. Please see reception — your appointment is not affected.',
-      /**
-       * REACHED BY PRESSING BACK FROM K-3 AFTER THE PARTICULARS LOCKED.
+      /*
+       * `lockedNotice` USED TO LIVE HERE AND HAS BEEN DELETED (Carl, 4 Sep
+       * 2026), because the screen it explained no longer exists.
        *
-       * Who signs is one of the locked particulars (REQ-REG-06), so the server
-       * refuses to re-point the agreement once they are locked — and a screen
-       * that offers a choice the server will refuse is worse than one that
-       * explains why it cannot. The controls are disabled, this says what
-       * happened, and reception is the route. When the lock has NOT happened —
-       * which is the case whenever it failed — the choice is fully live, which
-       * is the reason Back exists at all.
+       * K-5 rendered the self option, then — exactly where "Someone else is
+       * signing for …" belongs — a box explaining that who signs is locked,
+       * then a Continue. Carl read the box AS the second option, which is the
+       * only sensible reading of a panel sitting in an option's place. The fix
+       * was not better wording: when the particulars are locked there is
+       * nothing to choose, so the ceremony SKIPS K-5 entirely and goes from
+       * verification to K-3, whose "Signing" line already states who signs.
+       * The one fact worth keeping moved with it —
+       * `particulars.assignorLockedNote`.
+       *
+       * The rule this leaves behind: never render an option-shaped box that is
+       * not an option.
        */
-      lockedNotice:
-        'Who is signing is part of this agreement, which is already locked, so it cannot be changed here. '
-        + 'Our reception staff can change it for you.',
       railAgeKicker: 'Age gates',
       railAgeBody:
         'A patient of the qualifying age or over may sign for themselves. Anyone signing for another person '
@@ -3916,6 +4003,22 @@ export const strings = {
       assignor: 'Signing',
       assignorIsPatient: 'The patient is signing',
       assignorIsOther: (name: string, relationship: string) => `${name} · ${relationship}`,
+      /**
+       * WHERE THE LOCKED EXPLANATION WENT (Carl, 4 Sep 2026), and it is one
+       * line rather than a panel.
+       *
+       * K-5 is skipped on a locked agreement — there is nothing to choose, and
+       * a box in an option's place reads as an option. But the fact still
+       * matters to whoever is standing there: who signs was decided at the
+       * desk, and if it is wrong a person can fix it. So it sits under K-3's
+       * "Signing" line, which is already stating who signs, and it points at a
+       * human rather than at a control.
+       *
+       * It does not say "locked", "refused" or "cannot" — the patient is not
+       * being told off, and nothing about their appointment is affected
+       * (REQ-REC-04).
+       */
+      assignorLockedNote: 'Set at reception — ask our staff if this is wrong',
       consentText:
         'I assign my right to the Medicare benefit for the service described above to the provider named '
         + 'above, who accepts that assigned benefit as full payment for that service.',

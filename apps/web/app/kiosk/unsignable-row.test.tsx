@@ -103,6 +103,13 @@ vi.mock('./api', () => ({
     practiceName: 'Sample Practice',
     state: 'NSW',
     identifierTypes: ['name', 'date_of_birth', 'address'],
+    /*
+     * A TEST DEVICE (Carl, 4 Sep 2026). This suite drives the LIST path —
+     * tap a name, then prove it — and since the pairing-day reversal that
+     * path exists only on a device the console has flagged. The walk-up
+     * flow that replaced it as the default is `walk-up-claim.test.tsx`.
+     */
+    showsWaitingList: true,
     reload: false,
   })),
   fetchWaitingList: vi.fn(async () => ({
@@ -113,6 +120,7 @@ vi.mock('./api', () => ({
       revision: 'rev-1',
       pollMs: 60_000,
       identifierTypes: ['name', 'date_of_birth', 'address'],
+      hidden: false,
       waiting: [UNSIGNABLE_ROW, SIGNABLE_ROW],
       reload: false,
     },

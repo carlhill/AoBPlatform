@@ -1698,6 +1698,19 @@ model Device {
   /// stories, and only one of them is a security event.
   revokedReason String?
 
+  /// A TEST DEVICE — the ONLY kind that is shown the waiting list (Carl, 4 Sep
+  /// 2026: "the list page is only for testing purposes").
+  ///
+  /// The walk-up tablet must never display other patients' names, so Begin
+  /// goes straight to "Confirm your details" and the server finds the one
+  /// waiting row that matches. `GET /kiosk/waiting-list` answers a device
+  /// without this flag `{ waiting: [], hidden: true }` — and no count either,
+  /// because the count was itself the disclosure Carl removed.
+  ///
+  /// SET FROM THE CONSOLE, NEVER FROM THE TABLET (`PATCH /devices/:id`), for
+  /// the same reason revoke lives there: a device that can turn its own
+  /// disclosure on is a device a passer-by can turn on. Default false.
+  showsWaitingList Boolean @default(false)
 
   @@index([practiceId])
   @@map("devices")

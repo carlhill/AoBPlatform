@@ -68,6 +68,7 @@ const VIEW: ParticularsView = {
   assignorIsPatient: true,
   assignorName: null,
   assignorRelationship: null,
+  particularsLocked: false,
   ruleSetVersion: 'draft-2026-08',
   mappingVersion: 'dev-mapping-1',
   artefactHash: 'b'.repeat(64),
@@ -132,6 +133,7 @@ describe('CLAUDE.md §7 — nothing is written to the device', () => {
         rows={[]}
         error={null}
         online
+        testDevice={false}
         onStart={noop}
         onBack={noop}
         onPick={noop}
@@ -144,6 +146,7 @@ describe('CLAUDE.md §7 — nothing is written to the device', () => {
         rows={[]}
         error={null}
         online
+        testDevice
         onStart={noop}
         onBack={noop}
         onPick={noop}
@@ -171,7 +174,6 @@ describe('CLAUDE.md §7 — nothing is written to the device', () => {
         guard={{ state: 'valid' }}
         saveError={false}
         saving={false}
-        particularsLocked={false}
         onChoose={noop}
         onChangeOther={noop}
         onContinue={noop}

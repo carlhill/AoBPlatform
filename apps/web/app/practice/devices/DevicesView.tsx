@@ -28,6 +28,14 @@
  * person who needs it is the person already looking at a list of tablets
  * wondering which of them is broken.
  *
+ * THE TEST-DEVICE TOGGLE IS ON THIS PAGE FOR THE SAME REASON REVOKE IS (Carl,
+ * 4 Sep 2026). Turning it on makes one tablet display other patients' names —
+ * a disclosure, not a preference — so it lives where a practice's device acts
+ * live, behind a signed-in staff member, and never as a tick-box on the tablet
+ * itself. A device that can widen its own disclosure is a device a passer-by
+ * can widen. It reaches the tablet on its next poll: no re-pairing, no reload,
+ * nobody walking over to it.
+ *
  * REVOKING NEVER BLOCKS CARE (hard rule 8). The confirmation says so in
  * words, because the instinct when a tablet goes missing is to hesitate — and
  * hesitating is the wrong answer. Reception carries on; capture falls back to
@@ -37,7 +45,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, RotateCw, ShieldOff, Tablet } from 'lucide-react';
 import { formatPairingCode, type DeviceRow } from '@aobplatform/domain';
-import { Button, Chip, Field, Notice, Section, Shell, TextInput, ui, type Tone } from '../../ui';
+import { Button, Checkbox, Chip, Field, Notice, Section, Shell, TextInput, ui, type Tone } from '../../ui';
 import { strings } from '../../strings';
 import { apiHeaders } from '../../auth';
 import { SessionControl } from '../../SessionControl';
@@ -111,7 +119,7 @@ export function DevicesView({ practiceId }: { practiceId: string }) {
     void load();
   }, [load]);
 
-  async function post<T>(path: string, body: unknown, method: 'POST' | 'PUT' = 'POST'): Promise<T> {
+  async function post<T>(path: string, body: unknown, method: 'POST' | 'PUT' | 'PATCH' = 'POST'): Promise<T> {
     const res = await fetch(`${CORE_URL}${path}`, {
       method,
       headers: apiHeaders(practiceId),
@@ -148,6 +156,16 @@ export function DevicesView({ practiceId }: { practiceId: string }) {
       await post(`/devices/${device.id}/revoke`, { reason: revokeReason.trim() || undefined });
       setConfirming(null);
       setRevokeReason('');
+    });
+
+  /**
+   * ONE TABLET'S DISCLOSURE SETTING. Optimistic nothing: the checkbox reflects
+   * the SERVER's answer, so a refused write leaves the control where it was
+   * rather than showing a state the tablet is not in.
+   */
+  const setTestDevice = (device: DeviceRow, showsWaitingList: boolean) =>
+    act(async () => {
+      await post(`/devices/${device.id}`, { showsWaitingList }, 'PATCH');
     });
 
   const rotate = (device: DeviceRow) =>
@@ -324,6 +342,28 @@ export function DevicesView({ practiceId }: { practiceId: string }) {
                   </div>
                 </div>
               ) : (
+                <>
+                  {/*
+                    THE WARNING IS THE HINT, NOT A FOOTNOTE. What this switch
+                    turns on is patient names on a waiting-room screen, and the
+                    person reaching for it should read that before the tap
+                    rather than after it. Off is the default, and off is what a
+                    patient actually sees at the tablet.
+
+                    NOT OFFERED ON A REVOKED DEVICE: it holds no credential, so
+                    the setting could not reach a screen — a control that can
+                    only report having done nothing.
+                  */}
+                  {!device.revokedAt && (
+                    <div className={styles.cardBody} data-testid={`test-device-${device.id}`}>
+                      <Checkbox
+                        checked={device.showsWaitingList}
+                        onCheckedChange={(next) => void setTestDevice(device, next)}
+                        label={strings.devices.testDeviceLabel}
+                        hint={strings.devices.testDeviceWarning}
+                      />
+                    </div>
+                  )}
                 <div className={styles.cardActions}>
                   {/*
                     REVOKE IS OFFERED ONLY WHERE IT MEANS SOMETHING. A revoked
@@ -346,6 +386,7 @@ export function DevicesView({ practiceId }: { practiceId: string }) {
                     <RotateCw size={14} aria-hidden="true" /> {strings.devices.rotateAction}
                   </Button>
                 </div>
+                </>
               )}
             </li>
           ))}

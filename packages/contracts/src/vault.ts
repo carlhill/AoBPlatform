@@ -203,30 +203,45 @@ export const VAULT_EVENT_TYPES = [
    */
   'device.rotated',
   /**
+   * A TABLET WAS TOLD IT MAY (OR MAY NOT) SHOW THE WAITING LIST (Carl, 4 Sep
+   * 2026 — "the list page is only for testing purposes").
+   *
+   * Ordinary tablets show nobody's name: the walk-up patient states three
+   * details and the server finds their row. Turning the list back on for one
+   * device puts other patients' names on a screen anybody in the room can
+   * read, so it is a security setting rather than a preference — console only,
+   * staff actor required, and evidenced here every time it changes.
+   */
+  'device.waiting_list_visibility_set',
+  /*
+   * THE WALK-UP CLAIM — "Confirm your details", and the server finds you
+   * (Carl, 4 Sep 2026). The patient states their identifiers and the server
+   * evaluates every waiting row of that practice; exactly one match verifies
+   * and continues, and zero or many are the SAME generic refusal, because
+   * "nobody by that name" and "two people match" are both facts about other
+   * people.
+   *
+   * `kiosk.claim_matched` hangs off the verification event the ordinary
+   * in-practice path produced, and adds the one thing that path has no column
+   * for: WHICH TABLET. It is the walk-up equivalent of a staff identity.
+   *
+   * `kiosk.claim_failed` and `kiosk.claim_locked_out` hang off the DEVICE,
+   * necessarily — a failed claim identified nobody, so there is no patient and
+   * no verification event to attach them to, and inventing one would be the
+   * fabricated evidence this product exists to prevent. They carry TYPES,
+   * counts and outcomes only; never a value, and never a name (REQ-VER-04).
+   */
+  'kiosk.claim_matched',
+  'kiosk.claim_failed',
+  'kiosk.claim_locked_out',
+  /**
    * The practice was moved to a newer kiosk build floor — the rollback signal
    * that reaches a tab which has been open since eight in the morning. Every
    * tablet below the floor reloads on its next poll, so this is one act with a
    * fleet-wide effect, which is exactly the kind that has to be attributable.
    */
   'practice.minimum_kiosk_build_set',
-  // Somebody -- or something -- decided about a change that needed a second
-  // look. The payload always says WHICH, because "a person accepted this" and
-  // "a model scored it and nobody looked" are different claims.
-  'review_task.resolved',
-  'affiliation.invited',
-  'affiliation.accepted',
-  'affiliation.rejected',
-  'affiliation.notice_given',
-  // The practitioner stayed. Recorded because a notice that was given and
-  // then withdrawn is not the same history as one never given -- somebody
-  // was told they were leaving, and that has to remain visible.
-  'affiliation.notice_withdrawn',
-  'affiliation.ended',
-  'practitioner.deregistered',
-  'campaign.declared',
-  'key.used',
-  'access.read', // REQ-LOG-07: reads are logged, not only writes
-  /**
+  /*
    * PUSH-TO-DEVICE CAPTURE — reception handed the patient a locked screen
    * (TODO.md "Push-to-device capture" / "Two front doors", Carl 4 Sep 2026).
    *
@@ -270,6 +285,23 @@ export const VAULT_EVENT_TYPES = [
    * attempt would imply values were compared that never existed.
    */
   'verification.staff_verified',
+  // Somebody -- or something -- decided about a change that needed a second
+  // look. The payload always says WHICH, because "a person accepted this" and
+  // "a model scored it and nobody looked" are different claims.
+  'review_task.resolved',
+  'affiliation.invited',
+  'affiliation.accepted',
+  'affiliation.rejected',
+  'affiliation.notice_given',
+  // The practitioner stayed. Recorded because a notice that was given and
+  // then withdrawn is not the same history as one never given -- somebody
+  // was told they were leaving, and that has to remain visible.
+  'affiliation.notice_withdrawn',
+  'affiliation.ended',
+  'practitioner.deregistered',
+  'campaign.declared',
+  'key.used',
+  'access.read', // REQ-LOG-07: reads are logged, not only writes
 ] as const;
 
 export type VaultEventType = (typeof VAULT_EVENT_TYPES)[number];

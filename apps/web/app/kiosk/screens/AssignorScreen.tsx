@@ -45,12 +45,27 @@
  * copy is a statement rather than an accusation — and it still never says
  * which name matched or how, which is the half of REQ-VUL-04 worth protecting.
  *
- * REACHED AGAIN BY PRESSING BACK FROM K-3 (Carl, 3 Sep 2026 live test). Once
- * the particulars are locked, who signs is one of them (REQ-REG-06) and the
- * server refuses to re-point the agreement — so the choice is disabled and
- * `lockedNotice` says why, rather than offering a control that will be
- * refused. When the lock has NOT happened, which is the case whenever it
- * failed, the choice is fully live: that is the reason Back exists.
+ * IT IS NEVER RENDERED ON A LOCKED AGREEMENT ANY MORE (Carl, 4 Sep 2026).
+ *
+ * It used to be, and the result is worth recording. On a locked agreement the
+ * screen drew the self option, then — in the place where "Someone else is
+ * signing for Riley Example" belongs — a panel explaining that who signs is
+ * locked, then a Continue. Carl read the panel AS the second option, which is
+ * the only sensible reading of a box sitting in an option's slot.
+ *
+ * The fix was not better wording. When the particulars are locked there is
+ * nothing to choose, so the CEREMONY SKIPS THIS SCREEN: verification goes
+ * straight to K-3, whose "Signing" line already states who signs and now
+ * carries a one-line note saying it was set at reception. Back from K-3 is
+ * withdrawn there for the same reason — there is nothing behind it.
+ *
+ * So this screen has exactly one state: two real options, self advancing on
+ * the tap, "someone else" revealing a form with real gates. THE RULE IT
+ * ENCODES: never render an option-shaped box that is not an option.
+ *
+ * This is also the shape the reception-push flow wants. A pushed agreement is
+ * always locked before it reaches a device (REQ-REG-06), so the tablet will
+ * never show K-5 for one.
  */
 
 import type { ReactNode } from 'react';
@@ -90,7 +105,6 @@ export function AssignorScreen({
   guard,
   saveError,
   saving,
-  particularsLocked,
   onChoose,
   onChangeOther,
   onContinue,
@@ -105,11 +119,6 @@ export function AssignorScreen({
   /** The server refused the change. Shown as our sentence, never its message. */
   saveError: boolean;
   saving: boolean;
-  /**
-   * True once `POST /agreements/:id/particulars` has succeeded. Who signs is
-   * then one of the locked particulars and cannot be changed here.
-   */
-  particularsLocked: boolean;
   onChoose: (assignorIsPatient: boolean) => void;
   onChangeOther: (patch: Partial<AssignorChoice>) => void;
   onContinue: () => void;
@@ -143,11 +152,10 @@ export function AssignorScreen({
           <h1 className={styles.h2}>{strings.assignor.heading}</h1>
 
           {/*
-            SELF IS ALWAYS OFFERED, INCLUDING ON A LOCKED AGREEMENT. Confirming
-            that you are the person signing costs the server nothing when the
-            agreement already says so — `advanceAssignor` posts only when it
-            has to re-point — so there is no reason to take the choice away
-            from somebody who is simply agreeing with what is on the record.
+            SELF ADVANCES ON THE TAP. Nothing about it can fail on this device
+            — the kiosk holds no date of birth, so the self-assign gate is the
+            server's — and a Continue under a choice already made reads as a
+            step somebody is still waiting for.
           */}
           <SecondaryButton
             label={strings.assignor.self(patientName)}
@@ -158,29 +166,20 @@ export function AssignorScreen({
           />
 
           {/*
-            "SOMEONE ELSE" IS NOT OFFERED ONCE THE PARTICULARS ARE LOCKED. Who
-            signs is one of them (REQ-REG-06), so the server refuses to
-            re-point the agreement — and a control that leads to a refusal is
-            worse than a sentence explaining why it is not there. Reached both
-            by arriving at an already-locked agreement (the intended flow: the
-            staff side validates and locks before the tablet sees it) and by
-            pressing Back from K-3.
+            BOTH OPTIONS ARE REAL OPTIONS, ALWAYS — because this screen is
+            reached only when there is a genuine choice to make. A locked
+            agreement never gets here; see the module note for the box that
+            used to sit in this slot and read as an option.
           */}
-          {particularsLocked ? (
-            <Blueprint accented className={styles.panel} testId="assignor-locked">
-              <p className={styles.body}>{strings.assignor.lockedNotice}</p>
-            </Blueprint>
-          ) : (
-            <SecondaryButton
-              label={strings.assignor.other(patientName)}
-              align="left"
-              selected={!choice.assignorIsPatient}
-              onPress={() => onChoose(false)}
-              testId="assignor-other"
-            />
-          )}
+          <SecondaryButton
+            label={strings.assignor.other(patientName)}
+            align="left"
+            selected={!choice.assignorIsPatient}
+            onPress={() => onChoose(false)}
+            testId="assignor-other"
+          />
 
-          {!choice.assignorIsPatient && !particularsLocked ? (
+          {!choice.assignorIsPatient ? (
             <Blueprint className={styles.panel}>
               <h2 className={styles.panelHeading}>{strings.assignor.panelHeading}</h2>
               <div className={styles.fieldGrid}>
@@ -291,10 +290,9 @@ export function AssignorScreen({
             waits for a step that is not there. Self needs no Continue —
             nothing about it can fail on this device — so it is not drawn. The
             "someone else" branch keeps it, because that branch has real gates
-            to pass and something has to submit them; so does the locked
-            branch, where the choice is fixed and Continue is the only way on.
+            to pass and something has to submit them.
           */}
-          {!choice.assignorIsPatient || particularsLocked ? (
+          {!choice.assignorIsPatient ? (
             <div className={styles.actions}>
               <GuardedButton
                 label={saving ? strings.particulars.validating : strings.assignor.continueAction}
