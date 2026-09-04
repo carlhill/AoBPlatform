@@ -24,6 +24,7 @@ import type {
   PortalEnduring,
   PortalMessage,
   PortalNotice,
+  PortalPasskey,
   PortalSession,
   PortalTermination,
   PortalVisit,
@@ -206,3 +207,48 @@ export const fixtureAccessLog: readonly PortalAccessEntry[] = [
     actionKey: 'retention_clock_started',
   },
 ];
+
+// ---------------------------------------------------------------------------
+// FR-8.2 — passkeys
+// ---------------------------------------------------------------------------
+
+/**
+ * A MUTABLE LIST, unlike everything else in this file.
+ *
+ * The other fixtures are constants because nothing on the page changes them.
+ * Passkeys are the one thing a patient ADDS and REMOVES from this surface, and
+ * a fixture that ignored both would make the card look finished while hiding
+ * the two states that matter — the empty list somebody sees first, and the
+ * warning shown when they are about to remove their last one.
+ *
+ * No credential id, no public key, no device model. There is nothing here a
+ * real payload has that this does not, because the real payload has nothing
+ * else either.
+ */
+let fixturePasskeyList: PortalPasskey[] = [
+  {
+    id: 'passkey-fixture-1',
+    label: 'My phone',
+    createdAt: '2026-08-19T02:44:00.000Z',
+    lastUsedAt: '2026-09-03T22:01:00.000Z',
+  },
+];
+
+export function fixturePasskeys(): readonly PortalPasskey[] {
+  return fixturePasskeyList;
+}
+
+export function addFixturePasskey(label?: string): PortalPasskey {
+  const added: PortalPasskey = {
+    id: `passkey-fixture-${fixturePasskeyList.length + 1}`,
+    label: label?.trim() || null,
+    createdAt: new Date().toISOString(),
+    lastUsedAt: null,
+  };
+  fixturePasskeyList = [...fixturePasskeyList, added];
+  return added;
+}
+
+export function removeFixturePasskey(passkeyId: string): void {
+  fixturePasskeyList = fixturePasskeyList.filter((passkey) => passkey.id !== passkeyId);
+}

@@ -1,9 +1,11 @@
 'use client';
 
 /**
- * THE PATIENT'S OWN PAGE — C8, one route, nine cards (REQ-PORT-01..08).
+ * THE PATIENT'S OWN PAGE — C8, one route, ten cards (REQ-PORT-01..08). The
+ * tenth is "Sign-in and security", added with FR-8.2's passkey half on
+ * 4 September 2026.
  *
- * NINE INDEPENDENT READS, NOT ONE. Each card fetches its own endpoint and holds
+ * INDEPENDENT READS, NOT ONE. Each card fetches its own endpoint and holds
  * its own loading, error and empty state, so a failing agreements service does
  * not blank the page a patient opened to check whether a text message was
  * genuine. A single page-level load would have made every card as reliable as
@@ -38,12 +40,17 @@ import {
   fetchEnduring,
   fetchMessages,
   fetchNotices,
+  fetchPasskeys,
   fetchSession,
   fetchVisits,
   isSignedOut,
   openDevPortalSession,
+  passkeysAvailable,
+  registerPasskey,
   requestDetailCorrection,
   revokeAssignor,
+  revokePasskey,
+  signInWithPasskey,
   terminateEnduring,
   type PortalAccessEntry,
   type PortalAgreement,
@@ -52,6 +59,7 @@ import {
   type PortalEnduring,
   type PortalMessage,
   type PortalNotice,
+  type PortalPasskey,
   type PortalVisit,
 } from './api';
 import type { Loadable } from './portal-ui';
@@ -62,6 +70,7 @@ import { DetailsCard } from './cards/DetailsCard';
 import { EnduringCard } from './cards/EnduringCard';
 import { MessagesCard } from './cards/MessagesCard';
 import { NoticesCard } from './cards/NoticesCard';
+import { PasskeysCard } from './cards/PasskeysCard';
 import { PeopleCard } from './cards/PeopleCard';
 import { VisitsCard } from './cards/VisitsCard';
 import { PortalButton } from './portal-ui';
@@ -86,6 +95,7 @@ type Cards = {
   messages: Loadable<readonly PortalMessage[]>;
   people: Loadable<PortalAssignors>;
   access: Loadable<readonly PortalAccessEntry[]>;
+  passkeys: Loadable<readonly PortalPasskey[]>;
 };
 
 const ALL_LOADING: Cards = {
@@ -97,6 +107,7 @@ const ALL_LOADING: Cards = {
   messages: LOADING,
   people: LOADING,
   access: LOADING,
+  passkeys: LOADING,
 };
 
 export function PortalView() {
@@ -130,6 +141,7 @@ export function PortalView() {
     void load('messages', fetchMessages);
     void load('people', fetchAssignors);
     void load('access', fetchAccessLog);
+    void load('passkeys', fetchPasskeys);
   }, [load]);
 
   const checkSession = useCallback(async () => {
@@ -174,6 +186,18 @@ export function PortalView() {
         <MessagesCard state={cards.messages} />
         <PeopleCard state={cards.people} onRevoke={revokeAssignor} />
         <DataCard state={cards.access} />
+        <PasskeysCard
+          state={cards.passkeys}
+          supported={passkeysAvailable()}
+          onAdd={async (label) => {
+            await registerPasskey(label);
+            await load('passkeys', fetchPasskeys);
+          }}
+          onRemove={async (passkeyId) => {
+            await revokePasskey(passkeyId);
+            await load('passkeys', fetchPasskeys);
+          }}
+        />
         <ComingLaterCard />
       </div>
     </Shell>
@@ -188,13 +212,46 @@ export function PortalView() {
  * agreement never requires this page (REQ-PORT-08). Saying it here, on the
  * screen that could imply otherwise, is the only place it does any work.
  *
- * There is no sign-in button yet. Activation is offered after a completed
- * signature (FR-1.14) and the passkey bootstrap is the server agent's half of
- * C8; a button that went nowhere would be worse than none.
+ * THERE IS NOW A SIGN-IN BUTTON, and only where it can work. FR-8.2's passkey
+ * half landed on 4 September 2026, so a patient who added one can get back in
+ * from here with their face, fingerprint or PIN — no username, nothing typed.
+ * It renders only when the browser can actually do WebAuthn: a control that
+ * explains itself after being pressed is worse than none on a page somebody
+ * opened because they were worried.
+ *
+ * THE REQ-PORT-08 SENTENCE STAYS ABOVE IT, and that ordering is deliberate.
+ * Adding a way IN must not turn this into a screen that implies a way in is
+ * needed. Signing an agreement has never required this page, and the sentence
+ * that says so is read first.
  */
 function SignedOut({ unreachable, onSignedIn }: { unreachable: boolean; onSignedIn: () => void }) {
   const [failed, setFailed] = useState(false);
   const [patientIds, setPatientIds] = useState<readonly string[]>([]);
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
+  const [passkeyFailed, setPasskeyFailed] = useState(false);
+
+  /*
+   * READ ONCE, AFTER MOUNT. `passkeysAvailable()` touches `window`, and calling
+   * it during render would make this component disagree with itself between the
+   * server pass and the client one.
+   */
+  const [canPasskey, setCanPasskey] = useState(false);
+  useEffect(() => setCanPasskey(passkeysAvailable()), []);
+
+  const signIn = async () => {
+    setPasskeyFailed(false);
+    setPasskeyBusy(true);
+    try {
+      await signInWithPasskey();
+      onSignedIn();
+    } catch {
+      // Never the server's sentence, and never logged. A cancelled prompt and a
+      // refused assertion are the same thing to the person holding the phone.
+      setPasskeyFailed(true);
+    } finally {
+      setPasskeyBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (!DEV_SEAM_ALLOWED) return;
@@ -221,6 +278,19 @@ function SignedOut({ unreachable, onSignedIn }: { unreachable: boolean; onSigned
         <p>
           <strong>{strings.portal.signedOut.neverNeeded}</strong>
         </p>
+
+        {canPasskey && (
+          <div className={styles.signInWithPasskey}>
+            <PortalButton variant="primary" onClick={signIn} disabled={passkeyBusy}>
+              {passkeyBusy ? strings.portal.passkeys.signInBusy : strings.portal.passkeys.signInAction}
+            </PortalButton>
+            {passkeyFailed && (
+              <p className={styles.cardError} role="alert">
+                {strings.portal.passkeys.signInFailed}
+              </p>
+            )}
+          </div>
+        )}
 
         {DEV_SEAM_ALLOWED && (
           <div className={styles.devSeam}>

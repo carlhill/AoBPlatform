@@ -278,3 +278,53 @@
   padding: var(--s5);
   color: var(--ink-muted);
 }
+
+/* --- Sign-in and security (FR-8.2 passkeys) -------------------------------- */
+
+/*
+ * THE ONLY TEXT INPUT ON THIS WHOLE PAGE, and it is optional: a name for a
+ * device, which the patient may leave blank. Everything else here is read-only
+ * or a button, because a patient portal that collects typing is a portal that
+ * has started asking people to correct their own records — which is reception's
+ * job against the PMS, never ours (REQ-DATA-10).
+ *
+ * 44px MINIMUM TARGETS, as everywhere on a patient surface (WCAG 2.2, CLAUDE.md
+ * §6). The row wraps rather than shrinking the field, because a name field that
+ * is 90px wide on a phone is a field nobody fills in.
+ */
+.addPasskey {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s3);
+  margin-top: var(--s5);
+}
+
+.fieldLabel {
+  display: block;
+  width: 100%;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+/* No `:focus-visible` rule here: `tokens.css` gives every input a visible focus
+   ring already, and a second one would only be a chance to get it wrong. */
+.field {
+  flex: 1 1 14rem;
+  min-height: 44px;
+  padding: 0 var(--s3);
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+
+/*
+ * The one way IN from the signed-out screen. Below the REQ-PORT-08 sentence on
+ * purpose: adding a door must not turn this into a page that implies one is
+ * needed.
+ */
+.signInWithPasskey {
+  margin-top: var(--s5);
+}

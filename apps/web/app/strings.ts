@@ -5080,5 +5080,65 @@ export const strings = {
       appointments: 'Your appointments',
       referrals: 'Your referrals',
     },
+
+    /* --------------------------------------------------------------- 10 */
+    /*
+     * SIGN-IN AND SECURITY — FR-8.2 passkeys (Carl, 4 Sep 2026).
+     *
+     * "PASSKEY" IS THE ONE PIECE OF JARGON, and it is unavoidable: it is the
+     * word the patient's own phone will use in the prompt, so a page that
+     * called it something friendlier would be teaching a term that does not
+     * appear anywhere else in the ceremony. Everything around it is plain:
+     * face, fingerprint, PIN, phone. No "authenticator", no "credential", no
+     * "WebAuthn", no "biometrics".
+     *
+     * NOTHING HERE PROMISES SECURITY IT CANNOT DELIVER, and nothing claims a
+     * certification of any kind (hard rule 12). It says what happens, not how
+     * safe it is.
+     *
+     * THE TWO SENTENCES THAT MATTER MOST ARE `optional` AND `lastOne`. Portal
+     * access is never a precondition of anything (REQ-PORT-08), so the offer
+     * has to read as an offer; and removing the last passkey is allowed, so
+     * the warning before it has to say what happens next rather than trying to
+     * talk somebody out of it.
+     */
+    passkeys: {
+      heading: 'Sign-in and security',
+      lead: 'How you get back into this page next time.',
+      optional: 'This is optional. You never need it to sign a bulk-billing agreement, and you can remove it at any time.',
+      /*
+       * WHAT A PASSKEY IS, IN ONE SENTENCE A PERSON CAN PICTURE. Not "a
+       * public-key credential bound to this origin" — the thing they will
+       * actually experience is their own phone asking for their face.
+       */
+      whatItIs: 'A passkey lets you open this page with the same face, fingerprint or PIN you use to unlock your phone. There is no password to remember, and nothing to type.',
+      whereItLives: 'The passkey stays on your own phone or computer. We only keep the part that lets us check it, and we can never use it to unlock anything of yours.',
+      addAction: 'Add a passkey',
+      addBusy: 'Waiting for your phone…',
+      labelLabel: 'What should we call this device? (optional)',
+      labelPlaceholder: 'My phone',
+      addFailed: 'That did not work. Your phone or browser may have cancelled it — you can try again, and nothing has changed.',
+      unsupported: 'This browser cannot use passkeys. You can still open this page the way you did today.',
+      empty: 'You have not added a passkey yet.',
+      unnamed: 'Unnamed device',
+      added: (when: string) => `Added ${when}`,
+      lastUsed: (when: string) => `Last used ${when}`,
+      neverUsed: 'Not used yet',
+      removeAction: 'Remove',
+      removeFailed: 'That could not be removed just now. Nothing has changed — please try again.',
+      confirmTitle: 'Remove this passkey?',
+      confirmBody: (name: string) => `${name} will no longer open this page.`,
+      /*
+       * REMOVING THE LAST ONE IS ALLOWED (REQ-PORT-08). The sentence says what
+       * happens afterwards, so the decision is informed rather than blocked —
+       * and it says the route back, which is the practice, not us.
+       */
+      lastOne: 'This is your only passkey. After you remove it, you will need a new invitation from your practice to open this page again. Your agreements and your care are not affected.',
+      confirmAction: 'Remove it',
+      /* The signed-out control. Shown only where the browser can do it. */
+      signInAction: 'Sign in with a passkey',
+      signInBusy: 'Waiting for your phone…',
+      signInFailed: 'That did not work. If you have not added a passkey yet, ask your practice for a new invitation.',
+    },
   },
 } as const;

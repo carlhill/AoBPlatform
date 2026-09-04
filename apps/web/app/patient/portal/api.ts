@@ -323,3 +323,130 @@ export async function openDevPortalSession(patientIds: readonly string[]): Promi
     body: JSON.stringify({ patientIds }),
   });
 }
+
+// ---------------------------------------------------------------------------
+// FR-8.2 — passkeys (Carl, 4 Sep 2026: "Implement"; D-2026-09-04-02)
+// ---------------------------------------------------------------------------
+
+/**
+ * ONE CREDENTIAL, AS THE "SIGN-IN AND SECURITY" CARD LISTS IT.
+ *
+ * `label` is the patient's own words for their own device and may be null,
+ * which is the ordinary case — the card shows a neutral name rather than
+ * inventing one from a user agent string. There is no field here for a device
+ * model, a browser or an operating system, and there must not be: a device
+ * fingerprint is not made acceptable by being displayed as a convenience.
+ */
+export interface PortalPasskey {
+  readonly id: string;
+  readonly label: string | null;
+  readonly createdAt: string;
+  readonly lastUsedAt: string | null;
+}
+
+/** What an options call hands back. `options` goes straight to the browser, unread. */
+interface PortalPasskeyChallenge {
+  readonly challengeId: string;
+  readonly options: Record<string, unknown>;
+}
+
+/**
+ * CAN THIS BROWSER DO PASSKEYS AT ALL.
+ *
+ * Checked before either control is RENDERED, not before it is clicked. A
+ * "sign in with a passkey" button that explains itself only after being pressed
+ * is worse than no button on a page a worried person came to for reassurance —
+ * and older browsers are over-represented among the patients this page is for.
+ */
+export function passkeysAvailable(): boolean {
+  return typeof window !== 'undefined' && typeof window.PublicKeyCredential === 'function';
+}
+
+export async function fetchPasskeys(): Promise<readonly PortalPasskey[]> {
+  if (PORTAL_FIXTURES) return (await fixtures()).fixturePasskeys();
+  return request<readonly PortalPasskey[]>('/portal/passkeys');
+}
+
+/**
+ * ADD A PASSKEY — options, the browser ceremony, then verify.
+ *
+ * THE WHOLE CEREMONY LIVES HERE RATHER THAN IN THE CARD, so the card stays a
+ * screen: it has one async call to await and one error to show. It also means
+ * the two round trips and the `navigator.credentials` call cannot drift apart
+ * across surfaces, because there is one copy of the sequence.
+ *
+ * ONLY REACHABLE WITH A LIVE SESSION. The server refuses both halves without
+ * one (`passkey_registration_requires_a_bootstrapped_session`) — this is not
+ * the enforcement, it is the screen agreeing with it.
+ *
+ * NOTHING IS PERSISTED IN THE BROWSER. No storage API is touched here and no
+ * response is logged. The credential itself lives in the phone's own secure
+ * store, which is the platform's, not ours.
+ */
+export async function registerPasskey(label?: string): Promise<PortalPasskey> {
+  if (PORTAL_FIXTURES) return (await fixtures()).addFixturePasskey(label);
+
+  const { startRegistration } = await import('@simplewebauthn/browser');
+  const challenge = await request<PortalPasskeyChallenge>('/portal/passkeys/registration/options', {
+    method: 'POST',
+  });
+
+  // The browser asks for the patient's face, fingerprint or PIN here.
+  const response = await startRegistration({ optionsJSON: challenge.options as never });
+
+  const result = await request<{ registered: true; passkey: PortalPasskey }>(
+    '/portal/passkeys/registration/verify',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        challengeId: challenge.challengeId,
+        response,
+        ...(label && label.trim().length > 0 ? { label: label.trim() } : {}),
+      }),
+    },
+  );
+  return result.passkey;
+}
+
+/**
+ * SIGN IN WITH A PASSKEY — no username, no identifier, nothing typed.
+ *
+ * The options carry no credential list, so this call cannot be used to ask
+ * whether somebody has an account here; the patient's own device offers the
+ * right credential and the signature says who they are. On success the server
+ * sets the session cookie and the page re-reads its session — there is nothing
+ * for this function to return.
+ */
+export async function signInWithPasskey(): Promise<void> {
+  if (PORTAL_FIXTURES) {
+    (await fixtures()).openFixtureSession();
+    return;
+  }
+
+  const { startAuthentication } = await import('@simplewebauthn/browser');
+  const challenge = await request<PortalPasskeyChallenge>('/portal/passkeys/authentication/options', {
+    method: 'POST',
+  });
+
+  const response = await startAuthentication({ optionsJSON: challenge.options as never });
+
+  await request<{ signedIn: true }>('/portal/passkeys/authentication/verify', {
+    method: 'POST',
+    body: JSON.stringify({ challengeId: challenge.challengeId, response }),
+  });
+}
+
+/**
+ * REMOVE ONE. REMOVING THE LAST IS ALLOWED (REQ-PORT-08) and the server says so
+ * in `noPasskeysRemain` — the card uses that to warn BEFORE the patient
+ * confirms, never to refuse. The portal is never a precondition of anything,
+ * and somebody wiping a phone they are selling should not be made to keep a
+ * credential in order to be permitted to remove the others.
+ */
+export async function revokePasskey(passkeyId: string): Promise<void> {
+  if (PORTAL_FIXTURES) {
+    (await fixtures()).removeFixturePasskey(passkeyId);
+    return;
+  }
+  await request<void>(`/portal/passkeys/${encodeURIComponent(passkeyId)}/revoke`, { method: 'POST' });
+}
