@@ -3755,6 +3755,8 @@ export const strings = {
        * as broken.
        */
       nobodyWaiting: 'Nobody is waiting to sign just now.',
+      /** Idle screen, in place of Begin, when the server says nobody is waiting (a boolean, never a count). */
+      nobodyWaitingIdle: 'Nobody is waiting to sign just now. Please see reception.',
       /*
        * BEGIN, REPLACED RATHER THAN DISABLED (Carl, 4 Sep 2026). A walk-up
        * tablet with nobody staged has nothing for Begin to open, and a

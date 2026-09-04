@@ -63,6 +63,12 @@ export interface WaitingListState {
    * change cannot be swallowed by a 304 on a quiet morning.
    */
   readonly hidden: boolean | null;
+  /**
+   * Somebody is waiting -- true/false once the server has answered, null before.
+   * On a hidden response it is the server's boolean; on a test device it is
+   * whether any rows came back. Never a number.
+   */
+  readonly anyoneWaiting: boolean | null;
   /** This tab is below the practice's build floor and must hard-reload. */
   readonly reload: boolean;
   /** How many polls came back 304 — evidence the ETag path is doing its job. */
@@ -162,6 +168,8 @@ export function useWaitingList(enabled: boolean): WaitingListState {
     error,
     unpaired,
     hidden: body === null ? null : body.hidden !== false,
+    anyoneWaiting:
+      body === null ? null : body.hidden !== false ? body.anyoneWaiting !== false : body.waiting.length > 0,
     reload: body?.reload === true,
     notModifiedCount,
     refresh: () => {

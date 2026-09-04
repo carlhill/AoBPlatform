@@ -52,6 +52,21 @@ function renderIdle(overrides: Partial<Parameters<typeof IdleScreen>[0]> = {}) {
   return render(<IdleScreen {...props} />);
 }
 
+describe('idle_hides_begin_when_nobody_is_waiting', () => {
+  it('hides Begin and says so when the server reports nobody waiting', () => {
+    const view = renderIdle({ anyoneWaiting: false });
+    expect(view.queryByTestId('start-check-in')).toBeNull();
+    expect(view.getByTestId('idle-nobody-waiting').textContent).toBe(strings.idle.nobodyWaitingIdle);
+    // Never a number on this screen.
+    expect(view.container.textContent).not.toMatch(/\d+ (person|people)/);
+  });
+
+  it('keeps Begin while the first poll is still in flight (null) and when somebody is waiting', () => {
+    expect(renderIdle({ anyoneWaiting: null }).queryByTestId('start-check-in')).not.toBeNull();
+    expect(renderIdle({ anyoneWaiting: true }).queryByTestId('start-check-in')).not.toBeNull();
+  });
+});
+
 describe('idle_hides_start_when_the_list_failed', () => {
   it('hides Start check-in and shows only the failure message when the poll has an error', () => {
     const view = renderIdle({ error: 'Failed to fetch' });

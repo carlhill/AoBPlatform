@@ -41,6 +41,7 @@ export function IdleScreen({
   mode,
   rows,
   error,
+  anyoneWaiting = true,
   online,
   testDevice,
   onStart,
@@ -53,6 +54,13 @@ export function IdleScreen({
   mode: 'idle' | 'list';
   rows: readonly KioskWaitingRow[];
   error: string | null;
+  /**
+   * FALSE HIDES BEGIN over an empty queue (Carl, 4 Sep 2026): a button that
+   * opens a form nobody can pass is worse than a sentence. A boolean from the
+   * server, never a count; null (no answer yet) is treated as true so the
+   * button is not withheld while the first poll is in flight.
+   */
+  anyoneWaiting?: boolean | null;
   online: boolean;
   /**
    * THE CONSOLE SAID THIS TABLET MAY SHOW NAMES. It is the ONLY thing that
@@ -86,6 +94,10 @@ export function IdleScreen({
           {error ? (
             <p className={styles.error} data-testid="idle-load-failed">
               {strings.idle.loadFailed}
+            </p>
+          ) : anyoneWaiting === false ? (
+            <p className={styles.muted} data-testid="idle-nobody-waiting">
+              {strings.idle.nobodyWaitingIdle}
             </p>
           ) : (
             /*

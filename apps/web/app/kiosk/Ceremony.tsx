@@ -987,6 +987,7 @@ export function Ceremony(): ReactNode {
             nobody can reach.
           */
           error={list.error}
+          anyoneWaiting={list.anyoneWaiting}
           online={list.error === null}
           testDevice={testDevice}
           onStart={begin}

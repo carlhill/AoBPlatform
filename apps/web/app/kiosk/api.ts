@@ -46,6 +46,12 @@ export interface WaitingListResponse {
    */
   readonly hidden?: boolean;
   /**
+   * WHETHER ANYBODY IS WAITING AT ALL -- a boolean, never a count (Carl,
+   * 4 Sep 2026). Rides on the hidden response so an ordinary tablet can hide
+   * Begin over an empty queue without learning who or how many.
+   */
+  readonly anyoneWaiting?: boolean;
+  /**
    * This tab is below the practice's kiosk build floor and must hard-reload.
    * It rides on the POLL rather than on a channel of its own, so a rollback
    * reaches an open tab within the cadence the server already chose — and it
