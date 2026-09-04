@@ -3488,7 +3488,7 @@ export const strings = {
        * serves specialists, allied health and optometry.
        */
       heading: 'Agree to bulk billing',
-      lede: 'Confirm your details, read your agreement, and sign. Our staff can help at any point.',
+      // No subtitle: heading and Begin are the whole screen (Carl, 4 Sep 2026) -- the steps explain themselves.
       start: 'Begin',
       waitingCount: (count: number) =>
         count === 1 ? '1 person is ready to sign' : `${count} people are ready to sign`,

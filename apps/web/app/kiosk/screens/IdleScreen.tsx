@@ -54,7 +54,6 @@ export function IdleScreen({
       <Screen practiceName={practiceName} locationLine={locationLine} context={context}>
         <div className={styles.centred}>
           <h1 className={styles.h1}>{strings.idle.heading}</h1>
-          <p className={styles.lede}>{strings.idle.lede}</p>
           {/*
             NO BUTTON THAT PROMISES A LIST THE SERVER COULD NOT SEND (Carl,
             4 Sep 2026). `error` covers a failed fetch, a non-2xx, and a
