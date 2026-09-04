@@ -29,7 +29,8 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { Shell } from '../../ui';
+import { LogIn, LogOut } from 'lucide-react';
+import { Shell, ui } from '../../ui';
 import { strings } from '../../strings';
 import { useRefreshable } from '../../refresh';
 import {
@@ -113,6 +114,9 @@ const ALL_LOADING: Cards = {
 
 export function PortalView() {
   const [session, setSession] = useState<'checking' | 'in' | 'out' | 'unreachable'>('checking');
+  // THE PORTAL ACCOUNT'S OWN ID, shown in the session bar beside Sign out so
+  // the page can be checked against a message that quoted it (Carl, 4 Sep 2026).
+  const [accountId, setAccountId] = useState<string | null>(null);
   const [cards, setCards] = useState<Cards>(ALL_LOADING);
 
   /**
@@ -147,7 +151,8 @@ export function PortalView() {
 
   const checkSession = useCallback(async () => {
     try {
-      await fetchSession();
+      const current = await fetchSession();
+      setAccountId(current.accountId);
       setSession('in');
       loadAll();
     } catch (err) {
@@ -186,23 +191,36 @@ export function PortalView() {
       title={displayName ? strings.portal.titleFor(displayName) : strings.portal.title}
       lead={strings.portal.lead}
       right={
-        // SIGN OUT, IN THE TOP BAR ON EVERY SIGNED-IN VIEW. A server-side
-        // revoke; the page then re-asks the server and shows the signed-out
-        // screen (a failed revoke still re-checks, so a dead cookie shows as
-        // signed out rather than as a stale page).
-        <PortalButton
-          variant="quiet"
-          data-testid="portal-sign-out"
-          onClick={async () => {
-            try {
-              await signOut();
-            } finally {
-              checkSession();
-            }
-          }}
-        >
-          {strings.portal.signOut}
-        </PortalButton>
+        // THE SESSION BAR, IN THE CONSOLE'S OWN STYLE: audience, the account's
+        // record id in full, and Sign out. Sign out is a server-side revoke;
+        // the page then re-asks the server and shows the signed-out screen (a
+        // failed revoke still re-checks, so a dead cookie shows as signed out
+        // rather than as a stale page).
+        <span className={ui.sessionBar}>
+          <span className={ui.sessionAudience}>{strings.portal.session.audience}</span>
+          {accountId && (
+            <span className={ui.sessionIdentity} data-testid="portal-record-id">
+              <span className={ui.sessionAffiliation} title={accountId}>
+                {strings.portal.session.recordId(accountId)}
+              </span>
+            </span>
+          )}
+          <button
+            type="button"
+            className={ui.sessionButton}
+            data-testid="portal-sign-out"
+            onClick={async () => {
+              try {
+                await signOut();
+              } finally {
+                checkSession();
+              }
+            }}
+          >
+            <LogOut size={13} aria-hidden="true" />
+            {strings.portal.signOut}
+          </button>
+        </span>
       }
     >
       <div className={styles.page}>
@@ -306,24 +324,41 @@ function SignedOut({ unreachable, onSignedIn }: { unreachable: boolean; onSigned
   };
 
   return (
-    <Shell title={strings.portal.signedOut.heading}>
+    <Shell
+      title={strings.portal.signedOut.heading}
+      right={
+        // THE SAME SESSION BAR AS THE CONSOLE'S, so the sign-in looks like
+        // every other AoBPlatform sign-in (Carl, 4 Sep 2026). Only where the
+        // browser can do WebAuthn — a button that explains itself after being
+        // pressed is worse than none on a page somebody opened because they
+        // were worried.
+        canPasskey ? (
+          <span className={ui.sessionBar}>
+            <span className={ui.sessionAudience}>{strings.portal.session.audience}</span>
+            <button
+              type="button"
+              className={ui.sessionButton}
+              onClick={signIn}
+              disabled={passkeyBusy}
+              data-testid="portal-sign-in"
+            >
+              <LogIn size={13} aria-hidden="true" />
+              {passkeyBusy ? strings.portal.passkeys.signInBusy : strings.portal.passkeys.signInAction}
+            </button>
+          </span>
+        ) : undefined
+      }
+    >
       <div className={styles.signedOut}>
         <p>{unreachable ? strings.portal.signedOut.unreachable : strings.portal.signedOut.body}</p>
         <p>
           <strong>{strings.portal.signedOut.neverNeeded}</strong>
         </p>
 
-        {canPasskey && (
-          <div className={styles.signInWithPasskey}>
-            <PortalButton variant="primary" onClick={signIn} disabled={passkeyBusy}>
-              {passkeyBusy ? strings.portal.passkeys.signInBusy : strings.portal.passkeys.signInAction}
-            </PortalButton>
-            {passkeyFailed && (
-              <p className={styles.cardError} role="alert">
-                {strings.portal.passkeys.signInFailed}
-              </p>
-            )}
-          </div>
+        {passkeyFailed && (
+          <p className={styles.cardError} role="alert">
+            {strings.portal.passkeys.signInFailed}
+          </p>
         )}
 
         {DEV_SEAM_ALLOWED && (

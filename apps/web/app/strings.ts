@@ -4796,6 +4796,17 @@ export const strings = {
     lead: 'Everything AoBPlatform holds about you, and what we do with it.',
     loading: 'Loading…',
     signOut: 'Sign out',
+    /**
+     * THE SESSION BAR, IN THE SAME STYLE AS THE CONSOLE'S (Carl, 4 Sep 2026:
+     * "Put this style of button for sign-in/out with the person's GUID next
+     * to the button so we know it is not a scam"). The record id is the
+     * portal account's own opaque id -- shown in full so a page that claims
+     * to be this one can be checked against a message that quoted it.
+     */
+    session: {
+      audience: 'AoBPlatform',
+      recordId: (id: string) => `Your record ID ${id}`,
+    },
     /*
      * ONE CARD FAILED, NOT THE PAGE. Said inside the card that failed, and it
      * says the rest still works — because somebody who came here to check
@@ -5139,7 +5150,7 @@ export const strings = {
       lastOne: 'This is your only passkey. After you remove it, you will need a new invitation from your practice to open this page again. Your agreements and your care are not affected.',
       confirmAction: 'Remove it',
       /* The signed-out control. Shown only where the browser can do it. */
-      signInAction: 'Sign in with a passkey',
+      signInAction: 'Sign in with your passkey',
       signInBusy: 'Waiting for your phone…',
       signInFailed: 'That did not work. If you have not added a passkey yet, ask your practice for a new invitation.',
     },

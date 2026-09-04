@@ -97,19 +97,20 @@ describe('portal_signed_out_says_signing_never_needs_an_account', () => {
     // somebody opened because they were worried.
     const without = render(<PortalView />);
     await screen.findByText(/You never need to sign in to sign a bulk-billing agreement/);
-    expect(screen.queryByRole('button', { name: 'Sign in with a passkey' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Sign in with your passkey' })).toBeNull();
     without.unmount();
 
     vi.stubGlobal('PublicKeyCredential', function PublicKeyCredential() {});
     render(<PortalView />);
 
-    const button = await screen.findByRole('button', { name: 'Sign in with a passkey' });
+    const button = await screen.findByRole('button', { name: 'Sign in with your passkey' });
     /*
-     * ORDER MATTERS. Adding a way IN must not turn this into a screen that
-     * implies a way in is needed, so the REQ-PORT-08 sentence is read first.
+     * IN THE TOP BAR, IN THE CONSOLE'S OWN STYLE (Carl, 4 Sep 2026) -- chrome,
+     * not content. The REQ-PORT-08 sentence is still the first thing in the
+     * page body, and it is still on the page.
      */
-    const sentence = screen.getByText(/You never need to sign in to sign a bulk-billing agreement/);
-    expect(sentence.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(button.closest('header')).toBeTruthy();
+    expect(screen.getByText(/You never need to sign in to sign a bulk-billing agreement/)).toBeTruthy();
 
     fireEvent.click(button);
     await waitFor(() => expect(actual.signInWithPasskey).toHaveBeenCalled());
@@ -208,6 +209,10 @@ describe('portal_header_names_the_person_and_offers_sign_out', () => {
     await waitFor(() =>
       expect(screen.getByRole('heading', { level: 1 }).textContent).toContain('Jamie Sampleton'),
     );
+
+    // THE RECORD ID BESIDE SIGN OUT, in full, so the page can be checked
+    // against a message that quoted it (Carl: "so we know it is not a scam").
+    expect(screen.getByTestId('portal-record-id').textContent).toMatch(/Your record ID a$/);
 
     // SIGN OUT: the server-side revoke is called, then the session is re-asked
     // — and a 401 on that re-ask is the signed-out screen, not an error.
