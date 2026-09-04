@@ -1320,7 +1320,20 @@ reception pushes one locked payload to one tablet, and the screen shows
 exactly one patient. Type-to-find is the pull-model fallback, and it should
 stay that way."
 
-**Reversed the same morning -- being fixed (Carl, 4 Sep 2026):** "Remove the
+**Reversed the same morning -- BUILT (`daa968c`, 4 Sep 2026):** `POST
+/kiosk/claim` finds the one waiting row matching all three identifiers and
+verifies through the real in-practice path; zero or many -> the generic
+mismatch; three failures per device in ten minutes -> lockout; the waiting
+list returns `hidden: true` and no count unless the device is flagged
+`showsWaitingList` from the console (banner "TEST DEVICE -- names visible").
+Core kiosk e2e 23, web 106. Left open by it: two `kiosk-ceremony` Playwright
+tests were already red since `cc442d8` (an unlocked staged draft has no D6a so
+it hands over before K-2) -- needs a dev seam to set D6a without a session, or
+the signed-in fixture; the claim limiter is in-memory per process (Redis before
+more than one Fargate task); `claim` writes `agreement.verificationEventId`
+from the kiosk module on the `CaptureService.verifyLink` precedent -- both want
+an `AgreementsService` method if module boundaries tighten.
+**Original note (Carl, 4 Sep 2026):** "Remove the
 'x people ready to sign' text -- this is a security feature. Then on the next
 page do not show the list. Go straight to 'Confirm your details', match these
 details to the list on AoBPlatform and then go to the next page. The list page

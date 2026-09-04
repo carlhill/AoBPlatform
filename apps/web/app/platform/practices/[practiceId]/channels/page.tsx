@@ -21,7 +21,7 @@ export default function ViewChannelsViewPage({ params }: { params: Promise<{ pra
   const { practiceId } = use(params);
   return (
     <ViewOnly practiceId={practiceId}>
-      <ChannelsView practiceId={practiceId} />
+      <ChannelsView practiceId={practiceId} viewOnly />
     </ViewOnly>
   );
 }

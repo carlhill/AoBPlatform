@@ -1,5 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { captureReadiness, orderCards, worstRowsFirst, type CardState, type SetupRow } from '@aobplatform/domain';
+import {
+  captureReadiness,
+  deviceState,
+  orderCards,
+  worstRowsFirst,
+  type CardState,
+  type SetupRow,
+} from '@aobplatform/domain';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -36,12 +43,13 @@ export class SetupService {
 
   async hub(practiceId: string) {
     return this.prisma.withPractice(practiceId, async (tx) => {
-      const [practice, locations, affiliations, credentials, staff] = await Promise.all([
+      const [practice, locations, affiliations, credentials, staff, devices] = await Promise.all([
         tx.practice.findFirstOrThrow({ where: { id: practiceId } }),
         tx.practiceLocation.findMany({ orderBy: { createdAt: 'asc' } }),
         tx.affiliation.findMany({ include: { practitioner: true, location: true } }),
         tx.practiceCredential.findMany(),
         tx.staffMember.findMany(),
+        tx.device.findMany(),
       ]);
 
       const activeLocations = locations.filter((l) => l.active);
@@ -184,6 +192,16 @@ export class SetupService {
       // and an unregistered sender shows to patients as "Unverified" and is
       // grouped with scams — so it silently destroys response rates if it is
       // left to be discovered later.
+      //
+      // THE KIOSK ROW READS THE SAME `Device` TABLE THE TABLETS CARD DOES
+      // (TODO.md 4 Sep 2026 — the two used to disagree). This used to say
+      // "unpaired" unconditionally, so a practice with a tablet paired and
+      // working was told on its own hub that it had none. `deviceState` is the
+      // one place a row is paired/awaiting/revoked is decided, so this counts
+      // the same way the console does rather than re-deriving it.
+      const pairedDeviceCount = devices.filter(
+        (d) => deviceState({ revokedAt: d.revokedAt, pairedAt: d.pairedAt }) === 'paired',
+      ).length;
       const channelRows: SetupRow[] = [
         {
           label: 'SMS sender ID',
@@ -194,8 +212,13 @@ export class SetupService {
         },
         {
           label: 'Kiosk',
-          note: 'unpaired',
-          needsWork: true,
+          note:
+            pairedDeviceCount === 0
+              ? 'unpaired'
+              : pairedDeviceCount === 1
+                ? '1 tablet paired'
+                : `${pairedDeviceCount} tablets paired`,
+          needsWork: pairedDeviceCount === 0,
         },
       ];
 

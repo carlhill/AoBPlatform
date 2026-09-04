@@ -140,6 +140,25 @@ describe('reaching a page', () => {
     expect(mayReach('/practice/application', acting)).toBe(true);
   });
 
+  it('reaches the tablets twins under /platform/practices, the same way every other twin does', () => {
+    /*
+     * `/practice/devices` and `/practice/tablet` are `practice_admin`/`practice`
+     * only, exactly like `/practice/application` above — so an operator still
+     * cannot open THOSE directly. Their read-only twins live under
+     * `/platform/practices`, which already carries `matchesChildren: true`
+     * for precisely this: a practice's pages, reached as the platform, for
+     * looking rather than acting (see the entry's own comment). No page-specific
+     * entry is needed for either twin — the prefix rule covers a new one the
+     * moment its route exists, which is what stops this table and the read-only
+     * tree drifting apart.
+     */
+    expect(mayReach('/practice/devices', operator)).toBe(false);
+    expect(mayReach('/practice/tablet', operator)).toBe(false);
+    expect(mayReach('/platform/practices/p1/devices', operator)).toBe(true);
+    expect(mayReach('/platform/practices/p1/tablet', operator)).toBe(true);
+    expect(mayReach('/platform/practices/p1/devices', ordinary)).toBe(false);
+  });
+
   it('leaves the token-bearing pages reachable without a session', () => {
     // The people answering these are precisely the people who cannot sign in:
     // a practitioner who has not accepted, an applicant with no account,

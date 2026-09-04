@@ -23,16 +23,22 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, MessageSquare, Monitor, ShieldQuestion, Timer } from 'lucide-react';
+import Link from 'next/link';
+import { ArrowRight, CheckCircle2, MessageSquare, Monitor, ShieldQuestion, Timer } from 'lucide-react';
 import {
   APPROVED_IDENTIFIER_TYPES,
   IDENTIFIER_COUNT_FLOOR,
+  audiencesOf,
+  mayReach,
+  type Audience,
+  type DeviceRow,
 } from '@aobplatform/domain';
 import { Button, Checkbox, Chip, Field, Notice, Shell, TextInput, ui } from '../../ui';
 import { strings } from '../../strings';
 import styles from '../manage.module.css';
 import { SessionControl } from '../../SessionControl';
-import { apiHeaders } from '../../auth';
+import { apiHeaders, currentSession } from '../../auth';
+import { toViewPath } from '../../viewPath';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -43,15 +49,44 @@ interface Practice {
   identifierTypes: string[];
 }
 
+/**
+ * THE SAME SHAPE `SetupHub` READS, for the same reason: the Kiosk row here
+ * and the hub's Tablets card must never disagree about how many tablets are
+ * paired, and the only way to guarantee that structurally is for both to
+ * read `GET /devices` and count the same way.
+ *
+ * `unavailable` IS ITS OWN STATE, not a zero — `GET /devices` is
+ * `@PracticeScoped`, so the platform's read-only twin of this page (which
+ * carries no practice claim) is refused, and a wrong "0 paired" would read as
+ * "no tablets", which may simply be untrue.
+ */
+interface DevicesSummary {
+  status: 'loading' | 'ok' | 'unavailable';
+  total: number;
+  paired: number;
+  revoked: number;
+}
+
+const DEVICES_LOADING: DevicesSummary = { status: 'loading', total: 0, paired: 0, revoked: 0 };
+const DEVICES_UNAVAILABLE: DevicesSummary = { status: 'unavailable', total: 0, paired: 0, revoked: 0 };
+
 async function refusalMessage(res: Response): Promise<string> {
   const body = (await res.json().catch(() => ({}))) as { message?: string | string[] };
   if (Array.isArray(body.message)) return body.message.join(' ');
   return body.message ?? String(res.status);
 }
 
-export function ChannelsView({ practiceId }: { practiceId: string }) {
+export function ChannelsView({
+  practiceId,
+  /** Read-only, as the platform. See `SetupHub` for the full reasoning. */
+  viewOnly = false,
+}: {
+  practiceId: string;
+  viewOnly?: boolean;
+}) {
   const [practice, setPractice] = useState<Practice | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [devices, setDevices] = useState<DevicesSummary>(DEVICES_LOADING);
 
   const [senderId, setSenderId] = useState(false);
   const [expiry, setExpiry] = useState('24');
@@ -60,6 +95,15 @@ export function ChannelsView({ practiceId }: { practiceId: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+
+  const session = currentSession();
+  const audiences: Audience[] = audiencesOf({
+    roles: session?.roles ?? [],
+    practiceId,
+    practitionerId: session?.practitionerId,
+    consoleRole: session?.consoleRole,
+  });
+  const canOpen = (path: string) => viewOnly || mayReach(path, audiences);
 
   const load = useCallback(async () => {
     try {
@@ -74,6 +118,22 @@ export function ChannelsView({ practiceId }: { practiceId: string }) {
       setIdentifiers(data.identifierTypes ?? []);
     } catch (e) {
       setLoadError(e instanceof TypeError ? strings.review.unreachableBody : (e as Error).message);
+    }
+
+    /*
+     * THE SAME FETCH THE SETUP HUB'S TABLETS CARD READS. Kept independent of
+     * the practice-config load above: a refusal here says nothing about
+     * whether the practice's own settings loaded, and the reverse.
+     */
+    try {
+      const res = await fetch(`${CORE_URL}/devices`, { headers: apiHeaders(practiceId) });
+      if (!res.ok) throw new Error(String(res.status));
+      const body = (await res.json()) as { devices: DeviceRow[] };
+      const paired = body.devices.filter((d) => d.state === 'paired').length;
+      const revoked = body.devices.filter((d) => d.state === 'revoked').length;
+      setDevices({ status: 'ok', total: body.devices.length, paired, revoked });
+    } catch {
+      setDevices(DEVICES_UNAVAILABLE);
     }
   }, [practiceId]);
 
@@ -102,6 +162,19 @@ export function ChannelsView({ practiceId }: { practiceId: string }) {
     Number.isFinite(hours) &&
     hours >= 1 &&
     hours <= 168;
+
+  // DONE ONLY ON EVIDENCE. An operator viewing this read-only, who cannot
+  // call the `@PracticeScoped` `/devices` list, gets NEEDS WORK rather than a
+  // guessed DONE — the same reasoning the setup hub's Tablets card follows.
+  const kioskDone = devices.status === 'ok' && devices.paired > 0;
+  const kioskNote =
+    devices.status === 'unavailable'
+      ? strings.channels.kioskUnavailable
+      : devices.status === 'loading'
+        ? strings.channels.loading
+        : devices.total === 0
+          ? strings.channels.kioskNone
+          : strings.channels.kioskSummary(devices.paired, devices.revoked);
 
   async function save() {
     setBusy(true);
@@ -243,18 +316,38 @@ export function ChannelsView({ practiceId }: { practiceId: string }) {
             </div>
           </div>
 
-          {/* --- Kiosk: listed so the card is honest about what exists --- */}
+          {/*
+            --- Kiosk. Reads the SAME `/devices` fetch the setup hub's
+            Tablets card does (see `DevicesSummary` above), so the two can
+            never disagree about how many tablets are paired — which used to
+            be the bug: this card said "NOT BUILT YET" long after pairing
+            existed and tablets were actually paired.
+          */}
           <div className={styles.card} style={{ marginTop: 'var(--s3)' }}>
             <div className={styles.cardHead}>
               <Monitor size={18} aria-hidden="true" className={styles.cardIcon} />
               <div className={styles.cardMain}>
                 <p className={styles.cardTitle}>{strings.channels.kioskTitle}</p>
-                <p className={styles.cardNote}>{strings.channels.kioskBody}</p>
+                <p className={styles.cardNote}>{kioskNote}</p>
               </div>
               <div className={styles.cardAside}>
-                <Chip tone="neutral">{strings.channels.kioskState}</Chip>
+                <Chip tone={kioskDone ? 'ok' : 'warn'}>
+                  {kioskDone ? strings.channels.kioskDone : strings.channels.kioskNeedsWork}
+                </Chip>
               </div>
             </div>
+            {canOpen('/practice/devices') && (
+              <div className={styles.cardBody}>
+                <Link
+                  href={viewOnly ? toViewPath('/practice/devices', practiceId) : '/practice/devices'}
+                  className={ui.buttonLink}
+                  data-testid="channels-manage-tablets"
+                >
+                  {strings.channels.kioskManage}
+                  <ArrowRight size={14} aria-hidden="true" />
+                </Link>
+              </div>
+            )}
           </div>
 
           <div className={styles.formActions}>

@@ -45,7 +45,7 @@ import {
   UserSquare,
   Send,
 } from 'lucide-react';
-import { audiencesOf, mayReach, type Audience, type CardState } from '@aobplatform/domain';
+import { audiencesOf, mayReach, type Audience, type CardState, type DeviceRow } from '@aobplatform/domain';
 import { Chip, Notice, Shell, ui, type Tone } from '../../ui';
 import { useRefreshable } from '../../refresh';
 import { toViewPath } from '../../viewPath';
@@ -88,6 +88,28 @@ interface Hub {
   readiness: { ready: boolean; readyCount: number; blockers: string[]; headline: string };
   cards: Card[];
 }
+
+/**
+ * THE ONE DEVICES FETCH, shared by the Tablets card and the Kiosk row in
+ * Capture channels — see `load` below. Two cards reading two different
+ * counts is exactly the bug Carl saw: this makes it structurally impossible.
+ *
+ * `unavailable` IS ITS OWN STATE, not a zero. `GET /devices` is
+ * `@PracticeScoped` (the same reasoning as `/practice/users` — handing out
+ * the credential that opens a practice's waiting list is the practice's own
+ * act), so a platform session with no practice claim is refused. Showing
+ * "0 paired" there would read as "this practice has no tablets", which may
+ * simply be untrue — the honest answer is that this view cannot say.
+ */
+interface DevicesSummary {
+  status: 'loading' | 'ok' | 'unavailable';
+  total: number;
+  paired: number;
+  revoked: number;
+}
+
+const DEVICES_LOADING: DevicesSummary = { status: 'loading', total: 0, paired: 0, revoked: 0 };
+const DEVICES_UNAVAILABLE: DevicesSummary = { status: 'unavailable', total: 0, paired: 0, revoked: 0 };
 
 
 /**
@@ -152,6 +174,7 @@ export function SetupHub({
 }) {
   const [hub, setHub] = useState<Hub | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [devices, setDevices] = useState<DevicesSummary>(DEVICES_LOADING);
 
   /*
    * WHAT THIS READER MAY ACTUALLY OPEN, asked of the domain rather than guessed
@@ -179,6 +202,24 @@ export function SetupHub({
       .catch((e: Error) =>
         live && setError(e instanceof TypeError ? strings.review.unreachableBody : e.message),
       );
+
+    /*
+     * THE SAME FETCH THE TABLETS CARD AND THE CAPTURE CHANNELS KIOSK ROW BOTH
+     * READ (see `DevicesSummary`). One request, refreshed alongside the hub
+     * itself, so the two cards cannot drift apart between one render and the
+     * next the way the server's hardcoded "unpaired" and a genuinely paired
+     * tablet just did.
+     */
+    fetch(`${CORE_URL}/devices`, { headers: apiHeaders(practiceId) })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((body: { devices: DeviceRow[] }) => {
+        if (!live) return;
+        const paired = body.devices.filter((d) => d.state === 'paired').length;
+        const revoked = body.devices.filter((d) => d.state === 'revoked').length;
+        setDevices({ status: 'ok', total: body.devices.length, paired, revoked });
+      })
+      .catch(() => live && setDevices(DEVICES_UNAVAILABLE));
+
     return () => {
       live = false;
     };
@@ -269,6 +310,46 @@ export function SetupHub({
     );
   }
 
+  /*
+   * THE TABLETS CARD'S OWN LINE, and DONE ONLY WHEN THERE IS EVIDENCE OF IT —
+   * an operator who cannot see the list (`unavailable`) gets `not_started`
+   * rather than a guess, because this badge cannot say DONE for something it
+   * has not seen.
+   */
+  const tabletsState: CardState = devices.status === 'ok' && devices.paired > 0 ? 'done' : 'not_started';
+  const tabletsRollup =
+    devices.status === 'unavailable'
+      ? strings.setup.tabletsUnavailableAsPlatform
+      : devices.status === 'loading'
+        ? strings.review.loading
+        : devices.total === 0
+          ? strings.setup.tabletsRollupNone
+          : strings.setup.tabletsRollup(devices.paired, devices.revoked);
+
+  /*
+   * THE CAPTURE CHANNELS CARD, WITH A LIVE KIOSK ROW. The server's own row is
+   * already correct (it reads the same `Device` table), but this is the exact
+   * same fetch the Tablets card reads, so if the two ever COULD disagree this
+   * makes it structurally impossible: both come from one response. When that
+   * fetch fails, the card keeps the server's row rather than overwriting a
+   * right answer with a guess.
+   */
+  const withLiveKioskRow = (card: Card): Card => {
+    if (card.key !== 'channels' || devices.status !== 'ok') return card;
+    return {
+      ...card,
+      rows: card.rows.map((row) =>
+        row.label === 'Kiosk'
+          ? {
+              ...row,
+              note: devices.paired > 0 ? strings.setup.kioskPaired(devices.paired) : strings.setup.kioskUnpaired,
+              needsWork: devices.paired === 0,
+            }
+          : row,
+      ),
+    };
+  };
+
   return (
     <Shell
       right={<SessionControl audience={strings.setup.audience} />}
@@ -344,6 +425,7 @@ export function SetupHub({
             };
             return rank(a.key) - rank(b.key);
           })
+          .map(withLiveKioskRow)
           .map((card) => {
           const Icon = CARD_ICONS[card.key] ?? Circle;
           return (
@@ -390,6 +472,56 @@ export function SetupHub({
             </section>
           );
         })}
+
+        {/*
+          THE TABLETS CARD. Placed straight after Capture channels rather than
+          sorted in with it: it is a card of its own, not a channel, and it
+          used to be two links buried in the Messages card at the foot of the
+          hub — which put a device's own state behind a card about
+          correspondence and told nobody whether anything was actually
+          paired. `devices` is the one fetch this and the Kiosk row above both
+          read (see `load`), so they cannot disagree.
+        */}
+        <section className={styles.card} aria-label={strings.devices.title} data-testid="card-tablets">
+          <div className={styles.cardHead}>
+            <span className={styles.cardIcon}>
+              <Tablet size={16} aria-hidden="true" />
+            </span>
+            <h2 className={styles.cardTitle}>{strings.devices.title}</h2>
+            <Chip tone={STATE_TONE[tabletsState]}>{strings.setup.states[tabletsState]}</Chip>
+          </div>
+
+          <p className={styles.cardRollup} data-testid="tablets-rollup">{tabletsRollup}</p>
+
+          {/*
+            REGISTERING A DEVICE IS THE ADMINISTRATOR'S; USING ONE IS
+            RECEPTION'S — the same split `mayReach` makes for these two paths,
+            asked here with the same `canOpen` rather than a second copy of
+            the judgement.
+          */}
+          {canOpen('/practice/devices') && (
+            <Link
+              href={viewOnly ? toViewPath('/practice/devices', practiceId) : '/practice/devices'}
+              className={styles.cardLink}
+              data-testid="hub-to-devices"
+            >
+              <Tablet size={14} aria-hidden="true" />
+              {openLabel(strings.devices.title)}
+              <ArrowRight size={14} aria-hidden="true" />
+            </Link>
+          )}
+          {canOpen('/practice/tablet') && (
+            <Link
+              href={viewOnly ? toViewPath('/practice/tablet', practiceId) : '/practice/tablet'}
+              className={styles.cardLink}
+              data-testid="hub-to-tablet"
+            >
+              <Send size={14} aria-hidden="true" />
+              {openLabel(strings.tablet.title)}
+              <ArrowRight size={14} aria-hidden="true" />
+            </Link>
+          )}
+        </section>
 
         {/*
           The sixth panel, and DASHED because we do not control it yet. The
@@ -454,46 +586,12 @@ export function SetupHub({
             </Link>
           )}
           {/*
-            THE TABLETS, GATED THE SAME WAY AND FOR THE SAME REASON. Registering
-            a waiting-room device hands out the credential that opens this
-            practice's list of patient names; revoking one takes it back. That
-            is the administrator's decision, not an ordinary setting — so it is
-            behind `canOpen`, the SAME rule the guard applies, rather than a
-            second copy of the judgement that could drift from it.
+            THE TABLETS HAVE THEIR OWN CARD NOW (Carl, 4 Sep 2026 — "buried
+            inside Messages"). Registering a device and sending to one are
+            both device business, not correspondence, and burying them here
+            meant an operator could not tell whether anything was actually
+            paired. See the Tablets card, above.
           */}
-          {canOpen('/practice/devices') && (
-            <Link
-              href={viewOnly ? toViewPath('/practice/devices', practiceId) : '/practice/devices'}
-              className={styles.cardLink}
-              data-testid="hub-to-devices"
-            >
-              <Tablet size={14} aria-hidden="true" />
-              {openLabel(strings.devices.title)}
-              <ArrowRight size={14} aria-hidden="true" />
-            </Link>
-          )}
-          {/*
-            SEND TO THE TABLET, and the audience is deliberately WIDER than the
-            card above it. Registering a device hands out the credential that
-            opens this practice's waiting list — an administrator's decision.
-            USING a tablet that is already paired is the front desk's ordinary
-            work, done dozens of times a morning by whoever is standing at it.
-            So this one is gated on `/practice/tablet` rather than on
-            `/practice/devices`: the same `canOpen`, asking about the page it
-            actually leads to, which is what stops the card and the guard
-            drifting apart.
-          */}
-          {canOpen('/practice/tablet') && (
-            <Link
-              href={viewOnly ? toViewPath('/practice/tablet', practiceId) : '/practice/tablet'}
-              className={styles.cardLink}
-              data-testid="hub-to-tablet"
-            >
-              <Send size={14} aria-hidden="true" />
-              {openLabel(strings.tablet.title)}
-              <ArrowRight size={14} aria-hidden="true" />
-            </Link>
-          )}
           {/*
             SCOPED TO THIS PRACTICE in view-only. These two used to point at the
             global platform queues, which threw the reader out of the practice
