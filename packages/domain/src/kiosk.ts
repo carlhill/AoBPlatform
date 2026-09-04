@@ -192,3 +192,63 @@ export const KIOSK_POLL_MS = {
 export function kioskPollMs(waitingCount: number): number {
   return waitingCount > 0 ? KIOSK_POLL_MS.waitingMs : KIOSK_POLL_MS.idleMs;
 }
+
+/**
+ * RETURN TO THE START WHEN NOBODY IS THERE (Carl, 4 September 2026).
+ *
+ * A patient is called in mid-ceremony, or simply walks off. The tablet is then
+ * sitting on a counter in a waiting room with somebody's name, date of birth
+ * and address on it, and the next person to pick it up is a stranger. So every
+ * screen but the idle one is on a clock: any pointer, touch or key activity
+ * resets it, and on expiry the tablet drops EVERYTHING it holds in memory and
+ * returns to idle.
+ *
+ * IT IS A PER-PRACTICE SETTING, NOT A CONSTANT, and the constants here are the
+ * default and the bounds around it. A busy practice with a tablet at the desk
+ * wants it short; a quiet one handing a tablet to somebody reading slowly wants
+ * it longer, and neither of them should have to ring us. Five minutes is the
+ * default because it is long enough to read an agreement standing up and short
+ * enough that a walked-away patient's details are gone before the next person
+ * reaches the counter.
+ *
+ * THE BOUNDS ARE ENFORCED IN THE DTO AND HERE, not merely rendered as `min`
+ * and `max` on an input. A minute is the floor because anything shorter resets
+ * the screen while somebody is still reading it — which would BLOCK CARE by
+ * making the ceremony uncompletable (hard rule 8, REQ-REC-04) — and thirty
+ * minutes is the ceiling because a tablet holding particulars for longer than
+ * a consultation is no longer "between patients", it is left out.
+ */
+export const KIOSK_IDLE_TIMEOUT_DEFAULT_SECONDS = 300;
+export const KIOSK_IDLE_TIMEOUT_MIN_SECONDS = 60;
+export const KIOSK_IDLE_TIMEOUT_MAX_SECONDS = 1_800;
+
+/**
+ * THE QUIET WARNING BEFORE IT HAPPENS. Thirty seconds, on every screen the
+ * clock covers, and tapping anywhere cancels it — because the one thing worse
+ * than a tablet that resets is a tablet that resets under the hand of somebody
+ * who was still reading.
+ */
+export const KIOSK_IDLE_WARNING_SECONDS = 30;
+
+export function isKioskIdleTimeoutInRange(seconds: number): boolean {
+  return (
+    Number.isInteger(seconds) &&
+    seconds >= KIOSK_IDLE_TIMEOUT_MIN_SECONDS &&
+    seconds <= KIOSK_IDLE_TIMEOUT_MAX_SECONDS
+  );
+}
+
+/**
+ * WHAT THE TABLET USES when the server said nothing it can believe.
+ *
+ * An older core that does not carry the field, a failed identity read, a value
+ * outside the bounds: all three answer the default rather than "no timeout".
+ * FAIL CLOSED — the failure mode of an absent setting must be a screen that
+ * clears itself, never one that holds a patient's address until somebody
+ * notices.
+ */
+export function kioskIdleTimeoutOrDefault(seconds: unknown): number {
+  return typeof seconds === 'number' && isKioskIdleTimeoutInRange(seconds)
+    ? seconds
+    : KIOSK_IDLE_TIMEOUT_DEFAULT_SECONDS;
+}

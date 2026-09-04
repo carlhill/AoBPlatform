@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { assertValidIdentifierSet, IdentifierSetError } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
+import type { Actor } from '../auth/actor.decorator';
 import type {
   CreateAssignorDto,
   CreatePracticeDto,
@@ -50,7 +51,7 @@ export class PracticesService {
   }
 
   /** FR-1.4 — configuration. Identifier floor + Medicare exclusion enforced by the domain guard. */
-  async updateConfig(practiceId: string, dto: UpdateConfigDto) {
+  async updateConfig(practiceId: string, dto: UpdateConfigDto, actor?: Actor) {
     if (dto.identifierTypes) {
       try {
         assertValidIdentifierSet(dto.identifierTypes);
@@ -62,15 +63,57 @@ export class PracticesService {
     return this.prisma.withPractice(practiceId, async (tx) => {
       const practice = await tx.practice.findFirst({});
       if (!practice) throw new NotFoundException('Practice not found.');
-      return tx.practice.update({
+      const updated = await tx.practice.update({
         where: { id: practiceId },
         data: {
           identifierTypes: dto.identifierTypes,
           linkExpiryHours: dto.linkExpiryHours,
+          kioskIdleTimeoutSeconds: dto.kioskIdleTimeoutSeconds,
           writeBackProven: dto.writeBackProven,
           senderIdRegistered: dto.senderIdRegistered,
         },
       });
+
+      /*
+       * THE INACTIVITY RESET IS EVIDENCED WHEN IT MOVES (Carl, 4 Sep 2026).
+       *
+       * It is a screen-hygiene control, not a comfort setting: it decides how
+       * long a walked-away patient's name, date of birth and address stay on a
+       * tablet sitting on a counter. Lengthening it is a decision somebody
+       * should have to own, so it is written through the OUTBOX in the same
+       * transaction as the row it evidences — one without the other is
+       * structurally impossible (hard rule 11, FR-11.2).
+       *
+       * ONLY WHEN IT ACTUALLY CHANGES. This endpoint is a whole-form save and
+       * the console posts every field on every press; an event per save would
+       * make the trail say "somebody changed the timeout" on the morning
+       * somebody ticked the sender-ID box.
+       *
+       * THE VALUE GOES IN THE PAYLOAD because a number of seconds is not PII
+       * and "it was changed" without "to what" is not evidence of anything
+       * (REQ-LOG-08 forbids identifier VALUES, not settings).
+       */
+      if (
+        dto.kioskIdleTimeoutSeconds !== undefined &&
+        dto.kioskIdleTimeoutSeconds !== practice.kioskIdleTimeoutSeconds
+      ) {
+        await enqueueVaultEvent(tx, {
+          type: 'practice.kiosk_idle_timeout_set',
+          // Attributed to the signed-in staff member where there is one. This
+          // endpoint predates `SessionActor` and is still reachable without a
+          // token while `AUTH_ENFORCE` is false, so it falls back to the
+          // system actor rather than refusing a save that has always worked.
+          actor: actor ? { principalType: actor.principalType, id: actor.id } : SYSTEM_ACTOR,
+          subject: { type: 'Practice', id: practiceId },
+          payload: {
+            kioskIdleTimeoutSeconds: dto.kioskIdleTimeoutSeconds,
+            previousSeconds: practice.kioskIdleTimeoutSeconds,
+            ...(actor ? { setBy: actor.name } : {}),
+          },
+        });
+      }
+
+      return updated;
     });
   }
 

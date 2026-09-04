@@ -4,6 +4,7 @@ import {
   computeSignability,
   isServiceDescription,
   KIOSK_CAPTURABLE_STATUSES,
+  kioskIdleTimeoutOrDefault,
   kioskPollMs,
   projectKioskWaitingRow,
   type ApprovedIdentifierType,
@@ -118,6 +119,23 @@ export class KioskService {
      * can reach that changes it (see `PATCH /devices/:id`).
      */
     showsWaitingList: boolean;
+    /**
+     * HOW LONG THIS TABLET WAITS BEFORE IT RETURNS TO THE START (Carl, 4 Sep
+     * 2026). Seconds, from the practice.
+     *
+     * IT RIDES ON THE CALL THE TABLET ALREADY MAKES rather than on a settings
+     * endpoint of its own, because a device with settings of its own is a
+     * device somebody can configure at the tablet — and the whole point of
+     * `/kiosk/me` is that the server answers who this device is and what it may
+     * do. The tablet reads it on the same poll that already carries the build
+     * floor, so a change reaches an open tab without re-pairing.
+     *
+     * NEVER ABSENT. The column is NOT NULL with a default, so an older tablet
+     * reading a newer server gets a number, and a newer tablet reading an
+     * older server falls back to the domain default rather than to no clock at
+     * all (`kioskIdleTimeoutOrDefault`).
+     */
+    kioskIdleTimeoutSeconds: number;
     kioskBuild: string | null;
     reload: boolean;
   }> {
@@ -130,6 +148,7 @@ export class KioskService {
       state: practice?.state ?? null,
       identifierTypes: practice?.identifierTypes ?? [],
       showsWaitingList: device.showsWaitingList,
+      kioskIdleTimeoutSeconds: kioskIdleTimeoutOrDefault(practice?.kioskIdleTimeoutSeconds),
       kioskBuild,
       reload: await this.devices.shouldReload(device.practiceId, kioskBuild),
     };

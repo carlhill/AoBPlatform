@@ -241,6 +241,20 @@ export const VAULT_EVENT_TYPES = [
    * fleet-wide effect, which is exactly the kind that has to be attributable.
    */
   'practice.minimum_kiosk_build_set',
+  /**
+   * HOW LONG A TABLET WAITS BEFORE IT RETURNS TO THE START (Carl, 4 Sep 2026).
+   *
+   * A screen-hygiene control, not a comfort setting: it decides how long a
+   * walked-away patient's name, date of birth and address stay on a device
+   * sitting on a counter. Lengthening it is therefore a decision somebody
+   * should have to own, so the new value and who set it are evidenced here
+   * every time it moves.
+   *
+   * THE VALUE IS A NUMBER OF SECONDS AND IS NOT PII — there is nothing about a
+   * patient in it, which is why it may be carried in the payload at all
+   * (REQ-LOG-08).
+   */
+  'practice.kiosk_idle_timeout_set',
   /*
    * PUSH-TO-DEVICE CAPTURE — reception handed the patient a locked screen
    * (TODO.md "Push-to-device capture" / "Two front doors", Carl 4 Sep 2026).

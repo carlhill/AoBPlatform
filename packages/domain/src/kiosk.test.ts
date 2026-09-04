@@ -1,9 +1,14 @@
 import {
   KIOSK_CAPTURABLE_STATUSES,
+  KIOSK_IDLE_TIMEOUT_DEFAULT_SECONDS,
+  KIOSK_IDLE_TIMEOUT_MAX_SECONDS,
+  KIOSK_IDLE_TIMEOUT_MIN_SECONDS,
   KIOSK_POLL_MS,
   KIOSK_WAITING_ROW_FIELDS,
   computeSignability,
   isKioskCapturableStatus,
+  isKioskIdleTimeoutInRange,
+  kioskIdleTimeoutOrDefault,
   kioskPollMs,
   projectKioskWaitingRow,
 } from './kiosk';
@@ -145,5 +150,36 @@ describe('the kiosk waiting list', () => {
         expect(['service_description_missing', 'particulars_incomplete', 'other']).toContain(result.blockedReason);
       }
     });
+  });
+});
+
+/**
+ * THE INACTIVITY RESET'S BOUNDS (Carl, 4 September 2026). The interesting half
+ * is the fallback: everything the tablet cannot believe answers the DEFAULT,
+ * never "no timeout", because the failure mode of an absent setting must be a
+ * screen that clears itself rather than one holding an address all afternoon.
+ */
+describe('the kiosk idle timeout', () => {
+  it('defaults to five minutes, and is bounded at a minute and half an hour', () => {
+    expect(KIOSK_IDLE_TIMEOUT_DEFAULT_SECONDS).toBe(300);
+    expect(KIOSK_IDLE_TIMEOUT_MIN_SECONDS).toBe(60);
+    expect(KIOSK_IDLE_TIMEOUT_MAX_SECONDS).toBe(1_800);
+    expect(isKioskIdleTimeoutInRange(KIOSK_IDLE_TIMEOUT_DEFAULT_SECONDS)).toBe(true);
+  });
+
+  it('refuses anything outside the bounds, and anything that is not a whole number of seconds', () => {
+    for (const bad of [0, 59, 1_801, 90.5, -300]) {
+      expect(isKioskIdleTimeoutInRange(bad)).toBe(false);
+    }
+    for (const good of [60, 300, 1_800]) {
+      expect(isKioskIdleTimeoutInRange(good)).toBe(true);
+    }
+  });
+
+  it('falls back to the default rather than to no timeout at all', () => {
+    for (const unusable of [undefined, null, 'five minutes', 0, 10, 99_999, Number.NaN]) {
+      expect(kioskIdleTimeoutOrDefault(unusable)).toBe(KIOSK_IDLE_TIMEOUT_DEFAULT_SECONDS);
+    }
+    expect(kioskIdleTimeoutOrDefault(120)).toBe(120);
   });
 });

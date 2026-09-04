@@ -60,6 +60,24 @@ model Practice {
    * never a reason to restart every tablet in the country.
    */
   minimumKioskBuild  String?
+  /**
+   * RETURN TO THE START AFTER THIS LONG WITH NOBODY TOUCHING THE TABLET
+   * (Carl, 4 September 2026). Seconds; five minutes by default; bounded 60 to
+   * 1800 by the DTO and by `isKioskIdleTimeoutInRange` in the domain.
+   *
+   * PER PRACTICE, because the right number depends on the room: a tablet at a
+   * busy desk wants it short, and a practice handing one to somebody reading
+   * slowly wants it longer. It is a SCREEN-HYGIENE control rather than a
+   * comfort one — it decides how long a walked-away patient's name, date of
+   * birth and address stay on a device sitting on a counter — which is why the
+   * console explains it that way and why moving it writes a vault event.
+   *
+   * NOT NULLABLE. "No setting" must never mean "no timeout": a tablet that
+   * never clears itself is exactly the failure this column exists to prevent,
+   * so the absence of a decision is the default rather than the absence of a
+   * clock.
+   */
+  kioskIdleTimeoutSeconds Int @default(300)
   // Go-live gates (FR-1.7). Both flip via real integrations later; explicit
   // booleans so the checklist is honest, never inferred.
   writeBackProven    Boolean  @default(false)
