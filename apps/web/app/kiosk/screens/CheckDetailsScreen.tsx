@@ -221,25 +221,29 @@ export function CheckDetailsScreen({
             </p>
           ) : null}
 
-          <div className={styles.actions}>
-            <div className={styles.grow}>
-              <GuardedButton
-                label={strings.checkDetails.continueAction}
-                state={
-                  outstanding === 0 && !disputed && !saving
-                    ? { disabled: false }
-                    : {
-                        disabled: true,
-                        disabledLabel: disputed
-                          ? strings.checkDetails.continueDisputed
-                          : strings.checkDetails.continueBlocked(Math.max(outstanding, 1)),
-                      }
-                }
-                onPress={onContinue}
-                testId="check-details-continue"
-              />
+          {/*
+            NO CONTROL THAT CANNOT DO ANYTHING (Carl, 4 Sep 2026). The band
+            above already says reception is fixing it and the appointment is
+            unaffected; a second, disabled box repeating that — and a press
+            that does nothing — has no business on a patient screen. Changing
+            a cross back to a tick clears `disputed` and this returns.
+          */}
+          {disputed ? null : (
+            <div className={styles.actions}>
+              <div className={styles.grow}>
+                <GuardedButton
+                  label={strings.checkDetails.continueAction}
+                  state={
+                    outstanding === 0 && !saving
+                      ? { disabled: false }
+                      : { disabled: true, disabledLabel: strings.checkDetails.continueBlocked(Math.max(outstanding, 1)) }
+                  }
+                  onPress={onContinue}
+                  testId="check-details-continue"
+                />
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         <div className={styles.rail}>

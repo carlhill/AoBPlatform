@@ -401,8 +401,8 @@ describe('kp1_tick_and_cross_per_row_right_of_the_text', () => {
   });
 });
 
-describe('any_cross_disables_continue_and_reports_disputes', () => {
-  it('posts the crossed TYPES without a further tap, and will not let the patient continue', async () => {
+describe('any_cross_removes_continue_and_reports_disputes', () => {
+  it('posts the crossed TYPES without a further tap, and gives the patient no Continue to press', async () => {
     asPairedTablet();
     fetchTabletSession.mockResolvedValue({ session: SESSION });
     fetchAgreement.mockResolvedValue(AGREEMENT);
@@ -460,14 +460,14 @@ describe('any_cross_disables_continue_and_reports_disputes', () => {
     expect(band.textContent).toBe(strings.checkDetails.disputeBand);
 
     /*
-     * AND CONTINUE IS UNREACHABLE — a real `button[disabled]` with no handler,
-     * not a live control that ignores the press (CLAUDE.md §6). Pressing it
-     * moves nothing.
+     * AND CONTINUE IS ABSENT, NOT MERELY DISABLED (Carl, 4 Sep 2026). The
+     * band above already says reception is fixing it and the appointment is
+     * unaffected; a second, disabled box repeating that — with a press that
+     * could not do anything — has no business on a patient screen (CLAUDE.md
+     * §6: a control that cannot do anything is not "disabled", it is not
+     * offered).
      */
-    const cont = screen.getByTestId('check-details-continue') as HTMLButtonElement;
-    expect(cont.disabled).toBe(true);
-    expect(cont.textContent).toBe(strings.checkDetails.continueDisputed);
-    fireEvent.click(cont);
+    expect(screen.queryByTestId('check-details-continue')).toBeNull();
     expect(fetchAgreement).not.toHaveBeenCalled();
     expect(screen.queryByTestId('particulars-heading')).toBeNull();
 

@@ -4104,13 +4104,6 @@ export const strings = {
       continueBlocked: (count: number) =>
         count === 1 ? 'Continue — 1 detail still to check' : `Continue — ${count} details still to check`,
       /**
-       * WHY CONTINUE IS DEAD AFTER A CROSS, in the label of the dead control
-       * itself (CLAUDE.md §6 — blocked states are unreachable, and a control
-       * disabled without a reason sends the patient to a staff member who also
-       * cannot see why).
-       */
-      continueDisputed: 'Continue — reception is fixing a detail',
-      /**
        * THE BAND, and it is deliberately in the present tense. By the time it
        * shows, the crossed types have already reached reception's screen, so
        * the patient is not being given an errand — they are being told what is
