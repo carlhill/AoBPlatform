@@ -1991,6 +1991,37 @@ gate in GA-PLAN.md: the artefact download and enduring termination are MUSTs
 with statutory sections behind them. Estimate: ~4 agent-days for cards +
 access, plus the human-authored termination-notice template review.
 
+### BUILT (server) -- 4 Sep 2026
+
+`apps/core/src/portal/**`, migration `20260904070000_patient_portal`, contract
+`packages/contracts/src/portal.ts`. Every card above has its endpoint; the web
+surface builds to those exported types.
+
+- **Activation** `POST /portal/activate` -- invitation token PLUS three approved
+  identifiers through the existing verification module (types and outcome
+  logged, never values). A Medicare number offered as an identifier is a 400.
+  Three wrong answers lock the invitation (423). Invitations are minted by
+  `POST /agreements/:id/portal-invitation`, only after a signature (FR-1.14),
+  hash-stored, single-use, seven days.
+- **Reads** `/portal/session|details|agreements|agreements/:id/artefact|
+  enduring|notices|visits|messages|assignors|access-log`, every one filtered to
+  the account's own links and run under each practice's RLS scope. RLS is LIVE
+  in dev -- the service connects as `aob_app`, which has no BYPASSRLS.
+- **Termination** `POST /portal/enduring/:id/terminate` goes through
+  `EnduringService.terminate`, so the two-business-day date is the existing
+  state calendar including public holidays -- not a portal-local weekday count.
+- **The written notice is NOT written.** `packages/domain/content/
+  enduring-termination-notice.json` ships with empty section bodies and
+  `draft: true`; every notice row is `draft_pending_review` (a DB CHECK
+  constraint, not a convention) with a high-stakes review task beside it.
+  **This is the human-authored piece the estimate above called out.**
+- **Passkey seam only.** `PortalAuthenticator` is where FR-8.2's passkey half
+  slots in; nothing touches Keycloak, which needs Carl's go.
+- **Not built, and it is a schema fact rather than a gap:** `iActFor` is empty.
+  `Assignor` has no link to the acting person's own patient record, so the
+  question is only answerable by matching on a name. FR-1.19 creates that link.
+- Dev seam `POST /dev/portal-session` (DEV-LOOP.md). 24 e2e tests.
+
 ### BUILT (web) — 4 Sep 2026
 The nine cards and the page are built at `/patient/portal` (`apps/web/app/
 patient/portal`). All nine render, each with its own loading, error and empty

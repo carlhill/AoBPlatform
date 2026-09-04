@@ -164,3 +164,30 @@ npm run test:e2e -w apps/core -- onboarding-sequence
 
 The full sweep (`npm run test && npm run test:e2e`) belongs before a commit, not
 after every edit.
+
+## Opening the patient portal without a signature
+
+`/portal/*` is guarded by the `aob_portal` session cookie, and the real way to
+get one is `POST /portal/activate` — a minted invitation plus three correct
+identifiers against a signed agreement. That is right, and it makes every portal
+screen unreachable for anybody building one. So there is a dev seam:
+
+```bash
+curl -i -X POST localhost:3001/dev/portal-session \
+  -H 'content-type: application/json' -H "x-practice-id: $PRACTICE_ID" \
+  -d '{"patientIds":["<patient-uuid>"]}'
+```
+
+Take the `aob_portal` cookie off the response and send it with the reads. For a
+patient linked at more than one practice, name them: `{"patientIds":[…],
+"practiceIds":[…]}`.
+
+**It names the practices because it cannot look them up.** The service connects
+as `aob_app`, which holds neither SUPERUSER nor BYPASSRLS — only the migration
+role does — so a patient id cannot be turned into a practice id without already
+being scoped to that practice. RLS is live in development, which is worth
+knowing before you write a tenancy test that assumes otherwise.
+
+It refuses to run when `NODE_ENV=production`, and it still writes its
+`portal.accessed` vault event, so a seeded session shows up in the patient's own
+access log exactly as a real one would.
