@@ -21,8 +21,27 @@ import { AppModule } from './app.module';
  */
 const JSON_BODY_LIMIT = Math.ceil((MAX_ARTEFACT_BYTES * 4) / 3) + 1024 * 1024;
 
+/**
+ * CORS, WITH CREDENTIALS -- for the patient portal's cookie (4 Sep 2026).
+ *
+ * `cors: true` answered `Access-Control-Allow-Origin: *`, which a browser
+ * refuses to pair with `credentials: 'include'`; the portal is the first
+ * surface that authenticates with a cookie rather than a header, and every
+ * one of its requests failed in the browser while passing from curl. The
+ * allowed origins are an explicit list (`CORS_ORIGINS`, comma-separated),
+ * defaulting to the local Next dev server; a wildcard is never reflected.
+ */
+function corsOrigins(): string[] {
+  return (process.env.CORS_ORIGINS ?? 'http://localhost:3100')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { cors: true });
+  const app = await NestFactory.create(AppModule, {
+    cors: { origin: corsOrigins(), credentials: true },
+  });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
   // Raised for artefact uploads specifically. Everything else this API accepts
