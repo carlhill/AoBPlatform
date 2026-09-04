@@ -7,6 +7,7 @@ import {
   Param,
   ParseUUIDPipe,
   Patch,
+  Query,
   Req,
 } from '@nestjs/common';
 import type { Request } from 'express';
@@ -50,6 +51,49 @@ function requirePractice(practiceId: string | undefined): string {
 @Controller('patients')
 export class PatientsController {
   constructor(private readonly patients: PatientsService) {}
+
+  /**
+   * THE PATIENTS WITH SOMETHING OPEN TODAY — reception's queue
+   * (TODO.md "Reception-centric: the patient work page", Carl 4 Sep 2026).
+   *
+   * `?open=today` AND NOTHING ELSE. There is deliberately no unfiltered list
+   * of a practice's patients here: this platform is not a patient directory,
+   * and an endpoint that answered "everyone" would become one the first time
+   * somebody paged it. The query names the only question reception asks — who
+   * has something waiting today — and any other value is refused.
+   *
+   * IT COMPOSES `TabletSessionsService` RATHER THAN RE-ASKING THE DATABASE,
+   * so the work list and `/practice/tablet` cannot disagree about what "today"
+   * means (the service's own comment says what it means).
+   */
+  @Get()
+  @PracticeScoped()
+  open(@Headers('x-practice-id') practiceId: string | undefined, @Query('open') open?: string) {
+    if (open !== 'today') {
+      throw new BadRequestException(
+        'This lists the patients with something open today: ask for ?open=today. There is no list of ' +
+          'every patient — the practice management system holds the patient record (REQ-DATA-10).',
+      );
+    }
+    return this.patients.openToday(requirePractice(practiceId));
+  }
+
+  /**
+   * WHAT HAPPENED TO THIS PATIENT, IN ORDER — the work page's History card.
+   *
+   * TYPES, TIMES AND SHORT CODES, never values (REQ-VER-04) and never a
+   * sentence: the words belong to the console's string table (REQ-LANG-01).
+   * Declared BEFORE nothing and after `:id/details` only for reading order —
+   * both are `:id`-shaped and neither shadows the other.
+   */
+  @Get(':id/timeline')
+  @PracticeScoped()
+  timeline(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.patients.timeline(requirePractice(practiceId), id);
+  }
 
   /**
    * THE SIX DETAILS AS THEY STAND — read when reception opens the correction

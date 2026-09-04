@@ -2075,4 +2075,170 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
       expect(session!.endedAt).toBeNull();
     });
   });
+  /**
+   * RECEPTION'S WORK LIST — the patients with something open today, and one
+   * patient's own history (TODO.md "Reception-centric: the patient work page",
+   * Carl 4 Sep 2026).
+   *
+   * IT IS THE PUSH LIST, REGROUPED. Both endpoints are built on
+   * `TabletSessionsService`, so what these pin is that the regrouping is
+   * faithful and that it carries no more about a person than it must: an id, a
+   * name, a date of birth, and TYPES.
+   */
+  describe("reception's work list", () => {
+    async function workPatient(givenNames: string) {
+      return prisma.withPractice(practiceA, async (tx) => {
+        const patient = await tx.patient.create({
+          data: {
+            practiceId: practiceA,
+            familyName: 'Worklist',
+            givenNames,
+            dateOfBirth: new Date('1971-06-30'),
+            genderAsIdentified: 'female',
+            // Obviously fake, and deliberately distinctive: every assertion
+            // below is that these strings do NOT appear.
+            address: '77 Neverseen Street, Sampletown NSW 2000',
+            patientRecordNumber: 'PRN-NEVERSEEN',
+            ihi: '8003600000000404',
+            mobile: '+61400000777',
+            email: 'never.seen@example.invalid',
+          },
+        });
+        const assignor = await tx.assignor.create({
+          data: { practiceId: practiceA, name: `${givenNames} Worklist`, authorityBasis: 'self' },
+        });
+        return { patientId: patient.id, assignorId: assignor.id };
+      });
+    }
+
+    const workList = (practiceId = practiceA) =>
+      http().get('/patients?open=today').set('x-practice-id', practiceId);
+
+    it('work_list_names_only_patients_with_something_open', async () => {
+      const { patientId, assignorId } = await workPatient('Robin');
+      const agreementId = await draft({ patientId, assignorId });
+
+      const res = await workList().expect(200);
+      const rows = res.body as Array<{
+        patientId: string;
+        patientName: string;
+        dateOfBirth: string;
+        items: Array<Record<string, unknown>>;
+      }>;
+
+      const mine = rows.find((row) => row.patientId === patientId);
+      expect(mine).toBeDefined();
+      expect(mine!.patientName).toBe('Robin Worklist');
+      // The one detail that travels, and only because two people share a name.
+      expect(mine!.dateOfBirth).toBe('1971-06-30');
+      expect(mine!.items).toContainEqual(
+        expect.objectContaining({ kind: 'awaiting_signature', agreementId, pushable: true }),
+      );
+
+      /*
+       * A PATIENT WITH NOTHING OPEN IS NOT ON THE LIST, which is the whole
+       * claim the page makes. `patientB` belongs to the other practice and
+       * would fail closed anyway; this is a patient of THIS practice with no
+       * agreement waiting and no session today.
+       */
+      const quiet = await workPatient('Quiet');
+      const after = await workList().expect(200);
+      expect((after.body as Array<{ patientId: string }>).map((row) => row.patientId)).not.toContain(
+        quiet.patientId,
+      );
+
+      /*
+       * NOTHING ABOUT THE PERSON BEYOND A NAME AND A DATE OF BIRTH. No
+       * address, no contact detail, no record number, no IHI — and no
+       * Medicare-shaped key anywhere, because there is no column for one and
+       * it is not an identity identifier in any case (hard rule 1,
+       * REQ-VER-02).
+       */
+      const json = JSON.stringify(res.body);
+      expect(json).not.toContain('Neverseen');
+      expect(json).not.toContain('PRN-');
+      expect(json).not.toContain('8003600000000404');
+      expect(json).not.toContain('+61400000777');
+      expect(json).not.toMatch(/medicare/i);
+      // Hard rule 4: no benefit, no dollar amount, on any agreement artefact.
+      expect(json).not.toMatch(/\$\d/);
+    });
+
+    it('the work list answers one question and refuses the rest', async () => {
+      /*
+       * THERE IS NO LIST OF EVERY PATIENT HERE, and an endpoint that answered
+       * "everyone" would become a patient directory the first time somebody
+       * paged it. The PMS holds the patient record (REQ-DATA-10).
+       */
+      await http().get('/patients').set('x-practice-id', practiceA).expect(400);
+      await http().get('/patients?open=everything').set('x-practice-id', practiceA).expect(400);
+    });
+
+    it('a work list across a practice boundary shows nothing of the other practice', async () => {
+      const { patientId, assignorId } = await workPatient('Tenancy');
+      await draft({ patientId, assignorId });
+
+      signedInAt(practiceB);
+      const theirs = await workList(practiceB).expect(200);
+      expect(JSON.stringify(theirs.body)).not.toContain('Worklist');
+      expect((theirs.body as Array<{ patientId: string }>).map((row) => row.patientId)).not.toContain(
+        patientId,
+      );
+      signedInAt(practiceA);
+    });
+
+    it('timeline_carries_types_and_times_never_values', async () => {
+      const { patientId, assignorId } = await workPatient('Story');
+      const agreementId = await draft({ patientId, assignorId });
+      const pushed = await pushTo(tabletA, agreementId).expect(201);
+
+      const res = await http()
+        .get(`/patients/${patientId}/timeline`)
+        .set('x-practice-id', practiceA)
+        .expect(200);
+
+      const entries = res.body.entries as Array<{ type: string; detailTypes?: string[] }>;
+      const types = entries.map((entry) => entry.type);
+      expect(types).toContain('agreement_created');
+      expect(types).toContain('particulars_locked');
+      expect(types).toContain('session_pushed');
+      // The push IS the verification record (REQ-VER-03) — TYPES and an
+      // outcome, and never a value (REQ-VER-04).
+      expect(types).toContain('verification');
+      const verification = entries.find((entry) => entry.type === 'verification')!;
+      expect(verification.detailTypes!.length).toBeGreaterThan(0);
+      expect(JSON.stringify(res.body)).not.toMatch(/medicare/i);
+
+      // Newest first, so the page reads downward into the past.
+      const times = entries.map((entry) => (entry as unknown as { at: string }).at);
+      expect([...times].sort().reverse()).toEqual(times);
+
+      /*
+       * NOT ONE VALUE, ANYWHERE. Not the address, not the date of birth, not
+       * the contact details, not the record number — the story of what
+       * happened, told in types and times.
+       */
+      const json = JSON.stringify(res.body);
+      expect(json).not.toContain('Neverseen');
+      expect(json).not.toContain('1971-06-30');
+      expect(json).not.toContain('never.seen@example.invalid');
+      expect(json).not.toContain('PRN-');
+      expect(json).toContain(pushed.body.id);
+    });
+
+    it('a timeline across a practice boundary finds nothing', async () => {
+      /*
+       * FAILS CLOSED, AND SAYS NOTHING. RLS filters on the transaction-local
+       * scope, so another practice's patient is NOT FOUND rather than refused
+       * — a refusal would confirm that the id names somebody, somewhere.
+       */
+      signedInAt(practiceB);
+      const res = await http()
+        .get(`/patients/${patientA}/timeline`)
+        .set('x-practice-id', practiceB)
+        .expect(404);
+      expect(JSON.stringify(res.body)).not.toContain('Jamie');
+      signedInAt(practiceA);
+    });
+  });
 });

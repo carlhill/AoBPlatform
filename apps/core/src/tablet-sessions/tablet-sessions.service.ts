@@ -48,6 +48,15 @@ export interface PushableRow {
   agreementType: AgreementType;
   status: string;
   patientName: string;
+  /**
+   * SO A ROW CAN BE FOLLOWED TO THE PATIENT IT IS ABOUT (the reception work
+   * page, Carl 4 Sep 2026). An ID, NOT A DETAIL — exactly the reasoning
+   * `TabletSessionRow.patientId` already carries: it names a row the vault
+   * events also name, so nothing about the person is added to the wire by
+   * putting it here. The five details are still fetched only when somebody
+   * opens the control that needs them.
+   */
+  patientId: string;
   providerName: string | null;
   /** So the console offers episodic / Treatment Plan Assignment for a non-GP, never enduring (REQ-END-01a). */
   providerType: string | null;
@@ -654,6 +663,7 @@ export class TabletSessionsService {
           // A staff surface: the practice's own list of its own patients, the
           // same shape every other console list uses.
           patientName: `${patient.givenNames} ${patient.familyName}`,
+          patientId: patient.id,
           providerName: provider?.name ?? null,
           providerType: provider?.providerType ?? null,
           appointmentDate: appointment ? appointment.date.toISOString().slice(0, 10) : null,

@@ -4,12 +4,19 @@ import {
   CORRECTABLE_PATIENT_FIELDS,
   detailTypeForPatientField,
   isCorrectablePatientField,
+  type AgreementType,
   type ConfirmableDetailType,
   type CorrectablePatientField,
+  type DisputeResolutionOutcome,
+  type PatientQueueItem,
+  type PatientQueueRow,
+  type PatientTimelineEntry,
+  type TabletSessionState,
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import type { Actor } from '../auth/actor.decorator';
 import { PrismaService } from '../prisma/prisma.service';
+import { TabletSessionsService } from '../tablet-sessions/tablet-sessions.service';
 
 /**
  * ANY FIELD NAME WITH "MEDICARE" IN IT IS REFUSED, WHATEVER IT IS FOR.
@@ -72,7 +79,19 @@ export interface CorrectionOutcome {
  */
 @Injectable()
 export class PatientsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    /**
+     * THE PUSH LIST'S OWN NOTION OF "TODAY", BORROWED RATHER THAN COPIED
+     * (Carl, 4 Sep 2026). Reception's work list must name exactly the patients
+     * `/practice/tablet` names — a second query that decided for itself what
+     * "open today" meant would be a second answer to one question, and the two
+     * screens would disagree in front of a patient. So this module asks the
+     * module that owns the question, through its service, and reads none of
+     * its tables (CLAUDE.md §4).
+     */
+    private readonly tabletSessions: TabletSessionsService,
+  ) {}
 
   /**
    * THE SIX CORRECTABLE DETAILS AS THEY STAND, FOR THE ONE PERSON ABOUT TO
@@ -265,6 +284,275 @@ export class PatientsService {
       }
 
       return { patientId: patient.id, fields: changed, types, correctedAt: now.toISOString() };
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Reception's work list (TODO.md "Reception-centric: the patient work page")
+  // ---------------------------------------------------------------------------
+
+  /**
+   * THE PATIENTS WITH SOMETHING OPEN TODAY - reception's queue, one row per
+   * PERSON rather than one per agreement (Carl, 4 Sep 2026).
+   *
+   * IT INVENTS NO NEW NOTION OF "TODAY". Both halves come from
+   * `TabletSessionsService`: the push list, whose own comment defines today as
+   * the appointment's date (or, for a walk-in nobody booked, the day the draft
+   * was created), and the last twenty-four hours of tablet sessions, which is
+   * what makes a session that ENDED this morning still worth showing. A second
+   * definition here would be a second answer to one question, and the two
+   * screens would disagree in front of a patient.
+   *
+   * ONE ROW PER PATIENT, WITH EVERY OPEN THING ON IT. The same person can have
+   * an agreement waiting, a session that timed out at nine and a crossed
+   * detail nobody has answered - which is three rows on `/practice/tablet` and
+   * one conversation at the desk.
+   *
+   * THE DATE OF BIRTH IS THE ONE DETAIL THAT TRAVELS, and only because two
+   * people share a name (Carl asked for it by name). Nothing else about the
+   * person is here: no address, no contact detail, no record number, no
+   * Medicare number - there is no column for one and it is not an identity
+   * identifier in any case (hard rule 1, REQ-VER-02). The five details are
+   * still read only when somebody opens the control that corrects them.
+   *
+   * NO AMOUNTS, ANYWHERE (hard rule 4). Nothing in the shape could carry one.
+   */
+  async openToday(practiceId: string): Promise<PatientQueueRow[]> {
+    const [pushable, sessions] = await Promise.all([
+      this.tabletSessions.pushable(practiceId),
+      // `false` = the last twenty-four hours, so an ended session still shows.
+      this.tabletSessions.list(practiceId, false),
+    ]);
+
+    const itemsByPatient = new Map<string, PatientQueueItem[]>();
+    const push = (patientId: string, item: PatientQueueItem) => {
+      const held = itemsByPatient.get(patientId);
+      if (held) held.push(item);
+      else itemsByPatient.set(patientId, [item]);
+    };
+
+    /*
+     * SESSIONS FIRST, because the freshest fact about a patient is what their
+     * tablet is doing - the console reads the whole list to decide the row's
+     * one line, but a caller reading only the first item still gets the thing
+     * that changed most recently. `list` orders by `pushedAt` descending.
+     */
+    for (const session of sessions) {
+      push(session.patientId, {
+        kind: 'session',
+        agreementId: session.agreementId,
+        agreementType: session.agreementType,
+        sessionId: session.id,
+        sessionState: session.state as TabletSessionState,
+        deviceLabel: session.deviceLabel,
+        endedAt: session.endedAt,
+        disputedDetails: session.disputedDetails,
+        disputeResolution: session.disputeResolution as DisputeResolutionOutcome | null,
+      });
+    }
+
+    for (const row of pushable) {
+      push(row.patientId, {
+        kind: 'awaiting_signature',
+        agreementId: row.agreementId,
+        agreementType: row.agreementType as AgreementType,
+        pushable: row.pushable,
+        blockedReason: row.blockedReason,
+      });
+    }
+
+    if (itemsByPatient.size === 0) return [];
+
+    const patients = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.patient.findMany({ where: { id: { in: [...itemsByPatient.keys()] } } }),
+    );
+
+    const rows: PatientQueueRow[] = patients.map((patient) => ({
+      patientId: patient.id,
+      patientName: `${patient.givenNames} ${patient.familyName}`,
+      dateOfBirth: patient.dateOfBirth.toISOString().slice(0, 10),
+      items: itemsByPatient.get(patient.id) ?? [],
+    }));
+
+    /*
+     * THE ONES SOMEBODY HAS TO GET UP FOR, FIRST: an unanswered cross, then a
+     * tablet with a live session on it, then everybody else by name. Sorting
+     * by name alone would bury the one row that is actually waiting on a
+     * person behind twelve that are waiting on nobody.
+     */
+    const rank = (row: PatientQueueRow): number => {
+      const unanswered = row.items.some(
+        (item) => (item.disputedDetails?.length ?? 0) > 0 && !item.disputeResolution,
+      );
+      if (unanswered) return 0;
+      if (row.items.some((item) => item.kind === 'session' && item.endedAt === null)) return 1;
+      return 2;
+    };
+    rows.sort((a, b) => rank(a) - rank(b) || a.patientName.localeCompare(b.patientName, 'en-AU'));
+    return rows;
+  }
+
+  /**
+   * WHAT HAPPENED TO THIS PATIENT, IN ORDER (the work page's History card).
+   *
+   * TYPES, TIMES AND SHORT CODES - never a value, never a sentence
+   * (REQ-VER-04, REQ-LANG-01). A verification entry says which identifier
+   * TYPES were checked and how it went; a correction says which detail moved
+   * and never what it moved from or to; a signature says one happened. The
+   * words are the console's, keyed by the type.
+   *
+   * IT IS A READ, AND ONLY A READ. Every WRITE this platform makes still goes
+   * through the module that owns the row - the push through
+   * `TabletSessionsService`, the lock and the signature through
+   * `AgreementsService`. This assembles a projection of what those modules
+   * already wrote, in one query per table, because the alternative is five
+   * round trips from the browser and a screen that assembles evidence itself.
+   *
+   * IT IS NOT THE EVIDENCE. The vault holds the non-repudiable chain; this is
+   * the same story told from the domain rows so reception can read it without
+   * leaving the patient they are standing in front of.
+   */
+  async timeline(
+    practiceId: string,
+    patientId: string,
+  ): Promise<{ patientId: string; entries: PatientTimelineEntry[] }> {
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      // A cross-practice id finds nothing rather than being refused - RLS
+      // filters on the transaction-local scope, so this fails closed.
+      const patient = await tx.patient.findFirst({ where: { id: patientId } });
+      if (!patient) throw new NotFoundException('That patient was not found.');
+
+      const agreements = await tx.agreement.findMany({
+        where: { patientId },
+        orderBy: { createdAt: 'asc' },
+      });
+      const agreementIds = agreements.map((a) => a.id);
+
+      const [captures, signatures, verifications, sessions] = await Promise.all([
+        agreementIds.length
+          ? tx.captureRequest.findMany({ where: { agreementId: { in: agreementIds } } })
+          : Promise.resolve([]),
+        agreementIds.length
+          ? tx.signatureEvent.findMany({ where: { agreementId: { in: agreementIds } } })
+          : Promise.resolve([]),
+        tx.verificationEvent.findMany({ where: { patientId } }),
+        agreementIds.length
+          ? tx.tabletSession.findMany({ where: { agreementId: { in: agreementIds } } })
+          : Promise.resolve([]),
+      ]);
+
+      const entries: PatientTimelineEntry[] = [];
+      const add = (
+        when: Date | string | null | undefined,
+        entry: Omit<PatientTimelineEntry, 'at'>,
+      ) => {
+        const iso = when instanceof Date ? when.toISOString() : (when ?? null);
+        if (iso) entries.push({ at: iso, ...entry });
+      };
+
+      for (const agreement of agreements) {
+        add(agreement.createdAt, {
+          type: 'agreement_created',
+          agreementId: agreement.id,
+          detail: agreement.type,
+        });
+        add(agreement.particularsLockedAt, {
+          type: 'particulars_locked',
+          agreementId: agreement.id,
+        });
+        /*
+         * THE SUPERSESSION IS RECORDED AGAINST THE AGREEMENT THAT WAS
+         * REPLACED (HARD-02: corrections supersede, they do not edit), at the
+         * moment the replacement was created - which is when it happened.
+         */
+        if (agreement.supersedesAgreementId) {
+          add(agreement.createdAt, {
+            type: 'agreement_superseded',
+            agreementId: agreement.supersedesAgreementId,
+          });
+        }
+      }
+
+      for (const capture of captures) {
+        add(capture.createdAt, {
+          type: 'capture_opened',
+          agreementId: capture.agreementId,
+          detail: capture.channel,
+        });
+        add(capture.completedAt, {
+          type: 'capture_closed',
+          agreementId: capture.agreementId,
+          detail: capture.status,
+        });
+      }
+
+      for (const signature of signatures) {
+        add(signature.createdAt, {
+          type: 'agreement_signed',
+          agreementId: signature.agreementId,
+          detail: signature.method,
+        });
+      }
+
+      for (const verification of verifications) {
+        add(verification.createdAt, {
+          type: 'verification',
+          detail: verification.outcome,
+          // THE TYPES THAT WERE CHECKED, never what they said (REQ-VER-04).
+          detailTypes: [...verification.identifierTypes],
+        });
+      }
+
+      for (const session of sessions) {
+        add(session.pushedAt, {
+          type: 'session_pushed',
+          agreementId: session.agreementId,
+          sessionId: session.id,
+        });
+        add(session.detailsConfirmedAt, {
+          type: 'session_details_confirmed',
+          agreementId: session.agreementId,
+          sessionId: session.id,
+          detailTypes: [...session.detailsConfirmedTypes],
+        });
+        add(session.detailsDisputedAt, {
+          type: 'session_details_disputed',
+          agreementId: session.agreementId,
+          sessionId: session.id,
+          detailTypes: [...session.detailsDisputedTypes],
+        });
+        add(session.disputeResolvedAt, {
+          type: 'session_dispute_resolved',
+          agreementId: session.agreementId,
+          sessionId: session.id,
+          detail: session.disputeResolution ?? undefined,
+        });
+        add(session.endedAt, {
+          type: 'session_ended',
+          agreementId: session.agreementId,
+          sessionId: session.id,
+          detail: session.state,
+        });
+      }
+
+      /*
+       * THE CORRECTIONS THIS MIRROR HAS TAKEN - from the per-field map, which
+       * holds the LATEST time each detail was corrected (schema.prisma says
+       * why it exists). A detail corrected twice therefore shows once; the
+       * vault holds every one of them, and this is a projection rather than
+       * the record.
+       */
+      const corrected =
+        patient.detailsCorrectedFields && typeof patient.detailsCorrectedFields === 'object'
+          ? (patient.detailsCorrectedFields as Record<string, unknown>)
+          : {};
+      for (const [field, when] of Object.entries(corrected)) {
+        if (typeof when !== 'string' || !isCorrectablePatientField(field)) continue;
+        add(when, { type: 'details_corrected', detailTypes: [detailTypeForPatientField(field)] });
+      }
+
+      entries.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+      return { patientId: patient.id, entries: entries.slice(0, 200) };
     });
   }
 }

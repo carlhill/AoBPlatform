@@ -312,6 +312,24 @@ export const PAGES: Readonly<Record<string, PageRule>> = {
   },
 
   /*
+   * RECEPTION'S WORK LIST, AND THE PAGE FOR ONE PATIENT ON IT (Carl, 4 Sep
+   * 2026). The same audience as `/practice/tablet` and for the identical
+   * reason: this is the front desk's ordinary work, one patient at a time,
+   * and every act behind it — the push, the correction, the re-send — is the
+   * same `@PracticeScoped` act it already was. It shows nothing an
+   * administrator may see that a receptionist may not.
+   *
+   * `matchesChildren` BECAUSE THE PATIENT IS IN THE PATH. `/practice/patients/
+   * <id>` must not be an unclassified page, and an unknown page is REFUSED
+   * (`mayReach`) — which would be a screen reception could not open.
+   */
+  '/practice/patients': {
+    audiences: ['practice'],
+    why: 'The patients with something open today, and everything about one of them in one place. The front desk’s own work — the same acts as the tablet page, grouped by the person standing at the counter.',
+    matchesChildren: true,
+  },
+
+  /*
    * PRACTITIONER. Their own affiliations and the notices sent to them, and
    * nothing about a practice's other people. A practitioner works at several
    * practices over time and the platform must never become a directory of who

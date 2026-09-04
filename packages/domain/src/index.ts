@@ -47,6 +47,7 @@ export * from './correspondence-log';
 export * from './kiosk';
 export * from './devices';
 export * from './tablet-session';
+export * from './patient-work';
 export * from './chase-attempt';
 export * from './assignor';
 export * from './assignor-relationships';
