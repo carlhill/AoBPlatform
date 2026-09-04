@@ -231,6 +231,39 @@ export function correctionTouchesParticulars(types: readonly string[]): boolean 
 }
 
 /**
+ * HOW A DISPUTE ENDED, and there are exactly two honest answers (Carl, 4 Sep
+ * 2026).
+ *
+ *  - `corrected`     — reception changed the detail on the platform's mirror.
+ *                      That act has its own event (`patient.details_corrected`);
+ *                      the resolution says WHY it was made.
+ *  - `patient_error` — the detail we hold was right and the patient crossed it
+ *                      anyway. A mis-tap, or an old address read and disowned
+ *                      before the person remembers they moved.
+ *
+ * THE SECOND IS WHY THE CONCEPT EXISTS. Without it, reception's only way out
+ * of a dispute is to "correct" a detail that needs no correction — an event in
+ * the vault claiming a change nobody made — or to leave the cross hanging.
+ *
+ * THERE IS NO THIRD OPTION AND NO FREE TEXT. "Something else happened" is not
+ * a resolution, and a note field on a staff surface is where a patient's
+ * details end up written out in prose beside a record designed to carry none
+ * (REQ-LOG-08).
+ *
+ * IT LIVES HERE, NOT IN THE SERVICE, because four things must agree about it:
+ * the DTO that accepts it, the CHECK constraint that stores it, the row the
+ * console renders, and the vault event that evidences it. A second copy is the
+ * one that drifts.
+ */
+export const DISPUTE_RESOLUTION_OUTCOMES = ['corrected', 'patient_error'] as const;
+
+export type DisputeResolutionOutcome = (typeof DISPUTE_RESOLUTION_OUTCOMES)[number];
+
+export function isDisputeResolutionOutcome(value: string): value is DisputeResolutionOutcome {
+  return (DISPUTE_RESOLUTION_OUTCOMES as readonly string[]).includes(value);
+}
+
+/**
  * WHAT RECEPTION MAY CORRECT ON THE PLATFORM'S MIRROR, and the list is the
  * whole of it (TODO.md "Check-your-details", Carl 4 Sep 2026).
  *
@@ -488,6 +521,21 @@ export interface TabletSessionRow {
    * ago. The wire never carries them.
    */
   disputedDetails: string[];
+  /**
+   * HOW THE DISPUTE ENDED, once reception has said (Carl, 4 Sep 2026).
+   *
+   * `null` while a cross is still unanswered — which is what the console reads
+   * to decide between "here is what to fix" and "Resolved — ready to
+   * re-send". The crossed TYPES stay on the row either way, so reception can
+   * still see WHAT was fixed after it was.
+   *
+   * IT IS A FACT ABOUT THE DISPUTE, NOT A NEW STATE. The session stays
+   * `details_disputed`: the cross happened, and a resolution does not unhappen
+   * it. What follows is a re-send, which builds a fresh session and leaves
+   * this one's resolution on it for the audit trail.
+   */
+  disputeResolution: DisputeResolutionOutcome | null;
+  disputeResolvedAt: string | null;
   /** The staff member who pushed it, by display name. */
   pushedBy: string;
   pushedAt: string;

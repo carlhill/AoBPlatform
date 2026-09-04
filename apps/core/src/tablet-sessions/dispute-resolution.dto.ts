@@ -1,30 +1,20 @@
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsString } from 'class-validator';
-import { CONFIRMABLE_DETAIL_TYPES } from '@aobplatform/domain';
+import {
+  CONFIRMABLE_DETAIL_TYPES,
+  DISPUTE_RESOLUTION_OUTCOMES,
+  type DisputeResolutionOutcome,
+} from '@aobplatform/domain';
 
-/**
- * HOW A DISPUTE ENDS, and there are exactly two honest answers (Carl, 4 Sep
- * 2026).
- *
- *  - `corrected`     — reception changed the detail on the platform's mirror.
- *                      That act has its own event (`patient.details_corrected`,
- *                      written by `PATCH /patients/:id/details`); this one says
- *                      WHY it was made.
- *  - `patient_error` — the detail we hold was right and the patient crossed it
- *                      anyway. It happens: a mis-tap, or an old address read
- *                      and disowned before the person remembers they moved.
- *
- * THE SECOND IS THE REASON THIS ENDPOINT EXISTS. Without it reception's only
- * way out of a dispute is to "correct" a detail that needs no correction —
- * which would put a correction event in the vault saying somebody changed
- * something when nobody did, and leave the cross unexplained either way.
- *
- * THERE IS NO THIRD OPTION AND NO FREE TEXT. "Something else happened" is not
- * a resolution, and a note field on a staff surface is where a patient's
- * details end up written out in prose next to an event that was designed to
- * carry none (REQ-LOG-08).
+export { DISPUTE_RESOLUTION_OUTCOMES, type DisputeResolutionOutcome };
+
+/*
+ * THE TWO OUTCOMES LIVE IN THE DOMAIN, not here — `DISPUTE_RESOLUTION_OUTCOMES`
+ * in packages/domain/src/tablet-session.ts, with the reasoning for why there
+ * are two and no third. FOUR THINGS MUST AGREE ABOUT THEM: this DTO, the CHECK
+ * constraint that stores them, the row the console renders, and the vault event
+ * that evidences them. A second copy is the one that drifts, and a copy inside
+ * a decorator is the one nobody notices has drifted.
  */
-export const DISPUTE_RESOLUTION_OUTCOMES = ['corrected', 'patient_error'] as const;
-export type DisputeResolutionOutcome = (typeof DISPUTE_RESOLUTION_OUTCOMES)[number];
 
 /**
  * `POST /tablet-sessions/:id/dispute-resolution` — reception closes a dispute.

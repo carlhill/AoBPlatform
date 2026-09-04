@@ -10,6 +10,36 @@ import { DevicesService } from '../src/devices/devices.service';
 import { RULES_CLIENT } from '../src/rules-client/rules-client.module';
 
 /**
+ * ONE EVENT TYPE CAN BE MADE TO FAIL, so "the row and its event commit
+ * together" can be asserted rather than assumed.
+ *
+ * A DATABASE TRIGGER WOULD HAVE BEEN NEATER AND IS NOT AVAILABLE: the
+ * application's own role has no rights to create functions in `core` —
+ * correctly, since it is the role the service runs as, and a service that can
+ * define triggers can define anything. `jest.spyOn` cannot help either, because
+ * the compiled module's exports are non-configurable getters. So the module is
+ * mocked and delegates to the real implementation for everything except the one
+ * type a test arms.
+ *
+ * The `mock` prefix is required: the factory is hoisted above the imports, and
+ * only identifiers beginning with `mock` may be referenced from inside it.
+ */
+let mockFailVaultEventType: string | null = null;
+
+jest.mock('@aobplatform/vault-client', () => {
+  const actual = jest.requireActual('@aobplatform/vault-client');
+  return {
+    ...actual,
+    enqueueVaultEvent: async (writer: unknown, event: { type: string }) => {
+      if (mockFailVaultEventType && event.type === mockFailVaultEventType) {
+        throw new Error('vault outbox refused for the test');
+      }
+      return actual.enqueueVaultEvent(writer, event);
+    },
+  };
+});
+
+/**
  * PUSH-TO-DEVICE CAPTURE — reception hands the patient a locked screen
  * (TODO.md "Push-to-device capture" and "Two front doors", Carl 4 Sep 2026).
  *
@@ -95,6 +125,7 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
   let tabletA: string;
   let tabletACredential: string;
   let secondTabletA: string;
+  let secondTabletACredential: string;
 
   let providerB: string;
   let patientB: string;
@@ -227,7 +258,11 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
     const first = await pairTablet(practiceA, 'Reception tablet 1');
     tabletA = first.deviceId;
     tabletACredential = first.credential;
-    secondTabletA = (await pairTablet(practiceA, 'Reception tablet 2')).deviceId;
+    const second = await pairTablet(practiceA, 'Reception tablet 2');
+    secondTabletA = second.deviceId;
+    // Its own credential, so a test needing TWO live sessions at once can drive
+    // the second tablet's own ceremony as well as the first's.
+    secondTabletACredential = second.credential;
     tabletB = (await pairTablet(practiceB, 'Other practice tablet')).deviceId;
   });
 
@@ -1838,6 +1873,143 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
       await resolve(pushed.body.id, { outcome: 'corrected', details: ['medicare_number'] }).expect(400);
       await resolve(pushed.body.id, { outcome: 'corrected', details: [] }).expect(400);
       await resolve(pushed.body.id, { outcome: 'something_else', details: ['address'] }).expect(400);
+    });
+
+    it('dispute_resolution_persists_with_its_event', async () => {
+      const { patientId, assignorId } = await freshPatient('Reese');
+      const agreementId = await draft({ patientId, assignorId });
+      const pushed = await pushTo(tabletA, agreementId).expect(201);
+      await answer(pushed.body.id, {
+        confirmed: ['name', 'date_of_birth', 'mobile', 'email'],
+        disputed: ['address'],
+      }).expect(201);
+
+      const res = await resolve(pushed.body.id, {
+        outcome: 'corrected',
+        details: ['address'],
+      }).expect(201);
+      expect(res.body.resolvedAt).toBeTruthy();
+
+      const session = await prisma.withPractice(practiceA, (tx) =>
+        tx.tabletSession.findFirst({ where: { id: pushed.body.id } }),
+      );
+      expect(session!.disputeResolution).toBe('corrected');
+      expect(session!.disputeResolvedAt).not.toBeNull();
+      // THE STAFF PRINCIPAL ID, NEVER A NAME. A name in a column goes stale the
+      // moment somebody is renamed and joins to nothing; the display name is on
+      // the event, where an audit line reads it.
+      expect(session!.disputeResolvedByPrincipalId).toBe(RECEPTIONIST.sub);
+      // A FACT ABOUT THE DISPUTE, NOT A NEW STATE.
+      expect(session!.state).toBe('details_disputed');
+      expect(session!.endedAt).toBeNull();
+      expect(session!.detailsDisputedTypes).toEqual(['address']);
+
+      // AND RECEPTION'S OWN LIST CARRIES IT, which is what lets the row read
+      // "Resolved -- ready to re-send" instead of repeating the cross.
+      const list = await http()
+        .get('/tablet-sessions?active=true')
+        .set('x-practice-id', practiceA)
+        .expect(200);
+      const row = (list.body as Array<Record<string, unknown>>).find((r) => r.id === pushed.body.id);
+      expect(row!.disputeResolution).toBe('corrected');
+      expect(row!.disputeResolvedAt).toBeTruthy();
+      // The list is a status, not a mirror: no value, and no principal id
+      // either -- nobody on that screen needs it.
+      expect(JSON.stringify(row)).not.toContain('404 Wrongway Parade');
+      expect(JSON.stringify(row)).not.toContain(RECEPTIONIST.sub);
+    });
+
+    /**
+     * ONE WITHOUT THE OTHER IS STRUCTURALLY IMPOSSIBLE (hard rule 11, FR-11.2).
+     *
+     * The row and its outbox event commit together. Asserted by making the
+     * EVENT write fail and finding the columns untouched, rather than by
+     * trusting that two awaits happen to sit inside one transaction -- which is
+     * the thing that silently stops being true when somebody refactors.
+     */
+    it('a failed event write leaves the resolution columns null', async () => {
+      const { patientId, assignorId } = await freshPatient('Sasha');
+      const agreementId = await draft({ patientId, assignorId });
+      const pushed = await pushTo(secondTabletA, agreementId).expect(201);
+      await http()
+        .post('/kiosk/session/' + pushed.body.id + '/confirm-details')
+        .set('x-device-credential', secondTabletACredential)
+        .send({ confirmed: ['name', 'date_of_birth', 'mobile', 'email'], disputed: ['address'] })
+        .expect(201);
+
+      /*
+       * THE EVENT WRITE IS MADE TO FAIL, through the module mock declared at
+       * the top of this file (which explains why not a database trigger). It
+       * fails exactly the write under test and leaves every other event in the
+       * suite alone.
+       */
+      mockFailVaultEventType = 'tablet.dispute_resolved';
+      try {
+        await resolve(pushed.body.id, { outcome: 'patient_error', details: ['address'] }).expect(500);
+      } finally {
+        mockFailVaultEventType = null;
+      }
+
+      const rolledBack = await prisma.withPractice(practiceA, (tx) =>
+        tx.tabletSession.findFirst({ where: { id: pushed.body.id } }),
+      );
+      // THE ROW DID NOT MOVE WITHOUT ITS EVIDENCE.
+      expect(rolledBack!.disputeResolution).toBeNull();
+      expect(rolledBack!.disputeResolvedAt).toBeNull();
+      expect(rolledBack!.disputeResolvedByPrincipalId).toBeNull();
+      expect(rolledBack!.state).toBe('details_disputed');
+
+      await http()
+        .post('/tablet-sessions/' + pushed.body.id + '/recall')
+        .set('x-practice-id', practiceA)
+        .expect(201);
+    });
+
+    it('second_resolution_replaces_the_first', async () => {
+      const { patientId, assignorId } = await freshPatient('Tam');
+      const agreementId = await draft({ patientId, assignorId });
+      const pushed = await pushTo(tabletA, agreementId).expect(201);
+      await answer(pushed.body.id, {
+        confirmed: ['name', 'date_of_birth', 'mobile', 'email'],
+        disputed: ['address'],
+      }).expect(201);
+
+      // Reception corrects it ...
+      await resolve(pushed.body.id, { outcome: 'corrected', details: ['address'] }).expect(201);
+      const first = await prisma.withPractice(practiceA, (tx) =>
+        tx.tabletSession.findFirst({ where: { id: pushed.body.id } }),
+      );
+      expect(first!.disputeResolution).toBe('corrected');
+
+      // ... and then realises the address we held was right all along.
+      await resolve(pushed.body.id, { outcome: 'patient_error', details: ['address'] }).expect(201);
+      const second = await prisma.withPractice(practiceA, (tx) =>
+        tx.tabletSession.findFirst({ where: { id: pushed.body.id } }),
+      );
+
+      /*
+       * THE ROW IS STATE; THE EVENTS ARE HISTORY. The column holds the LATEST
+       * answer -- reception's screen must show what is true now -- and the
+       * outbox holds BOTH, because "they said corrected, then said patient
+       * error" is exactly the sort of thing somebody is asked about later, and
+       * exactly what an append-only record is for (hard rule 11).
+       */
+      expect(second!.disputeResolution).toBe('patient_error');
+      expect(second!.disputeResolvedAt!.getTime()).toBeGreaterThanOrEqual(
+        first!.disputeResolvedAt!.getTime(),
+      );
+
+      const events = await prisma.vaultOutbox.findMany({
+        where: { subjectId: pushed.body.id, type: 'tablet.dispute_resolved' },
+        orderBy: { occurredAt: 'asc' },
+      });
+      expect(events).toHaveLength(2);
+      expect((events[0].payload as Record<string, unknown>).outcome).toBe('corrected');
+      expect((events[1].payload as Record<string, unknown>).outcome).toBe('patient_error');
+
+      // Still a live, disputed session holding its device.
+      expect(second!.state).toBe('details_disputed');
+      expect(second!.endedAt).toBeNull();
     });
 
     it('a dispute resolution across a practice boundary finds nothing', async () => {

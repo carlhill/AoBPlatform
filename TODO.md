@@ -1538,9 +1538,15 @@ capture requests cancelled; mobile/email never supersede. `PATCH
 - A cross that has not yet been posted (fewer than five rows answered) can
   still be changed -- one honest moment to fix a slip, none after.
 - Reception closes a dispute with Correct (all five shown, crossed ones
-  marked) or No change needed (patient error); resolution persisted on the
-  session with its vault event (in flight); the row then reads "Resolved --
-  ready to re-send" (`e28f33f`).
+  marked) or No change needed (patient error). The resolution is PERSISTED on
+  the session -- `disputeResolution`, `disputeResolvedAt`,
+  `disputeResolvedByPrincipalId` -- written in the same transaction as its
+  `tablet.dispute_resolved` event, so one without the other is structurally
+  impossible (hard rule 11). The row then reads "Resolved -- ready to re-send"
+  with Re-send primary and the crossed detail still named, and a second
+  resolution replaces the first on the row while both stay in the outbox: the
+  row is state, the events are history (`e28f33f`, and the persistence
+  commit).
 - Session id (short) on the kiosk footer during a pushed session and on the
   console rows, so the two screens can be matched by eye (`5ad708c`).
 

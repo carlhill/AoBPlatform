@@ -3793,6 +3793,23 @@ export const strings = {
      * event carrying the TYPES and no values — never a quiet dismissal that
      * leaves the cross unexplained in the evidence.
      */
+    /**
+     * ONCE RECEPTION HAS ANSWERED THE CROSS (Carl, 4 Sep 2026). The row stops
+     * repeating "a detail is wrong" at somebody who has already dealt with it
+     * and says what is true now: the dispute is answered and the thing left to
+     * do is send it again.
+     *
+     * IT STILL NAMES WHAT WAS CROSSED, in secondary text. Reception may be a
+     * different person from the one who fixed it — a shift changes, a colleague
+     * covers a break — and "Resolved" with nothing else would ask them to take
+     * it on trust. The TYPES are on the row already (REQ-VER-04); the values
+     * are not, and are not added here.
+     */
+    resolvedTitle: 'Resolved — ready to re-send',
+    resolvedWas: (details: string) => `The patient had crossed: ${details}`,
+    resolvedCorrected: 'You corrected it here.',
+    resolvedPatientError: 'Recorded as right already — nothing was changed.',
+    resolvedAt: (when: string) => `Resolved at ${when}`,
     noChangeAction: 'No change needed — the details were right',
     noChangeNote: 'Recorded against your name, with the details the patient crossed. Nothing is changed.',
     noChangeRecorded: 'Recorded. Now send it to the tablet again.',

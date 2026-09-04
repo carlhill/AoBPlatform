@@ -98,6 +98,8 @@ const SESSION: TabletSessionRow = {
   providerName: 'Dr Example Provider',
   state: 'reading',
   disputedDetails: [],
+  disputeResolution: null,
+  disputeResolvedAt: null,
   pushedBy: 'Mai Frontdesk',
   pushedAt: '2026-09-04T09:05:00.000Z',
   lastStateAt: '2026-09-04T09:06:00.000Z',
@@ -113,6 +115,20 @@ const DISPUTED: TabletSessionRow = {
   ...SESSION,
   state: 'details_disputed',
   disputedDetails: ['address', 'mobile'],
+};
+
+/**
+ * THE SAME SESSION, ONCE RECEPTION HAS ANSWERED THE CROSS (Carl, 4 Sep 2026).
+ *
+ * THE STATE IS STILL `details_disputed`, deliberately: a resolution is a fact
+ * about the dispute, not a new state — the cross happened, and answering it
+ * does not unhappen it. The console reads `disputeResolution` rather than
+ * inventing a state the server does not have.
+ */
+const RESOLVED: TabletSessionRow = {
+  ...DISPUTED,
+  disputeResolution: 'patient_error',
+  disputeResolvedAt: '2026-09-04T09:12:00.000Z',
 };
 
 /**
@@ -995,6 +1011,69 @@ describe('the reception-push loop -- set, resolve, send again', () => {
     // EIGHT CHARACTERS, NOT THE WHOLE ID -- long enough to be unique among a
     // morning's sessions, short enough to read across a desk.
     expect(document.body.textContent ?? '').not.toContain(LIVE_UUID.id);
+  });
+
+  /**
+   * ONCE THE CROSS IS ANSWERED, THE ROW SAYS SO (Carl, 4 Sep 2026).
+   *
+   * The gap this closes is the one between reception fixing a detail and
+   * sending it again: the row used to go on saying "a detail is wrong" at the
+   * person who had just dealt with it, which is a screen telling somebody
+   * something they know and not the thing they need.
+   */
+  it('resolved_dispute_row_reads_ready_to_resend', async () => {
+    signedInAtPractice();
+    /*
+     * THE RESOLUTION ARRIVES ON THE POLL, as it does in life: reception's
+     * screen learns of it from the server, not from having been the tab that
+     * pressed the button — a colleague may have answered it at the next desk.
+     */
+    let live: TabletSessionRow[] = [DISPUTED];
+    stubFetch({ sessions: () => live });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    // BEFORE: what was crossed, and the two ways to answer it.
+    await screen.findByTestId(`disputed-${DISPUTED.id}`);
+    expect(screen.getByTestId(`no-change-${DISPUTED.id}`)).toBeTruthy();
+    expect(screen.queryByTestId(`resolved-${DISPUTED.id}`)).toBeNull();
+
+    live = [RESOLVED];
+
+    // AFTER: the row reads as answered, and the crossed detail is still named
+    // — reception may be a different person from the one who fixed it.
+    const resolved = await screen.findByTestId(`resolved-${RESOLVED.id}`, undefined, { timeout: 5000 });
+    expect(resolved.textContent).toContain(strings.tablet.resolvedTitle);
+    expect(resolved.textContent).toContain(strings.tablet.resolvedPatientError);
+    expect(screen.getByTestId(`resolved-was-${RESOLVED.id}`).textContent).toContain(
+      strings.tablet.resolvedWas('Address, Mobile number'),
+    );
+    // The short id, so the row can be matched to the tablet by eye.
+    expect(screen.getByTestId(`resolved-session-id-${RESOLVED.id}`).textContent).toBe(
+      strings.tablet.sessionTag(RESOLVED.id.slice(0, 8)),
+    );
+
+    // THE "a detail is wrong" BANNER IS GONE, and so is "No change needed" —
+    // pressing it now would only overwrite one answer with another.
+    expect(screen.queryByTestId(`disputed-${RESOLVED.id}`)).toBeNull();
+    expect(screen.queryByTestId(`no-change-${RESOLVED.id}`)).toBeNull();
+
+    // RE-SEND IS THE PRIMARY ACTION, and Correct stays available for another go.
+    const resend = screen.getByTestId(`resend-${RESOLVED.id}`) as HTMLButtonElement;
+    expect(resend.disabled).toBe(false);
+    // The CSS module hashes the name, so match the variant rather than the class.
+    expect(resend.className).toMatch(/buttonPrimary/);
+    expect((screen.getByTestId(`correct-open-${RESOLVED.id}`) as HTMLButtonElement).disabled).toBe(false);
+
+    // AND NOT ONE VALUE, still — the row is a status, not a mirror.
+    const page = document.body.textContent ?? '';
+    expect(page).not.toContain('404 Wrongway Parade');
+    expect(page).not.toContain('+61400000404');
+
+    fireEvent.click(resend);
+    await waitFor(() => expect(calls.some((c) => c.url.includes('/resend'))).toBe(true));
+    expect(calls.find((c) => c.url.includes('/resend'))!.url).toContain(
+      `/tablet-sessions/${RESOLVED.id}/resend`,
+    );
   });
 
   it('an ended session shows its short id too, on the line that says how it ended', async () => {

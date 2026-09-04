@@ -436,6 +436,7 @@ export class TabletSessionsService {
     id: string;
     outcome: DisputeResolutionOutcome;
     details: ConfirmableDetailType[];
+    resolvedAt: string;
     state: TabletSessionState;
   }> {
     if (!actor) throw pushRefusals.noActor();
@@ -456,6 +457,38 @@ export class TabletSessionsService {
       if (session.detailsDisputedTypes.length === 0) {
         throw new BadRequestException('This session has no disputed detail to resolve.');
       }
+
+      /*
+       * THE ROW AND THE EVENT, IN ONE TRANSACTION (hard rule 11, FR-11.2).
+       * Neither is allowed to exist without the other: a row saying reception
+       * answered with nothing in the vault to evidence it, or an event about a
+       * row that never moved, are both worse than a refusal. The outbox insert
+       * below is in this same `tx`, so a failure on either rolls back both —
+       * which is what `resolved_dispute_persists_with_its_event` asserts by
+       * making the event write fail and finding the columns still null.
+       *
+       * A SECOND RESOLUTION REPLACES THE FIRST. Reception may correct a detail
+       * and then realise it was the patient's error after all. The columns hold
+       * the LATEST answer and the outbox holds every one of them — the row is
+       * state, the events are history, and that is the right way round.
+       *
+       * THE STATE DOES NOT MOVE. `details_disputed` stays: the cross happened,
+       * and a resolution does not unhappen it. What follows is a re-send, which
+       * builds a fresh session and leaves this one's resolution on it.
+       *
+       * A PRINCIPAL ID, NEVER A NAME, in the column. The display name goes on
+       * the event, where an audit line needs to read; a name in a column goes
+       * stale the moment somebody is renamed.
+       */
+      const resolvedAt = new Date();
+      await tx.tabletSession.update({
+        where: { id: session.id },
+        data: {
+          disputeResolution: outcome,
+          disputeResolvedAt: resolvedAt,
+          disputeResolvedByPrincipalId: actor.id,
+        },
+      });
 
       await enqueueVaultEvent(tx, {
         type: 'tablet.dispute_resolved',
@@ -494,6 +527,9 @@ export class TabletSessionsService {
         id: session.id,
         outcome,
         details: resolved,
+        resolvedAt: resolvedAt.toISOString(),
+        // UNCHANGED, and stated rather than implied: a resolution is a fact
+        // about the dispute, not a new state.
         state: session.state as TabletSessionState,
       };
     });
@@ -1252,6 +1288,17 @@ export class TabletSessionsService {
           // "Patient says wrong: address, mobile" and looks the values up on
           // their own screen.
           disputedDetails: [...session.detailsDisputedTypes],
+          /*
+           * AND WHETHER RECEPTION HAS ANSWERED IT (Carl, 4 Sep 2026). This is
+           * what lets the row read "Resolved — ready to re-send" instead of
+           * repeating "a detail is wrong" at somebody who has already fixed
+           * it. An OUTCOME and a TIME — never who by, because a staff
+           * principal id on a list that refreshes every three seconds is an
+           * identifier nobody on that screen needs; it is on the event, where
+           * an audit reads it.
+           */
+          disputeResolution: (session.disputeResolution ?? null) as TabletSessionRow['disputeResolution'],
+          disputeResolvedAt: session.disputeResolvedAt?.toISOString() ?? null,
           pushedBy: session.pushedBy,
           pushedAt: session.pushedAt.toISOString(),
           lastStateAt: session.lastStateAt.toISOString(),
@@ -1277,6 +1324,8 @@ export class TabletSessionsService {
       providerName: context.providerName,
       state: session.state as TabletSessionState,
       disputedDetails: [...session.detailsDisputedTypes],
+      disputeResolution: (session.disputeResolution ?? null) as TabletSessionRow['disputeResolution'],
+      disputeResolvedAt: session.disputeResolvedAt?.toISOString() ?? null,
       pushedBy: session.pushedBy,
       pushedAt: session.pushedAt.toISOString(),
       lastStateAt: session.lastStateAt.toISOString(),

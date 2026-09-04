@@ -63,6 +63,8 @@ const SESSION: TabletSessionRow = {
   providerName: 'Dr Example Provider',
   state: 'reading',
   disputedDetails: [],
+  disputeResolution: null,
+  disputeResolvedAt: null,
   pushedBy: 'Mai Frontdesk',
   pushedAt: '2026-09-04T09:05:00.000Z',
   lastStateAt: '2026-09-04T09:06:00.000Z',

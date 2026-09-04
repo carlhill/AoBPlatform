@@ -1854,6 +1854,27 @@ model TabletSession {
   detailsDisputedTypes String[] @default([])
   detailsDisputedAt    DateTime?
 
+  /// HOW THE DISPUTE ENDED — `corrected` or `patient_error`, and NULL while a
+  /// cross is still unanswered (Carl, 4 Sep 2026).
+  ///
+  /// A FACT ABOUT THE DISPUTE, NOT A NEW STATE. The session stays
+  /// `details_disputed`: the cross happened, and a resolution does not unhappen
+  /// it. Reception's row reads "Resolved — ready to re-send" off this column,
+  /// and the re-send then builds a FRESH session, leaving this one's resolution
+  /// on it for the audit trail.
+  ///
+  /// A SECOND RESOLUTION REPLACES THE FIRST. Reception may correct a detail and
+  /// then realise it was the patient's error after all; the columns hold the
+  /// latest answer and the outbox holds every one of them, which is the right
+  /// way round — the row is state, the events are history.
+  disputeResolution String?
+
+  /// When, and WHO BY — the staff principal id, never a name. The display name
+  /// belongs on the event (which carries it for an audit line); a name in a
+  /// column goes stale the moment somebody is renamed, and joins to nothing.
+  disputeResolvedAt            DateTime?
+  disputeResolvedByPrincipalId String?
+
   /// Who pushed it, from their verified session — never from the body. The
   /// same act is the verification record, so an unattributed push is refused.
   pushedBy   String

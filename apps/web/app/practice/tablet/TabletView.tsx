@@ -1751,7 +1751,11 @@ export function TabletView({ practiceId }: { practiceId: string }) {
                   refreshes every three seconds. The values arrive when
                   somebody opens Correct, and go again when they close it.
                 */}
-                {session && session.disputedDetails.length > 0 && (
+                {/*
+                  BEFORE RECEPTION HAS ANSWERED: what the patient crossed, and
+                  the two ways to answer it.
+                */}
+                {session && session.disputedDetails.length > 0 && !session.disputeResolution && (
                   <Notice
                     tone="stop"
                     title={strings.tablet.disputedTitle}
@@ -1767,6 +1771,47 @@ export function TabletView({ practiceId }: { practiceId: string }) {
                     */}
                     <p className={ui.hint} data-testid={`no-change-note-${session.id}`}>
                       {strings.tablet.noChangeNote}
+                    </p>
+                  </Notice>
+                )}
+
+                {/*
+                  AFTER IT (Carl, 4 Sep 2026): the row stops repeating "a
+                  detail is wrong" at somebody who has already dealt with it,
+                  and says what is true now — the dispute is answered, and the
+                  thing left to do is send it again.
+
+                  IT STILL NAMES WHAT WAS CROSSED. Reception may be a different
+                  person from the one who fixed it, and "Resolved" alone would
+                  ask them to take it on trust. TYPES, never values, exactly as
+                  before (REQ-VER-04).
+
+                  THE SESSION IS STILL `details_disputed` on the server. A
+                  resolution is a fact about the dispute, not a new state, and
+                  this reads the resolution rather than inventing a state the
+                  server does not have.
+                */}
+                {session && session.disputeResolution && (
+                  <Notice
+                    tone="ok"
+                    title={strings.tablet.resolvedTitle}
+                    data-testid={`resolved-${session.id}`}
+                  >
+                    <p>
+                      {session.disputeResolution === 'corrected'
+                        ? strings.tablet.resolvedCorrected
+                        : strings.tablet.resolvedPatientError}
+                    </p>
+                    <p className={ui.hint} data-testid={`resolved-was-${session.id}`}>
+                      {strings.tablet.resolvedWas(disputedLabels(session.disputedDetails))}
+                      {session.disputeResolvedAt && (
+                        <>
+                          {' · '}
+                          {strings.tablet.resolvedAt(when(session.disputeResolvedAt))}
+                        </>
+                      )}
+                      {' · '}
+                      <SessionTag id={session.id} testId={`resolved-session-id-${session.id}`} />
                     </p>
                   </Notice>
                 )}
@@ -1824,15 +1869,22 @@ export function TabletView({ practiceId }: { practiceId: string }) {
                           claiming a change nobody made. This records what
                           actually happened, against the person who says so,
                           and changes nothing.
+
+                          IT GOES ONCE THE DISPUTE IS ANSWERED. Pressing it on
+                          a resolved row would only overwrite one answer with
+                          another; Correct stays available for a second go,
+                          which is the case that actually arises.
                         */}
-                        <Button
-                          disabled={!canSend || correctBusy || busyId !== null}
-                          onClick={() => void noChangeNeeded(session)}
-                          data-testid={`no-change-${session.id}`}
-                        >
-                          <CheckCheck size={14} aria-hidden="true" />
-                          {strings.tablet.noChangeAction}
-                        </Button>
+                        {!session.disputeResolution && (
+                          <Button
+                            disabled={!canSend || correctBusy || busyId !== null}
+                            onClick={() => void noChangeNeeded(session)}
+                            data-testid={`no-change-${session.id}`}
+                          >
+                            <CheckCheck size={14} aria-hidden="true" />
+                            {strings.tablet.noChangeAction}
+                          </Button>
+                        )}
                         <Button
                           variant="primary"
                           disabled={!canSend || busyId !== null}
