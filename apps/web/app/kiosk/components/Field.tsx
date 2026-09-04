@@ -57,14 +57,28 @@ export function Field({
 }): ReactNode {
   const id = useId();
   const hintId = hint ? `${id}-hint` : undefined;
+  /*
+   * "FILLED" MEANS "HAS A VALUE", NOT "VALID" (Carl, 4 Sep 2026). The
+   * identifiers are not verified until Continue is pressed and the server
+   * answers — this state says only that there is something in the box, and
+   * the copy around it must never say "valid" or "verified". WCAG 1.4.1: the
+   * outline (a theme token, not a hard-coded colour) is paired with a tick
+   * glyph beside the label, so the state does not depend on colour alone.
+   */
+  const filled = value.trim().length > 0;
   return (
     <div className={`${styles.field} ${className ?? ''}`}>
       <label className={styles.fieldLabel} htmlFor={id}>
         {label}
+        {filled ? (
+          <span className={styles.filledTick} aria-hidden="true" data-testid={testId ? `${testId}-filled` : undefined}>
+            {' '}✓
+          </span>
+        ) : null}
       </label>
       <input
         id={id}
-        className={styles.input}
+        className={`${styles.input} ${filled ? styles.inputFilled : ''}`}
         type={inputMode === 'email' ? 'email' : inputMode === 'tel' ? 'tel' : 'text'}
         inputMode={inputMode}
         value={value}
@@ -105,14 +119,21 @@ export function SelectField({
   testId?: string;
 }): ReactNode {
   const id = useId();
+  // Same rule as `Field` above: "has a value", never "valid" or "verified".
+  const filled = value.trim().length > 0;
   return (
     <div className={`${styles.field} ${className ?? ''}`}>
       <label className={styles.fieldLabel} htmlFor={id}>
         {label}
+        {filled ? (
+          <span className={styles.filledTick} aria-hidden="true" data-testid={testId ? `${testId}-filled` : undefined}>
+            {' '}✓
+          </span>
+        ) : null}
       </label>
       <select
         id={id}
-        className={styles.select}
+        className={`${styles.select} ${filled ? styles.inputFilled : ''}`}
         value={value}
         aria-label={label}
         onChange={(event) => onValueChange(event.target.value)}

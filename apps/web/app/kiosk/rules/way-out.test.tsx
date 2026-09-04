@@ -54,6 +54,7 @@ const VALID: SignatureValidation = {
 };
 
 const VIEW: ParticularsView = {
+  agreementType: 'episodic_pre',
   patientName: 'Jamie Sampleton',
   providerName: 'Dr Sample Provider',
   providerAddress: '2 Example Street, Sampletown NSW 2000',
@@ -69,7 +70,12 @@ const VIEW: ParticularsView = {
 };
 
 const noop = () => undefined;
-const CHROME = { practiceName: 'Sample Practice', locationLine: 'NSW' };
+const CHROME = {
+  practiceName: 'Sample Practice',
+  locationLine: 'NSW',
+  // Only `SignatureScreen` reads this; harmless as an extra prop everywhere else.
+  heading: strings.particulars.headingByAgreementType.episodic_pre,
+};
 
 /** One entry per screen of the ceremony. Adding a screen without an exit fails here. */
 function ceremonyScreens(onLeave: () => void): ReadonlyArray<readonly [string, ReactElement]> {

@@ -49,6 +49,7 @@
  */
 
 import type { ReactNode } from 'react';
+import type { AgreementType } from '@aobplatform/domain';
 import { Blueprint, Kicker, Screen, Tag } from '../components/Chrome';
 import { GuardedButton, SecondaryButton } from '../components/Buttons';
 import { shortHash } from '../components/SignatureControl';
@@ -57,6 +58,8 @@ import { strings } from '../strings';
 import styles from '../kiosk.module.css';
 
 export interface ParticularsView {
+  /** Drives the type-specific heading (`strings.particulars.headingByAgreementType`), carried onto K-4 too. */
+  readonly agreementType: AgreementType;
   readonly patientName: string;
   readonly providerName: string | null;
   readonly providerAddress: string | null;
@@ -100,7 +103,9 @@ export function ParticularsScreen({
       <div className={styles.twoColumn}>
         <Blueprint className={styles.document}>
           <div className={styles.documentHeader}>
-            <h1 className={styles.documentTitle}>{strings.particulars.documentTitle}</h1>
+            <h1 className={styles.documentTitle} data-testid="particulars-heading">
+              {strings.particulars.headingByAgreementType[view.agreementType]}
+            </h1>
             {view.ruleSetVersion && view.mappingVersion ? (
               <p className={styles.versions} data-testid="versions">
                 {strings.particulars.versions(view.ruleSetVersion, view.mappingVersion)}

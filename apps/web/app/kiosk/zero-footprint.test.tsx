@@ -43,15 +43,22 @@ import {
   writePairingCredential,
 } from './pairing';
 import type { SignatureValidation } from './rules/signature-gate';
+import { strings } from './strings';
 
 const noop = () => undefined;
-const CHROME = { practiceName: 'Sample Practice', locationLine: 'NSW' };
+const CHROME = {
+  practiceName: 'Sample Practice',
+  locationLine: 'NSW',
+  // Only `SignatureScreen` reads this; harmless as an extra prop everywhere else.
+  heading: strings.particulars.headingByAgreementType.episodic_pre,
+};
 const VALID: SignatureValidation = {
   state: 'valid',
   artefactHash: 'b'.repeat(64),
   ruleSetVersion: 'draft-2026-08',
 };
 const VIEW: ParticularsView = {
+  agreementType: 'episodic_pre',
   patientName: 'Jamie Sampleton',
   providerName: 'Dr Sample Provider',
   providerAddress: '2 Example Street, Sampletown NSW 2000',

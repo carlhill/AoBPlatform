@@ -55,11 +55,29 @@ export function IdleScreen({
         <div className={styles.centred}>
           <h1 className={styles.h1}>{strings.idle.heading}</h1>
           <p className={styles.lede}>{strings.idle.lede}</p>
-          <PrimaryButton label={strings.idle.start} onPress={onStart} testId="start-check-in" />
-          <p className={styles.muted} data-testid="waiting-count">
-            {rows.length > 0 ? strings.idle.waitingCount(rows.length) : strings.idle.nobodyWaiting}
-          </p>
-          {error ? <p className={styles.error}>{strings.idle.loadFailed}</p> : null}
+          {/*
+            NO BUTTON THAT PROMISES A LIST THE SERVER COULD NOT SEND (Carl,
+            4 Sep 2026). `error` covers a failed fetch, a non-2xx, and a
+            device the poll has flagged unpaired but not yet redirected off
+            this screen — none of those states have a real waiting list
+            behind them, so "Start check-in" is hidden rather than left live
+            over nothing, and the failure message is the one thing shown.
+            The poll keeps running underneath (`useWaitingList` — no retry
+            loop of its own, just the existing cadence); the button returns
+            on its own the moment `error` clears.
+          */}
+          {error ? (
+            <p className={styles.error} data-testid="idle-load-failed">
+              {strings.idle.loadFailed}
+            </p>
+          ) : (
+            <>
+              <PrimaryButton label={strings.idle.start} onPress={onStart} testId="start-check-in" />
+              <p className={styles.muted} data-testid="waiting-count">
+                {rows.length > 0 ? strings.idle.waitingCount(rows.length) : strings.idle.nobodyWaiting}
+              </p>
+            </>
+          )}
         </div>
       </Screen>
     );
@@ -88,6 +106,13 @@ export function IdleScreen({
         ) : (
           rows.map((row) => (
             <div key={row.captureRequestId} className={styles.rowWrap} data-testid={`waiting-row-${row.captureRequestId}`}>
+              {/*
+                STILL TAPPABLE (TODO.md, "Two rulings from pairing day", 4 Sep
+                2026). The tag below is a hint that saves a tap, not a lock on
+                the row: tapping an unsignable row still works, and goes
+                straight to the named hand-over rather than to verification —
+                see `Ceremony.tsx`'s `pick`.
+              */}
               <SecondaryButton
                 label={row.patientName}
                 align="left"
@@ -97,6 +122,11 @@ export function IdleScreen({
               <div className={styles.rowMeta}>
                 <Tag label={row.appointmentTime ?? strings.idle.walkIn} />
                 {row.providerName ? <Tag label={row.providerName} /> : null}
+                {row.signable === false ? (
+                  <span data-testid={`unsignable-${row.captureRequestId}`}>
+                    <Tag label={strings.idle.pleaseSeeReception} />
+                  </span>
+                ) : null}
               </div>
             </div>
           ))

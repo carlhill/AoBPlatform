@@ -48,6 +48,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import type { AgreementType } from '@aobplatform/domain';
 import {
   attemptChallenge,
   changeAssignor,
@@ -384,6 +385,25 @@ export function Ceremony(): ReactNode {
       setVerification(firstAttempt());
       setMismatch(false);
       setStartError(false);
+
+      /*
+       * UNSIGNABLE, ALREADY KNOWN (TODO.md, "Two rulings from pairing day", 4
+       * Sep 2026). `signable` is computed server-side on every poll —
+       * `computeSignability` in `packages/domain/src/kiosk.ts` — so the
+       * tablet already knows, before this tap, that nothing done here will
+       * change the outcome: Carl chose Jamie, passed all three identifiers,
+       * and only then found out a detail was missing, on a hand-over screen
+       * that named nobody. So the row goes STRAIGHT to the hand-over, naming
+       * the patient — the name is not a new disclosure; it is what this same
+       * screen already showed on the list a moment ago — and NOTHING is
+       * called: no verification challenge, no transition, no lock. The
+       * agreement is exactly as untouched as `leave` leaves it.
+       */
+      if (picked.signable === false) {
+        toHandover(strings.particulars.needsReceptionHeading(picked.patientName), strings.particulars.needsReceptionBody);
+        return;
+      }
+
       setStep('verify');
       try {
         const built = identifierFieldsFor(list.identifierTypes);
@@ -411,7 +431,7 @@ export function Ceremony(): ReactNode {
         setFields([]);
       }
     },
-    [list.identifierTypes],
+    [list.identifierTypes, toHandover],
   );
 
   /** Step 2: one attempt. Values go out once and are not kept here. */
@@ -603,14 +623,18 @@ export function Ceremony(): ReactNode {
        */
       const read = readLockFailure(err);
       if (read.kind === 'rules') {
-        toHandover(strings.particulars.needsReceptionHeading, strings.particulars.needsReceptionBody);
+        // NAMES THE PATIENT (TODO.md, "Two rulings from pairing day", 4 Sep
+        // 2026) — `patientName` is already in scope from the row this
+        // ceremony started on, and the hand-over is the second of the two
+        // places that ruling requires it.
+        toHandover(strings.particulars.needsReceptionHeading(patientName), strings.particulars.needsReceptionBody);
       } else {
         toHandover(strings.particulars.serverFaultHeading, strings.particulars.serverFault);
       }
     } finally {
       setLockBusy(false);
     }
-  }, [agreement, row, toHandover]);
+  }, [agreement, row, toHandover, patientName]);
 
   /**
    * THE AUTOMATIC LOCK FIRES ONCE PER AGREEMENT, and the ref is the reason it
@@ -695,6 +719,15 @@ export function Ceremony(): ReactNode {
     const p = (agreement?.particulars ?? {}) as Record<string, unknown>;
     const str = (key: string) => (typeof p[key] === 'string' ? (p[key] as string) : null);
     return {
+      /*
+       * THE ROW'S OWN FIELD FIRST (TODO.md, 4 Sep 2026 copy follow-up) — it
+       * is on the waiting-list row precisely so K-3 need not wait on a fresh
+       * agreement fetch to know which heading to show. `agreement.type`
+       * (already fetched by this point in the ceremony) is the fallback, and
+       * `episodic_pre` — the only type the kiosk ever lists — is the last
+       * one, so this can never be `undefined` and force a component to guess.
+       */
+      agreementType: row?.agreementType ?? (agreement?.type as AgreementType | undefined) ?? 'episodic_pre',
       patientName: str('patientName') ?? row?.patientName ?? '',
       providerName: str('providerName') ?? row?.providerName ?? null,
       providerAddress: str('providerAddress'),
@@ -764,7 +797,18 @@ export function Ceremony(): ReactNode {
           incomplete={incomplete}
           startError={startError}
           mismatch={mismatch}
-          onChange={(t, v) => setStated((prev) => ({ ...prev, [t]: v }))}
+          onChange={(t, v) => {
+            setStated((prev) => ({ ...prev, [t]: v }));
+            /*
+             * THE MISMATCH MESSAGE CLEARS THE MOMENT A FIELD CHANGES (Carl,
+             * 4 Sep 2026). Leaving "Some details don't match" up while the
+             * patient is correcting a value read as though the correction
+             * had already failed too. The attempt counter in the footer
+             * (`strings.verify.attemptOf`) is untouched — it is still true —
+             * and the message returns only if the NEXT Continue fails again.
+             */
+            setMismatch(false);
+          }}
           onContinue={() => void submitAttempt()}
           onSeeReception={leave}
         />
@@ -816,6 +860,7 @@ export function Ceremony(): ReactNode {
         <SignatureScreen
           practiceName={practiceName}
           locationLine={locationLine}
+          heading={strings.particulars.headingByAgreementType[view.agreementType]}
           validation={validation}
           padRef={padRef}
           inkPresent={inkPresent}

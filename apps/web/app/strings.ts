@@ -12,7 +12,7 @@
  * true — this module is still the only place a component reads text from — and
  * keeps the wording single-sourced with the rule that produces it.
  */
-import { CONTACT_CLASH_MESSAGES } from '@aobplatform/domain';
+import { CONTACT_CLASH_MESSAGES, type AgreementType } from '@aobplatform/domain';
 
 export const strings = {
   appName: 'AoBPlatform',
@@ -3479,18 +3479,36 @@ export const strings = {
     },
 
     idle: {
-      heading: 'Checking in?',
-      lede: 'Tap below to confirm your details and read your bulk-billing consent. Our staff can help at any point.',
-      start: 'Start check-in',
+      /*
+       * "AGREE", NOT "CHECK IN" (Carl, 4 Sep 2026 copy pass). The ceremony
+       * captures consent to bulk billing, not attendance — reworded across
+       * every patient-facing string on this screen so none of them promise a
+       * simple check-in. "Doctor" is avoided throughout for the same reason
+       * the domain terminology rule exists (CLAUDE.md §3): this screen also
+       * serves specialists, allied health and optometry.
+       */
+      heading: 'Agree to bulk billing',
+      lede: 'Confirm your details, read your agreement, and sign. Our staff can help at any point.',
+      start: 'Begin',
       waitingCount: (count: number) =>
-        count === 1 ? '1 person is ready to check in' : `${count} people are ready to check in`,
-      nobodyWaiting: 'Nobody is waiting to check in just now.',
-      listHeading: 'Who is checking in?',
+        count === 1 ? '1 person is ready to sign' : `${count} people are ready to sign`,
+      nobodyWaiting: 'Nobody is waiting to sign just now.',
+      /** Matches `assignor.heading` below deliberately — K-1's list and K-5 ask the same question. */
+      listHeading: 'Who is signing today?',
       listHint: 'Tap your name. If it is not here, please see reception.',
       walkIn: 'No appointment time',
       backToIdle: 'Back',
       loadFailed: 'The list could not be loaded. Please see reception — your appointment is not affected.',
       retry: 'Try again',
+      /**
+       * THE QUIET TAG ON AN UNSIGNABLE ROW (TODO.md, "Two rulings from
+       * pairing day", 4 Sep 2026). The row stays tappable — see
+       * `needsReceptionHeading` — this is only the hint that saves the tap:
+       * a patient who reads it before tapping learns the same thing sooner,
+       * and one who taps anyway still lands on a screen that names them and
+       * hands them over cleanly, no verification attempted for nothing.
+       */
+      pleaseSeeReception: 'Please see reception',
     },
 
     verify: {
@@ -3693,8 +3711,39 @@ export const strings = {
     },
 
     particulars: {
-      heading: 'Assignment of benefit — please read',
-      documentTitle: 'Assignment of Medicare benefit',
+      /**
+       * K-3'S OWN HEADING, KEYED BY AGREEMENT TYPE, CARRIED ONTO K-4 (Carl,
+       * 4 Sep 2026 copy follow-up to the pairing-day ruling). Reading (K-3)
+       * and signing (K-4) are one act about one agreement, so both steps use
+       * this same lookup rather than a component ever writing
+       * `type === 'enduring' ? … : …` itself — a Record, the same pattern
+       * `identifierNames` and `relationshipNames` already use above.
+       *
+       * Replaces the old static `documentTitle`/`heading` strings, which
+       * said "Assignment of Medicare benefit" regardless of what kind of
+       * agreement it was.
+       *
+       * "VISIT" IS DELIBERATE PATIENT-FACING PLAIN LANGUAGE (Carl's choice).
+       * The domain and every regulatory surface keep saying "service"
+       * (REQ-MP-01, CLAUDE.md §3) — this is the one word in the table that
+       * trades that precision for a word a patient reads without pausing on
+       * it, and it names nothing the s 65C data set itself calls a "visit".
+       *
+       * ENDURING NEVER REACHES A LIVE TABLET TODAY — kiosk enduring is out
+       * of scope (README.md, "Not built here") — so that branch is exercised
+       * only by `heading_follows_agreement_type`. `treatment_plan` takes the
+       * episodic wording on the same reasoning `enduring` does not: one
+       * agreement still authorises one signing occasion here, even where the
+       * plan behind it spans six months. That is unconfirmed copy, not a
+       * regulatory fact, and is worth revisiting once that module (build-plan
+       * item 10) actually reaches the kiosk.
+       */
+      headingByAgreementType: {
+        episodic_pre: "Agree to bulk billing for today's visit",
+        episodic_post: "Agree to bulk billing for today's visit",
+        treatment_plan: "Agree to bulk billing for today's visit",
+        enduring: 'Agree to bulk billing',
+      } as Record<AgreementType, string>,
       patient: 'Patient',
       provider: 'Provider',
       placeOfPractice: 'Place of practice',
@@ -3736,7 +3785,16 @@ export const strings = {
        * — the practice queue or reconciliation — where the mapping, the
        * booking and the audit trail all are.
        */
-      needsReceptionHeading: 'One more detail is needed from reception',
+      /**
+       * TAKES THE NAME (TODO.md, "Two rulings from pairing day", 4 Sep
+       * 2026). Carl chose Jamie on the list, passed all three identifiers on
+       * K-2, and only then reached this hand-over — on a screen with no name
+       * on it, so reception had no way to tell who needed fixing. The name is
+       * safe to show here for the same reason it is safe on the list: the
+       * patient (or whoever picked them) just tapped it on a screen that
+       * already showed it to them, so nothing is newly disclosed.
+       */
+      needsReceptionHeading: (patientName: string) => `${patientName} — one more detail is needed from reception`,
       needsReceptionBody:
         'We need one more detail from reception before this can be signed. Please see reception — your '
         + 'appointment is not affected.',

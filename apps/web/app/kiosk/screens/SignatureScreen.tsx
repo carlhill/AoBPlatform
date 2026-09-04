@@ -38,6 +38,7 @@ import styles from '../kiosk.module.css';
 export function SignatureScreen({
   practiceName,
   locationLine,
+  heading,
   validation,
   padRef,
   inkPresent,
@@ -52,6 +53,14 @@ export function SignatureScreen({
 }: {
   practiceName: string;
   locationLine: string | null;
+  /**
+   * SAME HEADING AS K-3, CARRIED FORWARD (Carl, 4 Sep 2026 copy follow-up).
+   * Reading and signing are one act about one agreement — Ceremony.tsx looks
+   * this up once from `strings.particulars.headingByAgreementType`, which is
+   * why it arrives here as plain text rather than as an agreement type this
+   * screen would have to look up itself.
+   */
+  heading: string;
   validation: SignatureValidation;
   padRef: { current: SignaturePadHandle | null };
   inkPresent: boolean;
@@ -74,6 +83,9 @@ export function SignatureScreen({
       onLeave={onSeeReception}
     >
       <div className={styles.stack}>
+        <h1 className={styles.h2} data-testid="signature-heading">
+          {heading}
+        </h1>
         {validation.state === 'valid' ? (
           <Blueprint accented className={styles.banner}>
             <p className={styles.body} data-testid="validated-banner">

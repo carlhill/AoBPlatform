@@ -170,6 +170,7 @@ describe('K-2 — a mismatch does not move the screen', () => {
 });
 
 const VIEW: ParticularsView = {
+  agreementType: 'episodic_pre',
   patientName: 'Jamie Sampleton',
   providerName: 'Dr Sample Provider',
   providerAddress: '2 Example Street, Sampletown NSW 2000',
@@ -225,6 +226,57 @@ describe('K-3 — the reading step asks the patient for nothing', () => {
       expect(view.container.textContent).not.toMatch(/internal server error|C6:|D6a/i);
       view.unmount();
     }
+  });
+
+  it('heading_follows_agreement_type — K-3 reads its own heading from strings.particulars.headingByAgreementType', () => {
+    /*
+     * COPY FOLLOW-UP TO THE PAIRING-DAY RULING (Carl, 4 Sep 2026). The
+     * heading a patient reads before signing must say what kind of
+     * agreement this is: an enduring agreement is per practitioner × patient
+     * and is not "today's visit" (rule 6), while every episodic type on this
+     * screen authorises one occasion of care. Every kiosk row is
+     * `episodic_pre` today — enduring at the kiosk is out of scope
+     * (README.md) — so the `enduring` branch here is this test's job to
+     * exercise, not a live tablet's.
+     */
+    const validation: SignatureValidation = { state: 'valid', artefactHash: 'b'.repeat(64), ruleSetVersion: 'draft-2026-08' };
+
+    const episodic = render(
+      <ParticularsScreen
+        {...CHROME}
+        view={{ ...VIEW, agreementType: 'episodic_pre' }}
+        validation={validation}
+        onContinue={noop}
+        onBack={noop}
+        onSeeReception={noop}
+      />,
+    );
+    expect(episodic.getByTestId('particulars-heading').textContent).toBe(
+      strings.particulars.headingByAgreementType.episodic_pre,
+    );
+    expect(episodic.getByTestId('particulars-heading').textContent).toBe("Agree to bulk billing for today's visit");
+    episodic.unmount();
+
+    const enduring = render(
+      <ParticularsScreen
+        {...CHROME}
+        view={{ ...VIEW, agreementType: 'enduring' }}
+        validation={validation}
+        onContinue={noop}
+        onBack={noop}
+        onSeeReception={noop}
+      />,
+    );
+    expect(enduring.getByTestId('particulars-heading').textContent).toBe(
+      strings.particulars.headingByAgreementType.enduring,
+    );
+    expect(enduring.getByTestId('particulars-heading').textContent).toBe('Agree to bulk billing');
+    enduring.unmount();
+
+    // The whole point: the two are different sentences, not the same one twice.
+    expect(strings.particulars.headingByAgreementType.episodic_pre).not.toBe(
+      strings.particulars.headingByAgreementType.enduring,
+    );
   });
 
   it('k3_has_one_primary_and_it_is_disabled_until_the_payload_validates', () => {
