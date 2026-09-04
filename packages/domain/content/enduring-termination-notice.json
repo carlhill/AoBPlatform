@@ -1,0 +1,47 @@
+{
+  "$comment": "VERSIONED CONTENT, NOT CODE (hard rule 14), AND DELIBERATELY UNWRITTEN. This is the written notice a patient's termination of an enduring agreement must generate under REQ-PORT-05 / 65CA(7)(b), with the two-business-day effect of FR-5.3. THE WORDING IS HUMAN-AUTHORED REGULATORY COPY AND IS NOT HERE: `draft` is true, every section body is empty, and the portal refuses to mark any notice built from this file as anything but `draft_pending_review`. A generated agent must not invent statutory notice wording — the section numbers, the effect date language and the obligations stated to the provider are exactly the facts CLAUDE.md forbids inferring from training data. What IS settled here is the SHAPE: which sections the notice has, in what order, and which placeholders each may use. A reviewer fills the bodies, bumps `version`, and flips `draft` to false; until then the review task raised beside every termination is the thing that stops a blank notice going out. PLACEHOLDERS ARE KEYS, NEVER VALUES. `{{effectiveAt}}` and the rest are substituted at render time from the agreement's own record; no name, address or amount is ever written into this file. NO BENEFIT AMOUNT APPEARS IN ANY SECTION and none may be added — an agreement artefact carries no dollar figure (hard rule 4); reg 89AA notices are the one place an amount belongs and they are a different document entirely.",
+  "templateKey": "enduring_termination_notice_v1",
+  "version": "enduring-termination-notice-2026-09-1-DRAFT",
+  "draft": true,
+  "placeholders": [
+    "patientGivenNames",
+    "practiceName",
+    "providerName",
+    "agreementEnteredInto",
+    "noticeAt",
+    "effectiveAt",
+    "businessDayCalendarState"
+  ],
+  "sections": [
+    {
+      "key": "heading",
+      "body": "",
+      "note": "DRAFT — a reviewer writes this. What the document is. Never the words 'certified', 'approved', 'accredited' or 'government-approved' (hard rule 12)."
+    },
+    {
+      "key": "who_and_what",
+      "body": "",
+      "note": "DRAFT — which enduring agreement is ending: patient, provider, practice, and when it was entered into. Placeholders only."
+    },
+    {
+      "key": "statutory_basis",
+      "body": "",
+      "note": "DRAFT — the patient's right to terminate, cited from the requirements docs and NEVER from memory. A generated draft must leave this empty rather than guess a section number."
+    },
+    {
+      "key": "effect_date",
+      "body": "",
+      "note": "DRAFT — that the termination takes effect on {{effectiveAt}}, two business days after {{noticeAt}} on the {{businessDayCalendarState}} calendar (FR-5.3)."
+    },
+    {
+      "key": "what_happens_next",
+      "body": "",
+      "note": "DRAFT — plain language, UK/AU spelling: what the patient should expect afterwards. It must not suggest that care or billing stops; the platform never blocks care (hard rule 8)."
+    },
+    {
+      "key": "contact",
+      "body": "",
+      "note": "DRAFT — how to ask the practice about this notice. A destination, not a prose instruction to 'see the practice'."
+    }
+  ]
+}

@@ -369,6 +369,48 @@ export const VAULT_EVENT_TYPES = [
    * the walked-away event does (hard rule 8, REQ-REC-04).
    */
   'tablet.dispute_resolved',
+  /*
+   * THE PATIENT'S OWN PAGE (C8, REQ-PORT-01..08; TODO.md "The patient's own
+   * page", Carl 4 Sep 2026).
+   *
+   * WHY A PORTAL NEEDS EVENTS AT ALL. FR-8.2 makes every access an event, and
+   * the card that answers Carl's actual question — "what do you do with my
+   * data" — is built out of these. A platform that logs what the PRACTICE did
+   * to a record and not what the PATIENT did with it can only ever show the
+   * patient half a story about their own data.
+   *
+   * `portal.activated` is the heaviest of the six. It is the moment a person
+   * proved, with three approved identifiers against ONE practice's record,
+   * that they are the patient that practice verified across its counter — and
+   * a link was made. Its payload carries identifier TYPES, a count and an
+   * outcome, never a value and never the token (REQ-VER-04, hard rule 9); the
+   * Medicare card number cannot appear because it is refused as an identifier
+   * before this event is ever written (hard rule 1).
+   *
+   * `portal.accessed` IS ONE PER SESSION, NOT ONE PER REQUEST, and that is a
+   * decision rather than an economy. A read-per-request log at portal volumes
+   * is a second copy of the traffic log wearing evidence clothes; what the
+   * patient is entitled to see, and what an auditor asks for, is "somebody
+   * signed in as me, then". The per-artefact reads keep their own
+   * `artefact.accessed` events, which is where read-level detail belongs.
+   *
+   * `portal.enduring_terminated` is the patient exercising 65CA(7)(b) — a
+   * right they hold whether or not they were the assignor. Carried beside the
+   * enduring module's own `agreement.terminated`, because "the patient ended
+   * this from their own page" and "it was terminated" are different facts and
+   * only one of them can be told from the other's absence.
+   *
+   * NONE OF THE SIX CARRIES AN AMOUNT, a name, an address or a detail's value.
+   * `portal.correction_requested` carries the field TYPE the patient says is
+   * wrong and never what they believe is right — the portal has no field to
+   * take one, because reception confirms it in person against the PMS.
+   */
+  'portal.invitation_minted',
+  'portal.activated',
+  'portal.accessed',
+  'portal.correction_requested',
+  'portal.enduring_terminated',
+  'portal.assignor_revoked',
 ] as const;
 
 export type VaultEventType = (typeof VAULT_EVENT_TYPES)[number];

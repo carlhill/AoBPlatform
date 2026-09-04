@@ -134,6 +134,37 @@ export const REVIEW_TASK_KINDS: readonly ReviewTaskKind[] = [
     question: 'Has the practice confirmed its details are still correct?',
     stakes: 'low',
   }),
+  kind({
+    key: 'portal_correction_requested',
+    label: 'A patient says one of their details is wrong',
+    question: 'Confirm the correct value with the patient, then change it in the PMS.',
+    /*
+     * HIGH, and the reason is that a model cannot do the work.
+     *
+     * The task carries the FIELD TYPE and nothing else — the patient was never
+     * asked for a replacement value and the portal has no box to take one
+     * (APP 13 routes a correction to the record owner; it does not let an
+     * unverified channel write to a clinical system). Closing this means
+     * somebody at the practice confirmed the right value with the person and
+     * typed it into the PMS. There is no artefact for an automated check to
+     * compare, so an auto-resolvable kind here would close tasks that nobody
+     * had actually done.
+     */
+    stakes: 'high',
+  }),
+  kind({
+    key: 'portal_enduring_terminated',
+    label: 'A patient ended an enduring agreement from their own page',
+    question: 'Release the written notice, and stop bulk-billing under this agreement from the effective date.',
+    /*
+     * HIGH, unavoidably. The patient has exercised 65CA(7)(b) and a clock is
+     * running: the termination takes effect two business days after notice
+     * (FR-5.3), and the written notice waiting behind this task is
+     * human-authored regulatory copy that a person releases. A closed task
+     * nobody read is a notice that never went.
+     */
+    stakes: 'high',
+  }),
 ] as const;
 
 export const REVIEW_TASK_KEYS = REVIEW_TASK_KINDS.map((k) => k.key);

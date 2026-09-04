@@ -2411,3 +2411,160 @@ model ResendReason {
 
   @@map("resend_reasons")
 }
+
+// ---------------------------------------------------------------------------
+// M8 — THE PATIENT'S OWN PAGE (C8; REQ-PORT-01..08, FR-8.1/8.2).
+//
+// THE ACCOUNT IS THE HUB AND THE PATIENT CARRIES THE LINKS. A person activates
+// from each practice's signed agreement, after THAT practice verified them
+// across its own counter, so no practice ever learns another exists and no
+// cross-practice identifier is ever needed (TODO.md "The patient links their
+// own practices", Carl 4 Sep 2026). It is the whole reason there is no IHI
+// matching anywhere in this file.
+//
+// NOTHING ABOUT THE PERSON IS STORED HERE. No email, no mobile, no name, no
+// date of birth: contact and identity live on the practice's own patient
+// record, where the PMS is the master (REQ-DATA-10) and where the encryption
+// and the RLS already are. A portal account is an id, two timestamps and a set
+// of links — which is also why crypto-shredding a patient does not leave a
+// second copy of them in this table.
+// ---------------------------------------------------------------------------
+
+/// One person's portal identity. Deliberately almost empty — see above.
+model PortalAccount {
+  id         String    @id @default(uuid()) @db.Uuid
+  createdAt  DateTime  @default(now())
+  /// Refreshed when a session is issued, so a dormant account is visible
+  /// without reading the session table. Never a request-level clock.
+  lastSeenAt DateTime?
+
+  links    PortalAccountPatient[]
+  sessions PortalSession[]
+
+  @@map("portal_accounts")
+}
+
+/// ONE LINK PER PRACTICE THE PATIENT ACTIVATED FROM.
+///
+/// `linkedByAgreementId` is the agreement whose activation invitation produced
+/// it — the evidence of WHY this account may see this practice's record. A link
+/// with no agreement behind it would be an assertion that somebody is a patient,
+/// which is exactly what the three-identifier check exists to avoid making.
+model PortalAccountPatient {
+  id                  String        @id @default(uuid()) @db.Uuid
+  accountId           String        @db.Uuid
+  account             PortalAccount @relation(fields: [accountId], references: [id])
+  patientId           String        @db.Uuid
+  practiceId          String        @db.Uuid
+  linkedAt            DateTime      @default(now())
+  linkedByAgreementId String?       @db.Uuid
+
+  /// One link per patient record. A second activation from the same practice
+  /// refreshes nothing and creates nothing.
+  @@unique([accountId, patientId])
+  @@index([accountId])
+  @@index([practiceId])
+  @@map("portal_account_patients")
+}
+
+/// FR-8.2 — short-lived and SERVER-SIDE. The cookie carries an opaque id and
+/// nothing else: no claims, no patient ids, nothing a client could edit. Thirty
+/// minutes, revocable, and every issue writes a `portal.accessed` event.
+model PortalSession {
+  id        String        @id @default(uuid()) @db.Uuid
+  accountId String        @db.Uuid
+  account   PortalAccount @relation(fields: [accountId], references: [id])
+  createdAt DateTime      @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+
+  @@index([accountId])
+  @@map("portal_sessions")
+}
+
+/// FR-1.14 — the invitation minted after a completed signature. OFFERED, never
+/// required (REQ-PORT-08).
+///
+/// ONLY THE HASH IS STORED, exactly as capture links do: a database read must
+/// not be able to mint a working invitation. And the token is not the door —
+/// `POST /portal/activate` also demands the three approved identifiers against
+/// that agreement's own practice, which is what stops a forwarded message on a
+/// shared family phone opening somebody else's record (REQ-VUL, addendum v4).
+model PortalActivationToken {
+  id          String    @id @default(uuid()) @db.Uuid
+  practiceId  String    @db.Uuid
+  agreementId String    @db.Uuid
+  patientId   String    @db.Uuid
+  tokenHash   String    @unique
+  /// The staff member's principal id, or `system` when minted after signature.
+  mintedById  String
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime
+  usedAt      DateTime?
+  /// Three wrong answers and this token is finished (423). A fresh invitation
+  /// is a practice act, at the counter.
+  attempts    Int       @default(0)
+  lockedAt    DateTime?
+
+  @@index([practiceId])
+  @@index([agreementId])
+  @@map("portal_activation_tokens")
+}
+
+/// REQ-PORT-05 — the written notice a patient's termination generates.
+///
+/// ITS OWN TABLE AND NOT `notices`, deliberately. `notices` is the reg 89AA
+/// table: it REQUIRES a claim reference, a claim lodgement time and a benefit
+/// amount, because a post-claim notification is what it is for. A termination
+/// notice has none of those, and writing one there would mean inventing a
+/// benefit amount for a document that must not carry one (hard rule 4).
+///
+/// EVERY ROW IS A DRAFT. The wording is human-authored regulatory copy
+/// (packages/domain/content/enduring-termination-notice.json ships empty and
+/// marked draft), so the status is `draft_pending_review` and a review task is
+/// raised beside it. The termination itself is NOT held up by that — the
+/// statutory clock starts at notice and the patient's right does not wait on
+/// our copywriting.
+model PortalTerminationNotice {
+  id              String   @id @default(uuid()) @db.Uuid
+  practiceId      String   @db.Uuid
+  agreementId     String   @unique @db.Uuid
+  /// Who ended it. The account id, never a name.
+  accountId       String   @db.Uuid
+  templateKey     String
+  templateVersion String
+  status          String   @default("draft_pending_review")
+  noticeAt        DateTime
+  effectiveAt     DateTime
+  /// Which state's calendar produced `effectiveAt`, with its dataset provenance.
+  calendarState   String
+  reviewTaskId    String?  @db.Uuid
+  createdAt       DateTime @default(now())
+
+  @@index([practiceId])
+  @@map("portal_termination_notices")
+}
+
+/// FR-1.23 — the patient removes an assignor nomination, with no justification.
+///
+/// A ROW RATHER THAN A COLUMN ON `assignors`, for two reasons. Revocation is
+/// per PATIENT: one assignor may act for two people and being removed by one of
+/// them says nothing about the other. And it is an act with a time and an
+/// author, which a boolean cannot hold — "she was removed in March" and "she
+/// was never nominated" are different histories.
+///
+/// NO REASON COLUMN, and there must never be one. FR-1.23 is explicit that the
+/// patient owes no justification; a nullable field for one becomes a question
+/// on a screen, and then a required question.
+model PortalAssignorRevocation {
+  id         String   @id @default(uuid()) @db.Uuid
+  practiceId String   @db.Uuid
+  accountId  String   @db.Uuid
+  assignorId String   @db.Uuid
+  patientId  String   @db.Uuid
+  revokedAt  DateTime @default(now())
+
+  @@unique([assignorId, patientId])
+  @@index([practiceId])
+  @@map("portal_assignor_revocations")
+}
