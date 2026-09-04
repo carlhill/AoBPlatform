@@ -44,6 +44,25 @@
  *
  * A LOCKOUT ROUTES TO RECEPTION AND SAYS THE APPOINTMENT IS UNAFFECTED
  * (REQ-REC-04). Nothing on this screen can stop a patient being seen.
+ *
+ * BACK RETURNS TO IDLE, AND CLEARS (Carl, 4 September 2026, reading the live
+ * screen). Somebody presses Begin by mistake, or is handing the tablet back to
+ * the desk; without a Back the only doors were "See reception" — a hand-over
+ * that summons a person who is not needed — and typing three identifiers they
+ * do not have. It is navigation like every other Back on this device: it calls
+ * nothing, spends no attempt, and the DEVICE'S attempt counter lives on the
+ * server precisely so whoever failed a claim cannot reset it from here. What
+ * it does do is DROP EVERY TYPED VALUE, including the sub-fields held in this
+ * file's own form state, which go when the screen unmounts (C2 — no residual
+ * patient data). It is not offered on the lockout branch: the only door there
+ * is the desk.
+ *
+ * THE ANNOTATION RAIL IS FOR A TEST DEVICE (Carl, 4 September 2026). "REQ-VER-
+ * 02" is our vocabulary, not a patient's, and a requirement id beside a form
+ * in a waiting room is a developer's note somebody is being asked to read. The
+ * panel is unchanged and still renders where the waiting list does — it earns
+ * its place when the rule is being demonstrated — and on an ordinary tablet
+ * the form simply takes the width.
  */
 
 import { useState, type ReactNode } from 'react';
@@ -88,6 +107,8 @@ export function VerifyScreen({
   mismatch,
   onChange,
   onContinue,
+  onBack,
+  blueprintPanels = false,
   onSeeReception,
 }: {
   practiceName: string;
@@ -102,6 +123,20 @@ export function VerifyScreen({
   mismatch: boolean;
   onChange: (type: string, value: string) => void;
   onContinue: () => void;
+  /**
+   * BACK TO IDLE (Carl, 4 Sep 2026). Navigation, never a mutation: the
+   * ceremony's handler drops every typed value and returns to "Agree to bulk
+   * billing". Absent on the lockout branch, where the only door is the desk.
+   */
+  onBack?: () => void;
+  /**
+   * THE ANNOTATION RAIL IS DEVELOPER-FACING (Carl, 4 Sep 2026, reading it on a
+   * patient screen). "REQ-VER-02" beside a form somebody is filling in is a
+   * requirement id in a waiting room; it renders only on a TEST device — the
+   * same flag that banners the waiting list — and on an ordinary tablet the
+   * form takes the full width instead.
+   */
+  blueprintPanels?: boolean;
   onSeeReception: () => void;
 }): ReactNode {
   const stepTag = `${strings.chrome.stepOf(1, 4)} — ${strings.chrome.stepDetails}`;
@@ -141,7 +176,7 @@ export function VerifyScreen({
       context={strings.verify.attemptOf(attempt, KIOSK_MAX_ATTEMPTS)}
       onLeave={onSeeReception}
     >
-      <div className={styles.twoColumn}>
+      <div className={blueprintPanels ? styles.twoColumn : styles.oneColumn}>
         {/*
           DELIBERATELY NOT KEYED ON THE ATTEMPT. It used to be, because the
           ceremony cleared `stated` after every attempt and the sub-field state
@@ -161,13 +196,24 @@ export function VerifyScreen({
           mismatch={mismatch}
           onChange={onChange}
           onContinue={onContinue}
+          onBack={onBack}
+          wide={!blueprintPanels}
         />
-        <div className={styles.rail}>
-          <Blueprint>
-            <Kicker label={strings.verify.annotationKicker} />
-            <p className={styles.railText}>{strings.verify.annotationBody}</p>
-          </Blueprint>
-        </div>
+        {/*
+          THE BLUEPRINT RAIL, ON A TEST DEVICE ONLY (Carl, 4 Sep 2026). It is
+          the same panel it always was, kept because it is genuinely useful
+          when Carl is demonstrating the rule — and absent from every tablet a
+          practice uses, because "REQ-VER-02" is our vocabulary, not a
+          patient's.
+        */}
+        {blueprintPanels ? (
+          <div className={styles.rail}>
+            <Blueprint>
+              <Kicker label={strings.verify.annotationKicker} />
+              <p className={styles.railText}>{strings.verify.annotationBody}</p>
+            </Blueprint>
+          </div>
+        ) : null}
       </div>
     </Screen>
   );
@@ -182,6 +228,8 @@ function VerifyForm({
   mismatch,
   onChange,
   onContinue,
+  onBack,
+  wide,
 }: {
   fields: readonly IdentifierField[];
   stated: Readonly<Record<string, string>>;
@@ -191,6 +239,9 @@ function VerifyForm({
   mismatch: boolean;
   onChange: (type: string, value: string) => void;
   onContinue: () => void;
+  onBack?: () => void;
+  /** No rail beside it, so the column takes the width the rail was holding. */
+  wide: boolean;
 }): ReactNode {
   const [parts, setParts] = useState<IdentifierParts>(EMPTY_PARTS);
 
@@ -216,7 +267,7 @@ function VerifyForm({
   );
 
   return (
-    <div className={styles.main}>
+    <div className={`${styles.main} ${wide ? styles.mainFull : ''}`}>
       <h1 className={styles.h2}>{strings.verify.heading}</h1>
       <p className={styles.lede}>{strings.verify.lede(fields.length)}</p>
       {startError ? <p className={styles.error}>{strings.verify.failedToStart}</p> : null}
@@ -339,6 +390,14 @@ function VerifyForm({
         </Blueprint>
       ) : null}
       <div className={styles.actions}>
+        {/*
+          BACK SITS TO THE LEFT OF CONTINUE, as it does on K-3 and K-4 — a
+          secondary beside the step's own primary, never the header control,
+          which is the way OUT and is a different thing. It calls nothing.
+        */}
+        {onBack ? (
+          <SecondaryButton label={strings.chrome.backAction} onPress={onBack} testId="verify-back" />
+        ) : null}
         {/*
           DISABLED UNTIL THE MANDATORY PARTS ARE THERE, and it says so rather
           than only refusing — the codebase's disabled-with-a-reason primitive.

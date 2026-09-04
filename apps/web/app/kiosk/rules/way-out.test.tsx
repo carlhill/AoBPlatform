@@ -13,13 +13,20 @@
  *   an exit that quietly completed a capture request or transitioned an
  *   agreement would fail here rather than in production.
  *
- * AND SO IS BACK (Carl, 3 Sep 2026 live test). Back is NAVIGATION — one step
- * up the ceremony — and the way out is a HAND-OVER; they are different things
- * and they look different. What they have in common is the property this file
- * exists to protect: neither of them may touch the agreement. Back is held to
- * the same zero-mutation assertion, and it is absent from K-4 the moment a
- * signature is in flight, because a control that looks like it could undo one
- * would be a lie about what this platform does.
+ * AND SO IS BACK (Carl, 3 Sep 2026 live test; extended 4 Sep 2026). Back is
+ * NAVIGATION — one step up the ceremony — and the way out is a HAND-OVER; they
+ * are different things and they look different. What they have in common is
+ * the property this file exists to protect: neither of them may touch the
+ * agreement. Back is held to the same zero-mutation assertion, and it is
+ * absent from K-4 the moment a signature is in flight, because a control that
+ * looks like it could undo one would be a lie about what this platform does.
+ *
+ * IT IS NOW ON K-2 AS WELL, and on K-3 WITHOUT THE BLUEPRINT RAIL — which is
+ * the shape every tablet a practice uses renders, and the shape the PUSHED
+ * ceremony renders. Both are held to the same zero-mutation rule here; the
+ * sequence they navigate (K-3 → K-P1, ticks kept) is asserted against the real
+ * ceremony in `pushed-session.test.tsx`, because a sequence is not a property
+ * of a screen.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { ReactElement } from 'react';
@@ -295,6 +302,57 @@ describe('REQ-REC-04 — nothing blocks care', () => {
     fireEvent.click(k4.getByTestId('signature-back'));
     expect(onBackK4).toHaveBeenCalledTimes(1);
     k4.unmount();
+
+    /*
+     * K-2 (Carl, 4 Sep 2026). Back to idle from the verification form, so
+     * somebody who pressed Begin by mistake is not left choosing between
+     * summoning a person and typing three identifiers they do not have.
+     */
+    const onBackK2 = vi.fn();
+    const k2 = render(
+      <VerifyScreen
+        {...CHROME}
+        fields={[{ type: 'name', label: 'Your full name' }]}
+        stated={{}}
+        state={firstAttempt()}
+        busy={false}
+        incomplete={false}
+        startError={false}
+        mismatch={false}
+        onChange={noop}
+        onContinue={noop}
+        onBack={onBackK2}
+        onSeeReception={noop}
+      />,
+    );
+    const backK2 = k2.getByTestId('verify-back');
+    expect(backK2.textContent).toBe(strings.chrome.backAction);
+    expect(backK2).not.toBe(k2.getByTestId('leave-for-reception'));
+    fireEvent.click(backK2);
+    expect(onBackK2).toHaveBeenCalledTimes(1);
+    k2.unmount();
+
+    /*
+     * K-3 AS AN ORDINARY TABLET DRAWS IT — no blueprint rail, which is the
+     * layout every practice tablet uses and the one the PUSHED ceremony shows.
+     * The panel moved; the primary and Back did not.
+     */
+    const onBackPushedK3 = vi.fn();
+    const pushedK3 = render(
+      <ParticularsScreen
+        {...CHROME}
+        view={{ ...VIEW, particularsLocked: true }}
+        validation={VALID}
+        onContinue={noop}
+        onBack={onBackPushedK3}
+        blueprintPanels={false}
+        onSeeReception={noop}
+      />,
+    );
+    fireEvent.click(pushedK3.getByTestId('particulars-back'));
+    expect(onBackPushedK3).toHaveBeenCalledTimes(1);
+    expect(pushedK3.getByTestId('continue-to-sign')).toBeTruthy();
+    pushedK3.unmount();
 
     for (const name of MUTATORS) {
       expect(vi.mocked(api)[name]).toHaveBeenCalledTimes(0);

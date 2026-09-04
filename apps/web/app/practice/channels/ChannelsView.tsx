@@ -28,7 +28,9 @@ import { ArrowRight, CheckCircle2, MessageSquare, Monitor, ShieldQuestion, Timer
 import {
   APPROVED_IDENTIFIER_TYPES,
   IDENTIFIER_COUNT_FLOOR,
+  KIOSK_IDLE_TIMEOUT_DEFAULT_SECONDS,
   audiencesOf,
+  kioskIdleTimeoutOrDefault,
   mayReach,
   type Audience,
   type DeviceRow,
@@ -47,7 +49,23 @@ interface Practice {
   senderIdRegistered: boolean;
   linkExpiryHours: number;
   identifierTypes: string[];
+  /**
+   * SECONDS, and the field on this page is in MINUTES. See
+   * `strings.channels.idleHint`: nobody thinks "three hundred", and the tablet
+   * counting down does, so the conversion lives here and the server keeps one
+   * unit.
+   */
+  kioskIdleTimeoutSeconds?: number;
 }
+
+/**
+ * THE BOUNDS THIS PAGE OFFERS, in the unit this page uses. The server's own
+ * range is 60..1800 seconds and the DTO enforces it; these are the same range
+ * expressed in whole minutes, so the input cannot produce a value the save
+ * will be refused for.
+ */
+const IDLE_MIN_MINUTES = 1;
+const IDLE_MAX_MINUTES = 30;
 
 /**
  * THE SAME SHAPE `SetupHub` READS, for the same reason: the Kiosk row here
@@ -91,6 +109,7 @@ export function ChannelsView({
   const [senderId, setSenderId] = useState(false);
   const [expiry, setExpiry] = useState('24');
   const [identifiers, setIdentifiers] = useState<string[]>([]);
+  const [idleMinutes, setIdleMinutes] = useState(String(KIOSK_IDLE_TIMEOUT_DEFAULT_SECONDS / 60));
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -116,6 +135,13 @@ export function ChannelsView({
       setSenderId(Boolean(data.senderIdRegistered));
       setExpiry(String(data.linkExpiryHours ?? 24));
       setIdentifiers(data.identifierTypes ?? []);
+      /*
+       * FAIL CLOSED ON A SERVER THAT DID NOT SAY. `kioskIdleTimeoutOrDefault`
+       * answers five minutes for an absent or out-of-range value rather than
+       * leaving the box empty — an empty box on this page would read as "no
+       * timeout", which is the one thing this setting may never mean.
+       */
+      setIdleMinutes(String(kioskIdleTimeoutOrDefault(data.kioskIdleTimeoutSeconds) / 60));
     } catch (e) {
       setLoadError(e instanceof TypeError ? strings.review.unreachableBody : (e as Error).message);
     }
@@ -155,13 +181,17 @@ export function ChannelsView({
   }
 
   const hours = Number(expiry);
+  const minutes = Number(idleMinutes);
+  const idleValid =
+    Number.isInteger(minutes) && minutes >= IDLE_MIN_MINUTES && minutes <= IDLE_MAX_MINUTES;
   // DEAD UNTIL VALID. The floor is REQ-VER-06 and the server enforces it too;
   // the button simply does not pretend a set of two could be saved.
   const valid =
     identifiers.length >= IDENTIFIER_COUNT_FLOOR &&
     Number.isFinite(hours) &&
     hours >= 1 &&
-    hours <= 168;
+    hours <= 168 &&
+    idleValid;
 
   // DONE ONLY ON EVIDENCE. An operator viewing this read-only, who cannot
   // call the `@PracticeScoped` `/devices` list, gets NEEDS WORK rather than a
@@ -188,6 +218,9 @@ export function ChannelsView({
           senderIdRegistered: senderId,
           linkExpiryHours: hours,
           identifierTypes: identifiers,
+          // MINUTES ON THE SCREEN, SECONDS ON THE WIRE. One conversion, in one
+          // place, so the server never sees two units for one setting.
+          kioskIdleTimeoutSeconds: minutes * 60,
         }),
       });
       if (!res.ok) throw new Error(await refusalMessage(res));
@@ -335,6 +368,36 @@ export function ChannelsView({
                   {kioskDone ? strings.channels.kioskDone : strings.channels.kioskNeedsWork}
                 </Chip>
               </div>
+            </div>
+            {/*
+              RETURN TO THE START WHEN NOBODY IS USING IT (Carl, 4 Sep 2026).
+              It lives in the Kiosk card because it is about the tablet, and it
+              is offered even where the tablets link is not: a read-only
+              operator cannot list a practice's devices but the setting is
+              still the practice's own, and hiding the field would hide what
+              the practice has chosen.
+            */}
+            <div className={styles.cardBody}>
+              <p className={styles.cardTitle}>{strings.channels.idleTitle}</p>
+              <div className={styles.inlineForm}>
+                <Field label={strings.channels.idleLabel} hint={strings.channels.idleHint}>
+                  {(props) => (
+                    <TextInput
+                      {...props}
+                      type="number"
+                      min={IDLE_MIN_MINUTES}
+                      max={IDLE_MAX_MINUTES}
+                      value={idleMinutes}
+                      onChange={(e) => {
+                        setIdleMinutes(e.target.value);
+                        setSaved(false);
+                      }}
+                      data-testid="channels-idle-minutes"
+                    />
+                  )}
+                </Field>
+              </div>
+              <p className={styles.cardNote}>{strings.channels.idleLead}</p>
             </div>
             {canOpen('/practice/devices') && (
               <div className={styles.cardBody}>

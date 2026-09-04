@@ -38,13 +38,18 @@
  * patient could reasonably think they had signed on the reading step. Reading
  * is a step; signing is the next one.
  *
- * BACK RETURNS TO K-5, WHEN THERE IS A K-5 TO RETURN TO (Carl, 3 Sep 2026
- * live test; narrowed 4 Sep 2026). It is NAVIGATION, not the way out: it calls
- * nothing, changes no agreement, and sits beside the primary rather than in
- * the header where "See reception" lives. On a LOCKED agreement the ceremony
- * skips K-5 entirely — there is nothing to choose — so `onBack` is not passed
- * and the control is not drawn. A Back that leads to a screen offering a
- * choice the server will refuse is worse than no Back at all.
+ * BACK RETURNS TO WHATEVER IS ACTUALLY BEHIND THIS SCREEN (Carl, 3 Sep 2026
+ * live test; narrowed 4 Sep; widened again 4 Sep). It is NAVIGATION, not the
+ * way out: it calls nothing, changes no agreement, and sits beside the primary
+ * rather than in the header where "See reception" lives.
+ *
+ * On a LOCKED WALK-UP agreement the ceremony skips K-5 entirely — there is
+ * nothing to choose — so `onBack` is not passed and the control is not drawn.
+ * On the PUSHED path there IS something behind it, K-P1 "Please check your
+ * details", and the ticks are held in the ceremony's state so returning costs
+ * nobody a re-tick. This screen does not know or care which: it draws the
+ * control when it is given a handler, which is what keeps one Back rather than
+ * two.
  *
  * WHO SIGNS IS STATED HERE INSTEAD. The "Signing" line already says it, and on
  * a locked agreement a one-line note under it says where it was decided and
@@ -55,6 +60,14 @@
  * screen (rules 3 and 4); the three tags along the bottom say so out loud,
  * because a reviewer standing at the tablet should be able to see the rule
  * being kept rather than take it on trust.
+ *
+ * THE "READY TO SIGN" PANEL IS NOT ONE OF THOSE (Carl, 4 September 2026). Its
+ * words are about the render — locked particulars, a voided hash, a SHA-256 —
+ * and beside a document a patient is being asked to read they are a
+ * developer's notes on a patient's screen. It renders on a TEST device only,
+ * unchanged, because that is exactly what somebody demonstrating rule 13
+ * wants; on every tablet a practice uses the document takes the width and the
+ * same one primary sits under it.
  */
 
 import type { ReactNode } from 'react';
@@ -96,6 +109,7 @@ export function ParticularsScreen({
   validation,
   onContinue,
   onBack,
+  blueprintPanels = false,
   onSeeReception,
 }: {
   practiceName: string;
@@ -108,8 +122,46 @@ export function ParticularsScreen({
    * locked agreement, because K-5 was skipped and there is nothing behind it.
    */
   onBack?: () => void;
+  /**
+   * THE "READY TO SIGN" PANEL IS DEVELOPER-FACING (Carl, 4 Sep 2026). Its
+   * words are about the render — locked particulars, a voided hash, a SHA-256
+   * — and they sit beside a document a patient is being asked to read. It
+   * renders on a TEST device only, the same flag that banners the waiting
+   * list, and is unchanged there: it is exactly what somebody demonstrating
+   * rule 13 wants on the screen.
+   *
+   * WHAT NEVER MOVES IS CONTINUE. The primary and Back live in this column
+   * too, so hiding the panel hides the panel — never the way forward. On an
+   * ordinary tablet the document takes the full width and the actions sit
+   * under it.
+   */
+  blueprintPanels?: boolean;
   onSeeReception: () => void;
 }): ReactNode {
+  /*
+   * ONE PRIMARY, WHEREVER THE COLUMN ENDS UP. Composed once and placed either
+   * in the rail (test device) or under the document (every other tablet), so
+   * the two layouts cannot drift into offering different controls.
+   */
+  const actions = (
+    <div className={styles.actions}>
+      {onBack ? (
+        <SecondaryButton label={strings.chrome.backAction} onPress={onBack} testId="particulars-back" />
+      ) : null}
+      <div className={styles.grow}>
+        <GuardedButton
+          label={strings.particulars.continueToSign}
+          state={
+            validation.state === 'valid'
+              ? { disabled: false }
+              : { disabled: true, disabledLabel: strings.particulars.continueNotReady }
+          }
+          onPress={onContinue}
+          testId="continue-to-sign"
+        />
+      </div>
+    </div>
+  );
   return (
     <Screen
       practiceName={practiceName}
@@ -118,7 +170,7 @@ export function ParticularsScreen({
       context={strings.particulars.footer}
       onLeave={onSeeReception}
     >
-      <div className={styles.twoColumn}>
+      <div className={blueprintPanels ? styles.twoColumn : styles.oneColumn}>
         <Blueprint className={styles.document}>
           <div className={styles.documentHeader}>
             <h1 className={styles.documentTitle} data-testid="particulars-heading">
@@ -168,50 +220,44 @@ export function ParticularsScreen({
           </div>
         </Blueprint>
 
-        <div className={styles.rail}>
-          {validation.state === 'valid' ? (
-            <Blueprint>
-              <Kicker label={strings.particulars.validatedHeading} />
-              <p className={styles.railText}>{strings.particulars.validatedBody}</p>
-              <p className={styles.hash} data-testid="artefact-hash">
-                {strings.particulars.hashLine(shortHash(validation.artefactHash))}
-              </p>
-            </Blueprint>
-          ) : (
-            /*
-             * WAITING, OR — defensively — INERT. There is nothing to do here
-             * and nothing to fill in: a refusal has already sent the ceremony
-             * to the hand-over screen, and if one ever reaches this branch the
-             * right answer is still not to hand the patient a form.
-             */
-            <Blueprint>
-              <Kicker label={strings.particulars.validating} />
-              <p className={styles.railText}>{strings.particulars.needsReceptionBody}</p>
-            </Blueprint>
-          )}
+        {blueprintPanels ? (
+          <div className={styles.rail}>
+            {validation.state === 'valid' ? (
+              <Blueprint>
+                <Kicker label={strings.particulars.validatedHeading} />
+                <p className={styles.railText}>{strings.particulars.validatedBody}</p>
+                <p className={styles.hash} data-testid="artefact-hash">
+                  {strings.particulars.hashLine(shortHash(validation.artefactHash))}
+                </p>
+              </Blueprint>
+            ) : (
+              /*
+               * WAITING, OR — defensively — INERT. There is nothing to do here
+               * and nothing to fill in: a refusal has already sent the ceremony
+               * to the hand-over screen, and if one ever reaches this branch the
+               * right answer is still not to hand the patient a form.
+               */
+              <Blueprint>
+                <Kicker label={strings.particulars.validating} />
+                <p className={styles.railText}>{strings.particulars.needsReceptionBody}</p>
+              </Blueprint>
+            )}
 
-          {/*
-            ONE PRIMARY. Back sits to its left and is a secondary — navigation,
-            not the way out, which lives in the header and looks like neither.
-          */}
-          <div className={styles.actions}>
-            {onBack ? (
-              <SecondaryButton label={strings.chrome.backAction} onPress={onBack} testId="particulars-back" />
-            ) : null}
-            <div className={styles.grow}>
-              <GuardedButton
-                label={strings.particulars.continueToSign}
-                state={
-                  validation.state === 'valid'
-                    ? { disabled: false }
-                    : { disabled: true, disabledLabel: strings.particulars.continueNotReady }
-                }
-                onPress={onContinue}
-                testId="continue-to-sign"
-              />
-            </div>
+            {/*
+              ONE PRIMARY. Back sits to its left and is a secondary —
+              navigation, not the way out, which lives in the header and looks
+              like neither.
+            */}
+            {actions}
           </div>
-        </div>
+        ) : (
+          /*
+            NO RAIL ON AN ORDINARY TABLET. The document has the width, and the
+            same one primary sits under it — a patient loses a developer's
+            annotation and nothing else.
+          */
+          <div className={styles.railBelow}>{actions}</div>
+        )}
       </div>
     </Screen>
   );

@@ -149,6 +149,99 @@ This is also the shape the reception-push flow wants: a pushed agreement is
 always locked before it reaches a device, so the tablet will never show K-5 for
 one.
 
+## Return to the start when nobody is there (Carl, 4 September 2026)
+
+> "Return to the start when untouched for N minutes -- a per-practice setting,
+> default 5 minutes."
+
+A patient is called in part-way through, or reads two lines and wanders off.
+What is left is a tablet on a counter with somebody's name, date of birth and
+address on it, and the next person to pick it up is a stranger. C2's "no
+residual patient data on device after submission" has always covered the END of
+a ceremony; this covers the middle of one that never ends.
+
+- **The number is the practice's.** `practices.kioskIdleTimeoutSeconds`, NOT
+  NULL, default 300, bounded 60..1800 by `UpdateConfigDto` and by the domain's
+  `isKioskIdleTimeoutInRange`. Set on `/practice/channels` in MINUTES (1-30) and
+  stored in seconds. Moving it writes `practice.kiosk_idle_timeout_set` through
+  the outbox, carrying the old and new values -- seconds are not PII, and "it
+  was changed" without "to what" is not evidence of anything.
+- **It reaches the tablet on `GET /kiosk/me`**, with everything else the device
+  asks about itself, so a change lands on the existing poll with no re-pairing
+  and no reload. There is no setting on the device, and there could not be: a
+  device with settings is a device somebody can configure at the tablet.
+- **Every screen but idle.** `booting`, `pairing` and `unpaired` are staff
+  screens with no patient on them and no start to return to. The test device's
+  `list` IS covered -- it is the one screen that shows other patients' names.
+- **Any pointer, touch or key re-arms it** (`useInactivityReset`), captured on
+  `window` so a control that swallows its own events -- the signature pad --
+  cannot hide a patient's hand from the clock.
+- **Thirty seconds of warning**, as a small overlay with `pointer-events: none`
+  and no button. The answer to "Still there?" is to touch the screen, which is
+  what a person at a tablet does anyway; a modal with an "I'm still here"
+  control would be work for somebody who may be unwell and standing up.
+- **On expiry**: a pushed session posts `walked_away` first -- the same state
+  the exit posts, releasing the tablet for the next push and showing in
+  reception's status column -- and then the tablet clears everything and returns
+  to idle. A walk-up posts NOTHING: nothing was started server-side beyond a
+  verification event, and that event stands, because it records an identity
+  check that genuinely happened. Neither touches the agreement (hard rule 8,
+  REQ-REC-04).
+- **Timers are memory.** No storage, no cookie, no "last activity" stamp. A
+  reload starts the clock again, which is correct: a reloaded tab shows nobody.
+
+A released session is remembered by id (`releasedSessionRef` in `Ceremony.tsx`)
+and not re-entered until the server agrees it is gone. Without that, the poll's
+last answer would put the ceremony straight back up on the idle screen the reset
+had just produced -- and the timeout would appear not to work at all.
+
+Tests: `inactivity_reset_returns_to_idle_and_clears_state`,
+`inactivity_reset_posts_walked_away_for_a_pushed_session`,
+`inactivity_reset_posts_nothing_for_a_walk_up`,
+`activity_cancels_the_pending_reset`, `timeout_comes_from_the_practice_setting`
+(`inactivity.test.tsx`, fake timers); core
+`kiosk_me_carries_the_practice_idle_timeout`, `idle_timeout_is_bounded`.
+
+## Back, on both front doors (Carl, 4 September 2026)
+
+Back is navigation everywhere on this device: one `setStep`, no fetch, and it
+never touches the agreement. Where it goes depends on what is actually behind
+the screen, and it is not drawn where nothing is.
+
+| Screen | Back goes to | Not drawn when |
+|---|---|---|
+| K-2 verification | idle, dropping every typed value | the lockout -- the only door there is the desk |
+| K-P1 check your details | -- | always: behind it is idle, and leaving is "See reception" (`walked_away`) |
+| K-3 particulars, pushed | K-P1, **ticks kept** | -- |
+| K-3 particulars, walk-up | K-5 | the agreement is locked, so K-5 was skipped |
+| K-4 signature | K-3 | a signature is in flight |
+
+K-2's Back exists because the alternatives were summoning a person who is not
+needed and typing three identifiers the patient may not have. It clears the
+composed identifiers AND the sub-fields inside the form, which go when the
+screen unmounts; the device's attempt counter is the SERVER's, per device, and
+is untouched.
+
+Tests: `k2_back_returns_to_idle_and_clears_fields`,
+`pushed_k3_back_returns_to_check_details_with_ticks_kept`,
+`back_makes_no_mutating_calls_on_pushed_path`,
+`back_is_navigation_and_changes_no_agreement_state`.
+
+## The blueprint panels are for a test device (Carl, 4 September 2026)
+
+K-2's right-hand rail is headed **REQ-VER-02**; K-5's say "Age gates" and "Not
+on this screen"; K-3's says "Ready to sign" and prints a SHA-256. All true, all
+useful -- to a reviewer. On a screen a patient is standing at, a requirement id
+is a developer's note somebody is being asked to read past.
+
+They now render only where the waiting list does, behind the same
+`showsWaitingList` flag, and are UNCHANGED there: they earn their place when the
+rule is being demonstrated. On an ordinary tablet the content column takes the
+width. **K-3's rail also carries the primary and Back**, so the actions are
+composed once and placed in whichever column exists -- hiding the panel must
+never hide the way forward (that would be hard rule 8 broken by a cosmetic
+change). Test: `blueprint_panels_only_on_test_devices`.
+
 ## The second front door: reception pushes it (Carl, 4 September 2026)
 
 > "Reception has checked the patient across the desk and pushes the agreement
@@ -216,7 +309,7 @@ signature must not yank the screen away.
 | The ticks are not a verification | copy in `strings.checkDetails.lede`; the endpoint is `confirm-details`; the vault event carries `isVerification: false` | `pushed_flow_skips_verification_and_who_signs` |
 | REQ-REG-06 — a tablet cannot hold a draft | the push locks server-side; `Ceremony.tsx` hands over rather than locking a pushed agreement itself | `pushed_flow_skips_verification_and_who_signs` |
 | Rule 8 / REQ-REC-04 — nothing blocks care | `leave` posts `walked_away` and calls nothing else | `walked_away_posts_state_and_changes_nothing_else`, `the_exit_hands_over_and_promises_nothing` |
-| Screen hygiene — no particulars left on a tablet nobody is at | the disappearance effect; `TABLET_SESSION_IDLE_MS` on the server | `recalled_session_returns_tablet_to_idle` |
+| Screen hygiene — no particulars left on a tablet nobody is at | the disappearance effect; `TABLET_SESSION_IDLE_MS` on the server; `useInactivityReset` on the device | `recalled_session_returns_tablet_to_idle`, `inactivity_reset_posts_walked_away_for_a_pushed_session` |
 | Rule 14 — the type decides the words | `strings.particulars.headingByAgreementType`, keyed off the session | `pushed_k3_uses_type_specific_heading` |
 | Zero footprint | the session lives in `Ceremony`'s state and is dropped by `reset` | `kiosk_persists_nothing_but_pairing` |
 | Rules 1 and 4 — no card number, no amount | no field for either in `TabletSessionPayload`, the row list or the string table | `details_confirmation_sends_types_not_values` |
@@ -301,7 +394,9 @@ skips without `E2E_PRACTICE_USER` / `E2E_PRACTICE_PASSWORD`.
 | A walk-up tablet shows no other patient | `apps/core/src/kiosk/kiosk.service.ts` (`claim`, and the list's `hidden` gate); `screens/IdleScreen.tsx` | `claim_matches_exactly_one_waiting_row_of_this_practice`, `claim_failure_is_generic_for_none_and_for_many`, `claim_never_returns_other_rows`, `claim_records_types_not_values`, `claim_locks_out_after_three_per_device`, `waiting_list_hidden_unless_device_is_a_test_device`, `begin_goes_to_verify_not_the_list`, `idle_shows_no_count`, `list_only_on_a_test_device_and_bannered` |
 | No option-shaped box that is not an option | `Ceremony.tsx` skips K-5 when `particularsLockedAt` is set; `screens/ParticularsScreen.tsx` carries the one-line note | `k5_is_skipped_when_particulars_are_locked`, `k5_shows_both_options_when_unlocked` |
 | K-3 asks the patient for nothing | `screens/ParticularsScreen.tsx` — no input, select or textarea in any state | `k3_never_offers_a_field_to_the_patient` |
-| Back is navigation, not an exit | `Ceremony.tsx` (one `setStep`, no fetch) | `back_is_navigation_and_changes_no_agreement_state`, `back_is_withdrawn_once_a_signature_is_in_flight` |
+| Back is navigation, not an exit | `Ceremony.tsx` (one `setStep`, no fetch) | `back_is_navigation_and_changes_no_agreement_state`, `back_is_withdrawn_once_a_signature_is_in_flight`, `k2_back_returns_to_idle_and_clears_fields`, `back_makes_no_mutating_calls_on_pushed_path` |
+| Nothing developer-facing on a patient's screen | `blueprintPanels` on K-2/K-5/K-3, from `showsWaitingList` | `blueprint_panels_only_on_test_devices` |
+| A tablet nobody is at returns to the start | `useInactivityReset`, `practices.kioskIdleTimeoutSeconds` | `inactivity_reset_returns_to_idle_and_clears_state`, `timeout_comes_from_the_practice_setting` |
 
 ## What K-3 does when the rules engine refuses
 
@@ -345,8 +440,10 @@ of things the patient is being asked to fix.
 
 ## Still non-negotiable when the rest is built
 
-- Kiosk mode: locked-down launcher, no OS escape, auto-reset between patients,
-  **no residual patient data on device after submission**.
+- Kiosk mode: locked-down launcher, no OS escape,
+  **no residual patient data on device after submission**. (Auto-reset when the
+  tablet is untouched is BUILT -- see "Return to the start when nobody is
+  there".)
 - Accessibility: large text, high contrast, read-aloud, staff-assisted mode
   (REQ-NFR-05, REQ-VUL-08); WCAG 2.2 AA.
 - Signature: drawn, vector + raster, bound per REQ-SIG-02.

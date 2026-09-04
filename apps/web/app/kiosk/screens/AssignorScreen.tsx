@@ -108,6 +108,7 @@ export function AssignorScreen({
   onChoose,
   onChangeOther,
   onContinue,
+  blueprintPanels = false,
   onSeeReception,
 }: {
   practiceName: string;
@@ -122,9 +123,18 @@ export function AssignorScreen({
   onChoose: (assignorIsPatient: boolean) => void;
   onChangeOther: (patch: Partial<AssignorChoice>) => void;
   onContinue: () => void;
+  /**
+   * THE RAIL IS DEVELOPER-FACING (Carl, 4 Sep 2026). "Age gates" and "Not on
+   * this screen" are notes about how the rules are kept, written for somebody
+   * reviewing the product — on a patient's screen they are two paragraphs
+   * nobody at a tablet can act on. They render on a TEST device only, the same
+   * flag that banners the waiting list, and are unchanged there because they
+   * earn their place when the rule is being demonstrated.
+   */
+  blueprintPanels?: boolean;
   onSeeReception: () => void;
 }): ReactNode {
-  const rail = (
+  const rail = !blueprintPanels ? null : (
     <div className={styles.rail}>
       <Blueprint>
         <Kicker label={strings.assignor.railAgeKicker} />
@@ -147,8 +157,8 @@ export function AssignorScreen({
       context={strings.chrome.staffHelp}
       onLeave={onSeeReception}
     >
-      <div className={styles.twoColumn}>
-        <div className={styles.main}>
+      <div className={blueprintPanels ? styles.twoColumn : styles.oneColumn}>
+        <div className={`${styles.main} ${blueprintPanels ? '' : styles.mainFull}`}>
           <h1 className={styles.h2}>{strings.assignor.heading}</h1>
 
           {/*

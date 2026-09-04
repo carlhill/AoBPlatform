@@ -3082,6 +3082,27 @@ export const strings = {
     // tablets", which may simply be untrue.
     kioskUnavailable: 'Act as the practice to see which tablets are paired.',
     kioskManage: 'Manage tablets',
+
+    /*
+     * --- RETURN TO THE START WHEN THE TABLET IS UNTOUCHED (Carl, 4 Sep 2026).
+     *
+     * SET IN MINUTES, STORED IN SECONDS. Nobody standing at this page thinks
+     * "three hundred"; the tablet counting down does. The conversion happens
+     * here rather than in the API so the server keeps one unit.
+     *
+     * THE HELPER SAYS WHY, not what. A practice reading "returns to the start"
+     * will lengthen it to be kind to slow readers unless somebody tells them
+     * what the number is actually protecting — a walked-away patient's name,
+     * date of birth and address, on a device on a counter, in a room full of
+     * strangers.
+     */
+    idleTitle: 'Return a tablet to the start when nobody is using it',
+    idleLead:
+      'A patient is called in part-way through, or simply walks off. Until the tablet returns to the start '
+      + 'their name, date of birth and address are still on the screen, and the next person to pick it up is '
+      + 'a stranger. Any touch resets the clock, and a quiet warning appears thirty seconds before it happens.',
+    idleLabel: 'Minutes of no activity',
+    idleHint: 'Between 1 and 30. Five is the default — long enough to read an agreement standing up.',
   },
   /**
    * The two identity dashboards (IDENTITY-STRENGTH-DESIGN.md §7).
@@ -3723,6 +3744,28 @@ export const strings = {
        * tablet in front of them.
        */
       deviceIdentity: (label: string, idPrefix: string) => `${label} · ${idPrefix}`,
+    },
+
+    /*
+     * RETURNING TO THE START WHEN NOBODY IS THERE (Carl, 4 Sep 2026).
+     *
+     * QUIET, AND IT ASKS RATHER THAN ANNOUNCES. "Still there?" is the whole of
+     * it: a patient who IS still there taps anywhere and it goes away, and one
+     * who has gone never reads it. It does not say "session", "timeout" or
+     * "expired" — nothing is expiring, the tablet is tidying itself up — and
+     * it must never suggest the appointment or the agreement is affected,
+     * because neither is (REQ-REC-04, hard rule 8).
+     *
+     * THE COUNT IS IN SECONDS AND IS SPELLED "s", because the number changes
+     * every second and a word that changes with it ("seconds"/"second") reads
+     * as movement on a screen that is meant to be calm.
+     */
+    inactivity: {
+      heading: 'Still there?',
+      countdown: (seconds: number) => `Returning to the start in ${seconds} s`,
+      /** Announced once, to a screen reader, rather than re-read on every tick. */
+      announcement: 'Still there? The tablet will return to the start shortly. Touch the screen to carry on.',
+      dismissHint: 'Touch the screen to carry on',
     },
 
     idle: {

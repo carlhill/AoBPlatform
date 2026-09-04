@@ -364,3 +364,98 @@ describe('k5_shows_both_options_when_unlocked', () => {
     expect(screen.getByTestId('assignor-continue')).toBeTruthy();
   });
 });
+
+/**
+ * BACK ON K-2 (Carl, 4 September 2026, reading the live screen).
+ *
+ * Somebody presses Begin by mistake, or is handing the tablet back to the
+ * desk. Before this the only doors off "Confirm your details" were "See
+ * reception" — a hand-over that summons a person who is not needed — and
+ * typing three identifiers they may not have. Back is the third, and like
+ * every other Back on this device it is NAVIGATION: it calls nothing.
+ *
+ * WHAT MAKES IT MORE THAN A `setStep`. It has to leave the screen with nothing
+ * on it. The identifiers a patient typed live in two places — the composed
+ * strings in `Ceremony`, and the sub-fields inside `VerifyScreen`'s own form —
+ * and only the first is obvious. Both are asserted here, by coming back in and
+ * reading the boxes.
+ */
+describe('k2_back_returns_to_idle_and_clears_fields', () => {
+  it('goes back to idle, drops every typed value, and calls nothing', async () => {
+    asWalkUpTablet();
+    render(<Ceremony />);
+
+    await waitFor(() => expect(screen.getByTestId('start-check-in')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('start-check-in'));
+    await waitFor(() => expect(screen.getByTestId('identifier-name-given')).toBeTruthy());
+
+    // Half-filled, which is the realistic state somebody walks away from.
+    fireEvent.change(screen.getByTestId('identifier-name-given'), { target: { value: 'Riley' } });
+    fireEvent.change(screen.getByTestId('identifier-name-family'), { target: { value: 'Example' } });
+    fireEvent.change(screen.getByTestId('identifier-address'), {
+      target: { value: '7 Sample Road Sampletown 2000' },
+    });
+    fireEvent.change(screen.getByTestId('identifier-dob-year'), { target: { value: '1988' } });
+
+    // BACK IS A SECONDARY BESIDE CONTINUE, not the header control — the way
+    // out is a different thing and looks like one.
+    const back = screen.getByTestId('verify-back');
+    expect(back.textContent).toBe(strings.chrome.backAction);
+    expect(back).not.toBe(screen.getByTestId('leave-for-reception'));
+
+    fireEvent.click(back);
+
+    // Idle, not the hand-over: nobody needs helping, and nothing was signed.
+    await waitFor(() => expect(screen.getByTestId('start-check-in')).toBeTruthy());
+    expect(screen.queryByTestId('identifier-name-given')).toBeNull();
+    expect(document.body.textContent).not.toContain('Riley');
+    expect(document.body.textContent).not.toContain('7 Sample Road');
+
+    /*
+     * AND NOTHING WAS CALLED. Not an attempt, not a claim, not a challenge —
+     * so no attempt was spent and the DEVICE'S server-side counter, which is
+     * per device precisely so whoever failed a claim cannot reset it, is
+     * exactly where it was.
+     */
+    for (const mock of [
+      claimWaitingRow,
+      startChallenge,
+      attemptChallenge,
+      transitionAgreement,
+      changeAssignor,
+      lockParticulars,
+      signAgreement,
+      completeCapture,
+      fetchAgreement,
+    ]) {
+      expect(mock).not.toHaveBeenCalled();
+    }
+
+    // COMING BACK IN, THE BOXES ARE EMPTY. This is the half a `setStep` alone
+    // would have missed: the day/month/year and given/family sub-fields live
+    // in the screen's own state, and go with it when it unmounts.
+    fireEvent.click(screen.getByTestId('start-check-in'));
+    await waitFor(() => expect(screen.getByTestId('identifier-name-given')).toBeTruthy());
+    expect((screen.getByTestId('identifier-name-given') as HTMLInputElement).value).toBe('');
+    expect((screen.getByTestId('identifier-name-family') as HTMLInputElement).value).toBe('');
+    expect((screen.getByTestId('identifier-address') as HTMLInputElement).value).toBe('');
+    expect((screen.getByTestId('identifier-dob-year') as HTMLSelectElement).value).toBe('');
+  });
+
+  it('is not offered on the lockout, where the only door is the desk', async () => {
+    asWalkUpTablet();
+    claimWaitingRow.mockResolvedValue({ outcome: 'locked_out', message: 'Verification is locked.' });
+    render(<Ceremony />);
+
+    await waitFor(() => expect(screen.getByTestId('start-check-in')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('start-check-in'));
+    await waitFor(() => expect(screen.getByTestId('identifier-name-given')).toBeTruthy());
+    fillAndSubmitVerify();
+
+    await waitFor(() => expect(screen.getByTestId('locked-reception')).toBeTruthy());
+    expect(screen.queryByTestId('verify-back')).toBeNull();
+    // The way out is still there — a patient may always ask for a person.
+    expect(screen.getByTestId('leave-for-reception')).toBeTruthy();
+  });
+});
+

@@ -118,6 +118,18 @@ export interface KioskMeResponse {
    * flow, which is the safe default when an older server answers this call.
    */
   readonly showsWaitingList?: boolean;
+  /**
+   * HOW LONG THIS TABLET WAITS BEFORE IT RETURNS TO THE START (Carl, 4 Sep
+   * 2026). Seconds, from the PRACTICE — the device holds no setting of its own
+   * and could not, because a device with settings is a device somebody can
+   * configure at the tablet.
+   *
+   * OPTIONAL ON THE WIRE, NEVER OPTIONAL IN EFFECT. An older core does not
+   * send it and the tablet falls back to the domain default rather than to no
+   * clock at all (`kioskIdleTimeoutOrDefault`): the failure mode of an absent
+   * setting must be a screen that clears itself.
+   */
+  readonly kioskIdleTimeoutSeconds?: number;
   /** This tab is below the practice's build floor and must hard-reload. */
   readonly reload: boolean;
 }

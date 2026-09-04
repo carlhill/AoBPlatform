@@ -71,7 +71,11 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { AgreementType } from '@aobplatform/domain';
+import {
+  KIOSK_IDLE_TIMEOUT_DEFAULT_SECONDS,
+  kioskIdleTimeoutOrDefault,
+  type AgreementType,
+} from '@aobplatform/domain';
 import {
   attemptChallenge,
   changeAssignor,
@@ -95,6 +99,7 @@ import {
 } from './api';
 import { useWaitingList } from './useWaitingList';
 import { useTabletSession } from './useTabletSession';
+import { useInactivityReset } from './useInactivityReset';
 import { clearPairingCredential, readPairingCredential, writePairingCredential } from './pairing';
 import { challengeIsComplete, identifierFieldsFor, type IdentifierField } from './rules/identifiers';
 import { composeSignRequest } from './rules/signature-payload';
@@ -121,6 +126,7 @@ import { HandoverScreen } from './screens/HandoverScreen';
 import { PairingScreen, type PairedOutcome, type PairingFailure } from './screens/PairingScreen';
 import { UnpairedScreen } from './screens/UnpairedScreen';
 import type { SignaturePadHandle } from './components/SignaturePad';
+import { InactivityWarning } from './components/InactivityWarning';
 import { strings } from './strings';
 
 /**
@@ -163,6 +169,16 @@ export function Ceremony(): ReactNode {
    */
   const [meShowsWaitingList, setMeShowsWaitingList] = useState(false);
   /**
+   * HOW LONG THIS TABLET WAITS BEFORE IT RETURNS TO THE START (Carl, 4 Sep
+   * 2026) — the PRACTICE'S number, read off `/kiosk/me` with everything else
+   * the tablet asks about itself.
+   *
+   * The default stands until the server answers, and stands again if it never
+   * does. An absent setting must never mean "no timeout": a tablet that does
+   * not clear itself is the disclosure this feature exists to close.
+   */
+  const [idleTimeoutSeconds, setIdleTimeoutSeconds] = useState(KIOSK_IDLE_TIMEOUT_DEFAULT_SECONDS);
+  /**
    * TYPES, NEVER VALUES (REQ-VER-04) — from `/kiosk/me`, because the waiting
    * list no longer answers on an ordinary tablet and K-2 is now the FIRST
    * screen a patient sees. The list's copy is the fallback for a test device
@@ -202,6 +218,25 @@ export function Ceremony(): ReactNode {
   const [assignorError, setAssignorError] = useState(false);
 
   const [lockBusy, setLockBusy] = useState(false);
+
+  /**
+   * THE SESSION THIS TABLET HAS FINISHED WITH — and why a ref is needed at all.
+   *
+   * `walked_away` is fire and forget, and the pushed-session poll keeps
+   * answering with the session it last saw. So the instant the tablet returns
+   * to idle — after the exit, after the inactivity reset, after the thank-you
+   * screen's Done — the takeover effect below sees a live session on an idle
+   * screen and puts the ceremony straight back up, with the details of somebody
+   * who has left on it. Carl's timeout would have appeared not to work at all.
+   *
+   * So the id is remembered and skipped until the SERVER agrees it is gone: a
+   * `{ session: null }`, or a different session, clears it. The tablet never
+   * asserts the session has ended — it declines to re-enter one it has already
+   * released, which is a different and much smaller claim.
+   */
+  const releasedSessionRef = useRef<string | null>(null);
+  /** The live session's id, readable from callbacks that must not depend on it. */
+  const pushedIdRef = useRef<string | null>(null);
 
   /** Which agreement the automatic lock has already been attempted for. */
   const autoLockedRef = useRef<string | null>(null);
@@ -324,6 +359,9 @@ export function Ceremony(): ReactNode {
       setLocationLine(me.state ?? null);
       // FAIL CLOSED. Anything but an explicit `true` is a walk-up tablet.
       setMeShowsWaitingList(me.showsWaitingList === true);
+      // Out of range, absent, or a server too old to carry it — all three
+      // answer the domain default rather than leaving the clock unset.
+      setIdleTimeoutSeconds(kioskIdleTimeoutOrDefault(me.kioskIdleTimeoutSeconds));
       setIdentifierTypes(me.identifierTypes ?? []);
       setStep((current) => (current === 'booting' || current === 'unpaired' ? 'idle' : current));
       return true;
@@ -455,6 +493,13 @@ export function Ceremony(): ReactNode {
   }, []);
 
   const reset = useCallback(() => {
+    // Whatever session was up, this tablet is done with it. Read from a ref so
+    // `reset` stays dependency-free — it is itself a dependency of the recall
+    // effect, and recreating it on every poll would churn that effect.
+    if (pushedIdRef.current) {
+      releasedSessionRef.current = pushedIdRef.current;
+      pushedIdRef.current = null;
+    }
     setStep('idle');
     setRow(null);
     setAgreement(null);
@@ -527,11 +572,95 @@ export function Ceremony(): ReactNode {
      */
     if (pushed) {
       void setTabletSessionState(pushed.id, 'walked_away').catch(() => undefined);
+      releasedSessionRef.current = pushed.id;
       setPushed(null);
       setTicked(new Set());
     }
     toHandover(strings.chrome.leaveHeading, strings.chrome.leaveBody);
   }, [pushed, toHandover]);
+
+  /**
+   * NOBODY HAS TOUCHED THIS TABLET FOR THE PRACTICE'S N MINUTES (Carl, 4
+   * September 2026).
+   *
+   * A patient is called in part-way through, or reads two lines and wanders
+   * off. What is left is a device on a counter in a waiting room with
+   * somebody's name, date of birth and address on it, and the next person to
+   * pick it up is a stranger. So the tablet drops EVERYTHING and goes back to
+   * idle — `reset()`, the same clearing the done screen performs, which is the
+   * point: there is one place that says what "the tablet holds nothing" means.
+   *
+   * IT IS NOT `leave()`. The hand-over screen exists to tell a person standing
+   * there that somebody will help them; there is nobody standing here, and a
+   * tablet left on "our reception staff can help" is a tablet still saying
+   * something to a room. Idle is the honest screen for an empty counter.
+   *
+   * A PUSHED SESSION IS ENDED FIRST, and only a pushed session. `walked_away`
+   * releases the tablet so reception can push the next patient to it and shows
+   * in the console's status column — the same state the exit posts, because
+   * from the server's point of view it is the same event: the patient is not
+   * at the screen any more. It changes NOTHING on the agreement (hard rule 8,
+   * REQ-REC-04). A WALK-UP ceremony posts nothing, because nothing was started
+   * server-side beyond a verification event, and that event stands: it records
+   * an identity check that genuinely happened, and deleting it because nobody
+   * finished the ceremony would be falsifying the record.
+   *
+   * FIRE AND FORGET, like the exit. The tablet is going back to idle whether
+   * or not the request lands; a failed one costs nothing, because the session
+   * expires on its own and reception can recall it in the meantime.
+   */
+  const resetForInactivity = useCallback(() => {
+    if (pushed) {
+      void setTabletSessionState(pushed.id, 'walked_away').catch(() => undefined);
+    }
+    reset();
+  }, [pushed, reset]);
+
+  /**
+   * THE CLOCK, ON EVERY SCREEN BUT THE ONES WITH NOBODY'S DETAILS ON THEM.
+   *
+   * `idle` is excluded because it holds nothing and is already where this
+   * sends the tablet. `booting`, `pairing` and `unpaired` are excluded because
+   * they are STAFF screens with no patient on them — and because "return to
+   * the start" has no meaning on a tablet that has no start to return to. The
+   * test device's `list` IS included: it is the one screen in the product that
+   * shows other patients' names, so it is the last one that should sit there
+   * unattended.
+   */
+  const inactivity = useInactivityReset({
+    enabled: step !== 'idle' && step !== 'booting' && step !== 'pairing' && step !== 'unpaired',
+    timeoutSeconds: idleTimeoutSeconds,
+    onExpire: resetForInactivity,
+  });
+
+  /**
+   * BACK ON K-2, ON THE WALK-UP PATH (Carl, 4 September 2026, from the live
+   * screen).
+   *
+   * NAVIGATION, AND IT CLEARS. Every value the patient typed is dropped on the
+   * way out — the composed identifiers here, and the sub-fields inside
+   * `VerifyScreen`'s own form, which go with it because returning to idle
+   * unmounts the screen. Somebody who pressed Begin by mistake, or who is
+   * handing the tablet back, must not leave three identifiers on it for the
+   * next person to find (C2 — no residual patient data).
+   *
+   * IT CALLS NOTHING. No challenge is abandoned server-side, no attempt is
+   * spent, and the DEVICE'S OWN attempt counter — which lives on the server,
+   * per device, precisely so a failed claim cannot be reset by whoever failed
+   * it — is untouched. What resets here is the local display of it, because
+   * the next person to press Begin is a new person at a fresh screen.
+   */
+  const backFromVerify = useCallback(() => {
+    setStated({});
+    setFields([]);
+    setChallengeId(null);
+    setRow(null);
+    setMismatch(false);
+    setIncomplete(false);
+    setStartError(false);
+    setVerification(firstAttempt());
+    setStep('idle');
+  }, []);
 
   /**
    * A PUSHED SESSION TAKES OVER THE TABLET — from the IDLE screen, and only
@@ -550,7 +679,17 @@ export function Ceremony(): ReactNode {
    */
   useEffect(() => {
     const session = tabletSession.session;
+    /*
+     * THE SERVER SAYS THERE IS NOTHING, or there is something else: either way
+     * whatever this tablet released is genuinely behind it, and the guard is
+     * dropped. This is the only place it is cleared, so a released session can
+     * never be re-entered on the strength of a poll that has not caught up.
+     */
+    if (releasedSessionRef.current !== null && releasedSessionRef.current !== session?.id) {
+      releasedSessionRef.current = null;
+    }
     if (!session) return;
+    if (releasedSessionRef.current === session.id) return;
     if (pushed?.id === session.id) return;
     if (step !== 'idle' && step !== 'list') return;
 
@@ -566,6 +705,7 @@ export function Ceremony(): ReactNode {
     setTicked(new Set());
     setConfirmError(false);
     setPushed(session);
+    pushedIdRef.current = session.id;
     setStep('check-details');
     if (session.state === 'pushed') {
       void setTabletSessionState(session.id, 'reading').catch(() => undefined);
@@ -1197,207 +1337,250 @@ export function Ceremony(): ReactNode {
     };
   }, [agreement, row, pushed, pushedPatientName]);
 
-  switch (step) {
-    /*
-     * BEFORE ANYTHING ELSE. Deliberately blank rather than a spinner or a
-     * skeleton of the idle screen: this lasts one request, and showing a
-     * practice's chrome to a tablet that may not belong to a practice — even
-     * for a moment — is the thing pairing exists to stop.
-     */
-    case 'booting':
-      return null;
-    case 'pairing':
-      return (
-        <PairingScreen
-          code={pairingCode}
-          busy={pairingBusy}
-          failure={pairingFailure}
-          paired={paired}
-          onChangeCode={(next) => {
-            setPairingFailure(null);
-            setPairingCode(next);
-          }}
-          onPair={() => void submitPairing()}
-          onContinue={finishPairing}
-        />
-      );
-    case 'unpaired':
-      return <UnpairedScreen onPair={startPairing} />;
-    case 'idle':
-    case 'list':
-      return (
-        <IdleScreen
-          practiceName={practiceName}
-          locationLine={locationLine}
-          mode={step}
-          rows={list.rows}
-          /*
-            THE HEALTH SIGNAL IS THE POLL ANSWERING, NOT THE POLL RETURNING
-            NAMES (Carl, 4 Sep 2026). On an ordinary tablet the response is
-            `hidden: true` with no rows — an empty list is now the normal
-            answer, so it can no longer mean "something is wrong". `error` is
-            the only thing that does, and it still hides Begin over a server
-            nobody can reach.
-          */
-          error={list.error}
-          anyoneWaiting={list.anyoneWaiting}
-          online={list.error === null}
-          testDevice={testDevice}
-          onStart={begin}
-          onBack={() => setStep('idle')}
-          onPick={(picked) => void pick(picked)}
-          onRetry={list.refresh}
-        />
-      );
-    /*
-     * K-P1 — THE PUSHED CEREMONY'S ONLY NEW SCREEN.
-     *
-     * No verification form and no list: reception did the checking, and the
-     * patient neither searches nor types. No K-5 either — who signs was set at
-     * the desk before the push and the particulars are locked, so there is
-     * nothing to choose and K-3 states it read-only, exactly as it does for a
-     * locked walk-up agreement (Carl, 4 Sep 2026: never render an
-     * option-shaped box that is not an option).
-     */
-    case 'check-details':
-      return (
-        <CheckDetailsScreen
-          practiceName={practiceName}
-          locationLine={locationLine}
-          agreementType={pushed?.agreementType ?? 'episodic_pre'}
-          rows={detailRows}
-          ticked={ticked}
-          saving={confirmBusy}
-          saveError={confirmError}
-          onToggle={toggleDetail}
-          onContinue={() => void confirmDetails()}
-          onSeeReception={leave}
-        />
-      );
-    case 'verify':
-      return (
-        <VerifyScreen
-          practiceName={practiceName}
-          locationLine={locationLine}
-          fields={fields}
-          stated={stated}
-          state={verification}
-          busy={verifyBusy}
-          incomplete={incomplete}
-          startError={startError}
-          mismatch={mismatch}
-          onChange={(t, v) => {
-            setStated((prev) => ({ ...prev, [t]: v }));
+  /**
+   * THE SCREEN, AND THEN THE ONE THING THAT SITS OVER IT.
+   *
+   * The switch is unchanged; what wraps it is the inactivity warning, which
+   * has to be able to appear on ANY of these screens and therefore cannot
+   * live inside one. It is drawn last so it is over the ceremony, and it does
+   * not intercept a tap — see `InactivityWarning` — so the touch that
+   * dismisses it is still the touch the patient meant to make.
+   */
+  const screen = ((): ReactNode => {
+    switch (step) {
+      /*
+       * BEFORE ANYTHING ELSE. Deliberately blank rather than a spinner or a
+       * skeleton of the idle screen: this lasts one request, and showing a
+       * practice's chrome to a tablet that may not belong to a practice — even
+       * for a moment — is the thing pairing exists to stop.
+       */
+      case 'booting':
+        return null;
+      case 'pairing':
+        return (
+          <PairingScreen
+            code={pairingCode}
+            busy={pairingBusy}
+            failure={pairingFailure}
+            paired={paired}
+            onChangeCode={(next) => {
+              setPairingFailure(null);
+              setPairingCode(next);
+            }}
+            onPair={() => void submitPairing()}
+            onContinue={finishPairing}
+          />
+        );
+      case 'unpaired':
+        return <UnpairedScreen onPair={startPairing} />;
+      case 'idle':
+      case 'list':
+        return (
+          <IdleScreen
+            practiceName={practiceName}
+            locationLine={locationLine}
+            mode={step}
+            rows={list.rows}
             /*
-             * THE MISMATCH MESSAGE CLEARS THE MOMENT A FIELD CHANGES (Carl,
-             * 4 Sep 2026). Leaving "Some details don't match" up while the
-             * patient is correcting a value read as though the correction
-             * had already failed too. The attempt counter in the footer
-             * (`strings.verify.attemptOf`) is untouched — it is still true —
-             * and the message returns only if the NEXT Continue fails again.
-             */
-            setMismatch(false);
-          }}
-          onContinue={() => void submitAttempt()}
-          onSeeReception={leave}
-        />
-      );
-    case 'assignor':
-      return (
-        <AssignorScreen
-          practiceName={practiceName}
-          locationLine={locationLine}
-          patientName={patientName}
-          choice={choice}
-          guard={guard}
-          saveError={assignorError}
-          saving={assignorBusy}
-          onChoose={(isPatient) => {
-            const next = { ...choice, assignorIsPatient: isPatient };
-            setChoice(next);
-            setAssignorError(false);
-            // Self-assign is never blocked from this device (see
-            // `advanceAssignor`), so the tap itself advances — fewest taps,
-            // no Continue needed for the common case. "Someone else" only
-            // reveals the form; it still has real gates to pass.
-            if (isPatient) void advanceAssignor(next);
-          }}
-          onChangeOther={(patch) => {
-            setAssignorError(false);
-            setChoice((prev) => ({ ...prev, ...patch }));
-          }}
-          onContinue={continueAssignor}
-          onSeeReception={leave}
-        />
-      );
-    case 'particulars':
-      return (
-        <ParticularsScreen
-          practiceName={practiceName}
-          locationLine={locationLine}
-          view={view}
-          validation={validation}
-          onContinue={() => setStep('signature')}
-          /*
-            NAVIGATION, NOT AN EXIT — one `setStep` and nothing else — AND NOT
-            OFFERED AT ALL ON A LOCKED AGREEMENT (Carl, 4 Sep 2026). K-5 was
-            skipped, so there is nothing behind Back; a control that leads to a
-            screen offering a choice the server will refuse is worse than no
-            control.
-          */
-          onBack={particularsLocked ? undefined : () => setStep('assignor')}
-          onSeeReception={leave}
-        />
-      );
-    case 'signature':
-      return (
-        <SignatureScreen
-          practiceName={practiceName}
-          locationLine={locationLine}
-          heading={strings.particulars.headingByAgreementType[view.agreementType]}
-          validation={validation}
-          padRef={padRef}
-          inkPresent={inkPresent}
-          submitting={signBusy}
-          error={signError}
-          onInkChange={setInkPresent}
-          onClear={() => {
-            padRef.current?.clear();
-            setInkPresent(false);
-          }}
-          onSignDrawn={() => void sign('drawn')}
-          onSignTap={() => void sign('tap_to_approve')}
-          // NAVIGATION, NOT AN EXIT — and offered only while nothing has been
-          // signed; the screen hides it once a signature is in flight.
-          onBack={() => setStep('particulars')}
-          onSeeReception={leave}
-        />
-      );
-    case 'complete':
-      return (
-        <CompleteScreen
-          practiceName={practiceName}
-          locationLine={locationLine}
-          // The push has no waiting row; its session carries the given names
-          // directly, which is a better source than splitting a display name.
-          givenName={
-            (pushed?.patient.givenNames ?? row?.patientName ?? '').trim().split(' ')[0] ?? ''
-          }
-          onDone={reset}
-        />
-      );
-    case 'handover':
-    default:
-      return (
-        <HandoverScreen
-          practiceName={practiceName}
-          locationLine={locationLine}
-          heading={handover.heading}
-          body={handover.body}
-          onDone={reset}
-        />
-      );
-  }
+              THE HEALTH SIGNAL IS THE POLL ANSWERING, NOT THE POLL RETURNING
+              NAMES (Carl, 4 Sep 2026). On an ordinary tablet the response is
+              `hidden: true` with no rows — an empty list is now the normal
+              answer, so it can no longer mean "something is wrong". `error` is
+              the only thing that does, and it still hides Begin over a server
+              nobody can reach.
+            */
+            error={list.error}
+            anyoneWaiting={list.anyoneWaiting}
+            online={list.error === null}
+            testDevice={testDevice}
+            onStart={begin}
+            onBack={() => setStep('idle')}
+            onPick={(picked) => void pick(picked)}
+            onRetry={list.refresh}
+          />
+        );
+      /*
+       * K-P1 — THE PUSHED CEREMONY'S ONLY NEW SCREEN.
+       *
+       * No verification form and no list: reception did the checking, and the
+       * patient neither searches nor types. No K-5 either — who signs was set at
+       * the desk before the push and the particulars are locked, so there is
+       * nothing to choose and K-3 states it read-only, exactly as it does for a
+       * locked walk-up agreement (Carl, 4 Sep 2026: never render an
+       * option-shaped box that is not an option).
+       */
+      case 'check-details':
+        return (
+          <CheckDetailsScreen
+            practiceName={practiceName}
+            locationLine={locationLine}
+            agreementType={pushed?.agreementType ?? 'episodic_pre'}
+            rows={detailRows}
+            ticked={ticked}
+            saving={confirmBusy}
+            saveError={confirmError}
+            onToggle={toggleDetail}
+            onContinue={() => void confirmDetails()}
+            onSeeReception={leave}
+          />
+        );
+      case 'verify':
+        return (
+          <VerifyScreen
+            practiceName={practiceName}
+            locationLine={locationLine}
+            fields={fields}
+            stated={stated}
+            state={verification}
+            busy={verifyBusy}
+            incomplete={incomplete}
+            startError={startError}
+            mismatch={mismatch}
+            onChange={(t, v) => {
+              setStated((prev) => ({ ...prev, [t]: v }));
+              /*
+               * THE MISMATCH MESSAGE CLEARS THE MOMENT A FIELD CHANGES (Carl,
+               * 4 Sep 2026). Leaving "Some details don't match" up while the
+               * patient is correcting a value read as though the correction
+               * had already failed too. The attempt counter in the footer
+               * (`strings.verify.attemptOf`) is untouched — it is still true —
+               * and the message returns only if the NEXT Continue fails again.
+               */
+              setMismatch(false);
+            }}
+            onContinue={() => void submitAttempt()}
+            /*
+              BACK TO IDLE, CLEARING EVERY TYPED VALUE (Carl, 4 Sep 2026, from
+              the live screen). Navigation, not the way out: it calls nothing,
+              spends no attempt, and leaves the device's server-side attempt
+              counter exactly where it was.
+            */
+            onBack={backFromVerify}
+            blueprintPanels={testDevice}
+            onSeeReception={leave}
+          />
+        );
+      case 'assignor':
+        return (
+          <AssignorScreen
+            practiceName={practiceName}
+            locationLine={locationLine}
+            patientName={patientName}
+            choice={choice}
+            guard={guard}
+            saveError={assignorError}
+            saving={assignorBusy}
+            onChoose={(isPatient) => {
+              const next = { ...choice, assignorIsPatient: isPatient };
+              setChoice(next);
+              setAssignorError(false);
+              // Self-assign is never blocked from this device (see
+              // `advanceAssignor`), so the tap itself advances — fewest taps,
+              // no Continue needed for the common case. "Someone else" only
+              // reveals the form; it still has real gates to pass.
+              if (isPatient) void advanceAssignor(next);
+            }}
+            onChangeOther={(patch) => {
+              setAssignorError(false);
+              setChoice((prev) => ({ ...prev, ...patch }));
+            }}
+            onContinue={continueAssignor}
+            blueprintPanels={testDevice}
+            onSeeReception={leave}
+          />
+        );
+      case 'particulars':
+        return (
+          <ParticularsScreen
+            practiceName={practiceName}
+            locationLine={locationLine}
+            view={view}
+            validation={validation}
+            onContinue={() => setStep('signature')}
+            /*
+              NAVIGATION, NOT AN EXIT — one `setStep` and nothing else — AND NOT
+              OFFERED AT ALL ON A LOCKED AGREEMENT (Carl, 4 Sep 2026). K-5 was
+              skipped, so there is nothing behind Back; a control that leads to a
+              screen offering a choice the server will refuse is worse than no
+              control.
+            */
+            /*
+              AND ON THE PUSHED PATH IT GOES BACK TO K-P1 (Carl, 4 Sep 2026).
+              There IS something behind it there — "Please check your details" —
+              and the ticks are held in this component's state, so nobody has to
+              re-tick five rows to look at their address again. One `setStep`,
+              no fetch, and `confirm-details` is not re-posted on the way back.
+            */
+            onBack={
+              pushed
+                ? () => setStep('check-details')
+                : particularsLocked
+                  ? undefined
+                  : () => setStep('assignor')
+            }
+            blueprintPanels={testDevice}
+            onSeeReception={leave}
+          />
+        );
+      case 'signature':
+        return (
+          <SignatureScreen
+            practiceName={practiceName}
+            locationLine={locationLine}
+            heading={strings.particulars.headingByAgreementType[view.agreementType]}
+            validation={validation}
+            padRef={padRef}
+            inkPresent={inkPresent}
+            submitting={signBusy}
+            error={signError}
+            onInkChange={setInkPresent}
+            onClear={() => {
+              padRef.current?.clear();
+              setInkPresent(false);
+            }}
+            onSignDrawn={() => void sign('drawn')}
+            onSignTap={() => void sign('tap_to_approve')}
+            // NAVIGATION, NOT AN EXIT — and offered only while nothing has been
+            // signed; the screen hides it once a signature is in flight.
+            onBack={() => setStep('particulars')}
+            onSeeReception={leave}
+          />
+        );
+      case 'complete':
+        return (
+          <CompleteScreen
+            practiceName={practiceName}
+            locationLine={locationLine}
+            // The push has no waiting row; its session carries the given names
+            // directly, which is a better source than splitting a display name.
+            givenName={
+              (pushed?.patient.givenNames ?? row?.patientName ?? '').trim().split(' ')[0] ?? ''
+            }
+            onDone={reset}
+          />
+        );
+      case 'handover':
+      default:
+        return (
+          <HandoverScreen
+            practiceName={practiceName}
+            locationLine={locationLine}
+            heading={handover.heading}
+            body={handover.body}
+            onDone={reset}
+          />
+        );
+    }
+  })();
+
+  return (
+    <>
+      {screen}
+      {inactivity.warningSecondsLeft !== null ? (
+        <InactivityWarning secondsLeft={inactivity.warningSecondsLeft} />
+      ) : null}
+    </>
+  );
 }
 
 /**

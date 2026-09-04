@@ -813,3 +813,88 @@
   color: var(--ink-muted);
   opacity: 0.7;
 }
+
+/* --------------------------------------------------------------------------
+ * "Still there?" — the thirty seconds before the tablet returns to the start
+ * (Carl, 4 September 2026).
+ *
+ * `pointer-events: none` IS THE LOAD-BEARING LINE. The overlay must not
+ * intercept the tap that dismisses it: whatever the patient was reaching for
+ * underneath is still what they hit, and the same tap re-arms the clock. An
+ * overlay that swallowed the first touch would make the warning cost a tap.
+ *
+ * It sits at the FOOT of the screen rather than across it, for the same
+ * reason: nothing a patient is reading is covered, and a notice that appears
+ * over the agreement somebody is part-way through would be the tablet
+ * interrupting the ceremony to ask whether the ceremony is still happening.
+ * ------------------------------------------------------------------------ */
+
+.inactivity {
+  position: fixed;
+  inset: auto 0 0 0;
+  display: flex;
+  justify-content: center;
+  padding: var(--s5);
+  pointer-events: none;
+  z-index: 20;
+}
+
+.inactivityCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  align-items: center;
+  max-width: 520px;
+  padding: var(--s4) var(--s6);
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  text-align: center;
+}
+
+.inactivityHeading {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.inactivityCountdown {
+  margin: 0;
+  font-size: 1rem;
+  /* Tabular figures, so the number does not jog the line as it counts down. */
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.inactivityHint {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--ink-muted);
+}
+
+/*
+ * Announced, never drawn. The countdown is `aria-hidden` and this sentence
+ * carries the whole message once, rather than a number re-read every second.
+ */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/*
+ * THE CONTENT COLUMN WHEN THERE IS NO BLUEPRINT RAIL BESIDE IT (Carl, 4 Sep
+ * 2026). The annotation panels are developer-facing and render only on a test
+ * device; on an ordinary tablet the column takes the width they were holding
+ * rather than leaving it empty.
+ */
+.mainFull {
+  max-width: 100%;
+}

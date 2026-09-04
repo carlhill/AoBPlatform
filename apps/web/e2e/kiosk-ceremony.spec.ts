@@ -754,9 +754,18 @@ test.describe('the pushed ceremony', () => {
     expect(wire).not.toContain('Example Street');
     expect(wire).not.toMatch(/medicare|\$\s?\d/i);
 
-    // K-3: locked, versioned, hashed, no amount, no provider signature field.
-    await expect(tablet.getByTestId('artefact-hash')).toBeVisible({ timeout: 25_000 });
-    await expect(tablet.getByTestId('versions')).toBeVisible();
+    /*
+     * K-3: locked, versioned, no amount, no provider signature field.
+     *
+     * NOT THE HASH PANEL, because this is an ORDINARY tablet (Carl, 4 Sep
+     * 2026). "Ready to sign", the sentence about a voided render and the
+     * SHA-256 are developer-facing, so they render only where the waiting list
+     * does — the walk-up tests above pair a test device and still assert
+     * `artefact-hash`. What proves the render happened HERE is `versions`,
+     * which is inside the document the patient is reading.
+     */
+    await expect(tablet.getByTestId('versions')).toBeVisible({ timeout: 25_000 });
+    await expect(tablet.getByTestId('artefact-hash')).toHaveCount(0);
     await expect(tablet.getByTestId('assignor-locked-note')).toBeVisible();
     await expect(tablet.locator('main')).not.toContainText(/\$\s?\d/);
     await expect(tablet.getByText('No provider signature field')).toBeVisible();

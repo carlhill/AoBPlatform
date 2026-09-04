@@ -384,15 +384,22 @@ describe('pushed_flow_skips_verification_and_who_signs', () => {
     expect(claimWaitingRow).not.toHaveBeenCalled();
 
     // NO K-5. Who signs was set at the desk before the push and the particulars
-    // are locked, so there is nothing to choose — K-3 states it read-only and
-    // Back is withdrawn with it.
+    // are locked, so there is nothing to choose — K-3 states it read-only.
     expect(screen.queryByTestId('assignor-self')).toBeNull();
     expect(screen.queryByTestId('assignor-other')).toBeNull();
     expect(screen.getByText(strings.particulars.assignorIsPatient)).toBeTruthy();
     expect(screen.getByTestId('assignor-locked-note').textContent).toBe(
       strings.particulars.assignorLockedNote,
     );
-    expect(screen.queryByTestId('particulars-back')).toBeNull();
+    /*
+     * BUT BACK IS THERE (Carl, 4 Sep 2026 — this REVERSES the assertion that
+     * stood here, which said Back was withdrawn with K-5). It was withdrawn
+     * because on a locked WALK-UP agreement there is nothing behind K-3. On
+     * the PUSHED path there is: K-P1, "Please check your details". Withdrawing
+     * it there left a patient who wanted to re-read their address with only
+     * the way out, which summons a person who is not needed.
+     */
+    expect(screen.getByTestId('particulars-back')).toBeTruthy();
 
     // NOTHING WAS RE-LOCKED OR RE-POINTED ON THE WAY PAST. The push validated
     // and locked on the SERVER, which is why a tablet cannot hold a draft.
@@ -546,3 +553,106 @@ describe('pushed_k3_uses_type_specific_heading', () => {
     );
   });
 });
+
+/**
+ * BACK ON THE PUSHED PATH (Carl, 4 September 2026).
+ *
+ * > "K-3 → back to K-P1 'Please check your details' (ticks preserved in
+ * > memory, so they do not re-tick everything); K-4 → K-3 as now. K-P1 itself
+ * > has no Back — before it is idle, and leaving is 'See reception'."
+ *
+ * THE TICKS ARE THE POINT. Five rows is five taps, and a Back that made
+ * somebody do them again would be a control nobody would use twice. They live
+ * in `Ceremony`'s own state, so returning costs nothing — and, because they
+ * live there and not on the server, going back does not un-confirm anything
+ * either: `confirm-details` was posted once and is not re-posted on the way
+ * back, which is asserted below.
+ */
+describe('pushed_k3_back_returns_to_check_details_with_ticks_kept', () => {
+  it('returns to K-P1 with every row still ticked, and re-posts nothing', async () => {
+    asPairedTablet();
+    fetchTabletSession.mockResolvedValue({ session: SESSION });
+    fetchAgreement.mockResolvedValue(AGREEMENT);
+
+    render(<Ceremony />);
+    await waitFor(() => expect(screen.getByTestId('check-details-heading')).toBeTruthy());
+    tickEverything();
+    fireEvent.click(screen.getByTestId('check-details-continue'));
+    await waitFor(() => expect(screen.getByTestId('particulars-heading')).toBeTruthy());
+    expect(confirmSessionDetails).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByTestId('particulars-back'));
+
+    // K-P1 again — the screen behind K-3 on this path.
+    await waitFor(() => expect(screen.getByTestId('check-details-heading')).toBeTruthy());
+
+    /*
+     * AND EVERY ROW IS STILL TICKED, which is visible in the state of the
+     * control (label AND `aria-pressed`, never colour alone) and in the fact
+     * that Continue is live rather than blocked behind five outstanding rows.
+     */
+    for (const type of CONFIRMABLE_DETAIL_TYPES) {
+      const tick = screen.getByTestId(`detail-tick-${type}`);
+      expect(tick.getAttribute('aria-pressed')).toBe('true');
+      expect(tick.textContent).toBe(strings.checkDetails.ticked);
+    }
+    expect((screen.getByTestId('check-details-continue') as HTMLButtonElement).disabled).toBe(false);
+
+    // Nothing was re-confirmed on the way back. One tick, one post.
+    expect(confirmSessionDetails).toHaveBeenCalledTimes(1);
+  });
+
+  it('back_makes_no_mutating_calls_on_pushed_path', async () => {
+    /*
+     * THE ASSERTION THAT MATTERS, and the same one `way-out.test.tsx` makes
+     * about the exit. Back is navigation. On a path where the agreement is
+     * already locked and rendered on the server, a "Back" that quietly
+     * re-locked it, re-pointed the assignor or moved the session's state would
+     * be a mutation wearing the word — and the only thing that catches it is a
+     * count on every call that could change what the server holds.
+     */
+    asPairedTablet();
+    fetchTabletSession.mockResolvedValue({ session: SESSION });
+    fetchAgreement.mockResolvedValue(AGREEMENT);
+
+    render(<Ceremony />);
+    await waitFor(() => expect(screen.getByTestId('check-details-heading')).toBeTruthy());
+    tickEverything();
+    fireEvent.click(screen.getByTestId('check-details-continue'));
+    await waitFor(() => expect(screen.getByTestId('continue-to-sign')).toBeTruthy());
+
+    // K-3 → K-4 → back to K-3 → back to K-P1: every Back on the path.
+    fireEvent.click(screen.getByTestId('continue-to-sign'));
+    await waitFor(() => expect(screen.getByTestId('signature-back')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('signature-back'));
+    await waitFor(() => expect(screen.getByTestId('particulars-back')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('particulars-back'));
+    await waitFor(() => expect(screen.getByTestId('check-details-heading')).toBeTruthy());
+
+    for (const mutator of AGREEMENT_MUTATORS) expect(mutator).not.toHaveBeenCalled();
+    // The SESSION was not moved either. `reading` was posted once, as K-P1
+    // first rendered; no Back reported a walk-away, a recall or anything else.
+    for (const call of setTabletSessionState.mock.calls) expect(call[1]).toBe('reading');
+    expect(confirmSessionDetails).toHaveBeenCalledTimes(1);
+  });
+
+  it('K-P1 itself has no Back — before it is idle, and leaving is the way out', async () => {
+    /*
+     * Carl's ruling, and the reasoning is the one this codebase already
+     * applies to a locked K-3: never draw a control that leads nowhere. What
+     * is behind K-P1 is the idle screen, and going there deliberately — rather
+     * than walking away — is not a thing a patient does. The way out is, and
+     * it is on the screen, and it posts `walked_away`.
+     */
+    asPairedTablet();
+    fetchTabletSession.mockResolvedValue({ session: SESSION });
+
+    render(<Ceremony />);
+    await waitFor(() => expect(screen.getByTestId('check-details-heading')).toBeTruthy());
+
+    expect(screen.queryByTestId('particulars-back')).toBeNull();
+    expect(screen.queryByTestId('verify-back')).toBeNull();
+    expect(screen.getByTestId('leave-for-reception')).toBeTruthy();
+  });
+});
+
