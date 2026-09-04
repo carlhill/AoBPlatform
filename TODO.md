@@ -1601,6 +1601,30 @@ Now a working rule in CLAUDE.md section 7.
       (queue, reconciliation, correspondence, devices) and give each a link
       with the item id.
 
+## timed_out, refusal mapping, and the D6a supersession bug -- landed 4 Sep 2026
+
+- [x] `timed_out` session end state (`b91a2f7`): device-settable, distinct from
+      `walked_away` (patient pressed exit) and `expired` (server gave up); the
+      inactivity reset posts it; DB check constraints re-issued idempotently.
+      Console label pending in the tablet strings (in flight).
+- [x] Every push refusal on `/practice/tablet` maps to real copy and a way
+      forward (`d6fe553`): busy tablet names the patient and offers Recall
+      inline; D6a / not-pushable link to reconciliation; revoked / unpaired link
+      to devices; unmapped codes show their code. "See the practice queue" is
+      gone. No per-patient page exists for `patient_confidential` (copy only)
+      and no `/practice/agreements/:id` page exists -- both worth having.
+- [x] Live bug fixed: a superseding agreement lost its D6a when the original
+      held it in `particulars.basicServiceDescription` rather than the column
+      (`supersedeForCorrection` now reads both, like `pushable`). Test
+      `superseding_agreement_keeps_d6a_and_is_pushable`.
+- [ ] Carl to confirm: the superseding row deliberately does NOT copy
+      `ruleSetVersion`/`mappingVersion` -- they are re-stamped at the fresh
+      lock (rule 14), which `resend()` performs inline. Agent flagged rather
+      than followed my instruction to copy them; the agent is right.
+- [ ] In flight: inline D6a setter on the blocked row, Correct showing all
+      five details, "No change needed" (patient error) recorded with types and
+      staff, Send again on ended rows, the `timed_out` console label.
+
 ## Outage screen on the tablet (Carl, 4 Sep 2026)
 
 "When the server is down, hide everything and say, Please contact reception."
