@@ -10,12 +10,14 @@
  * exists rather than a new thing to maintain. A collection notice on its own is
  * what every organisation publishes; the timeline is the part that is checkable.
  *
- * THE RETENTION PERIOD IS A PLACEHOLDER ON PURPOSE. The requirements state a
- * period and anchor it to an event this system may not observe directly, so the
- * sentence a patient reads has to be written from the requirement rather than
- * from memory (CLAUDE.md §7 — never invent a regulatory fact). The key exists,
- * it renders visibly as a placeholder, and it is flagged for Carl rather than
- * quietly filled in with a plausible number.
+ * THE RETENTION PERIOD IS NOW STATED, AND IT WAS SOURCED. Two years from the
+ * date of the related claim, from REQ-REG-09 (aob-requirements.md line 110) —
+ * not from the service date, and not from memory (CLAUDE.md §7). It stood as a
+ * visible placeholder until somebody had read the line; Carl wrote the sentence
+ * on 4 September 2026. The clock's ANCHOR is an event this platform may not
+ * observe (REQ-INT-04), so the copy says what the law requires rather than
+ * promising a date we could compute — that is the retention module's problem
+ * and its own item on the TODO.
  *
  * AN ACTION KEY WITH NO COPY SHOWS AS ITS CODE. A timeline row that said
  * nothing would be worse than useless on the one card whose job is to be

@@ -3,10 +3,14 @@
  * (4 Sep 2026), and the access timeline that makes the answer checkable.
  *
  * `portal_data_retention_is_not_invented` is the important one. The retention
- * period is a regulatory fact with an anchor this system may not observe
- * directly; CLAUDE.md §7 forbids inferring one. So the copy renders a VISIBLE
- * placeholder and this test holds it there — a plausible-looking number that
- * nobody sourced would be far worse than an obviously unfinished sentence.
+ * period is a regulatory fact and CLAUDE.md §7 forbids inferring one, so this
+ * test held a VISIBLE placeholder in place until somebody had read the source.
+ * Carl wrote the sentence on 4 September 2026 from REQ-REG-09
+ * (aob-requirements.md line 110): two years from the date of the RELATED CLAIM,
+ * not the service date. The test now pins that sentence word for word and
+ * refuses the placeholder — the same job in the other direction. If the period
+ * or the anchor ever changes, this test is what makes the copy change with it
+ * rather than drift.
  */
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -21,14 +25,29 @@ const log: readonly PortalAccessEntry[] = [
 
 const ready = (data: readonly PortalAccessEntry[]) => ({ status: 'ready', data }) as const;
 
+/** The sentence, exactly as Carl wrote it. One copy, compared not paraphrased. */
+const RETENTION_SENTENCE =
+  'We keep the record of each bulk-billing agreement for two years from the date of the related Medicare claim, ' +
+  'as the law requires. After that it is destroyed or de-identified.';
+
 describe('portal_data_retention_is_not_invented', () => {
-  it('renders the placeholder rather than a number nobody sourced', () => {
+  it('states the sourced period, and the placeholder is gone', () => {
     render(<DataCard state={ready(log)} />);
     const text = document.body.textContent ?? '';
 
-    expect(text).toContain('[retention period — from requirements]');
-    // No period is stated in any of the shapes a plausible guess would take.
-    expect(text).not.toMatch(/\b\d+\s*(year|month|day)s?\b/i);
+    expect(text).toContain(RETENTION_SENTENCE);
+    expect(text).not.toContain('[retention period — from requirements]');
+  });
+
+  it('anchors the clock to the claim rather than to the service date', () => {
+    render(<DataCard state={ready(log)} />);
+    const text = document.body.textContent ?? '';
+
+    // REQ-REG-09 is explicit that it runs from the related CLAIM. A sentence
+    // that said "from your appointment" would be plausible, wrong, and the
+    // exact failure the placeholder existed to prevent.
+    expect(text).toContain('from the date of the related Medicare claim');
+    expect(text).not.toMatch(/from the (date of the )?(service|appointment|visit)/i);
   });
 
   it('says what is held, why, who sees it, and what the patient can do', () => {
@@ -69,7 +88,7 @@ describe('who has looked', () => {
     expect(failed.container.querySelector('[role="alert"]')).toBeTruthy();
     // The prose still renders — a failed timeline does not take the collection
     // notice down with it.
-    expect(failed.container.textContent).toContain('[retention period — from requirements]');
+    expect(failed.container.textContent).toContain(RETENTION_SENTENCE);
     failed.unmount();
 
     const empty = render(<DataCard state={ready([])} />);
