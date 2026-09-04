@@ -1320,12 +1320,16 @@ reception pushes one locked payload to one tablet, and the screen shows
 exactly one patient. Type-to-find is the pull-model fallback, and it should
 stay that way."
 
-**Accepted risk, recorded, not fixed:** the walk-up list shows every waiting
-patient's name and provider to whoever is at the kiosk. Carl chose to leave it
-for now. The recommended fix when it is picked up: Begin -> K-2 directly, and
-the server finds the one waiting row that matches all three identifiers, so no
-list is ever sent to the tablet; a per-device console flag (never a tick-box on
-the tablet) shows the list for test devices under a banner.
+**Reversed the same morning -- being fixed (Carl, 4 Sep 2026):** "Remove the
+'x people ready to sign' text -- this is a security feature. Then on the next
+page do not show the list. Go straight to 'Confirm your details', match these
+details to the list on AoBPlatform and then go to the next page. The list page
+is only for testing purposes." Build in flight: no count on idle; Begin -> K-2;
+`POST /kiosk/claim` finds the ONE waiting row matching all three identifiers
+and verifies in the same step, generic failure for none-or-many, three
+attempts per device; the list is returned only to a device flagged as a test
+device from the console (never a tick-box on the tablet) and renders under a
+"TEST DEVICE -- names visible" banner.
 
 ### Reception push -- the workflow (Carl)
 1. Patient arrives, shows the Medicare card; reception asks which number on
