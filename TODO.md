@@ -1781,6 +1781,103 @@ elderly patient.
       Phase-0/1 job (REQ-REG-03). Its D6a match is exact and case-sensitive by
       design -- keep it that way and stop asking anyone to type it.
 
+## Reception-centric: the patient work page (Carl, 4 Sep 2026)
+
+Carl: "What we have so far is Practice centric functionality. We leave what we
+have built as is, as we need it for Practice-Admin-Mgr like tasks. Next, we
+need to think of the pages to support a practice." The flow: a patient or
+carer walks up; reception brings up their record in the PMS; the PMS pushes
+the five details to AoBPlatform and what the visit needs (a first enduring
+agreement, or an episodic one for the visit); reception moves to AoBPlatform,
+picks the patient they are processing from the queue, and does EVERYTHING for
+that patient on one page -- send to tablet, correct details, re-send, follow up
+reminders, check correspondence -- without jumping around. Cards, with links to
+the deeper pages.
+
+### 1. Queue + work page -- IN FLIGHT (4 Sep 2026)
+- [ ] `/practice/patients`: today's queue -- patients with something open (an
+      open in-practice request, a live or ended-today tablet session, an
+      agreement awaiting signature), type-to-find, one status line per row
+      (same copy as the tablet rows), click through. Patients card on the
+      setup hub.
+- [ ] `/practice/patients/[patientId]`: cards -- Identity (five details, inline
+      Correct, supersession as on the tablet page); Agreements (enduring per
+      provider, episodic for today, with the tablet controls extracted from
+      TabletView into shared components: Send / Re-send / Send again / session
+      state + short id / Correct / No change needed / Resolved -- ready to
+      re-send / refusal mapping with deep links); Follow-up (chase state, next
+      reminder, send now; 89AA never here with approval language); Correspondence
+      (channel, state, when -- states not bodies); History (per-patient
+      timeline: types and labels, never values). Existing pages stay as the
+      administrator's tooling. Platform twins follow the tablet-page pattern.
+      Named tests: `queue_lists_only_patients_with_something_open`,
+      `work_page_shows_all_five_details_and_corrects_inline`,
+      `work_page_tablet_controls_match_tablet_page`,
+      `work_page_never_shows_medicare_or_amounts`; cross-practice fails closed
+      on any new endpoint.
+
+### 2. The PMS push -- our side only, until D-01 resolves
+- [ ] An **arrival** contract we own: `{ patient five details, provider,
+      arrivedAt }` from the site connector -- or from a dev script until
+      Medtech's mechanism is known (D-01; do not guess whether Evolution pushes
+      or the connector polls). Behind the FR-9.1 adapter with the mock. The
+      reception queue is fed from arrivals as well as from staged requests.
+- [ ] **The PMS does not decide the agreement type.** Whether the visit needs a
+      first enduring agreement or an episodic one is a rules question -- is
+      there an active enduring agreement for THIS provider x THIS patient, and
+      is the provider a GP (hard rule 6; enduring is never per practice, so the
+      arrival must name the provider). The versioned rule set answers it and
+      the answer travels with the record (hard rule 14). If the PMS says
+      "enduring" and we obey, we have hardcoded the mapping versioning exists
+      to prevent. Named test: `arrival_type_is_decided_by_the_rule_set_not_the_pms`.
+
+### 3. Shared patient record across practices -- v2, decision first
+Carl's idea: the five details exist once for all practices, so (with the
+patient's approval) a specialist practice can be told the patient changed
+address -- a free service and a marketing point. Carl, later 4 Sep 2026:
+"currently the GP will send a letter to the Specialist (another Practice) with
+all the patient's details -- in this case the patient is giving consent to the
+GP to do that. Hence we may be able to share the patient details with the GP.
+For now we are already recording these changes at the practice level, so let's
+leave it there for now."
+
+Left at practice level for v1. Before it is built (v2):
+- [ ] **ADR change.** Practice scoping by RLS is an ADR and a hard rule; a
+      patient row shared by practices is the one shape it forbids. The
+      buildable form is a platform-level *person* with per-practice *patient*
+      projections, linked only on explicit, revocable patient consent, and the
+      threat model re-run against the new flow.
+- [ ] **Identifier permitted-use check.** Without the Medicare number the only
+      cross-provider identifier is the IHI; whether "tell another practice this
+      person moved" is a permitted purpose under the Healthcare Identifiers Act
+      is a regulatory fact to be verified, not inferred. The referral-letter
+      analogy (patient consents to the GP disclosing to the specialist) is the
+      consent model to test it against.
+- [ ] **Secondary use.** Practice A collected the address for its consent
+      record; disclosing it to practice B is a new purpose: specific consent,
+      an updated collection notice, a vault event for the consent and for every
+      disclosure.
+- [ ] **The PMS is the master.** An address change only helps practice B if it
+      lands in their PMS or in front of their staff -- write-back (D-01) at a
+      practice that may not be a customer.
+- [ ] Design now so it is not boxed in: keep `patient` per practice; do not
+      add cross-practice joins; keep the five details in one place per
+      practice so a future person/patient split is a data move, not a rewrite.
+
+### 4. Join to the patient referral platform -- v3 (Carl, 4 Sep 2026)
+- [ ] Since the GP-to-specialist referral letter already carries the patient's
+      details with the patient's consent, the natural home for cross-practice
+      demographics is the referral flow itself: AoBPlatform joined to the
+      patient referral platform, so a referral carries current details and
+      the receiving practice's AoB record starts from them. Direction, not
+      scope; sits with the v3 front-office ideas below.
+
+### 5. Housekeeping agreed for the end of the 4 Sep session
+- [ ] Migrate `core.tablet_sessions` timestamps to `timestamptz` (the whole
+      table, not the three new dispute columns alone -- Carl, 4 Sep 2026).
+      Reversible migration; check what Prisma's client needs for the mapping;
+      apply by hand to the dev DB as usual.
+
 ## Where this product could go: v2 and v3
 
 Carl, 3 Sep 2026: "Version two of AoBPlatform could morph from just a
@@ -1798,13 +1895,16 @@ in the April 2027 GA.
 - **v2, practice AoB management.** The queue, chase and reconciliation
   surfaces already lean this way -- the practice is doing work in our screens
   because it does not get paid otherwise. Making that the product rather than
-  a side effect is a small step from here.
+  a side effect is a small step from here. Also v2: the shared patient record
+  across practices, once the ADR and identifier questions above are answered.
 - **v3, front office including scheduling.** A much larger step: it puts us in
   the path of the appointment book, which is where the PMS lives. Worth noting
   what it changes -- today an outage slows evidence and never service
   (REQ-REC-04). Own the schedule and an outage stops the practice. That is a
   different risk posture and a different support obligation, and it should be
   decided with eyes open rather than arrived at feature by feature.
+- **v3 also: join to the patient referral platform** (Carl, 4 Sep 2026) --
+  see "Reception-centric" section 4 above.
 - **The automation argument is the real prize** and is worth testing early:
   each step upstream means fewer things the platform has to ask a human to
   confirm.
