@@ -56,6 +56,15 @@ interface Practice {
   abnStatus: string | null;
   entityType: string | null;
   abnVerificationSource: string | null;
+  /**
+   * WHEN the register last answered about this ABN.
+   *
+   * Shown because an ABN check is a fact about a DAY, not a property of an
+   * entity: a practice approved in March against an ACTIVE ABN can be trading
+   * on a cancelled one by September, and a page that showed only the status
+   * would be quoting the March answer for ever without saying so.
+   */
+  abnVerifiedAt: string | null;
   abnSightedByName: string | null;
   validationState: string;
   validatedByName: string | null;
@@ -226,9 +235,25 @@ export function EntityView({ practiceId }: { practiceId: string }) {
         </div>
 
         <Notice tone={attested ? 'warn' : 'ok'} title={strings.entity.verifiedHow}>
-          {attested
-            ? strings.entity.verifiedAttested.replace('{who}', practice.abnSightedByName ?? 'The applicant')
-            : strings.entity.verifiedAbr}
+          <p>
+            {attested
+              ? strings.entity.verifiedAttested.replace('{who}', practice.abnSightedByName ?? 'The applicant')
+              : strings.entity.verifiedAbr}
+          </p>
+          {/*
+            THE PROVENANCE AND THE DATE, TOGETHER, because either alone is
+            misleading: "the register said so" without a date is a claim with no
+            shelf life, and a date without the source does not say whether the
+            register or a colleague was the one who said it.
+          */}
+          <p className={ui.hint} data-testid="entity-abn-provenance">
+            {strings.entity.verifiedSource}: {practice.abnVerificationSource ?? strings.entity.verifiedSourceUnknown}
+            {' · '}
+            {practice.abnVerifiedAt
+              ? strings.entity.verifiedOn.replace('{date}', when(practice.abnVerifiedAt))
+              : strings.entity.verifiedNever}
+          </p>
+          <AbnRecheck practice={practice} onDone={() => void load()} />
         </Notice>
 
         <Notice tone="ok" title={strings.entity.lockedTitle}>
@@ -374,6 +399,98 @@ export function EntityView({ practiceId }: { practiceId: string }) {
         />
       </Section>
     </Shell>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Ask the register again
+// ---------------------------------------------------------------------------
+
+interface RecheckResult {
+  rechecked: boolean;
+  outcome: string;
+  reason?: string;
+  abnStatus?: string | null;
+  active?: boolean;
+  statusChanged?: boolean;
+  entityTypeChanged?: boolean;
+  registerEntityType?: string;
+  provenanceUpgraded?: boolean;
+}
+
+/**
+ * "Re-check with the Australian Business Register".
+ *
+ * WHY AN ADMINISTRATOR SHOULD BE ABLE TO PRESS THIS. The stored answer has a
+ * date on it and the register does not tell us when it changes. Two things
+ * follow: a practice whose ABN was cancelled has no way to find out here, and
+ * a practice whose application fell back to a typed attestation during an ABR
+ * outage is stuck with the weaker evidence for ever. This fixes both, and it
+ * is the practice's own act about their own entity.
+ *
+ * WHAT IT CANNOT DO IS CHANGE THE ABN. A different ABN is a different legal
+ * entity — a new application, not an edit — which is the rule this whole page
+ * is built on.
+ *
+ * A FAILED RE-CHECK CHANGES NOTHING. The server does not overwrite a good
+ * stored answer because the register was briefly unreachable, and the message
+ * here says which of the two happened.
+ */
+function AbnRecheck({ practice, onDone }: { practice: Practice; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<RecheckResult | null>(null);
+
+  async function recheck() {
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await fetch(`${CORE_URL}/organisations/abn-recheck`, {
+        method: 'POST',
+        headers: apiHeaders(practice.id),
+      });
+      if (!res.ok) throw new Error(await refusalMessage(res));
+      const body = (await res.json()) as RecheckResult;
+      setResult(body);
+      if (body.rechecked) onDone();
+    } catch (e) {
+      setError(e instanceof TypeError ? strings.review.unreachableBody : (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const s = strings.entity;
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      <Button onClick={() => void recheck()} disabled={busy || !practice.abn} data-testid="entity-abn-recheck">
+        {busy ? s.recheckBusy : s.recheckButton}
+      </Button>
+      <p className={ui.hint}>{s.recheckLead}</p>
+
+      {error && <p className={ui.hint}>{error}</p>}
+
+      {result && !result.rechecked && (
+        <p className={ui.hint} data-testid="entity-abn-recheck-failed">
+          {s.recheckFailed}{' '}
+          {s.recheckReasons[result.reason ?? ''] ?? s.recheckUnknownReason.replace('{code}', result.reason ?? '—')}
+        </p>
+      )}
+
+      {result?.rechecked && (
+        <p className={ui.hint} data-testid="entity-abn-recheck-done">
+          {result.statusChanged
+            ? s.recheckStatusChanged.replace('{status}', result.abnStatus ?? '—')
+            : s.recheckUnchanged.replace('{status}', result.abnStatus ?? '—')}
+          {result.provenanceUpgraded ? ` ${s.recheckUpgraded}` : ''}
+          {result.entityTypeChanged
+            ? ` ${s.recheckEntityTypeChanged.replace('{type}', result.registerEntityType ?? '—')}`
+            : ''}
+        </p>
+      )}
+    </div>
   );
 }
 

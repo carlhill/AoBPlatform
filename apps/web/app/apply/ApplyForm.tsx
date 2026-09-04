@@ -18,7 +18,7 @@ import { SessionControl } from '../SessionControl';
  *               all; that is a judgement, and it belongs to the reviewer.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { abnLookupUrl,
   AU_STATES,
   contactClash,
@@ -44,6 +44,38 @@ const CREDENTIAL_TYPES = [
   { value: 'other', label: 'Other' },
 ];
 
+/**
+ * What the register said about the ABN in the field, if anything yet.
+ *
+ * `not_found` and `unreachable` are separate states rather than one "it did not
+ * work", because they are different facts with different next steps: the first
+ * says the entity is not there and the number needs checking, the second says
+ * we could not ask and the application should be sent anyway. A screen that
+ * merged them would be the generic-message defect.
+ */
+type RegisterEntity = {
+  abn: string;
+  abnStatus: string;
+  active: boolean;
+  legalName: string;
+  businessNames: string[];
+  entityType: string;
+  gstRegistered: boolean;
+  abnStatusEffectiveFrom: string | null;
+  mainBusinessState: string | null;
+  mainBusinessPostcode: string | null;
+};
+
+type RegisterPreview =
+  | { state: 'idle' }
+  | { state: 'checking' }
+  | { state: 'found'; entity: RegisterEntity }
+  | { state: 'not_found'; reason: string }
+  | { state: 'unreachable'; reason: string };
+
+/** How long after the last keystroke before we ask the register. */
+const LOOKUP_DEBOUNCE_MS = 400;
+
 const ENTITY_TYPES = [
   { value: 'PTY_LTD', label: 'PTY_LTD — “Australian Private Company”' },
   { value: 'PUBLIC_COMPANY', label: 'PUBLIC_COMPANY — “Australian Public Company”' },
@@ -52,6 +84,100 @@ const ENTITY_TYPES = [
   { value: 'PARTNERSHIP', label: 'PARTNERSHIP' },
   { value: 'OTHER', label: 'OTHER' },
 ];
+
+/**
+ * What the register says about the ABN in the field.
+ *
+ * THE WORDING IS CONSTRAINED. Nothing here may say certified, approved,
+ * accredited or government-approved (REQ-65C-05): the register is being quoted,
+ * not endorsing anybody, and "checked against the Australian Business Register"
+ * is the permitted form.
+ *
+ * EVERY UNHAPPY OUTCOME CARRIES ITS REASON AND ITS NEXT STEP, and an
+ * unrecognised code is shown as itself rather than swallowed by a generic
+ * message — a code on screen can be quoted and diagnosed; "something went
+ * wrong" cannot (Carl, 4 September 2026).
+ */
+function RegisterPanel({ preview, onUseName }: { preview: RegisterPreview; onUseName: (name: string) => void }) {
+  const s = strings.apply;
+
+  if (preview.state === 'idle') return null;
+
+  if (preview.state === 'checking') {
+    return (
+      <p className={ui.hint} style={{ marginBottom: 8 }} data-testid="apply-abr-checking">
+        {s.registerChecking}
+      </p>
+    );
+  }
+
+  if (preview.state === 'unreachable') {
+    return (
+      <Notice tone="warn" title={s.registerUnavailableTitle} data-testid="apply-abr-unreachable">
+        <p>{s.abrReasons[preview.reason] ?? s.registerUnknownReason.replace('{code}', preview.reason)}</p>
+        <p>{s.registerUnavailableSend}</p>
+      </Notice>
+    );
+  }
+
+  if (preview.state === 'not_found') {
+    return (
+      <Notice tone="stop" title={s.registerNotFoundTitle} data-testid="apply-abr-not-found">
+        <p>{s.abrReasons[preview.reason] ?? s.registerUnknownReason.replace('{code}', preview.reason)}</p>
+        <p>{s.registerNotFoundNext}</p>
+      </Notice>
+    );
+  }
+
+  const entity = preview.entity;
+  return (
+    <Notice
+      tone={entity.active ? 'ok' : 'stop'}
+      title={entity.active ? s.registerFoundTitle : s.cancelledTitle}
+      data-testid="apply-abr-found"
+    >
+      <p>
+        <strong>{entity.legalName}</strong>
+        {' · '}
+        {entity.abnStatus}
+        {entity.abnStatusEffectiveFrom ? ` ${s.registerStatusSince.replace('{date}', entity.abnStatusEffectiveFrom)}` : ''}
+        {' · '}
+        {entity.entityType}
+        {entity.gstRegistered ? ` · ${s.registerGstRegistered}` : ''}
+      </p>
+
+      {entity.businessNames.length > 0 ? (
+        <p>
+          {s.registerBusinessNames}:{' '}
+          {entity.businessNames.map((businessName) => (
+            <Button key={businessName} variant="subtle" onClick={() => onUseName(businessName)}>
+              {businessName}
+            </Button>
+          ))}
+        </p>
+      ) : (
+        <p className={ui.hint}>{s.registerNoBusinessNames}</p>
+      )}
+
+      {/*
+        The trading-name rule, said to the person it will otherwise surprise:
+        the register stopped collecting trading names in May 2012, so a name a
+        practice has used for twenty years may simply not be here.
+      */}
+      <p className={ui.hint}>{s.registerTradingNamesNote}</p>
+
+      {entity.mainBusinessState && (
+        <p className={ui.hint}>
+          {s.registerMainLocation}: {entity.mainBusinessState} {entity.mainBusinessPostcode ?? ''}
+          {' — '}
+          {s.registerMainLocationNote}
+        </p>
+      )}
+
+      {!entity.active && <p>{s.cancelledBody}</p>}
+    </Notice>
+  );
+}
 
 export function ApplyForm() {
   const [name, setName] = useState('');
@@ -96,10 +222,94 @@ export function ApplyForm() {
   const abnValid = abnTouched && isValidAbnChecksum(abnDigits);
   const abnError = abnTouched && !abnValid ? strings.apply.abnInvalid : null;
 
+  /**
+   * THE REGISTER, ASKED WHILE THE FIELD STILL HAS FOCUS.
+   *
+   * Until now an applicant learned which entity their ABN resolves to only
+   * after filling in two contacts and pressing send, which meant a mistyped
+   * digit came back as a refusal about a company they had never heard of. This
+   * asks the server as soon as the check digits agree, and shows them the
+   * entity name, its status and its registered business names.
+   *
+   * IT DECIDES NOTHING. The server consults the register again at submission
+   * and the gate runs there; this is a preview, and a preview that went stale
+   * is caught by the real check.
+   */
+  const [register, setRegister] = useState<RegisterPreview>({ state: 'idle' });
+
+  useEffect(() => {
+    if (!abnValid) {
+      setRegister({ state: 'idle' });
+      return;
+    }
+    // `live` guards the answer to a request the applicant has already typed
+    // past: a slow reply about the previous ABN must never paint over a newer
+    // one. Debounced so that typing eleven digits is one lookup, not eleven.
+    let live = true;
+    const timer = setTimeout(async () => {
+      setRegister({ state: 'checking' });
+      try {
+        const response = await fetch(`${CORE_URL}/organisations/abn-lookup?abn=${abnDigits}`);
+        const body = await response.json().catch(() => ({}));
+        if (!live) return;
+        if (!response.ok) {
+          setRegister({ state: 'unreachable', reason: body.reason ?? `http_${response.status}` });
+        } else if (body.outcome === 'found') {
+          setRegister({ state: 'found', entity: body as RegisterEntity });
+        } else if (body.outcome === 'not_found') {
+          setRegister({ state: 'not_found', reason: body.reason ?? 'no_record' });
+        } else {
+          setRegister({ state: 'unreachable', reason: body.reason ?? 'unreachable' });
+        }
+      } catch {
+        if (live) setRegister({ state: 'unreachable', reason: 'network' });
+      }
+    }, LOOKUP_DEBOUNCE_MS);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [abnDigits, abnValid]);
+
+  /**
+   * Fill the name in ONLY when it is empty.
+   *
+   * Overwriting something the applicant typed would be the form arguing with
+   * them about their own practice's name — and the field takes a legal OR a
+   * trading name, so what they typed may well be the better answer. When they
+   * have registered business names, each is offered as a one-click choice
+   * instead.
+   *
+   * THE ADDRESS IS DELIBERATELY NOT PREFILLED. The register's main business
+   * location is frequently an accountant's office, and this form wants the
+   * practice's head office. Showing it as context is useful; typing it into
+   * the address fields would be a plausible-looking wrong answer.
+   */
+  const registerLegalName = register.state === 'found' ? register.entity.legalName : '';
+  useEffect(() => {
+    // Keyed on the LOOKUP, not on the name field: the point is to fill a blank
+    // once, not to refill it on every keystroke. `setName` with a function
+    // reads the current value without making the name a dependency.
+    if (!registerLegalName) return;
+    setName((current) => (current.trim().length === 0 ? registerLegalName : current));
+  }, [registerLegalName]);
+
   // The SAME function the server calls. Two implementations of one rule drift,
   // and the pair that drifts here is "the form said fine, the API said no".
   const clash = contactClash({ adminEmail, adminPhone, managerEmail, managerPhone });
   const managerClash = clash !== null;
+
+  /**
+   * The two states the preview can put the form into where sending is pointless
+   * and the server would refuse: the register says this ABN is cancelled, and
+   * the register says it has never heard of it. Neither is retypable — the
+   * ENTITY is wrong — so the submit goes dead rather than nagging.
+   *
+   * "We could not reach the register" is NOT here. That must never stop an
+   * application: it is sent, and the attestation path takes over.
+   */
+  const registerRefuses =
+    register.state === 'not_found' || (register.state === 'found' && !register.entity.active);
 
   const gates: GateLedgerState = useMemo(
     () => ({
@@ -110,17 +320,31 @@ export function ApplyForm() {
           : 'passed'
         : needsAttestation
           ? 'waiting'
-          : 'not_run',
+          : // Before sending, the row reports what the PREVIEW found — which is
+            // the register genuinely having answered, so it is not a guess.
+            register.state === 'checking'
+            ? 'waiting'
+            : register.state === 'not_found'
+              ? 'failed'
+              : register.state === 'found'
+                ? register.entity.active
+                  ? 'passed'
+                  : 'failed'
+                : 'not_run',
       human: sentReference ? 'waiting' : 'not_run',
       // Before sending, the panel tells the applicant what to do; after sending,
       // the row must state what actually happened, which is not the same text.
-      registerDetail: !needsAttestation
-        ? undefined
-        : sentReference
+      registerDetail: needsAttestation
+        ? sentReference
           ? strings.gates.registerAttested
-          : strings.apply.attestLead,
+          : strings.apply.attestLead
+        : // Name the entity the register matched, so the row says WHICH company
+          // passed rather than merely that something did.
+          register.state === 'found'
+          ? `${register.entity.legalName} — ${register.entity.abnStatus}`
+          : undefined,
     }),
-    [abnTouched, abnValid, needsAttestation, sentReference],
+    [abnTouched, abnValid, needsAttestation, sentReference, register],
   );
 
   const complete =
@@ -134,6 +358,7 @@ export function ApplyForm() {
     adminEmail.trim() &&
     adminPhone.trim() &&
     !managerClash &&
+    !registerRefuses &&
     (!needsAttestation || (attLegalName.trim() && attEntityType && attSightedBy.trim()));
 
   async function submit() {
@@ -179,6 +404,29 @@ export function ApplyForm() {
 
       if (!response.ok) {
         const message = Array.isArray(body.message) ? body.message.join('; ') : (body.message ?? 'Unknown error');
+
+        /*
+         * THE REASON CODE FIRST, the prose only as a fallback.
+         *
+         * The server now sends a `reason` with every ABR refusal, and routing
+         * on a code rather than on a regular expression over English is the
+         * difference between a screen that keeps working when the copy is
+         * reworded and one that silently falls through to "Unknown error".
+         * The regexes below remain for the refusals that do not carry a code
+         * yet — the name-match and cancelled gates, which are raised by the
+         * domain rather than by the client.
+         */
+        const UNREACHABLE = ['not_configured', 'timeout', 'network', 'http_error', 'unparseable', 'register_refused'];
+        if (typeof body.reason === 'string' && UNREACHABLE.includes(body.reason)) {
+          setNeedsAttestation(true);
+          setInlineError(null);
+          return;
+        }
+        if (body.reason === 'no_record' || body.reason === 'invalid_search_text') {
+          setBlocking({ title: strings.apply.registerNotFoundTitle, body: message });
+          return;
+        }
+
         // The refusal grammar, applied. Which form is used is decided by WHAT
         // failed, never by convenience.
         if (/no ABN lookup is configured/i.test(message)) {
@@ -244,6 +492,8 @@ export function ApplyForm() {
             )}
           </Field>
         </div>
+
+        <RegisterPanel preview={register} onUseName={setName} />
 
         <p className={ui.hint} style={{ marginBottom: 8 }}>
           {strings.apply.headOfficeHint}

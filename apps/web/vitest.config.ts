@@ -37,6 +37,10 @@ export default defineConfig({
       'app/platform/**/*.test.tsx',
       'app/patient/**/*.test.ts',
       'app/patient/**/*.test.tsx',
+      // The practice application form, from the day it started asking the
+      // Australian Business Register a live question (4 September 2026).
+      'app/apply/**/*.test.ts',
+      'app/apply/**/*.test.tsx',
     ],
     exclude: ['**/node_modules/**', 'e2e/**'],
     restoreMocks: true,

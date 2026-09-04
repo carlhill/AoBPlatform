@@ -175,6 +175,66 @@ export const strings = {
       'no ACN of its own, and choosing a company type will be refused.',
     attestSightedBy: 'Your name — you are attesting that you read the register',
 
+    /*
+     * THE ABN PREVIEW.
+     *
+     * Wording rule, and it is a hard one (REQ-65C-05): nothing here may say
+     * certified, approved, accredited or government-approved. The register is
+     * being QUOTED. "Checked against the Australian Business Register" is the
+     * permitted form, and the entity being on the register is not an opinion
+     * about the practice.
+     */
+    registerChecking: 'Checking the Australian Business Register…',
+    registerFoundTitle: 'Checked against the Australian Business Register',
+    registerStatusSince: 'since {date}',
+    registerGstRegistered: 'registered for GST',
+    registerBusinessNames: 'Registered business names',
+    registerNoBusinessNames:
+      'No registered business names against this ABN. That is ordinary — many practices have none, and the ' +
+      'entity name above is what your practice name will be matched against.',
+    registerTradingNamesNote:
+      'Business names only. The register stopped collecting TRADING names in May 2012, so a name a practice ' +
+      'has traded under for years may simply not appear here — that is a gap in the register, not a problem ' +
+      'with your practice, and a reviewer can see it.',
+    registerMainLocation: 'Main business location',
+    registerMainLocationNote:
+      'the register’s own location for the entity, which is often an accountant’s address — it is shown for ' +
+      'recognition only and is never used as your head office.',
+
+    registerNotFoundTitle: 'The register has no record of this ABN',
+    registerNotFoundNext:
+      'Check the number against the practice’s own paperwork and change it above. There is nothing to attest ' +
+      'to here: the register has answered, and it says this ABN has not been issued.',
+
+    registerUnavailableTitle: 'The register could not be checked just now',
+    registerUnavailableSend:
+      'Send the application anyway. It is checked again when it arrives, and if the register is still quiet ' +
+      'you will be asked to type what it shows and sign your name to it.',
+    registerUnknownReason:
+      'The register answered with something this screen has no wording for. The code is {code} — quote it if ' +
+      'you contact us, and send the application in the meantime.',
+
+    /**
+     * Server reason codes, mapped to what the applicant should understand.
+     * An unmapped code falls through to `registerUnknownReason`, which shows
+     * the code itself rather than hiding it.
+     */
+    abrReasons: {
+      no_record: 'The check digits agree, but the Australian Business Register holds no entity against this ABN.',
+      invalid_search_text: 'The register would not accept this as an ABN at all.',
+      register_refused:
+        'The register declined our request. This is a fault at our end, not with your ABN, and it is already ' +
+        'logged for us to fix.',
+      not_configured: 'This environment has no connection to the register configured, so nothing was asked.',
+      timeout: 'The register did not answer in time.',
+      network: 'We could not reach the register.',
+      http_error: 'The register answered with an error.',
+      unparseable: 'The register answered with something we could not read.',
+      rate_limited:
+        'You have checked a lot of ABNs from here in a short time, so we have paused the checks for a few ' +
+        'minutes. It does not stop you sending the application.',
+    } as Record<string, string>,
+
     sentTitle: 'Application sent',
     sentBody:
       'A person reads it next. You will hear from us either way, at the email above. There is nothing further ' +
@@ -3327,6 +3387,42 @@ export const strings = {
     verifiedAttested:
       'ATTESTED, not checked. {who} stated these details and a reviewer accepted them; the register itself ' +
       'was not reachable at the time. That is weaker than a lookup and is recorded as such.',
+
+    /*
+     * PROVENANCE AND DATE TOGETHER. An ABN check is a fact about a day: "the
+     * register said ACTIVE" with no date is a claim with no shelf life, and a
+     * date with no source does not say whether the register or a colleague was
+     * the one who said it.
+     */
+    verifiedSource: 'Source',
+    verifiedSourceUnknown: 'not recorded',
+    verifiedOn: 'as at {date}',
+    verifiedNever: 'no check date recorded',
+
+    recheckButton: 'Re-check with the Australian Business Register',
+    recheckBusy: 'Asking the register…',
+    recheckLead:
+      'Asks the register again, now. An ABN status can change after approval, and a re-check also replaces ' +
+      'a typed attestation with the register’s own answer. It cannot change the ABN itself — a different ' +
+      'ABN is a different entity, and that is a new application.',
+    recheckUnchanged: 'The register still shows {status}. Nothing changed.',
+    recheckStatusChanged: 'The register now shows {status}. That is a change, and it has been recorded.',
+    recheckUpgraded: 'The typed attestation has been replaced by the register’s own answer.',
+    recheckEntityTypeChanged:
+      'The register now describes this entity as {type}, which is not what the application was assessed ' +
+      'against. It has been recorded and left for a person to look at rather than quietly rewritten.',
+    recheckFailed: 'The register could not be asked, so nothing was changed.',
+    recheckUnknownReason: 'The reason code was {code} — quote it if you contact us.',
+    recheckReasons: {
+      no_record: 'The register now holds no entity against this ABN, which is unusual enough to be looked at by a person.',
+      invalid_search_text: 'The register would not accept the stored ABN as an ABN.',
+      register_refused: 'The register declined our request. That is a fault at our end and is already logged.',
+      not_configured: 'This environment has no connection to the register configured.',
+      timeout: 'The register did not answer in time.',
+      network: 'We could not reach the register.',
+      http_error: 'The register answered with an error.',
+      unparseable: 'The register answered with something we could not read.',
+    } as Record<string, string>,
 
     lockedTitle: 'Why none of this can be edited',
     lockedBody:
