@@ -1847,7 +1847,7 @@ Left open by it, for Carl:
   nobody crossed anything. A correction is now about a SUBJECT (a session, or
   a bare patient), which is what makes that structural rather than remembered.
 
-### 2. The PMS push -- our side only, until D-01 resolves
+### 2. The PMS push -- our side only, until D-01 resolves -- BUILT (4 Sep 2026)
 - [ ] An **arrival** contract we own: `{ patient five details, provider,
       arrivedAt }` from the site connector -- or from a dev script until
       Medtech's mechanism is known (D-01; do not guess whether Evolution pushes
@@ -1861,6 +1861,50 @@ Left open by it, for Carl:
       the answer travels with the record (hard rule 14). If the PMS says
       "enduring" and we obey, we have hardcoded the mapping versioning exists
       to prevent. Named test: `arrival_type_is_decided_by_the_rule_set_not_the_pms`.
+
+**BUILT 4 Sep 2026.** `POST /arrivals` (`apps/core/src/arrivals`) is the message
+we own: the five details, the provider, `arrivedAt`, a `source` and an
+`idempotencyKey`. It has NO Medicare field and NO agreement-type field, and
+refuses either out loud rather than letting `whitelist: true` strip it silently
+-- `arrival_rejects_a_medicare_number` and
+`arrival_type_is_decided_by_the_rule_set_not_the_pms`. One message performs the
+whole sequence the staging script used to mimic: mirror the patient by the
+practice's own record number (REQ-DATA-10, recording which detail TYPES moved,
+never values), ensure the patient's own `self` assignor, decide, draft, open the
+in-practice request, write the practice's default D6a and lock. Idempotent on
+`(practiceId, idempotencyKey)` in the service AND in a unique index. The
+`arrivals` row and its `arrival.received` vault event commit together.
+
+The decision is `packages/domain/src/visit-policy.ts` +
+`content/visit-agreement-policy.json` (`visit-policy-1`) -- a versioned rule
+table, first match wins, last row must match everything so the table is total.
+Four inputs and there is deliberately no practice-wide coverage input, so no
+edit to the file can make an enduring agreement cover a practice (hard rule 6).
+An `enduring` row must name its pathway, which is why that regulatory inference
+is content rather than a `switch`. `visit_policy_never_offers_enduring_for_non_gp`,
+`visit_policy_is_per_provider_not_per_practice`,
+`visit_policy_version_travels_with_the_decision`. Core e2e `arrivals` (9),
+domain (14). Dev: `bash scripts/dev/arrive.sh`.
+
+Left open by it, for Carl:
+- **The vault container needs a rebuild** before `arrival.received` will be
+  accepted -- it validates against its own build of `VAULT_EVENT_TYPES`. The
+  outbox row is written either way; the relay just retries until then.
+- **`enduringByDefault` is read tolerantly and defaults to TRUE.** The column
+  landed on `practices` the same afternoon from another hand and is read through
+  a cast; with it true every GP arrival decides `enduring`, and an enduring
+  draft cannot be pushed or locked yet
+  (`enduring_rules_not_authored`, GA-PLAN B5). So `reset-kiosk-list.sh` was
+  LEFT ALONE -- the result on the queue is not identical to staging's episodic
+  drafts, which was the stated condition for replacing it. `arrive.sh` takes a
+  provider id as a fourth field to exercise the episodic path today.
+- **`patientDeclinedEnduring` is always false.** Nothing stores a decline yet;
+  a patient who has never been asked has not declined, and inventing the fact
+  from a spare column would be worse than saying so.
+- **The `none` queue line is a follow-up for the work-page owner.** An arrival
+  covered by an ongoing agreement records the decision and its reason, but the
+  row that should read "covered by an ongoing agreement with Dr X -- nothing to
+  sign" belongs to `patients` / `tablet-sessions`, which this build did not own.
 
 ### 3. Shared patient record across practices -- v2, decision first
 Carl's idea: the five details exist once for all practices, so (with the
