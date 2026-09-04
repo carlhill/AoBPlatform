@@ -1397,6 +1397,23 @@ device from the console (never a tick-box on the tablet) and renders under a
 - [ ] Per-device mode in the console: walk-up enabled / push only. A tablet
       beside reception should not offer the walk-up list.
 
+## The administrator's stored email drifted from Keycloak
+
+Found 4 Sep 2026 while Carl tried to sign in as XLEVELUP's administrator. The
+staff row says `carl_6_xlevelup3@hillsempire.com`; Keycloak's account
+(username `admin.821709fb`, passkey enrolled) says `carl_7_...`. The people
+screen showed carl_7 because it derives the address; the database still holds
+carl_6, so a sign-in with the stored address fails as "invalid username".
+One source of truth is needed -- either the staff row is updated when the
+administrator address is re-issued, or the screen reads Keycloak and the
+column goes.
+
+- [ ] Reconcile `staff_members.email` with the Keycloak account on re-issue;
+      a named test that the two cannot differ after an admin re-issue.
+- [ ] Sign-in copy: the administrator account signs in with the address shown
+      on the people screen (or username `admin.<practice-id-prefix>`); say so
+      where the account is described.
+
 ## Nothing on the patient surface is ever staff entry
 
 Carl, 3 Sep 2026, on seeing K-3 ask for a "Basic description of the service --
