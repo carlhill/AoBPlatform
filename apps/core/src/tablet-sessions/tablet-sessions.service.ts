@@ -26,6 +26,7 @@ import { CaptureService } from '../capture/capture.service';
 import { VerificationService } from '../verification/verification.service';
 import { DevicesService, type ResolvedDevice } from '../devices/devices.service';
 import { pushRefusals } from './push-refusal';
+import type { DisputeResolutionOutcome } from './dispute-resolution.dto';
 
 /**
  * The statuses a pre-agreement may be in and still be worth sending to a
@@ -390,6 +391,112 @@ export class TabletSessionsService {
 
     const row = await this.push(practiceId, session.deviceId, targetAgreementId, actor);
     return { ...row, supersededAgreementId };
+  }
+
+  /**
+   * HOW THE DISPUTE ENDED — the other half of the cross (Carl, 4 Sep 2026).
+   *
+   * WHY THE RECORD NEEDS THIS AT ALL. `tablet.details_disputed` says that at a
+   * given moment the person the particulars are about looked at them and said
+   * one was not theirs. On its own that is half a story, and the missing half
+   * is the one somebody will actually ask about: was our record wrong, or was
+   * the patient? Reception knows within seconds, and until now had nowhere to
+   * put the answer.
+   *
+   * AND WITHOUT IT, "THE PATIENT WAS MISTAKEN" HAD TO BE FAKED AS A
+   * CORRECTION. The only way out of a dispute was `PATCH /patients/:id/details`
+   * — which writes `patient.details_corrected` — so a receptionist whose
+   * record was right had to either re-save the same value (an event claiming a
+   * change nobody made) or leave the cross hanging. Both are worse than a
+   * second, honestly-named outcome.
+   *
+   * IT CHANGES NOTHING AND IT MUST NOT. Not the agreement, not the patient,
+   * not the session's state or its disputed types: the cross is a fact and
+   * facts are not edited (hard rule 11's instinct applied to a session row).
+   * What follows is a re-send, which builds a FRESH session — and after
+   * `patient_error` nothing was corrected, so `particularsCorrectedSince`
+   * finds nothing and the SAME agreement goes out again, unsuperseded. That
+   * falls out of `resend` as it stands rather than being arranged here, which
+   * is the reason there is no special case for it.
+   *
+   * A STAFF ACTOR IS REQUIRED, like every other console act on this page. A
+   * resolution nobody can be asked about is the shape this platform exists to
+   * prevent (`SessionActor`'s own words).
+   *
+   * TYPES, NEVER VALUES (REQ-VER-04). The DTO has no field for one and this
+   * method reads no patient row.
+   */
+  async resolveDispute(
+    practiceId: string,
+    sessionId: string,
+    outcome: DisputeResolutionOutcome,
+    details: string[],
+    actor: Actor | undefined,
+  ): Promise<{
+    id: string;
+    outcome: DisputeResolutionOutcome;
+    details: ConfirmableDetailType[];
+    state: TabletSessionState;
+  }> {
+    if (!actor) throw pushRefusals.noActor();
+    const resolved = [...new Set(details)] as ConfirmableDetailType[];
+
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      // A cross-practice id finds nothing — RLS filters on the
+      // transaction-local scope, so this fails closed rather than admitting
+      // the session exists somewhere else.
+      const session = await tx.tabletSession.findFirst({ where: { id: sessionId } });
+      if (!session) throw new NotFoundException('That tablet session was not found.');
+
+      /*
+       * THERE MUST BE A DISPUTE TO RESOLVE. Recording an answer to a question
+       * nobody asked would put an event in the vault that reads like evidence
+       * of a conversation that never happened.
+       */
+      if (session.detailsDisputedTypes.length === 0) {
+        throw new BadRequestException('This session has no disputed detail to resolve.');
+      }
+
+      await enqueueVaultEvent(tx, {
+        type: 'tablet.dispute_resolved',
+        actor: { principalType: 'staff', id: actor.id },
+        subject: { type: 'TabletSession', id: session.id },
+        payload: {
+          agreementId: session.agreementId,
+          outcome,
+          /*
+           * WHAT THE PATIENT CROSSED, AND WHAT RECEPTION ANSWERED FOR — as
+           * TYPES, joined into one string because a vault payload holds
+           * scalars, and sorted so the same answer compares equal whichever
+           * order the console listed them in.
+           *
+           * THE TWO LISTS ARE RECORDED SEPARATELY AND ARE ALLOWED TO DIFFER.
+           * A patient who crossed their address while mentioning that their
+           * mobile is also wrong leaves reception correcting two details
+           * against one cross — and an event that folded the second into the
+           * first would say the patient disputed something they ticked.
+           */
+          disputedTypes: [...session.detailsDisputedTypes].sort().join(','),
+          resolvedTypes: [...resolved].sort().join(','),
+          resolvedCount: resolved.length,
+          resolvedBy: actor.name,
+          /*
+           * AND THE CONTRACT DID NOT MOVE. Closing a dispute settles what
+           * reception does next, never what was agreed (hard rule 8,
+           * REQ-REC-04) — the same statement, for the same reason, as the
+           * dispute event that preceded it.
+           */
+          agreementChanged: false,
+        },
+      });
+
+      return {
+        id: session.id,
+        outcome,
+        details: resolved,
+        state: session.state as TabletSessionState,
+      };
+    });
   }
 
   /** What is on the practice's tablets right now — states, never a mirror. */

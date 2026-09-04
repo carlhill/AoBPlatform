@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { TabletSessionsService } from './tablet-sessions.service';
 import { PushToDeviceDto } from './tablet-sessions.dto';
+import { ResolveDisputeDto } from './dispute-resolution.dto';
 import { SessionActor, type Actor } from '../auth/actor.decorator';
 import { PracticeScoped } from '../auth/practice-scope.decorator';
 
@@ -142,5 +143,34 @@ export class TabletSessionsController {
     @SessionActor() actor: Actor | undefined,
   ) {
     return this.sessions.resend(requirePractice(practiceId), id, actor);
+  }
+
+  /**
+   * HOW THE DISPUTE ENDED (Carl, 4 Sep 2026) — reception says what they did
+   * about the row the patient crossed.
+   *
+   * TWO OUTCOMES, AND THE SECOND IS WHY THIS EXISTS. `corrected` says the
+   * detail was changed on the platform's mirror (that act writes its own
+   * `patient.details_corrected` event); `patient_error` says the detail was
+   * right all along. Without the second, closing a dispute would mean faking
+   * a correction that never happened.
+   *
+   * IT CHANGES NOTHING — not the agreement, not the session, not the patient.
+   * It records a fact against a named staff member and nothing else, which is
+   * exactly what it is for: a cross with no recorded answer is a hole in the
+   * evidence, and a cross answered by an unattributed caller is worse.
+   *
+   * TYPES, NEVER VALUES (REQ-VER-04). The DTO has no field that could carry
+   * one.
+   */
+  @Post('tablet-sessions/:id/dispute-resolution')
+  @PracticeScoped()
+  resolveDispute(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ResolveDisputeDto,
+    @SessionActor() actor: Actor | undefined,
+  ) {
+    return this.sessions.resolveDispute(requirePractice(practiceId), id, dto.outcome, dto.details, actor);
   }
 }

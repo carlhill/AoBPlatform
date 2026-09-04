@@ -350,6 +350,25 @@ export const VAULT_EVENT_TYPES = [
   'campaign.declared',
   'key.used',
   'access.read', // REQ-LOG-07: reads are logged, not only writes
+  /**
+   * A DISPUTED DETAIL WAS CLOSED AT THE DESK (Carl, 4 Sep 2026).
+   *
+   * A cross on the tablet is a fact somebody will be asked about later: at
+   * that moment the person the particulars are about said one was not theirs.
+   * WHAT HAPPENED NEXT is the other half of that record, and there are exactly
+   * two honest answers — `corrected` (reception changed the detail on the
+   * platform's mirror, which has its own `patient.details_corrected` event) and
+   * `patient_error` (the detail was right; the patient crossed it in error).
+   * Without this event the second answer would have to be faked as the first,
+   * putting a correction in the vault that never happened.
+   *
+   * THE TYPES AND THE STAFF MEMBER, NEVER A VALUE (REQ-VER-04, hard rule 9) —
+   * `address`, `mobile`, the same five words the tick-boxes use. And the
+   * AGREEMENT DID NOT MOVE: closing a dispute settles what reception will do
+   * next, not what was contracted, so the payload says so for the same reason
+   * the walked-away event does (hard rule 8, REQ-REC-04).
+   */
+  'tablet.dispute_resolved',
 ] as const;
 
 export type VaultEventType = (typeof VAULT_EVENT_TYPES)[number];

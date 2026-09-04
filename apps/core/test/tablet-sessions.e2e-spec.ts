@@ -1610,6 +1610,173 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
       expect(untouched!.renderedArtefactHash).toBe(before!.renderedArtefactHash);
     });
 
+    /**
+     * HOW THE DISPUTE ENDED -- the other half of the cross (Carl, 4 Sep 2026).
+     *
+     * `tablet.details_disputed` records that at a given moment the person the
+     * particulars are about looked at them and said one was not theirs. On its
+     * own that is half a story, and the missing half is the one somebody will
+     * actually ask about: was OUR record wrong, or was the patient?
+     *
+     * AND WITHOUT IT, "THE PATIENT WAS MISTAKEN" HAD TO BE FAKED AS A
+     * CORRECTION. The only exit from a dispute was `PATCH /patients/:id/details`
+     * -- which writes `patient.details_corrected` -- so a receptionist whose
+     * record was right had to either re-save the same value (an event claiming
+     * a change nobody made) or leave the cross hanging.
+     */
+    const resolve = (
+      sessionId: string,
+      body: { outcome: string; details: string[] },
+      practiceId = practiceA,
+    ) =>
+      http()
+        .post(`/tablet-sessions/${sessionId}/dispute-resolution`)
+        .set('x-practice-id', practiceId)
+        .send(body);
+
+    it('dispute_resolution_is_recorded_with_types_and_staff', async () => {
+      const { patientId, assignorId } = await freshPatient('Noor');
+      const agreementId = await draft({ patientId, assignorId });
+      const pushed = await pushTo(tabletA, agreementId).expect(201);
+
+      await answer(pushed.body.id, {
+        confirmed: ['name', 'date_of_birth', 'email'],
+        disputed: ['address', 'mobile'],
+      }).expect(201);
+
+      const before = await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.findFirst({ where: { id: agreementId } }),
+      );
+
+      const res = await resolve(pushed.body.id, {
+        outcome: 'patient_error',
+        details: ['address', 'mobile'],
+      }).expect(201);
+      expect(res.body.outcome).toBe('patient_error');
+      expect([...res.body.details].sort()).toEqual(['address', 'mobile']);
+
+      const event = await prisma.vaultOutbox.findFirst({
+        where: { subjectId: pushed.body.id, type: 'tablet.dispute_resolved' },
+      });
+      expect(event).not.toBeNull();
+      const payload = event!.payload as Record<string, unknown>;
+      expect(payload.outcome).toBe('patient_error');
+      expect(payload.resolvedTypes).toBe('address,mobile');
+      expect(payload.disputedTypes).toBe('address,mobile');
+      expect(payload.resolvedCount).toBe(2);
+      // AGAINST A NAME. "Nothing was wrong after all" is a claim somebody may
+      // be asked about later, and an unattributed one cannot be questioned.
+      expect(typeof payload.resolvedBy).toBe('string');
+      expect((payload.resolvedBy as string).length).toBeGreaterThan(0);
+      expect((event!.actor as Record<string, unknown>).id).toBe(RECEPTIONIST.sub);
+      expect((event!.actor as Record<string, unknown>).principalType).toBe('staff');
+      // AND THE CONTRACT DID NOT MOVE (hard rule 8, REQ-REC-04).
+      expect(payload.agreementChanged).toBe(false);
+
+      /*
+       * NOTHING WAS TOUCHED. Not the agreement, and not the session: the
+       * cross is a fact and facts are not edited. What follows is a re-send,
+       * which builds a FRESH session -- and after `patient_error` nothing was
+       * corrected, so the SAME agreement goes out again, unsuperseded.
+       */
+      const after = await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.findFirst({ where: { id: agreementId } }),
+      );
+      expect(after).toEqual(before);
+
+      const session = await prisma.withPractice(practiceA, (tx) =>
+        tx.tabletSession.findFirst({ where: { id: pushed.body.id } }),
+      );
+      expect(session!.state).toBe('details_disputed');
+      expect(session!.endedAt).toBeNull();
+      expect(session!.detailsDisputedTypes.sort()).toEqual(['address', 'mobile']);
+
+      // A SESSION WITH NOTHING TO RESOLVE IS REFUSED. An answer to a question
+      // nobody asked would read like evidence of a conversation that never
+      // happened.
+      const clean = await draft();
+      const other = await pushTo(secondTabletA, clean).expect(201);
+      await resolve(other.body.id, { outcome: 'corrected', details: ['address'] }).expect(400);
+      await http()
+        .post(`/tablet-sessions/${other.body.id}/recall`)
+        .set('x-practice-id', practiceA)
+        .expect(201);
+    });
+
+    it('dispute_resolution_never_carries_values', async () => {
+      const { patientId, assignorId } = await freshPatient('Ora');
+      const agreementId = await draft({ patientId, assignorId });
+      const pushed = await pushTo(tabletA, agreementId).expect(201);
+
+      await answer(pushed.body.id, {
+        confirmed: ['name', 'date_of_birth', 'mobile', 'email'],
+        disputed: ['address'],
+      }).expect(201);
+
+      await resolve(pushed.body.id, { outcome: 'corrected', details: ['address'] }).expect(201);
+
+      const event = await prisma.vaultOutbox.findFirst({
+        where: { subjectId: pushed.body.id, type: 'tablet.dispute_resolved' },
+      });
+      expect(event).not.toBeNull();
+
+      /*
+       * NOT ONE VALUE, ANYWHERE NEAR IT -- not the detail as it stood, and not
+       * the detail as it now reads. The DTO has no field for either and the
+       * service reads no patient row (REQ-VER-04, hard rule 9). Nor a
+       * Medicare-shaped anything, which does not exist in this system at all
+       * (hard rule 1), nor a dollar amount (hard rule 4).
+       */
+      const serialised = JSON.stringify(event);
+      for (const value of [
+        '404 Wrongway Parade',
+        '+61400000404',
+        'wrong.address@example.invalid',
+        '1969-11-02',
+        'Ora',
+        'Crossfield',
+      ]) {
+        expect(serialised).not.toContain(value);
+      }
+      expect(serialised).not.toMatch(/medicare/i);
+      expect(serialised).not.toMatch(/\$\s?\d/);
+
+      // A NAMELESS CALLER IS REFUSED, like every other act on this page -- 403
+      // from the scope guard, before anything reads the body.
+      const saved = currentPrincipal;
+      currentPrincipal = null;
+      await resolve(pushed.body.id, { outcome: 'patient_error', details: ['address'] }).expect(403);
+      currentPrincipal = saved;
+
+      // AND THE LIST IS FIXED: a type outside the five has no field to arrive
+      // in, and a resolution naming nothing is not a record of anything.
+      await resolve(pushed.body.id, { outcome: 'corrected', details: ['medicare_number'] }).expect(400);
+      await resolve(pushed.body.id, { outcome: 'corrected', details: [] }).expect(400);
+      await resolve(pushed.body.id, { outcome: 'something_else', details: ['address'] }).expect(400);
+    });
+
+    it('a dispute resolution across a practice boundary finds nothing', async () => {
+      const { patientId, assignorId } = await freshPatient('Pax');
+      const agreementId = await draft({ patientId, assignorId });
+      const pushed = await pushTo(tabletA, agreementId).expect(201);
+      await answer(pushed.body.id, {
+        confirmed: ['name', 'date_of_birth', 'mobile', 'email'],
+        disputed: ['address'],
+      }).expect(201);
+
+      signedInAt(practiceB);
+      await resolve(pushed.body.id, { outcome: 'patient_error', details: ['address'] }, practiceB).expect(
+        404,
+      );
+
+      // Nothing recorded, and the dispute still practice A's to answer.
+      const events = await prisma.vaultOutbox.findMany({
+        where: { subjectId: pushed.body.id, type: 'tablet.dispute_resolved' },
+      });
+      expect(events).toHaveLength(0);
+      signedInAt(practiceA);
+    });
+
     it('the re-send refuses an unattributed caller, like every other act on this page', async () => {
       const { patientId, assignorId } = await freshPatient('Lior');
       const agreementId = await draft({ patientId, assignorId });

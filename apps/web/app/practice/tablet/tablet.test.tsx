@@ -127,6 +127,48 @@ const BUSY_SESSION: TabletSessionRow = {
   patientName: 'Alex Otherpatient',
 };
 
+/**
+ * A TABLET WHOSE LAST SESSION ENDED. `timed_out` is the tablet's own
+ * inactivity clock — nobody pressed anything — and it leaves the AGREEMENT
+ * untouched, which is why the row can simply be sent again.
+ *
+ * A UUID-SHAPED ID ON PURPOSE: the console shows the first eight characters so
+ * reception and the tablet's footer can be matched by eye, and `session-1`
+ * would make that assertion prove nothing.
+ */
+const ENDED: TabletSessionRow = {
+  ...SESSION,
+  id: '8ff09d7b-2222-4000-8000-000000000002',
+  state: 'timed_out',
+  endedAt: '2026-09-04T09:20:00.000Z',
+};
+
+const TABLET_TWO: DeviceRow = { ...TABLET, id: 'device-2', label: 'Reception tablet 2' };
+
+/** The SERVER giving up after thirty minutes, on a different tablet. */
+const EXPIRED: TabletSessionRow = {
+  ...ENDED,
+  id: '9aa11c2d-3333-4000-8000-000000000003',
+  deviceId: TABLET_TWO.id,
+  deviceLabel: TABLET_TWO.label,
+  state: 'expired',
+};
+
+/** A live session with a real-shaped id, for the short-id assertions. */
+const LIVE_UUID: TabletSessionRow = {
+  ...SESSION,
+  id: '8ff09d7b-1111-4000-8000-000000000001',
+};
+
+/**
+ * D6a, AS THE SERVER SENDS IT — the words and the VERSION of the list they
+ * came from (hard rule 14). The console never holds these strings.
+ */
+const DESCRIPTIONS = {
+  version: '2026-08',
+  descriptions: ['General practitioner attendance', 'Specialist attendance'],
+};
+
 /** What `GET /patients/:id/details` answers — the six correctable fields. */
 const DETAILS = {
   id: 'patient-1',
@@ -154,6 +196,7 @@ function stubFetch(
     sessions?: TabletSessionRow[] | (() => TabletSessionRow[]);
     staff?: string[];
     details?: unknown;
+    content?: unknown;
     onPost?: (url: string) => { ok: boolean; status?: number; payload?: unknown };
   } = {},
 ) {
@@ -167,6 +210,8 @@ function stubFetch(
         const liveSessions = typeof opts.sessions === 'function' ? opts.sessions() : (opts.sessions ?? []);
         const payload = url.includes('/patients/')
           ? (opts.details ?? DETAILS)
+          : url.includes('/service-descriptions')
+          ? (opts.content ?? DESCRIPTIONS)
           : url.includes('/tablet-sessions/pushable')
           ? (opts.rows ?? [READY, BLOCKED])
           : url.includes('/tablet-sessions')
@@ -612,21 +657,53 @@ describe('console_shows_disputed_details_and_offers_correct_and_resend', () => {
     expect(page).not.toMatch(/certified|accredited|government-approved/i);
   });
 
-  it('opens a field per crossed detail, shows the PMS caveat verbatim, and sends only what changed', async () => {
+  /**
+   * UPDATED 4 SEP 2026, AND THE CHANGE IS THE POINT. This used to assert that
+   * ONLY the crossed fields rendered. Carl's ruling from live testing replaced
+   * that rule: "just in case the patient says my mobile is also wrong but I
+   * ticked yes". All five details open; the crossed ones are MARKED. The half
+   * of the old test that still holds — the caveat verbatim, and only the
+   * changed field on the wire — is unchanged, because those were never about
+   * which fields were drawn.
+   */
+  it('correct_panel_shows_all_five_details_with_disputed_highlighted', async () => {
     signedInAtPractice();
     stubFetch({ sessions: [DISPUTED] });
     render(<TabletView practiceId={PRACTICE} />);
 
     fireEvent.click(await screen.findByTestId(`correct-open-${DISPUTED.id}`));
 
-    // ONE FIELD PER CROSSED DETAIL, and nothing else: a crossed address is not
-    // an occasion to open the whole record.
+    // ALL FIVE DETAILS — six columns, because a name is two of them and one
+    // question. Every one pre-filled with what the platform holds.
     const address = (await screen.findByTestId(`correct-address-${DISPUTED.id}`)) as HTMLInputElement;
     const mobile = screen.getByTestId(`correct-mobile-${DISPUTED.id}`) as HTMLInputElement;
+    const email = screen.getByTestId(`correct-email-${DISPUTED.id}`) as HTMLInputElement;
+    const dob = screen.getByTestId(`correct-dateOfBirth-${DISPUTED.id}`) as HTMLInputElement;
+    const given = screen.getByTestId(`correct-givenNames-${DISPUTED.id}`) as HTMLInputElement;
+    const family = screen.getByTestId(`correct-familyName-${DISPUTED.id}`) as HTMLInputElement;
     expect(address.value).toBe(DETAILS.address);
     expect(mobile.value).toBe(DETAILS.mobile);
-    expect(screen.queryByTestId(`correct-email-${DISPUTED.id}`)).toBeNull();
-    expect(screen.queryByTestId(`correct-dateOfBirth-${DISPUTED.id}`)).toBeNull();
+    expect(email.value).toBe(DETAILS.email);
+    expect(dob.value).toBe(DETAILS.dateOfBirth);
+    expect(given.value).toBe(DETAILS.givenNames);
+    expect(family.value).toBe(DETAILS.familyName);
+
+    // THE CROSSED ONES ARE MARKED, and the rest are not — the panel still says
+    // what the tablet reported, it simply does not hide the rest.
+    expect(
+      screen.getByTestId(`correct-field-address-${DISPUTED.id}`).getAttribute('data-disputed'),
+    ).toBe('true');
+    expect(
+      screen.getByTestId(`correct-field-mobile-${DISPUTED.id}`).getAttribute('data-disputed'),
+    ).toBe('true');
+    expect(
+      screen.getByTestId(`correct-field-email-${DISPUTED.id}`).getAttribute('data-disputed'),
+    ).toBe('false');
+    // IN WORDS AS WELL AS IN COLOUR — a colour-only distinction is not a
+    // distinction (WCAG 2.2 AA).
+    expect(screen.getByTestId(`correct-field-address-${DISPUTED.id}`).textContent).toContain(
+      strings.tablet.correctDisputedTag,
+    );
 
     // CARL'S CAVEAT, WORD FOR WORD.
     expect(screen.getByTestId(`correct-caveat-${DISPUTED.id}`).textContent).toContain(
@@ -639,9 +716,18 @@ describe('console_shows_disputed_details_and_offers_correct_and_resend', () => {
     await waitFor(() => expect(calls.some((c) => c.method === 'PATCH')).toBe(true));
     const patch = calls.find((c) => c.method === 'PATCH')!;
     expect(patch.url).toContain(`/patients/${DISPUTED.patientId}/details`);
-    // ONLY THE CHANGED FIELD. The mobile was opened, read and left alone, and
-    // an unchanged field must not become a correction event.
+    // ONLY THE CHANGED FIELD, still — five fields on screen and one on the
+    // wire. An unchanged field must never become a correction event, and
+    // opening the whole record must not make it one.
     expect(patch.body).toEqual({ address: '1 Corrected Way, Sampletown NSW 2000' });
+
+    // AND WHY IT WAS MADE, ON THE SESSION — the cross and its answer are one
+    // story rather than two unconnected facts.
+    await waitFor(() =>
+      expect(calls.some((c) => c.url.includes('/dispute-resolution'))).toBe(true),
+    );
+    const resolved = calls.find((c) => c.url.includes('/dispute-resolution'))!;
+    expect(resolved.body).toEqual({ outcome: 'corrected', details: ['address'] });
   });
 
   it('re-sends in one press and says plainly when a locked agreement was superseded', async () => {
@@ -715,6 +801,212 @@ describe('console_shows_disputed_details_and_offers_correct_and_resend', () => {
     // An unknown type contributes nothing rather than throwing — a server that
     // grows a sixth detail must not blank the correction panel.
     expect(fieldsToCorrect(['something_new'])).toEqual([]);
+  });
+});
+
+/**
+ * FOUR RULINGS FROM CARL'S LIVE TESTING OF THE RECEPTION-PUSH LOOP (4 Sep
+ * 2026), and one label.
+ *
+ *  - THE BLOCKED ROW CARRIES ITS OWN FIX. "Shortcuts to the answer, not
+ *    directions to a screen" (CLAUDE.md section 7): the description is chosen
+ *    on the row that says it is missing, from the SERVER's versioned list, and
+ *    the reconciliation link stays as the secondary route.
+ *  - A DISPUTE HAS TWO HONEST ENDINGS. The patient may have crossed a detail
+ *    that was right; recording that as a "correction" would put an event in
+ *    the vault claiming a change nobody made.
+ *  - AN ENDED SESSION IS SENT AGAIN FROM THE ROW THAT SAID IT ENDED. Walking
+ *    away, timing out, recall and expiry leave the agreement untouched (hard
+ *    rule 8, REQ-REC-04), so it is an ordinary push -- with the ordinary
+ *    refusal mapping when the agreement has since moved on.
+ *  - `timed_out` AND `expired` READ AS DIFFERENT THINGS, because they ARE: the
+ *    tablet's own clock, and the server giving up. Reception acts differently
+ *    on the two.
+ *  - THE SHORT SESSION ID IS ON THE ROW, matching the tablet's footer, so a
+ *    screen and a person can be paired by eye.
+ */
+describe('the reception-push loop -- set, resolve, send again', () => {
+  beforeEach(() => {
+    calls.length = 0;
+    session = null;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('d6a_can_be_set_inline_on_the_blocked_row', async () => {
+    signedInAtPractice();
+    stubFetch();
+    render(<TabletView practiceId={PRACTICE} />);
+
+    const band = await screen.findByTestId(`blocked-${BLOCKED.agreementId}`);
+    expect(band.textContent).toContain(strings.tablet.blocked.service_description_missing);
+
+    // THE CONTROL IS IN THE BAND THAT STATES THE PROBLEM.
+    const fix = await screen.findByTestId(`d6a-fix-${BLOCKED.agreementId}`);
+    // WHICH LIST IT IS OFFERING (hard rule 14) -- never a version this file
+    // decided on.
+    expect(fix.textContent).toContain(strings.tablet.d6aListVersion(DESCRIPTIONS.version));
+    // AND THE WORDS CAME FROM THE SERVER, in the order it sent them.
+    expect(within(fix).getByText(DESCRIPTIONS.descriptions[0])).toBeTruthy();
+    expect(within(fix).getByText(DESCRIPTIONS.descriptions[1])).toBeTruthy();
+
+    // Dead until a description is chosen (CLAUDE.md section 6).
+    expect((screen.getByTestId(`d6a-set-${BLOCKED.agreementId}`) as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(screen.getByTestId(`d6a-select-${BLOCKED.agreementId}`), {
+      target: { value: DESCRIPTIONS.descriptions[1] },
+    });
+    await waitFor(() =>
+      expect((screen.getByTestId(`d6a-set-${BLOCKED.agreementId}`) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
+    fireEvent.click(screen.getByTestId(`d6a-set-${BLOCKED.agreementId}`));
+
+    await waitFor(() =>
+      expect(calls.some((c) => c.url.includes('/service-descriptions/agreements/'))).toBe(true),
+    );
+    const posted = calls.find((c) => c.url.includes('/service-descriptions/agreements/'))!;
+    expect(posted.method).toBe('POST');
+    // THE EXISTING STAFF ENDPOINT, unchanged -- this adds a second place to
+    // press it, not a second way of doing it.
+    expect(posted.url).toContain(`/service-descriptions/agreements/${BLOCKED.agreementId}`);
+    expect(posted.body).toEqual({ description: DESCRIPTIONS.descriptions[1] });
+
+    // AND THE RECONCILIATION LINK IS STILL THERE, as the secondary route.
+    const link = within(band).getByTestId(`blocked-link-${BLOCKED.agreementId}`) as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('/practice/reconciliation');
+  });
+
+  it('no_change_needed_records_patient_error_then_resends', async () => {
+    signedInAtPractice();
+    stubFetch({ sessions: [DISPUTED] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    // THE SCREEN SAYS IT IS RECORDED, AND AGAINST WHOM, BEFORE ANYBODY PRESSES.
+    const banner = await screen.findByTestId(`disputed-${DISPUTED.id}`);
+    expect(banner.textContent).toContain(strings.tablet.noChangeNote);
+
+    fireEvent.click(await screen.findByTestId(`no-change-${DISPUTED.id}`));
+
+    await waitFor(() => expect(calls.some((c) => c.url.includes('/dispute-resolution'))).toBe(true));
+    const resolved = calls.find((c) => c.url.includes('/dispute-resolution'))!;
+    expect(resolved.method).toBe('POST');
+    expect(resolved.url).toContain(`/tablet-sessions/${DISPUTED.id}/dispute-resolution`);
+    // THE TYPES THE PATIENT CROSSED, never a value (REQ-VER-04).
+    expect(resolved.body).toEqual({ outcome: 'patient_error', details: ['address', 'mobile'] });
+    expect(JSON.stringify(resolved.body)).not.toContain('404 Wrongway Parade');
+
+    // AND NOTHING WAS CHANGED. The whole reason this exists is that the only
+    // other way out was a correction event for a change nobody made.
+    expect(calls.some((c) => c.method === 'PATCH')).toBe(false);
+
+    // RE-SEND IS THE NEXT PRESS, and after `patient_error` it sends the SAME
+    // agreement -- nothing was corrected, so nothing supersedes.
+    fireEvent.click(screen.getByTestId(`resend-${DISPUTED.id}`));
+    await waitFor(() => expect(calls.some((c) => c.url.includes('/resend'))).toBe(true));
+    expect(calls.find((c) => c.url.includes('/resend'))!.url).toContain(
+      `/tablet-sessions/${DISPUTED.id}/resend`,
+    );
+  });
+
+  it('ended_session_row_offers_send_again', async () => {
+    signedInAtPractice();
+    stubFetch({ sessions: [ENDED] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    // The tablet is idle, and says what it last did -- a name and an ending,
+    // still a status rather than a mirror.
+    const last = await screen.findByTestId(`tablet-last-${TABLET.id}`);
+    expect(last.textContent).toContain(ENDED.patientName);
+    expect(last.textContent).toContain(strings.tablet.states.timed_out);
+
+    const again = screen.getByTestId(`send-again-${ENDED.id}`) as HTMLButtonElement;
+    expect(again.disabled).toBe(false);
+    fireEvent.click(again);
+
+    await waitFor(() =>
+      expect(calls.some((c) => c.method === 'POST' && c.url.includes('/push'))).toBe(true),
+    );
+    const push = calls.find((c) => c.method === 'POST' && c.url.includes('/push'))!;
+    // THE SAME PUSH, TO THE SAME TABLET, FOR THE SAME AGREEMENT. There is one
+    // push in this product.
+    expect(push.url).toContain(`/devices/${ENDED.deviceId}/push`);
+    expect(push.body).toEqual({ agreementId: ENDED.agreementId });
+  });
+
+  it('a send-again whose agreement has moved on is dead, and says why', async () => {
+    signedInAtPractice();
+    // The pushable list no longer holds it -- signed, superseded, or captured
+    // another way. That is exactly what `agreement_not_pushable` says.
+    stubFetch({ sessions: [ENDED], rows: [BLOCKED] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    const again = (await screen.findByTestId(`send-again-${ENDED.id}`)) as HTMLButtonElement;
+    expect(again.disabled).toBe(true);
+
+    const band = screen.getByTestId(`send-again-blocked-${ENDED.id}`);
+    expect(band.textContent).toContain(strings.tablet.blocked.agreement_not_pushable);
+    // A way forward, never a dead end (CLAUDE.md section 7).
+    expect(
+      (within(band).getByTestId(`send-again-link-${ENDED.id}`) as HTMLAnchorElement).getAttribute('href'),
+    ).toBe('/practice/reconciliation');
+    expect(band.textContent).not.toMatch(/practice queue/i);
+  });
+
+  it('timed_out_and_expired_have_distinct_labels', async () => {
+    // Two different facts, and reception acts differently on each: the
+    // tablet's own clock reset a screen nobody was at; the SERVER gave up on a
+    // tablet that stopped asking altogether. One word for both is the bug.
+    expect(strings.tablet.states.timed_out).toBeTruthy();
+    expect(strings.tablet.states.expired).toBeTruthy();
+    expect(strings.tablet.states.timed_out).not.toBe(strings.tablet.states.expired);
+
+    signedInAtPractice();
+    stubFetch({ devices: [TABLET, TABLET_TWO], sessions: [ENDED, EXPIRED] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    const first = await screen.findByTestId(`tablet-last-${TABLET.id}`);
+    const second = await screen.findByTestId(`tablet-last-${TABLET_TWO.id}`);
+    expect(first.textContent).toContain(strings.tablet.states.timed_out);
+    expect(first.textContent).not.toContain(strings.tablet.states.expired);
+    expect(second.textContent).toContain(strings.tablet.states.expired);
+    expect(second.textContent).not.toContain(strings.tablet.states.timed_out);
+  });
+
+  it('rows_show_the_session_id_short', async () => {
+    signedInAtPractice();
+    stubFetch({
+      sessions: [LIVE_UUID],
+      rows: [{ ...READY, activeSession: { id: LIVE_UUID.id, deviceId: TABLET.id, state: 'reading' } }],
+    });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    const short = strings.tablet.sessionTag('8ff09d7b');
+
+    // ON THE AGREEMENT'S ROW ...
+    expect((await screen.findByTestId(`row-session-id-${READY.agreementId}`)).textContent).toBe(short);
+    // ... AND ON THE TABLET'S. The tablet's own footer shows the same eight
+    // characters, so a screen and a person can be paired by eye.
+    expect(screen.getByTestId(`tablet-session-id-${TABLET.id}`).textContent).toBe(short);
+
+    // EIGHT CHARACTERS, NOT THE WHOLE ID -- long enough to be unique among a
+    // morning's sessions, short enough to read across a desk.
+    expect(document.body.textContent ?? '').not.toContain(LIVE_UUID.id);
+  });
+
+  it('an ended session shows its short id too, on the line that says how it ended', async () => {
+    signedInAtPractice();
+    stubFetch({ sessions: [ENDED] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    const last = await screen.findByTestId(`tablet-last-${TABLET.id}`);
+    expect(last.textContent).toContain(strings.tablet.states.timed_out);
+    expect(screen.getByTestId(`tablet-last-session-id-${TABLET.id}`).textContent).toBe(
+      strings.tablet.sessionTag('8ff09d7b'),
+    );
   });
 });
 

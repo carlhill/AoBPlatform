@@ -87,3 +87,45 @@
 .band {
   grid-column: 1 / -1;
 }
+
+/*
+ * THE FIX, INSIDE THE BAND THAT STATES THE PROBLEM (Carl, 4 Sep 2026) — the
+ * D6a select and its button, sitting under the refusal sentence rather than
+ * two screens away. It is inside a `Notice`, whose body is already a block, so
+ * this only has to space its own three children and stop the select stretching
+ * to the width of a full-bleed band on a wide monitor.
+ */
+.fix {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s2);
+  margin: var(--s2) 0;
+  max-width: 32rem;
+}
+
+/*
+ * THE ROWS THE PATIENT ACTUALLY CROSSED. The correction panel now opens ALL
+ * five details, so the mark is what carries "this is the one the tablet
+ * reported" — and it is a border and a tint rather than colour alone, because
+ * a colour-only distinction is not a distinction under WCAG 2.2 AA. The field's
+ * own hint says it in words as well, which is the part a screen reader gets.
+ */
+.disputedField {
+  border-left: 3px solid var(--warn);
+  background: var(--warn-wash);
+  padding: var(--s2) var(--s3);
+  border-radius: var(--radius);
+}
+
+/*
+ * THE SHORT SESSION ID (Carl, 4 Sep 2026). Monospace, because its whole job is
+ * to be compared character by character against the eight on the tablet's own
+ * footer — a proportional face makes 8ff09d7b and 8ff09db7 look alike at a
+ * glance, which is the one thing this must not do.
+ */
+.sessionId {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  white-space: nowrap;
+}

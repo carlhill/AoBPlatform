@@ -48,15 +48,19 @@
  * bills privately or asks again after the service.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { ArrowRight, ClipboardList, PencilLine, RotateCcw, Send, Tablet, UserRound } from 'lucide-react';
+import { ArrowRight, CheckCheck, ClipboardList, PencilLine, RotateCcw, Send, Tablet, UserRound } from 'lucide-react';
 import {
   ASSIGNOR_RELATIONSHIPS_VERSION,
   ASSIGNOR_RELATIONSHIP_OPTIONS,
+  CORRECTABLE_PATIENT_FIELDS,
+  ENDED_TABLET_SESSION_STATES,
   MIN_AGE_ASSIGN_FOR_OTHER,
   audiencesOf,
   authorityBasisFor,
+  detailTypeForPatientField,
+  isCorrectablePatientField,
   matchesPracticeStaff,
   mayReach,
   relationshipNeedsFreeText,
@@ -125,9 +129,66 @@ const STATE_TONE: Record<string, Tone> = {
   details_disputed: 'stop',
   signed: 'ok',
   walked_away: 'neutral',
+  // The tablet's own clock and the server's backstop. Neither is a failure and
+  // neither needs anybody to move, so both read as neutral — the difference
+  // between them is in the WORDS (`strings.tablet.states`), not in the colour.
+  timed_out: 'neutral',
   recalled: 'neutral',
   expired: 'neutral',
 };
+
+/**
+ * WHICH ENDINGS STILL HAVE SOMETHING TO SEND (Carl, 4 Sep 2026).
+ *
+ * Walking away, timing out, being recalled and expiring all leave the
+ * AGREEMENT exactly as it was — that is hard rule 8 in the session table
+ * (REQ-REC-04), and it is what makes "send it again" the ordinary next thing
+ * rather than a repair. `signed` is the one ending with nothing left to do,
+ * and it is excluded by NAME rather than by listing the other four, so an
+ * ending added to the domain later shows up here instead of being silently
+ * dropped.
+ */
+export const SEND_AGAIN_ENDINGS: readonly string[] = ENDED_TABLET_SESSION_STATES.filter(
+  (state) => state !== 'signed',
+);
+
+/**
+ * THE SESSIONS THAT STILL OWN A TABLET. The poll asks for the last
+ * twenty-four hours so an ENDED session can offer "Send again"; everything
+ * that reasons about what a tablet is doing right now — which device is free,
+ * who is in the way of a `device_busy` refusal — must filter first, or a
+ * receptionist is told the tablet is showing somebody who left at nine.
+ */
+export function liveOnly(sessions: readonly TabletSessionRow[]): TabletSessionRow[] {
+  return sessions.filter((session) => session.endedAt === null);
+}
+
+/**
+ * THE FIRST EIGHT CHARACTERS OF A SESSION ID (Carl, 4 Sep 2026).
+ *
+ * The tablet's own footer carries the same eight, so reception and a tablet
+ * can be matched BY EYE — which is what testing needs and what an audit needs
+ * later, when somebody asks which screen a signature came off. Eight is enough
+ * to be unique among the handful of sessions a practice has open in a day and
+ * short enough to read across a desk; the full id is still what every call
+ * carries.
+ *
+ * AN ID IS NOT A DETAIL ABOUT A PERSON. It names a session row — the same
+ * thing the vault events name — so showing it adds nothing about the patient
+ * to a screen that faces the room.
+ */
+export function shortSessionId(id: string): string {
+  return id.slice(0, 8);
+}
+
+/** The short id, in the one typeface it can be compared in. */
+function SessionTag({ id, testId }: { id: string; testId: string }) {
+  return (
+    <span className={rowStyles.sessionId} data-testid={testId}>
+      {strings.tablet.sessionTag(shortSessionId(id))}
+    </span>
+  );
+}
 
 /** The words for a relationship key — the kiosk's own, read from one place. */
 function relationshipLabel(key: string): string {
@@ -151,6 +212,12 @@ export function disputedLabels(types: readonly string[]): string {
  * WHICH COLUMNS ANSWER A CROSSED ROW. The patient crossed "Name"; reception
  * corrects given names AND family name, because a person does not read their
  * name as two questions and the platform stores it as two columns.
+ *
+ * SINCE 4 SEP 2026 THIS DECIDES WHAT IS MARKED, NOT WHAT IS SHOWN. The
+ * correction panel opens ALL five details (Carl: "just in case the patient
+ * says my mobile is also wrong but I ticked yes"); this maps the crossed types
+ * onto the columns that answer them, so those fields are highlighted while the
+ * rest are simply available.
  */
 export const FIELDS_FOR_DISPUTED_TYPE: Readonly<Record<string, readonly CorrectablePatientField[]>> = {
   name: ['givenNames', 'familyName'],
@@ -202,6 +269,14 @@ export interface RefusalDescription {
   recallSessionId?: string;
   /** Present only for the unmapped fallback, so a caller can assert the code was not swallowed. */
   code?: string;
+  /**
+   * THE REASON, CARRIED THROUGH, so a band can offer the FIX and not only the
+   * sentence. `service_description_missing` is the one that has an inline
+   * control today (Carl, 4 Sep 2026): the description is chosen on the blocked
+   * row itself rather than on a screen two clicks away. Every other reason
+   * ignores it.
+   */
+  reason?: string;
 }
 
 /**
@@ -226,6 +301,7 @@ export function describeRefusal(
   switch (reason) {
     case 'device_busy':
       return {
+        reason,
         text: strings.tablet.blocked.device_busy(
           ctx.deviceLabel ?? strings.tablet.blocked.device_busySomeone,
           ctx.patientName ?? strings.tablet.blocked.device_busySomeone,
@@ -234,42 +310,50 @@ export function describeRefusal(
       };
     case 'service_description_missing':
       return {
+        reason,
         text: strings.tablet.blocked.service_description_missing,
+        // SECONDARY, now that the description is set on the row itself. The
+        // link is still here because the reconciliation row carries the rest
+        // of the record, and somebody may want it.
         link: { href: '/practice/reconciliation', label: strings.tablet.toReconciliationForD6a },
       };
     case 'agreement_not_pushable':
       return {
+        reason,
         text: strings.tablet.blocked.agreement_not_pushable,
         link: { href: '/practice/reconciliation', label: strings.tablet.toReconciliationRow },
       };
     case 'device_revoked':
       return {
+        reason,
         text: strings.tablet.blocked.device_revoked,
         link: { href: '/practice/devices', label: strings.tablet.toDevices },
       };
     case 'device_not_paired':
       return {
+        reason,
         text: strings.tablet.blocked.device_not_paired,
         link: { href: '/practice/devices', label: strings.tablet.toDevices },
       };
     case 'enduring_not_supported': {
       const nonGp = ctx.providerType != null && ctx.providerType !== 'general_practitioner';
       return {
+        reason,
         text: nonGp
           ? `${strings.tablet.blocked.enduring_not_supported} ${strings.tablet.enduringOfferOther}`
           : strings.tablet.blocked.enduring_not_supported,
       };
     }
     case 'who_is_signing_unset':
-      return { text: strings.tablet.blocked.who_is_signing_unset };
+      return { reason, text: strings.tablet.blocked.who_is_signing_unset };
     case 'patient_confidential':
       // No per-patient page exists in this app yet — carrying no link here is
       // deliberate rather than an oversight (see the doc comment above).
-      return { text: strings.tablet.blocked.patient_confidential };
+      return { reason, text: strings.tablet.blocked.patient_confidential };
     case 'device_unknown':
-      return { text: strings.tablet.blocked.device_unknown };
+      return { reason, text: strings.tablet.blocked.device_unknown };
     case 'agreement_not_found':
-      return { text: strings.tablet.blocked.agreement_not_found };
+      return { reason, text: strings.tablet.blocked.agreement_not_found };
     default: {
       if (reason) return { text: strings.tablet.blocked.other(reason), code: reason };
       return { text: ctx.rawMessage ?? strings.tablet.blocked.otherNoCode };
@@ -428,6 +512,7 @@ function RefusalOutcomeBody({
   onRecall,
   linkTestId,
   recallTestId,
+  fix,
 }: {
   info: RefusalDescription;
   canSend: boolean;
@@ -435,10 +520,18 @@ function RefusalOutcomeBody({
   onRecall: (sessionId: string) => void;
   linkTestId: string;
   recallTestId: string;
+  /**
+   * THE FIX ITSELF, WHERE ONE FITS IN THE BAND — today only the D6a select
+   * (Carl, 4 Sep 2026). It sits ABOVE the link on purpose: the control that
+   * ends the problem here is the main answer, and the link is what to do
+   * instead.
+   */
+  fix?: ReactNode;
 }) {
   return (
     <>
       <p>{info.text}</p>
+      {fix}
       {info.link && (
         <Link href={info.link.href} data-testid={linkTestId}>
           {info.link.label}
@@ -488,6 +581,19 @@ export function TabletView({ practiceId }: { practiceId: string }) {
   const [draft, setDraft] = useState<Partial<Record<CorrectablePatientField, string>>>({});
   const [correctBusy, setCorrectBusy] = useState(false);
   const [correctOutcome, setCorrectOutcome] = useState<{ id: string; text: string; ok: boolean } | null>(null);
+
+  /**
+   * THE SERVICE DESCRIPTIONS, FETCHED ONCE AND NOT ON THE POLL. They are
+   * versioned CONTENT (hard rule 14) and this component knows none of the
+   * words — a copy in this file would be a second copy of the mapping the
+   * rules engine matches, which is the exact failure versioning exists to
+   * prevent. They change when a mapping is published, not every three
+   * seconds, so re-reading them on the poll would be traffic for nothing.
+   */
+  const [descriptions, setDescriptions] = useState<{ version: string; descriptions: string[] } | null>(null);
+  const [d6aChoice, setD6aChoice] = useState<Record<string, string>>({});
+  const [d6aBusy, setD6aBusy] = useState<string | null>(null);
+  const [d6aOutcome, setD6aOutcome] = useState<{ id: string; text: string; ok: boolean } | null>(null);
 
   /**
    * Which tablet each row would go to, and what happened when it went.
@@ -540,7 +646,17 @@ export function TabletView({ practiceId }: { practiceId: string }) {
       const [p, d, s] = await Promise.all([
         fetch(`${CORE_URL}/tablet-sessions/pushable`, { headers: apiHeaders(practiceId) }),
         fetch(`${CORE_URL}/devices`, { headers: apiHeaders(practiceId) }),
-        fetch(`${CORE_URL}/tablet-sessions?active=true`, { headers: apiHeaders(practiceId) }),
+        /*
+         * THE LAST TWENTY-FOUR HOURS, NOT ONLY THE LIVE ONES (Carl, 4 Sep
+         * 2026). A tablet whose session has ENDED — walked away, timed out,
+         * recalled, expired — must offer "Send again" for that agreement
+         * right there, and a list filtered to active sessions is a list in
+         * which the row reception is looking at has just vanished. The live
+         * view is derived below by filtering on `endedAt`, which the server
+         * already sends; asking for both in one request is cheaper than two
+         * polls three seconds apart.
+         */
+        fetch(`${CORE_URL}/tablet-sessions?active=false`, { headers: apiHeaders(practiceId) }),
       ]);
       if (!p.ok || !d.ok || !s.ok) throw new Error(String(p.ok ? (d.ok ? s.status : d.status) : p.status));
       const freshRows = (await p.json()) as PushableRow[];
@@ -570,6 +686,20 @@ export function TabletView({ practiceId }: { practiceId: string }) {
         setStaffNames((body.users ?? []).map((u) => u.name).filter((n): n is string => typeof n === 'string')),
       )
       .catch(() => setStaffNames([]));
+  }, [practiceId]);
+
+  /*
+   * THE D6a LIST, ONCE. A failure leaves the select unpopulated and the
+   * inline control disabled — the reconciliation link in the same band is
+   * still there, so the row is never a dead end (CLAUDE.md §7).
+   */
+  useEffect(() => {
+    void fetch(`${CORE_URL}/service-descriptions`, { headers: apiHeaders(practiceId) })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((body: { version?: string; descriptions?: string[] }) =>
+        setDescriptions({ version: body.version ?? '', descriptions: body.descriptions ?? [] }),
+      )
+      .catch(() => setDescriptions(null));
   }, [practiceId]);
 
   /*
@@ -681,9 +811,14 @@ export function TabletView({ practiceId }: { practiceId: string }) {
         const freshDevices = fresh?.devices ?? devices ?? [];
         const freshSessions = fresh?.sessions ?? sessions;
         const chosenDevice = freshDevices.find((d) => d.id === deviceId);
+        // LIVE ONES ONLY. The poll now carries the last twenty-four hours, and
+        // a session that ENDED cannot be the one in the way — naming its
+        // patient would tell reception the tablet is showing somebody who
+        // left an hour ago.
+        const live = liveOnly(freshSessions);
         const busySession = sessionId
-          ? (freshSessions.find((s) => s.id === sessionId) ?? freshSessions.find((s) => s.deviceId === deviceId))
-          : freshSessions.find((s) => s.deviceId === deviceId);
+          ? (live.find((s) => s.id === sessionId) ?? live.find((s) => s.deviceId === deviceId))
+          : live.find((s) => s.deviceId === deviceId);
         setPushOutcome({
           id: row.agreementId,
           ok: false,
@@ -725,10 +860,18 @@ export function TabletView({ practiceId }: { practiceId: string }) {
       if (!res.ok) throw new Error((await refusal(res)).message);
       const body = (await res.json()) as PatientDetails;
       setDetails(body);
-      // Pre-filled with what we hold, because a correction is almost always an
-      // edit of one character in an address rather than a re-typing of it.
+      /*
+       * ALL FIVE DETAILS, PRE-FILLED (Carl, 4 Sep 2026: "just in case the
+       * patient says my mobile is also wrong but I ticked yes"). A correction
+       * is almost always an edit of one character in an address rather than a
+       * re-typing of it, and a person answering five rows on a tablet is not a
+       * reliable narrator of which ones are wrong — they tick along and
+       * mention the rest across the desk. The crossed ones are MARKED below;
+       * the rest are simply available, and `saveCorrection` still sends only
+       * what actually changed.
+       */
       const seed: Partial<Record<CorrectablePatientField, string>> = {};
-      for (const field of fieldsToCorrect(session.disputedDetails)) {
+      for (const field of CORRECTABLE_PATIENT_FIELDS) {
         seed[field] = (body[field] as string | null) ?? '';
       }
       setDraft(seed);
@@ -776,7 +919,29 @@ export function TabletView({ practiceId }: { practiceId: string }) {
       // paraphrasing it on the client would be a second copy of a rule that
       // has one home.
       if (!res.ok) throw new Error((await refusal(res)).message);
-      setCorrectOutcome({ id: session.id, text: strings.tablet.correctSaved, ok: true });
+
+      /*
+       * AND WHY IT WAS MADE, ON THE SESSION (Carl, 4 Sep 2026). The correction
+       * itself already has an event; this closes the CROSS that prompted it,
+       * so the dispute and its answer read as one story rather than two
+       * unconnected facts. The types are those of the fields that actually
+       * changed — which may include one the patient ticked, because a person
+       * who crossed their address often mentions their mobile in the same
+       * breath.
+       */
+      const changedTypes = [
+        ...new Set(
+          Object.keys(body)
+            .filter(isCorrectablePatientField)
+            .map((field) => detailTypeForPatientField(field)),
+        ),
+      ];
+      const recorded = await recordResolution(session, 'corrected', changedTypes);
+      setCorrectOutcome({
+        id: session.id,
+        text: recorded ? strings.tablet.correctSaved : strings.tablet.resolveNotRecorded,
+        ok: recorded,
+      });
       setCorrectFor(null);
       setDetails(null);
       setDraft({});
@@ -789,6 +954,158 @@ export function TabletView({ practiceId }: { practiceId: string }) {
       });
     } finally {
       setCorrectBusy(false);
+    }
+  }
+
+  /**
+   * HOW THE DISPUTE ENDED, ON THE RECORD (Carl, 4 Sep 2026).
+   *
+   * Two answers and no third: `corrected` (reception changed the detail — the
+   * change has its own event, this says why it was made) and `patient_error`
+   * (the detail was right and the patient crossed it anyway). Both are
+   * recorded against the staff member who says so, because "nothing was wrong
+   * after all" is a claim somebody may be asked about later.
+   *
+   * IT RETURNS A BOOLEAN RATHER THAN THROWING, because its two callers want
+   * different things from a failure: after a correction the change has ALREADY
+   * been saved and reception must not be told it was not, so the message says
+   * exactly what happened.
+   *
+   * TYPES ONLY, ON THE WIRE AND ON THE SCREEN (REQ-VER-04).
+   */
+  async function recordResolution(
+    session: TabletSessionRow,
+    outcome: 'corrected' | 'patient_error',
+    types: readonly string[],
+  ): Promise<boolean> {
+    if (types.length === 0) return true;
+    try {
+      const res = await fetch(`${CORE_URL}/tablet-sessions/${session.id}/dispute-resolution`, {
+        method: 'POST',
+        headers: apiHeaders(practiceId),
+        body: JSON.stringify({ outcome, details: [...types] }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * "NO CHANGE NEEDED — THE DETAILS WERE RIGHT" (Carl, 4 Sep 2026).
+   *
+   * The second way out of a dispute, and the reason the endpoint exists: a
+   * patient can cross a row that was correct. Without this the only exit was
+   * to "correct" a detail needing no correction, which would put an event in
+   * the vault saying somebody changed something when nobody did.
+   *
+   * NOTHING IS TOUCHED — not the patient, not the agreement, not the session.
+   * The next press is Re-send, which pushes the SAME agreement, because no
+   * particular moved and so nothing supersedes.
+   */
+  async function noChangeNeeded(session: TabletSessionRow) {
+    setCorrectBusy(true);
+    setCorrectOutcome(null);
+    const ok = await recordResolution(session, 'patient_error', session.disputedDetails);
+    setCorrectOutcome({
+      id: session.id,
+      text: ok ? strings.tablet.noChangeRecorded : strings.tablet.resolveNotRecorded,
+      ok,
+    });
+    setCorrectBusy(false);
+    if (ok) await load();
+  }
+
+  /**
+   * SET D6a ON THE BLOCKED ROW ITSELF (Carl, 4 Sep 2026) — the shortcut to the
+   * answer rather than directions to a screen (CLAUDE.md §7).
+   *
+   * THE SAME ENDPOINT THE RECONCILIATION SCREEN USES, unchanged: a staff
+   * surface, a named actor the server requires, and the words chosen from the
+   * server's own versioned list. This adds a second place to press it, not a
+   * second way of doing it — and it deliberately does NOT lock, for the reason
+   * `ServiceDescriptionsService` gives at length (locking here would close the
+   * door on setting who is signing).
+   *
+   * THE LIST IS RE-READ AFTERWARDS rather than the row patched, so what is on
+   * screen is what the server thinks — including whether the row is now
+   * pushable, which is the whole point of pressing it.
+   */
+  async function setD6a(row: PushableRow) {
+    const description = d6aChoice[row.agreementId];
+    if (!description) return;
+    setD6aBusy(row.agreementId);
+    setD6aOutcome(null);
+    try {
+      const res = await fetch(`${CORE_URL}/service-descriptions/agreements/${row.agreementId}`, {
+        method: 'POST',
+        headers: apiHeaders(practiceId),
+        body: JSON.stringify({ description }),
+      });
+      // THE SERVER'S OWN RULE TEXT, as it came — a refusal here is the rules
+      // engine or the versioned list speaking, and paraphrasing it on the
+      // client would be a second copy of a rule that has one home.
+      if (!res.ok) throw new Error((await refusal(res)).message);
+      setD6aOutcome({ id: row.agreementId, text: strings.tablet.d6aSetDone, ok: true });
+      await load();
+    } catch (e) {
+      setD6aOutcome({
+        id: row.agreementId,
+        text: e instanceof TypeError ? strings.status.unreachable : (e as Error).message,
+        ok: false,
+      });
+    } finally {
+      setD6aBusy(null);
+    }
+  }
+
+  /**
+   * SEND IT AGAIN, TO THE TABLET THAT JUST FINISHED WITH IT (Carl, 4 Sep
+   * 2026).
+   *
+   * A session that walked away, timed out, was recalled or expired left the
+   * AGREEMENT untouched (hard rule 8, REQ-REC-04) — so this is an ordinary
+   * push of the same agreement to the same tablet, not a repair, and it is the
+   * SAME call the row's own Send makes. Refusals are the same codes and read
+   * the same way, which is the point: there is one push in this product.
+   */
+  async function sendAgain(ended: TabletSessionRow) {
+    setBusyId(ended.id);
+    setPushOutcome(null);
+    try {
+      const res = await fetch(`${CORE_URL}/devices/${ended.deviceId}/push`, {
+        method: 'POST',
+        headers: apiHeaders(practiceId),
+        body: JSON.stringify({ agreementId: ended.agreementId }),
+      });
+      if (!res.ok) {
+        const { reason, message, sessionId } = await refusal(res);
+        const fresh = await load();
+        const live = liveOnly(fresh?.sessions ?? sessions);
+        const busySession = sessionId
+          ? (live.find((s) => s.id === sessionId) ?? live.find((s) => s.deviceId === ended.deviceId))
+          : live.find((s) => s.deviceId === ended.deviceId);
+        setPushOutcome({
+          id: ended.id,
+          ok: false,
+          info: describeRefusal(reason, {
+            deviceLabel: ended.deviceLabel,
+            patientName: busySession?.patientName,
+            sessionId: sessionId ?? busySession?.id,
+            rawMessage: message,
+          }),
+        });
+        return;
+      }
+      await load();
+    } catch (e) {
+      setPushOutcome({
+        id: ended.id,
+        text: e instanceof TypeError ? strings.status.unreachable : (e as Error).message,
+        ok: false,
+      });
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -817,10 +1134,10 @@ export function TabletView({ practiceId }: { practiceId: string }) {
         // treatment, and the same tablet is already known (it is this row's).
         const { reason, message, sessionId } = await refusal(res);
         const fresh = await load();
-        const freshSessions = fresh?.sessions ?? sessions;
+        const live = liveOnly(fresh?.sessions ?? sessions);
         const busySession = sessionId
-          ? (freshSessions.find((s) => s.id === sessionId) ?? freshSessions.find((s) => s.deviceId === session.deviceId))
-          : freshSessions.find((s) => s.deviceId === session.deviceId);
+          ? (live.find((s) => s.id === sessionId) ?? live.find((s) => s.deviceId === session.deviceId))
+          : live.find((s) => s.deviceId === session.deviceId);
         setPushOutcome({
           id: session.id,
           ok: false,
@@ -877,7 +1194,80 @@ export function TabletView({ practiceId }: { practiceId: string }) {
     }
   }
 
-  const sessionByDevice = new Map(sessions.map((s) => [s.deviceId, s]));
+  /*
+   * WHAT EACH TABLET IS DOING, AND WHAT IT LAST DID. The poll carries the last
+   * twenty-four hours in one array; the live view is the sessions with no
+   * `endedAt`, and a tablet with none of those shows its most recent ENDED
+   * session instead, so "Send again" is on the row that just told reception it
+   * ended (Carl, 4 Sep 2026).
+   */
+  const sessionByDevice = new Map(liveOnly(sessions).map((s) => [s.deviceId, s]));
+  const lastEndedByDevice = new Map<string, TabletSessionRow>();
+  for (const session of sessions) {
+    if (session.endedAt === null) continue;
+    if (sessionByDevice.has(session.deviceId)) continue;
+    const held = lastEndedByDevice.get(session.deviceId);
+    // The server orders by `pushedAt` desc; comparing anyway means a caller
+    // that does not is still shown the latest rather than the first it sent.
+    if (!held || held.lastStateAt < session.lastStateAt) lastEndedByDevice.set(session.deviceId, session);
+  }
+  /**
+   * THE FIX, IN THE BAND THAT STATES THE PROBLEM (Carl, 4 Sep 2026). The one
+   * thing standing between this patient and the tablet is a description of the
+   * service, and the control that supplies it belongs here rather than two
+   * screens away — "shortcuts to the answer, not directions to a screen"
+   * (CLAUDE.md §7).
+   *
+   * THE WORDS COME FROM THE SERVER AND THE VERSION IS SHOWN. They are the
+   * exact strings the rules engine matches and they are versioned content
+   * (hard rule 14); a list in this file would be a second copy that goes stale
+   * silently, so this component knows none of them and says which list it is
+   * offering.
+   */
+  function d6aFix(row: PushableRow): ReactNode {
+    const said = d6aOutcome?.id === row.agreementId ? d6aOutcome : null;
+    return (
+      <div className={rowStyles.fix} data-testid={`d6a-fix-${row.agreementId}`}>
+        {descriptions && (
+          <Chip tone="neutral">{strings.tablet.d6aListVersion(descriptions.version)}</Chip>
+        )}
+        <Field label={strings.tablet.d6aSetLabel}>
+          {(p) => (
+            <SelectInput
+              {...p}
+              value={d6aChoice[row.agreementId] ?? ''}
+              disabled={!canSend || !descriptions || d6aBusy !== null}
+              onChange={(e) => setD6aChoice((c) => ({ ...c, [row.agreementId]: e.target.value }))}
+              data-testid={`d6a-select-${row.agreementId}`}
+            >
+              <option value="">{strings.tablet.d6aSetPlaceholder}</option>
+              {/* IN THE ORDER THE SERVER SENT. File order is screen order. */}
+              {(descriptions?.descriptions ?? []).map((description) => (
+                <option key={description} value={description}>
+                  {description}
+                </option>
+              ))}
+            </SelectInput>
+          )}
+        </Field>
+        <div className={styles.formActions}>
+          <Button
+            onClick={() => void setD6a(row)}
+            disabled={!canSend || d6aBusy !== null || !d6aChoice[row.agreementId]}
+            data-testid={`d6a-set-${row.agreementId}`}
+          >
+            {d6aBusy === row.agreementId ? strings.tablet.d6aSetting : strings.tablet.d6aSetAction}
+          </Button>
+        </div>
+        {said && (
+          <p className={ui.hint} data-testid={`d6a-outcome-${row.agreementId}`}>
+            {said.text}
+          </p>
+        )}
+      </div>
+    );
+  }
+
   const paired = (devices ?? []).filter((d) => d.state !== 'revoked');
   const free = paired.filter((d) => d.state === 'paired' && !sessionByDevice.has(d.id));
 
@@ -975,7 +1365,8 @@ export function TabletView({ practiceId }: { practiceId: string }) {
                   </div>
                   {live && (
                     <Chip tone={STATE_TONE[live.state] ?? 'neutral'}>
-                      {strings.tablet.onTabletNow(live.deviceLabel)}
+                      {strings.tablet.onTabletNow(live.deviceLabel)} ·{' '}
+                      <SessionTag id={live.id} testId={`row-session-id-${row.agreementId}`} />
                     </Chip>
                   )}
                 </div>
@@ -1080,6 +1471,9 @@ export function TabletView({ practiceId }: { practiceId: string }) {
                         onRecall={(sessionId) => void recall(sessionId)}
                         linkTestId={`blocked-link-${row.agreementId}`}
                         recallTestId={`blocked-recall-${row.agreementId}`}
+                        fix={
+                          row.blockedReason === 'service_description_missing' ? d6aFix(row) : undefined
+                        }
                       />
                     </Notice>
                   </div>
@@ -1108,6 +1502,11 @@ export function TabletView({ practiceId }: { practiceId: string }) {
                           onRecall={(sessionId) => void recall(sessionId)}
                           linkTestId={`push-outcome-link-${row.agreementId}`}
                           recallTestId={`push-outcome-recall-${row.agreementId}`}
+                          fix={
+                            outcome.info.reason === 'service_description_missing'
+                              ? d6aFix(row)
+                              : undefined
+                          }
                         />
                       ) : (
                         outcome.text
@@ -1257,7 +1656,35 @@ export function TabletView({ practiceId }: { practiceId: string }) {
         <ul className={styles.list} data-testid="tablet-list">
           {(devices ?? []).map((device) => {
             const session = sessionByDevice.get(device.id);
-            const outcome = session && pushOutcome?.id === session.id ? pushOutcome : null;
+            const lastEnded = lastEndedByDevice.get(device.id);
+            /*
+             * WHAT THIS TABLET LAST DID, when it is doing nothing (Carl, 4 Sep
+             * 2026). A session that walked away, timed out, was recalled or
+             * expired left the agreement untouched, so the ordinary next thing
+             * is to send it again — on the row that just said it ended, rather
+             * than after a hunt back through the waiting list.
+             */
+            const ended =
+              !session && lastEnded && SEND_AGAIN_ENDINGS.includes(lastEnded.state) ? lastEnded : undefined;
+            const outcome =
+              pushOutcome && (pushOutcome.id === session?.id || pushOutcome.id === ended?.id)
+                ? pushOutcome
+                : null;
+            /*
+             * WHETHER IT COULD ACTUALLY GO, read from the list this page
+             * already polls — dead until valid (CLAUDE.md §6). An agreement no
+             * longer on the pushable list has moved on: signed, superseded, or
+             * captured another way, which is exactly what
+             * `agreement_not_pushable` says.
+             */
+            const againRow = ended ? (rows ?? []).find((r) => r.agreementId === ended.agreementId) : undefined;
+            const againBlocked: string | null = !ended
+              ? null
+              : againRow
+                ? (againRow.pushable ? null : (againRow.blockedReason ?? 'agreement_not_pushable'))
+                : rows === null
+                  ? null
+                  : 'agreement_not_pushable';
             return (
               <li key={device.id} className={styles.card} data-testid={`tablet-${device.id}`}>
                 <div className={styles.cardHead}>
@@ -1282,10 +1709,31 @@ export function TabletView({ practiceId }: { practiceId: string }) {
                                 strings.tablet.states[session.state] ?? session.state,
                               )
                             : strings.tablet.tabletIdle}
+                      {/* THE SAME EIGHT CHARACTERS THE TABLET'S FOOTER SHOWS. */}
+                      {session && (
+                        <>
+                          {' · '}
+                          <SessionTag id={session.id} testId={`tablet-session-id-${device.id}`} />
+                        </>
+                      )}
                     </p>
                     {session && (
                       <p className={styles.cardSub}>
                         {strings.tablet.pushedAt(session.pushedBy, when(session.pushedAt))}
+                      </p>
+                    )}
+                    {/*
+                      WHAT IT LAST DID, on a tablet that is now idle. A name
+                      and an ending — still a status, not a mirror.
+                    */}
+                    {ended && (
+                      <p className={styles.cardSub} data-testid={`tablet-last-${device.id}`}>
+                        {strings.tablet.tabletLastSession(
+                          ended.patientName,
+                          strings.tablet.states[ended.state] ?? ended.state,
+                        )}
+                        {' · '}
+                        <SessionTag id={ended.id} testId={`tablet-last-session-id-${device.id}`} />
                       </p>
                     )}
                   </div>
@@ -1311,6 +1759,15 @@ export function TabletView({ practiceId }: { practiceId: string }) {
                   >
                     <p>{strings.tablet.disputedList(disputedLabels(session.disputedDetails))}</p>
                     <p className={ui.hint}>{strings.tablet.disputedLead}</p>
+                    {/*
+                      SAID ONCE, BESIDE THE CHOICE. "No change needed" is a
+                      claim somebody may be asked about later, so the screen
+                      states that it is recorded and against whom before
+                      anybody presses it.
+                    */}
+                    <p className={ui.hint} data-testid={`no-change-note-${session.id}`}>
+                      {strings.tablet.noChangeNote}
+                    </p>
                   </Notice>
                 )}
 
@@ -1359,6 +1816,23 @@ export function TabletView({ practiceId }: { practiceId: string }) {
                           (HARD-02) and says so, which is why the outcome below
                           has two sentences.
                         */}
+                        {/*
+                          THE SECOND WAY OUT OF A DISPUTE (Carl, 4 Sep 2026):
+                          the patient crossed a row that was RIGHT. Without
+                          it, reception's only exit was to "correct" a detail
+                          needing no correction — an event in the vault
+                          claiming a change nobody made. This records what
+                          actually happened, against the person who says so,
+                          and changes nothing.
+                        */}
+                        <Button
+                          disabled={!canSend || correctBusy || busyId !== null}
+                          onClick={() => void noChangeNeeded(session)}
+                          data-testid={`no-change-${session.id}`}
+                        >
+                          <CheckCheck size={14} aria-hidden="true" />
+                          {strings.tablet.noChangeAction}
+                        </Button>
                         <Button
                           variant="primary"
                           disabled={!canSend || busyId !== null}
@@ -1374,10 +1848,67 @@ export function TabletView({ practiceId }: { practiceId: string }) {
                 )}
 
                 {/*
-                  THE CORRECTION PANEL — one field per crossed detail, and
-                  nothing else. A patient who crossed their address is not an
-                  occasion to open their whole record: the fields shown are
-                  derived from what they actually disputed.
+                  SEND IT AGAIN, ON THE ROW THAT SAID IT ENDED (Carl, 4 Sep
+                  2026). The endings that reach here — walked away, timed out,
+                  recalled, expired — changed NOTHING on the agreement (hard
+                  rule 8, REQ-REC-04), so this is an ordinary push of the same
+                  agreement to the same tablet. Dead until it could actually
+                  go, with the same refusal mapping as every other push.
+                */}
+                {ended && (
+                  <div className={styles.cardActions}>
+                    <Button
+                      variant="primary"
+                      disabled={!canSend || busyId !== null || againBlocked !== null}
+                      title={
+                        againBlocked
+                          ? blockedMessage(againBlocked, { providerType: againRow?.providerType })
+                          : strings.tablet.sendAgainTitle
+                      }
+                      onClick={() => void sendAgain(ended)}
+                      data-testid={`send-again-${ended.id}`}
+                    >
+                      <Send size={14} aria-hidden="true" />
+                      {busyId === ended.id ? strings.tablet.sending : strings.tablet.sendAgainAction}
+                    </Button>
+                  </div>
+                )}
+
+                {ended && againBlocked && (
+                  <Notice
+                    tone="warn"
+                    title={strings.tablet.sendBlocked}
+                    data-testid={`send-again-blocked-${ended.id}`}
+                  >
+                    <RefusalOutcomeBody
+                      info={describeRefusal(againBlocked, { providerType: againRow?.providerType })}
+                      canSend={canSend}
+                      busy={busyId !== null}
+                      onRecall={(sessionId) => void recall(sessionId)}
+                      linkTestId={`send-again-link-${ended.id}`}
+                      recallTestId={`send-again-recall-${ended.id}`}
+                      fix={
+                        againBlocked === 'service_description_missing' && againRow
+                          ? d6aFix(againRow)
+                          : undefined
+                      }
+                    />
+                  </Notice>
+                )}
+
+                {/*
+                  THE CORRECTION PANEL — every detail, with the crossed ones
+                  MARKED (Carl, 4 Sep 2026: "just in case the patient says my
+                  mobile is also wrong but I ticked yes").
+
+                  IT SHOWED ONLY THE CROSSED ROWS UNTIL TODAY, and that was
+                  the wrong shape by one conversation: a person answering five
+                  rows on a tablet ticks along and mentions the rest across
+                  the desk, and reception then had to close this panel and go
+                  looking for another screen. Showing all five and MARKING the
+                  crossed ones keeps what the tablet reported without hiding
+                  what the patient just said. Only what actually changes is
+                  sent, so an untouched field never becomes a correction event.
 
                   AND CARL'S CAVEAT SITS ON IT, VERBATIM. The PMS is the source
                   of truth (REQ-DATA-10) and until the Medtech write-back
@@ -1388,6 +1919,7 @@ export function TabletView({ practiceId }: { practiceId: string }) {
                 {session && correctFor === session.id && (
                   <div className={styles.form} data-testid={`correct-panel-${session.id}`}>
                     <p className={ui.hint}>{strings.tablet.correctHeading}</p>
+                    <p className={ui.hint}>{strings.tablet.correctAllLead}</p>
                     <Notice
                       tone="warn"
                       title={strings.tablet.correctAction}
@@ -1404,20 +1936,38 @@ export function TabletView({ practiceId }: { practiceId: string }) {
                             {strings.tablet.correctedAt(when(details.detailsCorrectedAt))}
                           </p>
                         )}
-                        {fieldsToCorrect(session.disputedDetails).map((field) => (
-                          <Field key={field} label={strings.tablet.correctFields[field] ?? field}>
-                            {(p) => (
-                              <TextInput
-                                {...p}
-                                type={field === 'dateOfBirth' ? 'date' : 'text'}
-                                value={draft[field] ?? ''}
-                                maxLength={field === 'address' ? 500 : 254}
-                                onChange={(e) => setDraft((d) => ({ ...d, [field]: e.target.value }))}
-                                data-testid={`correct-${field}-${session.id}`}
-                              />
-                            )}
-                          </Field>
-                        ))}
+                        {CORRECTABLE_PATIENT_FIELDS.map((field) => {
+                          // MARKED, NOT FILTERED. `fieldsToCorrect` maps the
+                          // crossed TYPES onto the columns that answer them —
+                          // a crossed "Name" marks both name columns, because
+                          // a person does not read their name as two
+                          // questions.
+                          const disputed = fieldsToCorrect(session.disputedDetails).includes(field);
+                          return (
+                            <div
+                              key={field}
+                              className={disputed ? rowStyles.disputedField : undefined}
+                              data-disputed={disputed ? 'true' : 'false'}
+                              data-testid={`correct-field-${field}-${session.id}`}
+                            >
+                              <Field
+                                label={strings.tablet.correctFields[field] ?? field}
+                                hint={disputed ? strings.tablet.correctDisputedTag : undefined}
+                              >
+                                {(p) => (
+                                  <TextInput
+                                    {...p}
+                                    type={field === 'dateOfBirth' ? 'date' : 'text'}
+                                    value={draft[field] ?? ''}
+                                    maxLength={field === 'address' ? 500 : 254}
+                                    onChange={(e) => setDraft((d) => ({ ...d, [field]: e.target.value }))}
+                                    data-testid={`correct-${field}-${session.id}`}
+                                  />
+                                )}
+                              </Field>
+                            </div>
+                          );
+                        })}
                         <div className={styles.formActions}>
                           <Button
                             variant="primary"

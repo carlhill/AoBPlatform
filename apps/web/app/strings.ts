@@ -3591,6 +3591,17 @@ export const strings = {
     signingOther: (name: string, relationship: string) => (relationship ? `${name} · ${relationship}` : name),
     signingUnset: 'Not decided yet',
     onTabletNow: (label: string) => `On ${label} now`,
+    /**
+     * THE SESSION'S OWN ID, SHORT (Carl, 4 Sep 2026). The tablet's footer
+     * shows the same eight characters, so a receptionist and a tablet can be
+     * matched by eye — during testing, and later when somebody asks the
+     * evidence which screen a signature came off.
+     *
+     * AN ID IS NOT A DETAIL ABOUT ANYBODY. It names a session row, which is
+     * the same thing the vault events name; nothing about the patient is
+     * added to a screen by putting it here.
+     */
+    sessionTag: (shortId: string) => `session ${shortId}`,
 
     /*
      * WHO IS SIGNING — set at the DESK, before the push, and never on the
@@ -3669,8 +3680,21 @@ export const strings = {
       details_disputed: 'a detail is wrong',
       signed: 'signed',
       walked_away: 'walked away',
+      /*
+       * TWO CLOCKS, TWO WORDS (Carl, 4 Sep 2026). `timed_out` is the TABLET's
+       * own inactivity clock: the patient's record sat on the screen and
+       * nobody touched it, so the tablet reset itself and said so.
+       * `expired` is the SERVER giving up after thirty minutes in which no
+       * request reached it at all — the backstop for a tablet that was
+       * killed, went offline, or crashed before it could post its own
+       * timeout. Reception acts differently on the two (the first is a
+       * patient who wandered off; the second is a tablet worth looking at),
+       * so they must not read as the same word — which is what "timed out"
+       * on BOTH of them used to do.
+       */
+      timed_out: 'Timed out',
       recalled: 'recalled',
-      expired: 'timed out',
+      expired: 'Ended by the server',
     } as Record<string, string>,
 
     /*
@@ -3692,7 +3716,23 @@ export const strings = {
 
     correctAction: 'Correct',
     correctClose: 'Close',
-    correctHeading: 'Correct the details the patient says are wrong',
+    correctHeading: 'Check and correct this patient’s details',
+    /**
+     * ALL FIVE DETAILS, NOT ONLY THE CROSSED ONES (Carl, 4 Sep 2026: "just in
+     * case the patient says my mobile is also wrong but I ticked yes").
+     *
+     * A patient answering five rows on a tablet is not a reliable narrator of
+     * which ones are wrong — they tick along and mention the rest across the
+     * desk. Opening only the crossed row would make reception close the panel
+     * and go looking for another screen for the detail the patient just said
+     * out loud. The crossed ones are MARKED, so the panel still says what the
+     * tablet reported; it simply does not hide the rest.
+     */
+    correctAllLead:
+      'The details the patient crossed are marked. The rest are here too, in case they have told you about '
+      + 'another one — only what you change is saved.',
+    /** Beside a field the patient actually crossed. Says what happened, not who was wrong. */
+    correctDisputedTag: 'Patient says this is wrong',
     correctLoading: 'Reading the current details…',
     correctSave: 'Save the correction',
     correctSaving: 'Saving…',
@@ -3737,6 +3777,62 @@ export const strings = {
       'Sent again. The details are part of the agreement, so a new agreement replaced the old one — the old '
       + 'one is kept exactly as it was.',
     resent: 'Sent to the tablet again.',
+
+    /**
+     * THE SECOND WAY TO CLOSE A DISPUTE (Carl, 4 Sep 2026): the patient
+     * crossed a row that was RIGHT.
+     *
+     * It happens — a person mis-taps, or reads their old address and says it
+     * is wrong before remembering they moved. Without this, reception's only
+     * way out of a dispute is to "correct" a detail that needs no correction,
+     * which would put a `patient.details_corrected` event in the vault saying
+     * somebody changed something when nobody did.
+     *
+     * IT IS RECORDED, AND AGAINST A NAME. "Nothing was wrong after all" is a
+     * claim somebody may be asked about later, so it is a staff-attributed
+     * event carrying the TYPES and no values — never a quiet dismissal that
+     * leaves the cross unexplained in the evidence.
+     */
+    noChangeAction: 'No change needed — the details were right',
+    noChangeNote: 'Recorded against your name, with the details the patient crossed. Nothing is changed.',
+    noChangeRecorded: 'Recorded. Now send it to the tablet again.',
+    /** The correction saved, but the reason it was made did not reach the record. */
+    resolveNotRecorded:
+      'Saved, but the reason could not be recorded. Send it again, then tell support.',
+
+    /**
+     * SEND AGAIN, ON A TABLET WHOSE LAST SESSION ENDED (Carl, 4 Sep 2026).
+     *
+     * Walking away, timing out, being recalled and expiring all leave the
+     * AGREEMENT untouched (hard rule 8, REQ-REC-04) — so the ordinary next
+     * thing is to hand the same patient the same tablet again, and it should
+     * be one press on the row that just told reception it ended rather than a
+     * hunt back through the waiting list. `signed` is the one ending with
+     * nothing left to send.
+     */
+    tabletLastSession: (patientName: string, state: string) => `Last: ${patientName} — ${state}`,
+    sendAgainAction: 'Send again',
+    sendAgainTitle: 'Send this one again',
+
+    /**
+     * D6a, SET ON THE BLOCKED ROW ITSELF (Carl, 4 Sep 2026). The one thing
+     * standing between this patient and the tablet is a description of the
+     * service, and the fix belongs where the block is stated rather than two
+     * screens away — "shortcuts to the answer, not directions to a screen"
+     * (CLAUDE.md §7).
+     *
+     * THE WORDS COME FROM THE SERVER, NEVER FROM HERE. They are the exact
+     * strings the rules engine matches, and they are versioned content (hard
+     * rule 14) — a list in this file would be a second copy that goes stale
+     * silently. Only the LABELS are here, and the version is shown so
+     * somebody can see which list they are choosing from.
+     */
+    d6aSetLabel: 'Description of the service',
+    d6aSetPlaceholder: 'Choose…',
+    d6aSetAction: 'Set description',
+    d6aSetting: 'Setting…',
+    d6aSetDone: 'Set. This one can go to a tablet now.',
+    d6aListVersion: (version: string) => `List ${version}`,
 
     /**
      * WHY A PUSH WAS REFUSED — one sentence per reason, each naming the rule
@@ -3784,8 +3880,13 @@ export const strings = {
 
     /** Enduring's own extra line where the provider is not a GP (hard rule 6, REQ-END-01a). */
     enduringOfferOther: 'Offer an episodic agreement or a Treatment Plan Assignment instead.',
-    /** Where each linked refusal sends reception. */
-    toReconciliationForD6a: 'Set the service description →',
+    /**
+     * Where each linked refusal sends reception. D6a's is now the SECONDARY
+     * route — the description is set inline on the row above it (Carl, 4 Sep
+     * 2026) — so the link says what it is for rather than duplicating the
+     * control beside it.
+     */
+    toReconciliationForD6a: 'Or open the record on the reconciliation screen →',
     toReconciliationRow: 'Open it on the reconciliation screen →',
     toDevices: 'Open Tablets →',
 
@@ -3842,6 +3943,14 @@ export const strings = {
        * tablet in front of them.
        */
       deviceIdentity: (label: string, idPrefix: string) => `${label} · ${idPrefix}`,
+      /*
+       * WHICH SESSION IS THIS (Carl, 4 Sep 2026) — an audit/testing aid, not a
+       * disclosure: an opaque id, never a name or a value, and reception sees
+       * the SAME id on the console row that pushed it. Shown on every pushed
+       * screen (K-P1, K-3, K-4, done) beside the device identity, and nowhere
+       * when there is no pushed session — a walk-up ceremony has none to show.
+       */
+      sessionIdentity: (shortId: string) => `session ${shortId}`,
     },
 
     /*
@@ -4011,6 +4120,17 @@ export const strings = {
        */
       disputeBand:
         'Please see reception — they will fix this and send it again. Your appointment is not affected.',
+      /**
+       * THE SCREEN IS LOCKED, once the cross has actually reached reception
+       * (Carl's ruling, 4 Sep 2026): "the tablet would be signing against
+       * details mid-correction" if a patient could change their answer after
+       * reception has started fixing it. Present tense, same as the band
+       * above — reception is already on it, not something the patient still
+       * has to arrange.
+       */
+      waitBand:
+        'Please wait for reception — they are fixing this and will send it again. Your appointment is not '
+        + 'affected.',
       /**
        * THE WAY OUT, STATED WHERE THE PATIENT IS DECIDING (REQ-REC-04). If a
        * row is wrong there is nothing to correct on this device — the tablet
