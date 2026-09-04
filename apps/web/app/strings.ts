@@ -4770,4 +4770,308 @@ export const strings = {
      */
     build: (build: string) => `build ${build}`,
   },
+  /*
+   * THE PATIENT'S OWN PAGE — `/patient/portal` (C8, REQ-PORT-01..08).
+   *
+   * THE VOICE IS DIFFERENT FROM EVERY OTHER NAMESPACE HERE and deliberately
+   * so. The console is read by somebody doing their job; this is read by a
+   * person who did not choose to use our software, may be unwell, and cannot
+   * ring our support line. Short sentences, no jargon, "you" not "the
+   * patient", and every consequence said before the button rather than after.
+   *
+   * NEVER "certified", "approved", "accredited" or "government-approved"
+   * (hard rule 12, REQ-65C-05) — held by the named test
+   * `portal_copy_never_claims_approval`, which reads this whole namespace.
+   * "Checked" is the permitted word and the honest one.
+   *
+   * "PROVIDER", NOT "GP"; "SERVICE", NOT "CONSULT" (REQ-MP-01, CLAUDE.md §3).
+   * UK/AU spelling throughout.
+   *
+   * NO AMOUNT ANYWHERE EXCEPT `notices` (hard rule 4). The 89AA notices card
+   * is the one place a benefit amount belongs, which is why it has a
+   * namespace of its own rather than a line inside `agreements`.
+   */
+  portal: {
+    title: 'Your bulk-billing record',
+    lead: 'Everything AoBPlatform holds about you, and what we do with it.',
+    loading: 'Loading…',
+    /*
+     * ONE CARD FAILED, NOT THE PAGE. Said inside the card that failed, and it
+     * says the rest still works — because somebody who came here to check
+     * whether a text message was genuine needs to know the answer is still on
+     * this page somewhere.
+     */
+    cardError: 'This part could not be loaded just now. Everything else on this page still works.',
+    common: {
+      cancel: 'Cancel',
+    },
+    signedOut: {
+      heading: 'Your bulk-billing record',
+      body: 'This page shows what each of your practices holds about you, so it needs to know who you are.',
+      unreachable: 'We cannot reach your record just now. Please try again shortly. Nothing about your care or your appointments is affected.',
+      /*
+       * THE SENTENCE THIS SCREEN EXISTS FOR (REQ-PORT-08). A person who has
+       * been sent an agreement to sign, and who lands here, must not conclude
+       * that they have to make an account first. They do not, and never will.
+       */
+      neverNeeded: 'You never need to sign in to sign a bulk-billing agreement. This page is only for looking at your own record afterwards.',
+      devHeading: 'Development only',
+      devHint: 'Add ?patientIds=… to the address bar, then open the page as those patients. This control does not exist in a real build.',
+      devAction: 'Open as a test patient',
+      devFailed: 'That did not work. Check that core is running and that it is configured for development.',
+    },
+
+    /* ---------------------------------------------------------------- 1 */
+    details: {
+      heading: 'My details',
+      /*
+       * WHY TWO PRACTICES CAN DISAGREE, said plainly. Their system is the
+       * master of their record; ours is not, and a patient who saw two
+       * addresses with no explanation would reasonably think one of them was
+       * our mistake.
+       */
+      lead: 'Each practice keeps its own copy of your details, so they can differ. What you see here is what that practice holds.',
+      empty: 'No practice details to show yet.',
+      notHeld: 'Not held',
+      name: 'Name',
+      dateOfBirth: 'Date of birth',
+      address: 'Address',
+      mobile: 'Mobile',
+      email: 'Email',
+      recordNumber: 'Their record number for you',
+      correctAction: 'Ask the practice to correct this',
+      asked: 'The practice has been asked. They will confirm the correct value with you.',
+      confirmTitle: 'Ask the practice to correct this?',
+      confirmBody: (field: string, practiceName: string) =>
+        `We will tell ${practiceName} that your ${field.toLowerCase()} needs correcting.`,
+      /*
+       * NO NEW VALUE IS SENT AND THE COPY SAYS SO. The practice owns the
+       * record; the correction is confirmed with the patient by the people who
+       * can actually make it. Promising an edit here would be promising
+       * something this page cannot do.
+       */
+      confirmNote: 'We do not send them a new value. They will confirm the correct one with you.',
+      confirmAction: 'Ask them to correct it',
+    },
+
+    /* ---------------------------------------------------------------- 2 */
+    agreements: {
+      heading: 'My agreements',
+      lead: 'Every bulk-billing agreement you are part of, and the copy you signed.',
+      empty: 'No agreements yet.',
+      signedOn: (when: string) => `Signed ${when}`,
+      notSignedYet: 'Not signed yet',
+      serviceOn: (when: string) => `service on ${when}`,
+      noServiceDescription: 'No service description recorded',
+      viewAction: 'View as signed (PDF)',
+      types: {
+        enduring: 'Ongoing agreement',
+        episodic: 'For one visit',
+      } as Record<string, string>,
+      channels: {
+        in_practice: 'Signed at the practice',
+        remote_link: 'Signed from a link we sent you',
+        verbal: 'Given verbally',
+        paper: 'Signed on paper',
+        print: 'Signed on paper',
+      } as Record<string, string>,
+      /*
+       * A LIFECYCLE STATE IN THE PATIENT'S WORDS. None of these claims that
+       * anybody has endorsed the form: "checked" is what we do (REQ-65C-05).
+       * A state with no entry shows as its own code rather than as nothing.
+       */
+      statuses: {
+        draft: 'Not finished',
+        verification_pending: 'Waiting on an identity check',
+        verification_failed: 'The identity check did not pass',
+        awaiting_signature: 'Waiting for your signature',
+        signed: 'Signed',
+        validated: 'Signed, and checked against the s 65C data set',
+        stored: 'Signed and stored',
+        claim_linked: 'Signed, and a claim has been made',
+        verbal_recorded: 'Recorded verbally',
+        declined: 'Declined',
+        expired: 'Expired',
+      } as Record<string, string>,
+    },
+
+    /* ---------------------------------------------------------------- 3 */
+    enduring: {
+      heading: 'Ongoing bulk-billing agreements',
+      /*
+       * PER PROVIDER, said in the lead, because the alternative reading —
+       * "an agreement with the practice" — is wrong in law and would mislead
+       * a patient about eight other doctors at the same address
+       * (REQ-END-01, hard rule 6).
+       */
+      lead: 'These are with one provider each, not with the practice. They keep going until you or the provider end them.',
+      empty: 'You have no ongoing agreements.',
+      activeSince: (when: string) => `In place since ${when}`,
+      /*
+       * THE PLAIN-LANGUAGE EXPLANATION REQ-PORT-03 ASKS FOR, in the words of
+       * the obligation itself (REQ-END-06a, FAQ p. 39): while the agreement
+       * stands, the provider bulk bills the services it covers. No amount, and
+       * no promise about services it does not cover.
+       */
+      coverage: (providerName: string) =>
+        `While this is in place, ${providerName} bulk bills you for the services it covers, so you are not charged for them.`,
+      endAction: 'End this agreement',
+      endsOn: (when: string) => `Ends ${when}`,
+      confirmTitle: 'End this agreement?',
+      confirmBody: (providerName: string) =>
+        `You are ending your ongoing bulk-billing agreement with ${providerName}.`,
+      /* Both facts come from the regulation, not from us (REQ-END-06, FR-5.3). */
+      confirmTiming: 'It ends two business days from now.',
+      confirmNotice: 'We will send you a written notice, and tell the practice.',
+      /* Hard rule 8, said where somebody is most likely to fear otherwise. */
+      confirmCare: 'This does not affect your appointments or your care. You can make a new agreement at any time.',
+      confirmFailed: 'We could not end it just now. Nothing has changed. Please try again shortly.',
+      confirmAction: 'End this agreement',
+    },
+
+    /* ---------------------------------------------------------------- 4 */
+    notices: {
+      heading: 'Medicare claim notices',
+      lead: 'When a provider claims a Medicare benefit for a service you assigned, they must tell you. These are those notices.',
+      empty: 'No claim notices yet.',
+      /*
+       * ONE-WAY, AND THE COPY IS THE ENFORCEMENT (hard rule 7, FR-6.3). No
+       * approve, no decline, no "waiting on you", and never a chase. It says a
+       * service was billed and asks nothing.
+       */
+      oneWayNote: 'These are for your information only. There is nothing for you to do, and nobody will ask you about them.',
+    },
+
+    /* ---------------------------------------------------------------- 5 */
+    visits: {
+      heading: 'Where I have been',
+      /*
+       * THE MOST IMPORTANT LINE ON THE CARD. A list of dates and places reads
+       * like the start of a medical history; this product holds none
+       * (CLAUDE.md §8) and has to say so before the list, not after.
+       */
+      lead: 'Visits where a bulk-billing agreement was made. This is not a medical record — we hold nothing about your health.',
+      empty: 'No visits recorded.',
+    },
+
+    /* ---------------------------------------------------------------- 6 */
+    messages: {
+      heading: 'Messages sent to me',
+      lead: 'That we sent it, when, and how. We do not keep a copy of what it said.',
+      empty: 'No messages yet.',
+      waitingHeading: 'Waiting for you',
+      /*
+       * THE ANTI-PHISHING ANSWER (REQ-PORT-06), and it works because the
+       * patient got here by their own route. A reassuring sentence inside a
+       * text message proves nothing — a forger writes those too. A list they
+       * reached themselves does.
+       */
+      genuineQuestion: 'Is this message genuine?',
+      genuineAnswer: 'If it is listed here, it came from your practice through AoBPlatform.',
+      purposes: {
+        signature_request: 'Asking you to sign an agreement',
+        agreement_copy: 'Your copy of an agreement',
+        reminder: 'A reminder to sign',
+        notice_89aa: 'A Medicare claim notice',
+        termination_notice: 'Notice that an agreement has ended',
+      } as Record<string, string>,
+      channels: {
+        sms: 'Text message',
+        email: 'Email',
+        letter: 'Letter',
+      } as Record<string, string>,
+      states: {
+        queued: 'Waiting to be sent',
+        sent: 'Sent',
+        delivered: 'Delivered',
+        failed: 'Could not be delivered',
+        stopped: 'Stopped at your request',
+      } as Record<string, string>,
+    },
+
+    /* ---------------------------------------------------------------- 7 */
+    people: {
+      heading: 'People who act for me, and people I act for',
+      lead: 'Somebody can sign a bulk-billing agreement for you, and you can sign for somebody else.',
+      actsForMeHeading: 'People who can act for me',
+      actsForMeEmpty: 'Nobody acts for you.',
+      iActForHeading: 'People I act for',
+      iActForEmpty: 'You do not act for anybody.',
+      since: (when: string) => `since ${when}`,
+      removeAction: 'Remove',
+      removed: 'Removed.',
+      /*
+       * THE WORDS FOR THE VERSIONED RELATIONSHIP LIST, keyed by the key in
+       * `packages/domain/content/assignor-relationships.json` (hard rule 14).
+       * A key with no word renders its own key, which is ugly and visible —
+       * the right failure for a missing translation.
+       */
+      relationshipNames: {
+        father: 'Father',
+        mother: 'Mother',
+        spouse: 'Spouse',
+        carer: 'Carer',
+        grandparent: 'Grandparent',
+        family_member: 'Family member',
+        friend: 'Friend',
+        other: 'Other',
+      } as Record<string, string>,
+      confirmTitle: 'Remove this person?',
+      confirmBody: (name: string) => `${name} will no longer be able to sign a bulk-billing agreement for you.`,
+      /*
+       * NO REASON IS ASKED FOR, AND THE DIALOG SAYS SO. Where a relationship
+       * has gone wrong, being asked to justify this is worse than unhelpful.
+       */
+      confirmNoReason: 'You do not need to give a reason.',
+      confirmAction: 'Remove them',
+    },
+
+    /* ---------------------------------------------------------------- 8 */
+    data: {
+      heading: 'What happens to my data',
+      whatWeHold: 'We hold your name, date of birth, address, mobile and email as your practice gave them to us, the bulk-billing agreements you are part of, and a record of every message we sent you.',
+      whyWeHold: 'We hold it for one reason: to make and keep the record that you agreed to bulk billing, and to prove it later if anybody asks. We hold nothing about your health.',
+      whoSeesIt: 'Your practice sees its own record of you and nothing from any other practice. We never sell it, and we never use it for advertising.',
+      /*
+       * PLACEHOLDER, ON PURPOSE (CLAUDE.md §7 — never invent a regulatory
+       * fact). The requirements state a period and anchor it to an event this
+       * system may not observe directly, so the sentence a patient reads has
+       * to be written from the requirement by a person. It renders visibly
+       * unfinished rather than plausibly wrong.
+       */
+      retentionPeriod: 'How long we keep it: [retention period — from requirements]. After that it is destroyed or de-identified.',
+      yourRights: 'You can ask your practice to correct anything it holds about you, and you can end an ongoing agreement from this page at any time.',
+      accessLogHeading: 'Who has looked',
+      accessLogLead: 'Every time somebody opens or changes your record, it is written down. This is that list.',
+      accessLogEmpty: 'Nothing has happened to your record yet.',
+      actors: {
+        practice_staff: 'Practice staff',
+        patient: 'You',
+        system: 'AoBPlatform',
+      } as Record<string, string>,
+      /*
+       * WHAT HAPPENED, IN WORDS. An unmapped key shows as its own code so it
+       * can be read out to support rather than disappearing — the "shortcuts
+       * to the answer" principle applied to a timeline (Carl, 4 Sep 2026).
+       */
+      actions: {
+        record_viewed: 'Looked at your record',
+        details_corrected: 'Corrected one of your details',
+        correction_requested: 'Asked the practice to correct a detail',
+        agreement_created: 'Started an agreement',
+        agreement_signed: 'Signed an agreement',
+        agreement_viewed: 'Looked at a signed agreement',
+        agreement_terminated: 'Ended an ongoing agreement',
+        message_sent: 'Sent you a message',
+      } as Record<string, string>,
+    },
+
+    /* ---------------------------------------------------------------- 9 */
+    later: {
+      heading: 'Coming later',
+      lead: 'Not built yet, and named here so you know they are missing rather than hidden.',
+      appointments: 'Your appointments',
+      referrals: 'Your referrals',
+    },
+  },
 } as const;

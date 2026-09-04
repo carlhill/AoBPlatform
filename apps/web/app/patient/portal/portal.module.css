@@ -1,0 +1,280 @@
+/*
+ * The patient's own page.
+ *
+ * EVERY COLOUR IS A TOKEN from `app/tokens.css`. Nothing is invented here, so
+ * the AA contrast decisions made once in that file hold on this surface too —
+ * and this is the surface where they matter most, because the reader did not
+ * choose to use our software and cannot ring our support line.
+ *
+ * TARGETS ARE 44px. Rows are read on a phone, one-handed, sometimes by somebody
+ * who is unwell. Every control on this page is at least 44 by 44, which is why
+ * `.action` sets both a min-height and a min-width rather than relying on
+ * padding to get there.
+ *
+ * ONE COLUMN, ALWAYS. Cards are independent answers, not a dashboard: side by
+ * side they invite comparison between things that are not comparable, and they
+ * reflow badly at the widths this page is actually read at.
+ */
+
+.page {
+  max-width: 46rem;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+}
+
+/* --- Cards ---------------------------------------------------------------- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--s5);
+}
+
+.cardTitle {
+  font-size: var(--text-xl);
+  margin: 0;
+}
+
+.cardLead {
+  margin: var(--s2) 0 0;
+  color: var(--ink-muted);
+  font-size: var(--text-base);
+}
+
+.cardQuiet {
+  margin: var(--s4) 0 0;
+  color: var(--ink-muted);
+}
+
+.cardError {
+  margin: var(--s4) 0 0;
+  padding: var(--s3);
+  border-left: 3px solid var(--stop);
+  background: var(--stop-wash);
+  color: var(--ink);
+}
+
+/* --- Rows ----------------------------------------------------------------- */
+
+.rows {
+  list-style: none;
+  margin: var(--s4) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+
+.row {
+  border-top: 1px solid var(--line);
+  padding-top: var(--s3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s4);
+  align-items: baseline;
+}
+
+.rowMain {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.rowLabel {
+  display: block;
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+
+.rowValue {
+  display: block;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.rowMeta {
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+
+.groupTitle {
+  font-size: var(--text-lg);
+  margin: var(--s5) 0 0;
+}
+
+/* --- Actions -------------------------------------------------------------- */
+
+.action {
+  font: inherit;
+  font-size: var(--text-base);
+  min-height: 44px;
+  min-width: 44px;
+  padding: var(--s2) var(--s4);
+  border-radius: var(--radius);
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.action:hover:not(:disabled) {
+  background: var(--surface-sunken);
+}
+
+/*
+ * FOCUS IS VISIBLE AND IT IS NOT THE BROWSER'S DEFAULT OUTLINE, which
+ * disappears against the accent fill on the primary action. Two rings, so it
+ * shows on every background on this page.
+ */
+.action:focus-visible,
+.detailLink:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.actionPrimary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 500;
+}
+
+.actionPrimary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.actionQuiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.actionQuiet:hover:not(:disabled) {
+  background: var(--info-wash);
+}
+
+.action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.detailLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--accent);
+}
+
+.dialogBody {
+  color: var(--ink);
+}
+
+.dialogBody p {
+  margin: 0 0 var(--s3);
+}
+
+/* --- Waiting-for-you strip (REQ-PORT-06) ---------------------------------- */
+
+/*
+ * THE ANTI-PHISHING STRIP. Highlighted because it is the answer to "is this
+ * message real" — the patient who has just had a text arrives here to check,
+ * and the check has to be the first thing on the card, not something they
+ * scroll to. Accent wash and a left rule; the words carry the meaning, colour
+ * only reinforces it.
+ */
+.waiting {
+  margin: var(--s4) 0 0;
+  padding: var(--s4);
+  border: 1px solid var(--info);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  background: var(--info-wash);
+}
+
+.waitingTitle {
+  margin: 0 0 var(--s2);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.waitingNote {
+  margin: var(--s3) 0 0;
+  font-size: var(--text-sm);
+  color: var(--ink);
+}
+
+/* --- Access log timeline -------------------------------------------------- */
+
+.timeline {
+  list-style: none;
+  margin: var(--s4) 0 0;
+  padding: 0;
+}
+
+.timelineItem {
+  border-left: 2px solid var(--line-strong);
+  padding: 0 0 var(--s4) var(--s4);
+  position: relative;
+}
+
+.timelineItem:last-child {
+  padding-bottom: 0;
+}
+
+.timelineWhen {
+  display: block;
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+
+/* An action key nobody has written copy for yet — shown, not swallowed. */
+.unmappedKey {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--surface-sunken);
+  padding: 0 var(--s1);
+  border-radius: var(--radius);
+}
+
+/* --- Prose ---------------------------------------------------------------- */
+
+.prose p {
+  margin: var(--s3) 0 0;
+  max-width: 38rem;
+}
+
+/* --- Signed out ----------------------------------------------------------- */
+
+.signedOut {
+  max-width: 34rem;
+  margin: 0 auto;
+}
+
+.devSeam {
+  margin-top: var(--s6);
+  padding: var(--s4);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+}
+
+.devSeamHeading {
+  margin: 0 0 var(--s2);
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-muted);
+}
+
+/* --- Coming later --------------------------------------------------------- */
+
+.quietCard {
+  background: var(--surface-sunken);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  padding: var(--s5);
+  color: var(--ink-muted);
+}
