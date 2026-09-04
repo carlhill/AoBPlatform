@@ -163,7 +163,7 @@ describe('approving an agreement from a link (e2e, real Postgres)', () => {
     // Whole words, so a random id or hash containing the hex run "fee" (seen
     // in CI: ...bfee-...) cannot trip the guard. The rule it protects is real
     // (rule 4 — no benefit amount on any agreement artefact); the regex was not.
-    expect(JSON.stringify(res.body)).not.toMatch(/(benefit|amount|cents|fee)|\$/i);
+    expect(JSON.stringify(res.body)).not.toMatch(/\b(benefit|amount|cents|fee)\b|\$/i);
     // Locked and hashed on this read — what is shown is what will be signed.
     expect(res.body.particulars.artefactSha256).toMatch(/^[0-9a-f]{64}$/);
     const locked = await prisma.withPractice(practiceId, (tx) => tx.agreement.findFirst({ where: { id: agreementId } }));
