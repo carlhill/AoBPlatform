@@ -2044,16 +2044,45 @@ the REQ-PORT-08 sentence: signing an agreement never needs an account.
   `fixtures.ts` until the server side lands. One line switches it:
   `NEXT_PUBLIC_PORTAL_FIXTURES=false`. Nothing else changes.
 
-TWO THINGS FOR CARL TO DECIDE, both deliberately left rather than guessed:
-1. **The retention sentence.** `portal.data.retentionPeriod` renders the
-   placeholder "[retention period — from requirements]". aob-requirements.md
-   states two years from the date of the RELATED CLAIM, not the service date,
-   and the clock is anchored to an event we may not observe — so the sentence a
-   patient reads needs writing by a person, not by an agent.
-2. **The termination wording.** The dialog says "It ends two business days from
-   now" and "We will send you a written notice, and tell the practice", taken
-   from REQ-END-06 and FR-5.3. The actual notice TEMPLATE is still the
-   human-authored piece the estimate above names.
+TWO THINGS FOR CARL TO DECIDE — both now answered (Carl, 4 Sep 2026):
+
+1. **The retention sentence — WRITTEN.** `portal.data.retentionPeriod` now
+   reads: "We keep the record of each bulk-billing agreement for two years from
+   the date of the related Medicare claim, as the law requires. After that it is
+   destroyed or de-identified." The two-year period comes from
+   **aob-requirements.md line 110** (REQ-REG-09) and it runs from the date of
+   the RELATED CLAIM, not the service date. Held word for word by
+   `portal_data_retention_is_not_invented`.
+   - [ ] **The clock's anchor is an event we may not observe (REQ-INT-04), and
+         that is a separate item.** The copy says what the law requires of the
+         practice, which is true whatever our claim linkage turns out to see; it
+         does not promise a deletion date the platform can compute. What the
+         RETENTION MODULE does when no claim event ever arrives — hold
+         indefinitely, fall back to the service date, or surface the agreement
+         for a decision — is unanswered and belongs with the legal-hold work in
+         REQ-REG-09 rather than in portal copy.
+2. **The termination wording — DRAFT ONLY.** Carl, 4 Sep 2026: "make something
+   up for now and add it to TODO."
+   `packages/domain/content/enduring-termination-notice.json` now carries
+   plain-language bodies for all six sections plus a `draft_banner` section that
+   RENDERS ("DRAFT — pending review. This wording has not been reviewed and this
+   notice is not to be sent."), so a notice that escaped review is visibly
+   unfinished to whoever holds it.
+   - [ ] **Termination notice wording is a placeholder drafted by an agent on
+         4 Sep 2026; a human must review/replace it and widen the status CHECK
+         before any notice is delivered.** `draft` stays `true`, the CHECK on
+         `portal_termination_notices.status` still admits only
+         `draft_pending_review`, and a review task is still raised beside every
+         termination. The reviewer's edit is one act with four parts: rewrite the
+         bodies, delete the banner section, bump `version`, flip `draft`, and
+         widen the CHECK in a new migration.
+   - What the draft deliberately does NOT do, each held by a named test in
+     `packages/domain/src/enduring-termination-notice.test.ts`: no benefit or
+     dollar amount of any kind (hard rule 4); no "certified", "approved" or
+     "accredited" (hard rule 12); no practitioner signature block (hard rule 3);
+     no suggestion that care, appointments or billing stop (hard rule 8); and
+     **exactly one section number** — 65CA(7)(b), because REQ-PORT-05 gives it
+     and CLAUDE.md §7 forbids inferring another.
 
 ## Where this product could go: v2 and v3
 

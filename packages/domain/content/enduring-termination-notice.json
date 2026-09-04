@@ -1,7 +1,7 @@
 {
-  "$comment": "VERSIONED CONTENT, NOT CODE (hard rule 14), AND DELIBERATELY UNWRITTEN. This is the written notice a patient's termination of an enduring agreement must generate under REQ-PORT-05 / 65CA(7)(b), with the two-business-day effect of FR-5.3. THE WORDING IS HUMAN-AUTHORED REGULATORY COPY AND IS NOT HERE: `draft` is true, every section body is empty, and the portal refuses to mark any notice built from this file as anything but `draft_pending_review`. A generated agent must not invent statutory notice wording — the section numbers, the effect date language and the obligations stated to the provider are exactly the facts CLAUDE.md forbids inferring from training data. What IS settled here is the SHAPE: which sections the notice has, in what order, and which placeholders each may use. A reviewer fills the bodies, bumps `version`, and flips `draft` to false; until then the review task raised beside every termination is the thing that stops a blank notice going out. PLACEHOLDERS ARE KEYS, NEVER VALUES. `{{effectiveAt}}` and the rest are substituted at render time from the agreement's own record; no name, address or amount is ever written into this file. NO BENEFIT AMOUNT APPEARS IN ANY SECTION and none may be added — an agreement artefact carries no dollar figure (hard rule 4); reg 89AA notices are the one place an amount belongs and they are a different document entirely.",
+  "$comment": "VERSIONED CONTENT, NOT CODE (hard rule 14). This is the written notice a patient's termination of an enduring agreement must generate under REQ-PORT-05 / 65CA(7)(b), with the two-business-day effect of FR-5.3. THE WORDING BELOW IS A DRAFT WRITTEN BY AN AGENT ON 4 SEPTEMBER 2026 AT CARL'S REQUEST ('make something up for now'). IT HAS NOT BEEN REVIEWED BY A PERSON. `draft` stays true, the DB CHECK on portal_termination_notices still allows only `draft_pending_review`, and every termination still raises a review task beside its notice — so nothing here can be delivered as a finished document. A reviewer rewrites these bodies, bumps `version`, flips `draft` to false and widens the CHECK, in that order. WHAT THE DRAFT DELIBERATELY DOES NOT DO. It states no section number the requirements did not give us: 65CA(7)(b) is cited because REQ-PORT-05 names it, and nothing else is. It carries no benefit amount and no dollar figure of any kind (hard rule 4) — reg 89AA notices are the one place an amount belongs and they are a different document. It has no practitioner signature block and no space for one (hard rule 3, abolished 1 July 2026). It never says 'certified', 'approved', 'accredited' or 'government-approved' (hard rule 12). And it never suggests that care, appointments or billing stop, because they do not and the platform never blocks care (hard rule 8). PLACEHOLDERS ARE KEYS, NEVER VALUES. `{{effectiveAt}}` and the rest are substituted at render time from the agreement's own record; no name, address or amount is ever written into this file. THE DRAFT BANNER IS A SECTION, not a comment: it renders at the top of the document, so a notice that escaped review would be visibly unfinished to whoever received it rather than quietly wrong.",
   "templateKey": "enduring_termination_notice_v1",
-  "version": "enduring-termination-notice-2026-09-1-DRAFT",
+  "version": "enduring-termination-notice-2026-09-04-DRAFT",
   "draft": true,
   "placeholders": [
     "patientGivenNames",
@@ -14,34 +14,39 @@
   ],
   "sections": [
     {
+      "key": "draft_banner",
+      "body": "DRAFT — pending review. This wording has not been reviewed and this notice is not to be sent.",
+      "note": "STAYS UNTIL A HUMAN HAS REVIEWED THE WORDING. It is a section rather than a code comment on purpose: it renders, so a notice that escaped review is visibly unfinished to the person holding it. The reviewer deletes this section in the same edit that flips `draft` to false."
+    },
+    {
       "key": "heading",
-      "body": "",
-      "note": "DRAFT — a reviewer writes this. What the document is. Never the words 'certified', 'approved', 'accredited' or 'government-approved' (hard rule 12)."
+      "body": "Notice that an ongoing bulk-billing agreement has ended",
+      "note": "DRAFT — what the document is, in one line. Never the words 'certified', 'approved', 'accredited' or 'government-approved' (hard rule 12)."
     },
     {
       "key": "who_and_what",
-      "body": "",
-      "note": "DRAFT — which enduring agreement is ending: patient, provider, practice, and when it was entered into. Placeholders only."
+      "body": "{{patientGivenNames}}, you have ended your ongoing bulk-billing agreement with {{providerName}} at {{practiceName}}. That agreement was made on {{agreementEnteredInto}}. It covered services {{providerName}} provided to you: you agreed once, and each of those services was bulk billed without you being asked to sign again. You asked us to end it on {{noticeAt}}, and this notice is the record of that.",
+      "note": "DRAFT — which agreement is ending: patient, provider, practice, and when it was entered into. Placeholders only; no address, no patient record number, no amount. The plain-language description of what an enduring agreement covered is here rather than in a separate section because a person reading this needs to know what they have just switched off."
     },
     {
       "key": "statutory_basis",
-      "body": "",
-      "note": "DRAFT — the patient's right to terminate, cited from the requirements docs and NEVER from memory. A generated draft must leave this empty rather than guess a section number."
+      "body": "You did not have to give a reason, and you were not asked for one. The right to end an ongoing bulk-billing agreement is yours under paragraph 65CA(7)(b) of the Health Insurance Act 1973, and you hold it whether or not you were the person who signed the agreement.",
+      "note": "DRAFT — the right relied on. 65CA(7)(b) is cited because REQ-PORT-05 gives it; NO OTHER SECTION NUMBER MAY BE ADDED HERE without a source in the requirements documents (CLAUDE.md §7 — never invent a regulatory fact). A reviewer confirms the Act's short title and the paragraph as cited before `draft` is flipped."
     },
     {
       "key": "effect_date",
-      "body": "",
-      "note": "DRAFT — that the termination takes effect on {{effectiveAt}}, two business days after {{noticeAt}} on the {{businessDayCalendarState}} calendar (FR-5.3)."
+      "body": "The agreement ends on {{effectiveAt}}. That is two business days after you told us on {{noticeAt}}, counted on the {{businessDayCalendarState}} public holiday calendar. Until then the agreement is still in place, so a service in the next couple of days may still be bulk billed under it.",
+      "note": "DRAFT — the FR-5.3 effect date, and why it is not immediate. The last sentence matters: a patient who thinks the agreement stopped the moment they clicked will read a bulk-billed service on the following day as a mistake."
     },
     {
       "key": "what_happens_next",
-      "body": "",
-      "note": "DRAFT — plain language, UK/AU spelling: what the patient should expect afterwards. It must not suggest that care or billing stops; the platform never blocks care (hard rule 8)."
+      "body": "Nothing about your care changes. You can still see {{providerName}}, your appointments stand, and you do not need to do anything before your next visit. What changes is only how the paperwork is done: from {{effectiveAt}}, if a service is to be bulk billed, {{practiceName}} will ask you to agree to that service on the day. You can start a new ongoing agreement whenever you like — just tell the practice. We have told {{practiceName}} that this agreement has ended, so you do not need to.",
+      "note": "DRAFT — plain language, UK/AU spelling, 'provider' not 'GP' and 'service' not 'consult' (REQ-MP-01). It must never suggest care or billing stops; the platform never blocks care (hard rule 8). It also states that the practice has already been told, so the patient is not left thinking they have a phone call to make. NO DOLLAR FIGURE AND NO STATEMENT ABOUT WHAT ANYTHING COSTS (hard rule 4) — this document says nothing about money."
     },
     {
       "key": "contact",
-      "body": "",
-      "note": "DRAFT — how to ask the practice about this notice. A destination, not a prose instruction to 'see the practice'."
+      "body": "If any of this looks wrong, or you did not mean to end this agreement, contact {{practiceName}} and quote the date on this notice, {{noticeAt}}. They can set up a new ongoing agreement with {{providerName}} at your next visit.",
+      "note": "DRAFT — how to ask the practice about this notice, with the one thing that identifies it. A destination and a reference, not a prose instruction to 'see the practice' (Carl, 4 Sep 2026: shortcuts to the answer). The practice's own contact details are on the covering message, so no placeholder for a phone number is used here — adding one would put a value in a file that holds only keys."
     }
   ]
 }
