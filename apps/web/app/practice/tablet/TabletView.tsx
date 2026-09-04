@@ -81,6 +81,7 @@ import { strings } from '../../strings';
 import { apiHeaders, currentSession } from '../../auth';
 import { SessionControl } from '../../SessionControl';
 import styles from '../manage.module.css';
+import rowStyles from './tablet.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -154,6 +155,36 @@ export function mayPush(audiences: readonly Audience[]): boolean {
 /** "9:00", or the honest absence for a walk-in nobody booked. */
 export function whenLabel(row: Pick<PushableRow, 'appointmentTime'>): string {
   return row.appointmentTime ?? strings.tablet.unbooked;
+}
+
+/**
+ * "Service: General practitioner attendance" — label and value as ONE
+ * string, always. A narrow column wrapping normal text word by word is a
+ * width problem the grid solves; a label landing on a different line from
+ * its own value is a structure problem, and rendering the pair as a single
+ * string rather than as sibling expressions is what rules it out by
+ * construction (`row_renders_facts_in_one_line_each`).
+ */
+export function serviceFact(row: Pick<PushableRow, 'serviceDescription' | 'serviceDescriptionValid'>): string {
+  const value =
+    row.serviceDescription && row.serviceDescriptionValid
+      ? row.serviceDescription
+      : row.serviceDescription
+        ? strings.tablet.d6aStale
+        : strings.tablet.d6aMissing;
+  return `${strings.tablet.d6aLabel}: ${value}`;
+}
+
+/** "Signing: The patient" — the same one-string treatment as `serviceFact`. */
+export function signingFact(
+  row: Pick<PushableRow, 'assignorIsPatient' | 'assignorName' | 'assignorRelationship'>,
+): string {
+  const value = row.assignorIsPatient
+    ? strings.tablet.signingPatient
+    : row.assignorName
+      ? strings.tablet.signingOther(row.assignorName, row.assignorRelationship ?? '')
+      : strings.tablet.signingUnset;
+  return `${strings.tablet.signingLabel}: ${value}`;
 }
 
 /** What the who-is-signing panel is holding, before it is saved. */
@@ -510,41 +541,15 @@ export function TabletView({ practiceId }: { practiceId: string }) {
             return (
               <li
                 key={row.agreementId}
-                className={`${styles.queueRow} ${styles.sdRow}`}
+                className={rowStyles.row}
                 data-testid={`pushable-${row.agreementId}`}
               >
-                <div>
+                {/* WHO THIS IS. */}
+                <div className={rowStyles.identity}>
                   <strong>{row.patientName}</strong>
                   <div className={ui.hint}>
                     {[row.providerName, whenLabel(row)].filter(Boolean).join(' · ')}
                   </div>
-                  <div className={ui.hint}>
-                    {strings.tablet.d6aLabel}:{' '}
-                    {row.serviceDescription && row.serviceDescriptionValid
-                      ? row.serviceDescription
-                      : row.serviceDescription
-                        ? strings.tablet.d6aStale
-                        : strings.tablet.d6aMissing}
-                  </div>
-                  <div className={ui.hint}>
-                    {strings.tablet.signingLabel}:{' '}
-                    {row.assignorIsPatient
-                      ? strings.tablet.signingPatient
-                      : row.assignorName
-                        ? strings.tablet.signingOther(row.assignorName, row.assignorRelationship ?? '')
-                        : strings.tablet.signingUnset}
-                  </div>
-                  {/*
-                    ENDURING IS GP-ONLY (hard rule 6). Where the provider is not
-                    a general practitioner the screen says what to offer
-                    instead — a Treatment Plan Assignment — rather than leaving
-                    somebody to discover that enduring is not on the menu.
-                  */}
-                  {row.agreementType === 'enduring' && row.providerType !== 'general_practitioner' && (
-                    <p className={ui.hint} data-testid={`enduring-gp-only-${row.agreementId}`}>
-                      {strings.tablet.enduringGpOnly}
-                    </p>
-                  )}
                   {live && (
                     <Chip tone={STATE_TONE[live.state] ?? 'neutral'}>
                       {strings.tablet.onTabletNow(live.deviceLabel)}
@@ -553,10 +558,33 @@ export function TabletView({ practiceId }: { practiceId: string }) {
                 </div>
 
                 {/*
+                  WHAT THE VISIT IS. Label and value are rendered as ONE
+                  string each (`serviceFact` / `signingFact`) so there is
+                  nothing for a narrow column to split a fact across two
+                  lines — the column just wraps the whole fact, never a word
+                  at a time (`row_renders_facts_in_one_line_each`).
+                */}
+                <div className={rowStyles.facts}>
+                  <p className={`${ui.hint} ${rowStyles.fact}`}>{serviceFact(row)}</p>
+                  <p className={`${ui.hint} ${rowStyles.fact}`}>{signingFact(row)}</p>
+                  {/*
+                    ENDURING IS GP-ONLY (hard rule 6). Where the provider is not
+                    a general practitioner the screen says what to offer
+                    instead — a Treatment Plan Assignment — rather than leaving
+                    somebody to discover that enduring is not on the menu.
+                  */}
+                  {row.agreementType === 'enduring' && row.providerType !== 'general_practitioner' && (
+                    <p className={`${ui.hint} ${rowStyles.fact}`} data-testid={`enduring-gp-only-${row.agreementId}`}>
+                      {strings.tablet.enduringGpOnly}
+                    </p>
+                  )}
+                </div>
+
+                {/*
                   WHO IS SIGNING, SET AT THE DESK — before the push, never on
                   the tablet. D7 is explicit and never inferred (CLAUDE.md §3).
                 */}
-                <div>
+                <div className={rowStyles.who}>
                   <Button
                     variant="subtle"
                     disabled={!canSend || row.particularsLocked}
@@ -569,11 +597,14 @@ export function TabletView({ practiceId }: { practiceId: string }) {
                 </div>
 
                 {/*
-                  SEND. Dead until the row can actually go — a control that can
-                  only fail is a control that teaches people the page is broken
-                  (CLAUDE.md §6).
+                  WHERE IT GOES. Send is dead until the row can actually go — a
+                  control that can only fail is a control that teaches people
+                  the page is broken (CLAUDE.md §6). Blocked, its title carries
+                  the reason as a tooltip; the reason itself is stated once,
+                  in the full-width band below, never folded into the button's
+                  own visible label as well.
                 */}
-                <div className={styles.formActions}>
+                <div className={rowStyles.send}>
                   <SelectInput
                     id={`target-${row.agreementId}`}
                     aria-label={strings.tablet.sendChoose}
@@ -592,6 +623,7 @@ export function TabletView({ practiceId }: { practiceId: string }) {
                   <Button
                     variant="primary"
                     disabled={!canSend || !row.pushable || !target[row.agreementId] || busyId !== null}
+                    title={row.pushable ? undefined : blockedMessage(row.blockedReason)}
                     onClick={() => void send(row)}
                     data-testid={`send-${row.agreementId}`}
                   >
@@ -608,35 +640,46 @@ export function TabletView({ practiceId }: { practiceId: string }) {
                   THE REASON IT CANNOT GO, on the row, always — never only after
                   somebody presses something. This is Carl's live test made
                   structural: reception must be able to see who needs fixing.
+                  Its own full-width band beneath the facts, never sharing a
+                  track with — and so never overlapping — the send column.
                 */}
                 {!row.pushable && (
-                  <Notice tone="warn" title={strings.tablet.sendBlocked} data-testid={`blocked-${row.agreementId}`}>
-                    {blockedMessage(row.blockedReason)}
-                  </Notice>
+                  <div className={rowStyles.band}>
+                    <Notice tone="warn" title={strings.tablet.sendBlocked} data-testid={`blocked-${row.agreementId}`}>
+                      {blockedMessage(row.blockedReason)}
+                    </Notice>
+                  </div>
                 )}
 
                 {outcome && (
-                  <Notice
-                    tone={outcome.ok ? 'ok' : 'stop'}
-                    title={strings.tablet.sendBlocked}
-                    data-testid={`push-outcome-${row.agreementId}`}
-                  >
-                    {outcome.text}
-                  </Notice>
+                  <div className={rowStyles.band}>
+                    <Notice
+                      tone={outcome.ok ? 'ok' : 'stop'}
+                      title={strings.tablet.sendBlocked}
+                      data-testid={`push-outcome-${row.agreementId}`}
+                    >
+                      {outcome.text}
+                    </Notice>
+                  </div>
                 )}
 
                 {whoSaid && (
-                  <Notice
-                    tone={whoSaid.ok ? 'ok' : 'stop'}
-                    title={strings.tablet.whoTitle}
-                    data-testid={`who-outcome-${row.agreementId}`}
-                  >
-                    {whoSaid.text}
-                  </Notice>
+                  <div className={rowStyles.band}>
+                    <Notice
+                      tone={whoSaid.ok ? 'ok' : 'stop'}
+                      title={strings.tablet.whoTitle}
+                      data-testid={`who-outcome-${row.agreementId}`}
+                    >
+                      {whoSaid.text}
+                    </Notice>
+                  </div>
                 )}
 
                 {whoFor === row.agreementId && (
-                  <div className={styles.cardBody} data-testid={`who-panel-${row.agreementId}`}>
+                  <div
+                    className={`${styles.cardBody} ${rowStyles.band}`}
+                    data-testid={`who-panel-${row.agreementId}`}
+                  >
                     <Checkbox
                       checked={who.isPatient}
                       onCheckedChange={(v) => setWho((w) => ({ ...w, isPatient: v }))}

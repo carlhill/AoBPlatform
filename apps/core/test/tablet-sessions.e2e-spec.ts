@@ -794,6 +794,68 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
       // see who needs fixing (TODO.md, 4 Sep 2026).
       expect(rows.length).toBeGreaterThanOrEqual(3);
     });
+
+    it('pushable_reads_d6a_from_locked_particulars — the same read lockParticulars does', async () => {
+      // The column is what a lock through the DTO does NOT have to fill: a
+      // caller can supply `basicServiceDescription` straight to the lock, and
+      // only the rendered snapshot in `particulars` ever carries it. Written
+      // directly here rather than through `POST /agreements/:id/lock-particulars`
+      // so the fixture is exactly that shape — locked, with D6a nowhere but
+      // the particulars snapshot.
+      const agreementId = await draft({ description: null });
+      await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.update({
+          where: { id: agreementId },
+          data: {
+            particulars: { basicServiceDescription: D6A },
+            particularsLockedAt: new Date(),
+          },
+        }),
+      );
+
+      const res = await http().get('/tablet-sessions/pushable').set('x-practice-id', practiceA).expect(200);
+      const rows = res.body as Array<Record<string, unknown>>;
+      const row = rows.find((r) => r.agreementId === agreementId);
+
+      // Neither "Not set" nor blocked for want of a description it already has.
+      expect(row).toMatchObject({
+        pushable: true,
+        blockedReason: null,
+        serviceDescription: D6A,
+        serviceDescriptionValid: true,
+      });
+    });
+
+    it('pushable_excludes_agreements_whose_capture_is_closed — a stale attempt does not shadow a fresh one', async () => {
+      // The first attempt: opened, then closed without a signature — timed
+      // out, walked away, or superseded. Nothing will reopen it.
+      const stale = await draft();
+      await prisma.withPractice(practiceA, (tx) =>
+        tx.captureRequest.create({
+          data: { practiceId: practiceA, agreementId: stale, channel: 'in_practice', status: 'expired' },
+        }),
+      );
+
+      // A fresh draft for the same visit, never yet handed to a capture path.
+      const fresh = await draft();
+
+      // And one mid-flight, its in-practice capture request still open.
+      const openOne = await draft();
+      await prisma.withPractice(practiceA, (tx) =>
+        tx.captureRequest.create({
+          data: { practiceId: practiceA, agreementId: openOne, channel: 'in_practice', status: 'open' },
+        }),
+      );
+
+      const res = await http().get('/tablet-sessions/pushable').set('x-practice-id', practiceA).expect(200);
+      const ids = (res.body as Array<Record<string, unknown>>).map((r) => r.agreementId);
+
+      // The closed attempt is gone — not merely outranked, absent — so
+      // reception is never shown the same patient's visit twice.
+      expect(ids).not.toContain(stale);
+      expect(ids).toContain(fresh);
+      expect(ids).toContain(openOne);
+    });
   });
 
   // -------------------------------------------------------------------------

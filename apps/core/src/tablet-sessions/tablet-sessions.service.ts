@@ -330,11 +330,30 @@ export class TabletSessionsService {
       );
 
       const todayIso = today();
-      const forToday = candidates.filter((agreement) => {
+      const dueToday = candidates.filter((agreement) => {
         const appointment = appointmentByAgreement.get(agreement.id);
         if (appointment) return appointment.date.toISOString().slice(0, 10) === todayIso;
         return agreement.createdAt >= startOfDay;
       });
+      if (dueToday.length === 0) return [];
+
+      /*
+       * ONE ROW PER AGREEMENT WITH SOMEWHERE LEFT TO GO. A retried draft can
+       * leave TWO agreement rows behind a single visit — the first attempt's
+       * in-practice capture request timed out or was cancelled, and a fresh
+       * one was opened for the same patient. Both would satisfy "today" and
+       * "unsigned", and the stale one has no path to a signature any more: its
+       * capture request is closed and nothing will ever open it again. So it
+       * is excluded here rather than merely outranked — an agreement stays a
+       * candidate only while it has an OPEN capture request, or has none yet
+       * (a draft nobody has tried to capture at all).
+       */
+      const captureRequests = await tx.captureRequest.findMany({
+        where: { agreementId: { in: dueToday.map((a) => a.id) } },
+      });
+      const hasAnyCapture = new Set(captureRequests.map((r) => r.agreementId));
+      const hasOpenCapture = new Set(captureRequests.filter((r) => r.status === 'open').map((r) => r.agreementId));
+      const forToday = dueToday.filter((agreement) => !hasAnyCapture.has(agreement.id) || hasOpenCapture.has(agreement.id));
       if (forToday.length === 0) return [];
 
       const patients = await tx.patient.findMany({
@@ -368,6 +387,14 @@ export class TabletSessionsService {
           confidential: patient.confidentialityFlag,
         });
 
+        // The same D6a read `lockParticulars` does, and the same one
+        // `computeSignability` documents: the column while the draft is
+        // still open, falling back to the locked snapshot once it is not
+        // (see `d6aOf` below). A locked agreement whose description arrived
+        // through the lock's own DTO, rather than the staff surface that
+        // writes the column, must still show as set here.
+        const d6a = d6aOf(agreement);
+
         rows.push({
           agreementId: agreement.id,
           agreementType: agreement.type as AgreementType,
@@ -379,8 +406,8 @@ export class TabletSessionsService {
           providerType: provider?.providerType ?? null,
           appointmentDate: appointment ? appointment.date.toISOString().slice(0, 10) : null,
           appointmentTime: appointment?.time ?? null,
-          serviceDescription: agreement.serviceDescription,
-          serviceDescriptionValid: isServiceDescription(agreement.serviceDescription ?? ''),
+          serviceDescription: d6a ?? null,
+          serviceDescriptionValid: d6a ? isServiceDescription(d6a) : false,
           assignorIsPatient: agreement.assignorIsPatient,
           assignorName: agreement.assignorIsPatient ? null : (assignor?.name ?? null),
           assignorRelationship: agreement.assignorIsPatient
@@ -805,7 +832,7 @@ export class TabletSessionsService {
       const signability = computeSignability(
         {
           particularsLockedAt: agreement.particularsLockedAt,
-          basicServiceDescription: agreement.serviceDescription ?? undefined,
+          basicServiceDescription: d6aOf(agreement),
         },
         isServiceDescription,
       );
@@ -913,6 +940,28 @@ export class TabletSessionsService {
 /** Today, as the ISO date every particular in this system is written in. */
 function today(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * D6a, THE SAME READ `lockParticulars` DOES —
+ * `agreement.serviceDescription ?? particulars.basicServiceDescription` — and
+ * the one `computeSignability`'s own docstring names. The column holds D6a
+ * while the draft is still open; once locked, the trigger in the
+ * `service_description` migration refuses any further change to it, so the
+ * column can be stale (or never populated at all, when a caller supplied
+ * `basicServiceDescription` straight to the lock rather than through the
+ * staff surface that writes the column) while the LOCKED snapshot in
+ * `particulars` still carries the true, rendered value. Reading the column
+ * alone is exactly the bug this fixes: a locked agreement with a real D6a
+ * showing "Not set" and refusing to push (kiosk.service.ts's
+ * `collectWaiting` makes the identical read, for the identical reason).
+ */
+function d6aOf(agreement: Pick<DbAgreement, 'serviceDescription' | 'particulars'>): string | undefined {
+  if (agreement.serviceDescription) return agreement.serviceDescription;
+  const particulars = agreement.particulars as Record<string, unknown> | null;
+  return typeof particulars?.basicServiceDescription === 'string'
+    ? (particulars.basicServiceDescription as string)
+    : undefined;
 }
 
 /**

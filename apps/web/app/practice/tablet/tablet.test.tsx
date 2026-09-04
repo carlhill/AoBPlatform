@@ -26,9 +26,9 @@
  *    dollar amount (hard rule 4).
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MIN_AGE_ASSIGN_FOR_OTHER, type DeviceRow, type TabletSessionRow } from '@aobplatform/domain';
-import { TabletView, blockedMessage, mayPush, whoIsBlocked } from './TabletView';
+import { TabletView, blockedMessage, mayPush, serviceFact, signingFact, whoIsBlocked } from './TabletView';
 import { strings } from '../../strings';
 
 const PRACTICE = 'practice-1';
@@ -175,6 +175,51 @@ describe('/practice/tablet — send to the tablet', () => {
     expect(row.textContent).toContain('09:00');
     expect(row.textContent).toContain('General practitioner attendance');
     expect(row.textContent).toContain(strings.tablet.signingPatient);
+  });
+
+  it('row_renders_facts_in_one_line_each', async () => {
+    stubFetch();
+    render(<TabletView practiceId={PRACTICE} />);
+
+    await waitFor(() => expect(screen.getByTestId(`pushable-${READY.agreementId}`)).toBeTruthy());
+    const readyRow = within(screen.getByTestId(`pushable-${READY.agreementId}`));
+    const blockedRow = within(screen.getByTestId(`pushable-${BLOCKED.agreementId}`));
+
+    // The label and its value, together as ONE string — never split across
+    // sibling nodes a narrow column could wrap onto separate lines.
+    expect(serviceFact(READY)).toBe(`${strings.tablet.d6aLabel}: ${READY.serviceDescription}`);
+    expect(signingFact(READY)).toBe(`${strings.tablet.signingLabel}: ${strings.tablet.signingPatient}`);
+    expect(readyRow.getByText(serviceFact(READY))).toBeTruthy();
+    expect(readyRow.getByText(signingFact(READY))).toBeTruthy();
+
+    // A draft with no D6a yet reads the same way — "Service: Not set" as one
+    // line, not a label stranded above an empty value.
+    expect(serviceFact(BLOCKED)).toBe(`${strings.tablet.d6aLabel}: ${strings.tablet.d6aMissing}`);
+    expect(blockedRow.getByText(serviceFact(BLOCKED))).toBeTruthy();
+  });
+
+  it('blocked_row_disables_send_and_shows_reason_once', async () => {
+    signedInAtPractice();
+    stubFetch();
+    render(<TabletView practiceId={PRACTICE} />);
+
+    await waitFor(() => expect(screen.getByTestId(`send-${BLOCKED.agreementId}`)).toBeTruthy());
+    const send = screen.getByTestId(`send-${BLOCKED.agreementId}`) as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+
+    // The reason is the DEAD button's tooltip …
+    const reason = strings.tablet.blocked.service_description_missing;
+    expect(send.title).toBe(reason);
+
+    // … and appears exactly ONCE on the row: in its own full-width band,
+    // never also folded into the button's visible label (which stays the
+    // generic "Cannot be sent yet" so the two never say the reason twice,
+    // let alone overlap on screen).
+    const row = screen.getByTestId(`pushable-${BLOCKED.agreementId}`);
+    const text = row.textContent ?? '';
+    expect(text.split(reason).length - 1).toBe(1);
+    expect(send.textContent).not.toContain(reason);
+    expect(send.textContent).toContain(strings.tablet.sendBlocked);
   });
 
   it('a blocked row says which rule is in the way, before anybody presses anything', async () => {

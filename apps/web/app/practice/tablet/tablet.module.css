@@ -1,0 +1,89 @@
+/*
+ * ONE ROW, FOUR QUESTIONS — "Send to the tablet" (CLAUDE.md build brief).
+ *
+ * Reception scans this list all morning and is asking four things about each
+ * agreement: who is this, what is the visit, who is signing, and where does
+ * it go. The row previously borrowed `.sdRow` from `manage.module.css`, built
+ * for the reconciliation screen's D6a row — a name, a label, a select and a
+ * button, four DIRECT children. This row's three columns of controls do not
+ * arrive as four direct children: the identity block, the facts block, the
+ * who-is-signing button and a div wrapping BOTH the tablet select and Send
+ * are three, not four, and the fourth column of `.sdRow`'s grid went to
+ * whatever came next — the blocked notice — squeezed into a track sized for
+ * a single button. The identity column, sharing the leftover space with a
+ * select and a button it was never sized for, shrank until ordinary names
+ * wrapped word by word, and the blocked notice landed inside the send
+ * column rather than under it. This file gives the row its own grid, sized
+ * for exactly what it holds.
+ *
+ * REAL MINIMUM WIDTHS, not `auto` everywhere. A column that can shrink to
+ * nothing is a column whose text wraps a word at a time the moment the page
+ * is narrower than its longest row — which is exactly what happened.
+ */
+
+.row {
+  display: grid;
+  gap: var(--s3);
+  padding: var(--s4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+/*
+ * BELOW 900px THE GRID COLLAPSES TO STACKED SECTIONS, in the same order as
+ * the wide layout: who this is, what the visit is, who is signing, where it
+ * goes. No `grid-template-columns` at all here — a single implicit column,
+ * so every child simply stacks, full width, in document order.
+ */
+@media (min-width: 900px) {
+  .row {
+    grid-template-columns: minmax(12rem, 1fr) minmax(14rem, 1.4fr) auto auto;
+    align-items: start;
+  }
+}
+
+.identity {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s1);
+}
+
+.facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  min-width: 0;
+}
+
+/* Label and value are ONE string (see `serviceFact` / `signingFact` in
+   TabletView.tsx) so there is nothing for a layout to split mid-fact. */
+.fact {
+  margin: 0;
+  overflow-wrap: break-word;
+}
+
+.who {
+  display: flex;
+  align-items: flex-start;
+}
+
+.send {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--s2);
+  min-width: 12rem;
+}
+
+/*
+ * A FULL-WIDTH BAND, beneath the row's own columns — the blocked reason, a
+ * push or who-is-signing outcome, or the who-is-signing panel itself. Below
+ * 900px the row is already one column, so this only matters at the width
+ * where the grid is real; harmless either way.
+ */
+.band {
+  grid-column: 1 / -1;
+}
