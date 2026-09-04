@@ -3103,6 +3103,32 @@ export const strings = {
       + 'a stranger. Any touch resets the clock, and a quiet warning appears thirty seconds before it happens.',
     idleLabel: 'Minutes of no activity',
     idleHint: 'Between 1 and 30. Five is the default — long enough to read an agreement standing up.',
+
+    /**
+     * WHICH AGREEMENT THE PRE-STEP OFFERS FIRST (Carl, 4 Sep 2026; GA-PLAN B6).
+     *
+     * THE LABEL IS THE RULING'S OWN WORDS, kept verbatim. It says "GP
+     * practices" in the label itself because the alternative — a practice
+     * manager at a specialist clinic ticking it and wondering why nothing
+     * changed — is exactly the confusion the parenthesis prevents. Enduring is
+     * GP-only and per practitioner × patient however this is set (hard rule 6,
+     * REQ-END-01/-01a), and the hint says that too rather than leaving a
+     * setting to look like a permission.
+     *
+     * NO BENEFIT OR DOLLAR AMOUNT anywhere in this copy (hard rule 4), and
+     * nothing here claims any of it is certified or approved (hard rule 12).
+     */
+    enduringTitle: 'What the tablet offers first',
+    enduringLabel:
+      'Offer an ongoing bulk-billing agreement by default (GP practices). Patients who decline get an '
+      + 'agreement for the visit instead.',
+    enduringHint:
+      'A default, not a permission. Ongoing agreements are for general practitioners only, and are always '
+      + 'between one provider and one patient — never practice-wide.',
+    enduringLead:
+      'An ongoing agreement is signed once and covers that provider’s bulk-billed services from that day '
+      + 'until the patient or the provider ends it, so there is nothing to sign after each visit. Turn this '
+      + 'off and the tablet offers an agreement for the visit every time.',
   },
   /**
    * The two identity dashboards (IDENTITY-STRENGTH-DESIGN.md §7).

@@ -69,6 +69,7 @@ export class PracticesService {
           identifierTypes: dto.identifierTypes,
           linkExpiryHours: dto.linkExpiryHours,
           kioskIdleTimeoutSeconds: dto.kioskIdleTimeoutSeconds,
+          enduringByDefault: dto.enduringByDefault,
           writeBackProven: dto.writeBackProven,
           senderIdRegistered: dto.senderIdRegistered,
         },
@@ -108,6 +109,42 @@ export class PracticesService {
           payload: {
             kioskIdleTimeoutSeconds: dto.kioskIdleTimeoutSeconds,
             previousSeconds: practice.kioskIdleTimeoutSeconds,
+            ...(actor ? { setBy: actor.name } : {}),
+          },
+        });
+      }
+
+      /*
+       * WHICH AGREEMENT THE PRE-STEP OFFERS IS EVIDENCED WHEN IT MOVES (Carl,
+       * 4 Sep 2026; GA-PLAN B6) — the same treatment, and the same reasoning,
+       * as the idle timeout above.
+       *
+       * It is a practice-wide choice with a per-patient consequence: with it
+       * on, the first thing a GP practice offers at the desk is a STANDING
+       * commitment to bulk bill this patient for this provider's in-scope
+       * services until somebody ends it (REQ-END-06a). Turning it off changes
+       * what every patient after that is asked. So who changed it, and to
+       * what, is evidence rather than a preference — written through the
+       * outbox in the same transaction as the row it evidences (hard rule 11).
+       *
+       * ONLY WHEN IT ACTUALLY CHANGES, because this endpoint is a whole-form
+       * save and the console posts every field on every press.
+       *
+       * A BOOLEAN IS NOT PII (REQ-LOG-08), so the value travels in the
+       * payload; "somebody changed a setting" without saying which way is not
+       * evidence of anything.
+       */
+      if (
+        dto.enduringByDefault !== undefined &&
+        dto.enduringByDefault !== practice.enduringByDefault
+      ) {
+        await enqueueVaultEvent(tx, {
+          type: 'practice.enduring_by_default_set',
+          actor: actor ? { principalType: actor.principalType, id: actor.id } : SYSTEM_ACTOR,
+          subject: { type: 'Practice', id: practiceId },
+          payload: {
+            enduringByDefault: dto.enduringByDefault,
+            previous: practice.enduringByDefault,
             ...(actor ? { setBy: actor.name } : {}),
           },
         });

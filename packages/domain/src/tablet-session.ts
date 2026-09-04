@@ -97,6 +97,16 @@ export const ACTIVE_TABLET_SESSION_STATES = [
  *  - `expired`     — thirty minutes with no request reaching the SERVER at
  *                    all — the backstop for a tablet that never got to post
  *                    its own timeout (killed, offline, crashed). Same again.
+ *  - `declined_enduring` — the patient read the ongoing agreement and chose
+ *                    "I'd rather agree each visit" (Carl, 4 Sep 2026). It is
+ *                    an ENDING like the four above and it changes NOTHING on
+ *                    the agreement, but it is its own word because it is its
+ *                    own fact and it has its own next step: reception offers
+ *                    an episodic agreement for today's visit instead. Filing
+ *                    it under `walked_away` would lose the one thing worth
+ *                    knowing — the patient did not leave, they answered.
+ *                    Declining an ongoing agreement is not declining care and
+ *                    is not declining bulk billing (hard rule 8, REQ-REC-04).
  */
 export const ENDED_TABLET_SESSION_STATES = [
   'signed',
@@ -104,6 +114,7 @@ export const ENDED_TABLET_SESSION_STATES = [
   'timed_out',
   'recalled',
   'expired',
+  'declined_enduring',
 ] as const;
 
 export const TABLET_SESSION_STATES = [
@@ -137,7 +148,19 @@ export function isActiveTabletSessionState(value: string): value is ActiveTablet
  * `expired` — that is the SERVER's own word for giving up on a screen nobody
  * asked it to watch; a device cannot assert that about itself.
  */
-export const DEVICE_SETTABLE_TABLET_SESSION_STATES = ['reading', 'walked_away', 'timed_out'] as const;
+/*
+ * `declined_enduring` IS DEVICE-SETTABLE AND THE OTHER ENDINGS ARE NOT, for
+ * the same reason `walked_away` is: it is a thing the person standing at the
+ * tablet DID, and only the tablet was there when they did it. It asserts
+ * nothing about the contract — the agreement is untouched, exactly as a
+ * walk-away leaves it — and what follows is reception's act, not the device's.
+ */
+export const DEVICE_SETTABLE_TABLET_SESSION_STATES = [
+  'reading',
+  'walked_away',
+  'timed_out',
+  'declined_enduring',
+] as const;
 export type DeviceSettableTabletSessionState = (typeof DEVICE_SETTABLE_TABLET_SESSION_STATES)[number];
 
 export function isDeviceSettableTabletSessionState(
@@ -384,15 +407,43 @@ export const PUSH_BLOCKED_REASONS = [
    */
   'patient_confidential',
   /**
-   * ENDURING IS NOT PUSHABLE YET, and this is a reported gap rather than a
-   * decision. The s 65C rule set is a human-authored zone (CLAUDE.md §7): it
-   * has no enduring path — C6 skips D6a for the type, C5 still demands a
-   * single service date a standing agreement does not have, and the
-   * conformance suite has no enduring case at all. Filling that in from an
-   * agent would be authoring regulation. So the push refuses, visibly, and
-   * says why.
+   * ENDURING IS GP-ONLY (hard rule 6, REQ-END-01a). A specialist, allied
+   * health or optometry provider has NO enduring pathway, permanently — the
+   * offer there is an episodic agreement or a Treatment Plan Assignment.
+   *
+   * MISSING IS NOT GP. A provider row with no discipline recorded fails this
+   * check rather than passing it: the consequence of guessing wrong is a
+   * standing commitment to bulk bill entered by somebody who had no pathway
+   * to enter it.
    */
-  'enduring_not_supported',
+  'enduring_not_gp',
+  /**
+   * ENDURING IS PER PRACTITIONER × PATIENT, NEVER PER PRACTICE (hard rule 6,
+   * REQ-END-01). An agreement that does not name exactly one provider and one
+   * patient — an organisation anchor, or a provider that was never set — is
+   * not a thing a tablet may collect a signature on, because the person
+   * signing could not be told who they are agreeing with.
+   */
+  'enduring_not_per_provider',
+  /**
+   * THE BOUNDARY, STATED ON THE SCREEN RATHER THAN GUESSED AT (Carl, 4 Sep
+   * 2026 — it replaces the blanket `enduring_not_supported`).
+   *
+   * Everything up to the s 65C rule set now exists for enduring: the practice
+   * setting, the GP and per-provider checks, the ceremony, the decline path.
+   * What does not exist is the RULE SET's enduring branch — reg 65CB's content
+   * set has no rules written against it, C5 still demands the single service
+   * date a standing agreement has no honest value for, and the conformance
+   * suite has no enduring case.
+   *
+   * The rule set is a HUMAN-AUTHORED ZONE (CLAUDE.md §7), so the platform asks
+   * it and believes the answer: if the registered set returns no verdict on
+   * the enduring content set, SILENCE IS NOT A PASS and the push refuses with
+   * this code. `apps/rules/test/enduring-ruleset.pending.spec.ts` is the
+   * contract the branch is authored against; the moment it passes, this
+   * refusal stops happening on its own.
+   */
+  'enduring_rules_not_authored',
   'other',
 ] as const;
 

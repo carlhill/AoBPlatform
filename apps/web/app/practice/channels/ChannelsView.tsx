@@ -56,6 +56,12 @@ interface Practice {
    * unit.
    */
   kioskIdleTimeoutSeconds?: number;
+  /**
+   * WHICH AGREEMENT THE PRE-STEP OFFERS FIRST (Carl, 4 Sep 2026; GA-PLAN B6).
+   * A default, never a permission — enduring stays GP-only and per
+   * practitioner x patient whatever this says (hard rule 6, REQ-END-01/-01a).
+   */
+  enduringByDefault?: boolean;
 }
 
 /**
@@ -110,6 +116,7 @@ export function ChannelsView({
   const [expiry, setExpiry] = useState('24');
   const [identifiers, setIdentifiers] = useState<string[]>([]);
   const [idleMinutes, setIdleMinutes] = useState(String(KIOSK_IDLE_TIMEOUT_DEFAULT_SECONDS / 60));
+  const [enduringDefault, setEnduringDefault] = useState(true);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -142,6 +149,12 @@ export function ChannelsView({
        * timeout", which is the one thing this setting may never mean.
        */
       setIdleMinutes(String(kioskIdleTimeoutOrDefault(data.kioskIdleTimeoutSeconds) / 60));
+      /*
+       * THE DEFAULT IS TRUE ON A SERVER THAT DID NOT SAY, matching the column.
+       * An unticked box would read as "this practice chose episodic", which is
+       * a decision nobody made.
+       */
+      setEnduringDefault(data.enduringByDefault ?? true);
     } catch (e) {
       setLoadError(e instanceof TypeError ? strings.review.unreachableBody : (e as Error).message);
     }
@@ -221,6 +234,7 @@ export function ChannelsView({
           // MINUTES ON THE SCREEN, SECONDS ON THE WIRE. One conversion, in one
           // place, so the server never sees two units for one setting.
           kioskIdleTimeoutSeconds: minutes * 60,
+          enduringByDefault: enduringDefault,
         }),
       });
       if (!res.ok) throw new Error(await refusalMessage(res));
@@ -398,6 +412,30 @@ export function ChannelsView({
                 </Field>
               </div>
               <p className={styles.cardNote}>{strings.channels.idleLead}</p>
+            </div>
+            {/*
+              WHICH AGREEMENT THE PRE-STEP OFFERS FIRST (Carl, 4 Sep 2026;
+              GA-PLAN B6). It sits in the Kiosk card because it is about what
+              the tablet shows, next to the other setting that is.
+
+              A DEFAULT, NOT A PERMISSION, and the hint says so: enduring is
+              GP-only and per practitioner x patient however this is set (hard
+              rule 6, REQ-END-01/-01a). Ticking it does not make a specialist's
+              agreement ongoing, and unticking it does not stop a GP offering
+              one -- it decides what is offered FIRST.
+            */}
+            <div className={styles.cardBody}>
+              <p className={styles.cardTitle}>{strings.channels.enduringTitle}</p>
+              <Checkbox
+                checked={enduringDefault}
+                onCheckedChange={(v) => {
+                  setEnduringDefault(v);
+                  setSaved(false);
+                }}
+                label={strings.channels.enduringLabel}
+                hint={strings.channels.enduringHint}
+              />
+              <p className={styles.cardNote}>{strings.channels.enduringLead}</p>
             </div>
             {canOpen('/practice/devices') && (
               <div className={styles.cardBody}>

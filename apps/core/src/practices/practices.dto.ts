@@ -84,6 +84,19 @@ export class UpdateConfigDto {
   @Max(KIOSK_IDLE_TIMEOUT_MAX_SECONDS)
   kioskIdleTimeoutSeconds?: number;
 
+  /**
+   * WHICH AGREEMENT THE PRE-STEP OFFERS FIRST (Carl, 4 Sep 2026; GA-PLAN B6).
+   *
+   * A DEFAULT, NEVER A PERMISSION. Enduring is GP-only and per practitioner ×
+   * patient whatever this says (hard rule 6, REQ-END-01/-01a) — those checks
+   * live on the push and in the domain, where a setting cannot reach them.
+   * What this decides is what a GP practice OFFERS first at the desk, and what
+   * a patient who declines is offered instead.
+   */
+  @IsOptional()
+  @IsBoolean()
+  enduringByDefault?: boolean;
+
   @IsOptional()
   @IsBoolean()
   writeBackProven?: boolean;

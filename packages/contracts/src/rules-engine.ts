@@ -55,3 +55,44 @@ export interface ValidationResponse {
 export interface RulesEngineClient {
   validate(request: ValidationRequest): Promise<ValidationResponse>;
 }
+
+/**
+ * THE ENDURING BRANCH'S RULE FAMILY — the boundary between what an agent may
+ * build and what a human must author (Carl, 4 Sep 2026; GA-PLAN B5).
+ *
+ * WHY IT EXISTS AT ALL. Every enduring agreement is validated by the same
+ * s 65C rules C1–C14 as an episodic one, except that D5 (service date) and D6a
+ * (basic description) are episodic elements — a standing agreement has no
+ * single service date and no one description — and reg 65CB adds a content set
+ * of its own (REQ-END-02, REQ-TEST-02: "for enduring forms, reg 65CB"). Those
+ * additional obligations are this family.
+ *
+ * SILENCE IS NOT A PASS, and that is the whole point of naming them here. The
+ * registered rule set today has NO enduring branch: C6 skips D6a for the type
+ * and passes trivially, and nothing asserts the pathway, the GP-only rule or
+ * the per-practitioner anchor. A caller that simply read `valid: true` would
+ * lock a standing commitment to bulk bill against rules nobody wrote. So core
+ * requires the response to contain a verdict from THIS family before it will
+ * lock an enduring agreement, and refuses with `enduring_rules_not_authored`
+ * when it does not — the same idiom the assignor endpoint already applies to
+ * C8 ("a rule set that returns no C8 verdict has not been asked the question").
+ *
+ * ⚠ THE IDS ARE A PROPOSAL, NOT A REGULATORY FACT. REQ-65C-01's table stops at
+ * C14, so these are a new family rather than an extension of it, and their
+ * content is written out — with the requirement each traces to — as a pending
+ * conformance spec in `apps/rules/test/enduring-ruleset.pending.spec.ts`. That
+ * spec is what the human author works against. Renaming or re-cutting the
+ * family is a human decision; core asks only that the answer is not silence.
+ */
+export const ENDURING_RULE_IDS = ['E1', 'E2', 'E3', 'E4', 'E5', 'E6', 'E7', 'E8'] as const;
+
+export type EnduringRuleId = (typeof ENDURING_RULE_IDS)[number];
+
+/**
+ * DID THE RULE SET ANSWER THE ENDURING QUESTIONS AT ALL? One helper, used by
+ * core before it locks and by the pending spec, so "the branch exists" has one
+ * definition rather than two that drift.
+ */
+export function answersEnduringRules(results: readonly RuleResult[]): boolean {
+  return results.some((result) => (ENDURING_RULE_IDS as readonly string[]).includes(result.rule));
+}

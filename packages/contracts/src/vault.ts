@@ -78,6 +78,29 @@ export const VAULT_EVENT_TYPES = [
    * patient never asked" is a question somebody will put to the evidence.
    */
   'capture.suppressed',
+  /**
+   * A PATIENT WALKED UP TO RECEPTION (Carl, 4 Sep 2026; TODO.md
+   * "Reception-centric" §2).
+   *
+   * Evidence rather than telemetry, and for two reasons. First, it is the
+   * moment the platform's mirror of the five details was refreshed from the
+   * PMS, which is the source of truth (REQ-DATA-10) — so "why does our record
+   * say this address" has an answer with a time on it. Second, it carries the
+   * DECISION and the VERSION of the policy that made it (hard rule 14): what
+   * this visit needed signed was decided by our own rule table, not by the
+   * practice's software, and in 2028 somebody will ask which table.
+   *
+   * WRITTEN IN THE SAME TRANSACTION AS THE ARRIVAL ROW (hard rule 11, FR-11.2),
+   * so an arrival with no record of having been received is structurally
+   * impossible.
+   *
+   * THE PAYLOAD CARRIES NO VALUE. Ids, the decision, the policy version, and
+   * the detail TYPES that changed on the mirror — `address`, `mobile` — never
+   * the old value and never the new one (REQ-VER-04, REQ-LOG-08). No Medicare
+   * number appears because none is ever held (hard rule 1), and no amount
+   * appears because an arrival is a person at a desk, not a claim (hard rule 4).
+   */
+  'arrival.received',
   'signature.captured',
   /**
    * FR-7.3 — a person decided what happens to a service that never got its
@@ -124,6 +147,22 @@ export const VAULT_EVENT_TYPES = [
   'organisation.registered',
   'organisation.validated',
   'organisation.rejected',
+  /**
+   * The Australian Business Register was asked AGAIN about a practice already
+   * on the platform, and answered.
+   *
+   * Evidence rather than housekeeping, for two reasons. An ABN check is a fact
+   * about a day: "ACTIVE when we approved them" and "ACTIVE last Tuesday" are
+   * different claims, and only the events say which one the record rests on.
+   * And a re-check can UPGRADE PROVENANCE — an entity verified by a typed
+   * attestation during an ABR outage becomes one verified by the register
+   * itself — which is a change in the strength of the evidence and must be
+   * visible as one.
+   *
+   * Only written when the register actually answered. A failed re-check says
+   * nothing about the entity and writes nothing.
+   */
+  'organisation.abn_rechecked',
   /**
    * Contact details corrected AFTER approval. A separate event from
    * `organisation.registered` on purpose: this changes the record of who was
@@ -255,6 +294,43 @@ export const VAULT_EVENT_TYPES = [
    * (REQ-LOG-08).
    */
   'practice.kiosk_idle_timeout_set',
+  /**
+   * WHICH AGREEMENT THE PRE-STEP OFFERS BY DEFAULT (Carl, 4 Sep 2026;
+   * GA-PLAN B6).
+   *
+   * A practice-wide choice with a per-patient consequence: with it on, a GP
+   * practice's first offer at the desk is an ONGOING agreement — sign once,
+   * nothing post-service — and a patient who declines is offered an agreement
+   * for the visit instead. Turning it off changes what thousands of patients
+   * are asked, so who changed it and to what is evidence rather than a
+   * preference. A boolean is not PII (REQ-LOG-08).
+   *
+   * IT IS NOT A REGULATORY SWITCH. Enduring stays GP-only and per
+   * practitioner × patient whatever this says (hard rule 6, REQ-END-01/-01a);
+   * the setting decides what is OFFERED FIRST, never what is allowed.
+   */
+  'practice.enduring_by_default_set',
+  /**
+   * THE PATIENT WOULD RATHER AGREE EACH VISIT (Carl, 4 Sep 2026).
+   *
+   * Its own event, and not a flavour of the walk-away, because it is a
+   * different fact with a different next step: the person did not leave the
+   * tablet, they read a standing agreement and answered it. Reception's screen
+   * then offers an agreement for today's visit instead.
+   *
+   * NOTHING ON THE AGREEMENT MOVES, and the payload says so — declining an
+   * ongoing agreement declines neither bulk billing nor care (hard rule 8,
+   * REQ-REC-04). Ids and a state; no patient, no reason typed by anybody, no
+   * amount.
+   */
+  'tablet.enduring_declined',
+  /**
+   * AND WHAT WAS OFFERED INSTEAD. The episodic draft reception created from
+   * the declined ongoing agreement, naming both, so the pair can be read as
+   * one story later: this patient was offered a standing agreement, said no,
+   * and signed for the visit.
+   */
+  'tablet.episodic_offered_after_decline',
   /*
    * PUSH-TO-DEVICE CAPTURE — reception handed the patient a locked screen
    * (TODO.md "Push-to-device capture" / "Two front doors", Carl 4 Sep 2026).
