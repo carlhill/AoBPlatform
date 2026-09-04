@@ -1878,6 +1878,88 @@ Left at practice level for v1. Before it is built (v2):
       Reversible migration; check what Prisma's client needs for the mapping;
       apply by hand to the dev DB as usual.
 
+## The patient's own page: "what do you do with my data" (Carl, 4 Sep 2026)
+
+Carl: "A patient will want to know what we do with all their data. So we need
+to allow the patient to view all their data": the five details; the practices
+and practitioners they hold Agreements of Benefit with; the history of
+practices visited (dates, location); every message sent to them by channel;
+later (v2/v3) appointments and referrals.
+
+This is **C8 -- Patient portal + self-termination**, a GA MUST (REQ-PORT-01..08,
+FR-8.1/8.2, M8), so it is on the critical path, not a nice-to-have. Carl's
+list maps onto it and C8 adds what the statute requires on top. Existing
+surfaces: `/patient/agree/[token]` (remote signing) and
+`/patient/messages/[token]` -- token-scoped, single purpose; neither is the
+portal.
+
+### Cards
+- [ ] **My details** -- the five details as each practice holds them (the PMS
+      is the master, so they may differ by practice; say so). "Ask the practice
+      to correct this" raises a correction request that lands on reception's
+      patient work page for THAT practice -- never a direct edit (APP 13-style
+      correction routed to the record owner). Never a Medicare number.
+- [ ] **My agreements** (REQ-PORT-01/-02/-03) -- every agreement: date,
+      provider, practice, service class, type, channel; the rendered artefact
+      AS SIGNED, hash re-verified on display (hard rule 13), downloadable as
+      PDF (automates the s 65C copy-on-request obligation). Active enduring
+      agreements per provider with the plain-language coverage explanation.
+      No dollar amounts on any agreement (hard rule 4).
+- [ ] **End an enduring agreement** (REQ-PORT-05, C8.3) -- one click; the
+      patient holds this right under 65CA(7)(b) even when not the assignor.
+      Generates and delivers the written notice; termination signal to the
+      practice (C8.6); 2-business-day effect per FR-5.3. Copy from the
+      requirements, not invented.
+- [ ] **89AA notices** (REQ-PORT-04) -- every reg 89AA claim notification:
+      date, provider, benefit amount. THE ONE PLACE a benefit amount appears;
+      one-way, no approval semantics, never chased (hard rule 7). Kept on its
+      own card so it can never bleed into the agreements card.
+- [ ] **Where I have been** -- practices and dates where an agreement was made
+      or a service was assigned. Only what the AoB record knows; never a
+      clinical record (CLAUDE.md section 8).
+- [ ] **Messages to me** -- by channel, date, state; and "**is this message
+      genuine?**" (REQ-PORT-06): the pending request visible after login is the
+      structural anti-phishing answer. Channel preferences / stop messages from
+      a practice I no longer attend (C8.6 offboarding; the AI-chat variant
+      C8.7 is SHOULD and later).
+- [ ] **Who acts for me / who I act for** (REQ-PORT-07, FR-1.19/-1.23) -- the
+      assignor view: a carer sees the people they act for, scoped; a patient
+      sees who is nominated for them and can revoke at any time with no
+      justification. 14th-birthday consequences (FR-1.16) surface here.
+- [ ] **What happens to my data** -- plain-language collection notice, what is
+      stored where, retention (from the retention module; state the period
+      from the requirements, never from memory), and **who has looked** -- every
+      access is a vault event (FR-8.2), so the patient can see the practice's
+      actions on their record (a correction by reception, a re-send) as a
+      timeline. This is the card that answers Carl's question directly.
+- [ ] v2/v3 placeholders, not built: appointments, referrals (see the
+      reception-centric section 4 and "Where this product could go").
+
+### Identity and access -- the part to get right
+- [ ] **Passkey-first, three-identifier bootstrap** (FR-8.2): activation is
+      OFFERED after a completed signature (FR-1.14), never required
+      (REQ-PORT-08 -- portal access is never a precondition of signing).
+      Sessions short-lived; every access an event.
+- [ ] **The patient links their own practices.** They activate from each
+      practice's signed agreement after that practice verified them across the
+      counter, so the portal account is the hub and no practice ever sees
+      another's data. That sidesteps the cross-practice identifier question
+      in the reception-centric section 3 entirely: no IHI matching, no
+      disclosure between practices -- the patient carries the link.
+- [ ] **A token alone never opens the portal.** The family-phone problem: a
+      parent and a 14+ child sharing one mobile must not see each other's
+      agreements (REQ-VUL, addendum v4). Message tokens stay single-purpose;
+      the full view needs the passkey or a fresh three-identifier check.
+- [ ] Patient surface rules: string table (REQ-LANG-01, community languages),
+      WCAG 2.2 AA, UK/AU plain language, never "certified/approved/accredited".
+      Zero PII in logs.
+
+### Sequencing
+After the reception work page and the arrival contract, and before the M2
+gate in GA-PLAN.md: the artefact download and enduring termination are MUSTs
+with statutory sections behind them. Estimate: ~4 agent-days for cards +
+access, plus the human-authored termination-notice template review.
+
 ## Where this product could go: v2 and v3
 
 Carl, 3 Sep 2026: "Version two of AoBPlatform could morph from just a
