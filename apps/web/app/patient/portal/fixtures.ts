@@ -52,13 +52,24 @@ export function fixtureSession(): PortalSession {
   };
 }
 
-/** Two practices, and they DISAGREE about the address — which is the point of the card. */
+/**
+ * Two practices, and they DISAGREE ABOUT THE ADDRESS — which is the point of
+ * the card, and now of the reconciliation notice above it (Carl, 5 Sep 2026).
+ *
+ * THE ADDRESS IS THE ONLY DIFFERENCE, deliberately. The name is spelled the
+ * same at both, the mobile is written differently at the two ("0400 000 001"
+ * and "0400000001") precisely so the normalisation can be seen NOT firing on
+ * it, and the email and date of birth match. So the fixture page shows exactly
+ * one line under "Your practices hold different details for you", which is the
+ * state worth looking at — a fixture that flagged four details would prove
+ * nothing about whether the comparison is any good.
+ */
 export const fixtureDetails: readonly PortalDetails[] = [
   {
     practiceId: 'prac-fixture-1',
     practiceName: 'Wattle Street Medical',
     familyName: 'Sample',
-    givenNames: 'Alex Jordan',
+    givenNames: 'Alex',
     dateOfBirth: '1984-02-29',
     address: '12 Example Street, Testville NSW 2000',
     mobile: '0400 000 001',
@@ -72,8 +83,8 @@ export const fixtureDetails: readonly PortalDetails[] = [
     givenNames: 'Alex',
     dateOfBirth: '1984-02-29',
     address: '3/40 Older Address Road, Testville NSW 2000',
-    mobile: '0400 000 001',
-    email: '',
+    mobile: '0400000001',
+    email: 'alex.sample@example.invalid',
     patientRecordNumber: 'HFP-99001',
   },
 ];

@@ -2080,6 +2080,14 @@ surfaces: `/patient/agree/[token]` (remote signing) and
 `/patient/messages/[token]` -- token-scoped, single purpose; neither is the
 portal.
 
+**BUILT 5 Sep 2026:** a practice filter under the page lead ("Showing: All
+practices | …", only where the account is linked to more than one, component
+state and nothing persisted) that narrows every card except the two that are
+account-level; and detail reconciliation on **My details** — a notice naming
+each detail two practices disagree about, and a "Differs from <practice>" tag
+beside the value with the existing correction link, on a normalised comparison
+so "2 Example St" and "2 Example Street" are one address.
+
 ### Cards
 - [ ] **My details** -- the five details as each practice holds them (the PMS
       is the master, so they may differ by practice; say so). "Ask the practice

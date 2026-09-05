@@ -60,6 +60,7 @@ import {
   type PortalAssignors,
   type PortalDetails,
   type PortalEnduring,
+  type PortalLink,
   type PortalMessage,
   type PortalNotice,
   type PortalPasskey,
@@ -75,6 +76,7 @@ import { MessagesCard } from './cards/MessagesCard';
 import { NoticesCard } from './cards/NoticesCard';
 import { PasskeysCard } from './cards/PasskeysCard';
 import { PeopleCard } from './cards/PeopleCard';
+import { PracticeFilter } from './cards/PracticeFilter';
 import { VisitsCard } from './cards/VisitsCard';
 import { PortalButton } from './portal-ui';
 import styles from './portal.module.css';
@@ -113,12 +115,36 @@ const ALL_LOADING: Cards = {
   passkeys: LOADING,
 };
 
+/**
+ * NARROWING ONE CARD'S ROWS. Loading, failed and empty pass straight through —
+ * a filter must never turn a failure into an empty list, because "we could not
+ * load this" and "there is nothing here" are different answers and a patient
+ * checking whether something exists needs to be told which one they got.
+ */
+function narrow<T>(state: Loadable<readonly T[]>, keep: (row: T) => boolean): Loadable<readonly T[]> {
+  if (state.status !== 'ready') return state;
+  return { status: 'ready', data: state.data.filter(keep) };
+}
+
 export function PortalView() {
   const [session, setSession] = useState<'checking' | 'in' | 'out' | 'unreachable'>('checking');
   // THE PORTAL ACCOUNT'S OWN ID, shown in the session bar beside Sign out so
   // the page can be checked against a message that quoted it (Carl, 4 Sep 2026).
   const [accountId, setAccountId] = useState<string | null>(null);
   const [cards, setCards] = useState<Cards>(ALL_LOADING);
+  /**
+   * THE PRACTICES THIS ACCOUNT IS LINKED TO, and which one the page is showing
+   * (Carl, 5 Sep 2026). `null` is all of them, and it is the default: the page
+   * answers "what does anybody hold about me" before it answers "what does this
+   * one hold".
+   *
+   * COMPONENT STATE, NOT STORAGE. The choice dies with the tab. Nothing on this
+   * page is written to the browser and a remembered filter would be the first
+   * thing that was — and the first way a shared phone could show one person's
+   * page in another person's shape.
+   */
+  const [links, setLinks] = useState<readonly PortalLink[]>([]);
+  const [practiceId, setPracticeId] = useState<string | null>(null);
   /**
    * ONE LINE, ONCE, AFTER AN ACTIVATION (Carl, 5 Sep 2026).
    *
@@ -174,6 +200,12 @@ export function PortalView() {
     try {
       const current = await fetchSession();
       setAccountId(current.accountId);
+      setLinks(current.links);
+      // A CHOSEN PRACTICE THAT IS NO LONGER LINKED falls back to all of them,
+      // rather than leaving the page showing an empty version of itself.
+      setPracticeId((chosen) =>
+        chosen && current.links.some((link) => link.practiceId === chosen) ? chosen : null,
+      );
       setSession('in');
       loadAll();
     } catch (err) {
@@ -202,9 +234,55 @@ export function PortalView() {
     return <SignedOut unreachable={session === 'unreachable'} onSignedIn={checkSession} />;
   }
 
-  // THE PERSON'S NAME IN THE HEADER, from the first practice's record once the
-  // details card has loaded; the generic title until then, and if it failed.
-  const first = cards.details.status === 'ready' ? cards.details.data[0] : undefined;
+  /**
+   * WHAT THE PAGE IS SHOWING — every card narrowed to the chosen practice, or
+   * all of them (Carl, 5 Sep 2026).
+   *
+   * BY NAME FOR EIGHT OF THE NINE, BY ID FOR DETAILS. Only `PortalDetails`
+   * carries a practice id on the wire; the rest carry the name the card
+   * displays, which is also what the patient is choosing between. Matching on
+   * the name the server itself sent for the link keeps the two sides of the
+   * comparison from being two different strings — and two practices sharing a
+   * display name would be a problem this page could not paper over anyway.
+   *
+   * PASSKEYS ARE NOT NARROWED. A passkey belongs to the account, not to a
+   * practice: hiding somebody's only credential because they were looking at
+   * one practice would be hiding the one thing that gets them back in.
+   *
+   * NEITHER IS "PEOPLE WHO ACT FOR ME". The authority is held against the
+   * patient, and the payload has no practice on it — filtering by a field that
+   * is not there would quietly empty the list. "People I act for" does carry a
+   * practice, and is narrowed.
+   */
+  const chosen = practiceId ? links.find((link) => link.practiceId === practiceId) : undefined;
+  const shown: Cards = !chosen
+    ? cards
+    : {
+        details: narrow(cards.details, (row) => row.practiceId === chosen.practiceId),
+        agreements: narrow(cards.agreements, (row) => row.practiceName === chosen.practiceName),
+        enduring: narrow(cards.enduring, (row) => row.practiceName === chosen.practiceName),
+        notices: narrow(cards.notices, (row) => row.practiceName === chosen.practiceName),
+        visits: narrow(cards.visits, (row) => row.practiceName === chosen.practiceName),
+        messages: narrow(cards.messages, (row) => row.practiceName === chosen.practiceName),
+        people:
+          cards.people.status !== 'ready'
+            ? cards.people
+            : {
+                status: 'ready',
+                data: {
+                  actsForMe: cards.people.data.actsForMe,
+                  iActFor: cards.people.data.iActFor.filter(
+                    (row) => row.practiceName === chosen.practiceName,
+                  ),
+                },
+              },
+        access: narrow(cards.access, (row) => row.practiceName === chosen.practiceName),
+        passkeys: cards.passkeys,
+      };
+
+  // THE PERSON'S NAME IN THE HEADER, from the first shown practice's record once
+  // the details card has loaded; the generic title until then, and if it failed.
+  const first = shown.details.status === 'ready' ? shown.details.data[0] : undefined;
   const displayName = first ? `${first.givenNames} ${first.familyName}`.trim() : '';
 
   return (
@@ -243,6 +321,11 @@ export function PortalView() {
       }
     >
       <div className={styles.page}>
+        {/*
+          UNDER THE LEAD, ABOVE EVERYTHING ELSE, and only where the account has
+          more than one practice — `PracticeFilter` renders nothing otherwise.
+        */}
+        <PracticeFilter links={links} selected={practiceId} onSelect={setPracticeId} />
         {welcome && (
           <div className={styles.welcome} data-testid="portal-welcome">
             {/*
@@ -258,16 +341,16 @@ export function PortalView() {
             </PortalButton>
           </div>
         )}
-        <DetailsCard state={cards.details} onRequestCorrection={requestDetailCorrection} />
-        <AgreementsCard state={cards.agreements} />
-        <EnduringCard state={cards.enduring} onTerminate={terminateEnduring} />
-        <NoticesCard state={cards.notices} />
-        <VisitsCard state={cards.visits} />
-        <MessagesCard state={cards.messages} recordId={accountId ? portalRecordId(accountId) : null} />
-        <PeopleCard state={cards.people} onRevoke={revokeAssignor} />
-        <DataCard state={cards.access} />
+        <DetailsCard state={shown.details} onRequestCorrection={requestDetailCorrection} />
+        <AgreementsCard state={shown.agreements} />
+        <EnduringCard state={shown.enduring} onTerminate={terminateEnduring} />
+        <NoticesCard state={shown.notices} />
+        <VisitsCard state={shown.visits} />
+        <MessagesCard state={shown.messages} recordId={accountId ? portalRecordId(accountId) : null} />
+        <PeopleCard state={shown.people} onRevoke={revokeAssignor} />
+        <DataCard state={shown.access} />
         <PasskeysCard
-          state={cards.passkeys}
+          state={shown.passkeys}
           supported={passkeysAvailable()}
           onAdd={async (label) => {
             await registerPasskey(label);

@@ -256,3 +256,203 @@ describe('portal_welcome_line_is_shown_once_after_an_activation', () => {
     expect(screen.queryByTestId('portal-welcome')).toBeNull();
   });
 });
+
+/**
+ * THE PRACTICE FILTER (Carl, 5 Sep 2026).
+ *
+ * Nine cards, each listing rows from every linked practice, is three
+ * interleaved records for somebody linked to three practices — and the question
+ * they arrive with is almost always about one of them. The filter answers it
+ * without making them read past the other two.
+ *
+ * IT IS STATE, NOT STORAGE. The choice dies with the tab, on a page that
+ * persists nothing (`portal_persists_nothing`, above).
+ */
+const TWO_LINKS = [
+  { practiceId: 'p1', practiceName: 'Wattle Street Medical', patientId: 'pat-1' },
+  { practiceId: 'p2', practiceName: 'Harbourview Family Practice', patientId: 'pat-2' },
+];
+
+function twoPracticesAnswer() {
+  api.fetchSession.mockResolvedValue({ accountId: 'a', links: TWO_LINKS });
+  api.fetchDetails.mockResolvedValue([
+    {
+      practiceId: 'p1',
+      practiceName: 'Wattle Street Medical',
+      familyName: 'Sample',
+      givenNames: 'Alex',
+      dateOfBirth: '1984-02-29',
+      address: '12 Example Street, Testville NSW 2000',
+      mobile: '0400 000 001',
+      email: 'alex@example.invalid',
+      patientRecordNumber: 'WSM-000123',
+    },
+    {
+      practiceId: 'p2',
+      practiceName: 'Harbourview Family Practice',
+      familyName: 'Sample',
+      givenNames: 'Alex',
+      dateOfBirth: '1984-02-29',
+      address: '3/40 Older Address Road, Testville NSW 2000',
+      mobile: '0400 000 001',
+      email: 'alex@example.invalid',
+      patientRecordNumber: 'HFP-99001',
+    },
+  ]);
+  api.fetchAgreements.mockResolvedValue([
+    {
+      id: 'agr-1',
+      practiceName: 'Wattle Street Medical',
+      providerName: 'Dr Robin Example',
+      type: 'episodic',
+      status: 'stored',
+      serviceDate: '2026-08-01',
+      serviceDescription: 'Standard service',
+      channel: 'in_practice',
+      signedAt: '2026-08-01T00:00:00.000Z',
+      artefactAvailable: true,
+    },
+    {
+      id: 'agr-2',
+      practiceName: 'Harbourview Family Practice',
+      providerName: 'Dr Sam Placeholder',
+      type: 'episodic',
+      status: 'stored',
+      serviceDate: '2026-08-19',
+      serviceDescription: 'Standard service',
+      channel: 'remote_link',
+      signedAt: '2026-08-19T00:00:00.000Z',
+      artefactAvailable: true,
+    },
+  ]);
+  api.fetchEnduring.mockResolvedValue([
+    {
+      agreementId: 'agr-1',
+      practiceName: 'Wattle Street Medical',
+      providerName: 'Dr Robin Example',
+      activeSince: '2026-07-15',
+    },
+    {
+      agreementId: 'agr-9',
+      practiceName: 'Harbourview Family Practice',
+      providerName: 'Dr Sam Placeholder',
+      activeSince: '2026-07-16',
+    },
+  ]);
+  api.fetchNotices.mockResolvedValue([
+    { id: 'n1', date: '2026-08-20', providerName: 'Dr Robin Example', practiceName: 'Wattle Street Medical', benefitAmountCents: 4285 },
+    { id: 'n2', date: '2026-08-21', providerName: 'Dr Sam Placeholder', practiceName: 'Harbourview Family Practice', benefitAmountCents: 4285 },
+  ]);
+  api.fetchVisits.mockResolvedValue([
+    { date: '2026-08-01', practiceName: 'Wattle Street Medical', locationLine: 'Wattle Street, Testville' },
+    { date: '2026-08-19', practiceName: 'Harbourview Family Practice', locationLine: 'Harbourview rooms, Testville' },
+  ]);
+  api.fetchMessages.mockResolvedValue([
+    { id: 'm1', channel: 'sms', sentAt: '2026-08-01T00:00:00.000Z', state: 'delivered', purposeKey: 'agreement_copy', practiceName: 'Wattle Street Medical', pending: false },
+    { id: 'm2', channel: 'email', sentAt: '2026-08-19T00:00:00.000Z', state: 'delivered', purposeKey: 'agreement_copy', practiceName: 'Harbourview Family Practice', pending: false },
+  ]);
+  api.fetchAssignors.mockResolvedValue({
+    actsForMe: [{ assignorId: 'asg-1', name: 'Kim Sample', relationshipKey: 'spouse', since: '2026-07-15', active: true }],
+    iActFor: [
+      { patientId: 'pat-9', practiceName: 'Wattle Street Medical', givenNames: 'Frankie', since: '2026-03-02' },
+      { patientId: 'pat-8', practiceName: 'Harbourview Family Practice', givenNames: 'Ashley', since: '2026-03-03' },
+    ],
+  });
+  api.fetchAccessLog.mockResolvedValue([
+    { at: '2026-08-01T00:00:00.000Z', actorType: 'system', practiceName: 'Wattle Street Medical', actionKey: 'message_sent' },
+    { at: '2026-08-19T00:00:00.000Z', actorType: 'patient', practiceName: 'Harbourview Family Practice', actionKey: 'agreement_signed' },
+  ]);
+  api.fetchPasskeys.mockResolvedValue([
+    { id: 'pk-1', label: 'My phone', createdAt: '2026-08-01T00:00:00.000Z', lastUsedAt: null },
+  ]);
+}
+
+describe('portal_filter_narrows_every_card_to_one_practice', () => {
+  it('shows all practices by default, then narrows every card to the chosen one', async () => {
+    twoPracticesAnswer();
+    // jsdom has no WebAuthn, and the passkey card draws no list without it —
+    // so the claim "passkeys are not narrowed" needs a browser that can.
+    vi.stubGlobal('PublicKeyCredential', function PublicKeyCredential() {});
+    render(<PortalView />);
+
+    // DEFAULT IS ALL OF THEM: the page answers "what does anybody hold about
+    // me" before it answers "what does this one hold".
+    const filter = await screen.findByTestId('portal-practice-filter');
+    expect(filter.querySelector('[aria-pressed="true"]')?.textContent).toBe('All practices');
+    await waitFor(() => expect(screen.getAllByText('Harbourview Family Practice').length).toBeGreaterThan(0));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Wattle Street Medical' }));
+
+    // EVERY CARD'S ROWS. The other practice's name has left the page entirely,
+    // apart from the filter button that puts it back.
+    await waitFor(() => {
+      const showing = screen
+        .getAllByText('Harbourview Family Practice')
+        .filter((node) => node.closest('[data-testid="portal-practice-filter"]') === null);
+      expect(showing).toHaveLength(0);
+    });
+
+    // And the chosen practice's own rows are all still there, card by card.
+    expect(screen.getByTestId('detail-p1-address').textContent).toContain('12 Example Street');
+    expect(screen.queryByTestId('detail-p2-address')).toBeNull();
+    expect(screen.getAllByText('Dr Robin Example', { exact: false }).length).toBeGreaterThan(0);
+    expect(document.body.textContent).toContain('Frankie');
+    expect(document.body.textContent).not.toContain('Ashley');
+
+    // PASSKEYS ARE ACCOUNT-LEVEL and are never narrowed: hiding somebody's only
+    // credential because they were looking at one practice would hide the one
+    // thing that gets them back in.
+    expect(screen.getAllByText('My phone').length).toBeGreaterThan(0);
+    // Nor is "people who act for me" — the authority is held against the
+    // patient and the payload carries no practice at all.
+    expect(screen.getAllByText('Kim Sample', { exact: false }).length).toBeGreaterThan(0);
+
+    // ONE PRACTICE'S DETAILS, so there is nothing left to reconcile.
+    expect(screen.queryByTestId('portal-details-reconciliation')).toBeNull();
+
+    // BACK TO ALL, and both are on the page again.
+    fireEvent.click(screen.getByRole('button', { name: 'All practices' }));
+    await waitFor(() => expect(screen.getByTestId('detail-p2-address')).toBeTruthy());
+    expect(screen.getByTestId('portal-details-reconciliation')).toBeTruthy();
+
+    // NOTHING WAS WRITTEN TO THE BROWSER by choosing a practice.
+    expect(window.localStorage.length).toBe(0);
+    expect(window.sessionStorage.length).toBe(0);
+
+    vi.unstubAllGlobals();
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404, json: async () => ({}) }) as unknown as Response));
+  });
+
+  it('is a named group of 44px targets that carry their own pressed state', async () => {
+    twoPracticesAnswer();
+    render(<PortalView />);
+
+    const filter = await screen.findByTestId('portal-practice-filter');
+    // Named by the visible word, so a screen reader hears it once and then each
+    // option with its state — rather than three unexplained buttons.
+    const group = filter.querySelector('[role="group"]');
+    expect(group?.getAttribute('aria-labelledby')).toBe('portal-practice-filter-label');
+    expect(document.getElementById('portal-practice-filter-label')?.textContent).toBe('Showing');
+
+    // Three options: all practices, and one per link.
+    const options = filter.querySelectorAll('button');
+    expect(options).toHaveLength(3);
+    for (const option of options) expect(option.getAttribute('aria-pressed')).toBeTruthy();
+
+    // It adds no heading — the page is still ten cards, ten h2s.
+    expect(document.querySelectorAll('main h2').length).toBe(10);
+  });
+});
+
+describe('portal_filter_hidden_for_a_single_practice', () => {
+  it('draws no filter at all where there is nothing to choose between', async () => {
+    allCardsAnswer();
+    api.fetchSession.mockResolvedValue({ accountId: 'a', links: [TWO_LINKS[0]] });
+
+    render(<PortalView />);
+    await screen.findByText('My agreements');
+
+    expect(screen.queryByTestId('portal-practice-filter')).toBeNull();
+    expect(screen.queryByText('All practices')).toBeNull();
+  });
+});

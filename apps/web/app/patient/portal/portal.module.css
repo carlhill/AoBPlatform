@@ -602,3 +602,121 @@
 .welcomeText {
   margin: 0;
 }
+
+/* --- The practice filter (Carl, 5 Sep 2026) ------------------------------- */
+
+/*
+ * SHOWING: ALL PRACTICES | ONE OF THEM. Only drawn where the account is linked
+ * to more than one, so most readers never meet it.
+ *
+ * IT WRAPS RATHER THAN SCROLLS. A horizontally scrolling strip hides options
+ * off the right edge of a phone, and the option somebody wants is as likely to
+ * be the last one as the first. Practice names are long; two lines of buttons
+ * is the honest layout.
+ */
+.filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+  margin-bottom: var(--s1);
+}
+
+.filterLabel {
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+
+.filterOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+/* 44px, like every other target on this page (WCAG 2.2, CLAUDE.md §6). */
+.filterOption {
+  font: inherit;
+  font-size: var(--text-base);
+  min-height: 44px;
+  min-width: 44px;
+  padding: var(--s2) var(--s4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.filterOption:hover {
+  background: var(--surface-sunken);
+}
+
+.filterOption:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/*
+ * THE CHOSEN ONE. Fill AND weight, never colour alone — `aria-pressed` carries
+ * it for a screen reader and the extra weight carries it for somebody who
+ * cannot tell the two fills apart (WCAG 2.2 AA, 1.4.1).
+ */
+.filterOptionOn {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 600;
+}
+
+.filterOptionOn:hover {
+  background: var(--accent-hover);
+}
+
+/* --- Detail reconciliation (Carl, 5 Sep 2026) ----------------------------- */
+
+/*
+ * "YOUR PRACTICES HOLD DIFFERENT DETAILS FOR YOU." Above the practice blocks,
+ * because it is the reason the blocks below it disagree.
+ *
+ * INFORMATION, NOT A WARNING. Two practices holding two addresses for somebody
+ * who has moved is ordinary, and neither copy is an error from where it sits —
+ * so this is the quiet surface and the left rule, not the stop wash.
+ */
+.reconcile {
+  margin: var(--s4) 0 0;
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--line-strong);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+}
+
+.reconcileTitle {
+  margin: 0;
+  font-weight: 600;
+}
+
+.reconcileList {
+  list-style: none;
+  margin: var(--s2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+/*
+ * THE TAG BESIDE THE VALUE ITSELF. Small, and on its own line under the value
+ * rather than beside it: an address wraps to two or three lines on a phone and
+ * a tag sharing that line would be pushed somewhere unreadable.
+ */
+.differsTag {
+  display: inline-block;
+  margin-top: var(--s1);
+  padding: 0 var(--s2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  color: var(--ink-muted);
+  font-size: var(--text-xs);
+}

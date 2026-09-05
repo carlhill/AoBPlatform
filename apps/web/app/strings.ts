@@ -5434,6 +5434,20 @@ export const strings = {
     welcome: "You're in. Add a passkey below so you can come back without a new invitation.",
     welcomeDismiss: 'Dismiss',
 
+    /*
+     * SHOWING ONE PRACTICE, OR ALL OF THEM (Carl, 5 Sep 2026).
+     *
+     * Only rendered where the account is linked to more than one practice —
+     * see `PracticeFilter`. "Showing" rather than "Filter" because the word
+     * describes the page's state, which is what somebody scanning for their
+     * own practice needs to read, and because "filter" is software's word for
+     * it rather than a person's.
+     */
+    filter: {
+      label: 'Showing',
+      all: 'All practices',
+    },
+
     /* ---------------------------------------------------------------- 1 */
     details: {
       heading: 'My details',
@@ -5465,6 +5479,38 @@ export const strings = {
        */
       confirmNote: 'We do not send them a new value. They will confirm the correct one with you.',
       confirmAction: 'Ask them to correct it',
+
+      /*
+       * WHEN TWO PRACTICES HOLD DIFFERENT THINGS (Carl, 5 Sep 2026).
+       *
+       * THE VALUES ARE NOT REPEATED HERE, and that is the whole design of this
+       * block. Both are already on screen in the practice blocks below it;
+       * printing them again would say the same address twice on a page read on
+       * a phone, and would make the notice longer than the thing it is about.
+       * It names the detail and the practices, and the reader looks down.
+       *
+       * IT DOES NOT SAY WHICH ONE IS WRONG, because we do not know. Each
+       * practice's own system is the master of its own record (the card's
+       * lead says so), and somebody who has moved has a right address and a
+       * stale one rather than an error. The next step is the same either way:
+       * tell the practice holding the old copy, which is why the tag sits
+       * beside the existing "Ask the practice to correct this" link.
+       */
+      differHeading: 'Your practices hold different details for you.',
+      /* Two practices — the ordinary case, and the words it deserves. */
+      differPair: (field: string, first: string, second: string) =>
+        `${field}: ${first} has one ${field.toLowerCase()}, ${second} has another.`,
+      /*
+       * Three or more. Deliberately weaker than "each holds a different one",
+       * which would be untrue where two of the three agree.
+       */
+      differMany: (field: string, practiceNames: string) =>
+        `${field}: ${practiceNames} do not all hold the same ${field.toLowerCase()}.`,
+      /* The list separator for that sentence: "A, B and C". */
+      differAnd: 'and',
+      /* The tag beside the detail itself, in the block that holds the odd copy. */
+      differsFrom: (practiceName: string) => `Differs from ${practiceName}`,
+      differsFromSeveral: (count: number) => `Differs from ${count} of your other practices`,
     },
 
     /* ---------------------------------------------------------------- 2 */
