@@ -77,6 +77,25 @@ If Carl or the requirements say the PMS's own PDF *must* be the signed instrumen
 
 Roughly **9–10 agent-days** for W1–W7, which make all five cases work today with the mock adapter and manual/drag-and-drop input; W8–W9 wait on D-01.
 
+## 4a. A seventh interface: email in (Carl, 5 Sep 2026)
+
+> Another interface could be that the patient and key details are sent in the header or the body of an email to a specific email address — `<practiceid>.agreement@aobplatform.com.au` or something like this.
+
+**Worth building, as the universal adapter.** Every PMS on the market can email a document or a letter, every practice already emails, and it needs nothing installed and no API that Medtech has to publish. It is the pragmatic fallback to D-01 and the zero-install cousin of the virtual printer: the practice "emails the agreement to AoB" instead of printing it to AoB. It also covers case 6 for a receptionist who would rather forward than drag.
+
+**What it feeds.** Nothing new downstream. Structured elements in the body or an attached CSV/JSON → the arrival pipeline (case 1). A PDF attachment → the PDF-ingest pipeline (case 2: store + hash, extract, **reception confirms**, lock, render ours). A body that cannot be parsed → a reception task "we received a message for <patient?> we could not read" with the safe parts shown. Email never locks an agreement on its own; the confirm step is what makes an unauthenticated channel safe to accept from.
+
+**The four things that make it safe rather than a hole:**
+
+1. **The address is a secret, not the practice id.** `<practiceid>.agreement@…` is guessable by anyone who knows a practice is a customer. Use an opaque, rotatable local part shown in the practice console — `k7f3…@agreements.aobplatform.com.au` — one per practice, regenerable from the console, and never printed on anything public. The console shows "email agreements to this address" beside the tablet settings.
+2. **Sender authentication, then an allow-list.** Accept only mail that passes DMARC alignment for the sending domain (SPF/DKIM), *and* whose sender is on the practice's allow-list (its own domain, its PMS vendor's sending domain). Anything else is dropped and counted — never bounced, because auto-replies to spoofed senders are how we would start spamming third parties. A per-practice HMAC in the subject line is available for PMSes that can be configured to add one; it upgrades a message from "confirm everything" to "pre-confirmed elements, staff still press Lock".
+3. **The raw email is not evidence we keep.** A PMS letter will very likely carry the Medicare card number. We may not hold one (hard rule 1), so the parser drops it and the **original message is not retained** — we keep the hash of the original (proof of what arrived), the extracted-and-redacted elements, and a redacted copy of any PDF attachment as the supporting artefact. Named test: `email_ingest_never_stores_a_medicare_number`.
+4. **Transport and residency.** Inbound via a mail-receiving service in ap-southeast-2 (e.g. SES inbound → S3 → queue → `POST /arrivals` with `source: 'email'`), TLS required for receiving (MTA-STS + TLS-RPT on our domain), messages encrypted at rest and deleted from the mail store once parsed. The practice's own mail system keeps a "sent" copy — that is their existing practice, not something we introduce, but the collection notice should say the channel exists.
+
+**What it costs.** ~2 agent-days after W3 (it shares the extractor and the confirm screen) plus a day of infra (receiving domain, DMARC/MTA-STS, the queue). Add to the table as **W10 — email-in adapter**.
+
+**What I would not do.** Put the practice id in the address; accept mail that fails DMARC; auto-lock from email; keep raw messages; or reply to unknown senders.
+
 ## 5. Decisions for Carl
 
 | # | Question | Proposed |
@@ -87,6 +106,7 @@ Roughly **9–10 agent-days** for W1–W7, which make all five cases work today 
 | Q4 | Logo: stored per practice as an image artefact, shown on the render and the portal? | Yes, size-capped, optional |
 | Q5 | Drag-and-drop file types in v1 | PDF, CSV, JSON only |
 | Q6 | The "2 years (soft)" for PMS PDFs — confirm it means "at least the statutory period, longer if the practice chooses" | Yes |
+| Q8 | Email-in: opaque rotatable address + DMARC + allow-list, raw mail never retained (§4a)? | Yes; build after W3 |
 | Q7 | Should the patient be shown the PMS PDF at all on the tablet, or only our render? | Only our render on the patient surface (one document to check); the PMS PDF is in the record and the audit extract |
 
 ## 6. Named tests the build must carry
