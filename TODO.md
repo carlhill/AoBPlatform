@@ -1654,6 +1654,14 @@ Now a working rule in CLAUDE.md section 7.
       `/practice/reconciliation`; enduring -> the rule-set explanation;
       confidential -> the patient's flag; not pushable -> the agreement page.
       The fallback shows the raw reason code. In flight 4 Sep.
+- [x] Second instance, 5 Sep 2026: `enduring_rules_not_authored` stated a problem
+      no receptionist can solve (they cannot author a rule set) and carried
+      neither control nor link. The band now holds both things they CAN do --
+      "Create an agreement for this visit instead" (`POST /agreements/:id/offer-episodic`,
+      sharing the declined-session offer's drafting) and a link to
+      `/practice/channels#kiosk`, the setting that decides what the tablet
+      offers first. Named tests `enduring_refusal_offers_episodic_inline_and_links_to_the_setting`
+      and `offer_episodic_instead_is_idempotent_per_visit`.
 - [ ] Audit every other "see X" message in the console for the same pattern
       (queue, reconciliation, correspondence, devices) and give each a link
       with the item id.

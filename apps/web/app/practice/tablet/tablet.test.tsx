@@ -183,6 +183,18 @@ const ENDURING_ROW = {
   serviceDescriptionValid: false,
 };
 
+/**
+ * THE SAME ONGOING AGREEMENT, REFUSED BECAUSE THE RULE SET IS NOT WRITTEN YET
+ * (Carl, 5 Sep 2026; GA-PLAN B5). This is the ordinary state of every arrival
+ * at a GP practice that offers ongoing agreements first, so it is the row a
+ * receptionist meets most often -- and until today it carried no way out.
+ */
+const ENDURING_BLOCKED = {
+  ...ENDURING_ROW,
+  pushable: false,
+  blockedReason: 'enduring_rules_not_authored' as const,
+};
+
 const TABLET_TWO: DeviceRow = { ...TABLET, id: 'device-2', label: 'Reception tablet 2' };
 
 /** The SERVER giving up after thirty minutes, on a different tablet. */
@@ -1018,6 +1030,74 @@ describe('the reception-push loop -- set, resolve, send again', () => {
     expect(JSON.stringify(offered.body ?? {})).not.toContain('Jamie');
   });
 
+  /**
+   * THE BAND THAT STATED A PROBLEM NOBODY READING IT COULD SOLVE (Carl, 5 Sep
+   * 2026; CLAUDE.md section 7, second instance).
+   *
+   * `enduring_rules_not_authored` is the commonest refusal at a GP practice
+   * that offers ongoing agreements first, and it used to carry no control and
+   * no link -- a receptionist with a patient at the desk, told that a rule set
+   * they cannot write is awaiting authoring. Both things they CAN do are now
+   * in the band: get THIS patient an agreement for today's visit, and change
+   * what the tablet offers first so the next arrival is not blocked the same
+   * way.
+   */
+  it('enduring_refusal_offers_episodic_inline_and_links_to_the_setting', async () => {
+    signedInAtPractice();
+    stubFetch({ rows: [ENDURING_BLOCKED] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    const band = await screen.findByTestId(`blocked-${ENDURING_BLOCKED.agreementId}`);
+    expect(band.textContent).toContain(strings.tablet.blocked.enduring_rules_not_authored);
+    // Never "see the practice queue", and never a claim about our forms.
+    expect(band.textContent).not.toMatch(/practice queue/i);
+    expect(band.textContent).not.toMatch(/certified|accredited|\bapproved\b/i);
+
+    /*
+     * THE LINK LANDS ON THE SETTING, not at the top of a page with four cards
+     * on it -- the anchor is part of the destination.
+     */
+    const link = within(band).getByTestId(`blocked-link-${ENDURING_BLOCKED.agreementId}`) as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('/practice/channels#kiosk');
+    expect(link.textContent).toBe(strings.tablet.toChannelsForOffer);
+
+    const offer = within(band).getByTestId(
+      `offer-episodic-instead-${ENDURING_BLOCKED.agreementId}`,
+    ) as HTMLButtonElement;
+    expect(offer.disabled).toBe(false);
+    expect(offer.textContent).toContain(strings.tablet.offerEpisodicInsteadAction);
+
+    const readsBefore = calls.filter((c) => c.url.includes('/tablet-sessions/pushable')).length;
+    fireEvent.click(offer);
+
+    /*
+     * ONE PRESS, ONE SERVER ACT. The draft, the description of the service,
+     * the lock and the capture request are all the server's -- a screen that
+     * assembled an agreement would be a screen asserting a contract.
+     */
+    await waitFor(() =>
+      expect(calls.some((c) => c.method === 'POST' && c.url.includes('/offer-episodic'))).toBe(true),
+    );
+    const posted = calls.find((c) => c.url.includes('/offer-episodic'))!;
+    expect(posted.url).toContain(`/agreements/${ENDURING_BLOCKED.agreementId}/offer-episodic`);
+    // Not a push composed here, and nothing about the patient on the wire.
+    expect(calls.some((c) => c.method === 'POST' && c.url.includes('/devices/'))).toBe(false);
+    expect(JSON.stringify(posted.body ?? {})).not.toContain('Jamie');
+
+    /*
+     * AND THE LIST IS RE-READ, which is the only honest way to show that both
+     * halves happened: the new episodic row appears and the ongoing one leaves
+     * "Waiting to be signed today" because its capture request is closed.
+     */
+    await waitFor(() =>
+      expect(calls.filter((c) => c.url.includes('/tablet-sessions/pushable')).length).toBeGreaterThan(
+        readsBefore,
+      ),
+    );
+    const said = await screen.findByTestId(`push-outcome-${ENDURING_BLOCKED.agreementId}`);
+    expect(said.textContent).toContain(strings.tablet.offerEpisodicInsteadDone);
+  });
+
   it('enduring_is_per_provider_and_patient_never_per_practice', async () => {
     signedInAtPractice();
     stubFetch({ rows: [ENDURING_ROW] });
@@ -1252,6 +1332,10 @@ describe('the refusal words', () => {
       strings.tablet.offerEpisodicAction,
       strings.tablet.offerEpisodicLead,
       strings.tablet.offerEpisodicDone,
+      strings.tablet.offerEpisodicInsteadAction,
+      strings.tablet.offerEpisodicInsteadBusy,
+      strings.tablet.offerEpisodicInsteadDone,
+      strings.tablet.toChannelsForOffer,
       strings.tablet.enduringRow('Dr Example Provider'),
       strings.tablet.enduringRowNoProvider,
       strings.tablet.blocked.other('some_code'),

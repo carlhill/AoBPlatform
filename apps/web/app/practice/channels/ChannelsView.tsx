@@ -501,7 +501,17 @@ export function ChannelsView({
             be the bug: this card said "NOT BUILT YET" long after pairing
             existed and tablets were actually paired.
           */}
-          <div className={styles.card} style={{ marginTop: 'var(--s3)' }}>
+          {/*
+            `id="kiosk"` IS A DESTINATION, NOT DECORATION (Carl, 5 Sep 2026).
+            `/practice/tablet` refuses an ongoing agreement while the enduring
+            rule set is awaiting authoring, and its band links here — to the
+            setting that decides what the tablet offers FIRST, so the next
+            arrival is drafted as an agreement for the visit instead of joining
+            the queue of blocked ongoing ones. A link to the top of a page with
+            four cards on it would be directions to a screen, which is the
+            failure CLAUDE.md §7 is named after.
+          */}
+          <div id="kiosk" className={styles.card} style={{ marginTop: 'var(--s3)' }}>
             <div className={styles.cardHead}>
               <Monitor size={18} aria-hidden="true" className={styles.cardIcon} />
               <div className={styles.cardMain}>

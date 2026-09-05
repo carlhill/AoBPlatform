@@ -62,6 +62,7 @@ import {
 } from '../../ui';
 import { strings } from '../../strings';
 import { apiHeaders, currentSession } from '../../auth';
+import { toViewPath } from '../../viewPath';
 import styles from '../manage.module.css';
 import rowStyles from './tablet.module.css';
 
@@ -256,6 +257,61 @@ export interface RefusalDescription {
   reason?: string;
 }
 
+/** What only the caller knows at the moment of a refusal. See `describeRefusal`. */
+export interface RefusalContext {
+  deviceLabel?: string;
+  patientName?: string;
+  sessionId?: string;
+  providerType?: string | null;
+  rawMessage?: string;
+  /** So `patient_confidential` can land on the patient it is about. */
+  patientId?: string;
+  /**
+   * WHO IS LOOKING, so a link goes where THEY can actually open it (Carl,
+   * 5 Sep 2026). Omitted, every link renders as the plain practice path it
+   * always did — which is what `blockedMessage` and the copy tests ask for,
+   * since neither is rendering a link at all.
+   */
+  audiences?: readonly Audience[];
+  /** The practice the page is about, for the read-only twin's path. */
+  practiceId?: string;
+}
+
+/**
+ * ONE LINK, ROUTED THE WAY EVERY OTHER CONSOLE LINK IS ROUTED (Carl, 5 Sep
+ * 2026) — `mayReach` decides whether to offer it at all, and `toViewPath`
+ * rewrites it for a platform operator who is looking rather than acting. The
+ * same pair `ChannelsView` and `SetupHub` already use, called from ONE place
+ * here so a destination added to the refusal mapping later cannot forget the
+ * twin (the failure `viewPath.ts` itself was written after).
+ *
+ * A LINK IS HIDDEN, NEVER LEFT TO 404. Offering somebody a way out that
+ * refuses them is worse than the band saying only the sentence — which is why
+ * the sentence always states what to do in words as well.
+ */
+function destination(
+  path: string,
+  label: string,
+  ctx: Pick<RefusalContext, 'audiences' | 'practiceId'>,
+  hash = '',
+): RefusalDescription['link'] {
+  if (!ctx.audiences) return { href: `${path}${hash}`, label };
+  const actingAsPractice = ctx.audiences.includes('practice');
+  // `canOpen`, computed as `ChannelsView` and `SetupHub` compute it: somebody
+  // acting AS the practice is held to the page table; somebody looking is not,
+  // because what they are offered is the read-only twin rather than this path.
+  if (actingAsPractice && !mayReach(path, ctx.audiences)) return undefined;
+  /*
+   * AND THE TWIN EXISTS FOR A PLATFORM OPERATOR AND FOR NOBODY ELSE. A caller
+   * we cannot place at all keeps the practice path — there is no practice they
+   * are operating, and this page has already refused them by the time they
+   * could read a band (`canSend` is false and every control is dead).
+   */
+  const operator = !actingAsPractice && ctx.audiences.includes('platform');
+  const href = operator && ctx.practiceId ? toViewPath(path, ctx.practiceId) : path;
+  return { href: `${href}${hash}`, label };
+}
+
 /**
  * WHY THE PUSH WAS REFUSED, in our words, with somewhere to go.
  *
@@ -268,15 +324,7 @@ export interface RefusalDescription {
  */
 export function describeRefusal(
   reason: string | null | undefined,
-  ctx: {
-    deviceLabel?: string;
-    patientName?: string;
-    sessionId?: string;
-    providerType?: string | null;
-    rawMessage?: string;
-    /** So `patient_confidential` can land on the patient it is about. */
-    patientId?: string;
-  } = {},
+  ctx: RefusalContext = {},
 ): RefusalDescription {
   switch (reason) {
     case 'device_busy':
@@ -295,25 +343,25 @@ export function describeRefusal(
         // SECONDARY, now that the description is set on the row itself. The
         // link is still here because the reconciliation row carries the rest
         // of the record, and somebody may want it.
-        link: { href: '/practice/reconciliation', label: strings.tablet.toReconciliationForD6a },
+        link: destination('/practice/reconciliation', strings.tablet.toReconciliationForD6a, ctx),
       };
     case 'agreement_not_pushable':
       return {
         reason,
         text: strings.tablet.blocked.agreement_not_pushable,
-        link: { href: '/practice/reconciliation', label: strings.tablet.toReconciliationRow },
+        link: destination('/practice/reconciliation', strings.tablet.toReconciliationRow, ctx),
       };
     case 'device_revoked':
       return {
         reason,
         text: strings.tablet.blocked.device_revoked,
-        link: { href: '/practice/devices', label: strings.tablet.toDevices },
+        link: destination('/practice/devices', strings.tablet.toDevices, ctx),
       };
     case 'device_not_paired':
       return {
         reason,
         text: strings.tablet.blocked.device_not_paired,
-        link: { href: '/practice/devices', label: strings.tablet.toDevices },
+        link: destination('/practice/devices', strings.tablet.toDevices, ctx),
       };
     /*
      * RECEPTION'S OWN SWITCH, AND THE LINK LANDS WHERE IT IS UNSWITCHED (Carl,
@@ -325,7 +373,7 @@ export function describeRefusal(
       return {
         reason,
         text: strings.tablet.blocked.device_out_of_use,
-        link: { href: '/practice/devices', label: strings.tablet.toDevices },
+        link: destination('/practice/devices', strings.tablet.toDevices, ctx),
       };
     /*
      * THREE ENDURING REFUSALS NOW, AND THE DIFFERENCE MATTERS TO THE PERSON
@@ -341,13 +389,32 @@ export function describeRefusal(
      * agreement available for a specialist, and telling somebody to wait for
      * it would be sending them to wait for something that will never arrive.
      *
-     * ALL THREE SAY WHAT TO DO INSTEAD, in the same breath. None of them
-     * carries a link: there is no rule-set screen in this console to point at
-     * yet, and a link that 404s is worse than none (the reasoning
-     * `patient_confidential` used to carry).
+     * ALL THREE SAY WHAT TO DO INSTEAD, in the same breath.
+     *
+     * AND THE PENDING ONE NOW CARRIES BOTH THINGS RECEPTION CAN ACTUALLY DO
+     * (Carl, 5 Sep 2026; CLAUDE.md §7, second instance). It used to carry
+     * neither, on the reasoning that there is no rule-set screen in this
+     * console to point at and a link that 404s is worse than none — true about
+     * the rule set, and the wrong conclusion about the band. Nobody at a
+     * practice can author a rule set. What they CAN do is get this patient an
+     * agreement for today's visit, which is the button in the band
+     * (`EnduringOfferFix`), and stop the practice drafting ongoing agreements
+     * until the rule set exists, which is the Kiosk card's "offer an ongoing
+     * agreement first" setting — a real screen, so a real link.
+     *
+     * `enduring_not_gp` AND `enduring_not_per_provider` STILL CARRY NEITHER,
+     * and correctly: they are permanent (hard rule 6, REQ-END-01/-01a), so
+     * there is nothing to wait for and no setting that changes them.
      */
     case 'enduring_rules_not_authored':
-      return { reason, text: strings.tablet.blocked.enduring_rules_not_authored };
+      return {
+        reason,
+        text: strings.tablet.blocked.enduring_rules_not_authored,
+        // THE ANCHOR IS PART OF THE DESTINATION, not decoration: `#kiosk` lands
+        // on the card that holds the setting rather than at the top of a page
+        // with four cards on it.
+        link: destination('/practice/channels', strings.tablet.toChannelsForOffer, ctx, '#kiosk'),
+      };
     case 'enduring_not_gp':
       return {
         reason,
@@ -370,7 +437,7 @@ export function describeRefusal(
         reason,
         text: strings.tablet.blocked.patient_confidential,
         link: ctx.patientId
-          ? { href: `/practice/patients/${ctx.patientId}`, label: strings.tablet.toPatient }
+          ? destination(`/practice/patients/${ctx.patientId}`, strings.tablet.toPatient, ctx)
           : undefined,
       };
     case 'device_unknown':
@@ -637,6 +704,14 @@ export interface PushDesk {
   staffNames: readonly string[];
   loadError: string | null;
   canSend: boolean;
+  /**
+   * WHO IS LOOKING AND WHICH PRACTICE THEY ARE LOOKING AT — passed into
+   * `describeRefusal` so a band's link goes where THIS caller can open it
+   * (Carl, 5 Sep 2026). Held on the desk rather than recomputed per row: one
+   * answer to "may this account act", used by the controls and by the links.
+   */
+  audiences: readonly Audience[];
+  practiceId: string;
   busyId: string | null;
   /** Live sessions by device, and the last ENDED one for a device with none. */
   sessionByDevice: Map<string, TabletSessionRow>;
@@ -651,6 +726,14 @@ export interface PushDesk {
    * with the same provider and patient, sent to the same tablet.
    */
   offerEpisodic: (sessionId: string) => Promise<void>;
+  /**
+   * THE ONGOING AGREEMENT CANNOT BE ASKED FOR AT ALL — so ask for this visit
+   * (Carl, 5 Sep 2026). The band's own control, not a session's: there is no
+   * tablet and no patient standing at one, so the server drafts, carries the
+   * practice's description of the service and opens the capture request, and
+   * the new row appears on this list.
+   */
+  offerEpisodicInstead: (row: PushableRow) => Promise<void>;
   send: (row: PushableRow) => Promise<void>;
   sendAgain: (ended: TabletSessionRow) => Promise<void>;
   resend: (session: TabletSessionRow) => Promise<void>;
@@ -957,6 +1040,8 @@ export function usePushDesk(practiceId: string): PushDesk {
             sessionId: sessionId ?? busySession?.id,
             providerType: row.providerType,
             patientId: row.patientId,
+            audiences,
+            practiceId,
           }),
         });
         return;
@@ -1224,6 +1309,8 @@ export function usePushDesk(practiceId: string): PushDesk {
             sessionId: sessionId ?? busySession?.id,
             rawMessage: message,
             patientId: ended.patientId,
+            audiences,
+            practiceId,
           }),
         });
         return;
@@ -1278,6 +1365,8 @@ export function usePushDesk(practiceId: string): PushDesk {
             sessionId: sessionId ?? busySession?.id,
             rawMessage: message,
             patientId: session.patientId,
+            audiences,
+            practiceId,
           }),
         });
         return;
@@ -1324,6 +1413,8 @@ export function usePushDesk(practiceId: string): PushDesk {
         const info = await refusal(res);
         setPushOutcome({ id: sessionId, ok: false, text: info.message, info: describeRefusal(info.reason, {
           rawMessage: info.message,
+          audiences,
+          practiceId,
         }) });
         return;
       }
@@ -1332,6 +1423,58 @@ export function usePushDesk(practiceId: string): PushDesk {
     } catch (e) {
       setPushOutcome({
         id: sessionId,
+        ok: false,
+        text: e instanceof TypeError ? strings.status.unreachable : (e as Error).message,
+      });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  /**
+   * "CREATE AN AGREEMENT FOR THIS VISIT INSTEAD" — pressed on the band that
+   * says the enduring rule set is awaiting authoring (Carl, 5 Sep 2026).
+   *
+   * IT IS THE SERVER'S ACT END TO END, exactly as the declined-session offer
+   * is: the draft, the description of the service, the lock and the capture
+   * request are every one of them evidence, and none may be assembled by a
+   * screen. This posts, then re-reads — the new episodic row appears (pushable
+   * where the description was there to lock) and the enduring row leaves the
+   * list, which is the honest way to show that both happened.
+   *
+   * THE OUTCOME LANDS ON THE ENDURING ROW that was pressed, because that is
+   * the row somebody is looking at. It is gone on the next poll, and what
+   * replaces it is the new row a line below.
+   */
+  async function offerEpisodicInstead(row: PushableRow) {
+    setBusyId(row.agreementId);
+    setPushOutcome(null);
+    try {
+      const res = await fetch(`${CORE_URL}/agreements/${row.agreementId}/offer-episodic`, {
+        method: 'POST',
+        headers: apiHeaders(practiceId),
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) {
+        const { reason, message } = await refusal(res);
+        setPushOutcome({
+          id: row.agreementId,
+          ok: false,
+          info: describeRefusal(reason, {
+            providerType: row.providerType,
+            patientId: row.patientId,
+            rawMessage: message,
+            audiences,
+            practiceId,
+          }),
+        });
+        return;
+      }
+      setPushOutcome({ id: row.agreementId, ok: true, text: strings.tablet.offerEpisodicInsteadDone });
+      await load();
+    } catch (e) {
+      setPushOutcome({
+        id: row.agreementId,
         ok: false,
         text: e instanceof TypeError ? strings.status.unreachable : (e as Error).message,
       });
@@ -1393,6 +1536,8 @@ export function usePushDesk(practiceId: string): PushDesk {
     staffNames,
     loadError,
     canSend,
+    audiences,
+    practiceId,
     busyId,
     sessionByDevice,
     lastEndedByDevice,
@@ -1401,6 +1546,7 @@ export function usePushDesk(practiceId: string): PushDesk {
     load,
     recall,
     offerEpisodic,
+    offerEpisodicInstead,
     send,
     sendAgain,
     resend,
@@ -1492,6 +1638,56 @@ export function D6aFix({ desk, row }: { desk: PushDesk; row: PushableRow }) {
       )}
     </div>
   );
+}
+
+/**
+ * THE OTHER FIX IN A BAND, AND THE ONE RECEPTION COULD NOT MAKE AT ALL (Carl,
+ * 5 Sep 2026; CLAUDE.md §7 "shortcuts to the answer", second instance).
+ *
+ * The band said the enduring rule set is awaiting authoring and stopped there.
+ * Authoring it is a human-authored zone (CLAUDE.md §7) and no receptionist can
+ * do it — so the band offered a person standing in front of a patient nothing
+ * at all. This is the thing they CAN do: one press, and the same patient has
+ * an agreement for today's visit with the same provider, on today's list and
+ * ready for a tablet.
+ *
+ * ONE PRESS, ONE SERVER ACT. The draft, the description of the service, the
+ * lock and the capture request are the server's — a screen that assembled an
+ * agreement would be a screen asserting a contract (the same reasoning
+ * `OfferEpisodic` carries for the declined case, whose drafting this shares).
+ *
+ * NOTHING HERE BLOCKS CARE. Whether it goes or not, the patient is seen (hard
+ * rule 8, REQ-REC-04) — and the sentence above the button says so.
+ */
+export function EnduringOfferFix({ desk, row }: { desk: PushDesk; row: PushableRow }) {
+  return (
+    <div className={rowStyles.fix} data-testid={`enduring-offer-fix-${row.agreementId}`}>
+      <div className={styles.formActions}>
+        <Button
+          variant="primary"
+          disabled={!desk.canSend || desk.busyId !== null}
+          onClick={() => void desk.offerEpisodicInstead(row)}
+          data-testid={`offer-episodic-instead-${row.agreementId}`}
+        >
+          <Send size={14} aria-hidden="true" />
+          {desk.busyId === row.agreementId
+            ? strings.tablet.offerEpisodicInsteadBusy
+            : strings.tablet.offerEpisodicInsteadAction}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * WHICH REASON HAS A CONTROL IN ITS OWN BAND — one mapping, so the row's
+ * standing "cannot be sent" band and the band after a refused press cannot
+ * come to offer different fixes for the same reason.
+ */
+function fixFor(desk: PushDesk, row: PushableRow, reason: string | null | undefined): ReactNode {
+  if (reason === 'service_description_missing') return <D6aFix desk={desk} row={row} />;
+  if (reason === 'enduring_rules_not_authored') return <EnduringOfferFix desk={desk} row={row} />;
+  return undefined;
 }
 
 /**
@@ -1651,13 +1847,15 @@ export function AgreementRow({
               info={describeRefusal(row.blockedReason, {
                 providerType: row.providerType,
                 patientId: row.patientId,
+                audiences: desk.audiences,
+                practiceId: desk.practiceId,
               })}
               canSend={desk.canSend}
               busy={desk.busyId !== null}
               onRecall={(sessionId) => void desk.recall(sessionId)}
               linkTestId={`blocked-link-${row.agreementId}`}
               recallTestId={`blocked-recall-${row.agreementId}`}
-              fix={row.blockedReason === 'service_description_missing' ? <D6aFix desk={desk} row={row} /> : undefined}
+              fix={fixFor(desk, row, row.blockedReason)}
             />
           </Notice>
         </div>
@@ -1684,11 +1882,7 @@ export function AgreementRow({
                 onRecall={(sessionId) => void desk.recall(sessionId)}
                 linkTestId={`push-outcome-link-${row.agreementId}`}
                 recallTestId={`push-outcome-recall-${row.agreementId}`}
-                fix={
-                  outcome.info.reason === 'service_description_missing' ? (
-                    <D6aFix desk={desk} row={row} />
-                  ) : undefined
-                }
+                fix={fixFor(desk, row, outcome.info.reason)}
               />
             ) : (
               outcome.text
@@ -2089,17 +2283,15 @@ export function SendAgain({ desk, ended }: { desk: PushDesk; ended: TabletSessio
             info={describeRefusal(againBlocked, {
               providerType: againRow?.providerType,
               patientId: ended.patientId,
+              audiences: desk.audiences,
+              practiceId: desk.practiceId,
             })}
             canSend={desk.canSend}
             busy={desk.busyId !== null}
             onRecall={(sessionId) => void desk.recall(sessionId)}
             linkTestId={`send-again-link-${ended.id}`}
             recallTestId={`send-again-recall-${ended.id}`}
-            fix={
-              againBlocked === 'service_description_missing' && againRow ? (
-                <D6aFix desk={desk} row={againRow} />
-              ) : undefined
-            }
+            fix={againRow ? fixFor(desk, againRow, againBlocked) : undefined}
           />
         </Notice>
       )}
