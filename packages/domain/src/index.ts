@@ -52,6 +52,8 @@ export * from './chase-attempt';
 export * from './assignor';
 export * from './assignor-relationships';
 export * from './service-descriptions';
+export * from './agreement-templates';
+export * from './practice-logo';
 export * from './enduring-termination-notice';
 export * from './signature';
 export * from './patient-message-templates';
