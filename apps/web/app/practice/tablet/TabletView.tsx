@@ -49,6 +49,7 @@ import { ArrowRight, ClipboardList, Tablet, Users } from 'lucide-react';
 import { Button, Chip, Notice, Section, Shell, ui } from '../../ui';
 import { strings } from '../../strings';
 import { SessionControl } from '../../SessionControl';
+import { useRefreshable } from '../../refresh';
 import { deviceActivityLine } from '../deviceActivity';
 import styles from '../manage.module.css';
 import {
@@ -94,6 +95,9 @@ export {
 
 export function TabletView({ practiceId }: { practiceId: string }) {
   const desk = usePushDesk(practiceId);
+  // THE TOP BAR'S REFRESH BUTTON works here too (Carl, 5 Sep 2026: 'No refresh
+  // button in header'): the Shell shows it only when a page registers a loader.
+  useRefreshable(desk.load);
   const { rows, devices, loadError, canSend, busyId } = desk;
 
   if (loadError && rows === null) {
