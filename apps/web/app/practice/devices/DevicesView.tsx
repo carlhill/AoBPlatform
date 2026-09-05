@@ -47,12 +47,13 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, RotateCw, ShieldOff, Tablet } from 'lucide-react';
+import { AlertTriangle, Home, PauseCircle, PlayCircle, RotateCw, ShieldOff, Tablet } from 'lucide-react';
 import { formatPairingCode, type DeviceRow } from '@aobplatform/domain';
 import { Button, Checkbox, Chip, Field, Notice, Section, Shell, TextInput, ui, type Tone } from '../../ui';
 import { strings } from '../../strings';
 import { apiHeaders } from '../../auth';
 import { SessionControl } from '../../SessionControl';
+import { deviceActivityLine } from '../deviceActivity';
 import styles from '../manage.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
@@ -78,8 +79,23 @@ interface IssuedCode {
 const STATE_TONE: Record<string, Tone> = {
   awaiting_pairing: 'warn',
   paired: 'ok',
+  /* Reception's own switch, not a fault and not a security event. */
+  inactive: 'warn',
   revoked: 'stop',
 };
+
+/**
+ * HOW OFTEN THE LIST REFRESHES ITSELF (Carl, 4–5 Sep 2026).
+ *
+ * This page used to load once, which was right when every line on it was a
+ * fact from last week — a label, who registered it, when it was paired. It now
+ * carries "On Begin · seen 4 s ago" and "Walk-up in progress", and a live line
+ * that only moves when somebody presses Refresh is a line that lies. Five
+ * seconds is slower than the tablet's own cadence and fast enough that the age
+ * on screen is never meaningfully wrong; it is a handful of small rows and a
+ * practice has a handful of tablets.
+ */
+const REFRESH_MS = 5_000;
 
 async function refusalMessage(res: Response): Promise<string> {
   const body = (await res.json().catch(() => ({}))) as { message?: string | string[] };
@@ -117,6 +133,9 @@ export function DevicesView({ practiceId }: { practiceId: string }) {
   const [confirming, setConfirming] = useState<{ device: DeviceRow; act: 'revoke' | 'rotate' } | null>(null);
   const [revokeReason, setRevokeReason] = useState('');
 
+  /** Which device was last sent a "Return to Begin", so the row can say so once. */
+  const [sentTo, setSentTo] = useState<string | null>(null);
+
   const [buildFloor, setBuildFloor] = useState('');
   const [buildSaved, setBuildSaved] = useState<'saved' | 'cleared' | null>(null);
 
@@ -135,6 +154,24 @@ export function DevicesView({ practiceId }: { practiceId: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /**
+   * THE LIVE HALF. The activity line is only true while the list is fresh, so
+   * the page re-reads itself on a quiet timer rather than waiting for somebody
+   * to press Refresh.
+   *
+   * IT SKIPS ITSELF WHILE AN ACT IS IN FLIGHT (`busy`) and while a
+   * confirmation is open, for the same reason: a list that reloads underneath
+   * a "revoke this tablet?" question can change which row the question is
+   * about. `act()` reloads on its own when it finishes, so nothing is missed.
+   */
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (busy || confirming) return;
+      void load();
+    }, REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [load, busy, confirming]);
 
   async function post<T>(path: string, body: unknown, method: 'POST' | 'PUT' | 'PATCH' = 'POST'): Promise<T> {
     const res = await fetch(`${CORE_URL}${path}`, {
@@ -184,6 +221,38 @@ export function DevicesView({ practiceId }: { practiceId: string }) {
   const setTestDevice = (device: DeviceRow, showsWaitingList: boolean) =>
     act(async () => {
       await post(`/devices/${device.id}`, { showsWaitingList }, 'PATCH');
+    });
+
+  /**
+   * SEND THAT TABLET BACK TO THE START (Carl, 4–5 Sep 2026).
+   *
+   * IT REACHES A WALK-UP, which is the case that had no answer before. Recall
+   * ends a PUSHED session; a walk-up is nobody's session — the patient typed
+   * three details in themselves — so a tablet stuck half-way through verifying
+   * somebody who wandered off could only be cleared by walking over to it or
+   * waiting out the practice's idle timeout.
+   *
+   * NO CONFIRMATION, deliberately. The person pressing this is standing next
+   * to the tablet, has looked at the line saying what is on it, and wants it
+   * back; the tablet itself tells whoever is holding it what happened before
+   * it clears. An "are you sure?" between those two things buys nothing and
+   * costs a tap in the one moment somebody is in a hurry.
+   */
+  const returnToBegin = (device: DeviceRow) =>
+    act(async () => {
+      await post(`/devices/${device.id}/return-to-begin`, {});
+      setSentTo(device.id);
+    });
+
+  /**
+   * OUT OF USE, AND BACK. Reception's own switch — see `outOfUseHint` for why
+   * it is not Revoke. Optimistic nothing: the control reflects the SERVER's
+   * answer after the reload, so a refused write leaves it where it was rather
+   * than showing a state the tablet is not in.
+   */
+  const setOutOfUse = (device: DeviceRow, outOfUse: boolean) =>
+    act(async () => {
+      await post(`/devices/${device.id}/out-of-use`, { outOfUse });
     });
 
   const rotate = (device: DeviceRow) =>
@@ -339,7 +408,9 @@ export function DevicesView({ practiceId }: { practiceId: string }) {
         )}
 
         <ul className={styles.list}>
-          {devices.map((device) => (
+          {devices.map((device) => {
+            const activity = deviceActivityLine(device);
+            return (
             <li key={device.id} className={styles.card} data-testid={`device-${device.id}`}>
               <div className={styles.cardHead}>
                 <span className={styles.cardIcon}>
@@ -361,6 +432,23 @@ export function DevicesView({ practiceId }: { practiceId: string }) {
                       {strings.devices.codeOutstanding(when(device.pairingExpiresAt))}
                     </p>
                   ) : null}
+                  {/*
+                    WHERE THE TABLET IS RIGHT NOW (Carl, 4–5 Sep 2026). A screen
+                    name and a time, or "not seen" — and never a patient's name,
+                    because the session id is what reception matches against the
+                    tablet row and a second copy of a name on a second screen at
+                    the counter buys nothing (REQ-VER-04, hard rule 9).
+                  */}
+                  {activity && (
+                    <p className={styles.cardSub} data-testid={`device-activity-${device.id}`}>
+                      {activity}
+                    </p>
+                  )}
+                  {device.outOfUse && device.outOfUseAt && (
+                    <p className={styles.cardSub} data-testid={`device-out-of-use-${device.id}`}>
+                      {strings.devices.outOfUseSince(device.outOfUseBy ?? '—', when(device.outOfUseAt))}
+                    </p>
+                  )}
                 </div>
                 <div className={styles.cardAside}>
                   {/* The WORD is the state; the colour only reinforces it. */}
@@ -481,11 +569,64 @@ export function DevicesView({ practiceId }: { practiceId: string }) {
                   <Button onClick={() => setConfirming({ device, act: 'rotate' })} data-testid={`rotate-${device.id}`}>
                     <RotateCw size={14} aria-hidden="true" /> {strings.devices.rotateAction}
                   </Button>
+                  {/*
+                    RETURN TO BEGIN — offered only on a tablet that could act on
+                    it. A revoked device holds no credential and an unpaired one
+                    has never called in, so on either the button could only
+                    report having done nothing (the same rule Revoke follows two
+                    lines up). An out-of-use tablet keeps heartbeating and CAN
+                    act on it, but it is already showing "not in use" and has
+                    nothing to clear, so the honest control there is "Put back
+                    in use".
+                  */}
+                  {device.state === 'paired' && (
+                    <Button
+                      disabled={busy}
+                      onClick={() => void returnToBegin(device)}
+                      title={strings.devices.returnToBeginHint}
+                      data-testid={`return-to-begin-${device.id}`}
+                    >
+                      <Home size={14} aria-hidden="true" />{' '}
+                      {busy ? strings.devices.returnToBeginBusy : strings.devices.returnToBeginAction}
+                    </Button>
+                  )}
+                  {/*
+                    OUT OF USE — RECEPTION'S SWITCH, next to but not the same as
+                    Revoke. A flat battery costs one press here and one press
+                    back; Revoke costs a rotate and somebody walking to the
+                    device with a code. Not offered on a revoked device, which
+                    is already out of use in the harder sense.
+                  */}
+                  {(device.state === 'paired' || device.state === 'inactive') && (
+                    <Button
+                      disabled={busy}
+                      onClick={() => void setOutOfUse(device, !device.outOfUse)}
+                      title={strings.devices.outOfUseHint}
+                      data-testid={`out-of-use-${device.id}`}
+                    >
+                      {device.outOfUse ? (
+                        <PlayCircle size={14} aria-hidden="true" />
+                      ) : (
+                        <PauseCircle size={14} aria-hidden="true" />
+                      )}{' '}
+                      {busy
+                        ? strings.devices.outOfUseBusy
+                        : device.outOfUse
+                          ? strings.devices.backInUseAction
+                          : strings.devices.outOfUseAction}
+                    </Button>
+                  )}
                 </div>
+                {sentTo === device.id && (
+                  <p className={ui.hint} data-testid={`return-to-begin-sent-${device.id}`}>
+                    {strings.devices.returnToBeginSent}
+                  </p>
+                )}
                 </>
               )}
             </li>
-          ))}
+            );
+          })}
         </ul>
       </Section>
 

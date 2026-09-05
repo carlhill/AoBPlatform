@@ -49,6 +49,7 @@ import { ArrowRight, ClipboardList, Tablet, Users } from 'lucide-react';
 import { Button, Chip, Notice, Section, Shell, ui } from '../../ui';
 import { strings } from '../../strings';
 import { SessionControl } from '../../SessionControl';
+import { deviceActivityLine } from '../deviceActivity';
 import styles from '../manage.module.css';
 import {
   AgreementRow,
@@ -209,6 +210,7 @@ export function TabletView({ practiceId }: { practiceId: string }) {
              */
             const ended =
               !session && lastEnded && SEND_AGAIN_ENDINGS.includes(lastEnded.state) ? lastEnded : undefined;
+            const activity = deviceActivityLine(device);
             return (
               <li key={device.id} className={styles.card} data-testid={`tablet-${device.id}`}>
                 <div className={styles.cardHead}>
@@ -227,12 +229,14 @@ export function TabletView({ practiceId }: { practiceId: string }) {
                         ? strings.tablet.tabletRevoked
                         : device.state === 'awaiting_pairing'
                           ? strings.tablet.tabletUnpaired
-                          : session
-                            ? strings.tablet.tabletShowing(
-                                session.patientName,
-                                strings.tablet.states[session.state] ?? session.state,
-                              )
-                            : strings.tablet.tabletIdle}
+                          : device.state === 'inactive'
+                            ? strings.tablet.tabletOutOfUse
+                            : session
+                              ? strings.tablet.tabletShowing(
+                                  session.patientName,
+                                  strings.tablet.states[session.state] ?? session.state,
+                                )
+                              : strings.tablet.tabletIdle}
                       {/* THE SAME EIGHT CHARACTERS THE TABLET'S FOOTER SHOWS. */}
                       {session && (
                         <>
@@ -244,6 +248,24 @@ export function TabletView({ practiceId }: { practiceId: string }) {
                     {session && (
                       <p className={styles.cardSub}>
                         {strings.tablet.pushedAt(session.pushedBy, when(session.pushedAt))}
+                      </p>
+                    )}
+                    {/*
+                      WHERE THE TABLET ITSELF SAYS IT IS (Carl, 4–5 Sep 2026).
+                      The line above is what the SERVER knows about the session;
+                      this is what the DEVICE last reported — which is a
+                      different fact, and the useful one when reception is
+                      asking why a push is still waiting. "Not seen for 3 min"
+                      answers it; so does "Walk-up in progress · checking
+                      identity", which was invisible from this page entirely
+                      before the heartbeat existed.
+
+                      NO PATIENT NAME IN IT. The session tag is what reception
+                      matches against the row above (REQ-VER-04, hard rule 9).
+                    */}
+                    {activity && (
+                      <p className={styles.cardSub} data-testid={`tablet-activity-${device.id}`}>
+                        {activity}
                       </p>
                     )}
                     {/*

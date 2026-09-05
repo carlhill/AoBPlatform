@@ -46,6 +46,61 @@ const PAIRED: DeviceRow = {
   showsWaitingList: false,
 };
 
+/**
+ * ON BEGIN, ANSWERING — the ordinary morning. The heartbeat fields are what
+ * the device row gained on 5 Sep 2026; `stale` is the SERVER'S answer and this
+ * page never recomputes it.
+ */
+const ON_BEGIN: DeviceRow = {
+  ...PAIRED,
+  id: 'device-on-begin',
+  label: 'Reception tablet 2',
+  lastSeenAt: new Date(Date.now() - 4_000).toISOString(),
+  currentScreen: 'begin',
+  currentSessionId: null,
+  stale: false,
+  outOfUse: false,
+};
+
+/** A pushed ceremony: the opaque session id, and no patient's name anywhere. */
+const IN_SESSION: DeviceRow = {
+  ...ON_BEGIN,
+  id: 'device-in-session',
+  label: 'Reception tablet 3',
+  currentScreen: 'check-details',
+  currentSessionId: 'f431e2a4-1111-4111-8111-111111111111',
+};
+
+/** A WALK-UP: a ceremony screen with no session. The state recall never reached. */
+const WALK_UP: DeviceRow = {
+  ...ON_BEGIN,
+  id: 'device-walk-up',
+  label: 'Reception tablet 4',
+  currentScreen: 'verify',
+  currentSessionId: null,
+};
+
+/** Two missed heartbeats. Asleep, off, or off the wifi — reception needs the row to say so. */
+const STALE: DeviceRow = {
+  ...ON_BEGIN,
+  id: 'device-stale',
+  label: 'Reception tablet 5',
+  lastSeenAt: new Date(Date.now() - 3 * 60_000).toISOString(),
+  currentScreen: 'begin',
+  stale: true,
+};
+
+/** Reception took this one off the floor. The credential is untouched. */
+const OUT_OF_USE: DeviceRow = {
+  ...ON_BEGIN,
+  id: 'device-out-of-use',
+  label: 'Reception tablet 6',
+  state: 'inactive',
+  outOfUse: true,
+  outOfUseAt: '2026-09-05T09:30:00.000Z',
+  outOfUseBy: 'Robin Reception',
+};
+
 const REVOKED: DeviceRow = {
   ...PAIRED,
   id: 'device-revoked',
@@ -363,5 +418,124 @@ describe('/practice/devices — the practice’s tablets', () => {
       expect(calls.filter((c) => c.url.includes('minimum-build')).length).toBe(2),
     );
     expect(calls.filter((c) => c.url.includes('minimum-build'))[1].body).toEqual({ build: null });
+  });
+
+  /**
+   * WHERE THE TABLET IS, ON THE ROW (Carl, 4-5 Sep 2026; TODO.md "Tablet
+   * heartbeat and Return to Begin").
+   *
+   * Carl's complaint: "the tablet must know what it is on" — and, before this,
+   * the server never did. A walk-up half-way through verifying was invisible
+   * from the console (recall reaches a pushed session; the session poll is off
+   * during a walk-up), and a tablet on Begin looked exactly like one that was
+   * switched off.
+   *
+   * AND NEVER A PATIENT'S NAME. The session tag is what reception matches
+   * against the row it already has on screen; a name here would be a second
+   * copy of somebody's identity on a monitor at the front counter for no gain
+   * (Carl's ruling, 5 Sep 2026; REQ-VER-04, hard rule 9).
+   */
+  it('device_rows_show_where_the_tablet_is', async () => {
+    stubFetch([ON_BEGIN, IN_SESSION, WALK_UP, STALE, OUT_OF_USE]);
+    render(<DevicesView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`device-activity-${ON_BEGIN.id}`)).toBeTruthy());
+
+    // "On Begin · seen 4 s ago"
+    const begin = screen.getByTestId(`device-activity-${ON_BEGIN.id}`).textContent ?? '';
+    expect(begin).toContain(strings.devices.activity.screens.begin);
+    expect(begin).toMatch(/seen \d+ s ago/);
+
+    // "Checking details · session f431e2a4" — the id, never the person.
+    const session = screen.getByTestId(`device-activity-${IN_SESSION.id}`).textContent ?? '';
+    expect(session).toContain(strings.devices.activity.screens['check-details']);
+    expect(session).toContain('f431e2a4');
+
+    // "Walk-up in progress · checking identity" — the case that had no line at all.
+    const walkUp = screen.getByTestId(`device-activity-${WALK_UP.id}`).textContent ?? '';
+    expect(walkUp).toMatch(/walk-up in progress/i);
+    expect(walkUp).toContain(strings.devices.activity.screens.verify.toLowerCase());
+
+    // "Not seen for 3 min" — and the SERVER decided that, not this page.
+    expect(screen.getByTestId(`device-activity-${STALE.id}`).textContent).toMatch(/not seen for 3 min/i);
+
+    // Out of use says so, with who and when.
+    expect(screen.getByTestId(`device-out-of-use-${OUT_OF_USE.id}`).textContent).toContain(
+      'Robin Reception',
+    );
+
+    // NO PATIENT ANYWHERE ON THE PAGE. There is nothing in the contract that
+    // could carry one; this asserts nothing crept in beside it.
+    expect(document.body.textContent).not.toContain('Riley');
+  });
+
+  it('says nothing about a tablet with nothing to say — revoked and unpaired carry their own chip', async () => {
+    stubFetch([REVOKED]);
+    render(<DevicesView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`device-${REVOKED.id}`)).toBeTruthy());
+    // A "not seen" line under "Revoked" would be a second sentence saying the
+    // same thing, more alarmingly.
+    expect(screen.queryByTestId(`device-activity-${REVOKED.id}`)).toBeNull();
+    expect(screen.queryByTestId(`return-to-begin-${REVOKED.id}`)).toBeNull();
+    expect(screen.queryByTestId(`out-of-use-${REVOKED.id}`)).toBeNull();
+  });
+
+  /**
+   * RETURN TO BEGIN — the button for a tablet stuck on somebody who has gone,
+   * including a walk-up, which recall could never reach.
+   *
+   * NO CONFIRMATION, deliberately: the person pressing it is standing next to
+   * the tablet, has read the line saying what is on it, and the TABLET tells
+   * whoever is holding it what happened before it clears. An "are you sure?"
+   * between those two things buys nothing.
+   */
+  it('sends Return to Begin with no confirmation, and says the request landed', async () => {
+    stubFetch([ON_BEGIN], () => ({ deviceId: ON_BEGIN.id, commandId: 'c-1', issuedAt: 'now' }));
+    render(<DevicesView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`return-to-begin-${ON_BEGIN.id}`)).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId(`return-to-begin-${ON_BEGIN.id}`));
+    await waitFor(() =>
+      expect(calls.some((c) => c.url.includes(`/devices/${ON_BEGIN.id}/return-to-begin`))).toBe(true),
+    );
+    const sent = calls.find((c) => c.url.includes('return-to-begin'));
+    expect(sent?.method).toBe('POST');
+    // No body worth having: the act names itself and the actor is the session.
+    expect(sent?.body).toEqual({});
+    await waitFor(() =>
+      expect(screen.getByTestId(`return-to-begin-sent-${ON_BEGIN.id}`)).toBeTruthy(),
+    );
+  });
+
+  /**
+   * OUT OF USE IS RECEPTION'S SWITCH, AND THE SCREEN SAYS HOW IT DIFFERS FROM
+   * REVOKE (Carl, 4-5 Sep 2026). The two controls sit next to each other and
+   * only one of them costs a rotate and a walk to the device.
+   */
+  it('takes a tablet out of use and puts it back, and distinguishes itself from Revoke', async () => {
+    stubFetch([ON_BEGIN], () => ({ deviceId: ON_BEGIN.id, outOfUse: true }));
+    render(<DevicesView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`out-of-use-${ON_BEGIN.id}`)).toBeTruthy());
+
+    const control = screen.getByTestId(`out-of-use-${ON_BEGIN.id}`);
+    expect(control.textContent).toContain(strings.devices.outOfUseAction);
+    // The hint draws the distinction the two controls need drawn.
+    expect(control.getAttribute('title')).toMatch(/credential is untouched/i);
+    expect(control.getAttribute('title')).toMatch(/unlike Revoke/i);
+
+    fireEvent.click(control);
+    await waitFor(() => expect(calls.some((c) => c.url.includes('/out-of-use'))).toBe(true));
+    expect(calls.find((c) => c.url.includes('/out-of-use'))?.body).toEqual({ outOfUse: true });
+  });
+
+  it('offers Put back in use on an inactive tablet, and reverses exactly the one boolean', async () => {
+    stubFetch([OUT_OF_USE], () => ({ deviceId: OUT_OF_USE.id, outOfUse: false }));
+    render(<DevicesView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`out-of-use-${OUT_OF_USE.id}`)).toBeTruthy());
+
+    const control = screen.getByTestId(`out-of-use-${OUT_OF_USE.id}`);
+    expect(control.textContent).toContain(strings.devices.backInUseAction);
+    fireEvent.click(control);
+    await waitFor(() => expect(calls.some((c) => c.url.includes('/out-of-use'))).toBe(true));
+    expect(calls.find((c) => c.url.includes('/out-of-use'))?.body).toEqual({ outOfUse: false });
   });
 });

@@ -29,6 +29,8 @@
  * and revoking it from the console closes it on the device's next request.
  */
 
+import type { KioskScreen } from './kiosk';
+
 /**
  * THE PAIRING-CODE ALPHABET, and every omission is deliberate.
  *
@@ -147,25 +149,95 @@ export interface DeviceRow {
    * uses.
    */
   showsWaitingList: boolean;
+
+  /* ------------------------------------------------------------------ *
+   * WHERE THE TABLET IS RIGHT NOW — from the heartbeat (Carl, 4–5 Sep
+   * 2026). Every field below is OPTIONAL ON THE WIRE and absent from an
+   * older server, which the console renders as "not seen" rather than as a
+   * blank line. None of them is patient data: a screen NAME, an opaque
+   * session id, and a timestamp (REQ-VER-04, hard rule 9).
+   * ------------------------------------------------------------------ */
+
+  /** One of `KIOSK_SCREENS`. Never a heading, never a value. */
+  currentScreen?: KioskScreen | null;
+  /**
+   * THE OPAQUE PUSHED-SESSION ID, AND NO NAME BESIDE IT (Carl, 5 Sep 2026).
+   * Reception matches the eight characters to the tablet row they already have
+   * on screen; looking a patient up to decorate a device row would put a name
+   * on a monitor for no gain, since the name is already on the session row.
+   */
+  currentSessionId?: string | null;
+  /**
+   * THE SERVER'S ANSWER, NOT THE CONSOLE'S GUESS. More than two poll intervals
+   * since the last heartbeat. The cadence is the server's (`kioskPollMs`), so
+   * a console that guessed it would be a second place for it to be wrong.
+   */
+  stale?: boolean;
+  /** Taken out of use by reception. The credential is untouched. */
+  outOfUse?: boolean;
+  outOfUseAt?: string | null;
+  outOfUseBy?: string | null;
 }
 
-export const DEVICE_STATES = ['awaiting_pairing', 'paired', 'revoked'] as const;
+/**
+ * `inactive` IS RECEPTION'S SWITCH; `revoked` IS THE ADMINISTRATOR'S (Carl,
+ * 4–5 Sep 2026, TODO.md "Tablets: make one inactive").
+ *
+ * A flat battery, a tablet gone for repair, a tablet on the wrong desk: none
+ * of those is a security event and none of them should cost a credential.
+ * `inactive` refuses pushes and shows a quiet "not in use" screen; the tablet
+ * keeps heartbeating, so it is still on the console and one press puts it
+ * back. `revoked` throws the credential away and needs a rotate and somebody
+ * re-typing a code at the device.
+ */
+export const DEVICE_STATES = ['awaiting_pairing', 'paired', 'inactive', 'revoked'] as const;
 export type DeviceState = (typeof DEVICE_STATES)[number];
 
 /**
- * The one place the three states are decided, so the console and the server
+ * TWO MISSED HEARTBEATS AND THE ROW SAYS SO. Not one: a single dropped poll is
+ * a network blip on a practice's wifi, and a console that cried "not seen" at
+ * every blip would teach reception to ignore the line that matters.
+ */
+export const DEVICE_STALE_AFTER_POLLS = 2;
+
+/**
+ * Has this tablet missed two heartbeats? Answered against the cadence the
+ * SERVER is currently handing out, so a busy practice (2 s) and a quiet one
+ * (15 s) get the same "two intervals" rule rather than the same number of
+ * seconds. Never seen at all is stale by definition.
+ */
+export function deviceHeartbeatIsStale(
+  lastSeenAt: Date | string | null | undefined,
+  pollMs: number,
+  now: Date = new Date(),
+): boolean {
+  if (!lastSeenAt) return true;
+  const at = typeof lastSeenAt === 'string' ? Date.parse(lastSeenAt) : lastSeenAt.getTime();
+  if (Number.isNaN(at)) return true;
+  return now.getTime() - at > DEVICE_STALE_AFTER_POLLS * pollMs;
+}
+
+/**
+ * The one place the four states are decided, so the console and the server
  * cannot disagree about what a row IS.
  *
  * REVOKED WINS OVER EVERYTHING. A revoked device with a live pairing code is
  * still revoked — rotate is the act that gives it a new code, and rotate
  * clears the revocation deliberately rather than as a side effect of the row
  * happening to have a code on it.
+ *
+ * OUT OF USE IS ASKED AFTER PAIRING, not before it. A device that has never
+ * been paired and is also flagged out of use reads `awaiting_pairing`, because
+ * the thing a person needs to do to it is type a code in — telling them it is
+ * "not in use" would hide the one action the row has.
  */
 export function deviceState(input: {
   revokedAt: Date | string | null;
   pairedAt: Date | string | null;
+  outOfUseAt?: Date | string | null;
 }): DeviceState {
   if (input.revokedAt) return 'revoked';
-  if (input.pairedAt) return 'paired';
-  return 'awaiting_pairing';
+  if (!input.pairedAt) return 'awaiting_pairing';
+  if (input.outOfUseAt) return 'inactive';
+  return 'paired';
 }
