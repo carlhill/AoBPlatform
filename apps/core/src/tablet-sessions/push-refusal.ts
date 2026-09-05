@@ -59,6 +59,23 @@ export const pushRefusals = {
     ),
 
   /**
+   * OUT OF USE IS RECEPTION'S OWN SWITCH, AND THE REFUSAL SAYS SO (Carl, 4–5
+   * Sep 2026).
+   *
+   * The fix is one press on `/practice/devices`, by the same person who is
+   * reading this sentence — not a rotate, not an administrator, not a walk to
+   * the tablet. So the refusal names the act rather than the state, and the
+   * console's copy carries the link.
+   */
+  deviceOutOfUse: (label: string) =>
+    new PushRefusal(
+      'device_out_of_use',
+      `${label} has been taken out of use, so it is showing "not in use" and would not show this ` +
+        'agreement. Put it back in use, or send to another tablet.',
+      new ConflictException().getStatus(),
+    ),
+
+  /**
    * ONE SESSION PER DEVICE, and the refusal carries the live session's id so
    * the console can offer Recall rather than leaving somebody to work out why
    * the button did nothing.

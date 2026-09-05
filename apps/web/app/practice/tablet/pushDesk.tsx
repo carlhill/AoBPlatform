@@ -316,6 +316,18 @@ export function describeRefusal(
         link: { href: '/practice/devices', label: strings.tablet.toDevices },
       };
     /*
+     * RECEPTION'S OWN SWITCH, AND THE LINK LANDS WHERE IT IS UNSWITCHED (Carl,
+     * 4–5 Sep 2026; CLAUDE.md §7 "shortcuts to the answer, not directions to a
+     * screen"). Unlike a revoke this needs no administrator and no new pairing
+     * code — one press on the page this link opens.
+     */
+    case 'device_out_of_use':
+      return {
+        reason,
+        text: strings.tablet.blocked.device_out_of_use,
+        link: { href: '/practice/devices', label: strings.tablet.toDevices },
+      };
+    /*
      * THREE ENDURING REFUSALS NOW, AND THE DIFFERENCE MATTERS TO THE PERSON
      * READING (Carl, 4 Sep 2026; GA-PLAN B5 -- they replace the single
      * `enduring_not_supported`).

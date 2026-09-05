@@ -1485,7 +1485,17 @@ administrator account.
 
 ## Tablets: make one inactive from the send-to-tablet page (Carl, 4 Sep 2026)
 
-- [ ] On `/practice/tablet`, reception needs to take a tablet OUT OF USE
+**Mostly BUILT 5 Sep 2026** as part of "Tablet heartbeat and Return to Begin"
+below -- the `inactive` state, the out-of-use screen, the refused push and the
+two vault events all landed there. What is left is where the control lives:
+it is on `/practice/devices` today, not on `/practice/tablet`.
+
+- [ ] Carl to say whether "Take out of use" should ALSO appear on the
+      send-to-tablet page's device rows. It is one press either way, and the
+      argument for `/practice/devices` is that it sits beside Revoke where the
+      distinction between the two is drawn; the argument for `/practice/tablet`
+      is that reception is already looking at the tablet that has gone flat.
+- [x] On `/practice/tablet`, reception needs to take a tablet OUT OF USE
       (flat battery, gone for repair, wrong desk) without being the
       administrator. Distinguish: **inactive** (reception; no pushes go to it,
       its session is recalled, it shows "This tablet is out of use -- please
@@ -1700,57 +1710,108 @@ this poll into `POST /kiosk/heartbeat`.
       `recovery_returns_to_idle_and_clears_state`. Sequenced after the
       `timed_out` build, which is editing Ceremony.tsx.
 
-## Tablet heartbeat and "Return to Begin" (Carl, 4 Sep 2026)
+## Tablet heartbeat and "Return to Begin" (Carl, 4-5 Sep 2026) -- BUILT
 
 Carl: reception needs one more option -- force a tablet back to the Begin
 page -- and "the tablet must know what it is on": is it on Begin, or is a
-patient part-way through, and on which page. Today the tablet knows its own
-screen but never tells the server, so a walk-up mid-verify is invisible from
-the console and a tablet on Begin looks the same as one that is switched off.
-Recall only reaches a pushed session; the session poll is deliberately off
-during a walk-up, so recall cannot clear a walk-up.
+patient part-way through, and on which page. Before this the tablet knew its
+own screen but never told the server, so a walk-up mid-verify was invisible
+from the console and a tablet on Begin looked the same as one that was
+switched off. Recall only reaches a pushed session; the session poll is
+deliberately off during a walk-up, so recall could not clear a walk-up.
 
-Design (agreed in principle 4 Sep 2026; build after the outage/dispute and
-console builds land -- they are in the same files):
+**Landed 5 Sep 2026.** Domain 907, web 329, core e2e 507, typecheck and lint
+clean. The vault needs a rebuild -- `VAULT_EVENT_TYPES` gained three types.
 
-- [ ] **Heartbeat, every poll, on every screen.** Turn the outage
-      heartbeat (`/kiosk/me` at the server's `pollMs`) into
-      `POST /kiosk/heartbeat { screen, sessionId }` answering
-      `{ command }`. `screen` is one of a fixed list of names -- begin, list,
-      verify, assignor, particulars, signature, check-details, complete,
-      handover, outage -- never a typed value, never a name (REQ-VER-04,
-      hard rule 9). `sessionId` is the opaque pushed-session id or null.
-      Server records `lastSeenAt`, `currentScreen`, `currentSessionId` on the
-      device. Named test: `heartbeat_carries_screen_names_not_values`.
-- [ ] **Console shows it** on `/practice/devices` and `/practice/tablet`
-      rows: "On Begin · seen 4 s ago", "Checking details · Riley Example ·
-      session f431e2a4", "Walk-up in progress · verifying identity",
-      "Not seen for 3 min" after two missed heartbeats. The stale state is
-      most of "Tablets: make one inactive" above, and it tells reception why
-      a push is still waiting.
-- [ ] **Return to Begin** -- a button on the device row. It recalls any live
-      pushed session (the tablet already handles `session: null`) AND sets a
-      reset command on the device; the next heartbeat delivers it, the tablet
-      runs the same clearing routine as inactivity and lands on Begin (not on
-      a timed-out or error screen), then acknowledges on its following
-      heartbeat. Vault event `tablet.reset_requested` with who and when; no
-      PII. Guard rails: the command is served for two minutes only, so a
-      tablet that was asleep does not reset tomorrow's patient; a reset on a
-      tablet already on Begin is a no-op. Named tests:
+- [x] **Heartbeat, every poll, on every screen.** `useOutageState` became
+      `useKioskHeartbeat` and its `GET /kiosk/me` poll became
+      `POST /kiosk/heartbeat { screen, sessionId, build, ackCommandId }`,
+      answering `{ command, pollMs, outOfUse, reload }` at the server's own
+      cadence -- which now matters more, because the waiting-list poll is off
+      mid-ceremony and this is then the only cadence there is. The failure
+      counting and recovery semantics are unchanged and their tests still hold
+      them. `screen` is one of `KIOSK_SCREENS` in packages/domain (ten words,
+      `IsIn` on the DTO, 400 otherwise) and the global whitelist strips any
+      fifth field, so no patient detail can ride on a poll that fires thirty
+      times a minute. Server records `lastSeenAt`, `currentScreen`,
+      `currentSessionId`; migration `20260905010000_tablet_heartbeat`
+      (idempotent, reversal documented in the file), applied by hand and
+      `prisma generate` run. `lastSeenAt` is now written on EVERY beat -- the
+      once-a-minute throttle made every tablet in a busy practice read stale,
+      which is the opposite of what "seen 4 s ago" is for. No vault event per
+      heartbeat: telemetry, not evidence. Named test
+      `heartbeat_carries_screen_names_not_values`, both halves.
+- [x] **Console shows it.** `GET /devices` carries `currentScreen`,
+      `currentSessionId`, `lastSeenAt`, `stale` and `outOfUse`; `stale` is TWO
+      MISSED BEATS computed SERVER-side against `kioskPollMs`, so the console
+      never guesses the cadence. One shared builder,
+      `apps/web/app/practice/deviceActivity.ts`, renders the line on both
+      `/practice/devices` and `/practice/tablet`: "On Begin - seen 4 s ago",
+      "Checking details - session f431e2a4", "Walk-up in progress - checking
+      identity", "Not seen for 3 min". NO PATIENT NAME is looked up for it
+      (Carl, 5 Sep 2026 -- the session id is enough; reception matches it to
+      the row above). `/practice/devices` now refreshes itself every 5 s,
+      because a live line that only moves on Refresh is a line that lies.
+      Named test `device_rows_show_where_the_tablet_is`.
+- [x] **Return to Begin.** Button on the DevicesView row (paired devices only
+      -- on a revoked or unpaired one it could only report having done
+      nothing), no confirmation: the person pressing it is standing at the
+      tablet and the TABLET tells whoever is holding it what happened.
+      `POST /devices/:id/return-to-begin` lives in `TabletSessionsController`
+      beside `push`, for the same reason -- the resource is a tablet, the
+      behaviour ends a session. Staff actor required (403 otherwise),
+      practice-scoped, cross-practice 404s. It recalls any live session through
+      the EXISTING recall path (state `recalled`, its own
+      `tablet.session_ended`) and sets `pendingCommand{Id,Kind,IssuedAt,IssuedBy}`
+      on the device. Vault event `tablet.return_to_begin_requested`, no PII.
+      Served on heartbeats for two minutes (`KIOSK_COMMAND_TTL_MS`) and then
+      dropped silently; served AGAIN on every beat until the tablet echoes
+      `ackCommandId`, so one dropped request does not lose a reset. A second
+      press replaces the first. Named tests
+      `reset_command_expires_after_two_minutes`,
+      `reset_command_is_served_once_and_acknowledged`.
+- [x] **Tablet side.** On `return_to_begin` the tablet shows the handover
+      screen with "Please see reception. / Your appointment is not affected."
+      (string table, `kiosk.chrome.returnToBegin*`), holds for six seconds or
+      a tap on the existing "Start again", then runs the SAME clearing routine
+      as inactivity (`clearCeremonyState({ releaseSession: true })`) and lands
+      on Begin. Nothing is posted; nothing is stored. A command arriving at a
+      genuinely idle tablet is acknowledged and ignored -- but a tablet that
+      dropped a ceremony AFTER the command was issued still shows the message,
+      because the recall and the command arrive on two independent polls and
+      the recall can win. Named tests
       `return_to_begin_clears_a_walk_up_mid_verify`,
-      `reset_command_expires_after_two_minutes`.
-- [ ] Return to Begin during a walk-up or a pushed ceremony does NOT drop the
-      patient straight onto Begin. The tablet first shows "Please see
-      reception. Your appointment is not affected." (same handover screen
-      family as the timed-out variant, string-table copy), then lands on
-      Begin after a short hold or on tap -- so the person holding the tablet
-      is told what happened rather than watching their screen vanish (Carl,
-      4 Sep 2026). Reception is standing there and has decided the tablet is
-      needed; care is not blocked (rule 8). Named test:
-      `return_to_begin_shows_see_reception_before_idle`.
-- [ ] Zero-footprint unchanged: nothing about the heartbeat is stored on the
-      device. OpenAPI contract updated; estimate ~half a day of agent time
-      across core, console and tablet.
+      `return_to_begin_shows_see_reception_before_idle` (including the race).
+- [x] **Stale tablets / out of use** -- most of "Tablets: make one inactive"
+      above. New device state `inactive` (`deviceState` reads `outOfUseAt`;
+      revoked still wins, unpaired still reads `awaiting_pairing`), set from
+      DevicesView with "Take out of use" / "Put back in use" via
+      `POST /devices/:id/out-of-use { outOfUse }` -- also in
+      `TabletSessionsController`, because taking one out RECALLS whatever is on
+      it. The heartbeat answers `outOfUse: true`, the tablet shows
+      `OutOfUseScreen` ("This tablet is not in use. / Please see reception.
+      Your appointment is not affected.") and KEEPS BEATING, which is the whole
+      difference from a revoke: it stays on the console and one press brings it
+      back, with nobody visiting the device. Pushes refuse with
+      `device_out_of_use`, mapped in `describeRefusal` with a link to
+      /practice/devices. Vault events `device.taken_out_of_use` /
+      `device.put_back_in_use`. `rotate` clears out-of-use and any pending
+      command, so a re-paired tablet comes back clean. Named test
+      `push_refuses_an_out_of_use_device`.
+- [x] Zero-footprint unchanged -- `kiosk_persists_nothing_but_pairing` still
+      green, with `OutOfUseScreen` added to the screens it renders. Rule 8
+      throughout: nothing here moves an agreement, a capture request or a
+      patient being seen. There is no OpenAPI document in this repo yet
+      (`packages/contracts` is TypeScript); the shared types carry the contract.
+
+Left for Carl:
+- [ ] The refresh on `/practice/devices` is a plain 5 s reload of `GET
+      /devices`. If a practice ever has enough tablets for that to matter, it
+      wants the same ETag treatment the waiting list has.
+- [ ] `POST /devices/:id/out-of-use` and `.../return-to-begin` sit in
+      `TabletSessionsController` by path-under-/devices convention. If a third
+      device act with no session involvement appears, that convention is worth
+      revisiting rather than stretching.
 
 ## Nothing on the patient surface is ever staff entry
 

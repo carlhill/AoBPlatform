@@ -384,6 +384,21 @@ export const PUSH_BLOCKED_REASONS = [
   'device_revoked',
   /** Registered but never paired: the code was issued and nobody typed it in. */
   'device_not_paired',
+  /**
+   * TAKEN OUT OF USE BY RECEPTION (Carl, 5 Sep 2026) — flat battery, gone for
+   * repair, wrong desk.
+   *
+   * IT IS NOT A REVOKE, and the difference is the whole reason it exists. The
+   * credential is untouched and the tablet keeps heartbeating, so the console
+   * can still see it and put it back in use with one press; a revoke is an
+   * administrator throwing the credential away. Reception should not have to
+   * do the second thing to achieve the first.
+   *
+   * NOTHING ABOUT IT BLOCKS CARE (hard rule 8, REQ-REC-04). It stops a SCREEN:
+   * the patient is seen, and reception sends to another tablet, bills
+   * privately, or captures after the service.
+   */
+  'device_out_of_use',
   /** One session per device. The console is told the session id so it can offer Recall. */
   'device_busy',
   'agreement_not_found',
