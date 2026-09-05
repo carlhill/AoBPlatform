@@ -255,9 +255,61 @@ export interface PortalCorrectionRequestResult {
   readonly fieldType: string;
 }
 
+/**
+ * WHY THE ACTIVATION PAGE ASKS THE SERVER ANYTHING AT ALL (FR-1.14, REQ-PORT-08).
+ *
+ * The invitation lands as a link. The page behind it has to draw the right
+ * boxes, and only the practice's configuration knows which three identifiers
+ * this practice challenges on (REQ-VER-06) — so the page asks, and this is the
+ * answer.
+ *
+ * WHAT IT DELIBERATELY DOES NOT CARRY. No name, no initials, no masked
+ * anything, no patient id, no agreement id. Somebody holding a forwarded link
+ * learns the practice's name — which the message they were forwarded already
+ * said — and WHICH KINDS of detail will be asked for, which the kiosk discloses
+ * to anybody standing in the waiting room. Neither is a disclosure about a
+ * person; a partial value would be.
+ *
+ * `identifierTypes` CAN NEVER CONTAIN A MEDICARE NUMBER, and the server puts
+ * the list through the domain's own approved-set guard before answering rather
+ * than trusting a practice row (hard rule 1, REQ-VER-02). Named test:
+ * `activation_challenge_never_asks_for_a_medicare_number`.
+ */
+export interface PortalActivationChallenge {
+  /** The approved types this practice challenges on, in the order to render them. */
+  readonly identifierTypes: readonly string[];
+  readonly practiceName: string;
+  readonly expiresAt: PortalTimestamp;
+  /** Of `PORTAL_ACTIVATION_MAX_ATTEMPTS`. Zero means the invitation is finished. */
+  readonly attemptsRemaining: number;
+}
+
+/**
+ * WHY A REFUSAL CARRIES A CODE AND NOT A SENTENCE.
+ *
+ * "Shortcuts to the answer, not directions to a screen" (Carl, 4 Sep 2026):
+ * every reason maps on the page to copy AND a next step, and an unmapped code
+ * shows itself so it can be diagnosed rather than disappearing into a generic
+ * apology. The sentences live in the string table (REQ-LANG-01); the server
+ * sends the code.
+ *
+ * THREE CODES, AND A USED-UP TOKEN IS `token_expired`. A link that has already
+ * been activated and one that ran out of days are the same fact to the person
+ * holding it — it no longer works, and the way back is a fresh invitation — and
+ * telling them apart would tell a stranger holding a forwarded link whether the
+ * patient has an account.
+ */
+export type PortalActivationRefusalReason = 'token_unknown' | 'token_expired' | 'token_locked';
+
 /** What `POST /portal/activate` is given. The token alone is never enough. */
 export interface PortalActivationRequest {
-  readonly agreementId: string;
+  /**
+   * OPTIONAL, because the token already names its own invitation row and the
+   * page behind the link never learns an agreement id (see
+   * `PortalActivationChallenge`). Where a caller does send one it is checked
+   * against the row and a mismatch is the same refusal as an unknown token.
+   */
+  readonly agreementId?: string;
   readonly activationToken: string;
   /**
    * The three-identifier answers, keyed by approved identifier type. Compared

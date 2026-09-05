@@ -5164,6 +5164,90 @@ export const strings = {
       devFailed: 'That did not work. Check that core is running and that it is configured for development.',
     },
 
+    /*
+     * THE ACTIVATION PAGE — what the invitation link opens (FR-1.14,
+     * REQ-PORT-08). `/patient/portal/activate/<token>`.
+     *
+     * THE ASK IS FRAMED AS A CHECK, NOT AS A SIGN-UP. Nothing here says
+     * "create an account", "register" or "verify your identity": the patient is
+     * being asked for details their practice already holds, and the sentence
+     * says so and says where they last gave them ("the same ones they asked
+     * when you signed"). A person who cannot remember what a practice holds is
+     * being asked a fair question; a person being asked to "prove" themselves
+     * to a website is being asked something else.
+     *
+     * IT NEVER NAMES THE IDENTIFIER THAT FAILED. One sentence for every
+     * mismatch, at every attempt (REQ-SEC-07): telling somebody the date was
+     * right and the address was wrong is telling whoever is holding a
+     * forwarded link exactly what to work on.
+     *
+     * EVERY REFUSAL HAS A NEXT STEP, and it is the practice rather than us —
+     * they are the only ones who can mint a new invitation (Carl, 4 Sep 2026,
+     * "shortcuts to the answer"). An unmapped reason code shows its own code
+     * so it can be read out to support rather than becoming a shrug.
+     *
+     * AND CARE IS NEVER AFFECTED, said on the locked screen where somebody is
+     * most likely to fear otherwise (hard rule 8).
+     */
+    activate: {
+      title: 'See your bulk-billing record',
+      loading: 'Opening your invitation…',
+      /* The offer, and the ask, in the order they make sense. */
+      offer: (practiceName: string) =>
+        `${practiceName} has offered you a way to see your bulk-billing record.`,
+      ask: 'To make sure it is you, tell us the details your practice holds — the same ones they asked when you signed.',
+      /* The nudge that this is optional, carried over from the signed-out screen. */
+      optional: 'You never need to do this to sign a bulk-billing agreement. This page is only for looking at your own record afterwards.',
+      expires: (when: string) => `This invitation is open until ${when}.`,
+      attemptsRemaining: (left: number) =>
+        left === 1 ? 'You have one more try.' : `You have ${left} more tries.`,
+      nameGiven: 'Given name',
+      nameFamily: 'Family name',
+      nameNote: 'Your family and given names count as one detail.',
+      continueAction: 'Continue',
+      continueBusy: 'Checking…',
+      continueBlocked: 'Fill in every box first',
+      /* ONE SENTENCE, NAMING NOTHING (REQ-SEC-07). */
+      mismatchHeading: 'Some of these details do not match what your practice holds',
+      mismatchBody: 'Check what you have typed and try again. We cannot tell you which one it was.',
+      /* The server was unreachable, or answered something we do not map. */
+      failed: 'We could not check that just now. Nothing has changed — please try again shortly.',
+      unmappedReason: (code: string) =>
+        `This link cannot be opened (${code}). Ask your practice for a new invitation, and tell them that code.`,
+      reasons: {
+        token_unknown: {
+          heading: 'This link does not work',
+          body: 'It may have been copied incompletely, or it may not be ours. Ask your practice for a new invitation.',
+        },
+        token_expired: {
+          heading: 'This link has already been used, or it has run out',
+          body: 'Ask your practice for a new invitation. If you have already set this up, you can open your record with your passkey.',
+        },
+        token_locked: {
+          heading: 'This link is now locked',
+          body: 'Ask your practice for a new invitation.',
+        },
+      } as Record<string, { heading: string; body: string }>,
+      lockedHeading: 'This link is now locked',
+      lockedBody: 'Ask your practice for a new invitation.',
+      lockedReassurance: 'Nothing about your care or appointments is affected.',
+      backToPortal: 'Go to your record',
+      /* Dev only, and it says so. See `fixtures.ts`. */
+      fixtureHeading: 'Development only',
+      fixtureHint: (answers: string) =>
+        `No core is running, so this page is answering from fixtures. It accepts: ${answers}`,
+    },
+
+    /*
+     * THE ONE-LINE WELCOME after an activation, shown ONCE (Carl, 5 Sep 2026).
+     * It exists to point at the passkey card, which is the next thing worth
+     * doing and the only thing that stops the next visit needing another
+     * invitation — and it is state rather than storage, so a reload drops it
+     * and the tablet rule is untouched.
+     */
+    welcome: "You're in. Add a passkey below so you can come back without a new invitation.",
+    welcomeDismiss: 'Dismiss',
+
     /* ---------------------------------------------------------------- 1 */
     details: {
       heading: 'My details',

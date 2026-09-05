@@ -2144,6 +2144,75 @@ the REQ-PORT-08 sentence: signing an agreement never needs an account.
   `fixtures.ts` until the server side lands. One line switches it:
   `NEXT_PUBLIC_PORTAL_FIXTURES=false`. Nothing else changes.
 
+### BUILT — the activation page (FR-1.14, REQ-PORT-08), 5 Sep 2026
+
+`portal_invitation_v1` had been sending patients to
+`/patient/portal/activate/<token>` since 4 September and **nothing served it**.
+It does now.
+
+- **`GET /portal/activate/:token/challenge`** answers which boxes to draw:
+  the practice's own identifier TYPES, its name, the expiry and the tries left
+  — and nothing about the patient. No name, no initials, no masked value, no
+  patient id, **no agreement id**. The types are what the kiosk already
+  discloses to a waiting room, so this is not a disclosure; a partial value
+  would be. The list goes through the domain's approved-set guard on the way
+  out and again in the browser before an input is drawn
+  (`activation_challenge_never_asks_for_a_medicare_number`).
+- **A dead link is a 404 with a reason code** — `token_unknown` |
+  `token_expired` | `token_locked` — and the page maps each to copy AND a next
+  step, with an unmapped code shown as itself (Carl, 4 Sep: "shortcuts to the
+  answer"). **Used and expired are the same code on purpose:** telling a
+  stranger holding a forwarded link that the patient has already activated is
+  a disclosure. 410 and 423 on the attempt path now carry the same codes.
+- **`agreementId` is optional on `POST /portal/activate`.** The page is never
+  told one; the token's hash names exactly one invitation row, which names the
+  agreement. A caller that does send one still has it checked.
+- **Rate-limited by address**, same mechanism as passkey sign-in and a separate
+  budget (`portal-activation-rate-limit.ts`, `portal-client-key.ts` — the
+  `clientKey` helper moved out of the passkey controller so there is one
+  definition). It is a brake on token enumeration; what stops guessing is the
+  three-attempt lock on the invitation itself.
+- **Web `/patient/portal/activate/[token]`** — the portal's Shell with the
+  session bar in its signed-out form, the offer and the ask, fields rendered
+  from the server's list in the server's order. It reuses the **kiosk's rules**
+  (`identifierFieldsFor`, `composeName`) and none of its chrome. Date of birth
+  is one native date input here rather than the kiosk's three pickers: this
+  runs on the patient's own phone, and both produce the same `YYYY-MM-DD`.
+  One mismatch sentence naming nothing, everything typed kept, attempts left
+  shown, focus to the first field on failure, `aria-describedby` from every
+  input to the one alert.
+- **On success the server sets the cookie and the page navigates to
+  `/patient/portal?welcome=1`**, which shows one line pointing at the passkey
+  card and then removes the parameter from the address bar. State, not storage
+  — nothing is written to the browser anywhere on this path.
+- **`PORTAL_FIXTURES` covers it**: the challenge and the activation resolve
+  from `fixtures.ts` and the page prints the accepted answers in a
+  development-only note. Reserved tokens `unknown` / `expired` / `used` /
+  `locked` show each dead-link state without a database.
+- **Messages card:** an unused, unlocked, unexpired invitation is now `pending`,
+  so the "Waiting for you" strip (REQ-PORT-06) includes the very message the
+  patient is most likely to be checking. It clears when `usedAt` is set, in the
+  activation's own transaction.
+- **No new vault event type.** Activation still writes `portal.activated` and
+  `portal.accessed`; the challenge read writes nothing, because a read of a
+  configuration is not an event about a person.
+- Tests: 46 core e2e (`activation_locks_after_three_failed_attempts`,
+  `activation_logs_identifier_types_not_values`,
+  `activation_links_into_the_preminted_account`,
+  `activation_challenge_never_asks_for_a_medicare_number`) and 15 web
+  (`activation_page_renders_only_identifier_types_from_the_server`,
+  `activation_never_shows_which_identifier_failed`,
+  `activation_locked_state_says_ask_your_practice`,
+  `activation_success_lands_on_the_portal_with_the_welcome_line`,
+  `portal_welcome_line_is_shown_once_after_an_activation`).
+
+Left for a person:
+- [ ] **The activation limiter is in memory, per process**, exactly like the
+      passkey one, and shares its Redis note. It also means a waiting room
+      behind one NAT shares one budget — ten refusals per ten minutes. It never
+      blocks care and never blocks signing; it can make somebody wait to look
+      at their own record.
+
 ### BUILT — passkeys (FR-8.2), 4 Sep 2026
 
 Carl: "Implement". Recorded as **D-2026-09-04-02**: patient passkeys are core's,

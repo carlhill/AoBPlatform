@@ -119,6 +119,26 @@ export function PortalView() {
   // the page can be checked against a message that quoted it (Carl, 4 Sep 2026).
   const [accountId, setAccountId] = useState<string | null>(null);
   const [cards, setCards] = useState<Cards>(ALL_LOADING);
+  /**
+   * ONE LINE, ONCE, AFTER AN ACTIVATION (Carl, 5 Sep 2026).
+   *
+   * The activation page lands here with `?welcome=1`. The line points at the
+   * passkey card, which is the next thing worth doing and the only thing that
+   * stops the next visit needing another invitation from the practice.
+   *
+   * STATE, NOT STORAGE. Nothing is written to the browser — the parameter is
+   * read once and then removed from the address bar with `replaceState`, so a
+   * reload or a shared link does not re-announce it. This page persists nothing
+   * and this line is not the exception.
+   */
+  const [welcome, setWelcome] = useState(false);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('welcome') !== '1') return;
+    setWelcome(true);
+    url.searchParams.delete('welcome');
+    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+  }, []);
 
   /**
    * ONE CARD'S READ. Resolved into `ready`, or into `error` and nothing else —
@@ -223,6 +243,21 @@ export function PortalView() {
       }
     >
       <div className={styles.page}>
+        {welcome && (
+          <div className={styles.welcome} data-testid="portal-welcome">
+            {/*
+              `role="status"` rather than `alert`: this is good news arriving,
+              not a problem, and it should be announced without interrupting
+              whatever a screen reader is already saying.
+            */}
+            <p className={styles.welcomeText} role="status">
+              {strings.portal.welcome}
+            </p>
+            <PortalButton variant="quiet" onClick={() => setWelcome(false)}>
+              {strings.portal.welcomeDismiss}
+            </PortalButton>
+          </div>
+        )}
         <DetailsCard state={cards.details} onRequestCorrection={requestDetailCorrection} />
         <AgreementsCard state={cards.agreements} />
         <EnduringCard state={cards.enduring} onTerminate={terminateEnduring} />

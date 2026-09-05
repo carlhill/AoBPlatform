@@ -10,8 +10,25 @@ import { IsObject, IsOptional, IsString, IsUUID, MinLength } from 'class-validat
  * not a convenience.
  */
 export class ActivatePortalDto {
+  /**
+   * OPTIONAL SINCE 5 SEPTEMBER 2026, and the reason is the activation page.
+   *
+   * The invitation reaches the patient as `/patient/portal/activate/<token>`
+   * and nothing else. The page behind that link is deliberately told nothing
+   * about the patient — not a name, not an initial, and not the id of the
+   * agreement they signed (see `PortalActivationChallenge`) — so it has no
+   * agreement id to send back. It does not need one: the token's hash names
+   * exactly one invitation row, which names the agreement.
+   *
+   * IT STILL NARROWS NOTHING WHEN IT IS SENT. A caller that supplies one — the
+   * e2e suite, and any earlier client — is checked against the row, and a
+   * mismatch is refused with the same words as an unknown token. Dropping the
+   * field would have removed a free defensive check; requiring it would have
+   * meant handing an agreement id to a page that must not have one.
+   */
+  @IsOptional()
   @IsUUID()
-  agreementId!: string;
+  agreementId?: string;
 
   @IsString()
   @MinLength(40)

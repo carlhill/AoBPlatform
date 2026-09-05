@@ -5,6 +5,7 @@ import {
   HttpException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   Logger,
   NotFoundException,
   UnauthorizedException,
@@ -13,6 +14,8 @@ import { randomUUID } from 'node:crypto';
 import {
   PORTAL_ACTIVATION_MAX_ATTEMPTS,
   PORTAL_SESSION_MINUTES,
+  type PortalActivationChallenge,
+  type PortalActivationRefusalReason,
   type PortalActivationResult,
   type PortalInvitationResult,
   type PortalLink,
@@ -30,6 +33,7 @@ import {
 } from './portal-token';
 import { PORTAL_AUTHENTICATOR, type PortalAuthenticator } from './portal-authenticator';
 import { PortalInvitationDispatcher } from './portal-invitation.dispatcher';
+import { PortalActivationAttemptLimit } from './portal-activation-rate-limit';
 
 /**
  * WHO THE PATIENT IS, AND WHAT THEY MAY SEE — the identity half of C8.
@@ -56,6 +60,14 @@ import { PortalInvitationDispatcher } from './portal-invitation.dispatcher';
 @Injectable()
 export class PortalService {
   private readonly logger = new Logger(PortalService.name);
+
+  /**
+   * The activation link's own window, shared by the challenge read and the
+   * attempt. See `portal-activation-rate-limit.ts` — it stops a script
+   * enumerating tokens; what stops guessing at identifiers is the three-attempt
+   * lock on the invitation itself.
+   */
+  private readonly limiter = new PortalActivationAttemptLimit();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -214,6 +226,111 @@ export class PortalService {
   }
 
   // -------------------------------------------------------------------------
+  // FR-1.14 — what the page behind the link is allowed to know
+  // -------------------------------------------------------------------------
+
+  /**
+   * `GET /portal/activate/:token/challenge` — which boxes to draw, and nothing
+   * else.
+   *
+   * WHY THIS ENDPOINT HAS TO EXIST. The invitation is a link and the page
+   * behind it must render the practice's OWN identifier set (REQ-VER-06, floor
+   * of three): a page that guessed would ask a patient at one practice for an
+   * IHI they were never verified on, and a page that asked for all six would be
+   * a page that had quietly decided the configuration does not matter.
+   *
+   * WHAT IT REFUSES TO SAY. No name, no initials, no masked value, no patient
+   * id, no agreement id. A stranger holding a forwarded link learns the
+   * practice's name — which the message they were forwarded already said — and
+   * WHICH KINDS of detail will be asked for, which the kiosk shows anybody
+   * standing in a waiting room. Neither is a fact about a person. A masked
+   * value would be, which is why there is no field here that could carry one.
+   *
+   * THE APPROVED-SET GUARD RUNS ON THE WAY OUT, NOT ONLY ON THE WAY IN
+   * (hard rule 1, REQ-VER-02). The list comes from a practice row, and a
+   * practice row is data; if one ever named a card number this answers with a
+   * failure rather than with a screen that has a card-number box on it. Named
+   * test: `activation_challenge_never_asks_for_a_medicare_number`.
+   *
+   * A DEAD LINK IS A 404 WITH A CODE, never a sentence and never a hint about
+   * whose it was. The page maps the code to copy and to a next step — "ask your
+   * practice for a new invitation" — because "something went wrong" on the one
+   * screen a patient reached by following our own message is the generic
+   * fallback the design principle calls a defect (Carl, 4 Sep 2026).
+   */
+  async activationChallenge(token: string, clientKey: string): Promise<PortalActivationChallenge> {
+    this.assertNotRateLimited(clientKey);
+
+    const parsed = parsePortalActivationToken(token);
+    if (!parsed) throw this.refuseActivation('token_unknown', clientKey);
+
+    const row = await this.prisma.withPractice(parsed.practiceId, (tx) =>
+      tx.portalActivationToken.findFirst({ where: { tokenHash: parsed.tokenHash } }),
+    );
+    if (!row) throw this.refuseActivation('token_unknown', clientKey);
+    if (row.lockedAt) throw this.refuseActivation('token_locked', clientKey);
+    /*
+     * USED AND EXPIRED ARE THE SAME ANSWER, on purpose. To the person holding
+     * the link they are one fact — it no longer works, and the way back is a
+     * fresh invitation. Distinguishing them would tell a stranger with a
+     * forwarded message whether the patient has already made an account.
+     */
+    if (row.usedAt || row.expiresAt < new Date()) throw this.refuseActivation('token_expired', clientKey);
+
+    const identifierTypes = await this.verification.identifierTypesFor(parsed.practiceId);
+    try {
+      assertValidIdentifierSet(identifierTypes);
+    } catch (err) {
+      if (err instanceof IdentifierSetError) {
+        // NOT a refusal code the page maps to "ask for a new invitation": the
+        // invitation is fine and the CONFIGURATION is not. Failing loudly is the
+        // only honest answer — the alternative is drawing the field.
+        this.logger.error(
+          `Practice ${parsed.practiceId} has an identifier set that is not renderable: ${err.message}`,
+        );
+        throw new InternalServerErrorException('This invitation cannot be opened just now.');
+      }
+      throw err;
+    }
+
+    const practice = await this.prisma.withPractice(parsed.practiceId, (tx) => tx.practice.findFirst({}));
+
+    return {
+      identifierTypes,
+      practiceName: practice?.name ?? 'This practice',
+      expiresAt: row.expiresAt.toISOString(),
+      attemptsRemaining: Math.max(0, PORTAL_ACTIVATION_MAX_ATTEMPTS - row.attempts),
+    };
+  }
+
+  /**
+   * A 404 CARRYING A CODE. `reason` is what the page maps to copy and a
+   * destination; `message` exists for a developer reading a response body and
+   * says nothing about anybody.
+   *
+   * EVERY REFUSAL COSTS THE CALLER A TICK OF THE WINDOW, which is the point of
+   * the limiter on this route: an unknown token is exactly what enumeration
+   * produces, and a patient re-opening their own valid link produces none.
+   */
+  private refuseActivation(reason: PortalActivationRefusalReason, clientKey: string): HttpException {
+    this.limiter.recordFailure(clientKey);
+    return new NotFoundException({ statusCode: 404, reason, message: 'This invitation cannot be opened.' });
+  }
+
+  private assertNotRateLimited(clientKey: string): void {
+    if (!this.limiter.isLockedOut(clientKey)) return;
+    throw new HttpException(
+      `Too many attempts. Try again in ${this.limiter.retryAfterSeconds(clientKey)} seconds.`,
+      429,
+    );
+  }
+
+  /** Test seam, as on the passkey limiter. Nothing in the application calls it. */
+  resetActivationRateLimit(): void {
+    this.limiter.reset();
+  }
+
+  // -------------------------------------------------------------------------
   // The activation itself
   // -------------------------------------------------------------------------
 
@@ -232,13 +349,27 @@ export class PortalService {
    * a separate account and the hub would not be a hub.
    */
   async activate(input: {
-    agreementId: string;
+    /**
+     * OPTIONAL. The activation page never learns one (see
+     * `activationChallenge`); a caller that does send one has it checked
+     * against the invitation row below.
+     */
+    agreementId?: string;
     activationToken: string;
     stated: Record<string, string>;
     existingAccountId: string | null;
+    /**
+     * The rate-limit key. `'unknown'` where a caller has no address — the
+     * limiter is a brake on enumeration, never the thing that decides whether
+     * an activation is allowed, so a missing address must not refuse anybody.
+     */
+    clientKey?: string;
   }): Promise<{ result: PortalActivationResult; sessionId: string }> {
+    const clientKey = input.clientKey ?? 'unknown';
+    this.assertNotRateLimited(clientKey);
+
     const parsed = parsePortalActivationToken(input.activationToken);
-    if (!parsed) throw new NotFoundException('This invitation is not valid.');
+    if (!parsed) throw this.refuseActivation('token_unknown', clientKey);
 
     /*
      * HARD RULE 1, ENFORCED ON THE WAY IN AND NOT ONLY DEEPER DOWN.
@@ -260,19 +391,45 @@ export class PortalService {
 
     const invitation = await this.prisma.withPractice(parsed.practiceId, async (tx) => {
       const row = await tx.portalActivationToken.findFirst({ where: { tokenHash: parsed.tokenHash } });
-      if (!row) throw new NotFoundException('This invitation is not valid.');
-      if (row.agreementId !== input.agreementId) {
+      if (!row) throw this.refuseActivation('token_unknown', clientKey);
+      if (input.agreementId !== undefined && row.agreementId !== input.agreementId) {
         // The body named a different agreement from the one the token was
         // minted for. Same refusal as an unknown token — a probe learns nothing.
-        throw new NotFoundException('This invitation is not valid.');
+        throw this.refuseActivation('token_unknown', clientKey);
       }
-      if (row.usedAt) throw new GoneException('This invitation has already been used.');
+      /*
+       * THE STATUS CODES ARE UNCHANGED AND THE BODIES NOW CARRY A `reason`.
+       * 410 and 423 are what they always were; the code beside them is what
+       * lets the activation page say the specific thing and offer the specific
+       * next step rather than a generic apology (Carl, 4 Sep 2026 — "shortcuts
+       * to the answer, not directions to a screen").
+       */
+      if (row.usedAt) {
+        throw new GoneException({
+          statusCode: 410,
+          reason: 'token_expired' satisfies PortalActivationRefusalReason,
+          message: 'This invitation has already been used.',
+        });
+      }
       if (row.lockedAt) {
         // 423 Locked: the invitation is locked, not the person and not the
         // practice's record. The patient can be re-invited at the counter.
-        throw new HttpException('This invitation is locked. Ask the practice for a new one.', 423);
+        throw new HttpException(
+          {
+            statusCode: 423,
+            reason: 'token_locked' satisfies PortalActivationRefusalReason,
+            message: 'This invitation is locked. Ask the practice for a new one.',
+          },
+          423,
+        );
       }
-      if (row.expiresAt < new Date()) throw new GoneException('This invitation has expired.');
+      if (row.expiresAt < new Date()) {
+        throw new GoneException({
+          statusCode: 410,
+          reason: 'token_expired' satisfies PortalActivationRefusalReason,
+          message: 'This invitation has expired.',
+        });
+      }
       return row;
     });
 
@@ -305,10 +462,29 @@ export class PortalService {
           data: { attempts, lockedAt: locked ? new Date() : null },
         }),
       );
-      if (locked) throw new HttpException('This invitation is locked. Ask the practice for a new one.', 423);
-      // The verification module's own generic message — never which identifier
-      // failed, never how close (REQ-SEC-07).
-      throw new UnauthorizedException(outcome.message ?? 'Some of those details do not match our records.');
+      this.limiter.recordFailure(clientKey);
+      if (locked) {
+        throw new HttpException(
+          {
+            statusCode: 423,
+            reason: 'token_locked' satisfies PortalActivationRefusalReason,
+            message: 'This invitation is locked. Ask the practice for a new one.',
+          },
+          423,
+        );
+      }
+      /*
+       * The verification module's own generic message — never which identifier
+       * failed, never how close (REQ-SEC-07). `attemptsRemaining` is a COUNT
+       * and says nothing about the answers: the patient is told how many tries
+       * are left because being locked out without warning, on a page they
+       * reached from our own message, is the worse failure.
+       */
+      throw new UnauthorizedException({
+        statusCode: 401,
+        attemptsRemaining: Math.max(0, PORTAL_ACTIVATION_MAX_ATTEMPTS - attempts),
+        message: outcome.message ?? 'Some of those details do not match our records.',
+      });
     }
 
     /*
@@ -408,6 +584,10 @@ export class PortalService {
         payload: { reason: 'activation', expiresAt: expiresAt.toISOString() },
       });
     });
+
+    // An activation that worked. The next patient behind that address starts
+    // clean — a shared waiting-room connection is one address, not one person.
+    this.limiter.clear(clientKey);
 
     const links = await this.linksFor(accountId);
     return { result: { activated: true, accountId, links }, sessionId };

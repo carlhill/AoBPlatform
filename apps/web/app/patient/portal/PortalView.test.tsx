@@ -223,3 +223,36 @@ describe('portal_header_names_the_person_and_offers_sign_out', () => {
     expect(screen.getByText(/You never need to sign in/)).toBeTruthy();
   });
 });
+
+/**
+ * THE WELCOME LINE — the other half of
+ * `activation_success_lands_on_the_portal_with_the_welcome_line`, which the
+ * activation page's own suite asserts the navigation half of.
+ *
+ * It exists to point at the passkey card: the next thing worth doing, and the
+ * only thing that stops the next visit needing another invitation from the
+ * practice. STATE, NOT STORAGE — the parameter is read once and removed from
+ * the address bar, so a reload does not re-announce it and nothing is written
+ * to the browser.
+ */
+describe('portal_welcome_line_is_shown_once_after_an_activation', () => {
+  it('shows the line for ?welcome=1, clears the parameter, and shows nothing without it', async () => {
+    allCardsAnswer();
+    window.history.replaceState(null, '', '/patient/portal?welcome=1');
+
+    const first = render(<PortalView />);
+    const line = await screen.findByTestId('portal-welcome');
+    expect(line.textContent).toContain('Add a passkey below');
+    // THE PARAMETER IS GONE, so a reload is not a second announcement.
+    expect(window.location.search).toBe('');
+
+    fireEvent.click(screen.getByText('Dismiss'));
+    expect(screen.queryByTestId('portal-welcome')).toBeNull();
+    first.unmount();
+
+    // And an ordinary visit never sees it.
+    render(<PortalView />);
+    await screen.findByText('My agreements');
+    expect(screen.queryByTestId('portal-welcome')).toBeNull();
+  });
+});

@@ -18,6 +18,7 @@
 import { PortalApiError } from './api';
 import type {
   PortalAccessEntry,
+  PortalActivationChallenge,
   PortalAgreement,
   PortalAssignors,
   PortalDetails,
@@ -255,4 +256,81 @@ export function addFixturePasskey(label?: string): PortalPasskey {
 
 export function removeFixturePasskey(passkeyId: string): void {
   fixturePasskeyList = fixturePasskeyList.filter((passkey) => passkey.id !== passkeyId);
+}
+
+// ---------------------------------------------------------------------------
+// FR-1.14 — the activation link
+// ---------------------------------------------------------------------------
+
+/**
+ * WHAT THE ACTIVATION PAGE ANSWERS FROM WHEN CORE IS NOT RUNNING.
+ *
+ * THE POINT IS THE SHAPE, NOT THE DATA. Three identifier types, a practice
+ * name, an expiry and a count of tries — so every state of that page (the
+ * form, a mismatch, the lockout, each dead-link reason) can be seen and tested
+ * without a database. The page prints the accepted answers in a
+ * development-only note, because a fixture form nobody can pass is a fixture
+ * form nobody looks at twice.
+ *
+ * OBVIOUSLY FAKE, AND NO MEDICARE NUMBER OF ANY FORMAT. Not even an invalid
+ * one: this surface has no field for a card number and a sample would be the
+ * first step towards one (hard rule 1, REQ-VER-02).
+ *
+ * THE TOKENS ARE ROUTING, NOT SECRETS. Four reserved words in the path pick a
+ * state; anything else is the working link. Nothing here is a credential and
+ * nothing here reaches a real server.
+ */
+export const FIXTURE_ACTIVATION_ANSWERS: Readonly<Record<string, string>> = {
+  name: 'Alex Sample',
+  date_of_birth: '1962-11-02',
+  address: '2 Example Street, Sampletown NSW 2000',
+};
+
+/** Which fixture token shows which dead-link reason. `expired` also covers "already used". */
+const FIXTURE_REFUSALS: Readonly<Record<string, string>> = {
+  unknown: 'token_unknown',
+  expired: 'token_expired',
+  used: 'token_expired',
+  locked: 'token_locked',
+};
+
+/** Counted per token, so the lockout after three wrong answers can be walked through. */
+const fixtureAttempts = new Map<string, number>();
+
+export function fixtureActivationChallenge(token: string): PortalActivationChallenge {
+  const refusal = FIXTURE_REFUSALS[token];
+  if (refusal) throw new PortalApiError('This invitation cannot be opened.', 404, refusal);
+  return {
+    identifierTypes: Object.keys(FIXTURE_ACTIVATION_ANSWERS),
+    practiceName: 'Wattle Street Medical',
+    expiresAt: '2026-09-30T04:00:00.000Z',
+    attemptsRemaining: Math.max(0, 3 - (fixtureAttempts.get(token) ?? 0)),
+  };
+}
+
+/**
+ * The three-identifier check, fixture side — same refusals, same statuses, and
+ * the same refusal to say WHICH answer was wrong (REQ-SEC-07).
+ */
+export function fixtureActivate(token: string, stated: Readonly<Record<string, string>>): void {
+  const refusal = FIXTURE_REFUSALS[token];
+  if (refusal) {
+    throw new PortalApiError('This invitation cannot be opened.', refusal === 'token_locked' ? 423 : 410, refusal);
+  }
+
+  const matched = Object.entries(FIXTURE_ACTIVATION_ANSWERS).every(
+    ([type, value]) => (stated[type] ?? '').trim().toLowerCase() === value.toLowerCase(),
+  );
+  if (matched) {
+    fixtureAttempts.delete(token);
+    openFixtureSession();
+    return;
+  }
+
+  const attempts = (fixtureAttempts.get(token) ?? 0) + 1;
+  fixtureAttempts.set(token, attempts);
+  if (attempts >= 3) {
+    throw new PortalApiError('This invitation is locked.', 423, 'token_locked');
+  }
+  throw new PortalApiError('Some of those details do not match.', 401, undefined, 3 - attempts);
 }

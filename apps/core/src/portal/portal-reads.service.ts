@@ -579,7 +579,7 @@ export class PortalReadsService {
     const out: Array<PortalMessage & { orderAt: string }> = [];
 
     for (const link of links) {
-      const { rows, openCaptureIds } = await this.prisma.withPractice(link.practiceId, async (tx) => {
+      const { rows, openCaptureIds, openInvitationIds } = await this.prisma.withPractice(link.practiceId, async (tx) => {
         const found = await tx.correspondence.findMany({
           where: { recipientType: 'patient', recipientId: link.patientId },
           orderBy: { queuedAt: 'desc' },
@@ -605,11 +605,34 @@ export class PortalReadsService {
           where: { id: { in: captureIds }, status: 'open' },
           select: { id: true, expiresAt: true },
         });
+
+        /*
+         * THE INVITATION TO THIS VERY PAGE IS ALSO STILL ASKING SOMETHING
+         * (Carl, 5 Sep 2026). Before this, `portal_invitation` messages were
+         * never pending, so a patient signed in on one device saw the offer
+         * they had not yet taken up on another listed as though it were
+         * finished — and the "Waiting for you" strip is the anti-phishing
+         * answer (REQ-PORT-06), which only works if it is complete.
+         *
+         * OPEN MEANS UNUSED, UNLOCKED AND UNEXPIRED — exactly the three
+         * conditions `activationChallenge` will let through. Once the patient
+         * activates, `usedAt` is set in the same transaction as the link, so
+         * the strip clears by itself with no second write to forget.
+         */
+        const invitationIds = found
+          .filter((r) => r.subjectType === 'PortalActivationToken')
+          .map((r) => r.subjectId);
+        const openInvitations = await tx.portalActivationToken.findMany({
+          where: { id: { in: invitationIds }, usedAt: null, lockedAt: null },
+          select: { id: true, expiresAt: true },
+        });
+
         return {
           rows: found,
           openCaptureIds: new Set(
             open.filter((c) => !c.expiresAt || c.expiresAt > now).map((c) => c.id),
           ),
+          openInvitationIds: new Set(openInvitations.filter((i) => i.expiresAt > now).map((i) => i.id)),
         };
       });
 
@@ -624,11 +647,14 @@ export class PortalReadsService {
           practiceName: link.practiceName,
           /*
            * PENDING MEANS "THIS IS STILL ASKING SOMETHING OF YOU" (REQ-PORT-06)
-           * — a capture request that is still open and not expired. A notice is
+           * — a capture request that is still open and not expired, or an
+           * invitation to this page that has not been used up. A notice is
            * never pending, because a notice never asks for anything and is
            * never chased (hard rule 7).
            */
-          pending: row.subjectType === 'CaptureRequest' && openCaptureIds.has(row.subjectId),
+          pending:
+            (row.subjectType === 'CaptureRequest' && openCaptureIds.has(row.subjectId)) ||
+            (row.subjectType === 'PortalActivationToken' && openInvitationIds.has(row.subjectId)),
         });
       }
     }

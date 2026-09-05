@@ -345,3 +345,83 @@
   letter-spacing: 0;
   user-select: all;
 }
+
+/* --- The activation page (FR-1.14) ---------------------------------------- */
+
+/*
+ * THE NARROWEST COLUMN ON THIS SURFACE, and narrower than `.signedOut`, because
+ * it is the only page here that asks somebody to type. A form read on a phone
+ * by a person who may be unwell wants one thing per line and no horizontal
+ * search; 30rem is about the width of the longest label plus its box.
+ */
+.activate {
+  max-width: 30rem;
+  margin: 0 auto;
+}
+
+.activateForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+  margin-top: var(--s6);
+}
+
+.activateGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+/*
+ * FAMILY AND GIVEN NAME SIT SIDE BY SIDE WHERE THERE IS ROOM AND WRAP WHERE
+ * THERE IS NOT — two inputs, one identifier. They never become two identifiers
+ * and they never become one box: the server takes one composed string per type,
+ * and the person types the two halves they actually know.
+ */
+.activateRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+}
+
+.activateCell {
+  flex: 1 1 10rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+.activateNote {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+.activateActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-top: var(--s3);
+}
+
+/*
+ * THE ONE-LINE WELCOME after an activation. Quiet rather than celebratory: the
+ * patient came to look at a record, and the line exists to point at the passkey
+ * card so the next visit does not need another invitation.
+ */
+.welcome {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin: 0 0 var(--s5);
+  padding: var(--s4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+}
+
+.welcomeText {
+  margin: 0;
+}

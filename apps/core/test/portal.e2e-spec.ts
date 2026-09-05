@@ -2,10 +2,11 @@ import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
-import { PORTAL_SESSION_COOKIE } from '@aobplatform/contracts';
+import { PORTAL_ACTIVATION_MAX_ATTEMPTS, PORTAL_SESSION_COOKIE } from '@aobplatform/contracts';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { RendererRegistry } from '../src/render/renderer-registry';
+import { PortalService } from '../src/portal/portal.service';
 
 /**
  * THE PATIENT'S OWN PAGE (C8 — REQ-PORT-01..08, FR-8.1/8.2, FR-1.14,
@@ -40,6 +41,7 @@ describe('M8 patient portal (e2e, real Postgres)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let renderers: RendererRegistry;
+  let portal: PortalService;
 
   const practiceA = randomUUID();
   const practiceB = randomUUID();
@@ -70,6 +72,7 @@ describe('M8 patient portal (e2e, real Postgres)', () => {
     await app.init();
     prisma = app.get(PrismaService);
     renderers = app.get(RendererRegistry);
+    portal = app.get(PortalService);
 
     const renderer = renderers.current();
 
@@ -361,6 +364,17 @@ describe('M8 patient portal (e2e, real Postgres)', () => {
     await app.close();
   });
 
+  /*
+   * THE ACTIVATION LINK IS RATE-LIMITED BY ADDRESS, and every request in this
+   * suite comes from the same one. The limiter is a brake on somebody
+   * enumerating tokens, not part of any rule under test, so it is wound back
+   * between tests — leaving it running would make the twentieth assertion in
+   * the file fail for a reason none of them is about.
+   */
+  beforeEach(() => {
+    portal.resetActivationRateLimit();
+  });
+
   /** Mint one invitation the way the practice does. Returns the one-time token. */
   async function mintInvitation(agreementId = signedAgreement): Promise<string> {
     const res = await request(app.getHttpServer())
@@ -390,6 +404,129 @@ describe('M8 patient portal (e2e, real Postgres)', () => {
   // -------------------------------------------------------------------------
   // Getting in
   // -------------------------------------------------------------------------
+
+  // -------------------------------------------------------------------------
+  // What the link opens — GET /portal/activate/:token/challenge
+  // -------------------------------------------------------------------------
+
+  it('activation_challenge_never_asks_for_a_medicare_number', async () => {
+    const token = await mintInvitation();
+    const res = await request(app.getHttpServer())
+      .get(`/portal/activate/${encodeURIComponent(token)}/challenge`)
+      .expect(200);
+
+    /*
+     * HARD RULE 1, REQ-VER-02. The types come from a practice row and a
+     * practice row is data — so the server puts the list through the domain's
+     * own approved-set guard before answering. There is no configuration that
+     * produces a card-number box; there is only a configuration that produces
+     * a page which refuses to open.
+     */
+    expect(res.body.identifierTypes.length).toBeGreaterThanOrEqual(3);
+    expect(res.body.identifierTypes).not.toContain('medicare_number');
+    expect(JSON.stringify(res.body)).not.toMatch(/medicare/i);
+  });
+
+  it('the challenge says which TYPES and nothing about the patient', async () => {
+    const token = await mintInvitation();
+    const res = await request(app.getHttpServer())
+      .get(`/portal/activate/${encodeURIComponent(token)}/challenge`)
+      .expect(200);
+
+    expect(res.body.practiceName).toBe('Portal Test Practice');
+    expect(res.body.attemptsRemaining).toBe(PORTAL_ACTIVATION_MAX_ATTEMPTS);
+    expect(typeof res.body.expiresAt).toBe('string');
+
+    /*
+     * NO NAME, NO INITIALS, NO MASKED ANYTHING, NO IDS. Somebody holding a
+     * forwarded link learns the practice's name — which the message they were
+     * forwarded already said — and which KINDS of detail will be asked for,
+     * which the kiosk shows anybody standing in a waiting room. Neither is a
+     * fact about a person, and a partial value would be.
+     */
+    const body = JSON.stringify(res.body);
+    expect(body).not.toContain('Sampleton');
+    expect(body).not.toContain('Jamie');
+    expect(body).not.toContain('Example Street');
+    expect(body).not.toContain('1962-11-02');
+    expect(body).not.toContain(patientA);
+    expect(body).not.toContain(signedAgreement);
+    // And no session was handed out by a read.
+    expect(res.headers['set-cookie']).toBeUndefined();
+  });
+
+  it('refuses a dead link with a reason code the page can map (Carl, 4 Sep 2026)', async () => {
+    const unknown = await request(app.getHttpServer())
+      .get('/portal/activate/not-a-real-token/challenge')
+      .expect(404);
+    expect(unknown.body.reason).toBe('token_unknown');
+
+    /*
+     * EXPIRED. Aged past its seven days rather than waiting for them — and the
+     * MINT DATE moves with the expiry, because a DB check constraint refuses a
+     * row that expires before it was created. That constraint is the reason
+     * this is three lines rather than one, and it is worth the three.
+     */
+    const expiring = await mintInvitation();
+    const eightDaysAgo = new Date(Date.now() - 8 * 24 * 3600_000);
+    await prisma.withPractice(practiceA, (tx) =>
+      tx.portalActivationToken.updateMany({
+        where: { agreementId: signedAgreement, usedAt: null, lockedAt: null },
+        data: { createdAt: eightDaysAgo, expiresAt: new Date(Date.now() - 1000) },
+      }),
+    );
+    const expired = await request(app.getHttpServer())
+      .get(`/portal/activate/${encodeURIComponent(expiring)}/challenge`)
+      .expect(404);
+    expect(expired.body.reason).toBe('token_expired');
+
+    // LOCKED, by the same three failures that lock the attempt path.
+    const locking = await mintInvitation();
+    const wrong = { ...STATED_CORRECT, name: 'Wrongname Person' };
+    for (let i = 0; i < PORTAL_ACTIVATION_MAX_ATTEMPTS; i += 1) {
+      await request(app.getHttpServer())
+        .post('/portal/activate')
+        .send({ activationToken: locking, stated: wrong });
+    }
+    const locked = await request(app.getHttpServer())
+      .get(`/portal/activate/${encodeURIComponent(locking)}/challenge`)
+      .expect(404);
+    expect(locked.body.reason).toBe('token_locked');
+
+    // USED IS `token_expired` TOO, on purpose: telling a stranger holding a
+    // forwarded link that the patient has already activated is a disclosure.
+    const spendable = await mintInvitation();
+    await request(app.getHttpServer())
+      .post('/portal/activate')
+      .send({ activationToken: spendable, stated: STATED_CORRECT })
+      .expect(201);
+    const used = await request(app.getHttpServer())
+      .get(`/portal/activate/${encodeURIComponent(spendable)}/challenge`)
+      .expect(404);
+    expect(used.body.reason).toBe('token_expired');
+
+    // NO REFUSAL EVER CARRIES A DETAIL, whatever its reason.
+    for (const res of [unknown, expired, locked, used]) {
+      const body = JSON.stringify(res.body);
+      expect(body).not.toContain('Sampleton');
+      expect(body).not.toContain('Example Street');
+    }
+  });
+
+  it('activates from the token alone — the page is never told an agreement id', async () => {
+    const token = await mintInvitation();
+    const res = await request(app.getHttpServer())
+      .post('/portal/activate')
+      .send({ activationToken: token, stated: STATED_CORRECT })
+      .expect(201);
+    expect(res.body.activated).toBe(true);
+    // A caller that DOES name one still has it checked against the row.
+    const other = await mintInvitation();
+    await request(app.getHttpServer())
+      .post('/portal/activate')
+      .send({ agreementId: enduringAgreement, activationToken: other, stated: STATED_CORRECT })
+      .expect(404);
+  });
 
   it('offers activation only after a signature (FR-1.14)', async () => {
     const res = await request(app.getHttpServer())
@@ -439,7 +576,7 @@ describe('M8 patient portal (e2e, real Postgres)', () => {
     await request(app.getHttpServer()).get('/portal/details').expect(401);
   });
 
-  it('locks an invitation after three wrong answers, and says so with 423', async () => {
+  it('activation_locks_after_three_failed_attempts', async () => {
     const token = await mintInvitation();
     const wrong = { ...STATED_CORRECT, name: 'Wrongname Person' };
     const attempt = () =>
@@ -450,11 +587,52 @@ describe('M8 patient portal (e2e, real Postgres)', () => {
     await attempt().expect(401);
     await attempt().expect(401);
     await attempt().expect(423);
-    // And it stays locked even for the RIGHT answers — the invitation is spent.
-    await request(app.getHttpServer())
+    // A FOURTH ATTEMPT IS REFUSED EVEN WITH THE RIGHT ANSWERS. The invitation
+    // is spent, not the person: three is the whole budget (REQ-PORT-08).
+    const spent = await request(app.getHttpServer())
       .post('/portal/activate')
       .send({ agreementId: signedAgreement, activationToken: token, stated: STATED_CORRECT })
       .expect(423);
+    expect(spent.body.reason).toBe('token_locked');
+    expect(spent.headers['set-cookie']).toBeUndefined();
+
+    /*
+     * THE COUNT IS PER TOKEN, NOT PER PATIENT. A fresh invitation for the same
+     * patient starts at three — otherwise a mistyped address would put somebody
+     * out of the portal for good, and the practice's remedy (mint another) would
+     * not be a remedy.
+     */
+    const fresh = await mintInvitation();
+    await request(app.getHttpServer())
+      .post('/portal/activate')
+      .send({ agreementId: signedAgreement, activationToken: fresh, stated: STATED_CORRECT })
+      .expect(201);
+  });
+
+  it('activation_logs_identifier_types_not_values', async () => {
+    await prisma.vaultOutbox.deleteMany({ where: { type: 'portal.activated' } });
+    const token = await mintInvitation();
+    await request(app.getHttpServer())
+      .post('/portal/activate')
+      .send({ activationToken: token, stated: STATED_CORRECT })
+      .expect(201);
+
+    const events = await prisma.vaultOutbox.findMany({ where: { type: 'portal.activated' } });
+    expect(events).toHaveLength(1);
+    const payload = JSON.stringify(events[0].payload);
+
+    // TYPES AND AN OUTCOME (REQ-VER-04, hard rule 9).
+    expect(payload).toContain('address');
+    expect(payload).toContain('date_of_birth');
+    expect(payload).toContain('passed');
+    // AND NOT ONE VALUE — not a name, not a date, not an address, not the token.
+    expect(payload).not.toContain('Sampleton');
+    expect(payload).not.toContain('Jamie');
+    expect(payload).not.toContain('1962-11-02');
+    expect(payload).not.toContain('Example Street');
+    expect(payload).not.toContain(token);
+    // AND NEVER A CARD NUMBER, in any spelling.
+    expect(payload).not.toMatch(/medicare/i);
   });
 
   it('activates on three correct identifiers, links the practice and issues a session', async () => {
@@ -541,7 +719,7 @@ ${payload.body ?? ''}`;
     expect(body).not.toMatch(/\b(certified|approved|accredited|government-approved)\b/i);
   });
 
-  it('activates into the account the invitation already named, and still needs the three identifiers', async () => {
+  it('activation_links_into_the_preminted_account', async () => {
     const token = await mintInvitation();
     const invitation = await prisma.withPractice(practiceA, (tx) =>
       tx.portalActivationToken.findFirst({ orderBy: { createdAt: 'desc' } }),
@@ -746,6 +924,40 @@ ${payload.body ?? ''}`;
     const serialised = JSON.stringify(res.body);
     expect(serialised).not.toContain('THIS BODY MUST NEVER REACH THE PORTAL');
     expect(serialised).not.toContain('A request from your practice');
+  });
+
+  it('shows an unused invitation as waiting for the patient, and clears it once activated', async () => {
+    /*
+     * REQ-PORT-06 — "Waiting for you" is the anti-phishing strip, and it only
+     * works if it is complete. Before 5 Sep 2026 the invitation to this very
+     * page was never pending, so a patient signed in on one device saw the
+     * offer they had not yet taken up on another listed as though it were
+     * finished (Carl, 5 Sep 2026).
+     */
+    const cookie = await activatedCookie();
+    const openInvitations = async (): Promise<number> => {
+      const res = await request(app.getHttpServer()).get('/portal/messages').set('Cookie', cookie).expect(200);
+      return res.body.filter(
+        (m: { purposeKey: string; pending: boolean }) => m.purposeKey === 'portal_invitation' && m.pending,
+      ).length;
+    };
+
+    /*
+     * A DELTA RATHER THAN A COUNT. Earlier tests in this file mint invitations
+     * they never spend, and every one of them is legitimately still waiting —
+     * asserting on the total would be asserting on the order of the suite.
+     */
+    const before = await openInvitations();
+    const waiting = await mintInvitation();
+    expect(await openInvitations()).toBe(before + 1);
+
+    // ONE WRITE CLEARS IT. `usedAt` is set in the same transaction as the link,
+    // so there is no second update to forget.
+    await request(app.getHttpServer())
+      .post('/portal/activate')
+      .send({ activationToken: waiting, stated: STATED_CORRECT })
+      .expect(201);
+    expect(await openInvitations()).toBe(before);
   });
 
   it('shows who acts for the patient, and an empty iActFor until FR-1.19 exists', async () => {

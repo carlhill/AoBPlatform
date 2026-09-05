@@ -5,6 +5,7 @@ import { PortalService } from './portal.service';
 import { PortalPasskeyService } from './portal-passkey.service';
 import { PortalPasskeyAuthenticationVerifyDto, PortalPasskeyRegistrationVerifyDto } from './portal-passkey.dto';
 import { readPortalCookie, setPortalCookie } from './portal-cookie';
+import { clientKey } from './portal-client-key';
 
 /**
  * FR-8.2 — PASSKEYS. Six routes, and they fall into two halves that must not be
@@ -132,20 +133,8 @@ export class PortalPasskeyController {
   }
 }
 
-/**
- * WHAT THE RATE LIMITER COUNTS AGAINST.
- *
- * `req.ip` WITH A FALLBACK, AND NO `X-Forwarded-For` PARSING OF OUR OWN. Express
- * derives `req.ip` from that header only when `trust proxy` is configured, which
- * is a deployment decision made once in `main.ts` rather than a header this
- * controller decides to believe. Reading the header directly here would mean any
- * caller could set their own rate-limit key, which is the same as having no
- * limiter.
- *
- * IT IS NOT AN IDENTIFIER AND IS NEVER STORED. The address exists as a key in an
- * in-memory map for ten minutes and appears in no event, no log line and no row
- * (REQ-LOG-08).
+/*
+ * WHAT THE RATE LIMITER COUNTS AGAINST lives in `portal-client-key.ts` — one
+ * definition, shared with the activation link, which is the other route on this
+ * module reachable without a session.
  */
-function clientKey(req: Request): string {
-  return req.ip ?? req.socket?.remoteAddress ?? 'unknown';
-}

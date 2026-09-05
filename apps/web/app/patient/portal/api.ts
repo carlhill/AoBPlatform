@@ -155,6 +155,28 @@ export interface PortalAssignors {
   readonly iActFor: readonly PortalIActFor[];
 }
 
+/**
+ * `GET /portal/activate/:token/challenge` — which boxes the activation page
+ * should draw (FR-1.14).
+ *
+ * NOTE WHAT IS NOT HERE, because the absence is the design: no name, no
+ * initials, no masked value, no patient id, no agreement id. A page that could
+ * render "J… S…" would be a page that had been handed part of a person's name
+ * on the strength of a link somebody may have forwarded.
+ *
+ * `identifierTypes` is the practice's own configured set, in the order to
+ * render it, and it can never contain a Medicare number — the server puts the
+ * list through the domain guard before answering, and `identifierFieldsFor`
+ * puts it through the same guard again before a single input is drawn
+ * (hard rule 1, REQ-VER-02).
+ */
+export interface PortalActivationChallenge {
+  readonly identifierTypes: readonly string[];
+  readonly practiceName: string;
+  readonly expiresAt: string;
+  readonly attemptsRemaining: number;
+}
+
 /** `GET /portal/access-log` — every look, from the vault's own events (FR-8.2). */
 export interface PortalAccessEntry {
   readonly at: string;
@@ -173,6 +195,19 @@ export class PortalApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /**
+     * THE SERVER'S REASON CODE, where it sent one.
+     *
+     * A CODE, NEVER THE SERVER'S SENTENCE. "Shortcuts to the answer, not
+     * directions to a screen" (Carl, 4 Sep 2026): the page maps the code to
+     * copy AND a next step, and an unmapped code renders as itself so it can be
+     * read out to support. Rendering the server's own message instead would put
+     * an unreviewed string on a patient surface, which is how a detail value
+     * eventually reaches a screen.
+     */
+    readonly reason?: string,
+    /** Tries left on this invitation, where the refusal counted one. */
+    readonly attemptsRemaining?: number,
   ) {
     super(message);
     this.name = 'PortalApiError';
@@ -191,8 +226,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { 'Content-Type': 'application/json', ...(init?.headers as Record<string, string>) },
   });
   if (!res.ok) {
-    // The body may name a rule; it never names a detail value, and it is never logged.
-    throw new PortalApiError(res.statusText || `HTTP ${res.status}`, res.status);
+    /*
+     * The body may name a rule; it never names a detail value, and it is never
+     * logged. Two machine-readable fields are lifted out of it — a reason code
+     * and a count of tries left — and the sentence is discarded: what the page
+     * shows comes from the string table, keyed by the code (REQ-LANG-01).
+     */
+    const body = (await res.json().catch(() => null)) as
+      | { reason?: unknown; attemptsRemaining?: unknown }
+      | null;
+    throw new PortalApiError(
+      res.statusText || `HTTP ${res.status}`,
+      res.status,
+      typeof body?.reason === 'string' ? body.reason : undefined,
+      typeof body?.attemptsRemaining === 'number' ? body.attemptsRemaining : undefined,
+    );
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
@@ -254,6 +302,50 @@ export async function fetchAssignors(): Promise<PortalAssignors> {
 export async function fetchAccessLog(): Promise<readonly PortalAccessEntry[]> {
   if (PORTAL_FIXTURES) return (await fixtures()).fixtureAccessLog;
   return request<readonly PortalAccessEntry[]>('/portal/access-log');
+}
+
+// ---------------------------------------------------------------------------
+// FR-1.14 — the activation link
+// ---------------------------------------------------------------------------
+
+/**
+ * WHAT THE INVITATION LINK OPENS. The one pair of calls on this surface that
+ * work without a session, because they are how a session is first obtained.
+ *
+ * THE TOKEN IS PATH-ENCODED AND NEVER LOGGED. It is a one-time secret; it goes
+ * into the request and nowhere else — not into a query string, not into
+ * storage, not into a console.
+ */
+export async function fetchActivationChallenge(token: string): Promise<PortalActivationChallenge> {
+  if (PORTAL_FIXTURES) return (await fixtures()).fixtureActivationChallenge(token);
+  return request<PortalActivationChallenge>(
+    `/portal/activate/${encodeURIComponent(token)}/challenge`,
+  );
+}
+
+/**
+ * THE THREE IDENTIFIERS, AND THE SESSION IF THEY MATCH.
+ *
+ * NO AGREEMENT ID IS SENT, because this page was never told one: the token
+ * names its own invitation row, which names the agreement. On success the
+ * server sets the httpOnly cookie — there is nothing for the browser to keep,
+ * and nothing this function returns that a caller has to store.
+ *
+ * THE ANSWERS GO ONCE AND ARE DROPPED. Nothing here caches, stores or logs a
+ * stated value (REQ-VER-04, hard rule 9).
+ */
+export async function activatePortal(
+  token: string,
+  stated: Readonly<Record<string, string>>,
+): Promise<void> {
+  if (PORTAL_FIXTURES) {
+    (await fixtures()).fixtureActivate(token, stated);
+    return;
+  }
+  await request<{ activated: true }>('/portal/activate', {
+    method: 'POST',
+    body: JSON.stringify({ activationToken: token, stated }),
+  });
 }
 
 /**

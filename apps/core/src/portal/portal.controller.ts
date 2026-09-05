@@ -5,6 +5,7 @@ import { PortalService } from './portal.service';
 import { PortalReadsService } from './portal-reads.service';
 import { ActivatePortalDto, CorrectionRequestDto } from './portal.dto';
 import { clearPortalCookie, readPortalCookie, setPortalCookie } from './portal-cookie';
+import { clientKey } from './portal-client-key';
 
 /**
  * THE PATIENT'S OWN PAGE — C8, and a GA MUST (REQ-PORT-01..08, FR-8.1/8.2).
@@ -28,6 +29,25 @@ export class PortalController {
     private readonly portal: PortalService,
     private readonly reads: PortalReadsService,
   ) {}
+
+  /**
+   * FR-1.14 — WHICH BOXES THE ACTIVATION PAGE SHOULD DRAW, and nothing else.
+   *
+   * The one read on this controller that works without a session, because it is
+   * what the invitation link opens. It answers with the practice's identifier
+   * TYPES, its name, when the link dies and how many tries are left — no name,
+   * no initials, no masked value, no agreement id. See
+   * `PortalService.activationChallenge` for why each of those is absent.
+   *
+   * THE TOKEN IS IN THE PATH, not a query string, matching the link the message
+   * carries: a query string is the part of a URL that leaks into referrers,
+   * server logs and analytics.
+   */
+  @Public()
+  @Get('activate/:token/challenge')
+  async activationChallenge(@Param('token') token: string, @Req() req: Request) {
+    return this.portal.activationChallenge(token, clientKey(req));
+  }
 
   /**
    * FR-1.14 — the invitation plus three approved identifiers.
@@ -58,6 +78,7 @@ export class PortalController {
       activationToken: dto.activationToken,
       stated: dto.stated,
       existingAccountId,
+      clientKey: clientKey(req),
     });
     setPortalCookie(res, sessionId);
     return result;
