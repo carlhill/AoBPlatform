@@ -3979,6 +3979,32 @@ export const strings = {
     offerEpisodicDone: 'Sent. They can sign for today’s visit now.',
 
     /**
+     * AND THE SAME ANSWER WHERE THE PATIENT WAS NEVER ASKED (Carl, 5 Sep 2026;
+     * CLAUDE.md section 7, second instance).
+     *
+     * The band that says the enduring rule set is awaiting authoring used to
+     * state the problem and stop. Reception cannot author a rule set; what
+     * they CAN do is get the person in front of them an agreement for today,
+     * and stop the practice drafting ongoing ones until the rule set exists.
+     * Both are on the band, so neither is a screen somebody has to go and find.
+     *
+     * IT DOES NOT SAY "SENT". Unlike the decline, there is no tablet and no
+     * patient standing at one -- the draft joins today's list and reception
+     * sends it when they are ready.
+     */
+    offerEpisodicInsteadAction: 'Create an agreement for this visit instead',
+    offerEpisodicInsteadBusy: 'Creating…',
+    offerEpisodicInsteadDone:
+      'Created. The agreement for today’s visit is on the list below, ready to send to a tablet.',
+    /**
+     * THE SETTING, NOT A SCREEN TO GO HUNTING ON. It lands on the Kiosk card
+     * where "offer an ongoing agreement first" is ticked, so the next arrival
+     * is drafted as an agreement for the visit instead of joining the queue of
+     * blocked ongoing ones.
+     */
+    toChannelsForOffer: 'Change what the tablet offers first →',
+
+    /**
      * ONGOING AGREEMENTS ARE NAMED UNDER THEIR PROVIDER, NEVER PRACTICE-WIDE
      * (hard rule 6, REQ-END-01). The row heading is the one place a
      * receptionist would otherwise read "this practice", so it says the
@@ -4200,8 +4226,9 @@ export const strings = {
        * which is where the answer changes.
        */
       enduring_rules_not_authored:
-        'Ongoing agreements are not yet enabled — the enduring rule set is awaiting authoring. Send an '
-        + 'agreement for this visit instead.',
+        'Ongoing agreements are not yet enabled — the enduring rule set is awaiting authoring. You can '
+        + 'send an agreement for today’s visit instead, or change what the tablet offers first so new '
+        + 'arrivals get one automatically.',
       /** Hard rule 6 / REQ-END-01a: permanent, not pending. */
       enduring_not_gp:
         'Ongoing agreements are for general practitioners only. For this provider, send an agreement for '
@@ -5324,6 +5351,20 @@ export const strings = {
      * most likely to fear otherwise (hard rule 8).
      */
     activate: {
+      /**
+       * THE GROUP HEADINGS, IN THE PATIENT'S OWN TERMS (Carl, 5 Sep 2026: "use
+       * the friendlier wording"). Keyed by identifier type; anything the server
+       * names that is not here falls back to the shared identifier label, so a
+       * practice's configured set always renders (REQ-VER-02 set only).
+       */
+      groupLabels: {
+        name: 'Your full name',
+        date_of_birth: 'Your date of birth',
+        gender: 'Your gender, as you identify it',
+        address: 'Your home address',
+        patient_record_number: 'Your patient record number — it is on your appointment reminder',
+        ihi: 'Your Individual Healthcare Identifier (IHI)',
+      } as Record<string, string>,
       title: 'See your bulk-billing record',
       loading: 'Opening your invitation…',
       /* The offer, and the ask, in the order they make sense. */

@@ -91,6 +91,11 @@ import styles from '../../portal.module.css';
 /** How many tries an invitation gets. Mirrors `PORTAL_ACTIVATION_MAX_ATTEMPTS`. */
 const MAX_ATTEMPTS = 3;
 
+/** The heading for one identifier group, in the patient's own terms; the shared label if we have no friendlier one. */
+function groupLabel(field: IdentifierField): string {
+  return strings.portal.activate.groupLabels[field.type] ?? field.label;
+}
+
 type Phase =
   | { kind: 'loading' }
   /** The link is dead. `reason` is the server's code — mapped to copy and a next step. */
@@ -444,7 +449,7 @@ function ActivateForm({
           if (field.type === 'name') {
             return (
               <fieldset key={field.type} className={styles.activateGroup}>
-                <legend className={styles.activateLegend}>{field.label}</legend>
+                <legend className={styles.activateLegend}>{groupLabel(field)}</legend>
                 <div className={styles.activateNameRow}>
                   <span className={styles.activateNameCell}>
                     <label className={styles.activateSubLabel} htmlFor="activate-name-given">
@@ -488,7 +493,7 @@ function ActivateForm({
           if (field.type === 'date_of_birth') {
             return (
               <fieldset key={field.type} className={styles.activateGroup} aria-describedby={describedBy}>
-                <legend className={styles.activateLegend}>{field.label}</legend>
+                <legend className={styles.activateLegend}>{groupLabel(field)}</legend>
                 <div className={styles.activateDobRow}>
                   {(
                     [
@@ -527,7 +532,7 @@ function ActivateForm({
           return (
             <div key={field.type} className={styles.activateGroup}>
               <label className={styles.activateLegend} htmlFor={`activate-${field.type}`}>
-                {field.label}
+                {groupLabel(field)}
               </label>
               <input
                 id={`activate-${field.type}`}
