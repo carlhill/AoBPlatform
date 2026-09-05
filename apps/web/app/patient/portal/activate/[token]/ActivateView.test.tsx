@@ -70,9 +70,16 @@ function fillTheForm() {
   fireEvent.change(screen.getByLabelText(strings.portal.activate.nameFamily), {
     target: { value: 'Sample' },
   });
-  fireEvent.change(screen.getByLabelText(strings.kiosk.verify.identifierNames.date_of_birth), {
-    target: { value: '1962-11-02' },
-  });
+  /*
+   * THREE PICKERS, like the kiosk (Carl, 5 Sep 2026); the composed value is
+   * 1962-11-02. The day VALUE is zero-padded — `dayOptions()` labels the option
+   * '2' and values it '02' — and a `fireEvent.change` to a value no option
+   * carries leaves the select on '', which is how this read as a half-filled
+   * date and disabled Continue.
+   */
+  fireEvent.change(screen.getByTestId('activate-dob-day'), { target: { value: '02' } });
+  fireEvent.change(screen.getByTestId('activate-dob-month'), { target: { value: '11' } });
+  fireEvent.change(screen.getByTestId('activate-dob-year'), { target: { value: '1962' } });
   fireEvent.change(screen.getByLabelText(strings.kiosk.verify.identifierNames.address), {
     target: { value: '2 Example Street' },
   });

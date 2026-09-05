@@ -349,58 +349,184 @@
 /* --- The activation page (FR-1.14) ---------------------------------------- */
 
 /*
- * THE NARROWEST COLUMN ON THIS SURFACE, and narrower than `.signedOut`, because
- * it is the only page here that asks somebody to type. A form read on a phone
- * by a person who may be unwell wants one thing per line and no horizontal
- * search; 30rem is about the width of the longest label plus its box.
+ * ONE CENTRED COLUMN, ONE CARD (Carl, 5 Sep 2026: "do this once and do it
+ * right"). The page before this had the form loose on the page ground with a
+ * grey nested box per identifier, because a `fieldset` carries a border and a
+ * background of its own until it is told not to. A form is one object; the
+ * groups inside it are separated by SPACE, never by another box.
+ *
+ * 40rem, not the 30rem this started at: the date of birth is three controls on
+ * one line and 30rem was the width that made the year wrap.
  */
 .activate {
-  max-width: 30rem;
-  margin: 0 auto;
+  max-width: 40rem;
+  margin: var(--s6) auto 0;
 }
 
+/*
+ * THE CARD. Same surface, line and radius as every other card on this surface,
+ * so the activation page does not read as a different product from the portal
+ * the patient lands on ten seconds later.
+ *
+ * `gap: var(--s5)` is the ONLY vertical rhythm between groups — no group sets
+ * a bottom margin, so adding or removing an identifier cannot change the
+ * spacing of the ones around it.
+ */
 .activateForm {
   display: flex;
   flex-direction: column;
   gap: var(--s5);
   margin-top: var(--s6);
+  padding: var(--s5);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
 }
 
+/*
+ * A GROUP IS A `fieldset` OR A `div` AND LOOKS IDENTICAL EITHER WAY. The name
+ * and date groups need `fieldset`/`legend` for their sub-controls to be
+ * announced under one heading (WCAG 2.2 AA, 1.3.1); the single-control groups
+ * do not. So the fieldset is stripped back to a plain block — no border, no
+ * background, no padding, no margin — and both render the same.
+ *
+ * `min-inline-size: 0` because a `fieldset` defaults to `min-content` and would
+ * otherwise refuse to be narrower than its widest child.
+ */
 .activateGroup {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s2);
-}
-/*
- * `.field` was written for a ROW (`flex: 1 1 14rem` = "share the width, start
- * from 14rem"). Inside a column the same basis becomes a HEIGHT, and Carl saw
- * 200px-tall inputs on the activation page (5 Sep 2026). In a column a field
- * takes the full width and its natural height, nothing more.
- */
-.activateCell > .field,
-.activateGroup > .field {
-  flex: 0 0 auto;
-  width: 100%;
-  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  min-inline-size: 0;
 }
 
 /*
- * FAMILY AND GIVEN NAME SIT SIDE BY SIDE WHERE THERE IS ROOM AND WRAP WHERE
- * THERE IS NOT — two inputs, one identifier. They never become two identifiers
- * and they never become one box: the server takes one composed string per type,
- * and the person types the two halves they actually know.
+ * THE GROUP LABEL, one size and one weight for every group whether it is a
+ * `legend` or a `label`. `--s2` to its control is the label→control gap the
+ * whole form uses.
  */
-.activateRow {
+.activateLegend {
+  display: block;
+  float: none;
+  margin: 0 0 var(--s2);
+  padding: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ink);
+}
+
+/* The quieter word over one half of a group: "Given name", "Day". */
+.activateSubLabel {
+  display: block;
+  margin: 0 0 var(--s2);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+/*
+ * EVERY BOX ON THE PAGE, input and select alike, stated explicitly rather than
+ * borrowed from `.field` — which is written for a ROW (`flex: 1 1 14rem`) and
+ * became a 200px HEIGHT the moment it was dropped into a column. Height, width
+ * and box model are said here so nothing about the surrounding layout can
+ * change them.
+ *
+ * 44px is the patient-surface target (CLAUDE.md §6, WCAG 2.2). 1rem rather than
+ * `--text-base` because a sub-16px control is what makes iOS Safari zoom the
+ * page on focus.
+ *
+ * NO `appearance: none` on the selects: the browser's own chevron is the
+ * affordance that says "this opens", and removing it without drawing one back
+ * is how a select stops looking like a select. No `:focus-visible` rule either
+ * — `tokens.css` rings every control already, and a second one is only a
+ * chance to get it wrong.
+ */
+.activateInput {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 0 var(--s3);
+  font-family: inherit;
+  font-size: 1rem;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+
+/* GIVEN AND FAMILY NAME, equal halves — one identifier in two boxes. */
+.activateNameRow {
   display: flex;
-  flex-wrap: wrap;
   gap: var(--s3);
 }
 
-.activateCell {
-  flex: 1 1 10rem;
+.activateNameCell {
+  display: block;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+@media (max-width: 480px) {
+  .activateNameRow {
+    flex-wrap: wrap;
+  }
+
+  .activateNameCell {
+    flex-basis: 100%;
+  }
+}
+
+/*
+ * DAY, MONTH, YEAR — ONE ROW THAT NEVER WRAPS. A wrapped year select reads as
+ * a fourth question. The widths are fixed for the two numeric parts and the
+ * month takes what is left, because the month is the one showing names.
+ */
+.activateDobRow {
   display: flex;
-  flex-direction: column;
-  gap: var(--s1);
+  flex-wrap: nowrap;
+  gap: var(--s3);
+}
+
+.activateDobDay {
+  flex: 0 0 6.5rem;
+}
+
+.activateDobMonth {
+  flex: 1 1 auto;
+  min-width: 9rem;
+}
+
+.activateDobYear {
+  flex: 0 0 7rem;
+}
+
+/*
+ * At the narrowest phone the three preferred widths add up to more than the
+ * card, and the rule above forbids the escape hatch of wrapping. So the two
+ * numeric parts give up their floor instead — still one row, still readable,
+ * and the month keeps priority because its labels are the longest.
+ */
+@media (max-width: 26rem) {
+  .activateDobDay {
+    flex: 0 0 4.5rem;
+  }
+
+  .activateDobMonth {
+    min-width: 0;
+  }
+
+  .activateDobYear {
+    flex: 0 0 5.5rem;
+  }
+}
+
+/* The muted line under a group — "Your family and given names count as one." */
+.activateHint {
+  margin: var(--s2) 0 0;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
 }
 
 .activateNote {
@@ -409,11 +535,50 @@
   color: var(--ink-muted);
 }
 
+/*
+ * THE REFUSAL, FULL WIDTH AND ABOVE THE BUTTON, because a message that appears
+ * below the control somebody just pressed is a message on a part of the screen
+ * they have already scrolled past. Warn rather than stop: a mismatch is
+ * something to try again, not something that has broken. It still names
+ * nothing (REQ-SEC-07) — the tone is the only thing this rule decides.
+ */
+.activateAlert {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  margin: 0;
+  padding: var(--s3) var(--s4);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--radius);
+  background: var(--warn-wash);
+  color: var(--ink);
+}
+
+.activateAlert p {
+  margin: 0;
+}
+
+.activateAlertHeading {
+  font-weight: 600;
+}
+
+/* The server was unreachable, which IS a stop — different fault, different tone. */
+.activateAlertStop {
+  border-left-color: var(--stop);
+  background: var(--stop-wash);
+}
+
+/*
+ * CONTINUE FIRST, THE REASON IT IS DISABLED BESIDE IT, vertically centred on
+ * the button rather than sitting on its baseline. On a narrow screen the
+ * sentence wraps underneath instead of squeezing the button.
+ */
 .activateActions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--s3);
-  margin-top: var(--s3);
+  margin: 0;
 }
 
 /*

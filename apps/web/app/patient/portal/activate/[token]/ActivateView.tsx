@@ -26,13 +26,23 @@
  * refusal to name the one that failed — because those are the parts that would
  * be wrong if they differed.
  *
- * DATE OF BIRTH IS ONE NATIVE DATE INPUT HERE, WHERE THE KIOSK USES THREE
- * PICKERS (Carl, 5 Sep 2026). The kiosk cannot rely on a native picker: it runs
- * on a shared tablet in an unknown browser and the three-select form is the one
- * that behaves the same everywhere. This page runs on the patient's OWN phone,
- * where `type="date"` is the control they use every day and already know. Both
- * produce the same `YYYY-MM-DD` the server compares, which is the only part
- * that has to agree.
+ * DATE OF BIRTH IS THREE PICKERS, THE SAME AS THE KIOSK (Carl, 5 Sep 2026 —
+ * reversing the native `type="date"` input this page opened with). A native
+ * picker is excellent on the phone it was designed for and a lottery
+ * everywhere else: on a desktop browser it is a text box with a format the
+ * patient has to guess, and the one format it will not accept is the one an
+ * Australian writes by hand. Day, month by NAME, year newest-first has nothing
+ * to type and nothing to format. Both shapes produce the same `YYYY-MM-DD` the
+ * server compares, which is the only part that has to agree — and the options
+ * come from the kiosk's own rules module so the two surfaces cannot drift.
+ *
+ * THE FORM IS ONE CARD AND THE GROUPS ARE SEPARATED BY SPACE. A `fieldset` is
+ * used where the group has more than one control, because that is what makes a
+ * screen reader announce "Date of birth, Day" — but it is stripped of its
+ * border, background and padding, so the page never shows a box inside a box.
+ * The layout rules are in `portal.module.css` under `activate*`; nothing here
+ * borrows `.field`, which is sized for a row and turns into a 200px-tall input
+ * the moment it is put in a column.
  *
  * A MISMATCH SAYS ONE THING AND NAMES NOTHING (REQ-SEC-07). Never which
  * identifier, never how close, never a highlighted field. It appears in place,
@@ -58,7 +68,14 @@ import { Shell, ui } from '../../../../ui';
 import { strings } from '../../../../strings';
 import { useRefreshable } from '../../../../refresh';
 import { identifierFieldsFor, type IdentifierField } from '../../../../kiosk/rules/identifiers';
-import { composeName } from '../../../../kiosk/rules/verify-fields';
+import {
+  composeDateOfBirth,
+  composeName,
+  dayOptions,
+  monthOptions,
+  yearOptions,
+  type DateOfBirthParts,
+} from '../../../../kiosk/rules/verify-fields';
 import {
   activatePortal,
   fetchActivationChallenge,
@@ -199,12 +216,12 @@ export function ActivateView({ token }: { token: string }) {
 
 /**
  * The portal's Shell with the session bar in its SIGNED-OUT form: the audience
- * label and nothing else.
+ * label, and the one door somebody might already hold a key to.
  *
- * NO SIGN-OUT, because there is no session — and no passkey sign-in either,
- * deliberately. Somebody on this page is holding an invitation and has been
- * asked one question; offering a second, different way in beside it is how a
- * person ends up pressing the control that cannot work for them yet.
+ * NO SIGN-OUT, because there is no session. The passkey sign-in IS offered
+ * (Carl, 5 Sep 2026) — see `ActivateSignIn` — and it is in the bar rather than
+ * beside Continue, so it reads as the chrome's second way in rather than an
+ * alternative answer to the question the form is asking.
  */
 function ActivateShell({ children }: { children: React.ReactNode }) {
   return (
@@ -305,13 +322,37 @@ function ActivateForm({
 
   const [name, setName] = useState<NameState>({ given: '', family: '' });
   const [plain, setPlain] = useState<Readonly<Record<string, string>>>({});
+  // DATE OF BIRTH AS THREE PICKERS, like the kiosk (Carl, 5 Sep 2026: "make the
+  // date three select boxes d, m, y"). The composed YYYY-MM-DD lands in `plain`
+  // so completeness and submission read it like any other identifier; it stays
+  // '' until all three parts are chosen, so a half date is never sent.
+  const [dob, setDob] = useState<DateOfBirthParts>({ day: '', month: '', year: '' });
+  const updateDob = (patch: Partial<DateOfBirthParts>) =>
+    setDob((prev) => {
+      const next = { ...prev, ...patch };
+      setPlain((p) => ({ ...p, date_of_birth: composeDateOfBirth(next) }));
+      return next;
+    });
   const [busy, setBusy] = useState(false);
   const [mismatch, setMismatch] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attemptsRemaining, setAttemptsRemaining] = useState(challenge.attemptsRemaining);
 
-  /** Focus goes to the first input when an attempt fails (WCAG 2.2 AA). */
-  const firstFieldRef = useRef<HTMLInputElement | null>(null);
+  /**
+   * FOCUS LANDS ON THE FIRST CONTROL, on arrival and again after a mismatch
+   * (WCAG 2.2 AA, 2.4.3 / 3.3.1). It is a `ref` CALLBACK rather than a plain
+   * `useRef` object because the first control is an `<input>` on one field set
+   * and a `<select>` on another: a `RefObject` of the union is not assignable
+   * to either element's `ref` prop, but a callback that ACCEPTS the union is
+   * assignable to both.
+   */
+  const firstFieldRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null);
+  const captureFirstField = useCallback((element: HTMLInputElement | HTMLSelectElement | null) => {
+    firstFieldRef.current = element;
+  }, []);
+  useEffect(() => {
+    firstFieldRef.current?.focus();
+  }, []);
 
   const valueFor = useCallback(
     (type: string): string => (type === 'name' ? composeName(name) : (plain[type] ?? '')),
@@ -387,91 +428,139 @@ function ActivateForm({
         }}
         noValidate
       >
-        {fields.map((field, index) => (
-          <div key={field.type} className={styles.activateGroup}>
-            {field.type === 'name' ? (
-              <fieldset className={styles.activateGroup}>
-                {/*
-                  TWO INPUTS, ONE IDENTIFIER — and the note says so, because a
-                  patient counting "you asked me for four things" is a patient
-                  who thinks we asked for more than the three we are allowed to
-                  need (REQ-VER-06).
-                */}
-                <legend className={styles.fieldLabel}>{field.label}</legend>
-                <div className={styles.activateRow}>
-                  <span className={styles.activateCell}>
-                    <label className={styles.fieldLabel} htmlFor="activate-name-given">
+        {fields.map((field, index) => {
+          /* The first control on the form, whichever identifier comes first. */
+          const first = index === 0;
+          /* Every control points at the one refusal, and only while it is there. */
+          const describedBy = mismatch ? 'activate-mismatch' : undefined;
+
+          /*
+            TWO INPUTS, ONE IDENTIFIER — and the hint says so, because a patient
+            counting "you asked me for four things" is a patient who thinks we
+            asked for more than the three we are allowed to need (REQ-VER-06).
+            The `fieldset` is what puts both boxes under one heading for a
+            screen reader; the CSS is what stops it drawing a box.
+          */
+          if (field.type === 'name') {
+            return (
+              <fieldset key={field.type} className={styles.activateGroup}>
+                <legend className={styles.activateLegend}>{field.label}</legend>
+                <div className={styles.activateNameRow}>
+                  <span className={styles.activateNameCell}>
+                    <label className={styles.activateSubLabel} htmlFor="activate-name-given">
                       {strings.portal.activate.nameGiven}
                     </label>
                     <input
                       id="activate-name-given"
-                      className={styles.field}
-                      ref={index === 0 ? firstFieldRef : undefined}
+                      className={styles.activateInput}
+                      ref={first ? captureFirstField : undefined}
                       autoComplete="given-name"
                       value={name.given}
                       onChange={(event) => setName((prev) => ({ ...prev, given: event.target.value }))}
-                      aria-describedby={mismatch ? 'activate-mismatch' : undefined}
+                      aria-describedby={describedBy}
                     />
                   </span>
-                  <span className={styles.activateCell}>
-                    <label className={styles.fieldLabel} htmlFor="activate-name-family">
+                  <span className={styles.activateNameCell}>
+                    <label className={styles.activateSubLabel} htmlFor="activate-name-family">
                       {strings.portal.activate.nameFamily}
                     </label>
                     <input
                       id="activate-name-family"
-                      className={styles.field}
+                      className={styles.activateInput}
                       autoComplete="family-name"
                       value={name.family}
                       onChange={(event) => setName((prev) => ({ ...prev, family: event.target.value }))}
-                      aria-describedby={mismatch ? 'activate-mismatch' : undefined}
+                      aria-describedby={describedBy}
                     />
                   </span>
                 </div>
-                <p className={styles.activateNote}>{strings.portal.activate.nameNote}</p>
+                <p className={styles.activateHint}>{strings.portal.activate.nameNote}</p>
               </fieldset>
-            ) : (
-              <>
-                <label className={styles.fieldLabel} htmlFor={`activate-${field.type}`}>
-                  {field.label}
-                </label>
-                {/*
-                  DATE OF BIRTH IS A NATIVE DATE INPUT and everything else — the
-                  address included — is one plain line. `type="date"` yields
-                  `YYYY-MM-DD`, which is exactly what the server compares, so
-                  the patient is never asked to guess our formatting on a screen
-                  whose failure message is not allowed to mention formatting.
-                */}
-                <input
-                  id={`activate-${field.type}`}
-                  className={styles.field}
-                  ref={index === 0 ? firstFieldRef : undefined}
-                  type={field.type === 'date_of_birth' ? 'date' : 'text'}
-                  placeholder={field.type === 'date_of_birth' ? undefined : field.hint}
-                  autoComplete={autoCompleteFor(field.type)}
-                  value={plain[field.type] ?? ''}
-                  onChange={(event) =>
-                    setPlain((prev) => ({ ...prev, [field.type]: event.target.value }))
-                  }
-                  aria-describedby={mismatch ? 'activate-mismatch' : undefined}
-                />
-              </>
-            )}
-          </div>
-        ))}
+            );
+          }
+
+          /*
+            DAY, MONTH BY NAME, YEAR NEWEST-FIRST, on one line that never wraps.
+            The empty option carries the part's own word rather than a dash: a
+            select whose resting state says "Day" has told the patient what it
+            wants before they open it.
+          */
+          if (field.type === 'date_of_birth') {
+            return (
+              <fieldset key={field.type} className={styles.activateGroup} aria-describedby={describedBy}>
+                <legend className={styles.activateLegend}>{field.label}</legend>
+                <div className={styles.activateDobRow}>
+                  {(
+                    [
+                      ['day', strings.portal.activate.dobDay, dayOptions(), styles.activateDobDay],
+                      ['month', strings.portal.activate.dobMonth, monthOptions(), styles.activateDobMonth],
+                      ['year', strings.portal.activate.dobYear, yearOptions(), styles.activateDobYear],
+                    ] as const
+                  ).map(([part, label, options, cell], partIndex) => (
+                    <span className={cell} key={part}>
+                      <label className={styles.activateSubLabel} htmlFor={`activate-dob-${part}`}>
+                        {label}
+                      </label>
+                      <select
+                        id={`activate-dob-${part}`}
+                        className={styles.activateInput}
+                        ref={first && partIndex === 0 ? captureFirstField : undefined}
+                        value={dob[part]}
+                        onChange={(event) => updateDob({ [part]: event.target.value })}
+                        data-testid={`activate-dob-${part}`}
+                      >
+                        <option value="">{label}</option>
+                        {options.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </span>
+                  ))}
+                </div>
+              </fieldset>
+            );
+          }
+
+          /* EVERYTHING ELSE — the address included — is one plain line. */
+          return (
+            <div key={field.type} className={styles.activateGroup}>
+              <label className={styles.activateLegend} htmlFor={`activate-${field.type}`}>
+                {field.label}
+              </label>
+              <input
+                id={`activate-${field.type}`}
+                className={styles.activateInput}
+                ref={first ? captureFirstField : undefined}
+                type="text"
+                placeholder={field.hint}
+                autoComplete={autoCompleteFor(field.type)}
+                value={plain[field.type] ?? ''}
+                onChange={(event) =>
+                  setPlain((prev) => ({ ...prev, [field.type]: event.target.value }))
+                }
+                aria-describedby={describedBy}
+              />
+            </div>
+          );
+        })}
 
         {/*
-          ONE LINE, IN PLACE, NAMING NOTHING. `role="alert"` so it is announced
-          when it appears rather than silently painted, and every input points
-          at it with `aria-describedby` — a screen-reader user gets told the
-          attempt failed and gets told exactly as much as everybody else does
+          ONE LINE, IN PLACE, NAMING NOTHING — and ABOVE Continue, because a
+          message under the button somebody just pressed is a message below the
+          fold. `role="alert"` so it is announced when it appears rather than
+          silently painted, and every control points at it with
+          `aria-describedby` — a screen-reader user gets told the attempt
+          failed and gets told exactly as much as everybody else does
           (REQ-SEC-07, WCAG 2.2 AA).
         */}
         {mismatch && (
-          <div id="activate-mismatch" role="alert">
-            <p className={styles.cardError}>{strings.portal.activate.mismatchHeading}</p>
-            <p className={styles.activateNote}>{strings.portal.activate.mismatchBody}</p>
+          <div id="activate-mismatch" role="alert" className={styles.activateAlert}>
+            <p className={styles.activateAlertHeading}>{strings.portal.activate.mismatchHeading}</p>
+            <p>{strings.portal.activate.mismatchBody}</p>
             {attemptsRemaining > 0 && (
-              <p className={styles.activateNote} data-testid="activate-attempts">
+              <p data-testid="activate-attempts">
                 {strings.portal.activate.attemptsRemaining(attemptsRemaining)}
               </p>
             )}
@@ -479,7 +568,7 @@ function ActivateForm({
         )}
 
         {failed && (
-          <p className={styles.cardError} role="alert">
+          <p className={`${styles.activateAlert} ${styles.activateAlertStop}`} role="alert">
             {strings.portal.activate.failed}
           </p>
         )}
@@ -516,11 +605,15 @@ function ActivateForm({
  * nothing rather than a guess: `autocomplete="off"` on a field a patient is
  * struggling with helps nobody, and a wrong hint invites the browser to fill a
  * record number with a postcode.
+ *
+ * This is asked only of the plain single-line fields. The two composite
+ * identifiers carry their own hints on their own parts — `given-name` and
+ * `family-name` on the two name boxes, and nothing on the date pickers, where
+ * `bday` would offer to fill a whole date into a control that holds one third
+ * of one.
  */
 function autoCompleteFor(type: string): string | undefined {
   switch (type) {
-    case 'date_of_birth':
-      return 'bday';
     case 'address':
       return 'street-address';
     default:

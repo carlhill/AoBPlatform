@@ -5338,6 +5338,17 @@ export const strings = {
       nameGiven: 'Given name',
       nameFamily: 'Family name',
       nameNote: 'Your family and given names count as one detail.',
+      /*
+       * THE THREE DATE PICKERS HAVE THEIR OWN WORDS HERE, not the kiosk's
+       * (Carl, 5 Sep 2026). The kiosk's copies live under `kiosk.verify` and
+       * this page reads the app-level table, so pointing at them left three
+       * unlabelled boxes on screen. They double as the placeholder option on
+       * each select — "Day" says what to choose, where an em dash says only
+       * that nothing is chosen yet.
+       */
+      dobDay: 'Day',
+      dobMonth: 'Month',
+      dobYear: 'Year',
       continueAction: 'Continue',
       continueBusy: 'Checking…',
       continueBlocked: 'Fill in every box first',
