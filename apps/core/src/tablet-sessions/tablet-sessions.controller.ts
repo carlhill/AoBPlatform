@@ -214,6 +214,40 @@ export class TabletSessionsController {
   }
 
   /**
+   * THE ONGOING AGREEMENT CANNOT BE ASKED FOR AT ALL — SO ASK FOR THIS VISIT
+   * (Carl, 5 Sep 2026; CLAUDE.md §7 "shortcuts to the answer").
+   *
+   * The band on `/practice/tablet` that says the enduring rule set is awaiting
+   * authoring used to end there: no control, and a receptionist who can
+   * neither author a rule set nor get the patient in front of them an
+   * agreement. This is the control. It drafts an `episodic_pre` for the same
+   * provider, patient and party signing, carries the practice's default
+   * description of the service (locking exactly as an arrival does), opens its
+   * in-practice capture request, and closes the enduring draft's — so the
+   * enduring row leaves the waiting list while the draft itself stays,
+   * untouched, as the record of what was offered (hard rule 11).
+   *
+   * UNDER `/agreements` BY PATH AND HERE BY MODULE, the same judgement
+   * `POST /devices/:deviceId/push` makes above: the resource being acted on is
+   * an agreement, so that is where a reader looks for it; the behaviour is
+   * this feature's — it is the sibling of `tablet-sessions/:id/offer-episodic`
+   * and shares its drafting — so that is where it lives. `AgreementsController`
+   * gains no knowledge of tablets or of the enduring rule set's state.
+   *
+   * IDEMPOTENT PER VISIT: a second press while an episodic is already open for
+   * this provider × patient × today returns that one and drafts nothing.
+   */
+  @Post('agreements/:id/offer-episodic')
+  @PracticeScoped()
+  offerEpisodicInstead(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('id', ParseUUIDPipe) id: string,
+    @SessionActor() actor: Actor | undefined,
+  ) {
+    return this.sessions.offerEpisodicInstead(requirePractice(practiceId), id, actor);
+  }
+
+  /**
    * HOW THE DISPUTE ENDED (Carl, 4 Sep 2026) — reception says what they did
    * about the row the patient crossed.
    *

@@ -59,6 +59,32 @@ export const VAULT_EVENT_TYPES = [
    * question asked in 2028 has an answer.
    */
   'agreement.service_description_set',
+  /**
+   * AN AGREEMENT FOR TODAY'S VISIT WAS OFFERED IN PLACE OF AN ONGOING ONE
+   * (Carl, 5 Sep 2026).
+   *
+   * The sibling of `tablet.episodic_offered_after_decline`, and a different
+   * fact: there the PATIENT read the ongoing agreement and said they would
+   * rather agree each visit; here the ongoing agreement could never be put in
+   * front of them at all, because the s 65C rule set's enduring branch is not
+   * authored yet (a human-authored zone, CLAUDE.md §7). Reception answered the
+   * block by asking for this visit instead. Folding the two into one type
+   * would make "the patient declined" and "we could not ask" indistinguishable
+   * in the evidence, which is the one distinction somebody would want.
+   *
+   * THE ENDURING DRAFT IS NOT TOUCHED and the payload names it for that
+   * reason: it stays, at its own status, as the record of what was offered
+   * (hard rule 11 — the vault is append-only, and a draft is not deleted
+   * because it was overtaken).
+   *
+   * AGREEMENT IDS AND NOTHING ELSE. What the replacement says, when its
+   * description of the service was set and when its particulars were locked
+   * are already `agreement.created`, `agreement.service_description_set` and
+   * `agreement.particulars_locked` on the new agreement; repeating them here
+   * would be two records of one fact. No patient, no identifier, no amount
+   * (REQ-LOG-08, hard rules 1 and 4).
+   */
+  'agreement.episodic_offered_instead',
   'agreement.superseded',
   'agreement.ceased',
   'agreement.terminated',

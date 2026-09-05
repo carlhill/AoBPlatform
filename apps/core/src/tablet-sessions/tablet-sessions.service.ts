@@ -610,17 +610,204 @@ export class TabletSessionsService {
           'so use the ordinary Send on the row instead.',
       );
     }
-    if (agreement.type !== 'enduring') {
-      throw new ConflictException('Only an ongoing agreement can be declined in favour of one for the visit.');
+
+    const offered = await this.draftEpisodicInstead(practiceId, agreement, practiceDefaultD6a, actor);
+
+    await this.prisma.withPractice(practiceId, (tx) =>
+      enqueueVaultEvent(tx, {
+        type: 'tablet.episodic_offered_after_decline',
+        actor: { principalType: 'staff', id: actor.id },
+        subject: { type: 'Agreement', id: offered.agreementId },
+        // Ids and types. No patient, no identifier value, no amount.
+        payload: {
+          declinedSessionId: session.id,
+          declinedAgreementId: agreement.id,
+          offeredAgreementId: offered.agreementId,
+          offeredType: 'episodic_pre',
+          providerId: offered.providerId,
+          serviceDescriptionCarried: offered.serviceDescription !== null,
+          offeredBy: actor.name,
+        },
+      }),
+    );
+
+    const row = await this.push(practiceId, session.deviceId, offered.agreementId, actor);
+    return { ...row, agreementId: offered.agreementId };
+  }
+
+  /**
+   * THE ONGOING AGREEMENT CANNOT BE ASKED FOR AT ALL — SO ASK FOR THIS VISIT
+   * (Carl, 5 Sep 2026; CLAUDE.md §7 "shortcuts to the answer, not directions
+   * to a screen", second instance).
+   *
+   * WHAT THE BAND USED TO SAY AND COULD NOT DO. A GP practice that offers
+   * ongoing agreements by default drafts an `enduring` agreement for every
+   * arrival, and every one of them sits on reception's list refusing to go
+   * with `enduring_rules_not_authored` — the s 65C rule set's enduring branch
+   * is a human-authored zone (CLAUDE.md §7) and is not written yet. The
+   * console stated that, correctly, and then stopped: no control, no link, and
+   * a receptionist who cannot author a rule set and cannot get the patient in
+   * front of them an agreement either. This is the control.
+   *
+   * IT IS THE SIBLING OF `offerEpisodicAfterDecline` AND NOT THE SAME ACT. The
+   * decline is the PATIENT'S answer, given on a tablet they are still standing
+   * at, so that one pushes. This one answers a block the patient never saw:
+   * there may be no tablet, no session and nobody at the desk yet, so it stops
+   * at reception's list — the row appears, pushable if the description of the
+   * service was there to lock, and reception sends it when the patient
+   * arrives. The DRAFTING is identical, which is why both go through
+   * `draftEpisodicInstead` rather than through two copies of the same rules.
+   *
+   * THE ENDURING DRAFT IS NOT DELETED, and it must not be. The vault is
+   * append-only (hard rule 11, ADR A-02) and the draft is evidence of what the
+   * practice offered this patient on this day; deleting it would erase the
+   * only record that an ongoing agreement was ever on the table. Its status
+   * does not move either — nothing was declined, refused or superseded. What
+   * DOES close is its open capture request, which is the codebase's own idiom
+   * for "this one has nowhere left to go" (`readPushableRows` filters on
+   * exactly that), so it leaves the waiting list without anything being
+   * rewritten.
+   *
+   * IT REFUSES AN AGREEMENT THAT IS ON A TABLET RIGHT NOW. Closing the capture
+   * request under a live session would leave a patient reading an agreement
+   * the console has already retired; reception recalls the screen first.
+   *
+   * IDEMPOTENT PER VISIT. Reception presses it twice, or two receptionists
+   * press it at once, and the second press finds the episodic that is already
+   * open for this provider × patient × today and returns it. Drafting a second
+   * one would put two live agreements behind one service — which is exactly
+   * what `pushable`'s open-capture filter exists to keep off the list.
+   *
+   * NOTHING HERE BLOCKS CARE (hard rule 8, REQ-REC-04). If the practice has no
+   * default description of the service the draft arrives unlocked and the row
+   * says `service_description_missing`, which the console fixes inline; the
+   * patient is seen either way.
+   */
+  async offerEpisodicInstead(
+    practiceId: string,
+    agreementId: string,
+    actor: Actor | undefined,
+  ): Promise<{ agreementId: string; enduringAgreementId: string; reused: boolean }> {
+    if (!actor) throw pushRefusals.noActor();
+
+    const found = await this.prisma.withPractice(practiceId, async (tx) => {
+      // A cross-practice id finds nothing — RLS filters on the
+      // transaction-local scope, so this fails closed as a 404 rather than
+      // admitting the agreement exists somewhere else.
+      const agreement = await tx.agreement.findFirst({ where: { id: agreementId } });
+      if (!agreement) return null;
+      const live = await tx.tabletSession.findFirst({ where: { agreementId, endedAt: null } });
+      const practice = await tx.practice.findFirst({});
+      return { agreement, live, practiceDefaultD6a: practice?.defaultServiceDescription ?? null };
+    });
+    if (!found) throw pushRefusals.agreementNotFound();
+    const { agreement, live, practiceDefaultD6a } = found;
+
+    if (live) {
+      throw new ConflictException(
+        'That agreement is on a tablet right now. Take the screen back first, then offer an agreement ' +
+          'for this visit.',
+      );
     }
-    if (agreement.anchorKind !== 'provider' || !agreement.providerId) {
+
+    const already = await this.openEpisodicForVisit(practiceId, agreement);
+    if (already) {
+      return { agreementId: already, enduringAgreementId: agreement.id, reused: true };
+    }
+
+    const offered = await this.draftEpisodicInstead(practiceId, agreement, practiceDefaultD6a, actor);
+
+    /*
+     * THE CAPTURE REQUEST IS WHAT PUTS IT ON RECEPTION'S LIST, and it is
+     * opened in the same order an arrival opens one — before the lock, because
+     * `CaptureService.open` refuses anything past `verification_pending` and
+     * the lock is what moves it past.
+     */
+    await this.capture.open(practiceId, { agreementId: offered.agreementId, channel: 'in_practice' });
+
+    /*
+     * AND THEN EXACTLY WHAT AN ARRIVAL DOES WITH THE PRACTICE'S DEFAULT: move
+     * it to `awaiting_signature` and lock the particulars, so the row is
+     * pushable the moment it appears. WITH NO DEFAULT THERE IS NO LOCK AND NO
+     * TRANSITION — an agreement sitting at `awaiting_signature` with unlocked
+     * particulars is the shape hard rule 2 (REQ-REG-06) forbids, and the
+     * platform never guesses a particular of a contract. The row arrives
+     * saying `service_description_missing`, which reception fixes on the row
+     * itself with the control that is already there.
+     */
+    if (offered.serviceDescription) {
+      await this.agreements.transition(practiceId, offered.agreementId, 'awaiting_signature');
+      await this.agreements.lockParticulars(practiceId, offered.agreementId, { serviceDate: today() });
+    }
+
+    await this.prisma.withPractice(practiceId, async (tx) => {
+      /*
+       * THE ENDURING DRAFT LEAVES THE LIST — through the capture module's own
+       * API, never by editing its row. See the docstring: the draft itself is
+       * evidence and stays exactly as it is.
+       */
+      await this.capture.cancelOpenFor(tx, agreement.id, 'episodic_offered_instead');
+      await enqueueVaultEvent(tx, {
+        type: 'agreement.episodic_offered_instead',
+        actor: { principalType: 'staff', id: actor.id },
+        subject: { type: 'Agreement', id: offered.agreementId },
+        // AGREEMENT IDS AND NOTHING ELSE. Everything the new agreement says is
+        // already on its own `agreement.created`,
+        // `agreement.service_description_set` and `agreement.particulars_locked`
+        // events; repeating it here would be two records of one fact.
+        payload: {
+          enduringAgreementId: agreement.id,
+          offeredAgreementId: offered.agreementId,
+        },
+      });
+    });
+
+    return { agreementId: offered.agreementId, enduringAgreementId: agreement.id, reused: false };
+  }
+
+  /**
+   * THE DRAFTING BOTH OFFERS SHARE — the same provider, the same patient, the
+   * same party signing, and the practice's own words for the service.
+   *
+   * ONE COPY, TWO DOORS TO IT (Carl, 5 Sep 2026). `offerEpisodicAfterDecline`
+   * answers the patient; `offerEpisodicInstead` answers a rule set that cannot
+   * be asked. What follows differs — one pushes to the tablet the patient is
+   * standing at, the other stops at reception's list — but what is CREATED is
+   * one thing, and a second copy of "which provider, which assignor, which
+   * description" is a second place for HARD-01 and D7 to be got wrong.
+   *
+   * IT IS A NEW AGREEMENT AND NOT A CONVERSION, and it could not be anything
+   * else: the source is an ENDURING agreement — a standing commitment under
+   * reg 65CB — and this is an episodic pre-agreement for one service under
+   * s 65C(4). They have different content sets and different rendered
+   * artefacts; turning one into the other by changing a column would produce
+   * an agreement whose type does not match its own evidence.
+   *
+   * D6a IS CARRIED WHERE THERE IS ONE AND OTHERWISE LEFT UNSET, deliberately.
+   * An enduring agreement has no basic service description (that is a
+   * pre-agreement element, REQ-REG-01 D6a), so in practice the source is the
+   * practice's own default. Guessing a description would put a word the
+   * practice never chose onto a contract. It is written through the
+   * service-descriptions module's API, which checks it against the CURRENT
+   * versioned list (hard rule 14) and records who set it.
+   */
+  private async draftEpisodicInstead(
+    practiceId: string,
+    source: DbAgreement,
+    practiceDefaultD6a: string | null,
+    actor: Actor,
+  ): Promise<{ agreementId: string; providerId: string; serviceDescription: string | null }> {
+    if (source.type !== 'enduring') {
+      throw new ConflictException('Only an ongoing agreement can be replaced by one for the visit.');
+    }
+    if (source.anchorKind !== 'provider' || !source.providerId) {
       throw pushRefusals.enduringNotPerProvider();
     }
     // Held once, after the guard: the same provider carries onto the new
     // agreement and onto its event (HARD-01 — a replacement offer is the SAME
     // provider seeing the SAME patient; a different one would need its own
     // consent).
-    const providerId = agreement.providerId;
+    const providerId = source.providerId;
 
     // The agreements module owns its own table: the draft is created through
     // its API, which re-asserts the anchor and D7 rules and writes its own
@@ -628,36 +815,75 @@ export class TabletSessionsService {
     const replacement = await this.agreements.createDraft(practiceId, {
       type: 'episodic_pre',
       providerId,
-      patientId: agreement.patientId,
-      assignorId: agreement.assignorId,
-      assignorIsPatient: agreement.assignorIsPatient,
+      patientId: source.patientId,
+      assignorId: source.assignorId,
+      assignorIsPatient: source.assignorIsPatient,
     });
 
-    const d6a = agreement.serviceDescription ?? practiceDefaultD6a;
-    if (d6a && isServiceDescription(d6a)) {
-      await this.serviceDescriptions.setFor(practiceId, replacement.id, d6a, actor);
-    }
+    const candidate = source.serviceDescription ?? practiceDefaultD6a;
+    const d6a = candidate && isServiceDescription(candidate) ? candidate : null;
+    if (d6a) await this.serviceDescriptions.setFor(practiceId, replacement.id, d6a, actor);
 
-    await this.prisma.withPractice(practiceId, (tx) =>
-      enqueueVaultEvent(tx, {
-        type: 'tablet.episodic_offered_after_decline',
-        actor: { principalType: 'staff', id: actor.id },
-        subject: { type: 'Agreement', id: replacement.id },
-        // Ids and types. No patient, no identifier value, no amount.
-        payload: {
-          declinedSessionId: session.id,
-          declinedAgreementId: agreement.id,
-          offeredAgreementId: replacement.id,
-          offeredType: 'episodic_pre',
-          providerId,
-          serviceDescriptionCarried: Boolean(d6a && isServiceDescription(d6a)),
-          offeredBy: actor.name,
+    return { agreementId: replacement.id, providerId, serviceDescription: d6a };
+  }
+
+  /**
+   * IS THERE ALREADY AN AGREEMENT OPEN FOR THIS VISIT? — the idempotency this
+   * offer needs (named test `offer_episodic_instead_is_idempotent_per_visit`).
+   *
+   * "THIS VISIT" IS PROVIDER × PATIENT × TODAY, and "today" is read exactly as
+   * `readPushableRows` reads it: the appointment's date where the agreement
+   * has a booking, and the day the draft was created where it does not. A
+   * second definition here would mean a row that this method thinks is
+   * yesterday's and the waiting list thinks is today's.
+   *
+   * "OPEN" IS AN OPEN CAPTURE REQUEST, the same test the waiting list applies
+   * — an agreement whose capture request was cancelled or completed has
+   * nowhere left to go, and treating it as an answer would leave reception
+   * pressing a button that returns a row they cannot see.
+   */
+  private async openEpisodicForVisit(
+    practiceId: string,
+    source: Pick<DbAgreement, 'providerId' | 'patientId'>,
+  ): Promise<string | null> {
+    if (!source.providerId) return null;
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const todayIso = today();
+
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const candidates = await tx.agreement.findMany({
+        where: {
+          type: 'episodic_pre',
+          providerId: source.providerId,
+          patientId: source.patientId,
+          status: { in: [...PUSHABLE_STATUSES] },
+          signatureEventId: null,
         },
-      }),
-    );
+        orderBy: { createdAt: 'asc' },
+      });
+      if (candidates.length === 0) return null;
 
-    const row = await this.push(practiceId, session.deviceId, replacement.id, actor);
-    return { ...row, agreementId: replacement.id };
+      const appointments = await tx.appointment.findMany({
+        where: { agreementId: { in: candidates.map((a) => a.id) } },
+      });
+      const appointmentByAgreement = new Map(
+        appointments.filter((a) => a.agreementId).map((a) => [a.agreementId as string, a]),
+      );
+
+      for (const candidate of candidates) {
+        const appointment = appointmentByAgreement.get(candidate.id);
+        const forToday = appointment
+          ? appointment.date.toISOString().slice(0, 10) === todayIso
+          : candidate.createdAt >= startOfDay;
+        if (!forToday) continue;
+        const open = await tx.captureRequest.findFirst({
+          where: { agreementId: candidate.id, status: 'open' },
+        });
+        if (open) return candidate.id;
+      }
+      return null;
+    });
   }
 
   /**

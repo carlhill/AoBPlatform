@@ -7,6 +7,7 @@ import { SERVICE_DESCRIPTIONS, TABLET_SESSION_IDLE_MS } from '@aobplatform/domai
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { DevicesService } from '../src/devices/devices.service';
+import { CaptureService } from '../src/capture/capture.service';
 import { RULES_CLIENT } from '../src/rules-client/rules-client.module';
 
 /**
@@ -999,6 +1000,270 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
   });
 
   // -------------------------------------------------------------------------
+
+  /**
+   * THE ONGOING AGREEMENT CANNOT BE ASKED FOR AT ALL — SO ASK FOR THIS VISIT
+   * (Carl, 5 Sep 2026; CLAUDE.md §7 "shortcuts to the answer", second
+   * instance).
+   *
+   * WHAT THIS PINS. A GP practice that offers ongoing agreements first drafts
+   * an `enduring` agreement for every arrival, and every one of them refuses
+   * with `enduring_rules_not_authored` — the s 65C rule set's enduring branch
+   * is human-authored and is not written yet. `POST /agreements/:id/offer-episodic`
+   * is reception's way out of that: the same patient gets an agreement for
+   * today's visit, with the same provider and the practice's own words for the
+   * service, locked exactly as an arrival locks one.
+   *
+   * AND WHAT IT PINS ABOUT THE ONE THAT WAS OFFERED FIRST: it is not deleted
+   * and its status does not move. The vault is append-only (hard rule 11, ADR
+   * A-02) and the enduring draft is the record that a standing agreement was
+   * on the table for this patient on this day. What closes is its capture
+   * request, which is the codebase's own way of saying an agreement has
+   * nowhere left to go.
+   */
+  describe('an agreement for the visit, where the ongoing one cannot be asked for', () => {
+    let capture: CaptureService;
+
+    beforeAll(async () => {
+      capture = app.get(CaptureService);
+      // The practice's own words for the service. Without one the offer still
+      // works and the draft simply arrives unlocked — asserted below.
+      await prisma.withPractice(practiceA, (tx) =>
+        tx.practice.update({ where: { id: practiceA }, data: { defaultServiceDescription: D6A } }),
+      );
+    });
+
+    afterAll(async () => {
+      await prisma.withPractice(practiceA, (tx) =>
+        tx.practice.update({ where: { id: practiceA }, data: { defaultServiceDescription: null } }),
+      );
+    });
+
+    /**
+     * A PATIENT PER TEST, and it matters here more than anywhere else in this
+     * file: the offer is idempotent per provider × patient × today, so a
+     * patient another test has already drafted for would make the first press
+     * of a later test return that draft instead of making one.
+     */
+    async function freshPatient(givenNames: string): Promise<string> {
+      return prisma.withPractice(practiceA, async (tx) => {
+        const patient = await tx.patient.create({
+          data: {
+            practiceId: practiceA,
+            familyName: 'Offered',
+            givenNames,
+            dateOfBirth: new Date('1970-01-01'),
+            address: '3 Sample Way, Sydney NSW 2000',
+            patientRecordNumber: `PRN-OFFER-${givenNames}`,
+          },
+        });
+        return patient.id;
+      });
+    }
+
+    /**
+     * WHAT AN ARRIVAL LEAVES BEHIND at such a practice: an enduring draft with
+     * an open in-practice capture request and no D6a (a basic service
+     * description is a pre-agreement element, REQ-REG-01 D6a).
+     */
+    async function enduringOnTheList(patientId: string): Promise<string> {
+      const agreementId = await draft({ type: 'enduring', description: null, patientId });
+      await capture.open(practiceA, { agreementId, channel: 'in_practice' });
+      return agreementId;
+    }
+
+    const offerInstead = (agreementId: string, practiceId = practiceA) =>
+      http().post(`/agreements/${agreementId}/offer-episodic`).set('x-practice-id', practiceId).send({});
+
+    const agreementRow = (agreementId: string, practiceId = practiceA) =>
+      prisma.withPractice(practiceId, (tx) => tx.agreement.findFirst({ where: { id: agreementId } }));
+
+    it('offer_episodic_instead_drafts_and_retires_the_enduring_request', async () => {
+      const patientId = await freshPatient('Robin');
+      const enduringId = await enduringOnTheList(patientId);
+      const before = await agreementRow(enduringId);
+
+      const res = await offerInstead(enduringId).expect(201);
+      expect(res.body.reused).toBe(false);
+      expect(res.body.enduringAgreementId).toBe(enduringId);
+      const offeredId: string = res.body.agreementId;
+      expect(offeredId).toBeTruthy();
+      expect(offeredId).not.toBe(enduringId);
+
+      /*
+       * THE SAME PROVIDER, PATIENT AND PARTY SIGNING (HARD-01, D7). A
+       * replacement offer is the SAME provider seeing the SAME patient; a
+       * different one would need its own consent.
+       */
+      const offered = await agreementRow(offeredId);
+      expect(offered!.type).toBe('episodic_pre');
+      expect(offered!.providerId).toBe(before!.providerId);
+      expect(offered!.patientId).toBe(before!.patientId);
+      expect(offered!.assignorId).toBe(before!.assignorId);
+      expect(offered!.assignorIsPatient).toBe(before!.assignorIsPatient);
+
+      // THE PRACTICE'S OWN WORDS, CARRIED AND LOCKED — exactly as an arrival
+      // does it, so the row is pushable the moment it appears.
+      expect(offered!.serviceDescription).toBe(D6A);
+      expect(offered!.status).toBe('awaiting_signature');
+      expect(offered!.particularsLockedAt).not.toBeNull();
+
+      // Its own in-practice capture request is what puts it on the list...
+      const opened = await prisma.withPractice(practiceA, (tx) =>
+        tx.captureRequest.findFirst({ where: { agreementId: offeredId, channel: 'in_practice' } }),
+      );
+      expect(opened!.status).toBe('open');
+
+      // ...and the enduring one's is closed, so it leaves it.
+      const retired = await prisma.withPractice(practiceA, (tx) =>
+        tx.captureRequest.findFirst({ where: { agreementId: enduringId } }),
+      );
+      expect(retired!.status).not.toBe('open');
+
+      // THE LIST ITSELF, which is what reception actually reads.
+      const list = await http().get('/tablet-sessions/pushable').set('x-practice-id', practiceA).expect(200);
+      const ids = (list.body as Array<{ agreementId: string }>).map((row) => row.agreementId);
+      expect(ids).toContain(offeredId);
+      expect(ids).not.toContain(enduringId);
+      expect(
+        (list.body as Array<{ agreementId: string; pushable: boolean }>).find((r) => r.agreementId === offeredId)!
+          .pushable,
+      ).toBe(true);
+
+      /*
+       * AND THE EVIDENCE: agreement ids and nothing else. What the new
+       * agreement says is already on its own `agreement.created`,
+       * `agreement.service_description_set` and `agreement.particulars_locked`
+       * events; no patient, no identifier, no amount (REQ-LOG-08, hard rules
+       * 1 and 4).
+       */
+      const event = await prisma.vaultOutbox.findFirst({
+        where: { type: 'agreement.episodic_offered_instead', subjectId: offeredId },
+      });
+      expect(event).toBeTruthy();
+      expect(event!.payload).toEqual({ enduringAgreementId: enduringId, offeredAgreementId: offeredId });
+      expect(event!.actor).toMatchObject({ principalType: 'staff', id: RECEPTIONIST.sub });
+      expect(JSON.stringify(event)).not.toContain('Robin');
+      expect(JSON.stringify(event)).not.toMatch(/\$\s?\d/);
+    });
+
+    it('the enduring draft is not touched — it is the record of what was offered', async () => {
+      const patientId = await freshPatient('Sam');
+      const enduringId = await enduringOnTheList(patientId);
+      const before = await agreementRow(enduringId);
+
+      await offerInstead(enduringId).expect(201);
+
+      /*
+       * NOT DELETED, NOT SUPERSEDED, NOT DECLINED. Nothing about the ongoing
+       * agreement changed: nobody read it and nobody answered it. Moving its
+       * status would put a fact in the record about a conversation that never
+       * happened.
+       */
+      const after = await agreementRow(enduringId);
+      expect(after).toBeTruthy();
+      expect(after!.status).toBe(before!.status);
+      expect(after!.type).toBe('enduring');
+      expect(after!.particularsLockedAt).toBeNull();
+      expect(after!.signatureEventId).toBeNull();
+      // Nor was it superseded: the new agreement is a DIFFERENT contract for a
+      // different thing (s 65C(4) against reg 65CB), not a correction of this one.
+      const claiming = await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.findMany({ where: { supersedesAgreementId: enduringId } }),
+      );
+      expect(claiming).toHaveLength(0);
+    });
+
+    it('offer_episodic_instead_is_idempotent_per_visit', async () => {
+      const patientId = await freshPatient('Frankie');
+      const enduringId = await enduringOnTheList(patientId);
+
+      const first = await offerInstead(enduringId).expect(201);
+      const second = await offerInstead(enduringId).expect(201);
+
+      /*
+       * TWO PRESSES, ONE AGREEMENT. Reception presses it twice, or two
+       * receptionists press it at once, and the second finds the episodic
+       * already open for this provider × patient × today. Drafting a second
+       * would put two live agreements behind one service.
+       */
+      expect(second.body.agreementId).toBe(first.body.agreementId);
+      expect(second.body.reused).toBe(true);
+
+      const episodics = await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.findMany({ where: { patientId, type: 'episodic_pre' } }),
+      );
+      expect(episodics).toHaveLength(1);
+      // And nothing was recorded the second time either.
+      const events = await prisma.vaultOutbox.findMany({
+        where: { type: 'agreement.episodic_offered_instead', subjectId: first.body.agreementId },
+      });
+      expect(events).toHaveLength(1);
+    });
+
+    it('with no default description of the service the draft arrives unlocked, and the row says so', async () => {
+      await prisma.withPractice(practiceA, (tx) =>
+        tx.practice.update({ where: { id: practiceA }, data: { defaultServiceDescription: null } }),
+      );
+      try {
+        const patientId = await freshPatient('Alex');
+        const enduringId = await enduringOnTheList(patientId);
+
+        const res = await offerInstead(enduringId).expect(201);
+        const offered = await agreementRow(res.body.agreementId);
+
+        /*
+         * THE PLATFORM NEVER GUESSES A PARTICULAR OF A CONTRACT, and an
+         * agreement at `awaiting_signature` with unlocked particulars is the
+         * shape hard rule 2 (REQ-REG-06) forbids — so neither happens. The row
+         * appears saying `service_description_missing`, which the console fixes
+         * on the row itself. Care is not blocked either way (hard rule 8).
+         */
+        expect(offered!.serviceDescription).toBeNull();
+        expect(offered!.particularsLockedAt).toBeNull();
+        expect(offered!.status).toBe('verification_pending');
+
+        const list = await http().get('/tablet-sessions/pushable').set('x-practice-id', practiceA).expect(200);
+        const row = (list.body as Array<{ agreementId: string; pushable: boolean; blockedReason: string | null }>).find(
+          (r) => r.agreementId === offered!.id,
+        )!;
+        expect(row.pushable).toBe(false);
+        expect(row.blockedReason).toBe('service_description_missing');
+      } finally {
+        await prisma.withPractice(practiceA, (tx) =>
+          tx.practice.update({ where: { id: practiceA }, data: { defaultServiceDescription: D6A } }),
+        );
+      }
+    });
+
+    it('offer_episodic_instead_across_a_practice_boundary_fails_closed', async () => {
+      const theirs = await draft({ practiceId: practiceB, type: 'enduring', description: null });
+
+      const res = await offerInstead(theirs, practiceA).expect(404);
+      expect(res.body.reason).toBe('agreement_not_found');
+      // It says nothing about the other practice at all.
+      expect(JSON.stringify(res.body)).not.toContain('Alex');
+
+      // And nothing was drafted for them.
+      const theirAgreements = await prisma.withPractice(practiceB, (tx) =>
+        tx.agreement.findMany({ where: { patientId: patientB, type: 'episodic_pre' } }),
+      );
+      expect(theirAgreements).toHaveLength(0);
+    });
+
+    it('refuses an unattributed caller — an offer nobody can be asked about is worse than a refusal', async () => {
+      const patientId = await freshPatient('Jules');
+      const enduringId = await enduringOnTheList(patientId);
+      currentPrincipal = null;
+
+      await offerInstead(enduringId).expect(403);
+
+      const drafted = await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.findMany({ where: { patientId, type: 'episodic_pre' } }),
+      );
+      expect(drafted).toHaveLength(0);
+    });
+  });
 
   describe('tenancy', () => {
     it('cross_practice_push_fails_closed — practice A cannot push practice B’s agreement', async () => {
