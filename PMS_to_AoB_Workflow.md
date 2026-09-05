@@ -30,6 +30,44 @@ If Carl or the requirements say the PMS's own PDF *must* be the signed instrumen
 
 **D-01 still governs the PMS side.** Nothing here guesses Medtech's API. Cases 1–3 describe what arrives; how it arrives (Evolution pushes, our connector polls, a virtual printer, a watched import folder) is the D-01 answer, and every case above is built so that answer slots in behind the adapter without touching the pipeline.
 
+## 1a. Who drafts the agreement — the PMS announces the visit, AoB drafts (Carl, 5 Sep 2026)
+
+Carl asked, of the example "Jamie arrives, the PMS says she is seeing Dr Sample
+Provider, a GP, the practice offers ongoing agreements by default, so AoB drafts
+an enduring agreement": *are you saying the enduring agreement details are not
+sent from the PMS — AoB just drafts it?* **Yes. By design.**
+
+**What the PMS sends** (the arrival contract, `POST /arrivals`): who the patient
+is, their five details, which provider they are seeing, and when. No agreement,
+no agreement type, no wording.
+
+**What AoB decides.** Whether the visit needs an enduring agreement, an episodic
+one, or nothing, depends on facts the PMS does not hold: does this patient
+already have an active enduring agreement with *this provider* on the platform;
+is the provider a GP; has the patient declined enduring before; what does this
+practice offer by default. That is the versioned visit policy
+(`visit-policy-1`, hard rules 6 and 14). If the PMS said "make an enduring one"
+and AoB obeyed, the rule that defends against regulatory whipsaw would live in
+every practice's PMS instead of in one versioned place we control. So an
+arrival that *claims* an agreement type is ignored on that point
+(`arrival_type_is_decided_by_the_rule_set_not_the_pms`).
+
+**What "drafts" means.** AoB assembles the agreement's content from what it
+holds: the patient's details from the arrival; the provider's identifying
+details from the practice's provider record (REQ-REG-02); today's date (D2);
+for enduring, the commencement and the pathway (MyMedicare); for episodic, the
+service date (D5) and the practice's default service description (D6a). The
+rules engine validates the set, it is locked, and AoB's own template wording
+(generic, or the practice's reviewed variant — §B of the W1 build) is rendered
+around it. Nothing about the agreement's *content* comes from the PMS beyond
+the identity of the patient and the provider.
+
+**Where the PMS can send more** — cases 2 and 3. If the PMS sends its own letter
+or PDF, AoB keeps it as evidence, extracts its elements, reception confirms
+them, and the same pipeline continues. Even then, the agreement the patient
+signs is the one AoB drafts and renders; the PMS's document informs it and sits
+beside it in the vault. It is never the thing signed (hard rule 13; §5 Q1).
+
 ## 2. The pipeline every case feeds
 
 ```
