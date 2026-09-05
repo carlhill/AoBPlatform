@@ -24,7 +24,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, CheckCircle2, MessageSquare, Monitor, ShieldQuestion, Timer } from 'lucide-react';
+import { ArrowRight, CheckCircle2, FileText, MessageSquare, Monitor, ShieldQuestion, Timer } from 'lucide-react';
 import {
   APPROVED_IDENTIFIER_TYPES,
   IDENTIFIER_COUNT_FLOOR,
@@ -676,6 +676,34 @@ export function ChannelsView({
               </div>
             )}
           </div>
+
+          {/*
+            THE DOCUMENT IS NOT A CHANNEL, so it is not a card on this page —
+            but somebody setting up capture will look for the letterhead here,
+            and a link is cheaper than a second copy of the settings (Carl,
+            5 Sep 2026; W1).
+          */}
+          {canOpen('/practice/templates') && (
+            <div className={styles.card} style={{ marginTop: 'var(--s3)' }}>
+              <div className={styles.cardHead}>
+                <FileText size={18} aria-hidden="true" className={styles.cardIcon} />
+                <div className={styles.cardMain}>
+                  <p className={styles.cardTitle}>{strings.channels.documentTitle}</p>
+                  <p className={styles.cardNote}>{strings.channels.documentLead}</p>
+                </div>
+              </div>
+              <div className={styles.cardBody}>
+                <Link
+                  href={viewOnly ? toViewPath('/practice/templates', practiceId) : '/practice/templates'}
+                  className={ui.buttonLink}
+                  data-testid="channels-open-templates"
+                >
+                  {strings.channels.documentOpen}
+                  <ArrowRight size={14} aria-hidden="true" />
+                </Link>
+              </div>
+            </div>
+          )}
 
           <div className={styles.formActions}>
             <Button variant="primary" onClick={() => void save()} disabled={!valid || busy} data-testid="channels-save">

@@ -3242,7 +3242,171 @@ export const strings = {
       `${n} agreement${n === 1 ? '' : 's'} on the queue ${n === 1 ? 'has' : 'have'} no description yet — `
       + 'set them on their rows.',
     d6aPendingLink: 'Open the queue',
+
+    /**
+     * THE DOCUMENT ITSELF LIVES ELSEWHERE, and this is the signpost. A
+     * practice setting up capture will look for the letterhead here; a link
+     * costs nothing and a second copy of the settings would cost a divergence.
+     */
+    documentTitle: 'The agreement document',
+    documentLead:
+      'The letterhead at the top of every agreement, your logo, and the words the patient reads and ticks.',
+    documentOpen: 'Open the agreement document',
   },
+  /**
+   * WHAT THE AGREEMENT LOOKS LIKE AND WHAT IT SAYS (Carl, 5 Sep 2026; W1).
+   *
+   * A NAMESPACE OF ITS OWN, and a page of its own, because it is not a
+   * channel. `channels` is how a request reaches a patient; this is the
+   * document — the letterhead at the top of it and the words in it, which are
+   * read at different times by different people and have a platform review
+   * queue behind them.
+   *
+   * THE INSTRUMENT'S OWN WORDS ARE NOT IN HERE. They are versioned content
+   * (`packages/domain/content/agreement-templates.json`) served by the API, so
+   * a copy in this table would be a second, unversioned copy of the operative
+   * text of a contract. What is here is the copy AROUND them.
+   *
+   * NOTHING BELOW SAYS "certified", "approved" or "accredited" about our forms
+   * (hard rule 12) and nothing carries an amount (hard rule 4).
+   */
+  templates: {
+    audience: 'Practice admin',
+    title: 'The agreement document',
+    lead:
+      'What appears at the top of every agreement this practice makes, and the words in it. The details '
+      + 'are read from your practice record; the logo and the wording are set here.',
+    backToChannels: 'Back to capture channels',
+    loading: 'Loading…',
+    notSet: 'Not set',
+
+    // --- Letterhead ---
+    letterheadTitle: 'Letterhead',
+    letterheadLead: 'These print at the top of every agreement, and on the copy the patient can download.',
+    /*
+     * WHY THEY CANNOT BE EDITED HERE, said once and plainly. A practice that
+     * is not told will look for the edit control, not find it, and conclude
+     * the page is broken.
+     */
+    letterheadWhereFrom:
+      'These come from your practice record — the legal name, trading name and ABN as they were checked '
+      + 'against the Australian Business Register. Change them there and the letterhead follows.',
+    fieldLegalName: 'Legal name',
+    fieldTradingName: 'Trading as',
+    fieldAddress: 'Address',
+    fieldPhone: 'Phone',
+    fieldEmail: 'Email',
+    fieldAbn: 'ABN',
+
+    // --- Logo ---
+    logoTitle: 'Logo',
+    logoLead:
+      'PNG or JPEG, up to 512 KB. It is drawn at a fixed size, so the file’s own dimensions do not change '
+      + 'the page.',
+    logoPresent: 'On the letterhead',
+    logoAbsent: 'None',
+    logoChoose: 'Choose a logo file',
+    logoRemove: 'Remove the logo',
+    logoDetail: (width: number, height: number, hash: string) => `${width} × ${height} pixels · ${hash}`,
+    logoTooLarge: (kb: number) => `That file is ${kb} KB. A logo may be at most 512 KB.`,
+    logoUnreadable: 'That file could not be read.',
+    /*
+     * THE ONE THING SOMEBODY WILL WORRY ABOUT before pressing Remove, answered
+     * before they press it. Agreements already signed embed those exact bytes
+     * and are re-checked against them every time they are shown.
+     */
+    logoKeepsWorking:
+      'Removing the logo stops it printing on new agreements. Agreements already signed keep the logo '
+      + 'they were signed with — the image stays in the record so those copies still verify.',
+
+    // --- Wording ---
+    wordingTitle: 'Wording',
+    wordingLead:
+      'Every agreement is written from a template. The standard wording is checked against the s 65C data '
+      + 'set; a practice that wants different words can propose its own.',
+    /*
+     * WHY THERE IS NO ACTIVATE BUTTON HERE. Said as a fact about how the
+     * process works rather than as a refusal, because a practice reading this
+     * has not yet done anything wrong.
+     */
+    wordingReviewed:
+      'Wording you propose is read by AoBPlatform before it is used, because it is the operative text of a '
+      + 'legal agreement. You will see the reviewer’s notes here.',
+    typeName: {
+      episodic: 'Agreement for a visit',
+      enduring: 'Ongoing agreement',
+    } as Record<string, string>,
+    statusName: {
+      draft: 'Draft — not yet submitted',
+      in_review: 'With AoBPlatform for review',
+      active: 'In use',
+      retired: 'Retired',
+    } as Record<string, string>,
+    usingGenericWording: (version: string) => `Using the standard wording (${version}).`,
+    usingPracticeWording: (version: string, reviewer: string) =>
+      `Using this practice’s wording (${version}), reviewed by ${reviewer}.`,
+    showGeneric: (version: string) => `Show the standard wording (${version})`,
+    showVariant: 'Show this wording',
+    statementsHeading: 'What the person signing ticks',
+    reviewerSaid: (reviewer: string, note: string) => `${reviewer}: ${note}`,
+    propose: 'Propose our own wording',
+    retire: 'Withdraw this wording',
+    cancel: 'Cancel',
+    saveDraft: 'Save as a draft',
+    submitForReview: 'Submit for review',
+    proposeSaved: 'Saved.',
+    editorLabel: 'The wording, as structured text',
+    editorLead:
+      'Edit the sections, the statements and the footer. Every element of the s 65C data set must still '
+      + 'appear — the check runs when you save, and names anything missing.',
+    editorPlaceholders: (list: string) =>
+      `The details are filled in where these appear: ${list}. Wrap a paragraph in `
+      + `{{#if isPreAgreement}}…{{/if}} or {{#unless assignorIsPatient}}…{{/unless}} to show it only in `
+      + 'that case.',
+    versionLabel: 'Version name',
+    versionPlaceholder: 'e.g. our-clinic-episodic-1',
+    notJson: 'That is not valid structured text. Check for a missing comma or bracket.',
+  },
+
+  /**
+   * THE PLATFORM'S SIDE OF THE SAME THING — the review queue (W1).
+   *
+   * A SEPARATE NAMESPACE FROM `templates`, because the audience is different
+   * and so is the act. A practice proposes; an operator READS THE WORDS and
+   * decides whether patients may be shown them. The copy here is about that
+   * decision and says what activating actually does.
+   */
+  platformTemplates: {
+    audience: 'Platform admin',
+    title: 'Agreement wording review',
+    lead:
+      'Wording practices have proposed for the agreements their patients sign. Activating it puts these '
+      + 'words in front of patients, so read them.',
+    loading: 'Loading…',
+    notLoaded: 'The review queue could not be loaded',
+    empty: 'Nothing is waiting to be read.',
+    waitingCount: (n: number) => `${n} waiting`,
+    submittedBy: (name: string, when: string) => `Submitted by ${name}, ${when}`,
+    inUse: (version: string) => `In use: ${version}`,
+    /*
+     * WHAT THE CHECKS ALREADY DID, so a reviewer knows what is left for THEM.
+     * The loader has refused an amount, a practitioner signature line, the
+     * approval words and a missing data element before this row existed; what
+     * a person is here for is whether the sentences are true and fair.
+     */
+    alreadyChecked:
+      'Already checked mechanically: every element of the s 65C data set appears, and there is no amount, '
+      + 'no practitioner signature line and no claim of approval. What is left is whether the words are '
+      + 'accurate and fair to the patient.',
+    activate: 'Activate this wording',
+    requestChanges: 'Send back with notes',
+    notesLabel: 'Notes for the practice',
+    notesRequired: 'Say what needs to change. A refusal with no reason is not a review.',
+    activated: 'Activated.',
+    sentBack: 'Sent back to the practice.',
+    failed: 'That could not be saved',
+  },
+
   /**
    * The two identity dashboards (IDENTITY-STRENGTH-DESIGN.md §7).
    *

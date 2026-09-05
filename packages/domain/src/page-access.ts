@@ -218,6 +218,10 @@ export const PAGES: Readonly<Record<string, PageRule>> = {
     audiences: ['platform'],
     why: 'Every acting-as session there has ever been, with its reason. Asked about months later, so it is a search rather than a dashboard.',
   },
+  '/platform/templates': {
+    audiences: ['platform'],
+    why: 'Agreement wording practices have proposed, waiting to be read. A practice may not activate the words its own patients sign, so activation is ours — and this is the only page that performs it.',
+  },
 
   /*
    * PRACTICE. A platform operator reaches these by ACTING AS somebody at the
@@ -251,6 +255,10 @@ export const PAGES: Readonly<Record<string, PageRule>> = {
   '/practice/application': { audiences: ['practice'], why: 'What the practice told us, and corrections to it.' },
   '/practice/locations': { audiences: ['practice'], why: 'Sites, and the addresses patients are seen at.' },
   '/practice/channels': { audiences: ['practice'], why: 'How the practice reaches its patients.' },
+  '/practice/templates': {
+    audiences: ['practice', 'platform'],
+    why: 'What the agreement looks like and what it says — the letterhead, the logo, and wording the practice may propose. The platform reaches one practice’s through the view-only twin; activating wording is a platform act on its own page.',
+  },
   '/practice/pms': { audiences: ['practice'], why: 'The practice management system connection.' },
   '/practice/practitioners': { audiences: ['practice'], why: 'Who works here.' },
   '/practice/affiliations': { audiences: ['practice'], why: 'Inviting practitioners, and recording departures.' },
