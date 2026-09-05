@@ -261,4 +261,22 @@ export class SignDto {
   @ValidateNested()
   @Type(() => DrawnSignatureDto)
   signature?: DrawnSignatureDto;
+
+  /**
+   * THE STATEMENTS THE ASSIGNOR TICKED — keys, never sentences (Carl, 5 Sep
+   * 2026; W1). `episodic_assign_v1`, and so on: the words live in the template
+   * the agreement records, and a client that could send its own text could
+   * send text nobody agreed to.
+   *
+   * OPTIONAL HERE, MANDATORY IN THE SERVICE, for the reason `signature` gives:
+   * the coupling is a rule about the agreement's own template rather than
+   * about this class, so it lives where a rule can be tested
+   * (`signature_requires_every_statement_affirmed`). Callers that predate the
+   * statements — and agreements locked before them — are unaffected.
+   */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(80, { each: true })
+  affirmations?: string[];
 }

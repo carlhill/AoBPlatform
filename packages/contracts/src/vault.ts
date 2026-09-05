@@ -591,6 +591,49 @@ export const VAULT_EVENT_TYPES = [
   'portal.passkey_signed_in',
   'portal.passkey_rejected',
   'portal.passkey_revoked',
+  /*
+   * THE WORDS OF THE AGREEMENT ITSELF (Carl, 5 Sep 2026; PMS_to_AoB_Workflow.md
+   * W1).
+   *
+   * WHY THESE ARE VAULT EVENTS. A practice may propose its own wording for the
+   * instrument its patients sign, and the platform reviews it before any
+   * patient sees it. "Who wrote these words, who read them, and when did they
+   * start being used" is precisely the question a dispute about what somebody
+   * agreed to turns into — and it cannot be answered from the templates table
+   * alone, because that table holds current state and a status column cannot
+   * say who moved it.
+   *
+   * `template.activated` IS THE HEAVY ONE. It is the moment unreviewed copy
+   * becomes the operative text of contracts, and its actor is a PLATFORM
+   * principal by construction: a practice cannot activate its own wording, the
+   * service refuses it, and the database refuses an active row with no named
+   * reviewer. The payload carries the reviewer's name deliberately — a review
+   * whose reviewer is anonymous is not a review.
+   *
+   * `template.retired` covers both endings: superseded by a newer version, and
+   * withdrawn back to the generic wording we ship. The two are different
+   * histories and the payload says which.
+   *
+   * NONE OF THE THREE CARRIES THE WORDS. The body lives in the row, at the
+   * version these events name; copying it here would put a second, divergeable
+   * copy of a contract's text in the log. And none of them carries a patient,
+   * an identifier or an amount (REQ-LOG-08, hard rules 1 and 4) — the template
+   * loader refuses an amount in the body before it can be stored at all.
+   */
+  'template.proposed',
+  'template.activated',
+  'template.retired',
+  /*
+   * THE PRACTICE'S LETTERHEAD MARK (W1). Recorded because the logo is embedded
+   * in the bytes of every agreement the practice makes and therefore in every
+   * hash: "why do agreements before Tuesday hash differently" has an answer
+   * with a time and a person on it. Hash, type and pixel dimensions only —
+   * never the image, which lives in the artefact store like every other
+   * artefact. Clearing it is its own event because the artefact is NOT
+   * deleted: what stopped is the printing, not the evidence.
+   */
+  'practice.letterhead_logo_set',
+  'practice.letterhead_logo_cleared',
 ] as const;
 
 export type VaultEventType = (typeof VAULT_EVENT_TYPES)[number];

@@ -365,6 +365,25 @@ model Practice {
   // arrangement is registered directly with Services Australia, with us not
   // in the path. (ORG-MODEL-PROPOSAL.md §8.)
 
+  // --- The letterhead logo (Carl, 5 Sep 2026; W1) ---
+  //
+  // A POINTER, NEVER BYTES. The image is an artefact, addressed by content
+  // hash; these columns say which one is current. Everything ELSE on the
+  // letterhead — legal name, trading names, address, phone, email, ABN — is
+  // already above and is read, never duplicated.
+  //
+  // CLEARING THE LOGO CLEARS THE POINTER AND NEVER DELETES THE ARTEFACT.
+  // Agreements signed under that letterhead embed those exact bytes and have
+  // to keep re-verifying against them (hard rules 11 and 13).
+  logoArtefactId  String?   @db.Uuid
+  logoSha256      String?
+  logoContentType String? // image/png | image/jpeg. SVG is refused twice over.
+  logoWidthPx     Int?
+  logoHeightPx    Int?
+  logoUpdatedAt   DateTime?
+  /// Who put it there, by display name. The vault event holds their subject id.
+  logoUpdatedBy   String?
+
   locations    PracticeLocation[]
   staff        StaffMember[]
   providers    Provider[]
@@ -1240,6 +1259,29 @@ model Agreement {
   renderedLanguages       String[]     @default([])
   renderedArtefactHash    String? // SHA-256 at render (REQ-VAULT-02)
   rendererVersion         String? // renderers are versioned content — re-verify with THIS version (rule 13/14)
+  /**
+   * THE WHOLE RENDERED DOCUMENT — letterhead, resolved template words and the
+   * particulars above — exactly as it was hashed at lock (Carl, 5 Sep 2026).
+   * WHY IT IS SEPARATE FROM `particulars`. `particulars` is the s 65C payload
+   * the rules engine validated, and it must stay that and only that. This is
+   * the render INPUT, and it has to be stored rather than recomputed: rebuilding
+   * it at verification time from the practice's CURRENT letterhead and the
+   * CURRENT template would make every stored hash stop verifying the day a
+   * practice changed its phone number.
+   * NULL ON EVERY AGREEMENT LOCKED BEFORE 5 SEPTEMBER 2026, which re-verify
+   * under `pdf-1` from `particulars` alone. That is what versioned renderers
+   * are for (`renderInputOf` in the render module picks between the two).
+   */
+  renderPayload           Json?
+  /**
+   * WHICH WORDS (hard rule 14) — the generic template id, or the practice's own
+   * variant. Beside `ruleSetVersion` and `mappingVersion` because it is the
+   * same kind of fact: what was in force when this agreement was made.
+   */
+  templateId              String?
+  templateVersion         String?
+  /** Which letterhead was on it. `letterheadHashOf` in the render module. */
+  letterheadHash          String?
   verificationEventId     String?      @db.Uuid
   signatureEventId        String?      @db.Uuid
   supersedesAgreementId   String?      @db.Uuid // HARD-02: corrections supersede
@@ -1442,6 +1484,19 @@ model SignatureEvent {
    */
   strokeCount               Int?
   pointCount                Int?
+
+  /**
+   * WHAT THE ASSIGNOR TICKED (Carl, 5 Sep 2026; W1). Statement KEYS —
+   * `episodic_assign_v1` — never the sentences. The words live in the
+   * template at the version recorded beside them, so a second copy here could
+   * disagree with the document the person actually read.
+   * EVERY STATEMENT OF THE TEMPLATE, ALWAYS. The server refuses a signature
+   * that does not carry them all (`signature_requires_every_statement_affirmed`),
+   * so a partial list is not a state this column can hold.
+   */
+  affirmations              String[] @default([])
+  templateId                String?
+  templateVersion           String?
 
   @@index([practiceId])
   @@index([agreementId])
@@ -2792,4 +2847,63 @@ model Arrival {
   @@unique([practiceId, idempotencyKey])
   @@index([practiceId, arrivedAt])
   @@map("arrivals")
+}
+
+/**
+ * PER-PRACTICE AGREEMENT WORDING (Carl, 5 Sep 2026; PMS_to_AoB_Workflow.md W1).
+ *
+ * The generic templates are versioned content in
+ * `packages/domain/content/agreement-templates.json`. A practice that wants
+ * different words proposes a VARIANT here, in the same schema, validated by
+ * the same loader — so a variant cannot drop a D-element, carry an amount,
+ * offer a practitioner signature or claim the form is approved (hard rules 3,
+ * 4, 12, 14).
+ *
+ * THE STATUS LADDER IS THE POINT. `draft` → `in_review` → `active` → `retired`,
+ * and the step from `in_review` to `active` is a PLATFORM-OPERATOR act. A
+ * practice cannot activate its own legal copy: regulatory wording is read by a
+ * person with the standing to read it, and the database refuses an `active`
+ * row with no named reviewer (`practice_templates_active_was_reviewed`).
+ *
+ * NOTHING IS EDITED IN PLACE ONCE ACTIVE. A change is a NEW version, proposed
+ * and reviewed again, and retiring the current one falls back to the generic —
+ * the same "corrections supersede" shape as HARD-02, for the same reason: an
+ * agreement records which version it was made from, and a version whose words
+ * can change afterwards records nothing.
+ */
+model PracticeAgreementTemplate {
+  id         String @id @default(uuid()) @db.Uuid
+  practiceId String @db.Uuid
+
+  /// episodic | enduring — the two instruments.
+  agreementType String
+  /// Minted by the practice, e.g. `testville-episodic-1`. Unique per type.
+  version       String
+  /// draft | in_review | active | retired
+  status        String @default("draft")
+
+  /// The body, in the generic file's own schema. Validated before it is written.
+  body  Json
+  /// The practice's own note about why these words. Never rendered.
+  notes String?
+
+  submittedByName String?
+  submittedAt     DateTime?
+
+  /// The PLATFORM principal who read the words. Never a practice user.
+  reviewedByName String?
+  reviewedAt     DateTime?
+  /// What the reviewer said. Shown to the practice, verbatim.
+  reviewNotes    String?
+
+  activatedAt DateTime?
+  retiredAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@unique([practiceId, agreementType, version])
+  @@index([practiceId, agreementType])
+  @@index([status, submittedAt])
+  @@map("practice_agreement_templates")
 }

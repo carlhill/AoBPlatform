@@ -47,6 +47,14 @@ export const ARTEFACT_PURPOSES = [
    */
   'signature_raster', // the PNG the pad produced
   'signature_vector', // the strokes, with their timing, exactly as captured
+  /**
+   * The practice's letterhead mark (Carl, 5 Sep 2026; W1). The ONLY artefact
+   * that is embedded in the bytes of an agreement rather than merely stored
+   * beside one, which is why `practice-logo.ts` puts a much shorter allowlist
+   * and a much smaller cap in front of it — and why one of these is never
+   * deleted while an agreement embeds it (hard rules 11 and 13).
+   */
+  'practice_logo',
   'other',
 ] as const;
 export type ArtefactPurpose = (typeof ARTEFACT_PURPOSES)[number];

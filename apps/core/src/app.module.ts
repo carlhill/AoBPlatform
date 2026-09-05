@@ -21,6 +21,7 @@ import { TabletSessionsModule } from './tablet-sessions/tablet-sessions.module';
 import { PatientsModule } from './patients/patients.module';
 import { ServiceDescriptionsModule } from './service-descriptions/service-descriptions.module';
 import { PracticesModule } from './practices/practices.module';
+import { TemplatesModule } from './templates/templates.module';
 import { PmsModule } from './pms/pms.module';
 import { AutoCaptureModule } from './auto-capture/auto-capture.module';
 import { ArrivalsModule } from './arrivals/arrivals.module';
@@ -69,6 +70,7 @@ import { PortalModule } from './portal/portal.module';
     PatientsModule,
     ServiceDescriptionsModule,
     PracticesModule,
+    TemplatesModule,
     OrganisationsModule,
     AffiliationsModule,
     IdentityDashboardModule,

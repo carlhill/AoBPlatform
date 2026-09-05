@@ -3,15 +3,22 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
   NotImplementedException,
 } from '@nestjs/common';
 import type { Agreement as DbAgreement, Prisma } from '@prisma/client';
 import { answersEnduringRules, type RulesEngineClient } from '@aobplatform/contracts';
-import { RendererRegistry } from '../render/renderer-registry';
+import { RendererRegistry, renderInputOf } from '../render/renderer-registry';
+import { LetterheadService } from '../practices/letterhead.service';
+import { TemplatesService } from '../templates/templates.service';
+import { RenderRefusal, type AgreementDocument } from '../render/agreement-document';
 import { CaptureService } from '../capture/capture.service';
 import { WriteBackService } from '../pms/write-back.service';
 import {
+  AgreementTemplateError,
+  renderAgreementTemplate,
+  type RenderedAgreementTemplate,
   assertNoForbiddenAgreementFields,
   assertRepointAllowed,
   assertSignatureAllowed,
@@ -107,10 +114,26 @@ export interface PreparedLock {
   readonly renderedArtefactHash: string;
   readonly rendererVersion: string;
   readonly languages: readonly string[];
+  /**
+   * THE WHOLE DOCUMENT THAT WAS HASHED — letterhead, resolved words and the
+   * particulars above (Carl, 5 Sep 2026; W1). Stored on the agreement so that
+   * re-rendering to check the hash has something complete to re-render, and so
+   * that a change to ANY rendered element moves the bytes. Before this, the
+   * render input was the particulars alone and correcting a detail the page
+   * did not carry changed nothing (the 4 September note).
+   */
+  readonly renderPayload: AgreementDocument;
+  readonly templateId: string;
+  readonly templateVersion: string;
+  readonly letterheadHash: string;
+  /** The statements the assignor must tick, in order. Keys travel to the signature. */
+  readonly statements: readonly { readonly key: string; readonly text: string }[];
 }
 
 @Injectable()
 export class AgreementsService {
+  private readonly logger = new Logger(AgreementsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     @Inject(RULES_CLIENT) private readonly rules: RulesEngineClient,
@@ -118,6 +141,8 @@ export class AgreementsService {
     private readonly capture: CaptureService,
     private readonly writeBack: WriteBackService,
     private readonly artefacts: ArtefactsService,
+    private readonly letterheads: LetterheadService,
+    private readonly templates: TemplatesService,
   ) {}
 
   /** See `enduringRulesAuthored`. In-process and per-instance, which is all a hint needs to be. */
@@ -679,11 +704,77 @@ export class AgreementsService {
       throw new BadRequestException({ message: 's 65C validation failed', failures });
     }
 
+    /*
+     * THE DOCUMENT, ASSEMBLED (Carl, 5 Sep 2026; W1). Three things the
+     * particulars alone never carried: whose practice this is, what the words
+     * mean, and which version of those words was in force.
+     *
+     * ORDER MATTERS HERE. The letterhead and the template are fetched AFTER
+     * the rules verdict, because a payload that will not validate is not worth
+     * a template lookup — and BEFORE the render, because the render is where
+     * they become bytes.
+     */
+    const [{ letterhead, letterheadHash }, resolved] = await Promise.all([
+      this.letterheads.forPractice(practiceId),
+      this.templates.resolve(practiceId, String(particulars.agreementType ?? '')),
+    ]);
+    if (resolved.fallbackReason) {
+      // A stored practice variant that no longer validates. The agreement is
+      // NOT blocked — it falls back to the generic wording (hard rule 8) — but
+      // the reason is loud, because somebody has to fix the variant.
+      this.logger.error(
+        `Practice ${practiceId} has an active agreement template that no longer validates; the generic ` +
+          `wording was used instead. ${resolved.fallbackReason}`,
+      );
+    }
+
+    let template: RenderedAgreementTemplate;
+    try {
+      template = renderAgreementTemplate(resolved.template, templateValuesFor(particulars, validation));
+    } catch (err) {
+      if (err instanceof AgreementTemplateError) {
+        // A particular the words need and the payload does not have. The rules
+        // engine has already passed, so this is a gap between the two — and
+        // rendering braces at a patient is not an option (hard rule 2).
+        throw new BadRequestException(err.message);
+      }
+      throw err;
+    }
+
+    const renderPayload: AgreementDocument = {
+      practiceId,
+      particulars,
+      letterhead,
+      letterheadHash,
+      template,
+      /*
+       * THE DRAFT MARKER IS DECIDED HERE AND STORED, never read at render time
+       * — see `AgreementDocument`. It is on while the words are unreviewed and
+       * we are not in production: a page that failed to say its wording was
+       * unreviewed would be the platform passing draft legal copy off as
+       * settled, and a marker that depended on the environment would make an
+       * agreement stop verifying when it moved between them.
+       */
+      draftMarker:
+        resolved.template.status === 'draft_pending_review' && process.env.NODE_ENV !== 'production',
+    };
+
     // Rule 13 / REQ-VAULT-02: one deterministic render path — the artefact is
     // rendered and hashed at lock time, and the hash is evidenced BEFORE the
     // signature control can enable.
     const languages = ['en'] as const; // bilingual rendering (REQ-LANG-02) arrives with M14
-    const rendered = await this.renderers.current().render(particulars, languages);
+    let rendered;
+    try {
+      rendered = await this.renderers
+        .current()
+        .render(renderPayload as unknown as Record<string, unknown>, languages);
+    } catch (err) {
+      // The render-time guards (hard rules 3, 4 and 12) refuse rather than
+      // redact. A refusal at the lock is a person seeing the reason and fixing
+      // the record it came from; nobody is blocked from being seen or billed.
+      if (err instanceof RenderRefusal) throw new BadRequestException(err.message);
+      throw err;
+    }
 
     return {
       particulars,
@@ -692,6 +783,11 @@ export class AgreementsService {
       renderedArtefactHash: rendered.sha256,
       rendererVersion: rendered.rendererVersion,
       languages: [...languages],
+      renderPayload,
+      templateId: resolved.template.id,
+      templateVersion: resolved.template.version,
+      letterheadHash,
+      statements: template.statements,
     };
   }
 
@@ -768,6 +864,12 @@ export class AgreementsService {
         renderedArtefactHash: prepared.renderedArtefactHash,
         rendererVersion: prepared.rendererVersion,
         renderedLanguages: [...prepared.languages],
+        // The whole hashed document, and the two versions rule 14 adds to the
+        // rule set and mapping already above.
+        renderPayload: prepared.renderPayload as unknown as Prisma.InputJsonValue,
+        templateId: prepared.templateId,
+        templateVersion: prepared.templateVersion,
+        letterheadHash: prepared.letterheadHash,
         ...extra,
       },
     });
@@ -775,13 +877,25 @@ export class AgreementsService {
       type: 'agreement.particulars_locked',
       actor: SYSTEM_ACTOR,
       subject: { type: 'Agreement', id: agreementId },
-      payload: { ruleSetVersion: prepared.ruleSetVersion, mappingVersion: prepared.mappingVersion },
+      payload: {
+        ruleSetVersion: prepared.ruleSetVersion,
+        mappingVersion: prepared.mappingVersion,
+        // WHICH WORDS, alongside which rules (hard rule 14). Without it the
+        // evidence says an agreement was locked and validated but not what it
+        // said, which is the question a dispute is actually about.
+        templateId: prepared.templateId,
+        templateVersion: prepared.templateVersion,
+      },
     });
     await enqueueVaultEvent(tx, {
       type: 'agreement.rendered',
       actor: SYSTEM_ACTOR,
       subject: { type: 'Agreement', id: agreementId },
-      payload: { artefactSha256: prepared.renderedArtefactHash, rendererVersion: prepared.rendererVersion },
+      payload: {
+        artefactSha256: prepared.renderedArtefactHash,
+        rendererVersion: prepared.rendererVersion,
+        letterheadHash: prepared.letterheadHash,
+      },
     });
     return updated;
   }
@@ -878,6 +992,8 @@ export class AgreementsService {
       deviceFingerprint?: string;
       ipAddress?: string;
       signature?: DrawnSignatureCapture;
+      /** The statement keys the assignor ticked. Every one, or the signature is refused. */
+      affirmations?: string[];
     },
   ): Promise<DbAgreement> {
     // Storage-time re-validation (REQ-65C-01: "and again at storage").
@@ -918,6 +1034,36 @@ export class AgreementsService {
       throw err;
     }
 
+    /*
+     * `signature_requires_every_statement_affirmed` — EVERY TICK BOX, ON THE
+     * SERVER (Carl, 5 Sep 2026; W1).
+     *
+     * The particulars were locked before the tablet drew anything (hard rule
+     * 2), and the ticks are the separate thing: the assignor's affirmations of
+     * what the document says. They are recorded as KEYS on the signature
+     * event, and a signature that does not carry every statement of the
+     * template the agreement was rendered from is refused here rather than
+     * merely discouraged in the UI — the kiosk's gate is markup, and this is
+     * the line that holds for the remote link, the portal and anything built
+     * later.
+     *
+     * AGREEMENTS LOCKED BEFORE TODAY CARRY NO TEMPLATE, so there is nothing to
+     * affirm and nothing is required. That is not a loophole a new agreement
+     * can reach: `prepareLock` has assembled a template on every lock since.
+     */
+    const required = statementKeysOf(agreementBefore);
+    if (required.length > 0) {
+      const ticked = new Set(dto.affirmations ?? []);
+      const missing = required.filter((key) => !ticked.has(key));
+      if (missing.length > 0) {
+        throw new BadRequestException(
+          `The person signing has not agreed to every statement on this agreement (${missing.length} of ` +
+            `${required.length} outstanding). A signature is a signature to what the document says, so it ` +
+            'cannot be recorded against statements nobody ticked.',
+        );
+      }
+    }
+
     // Storage pass (REQ-65C-01 "and again at storage"): the stored snapshot
     // plus the signature and lock facts, against the SAME rule-set version
     // that validated the lock (rule 14).
@@ -946,7 +1092,7 @@ export class AgreementsService {
       );
     }
     const rerendered = await renderer.render(
-      agreementBefore.particulars as Record<string, unknown>,
+      renderInputOf(agreementBefore),
       agreementBefore.renderedLanguages,
     );
     if (rerendered.sha256 !== agreementBefore.renderedArtefactHash) {
@@ -1028,6 +1174,11 @@ export class AgreementsService {
           padHeight: capture?.padHeight ?? null,
           strokeCount: capture?.strokeCount ?? null,
           pointCount: capture?.pointCount ?? null,
+          // KEYS, never the sentences — the words are in the template at the
+          // version recorded beside them.
+          affirmations: required,
+          templateId: agreementBefore.templateId,
+          templateVersion: agreementBefore.templateVersion,
         },
       });
       await enqueueVaultEvent(tx, {
@@ -1040,6 +1191,10 @@ export class AgreementsService {
           channel: dto.channel,
           artefactSha256: rerendered.sha256,
           hasVerificationEvent: agreementBefore.verificationEventId !== null,
+          // HOW MANY STATEMENTS WERE AFFIRMED, and under which wording. A
+          // count and two versions, never the sentences (REQ-LOG-08).
+          affirmationCount: required.length,
+          templateVersion: agreementBefore.templateVersion ?? 'none',
           // BOTH HALVES OF THE MARK, alongside the rendered agreement's hash
           // (REQ-SIG-02). Hashes and shape only — never the strokes, never the
           // image, never anything a log could leak. Pruned rather than sent as
@@ -1214,4 +1369,117 @@ function d6aOf(agreement: Pick<DbAgreement, 'serviceDescription' | 'particulars'
   return typeof particulars?.basicServiceDescription === 'string'
     ? (particulars.basicServiceDescription as string)
     : undefined;
+}
+
+/**
+ * THE PARTICULARS, TURNED INTO THE VALUES THE WORDS NEED.
+ *
+ * A DELIBERATE, EXPLICIT MAPPING rather than spreading the payload into the
+ * substitution. The template's placeholder names are content — a practice may
+ * rewrite every sentence around them — and the particulars' keys are the
+ * platform's own vocabulary. Coupling them by coincidence of naming would mean
+ * a rename in one silently blanking a particular on a contract in the other.
+ *
+ * THE EM DASH IS THE ANSWER FOR AN ELEMENT THAT DOES NOT APPLY, never an empty
+ * string: `renderAgreementTemplate` throws on a missing value precisely so
+ * that a particular cannot vanish, and the branches (`isPreAgreement`,
+ * `assignorIsPatient`) are what keep an inapplicable element off the page
+ * rather than a blank standing in for it.
+ *
+ * ONE ELEMENT IS NOT SOURCED FROM THE REQUIREMENTS AND SAYS SO:
+ * `commencementDate`. REQ-END-02's reg 65CB content set lists "signature and
+ * date", and `EnduringDetail.enteredIntoAt` is "the date the agreement was
+ * entered into" — neither is called a commencement. Rather than invent a
+ * field, the agreement's own D2 date stands in, which is the day the standing
+ * commitment begins on every reading of REQ-END-06a we have. FLAGGED for Carl:
+ * if reg 65CB carries a distinct commencement element, it belongs here.
+ */
+function templateValuesFor(
+  particulars: Record<string, unknown>,
+  validation: { readonly mappingVersion: string },
+): { values: Record<string, string>; conditions: Record<string, boolean> } {
+  const text = (key: string): string => {
+    const value = particulars[key];
+    if (Array.isArray(value)) return value.length > 0 ? value.join(', ') : NOT_APPLICABLE;
+    if (value === undefined || value === null || value === '') return NOT_APPLICABLE;
+    return String(value);
+  };
+
+  const agreementType = String(particulars.agreementType ?? '');
+  /*
+   * D4, s 65C(5): NAME + PLACE OF PRACTICE, **OR** PROVIDER NUMBER (REQ-REG-02).
+   * A provider number is NOT mandatory, and the whole point of (a) is that a
+   * practice can be onboarded without one. So the document renders whichever
+   * the platform holds, preferring the pair, and never leaves D4 blank.
+   */
+  const providerName = text('providerName');
+  const providerAddress = particulars.providerAddress;
+  const providerNumber = particulars.providerNumber;
+  const providerDetails =
+    typeof providerAddress === 'string' && providerAddress.trim()
+      ? `${providerName}, ${providerAddress}`
+      : typeof providerNumber === 'string' && providerNumber.trim()
+        ? `${providerName}, provider number ${providerNumber}`
+        : providerName;
+
+  return {
+    values: {
+      patientName: text('patientName'),
+      agreementDate: text('agreementDate'),
+      providerName,
+      providerDetails,
+      serviceDate: text('serviceDate'),
+      basicServiceDescription: text('basicServiceDescription'),
+      mbsItemNumbers: text('mbsItemNumbers'),
+      mappingVersion: validation.mappingVersion,
+      assignorName: text('assignorName'),
+      assignorRelationship: text('assignorRelationship'),
+      enduringPathway: text('enduringPathway'),
+      coveredServiceScope: coveredScopeOf(particulars),
+      notificationMethod: text('notificationMethod'),
+      terminationMethod: text('terminationMethod'),
+      // See the note above: D2 stands in, and the naming says the two are the
+      // same day rather than pretending to a field the docs do not record.
+      commencementDate: text('agreementDate'),
+    },
+    conditions: {
+      assignorIsPatient: particulars.assignorIsPatient !== false,
+      // `treatment_plan` takes the pre-service branch: it is agreed before the
+      // services it covers, which is what D3 is asking.
+      isPreAgreement: agreementType !== 'episodic_post',
+    },
+  };
+}
+
+/** REQ-END-06a — the scope, said as a scope type and its values, never a price. */
+function coveredScopeOf(particulars: Record<string, unknown>): string {
+  const values = particulars.coveredServiceClasses;
+  const scopeType = particulars.coveredServiceScopeType;
+  if (!Array.isArray(values) || values.length === 0) return NOT_APPLICABLE;
+  const list = values.map(String).join(', ');
+  return typeof scopeType === 'string' && scopeType ? `${scopeType}: ${list}` : list;
+}
+
+/**
+ * WHAT AN ELEMENT THAT DOES NOT APPLY PRINTS AS. An em dash, because a blank
+ * on a contract reads as something that failed to print, and because the
+ * substitution refuses an empty value outright.
+ */
+const NOT_APPLICABLE = '—';
+
+/**
+ * The statement keys the agreement's own stored document says must be ticked.
+ *
+ * READ OFF THE STORED DOCUMENT, not off the practice's CURRENT template. What
+ * the person signed is what was rendered and hashed for them; a template
+ * activated between the lock and the signature must not change what they are
+ * required to have agreed to.
+ */
+function statementKeysOf(agreement: Pick<DbAgreement, 'renderPayload'>): string[] {
+  const payload = agreement.renderPayload as { template?: { statements?: unknown } } | null;
+  const statements = payload?.template?.statements;
+  if (!Array.isArray(statements)) return [];
+  return statements
+    .map((s) => (s && typeof s === 'object' ? (s as { key?: unknown }).key : undefined))
+    .filter((key): key is string => typeof key === 'string' && key.length > 0);
 }

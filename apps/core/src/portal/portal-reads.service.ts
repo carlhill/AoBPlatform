@@ -30,7 +30,7 @@ import type {
 } from '@aobplatform/contracts';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
-import { RendererRegistry } from '../render/renderer-registry';
+import { RendererRegistry, renderInputOf } from '../render/renderer-registry';
 import { EnduringService } from '../enduring/enduring.service';
 import { ReviewTasksService } from '../review-tasks/review-tasks.service';
 import { PortalScope } from './portal-scope';
@@ -276,10 +276,12 @@ export class PortalReadsService {
         );
       }
 
-      const rendered = await renderer.render(
-        agreement.particulars as Record<string, unknown>,
-        agreement.renderedLanguages,
-      );
+      // `renderInputOf`, not `particulars`: since 5 September 2026 the lock
+      // stores the WHOLE rendered document (letterhead + words + particulars)
+      // and that is what has to be re-rendered to check the hash. Agreements
+      // locked before it still re-render from `particulars` under `pdf-1` —
+      // the helper picks, in one place, for all three re-render call sites.
+      const rendered = await renderer.render(renderInputOf(agreement), agreement.renderedLanguages);
       if (rendered.sha256 !== agreement.renderedArtefactHash) {
         this.logger.error(
           `Agreement ${agreementId} re-rendered to ${rendered.sha256}, recorded ${agreement.renderedArtefactHash}. ` +

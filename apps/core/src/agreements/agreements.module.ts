@@ -6,6 +6,8 @@ import { CaptureModule } from '../capture/capture.module';
 import { RenderModule } from '../render/render.module';
 import { PmsModule } from '../pms/pms.module';
 import { ArtefactsModule } from '../artefacts/artefacts.module';
+import { PracticesModule } from '../practices/practices.module';
+import { TemplatesModule } from '../templates/templates.module';
 
 /**
  * ArtefactsModule, not the artefacts TABLE. A drawn signature stores its
@@ -14,7 +16,18 @@ import { ArtefactsModule } from '../artefacts/artefacts.module';
  * module, never a second path into somebody else's rows (CLAUDE.md §4).
  */
 @Module({
-  imports: [RulesClientModule, CaptureModule, RenderModule, PmsModule, ArtefactsModule],
+  // PracticesModule for the letterhead and TemplatesModule for the words: the
+  // lock assembles the WHOLE document before it renders and hashes it, and
+  // both of those are somebody else's module (CLAUDE.md §4).
+  imports: [
+    RulesClientModule,
+    CaptureModule,
+    RenderModule,
+    PmsModule,
+    ArtefactsModule,
+    PracticesModule,
+    TemplatesModule,
+  ],
   controllers: [AgreementsController],
   providers: [AgreementsService],
   exports: [AgreementsService],

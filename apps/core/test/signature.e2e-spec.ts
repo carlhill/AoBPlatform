@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import type { ValidationResponse } from '@aobplatform/contracts';
+import { genericAgreementTemplate } from '@aobplatform/domain';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { ArtefactsService } from '../src/artefacts/artefacts.service';
@@ -50,6 +51,14 @@ function drawnSignature() {
     padHeight: 200,
   };
 }
+
+/**
+ * THE STATEMENTS THE ASSIGNOR TICKS on an episodic agreement, taken from the
+ * generic template rather than typed here (hard rule 14): the words are
+ * versioned content and the KEYS are what a signature records, so a test that
+ * hard-coded them would go green against wording nobody ships.
+ */
+const EPISODIC_AFFIRMATIONS = genericAgreementTemplate('episodic').statements.map((s) => s.key);
 
 const PARTICULARS = {
   patientName: 'Alex Testpatient',
@@ -165,6 +174,7 @@ describe('signature capture — the full journey (e2e, real Postgres)', () => {
         channel: 'sms_link',
         captureRequestId: opened.body.captureRequestId,
         deviceFingerprint: 'test-device-1',
+        affirmations: EPISODIC_AFFIRMATIONS,
       })
       .expect(201);
     expect(signed.body.status).toBe('stored');
@@ -300,7 +310,7 @@ describe('signature capture — the full journey (e2e, real Postgres)', () => {
     const signed = await request(app.getHttpServer())
       .post(`/agreements/${agreementId}/sign`)
       .set('x-practice-id', practiceId)
-      .send({ method: 'drawn', channel: 'in_practice', captureRequestId, signature: drawnSignature() })
+      .send({ method: 'drawn', channel: 'in_practice', captureRequestId, signature: drawnSignature(), affirmations: EPISODIC_AFFIRMATIONS })
       .expect(201);
     expect(signed.body.status).toBe('stored');
 
@@ -381,7 +391,7 @@ describe('signature capture — the full journey (e2e, real Postgres)', () => {
       await request(app.getHttpServer())
         .post(`/agreements/${agreementId}/sign`)
         .set('x-practice-id', practiceId)
-        .send({ method: 'drawn', channel: 'in_practice', captureRequestId, signature: drawnSignature() })
+        .send({ method: 'drawn', channel: 'in_practice', captureRequestId, signature: drawnSignature(), affirmations: EPISODIC_AFFIRMATIONS })
         .expect(500);
     } finally {
       spy.mockRestore();
@@ -409,7 +419,7 @@ describe('signature capture — the full journey (e2e, real Postgres)', () => {
     await request(app.getHttpServer())
       .post(`/agreements/${agreementId}/sign`)
       .set('x-practice-id', practiceId)
-      .send({ method: 'drawn', channel: 'in_practice', captureRequestId, signature: drawnSignature() })
+      .send({ method: 'drawn', channel: 'in_practice', captureRequestId, signature: drawnSignature(), affirmations: EPISODIC_AFFIRMATIONS })
       .expect(201);
 
     // Displayed, and served the way every artefact is served: as an
@@ -479,7 +489,7 @@ describe('signature capture — the full journey (e2e, real Postgres)', () => {
     await request(app.getHttpServer())
       .post(`/agreements/${agreementId}/sign`)
       .set('x-practice-id', practiceId)
-      .send({ method: 'tap_to_approve', channel: 'in_practice', captureRequestId })
+      .send({ method: 'tap_to_approve', channel: 'in_practice', captureRequestId, affirmations: EPISODIC_AFFIRMATIONS })
       .expect(201);
 
     const missing = await request(app.getHttpServer())

@@ -191,6 +191,39 @@ export class ArtefactsService {
   }
 
   /**
+   * CONTENT BY HASH, FOR THE RENDERER — the practice's letterhead logo, which
+   * is embedded in the bytes of every agreement that practice makes.
+   *
+   * SEPARATE FROM `download` FOR TWO REASONS, both about honesty rather than
+   * convenience. It is addressed by CONTENT HASH, because that is what the
+   * stored render payload carries and what makes "the same logo" a guarantee
+   * about bytes rather than about a row id somebody could re-point. And it
+   * writes NO `artefact.accessed` event: a render is not a person reading
+   * evidence, every agreement display already writes its own event, and one
+   * extra read per render would bury the reads that matter (REQ-LOG-07).
+   *
+   * NULL, NEVER A THROW. The caller is the render path, and the render path
+   * has a better answer than an exception from here: a declared logo that
+   * cannot be produced means the bytes would differ from the bytes hashed at
+   * lock, which is a rule 13 refusal with its own words.
+   */
+  async contentByHash(practiceId: string, sha256: string): Promise<Buffer | null> {
+    const artefact = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.artefact.findFirst({ where: { sha256, deletedAt: null } }),
+    );
+    if (!artefact) return null;
+    const bytes = await this.store.get(artefact.storageKey).catch(() => null);
+    if (!bytes) return null;
+    if (sha256Hex(bytes) !== artefact.sha256) {
+      this.logger.error(
+        `Artefact ${artefact.id} does not match its recorded hash. Refusing to render with it.`,
+      );
+      return null;
+    }
+    return Buffer.from(bytes);
+  }
+
+  /**
    * Fetch for download. REQ-LOG-07 — reads are logged, not only writes: who
    * looked at a piece of evidence is itself evidence.
    */

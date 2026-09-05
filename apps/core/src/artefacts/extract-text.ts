@@ -208,16 +208,34 @@ function extractPdfText(bytes: Uint8Array): string | null {
 function scrapeText(stream: string, toUnicode: Map<number, string>): string {
   const out: string[] = [];
 
-  // Hex strings first: <hhhh...>. Two-byte codes when the map is two-byte,
-  // which is the usual case for the subset fonts browsers embed.
-  for (const m of stream.matchAll(/<([0-9A-Fa-f\s]{2,})>\s*(?:Tj|TJ|\])/g)) {
-    const hex = m[1].replace(/\s/g, '');
-    let decoded = '';
-    const width = toUnicode.size > 0 ? 4 : 2;
-    for (let i = 0; i + width <= hex.length; i += width) {
-      const code = parseInt(hex.slice(i, i + width), 16);
-      decoded += toUnicode.get(code) ?? (code >= 32 && code < 127 ? String.fromCharCode(code) : '');
-    }
+  /*
+   * KERNED ARRAYS FIRST: `[<48656c> 50 <6c6f>] TJ`.
+   *
+   * A show-text array interleaves hex (or literal) runs with kern adjustments,
+   * so most of its runs are followed by a NUMBER rather than by `TJ` or `]`.
+   * The old rule below only matched a run sitting immediately before one of
+   * those, which meant every run but the last of a kerned line was dropped —
+   * and a PDF our own renderer produces is kerned on every line, so this read
+   * as "unreadable" rather than as "missing a word" (Carl, 5 Sep 2026).
+   *
+   * The arrays are scraped and then REMOVED from the string, so the rule below
+   * cannot count a run twice.
+   */
+  const withoutArrays = stream.replace(/\[([^\]]*)\]\s*TJ/g, (_whole, body: string) => {
+    const decoded = (body.match(/<([0-9A-Fa-f\s]*)>/g) ?? [])
+      .map((token) => decodeHex(token.slice(1, -1), toUnicode))
+      .join('');
+    if (decoded) out.push(decoded);
+    // The literal runs inside the array — `[(Hel) 50 (lo)] TJ` — are left in
+    // place for the bracketed-literal pass below, which reads them correctly.
+    return body.replace(/<[0-9A-Fa-f\s]*>/g, ' ');
+  });
+
+  // Hex strings shown on their own: `<hhhh...> Tj`. Two-byte codes when the
+  // map is two-byte, which is the usual case for the subset fonts browsers
+  // embed.
+  for (const m of withoutArrays.matchAll(/<([0-9A-Fa-f\s]{2,})>\s*(?:Tj|TJ|\])/g)) {
+    const decoded = decodeHex(m[1], toUnicode);
     if (decoded) out.push(decoded);
   }
 
@@ -225,8 +243,8 @@ function scrapeText(stream: string, toUnicode: Map<number, string>): string {
   let inString = false;
   let depth = 0;
   let current = '';
-  for (let i = 0; i < stream.length; i += 1) {
-    const ch = stream[i];
+  for (let i = 0; i < withoutArrays.length; i += 1) {
+    const ch = withoutArrays[i];
 
     if (!inString) {
       if (ch === '(') {
@@ -238,13 +256,18 @@ function scrapeText(stream: string, toUnicode: Map<number, string>): string {
     }
 
     if (ch === '\\') {
-      const next = stream[i + 1];
+      const next = withoutArrays[i + 1];
       if (next === undefined) break;
       if (next >= '0' && next <= '7') {
         let octal = '';
         let j = i + 1;
-        while (j < stream.length && octal.length < 3 && stream[j] >= '0' && stream[j] <= '7') {
-          octal += stream[j];
+        while (
+          j < withoutArrays.length &&
+          octal.length < 3 &&
+          withoutArrays[j] >= '0' &&
+          withoutArrays[j] <= '7'
+        ) {
+          octal += withoutArrays[j];
           j += 1;
         }
         current += String.fromCharCode(parseInt(octal, 8));
@@ -284,4 +307,20 @@ function scrapeText(stream: string, toUnicode: Map<number, string>): string {
   }
 
   return out.join(' ');
+}
+
+/**
+ * One hex run to text. Codes are two bytes wide where a ToUnicode map is in
+ * play (subset fonts) and one byte otherwise — the base-14 fonts our own
+ * renderer pins have no map and need none.
+ */
+function decodeHex(hex: string, toUnicode: Map<number, string>): string {
+  const clean = hex.replace(/\s/g, '');
+  const width = toUnicode.size > 0 ? 4 : 2;
+  let decoded = '';
+  for (let i = 0; i + width <= clean.length; i += width) {
+    const code = parseInt(clean.slice(i, i + width), 16);
+    decoded += toUnicode.get(code) ?? (code >= 32 && code < 127 ? String.fromCharCode(code) : '');
+  }
+  return decoded;
 }
