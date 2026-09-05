@@ -56,6 +56,21 @@
  * who can change it. That is where K-5's locked panel went, and one line under
  * an existing statement cannot be mistaken for an option (Carl, 4 Sep 2026).
  *
+ * THE WORDS ARE THE SERVER'S, AND THEY ARE THE PDF'S (Carl, 5 Sep 2026; W1).
+ * The statements the patient ticks are not written in this file and not in the
+ * string table: they come back from the lock as part of the rendered document,
+ * which is the same object the PDF is drawn from and hashed against. One
+ * source of truth, rendered twice. A sentence written here would be a second
+ * copy of the operative words of a contract, free to drift from the one that
+ * was signed.
+ *
+ * AND THE TICKS ARE NOT THE PARTICULARS. Rule 2 is already satisfied before
+ * this screen draws: the payload validated and locked on the server, and the
+ * signature control can only enable from that. The ticks are the separate
+ * thing the regulation actually wants — the assignor's affirmations — and they
+ * gate CONTINUE rather than the lock. Their KEYS travel to the signature
+ * event; the server refuses a signature missing any of them.
+ *
  * NO DOLLAR AMOUNT AND NO PRACTITIONER SIGNATURE FIELD appear anywhere on this
  * screen (rules 3 and 4); the three tags along the bottom say so out loud,
  * because a reviewer standing at the tablet should be able to see the rule
@@ -74,6 +89,7 @@ import type { ReactNode } from 'react';
 import type { AgreementType } from '@aobplatform/domain';
 import { Blueprint, Kicker, Screen, Tag } from '../components/Chrome';
 import { GuardedButton, SecondaryButton } from '../components/Buttons';
+import { Checkbox } from '../components/Field';
 import { shortHash } from '../components/SignatureControl';
 import type { SignatureValidation } from '../rules/signature-gate';
 import { strings } from '../strings';
@@ -100,6 +116,15 @@ export interface ParticularsView {
   readonly ruleSetVersion: string | null;
   readonly mappingVersion: string | null;
   readonly artefactHash: string | null;
+  /**
+   * THE AFFIRMATIONS, FROM THE RENDERED DOCUMENT. Empty until the lock
+   * answers, and empty forever on an agreement locked before templates
+   * existed — in which case there is nothing to tick and Continue is gated
+   * only by the signature gate, exactly as it was.
+   */
+  readonly statements?: readonly { readonly key: string; readonly text: string }[];
+  /** Which wording produced them. Shown beside the rule-set version. */
+  readonly templateVersion?: string | null;
 }
 
 export function ParticularsScreen({
@@ -107,6 +132,8 @@ export function ParticularsScreen({
   locationLine,
   view,
   validation,
+  affirmed = [],
+  onToggleAffirmation,
   onContinue,
   onBack,
   onDeclineEnduring,
@@ -118,6 +145,22 @@ export function ParticularsScreen({
   locationLine: string | null;
   view: ParticularsView;
   validation: SignatureValidation;
+  /** The statement keys ticked so far. Held by the ceremony so Back costs no re-tick. */
+  affirmed?: readonly string[];
+  /**
+   * DRAWN ONLY WHEN IT IS GIVEN, on the reasoning this file already applies to
+   * Back and to the enduring decline: a screen draws a control when it is
+   * handed a handler.
+   *
+   * WITHOUT ONE THE SCREEN IS EXACTLY WHAT IT WAS — the single consent
+   * sentence, no boxes, Continue gated only by the signature gate. That is the
+   * right behaviour for an agreement locked before the wording became content,
+   * and it is SAFE for any caller that forgets, because the server refuses a
+   * signature that does not carry every statement key of the template the
+   * agreement was rendered from. The tablet's gate is a courtesy; the refusal
+   * is the rule.
+   */
+  onToggleAffirmation?: (key: string) => void;
   onContinue: () => void;
   /**
    * "I'D RATHER AGREE EACH VISIT" — the ongoing agreement's quiet second
@@ -169,6 +212,20 @@ export function ParticularsScreen({
    */
   const isEnduring = view.agreementType === 'enduring';
 
+  /**
+   * EVERY STATEMENT, OR CONTINUE STAYS SHUT. The count is in the disabled
+   * label rather than only in a message, because a control that refuses
+   * without saying how many things are outstanding is the fault CLAUDE.md §7
+   * names — a shortcut to the answer, not a direction to a screen.
+   *
+   * THE SERVER HOLDS THE SAME LINE. This is markup; `POST /agreements/:id/sign`
+   * refuses a signature that does not carry every key, so a client that
+   * skipped this cannot record one.
+   */
+  const statements = onToggleAffirmation ? (view.statements ?? []) : [];
+  const outstanding = statements.filter((statement) => !affirmed.includes(statement.key)).length;
+  const readyToSign = validation.state === 'valid' && outstanding === 0;
+
   const actions = (
     <div className={styles.actions}>
       {onBack ? (
@@ -178,9 +235,15 @@ export function ParticularsScreen({
         <GuardedButton
           label={strings.particulars.continueToSign}
           state={
-            validation.state === 'valid'
+            readyToSign
               ? { disabled: false }
-              : { disabled: true, disabledLabel: strings.particulars.continueNotReady }
+              : {
+                  disabled: true,
+                  disabledLabel:
+                    validation.state === 'valid'
+                      ? strings.particulars.continueNotAffirmed(outstanding)
+                      : strings.particulars.continueNotReady,
+                }
           }
           onPress={onContinue}
           testId="continue-to-sign"
@@ -218,6 +281,7 @@ export function ParticularsScreen({
             {view.ruleSetVersion && view.mappingVersion ? (
               <p className={styles.versions} data-testid="versions">
                 {strings.particulars.versions(view.ruleSetVersion, view.mappingVersion)}
+                {view.templateVersion ? strings.particulars.wordingVersion(view.templateVersion) : ''}
               </p>
             ) : null}
           </div>
@@ -274,7 +338,34 @@ export function ParticularsScreen({
                 ))}
               </div>
             ) : null}
-            <p className={styles.consent}>{strings.particulars.consentText}</p>
+            {/*
+              THE OPERATIVE WORDS, FROM THE SERVER'S RENDERED DOCUMENT — the
+              same sentences the PDF prints, ticked one at a time. Nothing
+              here is written in this file or in the string table (see the
+              module note); the heading around them is, because a heading is
+              chrome and these are the instrument.
+
+              THE FALLBACK IS THE OLD SENTENCE, for an agreement locked before
+              templates existed. It is not a control and cannot be ticked,
+              because there is nothing on that agreement's record to record a
+              tick against.
+            */}
+            {statements.length > 0 && onToggleAffirmation ? (
+              <div className={styles.grid} data-testid="affirmations">
+                <span className={styles.docRowLabel}>{strings.particulars.statementsHeading}</span>
+                {statements.map((statement) => (
+                  <Checkbox
+                    key={statement.key}
+                    label={statement.text}
+                    checked={affirmed.includes(statement.key)}
+                    onToggle={() => onToggleAffirmation(statement.key)}
+                    testId={`affirm-${statement.key}`}
+                  />
+                ))}
+              </div>
+            ) : (
+              <p className={styles.consent}>{strings.particulars.consentText}</p>
+            )}
           </div>
           <div className={styles.tags}>
             <Tag label={strings.particulars.tagNoAmount} />

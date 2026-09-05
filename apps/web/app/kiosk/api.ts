@@ -81,6 +81,27 @@ export interface AgreementResponse {
   readonly ruleSetVersion: string | null;
   readonly mappingVersion: string | null;
   readonly renderedArtefactHash: string | null;
+  /**
+   * WHICH WORDS THIS AGREEMENT WAS MADE FROM (hard rule 14; Carl, 5 Sep 2026).
+   */
+  readonly templateVersion?: string | null;
+  /**
+   * THE RENDERED DOCUMENT — the object the server drew the PDF from and hashed
+   * (`AgreementDocument` in core's render module).
+   *
+   * THE TABLET READS THE STATEMENTS OUT OF IT AND NOTHING ELSE. It is here so
+   * that K-3 and the PDF show the same sentences from one source rather than
+   * two copies; the tablet does not compose a document from it, and every
+   * particular it draws still comes from `particulars` as before.
+   *
+   * NULL on an agreement locked before templates existed.
+   */
+  readonly renderPayload?: {
+    readonly template?: {
+      readonly templateVersion?: string;
+      readonly statements?: readonly { readonly key: string; readonly text: string }[];
+    };
+  } | null;
 }
 
 export interface ChallengeResponse {

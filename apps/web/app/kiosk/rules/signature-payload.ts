@@ -24,6 +24,12 @@ export interface SignRequestBody {
   readonly method: KioskSignatureMethod;
   readonly captureRequestId: string;
   readonly signature?: DrawnSignatureCapture;
+  /**
+   * THE STATEMENTS THE ASSIGNOR TICKED — keys, never sentences (Carl, 5 Sep
+   * 2026; W1). The words are the server's own, at the version the agreement
+   * records; a tablet that could send text could send text nobody agreed to.
+   */
+  readonly affirmations?: readonly string[];
 }
 
 /**
@@ -38,8 +44,10 @@ export function composeSignRequest(
   method: KioskSignatureMethod,
   captureRequestId: string,
   capture: DrawnSignatureCapture | null,
+  affirmations: readonly string[] = [],
 ): SignRequestBody | null {
-  if (method !== 'drawn') return { method, captureRequestId };
+  const ticks = affirmations.length > 0 ? { affirmations: [...affirmations] } : {};
+  if (method !== 'drawn') return { method, captureRequestId, ...ticks };
   if (!capture) return null;
-  return { method, captureRequestId, signature: capture };
+  return { method, captureRequestId, signature: capture, ...ticks };
 }

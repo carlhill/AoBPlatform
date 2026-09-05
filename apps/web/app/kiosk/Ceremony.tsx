@@ -182,6 +182,14 @@ export const RETURN_TO_BEGIN_HOLD_MS = 6_000;
 
 export function Ceremony(): ReactNode {
   const [step, setStep] = useState<Step>('booting');
+  /**
+   * THE STATEMENTS THE PERSON HAS TICKED, held here rather than in K-3 (Carl,
+   * 5 Sep 2026; W1) — for the same reason the pushed path's detail answers are
+   * held here: Back to K-P1 and forward again must not cost somebody their
+   * ticks. Dropped on reset with every other piece of ceremony state; nothing
+   * about it is written to the device (zero footprint).
+   */
+  const [affirmed, setAffirmed] = useState<readonly string[]>([]);
   const [practiceName, setPracticeName] = useState('');
   const [locationLine, setLocationLine] = useState<string | null>(null);
   /**
@@ -629,6 +637,8 @@ export function Ceremony(): ReactNode {
     setVerification(firstAttempt());
     setMismatch(false);
     setChoice(EMPTY_CHOICE);
+    // The ticks belong to the person who made them and to nobody after.
+    setAffirmed([]);
     setAssignorBusy(false);
     setAssignorError(false);
     autoLockedRef.current = null;
@@ -1669,6 +1679,10 @@ export function Ceremony(): ReactNode {
         method,
         captureRequestId,
         method === 'drawn' ? (padRef.current?.capture() ?? null) : null,
+        // THE TICKS TRAVEL WITH THE SIGNATURE. K-3 will not let the ceremony
+        // reach this screen with any outstanding, and the server refuses a
+        // signature missing one — this is the value that makes both true.
+        affirmed,
       );
       if (!body) {
         // Never rendered — K-4 shows its own copy for any failure — so this
@@ -1696,7 +1710,7 @@ export function Ceremony(): ReactNode {
         setSignBusy(false);
       }
     },
-    [agreement, captureRequestId],
+    [agreement, captureRequestId, affirmed],
   );
 
   const validation: SignatureValidation = useMemo(() => {
@@ -1710,6 +1724,10 @@ export function Ceremony(): ReactNode {
       renderedArtefactHash: agreement.renderedArtefactHash,
     });
   }, [agreement, lockBusy]);
+
+  const toggleAffirmation = useCallback((key: string) => {
+    setAffirmed((current) => (current.includes(key) ? current.filter((k) => k !== key) : [...current, key]));
+  }, []);
 
   const view: ParticularsView = useMemo(() => {
     const p = (agreement?.particulars ?? {}) as Record<string, unknown>;
@@ -1755,6 +1773,13 @@ export function Ceremony(): ReactNode {
       ruleSetVersion: agreement?.ruleSetVersion ?? null,
       mappingVersion: agreement?.mappingVersion ?? null,
       artefactHash: agreement?.renderedArtefactHash ?? null,
+      /*
+       * THE WORDS THE SERVER RENDERED, not a copy. Empty on an agreement
+       * locked before templates existed, and K-3 falls back to the sentence
+       * that agreement was actually shown.
+       */
+      statements: agreement?.renderPayload?.template?.statements ?? [],
+      templateVersion: agreement?.templateVersion ?? null,
     };
   }, [agreement, row, pushed, pushedPatientName]);
 
@@ -1954,6 +1979,8 @@ export function Ceremony(): ReactNode {
             locationLine={locationLine}
             view={view}
             validation={validation}
+            affirmed={affirmed}
+            onToggleAffirmation={toggleAffirmation}
             onContinue={() => setStep('signature')}
             /*
               NAVIGATION, NOT AN EXIT — one `setStep` and nothing else — AND NOT

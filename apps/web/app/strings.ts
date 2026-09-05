@@ -5029,10 +5029,33 @@ export const strings = {
        * (REQ-REC-04).
        */
       assignorLockedNote: 'Set at reception — ask our staff if this is wrong',
+      /**
+       * THE LAST INLINE COPY OF THE INSTRUMENT'S OWN WORDS, kept only for
+       * agreements locked before the wording became versioned content (Carl,
+       * 5 Sep 2026; W1).
+       *
+       * WHAT REPLACED IT. The sentences the patient ticks now come back from
+       * the server as part of the rendered document — the same object the PDF
+       * is drawn from and hashed against — so the tablet and the contract
+       * cannot say different things. A sentence in this table was a second
+       * copy of the operative words of a contract, unversioned, free to drift
+       * from the one that was signed, and impossible to answer "what did they
+       * actually agree to in March" from.
+       *
+       * IT IS NOT DELETED, because agreements locked before today have no
+       * statements on their record and this is what they were shown.
+       */
       consentText:
         'I assign my right to the Medicare benefit for the service described above to the provider named '
         + 'above, who accepts that assigned benefit as full payment for that service.',
+      /**
+       * The heading over the tick boxes. CHROME, not the instrument — the
+       * statements themselves are content and are never in this table.
+       */
+      statementsHeading: 'Please read and tick each of these',
       versions: (ruleSet: string, mapping: string) => `Rule set ${ruleSet} · mapping ${mapping}`,
+      /** Which wording produced the statements (hard rule 14). */
+      wordingVersion: (template: string) => ` · wording ${template}`,
       hashLine: (hash: string) => `SHA-256 ${hash}`,
       tagNoAmount: 'No amount shown',
       tagNoProviderSignature: 'No provider signature field',
@@ -5043,6 +5066,15 @@ export const strings = {
       /** THE ONE PRIMARY ON K-3. Reading is a step; signing is the next one. */
       continueToSign: 'Continue to sign',
       continueNotReady: 'Continue to sign — not ready yet',
+      /**
+       * HOW MANY ARE LEFT, not merely that something is (CLAUDE.md §7 —
+       * shortcuts to the answer). The boxes are on the same screen, so the
+       * count IS the direction: there is nowhere else to go and nobody to ask.
+       */
+      continueNotAffirmed: (outstanding: number) =>
+        outstanding === 1
+          ? 'Continue to sign — one box still to tick'
+          : `Continue to sign — ${outstanding} boxes still to tick`,
       /**
        * K-3 NEVER ASKS THE PATIENT FOR A PARTICULAR (Carl, 3 Sep 2026 — this
        * supersedes the staff-entry box the Expo build carried).
