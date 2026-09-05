@@ -1039,6 +1039,49 @@ verification event.
 - [ ] Touches the same screens as the kiosk MVP; do not start until that
       lands.
 
+## Enduring scope across locations, and provider numbers (Carl, 5 Sep 2026) -- VERIFY
+
+Carl's reading, agreed in principle: AoB is the source of truth for the
+agreements and their evidence (the PMS stays master for patient details);
+enduring agreements are **per practitioner** (REQ-END-01, FAQ correction of
+July 2026: "agreements are per practitioner, but multiple agreements can be
+made at the same practice"), so a GP seeing the same MyMedicare patient at
+either of the practice's locations needs no second enduring agreement; a
+non-GP practice signs a new episodic agreement for every service, pre or
+post (REQ-END-01a: no enduring pathway for specialists/allied/optometry).
+
+Two things to put to the Department (with the D-11 questions) before the
+visit policy relies on them:
+
+- [ ] **Location vs practitioner.** MyMedicare registration is with a
+      practice; REQ-END-07 lists MyMedicare deregistration or transfer as a
+      cessation trigger. "Two locations of the same practice" therefore holds
+      only if both sit under one MyMedicare registration. A secondary source
+      read on 5 Sep 2026 also names "the practitioner leaves the nominated
+      location" as a termination trigger, which sits awkwardly against the
+      per-practitioner correction. Unverified either way -- do not build
+      either reading into `visit-policy` until answered.
+- [ ] **Provider numbers are per location (Carl: "I thought the practitioner
+      had a different id for each practice they worked at").** As commonly
+      understood, a Medicare provider number is issued per practitioner per
+      practice location. The s 65C(4) D4 element may identify the professional
+      by name + practice address OR by provider number (REQ-REG-02, s 65C(5)(a)
+      or (b)). If an enduring agreement identifies the provider by a
+      location-specific number, is "the practitioner" in that agreement the
+      person (covering both locations) or the number (one location)? Ask.
+      Until answered, render D4 as name + practice address AND the provider
+      number where held, so the agreement identifies the person under (a) and
+      is not hostage to the location reading of (b).
+- [ ] **Model check.** `core.providers` carries `providerNumber` and a
+      `locationId`: confirm whether one practitioner at two locations is one
+      row or two, and whether `visit-policy`'s "active enduring for THIS
+      provider x patient" compares the person or the row. If two rows, the
+      policy would wrongly offer a second enduring agreement at the second
+      location. Decide: a `practitioner` identity (AHPRA number / person) above
+      the per-location provider rows, and the enduring agreement anchored to
+      the practitioner. Recorded as a decision for Carl once the Department
+      answers the first two.
+
 ## The practice flow, end to end: one touch per visit
 
 Carl, 3 Sep 2026, after seeing the kiosk: "too complex for a patient who is
