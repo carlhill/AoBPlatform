@@ -2238,6 +2238,24 @@ TWO THINGS FOR CARL TO DECIDE — both now answered (Carl, 4 Sep 2026):
      **exactly one section number** — 65CA(7)(b), because REQ-PORT-05 gives it
      and CLAUDE.md §7 forbids inferring another.
 
+## Government audit of a practice (Carl, 5 Sep 2026) -- plan in GovAudit.md
+
+New requirement: an agency may audit a practice. A `GovAuditQueue` records the
+`AuditRequest`; the practice Accepts or Rejects with a reason from its console
+(the email only points there); the agency is emailed either way; on Accept an
+extract for the period (CSVs + manifest + signed artefacts, hashed, an auditor
+bundle per REQ-VAULT-07) goes to a per-request read-only SFTP folder for 30
+days; every download is a vault event; no uploads by policy; files archived two
+years; re-access to past extracts by request to the platform, granted with a
+reason. Full plan, data extract, architecture (AWS Transfer Family + S3 Object
+Lock), state machine, named tests and nine open decisions: **GovAudit.md**.
+
+- [ ] Carl answers Q1-Q5 in GovAudit.md §6 (legal basis; what defines the
+      period; how the agency reconciles without a Medicare number; scope
+      options; whether officers get a portal in v1).
+- [ ] Then build P1-P4 (~14 agent-days). Not on the GA critical path unless a
+      customer or agency asks first; sits in GA-PLAN Phase 4 until Carl moves it.
+
 ## Where this product could go: v2 and v3
 
 Carl, 3 Sep 2026: "Version two of AoBPlatform could morph from just a
