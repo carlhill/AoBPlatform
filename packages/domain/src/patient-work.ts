@@ -34,7 +34,11 @@ import type { PushBlockedReason, TabletSessionState, DisputeResolutionOutcome } 
  * `session` is "this one is on a tablet, or was this morning" — live or ended,
  * with what the patient said about their details.
  */
-export type PatientQueueItemKind = 'awaiting_signature' | 'session' | 'portal_correction_requested';
+export type PatientQueueItemKind =
+  | 'awaiting_signature'
+  | 'session'
+  | 'portal_correction_requested'
+  | 'portal_activation_locked';
 
 export interface PatientQueueItem {
   kind: PatientQueueItemKind;
@@ -75,6 +79,22 @@ export interface PatientQueueItem {
   reviewTaskId?: string;
   fieldType?: string;
   requestedAt?: string;
+
+  /*
+   * `portal_activation_locked` ONLY -- three wrong answers on the activation
+   * link and the invitation is finished (Carl, 5 Sep 2026). The patient is told
+   * to ask their practice; this is the practice being told, on the screen where
+   * the answer is one press away.
+   *
+   * IT CARRIES NO IDENTIFIER TYPE AND NO OUTCOME DETAIL. Which detail the
+   * person got wrong is not on this item and is not anywhere reception can
+   * read it (REQ-VER-04, hard rule 9) -- the remedy is the same whichever it
+   * was. `agreementId` is the patient's most recent SIGNED agreement, because
+   * that is what minting a new invitation needs, and `reviewTaskId` is the task
+   * both buttons close.
+   */
+  lockedAt?: string;
+  invitationId?: string;
 }
 
 /**
@@ -127,6 +147,15 @@ export const PATIENT_TIMELINE_TYPES = [
    */
   'portal_correction_requested',
   'portal_correction_resolved',
+  /*
+   * THE INVITATION LOCKED, AND WHETHER A NEW ONE WENT. Both halves again: "the
+   * link stopped working" and "somebody here sent another" are different facts,
+   * and a patient asking why they still cannot get in is asking about the
+   * second. Neither entry carries an identifier type or an outcome — only that
+   * it happened, and when (REQ-VER-04, hard rule 9).
+   */
+  'portal_activation_locked',
+  'portal_reinvited',
 ] as const;
 
 export type PatientTimelineType = (typeof PATIENT_TIMELINE_TYPES)[number];

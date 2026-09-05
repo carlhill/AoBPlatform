@@ -537,13 +537,24 @@ export const VAULT_EVENT_TYPES = [
    * this from their own page" and "it was terminated" are different facts and
    * only one of them can be told from the other's absence.
    *
-   * NONE OF THE SIX CARRIES AN AMOUNT, a name, an address or a detail's value.
-   * `portal.correction_requested` carries the field TYPE the patient says is
-   * wrong and never what they believe is right — the portal has no field to
-   * take one, because reception confirms it in person against the PMS.
+   * `portal.activation_locked` is the OTHER end of `portal.activated`: three
+   * failed identifier checks and the invitation is finished (Carl, 5 Sep
+   * 2026). It carries the invitation id, the attempt COUNT and the review task
+   * it raised for the practice — never which identifier types were offered,
+   * never which failed and never a value (REQ-VER-04, hard rule 9). The
+   * per-attempt detail already exists as the verification module's own events;
+   * duplicating it here would put a failure profile for one person in a second
+   * place. It is written exactly once per invitation, because locking is a
+   * one-time transition.
+   *
+   * NONE OF THE SEVEN CARRIES AN AMOUNT, a name, an address or a detail's
+   * value. `portal.correction_requested` carries the field TYPE the patient
+   * says is wrong and never what they believe is right — the portal has no
+   * field to take one, because reception confirms it in person against the PMS.
    */
   'portal.invitation_minted',
   'portal.activated',
+  'portal.activation_locked',
   'portal.accessed',
   'portal.correction_requested',
   'portal.enduring_terminated',

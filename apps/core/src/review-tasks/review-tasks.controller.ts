@@ -1,11 +1,17 @@
 import { Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { IsIn, IsOptional, IsString } from 'class-validator';
-import { REVIEW_RESOLUTIONS, REVIEW_TASK_KINDS } from '@aobplatform/domain';
+import { MANUAL_REVIEW_RESOLUTIONS, REVIEW_TASK_KINDS } from '@aobplatform/domain';
 import { ReviewTasksService } from './review-tasks.service';
 import { SessionActor, type Actor } from '../auth/actor.decorator';
 
 export class ResolveTaskDto {
-  @IsIn(REVIEW_RESOLUTIONS as unknown as string[])
+  /*
+   * THE MANUAL LIST, NOT EVERY RESOLUTION. `reinvited` records an ACT — a new
+   * portal invitation was minted — and only the code that performs that act
+   * may write it. Accepting it here would let a caller close a locked
+   * invitation by saying a replacement went out (Carl, 5 Sep 2026).
+   */
+  @IsIn(MANUAL_REVIEW_RESOLUTIONS as unknown as string[])
   resolution!: string;
 
   @IsOptional()
@@ -61,6 +67,6 @@ export class ReviewTasksController {
   /** The kinds, their questions, and which may be closed automatically. */
   @Get('catalogue')
   catalogue() {
-    return { kinds: REVIEW_TASK_KINDS, resolutions: REVIEW_RESOLUTIONS };
+    return { kinds: REVIEW_TASK_KINDS, resolutions: MANUAL_REVIEW_RESOLUTIONS };
   }
 }

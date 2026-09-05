@@ -1,12 +1,15 @@
 import {
   AUTO_RESOLVE_CONFIDENCE,
+  MANUAL_REVIEW_RESOLUTIONS,
   REVIEW_CLAIM_MINUTES,
+  REVIEW_RESOLUTIONS,
   REVIEW_TASK_KEYS,
   REVIEW_TASK_KINDS,
   isTaskClaimable,
   kindForAmendment,
   mayAutoResolve,
   resolutionAttribution,
+  reinvitationAttribution,
   reviewTaskKind,
 } from './review-tasks';
 
@@ -145,5 +148,40 @@ describe('isTaskClaimable', () => {
 
   it('does not let a claim with no expiry hold for ever', () => {
     expect(isTaskClaimable({ state: 'claimed' }, NOW)).toBe(true);
+  });
+});
+
+describe('a portal invitation that locked (Carl, 5 Sep 2026)', () => {
+  it('is a kind the practice is told about, and carries nothing about what was typed', () => {
+    const kind = reviewTaskKind('portal_activation_locked');
+    expect(kind).toBeTruthy();
+    /*
+     * LOW-STAKES, and the reason is that there is nothing here to assess: the
+     * task cannot say which identifier failed (REQ-VER-04, hard rule 9), and
+     * the remedy is the same whichever it was — a new invitation.
+     */
+    expect(kind!.stakes).toBe('low');
+    expect(kind!.question).not.toMatch(/medicare|which identifier|value/i);
+  });
+
+  it('reinvited_is_not_a_decision_a_person_may_choose', () => {
+    /*
+     * It records an ACT — a replacement invitation actually went out — so only
+     * the code that mints one may write it. In a reviewer's drop-down it would
+     * be a way to say a message went about a message that never went.
+     */
+    expect(REVIEW_RESOLUTIONS).toContain('reinvited');
+    expect(MANUAL_REVIEW_RESOLUTIONS).not.toContain('reinvited');
+    for (const manual of MANUAL_REVIEW_RESOLUTIONS) {
+      expect(REVIEW_RESOLUTIONS).toContain(manual);
+    }
+  });
+
+  it('says plainly that nobody reviewed the locked one', () => {
+    const said = reinvitationAttribution('Mai Frontdesk');
+    expect(said).toContain('Mai Frontdesk');
+    expect(said).toMatch(/replaced/i);
+    // Never borrows the words for a judgement nobody made.
+    expect(said).not.toMatch(/^Reviewed by/);
   });
 });

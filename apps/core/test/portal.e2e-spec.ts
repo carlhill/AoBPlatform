@@ -609,6 +609,182 @@ describe('M8 patient portal (e2e, real Postgres)', () => {
       .expect(201);
   });
 
+  /**
+   * Lock one invitation, and hand back the row it locked.
+   *
+   * The three failures are the real route in — nothing here writes `lockedAt`
+   * by hand, because the transition is the thing under test.
+   */
+  async function lockAnInvitation(): Promise<{ token: string; invitationId: string }> {
+    const token = await mintInvitation();
+    const invitation = await prisma.withPractice(practiceA, (tx) =>
+      tx.portalActivationToken.findFirst({ orderBy: { createdAt: 'desc' } }),
+    );
+    const wrong = { ...STATED_CORRECT, name: 'Wrongname Person' };
+    const attempt = () =>
+      request(app.getHttpServer())
+        .post('/portal/activate')
+        .send({ agreementId: signedAgreement, activationToken: token, stated: wrong });
+    await attempt().expect(401);
+    await attempt().expect(401);
+    await attempt().expect(423);
+    return { token, invitationId: invitation!.id };
+  }
+
+  function lockedTasksFor(invitationId: string) {
+    return prisma.withPractice(practiceA, (tx) =>
+      tx.reviewTask.findMany({
+        where: {
+          kind: 'portal_activation_locked',
+          detail: { path: ['invitationId'], equals: invitationId },
+        },
+      }),
+    );
+  }
+
+  it('locked_activation_raises_one_task_for_the_practice', async () => {
+    /*
+     * THE PRACTICE IS TOLD WHEN AN ACTIVATION LOCKS (Carl, 5 Sep 2026). Until
+     * this existed the lock was told to the person who failed and to nobody
+     * else, and the remedy — a new invitation — only happened if the patient
+     * remembered to ask for one.
+     */
+    const { token, invitationId } = await lockAnInvitation();
+
+    const tasks = await lockedTasksFor(invitationId);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].subjectType).toBe('Patient');
+    expect(tasks[0].subjectId).toBe(patientA);
+    expect(tasks[0].state).toBe('open');
+
+    const events = await prisma.vaultOutbox.findMany({
+      where: { type: 'portal.activation_locked', subjectId: invitationId },
+    });
+    expect(events).toHaveLength(1);
+
+    /*
+     * AND NOT ONE VALUE IN EITHER OF THEM, nor which identifier failed
+     * (REQ-VER-04, REQ-SEC-07, hard rule 9). Reception is told that the
+     * invitation locked and nothing about what anybody typed — the remedy is
+     * the same whichever detail was wrong.
+     */
+    const serialised = JSON.stringify([tasks[0], events[0]]);
+    expect(serialised).not.toContain('Sampleton');
+    expect(serialised).not.toContain('Wrongname');
+    expect(serialised).not.toContain('1962-11-02');
+    expect(serialised).not.toContain('Example Street');
+    expect(serialised).not.toContain(token);
+    expect(serialised).not.toMatch(/medicare/i);
+    expect(serialised).not.toMatch(/date_of_birth/);
+
+    /*
+     * A FOURTH ATTEMPT RAISES NOTHING MORE. Locking is a one-time transition,
+     * so the task and the event are one each per invitation however many times
+     * somebody tries afterwards — otherwise a script would fill the practice's
+     * queue with the same fact.
+     */
+    await request(app.getHttpServer())
+      .post('/portal/activate')
+      .send({ agreementId: signedAgreement, activationToken: token, stated: STATED_CORRECT })
+      .expect(423);
+    expect(await lockedTasksFor(invitationId)).toHaveLength(1);
+    expect(
+      await prisma.vaultOutbox.findMany({
+        where: { type: 'portal.activation_locked', subjectId: invitationId },
+      }),
+    ).toHaveLength(1);
+  });
+
+  it('reinvitation_resolves_the_locked_task_and_starts_fresh', async () => {
+    const { token: dead, invitationId } = await lockAnInvitation();
+    expect(await lockedTasksFor(invitationId)).toHaveLength(1);
+
+    // THE REMEDY: one new invitation, minted the ordinary way.
+    const fresh = await mintInvitation();
+
+    const [task] = await lockedTasksFor(invitationId);
+    expect(task.state).toBe('resolved');
+    expect(task.resolution).toBe('reinvited');
+    expect(task.resolvedAutomatically).toBe(false);
+
+    /*
+     * THE CLOSURE IS EVIDENCE LIKE ANY OTHER, and says plainly that nobody
+     * reviewed the locked invitation — it was replaced.
+     */
+    const closures = await prisma.vaultOutbox.findMany({
+      where: { type: 'review_task.resolved', subjectId: patientA },
+    });
+    const payloads = closures.map((e) => JSON.stringify(e.payload));
+    expect(payloads.some((p) => p.includes('reinvited') && p.includes(task.id))).toBe(true);
+
+    // THE LOCKED TOKEN STAYS DEAD. Superseding it means the new one exists,
+    // not that the old one comes back.
+    const spent = await request(app.getHttpServer())
+      .post('/portal/activate')
+      .send({ agreementId: signedAgreement, activationToken: dead, stated: STATED_CORRECT })
+      .expect(423);
+    expect(spent.body.reason).toBe('token_locked');
+
+    // AND THE NEW ONE STARTS AT THREE — the count is per token, so a
+    // re-invitation is a remedy rather than a formality.
+    const challenge = await request(app.getHttpServer())
+      .get(`/portal/activate/${fresh}/challenge`)
+      .expect(200);
+    expect(challenge.body.attemptsRemaining).toBe(PORTAL_ACTIVATION_MAX_ATTEMPTS);
+    await request(app.getHttpServer())
+      .post('/portal/activate')
+      .send({ agreementId: signedAgreement, activationToken: fresh, stated: STATED_CORRECT })
+      .expect(201);
+  });
+
+  it('a locked invitation is invisible to another practice', async () => {
+    const { invitationId } = await lockAnInvitation();
+
+    /*
+     * TENANCY FAILS CLOSED ON BOTH NEW READS. Practice B asks the two
+     * questions practice A's desk asks — its review queue and its work list —
+     * and the RLS policies answer with nothing rather than with a refusal,
+     * because a refusal would confirm the row exists.
+     */
+    const queue = await request(app.getHttpServer())
+      .get('/review-tasks?kind=portal_activation_locked')
+      .set('x-practice-id', practiceB)
+      .expect(200);
+    expect(JSON.stringify(queue.body)).not.toContain(invitationId);
+    expect(JSON.stringify(queue.body)).not.toContain(patientA);
+
+    const work = await request(app.getHttpServer())
+      .get('/patients?open=today')
+      .set('x-practice-id', practiceB)
+      .expect(200);
+    expect(JSON.stringify(work.body)).not.toContain(patientA);
+
+    // Practice A's own desk does see it, on the patient it is about.
+    const mine = await request(app.getHttpServer())
+      .get('/patients?open=today')
+      .set('x-practice-id', practiceA)
+      .expect(200);
+    const row = (mine.body as Array<{ patientId: string; items: Array<Record<string, unknown>> }>).find(
+      (r) => r.patientId === patientA,
+    );
+    const locked = row?.items.find((item) => item.kind === 'portal_activation_locked');
+    expect(locked).toBeTruthy();
+    // THE AGREEMENT A NEW INVITATION HANGS OFF, chosen by the server: the
+    // patient's most recent SIGNED one (FR-1.14).
+    expect(locked?.agreementId).toBe(signedAgreement);
+    // AND NOTHING ABOUT WHAT ANYBODY TYPED.
+    expect(JSON.stringify(locked)).not.toMatch(/medicare|date_of_birth|Sampleton/i);
+
+    // The patient's own timeline of it, as the work page reads it.
+    const timeline = await request(app.getHttpServer())
+      .get(`/patients/${patientA}/timeline`)
+      .set('x-practice-id', practiceA)
+      .expect(200);
+    const types = (timeline.body.entries as Array<{ type: string }>).map((e) => e.type);
+    expect(types).toContain('portal_activation_locked');
+    expect(types).toContain('portal_reinvited');
+  });
+
   it('activation_logs_identifier_types_not_values', async () => {
     await prisma.vaultOutbox.deleteMany({ where: { type: 'portal.activated' } });
     const token = await mintInvitation();

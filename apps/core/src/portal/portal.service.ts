@@ -34,6 +34,7 @@ import {
 import { PORTAL_AUTHENTICATOR, type PortalAuthenticator } from './portal-authenticator';
 import { PortalInvitationDispatcher } from './portal-invitation.dispatcher';
 import { PortalActivationAttemptLimit } from './portal-activation-rate-limit';
+import { ReviewTasksService } from '../review-tasks/review-tasks.service';
 
 /**
  * WHO THE PATIENT IS, AND WHAT THEY MAY SEE — the identity half of C8.
@@ -74,6 +75,14 @@ export class PortalService {
     private readonly scope: PortalScope,
     private readonly verification: VerificationService,
     private readonly invitations: PortalInvitationDispatcher,
+    /**
+     * THE PRACTICE'S OWN QUEUE, ASKED RATHER THAN WRITTEN TO DIRECTLY
+     * (CLAUDE.md §4). A locked activation raises a task there and a new
+     * invitation closes it; `review_tasks` belongs to that module and this one
+     * never touches the table. The module is `@Global()`, which is why
+     * `PortalModule` imports nothing new for it.
+     */
+    private readonly reviewTasks: ReviewTasksService,
     @Inject(PORTAL_AUTHENTICATOR) private readonly authenticator: PortalAuthenticator,
   ) {}
 
@@ -166,6 +175,26 @@ export class PortalService {
       });
 
       /*
+       * A NEW INVITATION IS THE WHOLE REMEDY FOR A LOCKED ONE (Carl, 5 Sep
+       * 2026), so minting one closes the task that asked for it — in this
+       * transaction, so there is never a live invitation with reception still
+       * being told to send one.
+       *
+       * THE LOCKED TOKEN IS NOT TOUCHED AND STAYS DEAD. Superseding it means
+       * this one exists, not that that one comes back: its `lockedAt` is set,
+       * every activation against it is still a 423, and the count is per token
+       * — so this invitation starts at three attempts, which is what makes a
+       * re-invitation a remedy rather than a formality (named test
+       * `activation_locks_after_three_failed_attempts`).
+       */
+      const reinvited = await this.reviewTasks.resolveReinvited(tx, {
+        practiceId,
+        patientId: agreement.patientId,
+        by: mintedById,
+        invitationId: row.id,
+      });
+
+      /*
        * THE MESSAGE, IN THIS TRANSACTION. The enqueue writes its correspondence
        * twin beside it, so there is never an invitation nobody was told about
        * or a message with no invitation behind it. A patient with no email and
@@ -213,6 +242,9 @@ export class PortalService {
           accountId,
           deliveredBy: sent?.channel ?? 'none',
           ...(sent ? { templateKey: sent.templateKey } : {}),
+          // Whether this one replaced a locked invitation — a fact about the
+          // invitation, not about the person or what they typed.
+          ...(reinvited.length > 0 ? { replacesLockedInvitation: true } : {}),
         },
       });
 
@@ -456,12 +488,79 @@ export class PortalService {
     if (outcome.outcome !== 'passed') {
       const attempts = invitation.attempts + 1;
       const locked = attempts >= PORTAL_ACTIVATION_MAX_ATTEMPTS;
-      await this.prisma.withPractice(parsed.practiceId, (tx) =>
-        tx.portalActivationToken.update({
-          where: { id: invitation.id },
-          data: { attempts, lockedAt: locked ? new Date() : null },
-        }),
-      );
+      await this.prisma.withPractice(parsed.practiceId, async (tx) => {
+        /*
+         * THE LOCK IS A ONE-TIME TRANSITION, AND THE UPDATE SAYS SO.
+         * `lockedAt: null` in the WHERE is what makes it one: two requests
+         * racing on the third attempt produce exactly one lock, one task and
+         * one event, and the loser writes nothing. Before 5 September 2026
+         * this was an unconditional update, which was harmless while nothing
+         * hung off the transition and would not be now.
+         */
+        const { count } = await tx.portalActivationToken.updateMany({
+          where: { id: invitation.id, ...(locked ? { lockedAt: null } : {}) },
+          data: { attempts, ...(locked ? { lockedAt: new Date() } : {}) },
+        });
+        if (!locked || count === 0) return;
+
+        /*
+         * THE PRACTICE IS TOLD (Carl, 5 Sep 2026). Until now the lock was told
+         * to the person who failed and to nobody else: the patient saw "ask
+         * your practice for a new one" and the practice was never asked. A
+         * remedy that only exists if the patient remembers to mention it at
+         * their next visit is not a remedy.
+         *
+         * WHAT THE TASK MAY NOT SAY, AND DOES NOT. Not which identifier types
+         * were offered, not which failed, not how close anybody was
+         * (REQ-VER-04, REQ-SEC-07, hard rule 9). Reception does not need it —
+         * the remedy is the same whichever detail was wrong, and it is to check
+         * the details with the patient and send a new invitation. It names the
+         * INVITATION and the AGREEMENT so the work page can offer that in one
+         * press rather than sending anybody to a queue (CLAUDE.md §7,
+         * "shortcuts to the answer").
+         */
+        const task = await this.reviewTasks.raise(tx, {
+          practiceId: parsed.practiceId,
+          kind: 'portal_activation_locked',
+          subjectType: 'Patient',
+          subjectId: invitation.patientId,
+          summary:
+            'A patient’s portal invitation locked after three failed attempts. Check the details you hold ' +
+            'with them, then send a new invitation.',
+          detail: {
+            invitationId: invitation.id,
+            agreementId: invitation.agreementId,
+            attempts,
+            lockedAt: new Date().toISOString(),
+          },
+          raisedBy: 'system',
+        });
+
+        /*
+         * THE SUBJECT IS THE INVITATION, NOT THE PATIENT, and that is
+         * deliberate twice over. It is what actually locked; and the patient's
+         * own "who has looked" card is built from the events whose subject is
+         * their patient id, their agreements or their sessions — a lock they
+         * were already told about on screen has no business appearing there as
+         * a bare action key they cannot act on.
+         *
+         * THE ACTOR IS THE SYSTEM. Whoever was typing was, by definition, not
+         * proved to be anybody; recording the pre-minted account as the actor
+         * would assert the very thing the three failures did not establish.
+         */
+        await enqueueVaultEvent(tx, {
+          type: 'portal.activation_locked',
+          actor: { principalType: 'system', id: 'portal' },
+          subject: { type: 'PortalActivationToken', id: invitation.id },
+          payload: {
+            invitationId: invitation.id,
+            agreementId: invitation.agreementId,
+            attempts,
+            outcome: 'locked',
+            reviewTaskId: task.id,
+          },
+        });
+      });
       this.limiter.recordFailure(clientKey);
       if (locked) {
         throw new HttpException(

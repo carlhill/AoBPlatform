@@ -348,7 +348,7 @@ export class PatientsService {
    * NO AMOUNTS, ANYWHERE (hard rule 4). Nothing in the shape could carry one.
    */
   async openToday(practiceId: string): Promise<PatientQueueRow[]> {
-    const [pushable, sessions, corrections] = await Promise.all([
+    const [pushable, sessions, corrections, lockedInvitations] = await Promise.all([
       this.tabletSessions.pushable(practiceId),
       // `false` = the last twenty-four hours, so an ended session still shows.
       this.tabletSessions.list(practiceId, false),
@@ -361,6 +361,14 @@ export class PatientsService {
        * which is how it stays unanswered.
        */
       this.reviewTasks.openForPatients(practiceId, 'portal_correction_requested'),
+      /*
+       * AND A PORTAL INVITATION THAT LOCKED (Carl, 5 Sep 2026), on the same
+       * reasoning and with the same lack of a time bound. The patient was told
+       * to ask the practice; this is the practice being told without waiting
+       * for them to remember. Nothing here says which detail they got wrong —
+       * the task does not carry it (REQ-VER-04, hard rule 9).
+       */
+      this.reviewTasks.openForPatients(practiceId, 'portal_activation_locked'),
     ]);
 
     const itemsByPatient = new Map<string, PatientQueueItem[]>();
@@ -408,6 +416,24 @@ export class PatientsService {
       });
     }
 
+    for (const task of lockedInvitations) {
+      const detail = (task.detail ?? {}) as Record<string, unknown>;
+      push(task.subjectId, {
+        kind: 'portal_activation_locked',
+        reviewTaskId: task.id,
+        lockedAt: task.raisedAt.toISOString(),
+        ...(typeof detail.invitationId === 'string' ? { invitationId: detail.invitationId } : {}),
+        /*
+         * THE AGREEMENT THE LOCKED INVITATION WAS MINTED FOR, as a floor. It
+         * is replaced below by the patient's most recent SIGNED agreement
+         * where there is one, because that is the one a new invitation should
+         * hang off — an invitation is minted against an agreement and this
+         * saves reception finding it.
+         */
+        ...(typeof detail.agreementId === 'string' ? { agreementId: detail.agreementId } : {}),
+      });
+    }
+
     for (const row of pushable) {
       push(row.patientId, {
         kind: 'awaiting_signature',
@@ -420,9 +446,38 @@ export class PatientsService {
 
     if (itemsByPatient.size === 0) return [];
 
-    const patients = await this.prisma.withPractice(practiceId, (tx) =>
-      tx.patient.findMany({ where: { id: { in: [...itemsByPatient.keys()] } } }),
-    );
+    const lockedPatientIds = lockedInvitations.map((task) => task.subjectId);
+    const { patients, latestSigned } = await this.prisma.withPractice(practiceId, async (tx) => {
+      const found = await tx.patient.findMany({ where: { id: { in: [...itemsByPatient.keys()] } } });
+      /*
+       * THE MOST RECENT SIGNED AGREEMENT PER PATIENT WITH A LOCKED INVITATION,
+       * and only for them. `POST /agreements/:id/portal-invitation` mints
+       * against an agreement and refuses one that has not been signed
+       * (FR-1.14), so the work page's "Send a new invitation" needs an id — and
+       * the newest signed one is the right id, not the one the dead invitation
+       * happened to name.
+       */
+      const signed = lockedPatientIds.length
+        ? await tx.agreement.findMany({
+            where: { patientId: { in: lockedPatientIds }, signatureEventId: { not: null } },
+            select: { id: true, patientId: true, createdAt: true },
+            orderBy: { createdAt: 'desc' },
+          })
+        : [];
+      const newest = new Map<string, string>();
+      for (const agreement of signed) {
+        if (!newest.has(agreement.patientId)) newest.set(agreement.patientId, agreement.id);
+      }
+      return { patients: found, latestSigned: newest };
+    });
+
+    for (const [patientId, items] of itemsByPatient) {
+      const agreementId = latestSigned.get(patientId);
+      if (!agreementId) continue;
+      for (const item of items) {
+        if (item.kind === 'portal_activation_locked') item.agreementId = agreementId;
+      }
+    }
 
     const rows: PatientQueueRow[] = patients.map((patient) => ({
       patientId: patient.id,
@@ -445,8 +500,11 @@ export class PatientsService {
       // A REQUEST THE PATIENT MADE AND NOBODY HAS ANSWERED ranks with the
       // things a person has to get up for, above a tablet that is simply busy.
       if (row.items.some((item) => item.kind === 'portal_correction_requested')) return 1;
-      if (row.items.some((item) => item.kind === 'session' && item.endedAt === null)) return 2;
-      return 3;
+      // A LOCKED INVITATION IS ALSO SOMEBODY WAITING ON US, and has been since
+      // the third attempt — but a patient who asked a question outranks it.
+      if (row.items.some((item) => item.kind === 'portal_activation_locked')) return 2;
+      if (row.items.some((item) => item.kind === 'session' && item.endedAt === null)) return 3;
+      return 4;
     };
     rows.sort((a, b) => rank(a) - rank(b) || a.patientName.localeCompare(b.patientName, 'en-AU'));
     return rows;
@@ -481,11 +539,10 @@ export class PatientsService {
      * they belong to another module and are asked for through its service
      * rather than joined to (CLAUDE.md §4).
      */
-    const correctionRequests = await this.reviewTasks.forPatient(
-      practiceId,
-      'portal_correction_requested',
-      patientId,
-    );
+    const [correctionRequests, lockedInvitations] = await Promise.all([
+      this.reviewTasks.forPatient(practiceId, 'portal_correction_requested', patientId),
+      this.reviewTasks.forPatient(practiceId, 'portal_activation_locked', patientId),
+    ]);
     return this.prisma.withPractice(practiceId, async (tx) => {
       // A cross-practice id finds nothing rather than being refused - RLS
       // filters on the transaction-local scope, so this fails closed.
@@ -644,6 +701,22 @@ export class PatientsService {
             ...(fieldType ? { detailTypes: [fieldType] } : {}),
             ...(task.resolution ? { detail: task.resolution } : {}),
           });
+        }
+      }
+
+      /*
+       * THE INVITATION LOCKED, AND WHETHER A NEW ONE WENT. The task carries
+       * both times, so both are here — a patient who still cannot get in is
+       * asking about the second, and its absence is the answer.
+       *
+       * NO IDENTIFIER TYPE AND NO OUTCOME, because the task holds none. What
+       * failed is not on this timeline and is not readable anywhere reception
+       * can reach (REQ-VER-04, hard rule 9).
+       */
+      for (const task of lockedInvitations) {
+        add(task.raisedAt, { type: 'portal_activation_locked' });
+        if (task.resolvedAt && task.resolution === 'reinvited') {
+          add(task.resolvedAt, { type: 'portal_reinvited' });
         }
       }
 

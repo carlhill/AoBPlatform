@@ -153,6 +153,29 @@ export const REVIEW_TASK_KINDS: readonly ReviewTaskKind[] = [
     stakes: 'high',
   }),
   kind({
+    key: 'portal_activation_locked',
+    label: 'A patient’s portal invitation locked',
+    question: 'Check the details you hold with the patient, then send them a new invitation.',
+    /*
+     * LOW, and the reasoning is what the task DOES NOT carry.
+     *
+     * Three wrong answers on an activation link is overwhelmingly a patient
+     * reading their own address off a different piece of paper from the one
+     * the practice typed. The task says only that the invitation locked, when,
+     * and which invitation — never which identifier was offered, never which
+     * failed and never how close it was (REQ-VER-04, hard rule 9). There is
+     * therefore nothing here for anybody to assess: the whole remedy is a new
+     * invitation, which the work page offers in one press.
+     *
+     * WHY IT IS RAISED AT ALL. Until now the lock was told to the person who
+     * failed and to nobody else: the patient saw "ask your practice for a new
+     * one" and the practice was never asked. A remedy that only exists if the
+     * patient thinks to mention it at their next visit is not a remedy
+     * (Carl, 5 Sep 2026).
+     */
+    stakes: 'low',
+  }),
+  kind({
     key: 'portal_enduring_terminated',
     label: 'A patient ended an enduring agreement from their own page',
     question: 'Release the written notice, and stop bulk-billing under this agreement from the effective date.',
@@ -176,9 +199,27 @@ export function reviewTaskKind(key: string): ReviewTaskKind | undefined {
 export const REVIEW_TASK_STATES = ['open', 'claimed', 'resolved', 'dismissed'] as const;
 export type ReviewTaskState = (typeof REVIEW_TASK_STATES)[number];
 
-/** How a task ended. `escalated` is not a resolution — it is a handoff. */
-export const REVIEW_RESOLUTIONS = ['no_change_needed', 'corrected', 'escalated', 'not_a_problem'] as const;
+/**
+ * How a task ended. `escalated` is not a resolution — it is a handoff.
+ *
+ * `reinvited` IS NOT ON THE MANUAL LIST BELOW, and that is the point of there
+ * being two lists. It records that a task was closed BY AN ACT — a new portal
+ * invitation was minted for the patient, which is the entire remedy the locked
+ * one was waiting for — and only the code that performs that act may write it.
+ * Offered in a reviewer's drop-down it would be a way to say "a new invitation
+ * went" about an invitation that never went.
+ */
+export const REVIEW_RESOLUTIONS = [
+  'no_change_needed',
+  'corrected',
+  'escalated',
+  'not_a_problem',
+  'reinvited',
+] as const;
 export type ReviewResolution = (typeof REVIEW_RESOLUTIONS)[number];
+
+/** The ones a person may choose. See the note above on `reinvited`. */
+export const MANUAL_REVIEW_RESOLUTIONS = REVIEW_RESOLUTIONS.filter((r) => r !== 'reinvited');
 
 /**
  * How long a claim holds before anybody else may take it.
@@ -255,6 +296,19 @@ export function resolutionAttribution(input: {
   if (!input.automated) return `Reviewed by ${input.by}.`;
   const confidence = typeof input.confidence === 'number' ? ` (confidence ${input.confidence.toFixed(2)})` : '';
   return `Closed automatically by ${input.by}${confidence}. No person reviewed this.`;
+}
+
+/**
+ * CLOSED BY AN ACT RATHER THAN BY A DECISION — its own sentence for the same
+ * reason `resolutionAttribution` distinguishes a person from a checker.
+ *
+ * "Reviewed by system" would be false twice over: nobody reviewed the locked
+ * invitation, and nothing about it was assessed. What happened is that a new
+ * invitation replaced it, which is the whole remedy, and the record should say
+ * that rather than borrow the words for a judgement nobody made.
+ */
+export function reinvitationAttribution(by: string): string {
+  return `Closed by a new invitation minted by ${by}. Nobody reviewed the locked one; it was replaced.`;
 }
 
 /**

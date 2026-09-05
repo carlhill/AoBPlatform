@@ -1,10 +1,11 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
+  MANUAL_REVIEW_RESOLUTIONS,
   REVIEW_CLAIM_MINUTES,
-  REVIEW_RESOLUTIONS,
   REVIEW_TASK_KEYS,
   isTaskClaimable,
   mayAutoResolve,
+  reinvitationAttribution,
   resolutionAttribution,
   reviewTaskKind,
 } from '@aobplatform/domain';
@@ -177,9 +178,14 @@ export class ReviewTasksService {
     actor?: Actor,
   ) {
     if (!actor) throw new BadRequestException('Resolving a review records who decided, so it needs a signed-in user.');
-    if (!REVIEW_RESOLUTIONS.includes(input.resolution as never)) {
+    /*
+     * THE MANUAL LIST. `reinvited` is written by `resolveReinvited` alone,
+     * because it records that a new invitation actually went out — not that
+     * somebody decided one should (Carl, 5 Sep 2026).
+     */
+    if (!MANUAL_REVIEW_RESOLUTIONS.includes(input.resolution as never)) {
       throw new BadRequestException(
-        `"${input.resolution}" is not a resolution. One of: ${REVIEW_RESOLUTIONS.join(', ')}.`,
+        `"${input.resolution}" is not a resolution a person may choose. One of: ${MANUAL_REVIEW_RESOLUTIONS.join(', ')}.`,
       );
     }
     return this.prisma.withPractice(practiceId, async (tx) => {
@@ -267,6 +273,72 @@ export class ReviewTasksService {
         },
         actor,
       );
+      closed.push(task.id);
+    }
+    return closed;
+  }
+
+  /**
+   * A NEW INVITATION WENT, SO THE LOCKED ONE IS NO LONGER WAITING ON ANYBODY
+   * (Carl, 5 Sep 2026).
+   *
+   * IT TAKES THE MINT'S OWN TRANSACTION, exactly as `raise` does and for the
+   * mirror-image reason: an invitation that was minted while the task asking
+   * for one stayed open would leave reception chasing a thing that had already
+   * been done, and the two rows must move together or not at all.
+   *
+   * IT IS NOT `resolve`. That path records a PERSON'S DECISION about something
+   * they read; nobody read this, and nothing was assessed — the lock was
+   * replaced. `reinvited` is off the manual resolution list for the same
+   * reason, so this is the only code that can write it, and the attribution
+   * says plainly what happened (`reinvitationAttribution`).
+   *
+   * OPEN MEANS OPEN OR CLAIMED. A colleague who picked the task up is not a
+   * reason to leave it open once the remedy has been performed.
+   */
+  async resolveReinvited(
+    tx: Prisma.TransactionClient,
+    input: { practiceId: string; patientId: string; by: string; invitationId: string },
+  ): Promise<string[]> {
+    const open = await tx.reviewTask.findMany({
+      where: {
+        practiceId: input.practiceId,
+        kind: 'portal_activation_locked',
+        subjectType: 'Patient',
+        subjectId: input.patientId,
+        state: { in: ['open', 'claimed'] },
+      },
+      orderBy: { raisedAt: 'asc' },
+    });
+
+    const closed: string[] = [];
+    for (const task of open) {
+      await tx.reviewTask.update({
+        where: { id: task.id },
+        data: {
+          state: 'resolved',
+          resolution: 'reinvited',
+          resolvedBy: input.by,
+          resolvedAt: new Date(),
+          resolvedNote: 'A new portal invitation was minted for this patient.',
+          resolvedAutomatically: false,
+        },
+      });
+
+      await enqueueVaultEvent(tx, {
+        type: 'review_task.resolved',
+        actor: { principalType: input.by === 'system' ? 'system' : 'staff', id: input.by },
+        subject: { type: task.subjectType, id: task.subjectId },
+        payload: {
+          reviewTaskId: task.id,
+          kind: task.kind,
+          resolution: 'reinvited',
+          attribution: reinvitationAttribution(input.by),
+          // The id of the invitation that replaced the locked one. No token,
+          // no hash, no identifier type and no value (REQ-LOG-08, hard rule 9).
+          replacedByInvitationId: input.invitationId,
+        },
+      });
       closed.push(task.id);
     }
     return closed;
