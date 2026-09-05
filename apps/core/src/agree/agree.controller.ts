@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Ip, Param, Post } from '@nestjs/common';
-import { IsIn } from 'class-validator';
+import { IsArray, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import { Public } from '../auth/public.decorator';
 import { AgreeService } from './agree.service';
 
@@ -13,6 +13,21 @@ class ApproveDto {
    */
   @IsIn(['tap_to_approve'])
   method!: 'tap_to_approve';
+
+  /**
+   * THE STATEMENTS THE PERSON TICKED — keys, never sentences (Carl, 5 Sep
+   * 2026; W1). The words are the server's own, at the version the agreement
+   * records; a page that could send text could send text nobody agreed to.
+   *
+   * Optional here and mandatory in the service, for the reason the kiosk's
+   * `SignDto` gives: the rule is about the AGREEMENT'S template rather than
+   * about this class, so it lives where a rule can be tested.
+   */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(80, { each: true })
+  affirmations?: string[];
 }
 
 /**
@@ -45,6 +60,6 @@ export class AgreeController {
   @Public()
   @Post(':token/approve')
   approve(@Param('token') token: string, @Body() dto: ApproveDto, @Ip() ip: string) {
-    return this.agree.approve(token, dto.method, ip);
+    return this.agree.approve(token, dto.method, ip, dto.affirmations ?? []);
   }
 }

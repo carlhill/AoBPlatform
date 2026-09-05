@@ -1753,6 +1753,15 @@ export const strings = {
      verification state is shown. */
   /* A patient approving their bulk-billing agreement from the link we sent. */
   agree: {
+    /**
+     * THE HEADING OVER THE TICK BOXES on the remote link (Carl, 5 Sep 2026;
+     * W1). CHROME, not the instrument — the statements themselves come from
+     * the server as part of the rendered document and are never in this table.
+     */
+    statementsHeading: 'Please read and tick each of these',
+    /** HOW MANY ARE LEFT, not merely that something is (CLAUDE.md §7). */
+    approveNotAffirmed: (outstanding: number) =>
+      outstanding === 1 ? 'One box still to tick' : `${outstanding} boxes still to tick`,
     audience: 'Approve your bulk-billing agreement',
     checking: 'Loading…',
 

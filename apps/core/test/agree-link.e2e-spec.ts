@@ -8,6 +8,10 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { OutboundService } from '../src/outbound/outbound.service';
 import { RULES_CLIENT } from '../src/rules-client/rules-client.module';
 import { MESSAGING_GATEWAY, type MessagingGateway } from '../src/messaging/gateway';
+import { genericAgreementTemplate } from '@aobplatform/domain';
+
+/** From the shipped template, never retyped — the words are versioned content. */
+const EPISODIC_AFFIRMATIONS = genericAgreementTemplate('episodic').statements.map((s) => s.key);
 
 /**
  * The patient approves from a link — CONSULTATION-CAPTURE-PLAN.md §3.3,
@@ -159,11 +163,24 @@ describe('approving an agreement from a link (e2e, real Postgres)', () => {
     expect(res.body.particulars.serviceDate).toBe('2026-08-20');
     expect(res.body.particulars.mbsItemNumbers).toEqual(['23', '10990']);
     expect(res.body.particulars.patientName).toBe('Alex Testpatient');
-    // Rule 4: nothing about money, under any name.
-    // Whole words, so a random id or hash containing the hex run "fee" (seen
-    // in CI: ...bfee-...) cannot trip the guard. The rule it protects is real
-    // (rule 4 — no benefit amount on any agreement artefact); the regex was not.
-    expect(JSON.stringify(res.body)).not.toMatch(/\b(benefit|amount|cents|fee)\b|\$/i);
+    /*
+     * Rule 4: nothing about money, under any name.
+     *
+     * Whole words, so a random id or hash containing the hex run "fee" (seen
+     * in CI: ...bfee-...) cannot trip the guard. The rule it protects is real
+     * (rule 4 -- no benefit amount on any agreement artefact); the regex was not.
+     *
+     * "MEDICARE BENEFIT" IS NOT AN AMOUNT and is no longer banned (5 Sep 2026,
+     * W1). It is the thing s 65C assigns, and the page now carries the
+     * statements the person ticks -- "I assign my right to the Medicare benefit
+     * ... to Dr Example Provider" -- so an agreement that could not say it
+     * could not exist. What is banned is a FIGURE: a currency symbol, a
+     * currency code, the words dollars or cents, and the phrase "benefit
+     * amount". The same distinction the template loader draws.
+     */
+    expect(JSON.stringify(res.body)).not.toMatch(
+      /\b(benefit amount|amount|cents|dollars?|fee|rebate)\b|\$|\bAUD\b/i,
+    );
     // Locked and hashed on this read — what is shown is what will be signed.
     expect(res.body.particulars.artefactSha256).toMatch(/^[0-9a-f]{64}$/);
     const locked = await prisma.withPractice(practiceId, (tx) => tx.agreement.findFirst({ where: { id: agreementId } }));
@@ -181,10 +198,27 @@ describe('approving an agreement from a link (e2e, real Postgres)', () => {
     await request(app.getHttpServer()).post(`/agree/${token}/approve`).send({ method: 'drawn' }).expect(400);
   });
 
+  it('the link will not approve until every statement is ticked', async () => {
+    // `signature_requires_every_statement_affirmed` reaches the remote link
+    // too — a channel that could approve without the ticks would be the one
+    // way round the rule (Carl, 5 Sep 2026; W1).
+    const refused = await request(app.getHttpServer())
+      .post(`/agree/${token}/approve`)
+      .send({ method: 'tap_to_approve' })
+      .expect(400);
+    expect(String(refused.body.message)).toMatch(/not agreed to every statement/);
+  });
+
+  it("the read carries the statements the person must tick, in the server’s own words", async () => {
+    const read = await request(app.getHttpServer()).get(`/agree/${token}`).expect(200);
+    expect(read.body.statements.map((s: { key: string }) => s.key)).toEqual(EPISODIC_AFFIRMATIONS);
+    expect(read.body.templateVersion).toBe('episodic-generic-1');
+  });
+
   it('one tap: signed, validated, stored, the link closed, written back', async () => {
     const res = await request(app.getHttpServer())
       .post(`/agree/${token}/approve`)
-      .send({ method: 'tap_to_approve' })
+      .send({ method: 'tap_to_approve', affirmations: EPISODIC_AFFIRMATIONS })
       .expect(201);
     expect(res.body.approved).toBe(true);
     expect(res.body.status).toBe('stored');
@@ -208,7 +242,7 @@ describe('approving an agreement from a link (e2e, real Postgres)', () => {
 
   it('a used link is a dead link', async () => {
     await request(app.getHttpServer()).get(`/agree/${token}`).expect(410);
-    await request(app.getHttpServer()).post(`/agree/${token}/approve`).send({ method: 'tap_to_approve' }).expect(410);
+    await request(app.getHttpServer()).post(`/agree/${token}/approve`).send({ method: 'tap_to_approve', affirmations: EPISODIC_AFFIRMATIONS }).expect(410);
   });
 
   /*

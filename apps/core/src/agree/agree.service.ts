@@ -116,11 +116,31 @@ export class AgreeService {
         /** The hash the signature will bind to — shown so the record can be checked later. */
         artefactSha256: locked.renderedArtefactHash,
       },
+      /**
+       * THE STATEMENTS THE PERSON TICKS, from the rendered document (Carl,
+       * 5 Sep 2026; W1) — the same sentences the PDF prints, because they come
+       * out of the same stored object it was drawn from.
+       *
+       * THE REMOTE LINK IS NOT A LESSER SURFACE. The server refuses a
+       * signature that does not carry every statement key of the template the
+       * agreement was rendered from, whatever the channel; a link that could
+       * approve without them would be the one way round the rule.
+       *
+       * Empty on an agreement locked before templates existed, and the page
+       * then behaves exactly as it did.
+       */
+      statements: statementsOf(locked.renderPayload),
+      templateVersion: locked.templateVersion,
     };
   }
 
   /** Yes. Everything after this is the existing signature path, unchanged. */
-  async approve(token: string, method: 'tap_to_approve', ipAddress?: string) {
+  async approve(
+    token: string,
+    method: 'tap_to_approve',
+    ipAddress?: string,
+    affirmations: readonly string[] = [],
+  ) {
     const { practiceId, request, agreement } = await this.resolve(token);
     if (agreement.status !== 'awaiting_signature' || !agreement.particularsLockedAt) {
       throw new ConflictException('Confirm your details and review the agreement first.');
@@ -132,6 +152,7 @@ export class AgreeService {
       channel: request.channel,
       captureRequestId: request.id,
       ipAddress,
+      affirmations: [...affirmations],
     });
     return {
       approved: true as const,
@@ -193,4 +214,20 @@ export class AgreeService {
       messages: await this.correspondence.listForPatient(parsed.practiceId, context.agreement.patientId, 100),
     };
   }
+}
+
+/**
+ * The statement keys and text out of a stored render document. Empty for an
+ * agreement locked before the wording became content, which is the honest
+ * answer: that agreement has nothing on its record to tick against.
+ */
+function statementsOf(renderPayload: unknown): { key: string; text: string }[] {
+  const payload = renderPayload as { template?: { statements?: unknown } } | null;
+  const statements = payload?.template?.statements;
+  if (!Array.isArray(statements)) return [];
+  return statements
+    .filter((s): s is { key: string; text: string } =>
+      Boolean(s) && typeof (s as { key?: unknown }).key === 'string' && typeof (s as { text?: unknown }).text === 'string',
+    )
+    .map((s) => ({ key: s.key, text: s.text }));
 }

@@ -30,7 +30,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, Clock, FileCheck2, Lock, MailX, ShieldCheck, Wrench } from 'lucide-react';
-import { Button, Notice, Shell, ui } from '../../../ui';
+import { Button, Checkbox, Notice, Shell, ui } from '../../../ui';
 import { strings } from '../../../strings';
 import styles from '../../../verify/verify.module.css';
 
@@ -38,6 +38,9 @@ const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
 type Stage = 'loading' | 'challenge' | 'ready' | 'blocked' | 'done';
 type Outcome = 'invalid' | 'expired' | 'locked' | 'unreachable';
+
+/** One thing the person ticks. The KEY is what the signature records. */
+type Statement = { key: string; text: string };
 
 type Particulars = {
   practiceName: string | null;
@@ -62,6 +65,19 @@ export function AgreeView({ token }: { token: string }) {
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [identifierTypes, setIdentifierTypes] = useState<string[]>([]);
   const [particulars, setParticulars] = useState<Particulars | null>(null);
+  /**
+   * THE STATEMENTS THE PERSON TICKS, and the ones they have (Carl, 5 Sep 2026;
+   * W1). The sentences come from the server as part of the rendered document —
+   * the same object the PDF was drawn from and hashed against — so this page
+   * and the contract cannot say different things.
+   *
+   * THE REMOTE LINK IS NOT A LESSER SURFACE. The server refuses a signature
+   * that does not carry every statement key of the template the agreement was
+   * rendered from, whatever the channel. Empty on an agreement locked before
+   * templates existed, and the page then behaves exactly as it did.
+   */
+  const [statements, setStatements] = useState<readonly Statement[]>([]);
+  const [affirmed, setAffirmed] = useState<readonly string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Whether the copy has already landed in the practice's system, or is on
@@ -87,8 +103,10 @@ export function AgreeView({ token }: { token: string }) {
     if (!res) return setOutcome('unreachable');
     if (res.status === 501) return setStage('blocked');
     if (!res.ok) return fail(res.status);
-    const body = (await res.json()) as { particulars: Particulars };
+    const body = (await res.json()) as { particulars: Particulars; statements?: readonly Statement[] };
     setParticulars(body.particulars);
+    setStatements(body.statements ?? []);
+    setAffirmed([]);
     setStage('ready');
   }, [token]);
 
@@ -152,7 +170,7 @@ export function AgreeView({ token }: { token: string }) {
       const res = await fetch(`${CORE_URL}/agree/${token}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ method: 'tap_to_approve' }),
+        body: JSON.stringify({ method: 'tap_to_approve', affirmations: affirmed }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { message?: string };
@@ -251,6 +269,12 @@ export function AgreeView({ token }: { token: string }) {
 
   if (stage === 'ready' && particulars) {
     const items = particulars.mbsItemNumbers.join(', ');
+    /*
+     * EVERY STATEMENT, OR APPROVE STAYS SHUT, and the count is in the label —
+     * the boxes are on the same screen, so the count IS the direction
+     * (CLAUDE.md §7). The server holds the same line whatever this does.
+     */
+    const outstanding = statements.filter((statement) => !affirmed.includes(statement.key)).length;
     return (
       <Shell>
         <div className={styles.card}>
@@ -279,15 +303,43 @@ export function AgreeView({ token }: { token: string }) {
 
           <p className={ui.hint}>{strings.agree.noAmount}</p>
 
+          {/*
+            THE OPERATIVE WORDS, FROM THE SERVER. Not written in this file and
+            not in the string table: a sentence here would be a second copy of
+            the words of a contract, free to drift from the one that was
+            signed. The heading around them is chrome and IS in the table.
+          */}
+          {statements.length > 0 && (
+            <div data-testid="agree-statements">
+              <p className={ui.hint}>{strings.agree.statementsHeading}</p>
+              {statements.map((statement) => (
+                <Checkbox
+                  key={statement.key}
+                  checked={affirmed.includes(statement.key)}
+                  onCheckedChange={(on) =>
+                    setAffirmed((current) =>
+                      on ? [...current, statement.key] : current.filter((k) => k !== statement.key),
+                    )
+                  }
+                  label={statement.text}
+                />
+              ))}
+            </div>
+          )}
+
           <Button
             variant="primary"
             className={styles.submit}
-            disabled={busy}
+            disabled={busy || outstanding > 0}
             onClick={approve}
             data-testid="agree-approve"
           >
             <FileCheck2 size={16} aria-hidden="true" />
-            {busy ? strings.agree.approving : strings.agree.approve}
+            {busy
+              ? strings.agree.approving
+              : outstanding > 0
+                ? strings.agree.approveNotAffirmed(outstanding)
+                : strings.agree.approve}
           </Button>
 
           <div className={styles.why}>

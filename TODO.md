@@ -1624,13 +1624,21 @@ capture requests cancelled; mobile/email never supersede. `PATCH
 - Session id (short) on the kiosk footer during a pushed session and on the
   console rows, so the two screens can be matched by eye (`5ad708c`).
 
-- [ ] **Only `patientName` reaches the rendered artefact today** -- `prepareLock`
-      assembles no DOB and no address, so correcting either changes no hashed
-      byte as the renderer stands. The supersession rule still treats the full
-      D-set as particulars (fails toward superseding); narrowing it to `name`
-      is a decision, not a tidy-up. Better: the renderer should include the
-      D-set it is supposed to (REQ-REG-01/-06 -- check what D1-D7 requires on
-      the artefact) -- Carl to confirm which particulars must appear.
+- [x] **Only `patientName` reaches the rendered artefact today** -- FIXED,
+      5 Sep 2026 (W1). The hashed unit is now the whole DOCUMENT, stored in
+      `agreements.renderPayload`: the practice letterhead, the resolved
+      template words and the s 65C particulars together, rendered by `pdf-2`.
+      D1-D7 all appear (reg 65CB's set on an enduring agreement), so
+      correcting a detail the page carries now moves the bytes -- which is
+      what the supersession rule needed to be true rather than merely stated.
+      `pdf-1` stays registered forever for agreements locked under it.
+      STILL OPEN, and it is the narrower half of the original note: the
+      particulars assembled at lock carry no DOB and no address, because
+      neither is a s 65C element -- D1 is the patient's NAME. So correcting a
+      DOB still changes no hashed byte, correctly. Whether the ARTEFACT should
+      carry them anyway as identifying detail is a question for Carl, not a
+      defect: adding a field to the data set is exactly what REQ-REG-04 warns
+      against.
 - [ ] **No `superseded` agreement status exists** -- the superseded row keeps
       `awaiting_signature` with its capture requests closed (the codebase's
       idiom). Add a real `superseded` status to `lifecycle.ts`.

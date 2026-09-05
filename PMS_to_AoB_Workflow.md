@@ -86,13 +86,13 @@ beside it in the vault. It is never the thing signed (hard rule 13; §5 Q1).
 | Arrival contract `POST /arrivals`: elements in, patient found/updated, visit policy decides type, draft + request + lock with the practice default D6a | **Built** (4 Sep) | 1, 3, 6 (element files) |
 | Versioned visit policy (enduring / episodic / none; GP-only; per provider) | **Built** | all |
 | Rules validation + lock before signature; episodic complete; enduring branch awaiting Carl | **Built / gated** | all |
-| Deterministic render to PDF/A, hashed, re-verified on display | **Built**, but the render carries **only the patient name** — the full s 65C data set and the practice letterhead are not on the page yet | 1, 3, 4 (weak until fixed) |
+| Deterministic render to PDF/A, hashed, re-verified on display | **Built**, and since 5 Sep it carries the whole document — letterhead, the full s 65C data set, and the ticked statements (W1) | 1, 3, 4 |
 | Capture: tablet push, walk-up kiosk, remote link, post-service | **Built** | all |
 | Signature capture (drawn + tap-to-approve), hash-bound | **Built** | all |
 | Email/SMS templates for the remote link and the portal invitation; sandbox gateway | **Built** for those purposes; **no "here is your agreement" email/PDF-on-request flow yet** (case 1's "email and pdf if the patient wants a pdf") — though the portal's "View as signed (PDF)" already gives the patient the PDF | 1 |
 | Artefact upload (base64 JSON, 20 MB cap), artefact store, hashing | **Built** | 2, 3, 6 |
 | Text extraction from PDF (`artefacts/extract-text.ts`) | **Built**, used for evidence text today; **not wired to element extraction or a confirm screen** | 2, 3, 6 |
-| Practice entity: legal name, ABN verified against the register (live since 4 Sep), address, contacts | **Built**; **no logo** | 4 |
+| Practice entity: legal name, ABN verified against the register (live since 4 Sep), address, contacts | **Built**; logo added 5 Sep (PNG/JPEG, 512 KB, stored as an artefact and embedded verbatim) | 4 |
 | Reception work page and queue; inline Correct; default D6a control | **Built** | 4 (the natural home of the "type it in" form) |
 | Retention module (two years from the related claim; destroy/de-identify) | **Built**; no per-practice "keep longer" setting | 2 |
 | Medtech adapter | **Mock only** (D-01) | 1–3 |
@@ -103,7 +103,7 @@ beside it in the vault. It is never the thing signed (hard rule 13; §5 Q1).
 
 | # | Item | Serves | Est. | Notes |
 |---|---|---|---|---|
-| W1 | **Renderer carries the full s 65C data set + practice letterhead** (name, address, contacts, ABN, logo; templated body text from a versioned content file per agreement type) | 1, 3, 4 | 2 days + human review of the template text | Fixes the 4-Sep open item; the letterhead is a practice setting with a logo upload (image, size-capped, stored as an artefact) |
+| W1 | **Renderer carries the full s 65C data set + practice letterhead** | 1, 3, 4 | **BUILT** 5 Sep 2026 | `pdf-2` renders the whole document -- letterhead (legal and trading name, address, phone, email, ABN, optional logo), D1-D7 or reg 65CB's set, and the statements the assignor ticks -- from `packages/domain/content/agreement-templates.json`; the document is stored and hashed, so correcting a rendered element now moves the bytes. Per-practice wording is proposed at `/practice/templates` and activated only at `/platform/templates`. **The generic wording is a DRAFT pending Carl and counsel** (§5 Q3) |
 | W2 | **Case 4 — "New agreement" form on the work page / queue**: reception types the elements (patient found-or-created by record number; provider; visit) → the arrival pipeline. Reuses the arrival service with `source: 'reception'` | 4 | 1 day | The form IS an arrival typed by hand; one pipeline |
 | W3 | **Case 2 — PDF ingest**: upload/receive PDF → store + hash as supporting artefact → `extract-text` → element extraction (per-element patterns, versioned content, confidence per field) → **reception confirm screen** (extracted values shown beside the PDF; every field confirmed or corrected by staff; nothing auto-accepted below a confidence threshold) → arrival pipeline. Patient sees our render; the PMS PDF is attached as evidence | 2, 3 | 3 days | Extraction is heuristic by nature — the confirm step is what makes it safe. Never extract or store a Medicare number even if the PDF has one (hard rule 1): the extractor's field list is the six approved identifiers + the agreement particulars, nothing else |
 | W4 | **Case 3 — both**: elements win; the PDF's extracted elements cross-check them; a disagreement is shown to reception before lock | 3 | 0.5 day on top of W3 | |
@@ -154,3 +154,4 @@ Roughly **9–10 agent-days** for W1–W7, which make all five cases work today 
 | Version | Date | Change |
 |---|---|---|
 | 0.1 | 5 Sep 2026 | First pass from Carl's five use cases: built/left tables, pipeline, decisions Q1–Q7. |
+| 0.2 | 5 Sep 2026 | W1 BUILT: full data set + letterhead + logo on the render, versioned agreement templates with tick-box statements, per-practice wording with platform review. Q4 answered yes; Q3 still open — the generic wording is a DRAFT pending Carl and counsel. |

@@ -6,6 +6,7 @@ import { PORTAL_ACTIVATION_MAX_ATTEMPTS, PORTAL_SESSION_COOKIE } from '@aobplatf
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { RendererRegistry } from '../src/render/renderer-registry';
+import { DeterministicPdfRenderer } from '../src/render/pdf-renderer';
 import { PortalService } from '../src/portal/portal.service';
 
 /**
@@ -74,7 +75,21 @@ describe('M8 patient portal (e2e, real Postgres)', () => {
     renderers = app.get(RendererRegistry);
     portal = app.get(PortalService);
 
-    const renderer = renderers.current();
+    /*
+     * `pdf-1`, NOT `current()` (5 Sep 2026, W1). This fixture hand-builds an
+     * agreement out of bare particulars, which is exactly what an agreement
+     * locked before the wording became versioned content looks like — and
+     * `pdf-1` is the renderer those agreements are recorded under. The current
+     * renderer takes a whole DOCUMENT (letterhead, resolved words and
+     * particulars) and refuses bare particulars rather than drawing a page
+     * missing most of the agreement.
+     *
+     * So this keeps exercising rule 13 for real, on the legacy path the portal
+     * has to keep serving: `renderInputOf` picks `particulars` when there is no
+     * stored document, the registry resolves `pdf-1` from the agreement's own
+     * `rendererVersion`, and the hash still has to match.
+     */
+    const renderer = renderers.get(DeterministicPdfRenderer.VERSION)!;
 
     await prisma.withPractice(practiceA, async (tx) => {
       await tx.practice.create({ data: { id: practiceA, name: 'Portal Test Practice', state: 'NSW' } });
