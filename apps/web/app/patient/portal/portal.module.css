@@ -377,6 +377,7 @@
  * 200px-tall inputs on the activation page (5 Sep 2026). In a column a field
  * takes the full width and its natural height, nothing more.
  */
+.activateCell > .field,
 .activateGroup > .field {
   flex: 0 0 auto;
   width: 100%;

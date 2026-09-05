@@ -53,15 +53,19 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { LogIn } from 'lucide-react';
 import { Shell, ui } from '../../../../ui';
 import { strings } from '../../../../strings';
+import { useRefreshable } from '../../../../refresh';
 import { identifierFieldsFor, type IdentifierField } from '../../../../kiosk/rules/identifiers';
 import { composeName } from '../../../../kiosk/rules/verify-fields';
 import {
   activatePortal,
   fetchActivationChallenge,
+  passkeysAvailable,
   PORTAL_FIXTURES,
   PortalApiError,
+  signInWithPasskey,
   type PortalActivationChallenge,
 } from '../../api';
 import { PortalButton } from '../../portal-ui';
@@ -83,38 +87,41 @@ export function ActivateView({ token }: { token: string }) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
 
-  useEffect(() => {
-    let live = true;
-    void (async () => {
-      try {
-        const challenge = await fetchActivationChallenge(token);
-        if (!live) return;
-        // Zero tries left is a locked invitation however it got that way.
-        setPhase(
-          challenge.attemptsRemaining <= 0
-            ? { kind: 'locked' }
-            : { kind: 'asking', challenge },
-        );
-      } catch (err) {
-        if (!live) return;
-        /*
-         * A CODED REFUSAL IS A STATE; ANYTHING ELSE IS THE SERVER BEING
-         * UNREACHABLE. The two get different sentences because they have
-         * different next steps — one is "ask your practice", the other is
-         * "try again shortly" — and telling a patient to go and queue at
-         * reception because our server blinked would be the worse mistake.
-         */
-        setPhase(
-          err instanceof PortalApiError && err.reason
-            ? { kind: 'refused', reason: err.reason }
-            : { kind: 'unreachable' },
-        );
-      }
-    })();
-    return () => {
-      live = false;
-    };
+  /**
+   * THE CHALLENGE READ, as a loader the top bar's refresh button can call
+   * again (Carl, 5 Sep 2026: the page needs the refresh and sign-in controls
+   * the portal has). "Unreachable" is the state a refresh exists for.
+   */
+  const load = useCallback(async () => {
+    try {
+      const challenge = await fetchActivationChallenge(token);
+      // Zero tries left is a locked invitation however it got that way.
+      setPhase(
+        challenge.attemptsRemaining <= 0
+          ? { kind: 'locked' }
+          : { kind: 'asking', challenge },
+      );
+    } catch (err) {
+      /*
+       * A CODED REFUSAL IS A STATE; ANYTHING ELSE IS THE SERVER BEING
+       * UNREACHABLE. The two get different sentences because they have
+       * different next steps — one is "ask your practice", the other is
+       * "try again shortly" — and telling a patient to go and queue at
+       * reception because our server blinked would be the worse mistake.
+       */
+      setPhase(
+        err instanceof PortalApiError && err.reason
+          ? { kind: 'refused', reason: err.reason }
+          : { kind: 'unreachable' },
+      );
+    }
   }, [token]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useRefreshable(load);
 
   if (phase.kind === 'loading') {
     return (
@@ -206,11 +213,59 @@ function ActivateShell({ children }: { children: React.ReactNode }) {
       right={
         <span className={ui.sessionBar}>
           <span className={ui.sessionAudience}>{strings.portal.session.audience}</span>
+          <ActivateSignIn />
         </span>
       }
     >
       <div className={styles.activate}>{children}</div>
     </Shell>
+  );
+}
+
+/**
+ * THE SAME SIGN-IN THE PORTAL'S SIGNED-OUT SCREEN OFFERS, in the same bar
+ * (Carl, 5 Sep 2026). Somebody who already has a passkey and lands here from
+ * an old invitation should not have to answer the three questions again —
+ * they sign in and the portal is theirs. Only where the browser can do
+ * WebAuthn; a failed or cancelled prompt says nothing more than "that did
+ * not work", and never which credential.
+ */
+function ActivateSignIn() {
+  const router = useRouter();
+  const [canPasskey, setCanPasskey] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setCanPasskey(passkeysAvailable()), []);
+  if (!canPasskey) return null;
+  return (
+    <>
+      <button
+        type="button"
+        className={ui.sessionButton}
+        disabled={busy}
+        data-testid="activate-sign-in"
+        onClick={async () => {
+          setFailed(false);
+          setBusy(true);
+          try {
+            await signInWithPasskey();
+            router.push('/patient/portal');
+          } catch {
+            setFailed(true);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <LogIn size={13} aria-hidden="true" />
+        {busy ? strings.portal.passkeys.signInBusy : strings.portal.passkeys.signInAction}
+      </button>
+      {failed && (
+        <span role="alert" className={ui.sessionAffiliation}>
+          {strings.portal.passkeys.signInFailed}
+        </span>
+      )}
+    </>
   );
 }
 
