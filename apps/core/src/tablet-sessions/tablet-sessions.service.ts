@@ -182,6 +182,11 @@ export class TabletSessionsService {
     if (!device) throw pushRefusals.deviceUnknown();
     if (device.state === 'revoked') throw pushRefusals.deviceRevoked(device.label);
     if (device.state === 'awaiting_pairing') throw pushRefusals.deviceNotPaired(device.label);
+    // TAKEN OFF THE FLOOR BY RECEPTION. Not a security state and not a
+    // credential problem: the tablet is showing "not in use", so an agreement
+    // sent to it would sit behind that screen. Named test:
+    // `push_refuses_an_out_of_use_device`.
+    if (device.state === 'inactive') throw pushRefusals.deviceOutOfUse(device.label);
 
     const busy = await this.prisma.withPractice(practiceId, (tx) =>
       tx.tabletSession.findFirst({ where: { deviceId, endedAt: null } }),
@@ -320,6 +325,115 @@ export class TabletSessionsService {
       id: actor.id,
     });
     return this.decorate(practiceId, [ended]).then((rows) => rows[0]);
+  }
+
+  /**
+   * SEND A TABLET BACK TO BEGIN (Carl, 4–5 Sep 2026; TODO.md "Tablet heartbeat
+   * and Return to Begin").
+   *
+   * THE ONE THING RECEPTION COULD NOT DO BEFORE. Recall reaches a PUSHED
+   * session; a walk-up ceremony is nobody's session — the patient typed three
+   * details into a tablet by themselves — so a tablet stuck half-way through
+   * verifying somebody who wandered off could only be cleared by walking over
+   * and touching it, or by waiting out the practice's idle timeout. This is
+   * the button for it.
+   *
+   * IT IS BOTH HALVES, AND IT HAS TO BE. A live pushed session is RECALLED
+   * through the existing path — the same `end`, the same `recalled` state, the
+   * same `tablet.session_ended` event — so the console's story about that
+   * session is the story it has always told. And a command is left on the
+   * DEVICE, because a walk-up has no session to recall and the command is the
+   * only thing that reaches one.
+   *
+   * IT LIVES HERE AND NOT IN `DevicesController` for the same reason
+   * `POST /devices/:deviceId/push` does: the resource is a tablet, so the PATH
+   * is under `/devices`, but the behaviour ends a session, so the CODE is in
+   * the module that owns sessions. `DevicesController` keeps only what a
+   * device IS.
+   *
+   * IT NEVER BLOCKS CARE (hard rule 8, REQ-REC-04). Nothing on the agreement
+   * moves: the particulars stay locked, the capture request stays open, and
+   * the patient — who is standing in front of the person who pressed this — is
+   * seen either way. The tablet says so in words before it clears.
+   */
+  async returnToBegin(
+    practiceId: string,
+    deviceId: string,
+    actor: Actor | undefined,
+  ): Promise<{ deviceId: string; commandId: string; issuedAt: string; recalledSessionId: string | null }> {
+    if (!actor) throw pushRefusals.noActor();
+
+    const device = await this.devices.find(practiceId, deviceId);
+    // A cross-practice id finds nothing — RLS fails closed, and a caller
+    // cannot tell one from a made-up id, which is the correct amount to learn.
+    if (!device) throw pushRefusals.deviceUnknown();
+
+    /*
+     * THE RECALL FIRST, SO THE SESSION IS OVER BEFORE THE TABLET IS TOLD.
+     * Reception has decided the tablet is needed; leaving a live session on a
+     * device that is about to show Begin would be a session the console still
+     * offers Recall for after the screen it belonged to has gone.
+     */
+    const live = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.tabletSession.findFirst({ where: { deviceId, endedAt: null } }),
+    );
+    if (live) {
+      await this.end(practiceId, live.id, 'recalled', { principalType: 'staff', id: actor.id });
+    }
+
+    const command = await this.devices.requestReturnToBegin(practiceId, deviceId, actor, {
+      recalledSessionId: live?.id ?? null,
+    });
+    return { ...command, recalledSessionId: live?.id ?? null };
+  }
+
+  /**
+   * TAKE A TABLET OUT OF USE, OR PUT IT BACK (Carl, 4–5 Sep 2026; TODO.md
+   * "Tablets: make one inactive").
+   *
+   * RECEPTION'S SWITCH, NOT AN ADMINISTRATOR'S REVOKE. A flat battery, a
+   * tablet gone for repair, one on the wrong desk: the credential is fine, and
+   * revoking it would cost a rotate and somebody walking to the device to type
+   * a code in. Out of use refuses pushes, shows a quiet "not in use" screen,
+   * and reverses with one press — while the tablet keeps heartbeating, so it
+   * stays visible on the console instead of being indistinguishable from one
+   * switched off.
+   *
+   * TAKING IT OUT RECALLS WHATEVER IS ON IT, and that is why this act lives in
+   * this module rather than in `DevicesService` alone. A tablet declared off
+   * the floor while still holding somebody's particulars would be a screen
+   * nobody is watching with a session the console still thinks is live.
+   * Putting it BACK recalls nothing — there is nothing to take back.
+   *
+   * IT NEVER BLOCKS CARE (hard rule 8). The agreement is untouched; reception
+   * sends to another tablet, bills privately, or captures after the service.
+   */
+  async setDeviceOutOfUse(
+    practiceId: string,
+    deviceId: string,
+    outOfUse: boolean,
+    actor: Actor | undefined,
+  ): Promise<{ deviceId: string; outOfUse: boolean; recalledSessionId: string | null }> {
+    if (!actor) throw pushRefusals.noActor();
+
+    const device = await this.devices.find(practiceId, deviceId);
+    if (!device) throw pushRefusals.deviceUnknown();
+
+    let recalledSessionId: string | null = null;
+    if (outOfUse) {
+      const live = await this.prisma.withPractice(practiceId, (tx) =>
+        tx.tabletSession.findFirst({ where: { deviceId, endedAt: null } }),
+      );
+      if (live) {
+        await this.end(practiceId, live.id, 'recalled', { principalType: 'staff', id: actor.id });
+        recalledSessionId = live.id;
+      }
+    }
+
+    const result = await this.devices.setOutOfUse(practiceId, deviceId, outOfUse, actor, {
+      recalledSessionId,
+    });
+    return { ...result, recalledSessionId };
   }
 
   /**

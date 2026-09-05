@@ -1,4 +1,4 @@
-import { ArrayMaxSize, IsArray, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
 import {
   CONFIRMABLE_DETAIL_TYPES,
   DEVICE_SETTABLE_TABLET_SESSION_STATES,
@@ -17,6 +17,20 @@ import {
 export class PushToDeviceDto {
   @IsUUID()
   agreementId!: string;
+}
+
+/**
+ * `POST /devices/:deviceId/out-of-use` — reception taking a tablet off the
+ * floor, and putting it back (Carl, 4–5 Sep 2026).
+ *
+ * REQUIRED RATHER THAN OPTIONAL, and for the same reason `showsWaitingList`
+ * is: this is a switch with two meanings, and "the caller forgot to send it"
+ * must never be indistinguishable from "the caller asked for false". One
+ * endpoint rather than two so the reversal cannot drift from the act.
+ */
+export class DeviceOutOfUseDto {
+  @IsBoolean()
+  outOfUse!: boolean;
 }
 
 /**

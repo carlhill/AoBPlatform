@@ -252,6 +252,23 @@ export const VAULT_EVENT_TYPES = [
    * staff actor required, and evidenced here every time it changes.
    */
   'device.waiting_list_visibility_set',
+  /**
+   * RECEPTION TOOK A TABLET OUT OF USE, AND PUT IT BACK (Carl, 4–5 Sep 2026,
+   * TODO.md "Tablets: make one inactive").
+   *
+   * NOT A REVOKE, and the pair of events exists so the record can tell them
+   * apart. A flat battery or a tablet gone for repair is reception's own
+   * housekeeping: the credential is untouched, the device keeps heartbeating,
+   * and one press puts it back. A revoke is a security act by an
+   * administrator. Reading a month of these should let somebody say "that
+   * tablet was off the floor for three days", which `device.revoked` could
+   * never honestly say.
+   *
+   * NO PATIENT DATA. The label, who did it, and whether a live session was
+   * recalled to make it true — a count of one or none, never a name.
+   */
+  'device.taken_out_of_use',
+  'device.put_back_in_use',
   /*
    * THE WALK-UP CLAIM — "Confirm your details", and the server finds you
    * (Carl, 4 Sep 2026). The patient states their identifiers and the server
@@ -379,6 +396,24 @@ export const VAULT_EVENT_TYPES = [
    * (REQ-REC-04).
    */
   'tablet.session_ended',
+  /**
+   * RECEPTION ASKED A TABLET TO GO BACK TO BEGIN (Carl, 4–5 Sep 2026, TODO.md
+   * "Tablet heartbeat and Return to Begin").
+   *
+   * THE ACT IS THE EVIDENCE, NOT THE HEARTBEAT. A heartbeat is telemetry —
+   * where a tablet is, thirty times a minute — and writing one to an
+   * append-only vault would bury the record in noise for no evidentiary gain.
+   * The moment somebody DECIDES to take a screen off a patient is different:
+   * it may have interrupted a ceremony, so who did it and when is a question
+   * that can be asked later.
+   *
+   * IT SAYS WHAT IT DID, NOT WHO IT DID IT TO. The device, the command id, the
+   * staff member, and whether a live session was recalled to make it true. No
+   * patient, no identifier, no screen contents (REQ-LOG-08, hard rule 9). The
+   * recall itself writes its own `tablet.session_ended`, which is where the
+   * session's story belongs.
+   */
+  'tablet.return_to_begin_requested',
   /**
    * THE STAFF CHECK ACROSS THE DESK, recorded as its own kind of event.
    *

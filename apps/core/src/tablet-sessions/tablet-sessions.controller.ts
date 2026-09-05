@@ -10,7 +10,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { TabletSessionsService } from './tablet-sessions.service';
-import { PushToDeviceDto } from './tablet-sessions.dto';
+import { DeviceOutOfUseDto, PushToDeviceDto } from './tablet-sessions.dto';
 import { ResolveDisputeDto } from './dispute-resolution.dto';
 import { SessionActor, type Actor } from '../auth/actor.decorator';
 import { PracticeScoped } from '../auth/practice-scope.decorator';
@@ -64,6 +64,47 @@ export class TabletSessionsController {
     @SessionActor() actor: Actor | undefined,
   ) {
     return this.sessions.push(requirePractice(practiceId), deviceId, dto.agreementId, actor);
+  }
+
+  /**
+   * SEND THAT TABLET BACK TO BEGIN (Carl, 4–5 Sep 2026).
+   *
+   * Recalls any live pushed session AND leaves a command on the device, which
+   * is what reaches a WALK-UP — the case recall never could, because a walk-up
+   * is nobody's session. The tablet shows "Please see reception. Your
+   * appointment is not affected." for a moment and then clears itself.
+   *
+   * UNDER `/devices` BY PATH AND HERE BY MODULE, exactly like `push` above:
+   * the resource is a tablet, the behaviour ends a session.
+   */
+  @Post('devices/:deviceId/return-to-begin')
+  @PracticeScoped()
+  returnToBegin(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('deviceId', ParseUUIDPipe) deviceId: string,
+    @SessionActor() actor: Actor | undefined,
+  ) {
+    return this.sessions.returnToBegin(requirePractice(practiceId), deviceId, actor);
+  }
+
+  /**
+   * TAKE THIS TABLET OUT OF USE, OR PUT IT BACK (Carl, 4–5 Sep 2026).
+   *
+   * Reception's own switch — flat battery, gone for repair, wrong desk. The
+   * credential is untouched and the tablet keeps heartbeating; only a revoke
+   * (`/devices/:id/revoke`, the administrator's act) throws a credential away.
+   * Taking one out recalls whatever is on it, which is why it lives beside the
+   * push rather than with the device's own settings.
+   */
+  @Post('devices/:deviceId/out-of-use')
+  @PracticeScoped()
+  outOfUse(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('deviceId', ParseUUIDPipe) deviceId: string,
+    @Body() dto: DeviceOutOfUseDto,
+    @SessionActor() actor: Actor | undefined,
+  ) {
+    return this.sessions.setDeviceOutOfUse(requirePractice(practiceId), deviceId, dto.outOfUse, actor);
   }
 
   /**
