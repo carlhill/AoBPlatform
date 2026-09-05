@@ -75,6 +75,8 @@ import {
   KIOSK_IDLE_TIMEOUT_DEFAULT_SECONDS,
   kioskIdleTimeoutOrDefault,
   type AgreementType,
+  type KioskCommand,
+  type KioskScreen,
 } from '@aobplatform/domain';
 import {
   attemptChallenge,
@@ -100,7 +102,7 @@ import {
 import { useWaitingList } from './useWaitingList';
 import { useTabletSession } from './useTabletSession';
 import { useInactivityReset } from './useInactivityReset';
-import { useOutageState } from './useOutageState';
+import { useKioskHeartbeat } from './useKioskHeartbeat';
 import { clearPairingCredential, readPairingCredential, writePairingCredential } from './pairing';
 import { challengeIsComplete, identifierFieldsFor, type IdentifierField } from './rules/identifiers';
 import { composeSignRequest } from './rules/signature-payload';
@@ -135,6 +137,7 @@ import { HandoverScreen } from './screens/HandoverScreen';
 import { PairingScreen, type PairedOutcome, type PairingFailure } from './screens/PairingScreen';
 import { UnpairedScreen } from './screens/UnpairedScreen';
 import { OutageScreen } from './screens/OutageScreen';
+import { OutOfUseScreen } from './screens/OutOfUseScreen';
 import type { SignaturePadHandle } from './components/SignaturePad';
 import { InactivityWarning } from './components/InactivityWarning';
 import { strings } from './strings';
@@ -166,6 +169,16 @@ type Step =
   | 'signature'
   | 'complete'
   | 'handover';
+
+/**
+ * HOW LONG "Please see reception" STAYS UP before the tablet returns to Begin
+ * on its own (Carl, 4–5 Sep 2026). Long enough to read two short sentences
+ * standing up; short enough that reception, who pressed the button and is
+ * waiting for the tablet, is not left watching a message. A tap on "Start
+ * again" ends it sooner, which is what somebody handing the tablet over does
+ * anyway.
+ */
+export const RETURN_TO_BEGIN_HOLD_MS = 6_000;
 
 export function Ceremony(): ReactNode {
   const [step, setStep] = useState<Step>('booting');
@@ -280,6 +293,28 @@ export function Ceremony(): ReactNode {
   /** The live session's id, readable from callbacks that must not depend on it. */
   const pushedIdRef = useRef<string | null>(null);
 
+  /**
+   * WHICH SCREEN THIS IS, readable from a callback that must not re-create
+   * itself on every step change. The heartbeat's `onCommand` closes over it,
+   * and a callback that changed on every render would churn the poll's own
+   * effect — the same reasoning `useInactivityReset` gives for `onExpireRef`.
+   */
+  const stepRef = useRef<Step>('booting');
+  /**
+   * WHEN THIS TABLET LAST DROPPED A CEREMONY, and it exists for exactly one
+   * decision (Carl, 4–5 Sep 2026).
+   *
+   * "Return to Begin" recalls a pushed session server-side AND leaves a
+   * command for the tablet. Those arrive on two independent polls, so the
+   * recall can land first and drop this tablet to Begin before the command
+   * gets here — at which point "already on Begin, no-op" would swallow the one
+   * thing the patient standing there is owed: being told what happened. A
+   * clear that happened AFTER the command was issued happened BECAUSE of it.
+   */
+  const clearedAtRef = useRef<number | null>(null);
+  /** The previous render's outage flag — see where it is written, below the hook. */
+  const outageScreenRef = useRef(false);
+
   /** Which agreement the automatic lock has already been attempted for. */
   const autoLockedRef = useRef<string | null>(null);
   const padRef = useRef<SignaturePadHandle | null>(null);
@@ -287,9 +322,10 @@ export function Ceremony(): ReactNode {
   const [signBusy, setSignBusy] = useState(false);
   const [signError, setSignError] = useState<string | null>(null);
 
-  const [handover, setHandover] = useState<{ heading: string; body: string }>({
+  const [handover, setHandover] = useState<{ heading: string; body: string; autoReturn: boolean }>({
     heading: strings.verify.lockedHeading,
     body: strings.errors.generic,
+    autoReturn: false,
   });
 
   /*
@@ -552,6 +588,10 @@ export function Ceremony(): ReactNode {
    * session re-appears on its own from the session poll"), and setting the
    * guard here would lock it out for no reason this device ever earned.
    */
+  // The ref that lets a poll callback ask "which screen is up?" without being
+  // rebuilt every time the answer changes.
+  stepRef.current = step;
+
   const clearCeremonyState = useCallback((options: { releaseSession: boolean }) => {
     // Whatever session was up, read from a ref so this stays dependency-free
     // — it is itself a dependency of the recall effect, and recreating it on
@@ -560,6 +600,14 @@ export function Ceremony(): ReactNode {
       releasedSessionRef.current = pushedIdRef.current;
     }
     pushedIdRef.current = null;
+    /*
+     * WHEN, AND ONLY WHEN THERE WAS SOMETHING TO CLEAR. See `clearedAtRef`:
+     * a tablet that has just been dropped off a ceremony must be able to tell
+     * itself apart from one that has been sitting on Begin all morning, so
+     * that an inbound "Return to Begin" knows whether anybody is standing
+     * there to be told about it.
+     */
+    if (stepRef.current !== 'idle') clearedAtRef.current = Date.now();
     setStep('idle');
     setRow(null);
     setAgreement(null);
@@ -606,8 +654,16 @@ export function Ceremony(): ReactNode {
     [clearCeremonyState],
   );
 
-  const toHandover = useCallback((heading: string, body: string) => {
-    setHandover({ heading, body });
+  /**
+   * `autoReturn` IS FOR ONE CALLER AND IT IS NOT THE ORDINARY ONE (Carl, 4–5
+   * Sep 2026). Every other hand-over waits for the person to press "Start
+   * again": they asked for help, or hit a lockout, and the screen is theirs
+   * until they are done with it. "Return to Begin" is reception taking the
+   * tablet BACK, so the message is a courtesy on the way past — it holds for a
+   * few seconds, or until a tap, and then the tablet is Begin again.
+   */
+  const toHandover = useCallback((heading: string, body: string, autoReturn = false) => {
+    setHandover({ heading, body, autoReturn });
     setStep('handover');
   }, []);
 
@@ -734,15 +790,102 @@ export function Ceremony(): ReactNode {
   }, [pushed, reset]);
 
   /**
-   * THE OUTAGE HEARTBEAT (TODO.md "Outage screen on the tablet"). Runs on
-   * every screen but the three with no patient standing at them — see
-   * `useOutageState`'s own comment for the mechanics, and `clearCeremonyState`
-   * for why recovery is not `reset()`. `list.pollMs` is read here rather than
-   * re-derived, so this obeys the exact cadence the server already settled on
-   * for the waiting list and the pushed-session poll.
+   * WHICH OF THE TEN SCREEN NAMES THIS TABLET IS ON — the one thing the
+   * heartbeat says about itself (Carl, 4–5 Sep 2026).
+   *
+   * A NAME FROM `KIOSK_SCREENS`, NEVER A HEADING. The headings on these
+   * screens are frequently a person's name, so what goes on the wire is a word
+   * from a fixed list the server validates against; there is no branch here
+   * that could produce anything else, and the domain type will not let one be
+   * added (REQ-VER-04, hard rule 9).
+   *
+   * `outage` OVERRIDES THE STEP, because it overrides the screen: the tablet
+   * showing "Please contact reception" is not on K-3 whatever `step` still
+   * says, and reception needs to see that. The heartbeat that reports it is,
+   * by definition, one that got through.
+   *
+   * `booting`, `pairing` and `unpaired` never reach here — the heartbeat is
+   * disabled on all three — so `begin` is the honest fallback rather than a
+   * lie waiting to be told.
    */
-  const outageEnabled = step !== 'booting' && step !== 'pairing' && step !== 'unpaired';
-  const outage = useOutageState(outageEnabled, list.pollMs, clearForOutageRecovery);
+  const heartbeatScreen: KioskScreen = outageScreenRef.current
+    ? 'outage'
+    : step === 'idle'
+      ? 'begin'
+      : step === 'list' ||
+          step === 'verify' ||
+          step === 'assignor' ||
+          step === 'particulars' ||
+          step === 'signature' ||
+          step === 'check-details' ||
+          step === 'complete' ||
+          step === 'handover'
+        ? step
+        : 'begin';
+
+  /**
+   * "RETURN TO BEGIN", ARRIVING ON THE HEARTBEAT (Carl, 4–5 Sep 2026).
+   *
+   * THE PATIENT IS TOLD BEFORE THE SCREEN GOES. Reception is standing next to
+   * this tablet and has decided they need it — but the person holding it did
+   * not decide anything, and watching your details vanish mid-sentence is the
+   * worst version of being helped. So whatever screen it is on, walk-up
+   * mid-verify included, the tablet says "Please see reception. Your
+   * appointment is not affected." and then clears itself on a tap or after a
+   * short hold — the timed-out variant's own mechanism, reused rather than
+   * copied.
+   *
+   * ALREADY ON BEGIN IS A NO-OP, AND "ALREADY" IS THE HARD PART. A genuinely
+   * idle tablet must not flash a hand-over screen at an empty counter. But a
+   * PUSHED ceremony is recalled server-side by the same act that sets this
+   * command, and the session poll can see `{ session: null }` before the
+   * heartbeat brings the command — so a tablet that has just been dropped to
+   * Begin by this very reset would look identical to one that was idle all
+   * morning. `clearedAtRef` is what tells them apart: a ceremony this tablet
+   * dropped AFTER the command was issued was dropped BECAUSE of it, and the
+   * person holding the tablet is still standing there.
+   */
+  const returnToBegin = useCallback(
+    (command: KioskCommand) => {
+      const issuedAt = Date.parse(command.issuedAt);
+      const clearedBecauseOfThis =
+        clearedAtRef.current !== null &&
+        !Number.isNaN(issuedAt) &&
+        clearedAtRef.current >= issuedAt;
+      if (stepRef.current === 'idle' && !clearedBecauseOfThis) return;
+      toHandover(strings.chrome.returnToBeginHeading, strings.chrome.returnToBeginBody, true);
+    },
+    [toHandover],
+  );
+
+  /**
+   * THE HEARTBEAT (TODO.md "Outage screen on the tablet", then "Tablet
+   * heartbeat and Return to Begin"). Runs on every screen but the three with
+   * no patient standing at them — see `useKioskHeartbeat`'s own comment for
+   * the mechanics, and `clearCeremonyState` for why recovery is not `reset()`.
+   * `list.pollMs` is the starting cadence; the server's own answer takes over
+   * from the first successful beat, which matters because the waiting-list
+   * poll is off mid-ceremony and this is then the only cadence there is.
+   */
+  const heartbeatEnabled = step !== 'booting' && step !== 'pairing' && step !== 'unpaired';
+  const heartbeat = useKioskHeartbeat({
+    enabled: heartbeatEnabled,
+    pollMs: list.pollMs,
+    screen: heartbeatScreen,
+    sessionId: pushed?.id ?? null,
+    onRecovered: clearForOutageRecovery,
+    onCommand: returnToBegin,
+  });
+  const outage = { active: heartbeat.outage };
+  /*
+   * READ A RENDER BEHIND, WRITTEN A LINE AFTER, and that is the correct trade.
+   * `heartbeatScreen` is computed above the hook that produces `outage`, so it
+   * cannot see this render's value — but declaring an outage re-renders, and
+   * the beat after that carries `screen: 'outage'`. One beat of lag on a
+   * telemetry field, against restructuring the hook so a console line can be
+   * a fraction of a second fresher.
+   */
+  outageScreenRef.current = heartbeat.outage;
 
   /**
    * THE CLOCK, ON EVERY SCREEN BUT THE ONES WITH NOBODY'S DETAILS ON THEM.
@@ -765,6 +908,29 @@ export function Ceremony(): ReactNode {
     timeoutSeconds: idleTimeoutSeconds,
     onExpire: resetForInactivity,
   });
+
+  /**
+   * THE SHORT HOLD ON "PLEASE SEE RECEPTION" (Carl, 4–5 Sep 2026).
+   *
+   * The only hand-over that returns on its own. Every other one is a dead end
+   * the PATIENT reached — a lockout, a rules refusal, "I would rather ask
+   * somebody" — and those screens are theirs until they press "Start again".
+   * This one is reception taking the tablet back, so the message is a courtesy
+   * in passing: a few seconds, or a tap on the same "Start again" button that
+   * has always been there, and then Begin.
+   *
+   * IT RUNS THE SAME CLEARING ROUTINE AS INACTIVITY (`reset()`), not a second
+   * one. Whatever the tablet was holding is dropped in one place, which is the
+   * whole reason `clearCeremonyState` exists. Nothing is posted: the pushed
+   * session was already recalled by the act that sent this command, and a
+   * walk-up had nothing server-side to end (hard rule 8 — the agreement is
+   * untouched either way, and the patient is still seen).
+   */
+  useEffect(() => {
+    if (step !== 'handover' || !handover.autoReturn) return;
+    const timer = setTimeout(() => reset(), RETURN_TO_BEGIN_HOLD_MS);
+    return () => clearTimeout(timer);
+  }, [step, handover.autoReturn, reset]);
 
   /**
    * BACK ON K-2, ON THE WALK-UP PATH (Carl, 4 September 2026, from the live
@@ -1601,6 +1767,29 @@ export function Ceremony(): ReactNode {
    */
   if (outage.active) {
     return <OutageScreen practiceName={practiceName} locationLine={locationLine} />;
+  }
+
+  /**
+   * TAKEN OFF THE FLOOR BY RECEPTION (Carl, 4–5 Sep 2026; TODO.md "Tablets:
+   * make one inactive"). Flat battery, gone for repair, wrong desk.
+   *
+   * AFTER THE OUTAGE CHECK, deliberately. `outOfUse` is the last thing the
+   * SERVER said, and a tablet that cannot reach the server does not know
+   * whether it has been put back — so while the platform is unreachable the
+   * honest screen is the unreachable one.
+   *
+   * IT REPLACES EVERYTHING, like the outage screen, and for the same reason:
+   * whatever ceremony was up stays in memory, unseen. Reception took a live
+   * tablet off the floor; the act recalled the session server-side, and the
+   * next thing this device does after the flag clears is return to Begin on
+   * its own poll.
+   *
+   * THE TABLET KEEPS HEARTBEATING BEHIND IT. That is the whole difference from
+   * a revoke: this device stays visible on the console and one press puts it
+   * back, with nobody walking over to it.
+   */
+  if (heartbeat.outOfUse) {
+    return <OutOfUseScreen practiceName={practiceName} locationLine={locationLine} />;
   }
 
   /**

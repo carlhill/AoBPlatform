@@ -98,6 +98,7 @@ const SESSION: TabletSessionPayload = {
 };
 
 const {
+  sendKioskHeartbeat,
   claimWaitingRow,
   confirmSessionDetails,
   fetchAgreement,
@@ -113,6 +114,7 @@ const {
   signAgreement,
   completeCapture,
 } = vi.hoisted(() => ({
+  sendKioskHeartbeat: vi.fn(),
   claimWaitingRow: vi.fn(),
   confirmSessionDetails: vi.fn(),
   fetchAgreement: vi.fn(),
@@ -150,6 +152,7 @@ vi.mock('./api', () => ({
   isUnpaired: (err: unknown) =>
     typeof err === 'object' && err !== null && (err as { status?: number }).status === 401,
   fetchKioskMe,
+  sendKioskHeartbeat,
   fetchWaitingList,
   fetchPracticeStaffNames: vi.fn(async () => []),
   fetchTabletSession,
@@ -180,6 +183,14 @@ const MUTATORS = [
 ] as const;
 
 function asPairedTablet(rows: readonly KioskWaitingRow[] = []): void {
+  /*
+   * THE HEARTBEAT IS THE OUTAGE SIGNAL NOW (Carl, 4–5 Sep 2026). `GET
+   * /kiosk/me` is still the boot-time identity read, but the poll that runs on
+   * every screen — and therefore the one that decides "the platform is
+   * unreachable" — is `POST /kiosk/heartbeat`. Every failure below is that
+   * call's; the semantics it is asserted against are unchanged.
+   */
+  sendKioskHeartbeat.mockResolvedValue({ command: null, pollMs: POLL_MS, outOfUse: false, reload: false });
   fetchKioskMe.mockResolvedValue({
     deviceId: 'device-1',
     deviceLabel: 'Reception tablet 1',
@@ -221,6 +232,7 @@ async function advanceMs(ms: number): Promise<void> {
 
 beforeEach(() => {
   for (const mock of [
+    sendKioskHeartbeat,
     claimWaitingRow,
     confirmSessionDetails,
     fetchAgreement,
@@ -238,6 +250,7 @@ beforeEach(() => {
   ]) {
     mock.mockReset();
   }
+  sendKioskHeartbeat.mockResolvedValue({ command: null, pollMs: POLL_MS, outOfUse: false, reload: false });
   fetchTabletSession.mockResolvedValue({ session: null });
   setTabletSessionState.mockResolvedValue({ id: SESSION.id, state: 'reading' });
   confirmSessionDetails.mockResolvedValue({ id: SESSION.id, state: 'details_confirmed' });
@@ -257,7 +270,7 @@ describe('outage_replaces_every_screen_with_see_reception', () => {
     await settle();
     expect(screen.getByTestId('start-check-in')).toBeTruthy();
 
-    fetchKioskMe.mockRejectedValue(new Error('network down'));
+    sendKioskHeartbeat.mockRejectedValue(new Error('network down'));
     await advanceMs(POLL_MS);
     // ONE FAILURE IS NOT AN OUTAGE. A single dropped request is a network blip.
     expect(screen.queryByTestId('outage-heading')).toBeNull();
@@ -279,7 +292,7 @@ describe('outage_replaces_every_screen_with_see_reception', () => {
     expect(screen.getByTestId('identifier-name-given')).toBeTruthy();
     fireEvent.change(screen.getByTestId('identifier-name-given'), { target: { value: 'Riley' } });
 
-    fetchKioskMe.mockRejectedValue(new Error('network down'));
+    sendKioskHeartbeat.mockRejectedValue(new Error('network down'));
     await advanceMs(POLL_MS);
     await advanceMs(POLL_MS);
 
@@ -311,7 +324,7 @@ describe('outage_replaces_every_screen_with_see_reception', () => {
     await settle();
     expect(screen.getByTestId('particulars-heading')).toBeTruthy();
 
-    fetchKioskMe.mockRejectedValue(new Error('network down'));
+    sendKioskHeartbeat.mockRejectedValue(new Error('network down'));
     await advanceMs(POLL_MS);
     await advanceMs(POLL_MS);
 
@@ -327,7 +340,7 @@ describe('outage_replaces_every_screen_with_see_reception', () => {
     await settle();
     expect(screen.getByTestId('check-details-heading')).toBeTruthy();
 
-    fetchKioskMe.mockRejectedValue(new Error('network down'));
+    sendKioskHeartbeat.mockRejectedValue(new Error('network down'));
     await advanceMs(POLL_MS);
     await advanceMs(POLL_MS);
 
@@ -346,7 +359,7 @@ describe('outage_ignores_401_and_4xx', () => {
     await settle();
     expect(screen.getByTestId('start-check-in')).toBeTruthy();
 
-    fetchKioskMe.mockRejectedValue(new KioskApiError('revoked', 401));
+    sendKioskHeartbeat.mockRejectedValue(new KioskApiError('revoked', 401));
 
     await advanceMs(POLL_MS);
     await advanceMs(POLL_MS);
@@ -364,14 +377,14 @@ describe('outage_ignores_401_and_4xx', () => {
     await settle();
     expect(screen.getByTestId('start-check-in')).toBeTruthy();
 
-    fetchKioskMe.mockRejectedValue(new KioskApiError('not found', 404));
+    sendKioskHeartbeat.mockRejectedValue(new KioskApiError('not found', 404));
     await advanceMs(POLL_MS);
     await advanceMs(POLL_MS);
     expect(screen.queryByTestId('outage-heading')).toBeNull();
 
     // NOW A REAL OUTAGE, and it still takes the full two failures — the 4xx
     // pair above did not quietly advance the counter.
-    fetchKioskMe.mockRejectedValue(new Error('network down'));
+    sendKioskHeartbeat.mockRejectedValue(new Error('network down'));
     await advanceMs(POLL_MS);
     expect(screen.queryByTestId('outage-heading')).toBeNull();
     await advanceMs(POLL_MS);
@@ -387,7 +400,7 @@ describe('recovery_returns_to_idle_and_clears_state', () => {
     await settle();
     expect(screen.getByTestId('check-details-heading')).toBeTruthy();
 
-    fetchKioskMe.mockRejectedValue(new Error('network down'));
+    sendKioskHeartbeat.mockRejectedValue(new Error('network down'));
     await advanceMs(POLL_MS);
     await advanceMs(POLL_MS);
     expect(screen.getByTestId('outage-heading')).toBeTruthy();
@@ -398,16 +411,7 @@ describe('recovery_returns_to_idle_and_clears_state', () => {
      * isolates. A session still live on recovery reappearing on its own is
      * the same non-blocking guard `resend-session.test.tsx` proves.
      */
-    fetchKioskMe.mockResolvedValue({
-      deviceId: 'device-1',
-      deviceLabel: 'Reception tablet 1',
-      practiceId: 'practice-1',
-      practiceName: 'Sample Practice',
-      state: 'NSW',
-      identifierTypes: IDENTIFIER_TYPES,
-      showsWaitingList: false,
-      reload: false,
-    });
+    sendKioskHeartbeat.mockResolvedValue({ command: null, pollMs: POLL_MS, outOfUse: false, reload: false });
     fetchTabletSession.mockResolvedValue({ session: null });
     await advanceMs(POLL_MS);
 
@@ -430,23 +434,14 @@ describe('outage_posts_nothing', () => {
     // any outage. Everything from here on is what this test protects.
     const callsBeforeOutage = setTabletSessionState.mock.calls.length;
 
-    fetchKioskMe.mockRejectedValue(new Error('network down'));
+    sendKioskHeartbeat.mockRejectedValue(new Error('network down'));
     await advanceMs(POLL_MS);
     await advanceMs(POLL_MS);
     expect(screen.getByTestId('outage-heading')).toBeTruthy();
 
     // The session ends server-side while this tablet cannot see it — see
     // the note in `recovery_returns_to_idle_and_clears_state` above.
-    fetchKioskMe.mockResolvedValue({
-      deviceId: 'device-1',
-      deviceLabel: 'Reception tablet 1',
-      practiceId: 'practice-1',
-      practiceName: 'Sample Practice',
-      state: 'NSW',
-      identifierTypes: IDENTIFIER_TYPES,
-      showsWaitingList: false,
-      reload: false,
-    });
+    sendKioskHeartbeat.mockResolvedValue({ command: null, pollMs: POLL_MS, outOfUse: false, reload: false });
     fetchTabletSession.mockResolvedValue({ session: null });
     await advanceMs(POLL_MS);
     expect(screen.getByTestId('start-check-in')).toBeTruthy();

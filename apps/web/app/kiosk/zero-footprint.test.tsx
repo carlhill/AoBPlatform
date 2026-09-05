@@ -37,6 +37,7 @@ import { EMPTY_CHOICE } from './rules/assignor';
 import { PairingScreen } from './screens/PairingScreen';
 import { UnpairedScreen } from './screens/UnpairedScreen';
 import { OutageScreen } from './screens/OutageScreen';
+import { OutOfUseScreen } from './screens/OutOfUseScreen';
 import { getSession, PERSISTABLE_KEYS, setSession } from './session';
 import {
   PAIRING_CREDENTIAL_KEY,
@@ -271,6 +272,9 @@ describe('CLAUDE.md §7 — nothing is written to the device', () => {
        * checks that mounting and unmounting it is as silent as everything else.
        */
       <OutageScreen key="outage" {...CHROME} />,
+      // Reception took this one off the floor — a screen like any other, and
+      // like every other it writes nothing to the device (CLAUDE.md §7).
+      <OutOfUseScreen key="out-of-use" {...CHROME} />,
     ];
 
     for (const screen of screens) {

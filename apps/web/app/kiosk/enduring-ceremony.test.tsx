@@ -139,6 +139,20 @@ vi.mock('./pairing', () => ({
 }));
 
 vi.mock('./api', () => ({
+  /*
+   * THE HEARTBEAT, STUBBED HEALTHY (Carl, 4–5 Sep 2026). `useKioskHeartbeat`
+   * runs on every screen of the ceremony, so every suite that drives the real
+   * `Ceremony` needs it to answer — two consecutive failures would replace the
+   * screen under the test with "Please contact reception", which is
+   * `outage.test.tsx`'s subject and nobody else's. No command, no cadence of
+   * its own, not out of use: the quiet answer.
+   */
+  sendKioskHeartbeat: vi.fn(async () => ({
+    command: null,
+    pollMs: 0,
+    outOfUse: false,
+    reload: false,
+  })),
   KioskApiError: class KioskApiError extends Error {
     status: number;
     constructor(message: string, status: number) {

@@ -252,3 +252,91 @@ export function kioskIdleTimeoutOrDefault(seconds: unknown): number {
     ? seconds
     : KIOSK_IDLE_TIMEOUT_DEFAULT_SECONDS;
 }
+
+/**
+ * WHERE THE TABLET IS — the ten words a heartbeat may carry, and no eleventh
+ * (Carl, 4–5 Sep 2026: "the tablet must know what it is on").
+ *
+ * WHY A FIXED LIST RATHER THAN A STRING. `POST /kiosk/heartbeat` is a request
+ * a tablet makes from every screen in the ceremony, including the ones with a
+ * patient's name, date of birth and address on them. A free-text `screen`
+ * would be a field somebody could one day fill with a heading — and a heading
+ * on this product's screens is often a person's name. So the wire carries a
+ * WORD FROM THIS LIST, the server refuses anything else with a 400, and the
+ * named test `heartbeat_carries_screen_names_not_values` asserts that the body
+ * holds these fields and nothing else (REQ-VER-04, hard rule 9).
+ *
+ * THEY ARE SCREEN NAMES, NOT IDENTIFIER TYPES AND NOT STATES. `verify` says
+ * the patient is on the identity form; it does NOT say which identifiers were
+ * asked for and it certainly does not say what was typed into them. The
+ * console renders each of these through its own string table (REQ-LANG-01), so
+ * what a receptionist reads is written for a receptionist.
+ *
+ * `outage` IS ONE OF THEM, deliberately. A tablet that has replaced its screen
+ * with "Please contact reception" is in a state reception needs to see — and
+ * the heartbeat that says so is, by definition, one that got through, which
+ * makes it the most useful line on the row.
+ */
+export const KIOSK_SCREENS = [
+  'begin',
+  'list',
+  'verify',
+  'assignor',
+  'particulars',
+  'signature',
+  'check-details',
+  'complete',
+  'handover',
+  'outage',
+] as const;
+
+export type KioskScreen = (typeof KIOSK_SCREENS)[number];
+
+export function isKioskScreen(value: unknown): value is KioskScreen {
+  return typeof value === 'string' && (KIOSK_SCREENS as readonly string[]).includes(value);
+}
+
+/**
+ * THE SCREENS THAT MEAN SOMEBODY IS STANDING THERE. Begin and the test
+ * device's list are the between-patients screens; everything else has a
+ * ceremony on it, which is what turns "seen 4 s ago" into "walk-up in
+ * progress" on the console row.
+ */
+export function kioskScreenIsCeremony(screen: KioskScreen): boolean {
+  return screen !== 'begin' && screen !== 'list';
+}
+
+/**
+ * HOW LONG A COMMAND IS WORTH DELIVERING — two minutes (Carl, 4 Sep 2026).
+ *
+ * "Return to Begin" is pressed by somebody standing next to the tablet who
+ * wants it back NOW. A tablet that was asleep, off, or out of signal when the
+ * button was pressed must not wake up tomorrow morning and clear the screen
+ * of tomorrow's patient, so the command is served for two minutes and then
+ * dropped silently. Reception presses it again; that costs one tap and no
+ * surprise.
+ */
+export const KIOSK_COMMAND_TTL_MS = 2 * 60 * 1000;
+
+/** The commands a heartbeat may answer with. One today; the shape is the point. */
+export const KIOSK_COMMAND_KINDS = ['return_to_begin'] as const;
+export type KioskCommandKind = (typeof KIOSK_COMMAND_KINDS)[number];
+
+export interface KioskCommand {
+  /** Opaque. The tablet echoes it back as `ackCommandId` and the server clears it. */
+  readonly id: string;
+  readonly kind: KioskCommandKind;
+  /**
+   * WHEN RECEPTION PRESSED IT. The tablet uses this for one thing only: a
+   * ceremony it dropped AFTER this moment was dropped because of this command,
+   * so the person holding the tablet is still standing there and is owed the
+   * "please see reception" screen rather than a silent return to Begin.
+   */
+  readonly issuedAt: string;
+}
+
+export function kioskCommandIsLive(issuedAt: Date | string, now: Date = new Date()): boolean {
+  const at = typeof issuedAt === 'string' ? Date.parse(issuedAt) : issuedAt.getTime();
+  if (Number.isNaN(at)) return false;
+  return now.getTime() - at <= KIOSK_COMMAND_TTL_MS;
+}

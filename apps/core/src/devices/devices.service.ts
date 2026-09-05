@@ -7,14 +7,21 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import {
   DEVICE_LABEL_MAX_LENGTH,
   PAIRING_CODE_TTL_MS,
+  deviceHeartbeatIsStale,
   deviceState,
   isPairingCodeShape,
   kioskBuildIsStale,
+  kioskCommandIsLive,
+  kioskPollMs,
   normalisePairingCode,
   type DeviceRow,
+  type KioskCommand,
+  type KioskCommandKind,
+  type KioskScreen,
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import type { Actor } from '../auth/actor.decorator';
@@ -300,6 +307,228 @@ export class DevicesService {
     });
   }
 
+  /**
+   * THE HEARTBEAT — where this tablet is, every poll, on every screen
+   * (Carl, 4–5 Sep 2026; TODO.md "Tablet heartbeat and Return to Begin").
+   *
+   * IT WRITES EVERY TIME, unlike `touch` above, and the difference is the
+   * whole point. `touch` answers "was this tablet alive this morning?" and a
+   * once-a-minute write is plenty for that. This answers "where is it RIGHT
+   * NOW", which reception reads off a row while a patient stands at the desk —
+   * a throttled write would make every tablet in a busy practice read as
+   * stale, which is the opposite of what the line is for. A device row is a
+   * handful of small columns and a practice has a handful of tablets.
+   *
+   * NO VAULT EVENT. A heartbeat is telemetry, not evidence: thirty rows a
+   * minute per tablet in an append-only store would bury the events that
+   * matter for no evidentiary gain. The acts that ARE evidence — the reset
+   * request, taking a tablet out of use — write their own (hard rule 11).
+   *
+   * NO PATIENT DATA REACHES THIS FUNCTION. `screen` is one of `KIOSK_SCREENS`
+   * (the DTO refuses anything else) and `sessionId` is opaque; there is no
+   * parameter here that could carry a name, and none that could carry an
+   * identifier value (REQ-VER-04, hard rule 9).
+   *
+   * IT NEVER BLOCKS CARE. A device that has gone missing between the guard and
+   * here answers an empty command rather than throwing: the tablet in a
+   * patient's hands must not be broken by a write about telemetry
+   * (REQ-REC-04).
+   */
+  async recordHeartbeat(
+    device: ResolvedDevice,
+    input: {
+      screen: KioskScreen;
+      sessionId: string | null;
+      kioskBuild: string | null;
+      /** The command this tablet has just carried out. Clears it, once. */
+      ackCommandId: string | null;
+    },
+  ): Promise<{ command: KioskCommand | null; outOfUse: boolean }> {
+    const now = new Date();
+    return this.prisma.withPractice(device.practiceId, async (tx) => {
+      const row = await tx.device.findFirst({ where: { id: device.deviceId } });
+      if (!row) return { command: null, outOfUse: false };
+
+      /*
+       * SERVED ONCE, AND ONLY WHILE IT IS FRESH.
+       *
+       * Three things can be true of the pending command, and each has its own
+       * answer. The tablet has ACKNOWLEDGED it (the id comes back on this
+       * heartbeat) — clear it, it landed. It has EXPIRED — clear it silently,
+       * because a tablet that was asleep when reception pressed the button
+       * must not clear tomorrow's patient off the screen tomorrow morning
+       * (`KIOSK_COMMAND_TTL_MS`). Otherwise it is LIVE, and it is served again
+       * on every heartbeat until the acknowledgement arrives, so a command
+       * lost to one dropped request is not a command lost.
+       */
+      const pending =
+        row.pendingCommandId && row.pendingCommandKind && row.pendingCommandIssuedAt
+          ? {
+              id: row.pendingCommandId,
+              kind: row.pendingCommandKind as KioskCommandKind,
+              issuedAt: row.pendingCommandIssuedAt,
+            }
+          : null;
+      const acknowledged = pending !== null && input.ackCommandId === pending.id;
+      const expired = pending !== null && !kioskCommandIsLive(pending.issuedAt, now);
+      const clearCommand = pending !== null && (acknowledged || expired);
+      const serve = pending !== null && !acknowledged && !expired ? pending : null;
+
+      await tx.device.update({
+        where: { id: device.deviceId },
+        data: {
+          lastSeenAt: now,
+          currentScreen: input.screen,
+          currentSessionId: input.sessionId,
+          ...(input.kioskBuild !== null && input.kioskBuild !== row.lastKioskBuild
+            ? { lastKioskBuild: input.kioskBuild }
+            : {}),
+          ...(clearCommand
+            ? {
+                pendingCommandId: null,
+                pendingCommandKind: null,
+                pendingCommandIssuedAt: null,
+                pendingCommandIssuedBy: null,
+              }
+            : {}),
+        },
+      });
+
+      return {
+        command: serve
+          ? { id: serve.id, kind: serve.kind, issuedAt: serve.issuedAt.toISOString() }
+          : null,
+        outOfUse: row.outOfUseAt !== null,
+      };
+    });
+  }
+
+  /**
+   * "RETURN TO BEGIN" — reception asking for the tablet back (Carl, 4 Sep
+   * 2026).
+   *
+   * THIS HALF IS ONLY THE FLAG ON THE DEVICE. Recalling whatever session is
+   * live on the tablet is `TabletSessionsService`'s act, in its own
+   * transaction with its own event, because sessions are its table and its
+   * rules — a device module that ended sessions would be the second place the
+   * rule for ending one lives, and the second place is the one that drifts.
+   *
+   * IDEMPOTENT BY REPLACEMENT. A second press while one is pending replaces
+   * it: somebody pressing twice wants the tablet back once, and a queue of
+   * two resets would take two heartbeats to work through for no reason.
+   *
+   * THE EVENT IS WRITTEN IN THE SAME TRANSACTION AS THE FLAG (hard rule 11),
+   * and carries the device, the command, and who pressed it — never a patient,
+   * because the tablet may have had anybody's ceremony on it and this record
+   * is about the act, not its subject (REQ-LOG-08).
+   */
+  async requestReturnToBegin(
+    practiceId: string,
+    deviceId: string,
+    actor: Actor | undefined,
+    context: { recalledSessionId: string | null },
+  ): Promise<{ deviceId: string; commandId: string; issuedAt: string }> {
+    const named = this.requireActor(
+      actor,
+      'Sending a tablet back to the start can take a screen away from a patient standing at it, so it is ' +
+        'recorded against the person who did it. This request carries no signed-in user, so it is refused ' +
+        'rather than recorded as nobody.',
+    );
+    const commandId = randomUUID();
+    const issuedAt = new Date();
+
+    await this.prisma.withPractice(practiceId, async (tx) => {
+      const device = await tx.device.findFirst({ where: { id: deviceId } });
+      // A cross-practice id finds nothing — RLS filters on the
+      // transaction-local scope, so this fails closed as a 404 rather than
+      // admitting the device exists somewhere else.
+      if (!device) throw new NotFoundException('Device not found.');
+
+      await tx.device.update({
+        where: { id: deviceId },
+        data: {
+          pendingCommandId: commandId,
+          pendingCommandKind: 'return_to_begin' satisfies KioskCommandKind,
+          pendingCommandIssuedAt: issuedAt,
+          pendingCommandIssuedBy: named.id,
+        },
+      });
+      await enqueueVaultEvent(tx, {
+        type: 'tablet.return_to_begin_requested',
+        actor: { principalType: 'staff', id: named.id },
+        subject: { type: 'Device', id: deviceId },
+        payload: {
+          label: device.label,
+          commandId,
+          requestedBy: named.name,
+          // WHETHER A SCREEN WAS TAKEN OFF SOMEBODY, as an id and never a name.
+          recalledSessionId: context.recalledSessionId ?? '',
+          interruptedScreen: device.currentScreen ?? '',
+        },
+      });
+    });
+
+    return { deviceId, commandId, issuedAt: issuedAt.toISOString() };
+  }
+
+  /**
+   * TAKE A TABLET OUT OF USE, AND PUT IT BACK (Carl, 4–5 Sep 2026; TODO.md
+   * "Tablets: make one inactive").
+   *
+   * IT IS RECEPTION'S SWITCH AND NOT AN ADMINISTRATOR'S REVOKE, and the whole
+   * value is in that distinction. A flat battery, a tablet gone for repair, a
+   * tablet on the wrong desk: the credential is fine and throwing it away
+   * would cost somebody a rotate and a walk to the device to type a code in.
+   * So this refuses pushes, shows a quiet "not in use" screen, and reverses
+   * with one press — while the tablet keeps heartbeating, so it is still
+   * visible on the console rather than indistinguishable from one switched off.
+   *
+   * IDEMPOTENT AND SILENT ABOUT IT. Setting the state it is already in writes
+   * no row and no event: an audit trail of non-changes is one nobody reads.
+   */
+  async setOutOfUse(
+    practiceId: string,
+    deviceId: string,
+    outOfUse: boolean,
+    actor: Actor | undefined,
+    context: { recalledSessionId: string | null } = { recalledSessionId: null },
+  ): Promise<{ deviceId: string; outOfUse: boolean }> {
+    const named = this.requireActor(
+      actor,
+      'Taking a tablet out of use stops agreements reaching it, so it is recorded against the person who ' +
+        'did it. This request carries no signed-in user, so it is refused rather than recorded as nobody.',
+    );
+
+    const value = await this.prisma.withPractice(practiceId, async (tx) => {
+      const device = await tx.device.findFirst({ where: { id: deviceId } });
+      if (!device) throw new NotFoundException('Device not found.');
+      const already = device.outOfUseAt !== null;
+      if (already === outOfUse) return already;
+
+      await tx.device.update({
+        where: { id: deviceId },
+        data: outOfUse
+          ? { outOfUseAt: new Date(), outOfUseBy: named.name }
+          : { outOfUseAt: null, outOfUseBy: null },
+      });
+      await enqueueVaultEvent(tx, {
+        type: outOfUse ? 'device.taken_out_of_use' : 'device.put_back_in_use',
+        actor: { principalType: 'staff', id: named.id },
+        subject: { type: 'Device', id: deviceId },
+        // The label, who did it, and whether a live screen was taken back to
+        // make it true. No patient and no name of one (REQ-LOG-08).
+        payload: {
+          label: device.label,
+          setBy: named.name,
+          recalledSessionId: context.recalledSessionId ?? '',
+        },
+      });
+      return outOfUse;
+    });
+
+    return { deviceId, outOfUse: value };
+  }
+
   /** Whether this tablet is below the practice's build floor and must reload. */
   async shouldReload(practiceId: string, kioskBuild: string | null): Promise<boolean> {
     const practice = await this.prisma.withPractice(practiceId, (tx) => tx.practice.findFirst({}));
@@ -325,6 +554,9 @@ export class DevicesService {
     return this.prisma.withPractice(practiceId, async (tx) => {
       const device = await tx.device.findFirst({ where: { id: deviceId } });
       if (!device) return null;
+      // `deviceState` reads `outOfUseAt` too, so a caller asking "may I push to
+      // this?" gets `inactive` from the same function the console renders —
+      // one place decides what a device IS.
       return { id: device.id, label: device.label, state: deviceState(device) };
     });
   }
@@ -345,6 +577,21 @@ export class DevicesService {
         if (!liveCodeFor.has(code.deviceId)) liveCodeFor.set(code.deviceId, code.expiresAt);
       }
       const practice = await tx.practice.findFirst({});
+
+      /*
+       * STALENESS IS THE SERVER'S ANSWER, NOT THE CONSOLE'S GUESS (Carl, 5 Sep
+       * 2026). "Not seen for 3 min" has to mean "missed two heartbeats", and
+       * the heartbeat cadence is the server's — fast while somebody is
+       * waiting, slow while nobody is. A console that hardcoded a number would
+       * be a second place for the cadence to be wrong, and it would be wrong
+       * in the direction that matters: calling a live tablet dead.
+       */
+      const waitingCount = await tx.captureRequest.count({
+        where: { channel: 'in_practice', status: 'open' },
+      });
+      const pollMs = kioskPollMs(waitingCount);
+      const now = new Date();
+
       return {
         minimumKioskBuild: practice?.minimumKioskBuild ?? null,
         devices: rows.map((device) => ({
@@ -360,6 +607,18 @@ export class DevicesService {
           revokedBy: device.revokedBy,
           pairingExpiresAt: liveCodeFor.get(device.id)?.toISOString() ?? null,
           showsWaitingList: device.showsWaitingList,
+          /*
+           * WHERE THE TABLET IS. A screen NAME from `KIOSK_SCREENS` and an
+           * opaque session id — no patient is looked up to decorate this row,
+           * because reception already has the name on the session row and a
+           * second copy on a second screen buys nothing (Carl, 5 Sep 2026).
+           */
+          currentScreen: (device.currentScreen as DeviceRow['currentScreen']) ?? null,
+          currentSessionId: device.currentSessionId,
+          stale: deviceHeartbeatIsStale(device.lastSeenAt, pollMs, now),
+          outOfUse: device.outOfUseAt !== null,
+          outOfUseAt: device.outOfUseAt?.toISOString() ?? null,
+          outOfUseBy: device.outOfUseBy,
         })),
       };
     });
@@ -452,6 +711,21 @@ export class DevicesService {
           revokedAt: null,
           revokedBy: null,
           revokedReason: null,
+          /*
+           * A ROTATED TABLET COMES BACK CLEAN. Out of use, and a reset command
+           * nobody ever collected, are both statements about the tablet that
+           * WAS on this row — the one whose credential has just been thrown
+           * away. Carrying them across would greet a freshly paired device
+           * with "not in use" and a reset from last week.
+           */
+          outOfUseAt: null,
+          outOfUseBy: null,
+          pendingCommandId: null,
+          pendingCommandKind: null,
+          pendingCommandIssuedAt: null,
+          pendingCommandIssuedBy: null,
+          currentScreen: null,
+          currentSessionId: null,
         },
       });
       await tx.devicePairingCode.updateMany({

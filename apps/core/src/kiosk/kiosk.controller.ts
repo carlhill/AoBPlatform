@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Headers, Post, Res } from '@nestjs/common';
-import { IsObject } from 'class-validator';
+import { IsIn, IsObject, IsOptional, IsString, IsUUID, MaxLength, ValidateIf } from 'class-validator';
 import type { Response } from 'express';
+import { KIOSK_SCREENS, type KioskScreen } from '@aobplatform/domain';
 import { KioskService } from './kiosk.service';
 import { CallingDevice, KioskBuild, RequiresDevice } from '../devices/device.decorator';
 import type { ResolvedDevice } from '../devices/devices.service';
@@ -18,6 +19,61 @@ export class KioskClaimDto {
    */
   @IsObject()
   stated!: Record<string, string>;
+}
+
+/**
+ * THE HEARTBEAT'S WHOLE BODY, and the DTO is the guard rail (Carl, 4–5 Sep
+ * 2026; TODO.md "Tablet heartbeat and Return to Begin").
+ *
+ * FOUR FIELDS, AND THE VALIDATION PIPE STRIPS EVERY FIFTH. `whitelist: true`
+ * is on globally, so a tablet — or anything wearing a tablet's credential —
+ * that put a name, a date of birth or an address in this body would find it
+ * dropped before this class was constructed. That is what makes
+ * `heartbeat_carries_screen_names_not_values` a structural claim rather than
+ * an assertion about today's client code (REQ-VER-04, hard rule 9).
+ *
+ * `screen` IS A WORD FROM A FIXED LIST OR A 400. Free text here would be a
+ * field somebody could one day fill with a heading, and the headings on this
+ * product's screens are frequently a person's name.
+ */
+export class KioskHeartbeatDto {
+  @IsIn([...KIOSK_SCREENS])
+  screen!: KioskScreen;
+
+  /**
+   * The opaque pushed-session id, or null for a walk-up and for a tablet
+   * sitting on Begin. `null` is a real answer here — it is how the server
+   * learns the tablet is nobody's screen any more — so the field accepts it
+   * explicitly rather than treating absence and null as different things.
+   */
+  @IsOptional()
+  @ValidateIf((o: KioskHeartbeatDto) => o.sessionId !== null)
+  @IsUUID()
+  sessionId?: string | null;
+
+  /**
+   * Which build this tab is running. It is also on the `x-kiosk-build` header
+   * — the header is what every other kiosk call uses and what the guard reads
+   * — and it is here because the heartbeat is the one call whose entire job is
+   * to say what this tablet is and where. A header can be stripped by a proxy;
+   * the body is the tablet's own statement.
+   */
+  @IsOptional()
+  @ValidateIf((o: KioskHeartbeatDto) => o.build !== null)
+  @IsString()
+  @MaxLength(40)
+  build?: string | null;
+
+  /**
+   * "I HAVE DONE THAT ONE." The command id the tablet has just carried out,
+   * echoed back so the server can clear it. Until it arrives the command is
+   * served again on every heartbeat, so a command lost to one dropped request
+   * is not a command lost.
+   */
+  @IsOptional()
+  @ValidateIf((o: KioskHeartbeatDto) => o.ackCommandId !== null)
+  @IsUUID()
+  ackCommandId?: string | null;
 }
 
 /**
@@ -61,6 +117,48 @@ export class KioskController {
   @Get('me')
   me(@CallingDevice() device: ResolvedDevice | undefined, @KioskBuild() kioskBuild: string | null) {
     return this.kiosk.me(device!, kioskBuild);
+  }
+
+  /**
+   * WHERE THIS TABLET IS, AND WHAT RECEPTION WANTS IT TO DO — the poll that
+   * replaced `GET /kiosk/me` as the tablet's heartbeat (Carl, 4–5 Sep 2026).
+   *
+   * IT IS THE SAME POLL, DOING ONE MORE JOB. The outage screen already needed
+   * one cheap call on every screen, at the server's own cadence, so that a
+   * tablet nobody can reach says "please contact reception" rather than
+   * sitting on Begin. This is that call, turned from a read into an exchange:
+   * the tablet says which of ten screens it is on, and the server answers with
+   * the pending command, the cadence, and whether the tablet has been taken
+   * out of use.
+   *
+   * A POST BECAUSE IT WRITES. `lastSeenAt`, `currentScreen` and
+   * `currentSessionId` land on the device row, which is what turns a device
+   * list into "On Begin · seen 4 s ago" and "Walk-up in progress · verifying
+   * identity". Answering that question was the gap: recall reaches a pushed
+   * session, and the session poll is deliberately off during a walk-up, so
+   * before this a walk-up half-way through verifying was invisible.
+   *
+   * NO VAULT EVENT, deliberately — see `DevicesService.recordHeartbeat`. A
+   * heartbeat is telemetry; the acts that are evidence write their own.
+   *
+   * IT NEVER BLOCKS CARE (hard rule 8, REQ-REC-04). The worst this endpoint
+   * can do is fail, and a tablet that cannot reach it shows the outage screen
+   * and tells the patient their appointment is unaffected.
+   */
+  @Post('heartbeat')
+  heartbeat(
+    @CallingDevice() device: ResolvedDevice | undefined,
+    @Body() dto: KioskHeartbeatDto,
+    @KioskBuild() kioskBuild: string | null,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    res.setHeader('Cache-Control', 'no-store');
+    return this.kiosk.heartbeat(device!, {
+      screen: dto.screen,
+      sessionId: dto.sessionId ?? null,
+      build: dto.build ?? kioskBuild,
+      ackCommandId: dto.ackCommandId ?? null,
+    });
   }
 
   /**

@@ -8,6 +8,8 @@ import {
   kioskPollMs,
   projectKioskWaitingRow,
   type ApprovedIdentifierType,
+  type KioskCommand,
+  type KioskScreen,
   type KioskWaitingRow,
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
@@ -152,6 +154,71 @@ export class KioskService {
       kioskBuild,
       reload: await this.devices.shouldReload(device.practiceId, kioskBuild),
     };
+  }
+
+  /**
+   * THE HEARTBEAT — where the tablet is, and what reception wants it to do
+   * (Carl, 4–5 Sep 2026; TODO.md "Tablet heartbeat and Return to Begin").
+   *
+   * WHAT IT ANSWERS, AND WHY EACH PIECE IS HERE RATHER THAN SOMEWHERE ELSE:
+   *
+   *  - `command` — the pending "return to begin", served for two minutes and
+   *    then dropped silently. It rides on the poll the tablet already makes
+   *    because there is no other channel to a device that holds one opaque
+   *    credential and nothing else; a socket would fail silently, and a
+   *    silently dead reset is a tablet reception cannot get back.
+   *  - `pollMs` — the SERVER'S cadence, not the device's choice, exactly as
+   *    the waiting list has always worked. It matters more here: the waiting
+   *    list poll is off mid-ceremony, so on those screens this is the only
+   *    thing telling the tablet how often to ask, and a tablet picking its own
+   *    number is a number nobody can change without a deploy.
+   *  - `outOfUse` — reception has taken this tablet off the floor. The screen
+   *    goes quiet and the tablet KEEPS HEARTBEATING, which is the whole
+   *    difference from a revoke: it stays visible on the console and one press
+   *    puts it back.
+   *  - `reload` — the build floor, answered here for the same reason
+   *    `/kiosk/me` answers it: this is now the one poll that runs on every
+   *    screen, so it is the one place a rollback is guaranteed to reach.
+   *
+   * NO PATIENT DATA GOES IN OR COMES OUT. In: a screen NAME from a fixed list
+   * and an opaque session id (the DTO refuses anything else, and the global
+   * whitelist strips any fifth field). Out: a command id, a number and two
+   * booleans (REQ-VER-04, hard rule 9).
+   */
+  async heartbeat(
+    device: ResolvedDevice,
+    input: {
+      screen: KioskScreen;
+      sessionId: string | null;
+      build: string | null;
+      ackCommandId: string | null;
+    },
+  ): Promise<{
+    command: KioskCommand | null;
+    pollMs: number;
+    outOfUse: boolean;
+    reload: boolean;
+  }> {
+    const [{ command, outOfUse }, waitingCount, reload] = await Promise.all([
+      this.devices.recordHeartbeat(device, {
+        screen: input.screen,
+        sessionId: input.sessionId,
+        kioskBuild: input.build,
+        ackCommandId: input.ackCommandId,
+      }),
+      this.prisma.withPractice(device.practiceId, (tx) =>
+        tx.captureRequest.count({ where: { channel: 'in_practice', status: 'open' } }),
+      ),
+      this.devices.shouldReload(device.practiceId, input.build),
+    ]);
+
+    /*
+     * A COUNT, NEVER A LIST, AND IT NEVER LEAVES THIS FUNCTION. The cadence
+     * derived from it is the only thing the tablet is told — how many people
+     * are waiting is itself a disclosure, and it was the first one removed
+     * from the ordinary tablet's waiting-list response (Carl, 4 Sep 2026).
+     */
+    return { command, pollMs: kioskPollMs(waitingCount), outOfUse, reload };
   }
 
   /**

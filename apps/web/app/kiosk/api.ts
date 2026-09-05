@@ -24,6 +24,8 @@
 import type {
   ConfirmableDetailType,
   DeviceSettableTabletSessionState,
+  KioskCommand,
+  KioskScreen,
   KioskWaitingRow,
   TabletSessionPayload,
   TabletSessionState,
@@ -32,7 +34,7 @@ import { coreBaseUrl, getSession, kioskBuildId } from './session';
 import { readPairingCredential } from './pairing';
 import type { SignRequestBody } from './rules/signature-payload';
 
-export type { KioskWaitingRow, TabletSessionPayload };
+export type { KioskCommand, KioskScreen, KioskWaitingRow, TabletSessionPayload };
 
 /** `GET /kiosk/waiting-list`. */
 export interface WaitingListResponse {
@@ -270,6 +272,54 @@ export async function fetchWaitingList(etag: string | null): Promise<WaitingList
  */
 export function fetchKioskMe(): Promise<KioskMeResponse> {
   return request<KioskMeResponse>('/kiosk/me');
+}
+
+/**
+ * `POST /kiosk/heartbeat` — WHERE THIS TABLET IS, AND WHAT RECEPTION WANTS IT
+ * TO DO (Carl, 4–5 Sep 2026; TODO.md "Tablet heartbeat and Return to Begin").
+ *
+ * IT REPLACED `GET /kiosk/me` AS THE OUTAGE POLL. The tablet already made one
+ * cheap call on every screen, at the server's cadence, so that a device that
+ * cannot reach the platform says "please contact reception" rather than
+ * sitting on Begin. This is that call with the answer to the other half of the
+ * question: the tablet says which of ten screens it is on, and the server can
+ * say "come back to Begin".
+ *
+ * THE BODY IS FOUR FIELDS AND CANNOT BE FIVE. `screen` is one of
+ * `KIOSK_SCREENS` — a screen NAME, never a heading and never a typed value —
+ * and the server's DTO refuses anything else. `sessionId` is opaque. There is
+ * no parameter here that could carry a name, a date of birth or an address,
+ * which is what makes `heartbeat_carries_screen_names_not_values` a claim
+ * about the shape rather than about today's callers (REQ-VER-04, hard rule 9).
+ *
+ * NOTHING IS PERSISTED ON THE DEVICE BY ANY OF THIS. The screen, the session
+ * id and the pending command are React state and nothing else — the
+ * zero-footprint rule is untouched (CLAUDE.md §7).
+ */
+export interface KioskHeartbeatRequest {
+  readonly screen: KioskScreen;
+  readonly sessionId: string | null;
+  readonly build: string | null;
+  /** The command just carried out, echoed so the server can clear it. */
+  readonly ackCommandId: string | null;
+}
+
+export interface KioskHeartbeatResponse {
+  /** `return_to_begin`, or nothing to do. Served for two minutes only. */
+  readonly command: KioskCommand | null;
+  /** THE SERVER'S CADENCE. The tablet obeys it; it does not pick its own. */
+  readonly pollMs: number;
+  /** Reception has taken this tablet off the floor. The screen goes quiet. */
+  readonly outOfUse: boolean;
+  /** This tab is below the practice's build floor and must hard-reload. */
+  readonly reload: boolean;
+}
+
+export function sendKioskHeartbeat(body: KioskHeartbeatRequest): Promise<KioskHeartbeatResponse> {
+  return request<KioskHeartbeatResponse>('/kiosk/heartbeat', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
 }
 
 /**

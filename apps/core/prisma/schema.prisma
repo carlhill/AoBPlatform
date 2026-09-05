@@ -1720,10 +1720,58 @@ model Device {
 
   pairedAt DateTime?
 
-  /// Updated at most once a minute, not on every two-second poll — a heartbeat
-  /// that wrote on every request would turn a quiet waiting room into a write
-  /// per tablet per two seconds, for a column a person reads once a fortnight.
+  /// WRITTEN ON EVERY HEARTBEAT SINCE 5 SEP 2026, and the change is deliberate.
+  ///
+  /// It used to be throttled to once a minute, with the argument that nobody
+  /// reads it more often than once a fortnight. That stopped being true when
+  /// reception got "seen 4 s ago" and "not seen for 3 min" on the device row:
+  /// a column written once a minute makes every tablet in a busy practice look
+  /// stale, which is the opposite of what the line is for. A device row is a
+  /// handful of small columns and a practice has a handful of tablets — this
+  /// is a cheap write, and the throttle was buying nothing anybody wanted.
   lastSeenAt DateTime?
+
+  /// WHERE THE TABLET IS, from `POST /kiosk/heartbeat` (Carl, 4–5 Sep 2026).
+  ///
+  /// One of `KIOSK_SCREENS` — begin, verify, particulars, outage and the rest
+  /// — validated by the DTO against that list. NEVER a heading and never a
+  /// typed value: the headings on this product's screens are often a person's
+  /// name, so the wire carries a word from a fixed list or a 400 (REQ-VER-04,
+  /// hard rule 9).
+  currentScreen String?
+
+  /// The opaque pushed-session id the tablet is showing, or null for a walk-up.
+  /// Reception matches the first eight characters to the session row it
+  /// already has on screen; no name is looked up to decorate a device row.
+  currentSessionId String? @db.Uuid
+
+  /// TAKEN OUT OF USE BY RECEPTION (Carl, 4–5 Sep 2026) — flat battery, gone
+  /// for repair, wrong desk.
+  ///
+  /// IT IS NOT A REVOKE. The credential is untouched and the tablet keeps
+  /// heartbeating, so the console can still see it and one press puts it back.
+  /// Pushes are refused with `device_out_of_use` and the tablet shows a quiet
+  /// "not in use" screen. Reception's switch; revoke stays the administrator's.
+  outOfUseAt DateTime?
+  outOfUseBy String?
+
+  /// "RETURN TO BEGIN" — one pending command, served on heartbeats for two
+  /// minutes and then dropped silently (Carl, 4 Sep 2026).
+  ///
+  /// ONE, NOT A QUEUE. A second press replaces the first: reception wanting
+  /// the tablet back twice wants it back once. The TTL is the guard rail that
+  /// stops a tablet which was asleep at the time from clearing tomorrow's
+  /// patient off the screen tomorrow morning.
+  ///
+  /// CLEARED BY THE TABLET'S ACKNOWLEDGEMENT (`ackCommandId` on the next
+  /// heartbeat), so a command is served once and the row says whether it
+  /// landed.
+  pendingCommandId       String?   @db.Uuid
+  pendingCommandKind     String?
+  pendingCommandIssuedAt DateTime?
+  /// The principal id of the staff member who pressed it. Never a name here —
+  /// the name goes on the vault event, which is the record a person reads.
+  pendingCommandIssuedBy String?
 
   /// What the tablet last said it was running, so support can read it back
   /// without asking somebody to look at the device.

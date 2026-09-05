@@ -3619,6 +3619,8 @@ export const strings = {
     states: {
       awaiting_pairing: 'Waiting to be paired',
       paired: 'Paired',
+      /** Reception's switch, not a security state — see `outOfUseHint`. */
+      inactive: 'Not in use',
       revoked: 'Revoked',
     } as Record<string, string>,
 
@@ -3704,6 +3706,89 @@ export const strings = {
     threatNote:
       'A tablet holds one credential and nothing else: no patient details, no practice records, nothing that '
       + 'survives being revoked. If one goes missing, revoke it here.',
+
+    /*
+     * WHERE THE TABLET IS, IN ONE LINE (Carl, 4–5 Sep 2026; TODO.md "Tablet
+     * heartbeat and Return to Begin"). Rendered on `/practice/devices` and on
+     * `/practice/tablet` from one shared builder, so the two pages cannot
+     * describe the same tablet differently.
+     *
+     * A SCREEN NAME AND A TIME — NEVER A PATIENT. The heartbeat carries a word
+     * from a fixed list and an opaque session id, and nothing here looks a
+     * person up to decorate a device row: reception already has the name on
+     * the session row beside it, and a second copy on a second line is a
+     * second place a name sits on a screen at the front counter (REQ-VER-04,
+     * hard rule 9).
+     *
+     * "NOT SEEN" IS THE SERVER'S WORD, not this page's arithmetic. Staleness
+     * is two missed heartbeats at the cadence the server is currently handing
+     * out, computed there and sent as a boolean — a console that guessed the
+     * cadence would be a second place for it to be wrong, in the direction
+     * that calls a live tablet dead.
+     */
+    activity: {
+      screens: {
+        begin: 'On Begin',
+        list: 'Showing the waiting list',
+        verify: 'Checking identity',
+        assignor: 'Choosing who signs',
+        particulars: 'Reading the agreement',
+        signature: 'Signing',
+        'check-details': 'Checking details',
+        complete: 'Finished — thank-you screen',
+        handover: 'Sent to reception',
+        outage: 'Cannot reach the platform',
+      } as Record<string, string>,
+      /** "On Begin · seen 4 s ago" — a tablet between patients, alive. */
+      seen: (where: string, ago: string) => `${where} · seen ${ago} ago`,
+      /** "Checking details · session f431e2a4" — a pushed ceremony. */
+      inSession: (where: string, sessionTag: string) => `${where} · session ${sessionTag}`,
+      /** "Walk-up in progress · checking identity" — nobody pushed this one. */
+      walkUp: (where: string) => `Walk-up in progress · ${where.toLowerCase()}`,
+      /** Two missed heartbeats. The tablet may be asleep, off, or off the wifi. */
+      notSeen: (ago: string) => `Not seen for ${ago}`,
+      neverSeen: 'Never seen — this tablet has not called in yet',
+      /** Deliberately coarse: nobody needs "seen 4.312 s ago". */
+      agoSeconds: (n: number) => `${n} s`,
+      agoMinutes: (n: number) => (n === 1 ? '1 min' : `${n} min`),
+      agoHours: (n: number) => (n === 1 ? '1 hour' : `${n} hours`),
+      agoDays: 'over a day',
+    },
+
+    /*
+     * SEND IT BACK TO THE START (Carl, 4–5 Sep 2026). The button reception
+     * reaches for when a tablet is stuck on somebody who has gone — including
+     * a WALK-UP, which recall could never reach because a walk-up is nobody's
+     * session.
+     *
+     * THE HINT SAYS WHAT THE PATIENT SEES, because the person pressing this may
+     * be about to take a screen off somebody standing in front of them, and
+     * they should know that before the press rather than after.
+     */
+    returnToBeginAction: 'Return to Begin',
+    returnToBeginBusy: 'Sending…',
+    returnToBeginHint:
+      'Clears the tablet and takes it back to the Begin screen. If somebody is part-way through, they see '
+      + '“Please see reception. Your appointment is not affected.” first. Nothing on the agreement changes.',
+    returnToBeginSent: 'Sent. The tablet returns to Begin on its next check-in.',
+
+    /*
+     * OUT OF USE — RECEPTION'S SWITCH, NOT AN ADMINISTRATOR'S REVOKE (Carl,
+     * 4–5 Sep 2026; TODO.md "Tablets: make one inactive").
+     *
+     * The copy has to draw that distinction on the screen, because the two
+     * controls sit next to each other and only one of them costs a rotate and
+     * a walk to the device. "Take out of use" is for a flat battery; "Revoke"
+     * is for a tablet in the back of a taxi.
+     */
+    outOfUseAction: 'Take out of use',
+    backInUseAction: 'Put back in use',
+    outOfUseBusy: 'Saving…',
+    outOfUseHint:
+      'For a flat battery, a tablet out for repair, or one on the wrong desk. Nothing is sent to it and it '
+      + 'shows “This tablet is not in use”. The credential is untouched, so one press brings it back — '
+      + 'unlike Revoke, which needs a new pairing code typed in at the device.',
+    outOfUseSince: (who: string, when: string) => `Out of use — ${who}, ${when}`,
   },
 
   /*
@@ -3822,6 +3907,8 @@ export const strings = {
     tabletsNoneHint: 'Pair one under Tablets, then it will appear here.',
     tabletIdle: 'Ready',
     tabletRevoked: 'Revoked — rotate it under Tablets to bring it back',
+    /** Reception's own switch. One press on Tablets brings it back — no code, no walk. */
+    tabletOutOfUse: 'Not in use — put it back in use under Tablets',
     tabletUnpaired: 'Waiting to be paired',
     /** "Showing to Jamie Sampleton — reading". A name on a staff screen, and nothing else about them. */
     tabletShowing: (patientName: string, state: string) => `Showing to ${patientName} — ${state}`,
@@ -4075,6 +4162,16 @@ export const strings = {
       device_unknown: 'That tablet is not registered to this practice.',
       device_revoked: 'That tablet has been revoked and holds no credential.',
       device_not_paired: 'That tablet has not been paired yet.',
+      /*
+       * RECEPTION'S OWN SWITCH, AND THE FIX IS ONE PRESS BY THE PERSON READING
+       * THIS (Carl, 4–5 Sep 2026). Not a revoke, not an administrator, not a
+       * walk to the device — so the sentence names the act and the band carries
+       * the link to the page it is on ("shortcuts to the answer, not directions
+       * to a screen", CLAUDE.md §7).
+       */
+      device_out_of_use:
+        'That tablet has been taken out of use, so it is showing “not in use”. Put it back in use, or send '
+        + 'to another tablet.',
       /** "Reception tablet 1 is still showing Jamie Sampleton — recall it to send this one." */
       device_busy: (deviceLabel: string, patientName: string) =>
         `${deviceLabel} is still showing ${patientName} — recall it to send this one.`,
@@ -4361,6 +4458,25 @@ export const strings = {
       leaveBody:
         'They will finish this with you at the desk. Nothing has been signed, and your appointment is not '
         + 'affected.',
+      /*
+       * RECEPTION HAS ASKED FOR THE TABLET BACK (Carl, 4–5 Sep 2026; TODO.md
+       * "Tablet heartbeat and Return to Begin").
+       *
+       * IT IS SHOWN BEFORE THE SCREEN CLEARS, NOT INSTEAD OF CLEARING. Somebody
+       * may be half-way through proving who they are when this arrives, and a
+       * patient watching their own details vanish mid-sentence is the worst
+       * version of being helped. So they are told, for a few seconds, and then
+       * the tablet is Begin again.
+       *
+       * IT EXPLAINS NOTHING AND APOLOGISES FOR NOTHING, deliberately. Reception
+       * is standing right there — they pressed the button because they want the
+       * tablet — so the screen's whole job is to point at the person who already
+       * knows, and to say the one thing the patient actually needs (hard rule 8,
+       * REQ-REC-04). "The tablet is needed elsewhere" would be an explanation
+       * nobody asked for and, half the time, the wrong one.
+       */
+      returnToBeginHeading: 'Please see reception',
+      returnToBeginBody: 'Your appointment is not affected.',
       /*
        * BACK IS NAVIGATION, NOT AN EXIT (Carl, 3 Sep 2026 live test). It moves
        * one step up the ceremony and calls nothing — a different thing from
@@ -5088,6 +5204,24 @@ export const strings = {
     outage: {
       heading: 'Please contact reception',
       body: 'Your appointment is not affected.',
+    },
+
+    /*
+     * TAKEN OFF THE FLOOR BY RECEPTION (Carl, 4–5 Sep 2026; TODO.md "Tablets:
+     * make one inactive") — a flat battery, a tablet going out for repair, one
+     * on the wrong desk.
+     *
+     * QUIET, NOT ALARMING. This is housekeeping, not a fault: nothing has gone
+     * wrong with the platform and nothing has gone wrong for the patient. Two
+     * sentences, no button — there is nothing on this device that pressing
+     * anything could fix, and the way back is one press on the console.
+     *
+     * IT SAYS THE APPOINTMENT IS UNAFFECTED because somebody may be holding the
+     * tablet when it appears (hard rule 8, REQ-REC-04).
+     */
+    outOfUse: {
+      heading: 'This tablet is not in use',
+      body: 'Please see reception. Your appointment is not affected.',
     },
 
     /**

@@ -1,15 +1,20 @@
 import {
   KIOSK_CAPTURABLE_STATUSES,
+  KIOSK_COMMAND_TTL_MS,
   KIOSK_IDLE_TIMEOUT_DEFAULT_SECONDS,
   KIOSK_IDLE_TIMEOUT_MAX_SECONDS,
   KIOSK_IDLE_TIMEOUT_MIN_SECONDS,
   KIOSK_POLL_MS,
+  KIOSK_SCREENS,
   KIOSK_WAITING_ROW_FIELDS,
   computeSignability,
   isKioskCapturableStatus,
   isKioskIdleTimeoutInRange,
+  isKioskScreen,
+  kioskCommandIsLive,
   kioskIdleTimeoutOrDefault,
   kioskPollMs,
+  kioskScreenIsCeremony,
   projectKioskWaitingRow,
 } from './kiosk';
 import { isServiceDescription, SERVICE_DESCRIPTIONS } from './service-descriptions';
@@ -181,5 +186,78 @@ describe('the kiosk idle timeout', () => {
       expect(kioskIdleTimeoutOrDefault(unusable)).toBe(KIOSK_IDLE_TIMEOUT_DEFAULT_SECONDS);
     }
     expect(kioskIdleTimeoutOrDefault(120)).toBe(120);
+  });
+});
+
+/**
+ * WHERE THE TABLET IS — the ten words a heartbeat may carry (Carl, 4–5 Sep
+ * 2026; TODO.md "Tablet heartbeat and Return to Begin").
+ *
+ * THE LIST IS THE GUARD RAIL, not documentation. `POST /kiosk/heartbeat` is
+ * made from every screen in the ceremony, including the ones with a person's
+ * name, date of birth and address on them; a free-text `screen` would be a
+ * field somebody could one day fill with a heading, and the headings on this
+ * product's screens are frequently a person's name (REQ-VER-04, hard rule 9).
+ */
+describe('KIOSK_SCREENS', () => {
+  it('is exactly the ten screens the tablet can be on, and holds no identifier type', () => {
+    expect([...KIOSK_SCREENS]).toEqual([
+      'begin',
+      'list',
+      'verify',
+      'assignor',
+      'particulars',
+      'signature',
+      'check-details',
+      'complete',
+      'handover',
+      'outage',
+    ]);
+    /*
+     * NOT AN IDENTIFIER TYPE AMONG THEM, and least of all a Medicare number.
+     * A screen name is a place; the moment one of these reads like a piece of
+     * a person, the list has stopped being what it is for (hard rule 1).
+     */
+    for (const banned of ['name', 'date_of_birth', 'address', 'medicare', 'ihi']) {
+      expect(KIOSK_SCREENS as readonly string[]).not.toContain(banned);
+    }
+  });
+
+  it('accepts only its own words', () => {
+    expect(isKioskScreen('verify')).toBe(true);
+    expect(isKioskScreen('Jamie Sampleton — check your details')).toBe(false);
+    expect(isKioskScreen('date_of_birth')).toBe(false);
+    expect(isKioskScreen(undefined)).toBe(false);
+  });
+
+  it('knows which screens have somebody standing at them', () => {
+    // Begin and the test device's list are the between-patients screens; every
+    // other one is what turns "seen 4 s ago" into "walk-up in progress".
+    expect(kioskScreenIsCeremony('begin')).toBe(false);
+    expect(kioskScreenIsCeremony('list')).toBe(false);
+    expect(kioskScreenIsCeremony('verify')).toBe(true);
+    expect(kioskScreenIsCeremony('signature')).toBe(true);
+  });
+});
+
+/**
+ * TWO MINUTES, AND THEN THE COMMAND IS DROPPED (Carl, 4 Sep 2026).
+ *
+ * "Return to Begin" is pressed by somebody standing next to the tablet who
+ * wants it back now. A tablet that was asleep, off, or off the wifi at that
+ * moment must not wake up tomorrow morning and clear the screen of tomorrow's
+ * patient. Reception presses it again; that costs one tap and no surprise.
+ */
+describe('kioskCommandIsLive', () => {
+  const now = new Date('2026-09-05T09:00:00.000Z');
+
+  it('is live inside two minutes and dead outside them', () => {
+    expect(kioskCommandIsLive(new Date(now.getTime() - 1_000), now)).toBe(true);
+    expect(kioskCommandIsLive(new Date(now.getTime() - KIOSK_COMMAND_TTL_MS + 1), now)).toBe(true);
+    expect(kioskCommandIsLive(new Date(now.getTime() - KIOSK_COMMAND_TTL_MS - 1), now)).toBe(false);
+  });
+
+  it('treats an unreadable timestamp as dead — fail closed on a command that clears a screen', () => {
+    expect(kioskCommandIsLive('not a date', now)).toBe(false);
   });
 });
