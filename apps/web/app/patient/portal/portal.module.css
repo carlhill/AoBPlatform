@@ -371,6 +371,17 @@
   flex-direction: column;
   gap: var(--s2);
 }
+/*
+ * `.field` was written for a ROW (`flex: 1 1 14rem` = "share the width, start
+ * from 14rem"). Inside a column the same basis becomes a HEIGHT, and Carl saw
+ * 200px-tall inputs on the activation page (5 Sep 2026). In a column a field
+ * takes the full width and its natural height, nothing more.
+ */
+.activateGroup > .field {
+  flex: 0 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+}
 
 /*
  * FAMILY AND GIVEN NAME SIT SIDE BY SIDE WHERE THERE IS ROOM AND WRAP WHERE
