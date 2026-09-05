@@ -1084,6 +1084,52 @@ visit policy relies on them:
       the practice address (s 65C(5)(a)) with the location's provider number
       alongside where held. Decide once the Department answers the first two.
 
+## Billing role on the affiliation: who can be the provider on an agreement (Carl, 5 Sep 2026) -- PROPOSED, awaiting Carl's rulings
+
+From Carl's Cowork note on Medicare money flow: provider numbers are issued per
+practitioner per location (stem + location character); claims are batched by
+provider number and location; a payee provider can differ from the servicing
+provider; the Minor ID is the site's transmitting identity; a practice nurse
+(RN/EN) bills nothing under their own number -- "for and on behalf of" items go
+under the GP's provider number with the GP as servicing provider; a nurse
+practitioner is an eligible provider in their own right; a phlebotomist
+generates no Medicare claim from the practice at all.
+
+**Proposed rule.** The provider on an agreement is the **servicing provider
+whose provider number goes on the claim**, never the person who delivered the
+service. A `billingRole` on each **Affiliation** (per location, because the
+number is per location and an NP at one site may be an RN at another), from a
+versioned content list `billing-roles.json`:
+- `servicing_provider` -- holds a provider number at this location and is an
+  MBS-eligible type (GP, specialist, nurse practitioner, eligible allied
+  health). May be the provider on an agreement; enduring only if GP.
+- `works_under_provider` -- practice nurse on "for and on behalf of" items.
+  Never the provider on an agreement; the agreement names the GP the claim
+  goes under (this also answers Cowork's caveat about the immutable servicing
+  provider: the assignment is to the GP even when the nurse delivered).
+- `not_billable` -- phlebotomist, admin. Never on an agreement.
+
+Payee provider numbers and Minor IDs stay out of AoB: claim mechanics, and
+claim lodgement is out of scope (CLAUDE.md section 8).
+
+**Build once ruled:** column + content list + practitioner admin screen;
+arrival validates the named provider is a servicing provider at that
+location; visit policy reads the role for its GP check; W1's render shows the
+person's name + practice address + the location's provider number. Named
+tests: `nurse_cannot_be_the_provider_on_an_agreement`,
+`arrival_naming_a_non_servicing_provider_is_refused_with_the_reason`,
+`nurse_practitioner_is_a_servicing_provider`.
+
+**Carl to rule (asked 5 Sep 2026):**
+- [ ] An arrival names the nurse: refuse and have reception pick the GP the
+      claim goes under, or accept a `supervisingProviderId` from the PMS and
+      use it automatically?
+- [ ] A servicing provider with no provider number recorded: block agreements
+      for them, or allow with name + practice address (s 65C(5)(a) permits it)
+      and flag?
+- [ ] Wording of the flag: "billing role" with the three values above, or
+      Carl's wording.
+
 ## The practice flow, end to end: one touch per visit
 
 Carl, 3 Sep 2026, after seeing the kiosk: "too complex for a patient who is
