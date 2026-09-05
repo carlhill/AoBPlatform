@@ -1072,15 +1072,17 @@ visit policy relies on them:
       Until answered, render D4 as name + practice address AND the provider
       number where held, so the agreement identifies the person under (a) and
       is not hostage to the location reading of (b).
-- [ ] **Model check.** `core.providers` carries `providerNumber` and a
-      `locationId`: confirm whether one practitioner at two locations is one
-      row or two, and whether `visit-policy`'s "active enduring for THIS
-      provider x patient" compares the person or the row. If two rows, the
-      policy would wrongly offer a second enduring agreement at the second
-      location. Decide: a `practitioner` identity (AHPRA number / person) above
-      the per-location provider rows, and the enduring agreement anchored to
-      the practitioner. Recorded as a decision for Carl once the Department
-      answers the first two.
+- [ ] **Model check.** The schema already has the right shape: a
+      `Practitioner` (the person) with one `Affiliation` per practice location,
+      and `providerNumber` lives on the Affiliation -- i.e. per location, as
+      Carl expected. What to confirm: (a) the `providers` rows the arrival
+      names and `visit-policy`'s "active enduring for THIS provider x patient"
+      compare the **practitioner**, not the per-location affiliation -- if
+      they compare the affiliation, a GP at two locations would be offered a
+      second enduring agreement at the second one; (b) the enduring agreement
+      is anchored to the practitioner and renders D4 as the person's name +
+      the practice address (s 65C(5)(a)) with the location's provider number
+      alongside where held. Decide once the Department answers the first two.
 
 ## The practice flow, end to end: one touch per visit
 
