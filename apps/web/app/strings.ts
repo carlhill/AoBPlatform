@@ -2417,6 +2417,13 @@ export const strings = {
     actionFailed: 'That could not be recorded',
     resolutionLabels: {
       no_change_needed: 'Looked, and it is fine',
+      /*
+       * NOT OFFERED IN THE DROP-DOWN — the catalogue returns only the
+       * resolutions a person may choose, and this one is written by the code
+       * that actually mints the replacement invitation. It is here so a task
+       * closed that way READS properly wherever a resolution is shown.
+       */
+      reinvited: 'A new invitation was sent',
       corrected: 'Something was wrong and I fixed it',
       not_a_problem: 'Not a problem — expected change',
       escalated: 'Passing this to somebody else',
@@ -4327,6 +4334,14 @@ export const strings = {
      * never here: they were not asked for one.
      */
     summaryCorrection: (detail: string) => `Patient asked for a correction: ${detail}`,
+    /*
+     * THE PORTAL INVITATION LOCKED (Carl, 5 Sep 2026). The patient was told to
+     * ask the practice; this is the row that means they do not have to. It says
+     * what is wrong and what it needs, and never which detail anybody typed
+     * wrongly — the platform does not hold that and would not show it if it did
+     * (REQ-VER-04, hard rule 9).
+     */
+    summaryLocked: 'Portal invitation locked — needs a new one',
     summaryAwaiting: 'Awaiting signature · not yet sent',
     summaryBlocked: 'Awaiting signature · cannot be sent yet',
     summaryEnded: (state: string) => `Last session: ${state}`,
@@ -4360,6 +4375,37 @@ export const strings = {
     correctionRequestFailed: 'That could not be marked as done',
     /** On the review queue, straight to the patient this is about. */
     correctionRequestToPatient: 'Open this patient’s page →',
+
+    /*
+     * THE OTHER BANNER ON THIS CARD (Carl, 5 Sep 2026): three failed attempts
+     * on the activation link and the invitation is finished.
+     *
+     * IT NAMES NO DETAIL AND BLAMES NOBODY. Which identifier did not match is
+     * not something this platform tells the practice (REQ-VER-04, hard rule 9),
+     * and it does not matter to the remedy: check the details with the patient,
+     * then send a new invitation. It says "locked", not "failed" — the person is
+     * not locked out, one link is, and the way back is one press away rather
+     * than a queue somewhere else (CLAUDE.md §7).
+     */
+    lockedTitle: 'Their portal invitation is locked',
+    lockedBody: (when: string) =>
+      `This patient’s portal invitation locked after three failed attempts on ${when}. Check their details `
+      + 'with them, then send a new invitation.',
+    lockedSend: 'Send a new invitation',
+    lockedSending: 'Sending…',
+    lockedDismiss: 'Dismiss',
+    lockedDismissing: 'Dismissing…',
+    lockedSent: 'A new invitation has been sent. It starts again with three attempts.',
+    lockedDismissed: 'Dismissed. Nobody is waiting on this now.',
+    lockedFailed: 'That could not be done',
+    /*
+     * THE REASON, NOT A DEAD BUTTON. An invitation is minted against a SIGNED
+     * agreement (FR-1.14), so a patient with none cannot be re-invited yet —
+     * and the thing that fixes it is the agreements card immediately below.
+     */
+    lockedNoAgreement:
+      'A new invitation is sent against a signed agreement, and this patient has none yet. It is offered '
+      + 'at the end of their next signature.',
 
     identityTitle: 'Their details',
     identityLead:
@@ -4457,6 +4503,8 @@ export const strings = {
       details_corrected: 'A detail was corrected here',
       portal_correction_requested: 'The patient asked for a correction',
       portal_correction_resolved: 'The patient’s request was dealt with',
+      portal_activation_locked: 'Their portal invitation locked',
+      portal_reinvited: 'A new portal invitation was sent',
     } as Record<string, string>,
     historyDetail: (detail: string) => `· ${detail}`,
     historyTypesList: (types: string) => `· ${types}`,

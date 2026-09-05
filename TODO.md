@@ -2145,6 +2145,14 @@ so "2 Example St" and "2 Example Street" are one address.
       parent and a 14+ child sharing one mobile must not see each other's
       agreements (REQ-VUL, addendum v4). Message tokens stay single-purpose;
       the full view needs the passkey or a fresh three-identifier check.
+- [x] **A locked activation is told to the practice, never explained to
+      anybody** (Carl, 5 Sep 2026). Three failed attempts raise
+      `portal_activation_locked` on that patient's work page with "Send a new
+      invitation" and "Dismiss" beside it -- the task and its
+      `portal.activation_locked` event carry the invitation and nothing about
+      which identifier failed (REQ-VER-04, hard rule 9); the patient's own
+      screen still says only "ask your practice for a new invitation; nothing
+      about your care is affected".
 - [ ] Patient surface rules: string table (REQ-LANG-01, community languages),
       WCAG 2.2 AA, UK/AU plain language, never "certified/approved/accredited".
       Zero PII in logs.

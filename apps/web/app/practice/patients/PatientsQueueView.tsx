@@ -93,6 +93,17 @@ export function queueSummary(row: Pick<PatientQueueRow, 'items'>): string {
   }
 
   /*
+   * A PORTAL INVITATION THAT LOCKED, which is also somebody waiting on us and
+   * has been since their third attempt (Carl, 5 Sep 2026). Below a request they
+   * made in words, above a tablet that is merely busy. The line says what it
+   * needs -- a new invitation -- and never which detail did not match, because
+   * the platform does not tell the practice that (REQ-VER-04, hard rule 9).
+   */
+  if (items.some((item) => item.kind === 'portal_activation_locked')) {
+    return strings.patients.summaryLocked;
+  }
+
+  /*
    * AN ANSWERED CROSS OUTRANKS THE LIVE SESSION IT IS STILL SITTING ON. The
    * session stays `details_disputed` after reception answers -- a resolution
    * is a fact about the dispute, not a new state -- and the thing left to do
@@ -129,6 +140,7 @@ export function queueTone(row: Pick<PatientQueueRow, 'items'>): Tone {
   }
   // Somebody is waiting on us, and has been since they pressed the button.
   if (row.items.some((item) => item.kind === 'portal_correction_requested')) return 'warn';
+  if (row.items.some((item) => item.kind === 'portal_activation_locked')) return 'warn';
   if (row.items.some((item) => item.kind === 'session' && item.endedAt === null)) return 'warn';
   return 'neutral';
 }

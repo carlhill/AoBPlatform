@@ -173,6 +173,18 @@ export function PatientWorkView({ practiceId, patientId }: { practiceId: string;
    * and this page keeps patient values off the poll on purpose.
    */
   const [corrections, setCorrections] = useState<PatientQueueItem[]>([]);
+  /*
+   * AND WHETHER THEIR PORTAL INVITATION LOCKED (Carl, 5 Sep 2026). From the
+   * same queue read as the corrections, for the same reason: the row at the
+   * counter and the banner on this page must be reading one answer. The item
+   * carries the task to close, when it locked, and the agreement a new
+   * invitation is minted against — never which detail did not match, which the
+   * platform does not hold anywhere reception can reach (REQ-VER-04).
+   */
+  const [lockedInvitations, setLockedInvitations] = useState<PatientQueueItem[]>([]);
+  const [lockedBusy, setLockedBusy] = useState<string | null>(null);
+  const [lockedError, setLockedError] = useState<string | null>(null);
+  const [lockedOutcome, setLockedOutcome] = useState<'sent' | 'dismissed' | null>(null);
   const [markBusy, setMarkBusy] = useState<string | null>(null);
   const [markError, setMarkError] = useState<string | null>(null);
   const [markDone, setMarkDone] = useState(false);
@@ -212,6 +224,9 @@ export function PatientWorkView({ practiceId, patientId }: { practiceId: string;
         setCorrections(
           (mine?.items ?? []).filter((item) => item.kind === 'portal_correction_requested'),
         );
+        setLockedInvitations(
+          (mine?.items ?? []).filter((item) => item.kind === 'portal_activation_locked'),
+        );
       }
     } catch (e) {
       setIdentityError(e instanceof TypeError ? strings.status.unreachable : (e as Error).message);
@@ -246,6 +261,68 @@ export function PatientWorkView({ practiceId, patientId }: { practiceId: string;
         setMarkError(e instanceof TypeError ? strings.status.unreachable : (e as Error).message);
       } finally {
         setMarkBusy(null);
+      }
+    },
+    [practiceId, readPatient],
+  );
+
+  /**
+   * SEND THEM A NEW INVITATION — the whole remedy for a locked one, in one
+   * press.
+   *
+   * IT IS THE EXISTING MINT ENDPOINT AND NOT A NEW ONE. `POST
+   * /agreements/:id/portal-invitation` mints against a SIGNED agreement
+   * (FR-1.14), delivers the message through the sandbox gateway in the same
+   * transaction, and closes the locked task itself — so this screen does not
+   * resolve anything after it, and there is no path where a message went and
+   * the task stayed open. The agreement id is the patient's most recent signed
+   * one, chosen by the server rather than by this page.
+   */
+  const sendNewInvitation = useCallback(
+    async (item: PatientQueueItem) => {
+      if (!item.reviewTaskId || !item.agreementId) return;
+      setLockedBusy(item.reviewTaskId);
+      setLockedError(null);
+      try {
+        const res = await fetch(`${CORE_URL}/agreements/${item.agreementId}/portal-invitation`, {
+          method: 'POST',
+          headers: apiHeaders(practiceId),
+        });
+        if (!res.ok) throw new Error(String(res.status));
+        setLockedOutcome('sent');
+        await readPatient();
+      } catch (e) {
+        setLockedError(e instanceof TypeError ? strings.status.unreachable : (e as Error).message);
+      } finally {
+        setLockedBusy(null);
+      }
+    },
+    [practiceId, readPatient],
+  );
+
+  /**
+   * DISMISS — nobody is waiting on this after all. The same review-tasks
+   * resolve endpoint the correction banner uses: practice-scoped, a named staff
+   * member, one `review_task.resolved` event. `reinvited` is deliberately not
+   * writable from here — that resolution means an invitation actually went.
+   */
+  const dismissLocked = useCallback(
+    async (reviewTaskId: string) => {
+      setLockedBusy(reviewTaskId);
+      setLockedError(null);
+      try {
+        const res = await fetch(`${CORE_URL}/review-tasks/${reviewTaskId}/resolve`, {
+          method: 'POST',
+          headers: { ...apiHeaders(practiceId), 'content-type': 'application/json' },
+          body: JSON.stringify({ resolution: 'no_change_needed' }),
+        });
+        if (!res.ok) throw new Error(String(res.status));
+        setLockedOutcome('dismissed');
+        await readPatient();
+      } catch (e) {
+        setLockedError(e instanceof TypeError ? strings.status.unreachable : (e as Error).message);
+      } finally {
+        setLockedBusy(null);
       }
     },
     [practiceId, readPatient],
@@ -434,6 +511,68 @@ export function PatientWorkView({ practiceId, patientId }: { practiceId: string;
         {markError && (
           <Notice tone="stop" title={strings.patients.correctionRequestFailed} data-testid="correction-request-error">
             {markError}
+          </Notice>
+        )}
+
+        {/*
+          THEIR PORTAL INVITATION LOCKED, AND THE PRACTICE IS THE ONE BEING TOLD
+          (Carl, 5 Sep 2026). The patient's own screen still says only "ask your
+          practice for a new invitation"; this is the practice being asked
+          without waiting for the patient to remember. It names when, and the
+          two ways out are both here — send another, or dismiss it — rather than
+          a sentence pointing at a queue (CLAUDE.md §7).
+
+          NOT ONE WORD ABOUT WHICH DETAIL DID NOT MATCH. The task does not carry
+          it, this page could not show it, and the remedy is the same whichever
+          it was (REQ-VER-04, hard rule 9).
+        */}
+        {lockedInvitations.map((locked) => (
+          <Notice
+            key={locked.reviewTaskId}
+            tone="warn"
+            title={strings.patients.lockedTitle}
+            data-testid={`locked-invitation-${locked.reviewTaskId}`}
+          >
+            <p>{strings.patients.lockedBody(locked.lockedAt ? askedAt(locked.lockedAt) : '')}</p>
+            {!locked.agreementId && (
+              <p className={ui.hint} data-testid={`locked-invitation-no-agreement-${locked.reviewTaskId}`}>
+                {strings.patients.lockedNoAgreement}
+              </p>
+            )}
+            <div className={styles.formActions}>
+              <Button
+                disabled={!canAct || lockedBusy !== null || !locked.agreementId}
+                onClick={() => void sendNewInvitation(locked)}
+                data-testid={`locked-invitation-send-${locked.reviewTaskId}`}
+              >
+                <Mail size={14} aria-hidden="true" />
+                {lockedBusy === locked.reviewTaskId
+                  ? strings.patients.lockedSending
+                  : strings.patients.lockedSend}
+              </Button>
+              <Button
+                disabled={!canAct || lockedBusy !== null}
+                onClick={() => void dismissLocked(locked.reviewTaskId!)}
+                data-testid={`locked-invitation-dismiss-${locked.reviewTaskId}`}
+              >
+                <Check size={14} aria-hidden="true" />
+                {lockedBusy === locked.reviewTaskId
+                  ? strings.patients.lockedDismissing
+                  : strings.patients.lockedDismiss}
+              </Button>
+            </div>
+          </Notice>
+        ))}
+
+        {lockedError && (
+          <Notice tone="stop" title={strings.patients.lockedFailed} data-testid="locked-invitation-error">
+            {lockedError}
+          </Notice>
+        )}
+
+        {lockedOutcome && lockedInvitations.length === 0 && (
+          <Notice tone="ok" title={strings.patients.lockedTitle} data-testid="locked-invitation-outcome">
+            {lockedOutcome === 'sent' ? strings.patients.lockedSent : strings.patients.lockedDismissed}
           </Notice>
         )}
 

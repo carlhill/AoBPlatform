@@ -33,6 +33,8 @@ const PATIENT = '11111111-1111-4000-8000-000000000001';
 const OTHER_PATIENT = '22222222-2222-4000-8000-000000000002';
 /** The review task a patient's own correction request raises. */
 const TASK = '33333333-3333-4000-8000-000000000003';
+/** And the one a locked portal invitation raises for the practice. */
+const LOCK_TASK = '44444444-4444-4000-8000-000000000004';
 
 /** A row that can go to a tablet, and one that cannot — the same pair the tablet suite uses. */
 const READY = {
@@ -182,6 +184,20 @@ const QUEUE: PatientQueueRow[] = [
     ],
   },
 ];
+
+/**
+ * A LOCKED PORTAL INVITATION, AS THE QUEUE ENDPOINT HANDS IT BACK (Carl, 5 Sep
+ * 2026). It carries the task to close, when it locked and the agreement a new
+ * invitation is minted against — and no identifier type, because the server has
+ * none to give (REQ-VER-04, hard rule 9).
+ */
+const LOCKED = {
+  kind: 'portal_activation_locked' as const,
+  reviewTaskId: LOCK_TASK,
+  invitationId: '55555555-5555-4000-8000-000000000005',
+  agreementId: READY.agreementId,
+  lockedAt: '2026-09-05T02:15:00.000Z',
+};
 
 const calls: Array<{ url: string; method: string; body: unknown }> = [];
 
@@ -569,6 +585,110 @@ describe('/practice/patients/<id> — one patient, everything open', () => {
     render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
     const done = await screen.findByTestId(`correction-request-done-${TASK}`);
     expect((done as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('queue_shows_locked_invitations', async () => {
+    /*
+     * THE PRACTICE IS TOLD, ON THE SCREEN THEY ALREADY STAND AT. The line says
+     * what is wrong and what it needs — not "see the review queue", and not
+     * which detail the person got wrong, which nothing on this platform tells
+     * the practice (REQ-VER-04, hard rule 9).
+     */
+    const locked: PatientQueueRow = {
+      patientId: OTHER_PATIENT,
+      patientName: 'Casey Walkin',
+      dateOfBirth: '1988-02-02',
+      items: [LOCKED],
+    };
+
+    expect(queueSummary(locked)).toBe(strings.patients.summaryLocked);
+    expect(queueTone(locked)).toBe('warn');
+    // A request the patient made in words still outranks it.
+    expect(
+      queueSummary({
+        items: [
+          LOCKED,
+          { kind: 'portal_correction_requested', reviewTaskId: TASK, fieldType: 'mobile' },
+        ],
+      }),
+    ).toContain('Patient asked for a correction');
+
+    stubFetch({ queue: [locked] });
+    render(<PatientsQueueView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`patient-${OTHER_PATIENT}`)).toBeTruthy());
+    const row = screen.getByTestId(`patient-${OTHER_PATIENT}`);
+    expect(row.textContent).toContain(strings.patients.summaryLocked);
+    // NOT WHICH DETAIL, NOT HOW MANY WERE OFFERED, NOT A VALUE.
+    expect(row.textContent).not.toMatch(/address|date of birth|name we hold/i);
+  });
+
+  it('work_page_shows_the_locked_invitation_and_reinvites', async () => {
+    stubFetch({ queue: [{ ...QUEUE[0], items: [...QUEUE[0].items, LOCKED] }] });
+    render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+
+    const banner = await screen.findByTestId(`locked-invitation-${LOCK_TASK}`);
+    expect(banner.textContent).toContain(strings.patients.lockedTitle);
+    // WHEN IT LOCKED, WITH THE DAY — a lock from Sunday night must not read as
+    // though somebody is standing at the desk right now.
+    expect(banner.textContent).toContain(askedAt(LOCKED.lockedAt));
+    expect(banner.textContent).toContain('2026');
+    // AND NEVER WHICH DETAIL DID NOT MATCH.
+    expect(banner.textContent).not.toMatch(/medicare|password|which detail/i);
+
+    /*
+     * SEND A NEW INVITATION GOES TO THE EXISTING MINT ENDPOINT, against the
+     * signed agreement the SERVER chose (FR-1.14). The screen picks no
+     * agreement of its own and resolves no task afterwards — the mint closes
+     * the locked one in its own transaction.
+     */
+    fireEvent.click(screen.getByTestId(`locked-invitation-send-${LOCK_TASK}`));
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (call) =>
+            call.method === 'POST' &&
+            call.url.includes(`/agreements/${READY.agreementId}/portal-invitation`),
+        ),
+      ).toBe(true),
+    );
+    expect(calls.some((call) => call.url.includes('/review-tasks/') && call.method === 'POST')).toBe(
+      false,
+    );
+
+    // DISMISS closes the task through the review-tasks module's own endpoint,
+    // and never as `reinvited` — that resolution means a message actually went.
+    fireEvent.click(screen.getByTestId(`locked-invitation-dismiss-${LOCK_TASK}`));
+    await waitFor(() =>
+      expect(
+        calls.some((call) => call.url.includes(`/review-tasks/${LOCK_TASK}/resolve`)),
+      ).toBe(true),
+    );
+    const dismissed = calls.find((call) => call.url.includes(`/review-tasks/${LOCK_TASK}/resolve`))!;
+    expect((dismissed.body as { resolution: string }).resolution).toBe('no_change_needed');
+  });
+
+  it('a locked invitation with nothing signed says why, and a visitor cannot send one', async () => {
+    /*
+     * THE REASON, NOT A DEAD BUTTON (CLAUDE.md §7). An invitation is minted
+     * against a signed agreement, so a patient with none cannot be re-invited
+     * yet, and the banner says so rather than offering a control that fails.
+     */
+    stubFetch({
+      queue: [{ ...QUEUE[0], items: [{ ...LOCKED, agreementId: undefined }] }],
+    });
+    render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+    await screen.findByTestId(`locked-invitation-no-agreement-${LOCK_TASK}`);
+    expect(
+      (screen.getByTestId(`locked-invitation-send-${LOCK_TASK}`) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    cleanup();
+
+    // LOOKING, NOT WORKING — the server would refuse them anyway.
+    session = { roles: ['platform_operator'], practiceId: null };
+    stubFetch({ queue: [{ ...QUEUE[0], items: [LOCKED] }] });
+    render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+    const send = await screen.findByTestId(`locked-invitation-send-${LOCK_TASK}`);
+    expect((send as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('work_page_never_shows_medicare_or_amounts', async () => {
