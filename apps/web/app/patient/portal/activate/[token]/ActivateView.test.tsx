@@ -96,8 +96,10 @@ describe('the activation page', () => {
 
     await screen.findByText(strings.portal.activate.offer('Wattle Street Medical'));
 
-    expect(screen.getByLabelText(strings.kiosk.verify.identifierNames.patient_record_number)).toBeTruthy();
+    // Labelled in the patient's own words (Carl, 5 Sep 2026), keyed by the server's type.
+    expect(screen.getByLabelText(strings.portal.activate.groupLabels.patient_record_number)).toBeTruthy();
     // NOT SENT, SO NOT DRAWN. The page has no field set of its own.
+    expect(screen.queryByLabelText(strings.portal.activate.groupLabels.address)).toBeNull();
     expect(screen.queryByLabelText(strings.kiosk.verify.identifierNames.address)).toBeNull();
 
     /*
