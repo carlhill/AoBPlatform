@@ -45,7 +45,7 @@ import {
   UserSquare,
   UserRound,
   Send,
-} from 'lucide-react';
+ FileText,} from 'lucide-react';
 import { audiencesOf, mayReach, type Audience, type CardState, type DeviceRow } from '@aobplatform/domain';
 import { Chip, Notice, Shell, ui, type Tone } from '../../ui';
 import { useRefreshable } from '../../refresh';
@@ -559,6 +559,34 @@ export function SetupHub({
             </Link>
           )}
         </section>
+
+        {/*
+          THE AGREEMENT DOCUMENT (W1, 5 Sep 2026; Carl, 7 Sep: "is
+          practice/templates linked somewhere on this page?" -- it was not).
+          Letterhead, logo and the agreement's own wording. An administrator's
+          card: the same `canOpen` the page applies, so the card and the page
+          cannot disagree about who may open it.
+        */}
+        {canOpen('/practice/templates') && (
+          <section className={styles.card} aria-label={strings.templates.title} data-testid="card-templates">
+            <div className={styles.cardHead}>
+              <span className={styles.cardIcon}>
+                <FileText size={16} aria-hidden="true" />
+              </span>
+              <h2 className={styles.cardTitle}>{strings.templates.title}</h2>
+            </div>
+            <p className={styles.cardRollup}>{strings.templates.lead}</p>
+            <Link
+              href={viewOnly ? toViewPath('/practice/templates', practiceId) : '/practice/templates'}
+              className={styles.cardLink}
+              data-testid="hub-to-templates"
+            >
+              <FileText size={14} aria-hidden="true" />
+              {openLabel(strings.templates.title)}
+              <ArrowRight size={14} aria-hidden="true" />
+            </Link>
+          </section>
+        )}
 
         {/*
           The sixth panel, and DASHED because we do not control it yet. The

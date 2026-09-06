@@ -3281,6 +3281,7 @@ export const strings = {
    */
   templates: {
     audience: 'Practice admin',
+    navLabel: 'Agreement document',
     title: 'The agreement document',
     lead:
       'What appears at the top of every agreement this practice makes, and the words in it. The details '

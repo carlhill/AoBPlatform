@@ -131,6 +131,8 @@ export function MainMenu() {
         // for the same reason: /practice/queue beside it spans practices.
         { path: '/practice/correspondence', label: strings.correspondence.navLabel },
         { path: '/practice/channels', label: strings.nav.channels },
+        // Letterhead, logo and the agreement's own wording (W1, 5 Sep 2026).
+        { path: '/practice/templates', label: strings.templates.navLabel },
         { path: '/practice/pms', label: strings.nav.pms },
         { path: '/practice/users', label: strings.nav.users },
       ],
