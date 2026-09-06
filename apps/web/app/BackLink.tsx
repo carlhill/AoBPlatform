@@ -51,6 +51,8 @@ const PARENTS: Readonly<Record<string, string>> = {
   // who has just paired one is one press from using it, and the one who
   // wonders why a push refused goes the other way.
   '/practice/tablet': '/practice/setup',
+  // The agreement document -- letterhead, logo, wording (W1; Carl, 7 Sep 2026: 'need a backlink').
+  '/practice/templates': '/practice/setup',
   // '/practice/reports' is decided per audience in parentOf -- it belongs under
   // the practice hub for a practice user and under the organisation list for an
   // operator, because those are the places each of them came from.

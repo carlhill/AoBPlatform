@@ -36,6 +36,7 @@ import { strings } from '../../strings';
 import styles from '../manage.module.css';
 import { SessionControl } from '../../SessionControl';
 import { apiHeaders } from '../../auth';
+import { useRefreshable } from '../../refresh';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -152,6 +153,9 @@ export function TemplatesView({
     void load();
   }, [load]);
 
+
+  // THE TOP BAR'S REFRESH BUTTON (Carl, 7 Sep 2026): shown only where a page registers a loader.
+  useRefreshable(load);
   /**
    * THE FILE IS READ IN THE BROWSER AND SENT AS BASE64, the same shape every
    * other artefact upload uses. The SIZE IS CHECKED HERE TOO — not instead of
