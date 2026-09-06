@@ -483,6 +483,19 @@ export const VAULT_EVENT_TYPES = [
   // was told they were leaving, and that has to remain visible.
   'affiliation.notice_withdrawn',
   'affiliation.ended',
+  /**
+   * WHOSE PROVIDER NUMBER THE CLAIM GOES UNDER, at this location, CHANGED
+   * (Carl, 5-7 Sep 2026; the billing role).
+   *
+   * It decides who may be named as the provider on an agreement, so a change
+   * to it changes which consent records the practice can make -- and a
+   * practitioner recorded as a servicing provider on Tuesday and as working
+   * under one on Thursday is a question somebody will ask about a Wednesday
+   * agreement. The payload carries the role before and after, the content
+   * version the list came from (hard rule 14), and who changed it. No name,
+   * no provider number, no amount.
+   */
+  'affiliation.billing_role_set',
   'practitioner.deregistered',
   'campaign.declared',
   'key.used',

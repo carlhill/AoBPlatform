@@ -86,6 +86,17 @@ interface RosterEntry {
   affiliationCount: number;
   activeAffiliationCount: number;
   invitedAffiliationCount: number;
+  /**
+   * WHOSE PROVIDER NUMBER THE CLAIM GOES UNDER, at each place they work.
+   *
+   * A LIST rather than one value, because the role is per LOCATION: the same
+   * person can be a nurse practitioner at one site and an RN at another, and
+   * flattening that to a single word would state something false about one of
+   * the two places. Changed on the affiliation, which is where it lives.
+   */
+  billingRoles: string[];
+  /** Carl's second ruling, as a count. Allowed, and flagged (s 65C(5)(a)). */
+  affiliationsMissingProviderNumber: number;
 }
 
 async function refusalMessage(res: Response): Promise<string> {
@@ -366,6 +377,34 @@ function PractitionerCard({
           )}
 
           {/*
+            WHOSE PROVIDER NUMBER THE CLAIM GOES UNDER (Carl, 5-7 Sep 2026).
+            Read-only here: it is set on the affiliation, because the role is
+            per location and this page is about the person. Shown all the same,
+            because "is this person somebody an agreement can name" is a
+            question a practice asks of the roster.
+          */}
+          {entry.billingRoles.length > 0 && (
+            <p className={styles.cardNote} data-testid={`billing-roles-${entry.practitionerId}`}>
+              <strong>{strings.billingRoles.label}:</strong>{' '}
+              {entry.billingRoles
+                .map((role) => strings.billingRoles.names[role] ?? strings.billingRoles.unknown(role))
+                .join(' · ')}
+            </p>
+          )}
+
+          {/*
+            ALLOWED, AND FLAGGED. s 65C(5)(a) identifies the professional by
+            name and the address of the place of practice, so an agreement can
+            be made without a number -- this is a note, never a block, and it
+            says exactly what will happen instead.
+          */}
+          {entry.affiliationsMissingProviderNumber > 0 && (
+            <p className={styles.cardNote} data-testid={`no-provider-number-${entry.practitionerId}`}>
+              {strings.billingRoles.noProviderNumberNote}
+            </p>
+          )}
+
+          {/*
             Where an invitation would go. A practice that added this person
             sees the address it typed; one that did not is told an address
             exists and why it does not get to see it (domain/directory.ts).
@@ -401,6 +440,9 @@ function PractitionerCard({
           {entry.registrationStatus && <Chip tone="neutral">{entry.registrationStatus}</Chip>}
           {entry.affiliationCount === 0 && (
             <Chip tone="warn">{strings.practitioners.notAffiliated}</Chip>
+          )}
+          {entry.affiliationsMissingProviderNumber > 0 && (
+            <Chip tone="neutral">{strings.billingRoles.noProviderNumberFlag}</Chip>
           )}
         </div>
       </div>

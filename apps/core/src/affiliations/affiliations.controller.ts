@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import { IsArray, IsDate, IsEmail, IsIn, IsOptional, IsString, IsUUID, MinLength, ValidateNested } from 'class-validator';
-import { EXTERNAL_NOTICE_KEYS, EXTERNAL_NOTICE_MEANS } from '@aobplatform/domain';
+import { BILLING_ROLE_KEYS, EXTERNAL_NOTICE_KEYS, EXTERNAL_NOTICE_MEANS } from '@aobplatform/domain';
 import { AffiliationsService } from './affiliations.service';
 import { InvitationService } from './invitation.service';
 import { PLATFORM_ADMIN, RequireRoles } from '../auth/roles.decorator';
@@ -67,6 +67,18 @@ export class AnswerInvitationDto {
 
   @IsIn(['accept', 'decline'])
   decision!: 'accept' | 'decline';
+}
+
+/**
+ * WHOSE PROVIDER NUMBER THE CLAIM GOES UNDER, at this location.
+ *
+ * Validated against the versioned content list rather than an enum here, so
+ * the list moves without a code change (hard rule 14, CLAUDE.md §7). The
+ * service refuses an unknown role with the list in the message.
+ */
+export class BillingRoleDto {
+  @IsIn(BILLING_ROLE_KEYS as unknown as string[])
+  billingRole!: string;
 }
 
 export class RespondDto {
@@ -377,6 +389,18 @@ export class AffiliationsController {
     return { means: EXTERNAL_NOTICE_MEANS };
   }
 
+  /**
+   * The billing roles a practice may choose from, and the version of the list.
+   *
+   * From the server, like the external-notice catalogue, so the screen and the
+   * rule cannot drift: the service refuses a role it does not know, and a
+   * stale copy in the browser would offer one that is then rejected.
+   */
+  @Get('affiliations/billing-roles/catalogue')
+  billingRoleCatalogue() {
+    return this.affiliations.billingRoleCatalogue();
+  }
+
   @Get('affiliations')
   list(@Headers('x-practice-id') practiceId: string | undefined, @SessionActor() actor: Actor | undefined) {
     const scope = requirePractice(practiceId);
@@ -449,6 +473,29 @@ export class AffiliationsController {
     @Body() dto: GiveNoticeDto,
   ) {
     return this.affiliations.giveNotice(requirePractice(practiceId), affiliationId, dto);
+  }
+
+  /**
+   * SET THE BILLING ROLE. THE PRACTICE'S OWN ACT.
+   *
+   * The practice knows who its nurses are; a platform operator asserting it
+   * would be the platform deciding whose name may go on somebody else's
+   * consent records. A vault event records the change either way.
+   */
+  @PracticeScoped()
+  @Post('affiliations/:affiliationId/billing-role')
+  setBillingRole(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('affiliationId', ParseUUIDPipe) affiliationId: string,
+    @Body() dto: BillingRoleDto,
+    @SessionActor() actor: Actor | undefined,
+  ) {
+    return this.affiliations.setBillingRole(
+      requirePractice(practiceId),
+      affiliationId,
+      dto.billingRole,
+      actor?.id ?? null,
+    );
   }
 
   // Withdrawing it is the same act, undone.

@@ -2933,6 +2933,57 @@ export const strings = {
    * an invitation nobody has answered is worth nothing. So every row says where
    * it has got to, and says whether capture is actually open.
    */
+  /**
+   * WHOSE PROVIDER NUMBER THE CLAIM GOES UNDER (Carl, 5-7 Sep 2026; TODO.md
+   * "Billing role on the affiliation").
+   *
+   * KEYED BY THE ROLE, and the keys come from versioned content
+   * (packages/domain/content/billing-roles.json). The screens render the
+   * content file in file order and look the words up here (REQ-LANG-01/-02):
+   * a translated word must never be able to change who may be named on a
+   * contract, so the mapping lives in the file and the words live here.
+   *
+   * "PROVIDER", NOT "GP" (CLAUDE.md section 3) -- except inside the label for
+   * a role that is about general practice, where the word IS the fact.
+   */
+  billingRoles: {
+    label: 'Billing role',
+    hint:
+      'Who the claim goes under at this location. The provider named on an agreement is the servicing '
+      + 'provider whose provider number goes on the claim — not, of itself, whoever delivered the service.',
+    /** The display words, keyed by content key. */
+    names: {
+      servicing_provider: 'Servicing provider',
+      works_under_provider: 'Works under a provider',
+      not_billable: 'Not billable to Medicare',
+    } as Record<string, string>,
+    /** One line each, so somebody choosing can tell which is theirs. */
+    describe: {
+      servicing_provider:
+        'Bills under their own provider number here. May be named as the provider on an agreement.',
+      works_under_provider:
+        'A practice nurse on “for and on behalf of” items. The claim goes under the provider they '
+        + 'work under, so an agreement names that provider, never them.',
+      not_billable:
+        'Generates no Medicare claim from the practice — a phlebotomist, or administrative staff. Never on '
+        + 'an agreement.',
+    } as Record<string, string>,
+    /** A role this build does not know. Shown, never swallowed (Carl, 4 Sep 2026). */
+    unknown: (key: string) => `Unrecognised billing role (${key}). Please tell support this code.`,
+    saving: 'Saving…',
+    saveFailed: 'The billing role could not be changed',
+    /**
+     * CARL'S SECOND RULING, IN THE PRACTICE'S OWN WORDS. A servicing provider
+     * with no provider number recorded is ALLOWED — s 65C(5)(a) identifies
+     * the professional by name and the address of the place of practice —
+     * and FLAGGED, so a practice that meant to record one can see that it did
+     * not. It is a note, never a block.
+     */
+    noProviderNumberFlag: 'No provider number recorded',
+    noProviderNumberNote:
+      'No provider number recorded — agreements will identify this provider by name and practice address.',
+  },
+
   affiliations: {
     externalNoticeTitle: 'This date has already passed',
     externalNoticeBody:

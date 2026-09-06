@@ -14,6 +14,10 @@ import {
   invitationCapMessage,
   invitationLimitFor,
   assertRegistrationPermitsPractice,
+  BILLING_ROLES,
+  BILLING_ROLES_VERSION,
+  BILLING_ROLE_KEYS,
+  isBillingRole,
   assertSightingAttributable,
   registrationWarnings,
   AffiliationError,
@@ -1339,7 +1343,13 @@ export class AffiliationsService {
   async listRoster(practiceId: string) {
     const affiliations = await this.prisma.withPractice(practiceId, (tx) =>
       tx.affiliation.findMany({
-        select: { practitionerId: true, status: true, locationId: true },
+        select: {
+          practitionerId: true,
+          status: true,
+          locationId: true,
+          billingRole: true,
+          providerNumber: true,
+        },
       }),
     );
     const affiliatedIds = [...new Set(affiliations.map((a) => a.practitionerId))];
@@ -1363,6 +1373,32 @@ export class AffiliationsService {
         affiliationCount: theirs.length,
         activeAffiliationCount: theirs.filter((a) => a.status === 'active' || a.status === 'ending').length,
         invitedAffiliationCount: theirs.filter((a) => a.status === 'invited').length,
+        /*
+         * THE BILLING ROLES THEY HOLD, DE-DUPLICATED (Carl, 5-7 Sep 2026).
+         * A list rather than one value because the role is per LOCATION and
+         * the same person can be a nurse practitioner at one site and an RN at
+         * another -- flattening that to a single word would state something
+         * false about one of the two places.
+         */
+        billingRoles: [...new Set(theirs.map((a) => a.billingRole))],
+        /*
+         * CARL'S SECOND RULING, AS A COUNT. A servicing provider with no
+         * provider number recorded is ALLOWED -- s 65C(5)(a) identifies the
+         * professional by name and the address of the place of practice -- and
+         * FLAGGED, because a practice that meant to record one and did not
+         * should be able to see that from the roster.
+         *
+         * COUNTED ONLY FOR ROLES THAT COULD BE ON AN AGREEMENT. Flagging a
+         * phlebotomist for having no provider number would be flagging them
+         * for being exactly what they are.
+         */
+        affiliationsMissingProviderNumber: theirs.filter(
+          (a) =>
+            a.status !== 'ended' &&
+            a.status !== 'rejected' &&
+            !a.providerNumber &&
+            a.billingRole === 'servicing_provider',
+        ).length,
       };
     });
 
@@ -1410,6 +1446,13 @@ export class AffiliationsService {
          */
         providerNumber: opts.asPractice ? a.providerNumber : null,
         hasProviderNumber: Boolean(a.providerNumber),
+        /*
+         * WHOSE PROVIDER NUMBER THE CLAIM GOES UNDER, at this location (Carl,
+         * 5-7 Sep 2026). Shown to the platform too, unlike the number itself:
+         * the role is not a claiming credential, it is a fact about how this
+         * practice is organised, and a readiness review needs it.
+         */
+        billingRole: a.billingRole,
         startedAt: a.startedAt,
         noticeGivenAt: a.noticeGivenAt,
         endsAt: a.endsAt,
@@ -1454,6 +1497,81 @@ export class AffiliationsService {
     >`SELECT * FROM list_practitioner_affiliations(${practitionerId}::uuid)`;
     assertNoProviderNumber(rows, 'practitioner self-view');
     return rows;
+  }
+
+  /**
+   * WHOSE PROVIDER NUMBER THE CLAIM GOES UNDER, at this location, CHANGED
+   * (Carl, 5–7 Sep 2026; TODO.md "Billing role on the affiliation").
+   *
+   * IT IS AN EVENT AND NOT A SILENT COLUMN UPDATE. The role decides who may be
+   * named as the provider on an agreement, so changing it changes which
+   * consent records the practice can make. A practitioner recorded as a
+   * servicing provider on Tuesday and as working under one on Thursday is a
+   * question somebody will ask about a Wednesday agreement, and the answer has
+   * to exist.
+   *
+   * THE PRACTICE'S OWN ACT, like every other write on this page: the practice
+   * knows who its nurses are, and a platform operator asserting it would be
+   * the platform deciding whose name goes on somebody else's contracts.
+   *
+   * NOTHING IS RETROSPECTIVE. Agreements already made keep the provider they
+   * name — HARD-01 makes the anchor immutable and this does not reach it. The
+   * role decides the NEXT arrival, which is the only thing it can honestly do.
+   */
+  async setBillingRole(practiceId: string, affiliationId: string, billingRole: string, actor: string | null) {
+    if (!isBillingRole(billingRole)) {
+      throw new BadRequestException(
+        `"${billingRole}" is not a billing role. The list is versioned content ` +
+          `(packages/domain/content/billing-roles.json, ${BILLING_ROLES_VERSION}) and today reads: ` +
+          `${BILLING_ROLE_KEYS.join(', ')}.`,
+      );
+    }
+
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const affiliation = await tx.affiliation.findFirst({ where: { id: affiliationId } });
+      if (!affiliation) throw new NotFoundException('That affiliation is not one of this practice’s.');
+      if (affiliation.billingRole === billingRole) return { id: affiliationId, billingRole, changed: false };
+
+      const updated = await tx.affiliation.update({
+        where: { id: affiliationId },
+        data: { billingRole },
+      });
+
+      /*
+       * BEFORE AND AFTER, AND WHICH LIST. No name, no provider number, no
+       * amount (REQ-LOG-08, hard rules 1 and 4) — the ids are enough to join
+       * on, and the content version answers hard rule 14's question about
+       * which list the choice was made from.
+       */
+      await enqueueVaultEvent(tx, {
+        type: 'affiliation.billing_role_set',
+        actor: { principalType: 'staff', id: actor ?? practiceId },
+        subject: { type: 'Affiliation', id: affiliationId },
+        payload: {
+          practiceId,
+          practitionerId: affiliation.practitionerId,
+          locationId: affiliation.locationId,
+          from: affiliation.billingRole,
+          to: billingRole,
+          billingRolesVersion: BILLING_ROLES_VERSION,
+          hasProviderNumber: Boolean(affiliation.providerNumber),
+        },
+      });
+
+      return { id: updated.id, billingRole: updated.billingRole, changed: true };
+    });
+  }
+
+  /**
+   * The roles a practice may choose from, FROM THE SERVER.
+   *
+   * Fetched rather than hard-coded in the screen, for the same reason the
+   * external-notice catalogue is: the list is versioned content, the server
+   * refuses a role it does not know, and a stale copy in the browser would
+   * offer an option that is then rejected.
+   */
+  billingRoleCatalogue() {
+    return { version: BILLING_ROLES_VERSION, roles: BILLING_ROLES };
   }
 
   /** REQ-ANOM-01 — a signal for a human, never an automatic refusal. */

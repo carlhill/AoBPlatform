@@ -60,6 +60,8 @@ interface Affiliation {
   location: { id: string; address: string; code: string | null };
   department: string | null;
   providerNumber: string | null;
+  /** Whose provider number the claim goes under here. Versioned content. */
+  billingRole: string;
   startedAt: string | null;
   noticeGivenAt: string | null;
   endsAt: string | null;
@@ -69,6 +71,39 @@ interface Affiliation {
   invitationExpiresAt: string | null;
   acceptanceMethod: string | null;
   acceptanceMeans: string | null;
+}
+
+/** One role from `packages/domain/content/billing-roles.json`, as the server sends it. */
+interface BillingRole {
+  key: string;
+  mayBeProviderOnAgreement: boolean;
+}
+
+/**
+ * The billing roles, FROM THE SERVER, in the content file's own order.
+ *
+ * Fetched rather than hard-coded for the same reason the external-notice
+ * catalogue is: the list is versioned content, the server refuses a role it
+ * does not know, and a stale copy here would offer an option that is then
+ * rejected. File order IS screen order (CLAUDE.md §7).
+ */
+function useBillingRoles(): BillingRole[] {
+  const [roles, setRoles] = useState<BillingRole[]>([]);
+  useEffect(() => {
+    let live = true;
+    fetch(`${CORE_URL}/affiliations/billing-roles/catalogue`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((c) => {
+        if (live && c?.roles) setRoles(c.roles as BillingRole[]);
+      })
+      .catch(() => {
+        // The select simply will not offer options; the server still refuses.
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+  return roles;
 }
 
 interface Location {
@@ -401,6 +436,7 @@ function AffiliationCard({
     if (affiliation.status !== 'invited') setSent(null);
   }, [affiliation.status]);
   const externalMeansCatalogue = useExternalNoticeMeans();
+  const billingRoles = useBillingRoles();
   const [noticing, setNoticing] = useState(false);
   const [externalMeans, setExternalMeans] = useState<string>('');
   const [externalGivenAt, setExternalGivenAt] = useState<string>('');
@@ -444,6 +480,23 @@ function AffiliationCard({
       return (await res.json().catch(() => ({}))) as Record<string, unknown>;
     } finally {
       setBusy(false);
+    }
+  }
+
+  /**
+   * CHANGING THE BILLING ROLE. The practice's own act -- it knows who its
+   * nurses are -- and a vault event on the server, because the role decides
+   * which consent records the practice can make.
+   *
+   * NOTHING RETROSPECTIVE HAPPENS. Agreements already made keep the provider
+   * they name; this decides the next arrival.
+   */
+  async function setBillingRole(billingRole: string) {
+    try {
+      await post(`/affiliations/${a.id}/billing-role`, { billingRole });
+      await onChanged();
+    } catch (e) {
+      setError((e as Error).message);
     }
   }
 
@@ -608,12 +661,60 @@ function AffiliationCard({
           ) : (
             <p className={styles.cardNote}>{strings.affiliations.noProviderNumberNote}</p>
           )}
+
+          {/*
+            WHOSE PROVIDER NUMBER THE CLAIM GOES UNDER, AT THIS LOCATION
+            (Carl, 5-7 Sep 2026). It lives here rather than on the practitioner
+            because the number is per location and the same person can be a
+            nurse practitioner at one site and an RN at another -- one answer
+            for the person would be false about one of the two places.
+
+            The list is rendered in the content file's own order and never
+            carried by this component (CLAUDE.md section 7).
+          */}
+          <div className={styles.inlineForm}>
+            <Field label={strings.billingRoles.label} hint={strings.billingRoles.hint}>
+              {(props) => (
+                <SelectInput
+                  {...props}
+                  value={a.billingRole}
+                  disabled={busy || !canActForPractice}
+                  onChange={(e) => void setBillingRole(e.target.value)}
+                  data-testid={`billing-role-${a.id}`}
+                >
+                  {billingRoles.map((role) => (
+                    <option key={role.key} value={role.key}>
+                      {strings.billingRoles.names[role.key] ?? strings.billingRoles.unknown(role.key)}
+                    </option>
+                  ))}
+                </SelectInput>
+              )}
+            </Field>
+            <p className={styles.cardNote}>
+              {strings.billingRoles.describe[a.billingRole] ?? strings.billingRoles.unknown(a.billingRole)}
+            </p>
+            {/*
+              CARL'S SECOND RULING, ON THE ROW IT IS ABOUT. A servicing provider
+              with no provider number is ALLOWED -- s 65C(5)(a) identifies them
+              by name and the address of the place of practice -- and FLAGGED,
+              so a practice that meant to record one can see that it did not.
+              Never shown for a role that would not have one anyway.
+            */}
+            {a.billingRole === 'servicing_provider' && !a.providerNumber && (
+              <p className={styles.cardNote} data-testid={`no-provider-number-${a.id}`}>
+                {strings.billingRoles.noProviderNumberNote}
+              </p>
+            )}
+          </div>
         </div>
 
         <div className={styles.cardAside}>
           <Chip tone={chip.tone}>
             {chip.icon}
             {chip.label}
+          </Chip>
+          <Chip tone="neutral">
+            {strings.billingRoles.names[a.billingRole] ?? strings.billingRoles.unknown(a.billingRole)}
           </Chip>
           {!a.providerNumber && <Chip tone="neutral">{strings.affiliations.noProviderNumber}</Chip>}
         </div>

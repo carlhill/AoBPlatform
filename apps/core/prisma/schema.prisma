@@ -910,6 +910,27 @@ model Affiliation {
    */
   pmsLinkageKey  String?
 
+  /**
+   * WHOSE PROVIDER NUMBER THE CLAIM GOES UNDER, at this location
+   * (Carl, 5–7 Sep 2026; `packages/domain/content/billing-roles.json`).
+   *
+   * `servicing_provider` — may be the provider on an agreement; enduring only
+   * if the provider type is general practice as well (hard rule 6).
+   * `works_under_provider` — a practice nurse on "for and on behalf of" items.
+   * The claim goes under the GP, so the assignment does too: never the
+   * provider on an agreement.
+   * `not_billable` — phlebotomist, admin. Generates no Medicare claim at all.
+   *
+   * PER LOCATION BECAUSE THE NUMBER IS. The same person can be a nurse
+   * practitioner at one site and an RN at another, so this cannot live on
+   * `Practitioner`.
+   *
+   * The values are versioned content and the column has a CHECK repeating
+   * them (`affiliations_billing_role_known`). The default is not a guess —
+   * every practitioner on the platform when this landed is a doctor.
+   */
+  billingRole String @default("servicing_provider")
+
   status    String   @default("invited") // invited | active | ending | ended | rejected
   invitedAt DateTime @default(now())
 
