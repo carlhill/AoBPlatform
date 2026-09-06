@@ -1262,13 +1262,26 @@ ${payload.body ?? ''}`;
     expect(res.body.noticeTemplateKey).toBe('enduring_termination_notice_v1');
     expect(res.body.calendar).toContain('NSW');
 
-    // TWO BUSINESS DAYS, not two calendar days: strictly later than the notice,
-    // and never landing on a weekend.
+    // TWO BUSINESS DAYS, not two calendar days and not 48 hours: strictly later
+    // than the notice, never a weekend, and exactly two business days after the
+    // notice's date. (The old ">= 48 h" assertion failed when CI ran on a
+    // Sunday evening UTC: two business days after a Sunday notice is Tuesday,
+    // which is 25 h away at that hour -- the calendar was right, the test was
+    // counting hours.)
     const noticeAt = new Date(res.body.noticeAt);
     const effectiveAt = new Date(res.body.effectiveAt);
     expect(effectiveAt.getTime()).toBeGreaterThan(noticeAt.getTime());
     expect([0, 6]).not.toContain(effectiveAt.getUTCDay());
-    expect(effectiveAt.getTime() - noticeAt.getTime()).toBeGreaterThanOrEqual(2 * 86_400_000);
+    const cursor = new Date(Date.UTC(noticeAt.getUTCFullYear(), noticeAt.getUTCMonth(), noticeAt.getUTCDate()));
+    let businessDays = 0;
+    while (cursor.getTime() < effectiveAt.getTime()) {
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+      if (cursor.getUTCDay() !== 0 && cursor.getUTCDay() !== 6) businessDays += 1;
+    }
+    // Public holidays would make this >= 2 rather than exactly 2; the fixture practice is NSW and
+    // no NSW public holiday falls inside a two-business-day window on the days CI runs.
+    expect(businessDays).toBeGreaterThanOrEqual(2);
+    expect(businessDays).toBeLessThanOrEqual(3);
 
     const notice = await prisma.withPractice(practiceA, (tx) =>
       tx.portalTerminationNotice.findFirst({ where: { agreementId: enduringAgreement } }),

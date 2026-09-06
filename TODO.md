@@ -1130,6 +1130,20 @@ tests: `nurse_cannot_be_the_provider_on_an_agreement`,
 - [ ] Wording of the flag: "billing role" with the three values above, or
       Carl's wording.
 
+## Termination effective TIME, not just date (found 7 Sep 2026 via CI)
+
+`terminationEffectiveDate` returns 00:00 UTC on the second business day after
+the notice's UTC date -- i.e. 10:00/11:00 AEST that morning. REQ-END-06 says
+the agreement "ends 2 business days after written notice"; whether that means
+the start of that day, the end of it, or 48 business-hours later is not
+stated. A claim made on that Tuesday morning before 10:00 is inside the
+window; one at 10:01 is outside -- an odd line for a practice to reason about.
+- [ ] Carl to rule: end of the second business day in the practice's local
+      time (recommended: it is the reading most favourable to the patient's
+      last covered service and the easiest to explain), or start of day.
+- [ ] Then compute in the practice's timezone from its state, not UTC, and
+      say the time on the notice and in the portal.
+
 ## The practice flow, end to end: one touch per visit
 
 Carl, 3 Sep 2026, after seeing the kiosk: "too complex for a patient who is
