@@ -33,7 +33,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, ClipboardList, UserRound } from 'lucide-react';
+import { AlertTriangle, ArrowRight, ClipboardList, UserRound } from 'lucide-react';
+import type { ArrivalProviderChoice, RefusedArrival } from '@aobplatform/contracts';
 import {
   audiencesOf,
   mayReach,
@@ -41,7 +42,7 @@ import {
   type PatientQueueItem,
   type PatientQueueRow,
 } from '@aobplatform/domain';
-import { Chip, Field, Notice, Section, Shell, TextInput, ui, type Tone } from '../../ui';
+import { Button, Chip, Field, Notice, SelectInput, Section, Shell, TextInput, ui, type Tone } from '../../ui';
 import { strings } from '../../strings';
 import { apiHeaders, currentSession } from '../../auth';
 import { SessionControl } from '../../SessionControl';
@@ -156,6 +157,15 @@ export function matchesTerm(row: PatientQueueRow, term: string): boolean {
 
 export function PatientsQueueView({ practiceId }: { practiceId: string }) {
   const [rows, setRows] = useState<PatientQueueRow[] | null>(null);
+  /*
+   * ARRIVALS REFUSED FOR NAMING SOMEBODY THE CLAIM CANNOT GO UNDER (Carl,
+   * 5–7 Sep 2026). Kept apart from `rows`: a refused arrival has no agreement
+   * and may have no patient record at all, so it is not a `PatientQueueRow`,
+   * and pretending it is would mean inventing a patient id for somebody the
+   * platform has deliberately not written down yet.
+   */
+  const [refused, setRefused] = useState<RefusedArrival[]>([]);
+  const [choices, setChoices] = useState<ArrivalProviderChoice[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [term, setTerm] = useState('');
 
@@ -176,9 +186,18 @@ export function PatientsQueueView({ practiceId }: { practiceId: string }) {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`${CORE_URL}/patients?open=today`, { headers: apiHeaders(practiceId) });
+      const scope = apiHeaders(practiceId);
+      const [res, refusedRes, choicesRes] = await Promise.all([
+        fetch(`${CORE_URL}/patients?open=today`, { headers: scope }),
+        fetch(`${CORE_URL}/arrivals/needing-a-provider`, { headers: scope }),
+        fetch(`${CORE_URL}/arrivals/servicing-providers`, { headers: scope }),
+      ]);
       if (!res.ok) throw new Error(String(res.status));
       setRows((await res.json()) as PatientQueueRow[]);
+      // Neither of the other two is worth failing the page for: the queue is
+      // the subject, and a section that cannot be filled shows nothing.
+      setRefused(refusedRes.ok ? ((await refusedRes.json()) as RefusedArrival[]) : []);
+      setChoices(choicesRes.ok ? ((await choicesRes.json()) as ArrivalProviderChoice[]) : []);
       setLoadError(null);
     } catch (e) {
       setLoadError(e instanceof TypeError ? strings.status.unreachable : (e as Error).message);
@@ -236,6 +255,35 @@ export function PatientsQueueView({ practiceId }: { practiceId: string }) {
         <Notice tone="warn" title={strings.viewOnly.title} data-testid="patients-view-only">
           {strings.viewOnly.body}
         </Notice>
+      )}
+
+      {/*
+        ARRIVALS WAITING FOR A PROVIDER, ABOVE THE QUEUE.
+
+        Above, because somebody is standing at the desk and nothing else on
+        this page is about them yet — there is no agreement, no tablet row and
+        no work page, which is precisely the state that would otherwise be
+        invisible. The reason and the fix are ON the row (Carl, 4 Sep 2026).
+      */}
+      {refused.length > 0 && (
+        <Section number={0} title={strings.needsProvider.title}>
+          <p className={ui.hint}>{strings.needsProvider.lead}</p>
+          <div className={styles.queueSummary}>
+            <Chip tone="warn">{strings.needsProvider.count(refused.length)}</Chip>
+          </div>
+          <ul className={styles.list} data-testid="needs-provider-list">
+            {refused.map((arrival) => (
+              <NeedsProviderCard
+                key={arrival.arrivalId}
+                arrival={arrival}
+                choices={choices}
+                canAct={canAct}
+                practiceId={practiceId}
+                onDone={load}
+              />
+            ))}
+          </ul>
+        </Section>
       )}
 
       <Section number={1} title={strings.patients.title}>
@@ -299,6 +347,129 @@ export function PatientsQueueView({ practiceId }: { practiceId: string }) {
         </ul>
       </Section>
     </Shell>
+  );
+}
+
+/**
+ * ONE ARRIVAL WAITING FOR A PROVIDER, WITH THE FIX ON IT.
+ *
+ * THE PICKER OFFERS SERVICING PROVIDERS ONLY, from the server, by the same
+ * rule that refused the arrival — a picker that could offer the nurse again
+ * would be a picker that can reproduce the refusal.
+ *
+ * CHOOSING RE-SENDS THE ARRIVAL under its original idempotency key, so the
+ * retry supersedes the refusal rather than putting one walk-in on the queue
+ * twice. The details replayed are the practice management system's own, held
+ * on the row since it was refused — the console never retypes a patient
+ * detail, because the PMS is the source of truth (REQ-DATA-10).
+ */
+function NeedsProviderCard({
+  arrival,
+  choices,
+  canAct,
+  practiceId,
+  onDone,
+}: {
+  arrival: RefusedArrival;
+  choices: ArrivalProviderChoice[];
+  canAct: boolean;
+  practiceId: string;
+  onDone: () => Promise<void>;
+}) {
+  const [providerId, setProviderId] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const roleName = arrival.billingRole
+    ? (strings.billingRoles.names[arrival.billingRole] ?? arrival.billingRole)
+    : null;
+
+  async function submit() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`${CORE_URL}/arrivals/${arrival.arrivalId}/provider`, {
+        method: 'POST',
+        headers: apiHeaders(practiceId),
+        body: JSON.stringify({ providerId }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { message?: string | string[] };
+        throw new Error(
+          Array.isArray(body.message) ? body.message.join(' ') : (body.message ?? String(res.status)),
+        );
+      }
+      await onDone();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <li className={styles.card} data-testid={`needs-provider-${arrival.arrivalId}`}>
+      <div className={styles.cardHead}>
+        <span className={styles.cardIcon}>
+          <AlertTriangle size={18} aria-hidden="true" />
+        </span>
+        <div className={styles.cardMain}>
+          {/*
+            A NAME ONLY IF THE PRACTICE ALREADY HAD ONE. A refused arrival
+            changes nothing about the person, so a walk-in the platform has
+            never seen is identified by the practice's own record number —
+            which is what reception is reading off their own screen anyway.
+          */}
+          <p className={styles.cardTitle}>
+            {arrival.patientName ?? strings.needsProvider.recordNumber(arrival.pmsPatientRecordNumber)}
+          </p>
+          <p className={styles.cardSub} data-testid={`needs-provider-reason-${arrival.arrivalId}`}>
+            {arrival.reason === 'provider_not_servicing' && arrival.providerName && roleName
+              ? strings.needsProvider.reason(arrival.providerName, roleName)
+              : strings.needsProvider.unknownReason(arrival.reason)}
+          </p>
+        </div>
+      </div>
+
+      {error && (
+        <Notice tone="stop" title={strings.needsProvider.failed}>
+          {error}
+        </Notice>
+      )}
+
+      {choices.length === 0 ? (
+        <p className={ui.hint}>{strings.needsProvider.noneToChoose}</p>
+      ) : (
+        <div className={styles.cardActions}>
+          <Field label={strings.needsProvider.pickLabel}>
+            {(props) => (
+              <SelectInput
+                {...props}
+                value={providerId}
+                disabled={!canAct || busy}
+                onChange={(e) => setProviderId(e.target.value)}
+                data-testid={`needs-provider-pick-${arrival.arrivalId}`}
+              >
+                <option value="">{strings.needsProvider.pickPlaceholder}</option>
+                {choices.map((choice) => (
+                  <option key={choice.providerId} value={choice.providerId}>
+                    {choice.name}
+                  </option>
+                ))}
+              </SelectInput>
+            )}
+          </Field>
+          <Button
+            variant="primary"
+            disabled={!canAct || busy || providerId.length === 0}
+            onClick={() => void submit()}
+            data-testid={`needs-provider-submit-${arrival.arrivalId}`}
+          >
+            {busy ? strings.needsProvider.submitting : strings.needsProvider.submit}
+          </Button>
+        </div>
+      )}
+    </li>
   );
 }
 

@@ -109,3 +109,59 @@ export interface ArrivalReceipt {
   /** True on a retry: this arrival had already been processed. */
   readonly repeat: boolean;
 }
+
+/**
+ * WHY AN ARRIVAL WAS REFUSED — a reason CODE, never prose (Carl, 4 Sep 2026:
+ * "shortcuts to the answer, not directions to a screen"; 5–7 Sep 2026: the
+ * billing role).
+ *
+ * The code is what travels; the words and the destination are the console's,
+ * mapped from it, so an unmapped code shows itself and can be diagnosed rather
+ * than disappearing into a generic sentence.
+ */
+export const ARRIVAL_REFUSAL_REASONS = [
+  /**
+   * The person named cannot be the provider on an agreement at this location:
+   * their billing role is `works_under_provider` or `not_billable`. The claim
+   * — and therefore the assignment — goes under somebody else's number, and
+   * reception picks who.
+   */
+  'provider_not_servicing',
+] as const;
+export type ArrivalRefusalReason = (typeof ARRIVAL_REFUSAL_REASONS)[number];
+
+/**
+ * ONE ARRIVAL WAITING FOR RECEPTION TO NAME A PROVIDER.
+ *
+ * WHAT IS AND IS NOT HERE. The provider who was named and the role that
+ * refused them, because that is what has to be understood before it can be
+ * fixed. The patient's name ONLY when the practice already had a record of
+ * them — a refused arrival changes nothing about the person, so a walk-in the
+ * platform has never seen is identified by the practice's own record number,
+ * which is what reception reads off their own screen. No date of birth, no
+ * address, no contact detail: this is a "whose name goes on it" list, not a
+ * patient record (REQ-DATA-10). Never a Medicare number, which is not held at
+ * all (hard rule 1), and never an amount (hard rule 4).
+ */
+export interface RefusedArrival {
+  readonly arrivalId: string;
+  readonly reason: ArrivalRefusalReason | string;
+  /** The practice's own handle for the patient — always present. */
+  readonly pmsPatientRecordNumber: string;
+  /** Only when the practice already had a record of this person. */
+  readonly patientName: string | null;
+  readonly providerId: string | null;
+  readonly providerName: string | null;
+  /** The role that refused them, so the sentence on screen can name it. */
+  readonly billingRole: string | null;
+  /** ISO-8601, as the row holds it. Plain `string` — this shape crosses to a browser. */
+  readonly arrivedAt: string;
+  readonly source: ArrivalSource;
+}
+
+/** A servicing provider reception may choose instead. */
+export interface ArrivalProviderChoice {
+  readonly providerId: string;
+  readonly name: string;
+  readonly providerType: string;
+}

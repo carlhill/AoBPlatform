@@ -531,4 +531,236 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
     const stillBlocked = rows.find((r: { agreementId: string }) => r.agreementId === before.body.agreementId);
     expect(stillBlocked.blockedReason).toBe('service_description_missing');
   });
+
+  // -------------------------------------------------------------------------
+  // The billing role (Carl, 5–7 Sep 2026; TODO.md "Billing role on the
+  // affiliation"). The provider on an agreement is the SERVICING PROVIDER
+  // whose provider number goes on the claim, never (of itself) the person who
+  // delivered the service.
+  // -------------------------------------------------------------------------
+
+  describe('who may be the provider on an agreement', () => {
+    /*
+     * A PRACTICE NURSE, WIRED UP THE WAY THE PLATFORM CAN ACTUALLY SEE IT.
+     * The arrival names a `providers` row; the billing role lives on the
+     * `affiliations` row; the two tables have no foreign key between them, so
+     * they are joined on the AHPRA number — see
+     * `apps/core/src/affiliations/provider-billing-role.ts` for the full
+     * account and the other two keys it tries first.
+     */
+    /*
+     * UNIQUE PER RUN. `practitioners` is a PLATFORM table, not a practice one —
+     * one identity across every practice they work at — so it survives this
+     * suite's practice-scoped teardown, and a fixed number makes the second
+     * run of the suite fail on the unique index. Cleaned up below as well.
+     */
+    const NURSE_AHPRA = `NMW${String(Math.floor(Math.random() * 1e10)).padStart(10, '0')}`;
+    let nurseProviderId: string;
+    let nursePractitionerId: string;
+    let nurseLocationId: string;
+
+    afterAll(async () => {
+      await prisma.withPractice(practiceId, async (tx) => {
+        await tx.affiliation.deleteMany({ where: { practitionerId: nursePractitionerId } });
+        await tx.practiceLocation.deleteMany({ where: { id: nurseLocationId } });
+      });
+      await prisma.practitioner.deleteMany({ where: { ahpraNumber: NURSE_AHPRA } });
+    });
+
+    beforeAll(async () => {
+      await prisma.withPractice(practiceId, async (tx) => {
+        nurseProviderId = (
+          await tx.provider.create({
+            data: {
+              practiceId,
+              name: 'Nurse Example',
+              // Nothing in the provider TYPE says "practice nurse" — which is
+              // exactly why the role had to be recorded rather than inferred.
+              providerType: 'other',
+              ahpraNumber: NURSE_AHPRA,
+            },
+          })
+        ).id;
+
+        const location = await tx.practiceLocation.create({
+          data: { practiceId, address: '4 Example Street, Sampletown NSW 2000', code: 'MAIN' },
+        });
+        nurseLocationId = location.id;
+        const practitioner = await prisma.practitioner.create({
+          data: {
+            ahpraNumber: NURSE_AHPRA,
+            familyName: 'Example',
+            givenNames: 'Nurse',
+            providerType: 'other',
+            invitedByPracticeId: practiceId,
+          },
+        });
+        nursePractitionerId = practitioner.id;
+        await tx.affiliation.create({
+          data: {
+            practiceId,
+            practitionerId: practitioner.id,
+            locationId: location.id,
+            status: 'active',
+            startedAt: new Date(),
+            billingRole: 'works_under_provider',
+          },
+        });
+      });
+    });
+
+    /**
+     * CARL'S FIRST RULING. An arrival naming a nurse is refused, and reception
+     * picks the provider the claim will go under — the alternative, taking a
+     * `supervisingProviderId` from the PMS, would have the practice's software
+     * deciding whose name goes on a contract.
+     */
+    it('arrival_naming_a_non_servicing_provider_is_refused_with_the_reason', async () => {
+      const refused = await post(
+        arrival({ pmsPatientRecordNumber: 'ARR-NURSE', providerId: nurseProviderId }),
+      ).expect(422);
+
+      expect(refused.body.reason).toBe('provider_not_servicing');
+      expect(refused.body.billingRole).toBe('works_under_provider');
+      expect(refused.body.message).toMatch(/Nurse Example/);
+      expect(refused.body.message).toMatch(/provider number/i);
+
+      await prisma.withPractice(practiceId, async (tx) => {
+        // NOTHING ABOUT THE PATIENT MOVED. No mirror row, no assignor, no
+        // draft, nothing on reception's queue.
+        expect(await tx.patient.count({ where: { patientRecordNumber: 'ARR-NURSE' } })).toBe(0);
+
+        const row = await tx.arrival.findFirst({ where: { pmsPatientRecordNumber: 'ARR-NURSE' } });
+        expect(row?.outcome).toBe('refused');
+        expect(row?.refusedReason).toBe('provider_not_servicing');
+        expect(row?.agreementId).toBeNull();
+        expect(row?.assignorId).toBeNull();
+        expect(row?.visitDecision).toBeNull();
+
+        // The refusal and its event committed together (hard rule 11).
+        const events = await prisma.vaultOutbox.findMany({
+          where: { type: 'arrival.refused', subjectId: row!.id },
+        });
+        expect(events).toHaveLength(1);
+        const payload = events[0].payload as Record<string, unknown>;
+        expect(payload.billingRole).toBe('works_under_provider');
+        // Ids, a reason and a role — no patient value of any kind.
+        expect(JSON.stringify(payload)).not.toContain('Robin');
+        expect(JSON.stringify(payload)).not.toContain('Example Street');
+      });
+
+      // And it is on the desk's list, with the reason and the role on it.
+      const waiting = await request(app.getHttpServer())
+        .get('/arrivals/needing-a-provider')
+        .set('x-practice-id', practiceId)
+        .expect(200);
+      const line = waiting.body.find(
+        (r: { pmsPatientRecordNumber: string }) => r.pmsPatientRecordNumber === 'ARR-NURSE',
+      );
+      expect(line.reason).toBe('provider_not_servicing');
+      expect(line.providerName).toBe('Nurse Example');
+      expect(line.billingRole).toBe('works_under_provider');
+      // The platform had never seen this person, so there is no name to show —
+      // the practice's own record number stands in, and no other detail does.
+      expect(line.patientName).toBeNull();
+      expect(JSON.stringify(line)).not.toContain('1968-04-11');
+    });
+
+    /** The picker cannot offer the person who was just refused. */
+    it('the provider picker offers servicing providers only', async () => {
+      const choices = await request(app.getHttpServer())
+        .get('/arrivals/servicing-providers')
+        .set('x-practice-id', practiceId)
+        .expect(200);
+      const ids = choices.body.map((c: { providerId: string }) => c.providerId);
+      expect(ids).toContain(alliedProviderId);
+      expect(ids).not.toContain(nurseProviderId);
+    });
+
+    /**
+     * RECEPTION'S FIX, AND IT IS ONE CLICK. The same walk-in comes back under
+     * the same idempotency key with a servicing provider named, so the retry
+     * SUPERSEDES the refusal rather than putting one person on the queue twice.
+     */
+    it('refused_arrival_can_be_resubmitted_with_a_servicing_provider', async () => {
+      const key = `arr-resubmit-${randomUUID()}`;
+      const refused = await post(
+        arrival({ pmsPatientRecordNumber: 'ARR-REDO', providerId: nurseProviderId, idempotencyKey: key }),
+      ).expect(422);
+      expect(refused.body.reason).toBe('provider_not_servicing');
+
+      const arrivalId = await prisma.withPractice(practiceId, async (tx) => {
+        const row = await tx.arrival.findFirst({ where: { idempotencyKey: key } });
+        return row!.id;
+      });
+
+      const fixed = await request(app.getHttpServer())
+        .post(`/arrivals/${arrivalId}/provider`)
+        .set('x-practice-id', practiceId)
+        .send({ providerId: alliedProviderId })
+        .expect(201);
+
+      expect(fixed.body.arrivalId).toBe(arrivalId);
+      expect(fixed.body.decision.type).toBe('episodic_pre');
+      expect(fixed.body.agreementId).toBeTruthy();
+
+      await prisma.withPractice(practiceId, async (tx) => {
+        // ONE ROW, not two — the same walk-in.
+        expect(await tx.arrival.count({ where: { idempotencyKey: key } })).toBe(1);
+        const row = await tx.arrival.findFirst({ where: { id: arrivalId } });
+        expect(row?.outcome).toBe('received');
+        expect(row?.refusedReason).toBeNull();
+        // THE HELD MESSAGE IS GONE. From here the patient row IS the record.
+        expect(row?.refusedPayload).toBeNull();
+        expect(row?.providerId).toBe(alliedProviderId);
+
+        // The details that landed on the mirror are the PMS's own, replayed.
+        const patient = await tx.patient.findFirst({ where: { patientRecordNumber: 'ARR-REDO' } });
+        expect(patient?.givenNames).toBe('Robin');
+        expect(patient?.address).toBe('4 Example Street, Sampletown NSW 2000');
+      });
+
+      // Off the "needs a provider" list, and on reception's queue instead.
+      const waiting = await request(app.getHttpServer())
+        .get('/arrivals/needing-a-provider')
+        .set('x-practice-id', practiceId)
+        .expect(200);
+      expect(
+        waiting.body.some((r: { arrivalId: string }) => r.arrivalId === arrivalId),
+      ).toBe(false);
+
+      const pushable = await request(app.getHttpServer())
+        .get('/tablet-sessions/pushable')
+        .set('x-practice-id', practiceId)
+        .expect(200);
+      expect(
+        pushable.body.some((r: { agreementId: string }) => r.agreementId === fixed.body.agreementId),
+      ).toBe(true);
+    });
+
+    /**
+     * THE SAME RULE AT THE OTHER DOORS. An arrival is the commonest way an
+     * agreement gets a provider; it is not the only one. Drafting by hand goes
+     * through `AgreementsService`, which owns the guards.
+     */
+    it('nurse_cannot_be_the_provider_on_an_agreement', async () => {
+      const setUp = await post(arrival({ pmsPatientRecordNumber: 'ARR-MANUAL' })).expect(201);
+
+      const manual = await request(app.getHttpServer())
+        .post('/agreements')
+        .set('x-practice-id', practiceId)
+        .send({
+          type: 'episodic_pre',
+          providerId: nurseProviderId,
+          patientId: setUp.body.patientId,
+          assignorId: await prisma.withPractice(practiceId, async (tx) => {
+            const assignor = await tx.assignor.findFirst({ where: { authorityBasis: 'self' } });
+            return assignor!.id;
+          }),
+          assignorIsPatient: true,
+        })
+        .expect(400);
+      expect(manual.body.message).toMatch(/servicing provider/i);
+    });
+  });
 });

@@ -202,7 +202,16 @@ const LOCKED = {
 const calls: Array<{ url: string; method: string; body: unknown }> = [];
 
 function stubFetch(
-  opts: { queue?: PatientQueueRow[]; rows?: unknown[]; sessions?: TabletSessionRow[]; messages?: unknown[] } = {},
+  opts: {
+    queue?: PatientQueueRow[];
+    rows?: unknown[];
+    sessions?: TabletSessionRow[];
+    messages?: unknown[];
+    /** Arrivals refused for naming somebody the claim cannot go under. */
+    refused?: unknown[];
+    /** Who reception may choose instead. Servicing providers only. */
+    choices?: unknown[];
+  } = {},
 ) {
   vi.stubGlobal(
     'fetch',
@@ -216,7 +225,11 @@ function stubFetch(
 
       // ORDER MATTERS: the work list's own question is asked of `/patients`
       // itself, so it is matched before the per-patient reads.
-      const payload = url.includes('/patients?open=today')
+      const payload = url.includes('/arrivals/needing-a-provider')
+        ? (opts.refused ?? [])
+        : url.includes('/arrivals/servicing-providers')
+          ? (opts.choices ?? [])
+          : url.includes('/patients?open=today')
         ? (opts.queue ?? QUEUE)
         : url.includes('/timeline')
           ? TIMELINE
@@ -232,9 +245,9 @@ function stubFetch(
                     ? (opts.rows ?? [READY, BLOCKED])
                     : url.includes('/tablet-sessions')
                       ? (opts.sessions ?? [SESSION])
-                      : url.includes('/practice-users')
-                        ? { users: [] }
-                        : { devices: [TABLET] };
+                        : url.includes('/practice-users')
+                          ? { users: [] }
+                          : { devices: [TABLET] };
       return { ok: true, status: 200, json: async () => payload } as unknown as Response;
     }),
   );
@@ -350,6 +363,114 @@ describe('/practice/patients — who has something open today', () => {
 
     expect(matchesTerm(QUEUE[0], 'sampleton')).toBe(true);
     expect(matchesTerm(QUEUE[0], 'walkin')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * ARRIVALS WAITING FOR A PROVIDER (Carl, 5–7 Sep 2026; the billing role).
+ *
+ * The practice's software named somebody the claim cannot go under, the
+ * arrival was refused, and there is therefore no agreement, no tablet row and
+ * no work page. Without this section a patient stands at the desk and no
+ * screen in the practice says why nothing has happened.
+ */
+describe('/practice/patients — arrivals that need a provider', () => {
+  const ARRIVAL = 'arrival-1';
+  const KNOWN_ARRIVAL = 'arrival-2';
+
+  const REFUSED = [
+    {
+      arrivalId: ARRIVAL,
+      reason: 'provider_not_servicing',
+      pmsPatientRecordNumber: 'DEV-CASEY-WALKIN',
+      // Never seen before: no name, and no other detail either.
+      patientName: null,
+      providerId: 'provider-nurse',
+      providerName: 'Nurse Example',
+      billingRole: 'works_under_provider',
+      arrivedAt: '2026-09-07T09:00:00.000Z',
+      source: 'dev',
+    },
+    {
+      arrivalId: KNOWN_ARRIVAL,
+      reason: 'provider_not_servicing',
+      pmsPatientRecordNumber: 'DEV-JAMIE',
+      patientName: 'Jamie Sampleton',
+      providerId: 'provider-nurse',
+      providerName: 'Nurse Example',
+      billingRole: 'works_under_provider',
+      arrivedAt: '2026-09-07T09:05:00.000Z',
+      source: 'dev',
+    },
+  ];
+
+  const CHOICES = [
+    { providerId: 'provider-gp', name: 'Dr Example Provider', providerType: 'general_practitioner' },
+  ];
+
+  it('shows the reason on the row, naming the provider and the role', async () => {
+    stubFetch({ refused: REFUSED, choices: CHOICES });
+    render(<PatientsQueueView practiceId={PRACTICE} />);
+
+    const reason = await screen.findByTestId(`needs-provider-reason-${ARRIVAL}`);
+    expect(reason.textContent).toContain('Nurse Example');
+    expect(reason.textContent).toContain(strings.billingRoles.names.works_under_provider);
+  });
+
+  /**
+   * A refused arrival changes nothing about the person, so somebody the
+   * platform has never seen is identified by the practice's OWN record number
+   * — and by nothing else. No date of birth, no address, no contact detail.
+   */
+  it('identifies an unknown walk-in by the practice’s record number and nothing more', async () => {
+    stubFetch({ refused: REFUSED, choices: CHOICES });
+    render(<PatientsQueueView practiceId={PRACTICE} />);
+
+    const row = await screen.findByTestId(`needs-provider-${ARRIVAL}`);
+    expect(row.textContent).toContain('DEV-CASEY-WALKIN');
+    expect(row.textContent).not.toMatch(/1957|1988/);
+    expect(row.textContent).not.toMatch(/Parade|Street/);
+
+    // A patient the practice already knows shows their name instead.
+    const known = await screen.findByTestId(`needs-provider-${KNOWN_ARRIVAL}`);
+    expect(known.textContent).toContain('Jamie Sampleton');
+  });
+
+  /** The picker cannot offer the person who was refused. */
+  it('offers only the servicing providers the server sent', async () => {
+    stubFetch({ refused: REFUSED, choices: CHOICES });
+    render(<PatientsQueueView practiceId={PRACTICE} />);
+
+    const pick = (await screen.findByTestId(`needs-provider-pick-${ARRIVAL}`)) as HTMLSelectElement;
+    const values = [...pick.options].map((o) => o.value).filter(Boolean);
+    expect(values).toEqual(['provider-gp']);
+    expect(values).not.toContain('provider-nurse');
+  });
+
+  it('re-sends the arrival with the chosen provider, and sends nothing else', async () => {
+    stubFetch({ refused: REFUSED, choices: CHOICES });
+    render(<PatientsQueueView practiceId={PRACTICE} />);
+
+    const pick = await screen.findByTestId(`needs-provider-pick-${ARRIVAL}`);
+    fireEvent.change(pick, { target: { value: 'provider-gp' } });
+    fireEvent.click(screen.getByTestId(`needs-provider-submit-${ARRIVAL}`));
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));
+    const posted = calls.find((c) => c.method === 'POST');
+    expect(posted?.url).toContain(`/arrivals/${ARRIVAL}/provider`);
+    // ONE FIELD. The patient's details are the practice management system's
+    // own, held on the row since it was refused — the console never retypes
+    // one (REQ-DATA-10).
+    expect(posted?.body).toEqual({ providerId: 'provider-gp' });
+  });
+
+  it('shows nothing at all when no arrival is waiting', async () => {
+    stubFetch();
+    render(<PatientsQueueView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`patient-${PATIENT}`)).toBeTruthy());
+    expect(screen.queryByTestId('needs-provider-list')).toBeNull();
   });
 });
 

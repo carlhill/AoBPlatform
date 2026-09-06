@@ -99,7 +99,17 @@ try:
 except ValueError:
     sys.exit("  %-22s UNREADABLE: %s" % (name, raw[:200]))
 if "arrivalId" not in d:
-    sys.exit("  %-22s REFUSED: %s" % (name, d.get("message", d)))
+    # A REFUSAL CARRIES A CODE, and the code is the thing worth reading first
+    # (Carl, 5-7 Sep 2026). `provider_not_servicing` means the arrival named
+    # somebody the claim cannot go under -- a practice nurse, a phlebotomist --
+    # and the fix is on /practice/patients under "Needs a provider", where
+    # reception picks the provider the claim will go under and the arrival is
+    # replayed under the same idempotency key.
+    reason = d.get("reason")
+    print("REFUSED  %-22s %-13s %s" % (name, reason or "-", d.get("message", d)))
+    if reason == "provider_not_servicing":
+        print("         fix it at http://localhost:3100/practice/patients (Needs a provider)")
+    sys.exit(0)
 decision = d["decision"]
 note = {
   "enduring": "  (enduring drafts cannot be pushed yet - GA-PLAN B5)",

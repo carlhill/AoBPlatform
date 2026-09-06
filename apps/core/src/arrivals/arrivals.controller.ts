@@ -1,8 +1,15 @@
 import { BadRequestException, Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Req } from '@nestjs/common';
+import { IsUUID } from 'class-validator';
 import type { Request } from 'express';
 import { PracticeScoped } from '../auth/practice-scope.decorator';
 import { ArrivalsService } from './arrivals.service';
 import { ArrivalDto } from './arrivals.dto';
+
+/** Reception naming the provider the claim will go under. One field, on purpose. */
+export class ChooseProviderDto {
+  @IsUUID()
+  providerId!: string;
+}
 
 function requirePractice(practiceId: string | undefined): string {
   if (!practiceId) throw new BadRequestException('x-practice-id header is required.');
@@ -47,6 +54,41 @@ export class ArrivalsController {
   ) {
     const sent = req.body && typeof req.body === 'object' ? Object.keys(req.body as object) : [];
     return this.arrivals.receive(requirePractice(practiceId), dto, sent);
+  }
+
+  /**
+   * THE DESK'S "NEEDS A PROVIDER" LIST — arrivals refused for naming somebody
+   * who cannot be the provider on an agreement (Carl, 5–7 Sep 2026).
+   *
+   * BEFORE `:id`, because `needing-a-provider` and `servicing-providers` are
+   * not UUIDs and Nest matches routes in declaration order.
+   */
+  @Get('needing-a-provider')
+  @PracticeScoped()
+  needingAProvider(@Headers('x-practice-id') practiceId: string | undefined) {
+    return this.arrivals.needingAProvider(requirePractice(practiceId));
+  }
+
+  /** Who reception may choose instead. Servicing providers only, by the same rule that refused. */
+  @Get('servicing-providers')
+  @PracticeScoped()
+  servicingProviders(@Headers('x-practice-id') practiceId: string | undefined) {
+    return this.arrivals.servicingProviders(requirePractice(practiceId));
+  }
+
+  /**
+   * RECEPTION'S FIX. Names the provider the claim goes under and the platform
+   * replays the PMS's own message under the same idempotency key, so the retry
+   * supersedes the refusal instead of making a second walk-in.
+   */
+  @Post(':id/provider')
+  @PracticeScoped()
+  chooseProvider(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ChooseProviderDto,
+  ) {
+    return this.arrivals.chooseProvider(requirePractice(practiceId), id, dto.providerId);
   }
 
   /**

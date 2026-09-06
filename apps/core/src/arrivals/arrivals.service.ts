@@ -1,14 +1,15 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
-import type { ArrivalReceipt } from '@aobplatform/contracts';
+import { BadRequestException, HttpException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import type { ArrivalProviderChoice, ArrivalReceipt, RefusedArrival } from '@aobplatform/contracts';
 import {
-  canOfferEnduring,
+  BILLING_ROLES_VERSION,
   decideVisitAgreement,
   detailTypeForPatientField,
+  mayBeProviderOnAgreement,
+  providerIsGpFor,
   SERVICE_DESCRIPTIONS_VERSION,
   type ConfirmableDetailType,
   type CorrectablePatientField,
-  type ProviderType,
   type VisitAgreementDecision,
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
@@ -16,6 +17,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AgreementsService } from '../agreements/agreements.service';
 import { CaptureService } from '../capture/capture.service';
 import { EnduringService } from '../enduring/enduring.service';
+import { resolveBillingRoleForProvider } from '../affiliations/provider-billing-role';
 import { ArrivalDto } from './arrivals.dto';
 
 /**
@@ -25,6 +27,32 @@ import { ArrivalDto } from './arrivals.dto';
  * connector and a dev script from ever looking alike in the evidence.
  */
 const SYSTEM_ACTOR = { principalType: 'system', id: 'arrivals' } as const;
+
+/**
+ * THE ARRIVAL NAMED SOMEBODY WHO CANNOT BE THE PROVIDER ON AN AGREEMENT
+ * (Carl's ruling, 5–7 Sep 2026).
+ *
+ * 422 rather than 400: the message is well-formed and the platform understood
+ * it perfectly. What it cannot do is act on it, because the person it names
+ * does not bill under their own number — the claim, and therefore the
+ * assignment, goes under somebody else's. A 400 would tell a connector author
+ * to check their JSON, which is the wrong hunt.
+ *
+ * SHAPED LIKE `PushRefusal` — a reason CODE plus an honest fallback sentence —
+ * because the console maps the code to its own words and to a destination
+ * (Carl, 4 Sep 2026: shortcuts to the answer, not directions to a screen).
+ * Here the destination is `/practice/patients`, where the arrival is waiting
+ * with a provider picker on it.
+ */
+export class ArrivalRefusal extends HttpException {
+  constructor(
+    readonly reason: string,
+    message: string,
+    extra: Record<string, unknown> = {},
+  ) {
+    super({ statusCode: 422, message, reason, ...extra }, 422);
+  }
+}
 
 /**
  * ANY FIELD NAME WITH "MEDICARE" IN IT IS REFUSED, WHATEVER IT IS FOR — the
@@ -125,7 +153,17 @@ export class ArrivalsService {
     const existing = await this.prisma.withPractice(practiceId, (tx) =>
       tx.arrival.findFirst({ where: { practiceId, idempotencyKey: dto.idempotencyKey } }),
     );
-    if (existing) return this.receiptFor(existing, true);
+    /*
+     * A RETRY OF A REFUSAL IS NOT A REPEAT — IT IS THE FIX (Carl, 5–7 Sep 2026).
+     *
+     * A refused arrival produced nothing: no mirror change, no assignor, no
+     * draft, no queue row. Reception's answer to it is the SAME walk-in with a
+     * servicing provider named, and it comes back under the same idempotency
+     * key deliberately, so the retry supersedes the refusal instead of putting
+     * one person on the queue twice. So a refused row falls through to be
+     * decided again, and only a row that was actually acted on short-circuits.
+     */
+    if (existing && existing.outcome !== 'refused') return this.receiptFor(existing, true);
 
     const { provider, patient } = await this.prisma.withPractice(practiceId, async (tx) => ({
       provider: await this.findProvider(tx, dto),
@@ -133,6 +171,28 @@ export class ArrivalsService {
         where: { practiceId, patientRecordNumber: dto.pmsPatientRecordNumber },
       }),
     }));
+
+    /*
+     * WHOSE NUMBER DOES THE CLAIM GO UNDER — asked before anything is written
+     * (Carl's ruling, 5–7 Sep 2026). The provider on an assignment of benefit
+     * is the servicing provider, never (of itself) the person who delivered
+     * the service, and an arrival naming a nurse is refused so that reception
+     * picks the provider the claim will go under. Read `provider-billing-role.ts`
+     * for what "the affiliation for this provider" can and cannot mean today.
+     */
+    const role = await this.prisma.withPractice(practiceId, (tx) =>
+      resolveBillingRoleForProvider(tx, provider),
+    );
+    if (!mayBeProviderOnAgreement(role.billingRole)) {
+      await this.recordRefusal(practiceId, dto, provider, patient?.id ?? null, role.billingRole, existing?.id);
+      throw new ArrivalRefusal(
+        'provider_not_servicing',
+        `${provider.name} is recorded as "${role.billingRole}" at this practice and cannot be the provider ` +
+          'on an agreement — the claim goes under somebody else’s provider number. Pick the provider the ' +
+          'claim will go under.',
+        { providerId: provider.id, billingRole: role.billingRole },
+      );
+    }
 
     const coverage = patient
       ? await this.enduring.coverage(practiceId, { patientId: patient.id, providerId: provider.id })
@@ -155,9 +215,20 @@ export class ArrivalsService {
        * rule 6 made structural rather than remembered.
        */
       const decision = decideVisitAgreement({
-        // The SAME predicate the draft guard uses (`assertEnduringAllowed`
-        // calls it too), so "is this a GP" cannot come to mean two things.
-        providerIsGp: canOfferEnduring(provider.providerType as ProviderType),
+        /*
+         * BOTH HALVES, AND NEITHER IMPLIES THE OTHER (Carl, 5–7 Sep 2026). A
+         * nurse practitioner is a servicing provider and is NOT a GP, so no
+         * enduring agreement (hard rule 6, REQ-END-01a); and a GP recorded as
+         * working under another provider at this location cannot be the
+         * provider on any agreement here, so the question never arises. One
+         * predicate in the domain rather than two conditions here, because
+         * there are three call sites and the second half was missing from all
+         * of them.
+         */
+        providerIsGp: providerIsGpFor({
+          billingRole: role.billingRole,
+          providerType: provider.providerType,
+        }),
         activeEnduringForProviderAndPatient: coverage.covered,
         /*
          * THE PRACTICE'S STANDING SETTING (GA-PLAN B6). Read through a cast
@@ -184,22 +255,38 @@ export class ArrivalsService {
       });
 
       const arrivedAt = new Date(dto.arrivedAt);
-      const arrival = await tx.arrival.create({
-        data: {
+      /*
+       * UPSERT, BECAUSE A REFUSED ARRIVAL IS ALREADY HERE. Reception's fix
+       * comes back under the same idempotency key so that the retry supersedes
+       * the refusal rather than creating a second walk-in; the refusal's own
+       * fields are cleared, and the held payload with them — the patient row
+       * IS the record from here (REQ-DATA-10), and a second copy of the same
+       * details in a JSON column is data with no reason to exist.
+       */
+      const accepted = {
+        patientId: mirror.patientId,
+        providerId: provider.id,
+        providerNumber: dto.providerNumber ?? null,
+        assignorId: assignor.id,
+        patientCreated: mirror.created,
+        detailsChanged: mirror.changedTypes,
+        visitDecision: decision.type,
+        decisionReason: decision.reason,
+        policyVersion: decision.policyVersion,
+        arrivedAt,
+        source: dto.source,
+        outcome: 'received',
+        refusedReason: null,
+        refusedPayload: Prisma.DbNull,
+      };
+      const arrival = await tx.arrival.upsert({
+        where: { practiceId_idempotencyKey: { practiceId, idempotencyKey: dto.idempotencyKey } },
+        update: accepted,
+        create: {
           practiceId,
           pmsPatientRecordNumber: dto.pmsPatientRecordNumber,
-          patientId: mirror.patientId,
-          providerId: provider.id,
-          providerNumber: dto.providerNumber ?? null,
-          assignorId: assignor.id,
-          patientCreated: mirror.created,
-          detailsChanged: mirror.changedTypes,
-          visitDecision: decision.type,
-          decisionReason: decision.reason,
-          policyVersion: decision.policyVersion,
-          arrivedAt,
-          source: dto.source,
           idempotencyKey: dto.idempotencyKey,
+          ...accepted,
         },
       });
 
@@ -226,6 +313,15 @@ export class ArrivalsService {
           decisionReason: decision.reason,
           policyVersion: decision.policyVersion,
           decidedBy: 'visit_policy',
+          /*
+           * WHOSE NUMBER THE CLAIM GOES UNDER, and which list said so. Hard
+           * rule 14: the role is versioned content, and an agreement made
+           * under it should be answerable in 2028 without guessing which
+           * version of the list was live.
+           */
+          billingRole: role.billingRole,
+          billingRolesVersion: BILLING_ROLES_VERSION,
+          billingRoleResolved: role.resolved,
         },
       });
 
@@ -343,6 +439,216 @@ export class ArrivalsService {
   /** One arrival, for the console and for the tests that read it back. */
   async get(practiceId: string, arrivalId: string): Promise<ArrivalReceipt> {
     return this.receiptFor(await this.reread(practiceId, arrivalId), false);
+  }
+
+  // -------------------------------------------------------------------------
+  // The billing role — refusing, listing, and fixing
+  // -------------------------------------------------------------------------
+
+  /**
+   * THE REFUSAL, WRITTEN DOWN (Carl's ruling, 5–7 Sep 2026).
+   *
+   * NOTHING ABOUT THE PATIENT MOVES. No mirror row is created or updated, no
+   * assignor, no decision, no draft, nothing on reception's queue — the
+   * arrival named somebody who cannot be the provider, so none of it would be
+   * right. `patientId` is filled in only when the practice ALREADY had a
+   * record of this person, and that is a read, not a change: it is what lets
+   * the desk see a name rather than a record number.
+   *
+   * THE PMS'S OWN MESSAGE IS HELD, and only until this is fixed. Reception's
+   * answer is one click — choose the provider the claim goes under — and the
+   * platform replays the arrival it already has rather than asking the
+   * practice's software to send it again. The column is cleared the moment the
+   * arrival is accepted, and the database refuses to hold it otherwise
+   * (`arrivals_payload_held_only_while_refused`).
+   *
+   * THE EVENT AND THE ROW COMMIT TOGETHER (hard rule 11, FR-11.2), so a
+   * refusal with no record of having happened is structurally impossible.
+   */
+  private async recordRefusal(
+    practiceId: string,
+    dto: ArrivalDto,
+    provider: { id: string; name: string },
+    patientId: string | null,
+    billingRole: string,
+    existingArrivalId?: string,
+  ): Promise<void> {
+    await this.prisma.withPractice(practiceId, async (tx) => {
+      const refused = {
+        patientId,
+        providerId: provider.id,
+        providerNumber: dto.providerNumber ?? null,
+        arrivedAt: new Date(dto.arrivedAt),
+        source: dto.source,
+        outcome: 'refused',
+        refusedReason: 'provider_not_servicing',
+        refusedPayload: dto as unknown as Prisma.InputJsonValue,
+      };
+      const arrival = await tx.arrival.upsert({
+        where: { practiceId_idempotencyKey: { practiceId, idempotencyKey: dto.idempotencyKey } },
+        update: refused,
+        create: {
+          practiceId,
+          pmsPatientRecordNumber: dto.pmsPatientRecordNumber,
+          idempotencyKey: dto.idempotencyKey,
+          ...refused,
+        },
+      });
+
+      /*
+       * IDS, A REASON CODE AND A ROLE. No name, no date of birth, no address,
+       * no provider number, no amount (REQ-LOG-08, hard rules 1 and 4). The
+       * content version is here because the list of roles is versioned content
+       * and "which list said so" is the question hard rule 14 exists to answer.
+       */
+      await enqueueVaultEvent(tx, {
+        type: 'arrival.refused',
+        actor: SYSTEM_ACTOR,
+        subject: { type: 'Arrival', id: arrival.id },
+        payload: {
+          practiceId,
+          providerId: provider.id,
+          reason: 'provider_not_servicing',
+          billingRole,
+          billingRolesVersion: BILLING_ROLES_VERSION,
+          source: dto.source,
+          patientKnown: patientId !== null,
+          replacedRefusal: existingArrivalId !== undefined,
+        },
+      });
+    });
+
+    this.logger.log(
+      `Arrival refused for practice ${practiceId}: provider ${provider.id} is "${billingRole}" here. ` +
+        'Waiting on reception to name the provider the claim goes under.',
+    );
+  }
+
+  /**
+   * THE DESK'S "NEEDS A PROVIDER" LIST.
+   *
+   * WHY IT IS NOT ON THE PUSHABLE QUEUE. A refused arrival has no agreement,
+   * so there is nothing to push and no work page to open — the queue reads
+   * agreements and this has none. Leaving it only in a 422 nobody sees would
+   * mean the patient is at the desk, the connector has been refused, and no
+   * screen in the practice says so. That is exactly the "generic fallback
+   * message is a defect" case (Carl, 4 Sep 2026): the reason travels, and it
+   * lands on the item where it is fixed.
+   */
+  async needingAProvider(practiceId: string): Promise<RefusedArrival[]> {
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const rows = await tx.arrival.findMany({
+        where: { practiceId, outcome: 'refused' },
+        orderBy: { arrivedAt: 'desc' },
+        take: 50,
+      });
+      if (rows.length === 0) return [];
+
+      const providerIds = [...new Set(rows.map((r) => r.providerId).filter((id): id is string => id !== null))];
+      const patientIds = [...new Set(rows.map((r) => r.patientId).filter((id): id is string => id !== null))];
+      const [providers, patients] = await Promise.all([
+        providerIds.length
+          ? tx.provider.findMany({
+              where: { id: { in: providerIds } },
+              select: { id: true, name: true, providerNumber: true, ahpraNumber: true, pmsLinkageKey: true },
+            })
+          : Promise.resolve([]),
+        patientIds.length
+          ? tx.patient.findMany({
+              where: { id: { in: patientIds } },
+              select: { id: true, familyName: true, givenNames: true },
+            })
+          : Promise.resolve([]),
+      ]);
+
+      const roles = new Map<string, string>();
+      for (const provider of providers) {
+        roles.set(provider.id, (await resolveBillingRoleForProvider(tx, provider)).billingRole);
+      }
+
+      return rows.map((row) => {
+        const provider = providers.find((p) => p.id === row.providerId) ?? null;
+        const patient = patients.find((p) => p.id === row.patientId) ?? null;
+        return {
+          arrivalId: row.id,
+          reason: row.refusedReason ?? 'provider_not_servicing',
+          pmsPatientRecordNumber: row.pmsPatientRecordNumber,
+          /*
+           * ONLY WHEN THE PRACTICE ALREADY HAD A RECORD. A refused arrival
+           * changes nothing about the person, so a walk-in the platform has
+           * never seen is identified by the practice's own record number —
+           * which is what reception is reading off their own screen anyway.
+           */
+          patientName: patient ? `${patient.givenNames} ${patient.familyName}` : null,
+          providerId: row.providerId,
+          providerName: provider?.name ?? null,
+          billingRole: provider ? (roles.get(provider.id) ?? null) : null,
+          arrivedAt: row.arrivedAt.toISOString(),
+          source: row.source as RefusedArrival['source'],
+        } satisfies RefusedArrival;
+      });
+    });
+  }
+
+  /**
+   * WHO RECEPTION MAY CHOOSE INSTEAD — servicing providers only.
+   *
+   * A picker that offered the nurse again would be a picker that can reproduce
+   * the refusal, so it does not: the list is filtered by the same predicate
+   * that refused the arrival, from the same content file.
+   */
+  async servicingProviders(practiceId: string): Promise<ArrivalProviderChoice[]> {
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const providers = await tx.provider.findMany({
+        where: { active: true },
+        orderBy: { name: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          providerType: true,
+          providerNumber: true,
+          ahpraNumber: true,
+          pmsLinkageKey: true,
+        },
+      });
+      const choices: ArrivalProviderChoice[] = [];
+      for (const provider of providers) {
+        const role = await resolveBillingRoleForProvider(tx, provider);
+        if (!mayBeProviderOnAgreement(role.billingRole)) continue;
+        choices.push({ providerId: provider.id, name: provider.name, providerType: provider.providerType });
+      }
+      return choices;
+    });
+  }
+
+  /**
+   * RECEPTION NAMES THE PROVIDER THE CLAIM WILL GO UNDER, and the arrival is
+   * replayed.
+   *
+   * SAME IDEMPOTENCY KEY, DELIBERATELY. It is the same walk-in: the retry must
+   * supersede the refusal rather than put one person on the queue twice. The
+   * message replayed is the PMS's own, held on the row since it was refused —
+   * so what lands on the mirror is what the practice's software said, not what
+   * a console form retyped (REQ-DATA-10).
+   */
+  async chooseProvider(practiceId: string, arrivalId: string, providerId: string): Promise<ArrivalReceipt> {
+    const row = await this.reread(practiceId, arrivalId);
+    if (row.outcome !== 'refused' || !row.refusedPayload) {
+      throw new BadRequestException(
+        'That arrival is not waiting for a provider. Only an arrival refused for naming somebody who ' +
+          'cannot be the provider on an agreement can be re-sent this way.',
+      );
+    }
+    const held = row.refusedPayload as unknown as ArrivalDto;
+    // The provider is the ONE thing reception is changing. Everything else is
+    // the PMS's own message, replayed verbatim.
+    const replay: ArrivalDto = {
+      ...held,
+      providerId,
+      providerNumber: undefined,
+      idempotencyKey: row.idempotencyKey,
+    };
+    return this.receive(practiceId, replay, Object.keys(replay));
   }
 
   // -------------------------------------------------------------------------

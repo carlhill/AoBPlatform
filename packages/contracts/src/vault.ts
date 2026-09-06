@@ -127,6 +127,20 @@ export const VAULT_EVENT_TYPES = [
    * appears because an arrival is a person at a desk, not a claim (hard rule 4).
    */
   'arrival.received',
+  /**
+   * THE ARRIVAL NAMED SOMEBODY WHO CANNOT BE THE PROVIDER (Carl, 5-7 Sep 2026).
+   *
+   * A practice nurse, a phlebotomist -- somebody whose billing role at this
+   * location says the claim does not go under their number. It is refused, and
+   * reception picks the provider it does go under. Recorded because the
+   * connector's mapping being wrong is a fact about an onboarding, and because
+   * the arrival that was later accepted for the same walk-in should be
+   * traceable back to the one that was not.
+   *
+   * NO PATIENT VALUE, as with `arrival.received`: ids, the reason code, and
+   * the role that produced it.
+   */
+  'arrival.refused',
   'signature.captured',
   /**
    * FR-7.3 — a person decided what happens to a service that never got its

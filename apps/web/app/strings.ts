@@ -4504,6 +4504,36 @@ export const strings = {
   },
 
   /**
+   * ARRIVALS WAITING FOR A PROVIDER (Carl, 5-7 Sep 2026; the billing role).
+   *
+   * A patient is at the desk, the practice's software named somebody the claim
+   * cannot go under, and the arrival was refused. There is no agreement, so
+   * there is no work-page row and nothing on the tablet queue -- which is
+   * exactly why this section exists: a refusal nobody can see is a refusal
+   * that stalls a walk-in. The row carries the reason and the fix, on the row
+   * (Carl, 4 Sep 2026: shortcuts to the answer, not directions to a screen).
+   */
+  needsProvider: {
+    title: 'Needs a provider',
+    lead:
+      'The practice management system named somebody the claim cannot go under. Pick the provider it will '
+      + 'go under and we will carry on with the arrival — nothing has been changed for the patient yet.',
+    /** "{provider} works under a provider here" -- the reason, naming the role. */
+    reason: (provider: string, role: string) => `${provider} is recorded as “${role}” here.`,
+    unknownReason: (code: string) => `Refused (${code}). Please tell support this code.`,
+    /** When we have never seen this patient, the practice's own handle stands in. */
+    recordNumber: (number: string) => `Record number ${number}`,
+    pickLabel: 'The provider the claim will go under',
+    pickPlaceholder: 'Choose a provider…',
+    submit: 'Carry on with this arrival',
+    submitting: 'Sending…',
+    failed: 'That arrival could not be re-sent',
+    noneToChoose:
+      'No servicing provider is recorded at this practice yet. Set a billing role on an affiliation first.',
+    count: (n: number) => (n === 1 ? '1 arrival needs a provider' : `${n} arrivals need a provider`),
+  },
+
+  /**
    * RECEPTION'S OWN WORK LIST — the patients with something open today, and
    * everything about one of them in one place (TODO.md "Reception-centric: the
    * patient work page", Carl 4 Sep 2026).

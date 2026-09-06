@@ -2865,8 +2865,36 @@ model Arrival {
   /// The sender's own handle for this arrival. Idempotency is on this.
   idempotencyKey String
 
+  /**
+   * `received` | `refused` (Carl, 5–7 Sep 2026; the billing role).
+   *
+   * An arrival naming somebody who cannot be the provider on an agreement — a
+   * practice nurse, a phlebotomist — is REFUSED, and reception picks the
+   * provider the claim will go under. The refusal is RECORDED rather than only
+   * returned: "the connector sent us somebody who cannot be the provider" is a
+   * fact about an onboarding, and it has to be visible at the desk.
+   */
+  outcome String @default("received")
+  /// The reason code, e.g. `provider_not_servicing`. Never free prose.
+  refusedReason String?
+  /**
+   * THE PMS'S OWN MESSAGE, HELD ONLY WHILE THE ARRIVAL IS REFUSED.
+   *
+   * Reception's fix is one click — choose the provider, and the platform
+   * replays the arrival it already has — and it cannot replay a message it
+   * threw away. Nothing is mirrored onto the patient row until that click, so
+   * a refused arrival changes nothing about the person; this is what makes
+   * that possible. CLEARED the moment the arrival is accepted, enforced by
+   * `arrivals_payload_held_only_while_refused`, so it is a held message and
+   * never a second copy of the patient record. Same shape and same reasoning
+   * as `InboundPrintJob.payload`.
+   */
+  refusedPayload Json?
+
   @@unique([practiceId, idempotencyKey])
   @@index([practiceId, arrivedAt])
+  /// The desk's "Needs a provider" list, and nothing else reads this way.
+  @@index([practiceId, outcome, arrivedAt])
   @@map("arrivals")
 }
 
