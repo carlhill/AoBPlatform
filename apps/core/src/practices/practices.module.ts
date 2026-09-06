@@ -15,7 +15,11 @@ import { LetterheadService } from './letterhead.service';
   // hashed and vault-evented through the service that already does that for
   // every other piece of evidence (CLAUDE.md §4).
   imports: [IdentityModule, ArtefactsModule],
-  controllers: [PracticesController, PracticeUsersController, LetterheadController],
+  // LETTERHEAD FIRST. Nest registers routes in controller order, and
+  // PracticesController's `GET :id` (ParseUUIDPipe) otherwise swallows
+  // `GET /practices/letterhead` as an id -- Carl saw 'Validation failed (uuid
+  // is expected)' on /practice/templates (7 Sep 2026).
+  controllers: [LetterheadController, PracticesController, PracticeUsersController],
   providers: [PracticesService, PracticeUsersService, LetterheadService],
   // LetterheadService is exported because the LOCK reads it: every agreement
   // is rendered onto the practice's letterhead, and the fields come from the
