@@ -67,6 +67,22 @@ export const pushRefusals = {
    * the tablet. So the refusal names the act rather than the state, and the
    * console's copy carries the link.
    */
+  /**
+   * THE AGREEMENT NAMES SOMEBODY WHO CANNOT BE THE PROVIDER ON ONE (Carl,
+   * 5-7 Sep 2026). The fix is a change of billing role on the affiliation, or
+   * a fresh agreement under the provider the claim goes under -- and the
+   * refusal names the role so the reader can tell which.
+   */
+  providerNotServicing: (providerName: string | null, billingRole: string | null) =>
+    new PushRefusal(
+      'provider_not_servicing',
+      `${providerName ?? 'That provider'} is recorded as "${billingRole ?? 'unknown'}" at this practice and ` +
+        'cannot be the provider on an agreement — the claim goes under somebody else’s provider number. ' +
+        'Correct the billing role on their affiliation, or make the agreement under the provider the claim ' +
+        'will go under.',
+      new ConflictException().getStatus(),
+    ),
+
   deviceOutOfUse: (label: string) =>
     new PushRefusal(
       'device_out_of_use',

@@ -9,6 +9,7 @@ import {
   detailTypeForPatientField,
   isCorrectablePatientField,
   isServiceDescription,
+  mayBeProviderOnAgreement,
   projectTabletSessionPatient,
   shownDetailTypesFor,
   type AgreementType,
@@ -19,6 +20,7 @@ import {
   type TabletSessionState,
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
+import { resolveBillingRoleForProvider } from '../affiliations/provider-billing-role';
 import type { Actor } from '../auth/actor.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -1140,6 +1142,16 @@ export class TabletSessionsService {
         ? await tx.provider.findMany({ where: { id: { in: providerIds } } })
         : [];
       const providerById = new Map(providers.map((p) => [p.id, p]));
+      /*
+       * THE BILLING ROLE PER PROVIDER, RESOLVED ONCE FOR THE WHOLE LIST.
+       * `blockingReason` is synchronous and is called per row -- it must stay
+       * so -- and the providers on a day's queue are a handful, so the lookup
+       * happens here rather than becoming a query per line.
+       */
+      const billingRoleById = new Map<string, string>();
+      for (const provider of providers) {
+        billingRoleById.set(provider.id, (await resolveBillingRoleForProvider(tx, provider)).billingRole);
+      }
       const assignors = await tx.assignor.findMany({
         where: { id: { in: forToday.map((a) => a.assignorId) } },
       });
@@ -1161,6 +1173,7 @@ export class TabletSessionsService {
           assignorName: assignor?.name ?? null,
           confidential: patient.confidentialityFlag,
           providerType: provider?.providerType ?? null,
+          billingRole: provider ? (billingRoleById.get(provider.id) ?? null) : null,
         });
 
         // The same D6a read `lockParticulars` does, and the same one
@@ -1717,6 +1730,14 @@ export class TabletSessionsService {
          * as "not a GP", never as "probably fine".
          */
         providerType: provider?.providerType ?? null,
+        /*
+         * WHOSE PROVIDER NUMBER THE CLAIM GOES UNDER (Carl, 5-7 Sep 2026).
+         * `null` where no provider row was found, which the check below skips
+         * rather than fails on -- an agreement with no provider is already
+         * caught by `enduring_not_per_provider` and by the anchor rules, and
+         * inventing a second refusal for it would say the same thing twice.
+         */
+        billingRole: provider ? (await resolveBillingRoleForProvider(tx, provider)).billingRole : null,
         appointmentDate: appointment ? appointment.date.toISOString().slice(0, 10) : null,
       };
     });
@@ -1729,10 +1750,14 @@ export class TabletSessionsService {
     assignorName: string | null;
     confidential: boolean;
     providerType: string | null;
+    billingRole: string | null;
+    providerName?: string | null;
   }): void {
     const reason = this.blockingReason(context);
     if (!reason) return;
     switch (reason) {
+      case 'provider_not_servicing':
+        throw pushRefusals.providerNotServicing(context.providerName ?? null, context.billingRole);
       case 'enduring_not_gp':
         throw pushRefusals.enduringNotGp(context.providerType);
       case 'enduring_not_per_provider':
@@ -1787,8 +1812,25 @@ export class TabletSessionsService {
     confidential: boolean;
     /** The provider's discipline, or null where none is recorded. Missing is NOT a GP. */
     providerType: string | null;
+    /** The billing role at this practice, or null where no provider row was found. */
+    billingRole: string | null;
   }): PushBlockedReason | null {
     const { agreement } = context;
+
+    /*
+     * WHOSE NUMBER THE CLAIM GOES UNDER, BEFORE ANYTHING ELSE (Carl, 5-7 Sep
+     * 2026). An agreement naming somebody who cannot be the provider on one is
+     * wrong in a way no other check catches, and it is checked here as well as
+     * at arrival because the ROLE can change after the draft was made.
+     *
+     * A NULL ROLE IS SKIPPED, not failed. It means no provider row was found,
+     * and the anchor rules below already have a word for that -- a second
+     * refusal saying the same thing differently would just make the screen
+     * argue with itself.
+     */
+    if (context.billingRole !== null && !mayBeProviderOnAgreement(context.billingRole)) {
+      return 'provider_not_servicing';
+    }
 
     /*
      * ENDURING FIRST, and it is now THREE questions rather than one blanket

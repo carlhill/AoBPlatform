@@ -1084,7 +1084,7 @@ visit policy relies on them:
       the practice address (s 65C(5)(a)) with the location's provider number
       alongside where held. Decide once the Department answers the first two.
 
-## Billing role on the affiliation: who can be the provider on an agreement (Carl, 5 Sep 2026) -- PROPOSED, awaiting Carl's rulings
+## Billing role on the affiliation: who can be the provider on an agreement (Carl, 5-7 Sep 2026) -- BUILT
 
 From Carl's Cowork note on Medicare money flow: provider numbers are issued per
 practitioner per location (stem + location character); claims are batched by
@@ -1120,15 +1120,57 @@ tests: `nurse_cannot_be_the_provider_on_an_agreement`,
 `arrival_naming_a_non_servicing_provider_is_refused_with_the_reason`,
 `nurse_practitioner_is_a_servicing_provider`.
 
-**Carl to rule (asked 5 Sep 2026):**
-- [ ] An arrival names the nurse: refuse and have reception pick the GP the
-      claim goes under, or accept a `supervisingProviderId` from the PMS and
-      use it automatically?
-- [ ] A servicing provider with no provider number recorded: block agreements
-      for them, or allow with name + practice address (s 65C(5)(a) permits it)
-      and flag?
-- [ ] Wording of the flag: "billing role" with the three values above, or
-      Carl's wording.
+**Carl's rulings (7 Sep 2026), and the two defaults they settled:**
+- [x] An arrival naming a nurse is **refused**; reception picks the provider
+      the claim goes under. A `supervisingProviderId` from the PMS was the
+      alternative and was rejected: it would have the practice's software
+      deciding whose name goes on a contract.
+- [x] A servicing provider with **no provider number is allowed** -- s 65C(5)(a)
+      identifies the professional by name and the address of the place of
+      practice -- and **flagged** on the practitioner and affiliation screens:
+      "No provider number recorded -- agreements will identify this provider by
+      name and practice address." A note, never a block.
+- [x] The field is called **billing role**.
+
+**Built (7 Sep 2026).**
+- `packages/domain/content/billing-roles.json` + `src/billing-roles.ts`,
+  schema-validated at load, labels in the string table keyed by role. The
+  loader refuses a file with no `servicing_provider`, one where that role
+  cannot be on an agreement, or one where NOBODY is refused -- a list that has
+  silently turned the rule off.
+- `Affiliation.billingRole`, NOT NULL, default `servicing_provider` (every
+  practitioner on the platform today is a doctor; the migration says so), CHECK
+  `affiliations_billing_role_known`. Changing it emits
+  `affiliation.billing_role_set`. **The vault service needs a rebuild** --
+  `VAULT_EVENT_TYPES` gained that and `arrival.refused`.
+- Arrival: resolves the provider to an affiliation and refuses a non-servicing
+  one with 422 `provider_not_servicing`, recorded as `outcome = 'refused'`.
+  Reception fixes it on `/practice/patients` under "Needs a provider", which
+  replays the held PMS message under the same idempotency key.
+- Guarded at the service layer too (`AgreementsService.createDraft`) and on the
+  push path (`provider_not_servicing`), because the role can change after a
+  draft was made.
+- Named tests: `nurse_cannot_be_the_provider_on_an_agreement`,
+  `nurse_practitioner_is_a_servicing_provider`,
+  `arrival_naming_a_non_servicing_provider_is_refused_with_the_reason`,
+  `refused_arrival_can_be_resubmitted_with_a_servicing_provider`.
+
+**WHAT THE SCHEMA TURNED OUT TO BE, and it is worth reading before the next
+change here.** `providers` and `affiliations` are two unconnected tables.
+`providers` is PRACTICE-scoped, has no `locationId` and no key to anything but
+`practices`, and is the LEGACY agreement anchor (`Agreement.providerId`).
+`affiliations` is the practitioner x location edge and is the anchor
+`Agreement.affiliationId` is being migrated to -- but nothing writes
+`affiliationId` yet, and there is no foreign key, shared id or code path
+linking the two. An arrival names a `providers` row and carries no location at
+all. So the role is resolved by matching on the three keys the tables can
+share, strongest first: `pmsLinkageKey`, then `providerNumber`, then
+`ahpraNumber` (and where a practitioner holds several affiliations, only when
+they agree on the role). Nothing matching answers `servicing_provider` and says
+`resolved: false` -- refusing what cannot be resolved would have stopped every
+arrival in the estate on the day it shipped.
+- [ ] **Next**: write `Agreement.affiliationId` on new agreements and retire
+      `providers` as the anchor, which removes the resolver entirely.
 
 ## Termination effective TIME, not just date (found 7 Sep 2026 via CI)
 

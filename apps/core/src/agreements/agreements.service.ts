@@ -38,9 +38,10 @@ import {
 } from '@aobplatform/domain';
 import { ArtefactsService } from '../artefacts/artefacts.service';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
+import { resolveBillingRoleForProvider } from '../affiliations/provider-billing-role';
 import { PrismaService } from '../prisma/prisma.service';
 import { RULES_CLIENT, RulesClientError } from '../rules-client/rules-client.module';
-import { assertEnduringAllowed } from '@aobplatform/domain';
+import { assertCanBeProviderOnAgreement, assertEnduringAllowed } from '@aobplatform/domain';
 import type { ChangeAssignorDto, CreateAgreementDto, LockParticularsDto } from './agreements.dto';
 
 const SYSTEM_ACTOR = { principalType: 'system', id: 'core' } as const;
@@ -171,6 +172,21 @@ export class AgreementsService {
         if (expectedAnchor === 'provider') {
           const provider = await tx.provider.findFirst({ where: { id: dto.providerId } });
           if (!provider) throw new NotFoundException('Provider not found in this practice.');
+          /*
+           * THE PROVIDER ON AN AGREEMENT IS THE SERVICING PROVIDER (Carl, 5-7
+           * Sep 2026; TODO.md "Billing role on the affiliation").
+           *
+           * HERE AND NOT ONLY AT ARRIVAL. The arrival is the commonest way an
+           * agreement gets a provider and it refuses a nurse there with its own
+           * reason code -- but it is not the only way. The desk can draft one by
+           * hand, the appointment sweep drafts them, and a correction supersedes
+           * one. A rule enforced at one door of four is a rule with three doors,
+           * so it lives at the service that owns the guards.
+           */
+          assertCanBeProviderOnAgreement(
+            (await resolveBillingRoleForProvider(tx, provider)).billingRole,
+            provider.name,
+          );
           if (dto.type === 'enduring') {
             assertEnduringAllowed(provider.providerType as ProviderType, dto.enduringPathway as EnduringPathway);
           }
@@ -1394,7 +1410,7 @@ function d6aOf(agreement: Pick<DbAgreement, 'serviceDescription' | 'particulars'
  * commitment begins on every reading of REQ-END-06a we have. FLAGGED for Carl:
  * if reg 65CB carries a distinct commencement element, it belongs here.
  */
-function templateValuesFor(
+export function templateValuesFor(
   particulars: Record<string, unknown>,
   validation: { readonly mappingVersion: string },
 ): { values: Record<string, string>; conditions: Record<string, boolean> } {
@@ -1408,19 +1424,32 @@ function templateValuesFor(
   const agreementType = String(particulars.agreementType ?? '');
   /*
    * D4, s 65C(5): NAME + PLACE OF PRACTICE, **OR** PROVIDER NUMBER (REQ-REG-02).
+   *
    * A provider number is NOT mandatory, and the whole point of (a) is that a
-   * practice can be onboarded without one. So the document renders whichever
-   * the platform holds, preferring the pair, and never leaves D4 blank.
+   * practice can be onboarded without one -- which is also why Carl's ruling
+   * of 5-7 Sep 2026 ALLOWS a servicing provider with no number recorded, and
+   * flags it on the affiliation screen rather than blocking their agreements.
+   * So D4 is never blank, whichever of the two the platform holds.
+   *
+   * BOTH WHERE BOTH ARE HELD, and that is not belt-and-braces. The statute
+   * offers (a) OR (b); a document carrying both satisfies it either way, and
+   * the number is the key a claim is actually made against -- a reader
+   * reconciling this agreement to a claim should not have to go and look it up.
+   * The number is per practitioner PER LOCATION, so the one that renders is the
+   * one for the place of practice named beside it.
    */
   const providerName = text('providerName');
   const providerAddress = particulars.providerAddress;
   const providerNumber = particulars.providerNumber;
-  const providerDetails =
-    typeof providerAddress === 'string' && providerAddress.trim()
-      ? `${providerName}, ${providerAddress}`
-      : typeof providerNumber === 'string' && providerNumber.trim()
-        ? `${providerName}, provider number ${providerNumber}`
-        : providerName;
+  const hasAddress = typeof providerAddress === 'string' && providerAddress.trim().length > 0;
+  const hasNumber = typeof providerNumber === 'string' && providerNumber.trim().length > 0;
+  const providerDetails = [
+    providerName,
+    hasAddress ? String(providerAddress) : null,
+    hasNumber ? `provider number ${String(providerNumber)}` : null,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(', ');
 
   return {
     values: {

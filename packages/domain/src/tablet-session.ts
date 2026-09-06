@@ -422,6 +422,22 @@ export const PUSH_BLOCKED_REASONS = [
    */
   'patient_confidential',
   /**
+   * THE AGREEMENT NAMES SOMEBODY WHO CANNOT BE THE PROVIDER ON ONE (Carl,
+   * 5-7 Sep 2026; the billing role).
+   *
+   * The provider on an assignment of benefit is the SERVICING PROVIDER whose
+   * provider number goes on the claim. A practice nurse on a "for and on
+   * behalf of" item bills nothing under their own number, so an agreement in
+   * their name would be evidence of a consent matching no claim anybody can
+   * make.
+   *
+   * IT IS CHECKED HERE AS WELL AS AT ARRIVAL because the role can change after
+   * the agreement was drafted -- a practice correcting a mis-set role on
+   * Thursday should not be able to push Tuesday's draft to a tablet. The fix
+   * is on the affiliation, and the console's copy carries the link.
+   */
+  'provider_not_servicing',
+  /**
    * ENDURING IS GP-ONLY (hard rule 6, REQ-END-01a). A specialist, allied
    * health or optometry provider has NO enduring pathway, permanently — the
    * offer there is an episodic agreement or a Treatment Plan Assignment.

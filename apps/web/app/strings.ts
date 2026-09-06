@@ -4461,6 +4461,18 @@ export const strings = {
         'Ongoing agreements are not yet enabled — the enduring rule set is awaiting authoring. You can '
         + 'send an agreement for today’s visit instead, or change what the tablet offers first so new '
         + 'arrivals get one automatically.',
+      /**
+       * THE AGREEMENT NAMES SOMEBODY WHO CANNOT BE THE PROVIDER ON ONE
+       * (Carl, 5-7 Sep 2026; the billing role).
+       *
+       * It says WHOSE NUMBER the claim goes under rather than "not allowed",
+       * because that is the fact reception has to act on -- and the fix is a
+       * real screen, so the band carries the link to it.
+       */
+      provider_not_servicing:
+        'This agreement names somebody who cannot be the provider on one. The claim goes under the '
+        + 'servicing provider’s number, so the agreement has to name them. Correct the billing role, or '
+        + 'make the agreement under the provider the claim will go under.',
       /** Hard rule 6 / REQ-END-01a: permanent, not pending. */
       enduring_not_gp:
         'Ongoing agreements are for general practitioners only. For this provider, send an agreement for '
@@ -4486,6 +4498,8 @@ export const strings = {
     toReconciliationForD6a: 'Or open the record on the reconciliation screen →',
     toReconciliationRow: 'Open it on the reconciliation screen →',
     toDevices: 'Open Tablets →',
+    /** Where a billing-role refusal is actually fixed. */
+    toAffiliations: 'Open Affiliations →',
     /**
      * THE CONFIDENTIAL FLAG HAS SOMEWHERE TO GO NOW (Carl, 4 Sep 2026). Until
      * the work page existed there was no per-patient page in this console, so

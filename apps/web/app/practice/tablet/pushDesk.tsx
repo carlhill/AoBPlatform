@@ -415,6 +415,19 @@ export function describeRefusal(
         // with four cards on it.
         link: destination('/practice/channels', strings.tablet.toChannelsForOffer, ctx, '#kiosk'),
       };
+    /*
+     * THE BILLING ROLE (Carl, 5-7 Sep 2026). Unlike the enduring pair below
+     * this one is FIXABLE, and by the person reading it: the role lives on the
+     * affiliation and the practice sets it. So it carries a destination, and
+     * the destination is the screen where it is changed -- not the queue, and
+     * not a sentence telling somebody to go and look (Carl, 4 Sep 2026).
+     */
+    case 'provider_not_servicing':
+      return {
+        reason,
+        text: strings.tablet.blocked.provider_not_servicing,
+        link: destination('/practice/affiliations', strings.tablet.toAffiliations, ctx),
+      };
     case 'enduring_not_gp':
       return {
         reason,
