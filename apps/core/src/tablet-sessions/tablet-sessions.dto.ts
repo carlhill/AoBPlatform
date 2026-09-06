@@ -1,4 +1,14 @@
-import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  MaxLength,
+} from 'class-validator';
 import {
   CONFIRMABLE_DETAIL_TYPES,
   DEVICE_SETTABLE_TABLET_SESSION_STATES,
@@ -92,4 +102,30 @@ export class ConfirmDetailsDto {
 export class SetSessionStateDto {
   @IsIn(DEVICE_SETTABLE_TABLET_SESSION_STATES as unknown as string[])
   state!: string;
+
+  /**
+   * WHY A SIGNATURE WAS REFUSED — `signature_failed` only (Carl, 7 Sep 2026).
+   *
+   * THE SERVER'S OWN CODE, ECHOED BACK. The tablet asked
+   * `POST /agreements/:id/sign`, was refused, and repeats the code it was
+   * given; it composes nothing and diagnoses nothing.
+   *
+   * A SHAPE RATHER THAN A LIST, deliberately. `@IsIn(SIGNATURE_REFUSAL_REASONS)`
+   * would mean a newer server refusing for a newer reason had its code
+   * REJECTED on the way in, and reception would read a session that ended for
+   * no stated reason — the opposite of the design principle, which is that an
+   * unmapped code is shown as itself so it can be diagnosed (CLAUDE.md §7).
+   *
+   * THERE IS NOTHING HERE THAT COULD CARRY A VALUE. A snake_case token of at
+   * most sixty characters cannot hold a name, a date of birth or an address,
+   * which is what makes the no-values claim one about the shape rather than
+   * about today's callers (REQ-VER-04, hard rule 9).
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  @Matches(/^[a-z][a-z0-9_]*$/, {
+    message: 'reason must be a lower_snake_case code, never a sentence and never a patient detail',
+  })
+  reason?: string;
 }

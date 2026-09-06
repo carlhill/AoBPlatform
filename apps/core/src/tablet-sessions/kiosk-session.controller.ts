@@ -101,6 +101,12 @@ export class KioskSessionController {
    * private bill or an episodic agreement after the service. Named tests:
    * `walked_away_changes_nothing_on_the_agreement`,
    * `timed_out_ends_the_session_and_changes_nothing_on_the_agreement`.
+   *
+   * `signature_failed` IS THE FOURTH AND IT CHANGES NOTHING EITHER (Carl,
+   * 7 Sep 2026). The person signed, `POST /agreements/:id/sign` refused, and
+   * the tablet reports the code it was given — it asserts nothing about the
+   * contract, which is why a device may set this and may not set `signed`.
+   * Named test: `refused_signature_ends_the_session_as_signature_failed`.
    */
   @Post('session/:id/state')
   setState(
@@ -111,7 +117,8 @@ export class KioskSessionController {
     return this.sessions.setState(
       device!,
       id,
-      dto.state as 'reading' | 'walked_away' | 'timed_out' | 'declined_enduring',
+      dto.state as 'reading' | 'walked_away' | 'timed_out' | 'declined_enduring' | 'signature_failed',
+      dto.reason,
     );
   }
 }

@@ -1518,13 +1518,28 @@ export class TabletSessionsService {
   async setState(
     device: ResolvedDevice,
     sessionId: string,
-    state: 'reading' | 'walked_away' | 'timed_out' | 'declined_enduring',
+    state: 'reading' | 'walked_away' | 'timed_out' | 'declined_enduring' | 'signature_failed',
+    /**
+     * ONLY `signature_failed` CARRIES ONE, and it is the SERVER'S OWN CODE
+     * echoed back rather than a diagnosis the tablet composed (Carl, 7 Sep
+     * 2026). The device is reporting the answer it was given.
+     */
+    reason?: string,
   ): Promise<{ id: string; state: TabletSessionState }> {
-    if (state === 'walked_away' || state === 'timed_out' || state === 'declined_enduring') {
-      const ended = await this.end(device.practiceId, sessionId, state, {
-        principalType: 'device',
-        id: device.deviceId,
-      }, device.deviceId);
+    if (
+      state === 'walked_away' ||
+      state === 'timed_out' ||
+      state === 'declined_enduring' ||
+      state === 'signature_failed'
+    ) {
+      const ended = await this.end(
+        device.practiceId,
+        sessionId,
+        state,
+        { principalType: 'device', id: device.deviceId },
+        device.deviceId,
+        state === 'signature_failed' ? (reason ?? 'other') : undefined,
+      );
       return { id: ended.id, state: ended.state as TabletSessionState };
     }
 
@@ -1628,9 +1643,11 @@ export class TabletSessionsService {
   private async end(
     practiceId: string,
     sessionId: string,
-    to: 'walked_away' | 'timed_out' | 'recalled' | 'declined_enduring',
+    to: 'walked_away' | 'timed_out' | 'recalled' | 'declined_enduring' | 'signature_failed',
     actor: { principalType: string; id: string },
     deviceId?: string,
+    /** `signature_failed` only — the refusing server's own code (Carl, 7 Sep 2026). */
+    signatureFailureReason?: string,
   ): Promise<TabletSession> {
     return this.prisma.withPractice(practiceId, async (tx) => {
       const session = await tx.tabletSession.findFirst({ where: { id: sessionId } });
@@ -1649,7 +1666,12 @@ export class TabletSessionsService {
 
       const ended = await tx.tabletSession.update({
         where: { id: session.id },
-        data: { state: to, endedAt: new Date(), lastStateAt: new Date() },
+        data: {
+          state: to,
+          endedAt: new Date(),
+          lastStateAt: new Date(),
+          ...(to === 'signature_failed' ? { signatureFailureReason: signatureFailureReason ?? 'other' } : {}),
+        },
       });
       await enqueueVaultEvent(tx, {
         type: 'tablet.session_ended',
@@ -1693,6 +1715,33 @@ export class TabletSessionsService {
             // No reason is asked for and none is recorded. The tablet has one
             // quiet secondary action and no field to type into.
             offeredInstead: 'episodic_pre',
+          },
+        });
+      }
+
+      /*
+       * AND THE REFUSED SIGNATURE GETS ITS OWN EVENT, IN THE SAME TRANSACTION
+       * (Carl, 7 Sep 2026) — the same construction as the decline above, for
+       * the same reason (hard rule 11).
+       *
+       * `tablet.session_ended` says a screen finished on the word
+       * `signature_failed`. The fact worth keeping is WHY: somebody stood at a
+       * tablet, signed, and the platform did not record it. THE CODE AND
+       * NOTHING ELSE — never the server's sentence, never the payload, and
+       * never the assignor's strokes, which are identifier-grade and do not go
+       * near an event (REQ-LOG-08).
+       */
+      if (to === 'signature_failed') {
+        await enqueueVaultEvent(tx, {
+          type: 'tablet.signature_failed',
+          actor,
+          subject: { type: 'TabletSession', id: session.id },
+          payload: {
+            agreementId: session.agreementId,
+            reason: signatureFailureReason ?? 'other',
+            // The signature was refused, so nothing was recorded and nothing
+            // moved. The patient is seen either way (hard rule 8, REQ-REC-04).
+            agreementChanged: false,
           },
         });
       }
@@ -1951,6 +2000,13 @@ export class TabletSessionsService {
            */
           disputeResolution: (session.disputeResolution ?? null) as TabletSessionRow['disputeResolution'],
           disputeResolvedAt: session.disputeResolvedAt?.toISOString() ?? null,
+          /*
+           * WHY A SIGNATURE WAS REFUSED — the server's own code, mapped to
+           * words by the console (Carl, 7 Sep 2026). Null on every session
+           * that did not end that way; the CHECK constraint makes that a fact
+           * about the table rather than about this projection.
+           */
+          signatureFailureReason: session.signatureFailureReason ?? null,
           pushedBy: session.pushedBy,
           pushedAt: session.pushedAt.toISOString(),
           lastStateAt: session.lastStateAt.toISOString(),
@@ -1978,6 +2034,7 @@ export class TabletSessionsService {
       disputedDetails: [...session.detailsDisputedTypes],
       disputeResolution: (session.disputeResolution ?? null) as TabletSessionRow['disputeResolution'],
       disputeResolvedAt: session.disputeResolvedAt?.toISOString() ?? null,
+      signatureFailureReason: session.signatureFailureReason ?? null,
       pushedBy: session.pushedBy,
       pushedAt: session.pushedAt.toISOString(),
       lastStateAt: session.lastStateAt.toISOString(),

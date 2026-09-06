@@ -100,6 +100,7 @@ const SESSION: TabletSessionRow = {
   disputedDetails: [],
   disputeResolution: null,
   disputeResolvedAt: null,
+  signatureFailureReason: null,
   pushedBy: 'Mai Frontdesk',
   pushedAt: '2026-09-04T09:05:00.000Z',
   lastStateAt: '2026-09-04T09:06:00.000Z',
@@ -157,6 +158,23 @@ const ENDED: TabletSessionRow = {
   id: '8ff09d7b-2222-4000-8000-000000000002',
   state: 'timed_out',
   endedAt: '2026-09-04T09:20:00.000Z',
+};
+
+/**
+ * THE SIGNATURE THE PLATFORM DID NOT RECORD (Carl, 7 Sep 2026).
+ *
+ * The person signed, the request reached the server, and the server refused
+ * it -- here for the reason Carl actually hit: a tablet running a bundle from
+ * before the statements existed, signing without them. An ENDING like the
+ * others, changing NOTHING on the agreement, so the row offers the ordinary
+ * send-again beneath a sentence that names the fix.
+ */
+const SIGNATURE_FAILED: TabletSessionRow = {
+  ...SESSION,
+  id: '8ff09d7b-4444-4000-8000-000000000004',
+  state: 'signature_failed',
+  signatureFailureReason: 'affirmations_missing',
+  endedAt: '2026-09-07T09:24:00.000Z',
 };
 
 /**
@@ -987,6 +1005,51 @@ describe('the reception-push loop -- set, resolve, send again', () => {
     // push in this product.
     expect(push.url).toContain(`/devices/${ENDED.deviceId}/push`);
     expect(push.body).toEqual({ agreementId: ENDED.agreementId });
+  });
+
+  it('signature_failed_row_names_the_reason_and_offers_send_again', async () => {
+    signedInAtPractice();
+    stubFetch({ sessions: [SIGNATURE_FAILED] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    // THE ROW SAYS THE SIGNATURE WAS NOT RECORDED -- not that it "failed",
+    // which reads as something the patient did.
+    const last = await screen.findByTestId(`tablet-last-${TABLET.id}`);
+    expect(last.textContent).toContain(strings.tablet.states.signature_failed);
+
+    /*
+     * AND IT SAYS WHY, IN WORDS WITH THE NEXT ACT IN THEM. The server sent a
+     * CODE; this screen owns the sentence, and the sentence names the fix
+     * ("Reload the tablet and send again").
+     */
+    const why = await screen.findByTestId(`signature-failed-reason-${SIGNATURE_FAILED.id}`);
+    expect(why.textContent).toBe(strings.tablet.signatureFailedReasons.affirmations_missing);
+
+    // A refused signature changed nothing on the agreement, so the ordinary
+    // next thing is the ordinary push -- the SAME control every other ending
+    // gets (hard rule 8, REQ-REC-04).
+    const again = (await screen.findByTestId(`send-again-${SIGNATURE_FAILED.id}`)) as HTMLButtonElement;
+    expect(again.disabled).toBe(false);
+    fireEvent.click(again);
+    await waitFor(() =>
+      expect(calls.some((c) => c.method === 'POST' && c.url.includes('/push'))).toBe(true),
+    );
+  });
+
+  it('an_unmapped_signature_reason_shows_the_code_rather_than_a_generic_sentence', async () => {
+    signedInAtPractice();
+    stubFetch({
+      sessions: [{ ...SIGNATURE_FAILED, signatureFailureReason: 'some_new_server_code' }],
+    });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    /*
+     * THE DESIGN PRINCIPLE, PINNED (CLAUDE.md section 7). A generic fallback
+     * message is a defect: it destroys the one string somebody could diagnose
+     * an unknown refusal from. So the code is shown.
+     */
+    const why = await screen.findByTestId(`signature-failed-reason-${SIGNATURE_FAILED.id}`);
+    expect(why.textContent).toContain('some_new_server_code');
   });
 
   it('declining_enduring_offers_episodic_for_the_visit', async () => {

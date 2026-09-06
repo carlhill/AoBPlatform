@@ -107,6 +107,23 @@ export const ACTIVE_TABLET_SESSION_STATES = [
  *                    knowing — the patient did not leave, they answered.
  *                    Declining an ongoing agreement is not declining care and
  *                    is not declining bulk billing (hard rule 8, REQ-REC-04).
+ *
+ *  - `signature_failed` — the person signed, the request REACHED the server,
+ *                    and the server refused it (Carl, 7 Sep 2026). It is an
+ *                    ENDING because the tablet has nothing left to offer: the
+ *                    payload it holds is the payload that was just refused, so
+ *                    letting it sit on the signature screen invites the same
+ *                    refusal again while a patient watches. The screen says
+ *                    "please see reception" and clears; the agreement is
+ *                    UNTOUCHED, exactly as with every other ending here, and
+ *                    reception re-sends from a row that names the reason
+ *                    (`signatureFailureReason`).
+ *
+ *                    IT IS NOT AN OUTAGE. A request that never reached the
+ *                    server produces no state at all — the heartbeat's outage
+ *                    screen owns that, and a device asserting an ending it
+ *                    could not have observed would be a device asserting a
+ *                    fact about the server.
  */
 export const ENDED_TABLET_SESSION_STATES = [
   'signed',
@@ -115,7 +132,52 @@ export const ENDED_TABLET_SESSION_STATES = [
   'recalled',
   'expired',
   'declined_enduring',
+  'signature_failed',
 ] as const;
+
+/**
+ * WHY A SIGNATURE WAS REFUSED — a CODE, never the server's own sentence, and
+ * never anything about the patient (Carl, 7 Sep 2026).
+ *
+ * THE SAME CONSTRUCTION AS `PUSH_BLOCKED_REASONS` and for the same reason: the
+ * console maps each code to its own string-table entry plus a destination, so
+ * a refusal reads as guidance to a receptionist rather than as a server error,
+ * and an UNMAPPED code shows the code itself so it can be diagnosed rather
+ * than disappearing into a generic sentence ("Shortcuts to the answer",
+ * CLAUDE.md §7).
+ *
+ * THESE ARE THE REFUSALS `POST /agreements/:id/sign` ACTUALLY MAKES, read off
+ * that method and given names — not a wish list. The wire is deliberately not
+ * closed to this set: the DTO accepts any snake_case code, because a newer
+ * server refusing for a newer reason must reach reception as its code rather
+ * than be rejected on the way in.
+ */
+export const SIGNATURE_REFUSAL_REASONS = [
+  /**
+   * THE TABLET DID NOT SEND THE TICKED STATEMENTS. The refusal Carl hit on
+   * 7 September 2026: a tab running a bundle from before the statements
+   * existed signed without them, and the server was right to refuse
+   * (`signature_requires_every_statement_affirmed`). Almost always a stale
+   * bundle, which is why the kiosk answers it with one hard reload.
+   */
+  'affirmations_missing',
+  /** REQ-REG-06: the particulars were not complete, locked and validated. */
+  'not_locked',
+  /** Somebody already signed it — a second tablet, the desk, or a double tap. */
+  'already_signed',
+  /** The agreement is not at the signing step at all: declined, expired, still a draft. */
+  'not_awaiting_signature',
+  /** A drawn signature arrived with no strokes, or a tap arrived carrying some. */
+  'signature_capture_invalid',
+  /** The storage-time s 65C pass failed (REQ-65C-01, "and again at storage"). */
+  'storage_validation_failed',
+] as const;
+
+export type SignatureRefusalReason = (typeof SIGNATURE_REFUSAL_REASONS)[number];
+
+export function isSignatureRefusalReason(value: string): value is SignatureRefusalReason {
+  return (SIGNATURE_REFUSAL_REASONS as readonly string[]).includes(value);
+}
 
 export const TABLET_SESSION_STATES = [
   ...ACTIVE_TABLET_SESSION_STATES,
@@ -155,11 +217,29 @@ export function isActiveTabletSessionState(value: string): value is ActiveTablet
  * nothing about the contract — the agreement is untouched, exactly as a
  * walk-away leaves it — and what follows is reception's act, not the device's.
  */
+/*
+ * `signature_failed` IS DEVICE-SETTABLE AND `signed` IS NOT, which reads like
+ * a contradiction and is not (Carl, 7 Sep 2026).
+ *
+ * A device may not declare a signature RECORDED, because that is an assertion
+ * about a contract and only a signature event may make it. Declaring one
+ * REFUSED asserts nothing about the contract — the agreement is untouched —
+ * and the only fact it carries is one the device is the sole witness to: it
+ * asked, and it was told no. The reason travels as the SERVER'S OWN CODE,
+ * echoed back rather than composed by the tablet, so the device is reporting
+ * the answer it was given rather than diagnosing anything.
+ *
+ * A DEVICE CANNOT USE IT TO END A SESSION IT DISLIKES either: the ending it
+ * reaches for when nobody signed is `walked_away`, and this one produces a
+ * reception row that says "send it again", not a row that says anything
+ * happened to the agreement.
+ */
 export const DEVICE_SETTABLE_TABLET_SESSION_STATES = [
   'reading',
   'walked_away',
   'timed_out',
   'declined_enduring',
+  'signature_failed',
 ] as const;
 export type DeviceSettableTabletSessionState = (typeof DEVICE_SETTABLE_TABLET_SESSION_STATES)[number];
 
@@ -618,6 +698,16 @@ export interface TabletSessionRow {
    */
   disputeResolution: DisputeResolutionOutcome | null;
   disputeResolvedAt: string | null;
+  /**
+   * WHY THE SIGNATURE WAS REFUSED, as the server's own CODE (Carl, 7 Sep
+   * 2026). `null` on every session that did not end that way.
+   *
+   * A CODE AND NOT A SENTENCE, so the console owns the words and can carry a
+   * destination with them; an unmapped code is shown as the code rather than
+   * folded into a generic message. Nothing about the patient is in it — it
+   * names a rule, not a person (REQ-LOG-08).
+   */
+  signatureFailureReason: string | null;
   /** The staff member who pushed it, by display name. */
   pushedBy: string;
   pushedAt: string;

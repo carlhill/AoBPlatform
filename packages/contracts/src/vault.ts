@@ -437,6 +437,28 @@ export const VAULT_EVENT_TYPES = [
    */
   'tablet.session_ended',
   /**
+   * A SIGNATURE WAS ASKED FOR AND THE SERVER REFUSED IT (Carl, 7 Sep 2026).
+   *
+   * `tablet.session_ended` says a screen finished on the word
+   * `signature_failed`. That is not enough for this one: somebody stood at a
+   * tablet, signed, and the platform did not record it. The reason is the
+   * fact worth keeping — was the payload incomplete, was the agreement already
+   * signed, had the particulars never locked — and it is what a practice will
+   * ask about later. Two events, one transaction, so neither can exist without
+   * the other (hard rule 11).
+   *
+   * THE REASON CODE AND NOTHING ELSE. The server's own code — `not_locked`,
+   * `affirmations_missing` — never its sentence, never the payload, and never
+   * anything about the person: an assignor's strokes are identifier-grade and
+   * do not go near an event (REQ-LOG-08).
+   *
+   * THE AGREEMENT IS UNTOUCHED and the payload says so, exactly as the
+   * walked-away event does. A refused signature stops the EVIDENCE; the
+   * patient is seen and reception re-sends or bills another way (hard rule 8,
+   * REQ-REC-04).
+   */
+  'tablet.signature_failed',
+  /**
    * RECEPTION ASKED A TABLET TO GO BACK TO BEGIN (Carl, 4–5 Sep 2026, TODO.md
    * "Tablet heartbeat and Return to Begin").
    *

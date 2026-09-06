@@ -114,6 +114,13 @@ export const STATE_TONE: Record<string, Tone> = {
   timed_out: 'neutral',
   recalled: 'neutral',
   expired: 'neutral',
+  /*
+   * STOP, like a dispute and for the same reason (Carl, 7 Sep 2026). Every
+   * neutral ending above is "nothing to do here"; this one is a patient who
+   * signed, was told to see reception, and is on their way over. It needs
+   * somebody to get up.
+   */
+  signature_failed: 'stop',
 };
 
 /**
@@ -2078,8 +2085,22 @@ export function SessionDisputeNotices({ session }: { session: TabletSessionRow }
           </p>
         </Notice>
       )}
+
     </>
   );
+}
+
+/**
+ * A SERVER CODE TO A SENTENCE RECEPTION CAN ACT ON, or the code itself.
+ *
+ * NO GENERIC FALLBACK, deliberately (CLAUDE.md §7, "Shortcuts to the answer").
+ * An unmapped code is shown as the code, because the alternative — "the
+ * signature could not be recorded" — is a sentence that tells nobody anything
+ * and destroys the only clue there was.
+ */
+export function signatureFailureMessage(reason: string | null): string {
+  const code = reason ?? 'other';
+  return strings.tablet.signatureFailedReasons[code] ?? strings.tablet.signatureFailedUnmapped(code);
 }
 
 /**
@@ -2273,6 +2294,40 @@ export function SendAgain({ desk, ended }: { desk: PushDesk; ended: TabletSessio
 
   return (
     <>
+      {/*
+        THE SIGNATURE THE PLATFORM DID NOT RECORD (Carl, 7 Sep 2026).
+
+        IT LIVES HERE, ON THE SEND-AGAIN COMPONENT, for two reasons. The
+        obvious one is placement: `signature_failed` is an ENDING, so the row
+        that carries it is this one and never `SessionDisputeNotices`, which
+        draws for a LIVE session. The better one is that the reason and the
+        answer belong side by side — the sentence says what went wrong and the
+        button beneath it is what to do about it, which is the whole of
+        "shortcuts to the answer, not directions to a screen" (CLAUDE.md §7).
+
+        AND IT IS SHARED, so the tablet page and the patient work page cannot
+        come to say different things about the same row.
+      */}
+      {ended.state === 'signature_failed' && (
+        <Notice
+          tone="stop"
+          title={strings.tablet.signatureFailedTitle}
+          data-testid={`signature-failed-${ended.id}`}
+        >
+          {/*
+            THE REASON, MAPPED — and the CODE itself where this screen has no
+            wording for it yet. A generic fallback would be a defect: it would
+            hide the one string somebody could diagnose an unknown refusal
+            from.
+          */}
+          <p data-testid={`signature-failed-reason-${ended.id}`}>
+            {signatureFailureMessage(ended.signatureFailureReason)}
+          </p>
+          {/* Hard rule 8, on the row that most looks like a failure. */}
+          <p className={ui.hint}>{strings.tablet.signatureFailedNeverBlocks}</p>
+        </Notice>
+      )}
+
       <div className={styles.cardActions}>
         <Button
           variant="primary"

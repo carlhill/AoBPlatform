@@ -1725,6 +1725,22 @@ capture requests cancelled; mobile/email never supersede. `PATCH
   commit).
 - Session id (short) on the kiosk footer during a pushed session and on the
   console rows, so the two screens can be matched by eye (`5ad708c`).
+- **A REFUSED SIGNATURE IS AN ENDING, NOT A MESSAGE (Carl, 7 Sep 2026).** The
+  tablet used to print "your signature was not recorded, please see reception"
+  and STAY on the signature page with the same payload behind the same button.
+  It now posts the new ended state `signature_failed` carrying the server's own
+  reason CODE, hands over with "Please see reception. Your appointment is not
+  affected.", and clears to Begin. Reception's row reads "Signature not
+  recorded" with the mapped reason and the ordinary Send again; an unmapped
+  code is SHOWN rather than swallowed. `POST /agreements/:id/sign` now carries
+  a `reason` on every refusal (`affirmations_missing`, `not_locked`,
+  `already_signed`, `not_awaiting_signature`, `signature_capture_invalid`,
+  `storage_validation_failed`). A tab refused for `affirmations_missing` --
+  Carl's own fault: a bundle from before the statements existed -- hard-reloads
+  itself ONCE on the next Begin, through the same `reloadedRef` gate the build
+  floor uses, so a stale bundle heals without anybody visiting the device.
+  Vault: `tablet.signature_failed`, the code and nothing else, in the same
+  transaction as `tablet.session_ended` (**the vault needs a rebuild**).
 
 - [x] **Only `patientName` reaches the rendered artefact today** -- FIXED,
       5 Sep 2026 (W1). The hashed unit is now the whole DOCUMENT, stored in

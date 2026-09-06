@@ -754,6 +754,100 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
       expect(payload.agreementChanged).toBe(false);
     });
 
+    it('refused_signature_ends_the_session_as_signature_failed', async () => {
+      /*
+       * THE ELEVENTH ENDING (Carl, 7 Sep 2026). The person signed, the request
+       * reached the server, and the server refused it. The tablet reports the
+       * code it was GIVEN -- it asserts nothing about the contract, which is
+       * why a device may set this and may not set `signed`.
+       */
+      const agreementId = await draft();
+      const pushed = await pushTo(tabletA, agreementId).expect(201);
+
+      const before = await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.findFirst({ where: { id: agreementId } }),
+      );
+
+      const res = await http()
+        .post(`/kiosk/session/${pushed.body.id}/state`)
+        .set('x-device-credential', tabletACredential)
+        .send({ state: 'signature_failed', reason: 'affirmations_missing' })
+        .expect(201);
+      expect(res.body.state).toBe('signature_failed');
+
+      // FIELD BY FIELD, exactly as every other ending is checked. A refused
+      // signature stops the EVIDENCE, never the visit (hard rule 8, REQ-REC-04).
+      const after = await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.findFirst({ where: { id: agreementId } }),
+      );
+      expect(after).toEqual(before);
+      const captureRequest = await prisma.withPractice(practiceA, (tx) =>
+        tx.captureRequest.findFirst({ where: { agreementId, channel: 'in_practice' } }),
+      );
+      expect(captureRequest!.status).toBe('open');
+
+      // THE DEVICE IS RELEASED, so the tablet's poll does not re-enter the
+      // session it has just left.
+      const idle = await http()
+        .get('/kiosk/session')
+        .set('x-device-credential', tabletACredential)
+        .expect(200);
+      expect(idle.body).toEqual({ session: null });
+
+      // RECEPTION'S ROW CARRIES THE CODE, which is what lets the console say
+      // what to do about it rather than "something went wrong".
+      const rows = await http()
+        .get('/tablet-sessions?active=false')
+        .set('x-practice-id', practiceA)
+        .expect(200);
+      const row = (rows.body as Array<{ id: string; state: string; signatureFailureReason: string | null }>).find(
+        (r) => r.id === pushed.body.id,
+      );
+      expect(row!.state).toBe('signature_failed');
+      expect(row!.signatureFailureReason).toBe('affirmations_missing');
+
+      // TWO EVENTS, ONE TRANSACTION (hard rule 11): the ending, and WHY.
+      const ended = await prisma.vaultOutbox.findFirst({
+        where: { subjectId: pushed.body.id, type: 'tablet.session_ended' },
+      });
+      expect((ended!.payload as Record<string, unknown>).to).toBe('signature_failed');
+
+      const refusal = await prisma.vaultOutbox.findFirst({
+        where: { subjectId: pushed.body.id, type: 'tablet.signature_failed' },
+      });
+      expect(refusal).not.toBeNull();
+      const payload = refusal!.payload as Record<string, unknown>;
+      expect(payload.reason).toBe('affirmations_missing');
+      expect(payload.agreementChanged).toBe(false);
+      // THE CODE AND NOTHING ELSE -- no sentence, no payload, no strokes
+      // (REQ-LOG-08).
+      expect(Object.keys(payload).sort()).toEqual(['agreementChanged', 'agreementId', 'reason']);
+    });
+
+    it('a signature refusal reason is a code, never a sentence', async () => {
+      /*
+       * THE SHAPE IS THE GUARD (REQ-VER-04, hard rule 9). A snake_case token
+       * cannot carry a name, a date of birth or an address -- which is what
+       * makes the no-values claim one about the DTO rather than about today's
+       * callers. A newer code this build has never heard of is still accepted,
+       * because the console shows an unmapped code rather than swallowing it.
+       */
+      const agreementId = await draft();
+      const pushed = await pushTo(tabletA, agreementId).expect(201);
+
+      await http()
+        .post(`/kiosk/session/${pushed.body.id}/state`)
+        .set('x-device-credential', tabletACredential)
+        .send({ state: 'signature_failed', reason: 'Riley Example, 9 March 1988' })
+        .expect(400);
+
+      await http()
+        .post(`/kiosk/session/${pushed.body.id}/state`)
+        .set('x-device-credential', tabletACredential)
+        .send({ state: 'signature_failed', reason: 'some_future_code' })
+        .expect(201);
+    });
+
     it('timed_out_is_distinct_from_walked_away_and_expired', async () => {
       // Same effect on the record, different word — the one thing this whole
       // feature is (Carl's ruling, 4 Sep 2026). Three sessions, three ways of

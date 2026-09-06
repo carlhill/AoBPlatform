@@ -4191,7 +4191,62 @@ export const strings = {
        * reach for a private bill.
        */
       declined_enduring: 'Declined ongoing — offer today’s visit instead',
+      /*
+       * NOT "SIGNATURE FAILED" (Carl, 7 Sep 2026). The person signed; the
+       * platform did not record it. "Failed" reads as something the patient
+       * did, and the first thing reception will do with this row is speak to
+       * them. The reason and the next act sit beside it.
+       */
+      signature_failed: 'Signature not recorded',
     } as Record<string, string>,
+
+    /**
+     * WHY A SIGNATURE WAS NOT RECORDED, IN RECEPTION'S WORDS AND WITH THE NEXT
+     * ACT IN THEM (Carl, 7 Sep 2026; "Shortcuts to the answer", CLAUDE.md §7).
+     *
+     * THE SERVER SENDS A CODE AND THIS TURNS IT INTO A SENTENCE SOMEBODY CAN
+     * ACT ON. Every mapped code says what happened AND what to do; the row
+     * itself carries "Send again", which is the destination for most of them.
+     *
+     * AN UNMAPPED CODE SHOWS THE CODE — `signatureFailedUnmapped` below — and
+     * that is the design principle rather than a gap. A generic fallback
+     * sentence would be a defect: it would hide the one string that lets
+     * somebody diagnose a refusal this list has not met yet.
+     */
+    signatureFailedTitle: 'Signature not recorded',
+    signatureFailedReasons: {
+      /*
+       * THE ONE CARL HIT, and the copy names the actual fix. A tablet running
+       * a build from before the statements existed signs without them and is
+       * refused every time; the kiosk reloads itself once when it sees this,
+       * so most of the time it is already healed by the time this is read.
+       */
+      affirmations_missing:
+        'The tablet did not send the ticked statements. Reload the tablet and send again.',
+      not_locked:
+        'The agreement was not complete and locked when it was signed, so nothing could be recorded. '
+        + 'Send it again — it is locked before it reaches the tablet.',
+      already_signed:
+        'This agreement has already been signed, so there was nothing left to record. Nothing is '
+        + 'outstanding for this patient.',
+      not_awaiting_signature:
+        'This agreement is not at the signing step — it may have been declined, superseded or expired. '
+        + 'Check the agreement before sending anything again.',
+      signature_capture_invalid:
+        'The signature did not arrive with the tablet’s request. Send it again, and offer '
+        + '“approve by tapping” if the pad is not responding.',
+      storage_validation_failed:
+        'The agreement did not pass its final check against the s 65C data set, so it was not stored. '
+        + 'Tell us about this one — the patient is unaffected and can still be bulk billed.',
+    } as Record<string, string>,
+    /** The design principle: an unmapped code is shown, never swallowed. */
+    signatureFailedUnmapped: (code: string) =>
+      `The tablet reported “${code}”, which this screen does not have wording for yet. Tell us the code and `
+      + 'send it again.',
+    /** Hard rule 8, said on the one row that most looks like a failure. */
+    signatureFailedNeverBlocks:
+      'Nothing happened to the agreement and nothing happened to the appointment. The patient is seen '
+      + 'either way, and you can send it again, bill privately, or ask again after the service.',
 
     /**
      * AND THE ONE PRESS THAT ANSWERS IT (Carl, 4 Sep 2026; GA-PLAN B5).
@@ -5461,7 +5516,36 @@ export const strings = {
         'Signing records the document you were shown, the check we did on your details, the time, and this tablet.',
       needsInk: 'Please sign above, or use approve by tapping.',
       submitting: 'Recording your signature…',
+      /**
+       * A REQUEST THAT NEVER LANDED, and only that (Carl, 7 Sep 2026).
+       *
+       * This used to be shown for a REFUSAL too, and the screen then sat there
+       * with the same payload and the same button. A refusal now ends the
+       * ceremony and hands over (`notRecordedHeading` below), so what is left
+       * here is the case where the tablet does not know what happened —
+       * nothing reached the server — and the patient is on a screen they can
+       * still act on.
+       */
       failed: 'Your signature was not recorded. Please see reception — your appointment is not affected.',
+      /*
+       * THE SERVER REFUSED IT, so the tablet closes the page (Carl, 7 Sep
+       * 2026: "If the message is to see reception then close this page and go
+       * back to Begin").
+       *
+       * THE SAME WORDS AS "RETURN TO BEGIN", and that is not laziness. Both
+       * are the tablet ending a ceremony for a reason the patient did not
+       * cause and cannot fix, so both say the one thing that is true and
+       * useful — see reception, nothing has happened to your appointment —
+       * and neither explains itself. The REASON goes to reception's row, in
+       * their vocabulary, with the control that fixes it; putting it on this
+       * screen would hand a patient a diagnosis they can do nothing with
+       * (hard rule 8, REQ-REC-04).
+       *
+       * IT DOES NOT SAY "FAILED" OR "ERROR". Nothing was signed, nothing was
+       * lost, and the person did nothing wrong.
+       */
+      notRecordedHeading: 'Please see reception',
+      notRecordedBody: 'Your appointment is not affected.',
       footer: 'Vector and raster capture · tap-to-approve offered where signing on glass is difficult',
     },
 

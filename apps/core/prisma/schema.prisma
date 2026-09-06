@@ -1950,8 +1950,20 @@ model TabletSession {
   /// values (REQ-VER-04) — the event itself lives in `verification_events`.
   verificationEventId String? @db.Uuid
 
-  /// pushed | reading | details_confirmed | details_disputed | signed | walked_away | timed_out | recalled | expired
+  /// pushed | reading | details_confirmed | details_disputed | signed | walked_away | timed_out | recalled | expired | declined_enduring | signature_failed
   state String @default("pushed")
+
+  /// WHY A SIGNATURE WAS REFUSED — the server's own CODE, and only on a
+  /// session that ended `signature_failed` (Carl, 7 Sep 2026).
+  ///
+  /// A CODE AND NEVER A SENTENCE. The console owns the words, so a refusal can
+  /// carry a destination with them, and an unmapped code is shown as the code
+  /// rather than folded into a generic message. The CHECK constrains the SHAPE
+  /// and not the list: a newer server refusing for a newer reason must reach
+  /// reception as its code rather than be rejected on the way in.
+  ///
+  /// Nothing about the patient is in it — it names a rule (REQ-LOG-08).
+  signatureFailureReason String?
 
   /// WHICH DETAILS THE PATIENT TICKED AS CORRECT — TYPES ONLY, and it is not a
   /// verification (REQ-VER-03/-04). `mobile` and `email` appear here and are

@@ -184,14 +184,52 @@ export interface PracticeUsersResponse {
   readonly users: ReadonlyArray<{ readonly name: string }>;
 }
 
-/** Thrown for any non-2xx. Carries the status so a caller can tell a 404 from a 500. */
+/**
+ * Thrown for any non-2xx. Carries the status so a caller can tell a 404 from a
+ * 500 — and, since 7 September 2026, the server's own `reason` CODE where the
+ * refusal offered one.
+ *
+ * THE CLASS ITSELF IS THE "IT REACHED THE SERVER" TEST, and that is what makes
+ * the signature branch honest: a network failure never produces one of these
+ * (fetch throws a `TypeError`), so a caller that checks `instanceof` is asking
+ * "was I refused?" rather than "did something go wrong?". The outage heartbeat
+ * owns the other case, and a tablet must not end a session on an answer it
+ * never received.
+ */
 export class KioskApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /**
+     * A lower_snake_case code — `affirmations_missing`, `not_locked` — or
+     * undefined where the refusal carried none. Never a sentence: the sentence
+     * is `message`, and no screen on this device shows either of them to a
+     * patient.
+     */
+    readonly reason?: string,
   ) {
     super(message);
     this.name = 'KioskApiError';
+  }
+}
+
+/**
+ * The `reason` out of a refusal body, or undefined.
+ *
+ * DEFENSIVE ON EVERY SHAPE, because the body is whatever the server sent: not
+ * JSON at all, JSON that is not an object, an object with a `reason` that is a
+ * number. Anything but a snake_case string is treated as no reason, so a
+ * malformed body degrades to the unmapped fallback rather than putting an
+ * arbitrary server string on a console.
+ */
+function refusalReason(text: string): string | undefined {
+  try {
+    const body: unknown = JSON.parse(text);
+    if (typeof body !== 'object' || body === null) return undefined;
+    const reason = (body as { reason?: unknown }).reason;
+    return typeof reason === 'string' && /^[a-z][a-z0-9_]*$/.test(reason) ? reason : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -244,7 +282,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     // The body may name a rule failure; it never names a patient detail value.
     const text = await res.text().catch(() => '');
-    throw new KioskApiError(text.slice(0, 400) || res.statusText, res.status);
+    throw new KioskApiError(text.slice(0, 400) || res.statusText, res.status, refusalReason(text));
   }
   return (await res.json()) as T;
 }
@@ -596,9 +634,16 @@ export function confirmSessionDetails(
 export function setTabletSessionState(
   sessionId: string,
   state: DeviceSettableTabletSessionState,
+  /**
+   * `signature_failed` ONLY, and it is the SERVER'S OWN CODE echoed back
+   * (Carl, 7 Sep 2026). The tablet asked to sign, was refused, and repeats the
+   * code it was given — it composes nothing, and there is nothing here that
+   * could carry a patient detail.
+   */
+  reason?: string,
 ): Promise<{ id: string; state: TabletSessionState }> {
   return request(`/kiosk/session/${sessionId}/state`, {
     method: 'POST',
-    body: JSON.stringify({ state }),
+    body: JSON.stringify(reason ? { state, reason } : { state }),
   });
 }

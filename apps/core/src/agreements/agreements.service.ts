@@ -56,6 +56,26 @@ const SYSTEM_ACTOR = { principalType: 'system', id: 'core' } as const;
 const SIGNATURE_ATTRIBUTION = 'signature ceremony';
 
 /**
+ * PAST THE SIGNATURE ALREADY — which turns `sign` into `already_signed` rather
+ * than `not_awaiting_signature` (Carl, 7 Sep 2026).
+ *
+ * The distinction is the whole value of the code to reception: "somebody has
+ * already signed this, there is nothing to send" is a different next act from
+ * "this is not at the signing step" (a draft, a declined agreement, an expired
+ * one), which usually is a send-again once the reason is fixed.
+ */
+const SIGNED_ALREADY_STATUSES: ReadonlySet<string> = new Set([
+  'signed',
+  'validated',
+  'stored',
+  'active',
+  'claim_linked',
+  'registration_pending',
+  'registered',
+  'registration_overdue',
+]);
+
+/**
  * HOW LONG THE "IS THE ENDURING BRANCH AUTHORED?" ANSWER IS REUSED. A minute:
  * long enough that a console list of a dozen enduring rows costs one call,
  * short enough that registering the rule set is visible without a restart.
@@ -1015,7 +1035,21 @@ export class AgreementsService {
     // Storage-time re-validation (REQ-65C-01: "and again at storage").
     const agreementBefore = await this.get(practiceId, agreementId);
     if (agreementBefore.status !== 'awaiting_signature') {
-      throw new BadRequestException(`Cannot sign an agreement in status ${agreementBefore.status}.`);
+      /*
+       * EVERY REFUSAL ON THIS PATH CARRIES A `reason` CODE (Carl, 7 Sep 2026).
+       *
+       * The sentence is for a developer reading a log; the CODE is what a
+       * receptionist eventually reads, because the tablet echoes it back on
+       * `signature_failed` and the console maps it to copy plus a destination.
+       * A refusal with only prose is a refusal reception can do nothing with
+       * ("Shortcuts to the answer", CLAUDE.md §7).
+       */
+      throw new BadRequestException({
+        message: `Cannot sign an agreement in status ${agreementBefore.status}.`,
+        reason: SIGNED_ALREADY_STATUSES.has(agreementBefore.status)
+          ? 'already_signed'
+          : 'not_awaiting_signature',
+      });
     }
     try {
       assertSignatureAllowed({
@@ -1024,7 +1058,9 @@ export class AgreementsService {
         validationPassed: agreementBefore.ruleSetVersion !== null,
       });
     } catch (err) {
-      if (err instanceof HardRuleViolation) throw new BadRequestException(err.message);
+      if (err instanceof HardRuleViolation) {
+        throw new BadRequestException({ message: err.message, reason: 'not_locked' });
+      }
       throw err;
     }
 
@@ -1046,7 +1082,9 @@ export class AgreementsService {
     try {
       capture = assertSignatureCaptureAcceptable({ method: dto.method, signature: dto.signature });
     } catch (err) {
-      if (err instanceof SignatureCaptureError) throw new BadRequestException(err.message);
+      if (err instanceof SignatureCaptureError) {
+        throw new BadRequestException({ message: err.message, reason: 'signature_capture_invalid' });
+      }
       throw err;
     }
 
@@ -1072,11 +1110,20 @@ export class AgreementsService {
       const ticked = new Set(dto.affirmations ?? []);
       const missing = required.filter((key) => !ticked.has(key));
       if (missing.length > 0) {
-        throw new BadRequestException(
-          `The person signing has not agreed to every statement on this agreement (${missing.length} of ` +
+        throw new BadRequestException({
+          message:
+            `The person signing has not agreed to every statement on this agreement (${missing.length} of ` +
             `${required.length} outstanding). A signature is a signature to what the document says, so it ` +
             'cannot be recorded against statements nobody ticked.',
-        );
+          /*
+           * THE CODE MATTERS MORE THAN THE SENTENCE HERE (Carl, 7 Sep 2026).
+           * A tablet running a bundle from before the statements existed
+           * cannot send them and will be refused every time, so the kiosk
+           * reads this code as a reason to hard-reload itself ONCE — a stale
+           * bundle heals without anybody visiting the device.
+           */
+          reason: 'affirmations_missing',
+        });
       }
     }
 
@@ -1096,7 +1143,10 @@ export class AgreementsService {
       stage: 'storage',
     });
     if (!revalidation.valid) {
-      throw new BadRequestException('Storage-time s 65C validation failed — the agreement cannot be stored.');
+      throw new BadRequestException({
+        message: 'Storage-time s 65C validation failed — the agreement cannot be stored.',
+        reason: 'storage_validation_failed',
+      });
     }
 
     // Rule 13: any later use re-verifies the hash — re-render with the SAME

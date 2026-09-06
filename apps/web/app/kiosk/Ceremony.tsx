@@ -361,6 +361,23 @@ export function Ceremony(): ReactNode {
    */
   const reloadedRef = useRef(false);
 
+  /**
+   * THIS TAB LOOKS STALE FROM THE EVIDENCE OF A REFUSAL (Carl, 7 Sep 2026).
+   *
+   * The build floor is the ordinary way a rollback reaches an open tab, and it
+   * did not fire here: in dev the build id is `dev`, so there is no floor to be
+   * below. What DID happen is that the server refused a signature for
+   * `affirmations_missing` — which a current bundle cannot produce, because
+   * K-3 will not let the ceremony past an unticked statement. So the refusal
+   * is itself the evidence, and it is enough to justify one reload.
+   *
+   * STATE RATHER THAN A REF, deliberately: the reload effect must re-run when
+   * this is set, and a ref would leave the tab waiting for an unrelated
+   * render. It goes through the SAME `reloadedRef` gate as the build floor, so
+   * a tab that reloads and is refused again does not reload again.
+   */
+  const [staleBundle, setStaleBundle] = useState(false);
+
   // The list is polled only while the tablet is between patients. Mid-ceremony
   // the screen is not showing it, and a poll that nobody can see is noise.
   const list = useWaitingList(step === 'idle' || step === 'list');
@@ -518,11 +535,11 @@ export function Ceremony(): ReactNode {
    * the reload happens a few seconds later.
    */
   useEffect(() => {
-    if (!list.reload || reloadedRef.current) return;
+    if (!(list.reload || staleBundle) || reloadedRef.current) return;
     if (step !== 'idle' && step !== 'list') return;
     reloadedRef.current = true;
     window.location.reload();
-  }, [list.reload, step]);
+  }, [list.reload, staleBundle, step]);
 
   /**
    * THE EXCHANGE: a code in, a credential out, once.
@@ -758,6 +775,73 @@ export function Ceremony(): ReactNode {
     postedAnswersRef.current = '';
     toHandover(strings.particulars.enduringDeclinedHeading, strings.particulars.enduringDeclinedBody);
   }, [pushed, toHandover]);
+
+  /**
+   * THE SERVER REFUSED THE SIGNATURE (Carl, 7 Sep 2026).
+   *
+   * BEFORE: the screen said "your signature was not recorded, please see
+   * reception" and STAYED on the signature page, with the same payload and the
+   * same button, inviting the same refusal. Carl's ruling: "If the message is
+   * to see reception then close this page and go back to Begin."
+   *
+   * SO IT IS AN ENDING, and it is built out of the two that already exist. The
+   * shape is `leave()`'s exactly — post a state, release the session, drop
+   * everything the tablet holds, hand over — because a refused signature is
+   * the same kind of event as a walk-away in every way that matters to the
+   * record: the agreement is UNTOUCHED, the capture request is still open, the
+   * patient is still seen and still billable, and reception picks the same
+   * agreement up unchanged (hard rule 8, REQ-REC-04). The only difference is
+   * the word it ends on and the code that travels with it.
+   *
+   * `autoReturn` IS TRUE, unlike `leave()`. A patient who pressed "see
+   * reception" asked for the screen and keeps it until they are done; this
+   * patient asked to SIGN, and holding them on a dead end they did not choose
+   * would be the tablet making its own failure their problem. It holds for a
+   * few seconds, or until a tap, and then it is Begin again.
+   *
+   * THE REASON IS THE SERVER'S CODE, ECHOED. The tablet does not diagnose,
+   * does not translate, and does not show it — the code goes to the session so
+   * reception's row can say what to do about it, and this screen says the one
+   * thing that is true for every code: see reception, and your appointment is
+   * not affected.
+   */
+  const refuseSignature = useCallback(
+    (reason: string | undefined) => {
+      /*
+       * A STALE BUNDLE HEALS ITSELF, ONCE (Carl's own 7 Sep 2026 fault).
+       *
+       * `affirmations_missing` almost always means this tab is running a build
+       * from before the statements existed: it cannot send ticks it has no
+       * screen for, so every attempt from this tab will be refused. In dev the
+       * build id is `dev`, so the practice's build floor never fires and the
+       * tab would stay broken until somebody thought to reload it.
+       *
+       * The flag is read by the reload effect, which reloads only between
+       * patients and only ONCE per tab (`reloadedRef`) — one attempt, never a
+       * loop, for the reason that ref documents. A stale kiosk is a worse
+       * tablet; a looping one is no tablet at all.
+       */
+      if (reason === 'affirmations_missing') setStaleBundle(true);
+
+      if (pushed) {
+        /*
+         * FIRE AND FORGET, like every other ending here. A patient must not be
+         * made to wait on a second request after the first one failed, and a
+         * failed post costs nothing: the session expires on its own after
+         * thirty minutes and reception can recall it meanwhile.
+         */
+        void setTabletSessionState(pushed.id, 'signature_failed', reason ?? 'other').catch(() => undefined);
+        releasedSessionRef.current = pushed.id;
+        setPushed(null);
+        setAnswers({});
+        setDisputeSent(false);
+        postedAnswersRef.current = '';
+      }
+      setSignError(null);
+      toHandover(strings.signature.notRecordedHeading, strings.signature.notRecordedBody, true);
+    },
+    [pushed, toHandover],
+  );
 
   /**
    * NOBODY HAS TOUCHED THIS TABLET FOR THE PRACTICE'S N MINUTES (Carl, 4
@@ -1705,12 +1789,31 @@ export function Ceremony(): ReactNode {
          */
         setStep('complete');
       } catch (err) {
-        setSignError((err as Error).message);
+        /*
+         * A REFUSAL ENDS THE CEREMONY; A NETWORK FAILURE DOES NOT (Carl,
+         * 7 Sep 2026).
+         *
+         * `KioskApiError` is thrown for a non-2xx and for nothing else, so it
+         * is exactly the "the request reached the server and was refused"
+         * test. That is the case where staying on this screen is wrong: the
+         * payload the tablet holds is the payload that was just refused, so
+         * the same press produces the same refusal while a patient watches.
+         * The message already said "see reception" — Carl's ruling is that a
+         * screen which says that should then BE the see-reception screen, and
+         * clear.
+         *
+         * A REQUEST THAT NEVER LANDED IS THE OUTAGE HEARTBEAT'S, not ours. The
+         * tablet cannot know whether the signature was recorded, so it must
+         * not tell the server the session ended — and it must not tell the
+         * patient anything the heartbeat is not already saying.
+         */
+        if (err instanceof KioskApiError) refuseSignature(err.reason);
+        else setSignError((err as Error).message);
       } finally {
         setSignBusy(false);
       }
     },
-    [agreement, captureRequestId, affirmed],
+    [agreement, captureRequestId, affirmed, refuseSignature],
   );
 
   const validation: SignatureValidation = useMemo(() => {
