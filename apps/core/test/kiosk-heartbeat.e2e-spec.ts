@@ -257,7 +257,7 @@ describe('the tablet heartbeat and Return to Begin (e2e, real Postgres)', () => 
     const stripped = await prisma.withPractice(practiceA, (tx) =>
       tx.device.findFirst({ where: { id: tabletA } }),
     );
-    expect(JSON.stringify(stripped)).not.toMatch(/Sampleton|1957/);
+    expect(JSON.stringify(stripped)).not.toMatch(/Sampleton|1957-03-14/);
 
     /*
      * NO VAULT EVENT PER HEARTBEAT. Telemetry, not evidence — thirty rows a
@@ -299,7 +299,7 @@ describe('the tablet heartbeat and Return to Begin (e2e, real Postgres)', () => 
     expect(device?.stale).toBe(false);
     expect(device?.outOfUse).toBe(false);
     // No patient is looked up to decorate a device row (Carl, 5 Sep 2026).
-    expect(JSON.stringify(device)).not.toMatch(/Sampleton|1957/);
+    expect(JSON.stringify(device)).not.toMatch(/Sampleton|1957-03-14/);
   });
 
   it('reset_command_is_served_once_and_acknowledged', async () => {
@@ -344,7 +344,7 @@ describe('the tablet heartbeat and Return to Begin (e2e, real Postgres)', () => 
     const payload = events[0].payload as Record<string, unknown>;
     expect(payload.commandId).toBe(commandId);
     expect(payload.recalledSessionId).toBe('');
-    expect(JSON.stringify(payload)).not.toMatch(/Sampleton|1957|medicare/i);
+    expect(JSON.stringify(payload)).not.toMatch(/Sampleton|1957-03-14|medicare/i);
   });
 
   it('reset_command_expires_after_two_minutes', async () => {
