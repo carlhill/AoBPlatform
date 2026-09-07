@@ -840,6 +840,11 @@ describe('console_shows_disputed_details_and_offers_correct_and_resend', () => {
 
     fireEvent.click(await screen.findByTestId(`correct-open-${DISPUTED.id}`));
     const address = (await screen.findByTestId(`correct-address-${DISPUTED.id}`)) as HTMLInputElement;
+    // WAIT FOR THE PRE-FILL, not the field: the draft is seeded from the details
+    // fetch after the input exists; changing it before the seed lands lets the
+    // seed overwrite the change and the save reports "Nothing was changed"
+    // (flaked on CI, 7 Sep 2026 -- wow.md §2 item 6).
+    await waitFor(() => expect(address.value).not.toBe(''));
     fireEvent.change(address, { target: { value: '2 Anywhere Street' } });
     fireEvent.click(screen.getByTestId(`correct-save-${DISPUTED.id}`));
 
