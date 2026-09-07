@@ -117,6 +117,39 @@ export function allAnswered(rows: readonly DetailRow[], answers: DetailAnswers):
   return rows.length > 0 && rows.every((row) => answers[row.type] !== undefined);
 }
 
+/**
+ * THE ONLY WAY AN ANSWER EVER CHANGES (extracted from `Ceremony.tsx` on 7 Sep
+ * 2026, in review of the Continue lock).
+ *
+ * WHY IT IS A FUNCTION AND NOT AN `if` IN A HANDLER. The refusal it carries is
+ * the belt-and-braces half of the lock — `CheckDetailsScreen` already renders
+ * a real `button[disabled]` in both locked states, so the ONLY control a
+ * patient can reach while locked is the one that already matches their answer,
+ * and the guard is genuinely unreachable through the DOM. That makes it the
+ * kind of code a test cannot exercise in place and a refactor can therefore
+ * delete without anything going red. Out here it is a pure function with its
+ * own named test.
+ *
+ * TWO REASONS TO REFUSE, ONE RULE. A sent dispute (reception has the cross and
+ * is fixing it) and a pressed Continue (the set has gone, or is going) mean
+ * different things and lock identically: what a patient must not be able to do
+ * in either is change an answer that has already left this device.
+ *
+ * AN UNCHANGED ANSWER RETURNS THE SAME OBJECT, so a double tap on the button a
+ * row is already showing does not re-render it and — more to the point — does
+ * not make `answerSignature` differ and re-post an identical set.
+ */
+export function nextAnswers(
+  current: DetailAnswers,
+  type: string,
+  answer: DetailAnswer,
+  locked: boolean,
+): DetailAnswers {
+  if (locked) return current;
+  if (current[type] === answer) return current;
+  return { ...current, [type]: answer };
+}
+
 /** At least one cross — which disables Continue and summons reception. */
 export function anyDisputed(rows: readonly DetailRow[], answers: DetailAnswers): boolean {
   return rows.some((row) => answers[row.type] === 'wrong');

@@ -1250,8 +1250,35 @@ describe('continue_locks_the_chosen_answers_and_hides_the_rest', () => {
     expect(continueButton.getAttribute('aria-busy')).toBe('true');
     expect(continueButton.textContent).toContain(strings.checkDetails.continueAction);
 
-    // A tap that reaches a locked row changes nothing, and posts nothing more.
-    fireEvent.click(screen.getByTestId('detail-tick-name'));
+    /*
+     * THE BELT-AND-BRACES GUARD, ACTUALLY EXERCISED (review, 7 Sep 2026).
+     *
+     * Clicking a `button[disabled]` is a no-op in jsdom exactly as it is in a
+     * browser, so a plain `fireEvent.click` here proves only that the DISABLED
+     * ATTRIBUTE is set — which the loop above already asserted — and never
+     * reaches `answerDetail`'s own `disputeSent || confirmLocked` refusal. That
+     * refusal exists precisely for "anything that reaches this function
+     * directly", so a test of it has to be one of those things.
+     *
+     * SO THE ATTRIBUTE IS STRIPPED AND THE REAL HANDLER IS FIRED. React's
+     * `onClick` is still bound to this node; removing `disabled` re-opens the
+     * path a mis-fired tap, a stale render or a future refactor would come
+     * down, and the guard is what must stop it. Nothing in the component is
+     * mocked or stubbed to do this.
+     */
+    const lockedTick = screen.getByTestId('detail-tick-name') as HTMLButtonElement;
+    lockedTick.removeAttribute('disabled');
+    lockedTick.disabled = false;
+    fireEvent.click(lockedTick);
+    // Also try to change the answer to the OTHER one, from the row that is no
+    // longer drawn at all — via the tick, since the cross is gone.
+    fireEvent.click(lockedTick);
+
+    // The guard refused: the answer is what it was, and nothing more was sent.
+    expect(lockedTick.getAttribute('aria-pressed')).toBe('true');
+    expect(confirmSessionDetails).toHaveBeenCalledTimes(1);
+
+    // And Continue is still genuinely dead while the round trip runs.
     fireEvent.click(continueButton);
     expect(confirmSessionDetails).toHaveBeenCalledTimes(1);
 
@@ -1406,6 +1433,58 @@ describe('a_failed_send_keeps_the_answers_and_retries_before_see_reception', () 
      */
     expectAnswersHeld();
     expect((screen.getByTestId('check-details-continue') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('stops dead when the ceremony unmounts mid-retry, and touches nothing after it', async () => {
+    /*
+     * THE TIMER HAS TO DIE WITH THE COMPONENT (review, 7 Sep 2026). A backoff
+     * can have eight seconds pending, and the ceremony can leave the screen
+     * inside those eight seconds — an inactivity reset, a recall from
+     * reception, a hot reload. Without the abort the timer wakes into a dead
+     * render tree and calls `setAgreement`/`setStep` on it: React warns, and in
+     * a ceremony that resets itself on a clock it is a warning nobody can
+     * reproduce deliberately.
+     */
+    asPairedTablet();
+    fetchTabletSession.mockResolvedValue({ session: SESSION });
+    fetchAgreement.mockResolvedValue(AGREEMENT);
+    confirmSessionDetails.mockRejectedValue(new TypeError('Failed to fetch'));
+
+    /*
+     * ANY REACT WARNING FAILS THIS TEST. `act(...)` and "state update on an
+     * unmounted component" both arrive on `console.error`, and the whole point
+     * of the fix is that neither appears — so the assertion is on the console
+     * rather than on an absence somebody has to eyeball in the output.
+     */
+    const consoleErrors: unknown[][] = [];
+    const originalError = console.error;
+    console.error = (...args: unknown[]) => {
+      consoleErrors.push(args);
+    };
+
+    try {
+      const view = render(<Ceremony />);
+      await waitFor(() => expect(screen.getByTestId('check-details-heading')).toBeTruthy());
+      tickEverything();
+      fireEvent.click(screen.getByTestId('check-details-continue'));
+
+      // One attempt made, and a wait pending behind it.
+      await waitFor(() => expect(screen.getByTestId('check-details-retrying')).toBeTruthy());
+      expect(confirmSessionDetails).toHaveBeenCalledTimes(1);
+
+      view.unmount();
+
+      // Run past the WHOLE backoff — every remaining wait, and more.
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      // NOT ONE FURTHER ATTEMPT. The chain stopped at the abort rather than
+      // waking up four more times against a server nobody is listening to.
+      expect(confirmSessionDetails).toHaveBeenCalledTimes(1);
+      expect(fetchAgreement).not.toHaveBeenCalled();
+      expect(consoleErrors).toEqual([]);
+    } finally {
+      console.error = originalError;
+    }
   });
 
   it('does not retry a refusal the server means — it is answered once and acted on', async () => {

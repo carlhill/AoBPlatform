@@ -723,10 +723,21 @@
   gap: var(--s3);
 }
 
-.documentTitle {
-  margin: 0;
-  font-size: 1.5rem;
-}
+/*
+ * `.documentTitle` WAS DELETED, NOT REAPPLIED (review, 7 Sep 2026).
+ *
+ * K-3's title used to be 1.5rem, a size chosen for a document header when each
+ * step of the ceremony headed itself. It now goes through `CeremonyHeading`
+ * with every other step's, at `.h2`'s 1.625rem, and the rule was left behind
+ * dead.
+ *
+ * KEEPING IT AS AN OVERRIDE WAS THE OTHER OPTION AND IS THE WRONG ONE. The
+ * point of the change Carl asked for is that the top of every page of one act
+ * looks the same; a per-screen size override is the same drift the change
+ * removed, reintroduced a tenth of a millimetre at a time. If K-3's heading
+ * ever needs its own treatment again, it should be because somebody decided
+ * that — not because a stale rule survived.
+ */
 
 .versions {
   margin: 0;

@@ -125,6 +125,7 @@ import {
   detailRowsFor,
   type DetailAnswer,
   type DetailAnswers,
+  nextAnswers,
 } from './rules/pushed-details';
 import { IdleScreen } from './screens/IdleScreen';
 import { CheckDetailsScreen } from './screens/CheckDetailsScreen';
@@ -141,7 +142,7 @@ import { OutOfUseScreen } from './screens/OutOfUseScreen';
 import type { SignaturePadHandle } from './components/SignaturePad';
 import { InactivityWarning } from './components/InactivityWarning';
 import { strings } from './strings';
-import { withTransientRetry } from './rules/retry';
+import { isRetryAborted, withTransientRetry } from './rules/retry';
 import type { SigningParties } from './rules/who-is-signing';
 
 /**
@@ -295,6 +296,34 @@ export function Ceremony(): ReactNode {
     setConfirmSubmitting(false);
     setConfirmRetrying(false);
   }, []);
+
+  /**
+   * THE BACKOFF HAS TO DIE WITH THE COMPONENT (review of the retry, 7 Sep
+   * 2026).
+   *
+   * A retry chain can have eight seconds of `setTimeout` pending, and the
+   * ceremony can be taken off the screen inside those eight seconds — an
+   * inactivity reset, a recall from reception, a hot reload in dev, a route
+   * change. The timer would then wake into a dead render tree and call
+   * `setAgreement` and `setStep` on it. React warns; and in a ceremony that
+   * resets itself on a clock, it is the kind of warning nobody can reproduce
+   * deliberately, which is the worst kind to leave in.
+   *
+   * SO THE CONTROLLER IS ABORTED FROM THE CLEANUP. `withTransientRetry` clears
+   * the pending timeout, stops making attempts, and throws `RetryAborted`,
+   * which `confirmDetails` returns on WITHOUT touching state. The in-flight
+   * `fetch` itself cannot be recalled, but nothing is done with its answer.
+   *
+   * A REF, NOT STATE. Nothing renders from it, and a re-render must not
+   * abort a retry that is legitimately running.
+   */
+  const confirmAbortRef = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      confirmAbortRef.current?.abort();
+    },
+    [],
+  );
   /**
    * WHAT WAS LAST SENT, so the same answers are never sent twice.
    *
@@ -1237,9 +1266,13 @@ export function Ceremony(): ReactNode {
        * states, but this is the guard that cannot be bypassed by anything that
        * reaches this function directly.
        */
-      if (disputeSent || confirmLocked) return;
+      const locked = disputeSent || confirmLocked;
+      if (locked) return;
       setConfirmError(false);
-      setAnswers((prev) => (prev[type] === answer ? prev : { ...prev, [type]: answer }));
+      // `nextAnswers` refuses too, and it is the half with a test on it
+      // (`rules/pushed-details.ts`) — the early return above is the fast path,
+      // not the rule.
+      setAnswers((prev) => nextAnswers(prev, type, answer, locked));
     },
     [disputeSent, confirmLocked],
   );
@@ -1369,6 +1402,12 @@ export function Ceremony(): ReactNode {
     setConfirmSubmitting(true);
     setConfirmError(false);
     setConfirmRetrying(false);
+
+    // One controller per press. A previous press's chain is already finished
+    // or aborted by the time Continue can be pressed again.
+    const abort = new AbortController();
+    confirmAbortRef.current?.abort();
+    confirmAbortRef.current = abort;
     try {
       /*
        * A BLIP IS NOT A REFUSAL (Carl, 7 Sep 2026). Core restarting under the
@@ -1389,7 +1428,7 @@ export function Ceremony(): ReactNode {
           await postAnswers();
           return fetchAgreement(pushed.agreementId);
         },
-        { onRetry: () => setConfirmRetrying(true) },
+        { onRetry: () => setConfirmRetrying(true), signal: abort.signal },
       );
       setAgreement(current);
       setStep('particulars');
@@ -1410,6 +1449,12 @@ export function Ceremony(): ReactNode {
        * `postedAnswersRef` means trying costs nothing. The red line beside it
        * offers the desk, which is the answer when trying does not help.
        */
+      /*
+       * THE SCREEN IS GONE. Not an error, not a refusal, and above all not a
+       * `setState` — this is the unmount cleanup having fired, and the only
+       * correct thing to do with the answer is nothing at all.
+       */
+      if (isRetryAborted(err)) return;
       setConfirmRetrying(false);
       setConfirmSubmitting(false);
       if (isUnpaired(err)) {

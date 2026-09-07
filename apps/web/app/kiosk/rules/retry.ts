@@ -51,9 +51,57 @@ export function isTransientFailure(err: unknown): boolean {
   return true;
 }
 
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
+/**
+ * THE ERROR AN ABORT PRODUCES. Its own class so a caller can tell "we gave up
+ * because the screen went away" from "the server refused" without inspecting a
+ * message string — the two lead to completely different places, and one of
+ * them must lead nowhere at all.
+ */
+export class RetryAborted extends Error {
+  constructor() {
+    super('retry aborted');
+    this.name = 'RetryAborted';
+  }
+}
+
+export function isRetryAborted(err: unknown): boolean {
+  return err instanceof RetryAborted;
+}
+
+/**
+ * Wait, unless the caller has gone away first.
+ *
+ * THE TIMEOUT IS CLEARED ON ABORT, which is the whole point of this function
+ * existing rather than a bare `setTimeout`. A pending eight-second backoff on a
+ * component that has unmounted wakes up into a dead render tree and calls
+ * `setState` on it; React warns, and in a ceremony that resets itself on
+ * inactivity it would be a warning nobody could reproduce on purpose.
+ *
+ * IT REJECTS RATHER THAN HANGING. A promise that simply never settles leaks the
+ * whole chain behind it and gives the caller nothing to branch on; a
+ * `RetryAborted` unwinds it and is trivially distinguishable at the top.
+ */
+function wait(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new RetryAborted());
+      return;
+    }
+    /*
+     * THE TIMER IS CREATED FIRST so `onAbort` can close over it as a `const`.
+     * The reference to `onAbort` inside the timeout callback resolves when the
+     * timer FIRES, which is after both declarations — the listener is removed
+     * there so a settled wait leaves nothing attached to a long-lived signal.
+     */
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      reject(new RetryAborted());
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
 
@@ -71,22 +119,46 @@ function wait(ms: number): Promise<void> {
  *
  * THE LAST FAILURE IS RE-THROWN AS IT CAME. Wrapping it would hide the
  * `KioskApiError` an unpaired check downstream still needs to see.
+ *
+ * `signal` STOPS THE CHAIN DEAD. It is checked before every attempt and before
+ * every wait, and it cancels a wait already in flight — so an unmounting
+ * component's cleanup ends this within a tick rather than eight seconds later.
+ * The in-flight `fetch` cannot be recalled, but nothing is done with its answer
+ * and no further attempt is made; the caller sees `RetryAborted` and is
+ * expected to return without touching state.
  */
 export async function withTransientRetry<T>(
   attempt: () => Promise<T>,
   options?: {
     readonly delaysMs?: readonly number[];
     readonly onRetry?: (attemptNumber: number) => void;
+    readonly signal?: AbortSignal;
   },
 ): Promise<T> {
   const delays = options?.delaysMs ?? TRANSIENT_RETRY_DELAYS_MS;
+  const signal = options?.signal;
   for (let index = 0; ; index += 1) {
+    if (signal?.aborted) throw new RetryAborted();
+    let result: T;
     try {
-      return await attempt();
+      result = await attempt();
     } catch (err) {
+      // ABORTED WHILE THE ATTEMPT WAS IN FLIGHT. Whatever it threw is beside
+      // the point now — nobody is listening, and the answer goes nowhere.
+      if (signal?.aborted) throw new RetryAborted();
       if (index >= delays.length || !isTransientFailure(err)) throw err;
       options?.onRetry?.(index + 1);
-      await wait(delays[index]);
+      await wait(delays[index], signal);
+      continue;
     }
+    /*
+     * AND ABORTED WHILE A SUCCESSFUL ATTEMPT WAS IN FLIGHT, which is the case
+     * that actually bites: the fetch resolved, the component is gone, and
+     * returning the value here is what invites the caller to `setState` on it.
+     * Checked OUTSIDE the `try` so this throw is never mistaken for the
+     * attempt's own failure and retried.
+     */
+    if (signal?.aborted) throw new RetryAborted();
+    return result;
   }
 }
