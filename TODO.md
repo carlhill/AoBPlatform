@@ -1815,6 +1815,30 @@ types. Named tests `who_is_signing_on_a_locked_row_supersedes_rather_than_edits`
 `supersession_carries_d6a_and_template_versions`,
 `who_is_signing_enabled_on_locked_rows_and_explains_supersession`.
 
+**Who is signing is ASKED, not assumed (Carl, 7 Sep 2026, after pushing Kim to a
+tablet: "no who is signing", "it does not ask me who is approving").** Every
+agreement is drafted with the patient as its own assignor, so
+`assignorIsPatient = true` was a default indistinguishable, on the record, from
+an answer. `assignorConfirmedAt` / `assignorConfirmedBy` are the difference,
+written only by `POST /agreements/:id/assignor`; the push refuses until then
+with `assignor_not_confirmed`, and confirming the patient on an agreement that
+already says so is a CONFIRMATION written in place -- even on a locked one,
+because it is not a particular -- with its own `agreement.assignor_confirmed`
+event. Confirmations carry forward to a superseding agreement and to "offer an
+episodic agreement instead". The row now states who is signing by name and
+carries a numbered strip: 1 Who is signing, 2 Choose a tablet, 3 Send, with the
+select and Send dead until step 1 is answered. Named tests
+`push_refused_until_who_is_signing_is_confirmed`,
+`confirming_the_patient_records_who_confirmed_and_when`,
+`assignor_confirmed_event_carries_ids_only`, `row_states_who_is_signing`,
+`row_shows_the_numbered_workflow`,
+`send_and_tablet_select_are_dead_until_who_is_signing_is_saved`,
+`saving_who_is_signing_enables_send_without_reload`. Migration
+`20260907150000_assignor_confirmed` (additive, nullable, reversible) applied by
+hand to dev; the dev ledger still carries the pre-existing failed
+`20260903020000_chase_attempts` entry, so `prisma migrate deploy` refuses to
+record it (P3009, unrelated and predating this work).
+
 **Rulings later on 4 Sep 2026, all landed:**
 - Continue is absent, not disabled, while a cross is open -- the band already
   says reception is fixing it and a press did nothing (`7fddab0`).
