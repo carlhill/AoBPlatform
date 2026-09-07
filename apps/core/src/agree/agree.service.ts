@@ -123,11 +123,14 @@ export class AgreeService {
          * (rule 13), which is the point: the page states what the document
          * says, not what a second read of the database says now.
          *
-         * D7 IS EXPLICIT (CLAUDE.md §3). `assignorIsPatient` is always on a
-         * locked payload; the fallback exists only so an older record cannot
-         * make the page silently claim somebody else is signing.
+         * D7 IS EXPLICIT AND IS NEVER GUESSED (CLAUDE.md §3). `assignorIsPatient`
+         * is always on a locked payload, so `null` is unreachable today — but
+         * it is `null` rather than `true` because the wrong failure mode for a
+         * feature whose whole job is stating who signs would be to state it
+         * confidently from an absent field. The page draws no line at all
+         * rather than a plausible falsehood.
          */
-        assignorIsPatient: (p.assignorIsPatient as boolean | undefined) ?? true,
+        assignorIsPatient: typeof p.assignorIsPatient === 'boolean' ? p.assignorIsPatient : null,
         assignorName: (p.assignorName as string | undefined) ?? null,
         assignorRelationship: (p.assignorRelationship as string | undefined) ?? null,
         /** The hash the signature will bind to — shown so the record can be checked later. */

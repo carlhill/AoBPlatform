@@ -32,6 +32,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, Clock, FileCheck2, Lock, MailX, ShieldCheck, Wrench } from 'lucide-react';
 import { Button, Checkbox, Notice, Shell, ui } from '../../../ui';
 import { strings } from '../../../strings';
+/*
+ * THE ONE RELATIONSHIP LOOKUP, not a second copy of it. The words are the
+ * string table's, keyed by the versioned content file's key (hard rule 14);
+ * two readings of one list is how two surfaces come to print different words
+ * for one legal footing.
+ */
+import { relationshipLabel } from '../../../kiosk/rules/assignor';
 import styles from '../../../verify/verify.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
@@ -53,8 +60,12 @@ type Particulars = {
   /**
    * WHO IS SIGNING — D7, explicit and never inferred (CLAUDE.md §3), read from
    * the LOCKED particulars the render was drawn from.
+   *
+   * `null` MEANS THE RECORD DOES NOT SAY, and the page then says nothing rather
+   * than guessing. Unreachable on anything locked by this build; the type
+   * carries it so a future one cannot quietly turn "unknown" into "the patient".
    */
-  assignorIsPatient: boolean;
+  assignorIsPatient: boolean | null;
   assignorName: string | null;
   assignorRelationship: string | null;
   artefactSha256: string | null;
@@ -323,24 +334,27 @@ export function AgreeView({ token }: { token: string }) {
             before this page can draw (hard rule 2, REQ-REG-06); changing who
             signs is the practice's, by correct then supersede.
           */}
-          <p className={styles.lead} data-testid="agree-who">
-            {particulars.assignorIsPatient
-              ? strings.kiosk.signature.signingByPatient(particulars.patientName)
-              : particulars.assignorRelationship
-                ? strings.kiosk.signature.signingByOther(
-                    particulars.assignorName ?? '',
-                    particulars.patientName,
-                    strings.kiosk.assignor.relationshipNames[particulars.assignorRelationship]
-                      ?? particulars.assignorRelationship,
-                  )
-                : strings.kiosk.signature.signingByOtherUnstated(
-                    particulars.assignorName ?? '',
-                    particulars.patientName,
-                  )}
-          </p>
-          <p className={ui.hint} data-testid="agree-who-wrong">
-            {strings.agree.whoNotRight}
-          </p>
+          {particulars.assignorIsPatient !== null && (
+            <>
+              <p className={styles.lead} data-testid="agree-who">
+                {particulars.assignorIsPatient
+                  ? strings.kiosk.signature.signingByPatient(particulars.patientName)
+                  : particulars.assignorRelationship
+                    ? strings.kiosk.signature.signingByOther(
+                        particulars.assignorName ?? '',
+                        particulars.patientName,
+                        relationshipLabel(particulars.assignorRelationship),
+                      )
+                    : strings.kiosk.signature.signingByOtherUnstated(
+                        particulars.assignorName ?? '',
+                        particulars.patientName,
+                      )}
+              </p>
+              <p className={ui.hint} data-testid="agree-who-wrong">
+                {strings.agree.whoNotRight}
+              </p>
+            </>
+          )}
 
           {/*
             THE OPERATIVE WORDS, FROM THE SERVER. Not written in this file and
