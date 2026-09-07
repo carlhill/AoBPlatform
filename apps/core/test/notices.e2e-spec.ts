@@ -5,6 +5,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { SandboxGateway } from '../src/messaging/gateway';
+import { createServicingProvider, deleteSeededAnchors } from './anchor';
 
 describe('M5 enduring lifecycle + M6 reg 89AA notices (e2e, real Postgres)', () => {
   let app: INestApplication;
@@ -32,7 +33,7 @@ describe('M5 enduring lifecycle + M6 reg 89AA notices (e2e, real Postgres)', () 
    */
   async function makeEnduring(pathway: string, notificationMethod = 'email'): Promise<string> {
     const anchor =
-      pathway === 'accho_ams' ? { organisationId: randomUUID() } : { providerId: gpId };
+      pathway === 'accho_ams' ? { organisationId: randomUUID() } : { affiliationId: gpId };
     const draft = await createAgreement({
       type: 'enduring',
       enduringPathway: pathway,
@@ -66,12 +67,10 @@ describe('M5 enduring lifecycle + M6 reg 89AA notices (e2e, real Postgres)', () 
     await prisma.withPractice(practiceId, async (tx) => {
       await tx.practice.create({ data: { id: practiceId, name: 'Enduring Test Practice' } });
       gpId = (
-        await tx.provider.create({
-          data: { practiceId, name: 'Dr GP Test', providerType: 'general_practitioner' },
-        })
+        await createServicingProvider(tx, practiceId, { name: 'Dr GP Test', providerType: 'general_practitioner' })
       ).id;
       specialistId = (
-        await tx.provider.create({ data: { practiceId, name: 'Dr Specialist Test', providerType: 'specialist' } })
+        await createServicingProvider(tx, practiceId, { name: 'Dr Specialist Test', providerType: 'specialist' })
       ).id;
       patientId = (
         await tx.patient.create({
@@ -110,6 +109,7 @@ describe('M5 enduring lifecycle + M6 reg 89AA notices (e2e, real Postgres)', () 
       await tx.assignor.deleteMany({});
       await tx.patient.deleteMany({});
       await tx.provider.deleteMany({});
+      await deleteSeededAnchors(tx);
       await tx.practice.deleteMany({});
     });
     await prisma.vaultOutbox.deleteMany({});
@@ -121,7 +121,7 @@ describe('M5 enduring lifecycle + M6 reg 89AA notices (e2e, real Postgres)', () 
       const res = await createAgreement({
         type: 'enduring',
         enduringPathway: 'mymedicare',
-        providerId: specialistId,
+        affiliationId: specialistId,
         patientId,
         assignorId,
         assignorIsPatient: true,
@@ -184,7 +184,7 @@ describe('M5 enduring lifecycle + M6 reg 89AA notices (e2e, real Postgres)', () 
       const agreementId = await makeEnduring('mymedicare');
       const before = await request(app.getHttpServer())
         .get('/enduring/coverage')
-        .query({ patientId, providerId: gpId })
+        .query({ patientId, affiliationId: gpId })
         .set('x-practice-id', practiceId)
         .expect(200);
       expect(before.body.covered).toBe(true);
@@ -197,7 +197,7 @@ describe('M5 enduring lifecycle + M6 reg 89AA notices (e2e, real Postgres)', () 
 
       const after = await request(app.getHttpServer())
         .get('/enduring/coverage')
-        .query({ patientId, providerId: gpId })
+        .query({ patientId, affiliationId: gpId })
         .set('x-practice-id', practiceId)
         .expect(200);
       expect(after.body.agreementIds).not.toContain(agreementId);
@@ -218,7 +218,7 @@ describe('M5 enduring lifecycle + M6 reg 89AA notices (e2e, real Postgres)', () 
       const draft = await createAgreement({
         type: 'enduring',
         enduringPathway: 'mymedicare',
-        providerId: gpId,
+        affiliationId: gpId,
         patientId: childId,
         assignorId,
         assignorIsPatient: false, // covered by someone else's agreement — this is what ceases
@@ -265,7 +265,7 @@ describe('M5 enduring lifecycle + M6 reg 89AA notices (e2e, real Postgres)', () 
     it('episodic claims carry no notice obligation at all', async () => {
       const episodic = await createAgreement({
         type: 'episodic_post',
-        providerId: gpId,
+        affiliationId: gpId,
         patientId,
         assignorId,
         assignorIsPatient: true,

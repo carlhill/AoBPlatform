@@ -8,6 +8,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { RendererRegistry } from '../src/render/renderer-registry';
 import { DeterministicPdfRenderer } from '../src/render/pdf-renderer';
 import { PortalService } from '../src/portal/portal.service';
+import { createServicingProvider, deleteSeededAnchors } from './anchor';
 
 /**
  * THE PATIENT'S OWN PAGE (C8 — REQ-PORT-01..08, FR-8.1/8.2, FR-1.14,
@@ -110,9 +111,7 @@ describe('M8 patient portal (e2e, real Postgres)', () => {
       });
       patientA = patient.id;
 
-      const provider = await tx.provider.create({
-        data: { practiceId: practiceA, name: 'Dr Example Provider', providerType: 'general_practitioner' },
-      });
+      const provider = await createServicingProvider(tx, practiceA, { name: 'Dr Example Provider', providerType: 'general_practitioner' });
       providerA = provider.id;
 
       const selfAssignor = await tx.assignor.create({
@@ -154,7 +153,7 @@ describe('M8 patient portal (e2e, real Postgres)', () => {
           practiceId: practiceA,
           type: 'episodic_post',
           anchorKind: 'provider',
-          providerId: provider.id,
+          affiliationId: provider.id,
           patientId: patient.id,
           assignorId: carer.id,
           assignorIsPatient: false,
@@ -204,7 +203,7 @@ describe('M8 patient portal (e2e, real Postgres)', () => {
           practiceId: practiceA,
           type: 'episodic_post',
           anchorKind: 'provider',
-          providerId: provider.id,
+          affiliationId: provider.id,
           patientId: patient.id,
           assignorId: carer.id,
           assignorIsPatient: false,
@@ -224,7 +223,7 @@ describe('M8 patient portal (e2e, real Postgres)', () => {
           practiceId: practiceA,
           type: 'enduring',
           anchorKind: 'provider',
-          providerId: provider.id,
+          affiliationId: provider.id,
           patientId: patient.id,
           assignorId: selfAssignor.id,
           assignorIsPatient: true,
@@ -328,9 +327,7 @@ describe('M8 patient portal (e2e, real Postgres)', () => {
         },
       });
       patientB = patient.id;
-      const provider = await tx.provider.create({
-        data: { practiceId: practiceB, name: 'Dr Other', providerType: 'general_practitioner' },
-      });
+      const provider = await createServicingProvider(tx, practiceB, { name: 'Dr Other', providerType: 'general_practitioner' });
       const assignor = await tx.assignor.create({
         data: { practiceId: practiceB, name: 'Robin Otherperson', authorityBasis: 'self' },
       });
@@ -339,7 +336,7 @@ describe('M8 patient portal (e2e, real Postgres)', () => {
           practiceId: practiceB,
           type: 'episodic_post',
           anchorKind: 'provider',
-          providerId: provider.id,
+          affiliationId: provider.id,
           patientId: patient.id,
           assignorId: assignor.id,
           assignorIsPatient: true,
@@ -367,7 +364,8 @@ describe('M8 patient portal (e2e, real Postgres)', () => {
         await tx.provider.deleteMany({});
         await tx.patient.deleteMany({});
         await tx.practiceLocation.deleteMany({});
-        await tx.practice.deleteMany({});
+        await deleteSeededAnchors(tx);
+      await tx.practice.deleteMany({});
       });
     }
     // Portal accounts are not practice-scoped; signature and verification

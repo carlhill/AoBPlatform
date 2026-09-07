@@ -7,6 +7,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { RULES_CLIENT } from '../src/rules-client/rules-client.module';
 import { MESSAGING_GATEWAY, type MessagingGateway } from '../src/messaging/gateway';
+import { createServicingProvider, deleteSeededAnchors } from './anchor';
 
 /**
  * SOMEBODY OTHER THAN THE PATIENT IS SIGNING — `POST /agreements/:id/assignor`.
@@ -85,7 +86,7 @@ describe('re-pointing a draft agreement at another assignor (e2e, real Postgres)
       .set('x-practice-id', practiceId)
       .send({
         type: 'episodic_pre',
-        providerId,
+        affiliationId: providerId,
         patientId,
         assignorId: patientAssignorId,
         assignorIsPatient: true,
@@ -109,9 +110,7 @@ describe('re-pointing a draft agreement at another assignor (e2e, real Postgres)
     await prisma.withPractice(practiceId, async (tx) => {
       await tx.practice.create({ data: { id: practiceId, name: 'Assignor Change Test Practice' } });
       providerId = (
-        await tx.provider.create({
-          data: { practiceId, name: 'Dr Example Provider', providerType: 'general_practitioner' },
-        })
+        await createServicingProvider(tx, practiceId, { name: 'Dr Example Provider', providerType: 'general_practitioner' })
       ).id;
       patientId = (
         await tx.patient.create({
@@ -158,7 +157,8 @@ describe('re-pointing a draft agreement at another assignor (e2e, real Postgres)
         await tx.staffMember.deleteMany({});
         await tx.patient.deleteMany({});
         await tx.provider.deleteMany({});
-        await tx.practice.deleteMany({});
+        await deleteSeededAnchors(tx);
+      await tx.practice.deleteMany({});
       });
     }
     await prisma.vaultOutbox.deleteMany({});

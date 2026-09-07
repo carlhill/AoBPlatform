@@ -9,6 +9,7 @@ import { OutboundService } from '../src/outbound/outbound.service';
 import { RULES_CLIENT } from '../src/rules-client/rules-client.module';
 import { MESSAGING_GATEWAY, type MessagingGateway } from '../src/messaging/gateway';
 import { genericAgreementTemplate } from '@aobplatform/domain';
+import { createServicingProvider, deleteSeededAnchors } from './anchor';
 
 /** From the shipped template, never retyped — the words are versioned content. */
 const EPISODIC_AFFIRMATIONS = genericAgreementTemplate('episodic').statements.map((s) => s.key);
@@ -39,6 +40,7 @@ describe('approving an agreement from a link (e2e, real Postgres)', () => {
   let outbound: OutboundService;
   const practiceId = randomUUID();
   let providerId: string;
+  let affiliationId: string;
   let patientId: string;
   let assignorId: string;
   let agreementId: string;
@@ -60,11 +62,15 @@ describe('approving an agreement from a link (e2e, real Postgres)', () => {
 
     await prisma.withPractice(practiceId, async (tx) => {
       await tx.practice.create({ data: { id: practiceId, name: 'Agree Link Test Practice' } });
-      providerId = (
-        await tx.provider.create({
-          data: { practiceId, name: 'Dr Example Provider', providerType: 'general_practitioner', pmsLinkageKey: 'mock-prov-001' },
-        })
-      ).id;
+      const anchor = await createServicingProvider(tx, practiceId, {
+        name: 'Dr Example Provider',
+        providerType: 'general_practitioner',
+        pmsLinkageKey: 'mock-prov-001',
+      });
+      // The agreement is anchored on the practitioner at a location; the
+      // service record still mirrors the PMS provider feed, which has not moved.
+      affiliationId = anchor.affiliationId;
+      providerId = anchor.providerId;
       // Linked to the mock adapter's fixture patient, because verification
       // compares the stated values against the LIVE PMS record (ADR A-08).
       patientId = (
@@ -89,7 +95,7 @@ describe('approving an agreement from a link (e2e, real Postgres)', () => {
     const draft = await request(app.getHttpServer())
       .post('/agreements')
       .set('x-practice-id', practiceId)
-      .send({ type: 'episodic_post', providerId, patientId, assignorId, assignorIsPatient: true })
+      .send({ type: 'episodic_post', affiliationId, patientId, assignorId, assignorIsPatient: true })
       .expect(201);
     agreementId = draft.body.id;
     await prisma.withPractice(practiceId, (tx) =>
@@ -127,6 +133,7 @@ describe('approving an agreement from a link (e2e, real Postgres)', () => {
       await tx.assignor.deleteMany({});
       await tx.patient.deleteMany({});
       await tx.provider.deleteMany({});
+      await deleteSeededAnchors(tx);
       await tx.practice.deleteMany({});
     });
     await prisma.vaultOutbox.deleteMany({});

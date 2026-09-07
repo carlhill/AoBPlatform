@@ -8,6 +8,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { DevicesService } from '../src/devices/devices.service';
 import { RULES_CLIENT } from '../src/rules-client/rules-client.module';
+import { createServicingProvider, deleteSeededAnchors } from './anchor';
 
 /**
  * ENDURING AT THE KIOSK — everything up to the human-authored boundary, and
@@ -97,7 +98,7 @@ describe('enduring at the kiosk (e2e, real Postgres)', () => {
   const http = () => request(app.getHttpServer());
 
   async function enduringDraft(
-    opts: { providerId?: string; anchorKind?: string; organisationId?: string | null } = {},
+    opts: { affiliationId?: string; anchorKind?: string; organisationId?: string | null } = {},
   ): Promise<string> {
     return prisma.withPractice(practice, async (tx) => {
       const agreement = await tx.agreement.create({
@@ -105,7 +106,7 @@ describe('enduring at the kiosk (e2e, real Postgres)', () => {
           practiceId: practice,
           type: 'enduring',
           anchorKind: opts.anchorKind ?? 'provider',
-          providerId: opts.anchorKind === 'organisation' ? null : (opts.providerId ?? gp),
+          affiliationId: opts.anchorKind === 'organisation' ? null : (opts.affiliationId ?? gp),
           patientId: patient,
           assignorId: assignor,
           assignorIsPatient: true,
@@ -152,19 +153,10 @@ describe('enduring at the kiosk (e2e, real Postgres)', () => {
         },
       });
       gp = (
-        await tx.provider.create({
-          data: {
-            practiceId: practice,
-            name: 'Dr Example Provider',
-            providerType: 'general_practitioner',
-            placeOfPracticeAddress: '1 Example Street, Sampletown NSW 2000',
-          },
-        })
+        await createServicingProvider(tx, practice, { name: 'Dr Example Provider', providerType: 'general_practitioner', address: '1 Example Street, Sampletown NSW 2000' })
       ).id;
       specialist = (
-        await tx.provider.create({
-          data: { practiceId: practice, name: 'Dr Other Specialist', providerType: 'specialist' },
-        })
+        await createServicingProvider(tx, practice, { name: 'Dr Other Specialist', providerType: 'specialist' })
       ).id;
       patient = (
         await tx.patient.create({
@@ -214,6 +206,7 @@ describe('enduring at the kiosk (e2e, real Postgres)', () => {
       await tx.assignor.deleteMany({});
       await tx.patient.deleteMany({});
       await tx.provider.deleteMany({});
+      await deleteSeededAnchors(tx);
       await tx.practice.deleteMany({ where: { id: practice } });
     });
     await app.close();
@@ -239,7 +232,7 @@ describe('enduring at the kiosk (e2e, real Postgres)', () => {
 
     // GP-ONLY, PERMANENTLY (REQ-END-01a). A specialist has no enduring
     // pathway, and the refusal says what to offer instead.
-    const bySpecialist = await enduringDraft({ providerId: specialist });
+    const bySpecialist = await enduringDraft({ affiliationId: specialist });
     const refusedSpecialist = await push(bySpecialist).expect(409);
     expect(refusedSpecialist.body.reason).toBe('enduring_not_gp');
     expect(refusedSpecialist.body.message).toMatch(/general practitioner/i);
@@ -383,7 +376,7 @@ describe('enduring at the kiosk (e2e, real Postgres)', () => {
     );
     // HARD-01: the same provider seeing the same patient. A different provider
     // would be a different agreement needing its own consent.
-    expect(replacement?.providerId).toBe(gp);
+    expect(replacement?.affiliationId).toBe(gp);
     expect(replacement?.patientId).toBe(patient);
     expect(replacement?.type).toBe('episodic_pre');
     // D6a CARRIED FROM THE PRACTICE'S OWN DEFAULT, never guessed.

@@ -7,6 +7,7 @@ import { VISIT_POLICY_VERSION } from '@aobplatform/domain';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { RULES_CLIENT } from '../src/rules-client/rules-client.module';
+import { createServicingProvider, deleteSeededAnchors } from './anchor';
 
 const passingRules = {
   validate: async (): Promise<ValidationResponse> => ({
@@ -65,9 +66,18 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
   const otherPracticeId = randomUUID();
   /** A practice that has NOT chosen a default D6a. See the B10 test below. */
   const noDefaultPracticeId = randomUUID();
-  let gpProviderId: string;
+  /**
+   * THE ANCHORS. From 7 September 2026 an arrival names the practitioner at a
+   * LOCATION, so these are affiliation ids — and `gpAtSecondSite` is the same
+   * PERSON at the practice's other location, which is what
+   * `enduring_coverage_is_per_practitioner_across_locations` turns on.
+   */
+  let gpAffiliationId: string;
+  let gpPractitionerId: string;
+  let gpSecondSiteAffiliationId: string;
+  let alliedAffiliationId: string;
   let alliedProviderId: string;
-  let noDefaultProviderId: string;
+  let noDefaultAffiliationId: string;
 
   const arrival = (over: Record<string, unknown> = {}) => ({
     pmsPatientRecordNumber: 'ARR-0001',
@@ -77,7 +87,7 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
     address: '4 Example Street, Sampletown NSW 2000',
     mobile: '+61400000901',
     email: 'robin.arrival@example.invalid',
-    providerId: alliedProviderId,
+    affiliationId: alliedAffiliationId,
     arrivedAt: nowIso(),
     source: 'dev',
     idempotencyKey: `arr-${randomUUID()}`,
@@ -108,11 +118,29 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
       await tx.practice.create({
         data: { id: practiceId, name: 'Arrivals Test Practice', defaultServiceDescription: D6A },
       });
-      gpProviderId = (
-        await tx.provider.create({
-          data: { practiceId, name: 'Dr Sample GP', providerType: 'general_practitioner', providerNumber: '2222222A' },
+      const gp = await createServicingProvider(tx, practiceId, {
+        name: 'Dr Sample GP',
+        providerType: 'general_practitioner',
+        providerNumber: '2222222A',
+        locationCode: 'Main',
+      });
+      gpAffiliationId = gp.affiliationId;
+      gpPractitionerId = gp.practitionerId;
+      /*
+       * THE SAME DOCTOR AT THE PRACTICE'S OTHER SITE. One practitioner, two
+       * affiliations, two provider numbers — which is how the numbers are
+       * actually issued (FR-1.8) and the shape hard rule 6 has to survive.
+       */
+      gpSecondSiteAffiliationId = (
+        await createServicingProvider(tx, practiceId, {
+          name: 'Dr Sample GP',
+          providerType: 'general_practitioner',
+          providerNumber: '2222222B',
+          practitionerId: gp.practitionerId,
+          suburb: 'Otherville',
+          locationCode: 'After Hours',
         })
-      ).id;
+      ).affiliationId;
       /*
        * A NON-GP, and it is the workhorse of this suite rather than a corner
        * case. Enduring is GP-only (hard rule 6, REQ-END-01a), so an allied
@@ -120,11 +148,14 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
        * pre-agreement the rest of the platform can currently lock and push —
        * the s 65C rule set has no enduring path yet (CLAUDE.md §7).
        */
-      alliedProviderId = (
-        await tx.provider.create({
-          data: { practiceId, name: 'Sam Sample', providerType: 'allied_health' },
-        })
-      ).id;
+      const allied = await createServicingProvider(tx, practiceId, {
+        name: 'Sam Sample',
+        providerType: 'allied_health',
+      });
+      alliedAffiliationId = allied.affiliationId;
+      // The legacy `providers` row for the same person, which the deprecated
+      // `providerId` field on the contract is still resolved through.
+      alliedProviderId = allied.providerId;
     });
     await prisma.withPractice(otherPracticeId, async (tx) => {
       await tx.practice.create({ data: { id: otherPracticeId, name: 'Another Practice' } });
@@ -135,11 +166,9 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
     // suite quietly cleared out from under the other tests.
     await prisma.withPractice(noDefaultPracticeId, async (tx) => {
       await tx.practice.create({ data: { id: noDefaultPracticeId, name: 'No Default Yet Medical' } });
-      noDefaultProviderId = (
-        await tx.provider.create({
-          data: { practiceId: noDefaultPracticeId, name: 'Kim Sample', providerType: 'allied_health' },
-        })
-      ).id;
+      noDefaultAffiliationId = (
+        await createServicingProvider(tx, noDefaultPracticeId, { name: 'Kim Sample', providerType: 'allied_health' })
+      ).affiliationId;
     });
   });
 
@@ -162,7 +191,8 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
         await tx.assignor.deleteMany({});
         await tx.patient.deleteMany({});
         await tx.provider.deleteMany({});
-        await tx.practice.deleteMany({});
+        await deleteSeededAnchors(tx);
+      await tx.practice.deleteMany({});
       });
     }
     await prisma.vaultOutbox.deleteMany({});
@@ -302,7 +332,7 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
     // Same practice, same day. A GP arrival and a non-GP arrival get different
     // answers, and neither sender said anything about it (hard rule 6).
     const gp = await post(
-      arrival({ pmsPatientRecordNumber: 'ARR-GP', providerId: gpProviderId }),
+      arrival({ pmsPatientRecordNumber: 'ARR-GP', affiliationId: gpAffiliationId }),
     ).expect(201);
     expect(gp.body.decision.type).toBe('enduring');
     expect(gp.body.decision.reason).toBe('gp_with_no_active_enduring');
@@ -347,7 +377,7 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
           practiceId,
           type: 'enduring',
           anchorKind: 'provider',
-          providerId: gpProviderId,
+          affiliationId: gpAffiliationId,
           patientId: patient.id,
           assignorId: assignor.id,
           assignorIsPatient: true,
@@ -374,12 +404,42 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
         familyName: 'Covered',
         givenNames: 'Sam',
         dateOfBirth: '1959-02-02',
-        providerId: gpProviderId,
+        affiliationId: gpAffiliationId,
       }),
     ).expect(201);
 
     expect(res.body.decision).toEqual({ type: 'none', reason: 'already_covered_by_an_enduring_agreement' });
     expect(res.body.agreementId).toBeNull();
+
+    /*
+     * THE SAME DOCTOR, THE PRACTICE'S OTHER SITE — STILL COVERED (hard rule 6,
+     * REQ-END-01; `enduring_coverage_is_per_practitioner_across_locations`).
+     *
+     * The two sites are two affiliations with two provider numbers, because
+     * that is how the numbers are issued (FR-1.8). Matching coverage on the
+     * affiliation would make one doctor look like two and ask this patient to
+     * sign a second ongoing agreement for services the first already assigns.
+     * Coverage is asked about the PERSON.
+     */
+    const secondSite = await post(
+      arrival({
+        pmsPatientRecordNumber: record,
+        familyName: 'Covered',
+        givenNames: 'Sam',
+        dateOfBirth: '1959-02-02',
+        affiliationId: gpSecondSiteAffiliationId,
+      }),
+    ).expect(201);
+    expect(secondSite.body.decision.type).toBe('none');
+    expect(secondSite.body.agreementId).toBeNull();
+    await prisma.withPractice(practiceId, async (tx) => {
+      // And the arrival records WHICH site they actually walked into, even
+      // though nothing was drafted — the visit happened somewhere.
+      const row = await tx.arrival.findFirst({ where: { id: secondSite.body.arrivalId } });
+      expect(row?.affiliationId).toBe(gpSecondSiteAffiliationId);
+      const affiliation = await tx.affiliation.findFirst({ where: { id: row!.affiliationId! } });
+      expect(affiliation?.practitionerId).toBe(gpPractitionerId);
+    });
     await prisma.withPractice(practiceId, async (tx) => {
       // The enduring agreement, and nothing new beside it.
       expect(await tx.agreement.count({ where: { patientId } })).toBe(1);
@@ -393,10 +453,35 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
         familyName: 'Covered',
         givenNames: 'Sam',
         dateOfBirth: '1959-02-02',
-        providerId: alliedProviderId,
+        affiliationId: alliedAffiliationId,
       }),
     ).expect(201);
     expect(elsewhere.body.decision.type).toBe('episodic_pre');
+  });
+
+  /**
+   * THE DEPRECATED DOOR, FOR ONE MORE RELEASE (Carl, 7 Sep 2026). A connector
+   * that has not been updated still names a `providers` row; the server
+   * resolves it to the practitioner at a location and the agreement is
+   * anchored there, so nothing a practice already runs stops working on the
+   * day this landed (hard rule 8 — the platform never blocks care).
+   */
+  it('still accepts a deprecated providerId and resolves it to the affiliation', async () => {
+    const res = await post(
+      arrival({ pmsPatientRecordNumber: 'ARR-LEGACY', providerId: alliedProviderId, affiliationId: undefined }),
+    ).expect(201);
+    expect(res.body.decision.type).toBe('episodic_pre');
+
+    await prisma.withPractice(practiceId, async (tx) => {
+      const row = await tx.arrival.findFirst({ where: { id: res.body.arrivalId } });
+      // BOTH, while both exist: the anchor it resolved to, and the row it came
+      // in by — so the record says which door was used.
+      expect(row?.affiliationId).toBe(alliedAffiliationId);
+      expect(row?.providerId).toBe(alliedProviderId);
+
+      const agreement = await tx.agreement.findFirst({ where: { id: res.body.agreementId } });
+      expect(agreement?.affiliationId).toBe(alliedAffiliationId);
+    });
   });
 
   /** Hard rule 1 / REQ-VER-02 — refused out loud, at the door. */
@@ -413,9 +498,9 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
 
   it('refuses an arrival that names no provider — enduring is per practitioner (REQ-END-01)', async () => {
     const body = arrival({ pmsPatientRecordNumber: 'ARR-NOPROV' });
-    delete (body as Record<string, unknown>).providerId;
+    delete (body as Record<string, unknown>).affiliationId;
     const res = await post(body).expect(400);
-    expect(res.body.message).toMatch(/must name the provider/i);
+    expect(res.body.message).toMatch(/must name the practitioner/i);
   });
 
   /** RLS, not a filter: another practice's arrival simply is not there. */
@@ -461,7 +546,7 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
       request(app.getHttpServer())
         .post('/arrivals')
         .set('x-practice-id', noDefaultPracticeId)
-        .send(arrival({ pmsPatientRecordNumber: record, providerId: noDefaultProviderId }));
+        .send(arrival({ pmsPatientRecordNumber: record, affiliationId: noDefaultAffiliationId }));
     const pushableHere = () =>
       request(app.getHttpServer())
         .get('/tablet-sessions/pushable')
@@ -542,11 +627,10 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
   describe('who may be the provider on an agreement', () => {
     /*
      * A PRACTICE NURSE, WIRED UP THE WAY THE PLATFORM CAN ACTUALLY SEE IT.
-     * The arrival names a `providers` row; the billing role lives on the
-     * `affiliations` row; the two tables have no foreign key between them, so
-     * they are joined on the AHPRA number — see
-     * `apps/core/src/affiliations/provider-billing-role.ts` for the full
-     * account and the other two keys it tries first.
+     * The arrival names the practitioner at a location outright, and the
+     * billing role is read off that same row — no matching, no keys, nothing
+     * to guess. That is what retiring `providers` as the anchor bought
+     * (Carl, 7 Sep 2026).
      */
     /*
      * UNIQUE PER RUN. `practitioners` is a PLATFORM table, not a practice one —
@@ -554,58 +638,32 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
      * suite's practice-scoped teardown, and a fixed number makes the second
      * run of the suite fail on the unique index. Cleaned up below as well.
      */
-    const NURSE_AHPRA = `NMW${String(Math.floor(Math.random() * 1e10)).padStart(10, '0')}`;
-    let nurseProviderId: string;
+    let nurseAffiliationId: string;
     let nursePractitionerId: string;
-    let nurseLocationId: string;
 
     afterAll(async () => {
+      /*
+       * `practitioners` IS A PLATFORM TABLE, not a practice one — one identity
+       * across every practice somebody works at — so it survives this suite's
+       * practice-scoped teardown and has to be cleaned up by hand.
+       */
       await prisma.withPractice(practiceId, async (tx) => {
         await tx.affiliation.deleteMany({ where: { practitionerId: nursePractitionerId } });
-        await tx.practiceLocation.deleteMany({ where: { id: nurseLocationId } });
       });
-      await prisma.practitioner.deleteMany({ where: { ahpraNumber: NURSE_AHPRA } });
+      await prisma.practitioner.deleteMany({ where: { id: nursePractitionerId } });
     });
 
     beforeAll(async () => {
       await prisma.withPractice(practiceId, async (tx) => {
-        nurseProviderId = (
-          await tx.provider.create({
-            data: {
-              practiceId,
-              name: 'Nurse Example',
-              // Nothing in the provider TYPE says "practice nurse" — which is
-              // exactly why the role had to be recorded rather than inferred.
-              providerType: 'other',
-              ahpraNumber: NURSE_AHPRA,
-            },
-          })
-        ).id;
-
-        const location = await tx.practiceLocation.create({
-          data: { practiceId, address: '4 Example Street, Sampletown NSW 2000', code: 'MAIN' },
+        const nurse = await createServicingProvider(tx, practiceId, {
+          name: 'Nurse Example',
+          // Nothing in the provider TYPE says "practice nurse" — which is
+          // exactly why the role had to be recorded rather than inferred.
+          providerType: 'other',
+          billingRole: 'works_under_provider',
         });
-        nurseLocationId = location.id;
-        const practitioner = await prisma.practitioner.create({
-          data: {
-            ahpraNumber: NURSE_AHPRA,
-            familyName: 'Example',
-            givenNames: 'Nurse',
-            providerType: 'other',
-            invitedByPracticeId: practiceId,
-          },
-        });
-        nursePractitionerId = practitioner.id;
-        await tx.affiliation.create({
-          data: {
-            practiceId,
-            practitionerId: practitioner.id,
-            locationId: location.id,
-            status: 'active',
-            startedAt: new Date(),
-            billingRole: 'works_under_provider',
-          },
-        });
+        nurseAffiliationId = nurse.affiliationId;
+        nursePractitionerId = nurse.practitionerId;
       });
     });
 
@@ -617,7 +675,7 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
      */
     it('arrival_naming_a_non_servicing_provider_is_refused_with_the_reason', async () => {
       const refused = await post(
-        arrival({ pmsPatientRecordNumber: 'ARR-NURSE', providerId: nurseProviderId }),
+        arrival({ pmsPatientRecordNumber: 'ARR-NURSE', affiliationId: nurseAffiliationId }),
       ).expect(422);
 
       expect(refused.body.reason).toBe('provider_not_servicing');
@@ -672,9 +730,14 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
         .get('/arrivals/servicing-providers')
         .set('x-practice-id', practiceId)
         .expect(200);
-      const ids = choices.body.map((c: { providerId: string }) => c.providerId);
-      expect(ids).toContain(alliedProviderId);
-      expect(ids).not.toContain(nurseProviderId);
+      const ids = choices.body.map((c: { affiliationId: string }) => c.affiliationId);
+      expect(ids).toContain(alliedAffiliationId);
+      expect(ids).not.toContain(nurseAffiliationId);
+      // Two sites, one doctor: both are offered, and each says which site, so
+      // reception is never picking between two identical lines.
+      const gpLines = choices.body.filter((c: { name: string }) => c.name === 'Dr Sample GP');
+      expect(gpLines).toHaveLength(2);
+      expect(new Set(gpLines.map((c: { locationLabel: string }) => c.locationLabel)).size).toBe(2);
     });
 
     /**
@@ -685,7 +748,7 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
     it('refused_arrival_can_be_resubmitted_with_a_servicing_provider', async () => {
       const key = `arr-resubmit-${randomUUID()}`;
       const refused = await post(
-        arrival({ pmsPatientRecordNumber: 'ARR-REDO', providerId: nurseProviderId, idempotencyKey: key }),
+        arrival({ pmsPatientRecordNumber: 'ARR-REDO', affiliationId: nurseAffiliationId, idempotencyKey: key }),
       ).expect(422);
       expect(refused.body.reason).toBe('provider_not_servicing');
 
@@ -697,7 +760,7 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
       const fixed = await request(app.getHttpServer())
         .post(`/arrivals/${arrivalId}/provider`)
         .set('x-practice-id', practiceId)
-        .send({ providerId: alliedProviderId })
+        .send({ affiliationId: alliedAffiliationId })
         .expect(201);
 
       expect(fixed.body.arrivalId).toBe(arrivalId);
@@ -712,7 +775,7 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
         expect(row?.refusedReason).toBeNull();
         // THE HELD MESSAGE IS GONE. From here the patient row IS the record.
         expect(row?.refusedPayload).toBeNull();
-        expect(row?.providerId).toBe(alliedProviderId);
+        expect(row?.affiliationId).toBe(alliedAffiliationId);
 
         // The details that landed on the mirror are the PMS's own, replayed.
         const patient = await tx.patient.findFirst({ where: { patientRecordNumber: 'ARR-REDO' } });
@@ -751,7 +814,7 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
         .set('x-practice-id', practiceId)
         .send({
           type: 'episodic_pre',
-          providerId: nurseProviderId,
+          affiliationId: nurseAffiliationId,
           patientId: setUp.body.patientId,
           assignorId: await prisma.withPractice(practiceId, async (tx) => {
             const assignor = await tx.assignor.findFirst({ where: { authorityBasis: 'self' } });

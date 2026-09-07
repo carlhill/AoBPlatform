@@ -10,6 +10,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { RULES_CLIENT } from '../src/rules-client/rules-client.module';
 import { extractText } from '../src/artefacts/extract-text';
 import { RendererRegistry, renderInputOf } from '../src/render/renderer-registry';
+import { createServicingProvider, deleteSeededAnchors } from './anchor';
 
 /**
  * THE FULL AGREEMENT — letterhead, the whole s 65C data set, the words the
@@ -128,14 +129,7 @@ describe('the full agreement: letterhead, words and per-practice wording (e2e, r
           pms: 'other',
         },
       });
-      const provider = await tx.provider.create({
-        data: {
-          practiceId,
-          name: 'Dr Sam Example',
-          providerType: 'general_practitioner',
-          placeOfPracticeAddress: '1 Test Street, Testville NSW 2000',
-        },
-      });
+      const provider = await createServicingProvider(tx, practiceId, { name: 'Dr Sam Example', providerType: 'general_practitioner', address: '1 Test Street, Testville NSW 2000' });
       providerId = provider.id;
       const patient = await tx.patient.create({
         data: { practiceId, givenNames: 'Alex', familyName: 'Testpatient', dateOfBirth: new Date('1990-02-03') },
@@ -159,6 +153,7 @@ describe('the full agreement: letterhead, words and per-practice wording (e2e, r
       await tx.assignor.deleteMany({});
       await tx.patient.deleteMany({});
       await tx.provider.deleteMany({});
+      await deleteSeededAnchors(tx);
       await tx.vaultOutbox.deleteMany({});
     });
     await prisma.practice.deleteMany({ where: { id: practiceId } });
@@ -173,7 +168,7 @@ describe('the full agreement: letterhead, words and per-practice wording (e2e, r
     const created = await request(app.getHttpServer())
       .post('/agreements')
       .set('x-practice-id', practiceId)
-      .send({ type: 'episodic_pre', providerId, patientId, assignorId, assignorIsPatient: true })
+      .send({ type: 'episodic_pre', affiliationId: providerId, patientId, assignorId, assignorIsPatient: true })
       .expect(201);
     const agreementId = created.body.id as string;
     const locked = await request(app.getHttpServer())

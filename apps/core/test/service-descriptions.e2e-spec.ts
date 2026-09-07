@@ -8,6 +8,7 @@ import { DEV_MAPPING } from '../../rules/src/rules/rule-set-2026-08.draft';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { RULES_CLIENT } from '../src/rules-client/rules-client.module';
+import { createServicingProvider, deleteSeededAnchors } from './anchor';
 
 /**
  * D6a ON A STAFF SURFACE — `GET /service-descriptions` and
@@ -72,7 +73,7 @@ describe('D6a on a staff surface (e2e, real Postgres)', () => {
     const res = await request(app.getHttpServer())
       .post('/agreements')
       .set('x-practice-id', practiceId)
-      .send({ type: 'episodic_pre', providerId, patientId, assignorId, assignorIsPatient: true })
+      .send({ type: 'episodic_pre', affiliationId: providerId, patientId, assignorId, assignorIsPatient: true })
       .expect(201);
     return res.body.id as string;
   }
@@ -96,9 +97,7 @@ describe('D6a on a staff surface (e2e, real Postgres)', () => {
     await prisma.withPractice(practiceId, async (tx) => {
       await tx.practice.create({ data: { id: practiceId, name: 'Service Description Test Practice' } });
       providerId = (
-        await tx.provider.create({
-          data: { practiceId, name: 'Dr Example Provider', providerType: 'general_practitioner' },
-        })
+        await createServicingProvider(tx, practiceId, { name: 'Dr Example Provider', providerType: 'general_practitioner' })
       ).id;
       patientId = (
         await tx.patient.create({
@@ -129,7 +128,8 @@ describe('D6a on a staff surface (e2e, real Postgres)', () => {
         await tx.assignor.deleteMany({});
         await tx.patient.deleteMany({});
         await tx.provider.deleteMany({});
-        await tx.practice.deleteMany({});
+        await deleteSeededAnchors(tx);
+      await tx.practice.deleteMany({});
       });
     }
     await prisma.vaultOutbox.deleteMany({});

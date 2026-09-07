@@ -7,6 +7,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { RULES_CLIENT } from '../src/rules-client/rules-client.module';
 import { genericAgreementTemplate } from '@aobplatform/domain';
+import { createServicingProvider, deleteSeededAnchors } from './anchor';
 
 /** From the shipped template, never retyped — the words are versioned content. */
 const EPISODIC_AFFIRMATIONS = genericAgreementTemplate('episodic').statements.map((s) => s.key);
@@ -41,14 +42,7 @@ describe('M9 PMS wiring (e2e, real Postgres + mock adapter)', () => {
     await prisma.withPractice(practiceId, async (tx) => {
       await tx.practice.create({ data: { id: practiceId, name: 'PMS Wiring Test Practice' } });
       providerId = (
-        await tx.provider.create({
-          data: {
-            practiceId,
-            name: 'Dr Example Provider',
-            providerType: 'general_practitioner',
-            pmsLinkageKey: 'mock-prov-001',
-          },
-        })
+        await createServicingProvider(tx, practiceId, { name: 'Dr Example Provider', providerType: 'general_practitioner', pmsLinkageKey: 'mock-prov-001' })
       ).id;
       patientId = (
         await tx.patient.create({
@@ -79,6 +73,7 @@ describe('M9 PMS wiring (e2e, real Postgres + mock adapter)', () => {
       await tx.assignor.deleteMany({});
       await tx.patient.deleteMany({});
       await tx.provider.deleteMany({});
+      await deleteSeededAnchors(tx);
       await tx.practice.deleteMany({});
     });
     await prisma.vaultOutbox.deleteMany({});
@@ -125,7 +120,7 @@ describe('M9 PMS wiring (e2e, real Postgres + mock adapter)', () => {
     const draft = await request(app.getHttpServer())
       .post('/agreements')
       .set('x-practice-id', practiceId)
-      .send({ type: 'episodic_pre', providerId, patientId, assignorId, assignorIsPatient: true })
+      .send({ type: 'episodic_pre', affiliationId: providerId, patientId, assignorId, assignorIsPatient: true })
       .expect(201);
     const agreementId = draft.body.id;
     await request(app.getHttpServer())

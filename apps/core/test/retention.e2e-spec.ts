@@ -7,6 +7,7 @@ import { OutboundService } from '../src/outbound/outbound.service';
 import { PractitionerEmailService } from '../src/identity/practitioner-email.service';
 import { RetentionSweepService } from '../src/retention/retention-sweep.service';
 import { MESSAGING_GATEWAY, type MessagingGateway } from '../src/messaging/gateway';
+import { createServicingProvider, deleteSeededAnchors } from './anchor';
 
 /**
  * Retention sweep — two years, soft (CONSULTATION-CAPTURE-PLAN.md Part 5,
@@ -55,7 +56,7 @@ describe('retention sweep (e2e, real Postgres)', () => {
     await prisma.withPractice(practiceId, async (tx) => {
       await tx.practice.create({ data: { id: practiceId, name: 'Retention Test Practice' } });
       const providerId = (
-        await tx.provider.create({ data: { practiceId, name: 'Dr Retention', providerType: 'general_practitioner' } })
+        await createServicingProvider(tx, practiceId, { name: 'Dr Retention', providerType: 'general_practitioner' })
       ).id;
       patientId = (
         await tx.patient.create({
@@ -79,7 +80,7 @@ describe('retention sweep (e2e, real Postgres)', () => {
             practiceId,
             type: 'episodic_pre',
             anchorKind: 'provider',
-            providerId,
+            affiliationId: providerId,
             patientId,
             assignorId,
             assignorIsPatient: true,
@@ -183,6 +184,7 @@ describe('retention sweep (e2e, real Postgres)', () => {
       await tx.patient.deleteMany({});
       await tx.provider.deleteMany({});
       // Artefact rows cannot be deleted by design (artefacts_no_delete); they stay tombstoned.
+      await deleteSeededAnchors(tx);
       await tx.practice.deleteMany({});
     });
     if (practitionerId) {

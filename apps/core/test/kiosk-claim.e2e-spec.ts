@@ -7,6 +7,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { DevicesService } from '../src/devices/devices.service';
 import { GENERIC_MISMATCH_MESSAGE } from '../src/verification/verification.service';
 import { CLAIM_ATTEMPT_LIMIT } from '../src/kiosk/claim-rate-limit';
+import { createServicingProvider, deleteSeededAnchors } from './anchor';
 
 /**
  * `POST /kiosk/claim` — the walk-up front door (Carl, 4 Sep 2026).
@@ -122,7 +123,7 @@ describe('the kiosk claim (e2e, real Postgres)', () => {
           practiceId,
           type: 'episodic_pre',
           anchorKind: 'provider',
-          providerId: provider!.id,
+          affiliationId: provider!.id,
           patientId: patient.id,
           assignorId: assignor.id,
           assignorIsPatient: true,
@@ -149,9 +150,7 @@ describe('the kiosk claim (e2e, real Postgres)', () => {
     ] as const) {
       await prisma.withPractice(practiceId, async (tx) => {
         await tx.practice.create({ data: { id: practiceId, name } });
-        await tx.provider.create({
-          data: { practiceId, name: 'Dr Example Provider', providerType: 'general_practitioner' },
-        });
+        await createServicingProvider(tx, practiceId, { name: 'Dr Example Provider', providerType: 'general_practitioner' });
       });
     }
 
@@ -183,7 +182,8 @@ describe('the kiosk claim (e2e, real Postgres)', () => {
         await tx.assignor.deleteMany({});
         await tx.patient.deleteMany({});
         await tx.provider.deleteMany({});
-        await tx.practice.deleteMany({});
+        await deleteSeededAnchors(tx);
+      await tx.practice.deleteMany({});
       });
     }
     await prisma.vaultOutbox.deleteMany({});

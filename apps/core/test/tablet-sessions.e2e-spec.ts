@@ -9,6 +9,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { DevicesService } from '../src/devices/devices.service';
 import { CaptureService } from '../src/capture/capture.service';
 import { RULES_CLIENT } from '../src/rules-client/rules-client.module';
+import { createServicingProvider, deleteSeededAnchors } from './anchor';
 
 /**
  * ONE EVENT TYPE CAN BE MADE TO FAIL, so "the row and its event commit
@@ -167,7 +168,7 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
           practiceId,
           type: opts.type ?? 'episodic_pre',
           anchorKind: 'provider',
-          providerId: isB ? providerB : providerA,
+          affiliationId: isB ? providerB : providerA,
           patientId: opts.patientId ?? (isB ? patientB : patientA),
           assignorId: opts.assignorId ?? (isB ? assignorB : assignorA),
           assignorIsPatient: opts.assignorIsPatient ?? true,
@@ -202,9 +203,7 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
     await prisma.withPractice(practiceA, async (tx) => {
       await tx.practice.create({ data: { id: practiceA, name: 'Push Test Practice A' } });
       providerA = (
-        await tx.provider.create({
-          data: { practiceId: practiceA, name: 'Dr Example Provider', providerType: 'general_practitioner' },
-        })
+        await createServicingProvider(tx, practiceA, { name: 'Dr Example Provider', providerType: 'general_practitioner' })
       ).id;
       patientA = (
         await tx.patient.create({
@@ -234,9 +233,7 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
     await prisma.withPractice(practiceB, async (tx) => {
       await tx.practice.create({ data: { id: practiceB, name: 'Push Test Practice B' } });
       providerB = (
-        await tx.provider.create({
-          data: { practiceId: practiceB, name: 'Dr Other Provider', providerType: 'general_practitioner' },
-        })
+        await createServicingProvider(tx, practiceB, { name: 'Dr Other Provider', providerType: 'general_practitioner' })
       ).id;
       patientB = (
         await tx.patient.create({
@@ -308,7 +305,8 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
         await tx.assignor.deleteMany({});
         await tx.patient.deleteMany({});
         await tx.provider.deleteMany({});
-        await tx.practice.deleteMany({});
+        await deleteSeededAnchors(tx);
+      await tx.practice.deleteMany({});
       });
     }
     await prisma.vaultOutbox.deleteMany({});
@@ -1191,7 +1189,7 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
        */
       const offered = await agreementRow(offeredId);
       expect(offered!.type).toBe('episodic_pre');
-      expect(offered!.providerId).toBe(before!.providerId);
+      expect(offered!.affiliationId).toBe(before!.affiliationId);
       expect(offered!.patientId).toBe(before!.patientId);
       expect(offered!.assignorId).toBe(before!.assignorId);
       expect(offered!.assignorIsPatient).toBe(before!.assignorIsPatient);
@@ -1899,7 +1897,7 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
       expect(replacement!.patientId).toBe(patientId);
       // The anchor is carried, never changed — a different provider would be a
       // different agreement needing fresh consent (HARD-01).
-      expect(replacement!.providerId).toBe(locked!.providerId);
+      expect(replacement!.affiliationId).toBe(locked!.affiliationId);
       expect(replacement!.assignorIsPatient).toBe(locked!.assignorIsPatient);
       // D6a comes with it, so reception is not sent back to re-choose a
       // description nobody changed.
@@ -2075,7 +2073,7 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
       // the SAME patient; a different one would need fresh consent).
       expect(after!.type).toBe(before!.type);
       expect(after!.anchorKind).toBe(before!.anchorKind);
-      expect(after!.providerId).toBe(before!.providerId);
+      expect(after!.affiliationId).toBe(before!.affiliationId);
       expect(after!.affiliationId).toBe(before!.affiliationId);
       expect(after!.organisationId).toBe(before!.organisationId);
       expect(after!.patientId).toBe(before!.patientId);

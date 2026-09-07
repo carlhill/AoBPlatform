@@ -388,7 +388,8 @@ describe('/practice/patients — arrivals that need a provider', () => {
       pmsPatientRecordNumber: 'DEV-CASEY-WALKIN',
       // Never seen before: no name, and no other detail either.
       patientName: null,
-      providerId: 'provider-nurse',
+      affiliationId: 'affiliation-nurse',
+      providerId: null,
       providerName: 'Nurse Example',
       billingRole: 'works_under_provider',
       arrivedAt: '2026-09-07T09:00:00.000Z',
@@ -399,7 +400,8 @@ describe('/practice/patients — arrivals that need a provider', () => {
       reason: 'provider_not_servicing',
       pmsPatientRecordNumber: 'DEV-JAMIE',
       patientName: 'Jamie Sampleton',
-      providerId: 'provider-nurse',
+      affiliationId: 'affiliation-nurse',
+      providerId: null,
       providerName: 'Nurse Example',
       billingRole: 'works_under_provider',
       arrivedAt: '2026-09-07T09:05:00.000Z',
@@ -407,8 +409,25 @@ describe('/practice/patients — arrivals that need a provider', () => {
     },
   ];
 
+  /**
+   * PRACTITIONERS AT LOCATIONS, which is what an agreement is anchored on
+   * (Carl, 7 Sep 2026). The same doctor appears twice because they work at two
+   * of the practice's sites and each has its own provider number -- the label
+   * is what tells reception which line is which.
+   */
   const CHOICES = [
-    { providerId: 'provider-gp', name: 'Dr Example Provider', providerType: 'general_practitioner' },
+    {
+      affiliationId: 'affiliation-gp-main',
+      name: 'Dr Example Provider',
+      providerType: 'general_practitioner',
+      locationLabel: 'Main Street',
+    },
+    {
+      affiliationId: 'affiliation-gp-after-hours',
+      name: 'Dr Example Provider',
+      providerType: 'general_practitioner',
+      locationLabel: 'After Hours',
+    },
   ];
 
   it('shows the reason on the row, naming the provider and the role', async () => {
@@ -431,8 +450,15 @@ describe('/practice/patients — arrivals that need a provider', () => {
 
     const row = await screen.findByTestId(`needs-provider-${ARRIVAL}`);
     expect(row.textContent).toContain('DEV-CASEY-WALKIN');
-    expect(row.textContent).not.toMatch(/1957|1988/);
-    expect(row.textContent).not.toMatch(/Parade|Street/);
+    // THE WHOLE DATE, NOT THE YEAR. A bare `/1957|1988/` matches any four
+    // digits that happen to look like a year -- a record number, an
+    // idempotency key, a provider number -- and flaked twice in CI on
+    // exactly that. The fixture's dates of birth are what must not appear.
+    expect(row.textContent).not.toMatch(/1957-03-14|1988-02-02/);
+    // SAME LESSON, THE ADDRESS HALF. `/Parade|Street/` matched the picker's
+    // own site label ("Main Street") the moment locations got names -- a
+    // practice's site is not the patient's address. Match the fixture's.
+    expect(row.textContent).not.toMatch(/404 Wrongway Parade/);
 
     // A patient the practice already knows shows their name instead.
     const known = await screen.findByTestId(`needs-provider-${KNOWN_ARRIVAL}`);
@@ -446,8 +472,13 @@ describe('/practice/patients — arrivals that need a provider', () => {
 
     const pick = (await screen.findByTestId(`needs-provider-pick-${ARRIVAL}`)) as HTMLSelectElement;
     const values = [...pick.options].map((o) => o.value).filter(Boolean);
-    expect(values).toEqual(['provider-gp']);
-    expect(values).not.toContain('provider-nurse');
+    expect(values).toEqual(['affiliation-gp-main', 'affiliation-gp-after-hours']);
+    expect(values).not.toContain('affiliation-nurse');
+    // ONE NAME, TWO SITES, TWO DISTINGUISHABLE LINES. A picker that showed
+    // "Dr Example Provider" twice would make reception guess which desk.
+    const labels = [...pick.options].map((o) => o.textContent).filter(Boolean);
+    expect(labels).toContain('Dr Example Provider — Main Street');
+    expect(labels).toContain('Dr Example Provider — After Hours');
   });
 
   it('re-sends the arrival with the chosen provider, and sends nothing else', async () => {
@@ -455,7 +486,7 @@ describe('/practice/patients — arrivals that need a provider', () => {
     render(<PatientsQueueView practiceId={PRACTICE} />);
 
     const pick = await screen.findByTestId(`needs-provider-pick-${ARRIVAL}`);
-    fireEvent.change(pick, { target: { value: 'provider-gp' } });
+    fireEvent.change(pick, { target: { value: 'affiliation-gp-main' } });
     fireEvent.click(screen.getByTestId(`needs-provider-submit-${ARRIVAL}`));
 
     await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));
@@ -464,7 +495,7 @@ describe('/practice/patients — arrivals that need a provider', () => {
     // ONE FIELD. The patient's details are the practice management system's
     // own, held on the row since it was refused — the console never retypes
     // one (REQ-DATA-10).
-    expect(posted?.body).toEqual({ providerId: 'provider-gp' });
+    expect(posted?.body).toEqual({ affiliationId: 'affiliation-gp-main' });
   });
 
   it('shows nothing at all when no arrival is waiting', async () => {

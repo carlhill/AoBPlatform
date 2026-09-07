@@ -6,6 +6,7 @@ import { KIOSK_POLL_MS, SERVICE_DESCRIPTIONS } from '@aobplatform/domain';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { DevicesService } from '../src/devices/devices.service';
+import { createServicingProvider, deleteSeededAnchors } from './anchor';
 
 /**
  * The kiosk's list — CONSULTATION-CAPTURE-PLAN.md §2.2 step 1 and §9.4,
@@ -71,9 +72,7 @@ describe('the kiosk waiting list (e2e, real Postgres)', () => {
   ) =>
     prisma.withPractice(practiceId, async (tx) => {
       await tx.practice.create({ data: { id: practiceId, name: names.practice } });
-      const provider = await tx.provider.create({
-        data: { practiceId, name: names.provider, providerType: 'general_practitioner' },
-      });
+      const provider = await createServicingProvider(tx, practiceId, { name: names.provider, providerType: 'general_practitioner' });
       const patient = await tx.patient.create({
         data: {
           practiceId,
@@ -103,7 +102,7 @@ describe('the kiosk waiting list (e2e, real Postgres)', () => {
           practiceId,
           type: 'episodic_pre',
           anchorKind: 'provider',
-          providerId: provider.id,
+          affiliationId: provider.id,
           patientId: patient.id,
           assignorId: assignor.id,
           assignorIsPatient: true,
@@ -116,7 +115,7 @@ describe('the kiosk waiting list (e2e, real Postgres)', () => {
             practiceId,
             pmsAppointmentKey: `kiosk-${agreement.id}`,
             patientId: patient.id,
-            providerId: provider.id,
+            providerId: provider.providerId,
             date: new Date('2026-09-03'),
             time: opts.time ?? '09:00',
             agreementId: agreement.id,
@@ -161,7 +160,7 @@ describe('the kiosk waiting list (e2e, real Postgres)', () => {
           practiceId: practiceA,
           type: 'episodic_pre',
           anchorKind: 'provider',
-          providerId: provider!.id,
+          affiliationId: provider!.id,
           patientId: patient.id,
           assignorId: assignor.id,
           assignorIsPatient: true,
@@ -198,7 +197,8 @@ describe('the kiosk waiting list (e2e, real Postgres)', () => {
         await tx.assignor.deleteMany({});
         await tx.patient.deleteMany({});
         await tx.provider.deleteMany({});
-        await tx.practice.deleteMany({});
+        await deleteSeededAnchors(tx);
+      await tx.practice.deleteMany({});
       });
     }
     await prisma.vaultOutbox.deleteMany({});
@@ -311,7 +311,7 @@ describe('the kiosk waiting list (e2e, real Postgres)', () => {
             practiceId: practiceA,
             type: 'episodic_pre',
             anchorKind: 'provider',
-            providerId: provider!.id,
+            affiliationId: provider!.id,
             patientId: patient.id,
             assignorId: assignor.id,
             assignorIsPatient: true,
@@ -366,7 +366,7 @@ describe('the kiosk waiting list (e2e, real Postgres)', () => {
             practiceId: practiceA,
             type: 'episodic_pre',
             anchorKind: 'provider',
-            providerId: provider!.id,
+            affiliationId: provider!.id,
             patientId: patient.id,
             assignorId: assignor.id,
             assignorIsPatient: true,

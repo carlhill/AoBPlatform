@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { createServicingProvider } from './anchor';
 
 /**
  * The human half of the chase ladder (Carl, 3 Sep 2026): "we need an
@@ -29,6 +30,7 @@ describe('chase attempts — what a PERSON at the practice did (e2e, real Postgr
   const otherPracticeId = randomUUID();
   let patientId: string;
   let providerId: string;
+  let affiliationId: string;
   let assignorId: string;
   let standardRecordId: string;
   let expiredRecordId: string;
@@ -51,16 +53,13 @@ describe('chase attempts — what a PERSON at the practice did (e2e, real Postgr
 
     await prisma.withPractice(practiceId, async (tx) => {
       await tx.practice.create({ data: { id: practiceId, name: 'Chase Trail Test Practice' } });
-      providerId = (
-        await tx.provider.create({
-          data: {
-            practiceId,
-            name: 'Dr Chase Example',
-            providerType: 'general_practitioner',
-            pmsLinkageKey: `chase-prov-${practiceId.slice(0, 8)}`,
-          },
-        })
-      ).id;
+      const anchor = await createServicingProvider(tx, practiceId, {
+        name: 'Dr Chase Example',
+        providerType: 'general_practitioner',
+        pmsLinkageKey: `chase-prov-${practiceId.slice(0, 8)}`,
+      });
+      affiliationId = anchor.affiliationId;
+      providerId = anchor.providerId;
       patientId = (
         await tx.patient.create({
           data: {
@@ -178,7 +177,7 @@ describe('chase attempts — what a PERSON at the practice did (e2e, real Postgr
     const draft = await request(app.getHttpServer())
       .post('/agreements')
       .set('x-practice-id', practiceId)
-      .send({ type: 'episodic_post', providerId, patientId, assignorId, assignorIsPatient: true })
+      .send({ type: 'episodic_post', affiliationId, patientId, assignorId, assignorIsPatient: true })
       .expect(201);
     agreementId = draft.body.id;
     await prisma.withPractice(practiceId, (tx) =>

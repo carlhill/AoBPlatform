@@ -8,6 +8,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { DevicesService } from '../src/devices/devices.service';
 import { RULES_CLIENT } from '../src/rules-client/rules-client.module';
+import { createServicingProvider, deleteSeededAnchors } from './anchor';
 
 /**
  * THE TABLET HEARTBEAT, "RETURN TO BEGIN", AND OUT OF USE — the server half
@@ -111,7 +112,7 @@ describe('the tablet heartbeat and Return to Begin (e2e, real Postgres)', () => 
           practiceId: practiceA,
           type: 'episodic_pre',
           anchorKind: 'provider',
-          providerId: providerA,
+          affiliationId: providerA,
           patientId: patientA,
           assignorId: assignorA,
           assignorIsPatient: true,
@@ -140,13 +141,7 @@ describe('the tablet heartbeat and Return to Begin (e2e, real Postgres)', () => 
     await prisma.withPractice(practiceA, async (tx) => {
       await tx.practice.create({ data: { id: practiceA, name: 'Heartbeat Test Practice A' } });
       providerA = (
-        await tx.provider.create({
-          data: {
-            practiceId: practiceA,
-            name: 'Dr Example Provider',
-            providerType: 'general_practitioner',
-          },
-        })
+        await createServicingProvider(tx, practiceA, { name: 'Dr Example Provider', providerType: 'general_practitioner' })
       ).id;
       patientA = (
         await tx.patient.create({
@@ -211,7 +206,8 @@ describe('the tablet heartbeat and Return to Begin (e2e, real Postgres)', () => 
         await tx.provider.deleteMany({});
         await tx.devicePairingCode.deleteMany({});
         await tx.device.deleteMany({});
-        await tx.practice.deleteMany({});
+        await deleteSeededAnchors(tx);
+      await tx.practice.deleteMany({});
       });
     }
     await prisma.vaultOutbox.deleteMany({});

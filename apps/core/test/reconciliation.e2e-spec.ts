@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { createServicingProvider, deleteSeededAnchors } from './anchor';
 
 /** The practice manager who decides. Null = nobody signed in. */
 const MANAGER = {
@@ -22,6 +23,7 @@ describe('M7 reconciliation queue (e2e, real Postgres + mock adapter)', () => {
   let patientId: string;
   let confidentialPatientId: string;
   let providerId: string;
+  let affiliationId: string;
   let assignorId: string;
 
   beforeAll(async () => {
@@ -39,11 +41,15 @@ describe('M7 reconciliation queue (e2e, real Postgres + mock adapter)', () => {
 
     await prisma.withPractice(practiceId, async (tx) => {
       await tx.practice.create({ data: { id: practiceId, name: 'Reconciliation Test Practice' } });
-      providerId = (
-        await tx.provider.create({
-          data: { practiceId, name: 'Dr Example Provider', providerType: 'general_practitioner', pmsLinkageKey: 'mock-prov-001' },
-        })
-      ).id;
+      const anchor = await createServicingProvider(tx, practiceId, {
+        name: 'Dr Example Provider',
+        providerType: 'general_practitioner',
+        pmsLinkageKey: 'mock-prov-001',
+      });
+      // The agreement is anchored on the practitioner at a location; a service
+      // record still mirrors the PMS provider feed, which has not moved.
+      affiliationId = anchor.affiliationId;
+      providerId = anchor.providerId;
       patientId = (
         await tx.patient.create({
           data: {
@@ -88,6 +94,7 @@ describe('M7 reconciliation queue (e2e, real Postgres + mock adapter)', () => {
       await tx.assignor.deleteMany({});
       await tx.patient.deleteMany({});
       await tx.provider.deleteMany({});
+      await deleteSeededAnchors(tx);
       await tx.practice.deleteMany({});
     });
     await prisma.vaultOutbox.deleteMany({});
@@ -184,7 +191,7 @@ describe('M7 reconciliation queue (e2e, real Postgres + mock adapter)', () => {
     const draft = await request(app.getHttpServer())
       .post('/agreements')
       .set('x-practice-id', practiceId)
-      .send({ type: 'episodic_post', providerId, patientId, assignorId, assignorIsPatient: true })
+      .send({ type: 'episodic_post', affiliationId, patientId, assignorId, assignorIsPatient: true })
       .expect(201);
     // Link the urgent-band record to this agreement.
     const queue = await request(app.getHttpServer())

@@ -9,6 +9,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { PMS_ADAPTER } from '../src/pms/pms.tokens';
 import { MESSAGING_GATEWAY, type MessagingGateway } from '../src/messaging/gateway';
+import { createServicingProvider, deleteSeededAnchors } from './anchor';
 
 /**
  * The capture cascade run by the platform — CONSULTATION-CAPTURE-PLAN.md
@@ -111,9 +112,7 @@ describe('the platform-run capture cascade (e2e, real Postgres + fixture adapter
     await prisma.withPractice(practiceId, async (tx) => {
       await tx.practice.create({ data: { id: practiceId, name: 'Cascade Test Practice' } });
       providerId = (
-        await tx.provider.create({
-          data: { practiceId, name: 'Dr Example Provider', providerType: 'general_practitioner', pmsLinkageKey: 'mock-prov-001' },
-        })
+        await createServicingProvider(tx, practiceId, { name: 'Dr Example Provider', providerType: 'general_practitioner', pmsLinkageKey: 'mock-prov-001' })
       ).id;
 
       // The covered patient exists BEFORE the sync, with a live enduring
@@ -139,7 +138,7 @@ describe('the platform-run capture cascade (e2e, real Postgres + fixture adapter
             practiceId,
             type: 'enduring',
             anchorKind: 'provider',
-            providerId,
+            affiliationId: providerId,
             patientId: coveredPatientId,
             assignorId: assignor.id,
             assignorIsPatient: true,
@@ -183,6 +182,7 @@ describe('the platform-run capture cascade (e2e, real Postgres + fixture adapter
       await tx.assignor.deleteMany({});
       await tx.patient.deleteMany({});
       await tx.provider.deleteMany({});
+      await deleteSeededAnchors(tx);
       await tx.practice.deleteMany({});
     });
     await prisma.vaultOutbox.deleteMany({});
