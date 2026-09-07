@@ -37,7 +37,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Check, ClipboardList, History, Mail, PencilLine, Tablet, UserRound } from 'lucide-react';
+import {
+  ArrowRight,
+  Check,
+  ClipboardList,
+  FilePlus2,
+  History,
+  Mail,
+  PencilLine,
+  Tablet,
+  UserRound,
+} from 'lucide-react';
 import {
   audiencesOf,
   mayReach,
@@ -71,6 +81,7 @@ import {
   type PushableRow,
 } from '../tablet/pushDesk';
 import { bornOn } from './PatientsQueueView';
+import { NewAgreementPanel } from './NewAgreementPanel';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -191,6 +202,8 @@ export function PatientWorkView({ practiceId, patientId }: { practiceId: string;
   const [trails, setTrails] = useState<Record<string, ChaseTrail>>({});
   const [messages, setMessages] = useState<MessageRow[] | null>(null);
   const [timeline, setTimeline] = useState<PatientTimelineEntry[] | null>(null);
+  /** The "New agreement" panel, opened in place on this patient's own page. */
+  const [adding, setAdding] = useState(false);
 
   const audiences: Audience[] = useMemo(() => {
     const session = currentSession();
@@ -672,6 +685,42 @@ export function PatientWorkView({ practiceId, patientId }: { practiceId: string;
         }
       >
         <p className={ui.hint}>{strings.patients.agreementsLead}</p>
+
+        {/*
+          THE SAME "NEW AGREEMENT" FORM THE QUEUE CARRIES, pre-filled with this
+          patient (Carl, 7 Sep 2026; PMS_to_AoB_Workflow.md W2). It is here
+          because this is the page somebody is already on when the practice
+          management system is down and the person is at the desk — and it is
+          the SAME component, so the two screens cannot come to ask different
+          questions or enforce hard rule 10 differently.
+
+          IT DRAFTS THROUGH `POST /arrivals`, exactly as the queue's does.
+          Nothing on this page creates an agreement by another route.
+        */}
+        <div className={styles.formActions}>
+          <Button
+            variant={adding ? 'subtle' : 'primary'}
+            disabled={!canAct}
+            onClick={() => setAdding((open) => !open)}
+            data-testid="new-agreement-open"
+          >
+            <FilePlus2 size={14} aria-hidden="true" />
+            {adding ? strings.newAgreement.close : strings.newAgreement.open}
+          </Button>
+        </div>
+
+        {adding && (
+          <NewAgreementPanel
+            practiceId={practiceId}
+            canAct={canAct}
+            forPatientId={patientId}
+            onCreated={async () => {
+              await desk.load();
+              await readPatient();
+            }}
+            onClose={() => setAdding(false)}
+          />
+        )}
 
         {desk.rows !== null && rows.length === 0 && (
           <div className={styles.empty}>

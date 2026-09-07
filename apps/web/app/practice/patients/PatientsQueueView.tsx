@@ -33,7 +33,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, ArrowRight, ClipboardList, UserRound } from 'lucide-react';
+import { AlertTriangle, ArrowRight, ClipboardList, FilePlus2, UserRound } from 'lucide-react';
 import type { ArrivalProviderChoice, RefusedArrival } from '@aobplatform/contracts';
 import {
   audiencesOf,
@@ -47,16 +47,20 @@ import { strings } from '../../strings';
 import { apiHeaders, currentSession } from '../../auth';
 import { SessionControl } from '../../SessionControl';
 import styles from '../manage.module.css';
-import { POLL_MS, disputedLabels, shortSessionId } from '../tablet/pushDesk';
+import { POLL_MS, bornOn, disputedLabels, shortSessionId } from '../tablet/pushDesk';
+import { NewAgreementPanel } from './NewAgreementPanel';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
-/** "3 March 1957" — the same date, read the way a receptionist reads one. */
-export function bornOn(dateOfBirth: string): string {
-  const parsed = new Date(`${dateOfBirth}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return dateOfBirth;
-  return parsed.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
-}
+/**
+ * "3 March 1957" — re-exported, not defined here (7 Sep 2026).
+ *
+ * It moved into `pushDesk.tsx` with the other shared row parts when the "New
+ * agreement" form needed it: that panel is rendered BY this page, so importing
+ * it from here would have been a circular import. The re-export keeps the
+ * work page's existing import working and keeps one date format at the desk.
+ */
+export { bornOn };
 
 /**
  * THE FRESHEST TRUE THING ABOUT THIS PATIENT, IN ONE LINE.
@@ -168,6 +172,8 @@ export function PatientsQueueView({ practiceId }: { practiceId: string }) {
   const [choices, setChoices] = useState<ArrivalProviderChoice[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [term, setTerm] = useState('');
+  /** The "New agreement" panel, open in place rather than on a route of its own. */
+  const [adding, setAdding] = useState(false);
 
   /*
    * THE SESSION'S OWN CLAIM, NEVER THE PAGE'S PROP — the same rule every other
@@ -290,6 +296,41 @@ export function PatientsQueueView({ practiceId }: { practiceId: string }) {
         <div className={styles.queueSummary}>
           <Chip tone={rows && rows.length ? 'warn' : 'ok'}>{strings.patients.count(rows?.length ?? 0)}</Chip>
         </div>
+
+        {/*
+          THE WALK-IN NOTHING TOLD US ABOUT (Carl, 7 Sep 2026;
+          PMS_to_AoB_Workflow.md case 4, W2). At the TOP of the queue, because
+          the practice management system being down is exactly when somebody is
+          standing at the desk and nothing on this page is about them yet.
+
+          A PANEL, NOT A ROUTE. It opens in place: the queue behind it stays
+          on its three-second poll, and closing it needs no navigation and no
+          back link to register. Whatever it creates lands on this same list.
+
+          `canAct` GATES IT THE SAME WAY EVERY OTHER CONTROL HERE IS GATED —
+          somebody merely looking gets the read-only twin, and `@PracticeScoped`
+          on the server would refuse them anyway.
+        */}
+        <div className={styles.formActions}>
+          <Button
+            variant={adding ? 'subtle' : 'primary'}
+            disabled={!canAct}
+            onClick={() => setAdding((open) => !open)}
+            data-testid="new-agreement-open"
+          >
+            <FilePlus2 size={14} aria-hidden="true" />
+            {adding ? strings.newAgreement.close : strings.newAgreement.open}
+          </Button>
+        </div>
+
+        {adding && (
+          <NewAgreementPanel
+            practiceId={practiceId}
+            canAct={canAct}
+            onCreated={load}
+            onClose={() => setAdding(false)}
+          />
+        )}
 
         <Field label={strings.patients.findLabel}>
           {(p) => (

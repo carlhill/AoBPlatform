@@ -4985,6 +4985,205 @@ export const strings = {
     historyTypesList: (types: string) => `· ${types}`,
   },
 
+  /**
+   * RECEPTION TYPES AN AGREEMENT BY HAND (Carl, 7 Sep 2026;
+   * PMS_to_AoB_Workflow.md case 4, row W2).
+   *
+   * WHOSE WORDS THESE ARE. A STAFF surface, on the staff side of the desk —
+   * which is exactly why it may present fields at all. Nothing on the PATIENT
+   * surface asks a patient to type a detail on the practice's behalf (Carl,
+   * 3 Sep 2026), and this form is the other side of that rule rather than an
+   * exception to it: the person filling it in works here.
+   *
+   * WHAT THE COPY NEVER SAYS. Nothing is "certified", "approved",
+   * "accredited" or "government-approved" (hard rule 12, REQ-65C-05); no
+   * benefit and no dollar amount appears anywhere (hard rule 4); and there is
+   * no field, label or hint anywhere below for a Medicare card number, which
+   * is not an identity identifier and is not held in this platform at all
+   * (hard rule 1, REQ-VER-02). UK/AU spelling throughout.
+   *
+   * AND WHAT IT NEVER ASKS. It does not ask what KIND of agreement the visit
+   * needs — the versioned visit policy decides that and the form shows the
+   * answer (hard rules 6 and 14) — and it does not ask anybody to judge
+   * whether a patient can consent (REQ-VUL-05). Both absences are
+   * requirements.
+   */
+  newAgreement: {
+    open: 'New agreement',
+    close: 'Close',
+    title: 'New agreement',
+    lead:
+      'For a walk-in your practice software has not sent us — because it is down, is not connected, or '
+      + 'has no record of this person yet. Type what you would have sent and the platform drafts the '
+      + 'agreement exactly as it would have.',
+    /** The read-only twin's banner: the same one every practice screen shows. */
+
+    // --- 1. Who the patient is -------------------------------------------
+    patientHeading: 'Which patient',
+    patientExisting: 'Somebody we already hold',
+    patientNew: 'New patient',
+    findLabel: 'Find them by name or record number',
+    findPlaceholder: 'Start typing a name',
+    findHint: 'At least two characters. This searches your practice’s own records and nobody else’s.',
+    findSearching: 'Looking…',
+    findNone: (term: string) => `No patient at this practice matches “${term}”. Choose “New patient” instead.`,
+    findResult: (name: string, born: string) => `${name} · born ${born}`,
+    findResultNoRecordNumber: 'no record number held',
+    chosen: (name: string) => `Chosen: ${name}`,
+    changePatient: 'Choose somebody else',
+
+    familyName: 'Family name',
+    givenNames: 'Given names',
+    dateOfBirth: 'Date of birth',
+    dayLabel: 'Day',
+    monthLabel: 'Month',
+    yearLabel: 'Year',
+    address: 'Address',
+    addressHint: 'One line, as it is written in your practice software.',
+    mobile: 'Mobile number',
+    email: 'Email address',
+    contactHint: 'Optional. Used to send this patient their copy, never to identify them.',
+    /**
+     * THE ONE FIELD THAT IS ALWAYS REQUIRED, AND THE HINT SAYS WHY. It is the
+     * practice's own handle for this person and the key an arrival is matched
+     * on, so a typed walk-in with the wrong number becomes a second copy of a
+     * patient when the practice management system comes back.
+     */
+    recordNumber: 'Your patient record number',
+    recordNumberHint:
+      'Your practice’s own number for this patient. It is how this is matched to their record in your '
+      + 'practice software later, so it has to be the one on your screen.',
+
+    // --- 2. The provider --------------------------------------------------
+    providerHeading: 'Which provider',
+    providerLabel: 'The provider the claim will go under',
+    providerPlaceholder: 'Choose a provider',
+    /**
+     * WHOSE NUMBER THE CLAIM GOES UNDER. Only servicing providers are offered
+     * — somebody recorded as working under another provider, or as not
+     * billable, cannot be the provider on an agreement and is not in this list
+     * at all. A picker that offered them would be a picker that can produce a
+     * draft the server then refuses.
+     */
+    providerHint:
+      'Only providers who bill under their own number are listed. A nurse or anyone working under '
+      + 'another provider is not offered here — the claim, and so the agreement, goes under the '
+      + 'provider’s number.',
+    providerAt: (name: string, location: string) => `${name} — ${location}`,
+    providerNumberIs: (number: string) => `provider number ${number}`,
+    providerNumberNone: 'no provider number recorded',
+    providerNone:
+      'No provider at this practice is recorded as billing under their own number yet, so there is '
+      + 'nobody an agreement could name.',
+    providerToAffiliations: 'Set up who works here →',
+
+    // --- 3. The visit -----------------------------------------------------
+    visitHeading: 'The visit',
+    serviceDate: 'Date of the service',
+    serviceDateHint: 'Today, unless you are typing up an earlier visit.',
+    serviceDescription: 'What the service is',
+    serviceDescriptionHint: (version: string) =>
+      `Chosen from your practice’s list, never typed. List version ${version}.`,
+    serviceDescriptionDefault: '(your practice’s default)',
+    serviceDescriptionNone:
+      'Your practice has not chosen a default description yet, so this agreement will wait on your '
+      + 'queue until one is set on it.',
+
+    // --- 4. Who is signing ------------------------------------------------
+    signingHeading: 'Who is signing',
+    signingPatient: 'The patient',
+    signingOther: 'Someone else, for the patient',
+    signingName: 'Their full name',
+    signingRelationship: 'Their relationship to the patient',
+    signingRelationshipPlaceholder: 'Choose',
+    signingDescribe: 'Please describe',
+    signingAge: (minimumAge: number) => `They have told you they are ${minimumAge} or over`,
+    /**
+     * A DECLARATION, NOT A DATE OF BIRTH. Reg 65CB(5) records what the person
+     * acting for another SAYS about their age; nobody verifies it and no birth
+     * date for an assignor is asked for or stored anywhere in this platform
+     * (REQ-AGE-01, REQ-VUL-02) — the same answer the tablet and the kiosk give.
+     */
+    signingAgeHint:
+      'Recorded as what they told you. Nobody checks it and no date of birth is stored for them.',
+    signingContactHeading: 'So we can send them their copy',
+    signingContactHint:
+      'One of these is enough. Their copy of the agreement, and anything that follows, goes here. It is '
+      + 'not used to identify them.',
+    /** A patient of 14 or over may sign for themselves — the UI never asks staff to assess capacity. */
+    signingSelfHint: (minimumAge: number) =>
+      `A patient aged ${minimumAge} or over may sign for themselves. Nothing here asks you to judge `
+      + 'whether somebody can consent.',
+
+    // --- 5. What the visit needs (read, never chosen) ---------------------
+    decisionHeading: 'What this visit needs',
+    decisionLead:
+      'Decided by the current rule set from the provider and the patient — not chosen here. It is shown '
+      + 'before you submit so nothing is a surprise afterwards.',
+    decisionAsking: 'Working it out…',
+    decisionNeedsProvider: 'Choose a patient record number and a provider to see this.',
+    decisionEnduring: (provider: string) => `Ongoing agreement — first visit with ${provider}`,
+    decisionEpisodic: 'Agreement for today’s service',
+    decisionNone: (provider: string) =>
+      `Covered by an ongoing agreement with ${provider} — nothing to sign`,
+    decisionNoneOpen: 'Open the agreement that covers them →',
+    decisionVersion: (version: string) => `Rule set ${version}`,
+    /**
+     * THE REFUSALS, AS ANSWERS. Each names the reason and what fixes it right
+     * here — never "see the practice queue" (CLAUDE.md §7). An unmapped code
+     * shows itself so it can be diagnosed rather than disappearing into a
+     * generic sentence.
+     */
+    decisionBlocked: {
+      provider_not_servicing: (provider: string, role: string) =>
+        `${provider} is recorded as “${role}” here and cannot be the provider on an agreement — the `
+        + 'claim goes under somebody else’s number. Choose the provider the claim will go under.',
+      provider_not_anchored: (provider: string) =>
+        `${provider} is not linked to a practitioner at one of your locations, so an agreement naming `
+        + 'them could not say who signed for whom or where. Choose somebody else.',
+    } as Record<string, (provider: string, role: string) => string>,
+    decisionBlockedUnknown: (reason: string) =>
+      `This provider cannot be used yet. The platform gave the reason code “${reason}” — quote it to `
+      + 'support if it does not make sense here.',
+    decisionBlockedTitle: 'This provider cannot be named on an agreement',
+
+    // --- 6. Submit --------------------------------------------------------
+    submit: 'Create the agreement',
+    submitting: 'Creating…',
+    submitBlockedTitle: 'Not ready to create yet',
+    /** Live, before anybody presses — a control that only explains itself after a press is inert. */
+    needPatient: 'Choose a patient, or fill in a new one.',
+    needFamilyName: 'The patient’s family name is needed.',
+    needGivenNames: 'The patient’s given names are needed.',
+    needDateOfBirth: 'The patient’s date of birth is needed.',
+    needAddress: 'The patient’s address is needed.',
+    needRecordNumber: 'Your practice’s patient record number is needed.',
+    needProvider: 'Choose the provider the claim will go under.',
+    needServiceDate: 'The date of the service is needed.',
+    needProviderUsable: 'This provider cannot be named on an agreement — choose another.',
+    needNothingToSign: 'Nothing is needed for this visit, so there is nothing to create.',
+    /**
+     * A RELATIONSHIP THAT MAPS TO NO AUTHORITY BASIS. Unreachable from a
+     * correct `assignor-relationships.json`, and shown WITH ITS KEY when it
+     * happens — the content file can change without a code change (hard rule
+     * 14), so the code says which option is wrong rather than failing silently
+     * or blaming the person who chose it.
+     */
+    needRelationshipBasis: (key: string) =>
+      `The relationship “${key}” does not map to a legal authority to sign for somebody else, so it `
+      + 'cannot be used. Choose another, and quote that word to support — the relationship list needs '
+      + 'fixing.',
+
+    createdTitle: 'Agreement created',
+    created: (name: string) => `${name} is on the queue, ready to send to a tablet.`,
+    createdBlocked: (name: string) =>
+      `${name} is on the queue. It cannot be sent yet — their row says why and carries the fix.`,
+    createdNothing: (name: string) =>
+      `Nothing was drafted for ${name}: an ongoing agreement already covers this provider.`,
+    createdOpen: 'Open their page →',
+    failed: 'That could not be created',
+  },
+
   kiosk: {
     /** The wordmark in the tablet's footer. Repeated here so the ceremony reads one namespace. */
     appName: 'AoBPlatform',

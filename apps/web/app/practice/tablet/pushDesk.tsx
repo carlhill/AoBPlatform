@@ -492,6 +492,22 @@ export function mayPush(audiences: readonly Audience[]): boolean {
   return mayReach('/practice/tablet', audiences) && audiences.includes('practice');
 }
 
+/**
+ * "3 March 1957" — the same date, read the way a receptionist reads one.
+ *
+ * IT LIVES HERE, WITH THE OTHER SHARED ROW PARTS, so the three screens that
+ * show a patient's date of birth show it identically: their work page, the
+ * "New agreement" form's search results, and anything after. It moved here
+ * from `PatientsQueueView` on 7 Sep 2026 when the form needed it — that page
+ * imports this module, so the alternative was a circular import between two
+ * files that both render at the front desk.
+ */
+export function bornOn(dateOfBirth: string): string {
+  const parsed = new Date(`${dateOfBirth}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return dateOfBirth;
+  return parsed.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
 /** "9:00", or the honest absence for a walk-in nobody booked. */
 export function whenLabel(row: Pick<PushableRow, 'appointmentTime'>): string {
   return row.appointmentTime ?? strings.tablet.unbooked;
@@ -527,8 +543,16 @@ export function signingFact(
   return `${strings.tablet.signingLabel}: ${value}`;
 }
 
-/** What the who-is-signing panel is holding, before it is saved. */
-interface WhoDraft {
+/**
+ * What the who-is-signing panel is holding, before it is saved.
+ *
+ * EXPORTED SO THE ONE GATE HAS ONE INPUT (W2, 7 Sep 2026). `/practice/patients`'
+ * "New agreement" form asks the same question before the agreement exists, and
+ * it runs `whoIsBlocked` over this same shape rather than carrying a second
+ * copy of the rule — which is how two screens come to disagree about who may
+ * sign.
+ */
+export interface WhoDraft {
   isPatient: boolean;
   name: string;
   relationship: string;
@@ -538,7 +562,7 @@ interface WhoDraft {
   email: string;
 }
 
-const EMPTY_WHO: WhoDraft = {
+export const EMPTY_WHO: WhoDraft = {
   isPatient: true,
   name: '',
   relationship: '',
