@@ -131,6 +131,9 @@ describe('/practice/affiliations — whose provider number the claim goes under'
     render(<AffiliationsView practiceId={PRACTICE} />);
 
     const select = (await screen.findByTestId(`billing-role-${DOCTOR}`)) as HTMLSelectElement;
+    // The roles are their own fetch — wait for them rather than reading the
+    // options the instant the select exists (flaked on CI, 7 Sep 2026).
+    await waitFor(() => expect(select.options.length).toBeGreaterThan(0));
     expect([...select.options].map((o) => o.value)).toEqual([
       'servicing_provider',
       'works_under_provider',

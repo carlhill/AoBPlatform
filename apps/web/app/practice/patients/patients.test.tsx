@@ -685,7 +685,9 @@ describe('/practice/patients/<id> — one patient, everything open', () => {
      */
     fireEvent.click(screen.getByTestId(`correction-request-open-${TASK}`));
     const subjectKey = `patient:${PATIENT}`;
-    await waitFor(() => expect(screen.getByTestId(`correct-panel-${subjectKey}`)).toBeTruthy());
+    // THE FIELDS ARRIVE WITH THE DETAILS FETCH, after the panel opens — wait for
+    // a field, not the panel (same race as the inline-correct test; flaked on CI 7 Sep 2026).
+    await waitFor(() => expect(screen.getByTestId(`correct-field-mobile-${subjectKey}`)).toBeTruthy());
     expect(
       screen.getByTestId(`correct-field-mobile-${subjectKey}`).getAttribute('data-disputed'),
     ).toBe('true');
