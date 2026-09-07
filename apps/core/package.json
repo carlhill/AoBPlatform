@@ -17,7 +17,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "clean": "rm -rf dist",
-    "start:watch": "node --watch --require ts-node/register/transpile-only src/main.ts"
+    "start:watch": "node --watch-path=src --watch-path=../../packages/domain/dist --watch-path=../../packages/contracts/dist --watch-path=.env --require ts-node/register/transpile-only src/main.ts"
   },
   "dependencies": {
     "@aobplatform/auth-client": "*",

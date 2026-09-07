@@ -265,7 +265,7 @@ export function PatientWorkView({ practiceId, patientId }: { practiceId: string;
       try {
         const res = await fetch(`${CORE_URL}/review-tasks/${reviewTaskId}/resolve`, {
           method: 'POST',
-          headers: { ...apiHeaders(practiceId), 'content-type': 'application/json' },
+          headers: apiHeaders(practiceId),
           body: JSON.stringify({ resolution: 'no_change_needed' }),
         });
         if (!res.ok) throw new Error(await explainFailure(res));
@@ -327,7 +327,7 @@ export function PatientWorkView({ practiceId, patientId }: { practiceId: string;
       try {
         const res = await fetch(`${CORE_URL}/review-tasks/${reviewTaskId}/resolve`, {
           method: 'POST',
-          headers: { ...apiHeaders(practiceId), 'content-type': 'application/json' },
+          headers: apiHeaders(practiceId),
           body: JSON.stringify({ resolution: 'no_change_needed' }),
         });
         if (!res.ok) throw new Error(await explainFailure(res));
