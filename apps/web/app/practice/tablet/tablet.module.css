@@ -124,8 +124,17 @@
  * footer — a proportional face makes 8ff09d7b and 8ff09db7 look alike at a
  * glance, which is the one thing this must not do.
  */
+/*
+ * AN ID KEEPS ITS CASE. The status chip it sits in upper-cases its text
+ * (`.chip`), and text-transform inherits -- so "session 4ecda17f" read as
+ * "SESSION 4ECDA17F" on the console while the tablet footer showed the same
+ * id in lower case, and Carl read them as two different sessions (7 Sep 2026).
+ * Hex is compared character by character; it is never upper-cased here.
+ */
 .sessionId {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.9em;
   white-space: nowrap;
+  text-transform: none;
+  letter-spacing: 0;
 }
