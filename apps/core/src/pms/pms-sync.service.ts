@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import type { PmsAdapter, PmsInvoice, PmsPatientRecord, PmsProvider } from '@aobplatform/contracts';
 import type { IsoDate } from '@aobplatform/domain';
 import { PrismaService } from '../prisma/prisma.service';
+import { anchorForLegacyProvider, type LegacyProviderRow } from '../affiliations/agreement-anchor';
 import { PMS_ADAPTER } from './pms.tokens';
 
 /** How far back the invoice sync reaches — past the 12-month lodgement window with margin. */
@@ -131,13 +132,30 @@ export class PmsSyncService {
     practiceId: string,
     invoice: PmsInvoice,
     patient: { id: string } | null,
-    provider: { id: string } | null,
+    provider: LegacyProviderRow | null,
   ): Promise<{ id: string; created: boolean }> {
     const serviceDate = new Date(invoice.serviceDate);
+    /*
+     * THE STORED AGREEMENT FOR THIS PERSON AND THIS PROVIDER (REQ-SCOPE-01),
+     * looked up by the ANCHOR as well as by the legacy column (Carl, 7 Sep
+     * 2026). A service record still names the practice-wide `providers` row --
+     * that is what the PMS feed fills -- but the agreements it must link to
+     * are anchored on the practitioner's affiliation and carry no `providerId`
+     * at all. Matching only on the old column would leave every new agreement
+     * unlinked and every covered service sitting on the reconciliation queue.
+     */
+    const anchor = patient && provider ? await anchorForLegacyProvider(tx, provider) : null;
     const agreement =
       patient && provider
         ? await tx.agreement.findFirst({
-            where: { patientId: patient.id, providerId: provider.id, status: 'stored' },
+            where: {
+              patientId: patient.id,
+              status: 'stored',
+              OR: [
+                { providerId: provider.id },
+                ...(anchor?.affiliationId ? [{ affiliationId: anchor.affiliationId }] : []),
+              ],
+            },
           })
         : null;
 

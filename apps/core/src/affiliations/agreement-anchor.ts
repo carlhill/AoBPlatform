@@ -77,6 +77,16 @@ export interface AnchoredRow {
 /** What a `providers` row can be matched on. */
 export interface LegacyProviderRow {
   readonly id: string;
+  /**
+   * SCOPED EXPLICITLY, NOT LEFT TO RLS. Every query below already runs inside
+   * `withPractice`, so the policies would fence it — but a linkage key or a
+   * provider number is only unique WITHIN a practice, and a matcher that
+   * depends on the fence to say so is a matcher that silently matches another
+   * practice's doctor the moment it is called from anywhere with wider scope
+   * (a migration, a report, a test connecting as the migration role). Saying
+   * it here makes the intent readable and the answer the same either way.
+   */
+  readonly practiceId: string;
   readonly name: string;
   readonly providerType: string;
   readonly placeOfPracticeAddress?: string | null;
@@ -202,7 +212,7 @@ export async function matchAffiliationsForProvider(
 
   if (provider.pmsLinkageKey) {
     const rows = await tx.affiliation.findMany({
-      where: { pmsLinkageKey: provider.pmsLinkageKey },
+      where: { practiceId: provider.practiceId, pmsLinkageKey: provider.pmsLinkageKey },
       select: AFFILIATION_SELECT,
     });
     if (rows.length > 0) return { candidates: live(rows), matchedBy: 'pms_linkage_key' };
@@ -210,7 +220,7 @@ export async function matchAffiliationsForProvider(
 
   if (provider.providerNumber) {
     const rows = await tx.affiliation.findMany({
-      where: { providerNumber: provider.providerNumber },
+      where: { practiceId: provider.practiceId, providerNumber: provider.providerNumber },
       select: AFFILIATION_SELECT,
     });
     if (rows.length > 0) return { candidates: live(rows), matchedBy: 'provider_number' };
@@ -223,7 +233,7 @@ export async function matchAffiliationsForProvider(
     });
     if (practitioner) {
       const rows = await tx.affiliation.findMany({
-        where: { practitionerId: practitioner.id },
+        where: { practiceId: provider.practiceId, practitionerId: practitioner.id },
         select: AFFILIATION_SELECT,
       });
       if (rows.length > 0) return { candidates: live(rows), matchedBy: 'ahpra_number' };

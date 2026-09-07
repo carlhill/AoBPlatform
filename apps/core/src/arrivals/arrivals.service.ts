@@ -186,7 +186,7 @@ export class ArrivalsService {
     if (existing && existing.outcome !== 'refused') return this.receiptFor(existing, true);
 
     const { anchor, patient } = await this.prisma.withPractice(practiceId, async (tx) => ({
-      anchor: await this.findAnchor(tx, dto),
+      anchor: await this.findAnchor(tx, practiceId, dto),
       patient: await tx.patient.findFirst({
         where: { practiceId, patientRecordNumber: dto.pmsPatientRecordNumber },
       }),
@@ -794,7 +794,11 @@ export class ArrivalsService {
    * defaulted to whoever is first in the list, which is how a consent record
    * comes to name the wrong doctor.
    */
-  private async findAnchor(tx: Prisma.TransactionClient, dto: ArrivalDto): Promise<ArrivalAnchor> {
+  private async findAnchor(
+    tx: Prisma.TransactionClient,
+    practiceId: string,
+    dto: ArrivalDto,
+  ): Promise<ArrivalAnchor> {
     if (dto.affiliationId) {
       const anchor = await anchorForAffiliation(tx, dto.affiliationId);
       if (!anchor) throw new NotFoundException('That affiliation was not found in this practice.');
@@ -803,7 +807,7 @@ export class ArrivalsService {
 
     if (dto.practitionerId && dto.locationId) {
       const affiliation = await tx.affiliation.findFirst({
-        where: { practitionerId: dto.practitionerId, locationId: dto.locationId },
+        where: { practiceId, practitionerId: dto.practitionerId, locationId: dto.locationId },
         select: { id: true },
       });
       if (!affiliation) {
@@ -825,7 +829,9 @@ export class ArrivalsService {
        * would put a coin toss on a contract.
        */
       const matches = await tx.affiliation.findMany({
-        where: { providerNumber: dto.providerNumber },
+        // Scoped explicitly as well as by RLS — a provider number is unique
+        // within a practice, and the query should say which practice it means.
+        where: { practiceId, providerNumber: dto.providerNumber },
         select: { id: true, status: true },
       });
       const live = matches.filter((row) => LIVE_AFFILIATION_STATUSES.includes(row.status));

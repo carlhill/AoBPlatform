@@ -161,10 +161,18 @@ describe('M9 PMS wiring (e2e, real Postgres + mock adapter)', () => {
       tx.agreement.findMany({ where: { status: 'stored' } }),
     );
     expect(agreements.length).toBeGreaterThan(0);
+    /*
+     * AND MAKE IT THE OLDEST UNWRITTEN ONE. `list_unwritten_stored_agreements`
+     * takes the fifty oldest, which is right for the real sweep -- the one
+     * that has been waiting longest is the one an auditor is about to ask
+     * about -- and means this assertion is otherwise hostage to how many
+     * unwritten agreements every other suite happened to leave behind. Backing
+     * the timestamp up is also the case the FR-9.3 alert exists for.
+     */
     await prisma.withPractice(practiceId, (tx) =>
       tx.agreement.update({
         where: { id: agreements[0].id },
-        data: { writtenBackAt: null, pmsDocumentKey: null },
+        data: { writtenBackAt: null, pmsDocumentKey: null, createdAt: new Date('2020-01-01T00:00:00Z') },
       }),
     );
 
