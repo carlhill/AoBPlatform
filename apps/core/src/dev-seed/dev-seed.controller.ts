@@ -206,13 +206,53 @@ export class DevSeedController {
        * behaves like a connected one end to end. Email and mobile are what
        * let the capture cascade actually send this patient a link.
        */
-      const provider = await tx.provider.create({
+      /*
+       * A PRACTITIONER AT A LOCATION, which is what an agreement is anchored
+       * on from 7 September 2026. The seed used to write a practice-wide
+       * `providers` row; a practice seeded that way could not draft a single
+       * agreement now, because there would be nobody to name and nowhere to
+       * say they practise (s 65C(5)(a)).
+       *
+       * The AHPRA number is derived from the practice id so a second seed run
+       * makes a second person rather than colliding on the unique key — and it
+       * is obviously fake, like every other identity in here.
+       */
+      const location = await tx.practiceLocation.create({
         data: {
           practiceId,
-          name: 'Dr Example Provider',
+          address: '1 Example Street, Sampletown NSW 2000',
+          addressLine1: '1 Example Street',
+          suburb: 'Sampletown',
+          state: 'NSW',
+          postcode: '2000',
+          code: 'Main',
+          active: true,
+        },
+      });
+      const practitioner = await tx.practitioner.create({
+        data: {
+          ahpraNumber: `MED${practiceId.replace(/\D/g, '').padEnd(10, '0').slice(0, 10)}`,
+          givenNames: 'Example',
+          familyName: 'Provider',
           providerType: 'general_practitioner',
-          placeOfPracticeAddress: '1 Example Street, Sampletown NSW 2000',
+          invitedByPracticeId: practiceId,
+        },
+      });
+      const affiliation = await tx.affiliation.create({
+        data: {
+          practiceId,
+          practitionerId: practitioner.id,
+          locationId: location.id,
+          /*
+           * LINKED TO THE MOCK ADAPTER'S FIXTURE, on purpose, so a seeded
+           * practice behaves like a connected one end to end — the value
+           * matches apps/connector/src/mock-adapter.ts exactly.
+           */
           pmsLinkageKey: 'mock-prov-001',
+          billingRole: 'servicing_provider',
+          status: 'active',
+          startedAt: new Date(),
+          acceptanceMethod: 'console',
         },
       });
       const patient = await tx.patient.create({
@@ -234,7 +274,13 @@ export class DevSeedController {
       });
       return {
         practiceId: practice.id,
-        providerId: provider.id,
+        // The anchor. `providerId` is kept as an alias for one release so a
+        // dev script or a console page reading the old name still works, and
+        // it now carries the affiliation id rather than a retired row's.
+        affiliationId: affiliation.id,
+        providerId: affiliation.id,
+        practitionerId: practitioner.id,
+        locationId: location.id,
         patientId: patient.id,
         assignorId: assignor.id,
       };
@@ -292,15 +338,53 @@ export class DevSeedController {
       const practice = await tx.practice.findFirst({ where: { id: practiceId }, select: { id: true, name: true } });
       if (!practice) throw new BadRequestException('No such practice in this scope — check the practice id.');
 
-      const providerId = id('provider');
-      await tx.provider.upsert({
-        where: { id: providerId },
+      /*
+       * THE CORRESPONDENCE SEED NEEDS SOMEBODY TO HAVE SIGNED WITH, and from
+       * 7 September 2026 that is a practitioner at a location. Re-runnable:
+       * every id is derived from the practice id, so a second call rewrites
+       * the same rows instead of adding a second set.
+       */
+      const locationId = id('location');
+      await tx.practiceLocation.upsert({
+        where: { id: locationId },
         create: {
-          id: providerId,
+          id: locationId,
           practiceId,
-          name: 'Dr Sample Provider',
+          address: '2 Example Street, Sampletown NSW 2000',
+          addressLine1: '2 Example Street',
+          suburb: 'Sampletown',
+          state: 'NSW',
+          postcode: '2000',
+          code: 'Main',
+          active: true,
+        },
+        update: {},
+      });
+      const practitionerId = id('practitioner');
+      await tx.practitioner.upsert({
+        where: { id: practitionerId },
+        create: {
+          id: practitionerId,
+          ahpraNumber: `MED${practitionerId.replace(/\D/g, '').padEnd(10, '0').slice(0, 10)}`,
+          givenNames: 'Sample',
+          familyName: 'Provider',
           providerType: 'general_practitioner',
-          placeOfPracticeAddress: '2 Example Street, Sampletown NSW 2000',
+          invitedByPracticeId: practiceId,
+        },
+        update: {},
+      });
+      const affiliationId = id('affiliation');
+      await tx.affiliation.upsert({
+        where: { id: affiliationId },
+        create: {
+          id: affiliationId,
+          practiceId,
+          practitionerId,
+          locationId,
+          billingRole: 'servicing_provider',
+          status: 'active',
+          startedAt: new Date(),
+          acceptanceMethod: 'console',
         },
         update: {},
       });
@@ -404,7 +488,10 @@ export class DevSeedController {
             practiceId,
             type: a.type,
             anchorKind: 'provider',
-            providerId,
+            // THE ANCHOR (Carl, 7 Sep 2026). No legacy `providerId`: a seed
+            // that wrote one would be seeding the thing being retired, and the
+            // CHECK refuses a new agreement without an affiliation anyway.
+            affiliationId,
             patientId: id(a.person),
             assignorId: id(`${a.person}-assignor`),
             assignorIsPatient: true,
@@ -455,7 +542,9 @@ export class DevSeedController {
           practiceId,
           pmsInvoiceKey: 'DEV-CORR-INV-0001',
           patientId: suppressedPatientId,
-          providerId,
+          // The service record still mirrors the PMS provider feed, which has
+          // not moved; the seed simply does not invent one.
+          providerId: null,
           serviceDate: ago(6, 0, 0),
           mbsItemNumbers: ['23'],
           // The one suppression reason the log shows; the rest belong on the queue.

@@ -1,6 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { assertValidIdentifierSet, IdentifierSetError } from '@aobplatform/domain';
+import {
+  assertValidIdentifierSet,
+  BILLING_ROLES_VERSION,
+  DEFAULT_BILLING_ROLE,
+  IdentifierSetError,
+  isBillingRole,
+} from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { Actor } from '../auth/actor.decorator';
@@ -168,20 +174,112 @@ export class PracticesService {
     );
   }
 
-  /** FR-1.8 — provider record; provider number optional by design (REQ-REG-02). */
-  addProvider(practiceId: string, dto: CreateProviderDto) {
-    return this.prisma.withPractice(practiceId, (tx) =>
-      tx.provider.create({
+  /**
+   * FR-1.8 — THE PRACTITIONER AND THEIR AFFILIATION AT A LOCATION (Carl,
+   * 7 Sep 2026). Provider number optional by design (REQ-REG-02), and per
+   * location because that is how it is issued.
+   *
+   * WHAT THIS NO LONGER WRITES: a `providers` row. That table is
+   * practice-scoped with no location and no link to a person, and it stopped
+   * being the agreement anchor today — so writing one here would be adding to
+   * the thing being retired. The returned `affiliationId` is what an agreement
+   * is anchored on, and `id` mirrors it so a caller that only reads `id` gets
+   * the anchor rather than a row nothing points at.
+   *
+   * THE PERSON IS SHARED, THE AFFILIATION IS NOT. A practitioner already known
+   * to the platform (they work at another practice, or they were here before)
+   * is REUSED on their AHPRA number rather than duplicated — the identity is
+   * person-level and outlives any one practice.
+   *
+   * `status: 'active'` AND `startedAt`, because this is the practice recording
+   * somebody who already works there, not inviting somebody who might. The
+   * invitation path (`AffiliationsService.invite`) is the one that leaves a
+   * practitioner to accept for themselves, and it is still the only way an
+   * affiliation gets there from `invited`.
+   */
+  async addProvider(practiceId: string, dto: CreateProviderDto) {
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const locations = await tx.practiceLocation.findMany({ select: { id: true }, orderBy: { createdAt: 'asc' } });
+      if (locations.length === 0) {
+        throw new BadRequestException(
+          'This practice has no location yet. A provider number is issued per practitioner per location and ' +
+            's 65C(5)(a) identifies the professional by the address of their place of practice, so there is ' +
+            'nowhere to put either. Add a location first.',
+        );
+      }
+      const locationId = dto.locationId ?? (locations.length === 1 ? locations[0]!.id : null);
+      if (!locationId) {
+        throw new BadRequestException(
+          'This practice has more than one location, so name the one this practitioner works at ' +
+            '(locationId). Their provider number and the address on every agreement they sign come from it — ' +
+            'it is not something to guess.',
+        );
+      }
+      if (!locations.some((l) => l.id === locationId)) {
+        throw new NotFoundException('That location was not found in this practice.');
+      }
+      if (dto.billingRole && !isBillingRole(dto.billingRole)) {
+        throw new BadRequestException(
+          `"${dto.billingRole}" is not a billing role. The list is versioned content ` +
+            `(packages/domain/content/billing-roles.json, ${BILLING_ROLES_VERSION}).`,
+        );
+      }
+
+      // One name, split the way the register holds it: everything before the
+      // last space is given names. Crude, and it is the practice's own typing
+      // being tidied rather than a fact being invented — the register lookup
+      // (`AffiliationsService.preRegister`) is what replaces it.
+      const trimmed = dto.name.trim().replace(/\s+/g, ' ');
+      const cut = trimmed.lastIndexOf(' ');
+      const givenNames = cut > 0 ? trimmed.slice(0, cut) : trimmed;
+      const familyName = cut > 0 ? trimmed.slice(cut + 1) : trimmed;
+
+      const practitioner =
+        (await tx.practitioner.findFirst({ where: { ahpraNumber: dto.ahpraNumber } })) ??
+        (await tx.practitioner.create({
+          data: {
+            ahpraNumber: dto.ahpraNumber,
+            givenNames,
+            familyName,
+            providerType: dto.providerType,
+            invitedByPracticeId: practiceId,
+          },
+        }));
+
+      const existing = await tx.affiliation.findFirst({
+        where: { practitionerId: practitioner.id, locationId },
+      });
+      if (existing) {
+        throw new BadRequestException(
+          'That practitioner already has an affiliation at that location. Change it on the affiliation ' +
+            'screen rather than adding a second one — the pair is unique for a reason.',
+        );
+      }
+
+      const affiliation = await tx.affiliation.create({
         data: {
           practiceId,
-          name: dto.name,
-          providerType: dto.providerType,
-          placeOfPracticeAddress: dto.placeOfPracticeAddress,
-          providerNumber: dto.providerNumber,
-          ahpraNumber: dto.ahpraNumber,
+          practitionerId: practitioner.id,
+          locationId,
+          providerNumber: dto.providerNumber ?? null,
+          billingRole: dto.billingRole ?? DEFAULT_BILLING_ROLE,
+          status: 'active',
+          startedAt: new Date(),
+          acceptanceMethod: 'console',
         },
-      }),
-    );
+      });
+
+      return {
+        id: affiliation.id,
+        affiliationId: affiliation.id,
+        practitionerId: practitioner.id,
+        locationId,
+        name: `${practitioner.givenNames} ${practitioner.familyName}`.trim(),
+        providerType: practitioner.providerType,
+        providerNumber: affiliation.providerNumber,
+        billingRole: affiliation.billingRole,
+      };
+    });
   }
 
   /**
@@ -242,7 +340,16 @@ export class PracticesService {
     return this.prisma.withPractice(practiceId, async (tx) => {
       const practice = await tx.practice.findFirst({});
       if (!practice) throw new NotFoundException('Practice not found.');
-      const providerCount = await tx.provider.count({ where: { active: true } });
+      /*
+       * "SOMEBODY CAN BE THE PROVIDER ON AN AGREEMENT HERE" — counted on
+       * affiliations now, not on the retired `providers` table (Carl, 7 Sep
+       * 2026). A practice whose only `providers` rows match no practitioner
+       * could not anchor a single agreement, and the old count said it was
+       * ready to go live.
+       */
+      const providerCount = await tx.affiliation.count({
+        where: { status: { in: ['active', 'ending'] }, billingRole: 'servicing_provider' },
+      });
       const items = [
         { item: 'write_back_proven', done: practice.writeBackProven, blocking: true, note: 'D-01 spike (FR-1.3)' },
         { item: 'sender_id_registered', done: practice.senderIdRegistered, blocking: true, note: 'ACMA Sender ID (FR-1.4)' },

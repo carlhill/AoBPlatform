@@ -33,8 +33,17 @@ PATIENTS=("$@"); [ ${#PATIENTS[@]} -eq 0 ] && PATIENTS=("${DEFAULTS[@]}")
 
 hdr=(-H "x-practice-id: ${PRACTICE_ID}" -H "content-type: application/json")
 
-PROVIDER_ID="$("${PG[@]}" -c "select id from core.providers where \"practiceId\"='${PRACTICE_ID}' and active order by name limit 1;")"
-[ -n "$PROVIDER_ID" ] || { echo "no active provider for practice ${PRACTICE_ID}"; exit 1; }
+# THE ANCHOR IS THE PRACTITIONER AT A LOCATION (Carl, 7 Sep 2026). An
+# agreement is made on an affiliation now, not on a practice-wide `providers`
+# row, so this looks one up -- a live one whose billing role means the claim
+# can go under them. If there is none, say so and stop: staging an agreement
+# nobody can be named on is worse than staging nothing.
+AFFILIATION_ID="$("${PG[@]}" -c "select a.id from core.affiliations a where a.\"practiceId\"='${PRACTICE_ID}' and a.status in ('active','ending','invited') and a.\"billingRole\"='servicing_provider' order by a.\"invitedAt\" limit 1;")"
+[ -n "$AFFILIATION_ID" ] || {
+  echo "no servicing affiliation for practice ${PRACTICE_ID}."
+  echo "Add a practitioner at a location first: POST /practices/${PRACTICE_ID}/providers"
+  exit 1
+}
 
 for spec in "${PATIENTS[@]}"; do
   IFS='|' read -r fullname dob address <<<"$spec"
@@ -58,7 +67,7 @@ for spec in "${PATIENTS[@]}"; do
 
   # Draft → capture request (this is what puts them on the kiosk list) → lock with D6a.
   AGREEMENT_ID="$(curl -sS "${hdr[@]}" -X POST "${CORE}/agreements" \
-    -d "{\"type\":\"episodic_pre\",\"providerId\":\"${PROVIDER_ID}\",\"patientId\":\"${PATIENT_ID}\",\"assignorId\":\"${ASSIGNOR_ID}\",\"assignorIsPatient\":true}" \
+    -d "{\"type\":\"episodic_pre\",\"affiliationId\":\"${AFFILIATION_ID}\",\"patientId\":\"${PATIENT_ID}\",\"assignorId\":\"${ASSIGNOR_ID}\",\"assignorIsPatient\":true}" \
     | python -c 'import sys,json; d=json.load(sys.stdin); print(d.get("id") or sys.exit("agreement not created: %s" % d))')"
   curl -sS -o /dev/null -f "${hdr[@]}" -X POST "${CORE}/capture" -d "{\"agreementId\":\"${AGREEMENT_ID}\",\"channel\":\"in_practice\"}"
   curl -sS -o /dev/null -f "${hdr[@]}" -X POST "${CORE}/agreements/${AGREEMENT_ID}/transition" -d '{"to":"awaiting_signature"}'

@@ -12,7 +12,7 @@
 #
 #   bash scripts/dev/arrive.sh                                   # the standard five
 #   bash scripts/dev/arrive.sh "Riley Example|1988-03-09|7 Sample Road, Sampletown NSW 2000"
-#   bash scripts/dev/arrive.sh "Riley Example|1988-03-09|7 Sample Road|<providerId>"
+#   bash scripts/dev/arrive.sh "Riley Example|1988-03-09|7 Sample Road|<affiliationId>"
 #
 # HOW THIS DIFFERS FROM stage-kiosk-patients.sh, WHICH IS STILL HERE.
 # The staging script reaches into Postgres, inserts the patient and the assignor
@@ -32,8 +32,15 @@
 # scripts/dev/reset-kiosk-list.sh, which stages episodic drafts directly and is
 # deliberately left alone for exactly this reason.
 #
+# WHO THE ARRIVAL NAMES (Carl, 7 Sep 2026). The agreement anchor is the
+# practitioner's affiliation at a LOCATION, not the practice-wide `providers`
+# row, so this sends `providerNumber` where the affiliation holds one -- which
+# is the likeliest thing a real PMS knows -- and `affiliationId` otherwise. The
+# deprecated `providerId` field still works and is not used here: a dev script
+# should exercise the door the connector will come through.
+#
 # Needs: core on :3001 (npm run start:watch -w apps/core) and the postgres
-# container (only to look up the default provider). Fake identities only, and
+# container (only to look up the default practitioner). Fake identities only, and
 # no Medicare numbers anywhere — the endpoint refuses any field with "medicare"
 # in its name, out loud (CLAUDE.md rule 1).
 set -euo pipefail
@@ -43,7 +50,7 @@ PRACTICE_ID="${PRACTICE_ID:-821709fb-7f89-4fcf-95c0-27c5eb55cec8}"   # XLEVELUP 
 PG=(docker exec -i -e PGPASSWORD=aobplatform aobplatform-postgres psql -U aobplatform -d aobplatform -A -t -q -v ON_ERROR_STOP=1)
 RUN="$(date +%s)"
 
-# "Given Family|YYYY-MM-DD|address|providerId(optional)" — fake identities only.
+# "Given Family|YYYY-MM-DD|address|affiliationId(optional)" — fake identities only.
 DEFAULTS=(
   "Jamie Sampleton|1962-08-04|2 Example Street, Sampletown NSW 2000"
   "Morgan Placeholder|1971-11-22|2 Example Street, Sampletown NSW 2000"
@@ -55,22 +62,36 @@ PATIENTS=("$@"); [ ${#PATIENTS[@]} -eq 0 ] && PATIENTS=("${DEFAULTS[@]}")
 
 hdr=(-H "x-practice-id: ${PRACTICE_ID}" -H "content-type: application/json")
 
-DEFAULT_PROVIDER_ID="${PROVIDER_ID:-$("${PG[@]}" -c "select id from core.providers where \"practiceId\"='${PRACTICE_ID}' and active order by name limit 1;")}"
-[ -n "$DEFAULT_PROVIDER_ID" ] || { echo "no active provider for practice ${PRACTICE_ID}"; exit 1; }
+DEFAULT_AFFILIATION_ID="${AFFILIATION_ID:-$("${PG[@]}" -c "select id from core.affiliations where \"practiceId\"='${PRACTICE_ID}' and status in ('active','ending','invited') and \"billingRole\"='servicing_provider' order by \"invitedAt\" limit 1;")}"
+[ -n "$DEFAULT_AFFILIATION_ID" ] || {
+  echo "no servicing affiliation for practice ${PRACTICE_ID}."
+  echo "Add a practitioner at a location first: POST /practices/${PRACTICE_ID}/providers"
+  exit 1
+}
 
 for spec in "${PATIENTS[@]}"; do
-  IFS='|' read -r fullname dob address provider <<<"$spec"
+  IFS='|' read -r fullname dob address affiliation <<<"$spec"
   given="${fullname% *}"; family="${fullname##* }"
   slug="$(echo "${given}-${family}" | tr '[:upper:]' '[:lower:]')"
-  provider="${provider:-$DEFAULT_PROVIDER_ID}"
+  affiliation="${affiliation:-$DEFAULT_AFFILIATION_ID}"
+  # The provider number where this affiliation holds one -- it names the
+  # practitioner AND the location by itself (FR-1.8), which is the shape a real
+  # PMS message is likeliest to carry. Empty is lawful: s 65C(5)(a) identifies
+  # the professional by name and place of practice instead.
+  provider_number="$("${PG[@]}" -c "select coalesce(\"providerNumber\", '') from core.affiliations where id='${affiliation}';")"
 
   # The patient record number is the practice's OWN handle for this person —
   # what reception reads off the screen in front of them, and the key the
   # platform matches its mirror row on.
-  body="$(GIVEN="$given" FAMILY="$family" DOB="$dob" ADDR="$address" PROV="$provider" \
-          SLUG="$slug" RUN="$RUN" python -c '
+  body="$(GIVEN="$given" FAMILY="$family" DOB="$dob" ADDR="$address" AFFIL="$affiliation" \
+          PROVNUM="$provider_number" SLUG="$slug" RUN="$RUN" python -c '
 import json, os, datetime
 slug = os.environ["SLUG"]
+# The provider number where there is one, the affiliation id otherwise. Never
+# both: the server resolves either to the same practitioner at the same place,
+# and sending two keys would hide which one a connector is actually relying on.
+number = os.environ["PROVNUM"].strip()
+who = {"providerNumber": number} if number else {"affiliationId": os.environ["AFFIL"]}
 print(json.dumps({
   "pmsPatientRecordNumber": "DEV-" + slug.upper(),
   "familyName": os.environ["FAMILY"],
@@ -79,7 +100,7 @@ print(json.dumps({
   "address": os.environ["ADDR"],
   "mobile": "+61400000999",
   "email": slug + "@example.invalid",
-  "providerId": os.environ["PROV"],
+  **who,
   "arrivedAt": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
   "source": "dev",
   "idempotencyKey": "dev-" + slug + "-" + os.environ["RUN"],
@@ -107,7 +128,7 @@ if "arrivalId" not in d:
     # replayed under the same idempotency key.
     reason = d.get("reason")
     print("REFUSED  %-22s %-13s %s" % (name, reason or "-", d.get("message", d)))
-    if reason == "provider_not_servicing":
+    if reason in ("provider_not_servicing", "provider_not_anchored"):
         print("         fix it at http://localhost:3100/practice/patients (Needs a provider)")
     sys.exit(0)
 decision = d["decision"]
