@@ -1322,7 +1322,15 @@ model Agreement {
   letterheadHash          String?
   verificationEventId     String?      @db.Uuid
   signatureEventId        String?      @db.Uuid
-  supersedesAgreementId   String?      @db.Uuid // HARD-02: corrections supersede
+  /// HARD-02: corrections supersede. ONE SUCCESSOR PER AGREEMENT, enforced by
+  /// the partial unique index `agreements_one_successor` (UNIQUE on this column
+  /// WHERE it is NOT NULL) rather than by a Prisma `@@unique`, which would
+  /// apply to every row and there is no such thing as one agreement that
+  /// supersedes nothing. Two rows replacing the same agreement would be one
+  /// visit with two contracts; the service serialises the write under
+  /// `SELECT ... FOR UPDATE` and the index is what stops a future caller
+  /// forgetting to.
+  supersedesAgreementId   String?      @db.Uuid
   retentionExpiryDate     DateTime?    @db.Date
   legalHold               Boolean      @default(false)
   // FR-9.3 write-back tracking: the artefact lands in the PMS patient record

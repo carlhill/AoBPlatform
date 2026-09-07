@@ -396,6 +396,24 @@ export class AgreementsService {
     correctedTypes: readonly string[],
     actor: { id: string; name: string },
   ): Promise<DbAgreement> {
+    /*
+     * ONE SUCCESSOR PER AGREEMENT, AND THIS PATH CHECKS TOO (found in review,
+     * 7 Sep 2026, alongside the row lock on the assignor path).
+     *
+     * Re-send read the session, not the agreement, so pressing it twice on a
+     * row that had already been corrected and re-sent would have superseded
+     * the same agreement a second time — one visit, two contracts, each
+     * claiming to replace the same one. The correction has already happened
+     * and the replacement already carries it; the honest answer is that
+     * agreement, and the database now refuses the alternative outright
+     * (`agreements_one_successor`).
+     */
+    const existing = await tx.agreement.findFirst({
+      where: { supersedesAgreementId: agreement.id },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (existing) return existing;
+
     const replacement = await this.createSupersedingDraft(tx, practiceId, agreement, {});
 
     await enqueueVaultEvent(tx, {
@@ -619,7 +637,13 @@ export class AgreementsService {
     }
 
     if (disposition.kind === 'supersede') {
-      return this.supersedeForAssignorChange(practiceId, state.agreement, dto, actor);
+      /*
+       * THE ID, NOT THE ROW. What was read above committed in its own
+       * transaction and is a photograph; the supersession re-reads the row
+       * under a lock and decides again for itself (see below). Handing it this
+       * object would let a stale status choose the act.
+       */
+      return this.supersedeForAssignorChange(practiceId, agreementId, dto, actor);
     }
 
     try {
@@ -829,13 +853,71 @@ export class AgreementsService {
    */
   private async supersedeForAssignorChange(
     practiceId: string,
-    agreement: DbAgreement,
+    agreementId: string,
     dto: ChangeAssignorDto,
     actor?: Actor,
   ): Promise<DbAgreement> {
-    let replacementId: string;
+    let outcome:
+      | { kind: 'created'; id: string; superseded: DbAgreement }
+      | { kind: 'settled'; agreement: DbAgreement };
     try {
-      replacementId = await this.prisma.withPractice(practiceId, async (tx) => {
+      outcome = await this.prisma.withPractice(practiceId, async (tx) => {
+        /*
+         * TAKE THE ROW FIRST, THEN DECIDE (found in review, 7 Sep 2026).
+         *
+         * THE DECISION ABOVE WAS MADE IN A TRANSACTION THAT HAS COMMITTED, so
+         * by the time this one opens the agreement may have been signed, or
+         * superseded by the receptionist's own second press. Deciding on that
+         * photograph would let two overlapping calls both write a superseding
+         * agreement — one visit, two contracts, both claiming to replace the
+         * same one — and would let a signature that landed in the gap be
+         * followed by a supersession of what is now signed evidence, which is
+         * exactly the thing `assignorRepointDisposition` refuses.
+         *
+         * `SELECT ... FOR UPDATE` IS THE FIX AND NOT A RETRY LOOP. The second
+         * caller BLOCKS here until the first commits, then reads what the
+         * first wrote and re-decides against it: it finds a successor and
+         * either returns it (the same party asked for twice) or is refused
+         * with `agreement_moved_on`. Serialising two presses on one agreement
+         * costs milliseconds; two agreements for one visit costs an audit.
+         *
+         * RLS STILL APPLIES to the raw statement — the policy is on the table,
+         * not on the client — so a cross-practice id locks nothing and the
+         * read below fails closed as a 404.
+         */
+        await tx.$queryRaw`SELECT "id" FROM "agreements" WHERE "id" = ${agreementId}::uuid FOR UPDATE`;
+
+        const agreement = await tx.agreement.findFirst({ where: { id: agreementId } });
+        if (!agreement) throw new NotFoundException('Agreement not found.');
+        const successor = await tx.agreement.findFirst({
+          where: { supersedesAgreementId: agreementId },
+          orderBy: { createdAt: 'asc' },
+        });
+        const successorAssignor = successor
+          ? await tx.assignor.findFirst({ where: { id: successor.assignorId } })
+          : null;
+
+        const now = assignorRepointDisposition({
+          status: agreement.status as AgreementStatus,
+          particularsLocked: agreement.particularsLockedAt !== null,
+          signed: agreement.signatureEventId !== null,
+          superseded: successor !== null,
+        });
+        if (now.kind !== 'supersede') {
+          /*
+           * THE SAME TWO ANSWERS THE READ PATH GIVES, so a request that lost a
+           * race by a microsecond reads exactly like one that lost by a minute
+           * — a caller must not be able to tell which.
+           */
+          const settledState = { successor, successorAssignorName: successorAssignor?.name ?? null };
+          if (successor && this.successorAlreadySays(settledState, dto)) {
+            return { kind: 'settled' as const, agreement: successor };
+          }
+          throw assignorRefusal(
+            now.kind === 'refused' ? now.reason : 'agreement_moved_on',
+          );
+        }
+
         // THE PARTY FIRST, so a refusal costs nothing: everything below writes.
         let assignorId: string;
         if (dto.assignorIsPatient) {
@@ -953,12 +1035,20 @@ export class AgreementsService {
         await this.capture.openInPractice(tx, practiceId, replacement.id);
 
         await this.assertAssignorPartyPasses(tx, replacement);
-        return replacement.id;
+        return { kind: 'created' as const, id: replacement.id, superseded: agreement };
       });
     } catch (err) {
       if (err instanceof HardRuleViolation) throw new BadRequestException(err.message);
       throw err;
     }
+
+    /*
+     * NOTHING TO LOCK, BECAUSE NOTHING WAS MADE. The row was already superseded
+     * onto this very party by an earlier press; the answer is that agreement,
+     * exactly as the read path would have given it.
+     */
+    if (outcome.kind === 'settled') return outcome.agreement;
+    const replacementId = outcome.id;
 
     /*
      * NOW VALIDATE AND RENDER IT — outside the transaction above, because both
@@ -974,8 +1064,8 @@ export class AgreementsService {
        * agreement reaches here and a locked episodic one always stated D5 —
        * but a particular is never left to a `!`.
        */
-      serviceDate: serviceDateOf(agreement) ?? new Date().toISOString().slice(0, 10),
-      mbsItemNumbers: mbsItemNumbersOf(agreement),
+      serviceDate: serviceDateOf(outcome.superseded) ?? new Date().toISOString().slice(0, 10),
+      mbsItemNumbers: mbsItemNumbersOf(outcome.superseded),
     });
 
     const locked = await this.prisma.withPractice(practiceId, (tx) =>

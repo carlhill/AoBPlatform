@@ -753,6 +753,138 @@ describe('re-pointing a draft agreement at another assignor (e2e, real Postgres)
     expect(after?.assignorId).toBe(patientAssignorId);
   });
 
+  /**
+   * TWO PRESSES, ONE SUPERSESSION (found in review, 7 Sep 2026).
+   *
+   * The disposition — locked, unsigned, no successor — was read in a
+   * transaction that had already COMMITTED by the time the write opened its
+   * own. Two overlapping calls both read it and both wrote a replacement: one
+   * visit, two contracts, each claiming to replace the same agreement, and no
+   * story anybody could reconstruct afterwards.
+   *
+   * The write now takes `SELECT ... FOR UPDATE` on the agreement and re-decides
+   * under the lock, so the second caller blocks, reads what the first wrote,
+   * and gets that agreement back rather than making another. The partial unique
+   * index `agreements_one_successor` is the belt to that brace.
+   */
+  it('concurrent_who_is_signing_supersedes_once', async () => {
+    const agreementId = await lockedDraft();
+    const body = {
+      assignorIsPatient: false,
+      name: 'Sam Carer',
+      authorityBasis: 'parent',
+      declaresEighteenOrOver: true,
+      mobile: '0400000111',
+    };
+
+    const [first, second] = await Promise.all([
+      request(app.getHttpServer())
+        .post(`/agreements/${agreementId}/assignor`)
+        .set('x-practice-id', practiceId)
+        .send(body),
+      request(app.getHttpServer())
+        .post(`/agreements/${agreementId}/assignor`)
+        .set('x-practice-id', practiceId)
+        .send(body),
+    ]);
+
+    // NEITHER PRESS FAILED. The loser of the race is not told it lost — it is
+    // told the answer, which is the same agreement.
+    expect([first.status, second.status]).toEqual([201, 201]);
+    expect(first.body.id).toBe(second.body.id);
+    expect(first.body.supersedesAgreementId).toBe(agreementId);
+
+    // AND THERE IS EXACTLY ONE.
+    const successors = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findMany({ where: { supersedesAgreementId: agreementId } }),
+    );
+    expect(successors).toHaveLength(1);
+
+    // One act, one supersession event — not two saying the same thing about
+    // one agreement.
+    const superseded = await prisma.vaultOutbox.findMany({
+      where: { type: 'agreement.superseded', subjectId: agreementId },
+    });
+    expect(superseded).toHaveLength(1);
+  });
+
+  /**
+   * A SIGNATURE THAT LANDS IN THE GAP REFUSES, rather than superseding what is
+   * now signed evidence (found in review, 7 Sep 2026).
+   *
+   * HOW THE WINDOW IS STAGED. `changeAssignor` opens two transactions: the
+   * first reads the agreement to decide what to do, the second writes. This
+   * signs the row BETWEEN them, on its own connection, which is precisely what
+   * a patient finishing at the tablet a heartbeat earlier would do. Without the
+   * re-read under the lock, the write would go on to fabricate a successor for
+   * a signed agreement — contradicting the one rule
+   * `assignorRepointDisposition` never bends.
+   */
+  it('who_is_signing_refused_when_signed_between_read_and_write', async () => {
+    const agreementId = await lockedDraft();
+    /*
+     * COUNTED, NOT LISTED. Earlier tests in this file have re-pointed their own
+     * drafts at a party of the same name, and those rows are theirs — the
+     * question here is whether THIS refusal left one behind.
+     */
+    const partiesBefore = await prisma.withPractice(practiceId, (tx) =>
+      tx.assignor.count({ where: { name: 'Sam Carer' } }),
+    );
+
+    const original = prisma.withPractice.bind(prisma);
+    let seen = 0;
+    const spy = jest
+      .spyOn(prisma, 'withPractice')
+      .mockImplementation(async <T,>(scope: string, fn: (tx: never) => Promise<T>): Promise<T> => {
+        seen += 1;
+        // Call 1 is the disposition read. Immediately after it commits — and
+        // before the write transaction below opens — the signature lands.
+        if (seen === 2) {
+          await original(scope, (tx) =>
+            tx.agreement.update({
+              where: { id: agreementId },
+              data: { signatureEventId: randomUUID() },
+            }),
+          );
+        }
+        return original(scope, fn as never) as Promise<T>;
+      });
+
+    let refused: request.Response;
+    try {
+      refused = await request(app.getHttpServer())
+        .post(`/agreements/${agreementId}/assignor`)
+        .set('x-practice-id', practiceId)
+        .send({
+          assignorIsPatient: false,
+          name: 'Sam Carer',
+          authorityBasis: 'parent',
+          declaresEighteenOrOver: true,
+          mobile: '0400000111',
+        });
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(refused.status).toBe(409);
+    expect(refused.body.reason).toBe('already_signed');
+
+    // NOTHING WAS MADE, and no assignor row was left behind by a transaction
+    // that rolled back (hard rule 11).
+    const successors = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findMany({ where: { supersedesAgreementId: agreementId } }),
+    );
+    expect(successors).toEqual([]);
+    const partiesAfter = await prisma.withPractice(practiceId, (tx) =>
+      tx.assignor.count({ where: { name: 'Sam Carer' } }),
+    );
+    expect(partiesAfter).toBe(partiesBefore);
+    const superseded = await prisma.vaultOutbox.findMany({
+      where: { type: 'agreement.superseded', subjectId: agreementId },
+    });
+    expect(superseded).toEqual([]);
+  });
+
   it('assignor_change_emits_vault_event_in_same_transaction', async () => {
     const agreementId = await draft();
     const res = await request(app.getHttpServer())
