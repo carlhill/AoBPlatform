@@ -50,6 +50,13 @@ type Particulars = {
   serviceDate: string;
   mbsItemNumbers: string[];
   patientName: string;
+  /**
+   * WHO IS SIGNING — D7, explicit and never inferred (CLAUDE.md §3), read from
+   * the LOCKED particulars the render was drawn from.
+   */
+  assignorIsPatient: boolean;
+  assignorName: string | null;
+  assignorRelationship: string | null;
   artefactSha256: string | null;
 };
 
@@ -302,6 +309,38 @@ export function AgreeView({ token }: { token: string }) {
           </dl>
 
           <p className={ui.hint}>{strings.agree.noAmount}</p>
+
+          {/*
+            WHO IS SIGNING, SAID BEFORE THE TICKS AND THE BUTTON (Carl, 7 Sep
+            2026). The tablet's K-4 now states it; a remote signer is entitled
+            to the same sentence, and this page had nothing.
+
+            THE SAME WORDS, FROM THE SAME PLACE. `strings.kiosk.signature` is
+            read rather than a second copy written here, so the two surfaces
+            cannot come to describe one act differently (REQ-LANG-01).
+
+            IT STATES AND DOES NOT ASK. The particulars are locked and hashed
+            before this page can draw (hard rule 2, REQ-REG-06); changing who
+            signs is the practice's, by correct then supersede.
+          */}
+          <p className={styles.lead} data-testid="agree-who">
+            {particulars.assignorIsPatient
+              ? strings.kiosk.signature.signingByPatient(particulars.patientName)
+              : particulars.assignorRelationship
+                ? strings.kiosk.signature.signingByOther(
+                    particulars.assignorName ?? '',
+                    particulars.patientName,
+                    strings.kiosk.assignor.relationshipNames[particulars.assignorRelationship]
+                      ?? particulars.assignorRelationship,
+                  )
+                : strings.kiosk.signature.signingByOtherUnstated(
+                    particulars.assignorName ?? '',
+                    particulars.patientName,
+                  )}
+          </p>
+          <p className={ui.hint} data-testid="agree-who-wrong">
+            {strings.agree.whoNotRight}
+          </p>
 
           {/*
             THE OPERATIVE WORDS, FROM THE SERVER. Not written in this file and

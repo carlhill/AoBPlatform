@@ -124,6 +124,7 @@ export function Screen({
   stepTag,
   context,
   sessionId,
+  patientId,
   onLeave,
   children,
 }: {
@@ -141,6 +142,27 @@ export function Screen({
    * else this footer stays quiet about.
    */
   sessionId?: string | null;
+  /**
+   * WHICH PATIENT RECORD THIS SESSION IS ABOUT (Carl, 7 Sep 2026) — "every page
+   * must have the patient GUID from AoBPlatform somewhere, so we can see which
+   * record has the issue. Also helps with testing."
+   *
+   * PUSHED SESSIONS ONLY, and that is a rule rather than an accident of
+   * plumbing: before verification a walk-up tablet knows nothing about any
+   * person and there is no record to name, so the walk-up screens pass nothing
+   * and the line is not drawn. Named test:
+   * `kiosk_footer_shows_the_patient_id_during_a_pushed_session_only`.
+   *
+   * IN FULL, UNLIKE THE SESSION ID ABOVE IT. Eight characters are for matching
+   * by eye across a desk; this is for matching a record EXACTLY, which is what
+   * a support ticket and a test run both do with it.
+   *
+   * AN OPAQUE ID IS NOT A DISCLOSURE. It is a value this platform minted, it
+   * names the same row the vault events name, and it is not a Medicare number —
+   * there is no column for one anywhere in this system and it would not be an
+   * identity identifier if there were (hard rule 1, REQ-VER-02).
+   */
+  patientId?: string | null;
   /**
    * THE WAY OUT (Carl, 3 Sep 2026; REQ-REC-04, hard rule 8).
    *
@@ -221,6 +243,18 @@ export function Screen({
           {sessionId ? (
             <p className={styles.buildMark} data-testid="kiosk-session-identity">
               {strings.chrome.sessionIdentity(sessionId.slice(0, 8))}
+            </p>
+          ) : null}
+          {/*
+            AND WHICH RECORD IT IS ABOUT — its own line, after the session's,
+            for the reason the session's is its own line: each fact appears and
+            disappears on its own, independent of whether the one above it
+            resolved. Monospace, `text-transform: none`, selectable, and never
+            shortened (`.recordMark`).
+          */}
+          {patientId ? (
+            <p className={`${styles.buildMark} ${styles.recordMark}`} data-testid="kiosk-patient-identity">
+              {strings.chrome.patientIdentity(patientId)}
             </p>
           ) : null}
         </div>

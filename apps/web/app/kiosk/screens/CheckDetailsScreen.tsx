@@ -135,6 +135,7 @@ export function CheckDetailsScreen({
   saving,
   saveError,
   sessionId,
+  patientId,
   onAnswer,
   onContinue,
   onSeeReception,
@@ -160,6 +161,11 @@ export function CheckDetailsScreen({
   saveError: boolean;
   /** The pushed session's own id — an audit/testing aid in the footer. See `Chrome.tsx`'s `Screen`. */
   sessionId?: string | null;
+  /**
+   * The patient's own AoBPlatform id, on a PUSHED session only — the walk-up
+   * screens know nobody yet and pass nothing. See `Chrome.tsx`'s `Screen`.
+   */
+  patientId?: string | null;
   onAnswer: (type: string, answer: DetailAnswer) => void;
   onContinue: () => void;
   onSeeReception: () => void;
@@ -173,6 +179,7 @@ export function CheckDetailsScreen({
       stepTag={strings.chrome.stepOf(1, 3)}
       context={strings.checkDetails.footer}
       sessionId={sessionId}
+      patientId={patientId}
       onLeave={onSeeReception}
     >
       <div className={styles.twoColumn}>

@@ -36,6 +36,7 @@ export function CompleteScreen({
   givenName,
   enduringProviderName,
   sessionId,
+  patientId,
   onDone,
 }: {
   practiceName: string;
@@ -52,6 +53,11 @@ export function CompleteScreen({
   enduringProviderName?: string | null;
   /** The pushed session's own id — an audit/testing aid in the footer. See `Chrome.tsx`'s `Screen`. */
   sessionId?: string | null;
+  /**
+   * The patient's own AoBPlatform id, on a PUSHED session only — the walk-up
+   * screens know nobody yet and pass nothing. See `Chrome.tsx`'s `Screen`.
+   */
+  patientId?: string | null;
   onDone: () => void;
 }): ReactNode {
   const [remaining, setRemaining] = useState(RETURN_SECONDS);
@@ -72,6 +78,7 @@ export function CompleteScreen({
       stepTag={strings.chrome.complete}
       context={strings.complete.writeBackQueued}
       sessionId={sessionId}
+      patientId={patientId}
     >
       <div className={styles.centred}>
         <h1 className={styles.h1Small} data-testid="complete-heading">

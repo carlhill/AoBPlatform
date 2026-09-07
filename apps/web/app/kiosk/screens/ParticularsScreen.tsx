@@ -139,6 +139,7 @@ export function ParticularsScreen({
   onDeclineEnduring,
   blueprintPanels = false,
   sessionId,
+  patientId,
   onSeeReception,
 }: {
   practiceName: string;
@@ -197,6 +198,11 @@ export function ParticularsScreen({
   blueprintPanels?: boolean;
   /** The pushed session's own id — an audit/testing aid in the footer. See `Chrome.tsx`'s `Screen`. */
   sessionId?: string | null;
+  /**
+   * The patient's own AoBPlatform id, on a PUSHED session only — the walk-up
+   * screens know nobody yet and pass nothing. See `Chrome.tsx`'s `Screen`.
+   */
+  patientId?: string | null;
   onSeeReception: () => void;
 }): ReactNode {
   /*
@@ -270,6 +276,7 @@ export function ParticularsScreen({
       stepTag={strings.chrome.stepOf(3, 4)}
       context={strings.particulars.footer}
       sessionId={sessionId}
+      patientId={patientId}
       onLeave={onSeeReception}
     >
       <div className={blueprintPanels ? styles.twoColumn : styles.oneColumn}>

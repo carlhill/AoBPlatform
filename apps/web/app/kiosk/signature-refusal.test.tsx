@@ -51,6 +51,7 @@ const SESSION: TabletSessionPayload = {
     email: 'riley@example.invalid',
   },
   assignor: { isPatient: true },
+  patientId: 'e609b40e-63aa-56e1-8f5b-2e9bc5aa5133',
   agreementId: 'ag-riley',
   captureRequestId: 'cr-riley-pushed',
 };

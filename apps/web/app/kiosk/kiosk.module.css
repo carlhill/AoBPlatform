@@ -1035,3 +1035,45 @@
     flex: 1 1 0;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   K-4's WHO-IS-SIGNING STATEMENT (Carl, 7 Sep 2026).
+
+   PROMINENT, because the whole fault it fixes was that nobody was told. It is
+   set larger than body text and heavier, above the pad, so it is read before a
+   finger reaches the glass rather than after.
+
+   IT IS NOT AN ALERT AND MUST NOT LOOK LIKE ONE. No stop colour, no icon, no
+   border in the refusal palette: on the overwhelming majority of signings it
+   is simply true, and a screen that shouts a true fact at every patient
+   teaches them to skip it. The quiet line and the exit under it carry the
+   "if this is wrong" half.
+--------------------------------------------------------------------------- */
+.whoIsSigning {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s3);
+  padding: var(--s4) var(--s5);
+  border-left: 3px solid var(--accent);
+  background: var(--surface-sunken);
+}
+
+.whoIsSigningLine {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/* A full record id in the footer. The lesson `tablet.module.css`'s `.sessionId`
+   already carries: monospace, no letter-spacing and no transform, or a uuid is
+   a thing nobody can read a digit out of — and selectable, because the whole
+   point of showing it is that somebody reads it or drags across it. */
+.recordMark {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0;
+  text-transform: none;
+  overflow-wrap: anywhere;
+  user-select: all;
+}

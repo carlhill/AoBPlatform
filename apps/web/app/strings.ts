@@ -16,6 +16,34 @@ import { CONTACT_CLASH_MESSAGES, type AgreementType } from '@aobplatform/domain'
 
 export const strings = {
   appName: 'AoBPlatform',
+  /**
+   * THE RECORD LINE — "which record has the issue" (Carl, 7 Sep 2026).
+   *
+   * Every page that is ABOUT a patient names the patient's AoBPlatform id, in
+   * full, quietly, with a copy button. It is the diagnostic handle a support
+   * call and a test run both need: reception, the tablet, the vault events and
+   * the console rows all name the same row, and until now nothing on screen
+   * said which row that was.
+   *
+   * AN OPAQUE ID IS NOT A PERSONAL DETAIL. It is a value this platform minted;
+   * it is never a Medicare number (hard rule 1 — there is no column for one
+   * anywhere in this system), never an IHI, and never a record number belonging
+   * to somebody else's system. The same reasoning the tablet's session id
+   * already carries.
+   *
+   * IN FULL, NEVER TRUNCATED (Carl: "so we can see which record has the issue.
+   * Also helps with testing"). A shortened id is something to compare by eye; a
+   * full one is something to match exactly, which is what a support ticket
+   * needs — hence the copy button, which writes to the clipboard and persists
+   * nothing anywhere.
+   */
+  recordId: {
+    patient: 'Patient ID',
+    copy: 'Copy',
+    copied: 'Copied',
+    /** The accessible name on the copy control, so it is not twelve buttons all called "Copy". */
+    copyLabel: (label: string) => `Copy ${label}`,
+  },
   auth: {
     /*
      * A TOKEN WITH NO ROLES. Not a permissions problem — a stale session that
@@ -1828,6 +1856,16 @@ export const strings = {
     noAmount:
       'No amount is shown, deliberately. An assignment of benefit is about who Medicare pays, not how much; ' +
       'the amount is fixed by the Medicare schedule for those item numbers.',
+    /**
+     * "IF THIS IS NOT RIGHT" — the remote link's own version of the tablet's
+     * line (Carl, 7 Sep 2026).
+     *
+     * THE SENTENCE ABOVE IT IS THE KIOSK'S, read from `kiosk.signature` so the
+     * two surfaces cannot describe one act differently. THIS one is not, and
+     * cannot be: "see reception" is a person a metre away on a tablet in a
+     * waiting room, and nobody at all to somebody opening a link at home.
+     */
+    whoNotRight: 'If this is not right, do not approve — contact the practice.',
     approve: 'I agree',
     approving: 'Recording…',
     approveFailed: 'That could not be recorded',
@@ -4949,6 +4987,23 @@ export const strings = {
     sessionsTitle: 'On the tablet',
     sessionsNone: 'No tablet session for this patient today.',
     sessionOn: (device: string, state: string) => `${device} — ${state}`,
+    /**
+     * A SESSION WHOSE AGREEMENT HAS MOVED ON IS HISTORY, NOT WORK (Carl, 7 Sep
+     * 2026, from testing: Alex had signed on the tablet and his work page still
+     * offered "Send again" on the session he walked away from an hour earlier,
+     * whose only possible outcome was the server's refusal "This agreement has
+     * moved on and cannot be sent to a tablet").
+     *
+     * SO THE ROW LOSES ITS CONTROLS AND KEEPS ITS FACTS. It still says what
+     * happened and names the session, because the sequence is exactly what
+     * somebody reconstructing a visit needs; what it no longer does is offer an
+     * act that cannot succeed. A control whose only outcome is a refusal is the
+     * fault CLAUDE.md §7 names, seen from the other end.
+     */
+    sessionHistory: (state: string, shortId: string) => `${state} · session ${shortId}`,
+    sessionHistorySigned: 'this agreement was later signed',
+    /** Superseded, cancelled, expired — moved on, and the row does not guess which. */
+    sessionHistoryMovedOn: 'this agreement has since moved on',
 
     followUpTitle: 'Follow-up',
     followUpLead: 'Where managed follow-up has got to for this patient’s open agreements.',
@@ -5291,6 +5346,24 @@ export const strings = {
        * when there is no pushed session — a walk-up ceremony has none to show.
        */
       sessionIdentity: (shortId: string) => `session ${shortId}`,
+      /*
+       * WHICH PATIENT RECORD IS THIS (Carl, 7 Sep 2026) — "every page must
+       * have the patient GUID from AoBPlatform somewhere, so we can see which
+       * record has the issue".
+       *
+       * AN ID WE MINTED, AND NOTHING ELSE. It is opaque, it is ours, and it is
+       * not a Medicare number — there is no column for one of those anywhere in
+       * this system and it is not an identity identifier in any case (hard rule
+       * 1, REQ-VER-02). Shown IN FULL rather than shortened, because the point
+       * is matching a record exactly against the console and the vault; the
+       * session id above stays short because eight characters are read across a
+       * desk, and this one is read off a screen into a support ticket.
+       *
+       * ONLY DURING A PUSHED SESSION. Before verification the tablet knows
+       * nothing about any person and there is no record to name — the walk-up
+       * screens show nothing here.
+       */
+      patientIdentity: (id: string) => `patient ${id}`,
     },
 
     /*
@@ -5887,6 +5960,46 @@ export const strings = {
 
     signature: {
       heading: 'Sign here',
+      /**
+       * WHO IS SIGNING, SAID ON THE SCREEN WITH THE PEN ON IT (Carl, 7 Sep
+       * 2026, from testing the pushed flow: "did not ask who is signing").
+       *
+       * IT IS A STATEMENT AND NEVER A QUESTION. D7 is a LOCKED PARTICULAR by
+       * the time this screen draws (hard rule 2, REQ-REG-06): it was settled at
+       * reception before the push and it moves only by correct → supersede on a
+       * staff surface. A control here that could change it would be a tablet
+       * editing a particular of a contract, which is the whole thing K-3 has no
+       * field for.
+       *
+       * BUT IT HAD TO BE SAID. K-3's "Signing" row is one line inside a
+       * document somebody is reading; K-4 said nothing at all, so the person
+       * actually holding the pen was never told whose signature this is. On the
+       * other-party branch it names all three facts a wrong pairing would show
+       * up in — who is signing, who for, and on what footing.
+       *
+       * THE RELATIONSHIP IS THE RECORD'S OWN WORD, passed through the kiosk's
+       * `relationshipLabel` so a key-shaped value from an older record still
+       * reads as a word. The list itself is versioned content
+       * (`assignor-relationships.json`, hard rule 14); only the words are here.
+       */
+      signingByPatient: (patientName: string) => `${patientName} is signing.`,
+      signingByOther: (assignorName: string, patientName: string, relationship: string) =>
+        `${assignorName} is signing for ${patientName} as their ${relationship}.`,
+      /**
+       * THE SAME SENTENCE WITH THE RELATIONSHIP LEFT OUT, for a record that
+       * carries a name and no relationship. "as their ." is worse than silence,
+       * and inventing a word for a legal footing nobody declared is worse than
+       * both.
+       */
+      signingByOtherUnstated: (assignorName: string, patientName: string) =>
+        `${assignorName} is signing for ${patientName}.`,
+      /**
+       * AND THE WAY OUT IF IT IS WRONG (REQ-REC-04, hard rule 8). It offers no
+       * correction, because there is nothing on this device that could make
+       * one; it points at the person a metre away who can, and says the one
+       * thing that matters in the meantime — do not sign.
+       */
+      whoNotRight: 'If this is not right, do not sign — see reception.',
       validatedBanner: 'All particulars are complete and locked. Checked against the s 65C data set.',
       padHint: 'Sign with your finger above this line',
       padLabel: 'Signature area. Sign with your finger, or use approve by tapping below.',
@@ -6286,6 +6399,20 @@ export const strings = {
       mobile: 'Mobile',
       email: 'Email',
       recordNumber: 'Their record number for you',
+      /**
+       * OUR OWN ID FOR THIS PRACTICE'S ROW (Carl, 7 Sep 2026), beside the
+       * practice's own record number and doing a different job.
+       *
+       * THE ACCOUNT ID IS ALREADY ON THIS PAGE and is NOT this. That one names
+       * the person signed in; this names the patient row a single practice
+       * holds, and a support call has to be able to say which — a patient
+       * linked to two practices has one account and two of these.
+       *
+       * IT IS NOT CORRECTABLE and is not offered as such, for the same reason
+       * the record number is not: it identifies a row, it is not a fact about
+       * the person, and there is nothing anybody could change it to.
+       */
+      patientIdAt: (practiceName: string) => `Patient ID at ${practiceName}`,
       correctAction: 'Ask the practice to correct this',
       asked: 'The practice has been asked. They will confirm the correct value with you.',
       confirmTitle: 'Ask the practice to correct this?',

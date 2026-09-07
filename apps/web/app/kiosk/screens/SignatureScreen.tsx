@@ -24,6 +24,23 @@
  * NO PRACTITIONER SIGNATURE FIELD (rule 3, abolished 1 July 2026) and no
  * amount (rule 4). There is one signature on this screen and it belongs to the
  * assignor.
+ *
+ * AND IT SAYS WHOSE (Carl, 7 Sep 2026, from testing the pushed flow: "did not
+ * ask who is signing"). K-3's "Signing" row is one line inside a document
+ * somebody is reading; this screen said nothing at all, so the person holding
+ * the pen was never told whose signature this is.
+ *
+ * IT STATES, IT DOES NOT ASK. D7 is a LOCKED PARTICULAR by the time this screen
+ * draws — settled at reception before the push, validated and locked on the
+ * server (hard rule 2, REQ-REG-06) — and the tablet has never offered a field
+ * that could move it. Adding a question here would be a tablet editing a
+ * particular of a contract in a waiting room, which is exactly what K-3 has no
+ * field for. Changing it is reception's, by correct → supersede.
+ *
+ * SO THE ONLY THING UNDER IT IS THE WAY OUT. "If this is not right, do not sign
+ * — see reception", and the same See reception action every other screen
+ * carries. Nothing about the appointment moves either way (REQ-REC-04, hard
+ * rule 8).
  */
 
 import type { ReactNode } from 'react';
@@ -32,6 +49,7 @@ import { SecondaryButton } from '../components/Buttons';
 import { SignaturePad, type SignaturePadHandle } from '../components/SignaturePad';
 import { SignatureControl } from '../components/SignatureControl';
 import type { SignatureValidation } from '../rules/signature-gate';
+import { relationshipLabel } from '../rules/assignor';
 import { strings } from '../strings';
 import styles from '../kiosk.module.css';
 
@@ -39,6 +57,10 @@ export function SignatureScreen({
   practiceName,
   locationLine,
   heading,
+  patientName,
+  assignorIsPatient,
+  assignorName,
+  assignorRelationship,
   validation,
   padRef,
   inkPresent,
@@ -50,6 +72,7 @@ export function SignatureScreen({
   onSignTap,
   onBack,
   sessionId,
+  patientId,
   onSeeReception,
 }: {
   practiceName: string;
@@ -62,6 +85,28 @@ export function SignatureScreen({
    * screen would have to look up itself.
    */
   heading: string;
+  /**
+   * WHO THIS AGREEMENT IS ABOUT, AND WHO IS PUTTING A MARK ON IT.
+   *
+   * ALL FOUR ARRIVE FROM THE SAME PLACE K-3 READ THEM FROM (`ParticularsView`,
+   * built once in `Ceremony.tsx` from the locked particulars and the pushed
+   * session). This screen looks nothing up: two screens reading one object is
+   * what stops the reading step and the signing step from naming two different
+   * parties.
+   *
+   * `assignorIsPatient` IS THE DISCRIMINATOR AND IS NEVER INFERRED from whether
+   * a name happens to be present (CLAUDE.md §3, D7).
+   */
+  patientName: string;
+  assignorIsPatient: boolean;
+  assignorName: string | null;
+  /**
+   * The relationship AS THE RECORD CARRIES IT — already a display word on
+   * anything written since the assignor list became content. Passed through
+   * `relationshipLabel` below so a key-shaped value from an older record still
+   * reads as a word rather than as `family_member`.
+   */
+  assignorRelationship: string | null;
   validation: SignatureValidation;
   padRef: { current: SignaturePadHandle | null };
   inkPresent: boolean;
@@ -75,6 +120,11 @@ export function SignatureScreen({
   onBack: () => void;
   /** The pushed session's own id — an audit/testing aid in the footer. See `Chrome.tsx`'s `Screen`. */
   sessionId?: string | null;
+  /**
+   * The patient's own AoBPlatform id, on a PUSHED session only — the walk-up
+   * screens know nobody yet and pass nothing. See `Chrome.tsx`'s `Screen`.
+   */
+  patientId?: string | null;
   onSeeReception: () => void;
 }): ReactNode {
   return (
@@ -84,12 +134,42 @@ export function SignatureScreen({
       stepTag={strings.chrome.stepOf(4, 4)}
       context={strings.signature.footer}
       sessionId={sessionId}
+      patientId={patientId}
       onLeave={onSeeReception}
     >
       <div className={styles.stack}>
         <h1 className={styles.h2} data-testid="signature-heading">
           {heading}
         </h1>
+
+        {/*
+          WHO IS SIGNING, ABOVE THE PAD AND BEFORE THE BANNER. It is the first
+          thing on the screen after the heading because it is the thing the
+          person holding the tablet has to agree with before they touch the
+          glass — and because a statement placed under a signature pad is a
+          statement read after the fact.
+        */}
+        <div className={styles.whoIsSigning}>
+          <p className={styles.whoIsSigningLine} data-testid="signature-who">
+            {assignorIsPatient
+              ? strings.signature.signingByPatient(patientName)
+              : assignorRelationship
+                ? strings.signature.signingByOther(
+                    assignorName ?? '',
+                    patientName,
+                    relationshipLabel(assignorRelationship),
+                  )
+                : strings.signature.signingByOtherUnstated(assignorName ?? '', patientName)}
+          </p>
+          <p className={styles.muted} data-testid="signature-who-wrong">
+            {strings.signature.whoNotRight}
+          </p>
+          <SecondaryButton
+            label={strings.errors.seeReception}
+            onPress={onSeeReception}
+            testId="signature-who-see-reception"
+          />
+        </div>
         {validation.state === 'valid' ? (
           <Blueprint accented className={styles.banner}>
             <p className={styles.body} data-testid="validated-banner">

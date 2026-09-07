@@ -113,6 +113,23 @@ export class AgreeService {
         serviceDate: p.serviceDate as string,
         mbsItemNumbers: (p.mbsItemNumbers as string[] | undefined) ?? [],
         patientName: p.patientName as string,
+        /**
+         * WHO IS SIGNING (Carl, 7 Sep 2026) — the same three facts K-4 now
+         * states on the tablet, so a remote signer is told what a signer at
+         * the practice is told.
+         *
+         * FROM THE LOCKED PARTICULARS, NOT FROM THE AGREEMENT ROW. These are
+         * the values the render was drawn from and the hash was taken over
+         * (rule 13), which is the point: the page states what the document
+         * says, not what a second read of the database says now.
+         *
+         * D7 IS EXPLICIT (CLAUDE.md §3). `assignorIsPatient` is always on a
+         * locked payload; the fallback exists only so an older record cannot
+         * make the page silently claim somebody else is signing.
+         */
+        assignorIsPatient: (p.assignorIsPatient as boolean | undefined) ?? true,
+        assignorName: (p.assignorName as string | undefined) ?? null,
+        assignorRelationship: (p.assignorRelationship as string | undefined) ?? null,
         /** The hash the signature will bind to — shown so the record can be checked later. */
         artefactSha256: locked.renderedArtefactHash,
       },

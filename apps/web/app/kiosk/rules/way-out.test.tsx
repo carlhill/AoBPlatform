@@ -82,8 +82,13 @@ const noop = () => undefined;
 const CHROME = {
   practiceName: 'Sample Practice',
   locationLine: 'NSW',
-  // Only `SignatureScreen` reads this; harmless as an extra prop everywhere else.
+  // Only `SignatureScreen` reads these; harmless as extra props everywhere
+  // else, because a spread is not excess-property-checked.
   heading: strings.particulars.headingByAgreementType.episodic_pre,
+  patientName: 'Alex Fictional',
+  assignorIsPatient: true,
+  assignorName: null,
+  assignorRelationship: null,
 };
 
 /**

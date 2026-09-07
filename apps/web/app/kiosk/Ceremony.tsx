@@ -1863,9 +1863,17 @@ export function Ceremony(): ReactNode {
       serviceDate: str('serviceDate'),
       agreementDate: str('agreementDate'),
       basicServiceDescription: str('basicServiceDescription'),
-      assignorIsPatient: agreement?.assignorIsPatient ?? true,
-      assignorName: str('assignorName'),
-      assignorRelationship: str('assignorRelationship'),
+      /*
+       * D7, WITH THE PUSHED SESSION AS THE FALLBACK. The agreement's own field
+       * is authoritative and is used the moment it has been fetched; before
+       * that — and K-4 now STATES who is signing, so "before that" must not
+       * read as "the patient" by default — the session says it explicitly.
+       * `assignorIsPatient` is never inferred from whether a name is present
+       * (CLAUDE.md §3).
+       */
+      assignorIsPatient: agreement?.assignorIsPatient ?? pushed?.assignor.isPatient ?? true,
+      assignorName: str('assignorName') ?? pushed?.assignor.name ?? null,
+      assignorRelationship: str('assignorRelationship') ?? pushed?.assignor.relationship ?? null,
       /*
        * WHY K-3 IS TOLD (Carl, 4 Sep 2026). On a locked agreement K-5 was
        * skipped, so the "Signing" line here is the only place the patient is
@@ -2005,6 +2013,7 @@ export function Ceremony(): ReactNode {
             saving={confirmBusy}
             saveError={confirmError}
             sessionId={pushed?.id ?? null}
+            patientId={pushed?.patientId ?? null}
             onAnswer={answerDetail}
             onContinue={() => void confirmDetails()}
             onSeeReception={leave}
@@ -2116,6 +2125,7 @@ export function Ceremony(): ReactNode {
             onDeclineEnduring={pushed ? declineEnduring : undefined}
             blueprintPanels={testDevice}
             sessionId={pushed?.id ?? null}
+            patientId={pushed?.patientId ?? null}
             onSeeReception={leave}
           />
         );
@@ -2125,6 +2135,17 @@ export function Ceremony(): ReactNode {
             practiceName={practiceName}
             locationLine={locationLine}
             heading={strings.particulars.headingByAgreementType[view.agreementType]}
+            /*
+              WHO IS SIGNING, FROM THE SAME OBJECT K-3 READ IT FROM (Carl, 7 Sep
+              2026). `view` is built once from the locked particulars and the
+              pushed session; passing it here rather than letting K-4 look
+              anything up is what stops the reading step and the signing step
+              from naming two different parties.
+            */
+            patientName={view.patientName}
+            assignorIsPatient={view.assignorIsPatient}
+            assignorName={view.assignorName}
+            assignorRelationship={view.assignorRelationship}
             validation={validation}
             padRef={padRef}
             inkPresent={inkPresent}
@@ -2141,6 +2162,7 @@ export function Ceremony(): ReactNode {
             // signed; the screen hides it once a signature is in flight.
             onBack={() => setStep('particulars')}
             sessionId={pushed?.id ?? null}
+            patientId={pushed?.patientId ?? null}
             onSeeReception={leave}
           />
         );
@@ -2165,6 +2187,7 @@ export function Ceremony(): ReactNode {
               view.agreementType === 'enduring' ? (view.providerName ?? null) : null
             }
             sessionId={pushed?.id ?? null}
+            patientId={pushed?.patientId ?? null}
             onDone={reset}
           />
         );
