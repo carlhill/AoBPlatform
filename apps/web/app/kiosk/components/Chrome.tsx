@@ -73,6 +73,35 @@ function useDeviceIdentity(): { label: string; idPrefix: string } | null {
   return identity;
 }
 
+/**
+ * Lay a list of footer facts out on one row with a middot between each pair,
+ * skipping the ones that are not present (Carl, 7 Sep 2026 — "spread out the
+ * text").
+ *
+ * THE SEPARATOR IS DECORATION, NOT CONTENT. It is `aria-hidden` and lives in
+ * its own span, so no fact's own text ever carries it: `kiosk-device-identity`
+ * still reads exactly `deviceIdentity(label, prefix)` and nothing else, which
+ * is what the tests and a support call both rely on. Joining the facts into
+ * one string would have been shorter and would have broken both.
+ *
+ * IT PRESERVES ORDER AND OMISSION. A missing device identity closes the gap
+ * rather than leaving a stray "·" — the row shows what is known, in the order
+ * a support call asks for it.
+ */
+function separated(parts: readonly (ReactNode | null)[]): ReactNode[] {
+  const present = parts.filter((part): part is ReactNode => part !== null && part !== false);
+  return present.flatMap((part, index) =>
+    index === 0
+      ? [part]
+      : [
+          <span key={`separator-${index}`} className={styles.footerSeparator} aria-hidden="true">
+            ·
+          </span>,
+          part,
+        ],
+  );
+}
+
 export function Registration(): ReactNode {
   return (
     <>
@@ -210,53 +239,73 @@ export function Screen({
       </header>
       <main className={styles.content}>{children}</main>
       <footer className={styles.footer}>
-        <div>
-          <p className={styles.platformMark}>{strings.appName}</p>
-          {/*
-            THE VERSION BANNER SUPPORT CAN READ (TODO.md "Zero-footprint
-            kiosk"). It is on a patient-facing screen for one reason: when a
-            practice rings up, the first question is which build that tablet is
-            running, and the alternative is talking somebody through a browser
-            menu on a device in a waiting room. Quiet enough that nobody else
-            notices it; the forced reload is the half that acts on it.
-          */}
-          <p className={styles.buildMark} data-testid="kiosk-build">
-            {strings.build(kioskBuildId())}
-          </p>
-          {/*
-            WHICH TABLET THIS IS (Carl, 4 Sep 2026). Same treatment as the
-            build mark right above it — quiet, muted, and answering the second
-            question a support call asks straight after the first.
-          */}
-          {identity ? (
-            <p className={styles.buildMark} data-testid="kiosk-device-identity">
-              {strings.chrome.deviceIdentity(identity.label, identity.idPrefix)}
-            </p>
-          ) : null}
-          {/*
-            THE SESSION'S OWN LINE — separate from the device identity above
-            rather than appended to it, so it still appears if the device
-            identity fetch has failed (cosmetic-only, see `useDeviceIdentity`)
-            and disappears the instant `sessionId` does, independent of that
-            fetch's own timing.
-          */}
-          {sessionId ? (
-            <p className={styles.buildMark} data-testid="kiosk-session-identity">
-              {strings.chrome.sessionIdentity(sessionId.slice(0, 8))}
-            </p>
-          ) : null}
-          {/*
-            AND WHICH RECORD IT IS ABOUT — its own line, after the session's,
-            for the reason the session's is its own line: each fact appears and
-            disappears on its own, independent of whether the one above it
-            resolved. Monospace, `text-transform: none`, selectable, and never
-            shortened (`.recordMark`).
-          */}
-          {patientId ? (
-            <p className={`${styles.buildMark} ${styles.recordMark}`} data-testid="kiosk-patient-identity">
-              {strings.chrome.patientIdentity(patientId)}
-            </p>
-          ) : null}
+        {/*
+          ONE ROW, NOT FIVE LINES (Carl, 7 Sep 2026 — "the footer is too fat.
+          Spread out the text"). It used to stack every identifier vertically,
+          which cost a landscape tablet roughly a hundred pixels of ceremony
+          and pushed the Continue button against the divider. The facts are
+          unchanged; only their direction is.
+
+          EACH FACT KEEPS ITS OWN ELEMENT AND ITS OWN TEST ID. They appear and
+          disappear independently — the device identity is a fetch that may
+          never land (cosmetic only, see `useDeviceIdentity`), the session and
+          patient lines come and go with the pushed session — so the row is
+          assembled from whatever is present rather than from a single joined
+          string. A support call still reads the same words in the same order.
+
+          THE SEPARATORS ARE THEIR OWN `aria-hidden` SPANS, deliberately: no
+          fact's own text ever carries a "·", so `deviceIdentity(...)` still
+          matches its element exactly, and a screen reader hears the facts
+          rather than the punctuation between them.
+
+          IT WRAPS, IT DOES NOT SCROLL, AND IT NEVER OVERLAPS. The footer is
+          the grid's last row (`.screen`), so a second line steals height from
+          the scrolling content above it instead of covering it.
+        */}
+        <div className={styles.footerIdentity} data-testid="kiosk-footer-identity">
+          {separated([
+            <p key="mark" className={styles.platformMark}>
+              {strings.appName}
+            </p>,
+            /*
+              THE VERSION BANNER SUPPORT CAN READ (TODO.md "Zero-footprint
+              kiosk"). It is on a patient-facing screen for one reason: when a
+              practice rings up, the first question is which build that tablet
+              is running, and the alternative is talking somebody through a
+              browser menu on a device in a waiting room. Quiet enough that
+              nobody else notices it; the forced reload is the half that acts
+              on it.
+            */
+            <p key="build" className={styles.buildMark} data-testid="kiosk-build">
+              {strings.build(kioskBuildId())}
+            </p>,
+            /* WHICH TABLET THIS IS (Carl, 4 Sep 2026). */
+            identity ? (
+              <p key="device" className={styles.buildMark} data-testid="kiosk-device-identity">
+                {strings.chrome.deviceIdentity(identity.label, identity.idPrefix)}
+              </p>
+            ) : null,
+            /* THE SESSION'S OWN FACT, independent of whether the device fetch landed. */
+            sessionId ? (
+              <p key="session" className={styles.buildMark} data-testid="kiosk-session-identity">
+                {strings.chrome.sessionIdentity(sessionId.slice(0, 8))}
+              </p>
+            ) : null,
+            /*
+              AND WHICH RECORD IT IS ABOUT. Monospace, `text-transform: none`,
+              selectable, and never shortened (`.recordMark`) — the whole point
+              of showing it is that somebody reads it or drags across it.
+            */
+            patientId ? (
+              <p
+                key="patient"
+                className={`${styles.buildMark} ${styles.recordMark}`}
+                data-testid="kiosk-patient-identity"
+              >
+                {strings.chrome.patientIdentity(patientId)}
+              </p>
+            ) : null,
+          ])}
         </div>
         {context ? <p className={styles.footerContext}>{context}</p> : null}
       </footer>

@@ -177,19 +177,29 @@ export function CheckDetailsScreen({
       practiceName={practiceName}
       locationLine={locationLine}
       stepTag={strings.chrome.stepOf(1, 3)}
-      context={strings.checkDetails.footer}
+      /*
+       * NO FOOTER CONTEXT ON THIS SCREEN (Carl, 7 Sep 2026). The tagline moved
+       * to the right column, where it is read at reading size beside the rows
+       * rather than at 13px under them — see `.railNote` below. The string is
+       * the same one (`checkDetails.footer`); only where it sits has changed.
+       */
       sessionId={sessionId}
       patientId={patientId}
       onLeave={onSeeReception}
     >
       <div className={styles.twoColumn}>
-        <div className={styles.main}>
+        <div className={`${styles.main} ${styles.detailsMain}`}>
           <h1 className={styles.h2} data-testid="check-details-heading">
             {strings.particulars.headingByAgreementType[agreementType]}
           </h1>
-          <p className={styles.lede} data-testid="check-details-lede">
-            {strings.checkDetails.lede}
-          </p>
+          {/*
+            THE LEFT COLUMN IS THE TASK AND NOTHING ELSE (Carl, 7 Sep 2026 —
+            "write to the right side somewhere"). The lede that used to sit
+            here has moved into the rail: five rows, a heading, an explanation
+            and a button did not fit a landscape tablet, and of those four the
+            explanation is the one that reads better beside the task than above
+            it. Same string, same words — `check-details-lede` still names it.
+          */}
 
           {rows.map((row) => {
             const answer = answers[row.type];
@@ -309,7 +319,14 @@ export function CheckDetailsScreen({
           )}
         </div>
 
-        <div className={styles.rail}>
+        {/*
+          THE RIGHT COLUMN, WHICH NOW HAS SOMETHING IN IT (Carl, 7 Sep 2026 —
+          "the right column holds only the small See reception card and is
+          otherwise empty. Use it."). Below 900px the columns stack and
+          `.railLeading` puts this first, so the explanation is read before the
+          rows on a portrait tablet rather than after them.
+        */}
+        <div className={`${styles.rail} ${styles.railLeading}`} data-testid="check-details-rail">
           <Blueprint>
             {/*
               WHERE A WRONG DETAIL GOES, said before the patient has to work it
@@ -323,6 +340,28 @@ export function CheckDetailsScreen({
               {strings.checkDetails.somethingWrong}
             </p>
           </Blueprint>
+
+          {/*
+            WHAT THIS SCREEN IS, in the two sentences that were already written
+            for it: the lede that used to sit under the heading, and the
+            tagline that used to be set at 13px in the footer. Neither is new
+            copy and neither has changed a word — `checkDetails.lede` and
+            `checkDetails.footer`, both still the only place those words live.
+
+            AND BOTH SAY THE SAME THING THE SCREEN'S HEADER COMMENT SAYS: staff
+            confirmed who you are at the desk, this is a check that what we
+            hold is right. That distinction is the whole reason K-P1 is not
+            K-2, and it now sits where a patient reads it at rest instead of in
+            the footer.
+          */}
+          <div className={styles.railNote}>
+            <p className={styles.railLede} data-testid="check-details-lede">
+              {strings.checkDetails.lede}
+            </p>
+            <p className={styles.railContext} data-testid="check-details-context">
+              {strings.checkDetails.footer}
+            </p>
+          </div>
         </div>
       </div>
     </Screen>

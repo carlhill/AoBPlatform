@@ -954,3 +954,86 @@ describe('pushed_k3_back_returns_to_check_details_with_ticks_kept', () => {
   });
 });
 
+
+/**
+ * K-P1 HAS TO FIT A LANDSCAPE TABLET (Carl, 7 Sep 2026 — "format page so there
+ * is no scroll bar", "the footer is too fat", "write to the right side
+ * somewhere").
+ *
+ * WHAT JSDOM CAN AND CANNOT PROVE, said plainly rather than implied. There is
+ * no layout engine here: every box is zero pixels tall, so nothing in this file
+ * can assert that the screen fits 1024x768 — and a test that claimed to would
+ * be worse than no test. What it CAN pin is the STRUCTURE the fit depends on,
+ * which is also the structure a later edit is most likely to undo:
+ *
+ *  - the footer's identifiers are ONE row inside ONE container, not five
+ *    stacked lines (the hundred pixels that put the Continue button against
+ *    the divider);
+ *  - the explanatory copy is in the RIGHT column beside the See reception
+ *    card, not in the left column above the rows;
+ *  - and the left column carries only the heading, the rows and Continue.
+ *
+ * THE PIXELS THEMSELVES WERE CHECKED BY HAND, at 1024x768, 1180x820 and
+ * 1280x800 in a real browser against `npm run dev -w apps/web`, asserting
+ * `document.scrollingElement.scrollHeight <= innerHeight` and that the
+ * content column's own `scrollHeight <= clientHeight` at each size (7 Sep
+ * 2026). That check belongs to whoever changes this screen's spacing next; it
+ * cannot be automated in this runner.
+ */
+describe('k2_fits_a_landscape_tablet_without_page_scroll', () => {
+  it('lays the footer identifiers on one row, and puts the explanatory copy in the right column', async () => {
+    asPairedTablet();
+    fetchTabletSession.mockResolvedValue({ session: SESSION });
+
+    render(<Ceremony />);
+    await waitFor(() => expect(screen.getByTestId('check-details-heading')).toBeTruthy());
+
+    /*
+     * ONE ROW, ONE CONTAINER. Every identifier is a child of the same element,
+     * so the footer is one line of text that wraps rather than a stack that
+     * cannot. The device identity arrives on its own fetch, so this waits for
+     * the last of the five rather than reading the container the moment it
+     * appears (wow.md §2.6 — wait for the data, not the element).
+     */
+    const identityRow = await screen.findByTestId('kiosk-footer-identity');
+    await waitFor(() => expect(screen.getByTestId('kiosk-device-identity')).toBeTruthy());
+
+    for (const testId of [
+      'kiosk-build',
+      'kiosk-device-identity',
+      'kiosk-session-identity',
+      'kiosk-patient-identity',
+    ]) {
+      expect(identityRow.contains(screen.getByTestId(testId))).toBe(true);
+    }
+    // The wordmark leads it, and the patient id — full length, never elided —
+    // ends it.
+    expect(identityRow.textContent).toContain(strings.appName);
+    expect(identityRow.textContent).toContain(SESSION.patientId);
+
+    /*
+     * THE COPY MOVED, IT DID NOT CHANGE. Same two strings, same words: the
+     * lede that was under the heading and the tagline that was in the footer,
+     * now both beside the See reception card. Asserted against the string
+     * table so a reworded table moves the test with it.
+     */
+    const lede = screen.getByTestId('check-details-lede');
+    const context = screen.getByTestId('check-details-context');
+    expect(lede.textContent).toBe(strings.checkDetails.lede);
+    expect(context.textContent).toBe(strings.checkDetails.footer);
+
+    // BOTH IN THE RAIL, beside "See reception" — not in the column with the
+    // rows in it.
+    const rail = screen.getByTestId('check-details-rail');
+    expect(rail.contains(screen.getByTestId('check-details-wrong'))).toBe(true);
+    expect(rail.contains(lede)).toBe(true);
+    expect(rail.contains(context)).toBe(true);
+    expect(rail.contains(screen.getByTestId('check-details-heading'))).toBe(false);
+    expect(rail.contains(screen.getByTestId('detail-row-name'))).toBe(false);
+
+    // AND THE TAGLINE IS NOT ALSO IN THE FOOTER. It moved; it was not copied,
+    // or a patient would read the same sentence twice on one screen.
+    const footer = identityRow.parentElement;
+    expect(footer?.textContent).not.toContain(strings.checkDetails.footer);
+  });
+});

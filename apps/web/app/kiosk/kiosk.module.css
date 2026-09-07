@@ -21,11 +21,29 @@
  * already been recorded.
  */
 
+/*
+ * THREE ROWS, AND THE MIDDLE ONE IS THE ONLY ONE THAT MAY SCROLL (Carl, 7 Sep
+ * 2026 — "format page so there is no scroll bar").
+ *
+ * A GRID, NOT A COLUMN OF FLEX ITEMS, and the difference is `minmax(0, 1fr)`.
+ * A flex child's implicit `min-height: auto` lets tall content push the box
+ * past the viewport and the footer with it; the explicit zero minimum here
+ * makes the content row give way instead, so the footer is PINNED to the foot
+ * of the screen by the layout rather than by `position: fixed` sitting on top
+ * of whatever is underneath it. Nothing in this shell can overlap anything
+ * else.
+ *
+ * `100dvh`, NOT `100vh`. The dynamic unit is the one that tracks a mobile
+ * browser's collapsing address bar; `100vh` on the same device is the TALLER
+ * measurement and would put the footer just below the fold. `inset: 0` gives
+ * the same answer on a tablet in kiosk mode and is the floor under it.
+ */
 .screen {
   position: fixed;
   inset: 0;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 100dvh;
   background: var(--page);
   color: var(--ink);
   font-size: 1rem;
@@ -38,9 +56,14 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--s4);
-  padding: var(--s5) var(--s7);
+  /*
+   * TIGHTENED FROM `--s5` (Carl, 7 Sep 2026). The 44px exit control already
+   * sets this bar's height, so the extra eight pixels above and below it were
+   * buying nothing and were costing the ceremony a row.
+   */
+  padding: var(--s4) var(--s7);
   border-bottom: 1px solid var(--line);
-  flex: 0 0 auto;
+  min-width: 0;
 }
 
 .headerText {
@@ -89,21 +112,54 @@
   background: var(--surface-sunken);
 }
 
+/*
+ * THE ONLY SCROLLER ON THE DEVICE, and on the tablet sizes this product
+ * targets it should never actually scroll — the ceremony is laid out to fit
+ * 1024x768 and up. `overflow-y: auto` stays as the floor under a smaller or
+ * zoomed viewport: a screen that cannot fit scrolls its CONTENT, never the
+ * page, so the exit control in the header and the identifiers in the footer
+ * are reachable at every size (hard rule 8 — nothing here may block care).
+ */
 .content {
-  flex: 1 1 auto;
   min-height: 0;
-  padding: var(--s6) var(--s7);
+  padding: var(--s5) var(--s7);
   overflow-y: auto;
 }
 
+/*
+ * ONE ROW OF IDENTIFIERS (Carl, 7 Sep 2026 — "the footer is too fat. Spread
+ * out the text"). Five stacked lines and a tagline beside them cost roughly a
+ * hundred pixels; laid horizontally they cost one.
+ *
+ * IT WRAPS RATHER THAN TRUNCATES. The patient id is a full uuid and stays
+ * full — it is shown so somebody can read it into a support call or drag
+ * across it — so on a narrow tablet the row takes a second line and the grid
+ * above gives up the height. Nothing is ever elided.
+ */
 .footer {
   display: flex;
-  align-items: flex-end;
+  flex-wrap: wrap;
+  align-items: baseline;
   justify-content: space-between;
-  gap: var(--s4);
+  gap: var(--s1) var(--s5);
   padding: var(--s3) var(--s7);
   border-top: 1px solid var(--line);
-  flex: 0 0 auto;
+}
+
+.footerIdentity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s1) var(--s3);
+  min-width: 0;
+}
+
+/* Decoration between two facts, never part of either (`aria-hidden`). */
+.footerSeparator {
+  font-size: 0.6875rem;
+  line-height: 1;
+  color: var(--ink-muted);
+  opacity: 0.5;
 }
 
 .platformMark {
@@ -119,6 +175,8 @@
   font-size: 0.8125rem;
   color: var(--ink-muted);
   text-align: right;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 /* --------------------------------------------------------------------------
@@ -438,6 +496,58 @@
   color: var(--ink);
 }
 
+/*
+ * THE RIGHT COLUMN EARNS ITS WIDTH (Carl, 7 Sep 2026 — "write to the right
+ * side somewhere"). K-P1's rail held one small card and 320px of nothing while
+ * the left column carried a heading, a lede, five rows and a button and did
+ * not fit. The explanatory copy moved here: the left column is now the task,
+ * the right column is what the task is and where to go if it is wrong.
+ *
+ * LARGER TYPE THAN THE CARD ABOVE IT, not smaller. This is the sentence that
+ * tells somebody why they are being asked, and it was previously set as a
+ * muted lede under the heading where it competed with the rows. Off to the
+ * side it can be read at rest, so it is set at reading size — never below
+ * 1rem, on any surface a patient touches.
+ */
+.railNote {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  padding: var(--s4) var(--s5);
+  border-left: 3px solid var(--accent);
+  background: var(--surface-sunken);
+}
+
+.railLede {
+  margin: 0;
+  font-size: 1.125rem;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.railContext {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.45;
+  color: var(--ink-muted);
+}
+
+/*
+ * WHEN THE COLUMNS STACK, THIS ONE LEADS. Below the 900px breakpoint
+ * `.twoColumn` becomes a single column and DOM order would put the rail after
+ * the rows — which would leave a patient reading "please check these are
+ * right" AFTER they had already checked them. `order` is a presentation
+ * change only: the DOM order is unchanged, so the tab order and a screen
+ * reader still meet the task before the aside on a wide screen, and the
+ * explanation before the task on a narrow one, which is the reading order
+ * each layout actually shows.
+ */
+@media (max-width: 900px) {
+  .railLeading {
+    order: -1;
+  }
+}
+
 .centred {
   display: flex;
   flex-direction: column;
@@ -642,7 +752,17 @@
   color: var(--ink-muted);
 }
 
+/*
+ * `margin: 0` IS THE FIX FOR THE TALL ROW (Carl, 7 Sep 2026 — "the rows are
+ * tall"). It was the only text class in this file that had not zeroed the
+ * browser's default `1em` paragraph margin, and it is the one that renders a
+ * value: 32 pixels of nothing above and below every detail on K-P1, five times
+ * over, and the same again between the lines of an address on K-3. Every other
+ * `<p>` in this design system sets its own spacing with a flex `gap`; this one
+ * now does too.
+ */
 .docRowValue {
+  margin: 0;
   font-size: 1rem;
 }
 
@@ -917,13 +1037,30 @@
  * roughly one man in twelve cannot use the first pair to tell these apart.
  * ------------------------------------------------------------------------ */
 
+/*
+ * THE COLUMN THE FIVE ROWS LIVE IN — tighter than `.main`'s default gap
+ * (Carl, 7 Sep 2026). Five rows, a heading and a button have to fit 768px of
+ * landscape tablet between a header and a footer, and four pixels a gap over
+ * seven gaps is a row's worth of it. Scoped to K-P1 rather than applied to
+ * `.main`, so the screens that are not tight for space keep the roomier
+ * rhythm they were drawn with.
+ */
+.detailsMain {
+  gap: var(--s3);
+}
+
+/*
+ * ROW PADDING, TIGHTENED FROM `--s3` FOR THE SAME REASON. The 56px control is
+ * what sets the row's height and it has not moved: the touch target is
+ * untouched (WCAG 2.2 AA 2.5.8), only the dead space around it is.
+ */
 .detailRow {
   display: flex;
   gap: var(--s4);
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  padding: var(--s3) 0;
+  padding: var(--s2) 0;
   border-bottom: 1px solid var(--line);
 }
 

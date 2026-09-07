@@ -145,3 +145,110 @@ describe('footer_shows_the_pushed_session_id', () => {
     expect(testScreen.queryByTestId('kiosk-session-identity')).toBeNull();
   });
 });
+
+/**
+ * THE FOOTER IS ONE ROW, NOT FIVE LINES (Carl, 7 Sep 2026 — "the footer is too
+ * fat. Spread out the text").
+ *
+ * WHAT BROKE, AND WHAT THIS STOPS BREAKING AGAIN. Each identifier used to be a
+ * paragraph in a stack, and on a landscape tablet that stack was roughly a
+ * hundred pixels of the ceremony's height — enough that K-P1's Continue button
+ * ended up against the divider. Laying them horizontally is the fix, and the
+ * thing a later edit would undo without noticing.
+ *
+ * THE SEPARATORS MUST STAY OUT OF THE FACTS. `deviceIdentity(...)` is matched
+ * exactly, above, and would have quietly gained a trailing "·" the moment
+ * somebody joined these into one string. So this asserts both halves: the row
+ * reads with middots between the facts, and no fact's own element carries one.
+ */
+describe('kiosk_footer_lays_its_identifiers_on_one_row', () => {
+  beforeEach(() => {
+    fetchKioskMe.mockReset();
+    credential = 'fake-device-credential';
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const PATIENT_ID = '3f2b8c14-5555-6666-7777-888888888888';
+
+  it('puts every identifier in one container, separated by middots that belong to neither', async () => {
+    fetchKioskMe.mockResolvedValue({
+      deviceId: 'e1e2c073-1111-2222-3333-444444444444',
+      deviceLabel: 'Carl browser tablet',
+      practiceId: 'practice-1',
+      practiceName: 'Sample Practice',
+      reload: false,
+    });
+
+    render(
+      <Screen
+        practiceName="Sample Practice"
+        sessionId="8ff09d7b-aaaa-bbbb-cccc-dddddddddddd"
+        patientId={PATIENT_ID}
+      >
+        <p>content</p>
+      </Screen>,
+    );
+
+    // The device identity is a second fetch; wait for the fact, not for the
+    // container that merely hosts it (wow.md §2.6).
+    await waitFor(() => expect(testScreen.getByTestId('kiosk-device-identity')).toBeTruthy());
+    const row = testScreen.getByTestId('kiosk-footer-identity');
+
+    /*
+     * EVERY FACT IN THE ROW, AND EACH STILL EXACTLY ITS OWN WORDS. The
+     * expected text comes from the string table, so a fact that had a
+     * separator appended to it by the layout — which is what joining these
+     * into one string would do — fails here rather than at a support call.
+     * (`deviceIdentity` has a middot of its OWN, between the label and the id
+     * prefix; that one is the string table's, not the layout's.)
+     */
+    const expected: Record<string, string> = {
+      'kiosk-device-identity': strings.chrome.deviceIdentity('Carl browser tablet', 'e1e2c073'),
+      'kiosk-session-identity': strings.chrome.sessionIdentity('8ff09d7b'),
+      'kiosk-patient-identity': strings.chrome.patientIdentity(PATIENT_ID),
+    };
+    for (const [testId, text] of Object.entries(expected)) {
+      const fact = testScreen.getByTestId(testId);
+      expect(row.contains(fact)).toBe(true);
+      expect(fact.textContent).toBe(text);
+    }
+    expect(row.contains(testScreen.getByTestId('kiosk-build'))).toBe(true);
+
+    // Four separators for five facts — the wordmark, the build, the tablet,
+    // the session and the record.
+    const separators = Array.from(row.children).filter((child) => child.textContent === '·');
+    expect(separators.length).toBe(4);
+    for (const separator of separators) expect(separator.getAttribute('aria-hidden')).toBe('true');
+
+    // THE RECORD ID IS NEVER SHORTENED — the whole point of showing it is that
+    // somebody reads it out or drags across it.
+    expect(testScreen.getByTestId('kiosk-patient-identity').textContent).toContain(PATIENT_ID);
+  });
+
+  it('closes the gap around a fact that is absent, rather than leaving a stray separator', async () => {
+    // No credential, so no device identity; and a walk-up ceremony, so no
+    // session and no record. Two facts remain, and one separator between them.
+    credential = null;
+
+    render(
+      <Screen practiceName="Sample Practice">
+        <p>content</p>
+      </Screen>,
+    );
+
+    const row = await testScreen.findByTestId('kiosk-footer-identity');
+    await waitFor(() => expect(testScreen.getByTestId('kiosk-build')).toBeTruthy());
+
+    expect(testScreen.queryByTestId('kiosk-device-identity')).toBeNull();
+    expect(testScreen.queryByTestId('kiosk-session-identity')).toBeNull();
+    expect(testScreen.queryByTestId('kiosk-patient-identity')).toBeNull();
+
+    const separators = Array.from(row.children).filter((child) => child.textContent === '·');
+    expect(separators.length).toBe(1);
+    // It never trails: the row does not end in punctuation with nothing after it.
+    expect(row.lastElementChild).toBe(testScreen.getByTestId('kiosk-build'));
+  });
+});
