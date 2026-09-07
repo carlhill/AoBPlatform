@@ -158,8 +158,13 @@ describe('/practice/affiliations — whose provider number the claim goes under'
     });
     render(<AffiliationsView practiceId={PRACTICE} />);
 
+    // THE ROLE LIST IS ITS OWN FETCH: the select can render before the roles
+    // have arrived (it did on a slow CI runner), so wait for the option itself
+    // rather than reading the options the instant the select exists.
     const select = (await screen.findByTestId(`billing-role-${DOCTOR}`)) as HTMLSelectElement;
-    expect([...select.options].map((o) => o.value)).toContain('locum_under_supervision');
+    await waitFor(() =>
+      expect([...select.options].map((o) => o.value)).toContain('locum_under_supervision'),
+    );
     expect(select.textContent).toContain('locum_under_supervision');
   });
 
