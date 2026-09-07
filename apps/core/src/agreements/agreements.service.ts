@@ -86,6 +86,43 @@ function assignorRefusal(reason: 'already_signed' | 'agreement_moved_on'): Confl
   return new ConflictException({ statusCode: 409, message, reason });
 }
 
+/**
+ * WHO SAID WHO IS SIGNING, AND WHEN — written by every successful Save on
+ * `POST /agreements/:id/assignor` and by nothing else (Carl, 7 Sep 2026).
+ *
+ * THE ID, NEVER THE NAME (REQ-LOG-08). A name in a request is an assertion; a
+ * subject in a token is a claim the realm signed (`SessionActor`'s own
+ * reasoning). NULL where there is no staff session at all — the kiosk
+ * re-points a draft mid-ceremony from a tablet holding a pairing credential,
+ * and naming a witness there would be inventing one.
+ */
+function confirmationOf(actor: Actor | undefined): {
+  assignorConfirmedAt: Date;
+  assignorConfirmedBy: string | null;
+} {
+  return { assignorConfirmedAt: new Date(), assignorConfirmedBy: actor?.id ?? null };
+}
+
+/** IDS AND FACTS ONLY — no name, no patient, no contact value (REQ-VER-04). */
+function assignorConfirmedEvent(agreementId: string, actor: Actor | undefined) {
+  return {
+    type: 'agreement.assignor_confirmed' as const,
+    actor: assignorActor(actor),
+    subject: { type: 'Agreement' as const, id: agreementId },
+    payload: {
+      agreementId,
+      assignorIsPatient: true,
+      /*
+       * ABSENT RATHER THAN NULL where there is no staff session. The event's
+       * own `actor` already says the platform did it — a `confirmedBy: null`
+       * beside that would be the same absence said twice, in a field a reader
+       * would then have to interpret.
+       */
+      ...(actor?.id ? { confirmedBy: actor.id } : {}),
+    },
+  };
+}
+
 /** D5 off an agreement's own locked snapshot. `undefined` where it never had one. */
 function serviceDateOf(agreement: DbAgreement): string | undefined {
   const particulars = agreement.particulars as Record<string, unknown> | null;
@@ -230,7 +267,25 @@ export class AgreementsService {
    * (REQ-END-01a), D7 explicit. Every write pairs with a vault outbox row in
    * the SAME transaction (FR-11.2).
    */
-  async createDraft(practiceId: string, dto: CreateAgreementDto): Promise<DbAgreement> {
+  async createDraft(
+    practiceId: string,
+    dto: CreateAgreementDto,
+    /**
+     * A CONFIRMATION CARRIED FORWARD FROM AN AGREEMENT THIS ONE REPLACES —
+     * NOT A DTO FIELD, AND DELIBERATELY (Carl, 7 Sep 2026).
+     *
+     * `assignorConfirmedAt` says a person was asked who is signing, and a
+     * client that could assert it in a request body could assert it about a
+     * conversation nobody had. So it is a SERVICE argument: only another
+     * module, holding an agreement that already carries one, can pass it.
+     *
+     * The one caller is "offer an episodic agreement instead" — same patient,
+     * same visit, same signer, and reception has already answered for it.
+     * Re-asking there would mean pressing a button and being told to press
+     * another one about a question already answered a second earlier.
+     */
+    carried: { assignorConfirmedAt?: Date | null; assignorConfirmedBy?: string | null } = {},
+  ): Promise<DbAgreement> {
     const expectedAnchor = validAnchorKindFor(dto.type, dto.enduringPathway as EnduringPathway | undefined);
     if (dto.type === 'enduring' && !dto.enduringPathway) {
       throw new BadRequestException('An enduring agreement requires a pathway (reg 65CA/65CB).');
@@ -324,6 +379,18 @@ export class AgreementsService {
             assignorIsPatient: dto.assignorIsPatient,
             enduringPathway: dto.enduringPathway ?? null,
             status: 'draft',
+            /*
+             * UNCONFIRMED UNLESS ANOTHER MODULE CARRIED ONE FORWARD. A draft
+             * created by the arrival cascade or by the New agreement form has
+             * had nobody asked about it yet, and that is the intent: the desk
+             * answers "who is signing" before the push (Carl, 7 Sep 2026).
+             */
+            ...(carried.assignorConfirmedAt !== undefined
+              ? {
+                  assignorConfirmedAt: carried.assignorConfirmedAt,
+                  assignorConfirmedBy: carried.assignorConfirmedBy ?? null,
+                }
+              : {}),
           },
         });
         await enqueueVaultEvent(tx, {
@@ -464,6 +531,8 @@ export class AgreementsService {
       readonly assignorId?: string;
       readonly assignorIsPatient?: boolean;
       readonly patientAssignorId?: string | null;
+      readonly assignorConfirmedAt?: Date;
+      readonly assignorConfirmedBy?: string | null;
     },
   ): Promise<DbAgreement> {
     /*
@@ -532,8 +601,60 @@ export class AgreementsService {
         serviceDescriptionSetAt: agreement.serviceDescriptionSetAt,
         status: 'draft',
         supersedesAgreementId: agreement.id,
+        /*
+         * A CORRECTION CARRIES THE CONFIRMATION FORWARD; a change of party
+         * brings its own (the caller passes it). Neither re-asks reception
+         * about a question they have already answered for this visit.
+         */
+        assignorConfirmedAt: overrides.assignorConfirmedAt ?? agreement.assignorConfirmedAt,
+        assignorConfirmedBy:
+          overrides.assignorConfirmedAt !== undefined
+            ? (overrides.assignorConfirmedBy ?? null)
+            : agreement.assignorConfirmedBy,
       },
     });
+  }
+
+  /**
+   * "THE PATIENT IS SIGNING", ON AN AGREEMENT THAT ALREADY SAYS SO — the
+   * one-tap confirmation (Carl, 7 Sep 2026).
+   *
+   * NOTHING ABOUT THE CONTRACT MOVES. No party is created, no particular is
+   * touched, no artefact is re-rendered; the only thing that changes is that
+   * the record now says a named person was asked and answered, which is what
+   * the push waits for. Safe on a locked agreement for exactly that reason.
+   *
+   * IDEMPOTENT ENOUGH TO PRESS TWICE. A second Save re-stamps the time and the
+   * person, which is the truth — somebody confirmed it again — and writes a
+   * second event saying so. Neither is a change to the agreement.
+   */
+  private async confirmAssignorIsPatient(
+    practiceId: string,
+    agreementId: string,
+    actor?: Actor,
+  ): Promise<DbAgreement> {
+    return this.prisma.withPractice(practiceId, (tx) =>
+      this.writeAssignorConfirmation(tx, agreementId, actor, true),
+    );
+  }
+
+  /**
+   * The write and its event, in ONE transaction (hard rule 11 / FR-11.2): a
+   * confirmation the evidence cannot account for, or an event about a
+   * confirmation that did not commit, are both structurally impossible.
+   */
+  private async writeAssignorConfirmation(
+    tx: Prisma.TransactionClient,
+    agreementId: string,
+    actor: Actor | undefined,
+    emitEvent: boolean,
+  ): Promise<DbAgreement> {
+    const updated = await tx.agreement.update({
+      where: { id: agreementId },
+      data: confirmationOf(actor),
+    });
+    if (emitEvent) await enqueueVaultEvent(tx, assignorConfirmedEvent(agreementId, actor));
+    return updated;
   }
 
   /**
@@ -636,6 +757,28 @@ export class AgreementsService {
       throw assignorRefusal(disposition.reason);
     }
 
+    /*
+     * "THE PATIENT IS SIGNING" ON AN AGREEMENT THAT ALREADY SAYS SO IS A
+     * CONFIRMATION, NOT A CHANGE (Carl, 7 Sep 2026).
+     *
+     * IT IS THE COMMON CASE AND IT MUST BE ONE TAP. Every agreement is drafted
+     * with the patient as its own assignor, so the answer reception gives most
+     * mornings is the one already on the record. Nothing about D7 moves.
+     *
+     * WHICH IS WHY IT IS WRITTEN IN PLACE EVEN ON A LOCKED AGREEMENT, and why
+     * that does not touch hard rule 2. `assignorConfirmedAt` is not a
+     * particular: it is not in `particulars`, not in the render, not in the
+     * hash, and no artefact states it. Superseding to record it would spend a
+     * whole second agreement — a second validate, a second render, a second row
+     * in the evidence — saying exactly what the first one already said.
+     *
+     * The REFUSALS above still apply: a signed agreement is a record of an act
+     * and nothing is written to it here either.
+     */
+    if (dto.assignorIsPatient && state.agreement.assignorIsPatient) {
+      return this.confirmAssignorIsPatient(practiceId, agreementId, actor);
+    }
+
     if (disposition.kind === 'supersede') {
       /*
        * THE ID, NOT THE ROW. What was read above committed in its own
@@ -665,8 +808,15 @@ export class AgreementsService {
         });
 
         if (dto.assignorIsPatient) {
-          // Idempotent: asking for the state it is already in is not an event.
-          if (agreement.assignorIsPatient) return agreement;
+          /*
+           * REACHED ONLY WHEN THE AGREEMENT NAMES SOMEBODY ELSE — the
+           * confirm-the-patient case short-circuits above. The re-read can
+           * still land here on a row that changed underneath, so it stays
+           * handled: a confirmation, written where a change is not needed.
+           */
+          if (agreement.assignorIsPatient) {
+            return this.writeAssignorConfirmation(tx, agreementId, actor, true);
+          }
           if (!agreement.patientAssignorId) {
             throw new BadRequestException(
               'REQ-VUL-01: this agreement has never had the patient as its own assignor, so there is ' +
@@ -675,7 +825,13 @@ export class AgreementsService {
           }
           const reverted = await tx.agreement.update({
             where: { id: agreementId },
-            data: { assignorId: agreement.patientAssignorId, assignorIsPatient: true },
+            data: {
+              assignorId: agreement.patientAssignorId,
+              assignorIsPatient: true,
+              // A PERSON ANSWERED. Every successful Save records who and when,
+              // and the push waits for it (`assignor_not_confirmed`).
+              ...confirmationOf(actor),
+            },
           });
           await enqueueVaultEvent(tx, {
             type: 'agreement.assignor_changed',
@@ -689,6 +845,13 @@ export class AgreementsService {
               previousAssignorId: agreement.assignorId,
             },
           });
+          /*
+           * AND THE CONFIRMATION, AS ITS OWN EVENT. Two facts happened: the
+           * party moved back to the patient, and a named person said so. The
+           * push reads the second one, so it is recorded as itself rather than
+           * inferred from the first.
+           */
+          await enqueueVaultEvent(tx, assignorConfirmedEvent(agreementId, actor));
           await this.assertAssignorPartyPasses(tx, reverted);
           return reverted;
         }
@@ -747,6 +910,12 @@ export class AgreementsService {
             patientAssignorId: agreement.assignorIsPatient
               ? agreement.assignorId
               : agreement.patientAssignorId,
+            /*
+             * A PERSON ANSWERED, and the same column records it whichever
+             * answer they gave. `agreement.assignor_changed` below is the
+             * event for this branch — a change IS a confirmation, said once.
+             */
+            ...confirmationOf(actor),
           },
         });
 
@@ -969,6 +1138,13 @@ export class AgreementsService {
         const replacement = await this.createSupersedingDraft(tx, practiceId, agreement, {
           assignorId,
           assignorIsPatient: dto.assignorIsPatient,
+          /*
+           * CONFIRMED BY THE SAVE THAT MADE IT. The person answered "who is
+           * signing" and this agreement is that answer — asking them again
+           * about the row their own press produced would be the platform
+           * losing track of its own act.
+           */
+          ...confirmationOf(actor),
           /*
            * REMEMBERED ON THE WAY OUT, so "the patient is signing after all" on
            * the NEW agreement is exact rather than a name match — the same

@@ -1,0 +1,40 @@
+-- ---------------------------------------------------------------------------
+-- "WHO IS SIGNING" IS ASKED, ANSWERED AND RECORDED — BEFORE THE PUSH
+-- (Carl, 7 Sep 2026: "change the workflow to 'who is signing' only -- after
+-- that is actioned, enable the select tablet and send button").
+--
+-- WHY A COLUMN RATHER THAN AN INFERENCE. Every agreement is drafted with the
+-- patient as its own assignor: the arrival cascade does it, the New agreement
+-- form does it. So `assignorIsPatient = true` is a DEFAULT, and on the record
+-- it is indistinguishable from a receptionist having asked the person standing
+-- in front of them and been told so. Carl pushed Kim to a tablet and said,
+-- twice, that the desk never asked — and it never had, because there was
+-- nothing to ask and nothing that could have recorded the answer.
+--
+-- `assignorConfirmedAt` is that answer. It is written by exactly one endpoint,
+-- `POST /agreements/:id/assignor`, which is a person answering the question,
+-- and it is what a push now waits for (`assignor_not_confirmed`).
+--
+-- `assignorConfirmedBy` IS A USER ID AND NEVER A NAME (REQ-LOG-08). It is the
+-- subject of a token the realm signed — a claim somebody made — rather than a
+-- string a client typed. NULL where the answer came from a tablet
+-- mid-ceremony: that device holds a pairing credential and no staff session,
+-- and the platform does not invent a witness for an act it did not see a
+-- person perform. TEXT rather than UUID, matching `arrivals.receivedByPrincipalId`:
+-- a token subject is opaque to us, and a column that parsed it would refuse a
+-- realm that stopped issuing UUIDs.
+--
+-- EVERY EXISTING AGREEMENT STARTS UNCONFIRMED, and that is the intent rather
+-- than an oversight. Nothing about them is untrue and nothing is blocked that
+-- was not already asked for: a live tablet session is untouched, and the next
+-- push is preceded by one tap on a panel that opens ticked on the patient.
+-- Backfilling a confirmation nobody made would be inventing evidence.
+--
+-- TO REVERSE:
+--   ALTER TABLE "agreements" DROP COLUMN IF EXISTS "assignorConfirmedBy";
+--   ALTER TABLE "agreements" DROP COLUMN IF EXISTS "assignorConfirmedAt";
+-- Both are additive and nullable, so the reversal loses only the confirmations
+-- recorded since — no agreement, particular, hash or event is touched.
+-- ---------------------------------------------------------------------------
+ALTER TABLE "agreements" ADD COLUMN IF NOT EXISTS "assignorConfirmedAt" TIMESTAMPTZ(3);
+ALTER TABLE "agreements" ADD COLUMN IF NOT EXISTS "assignorConfirmedBy" TEXT;

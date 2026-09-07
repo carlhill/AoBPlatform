@@ -110,6 +110,10 @@ describe('enduring at the kiosk (e2e, real Postgres)', () => {
           patientId: patient,
           assignorId: assignor,
           assignorIsPatient: true,
+          // ASKED AND ANSWERED. A row reception is about to send has had "Who
+          // is signing?" opened and saved — the push refuses otherwise
+          // (`assignor_not_confirmed`, Carl 7 Sep 2026).
+          assignorConfirmedAt: new Date(),
           enduringPathway: opts.anchorKind === 'organisation' ? 'accho_ams' : 'mymedicare',
           status: 'draft',
         },

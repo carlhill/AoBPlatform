@@ -116,6 +116,10 @@ describe('the tablet heartbeat and Return to Begin (e2e, real Postgres)', () => 
           patientId: patientA,
           assignorId: assignorA,
           assignorIsPatient: true,
+          // ASKED AND ANSWERED. A row reception is about to send has had "Who
+          // is signing?" opened and saved — the push refuses otherwise
+          // (`assignor_not_confirmed`, Carl 7 Sep 2026).
+          assignorConfirmedAt: new Date(),
           status: 'draft',
           serviceDescription: D6A,
         },

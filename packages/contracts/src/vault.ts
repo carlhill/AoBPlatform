@@ -44,6 +44,20 @@ export const VAULT_EVENT_TYPES = [
    */
   'agreement.assignor_changed',
   /**
+   * SOMEBODY AT THE DESK SAID WHO IS SIGNING, AND IT WAS THE PATIENT (Carl,
+   * 7 Sep 2026).
+   *
+   * WHY IT IS NOT `assignor_changed`. Nothing changed: the agreement already
+   * named the patient, because every agreement is drafted that way. What
+   * happened is that a named staff member was asked and answered, which is a
+   * different fact and the one a push now waits for. Recording it as a change
+   * would put a change in the evidence that nobody made.
+   *
+   * IDS AND FACTS ONLY -- the agreement, D7, and the confirming user's id.
+   * Never a name, never a patient (REQ-LOG-08, REQ-VER-04).
+   */
+  'agreement.assignor_confirmed',
+  /**
    * D6a WAS CHOSEN — the Basic Service Description a pre-agreement needs, set
    * on a STAFF surface before the particulars were locked (hard rule 2), or
    * written by the appointment sweep from the practice's own default.

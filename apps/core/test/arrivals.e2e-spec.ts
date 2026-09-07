@@ -256,7 +256,34 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
     expect(row).toBeTruthy();
     expect(row.patientName).toBe('Robin Arrival');
     expect(row.serviceDescription).toBe(D6A);
-    expect(row.pushable).toBe(true);
+    /*
+     * ON THE QUEUE, AND WAITING TO BE ASKED WHO IS SIGNING (Carl, 7 Sep 2026).
+     *
+     * A CONNECTOR CANNOT ANSWER THAT QUESTION. The arrival names the patient as
+     * their own assignor because that is the default every agreement is drafted
+     * with, and a machine push has nobody standing at a desk to confirm it. So
+     * the row arrives complete in every other respect and blocked on the one
+     * thing only a person can supply — which is the workflow Carl asked for:
+     * who is signing, then choose a tablet, then Send.
+     */
+    expect(row.pushable).toBe(false);
+    expect(row.blockedReason).toBe('assignor_not_confirmed');
+    expect(row.assignorConfirmedAt).toBeNull();
+
+    // ONE PRESS AND IT CAN GO. Nothing else about the row changes.
+    await request(app.getHttpServer())
+      .post(`/agreements/${res.body.agreementId}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({ assignorIsPatient: true })
+      .expect(201);
+    const confirmed = (
+      await request(app.getHttpServer())
+        .get('/tablet-sessions/pushable')
+        .set('x-practice-id', practiceId)
+        .expect(200)
+    ).body.find((r: { agreementId: string }) => r.agreementId === res.body.agreementId);
+    expect(confirmed.pushable).toBe(true);
+    expect(confirmed.blockedReason).toBeNull();
   });
 
   it('is idempotent: the same arrival twice is one patient, one draft and one row', async () => {
@@ -601,7 +628,14 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
       const pushedRow = pushable.body.find(
         (r: { agreementId: string }) => r.agreementId === byMachine.body.agreementId,
       );
-      expect(typedRow.pushable).toBe(true);
+      /*
+       * THE SAME ANSWER FROM BOTH DOORS, which is what this test is about.
+       * Neither has been asked who is signing yet — the receptionist typed an
+       * arrival, they did not answer for the signature — so both wait on the
+       * same one press (Carl, 7 Sep 2026).
+       */
+      expect(typedRow.pushable).toBe(false);
+      expect(typedRow.blockedReason).toBe('assignor_not_confirmed');
       expect(typedRow.pushable).toBe(pushedRow.pushable);
       expect(typedRow.serviceDescription).toBe(pushedRow.serviceDescription);
       expect(typedRow.blockedReason).toBe(pushedRow.blockedReason);
@@ -1040,8 +1074,22 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
 
     const rows = (await pushableHere().expect(200)).body;
     const readyRow = rows.find((r: { agreementId: string }) => r.agreementId === after.body.agreementId);
-    expect(readyRow.pushable).toBe(true);
+    /*
+     * LOCKED AND READY, WAITING ONLY TO BE ASKED WHO IS SIGNING — which is a
+     * person's answer and not a practice setting (Carl, 7 Sep 2026). What this
+     * test is about is D6a, and D6a is now the one thing NOT in the way.
+     */
+    expect(readyRow.blockedReason).toBe('assignor_not_confirmed');
     expect(readyRow.serviceDescription).toBe(D6A);
+    await request(app.getHttpServer())
+      .post(`/agreements/${after.body.agreementId}/assignor`)
+      .set('x-practice-id', noDefaultPracticeId)
+      .send({ assignorIsPatient: true })
+      .expect(201);
+    const askedRow = (await pushableHere().expect(200)).body.find(
+      (r: { agreementId: string }) => r.agreementId === after.body.agreementId,
+    );
+    expect(askedRow.pushable).toBe(true);
     // And the one that was already waiting is still waiting, with its reason.
     const stillBlocked = rows.find((r: { agreementId: string }) => r.agreementId === before.body.agreementId);
     expect(stillBlocked.blockedReason).toBe('service_description_missing');

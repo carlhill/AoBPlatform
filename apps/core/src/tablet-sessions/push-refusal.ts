@@ -114,6 +114,30 @@ export const pushRefusals = {
       new ConflictException().getStatus(),
     ),
 
+  /**
+   * NOBODY HAS SAID WHO IS SIGNING YET (Carl, 7 Sep 2026: "change the workflow
+   * to 'who is signing' only -- after that is actioned, enable the select
+   * tablet and send button").
+   *
+   * NOT `who_is_signing_unset`, WHICH IS A DIFFERENT FAULT. That one is an
+   * agreement naming a third party with no party recorded. This one is an
+   * agreement that says the patient is signing because EVERY agreement says
+   * that when it is drafted -- so the record cannot tell a default from an
+   * answer. `assignorConfirmedAt` is the answer, and this refusal is the
+   * platform declining to hand a tablet across a desk before anybody was asked.
+   *
+   * ONE TAP AWAY, and the console's copy carries the control rather than a
+   * direction to a screen (CLAUDE.md §7): the row's own "Who is signing?"
+   * opens ticked on the patient. Nothing here blocks care (hard rule 8).
+   */
+  assignorNotConfirmed: () =>
+    new PushRefusal(
+      'assignor_not_confirmed',
+      'Nobody has confirmed who is signing this one yet. Use “Who is signing?” on the row — it opens ' +
+        'with the patient already ticked, so confirming takes one press.',
+      new ConflictException().getStatus(),
+    ),
+
   serviceDescriptionMissing: () =>
     new PushRefusal(
       'service_description_missing',

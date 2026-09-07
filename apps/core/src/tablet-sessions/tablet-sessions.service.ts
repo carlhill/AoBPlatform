@@ -79,6 +79,12 @@ export interface PushableRow {
   assignorName: string | null;
   assignorRelationship: string | null;
   particularsLocked: boolean;
+  /**
+   * WHEN A PERSON SAID WHO IS SIGNING — `null` until somebody has. The console
+   * keeps the tablet select and Send dead while it is null, and the row's own
+   * "Who is signing?" is the primary action instead (Carl, 7 Sep 2026).
+   */
+  assignorConfirmedAt: string | null;
   pushable: boolean;
   blockedReason: PushBlockedReason | null;
   /** Where it already is, if it is on a tablet right now. */
@@ -818,13 +824,28 @@ export class TabletSessionsService {
     // The agreements module owns its own table: the draft is created through
     // its API, which re-asserts the anchor and D7 rules and writes its own
     // `agreement.created` event.
-    const replacement = await this.agreements.createDraft(practiceId, {
-      type: 'episodic_pre',
-      affiliationId,
-      patientId: source.patientId,
-      assignorId: source.assignorId,
-      assignorIsPatient: source.assignorIsPatient,
-    });
+    const replacement = await this.agreements.createDraft(
+      practiceId,
+      {
+        type: 'episodic_pre',
+        affiliationId,
+        patientId: source.patientId,
+        assignorId: source.assignorId,
+        assignorIsPatient: source.assignorIsPatient,
+      },
+      /*
+       * AND WHO IS SIGNING CARRIES WITH IT (Carl, 7 Sep 2026). Same patient,
+       * same visit, same signer — reception answered that question for the
+       * agreement this one is offered instead of, and the answer did not stop
+       * being true when the patient said they would rather agree each visit.
+       * Re-asking would mean pressing this button and being told to press
+       * another about a question answered a second earlier.
+       */
+      {
+        assignorConfirmedAt: source.assignorConfirmedAt,
+        assignorConfirmedBy: source.assignorConfirmedBy,
+      },
+    );
 
     const candidate = source.serviceDescription ?? practiceDefaultD6a;
     const d6a = candidate && isServiceDescription(candidate) ? candidate : null;
@@ -1223,6 +1244,9 @@ export class TabletSessionsService {
             ? null
             : (assignor?.relationshipToPatient ?? null),
           particularsLocked: agreement.particularsLockedAt !== null,
+          assignorConfirmedAt: agreement.assignorConfirmedAt
+            ? agreement.assignorConfirmedAt.toISOString()
+            : null,
           pushable: blocked === null,
           blockedReason: blocked,
           activeSession: session
@@ -1904,6 +1928,8 @@ export class TabletSessionsService {
         throw pushRefusals.serviceDescriptionMissing();
       case 'who_is_signing_unset':
         throw pushRefusals.whoIsSigningUnset();
+      case 'assignor_not_confirmed':
+        throw pushRefusals.assignorNotConfirmed();
       default:
         throw pushRefusals.agreementNotPushable(context.agreement.status);
     }
@@ -2034,6 +2060,23 @@ export class TabletSessionsService {
     if (!agreement.assignorIsPatient && !(context.assignorName ?? '').trim()) {
       return 'who_is_signing_unset';
     }
+
+    /*
+     * AND HAS ANYBODY ACTUALLY BEEN ASKED? (Carl, 7 Sep 2026.)
+     *
+     * LAST, so every more specific fault still wins. A row with no description
+     * of the service, or naming somebody who cannot be the provider, has a
+     * different thing wrong with it and should say so — telling reception to
+     * confirm who is signing on a row that also cannot go for a second reason
+     * would send them round the loop twice.
+     *
+     * IT IS NOT ABOUT WHAT THE AGREEMENT SAYS, which is why no other check
+     * catches it. The agreement says the patient is signing, and so does every
+     * agreement the moment it is drafted; what is missing is a person having
+     * been asked. `assignorConfirmedAt` is written by
+     * `POST /agreements/:id/assignor` and by nothing else.
+     */
+    if (agreement.assignorConfirmedAt === null) return 'assignor_not_confirmed';
 
     return null;
   }

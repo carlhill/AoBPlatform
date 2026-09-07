@@ -885,6 +885,107 @@ describe('re-pointing a draft agreement at another assignor (e2e, real Postgres)
     expect(superseded).toEqual([]);
   });
 
+  /**
+   * WHO IS SIGNING IS ASKED, ANSWERED AND RECORDED — BEFORE THE PUSH (Carl,
+   * 7 Sep 2026: "change the workflow to 'who is signing' only -- after that is
+   * actioned, enable the select tablet and send button").
+   *
+   * WHY THE COLUMN HAD TO EXIST. Every agreement is drafted with the patient as
+   * its own assignor — the arrival cascade does it, the New agreement form does
+   * it — so `assignorIsPatient = true` is a DEFAULT, and on the record it is
+   * indistinguishable from a receptionist having asked the person in front of
+   * them. Carl pushed Kim to a tablet and said, twice, that the desk never
+   * asked; it never had, and nothing could have recorded the answer.
+   */
+  it('confirming_the_patient_records_who_confirmed_and_when', async () => {
+    const agreementId = await draft();
+    const before = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findFirst({ where: { id: agreementId } }),
+    );
+    // A FRESH DRAFT IS UNCONFIRMED, which is the whole point: it already says
+    // the patient is signing, and nobody has been asked.
+    expect(before?.assignorIsPatient).toBe(true);
+    expect(before?.assignorConfirmedAt).toBeNull();
+
+    const res = await request(app.getHttpServer())
+      .post(`/agreements/${agreementId}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({ assignorIsPatient: true })
+      .expect(201);
+
+    // NOTHING ABOUT THE CONTRACT MOVED. Same party, same D7 — what changed is
+    // that a person was asked.
+    expect(res.body.assignorIsPatient).toBe(true);
+    expect(res.body.assignorId).toBe(patientAssignorId);
+
+    const after = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findFirst({ where: { id: agreementId } }),
+    );
+    expect(after?.assignorConfirmedAt).not.toBeNull();
+    expect(after?.assignorId).toBe(before?.assignorId);
+
+    /*
+     * AND IT IS SAFE ON A LOCKED AGREEMENT, because a confirmation is not a
+     * particular: it is not in `particulars`, not in the render and not in the
+     * hash. Superseding to record it would spend a second agreement saying
+     * exactly what the first one already said.
+     */
+    const lockedId = await lockedDraft();
+    const lockedBefore = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findFirst({ where: { id: lockedId } }),
+    );
+    await request(app.getHttpServer())
+      .post(`/agreements/${lockedId}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({ assignorIsPatient: true })
+      .expect(201);
+
+    const lockedAfter = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findFirst({ where: { id: lockedId } }),
+    );
+    expect(lockedAfter?.assignorConfirmedAt).not.toBeNull();
+    expect(lockedAfter?.renderedArtefactHash).toBe(lockedBefore?.renderedArtefactHash);
+    expect(lockedAfter?.particulars).toEqual(lockedBefore?.particulars);
+    const successors = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findMany({ where: { supersedesAgreementId: lockedId } }),
+    );
+    expect(successors).toEqual([]);
+  });
+
+  it('assignor_confirmed_event_carries_ids_only', async () => {
+    const agreementId = await draft();
+    await request(app.getHttpServer())
+      .post(`/agreements/${agreementId}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({ assignorIsPatient: true })
+      .expect(201);
+
+    const events = await prisma.vaultOutbox.findMany({
+      where: { type: 'agreement.assignor_confirmed', subjectId: agreementId },
+    });
+    expect(events).toHaveLength(1);
+    const payload = events[0].payload as Record<string, unknown>;
+    expect(payload.agreementId).toBe(agreementId);
+    expect(payload.assignorIsPatient).toBe(true);
+
+    /*
+     * IDS AND FACTS ONLY (REQ-LOG-08, REQ-VER-04). The patient's name is on
+     * this practice's records and not in the evidence row; neither is the
+     * assignor's, and there is no contact value anywhere near it.
+     */
+    const serialised = JSON.stringify(events[0]);
+    expect(serialised).not.toContain('Testpatient');
+    expect(serialised).not.toContain('Robin');
+    expect(serialised).not.toContain('Sam Carer');
+
+    // AND IT IS NOT RECORDED AS A CHANGE, because nothing changed — a change in
+    // the evidence that nobody made is worse than no record at all.
+    const changed = await prisma.vaultOutbox.findMany({
+      where: { type: 'agreement.assignor_changed', subjectId: agreementId },
+    });
+    expect(changed).toEqual([]);
+  });
+
   it('assignor_change_emits_vault_event_in_same_transaction', async () => {
     const agreementId = await draft();
     const res = await request(app.getHttpServer())

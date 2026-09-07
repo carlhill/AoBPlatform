@@ -1261,6 +1261,27 @@ model Agreement {
    * person ends up with three rows and the wrong one gets the copy.
    */
   patientAssignorId       String?      @db.Uuid
+  /**
+   * A PERSON WAS ASKED WHO IS SIGNING, AND ANSWERED (Carl, 7 Sep 2026).
+   * WHY A COLUMN AND NOT AN INFERENCE. Every agreement is drafted with the
+   * patient as its own assignor — the arrival cascade does it, the New
+   * agreement form does it — so `assignorIsPatient = true` is a DEFAULT and
+   * cannot be told apart, on the record, from a receptionist having asked the
+   * person in front of them. This is the difference, and it is written by
+   * exactly one endpoint: `POST /agreements/:id/assignor`, which is a person
+   * answering the question. A push refuses while it is NULL
+   * (`assignor_not_confirmed`).
+   * `assignorConfirmedBy` IS A USER ID AND NEVER A NAME (REQ-LOG-08) — the
+   * subject of a token the realm signed, which is a claim somebody made rather
+   * than a string a client typed. TEXT rather than `@db.Uuid`, matching
+   * `Arrival.receivedByPrincipalId`: a subject is opaque to us, and a column
+   * that parses it would refuse a realm that stopped issuing UUIDs. NULL where the answer came from the tablet
+   * mid-ceremony, which holds a pairing credential and no staff session: the
+   * platform does not invent a witness for an act it did not see a person
+   * perform.
+   */
+  assignorConfirmedAt     DateTime?    @db.Timestamptz(3)
+  assignorConfirmedBy     String?
   enduringPathway         String? // mymedicare | residential_aged_care | accho_ams
   status                  String       @default("draft")
   /**

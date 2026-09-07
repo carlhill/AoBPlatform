@@ -158,6 +158,16 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
       assignorId?: string;
       /** A patient of this practice other than the suite's shared one. */
       patientId?: string;
+      /**
+       * HAS ANYBODY BEEN ASKED WHO IS SIGNING (Carl, 7 Sep 2026)? True by
+       * default, because that is the ordinary state of a row reception is
+       * about to send: they opened "Who is signing?", the patient was already
+       * ticked, and they pressed Save. A draft with this FALSE is one nobody
+       * has been asked about, which the push now refuses
+       * (`assignor_not_confirmed`) — see
+       * `push_refused_until_who_is_signing_is_confirmed`.
+       */
+      confirmed?: boolean;
     } = {},
   ): Promise<string> {
     const practiceId = opts.practiceId ?? practiceA;
@@ -175,6 +185,7 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
           enduringPathway: (opts.type ?? 'episodic_pre') === 'enduring' ? 'mymedicare' : null,
           status: 'draft',
           serviceDescription: opts.description === null ? null : (opts.description ?? D6A),
+          assignorConfirmedAt: opts.confirmed === false ? null : new Date(),
         },
       });
       return agreement.id;
@@ -439,6 +450,70 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
         tx.agreement.findFirst({ where: { id: agreementId } }),
       );
       expect(after!.particularsLockedAt).toBeNull();
+    });
+
+    /**
+     * WHO IS SIGNING IS ASKED, ANSWERED AND RECORDED — BEFORE THE PUSH (Carl,
+     * 7 Sep 2026: "change the workflow to 'who is signing' only -- after that
+     * is actioned, enable the select tablet and send button").
+     *
+     * THIS IS NOT `who_is_signing_unset`, AND THE DIFFERENCE IS THE WHOLE
+     * REASON THE COLUMN EXISTS. The agreement below says the patient is
+     * signing — as every agreement does the moment it is drafted — so nothing
+     * is missing from it and no other check has anything to catch. What is
+     * missing is a PERSON having been asked. Carl pushed Kim to a tablet and
+     * said, twice, that the desk never asked; it never had.
+     */
+    it('push_refused_until_who_is_signing_is_confirmed', async () => {
+      const agreementId = await draft({ confirmed: false });
+
+      const refused = await pushTo(tabletA, agreementId).expect(409);
+      expect(refused.body.reason).toBe('assignor_not_confirmed');
+
+      // NOTHING WAS DONE TO THE AGREEMENT by a push that did not happen — no
+      // lock, no session, no verification event (hard rule 8: the patient is
+      // still seen either way).
+      const untouched = await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.findFirst({ where: { id: agreementId } }),
+      );
+      expect(untouched!.particularsLockedAt).toBeNull();
+      expect(untouched!.verificationEventId).toBeNull();
+
+      // AND RECEPTION'S LIST SAYS THE SAME THING, so the row explains itself
+      // before anybody presses anything.
+      const listed = await http()
+        .get('/tablet-sessions/pushable')
+        .set('x-practice-id', practiceA)
+        .expect(200);
+      const row = (listed.body as Array<Record<string, unknown>>).find(
+        (r) => r.agreementId === agreementId,
+      );
+      expect(row?.pushable).toBe(false);
+      expect(row?.blockedReason).toBe('assignor_not_confirmed');
+      expect(row?.assignorConfirmedAt).toBeNull();
+
+      // ONE PRESS ON "WHO IS SIGNING?" — the patient is already ticked — and
+      // the same push goes.
+      await http()
+        .post(`/agreements/${agreementId}/assignor`)
+        .set('x-practice-id', practiceA)
+        .send({ assignorIsPatient: true })
+        .expect(201);
+
+      const sent = await pushTo(tabletA, agreementId).expect(201);
+      expect(sent.body.state).toBe('pushed');
+
+      const after = await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.findFirst({ where: { id: agreementId } }),
+      );
+      expect(after!.assignorConfirmedAt).not.toBeNull();
+      expect(after!.particularsLockedAt).not.toBeNull();
+
+      // Leave the tablet free for the tests that follow.
+      await http()
+        .post(`/tablet-sessions/${sent.body.id}/recall`)
+        .set('x-practice-id', practiceA)
+        .expect(201);
     });
 
     it('refuses an enduring agreement while the rule set has no enduring branch', async () => {

@@ -493,6 +493,29 @@ export const PUSH_BLOCKED_REASONS = [
    */
   'who_is_signing_unset',
   /**
+   * NOBODY HAS CONFIRMED WHO IS SIGNING YET (Carl, 7 Sep 2026: "change the
+   * workflow to 'who is signing' only -- after that is actioned, enable the
+   * select tablet and send button").
+   *
+   * IT IS NOT THE SAME AS `who_is_signing_unset`, AND THE DIFFERENCE IS THE
+   * WHOLE POINT. Every agreement is drafted with the patient as its own
+   * assignor -- the arrival cascade does it, the New agreement form does it --
+   * so "the patient is signing" is a DEFAULT and is indistinguishable, on the
+   * record, from a receptionist having asked the person in front of them and
+   * been told so. `assignorConfirmedAt` is the difference: it is only ever
+   * written by `POST /agreements/:id/assignor`, which is a person answering
+   * the question.
+   *
+   * SO THE PUSH WAITS FOR IT. A tablet is handed to a patient with a contract
+   * on it naming its counterparty; the practice should have said out loud who
+   * that is, once, before the screen goes across the desk.
+   *
+   * NOTHING HERE BLOCKS CARE (hard rule 8, REQ-REC-04). It is one tap away --
+   * the row's own "Who is signing?" opens ticked on the patient -- and the
+   * patient is seen either way.
+   */
+  'assignor_not_confirmed',
+  /**
    * REQ-CHILD-01, failing closed (REQ-CHILD-07) and consistently with
    * everything else in the capture path: the cascade declines to stage a
    * flagged patient and the walk-up waiting list omits them, so the push
