@@ -1021,10 +1021,18 @@ ${payload.body ?? ''}`;
     expect(agreement.signedAt).toBeTruthy();
 
     const serialised = JSON.stringify(res.body).toLowerCase();
-    for (const forbidden of ['amount', 'cents', 'benefit', 'fee', 'price', '$']) {
+    for (const forbidden of ['amount', 'cents', 'benefit', 'price']) {
       expect(serialised).not.toContain(forbidden);
     }
-    expect(serialised).not.toContain(String(BENEFIT_CENTS));
+    // 'fee' is spelled entirely in hex characters (f, e) — a plain `.toContain`
+    // is satisfied by a random id or hash byte string that happens to carry
+    // that run, so match it as a whole word instead (flaked on CI otherwise).
+    expect(serialised).not.toMatch(/\bfee\b/);
+    expect(serialised).not.toContain('$');
+    // A bare four-digit number, over a whole response body full of ids and
+    // timestamps, is exactly the kind of run a random UUID can carry by
+    // chance — word-bound it rather than a plain substring search.
+    expect(serialised).not.toMatch(new RegExp(String.raw`\b${BENEFIT_CENTS}\b`));
   });
 
   it('serves the copy as signed, re-verifying the hash first (REQ-PORT-02, rule 13)', async () => {

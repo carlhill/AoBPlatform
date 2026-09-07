@@ -771,7 +771,10 @@ describe('walked_away_posts_state_and_changes_nothing_else', () => {
     expect(screen.getByTestId('handover-body').textContent).toBe(strings.chrome.leaveBody);
     // Nothing of the patient survives on the screen they were handed over from.
     expect(document.body.textContent).not.toContain('Riley Example');
-    expect(document.body.textContent).not.toContain('1988');
+    // THE WHOLE DATE, NOT THE BARE YEAR — a footer session id or device id
+    // is free to contain the same four digits by chance (same lesson as
+    // patients.test.tsx's arrivals suite, flaked on CI for the same reason).
+    expect(document.body.textContent).not.toContain(SESSION.patient.dateOfBirth as string);
   });
 });
 

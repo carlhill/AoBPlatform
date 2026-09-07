@@ -175,7 +175,11 @@ describe('/practice/affiliations — whose provider number the claim goes under'
     stubFetch();
     render(<AffiliationsView practiceId={PRACTICE} />);
 
-    const select = await screen.findByTestId(`billing-role-${DOCTOR}`);
+    const select = (await screen.findByTestId(`billing-role-${DOCTOR}`)) as HTMLSelectElement;
+    // THE ROLE LIST IS ITS OWN FETCH: the select can render before the roles
+    // arrive, and firing change against an option that does not exist yet
+    // silently drops the value (flaked on CI, 7 Sep 2026 — same race as above).
+    await waitFor(() => expect(select.options.length).toBeGreaterThan(0));
     fireEvent.change(select, { target: { value: 'works_under_provider' } });
 
     await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));

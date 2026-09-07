@@ -234,6 +234,13 @@ describe('no amount and no approval claim in the console copy', () => {
     stubFetch();
     render(<TemplatesView practiceId={PRACTICE} />);
     await screen.findByTestId('letterhead-fields');
+    /*
+     * THE PERMITTED PHRASE LIVES IN THE WORDING SECTION, from the SEPARATE
+     * `/agreement-templates` fetch — the letterhead section renders from its
+     * own fetch first, so wait for wording too before reading the page as a
+     * whole (same race as the letterhead/templates split above).
+     */
+    await screen.findByTestId('wording-episodic');
     const text = document.body.textContent ?? '';
     expect(text).not.toMatch(/\bcertified\b|\baccredited\b|government-approved/i);
     expect(text).not.toMatch(/\$|\bAUD\b|\bdollars?\b/i);

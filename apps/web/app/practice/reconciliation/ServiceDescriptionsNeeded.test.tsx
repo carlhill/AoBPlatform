@@ -81,6 +81,11 @@ describe('service descriptions needed — the staff surface for D6a', () => {
     render(<ServiceDescriptionsNeeded practiceId={PRACTICE_ID} />);
 
     const select = (await screen.findByTestId(`sd-select-${ROW.agreementId}`)) as HTMLSelectElement;
+    // THE ROW IS ITS OWN FETCH, THE CONTENT LIST ANOTHER: the row (and this
+    // select) render as soon as `/service-descriptions/pending` answers, while
+    // the options come from the separate `/service-descriptions` call — wait
+    // for them rather than reading the options the instant the select exists.
+    await waitFor(() => expect(select.options.length).toBeGreaterThan(1));
     const options = [...select.options].map((o) => o.value).filter(Boolean);
     expect(options).toEqual(SERVER_LIST.descriptions);
     // In the order the server sent — file order is screen order.
@@ -95,7 +100,12 @@ describe('service descriptions needed — the staff surface for D6a', () => {
     const button = (await screen.findByTestId(`sd-set-${ROW.agreementId}`)) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
 
-    fireEvent.change(screen.getByTestId(`sd-select-${ROW.agreementId}`), {
+    // THE OPTIONS ARE THEIR OWN FETCH (see the test above) — firing a change to
+    // a value with no matching option yet silently leaves the select at '',
+    // which would flake this test's next assertion on a slow CI runner.
+    const select = screen.getByTestId(`sd-select-${ROW.agreementId}`) as HTMLSelectElement;
+    await waitFor(() => expect(select.options.length).toBeGreaterThan(1));
+    fireEvent.change(select, {
       target: { value: 'First stubbed description' },
     });
     expect((screen.getByTestId(`sd-set-${ROW.agreementId}`) as HTMLButtonElement).disabled).toBe(false);

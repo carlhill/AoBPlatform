@@ -180,7 +180,10 @@ describe('inbound print jobs (e2e, real Postgres)', () => {
       }).expect(202);
       const row = await prisma.withPractice(practiceId, (tx) => tx.inboundPrintJob.findFirst({ where: { id: smuggled.body.id } }));
       expect(JSON.stringify(row!.payload)).not.toContain('medicareNumber');
-      expect(JSON.stringify(row!.payload)).not.toContain('2123');
+      // THE WHOLE NUMBER, NOT A BARE FOUR-DIGIT FRAGMENT — '2123' alone is
+      // short enough that an unrelated id or timestamp elsewhere in the
+      // payload could contain that run of digits by chance and flake this.
+      expect(JSON.stringify(row!.payload)).not.toContain('2123 45670 1');
     });
   });
 

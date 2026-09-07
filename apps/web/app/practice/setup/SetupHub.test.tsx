@@ -100,8 +100,14 @@ describe('the Tablets card, and the Kiosk row it must never disagree with', () =
 
     render(<SetupHub practiceId={PRACTICE} />);
 
-    await waitFor(() => expect(screen.getByTestId('card-tablets')).toBeTruthy());
-    expect(screen.getByTestId('tablets-rollup').textContent).toBe('2 paired · 1 revoked');
+    /*
+     * THE CARD IS UNCONDITIONAL ONCE THE HUB LOADS; THE ROLLUP IS ITS OWN
+     * FETCH. `card-tablets` renders as soon as `/organisations/setup`
+     * answers, and `/devices` is a separate, independently-resolving request
+     * — waiting on the card alone can catch the rollup still reading "Loading"
+     * on a slow CI runner, so wait for the settled text itself.
+     */
+    await waitFor(() => expect(screen.getByTestId('tablets-rollup').textContent).toBe('2 paired · 1 revoked'));
     const tabletsCard = screen.getByTestId('card-tablets');
     expect(tabletsCard.textContent).toContain(strings.setup.states.done);
 

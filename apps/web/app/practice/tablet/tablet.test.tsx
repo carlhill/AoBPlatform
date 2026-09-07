@@ -915,9 +915,17 @@ describe('the reception-push loop -- set, resolve, send again', () => {
 
     // THE CONTROL IS IN THE BAND THAT STATES THE PROBLEM.
     const fix = await screen.findByTestId(`d6a-fix-${BLOCKED.agreementId}`);
-    // WHICH LIST IT IS OFFERING (hard rule 14) -- never a version this file
-    // decided on.
-    expect(fix.textContent).toContain(strings.tablet.d6aListVersion(DESCRIPTIONS.version));
+    /*
+     * THE BAND IS THE PUSHABLE ROWS' OWN FETCH; THE LIST IS ITS OWN, SEPARATE
+     * `/service-descriptions` CALL — `D6aFix` renders unconditionally the
+     * moment the row is blocked, and only fills in the version chip and the
+     * select's options once that second fetch answers. Wait for the version
+     * text rather than reading it the instant the band exists (flaked on a
+     * slow CI runner).
+     */
+    await waitFor(() =>
+      expect(fix.textContent).toContain(strings.tablet.d6aListVersion(DESCRIPTIONS.version)),
+    );
     // AND THE WORDS CAME FROM THE SERVER, in the order it sent them.
     expect(within(fix).getByText(DESCRIPTIONS.descriptions[0])).toBeTruthy();
     expect(within(fix).getByText(DESCRIPTIONS.descriptions[1])).toBeTruthy();
