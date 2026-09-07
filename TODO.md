@@ -2803,6 +2803,45 @@ Lock), state machine, named tests and nine open decisions: **GovAudit.md**.
 - [ ] Then build P1-P4 (~14 agent-days). Not on the GA critical path unless a
       customer or agency asks first; sits in GA-PLAN Phase 4 until Carl moves it.
 
+## Handover — state at compaction, 7 Sep 2026 (afternoon)
+
+Branch `feat/apply-ui`, CI green through `1f479f1`; everything below is pushed
+unless marked.
+
+**Two builds in flight (resume by id if the session is compacted; do not
+restart):**
+- Kiosk/console: who-is-signing stated on K-4 (patient or assignor + relation);
+  full patient id line on work page / queue rows / tablet rows / new-agreement
+  form / kiosk footer during a pushed session / portal details blocks; back link
+  + refresh on `/practice/patients` and the work page; signed patients leave the
+  queue and ended sessions for moved-on agreements offer no Send again;
+  "Signing you back in…" during silent restore after a browser reload.
+- Core/console: "Who is signing?" on a LOCKED, unsigned row supersedes (same
+  path as a locked name/DOB/address correction), refused once signed; button
+  re-enabled on every row with supersession copy.
+
+**Landed today:** anchor migration (agreements → Affiliation; backfill 0/251
+resolved in dev, 37 tasks); billing role; W1 form editor as a form + sticky
+checks + generated version; W2 New agreement form (reviewed, 4 fixes);
+activation lock → practice task; portal filter + reconciliation; expired-session
+bar + `explainFailure`; duplicate content-type header fix; core watcher watches
+src only (OneDrive was restarting it); session id keeps its case; letterhead
+route un-shadowed; hub card + menu for templates; wow.md (review-before-ready,
+gating, pre-fill race); GovAudit.md; PMS_to_AoB_Workflow.md (+§1a, §4a email-in).
+
+**Waiting on Carl:** termination effective TIME (start vs end of day);
+enduring commencement element; draft statements + templates wording review;
+PMS-sync AHPRA ruling; `providerId` deprecation date 30 Nov 2026; passkey
+implementation review; Q9 assignor DOB (declaration model); patient-proposed
+detail changes (hold-and-prove) window length; GovAudit Q1–Q5; the enduring
+rule-set branch (Carl authors, `apps/rules/test/enduring-ruleset.pending.spec.ts`).
+
+**Next builds queued:** post-service second push as its own flow; "covered by
+an ongoing agreement" queue line (arrivals deciding `none`); portal tables to
+timestamptz; passkey rate limiter to Redis; W3 PDF ingest + confirm screen;
+W5 drag-and-drop; W6 send-me-a-copy; W7 evidence retention floor; W10
+email-in adapter; dev reset script seeding a clean set (two Jamies).
+
 ## Where this product could go: v2 and v3
 
 Carl, 3 Sep 2026: "Version two of AoBPlatform could morph from just a
