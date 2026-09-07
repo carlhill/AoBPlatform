@@ -2347,6 +2347,24 @@ Left open by it, for Carl:
   another list entry**, never typed (`@IsIn(SERVICE_DESCRIPTIONS)`). A practice
   with no default still gets the honest "waits on your queue until one is set"
   path the connector arrivals already take.
+- **A PRE-EXISTING FLAKE FOUND WHILE VERIFYING THIS, NOT CAUSED BY IT AND NOT
+  FIXED BY IT** (7 Sep 2026). `org-model.e2e-spec.ts`, the describe block "the
+  identity dashboards are cross-tenant and narrow (design §7)": whichever test
+  runs FIRST in that block occasionally takes ~5s and times out, or fails with
+  `read ECONNRESET`; every later test in the block takes 7-25ms. It is the
+  first call to `/identity/practices`, the one endpoint there that scans across
+  every tenant, on a development database that has accumulated 120 practices.
+  Measured 1 in 5 on this branch's head and 0 in 3 on the commit before it —
+  and this build's own suites leave ZERO rows behind (row counts before and
+  after `arrivals` are identical), touch nothing under `identity`, and the
+  failing call is unrelated to any of them. **A fix was attempted and reverted:**
+  warming the endpoint in a `beforeAll` made it worse, because Jest applies the
+  same 5s default to hooks, so the hook's failure took all eight tests in the
+  block down instead of one. Whoever owns that suite should decide whether the
+  answer is a seeded-and-cleaned fixture set, an explicit timeout on a genuinely
+  cross-tenant read, or trimming the dev database — not a retry (wow.md §2 item
+  12). CI runs against a fresh database, where 120 practices do not exist, so
+  this is far less likely there than locally.
 
 ### 3. Shared patient record across practices -- v2, decision first
 Carl's idea: the five details exist once for all practices, so (with the
