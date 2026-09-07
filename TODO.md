@@ -1801,6 +1801,20 @@ on the remote link (`/patient/agree`), with "contact the practice" in place of
 "see reception". Named tests `signature_screen_names_who_is_signing` and
 `signature_screen_names_the_assignor_and_relationship_when_not_the_patient`.
 
+**Who is signing, after the lock, SUPERSEDES (Carl, 7 Sep 2026: "go -- fix who
+is signing on locked rows").** Arrivals lock at arrival, so every row on the
+desk was locked and "Who is signing?" was dead on all of them. `POST
+/agreements/:id/assignor` now edits in place while unlocked, supersedes once
+locked and unsigned (rule-10 checks first, then a new agreement with the same
+anchor, patient, D6a, service date and a fresh in-practice capture request; the
+old one untouched, its open requests cancelled, its tablet session ended
+`recalled`), and refuses `already_signed` / `agreement_moved_on` past that.
+Asking twice supersedes once. The panel says what Save will do before anybody
+types. Named tests `who_is_signing_on_a_locked_row_supersedes_rather_than_edits`,
+`who_is_signing_refused_once_signed`, `staff_assignor_still_hard_blocked_after_lock`,
+`supersession_carries_d6a_and_template_versions`,
+`who_is_signing_enabled_on_locked_rows_and_explains_supersession`.
+
 **Rulings later on 4 Sep 2026, all landed:**
 - Continue is absent, not disabled, while a cross is open -- the band already
   says reception is fixing it and a press did nothing (`7fddab0`).

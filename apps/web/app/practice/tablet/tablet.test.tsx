@@ -690,6 +690,96 @@ describe('/practice/tablet — send to the tablet', () => {
     expect(JSON.stringify(saved.body)).not.toMatch(/dateOfBirth|capacity/i);
   });
 
+  /**
+   * PREPARED IS NOT FINISHED (Carl, 7 Sep 2026: "go — fix who is signing on
+   * locked rows").
+   *
+   * An arrival locks its particulars as reception posts it, so every row on
+   * this list is prepared and the control died on all of them — the mother who
+   * brought her son met a dead button. Who signs is still a locked particular:
+   * the server supersedes rather than editing (HARD-02), and this pins that
+   * the screen SAYS so before anybody types, and that the band lands on the
+   * agreement that comes back rather than the one that is about to leave.
+   */
+  it('who_is_signing_enabled_on_locked_rows_and_explains_supersession', async () => {
+    signedInAtPractice();
+    const LOCKED = { ...READY, particularsLocked: true, status: 'awaiting_signature' };
+    const REPLACEMENT = { ...LOCKED, agreementId: 'agreement-superseding' };
+    /*
+     * THE LIST THE SERVER WOULD RETURN AFTERWARDS. The superseding agreement
+     * takes the old one's place — the old row's capture request is closed, so
+     * `pushable` stops offering it — and the console re-reads rather than
+     * patching, which is what makes the band land on a row that exists.
+     */
+    const rows: unknown[] = [LOCKED];
+    stubFetch({
+      rows,
+      onPost: () => {
+        rows.splice(0, rows.length, REPLACEMENT);
+        return { ok: true, payload: { id: REPLACEMENT.agreementId } };
+      },
+    });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    const open = (await screen.findByTestId(`who-open-${LOCKED.agreementId}`)) as HTMLButtonElement;
+    expect(open.disabled).toBe(false);
+    fireEvent.click(open);
+
+    // WHAT SAVE WILL DO, said before anybody types.
+    expect((await screen.findByTestId(`who-locked-${LOCKED.agreementId}`)).textContent).toBe(
+      strings.tablet.whoLockedLead,
+    );
+
+    fireEvent.click(screen.getByRole('checkbox', { name: strings.tablet.whoPatient }));
+    fireEvent.change(screen.getByTestId(`who-name-${LOCKED.agreementId}`), {
+      target: { value: 'Robin Relative' },
+    });
+    fireEvent.change(screen.getByTestId(`who-relationship-${LOCKED.agreementId}`), {
+      target: { value: 'mother' },
+    });
+    fireEvent.click(screen.getByRole('checkbox', { name: strings.tablet.whoAgeConfirm(MIN_AGE_ASSIGN_FOR_OTHER) }));
+    fireEvent.change(screen.getByTestId(`who-mobile-${LOCKED.agreementId}`), {
+      target: { value: '0400 000 001' },
+    });
+
+    await waitFor(() =>
+      expect((screen.getByTestId(`who-save-${LOCKED.agreementId}`) as HTMLButtonElement).disabled).toBe(false),
+    );
+    fireEvent.click(screen.getByTestId(`who-save-${LOCKED.agreementId}`));
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));
+    const saved = calls.find((c) => c.method === 'POST')!;
+    // THE SAME ENDPOINT as an unlocked row — the console does not decide which
+    // of the two acts this is, and could not: the server owns HARD-02.
+    expect(saved.url).toContain(`/agreements/${LOCKED.agreementId}/assignor`);
+
+    // AND THE BAND LANDS ON THE AGREEMENT THAT CAME BACK, which is the row
+    // that is about to appear rather than the one leaving the list.
+    const band = await screen.findByTestId(`who-outcome-${REPLACEMENT.agreementId}`);
+    expect(band.textContent).toContain(strings.tablet.whoSavedSuperseded);
+  });
+
+  it('a refusal on a row that has moved on reads in reception’s words, not the server’s', async () => {
+    signedInAtPractice();
+    const LOCKED = { ...READY, particularsLocked: true, status: 'awaiting_signature' };
+    stubFetch({
+      rows: [LOCKED],
+      onPost: () => ({
+        ok: false,
+        status: 409,
+        payload: { statusCode: 409, message: 'raw server sentence', reason: 'agreement_moved_on' },
+      }),
+    });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    fireEvent.click(await screen.findByTestId(`who-open-${LOCKED.agreementId}`));
+    fireEvent.click(screen.getByTestId(`who-save-${LOCKED.agreementId}`));
+
+    const band = await screen.findByTestId(`who-outcome-${LOCKED.agreementId}`);
+    expect(band.textContent).toContain(strings.tablet.whoRefusals.agreement_moved_on);
+    expect(band.textContent).not.toContain('raw server sentence');
+  });
+
   it('ui_never_asks_staff_to_assess_capacity', async () => {
     signedInAtPractice();
     stubFetch();

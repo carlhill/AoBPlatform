@@ -1052,8 +1052,32 @@ export function usePushDesk(practiceId: string): PushDesk {
         headers: apiHeaders(practiceId),
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error((await refusal(res)).message);
-      setWhoOutcome({ id: row.agreementId, text: strings.tablet.whoSaved, ok: true });
+      if (!res.ok) {
+        /*
+         * THE CODE, TURNED INTO A SENTENCE SOMEBODY CAN ACT ON (CLAUDE.md §7).
+         * The two late refusals — the agreement was signed, or it has moved on
+         * — carry a `reason`; the hard-rule refusals (REQ-VUL-04, REQ-AGE-01)
+         * carry only their own words, which already name the rule and the fix.
+         * An unmapped code is SHOWN rather than swallowed.
+         */
+        const { message, reason } = await refusal(res);
+        throw new Error(
+          reason ? (strings.tablet.whoRefusals[reason] ?? strings.tablet.whoRefusalUnmapped(reason)) : message,
+        );
+      }
+      /*
+       * A PREPARED ROW ANSWERS WITH A DIFFERENT AGREEMENT — the superseding one
+       * — so the band is hung on THAT id: the row it belongs to is the row that
+       * is about to appear, and the one reception was looking at leaves the
+       * list with its capture request closed.
+       */
+      const saved = (await res.json().catch(() => ({}))) as { id?: string };
+      const superseded = typeof saved.id === 'string' && saved.id !== row.agreementId;
+      setWhoOutcome({
+        id: superseded ? (saved.id as string) : row.agreementId,
+        text: superseded ? strings.tablet.whoSavedSuperseded : strings.tablet.whoSaved,
+        ok: true,
+      });
       setWhoFor(null);
       // Re-read rather than patch: what is on screen is what the server thinks.
       await load();
@@ -1867,11 +1891,18 @@ export function AgreementRow({
 
       {/*
         WHO IS SIGNING, SET AT THE DESK — before the push, never on the tablet.
+
+        ALIVE ON EVERY ROW, PREPARED OR NOT (Carl, 7 Sep 2026). It used to die
+        on `particularsLocked`, and since an arrival locks its particulars as
+        it is posted that meant every row on this list: the mother who brought
+        her son met a dead button. Who signs is still a locked particular and
+        is still never EDITED — after the lock the server supersedes, which is
+        what the panel says before anybody types.
       */}
       <div className={rowStyles.who}>
         <Button
           variant="subtle"
-          disabled={!desk.canSend || row.particularsLocked}
+          disabled={!desk.canSend}
           onClick={() => (desk.whoFor === row.agreementId ? desk.closeWho() : desk.openWho(row))}
           data-testid={`who-open-${row.agreementId}`}
         >
@@ -1992,6 +2023,17 @@ export function AgreementRow({
 
       {desk.whoFor === row.agreementId && (
         <div className={`${styles.cardBody} ${rowStyles.band}`} data-testid={`who-panel-${row.agreementId}`}>
+          {/*
+            WHAT SAVE WILL DO, SAID BEFORE ANYBODY TYPES. On a prepared row the
+            server supersedes (HARD-02) rather than editing, so reception gets
+            a second row and the first one leaves the list — a surprise worth
+            spending two sentences to avoid.
+          */}
+          {row.particularsLocked && (
+            <p className={ui.hint} data-testid={`who-locked-${row.agreementId}`}>
+              {strings.tablet.whoLockedLead}
+            </p>
+          )}
           <Checkbox
             checked={desk.who.isPatient}
             onCheckedChange={(v) => desk.setWho((w) => ({ ...w, isPatient: v }))}

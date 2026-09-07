@@ -4344,6 +4344,45 @@ export const strings = {
     whoSaving: 'Saving…',
     whoSaved: 'Saved.',
     /*
+     * AND WHAT HAPPENS ON A ROW THAT IS ALREADY PREPARED (Carl, 7 Sep 2026).
+     *
+     * An arrival locks its particulars as reception posts it, so by the time
+     * the patient is at the desk every row here is prepared — and who signs is
+     * one of the LOCKED particulars (hard rule 2, REQ-REG-06). It can still be
+     * changed; what it cannot be is edited. So the panel says, before anybody
+     * types, exactly what pressing Save will do: a second agreement with the
+     * same details and the new signer, and the first one left on the record
+     * saying what it always said (HARD-02).
+     *
+     * IT NEVER SAYS "APPROVED", "CERTIFIED" OR "ACCREDITED" about our forms
+     * (hard rule 12). "Prepared" is what happened: the details were checked
+     * against the s 65C data set and written down.
+     */
+    whoLockedLead:
+      'This agreement is already prepared. Changing who signs prepares a new one with the same '
+      + 'details; the first stays on record.',
+    whoSavedSuperseded:
+      'Saved. A new agreement is ready with the new signer, and it is on the list below. The first '
+      + 'one stays on record and can no longer be signed.',
+    /*
+     * WHY IT COULD NOT BE CHANGED, IN RECEPTION'S WORDS AND WITH THE NEXT ACT
+     * IN THEM (CLAUDE.md §7). The server sends a CODE; an unmapped one is
+     * SHOWN rather than swallowed, because a generic sentence would hide the
+     * one string that lets somebody diagnose a refusal this list has not met.
+     */
+    whoRefusals: {
+      already_signed:
+        'This agreement has already been signed, so who signed it cannot be changed — it is a record '
+        + 'of something that happened. If the wrong person signed, tell us; the patient is unaffected '
+        + 'and can still be bulk billed.',
+      agreement_moved_on:
+        'This agreement has moved on — it has been superseded, declined or has expired — so there is '
+        + 'nothing here to change. Use the patient’s current row on this list instead.',
+    } as Record<string, string>,
+    whoRefusalUnmapped: (code: string) =>
+      `The server reported “${code}”, which this screen does not have wording for yet. Tell us the `
+      + 'code — nothing was changed, and the patient can still be bulk billed.',
+    /*
      * EACH REFUSAL SAYS WHAT TO DO NEXT. The staff block is NAME-BASED and can
      * therefore hit an innocent namesake, so it states the match and offers the
      * desk rather than accusing anybody — and it never says which name matched
