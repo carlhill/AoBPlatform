@@ -10,6 +10,8 @@
   "editUsernameAllowed": false,
   "bruteForceProtected": true,
   "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 14400,
+  "ssoSessionMaxLifespan": 36000,
   "webAuthnPolicyRpEntityName": "AoBPlatform",
   "webAuthnPolicyRpId": "localhost",
   "webAuthnPolicySignatureAlgorithms": [

@@ -124,6 +124,35 @@ core's — **Carl to add; not edited by the agent that made this change.**
 
 ---
 
+## D-2026-09-07-01 — Console sign-ins end after four idle hours, not thirty minutes
+
+**Decided:** The `aobplatform` realm's `ssoSessionIdleTimeout` is 14400 s
+(4 hours); `ssoSessionMaxLifespan` stays 36000 s (10 hours); the access token
+stays 300 s. Set in `infra/keycloak/realm-export.json` and applied to the dev
+realm by the admin API the same day. The console copy reads the figure from
+`NEXT_PUBLIC_SESSION_IDLE_MINUTES` so the sentence "Sign-ins end after N
+minutes without activity" never disagrees with the realm. — Carl Hill,
+7 September 2026 ("do both - fix the copy and raise the idle timeout").
+
+**Why:**
+- **A reception desk is idle in bursts.** Thirty minutes without a console
+  action is normal mid-morning; the person is still at the desk. Each expiry
+  cost a passkey ceremony and, on 7 Sep, confusion — the page said "You are not
+  signed in" to somebody who had signed in an hour earlier.
+- **The short-lived credential is the access token, not the SSO session.**
+  Tokens still expire after five minutes and refresh silently; a stolen token is
+  worth five minutes either way. The idle timeout only decides how long a
+  browser that has gone quiet can come back without a passkey.
+- **Ten hours is the hard ceiling** and is unchanged: a session opened at
+  8 am ends by 6 pm whatever happens.
+
+**What would reopen it:** a customer's security policy requiring a shorter
+idle window (make it per-realm configuration, not a code change); shared
+reception PCs where several staff use one browser profile (the answer there is
+a per-user profile or a kiosk-style lock, not a shorter timeout); evidence from
+the access log that unattended consoles are being used by someone other than
+the signed-in user.
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
