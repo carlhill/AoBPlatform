@@ -1094,6 +1094,27 @@ export class TabletSessionsService {
     return rows;
   }
 
+  /**
+   * HAS THIS AGREEMENT MOVED PAST THE POINT A TABLET COULD MEAN ANYTHING?
+   *
+   * THE SAME TWO CONDITIONS `blockingReason` USES for
+   * `agreement_not_pushable`, and deliberately not a third opinion: a row that
+   * offered "Send again" and a server that refused it were the fault Carl found
+   * on 7 Sep 2026, and two separate readings of "pushable" is how that comes
+   * back. This one answers a narrower question — not "can it go now" (a
+   * missing D6a blocks that, and is fixable) but "has it left" — so a draft
+   * waiting on a service description still reads as work rather than history.
+   */
+  private outcomeOf(agreement: { status: string; signatureEventId: string | null } | undefined):
+    | 'signed'
+    | 'moved_on'
+    | null {
+    if (!agreement) return null;
+    if (agreement.signatureEventId) return 'signed';
+    if (!(PUSHABLE_STATUSES as readonly string[]).includes(agreement.status)) return 'moved_on';
+    return null;
+  }
+
   /** The rows themselves — one transaction, no network calls. See `pushable`. */
   private async readPushableRows(practiceId: string, startOfDay: Date): Promise<PushableRow[]> {
     return this.prisma.withPractice(practiceId, async (tx) => {
@@ -1286,6 +1307,15 @@ export class TabletSessionsService {
           ...patient,
           dateOfBirth: patient.dateOfBirth.toISOString().slice(0, 10),
         }),
+        /*
+         * OUR OWN ID FOR THE RECORD, so the tablet's footer can name it and a
+         * support call or a test run can match what is on the tablet to what
+         * reception is looking at (Carl, 7 Sep 2026). Deliberately OUTSIDE the
+         * projection above: that projection exists to let only the six
+         * permitted DETAIL fields through, and an opaque row id is not one of
+         * them — it is the same kind of thing as the session id beside it.
+         */
+        patientId: patient.id,
         assignor: agreement.assignorIsPatient
           ? { isPatient: true }
           : {
@@ -2013,6 +2043,12 @@ export class TabletSessionsService {
            * about the table rather than about this projection.
            */
           signatureFailureReason: session.signatureFailureReason ?? null,
+          /*
+           * AND WHETHER THE AGREEMENT BEHIND IT HAS LEFT. Read from the
+           * agreement rows this projection already fetched — no extra query,
+           * and no second definition of "pushable" (see `outcomeOf`).
+           */
+          agreementOutcome: this.outcomeOf(agreement),
           pushedBy: session.pushedBy,
           pushedAt: session.pushedAt.toISOString(),
           lastStateAt: session.lastStateAt.toISOString(),
@@ -2041,6 +2077,7 @@ export class TabletSessionsService {
       disputeResolution: (session.disputeResolution ?? null) as TabletSessionRow['disputeResolution'],
       disputeResolvedAt: session.disputeResolvedAt?.toISOString() ?? null,
       signatureFailureReason: session.signatureFailureReason ?? null,
+      agreementOutcome: this.outcomeOf(context.agreement),
       pushedBy: session.pushedBy,
       pushedAt: session.pushedAt.toISOString(),
       lastStateAt: session.lastStateAt.toISOString(),

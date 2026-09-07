@@ -47,6 +47,9 @@ const READY = {
   agreementType: 'episodic_pre',
   status: 'draft',
   patientName: 'Jamie Sampleton',
+  // An opaque id we minted, which the row now names so a support call can say
+  // which record it is looking at. Never a Medicare number (hard rule 1).
+  patientId: 'patient-1',
   providerName: 'Dr Example Provider',
   providerType: 'general_practitioner',
   appointmentDate: '2026-09-04',
@@ -97,6 +100,9 @@ const SESSION: TabletSessionRow = {
   patientId: 'patient-1',
   providerName: 'Dr Example Provider',
   state: 'reading',
+  // The agreement behind it can still go to a tablet — so this session's
+  // ending, when it gets one, is still work rather than history.
+  agreementOutcome: null,
   disputedDetails: [],
   disputeResolution: null,
   disputeResolvedAt: null,
@@ -346,6 +352,33 @@ describe('/practice/tablet — send to the tablet', () => {
     expect(row.textContent).toContain('09:00');
     expect(row.textContent).toContain('General practitioner attendance');
     expect(row.textContent).toContain(strings.tablet.signingPatient);
+  });
+
+  /**
+   * WHICH RECORD EACH ROW IS ABOUT (Carl, 7 Sep 2026) — "every page must have
+   * the patient GUID from AoBPlatform somewhere, so we can see which record has
+   * the issue. Also helps with testing."
+   *
+   * IN FULL, AND ON BOTH LISTS. The agreement rows on the left and the tablet
+   * showing a session on the right name the same id, which is how a support
+   * call matches a device to a record exactly rather than by eye — the tablet's
+   * own footer carries it too.
+   */
+  it('tablet_rows_show_the_patient_id', async () => {
+    stubFetch({ sessions: [SESSION] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    await waitFor(() => expect(screen.getByTestId(`pushable-${READY.agreementId}`)).toBeTruthy());
+    const onRow = screen.getByTestId(`row-patient-id-${READY.agreementId}`);
+    expect(onRow.textContent).toContain(READY.patientId);
+    expect(onRow.textContent).toContain(strings.recordId.patient);
+
+    // And on the device row that is showing that patient's session.
+    const onDevice = await screen.findByTestId(`tablet-patient-id-${TABLET.id}`);
+    expect(onDevice.textContent).toContain(SESSION.patientId);
+
+    // IT IS AN ID WE MINTED, AND NOTHING ELSE ARRIVED WITH IT (hard rule 1).
+    expect(document.body.textContent).not.toMatch(/medicare/i);
   });
 
   it('row_renders_facts_in_one_line_each', async () => {

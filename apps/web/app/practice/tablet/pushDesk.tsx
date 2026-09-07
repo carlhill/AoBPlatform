@@ -55,6 +55,7 @@ import {
   Chip,
   Field,
   Notice,
+  RecordId,
   SelectInput,
   TextInput,
   ui,
@@ -138,6 +139,31 @@ export const STATE_TONE: Record<string, Tone> = {
 export const SEND_AGAIN_ENDINGS: readonly string[] = ENDED_TABLET_SESSION_STATES.filter(
   (state) => state !== 'signed',
 );
+
+/**
+ * MAY THIS ENDED SESSION BE SENT AGAIN? — the one reading, shared by every
+ * screen that offers the control (Carl, 7 Sep 2026).
+ *
+ * THE ENDING IS ONLY HALF OF IT, and the missing half is what Carl found: a
+ * walked-away session offered "Send again" for the rest of the day, including
+ * after the patient had signed on a later session, and the only thing the
+ * press could produce was the server's refusal "This agreement has moved on
+ * and cannot be sent to a tablet". A control whose sole outcome is a refusal
+ * is CLAUDE.md §7's fault seen from the other end — the shortcut to the answer
+ * here is not to offer the act.
+ *
+ * THE SERVER DECIDES, THIS READS. `agreementOutcome` comes off the row and is
+ * computed from the same two conditions `blockingReason` uses for
+ * `agreement_not_pushable`, so the console and the endpoint cannot come to
+ * different answers.
+ */
+export function canSendAgain(session: TabletSessionRow): boolean {
+  return (
+    session.endedAt !== null
+    && SEND_AGAIN_ENDINGS.includes(session.state)
+    && session.agreementOutcome === null
+  );
+}
 
 /**
  * THE SESSIONS THAT STILL OWN A TABLET. The poll asks for the last
@@ -1801,6 +1827,18 @@ export function AgreementRow({
             <SessionTag id={live.id} testId={`row-session-id-${row.agreementId}`} />
           </Chip>
         )}
+        {/*
+          WHICH RECORD THIS ROW IS ABOUT (Carl, 7 Sep 2026) — beside the
+          session tag, and in the same spirit: an opaque id this platform
+          minted, naming the same row the vault events name. Never a Medicare
+          number, of which there is no column anywhere in this system (hard
+          rule 1, REQ-VER-02).
+        */}
+        <RecordId
+          label={strings.recordId.patient}
+          value={row.patientId}
+          testId={`row-patient-id-${row.agreementId}`}
+        />
       </div>
 
       {/*

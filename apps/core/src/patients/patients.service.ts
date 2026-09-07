@@ -473,6 +473,32 @@ export class PatientsService {
      * that changed most recently. `list` orders by `pushedAt` descending.
      */
     for (const session of sessions) {
+      /*
+       * AN ENDED SESSION WHOSE AGREEMENT HAS MOVED ON IS NOT SOMETHING OPEN
+       * (Carl, 7 Sep 2026, from testing: Alex signed on the tablet and stayed
+       * on this queue reading "2 things open" — one of them the session he had
+       * walked away from an hour earlier, whose agreement was by then signed).
+       *
+       * NOTHING IS LEFT TO DO WITH IT. It cannot be sent again (the server
+       * refuses: "this agreement has moved on"), it needs no answer and it
+       * blocks nothing; it is a fact about a visit that is finished. The work
+       * page still shows it, as history, because the sequence is exactly what
+       * somebody reconstructing a visit wants — but a queue of things needing
+       * a person is not the place for it.
+       *
+       * A LIVE SESSION IS ALWAYS OPEN, whatever its agreement says. Somebody
+       * is standing at a tablet; that is the definition of open, and a
+       * disagreement between the two would be a reason to look rather than a
+       * reason to hide the row.
+       *
+       * AND A SIGNED AGREEMENT ALONE KEEPS NOBODY HERE. `pushable()` already
+       * excludes signed and non-pushable agreements from the awaiting-signature
+       * half, so with this the only ways onto the list are: an agreement still
+       * waiting, a tablet in use, an ended session that could still be re-sent,
+       * a request the patient made, or an invitation that locked.
+       */
+      if (session.endedAt !== null && session.agreementOutcome !== null) continue;
+
       push(session.patientId, {
         kind: 'session',
         agreementId: session.agreementId,

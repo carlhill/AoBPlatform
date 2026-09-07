@@ -1087,3 +1087,23 @@ button.checksSummary {
 .addInline {
   margin-bottom: var(--s5);
 }
+
+/* ---------------------------------------------------------------------------
+   THE RECORD LINE ON A ROW (Carl, 7 Sep 2026) — "every page must have the
+   patient GUID from AoBPlatform somewhere, so we can see which record has the
+   issue".
+
+   OUTSIDE THE ROW'S LINK, NOT INSIDE IT. The whole card head is an anchor to
+   the patient's page; a copy BUTTON nested in an anchor is invalid markup and,
+   worse, a press that copies and then navigates. So it sits as a sibling under
+   the link, right-aligned, sharing the card's padding.
+
+   IT TAKES NO ROOM FROM THE ROW ITSELF. Top padding is zero — it hangs off the
+   bottom of the head it belongs to rather than reading as a second row of
+   content.
+--------------------------------------------------------------------------- */
+.cardRecordLine {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 var(--s4) var(--s3);
+}

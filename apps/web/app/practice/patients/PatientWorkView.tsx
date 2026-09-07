@@ -57,22 +57,24 @@ import {
   type PatientTimelineEntry,
   type TabletSessionRow,
 } from '@aobplatform/domain';
-import { Button, Chip, Notice, Section, Shell, ui } from '../../ui';
+import { Button, Chip, Notice, RecordId, Section, Shell, ui } from '../../ui';
 import { strings } from '../../strings';
 import { explainFailure } from '../../apiError';
 import { apiHeaders, currentSession } from '../../auth';
 import { SessionControl } from '../../SessionControl';
+import { useRefreshable } from '../../refresh';
 import styles from '../manage.module.css';
 import {
   AgreementRow,
   CorrectOutcomeNotice,
   CorrectionPanel,
-  SEND_AGAIN_ENDINGS,
+  canSendAgain,
   SendAgain,
   SessionActions,
   SessionDisputeNotices,
   SessionOutcomeNotice,
   SessionTag,
+  shortSessionId,
   STATE_TONE,
   subjectForPatient,
   subjectForSession,
@@ -362,6 +364,20 @@ export function PatientWorkView({ practiceId, patientId }: { practiceId: string;
   }, [readPatient]);
 
   /*
+   * THE TOP BAR'S REFRESH (Carl, 7 Sep 2026 — this page had none, and F5 on
+   * this console throws the in-memory session away and asks somebody to sign
+   * in again).
+   *
+   * BOTH READS, because `refreshAll` runs every registered loader and a page
+   * that refreshed one of two independent reads would show two things on one
+   * screen that disagree — the patient's five details from a moment ago beside
+   * a tablet row from three seconds ago. `desk.load` is the tablet page's own
+   * loader, registered here exactly as `/practice/tablet` registers it.
+   */
+  useRefreshable(readPatient);
+  useRefreshable(desk.load);
+
+  /*
    * A CORRECTION MOVED SOMETHING, SO THE PAGE RE-READS IT. Keyed on the
    * outcome's identity rather than on a counter, so a failed save does not
    * quietly refresh as though it had worked.
@@ -440,7 +456,22 @@ export function PatientWorkView({ practiceId, patientId }: { practiceId: string;
     <Shell
       right={<SessionControl audience={strings.patients.audience} />}
       title={name}
-      lead={strings.patients.workLead}
+      /*
+        WHICH RECORD THIS PAGE IS ABOUT, UNDER THE NAME (Carl, 7 Sep 2026:
+        "every page must have the patient GUID from AoBPlatform somewhere, so
+        we can see which record has the issue. Also helps with testing").
+
+        BESIDE THE SENTENCE RATHER THAN ON A LINE OF ITS OWN, because the
+        banner is pinned while the page scrolls: a third line there costs
+        every scroll of every long work page. An opaque id we minted — never a
+        Medicare number (hard rule 1, REQ-VER-02), never an IHI.
+      */
+      lead={
+        <>
+          {strings.patients.workLead}{' '}
+          <RecordId label={strings.recordId.patient} value={patientId} testId="work-patient-id" />
+        </>
+      }
     >
       <p className={ui.hint}>
         <Link href="/practice/patients" data-testid="work-to-queue">
@@ -781,7 +812,49 @@ export function PatientWorkView({ practiceId, patientId }: { practiceId: string;
         <ul className={styles.list} data-testid="work-sessions">
           {sessions.map((session: TabletSessionRow) => {
             const live = session.endedAt === null;
-            const canSendAgain = !live && SEND_AGAIN_ENDINGS.includes(session.state);
+            /*
+             * A SESSION WHOSE AGREEMENT HAS MOVED ON IS HISTORY (Carl, 7 Sep
+             * 2026, from testing: Alex had signed, and this card still offered
+             * "Send again" on the session he walked away from an hour before —
+             * an act whose only outcome was the server's refusal).
+             *
+             * IT KEEPS ITS FACTS AND LOSES ITS CONTROLS. What happened and
+             * which session it was is exactly what somebody reconstructing a
+             * visit needs; Send again, Correct and the dispute controls are
+             * not, because there is nothing left on this agreement to act on.
+             */
+            const history = !live && session.agreementOutcome !== null;
+            const sendAgain = canSendAgain(session);
+            if (history) {
+              return (
+                <li
+                  key={session.id}
+                  className={styles.card}
+                  data-testid={`work-session-${session.id}`}
+                >
+                  <div className={styles.cardHead}>
+                    <span className={styles.cardIcon}>
+                      <Tablet size={18} aria-hidden="true" />
+                    </span>
+                    <div className={styles.cardMain}>
+                      <p className={styles.cardSub} data-testid={`work-session-history-${session.id}`}>
+                        {strings.patients.sessionHistory(
+                          strings.tablet.states[session.state] ?? session.state,
+                          shortSessionId(session.id),
+                        )}
+                        {session.state === 'signed'
+                          ? ''
+                          : ` — ${
+                              session.agreementOutcome === 'signed'
+                                ? strings.patients.sessionHistorySigned
+                                : strings.patients.sessionHistoryMovedOn
+                            }`}
+                      </p>
+                    </div>
+                  </div>
+                </li>
+              );
+            }
             return (
               <li key={session.id} className={styles.card} data-testid={`work-session-${session.id}`}>
                 <div className={styles.cardHead}>
@@ -810,7 +883,7 @@ export function PatientWorkView({ practiceId, patientId }: { practiceId: string;
 
                 <SessionDisputeNotices session={session} />
                 {live && <SessionActions desk={desk} session={session} />}
-                {canSendAgain && <SendAgain desk={desk} ended={session} />}
+                {sendAgain && <SendAgain desk={desk} ended={session} />}
                 <CorrectionPanel desk={desk} subject={subjectForSession(session)} />
                 <CorrectOutcomeNotice
                   desk={desk}

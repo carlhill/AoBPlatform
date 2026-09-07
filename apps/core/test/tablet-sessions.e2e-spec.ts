@@ -2532,6 +2532,74 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
       expect(json).not.toMatch(/\$\d/);
     });
 
+    /**
+     * A PATIENT WHOSE AGREEMENT HAS MOVED ON LEAVES THE QUEUE (Carl, 7 Sep
+     * 2026, from testing: Alex signed on the tablet and stayed on
+     * `/practice/patients` reading "2 things open" — one of them the session
+     * he had walked away from an hour earlier, whose only offered act was a
+     * "Send again" the server refuses).
+     *
+     * THE TEST DRIVES BOTH HALVES OF THE RULE. An ended session whose
+     * agreement can still go is STILL something open — that is the case the
+     * fix must not break, because it is how reception picks the tablet back
+     * up. The same session stops being open the moment the agreement is
+     * signed, and with `pushable()` already excluding signed agreements the
+     * patient has nothing left and drops off the list.
+     */
+    it('signed_patient_leaves_the_queue', async () => {
+      const { patientId, assignorId } = await workPatient('Moved');
+      const agreementId = await draft({ patientId, assignorId });
+      const pushed = await pushTo(tabletA, agreementId).expect(201);
+
+      await http()
+        .post(`/kiosk/session/${pushed.body.id}/state`)
+        .set('x-device-credential', tabletACredential)
+        .send({ state: 'walked_away' })
+        .expect(201);
+
+      // STILL OPEN. Nothing on the agreement moved (hard rule 8), so the
+      // ended session is work: reception sends it again.
+      const during = await workList().expect(200);
+      const stillThere = (during.body as Array<{ patientId: string; items: unknown[] }>).find(
+        (row) => row.patientId === patientId,
+      );
+      expect(stillThere).toBeDefined();
+      expect(stillThere!.items).toContainEqual(
+        expect.objectContaining({ kind: 'session', sessionId: pushed.body.id }),
+      );
+
+      /*
+       * AND THEN IT IS SIGNED — on a later session, a remote link, or after
+       * the service. Written directly because this suite is about the queue
+       * rather than about the signature path, and the two conditions
+       * `outcomeOf` reads are exactly these two columns.
+       */
+      await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.update({
+          where: { id: agreementId },
+          data: { status: 'signed', signatureEventId: randomUUID() },
+        }),
+      );
+
+      // The row itself now says how the agreement left, so the console can
+      // drop the control rather than offering an act that only ever refuses.
+      const sessions = await http()
+        .get('/tablet-sessions?active=false')
+        .set('x-practice-id', practiceA)
+        .expect(200);
+      const row = (sessions.body as Array<{ id: string; agreementOutcome: string | null }>).find(
+        (item) => item.id === pushed.body.id,
+      );
+      expect(row?.agreementOutcome).toBe('signed');
+
+      // And the patient is off the queue: a signed agreement alone keeps
+      // nobody on a list of things needing a person.
+      const after = await workList().expect(200);
+      expect((after.body as Array<{ patientId: string }>).map((item) => item.patientId)).not.toContain(
+        patientId,
+      );
+    });
+
     it('the work list answers one question and refuses the rest', async () => {
       /*
        * THERE IS NO LIST OF EVERY PATIENT HERE, and an endpoint that answered

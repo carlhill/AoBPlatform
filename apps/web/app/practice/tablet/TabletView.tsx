@@ -46,7 +46,7 @@
 
 import Link from 'next/link';
 import { ArrowRight, ClipboardList, Tablet, Users } from 'lucide-react';
-import { Button, Chip, Notice, Section, Shell, ui } from '../../ui';
+import { Button, Chip, Notice, RecordId, Section, Shell, ui } from '../../ui';
 import { strings } from '../../strings';
 import { SessionControl } from '../../SessionControl';
 import { useRefreshable } from '../../refresh';
@@ -56,7 +56,7 @@ import {
   AgreementRow,
   CorrectOutcomeNotice,
   CorrectionPanel,
-  SEND_AGAIN_ENDINGS,
+  canSendAgain,
   SendAgain,
   SessionActions,
   SessionDisputeNotices,
@@ -77,6 +77,7 @@ import {
 export {
   FIELDS_FOR_DISPUTED_TYPE,
   SEND_AGAIN_ENDINGS,
+  canSendAgain,
   blockedMessage,
   describeRefusal,
   disputedLabels,
@@ -212,8 +213,14 @@ export function TabletView({ practiceId }: { practiceId: string }) {
              * is to send it again — on the row that just said it ended, rather
              * than after a hunt back through the waiting list.
              */
-            const ended =
-              !session && lastEnded && SEND_AGAIN_ENDINGS.includes(lastEnded.state) ? lastEnded : undefined;
+            /*
+             * AND ONLY WHILE THE AGREEMENT CAN STILL GO (Carl, 7 Sep 2026).
+             * `canSendAgain` adds the half this was missing: an ending that
+             * left the agreement untouched is not enough if the agreement has
+             * since been signed, superseded or cancelled — the press would only
+             * ever produce the server's refusal.
+             */
+            const ended = !session && lastEnded && canSendAgain(lastEnded) ? lastEnded : undefined;
             const activity = deviceActivityLine(device);
             return (
               <li key={device.id} className={styles.card} data-testid={`tablet-${device.id}`}>
@@ -253,6 +260,21 @@ export function TabletView({ practiceId }: { practiceId: string }) {
                       <p className={styles.cardSub}>
                         {strings.tablet.pushedAt(session.pushedBy, when(session.pushedAt))}
                       </p>
+                    )}
+                    {/*
+                      AND WHICH RECORD IT IS SHOWING (Carl, 7 Sep 2026), beside
+                      the session tag above and on the same footing: an opaque
+                      id this platform minted, naming the same row the vault
+                      events name. The TABLET's own footer carries the same id,
+                      so reception and the device can be matched exactly rather
+                      than by eye.
+                    */}
+                    {session && (
+                      <RecordId
+                        label={strings.recordId.patient}
+                        value={session.patientId}
+                        testId={`tablet-patient-id-${device.id}`}
+                      />
                     )}
                     {/*
                       WHERE THE TABLET ITSELF SAYS IT IS (Carl, 4–5 Sep 2026).

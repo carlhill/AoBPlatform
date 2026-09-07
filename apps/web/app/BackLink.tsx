@@ -51,6 +51,17 @@ const PARENTS: Readonly<Record<string, string>> = {
   // who has just paired one is one press from using it, and the one who
   // wonders why a push refused goes the other way.
   '/practice/tablet': '/practice/setup',
+  /*
+   * RECEPTION'S QUEUE SITS BESIDE THE TABLETS IT FEEDS (Carl, 7 Sep 2026 —
+   * it had no back link at all, so the only way off it was the menu). It is
+   * the same working area: the patients with something open, and the devices
+   * their agreements go to.
+   *
+   * The platform twin at `/platform/practices/<id>/patients` needs no entry:
+   * `platformPracticeParent` already sends every page under a practice up to
+   * that practice's own hub.
+   */
+  '/practice/patients': '/practice/setup',
   // The agreement document -- letterhead, logo, wording (W1; Carl, 7 Sep 2026: 'need a backlink').
   '/practice/templates': '/practice/setup',
   // '/practice/reports' is decided per audience in parentOf -- it belongs under
@@ -87,6 +98,13 @@ const PARENTS: Readonly<Record<string, string>> = {
 const PREFIX_PARENTS: ReadonlyArray<readonly [string, string]> = [
   ['/practitioner/practices/', '/practitioner'],
   ['/review/', '/review'],
+  /*
+   * ONE PATIENT'S WORK PAGE GOES UP TO THE QUEUE IT WAS OPENED FROM. The page
+   * carries its own "← All patients with something open today" link in the
+   * body; this is the shell's, so the control is in the same place it is on
+   * every other page rather than only where somebody remembered to put one.
+   */
+  ['/practice/patients/', '/practice/patients'],
 ];
 
 /**
@@ -160,6 +178,7 @@ export function BackLink() {
    */
   const LABELS: Record<string, string> = {
     '/practice/setup': strings.nav.setup,
+    '/practice/patients': strings.patients.navLabel,
     '/practice/queue': strings.nav.outbound,
     '/review': strings.nav.reviewDossiers,
     '/platform/acting-as': strings.nav.actingAsRegister,

@@ -71,7 +71,7 @@ import {
   MIN_AGE_SELF_ASSIGN,
   relationshipNeedsFreeText,
 } from '@aobplatform/domain';
-import { Button, Checkbox, Field, Notice, Section, SelectInput, TextInput, ui } from '../../ui';
+import { Button, Checkbox, Field, Notice, RecordId, Section, SelectInput, TextInput, ui } from '../../ui';
 import { strings } from '../../strings';
 import { apiHeaders } from '../../auth';
 import styles from '../manage.module.css';
@@ -718,9 +718,22 @@ export function NewAgreementPanel({
         )}
 
         {patient.chosen && (
-          <p className={ui.hint} data-testid="new-agreement-chosen">
-            {strings.newAgreement.chosen(`${patient.givenNames} ${patient.familyName}`)}
-          </p>
+          <>
+            <p className={ui.hint} data-testid="new-agreement-chosen">
+              {strings.newAgreement.chosen(`${patient.givenNames} ${patient.familyName}`)}
+            </p>
+            {/*
+              AND WHICH RECORD WAS PICKED (Carl, 7 Sep 2026). Two people share
+              a name; the id is what says which of them this agreement is about
+              before anything is created. An opaque id we minted — never a
+              Medicare number, and there is no column for one (hard rule 1).
+            */}
+            <RecordId
+              label={strings.recordId.patient}
+              value={patient.chosen.patientId}
+              testId="new-agreement-patient-id"
+            />
+          </>
         )}
 
         {/*

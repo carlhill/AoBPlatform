@@ -62,6 +62,9 @@ const SESSION: TabletSessionRow = {
   patientId: 'patient-1',
   providerName: 'Dr Example Provider',
   state: 'reading',
+  // The agreement behind it can still go to a tablet — so this session's
+  // ending, when it gets one, is still work rather than history.
+  agreementOutcome: null,
   disputedDetails: [],
   disputeResolution: null,
   disputeResolvedAt: null,

@@ -26,7 +26,9 @@ import * as RadixDialog from '@radix-ui/react-dialog';
 import { MainMenu } from '../MainMenu';
 import { BackLink } from '../BackLink';
 import { RefreshButton } from '../RefreshButton';
+import { Copy, Check } from 'lucide-react';
 import { useId, useState } from 'react';
+import { strings } from '../strings';
 import styles from './ui.module.css';
 
 export { styles as ui };
@@ -420,4 +422,81 @@ export function Button({
   const variantClass =
     variant === 'primary' ? styles.buttonPrimary : variant === 'subtle' ? styles.buttonSubtle : '';
   return <button {...rest} type={rest.type ?? 'button'} className={`${styles.button} ${variantClass}`} />;
+}
+
+// ---------------------------------------------------------------------------
+// The record line
+// ---------------------------------------------------------------------------
+
+/**
+ * WHICH RECORD IS THIS PAGE ABOUT (Carl, 7 Sep 2026) — "every page must have
+ * the patient GUID from AoBPlatform somewhere, so we can see which record has
+ * the issue. Also helps with testing".
+ *
+ * ONE COMPONENT, SO IT LOOKS THE SAME EVERYWHERE. A header, a queue row, a
+ * tablet row and a form all show the same thing in the same typeface, which is
+ * what makes it recognisable enough to be ignored until it is wanted. Callers
+ * pass the LABEL from the string table (`strings.recordId.patient`) rather than
+ * a hardcoded word, so this component carries no copy of its own beyond the
+ * copy control's.
+ *
+ * THE WHOLE ID, NEVER SHORTENED. Eight characters are for matching by eye
+ * across a desk — that is the tablet session tag's job, and it keeps it. This
+ * one exists to be matched EXACTLY: quoted into a support ticket, pasted into a
+ * query, compared against a vault event. Truncating it would leave somebody
+ * doing the one thing the id is for by hand.
+ *
+ * AN OPAQUE ID IS NOT A PERSONAL DETAIL, and this component must never be
+ * pointed at one that is. It renders a value this platform minted. Never a
+ * Medicare number (hard rule 1, REQ-VER-02 — there is no column for one), never
+ * an IHI, never a record number from somebody else's system.
+ *
+ * COPY WRITES TO THE CLIPBOARD AND PERSISTS NOTHING. No storage, no state that
+ * outlives the tab, no request — the confirmation is a two-second label change
+ * on the button itself. Where the clipboard API is unavailable or refused (an
+ * insecure origin, a permission denial, a test environment) the control simply
+ * says nothing and the id is still on screen and still selectable, which is the
+ * behaviour that was there before the button existed.
+ */
+export function RecordId({
+  label,
+  value,
+  testId,
+  className,
+}: {
+  label: string;
+  value: string;
+  testId?: string;
+  className?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  if (!value) return null;
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* Cosmetic only — the id is on screen and selectable either way. */
+    }
+  }
+
+  return (
+    <span className={`${styles.recordId} ${className ?? ''}`} data-testid={testId}>
+      <span className={styles.recordIdLabel}>{label}</span>
+      <span className={styles.recordIdValue}>{value}</span>
+      <button
+        type="button"
+        className={styles.recordIdCopy}
+        aria-label={strings.recordId.copyLabel(label)}
+        onClick={() => void copy()}
+        data-testid={testId ? `${testId}-copy` : undefined}
+      >
+        {copied ? <Check size={12} aria-hidden="true" /> : <Copy size={12} aria-hidden="true" />}
+        {copied ? strings.recordId.copied : strings.recordId.copy}
+      </button>
+    </span>
+  );
 }

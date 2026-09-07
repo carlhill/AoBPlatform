@@ -642,6 +642,23 @@ export interface TabletSessionPayload {
   /** Which of the four types this is, so the ceremony picks its own heading. */
   agreementType: AgreementType;
   patient: TabletSessionPatient;
+  /**
+   * WHICH RECORD THIS SESSION IS ABOUT (Carl, 7 Sep 2026) — "every page must
+   * have the patient GUID from AoBPlatform somewhere, so we can see which
+   * record has the issue".
+   *
+   * AN ID, NOT A DETAIL — the same reasoning `TabletSessionRow.patientId` and
+   * `PushableRow.patientId` already carry, and the same reasoning the session
+   * id in this payload carries. It names a row the vault events also name;
+   * nothing about the person is added to the wire by putting it here, and it is
+   * emphatically not a Medicare number (hard rule 1, REQ-VER-02 — there is no
+   * column for one anywhere in this system).
+   *
+   * THE TABLET SHOWS IT ONLY DURING A PUSHED SESSION, in the footer beside the
+   * session id, because before verification a walk-up tablet knows nothing
+   * about any person and there is no record to name.
+   */
+  patientId: string;
   assignor: TabletSessionAssignor;
   agreementId: string;
   /**
@@ -708,6 +725,26 @@ export interface TabletSessionRow {
    * names a rule, not a person (REQ-LOG-08).
    */
   signatureFailureReason: string | null;
+  /**
+   * WHETHER THE AGREEMENT BEHIND THIS SESSION HAS MOVED ON (Carl, 7 Sep 2026,
+   * from testing: Alex had signed on the tablet, and his work page still
+   * offered "Send again" on the session he walked away from an hour earlier —
+   * a control whose only possible outcome was the server's own refusal, "This
+   * agreement has moved on and cannot be sent to a tablet").
+   *
+   * `null` WHILE THE AGREEMENT CAN STILL GO TO A TABLET, which is the state in
+   * which "Send again" means something and an ended session is still work
+   * somebody has to finish. Otherwise it says HOW it left, because the two
+   * endings read differently to a person: `signed` is the good ending and the
+   * row says so, and `moved_on` covers superseded, cancelled and expired
+   * without the console guessing which.
+   *
+   * IT IS A FACT ABOUT THE AGREEMENT, NOT ABOUT THE SESSION. The session's own
+   * state is untouched: a patient who walked away walked away, and an
+   * agreement signed later on a different session does not unhappen it. That
+   * separation is what lets the row keep its history and lose its controls.
+   */
+  agreementOutcome: 'signed' | 'moved_on' | null;
   /** The staff member who pushed it, by display name. */
   pushedBy: string;
   pushedAt: string;

@@ -42,11 +42,12 @@ import {
   type PatientQueueItem,
   type PatientQueueRow,
 } from '@aobplatform/domain';
-import { Button, Chip, Field, Notice, SelectInput, Section, Shell, TextInput, ui, type Tone } from '../../ui';
+import { Button, Chip, Field, Notice, RecordId, SelectInput, Section, Shell, TextInput, ui, type Tone } from '../../ui';
 import { strings } from '../../strings';
 import { explainFailure } from '../../apiError';
 import { apiHeaders, currentSession } from '../../auth';
 import { SessionControl } from '../../SessionControl';
+import { useRefreshable } from '../../refresh';
 import styles from '../manage.module.css';
 import { POLL_MS, bornOn, disputedLabels, shortSessionId } from '../tablet/pushDesk';
 import { NewAgreementPanel } from './NewAgreementPanel';
@@ -217,6 +218,16 @@ export function PatientsQueueView({ practiceId }: { practiceId: string }) {
    * the state within a breath. A poll, not a socket — a dead socket fails
    * silently and a poll fails visibly.
    */
+  /*
+   * THE TOP BAR'S REFRESH (Carl, 7 Sep 2026 — this page had none, so the only
+   * way to ask again was F5, which throws the in-memory session away and asks
+   * somebody to sign in again). The three-second poll below is not a
+   * substitute: it is what keeps the list live, and the button is what
+   * somebody presses when they have just done something at the desk and want
+   * to see it land now.
+   */
+  useRefreshable(load);
+
   const latest = useRef(load);
   latest.current = load;
   useEffect(() => {
@@ -384,6 +395,20 @@ export function PatientsQueueView({ practiceId }: { practiceId: string }) {
                   <ArrowRight size={14} aria-hidden="true" />
                 </div>
               </Link>
+              {/*
+                WHICH RECORD THIS ROW IS (Carl, 7 Sep 2026). OUTSIDE the link,
+                because the copy control is a button and a button inside an
+                anchor is both invalid and a press that copies then navigates.
+                An opaque id we minted — never a Medicare number, of which
+                there is no column anywhere in this system (hard rule 1).
+              */}
+              <div className={styles.cardRecordLine}>
+                <RecordId
+                  label={strings.recordId.patient}
+                  value={row.patientId}
+                  testId={`queue-patient-id-${row.patientId}`}
+                />
+              </div>
             </li>
           ))}
         </ul>

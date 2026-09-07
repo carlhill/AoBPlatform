@@ -92,6 +92,9 @@ const SESSION: TabletSessionRow = {
   patientId: PATIENT,
   providerName: 'Dr Example Provider',
   state: 'reading',
+  // The agreement behind it can still go to a tablet — so this session's
+  // ending, when it gets one, is still work rather than history.
+  agreementOutcome: null,
   disputedDetails: [],
   disputeResolution: null,
   disputeResolvedAt: null,
@@ -256,6 +259,19 @@ function stubFetch(
 
 let session: { roles: string[]; practiceId: string | null } | null = null;
 
+/*
+ * WHICH PAGE THE SHELL THINKS IT IS ON. `BackLink` derives the parent from the
+ * path (there is no `back` prop, deliberately — see `BackLink.tsx`), so a test
+ * that wants to prove a page HAS a back link has to tell it where it is.
+ * Without this the hook returns null, every page looks like the root, and the
+ * absence Carl found on 7 Sep would be indistinguishable from the test setup.
+ */
+let pathname = '/practice/patients';
+
+vi.mock('next/navigation', () => ({
+  usePathname: () => pathname,
+}));
+
 vi.mock('../../auth', () => ({
   currentSession: () => session,
   apiHeaders: () => ({ 'x-practice-id': PRACTICE, 'Content-Type': 'application/json' }),
@@ -263,6 +279,7 @@ vi.mock('../../auth', () => ({
 
 beforeEach(() => {
   calls.length = 0;
+  pathname = '/practice/patients';
   session = { roles: ['practice_user'], practiceId: PRACTICE };
 });
 
@@ -913,5 +930,104 @@ describe('/practice/patients/<id> — one patient, everything open', () => {
     expect(text).not.toMatch(/certified|accredited|government-approved/i);
     // The whole markup, not only the words: no hidden attribute carries one.
     expect(container.innerHTML).not.toMatch(/medicare/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * THE RECORD LINE (Carl, 7 Sep 2026) — "every page must have the patient GUID
+ * from AoBPlatform somewhere, so we can see which record has the issue. Also
+ * helps with testing."
+ */
+describe('work_page_shows_the_full_patient_id', () => {
+  it('names the whole id under the patient, with a way to copy it', async () => {
+    stubFetch();
+    render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+
+    const line = await screen.findByTestId('work-patient-id');
+    // THE WHOLE ID, NOT A PREFIX. The session tag is what is matched by eye;
+    // this is what is matched exactly, quoted into a ticket, pasted into a query.
+    expect(line.textContent).toContain(PATIENT);
+    expect(line.textContent).toContain(strings.recordId.patient);
+    expect(screen.getByTestId('work-patient-id-copy')).toBeTruthy();
+  });
+
+  it('and every queue row names it too', async () => {
+    stubFetch();
+    render(<PatientsQueueView practiceId={PRACTICE} />);
+
+    const line = await screen.findByTestId(`queue-patient-id-${PATIENT}`);
+    expect(line.textContent).toContain(PATIENT);
+    expect(screen.getByTestId(`queue-patient-id-${OTHER_PATIENT}`).textContent).toContain(OTHER_PATIENT);
+  });
+});
+
+/**
+ * BACK AND REFRESH, WHICH BOTH OF THESE PAGES WERE MISSING (Carl, 7 Sep 2026;
+ * wow.md §2 item 3).
+ *
+ * REFRESH MATTERS MORE HERE THAN IT LOOKS. The console's access token is held
+ * in memory only, by design, so F5 throws the session away and asks somebody to
+ * sign in again — which is why every page registers a loader instead
+ * (`refresh.ts`).
+ */
+describe('patient_pages_have_back_link_and_refresh', () => {
+  it('the queue goes up to setup and can be re-read from the top bar', async () => {
+    pathname = '/practice/patients';
+    stubFetch();
+    render(<PatientsQueueView practiceId={PRACTICE} />);
+
+    await waitFor(() => expect(screen.getByTestId(`patient-${PATIENT}`)).toBeTruthy());
+    expect(screen.getByTestId('shell-back').getAttribute('href')).toBe('/practice/setup');
+    expect(screen.getByTestId('shell-refresh')).toBeTruthy();
+  });
+
+  it('one patient’s page goes up to the queue, and can be re-read too', async () => {
+    pathname = `/practice/patients/${PATIENT}`;
+    stubFetch();
+    render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+
+    await waitFor(() => expect(screen.getByTestId('identity-list')).toBeTruthy());
+    expect(screen.getByTestId('shell-back').getAttribute('href')).toBe('/practice/patients');
+    expect(screen.getByTestId('shell-refresh')).toBeTruthy();
+  });
+});
+
+/**
+ * A SESSION WHOSE AGREEMENT HAS MOVED ON IS HISTORY (Carl, 7 Sep 2026, from
+ * testing: Alex had signed, and his work page still offered "Send again" on the
+ * session he walked away from an hour earlier — an act whose only outcome was
+ * the server's refusal, "This agreement has moved on and cannot be sent to a
+ * tablet").
+ */
+describe('ended_session_for_a_moved_on_agreement_offers_no_send_again', () => {
+  const WALKED_AWAY: TabletSessionRow = {
+    ...SESSION,
+    state: 'walked_away',
+    endedAt: '2026-09-04T09:20:00.000Z',
+  };
+
+  it('keeps the facts and loses the controls once the agreement is signed', async () => {
+    // FIRST, THE CASE THE FIX MUST NOT BREAK: the agreement can still go, so
+    // the ended session is work and "Send again" is the ordinary next thing.
+    stubFetch({ sessions: [WALKED_AWAY] });
+    render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+    expect(await screen.findByTestId(`send-again-${WALKED_AWAY.id}`)).toBeTruthy();
+
+    cleanup();
+
+    // AND THEN THE AGREEMENT IS SIGNED. The row says what happened and which
+    // session it was, and offers nothing.
+    stubFetch({ sessions: [{ ...WALKED_AWAY, agreementOutcome: 'signed' }] });
+    render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+
+    const history = await screen.findByTestId(`work-session-history-${WALKED_AWAY.id}`);
+    expect(history.textContent).toContain(strings.tablet.states.walked_away);
+    expect(history.textContent).toContain(WALKED_AWAY.id.slice(0, 8));
+    expect(history.textContent).toContain(strings.patients.sessionHistorySigned);
+
+    expect(screen.queryByTestId(`send-again-${WALKED_AWAY.id}`)).toBeNull();
+    expect(screen.queryByTestId(`work-session-recall-${WALKED_AWAY.id}`)).toBeNull();
   });
 });

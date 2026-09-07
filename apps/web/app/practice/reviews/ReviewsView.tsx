@@ -21,7 +21,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowRight, Bot, Check, RefreshCw, ShieldAlert } from 'lucide-react';
-import { Button, Chip, Field, Notice, SelectInput, Shell, TextInput, ui } from '../../ui';
+import { Button, Chip, Field, Notice, RecordId, SelectInput, Shell, TextInput, ui } from '../../ui';
 import { isPlatformOperator } from '@aobplatform/domain';
 import { SessionControl } from '../../SessionControl';
 import { apiHeaders, currentSession } from '../../auth';
@@ -378,6 +378,21 @@ function TaskCard({
             {strings.patients.correctionRequestToPatient}
           </Link>
         </p>
+      )}
+
+      {/*
+        WHICH RECORD THIS TASK IS ABOUT (Carl, 7 Sep 2026). Every task with a
+        PATIENT as its subject, not only the correction request above — the
+        queue is where a problem is noticed, and the id is what a support call
+        quotes. An opaque id this platform minted; never a Medicare number
+        (hard rule 1, REQ-VER-02).
+      */}
+      {task.subjectType === 'Patient' && (
+        <RecordId
+          label={strings.recordId.patient}
+          value={task.subjectId}
+          testId={`review-patient-id-${task.id}`}
+        />
       )}
 
       {task.kind === 'admin_invite_failed' && (

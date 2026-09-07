@@ -990,3 +990,70 @@
   align-items: center;
   gap: var(--s2);
 }
+
+/* ---------------------------------------------------------------------------
+   THE RECORD LINE (Carl, 7 Sep 2026) — "every page must have the patient GUID
+   from AoBPlatform somewhere, so we can see which record has the issue".
+
+   QUIET BY CONSTRUCTION. It is a diagnostic handle, not content: muted, one
+   step below the smallest body size, and it never takes a line away from the
+   thing the page is actually about. It sits under a name in a header and at
+   the right-hand end of a row.
+
+   MONOSPACE, `text-transform: none`, SELECTABLE — the lesson the tablet page's
+   `.sessionId` already carries. A uuid set in the surrounding typeface, or
+   inherited into an uppercased row label, is a uuid nobody can read a digit
+   out of; and the whole point of showing it is that somebody reads it, matches
+   it, or drags across it.
+
+   IT WRAPS RATHER THAN OVERFLOWS. Thirty-six characters do not fit beside a
+   name on a phone, and a horizontally scrolling row is worse than two lines.
+--------------------------------------------------------------------------- */
+.recordId {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--s1);
+  flex-wrap: wrap;
+  max-width: 100%;
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+  line-height: 1.5;
+}
+
+.recordIdLabel {
+  flex: none;
+}
+
+.recordIdValue {
+  font-family: var(--font-mono);
+  text-transform: none;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+  /* Selectable, deliberately: a support call reads it, a tester drags it. */
+  user-select: all;
+}
+
+/* A copy control, sized like the text beside it rather than like a button. */
+.recordIdCopy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  flex: none;
+  padding: 0 var(--s1);
+  font: inherit;
+  color: var(--ink-muted);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.recordIdCopy:hover {
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.recordIdCopy:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
