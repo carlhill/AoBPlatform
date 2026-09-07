@@ -4296,10 +4296,38 @@ export const strings = {
     d6aLabel: 'Service',
     d6aMissing: 'Not set',
     d6aStale: 'From an older list',
+    /*
+     * WHO IS SIGNING, SAID ON THE ROW (Carl, 7 Sep 2026, twice: "it does not
+     * ask me who is approving", "no who is signing").
+     *
+     * IT NAMES PEOPLE NOW. The line used to read "Signing: The patient", which
+     * is a category rather than an answer -- reception looking at Kim's row
+     * could not tell from it that Kim is the one who will sign, and the fact
+     * they actually need on the morning somebody else is signing ("Alex, for
+     * Kim") was not on the row at all. Both shapes name the person, in the
+     * order a receptionist would say them out loud.
+     *
+     * ONE COPY, read by the tablet desk and by the patient work page's
+     * Agreements card, because both render the same `Row` -- two screens with
+     * two wordings for D7 is two screens that can disagree about a particular
+     * of a contract.
+     *
+     * NO CAPACITY LANGUAGE, here or anywhere near it (REQ-VUL-05). The line
+     * states who; it never asks anybody to judge whether they may.
+     */
     signingLabel: 'Signing',
-    signingPatient: 'The patient',
-    signingOther: (name: string, relationship: string) => (relationship ? `${name} · ${relationship}` : name),
+    signingPatient: 'the patient',
+    signingOther: (assignorName: string, patientName: string, relationship: string) =>
+      relationship
+        ? `${assignorName} for ${patientName} — ${relationship}`
+        : `${assignorName} for ${patientName}`,
     signingUnset: 'Not decided yet',
+    /**
+     * PRESSING THE LINE IS HOW YOU CHANGE IT, and the accessible name says so
+     * WITHOUT losing the visible words (WCAG 2.2, 2.5.3 Label in Name): the
+     * fact is spoken first, this is appended.
+     */
+    signingChange: 'change who is signing',
     onTabletNow: (label: string) => `On ${label} now`,
     /**
      * THE SESSION'S OWN ID, SHORT (Carl, 4 Sep 2026). The tablet's footer

@@ -780,6 +780,68 @@ describe('/practice/tablet — send to the tablet', () => {
     expect(band.textContent).not.toContain('raw server sentence');
   });
 
+  /**
+   * THE ROW SAYS WHO IS SIGNING (Carl, 7 Sep 2026, after pushing Kim to a
+   * tablet: "no who is signing", "it does not ask me who is approving").
+   *
+   * The line existed and read "Signing: The patient" — a category, not an
+   * answer. It named nobody, so a receptionist looking at Kim's row before
+   * pressing anything could not tell who would be asked to sign, and on the
+   * morning somebody else is signing the fact that matters ("Alex, for Kim")
+   * was not on the row at all.
+   */
+  it('row_states_who_is_signing', async () => {
+    signedInAtPractice();
+    const FOR_ANOTHER = {
+      ...READY,
+      agreementId: 'agreement-for-another',
+      patientName: 'Kim Specimen',
+      assignorIsPatient: false,
+      assignorName: 'Alex Fictional',
+      assignorRelationship: 'mother',
+    };
+    stubFetch({ rows: [READY, FOR_ANOTHER] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    // THE PATIENT SIGNING FOR THEMSELVES.
+    const own = await screen.findByTestId(`who-fact-${READY.agreementId}`);
+    expect(own.textContent).toBe(`${strings.tablet.signingLabel}: ${strings.tablet.signingPatient}`);
+
+    // AND SOMEBODY ELSE SIGNING FOR THEM — both people named, and the
+    // relationship, in the order a receptionist would say them.
+    const other = await screen.findByTestId(`who-fact-${FOR_ANOTHER.agreementId}`);
+    expect(other.textContent).toBe(
+      `${strings.tablet.signingLabel}: ${strings.tablet.signingOther('Alex Fictional', 'Kim Specimen', 'mother')}`,
+    );
+    expect(other.textContent).toContain('Alex Fictional');
+    expect(other.textContent).toContain('Kim Specimen');
+
+    // NO CAPACITY QUESTION ANYWHERE NEAR IT (REQ-VUL-05) — the row says WHO,
+    // and never asks anybody to judge whether they may.
+    expect(document.body.textContent ?? '').not.toMatch(/capacity|competent|understands/i);
+  });
+
+  it('who_fact_line_opens_the_panel', async () => {
+    signedInAtPractice();
+    stubFetch();
+    render(<TabletView practiceId={PRACTICE} />);
+
+    const fact = (await screen.findByTestId(`who-fact-${READY.agreementId}`)) as HTMLButtonElement;
+    expect(fact.disabled).toBe(false);
+    // The answer and the way to change it are the same thing to press.
+    expect(fact.getAttribute('aria-label')).toContain(strings.tablet.signingChange);
+    expect(screen.queryByTestId(`who-panel-${READY.agreementId}`)).toBeNull();
+
+    fireEvent.click(fact);
+    // THE SAME PANEL the "Who is signing?" button opens — one panel, not a
+    // second copy of the question.
+    expect(await screen.findByTestId(`who-panel-${READY.agreementId}`)).toBeTruthy();
+
+    // And pressing it again closes it, exactly as the button does.
+    fireEvent.click(screen.getByTestId(`who-fact-${READY.agreementId}`));
+    await waitFor(() => expect(screen.queryByTestId(`who-panel-${READY.agreementId}`)).toBeNull());
+  });
+
   it('ui_never_asks_staff_to_assess_capacity', async () => {
     signedInAtPractice();
     stubFetch();

@@ -558,14 +558,27 @@ export function serviceFact(row: Pick<PushableRow, 'serviceDescription' | 'servi
   return `${strings.tablet.d6aLabel}: ${value}`;
 }
 
-/** "Signing: The patient" — the same one-string treatment as `serviceFact`. */
+/**
+ * "Signing: the patient" / "Signing: Alex Fictional for Kim Specimen — mother"
+ * — the same one-string treatment as `serviceFact`.
+ *
+ * IT NAMES THE PATIENT NOW (Carl, 7 Sep 2026). "Signing: The patient" is a
+ * category, not an answer: reception looking at Kim's row could not tell from
+ * it who would be signing, which is exactly what Carl said twice after pushing
+ * her to a tablet. D7 is a particular of the contract and the row states it as
+ * a fact, in the words a receptionist would use.
+ *
+ * ONE HELPER for both surfaces — the tablet desk and the patient work page's
+ * Agreements card render the same `Row`, so there is no second copy that could
+ * come to word D7 differently.
+ */
 export function signingFact(
-  row: Pick<PushableRow, 'assignorIsPatient' | 'assignorName' | 'assignorRelationship'>,
+  row: Pick<PushableRow, 'assignorIsPatient' | 'assignorName' | 'assignorRelationship' | 'patientName'>,
 ): string {
   const value = row.assignorIsPatient
     ? strings.tablet.signingPatient
     : row.assignorName
-      ? strings.tablet.signingOther(row.assignorName, row.assignorRelationship ?? '')
+      ? strings.tablet.signingOther(row.assignorName, row.patientName, row.assignorRelationship ?? '')
       : strings.tablet.signingUnset;
   return `${strings.tablet.signingLabel}: ${value}`;
 }
@@ -1872,7 +1885,36 @@ export function AgreementRow({
       */}
       <div className={rowStyles.facts}>
         <p className={`${ui.hint} ${rowStyles.fact}`}>{serviceFact(row)}</p>
-        <p className={`${ui.hint} ${rowStyles.fact}`}>{signingFact(row)}</p>
+        {/*
+          WHO IS SIGNING — THE ANSWER AND THE WAY TO CHANGE IT, IN ONE PLACE
+          (Carl, 7 Sep 2026: "no who is signing").
+
+          IT IS A FACT FIRST. The row states D7 in words that name people, so
+          reception reading Kim's row before they press anything already knows
+          who will be asked to sign — which is the whole of what Carl found
+          missing, twice.
+
+          AND THE FACT IS THE CONTROL. Pressing it opens the same panel the
+          "Who is signing?" button opens: the thing you want to change is the
+          thing you press, rather than a statement in one column and a button
+          in another that a reader has to connect. The button beside it stays
+          for anybody who is looking for a button.
+
+          A BUTTON, NOT A LINK, because it goes nowhere — and its accessible
+          name is the fact plus what pressing does, so the visible words are
+          contained in the spoken ones (WCAG 2.2, 2.5.3 Label in Name).
+        */}
+        <button
+          type="button"
+          className={`${ui.hint} ${rowStyles.fact} ${rowStyles.factButton}`}
+          disabled={!desk.canSend}
+          aria-label={`${signingFact(row)} — ${strings.tablet.signingChange}`}
+          aria-expanded={desk.whoFor === row.agreementId}
+          onClick={() => (desk.whoFor === row.agreementId ? desk.closeWho() : desk.openWho(row))}
+          data-testid={`who-fact-${row.agreementId}`}
+        >
+          {signingFact(row)}
+        </button>
         {/*
           ENDURING IS GP-ONLY (hard rule 6). Where the provider is not a general
           practitioner the screen says what to offer instead — a Treatment Plan

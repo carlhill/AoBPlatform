@@ -65,6 +65,32 @@
   overflow-wrap: break-word;
 }
 
+/* THE "Signing: ..." FACT IS ALSO THE CONTROL THAT CHANGES IT (Carl, 7 Sep
+   2026). It has to read as the fact beside it -- same size, same colour, same
+   left edge -- while still being a real <button>: focusable, in the tab order,
+   and with a focus ring. Underlined on hover and on focus so it is discoverable
+   without a second visual weight in a column of facts. */
+.factButton {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.factButton:hover:not(:disabled),
+.factButton:focus-visible {
+  text-decoration: underline;
+}
+
+/* Read-only viewers (the platform twin) keep the fact and lose the press. */
+.factButton:disabled {
+  cursor: default;
+}
+
 .who {
   display: flex;
   align-items: flex-start;
