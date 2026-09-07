@@ -363,6 +363,29 @@ export function DetailsCard({
                     </span>
                   </span>
                 </li>
+                {/*
+                  AND OUR OWN ID FOR THAT ROW (Carl, 7 Sep 2026), beside the
+                  practice's number and doing a different job: the number above
+                  is the PRACTICE's handle for this person, this is AoBPlatform's
+                  — the one a support call can quote back at us. The account id
+                  elsewhere on this page names the person signed in; a patient
+                  linked to two practices has one of those and two of these.
+
+                  NOT CORRECTABLE, and not offered as such, for the same reason
+                  the record number is not: it identifies a row rather than
+                  stating a fact about the person, and there is nothing anybody
+                  could change it to.
+                */}
+                <li className={styles.row}>
+                  <span className={styles.rowMain}>
+                    <span className={styles.rowLabel}>
+                      {strings.portal.details.patientIdAt(block.practice.practiceName)}
+                    </span>
+                    <span className={`${styles.rowValue} ${styles.recordId}`}>
+                      {block.practice.patientId}
+                    </span>
+                  </span>
+                </li>
               </ul>
             </div>
           ))}

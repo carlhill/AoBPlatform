@@ -12,10 +12,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { DetailsCard } from './DetailsCard';
 import type { PortalDetails } from '../api';
+import { strings } from '../../../strings';
 
 const practice: PortalDetails = {
   practiceId: 'prac-1',
   practiceName: 'Wattle Street Medical',
+  patientId: 'e609b40e-63aa-56e1-8f5b-2e9bc5aa5133',
   familyName: 'Sample',
   givenNames: 'Alex',
   dateOfBirth: '1984-02-29',
@@ -248,5 +250,27 @@ describe('portal_single_practice_shows_no_reconciliation', () => {
     expect(screen.queryByTestId('portal-details-reconciliation')).toBeNull();
     expect(document.body.textContent).not.toContain('Your practices hold different details');
     expect(document.body.textContent).not.toContain('Differs from');
+  });
+});
+
+/**
+ * OUR OWN ID FOR THE PRACTICE'S ROW (Carl, 7 Sep 2026) — "so we can see which
+ * record has the issue".
+ *
+ * IT IS NOT THE ACCOUNT ID and the label says which practice it belongs to,
+ * because a patient linked to two practices has one account and two of these.
+ */
+describe('portal_details_show_the_practices_patient_id', () => {
+  it('names the id under each practice, with the practice in the label', () => {
+    render(<DetailsCard state={ready([practice])} onRequestCorrection={vi.fn()} />);
+
+    // The whole id, not a prefix: the point is matching a record exactly.
+    expect(document.body.textContent).toContain('e609b40e-63aa-56e1-8f5b-2e9bc5aa5133');
+    expect(document.body.textContent).toContain(
+      strings.portal.details.patientIdAt('Wattle Street Medical'),
+    );
+
+    // And it has changed nothing about hard rule 1.
+    expect(document.body.textContent?.toLowerCase()).not.toContain('medicare');
   });
 });

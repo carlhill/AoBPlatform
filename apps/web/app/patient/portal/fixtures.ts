@@ -68,6 +68,7 @@ export const fixtureDetails: readonly PortalDetails[] = [
   {
     practiceId: 'prac-fixture-1',
     practiceName: 'Wattle Street Medical',
+    patientId: 'pat-fixture-1',
     familyName: 'Sample',
     givenNames: 'Alex',
     dateOfBirth: '1984-02-29',
@@ -79,6 +80,7 @@ export const fixtureDetails: readonly PortalDetails[] = [
   {
     practiceId: 'prac-fixture-2',
     practiceName: 'Harbourview Family Practice',
+    patientId: 'pat-fixture-2',
     familyName: 'Sample',
     givenNames: 'Alex',
     dateOfBirth: '1984-02-29',

@@ -62,6 +62,15 @@ export interface PortalSession {
 export interface PortalDetails {
   readonly practiceId: string;
   readonly practiceName: string;
+  /**
+   * THE PRACTICE'S OWN ROW FOR THIS PERSON, by our id (Carl, 7 Sep 2026).
+   *
+   * NOT THE ACCOUNT ID. The card already shows that — it names the person
+   * signed in. This names one PRACTICE's patient row, and somebody linked to
+   * two practices has one account and two of these, which is exactly what a
+   * support call has to be able to say.
+   */
+  readonly patientId: string;
   readonly familyName: string;
   readonly givenNames: string;
   readonly dateOfBirth: string;

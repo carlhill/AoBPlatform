@@ -720,3 +720,15 @@
   color: var(--ink-muted);
   font-size: var(--text-xs);
 }
+
+/* An id, set so a digit can actually be read out of it (the lesson
+   `tablet.module.css`'s `.sessionId` carries): monospace, no transform, no
+   letter-spacing, and selectable, because the point of showing it is that
+   somebody reads it to us or drags across it. */
+.recordId {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  letter-spacing: 0;
+  text-transform: none;
+  user-select: all;
+}

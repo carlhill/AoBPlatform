@@ -1792,6 +1792,15 @@ capture requests cancelled; mobile/email never supersede. `PATCH
 /patients/:id/details` refuses any /medicare/i key from the RAW body. Core e2e
 415, web 168, domain 858. Three things it surfaced for Carl:
 
+**K-4 now says who is signing (Carl, 7 Sep 2026: "did not ask who is signing").**
+A statement, never a question -- D7 is locked before the push and moves only by
+correct then supersede at reception. Above the pad: "Alex Fictional is signing",
+or "Kim Fictional is signing for Alex Fictional as their Mother"; under it, "If
+this is not right, do not sign -- see reception" and the way out. The same line
+on the remote link (`/patient/agree`), with "contact the practice" in place of
+"see reception". Named tests `signature_screen_names_who_is_signing` and
+`signature_screen_names_the_assignor_and_relationship_when_not_the_patient`.
+
 **Rulings later on 4 Sep 2026, all landed:**
 - Continue is absent, not disabled, while a cross is open -- the band already
   says reception is fixing it and a press did nothing (`7fddab0`).
@@ -1927,6 +1936,27 @@ Now a working rule in CLAUDE.md section 7.
       `/practice/channels#kiosk`, the setting that decides what the tablet
       offers first. Named tests `enduring_refusal_offers_episodic_inline_and_links_to_the_setting`
       and `offer_episodic_instead_is_idempotent_per_visit`.
+- [x] Third instance, 7 Sep 2026 -- the DIAGNOSTIC HANDLE the principle needs
+      (Carl: "every page must have the patient GUID from AoBPlatform somewhere,
+      so we can see which record has the issue. Also helps with testing"). A
+      `RecordId` component in `app/ui`: the FULL id, monospace, selectable, with
+      a copy button, on the work page header, every `/practice/patients` row,
+      every `/practice/tablet` row and device showing a session, the New
+      agreement form once a patient is picked, review tasks about a patient, the
+      kiosk footer during a pushed session (and nowhere before verification),
+      and each practice block on the portal's details card. An id we minted,
+      never a Medicare number (hard rule 1). Named tests
+      `work_page_shows_the_full_patient_id`, `tablet_rows_show_the_patient_id`,
+      `kiosk_footer_shows_the_patient_id_during_a_pushed_session_only`,
+      `portal_details_show_the_practices_patient_id`.
+- [x] And the same principle from the other end, 7 Sep 2026: a control whose
+      only outcome is a refusal is the fault seen backwards. An ended session
+      whose agreement has moved on no longer offers "Send again" and no longer
+      counts as "something open" -- it is a history line on the work page, and
+      the patient leaves the queue. `TabletSessionRow.agreementOutcome` carries
+      it, read from the same two conditions `blockingReason` uses. Named tests
+      `signed_patient_leaves_the_queue` and
+      `ended_session_for_a_moved_on_agreement_offers_no_send_again`.
 - [ ] Audit every other "see X" message in the console for the same pattern
       (queue, reconciliation, correspondence, devices) and give each a link
       with the item id.
