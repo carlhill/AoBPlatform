@@ -45,13 +45,31 @@ export class ArrivalDto {
   @IsOptional() @IsString() @MaxLength(320) email?: string;
 
   /**
-   * WHICH PROVIDER — one of these two, and the service refuses an arrival with
-   * neither. An enduring agreement is per practitioner × patient (hard rule 6,
-   * REQ-END-01), so an arrival that cannot name the provider is an arrival that
-   * cannot be decided at all.
+   * WHICH PRACTITIONER, AT WHICH LOCATION — any ONE of these, and the service
+   * refuses an arrival with none of them. An enduring agreement is per
+   * practitioner × patient (hard rule 6, REQ-END-01) and a provider number is
+   * per practitioner per location (FR-1.8), so an arrival that cannot name the
+   * person and the place is an arrival that cannot be decided at all.
+   *
+   * `affiliationId` is the direct form. `practitionerId` + `locationId` is the
+   * same fact for a sender that holds them separately. `providerNumber` names
+   * both by itself, which is why `arrive.sh` uses it and why it is the
+   * likeliest thing a PMS actually holds.
+   */
+  @IsOptional() @IsUUID() affiliationId?: string;
+  @IsOptional() @IsUUID() practitionerId?: string;
+  @IsOptional() @IsUUID() locationId?: string;
+  @IsOptional() @IsString() @MaxLength(20) providerNumber?: string;
+
+  /**
+   * DEPRECATED — REMOVE AFTER 30 NOVEMBER 2026 (Carl, 7 Sep 2026).
+   *
+   * The practice-wide `providers` row, which is the anchor this build retired.
+   * Accepted for one release and resolved to the affiliation it can be matched
+   * to; an arrival whose provider matches no practitioner at a location is
+   * REFUSED with `provider_not_anchored` rather than anchored on a guess.
    */
   @IsOptional() @IsUUID() providerId?: string;
-  @IsOptional() @IsString() @MaxLength(20) providerNumber?: string;
 
   /** When they arrived, by the practice's clock rather than ours. */
   @IsISO8601()

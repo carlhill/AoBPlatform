@@ -376,7 +376,7 @@ function NeedsProviderCard({
   practiceId: string;
   onDone: () => Promise<void>;
 }) {
-  const [providerId, setProviderId] = useState('');
+  const [affiliationId, setAffiliationId] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -391,7 +391,7 @@ function NeedsProviderCard({
       const res = await fetch(`${CORE_URL}/arrivals/${arrival.arrivalId}/provider`, {
         method: 'POST',
         headers: apiHeaders(practiceId),
-        body: JSON.stringify({ providerId }),
+        body: JSON.stringify({ affiliationId }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { message?: string | string[] };
@@ -426,7 +426,9 @@ function NeedsProviderCard({
           <p className={styles.cardSub} data-testid={`needs-provider-reason-${arrival.arrivalId}`}>
             {arrival.reason === 'provider_not_servicing' && arrival.providerName && roleName
               ? strings.needsProvider.reason(arrival.providerName, roleName)
-              : strings.needsProvider.unknownReason(arrival.reason)}
+              : arrival.reason === 'provider_not_anchored' && arrival.providerName
+                ? strings.needsProvider.notAnchoredReason(arrival.providerName)
+                : strings.needsProvider.unknownReason(arrival.reason)}
           </p>
         </div>
       </div>
@@ -445,15 +447,24 @@ function NeedsProviderCard({
             {(props) => (
               <SelectInput
                 {...props}
-                value={providerId}
+                value={affiliationId}
                 disabled={!canAct || busy}
-                onChange={(e) => setProviderId(e.target.value)}
+                onChange={(e) => setAffiliationId(e.target.value)}
                 data-testid={`needs-provider-pick-${arrival.arrivalId}`}
               >
                 <option value="">{strings.needsProvider.pickPlaceholder}</option>
                 {choices.map((choice) => (
-                  <option key={choice.providerId} value={choice.providerId}>
-                    {choice.name}
+                  <option key={choice.affiliationId} value={choice.affiliationId}>
+                    {/*
+                      THE SITE, WHERE THERE IS ONE. The same practitioner can
+                      hold an affiliation at two of the practice's locations
+                      and each is a separate choice — the provider number and
+                      the place of practice on the agreement are per location.
+                      A list showing one name twice would make reception guess.
+                    */}
+                    {choice.locationLabel
+                      ? strings.needsProvider.choiceAtLocation(choice.name, choice.locationLabel)
+                      : choice.name}
                   </option>
                 ))}
               </SelectInput>
@@ -461,7 +472,7 @@ function NeedsProviderCard({
           </Field>
           <Button
             variant="primary"
-            disabled={!canAct || busy || providerId.length === 0}
+            disabled={!canAct || busy || affiliationId.length === 0}
             onClick={() => void submit()}
             data-testid={`needs-provider-submit-${arrival.arrivalId}`}
           >

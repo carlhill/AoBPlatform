@@ -17,7 +17,13 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AgreementsService } from '../agreements/agreements.service';
 import { CaptureService } from '../capture/capture.service';
 import { EnduringService } from '../enduring/enduring.service';
-import { resolveBillingRoleForProvider } from '../affiliations/provider-billing-role';
+import {
+  anchorForAffiliation,
+  anchorForLegacyProvider,
+  anchorsForAffiliations,
+  anchorsForAgreements,
+  type AgreementAnchor,
+} from '../affiliations/agreement-anchor';
 import { ArrivalDto } from './arrivals.dto';
 
 /**
@@ -81,10 +87,24 @@ const MIRRORED_FIELDS = [
   'email',
 ] as const satisfies readonly CorrectablePatientField[];
 
+/**
+ * THE AFFILIATION AN ARRIVAL RESOLVED TO, plus the legacy `providers` row it
+ * came in by where the deprecated `providerId` field was used. Both, while
+ * both exist: the anchor is what the agreement is made on, and the legacy id
+ * is what the refusal list shows a receptionist who is looking at a name their
+ * own software sent.
+ */
+type ArrivalAnchor = AgreementAnchor & { readonly legacyProviderId: string | null };
+
+/** Live first: a role recorded against a finished affiliation is history. */
+const LIVE_AFFILIATION_STATUSES = ['active', 'ending', 'invited'];
+
 interface DecidedArrival {
   arrivalId: string;
   patientId: string;
   assignorId: string;
+  /** The anchor the draft is made on — the practitioner at this location. */
+  affiliationId: string;
   decision: VisitAgreementDecision;
   practiceDefaultD6a: string | null;
   arrivalDate: string;
@@ -165,8 +185,8 @@ export class ArrivalsService {
      */
     if (existing && existing.outcome !== 'refused') return this.receiptFor(existing, true);
 
-    const { provider, patient } = await this.prisma.withPractice(practiceId, async (tx) => ({
-      provider: await this.findProvider(tx, dto),
+    const { anchor, patient } = await this.prisma.withPractice(practiceId, async (tx) => ({
+      anchor: await this.findAnchor(tx, dto),
       patient: await tx.patient.findFirst({
         where: { practiceId, patientRecordNumber: dto.pmsPatientRecordNumber },
       }),
@@ -177,25 +197,51 @@ export class ArrivalsService {
      * (Carl's ruling, 5–7 Sep 2026). The provider on an assignment of benefit
      * is the servicing provider, never (of itself) the person who delivered
      * the service, and an arrival naming a nurse is refused so that reception
-     * picks the provider the claim will go under. Read `provider-billing-role.ts`
-     * for what "the affiliation for this provider" can and cannot mean today.
+     * picks the provider the claim will go under. The role is now read off the
+     * affiliation the arrival resolved to, which is where it lives — the
+     * three-key guesswork the previous build needed went with the anchor.
      */
-    const role = await this.prisma.withPractice(practiceId, (tx) =>
-      resolveBillingRoleForProvider(tx, provider),
-    );
-    if (!mayBeProviderOnAgreement(role.billingRole)) {
-      await this.recordRefusal(practiceId, dto, provider, patient?.id ?? null, role.billingRole, existing?.id);
+    if (!mayBeProviderOnAgreement(anchor.billingRole)) {
+      await this.recordRefusal(practiceId, dto, anchor, patient?.id ?? null, existing?.id);
       throw new ArrivalRefusal(
         'provider_not_servicing',
-        `${provider.name} is recorded as "${role.billingRole}" at this practice and cannot be the provider ` +
+        `${anchor.name} is recorded as "${anchor.billingRole}" at this practice and cannot be the provider ` +
           'on an agreement — the claim goes under somebody else’s provider number. Pick the provider the ' +
           'claim will go under.',
-        { providerId: provider.id, billingRole: role.billingRole },
+        { providerId: anchor.legacyProviderId, affiliationId: anchor.affiliationId, billingRole: anchor.billingRole },
+      );
+    }
+
+    /*
+     * AND AN ARRIVAL CANNOT ANCHOR AN AGREEMENT ON A ROW THAT NAMES NO PERSON.
+     * Only the deprecated `providerId` path can reach here: a `providers` row
+     * that matched no affiliation. The agreement it would produce could not
+     * state who signed for whom or where (s 65C(5)(a)), so reception is asked
+     * for the practitioner — the same fix, on the same screen, as a refused
+     * nurse.
+     */
+    if (!anchor.affiliationId) {
+      await this.recordRefusal(practiceId, dto, anchor, patient?.id ?? null, existing?.id, 'provider_not_anchored');
+      throw new ArrivalRefusal(
+        'provider_not_anchored',
+        `${anchor.name} is not linked to a practitioner at one of this practice’s locations, so an ` +
+          'agreement naming them could not say who signed for whom or where. Pick the practitioner the ' +
+          'claim will go under.',
+        { providerId: anchor.legacyProviderId },
       );
     }
 
     const coverage = patient
-      ? await this.enduring.coverage(practiceId, { patientId: patient.id, providerId: provider.id })
+      ? await this.enduring.coverage(practiceId, {
+          patientId: patient.id,
+          /*
+           * THE PERSON, NOT THE ROW. A GP at two of this practice's locations
+           * is ONE practitioner, so an enduring agreement made at the Main
+           * Street site covers the same patient seeing them at After Hours —
+           * `enduring_coverage_is_per_practitioner_across_locations`.
+           */
+          practitionerId: anchor.practitionerId ?? undefined,
+        })
       : { covered: false, agreementIds: [] as string[] };
 
     // ---------------------------------------------------------------------
@@ -226,8 +272,8 @@ export class ArrivalsService {
          * of them.
          */
         providerIsGp: providerIsGpFor({
-          billingRole: role.billingRole,
-          providerType: provider.providerType,
+          billingRole: anchor.billingRole,
+          providerType: anchor.providerType,
         }),
         activeEnduringForProviderAndPatient: coverage.covered,
         /*
@@ -265,7 +311,8 @@ export class ArrivalsService {
        */
       const accepted = {
         patientId: mirror.patientId,
-        providerId: provider.id,
+        affiliationId: anchor.affiliationId,
+        providerId: anchor.legacyProviderId,
         providerNumber: dto.providerNumber ?? null,
         assignorId: assignor.id,
         patientCreated: mirror.created,
@@ -304,7 +351,18 @@ export class ArrivalsService {
         payload: {
           practiceId,
           patientId: mirror.patientId,
-          providerId: provider.id,
+          /*
+           * THE PRACTITIONER AND THE PLACE, by id (Carl, 7 Sep 2026). The
+           * affiliation is the anchor; the practitioner id is on the event
+           * beside it because "was this patient already covered for this
+           * PERSON" is the question REQ-END-01 asks, and an event that only
+           * named the location edge could not answer it without a join into a
+           * table the vault does not hold.
+           */
+          affiliationId: anchor.affiliationId ?? '',
+          practitionerId: anchor.practitionerId ?? '',
+          locationId: anchor.locationId ?? '',
+          legacyProviderId: anchor.legacyProviderId ?? '',
           source: dto.source,
           patientCreated: mirror.created,
           detailTypesChanged: mirror.changedTypes.join(','),
@@ -319,9 +377,9 @@ export class ArrivalsService {
            * under it should be answerable in 2028 without guessing which
            * version of the list was live.
            */
-          billingRole: role.billingRole,
+          billingRole: anchor.billingRole,
           billingRolesVersion: BILLING_ROLES_VERSION,
-          billingRoleResolved: role.resolved,
+          billingRoleResolved: anchor.billingRoleRecorded,
         },
       });
 
@@ -329,6 +387,7 @@ export class ArrivalsService {
         arrivalId: arrival.id,
         patientId: mirror.patientId,
         assignorId: assignor.id,
+        affiliationId: anchor.affiliationId!,
         decision,
         practiceDefaultD6a: practice.defaultServiceDescription,
         arrivalDate: arrivedAt.toISOString().slice(0, 10),
@@ -359,7 +418,7 @@ export class ArrivalsService {
     const draft = await this.agreements.createDraft(practiceId, {
       type: decided.decision.type,
       enduringPathway: decided.decision.enduringPathway,
-      providerId: provider.id,
+      affiliationId: decided.affiliationId,
       patientId: decided.patientId,
       // D7 is explicit and never inferred: the person who arrived is signing
       // for themselves. Somebody else signing is a change made at the desk
@@ -468,20 +527,28 @@ export class ArrivalsService {
   private async recordRefusal(
     practiceId: string,
     dto: ArrivalDto,
-    provider: { id: string; name: string },
+    anchor: ArrivalAnchor,
     patientId: string | null,
-    billingRole: string,
     existingArrivalId?: string,
+    reason: 'provider_not_servicing' | 'provider_not_anchored' = 'provider_not_servicing',
   ): Promise<void> {
     await this.prisma.withPractice(practiceId, async (tx) => {
       const refused = {
         patientId,
-        providerId: provider.id,
+        /*
+         * THE ANCHOR IS RECORDED EVEN ON A REFUSAL, where there was one. A
+         * nurse practitioner refused for their billing role IS a practitioner
+         * at a location, and the row saying which one is what lets the desk
+         * see who was named. `provider_not_anchored` is the case where there
+         * is none, and that is the whole reason it was refused.
+         */
+        affiliationId: anchor.affiliationId,
+        providerId: anchor.legacyProviderId,
         providerNumber: dto.providerNumber ?? null,
         arrivedAt: new Date(dto.arrivedAt),
         source: dto.source,
         outcome: 'refused',
-        refusedReason: 'provider_not_servicing',
+        refusedReason: reason,
         refusedPayload: dto as unknown as Prisma.InputJsonValue,
       };
       const arrival = await tx.arrival.upsert({
@@ -507,9 +574,11 @@ export class ArrivalsService {
         subject: { type: 'Arrival', id: arrival.id },
         payload: {
           practiceId,
-          providerId: provider.id,
-          reason: 'provider_not_servicing',
-          billingRole,
+          affiliationId: anchor.affiliationId ?? '',
+          practitionerId: anchor.practitionerId ?? '',
+          legacyProviderId: anchor.legacyProviderId ?? '',
+          reason,
+          billingRole: anchor.billingRole,
           billingRolesVersion: BILLING_ROLES_VERSION,
           source: dto.source,
           patientKnown: patientId !== null,
@@ -519,7 +588,8 @@ export class ArrivalsService {
     });
 
     this.logger.log(
-      `Arrival refused for practice ${practiceId}: provider ${provider.id} is "${billingRole}" here. ` +
+      `Arrival refused for practice ${practiceId} (${reason}): ` +
+        `${anchor.affiliationId ?? anchor.legacyProviderId ?? 'unknown'} is "${anchor.billingRole}" here. ` +
         'Waiting on reception to name the provider the claim goes under.',
     );
   }
@@ -544,30 +614,27 @@ export class ArrivalsService {
       });
       if (rows.length === 0) return [];
 
-      const providerIds = [...new Set(rows.map((r) => r.providerId).filter((id): id is string => id !== null))];
       const patientIds = [...new Set(rows.map((r) => r.patientId).filter((id): id is string => id !== null))];
-      const [providers, patients] = await Promise.all([
-        providerIds.length
-          ? tx.provider.findMany({
-              where: { id: { in: providerIds } },
-              select: { id: true, name: true, providerNumber: true, ahpraNumber: true, pmsLinkageKey: true },
-            })
-          : Promise.resolve([]),
-        patientIds.length
-          ? tx.patient.findMany({
-              where: { id: { in: patientIds } },
-              select: { id: true, familyName: true, givenNames: true },
-            })
-          : Promise.resolve([]),
-      ]);
+      const patients = patientIds.length
+        ? await tx.patient.findMany({
+            where: { id: { in: patientIds } },
+            select: { id: true, familyName: true, givenNames: true },
+          })
+        : [];
 
-      const roles = new Map<string, string>();
-      for (const provider of providers) {
-        roles.set(provider.id, (await resolveBillingRoleForProvider(tx, provider)).billingRole);
-      }
+      /*
+       * WHO WAS NAMED, read the same way the agreement would have read it: the
+       * affiliation where the arrival resolved to one (a nurse practitioner
+       * refused for their role has one), the legacy `providers` row where it
+       * did not — which is what `provider_not_anchored` means.
+       */
+      const anchors = await anchorsForAgreements(
+        tx,
+        rows.map((row) => ({ id: row.id, affiliationId: row.affiliationId, providerId: row.providerId })),
+      );
 
       return rows.map((row) => {
-        const provider = providers.find((p) => p.id === row.providerId) ?? null;
+        const anchor = anchors.get(row.id) ?? null;
         const patient = patients.find((p) => p.id === row.patientId) ?? null;
         return {
           arrivalId: row.id,
@@ -580,9 +647,10 @@ export class ArrivalsService {
            * which is what reception is reading off their own screen anyway.
            */
           patientName: patient ? `${patient.givenNames} ${patient.familyName}` : null,
+          affiliationId: row.affiliationId,
           providerId: row.providerId,
-          providerName: provider?.name ?? null,
-          billingRole: provider ? (roles.get(provider.id) ?? null) : null,
+          providerName: anchor?.name ?? null,
+          billingRole: anchor && anchor.billingRoleRecorded ? anchor.billingRole : null,
           arrivedAt: row.arrivedAt.toISOString(),
           source: row.source as RefusedArrival['source'],
         } satisfies RefusedArrival;
@@ -599,26 +667,49 @@ export class ArrivalsService {
    */
   async servicingProviders(practiceId: string): Promise<ArrivalProviderChoice[]> {
     return this.prisma.withPractice(practiceId, async (tx) => {
-      const providers = await tx.provider.findMany({
-        where: { active: true },
-        orderBy: { name: 'asc' },
-        select: {
-          id: true,
-          name: true,
-          providerType: true,
-          providerNumber: true,
-          ahpraNumber: true,
-          pmsLinkageKey: true,
-        },
+      /*
+       * PRACTITIONERS AT LOCATIONS, not practice-wide rows (Carl, 7 Sep 2026).
+       * The picker offers exactly what an agreement can be anchored on, so a
+       * choice made here cannot produce a draft the service then refuses.
+       * Ended affiliations are out: somebody who has left is not a choice.
+       */
+      const affiliations = await tx.affiliation.findMany({
+        where: { status: { in: LIVE_AFFILIATION_STATUSES } },
+        select: { id: true, billingRole: true },
       });
-      const choices: ArrivalProviderChoice[] = [];
-      for (const provider of providers) {
-        const role = await resolveBillingRoleForProvider(tx, provider);
-        if (!mayBeProviderOnAgreement(role.billingRole)) continue;
-        choices.push({ providerId: provider.id, name: provider.name, providerType: provider.providerType });
-      }
-      return choices;
+      const anchors = await anchorsForAffiliations(
+        tx,
+        affiliations.filter((a) => mayBeProviderOnAgreement(a.billingRole)).map((a) => a.id),
+      );
+      const labels = await this.locationLabels(tx, [...anchors.values()]);
+
+      return [...anchors.values()]
+        .map((anchor) => ({
+          affiliationId: anchor.affiliationId!,
+          name: anchor.name,
+          providerType: anchor.providerType,
+          /*
+           * WHICH SITE, because the same person can appear twice. A picker
+           * showing one name twice is a picker that makes reception guess.
+           */
+          locationLabel: (anchor.locationId ? labels.get(anchor.locationId) : null) ?? null,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name) || (a.locationLabel ?? '').localeCompare(b.locationLabel ?? ''));
     });
+  }
+
+  /** The practice's own label for a site — its code, else the suburb. */
+  private async locationLabels(
+    tx: Prisma.TransactionClient,
+    anchors: readonly AgreementAnchor[],
+  ): Promise<Map<string, string>> {
+    const ids = [...new Set(anchors.map((a) => a.locationId).filter((id): id is string => Boolean(id)))];
+    if (ids.length === 0) return new Map();
+    const locations = await tx.practiceLocation.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, code: true, suburb: true, address: true },
+    });
+    return new Map(locations.map((l) => [l.id, l.code ?? l.suburb ?? l.address]));
   }
 
   /**
@@ -631,7 +722,7 @@ export class ArrivalsService {
    * so what lands on the mirror is what the practice's software said, not what
    * a console form retyped (REQ-DATA-10).
    */
-  async chooseProvider(practiceId: string, arrivalId: string, providerId: string): Promise<ArrivalReceipt> {
+  async chooseProvider(practiceId: string, arrivalId: string, affiliationId: string): Promise<ArrivalReceipt> {
     const row = await this.reread(practiceId, arrivalId);
     if (row.outcome !== 'refused' || !row.refusedPayload) {
       throw new BadRequestException(
@@ -640,11 +731,16 @@ export class ArrivalsService {
       );
     }
     const held = row.refusedPayload as unknown as ArrivalDto;
-    // The provider is the ONE thing reception is changing. Everything else is
-    // the PMS's own message, replayed verbatim.
+    // The practitioner is the ONE thing reception is changing. Everything else
+    // is the PMS's own message, replayed verbatim — and every OTHER way of
+    // naming a provider is cleared, so the replay cannot resolve back to the
+    // person who was just refused.
     const replay: ArrivalDto = {
       ...held,
-      providerId,
+      affiliationId,
+      practitionerId: undefined,
+      locationId: undefined,
+      providerId: undefined,
       providerNumber: undefined,
       idempotencyKey: row.idempotencyKey,
     };
@@ -675,24 +771,92 @@ export class ArrivalsService {
   }
 
   /**
-   * THE PROVIDER, AND AN ARRIVAL MUST NAME ONE. An enduring agreement is per
-   * practitioner × patient (hard rule 6), so an arrival with no provider is
-   * one the policy cannot decide — refused rather than defaulted to whoever is
-   * first in the list, which is how a consent record comes to name the wrong
-   * doctor.
+   * WHO THE PATIENT IS HERE TO SEE, RESOLVED TO THE PRACTITIONER AT THIS
+   * LOCATION (Carl, 7 Sep 2026).
+   *
+   * FOUR KEYS, ANY ONE OF THEM, and the server does the resolving:
+   *
+   *   * `affiliationId` — the practitioner at a location outright. What a
+   *     connector should send once it holds our ids.
+   *   * `practitionerId` + `locationId` — the same fact said the long way,
+   *     for a sender that knows the person and the site separately.
+   *   * `providerNumber` — issued per practitioner per location (FR-1.8), so
+   *     it names both by itself. What `arrive.sh` sends, and the likeliest
+   *     thing a PMS actually holds.
+   *   * `providerId` — DEPRECATED, accepted for one release. The practice-wide
+   *     `providers` row, matched to an affiliation on the keys the two tables
+   *     can share (`matchAffiliationsForProvider`). Removed once the connector
+   *     names practitioners; TODO.md carries the date.
+   *
+   * AN ARRIVAL MUST NAME ONE OF THEM. An enduring agreement is per
+   * practitioner × patient (hard rule 6, REQ-END-01), so an arrival that
+   * cannot say who is one the policy cannot decide — refused rather than
+   * defaulted to whoever is first in the list, which is how a consent record
+   * comes to name the wrong doctor.
    */
-  private async findProvider(tx: Prisma.TransactionClient, dto: ArrivalDto) {
-    if (!dto.providerId && !dto.providerNumber) {
-      throw new BadRequestException(
-        'An arrival must name the provider the patient is here to see, by providerId or providerNumber. ' +
-          'An enduring agreement is per practitioner and patient, never per practice (REQ-END-01).',
-      );
+  private async findAnchor(tx: Prisma.TransactionClient, dto: ArrivalDto): Promise<ArrivalAnchor> {
+    if (dto.affiliationId) {
+      const anchor = await anchorForAffiliation(tx, dto.affiliationId);
+      if (!anchor) throw new NotFoundException('That affiliation was not found in this practice.');
+      return { ...anchor, legacyProviderId: null };
     }
-    const provider = dto.providerId
-      ? await tx.provider.findFirst({ where: { id: dto.providerId } })
-      : await tx.provider.findFirst({ where: { providerNumber: dto.providerNumber, active: true } });
-    if (!provider) throw new NotFoundException('That provider was not found in this practice.');
-    return provider;
+
+    if (dto.practitionerId && dto.locationId) {
+      const affiliation = await tx.affiliation.findFirst({
+        where: { practitionerId: dto.practitionerId, locationId: dto.locationId },
+        select: { id: true },
+      });
+      if (!affiliation) {
+        throw new NotFoundException(
+          'That practitioner has no affiliation at that location in this practice, so there is no ' +
+            'provider number and no place of practice to name on an agreement (s 65C(5)(a)).',
+        );
+      }
+      const anchor = await anchorForAffiliation(tx, affiliation.id);
+      if (!anchor) throw new NotFoundException('That affiliation was not found in this practice.');
+      return { ...anchor, legacyProviderId: null };
+    }
+
+    if (dto.providerNumber) {
+      /*
+       * A NUMBER NAMES A PERSON AND A PLACE, so it must name exactly ONE of
+       * them here. Two affiliations carrying the same number in one practice
+       * is a data fault, not a choice to make at a desk, and picking the first
+       * would put a coin toss on a contract.
+       */
+      const matches = await tx.affiliation.findMany({
+        where: { providerNumber: dto.providerNumber },
+        select: { id: true, status: true },
+      });
+      const live = matches.filter((row) => LIVE_AFFILIATION_STATUSES.includes(row.status));
+      const candidates = live.length > 0 ? live : matches;
+      if (candidates.length === 0) {
+        throw new NotFoundException('No practitioner at this practice holds that provider number.');
+      }
+      if (candidates.length > 1) {
+        throw new BadRequestException(
+          `Provider number ${dto.providerNumber} is recorded against more than one practitioner at this ` +
+            'practice. A provider number is issued per practitioner per location, so this is a records ' +
+            'fault to fix rather than a choice to make — nothing was guessed.',
+        );
+      }
+      const anchor = await anchorForAffiliation(tx, candidates[0]!.id);
+      if (!anchor) throw new NotFoundException('That affiliation was not found in this practice.');
+      return { ...anchor, legacyProviderId: null };
+    }
+
+    if (dto.providerId) {
+      const provider = await tx.provider.findFirst({ where: { id: dto.providerId } });
+      if (!provider) throw new NotFoundException('That provider was not found in this practice.');
+      const anchor = await anchorForLegacyProvider(tx, provider);
+      return { ...anchor, legacyProviderId: provider.id };
+    }
+
+    throw new BadRequestException(
+      'An arrival must name the practitioner the patient is here to see — by affiliationId, by ' +
+        'practitionerId and locationId together, or by providerNumber. An enduring agreement is per ' +
+        'practitioner and patient, never per practice (REQ-END-01).',
+    );
   }
 
   /**

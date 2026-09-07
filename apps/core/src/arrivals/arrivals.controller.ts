@@ -5,10 +5,14 @@ import { PracticeScoped } from '../auth/practice-scope.decorator';
 import { ArrivalsService } from './arrivals.service';
 import { ArrivalDto } from './arrivals.dto';
 
-/** Reception naming the provider the claim will go under. One field, on purpose. */
+/**
+ * Reception naming the practitioner-at-a-location the claim will go under. One
+ * field, on purpose — and it is the affiliation, because that is what an
+ * agreement is anchored on (Carl, 7 Sep 2026).
+ */
 export class ChooseProviderDto {
   @IsUUID()
-  providerId!: string;
+  affiliationId!: string;
 }
 
 function requirePractice(practiceId: string | undefined): string {
@@ -88,7 +92,7 @@ export class ArrivalsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ChooseProviderDto,
   ) {
-    return this.arrivals.chooseProvider(requirePractice(practiceId), id, dto.providerId);
+    return this.arrivals.chooseProvider(requirePractice(practiceId), id, dto.affiliationId);
   }
 
   /**

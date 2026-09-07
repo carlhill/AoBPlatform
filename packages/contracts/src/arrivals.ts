@@ -71,13 +71,36 @@ export interface ArrivalEvent {
   readonly email?: string;
 
   /**
-   * WHICH PROVIDER, AND IT IS NOT OPTIONAL BETWEEN THE TWO OF THEM. An
-   * enduring agreement is per practitioner × patient (hard rule 6), so an
-   * arrival that cannot name the provider cannot be decided at all. Either our
-   * own provider id, or the provider number the practice's software knows.
+   * WHICH PRACTITIONER, AT WHICH LOCATION, AND ONE OF THESE IS REQUIRED
+   * (Carl, 7 Sep 2026 — the agreement anchor moved to the affiliation).
+   *
+   * An enduring agreement is per practitioner × patient (hard rule 6,
+   * REQ-END-01) and a provider number is issued per practitioner per location
+   * (FR-1.8), so an arrival that cannot name the person AND the place cannot
+   * be decided at all — and the server resolves all three forms to the one
+   * affiliation rather than making the sender do it.
+   *
+   *   * `affiliationId` — the practitioner at a location, outright.
+   *   * `practitionerId` + `locationId` — the same fact, said separately.
+   *   * `providerNumber` — names both by itself, and is the likeliest thing a
+   *     PMS holds.
+   */
+  readonly affiliationId?: string;
+  readonly practitionerId?: string;
+  readonly locationId?: string;
+  readonly providerNumber?: string;
+
+  /**
+   * @deprecated Since 7 September 2026; REMOVE AFTER 30 NOVEMBER 2026.
+   *
+   * The practice-wide `providers` row. It has no location and no link to a
+   * practitioner, which is why it stopped being the anchor: an agreement made
+   * from it cannot state who signed for whom or where (s 65C(5)(a)). Still
+   * accepted, and resolved to the affiliation it can be matched to; where it
+   * matches none, the arrival is refused with `provider_not_anchored` rather
+   * than anchored on a guess.
    */
   readonly providerId?: string;
-  readonly providerNumber?: string;
 
   /** When they arrived, by the practice's clock. */
   readonly arrivedAt: IsoTimestamp;
@@ -127,6 +150,14 @@ export const ARRIVAL_REFUSAL_REASONS = [
    * reception picks who.
    */
   'provider_not_servicing',
+  /**
+   * The arrival named a legacy `providers` row that matches no practitioner at
+   * any of this practice's locations, so an agreement made from it could not
+   * state who signed for whom or where (s 65C(5)(a)). Reachable only through
+   * the deprecated `providerId` field, and it goes when that does. Reception
+   * picks the practitioner; nothing is guessed.
+   */
+  'provider_not_anchored',
 ] as const;
 export type ArrivalRefusalReason = (typeof ARRIVAL_REFUSAL_REASONS)[number];
 
@@ -150,18 +181,35 @@ export interface RefusedArrival {
   readonly pmsPatientRecordNumber: string;
   /** Only when the practice already had a record of this person. */
   readonly patientName: string | null;
+  /** The practitioner at a location the arrival resolved to, where it resolved to one. */
+  readonly affiliationId: string | null;
+  /** @deprecated The legacy `providers` row, where the arrival came in by one. */
   readonly providerId: string | null;
   readonly providerName: string | null;
-  /** The role that refused them, so the sentence on screen can name it. */
+  /**
+   * The role that refused them, so the sentence on screen can name it. Null
+   * where no role is RECORDED — which is not the same as `servicing_provider`,
+   * and the screen must not read it as one.
+   */
   readonly billingRole: string | null;
   /** ISO-8601, as the row holds it. Plain `string` — this shape crosses to a browser. */
   readonly arrivedAt: string;
   readonly source: ArrivalSource;
 }
 
-/** A servicing provider reception may choose instead. */
+/**
+ * A SERVICING PRACTITIONER, AT A LOCATION, reception may choose instead.
+ *
+ * It is the affiliation and not the person, because the provider number and
+ * the place of practice that go on the agreement are both per location — and
+ * because a practitioner working at two of the practice's sites is two
+ * choices, which is a thing reception knows and the platform must not decide.
+ * `locationLabel` is there so those two choices are told apart on screen.
+ */
 export interface ArrivalProviderChoice {
-  readonly providerId: string;
+  readonly affiliationId: string;
   readonly name: string;
   readonly providerType: string;
+  /** The practice's own label for the site — its code, else the suburb. */
+  readonly locationLabel: string | null;
 }
