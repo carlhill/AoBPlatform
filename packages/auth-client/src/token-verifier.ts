@@ -28,6 +28,25 @@ export interface AuthenticatedPrincipal {
   raw: JWTPayload;
 }
 
+/**
+ * A NAME THAT IS NEVER EMPTY, for attribution.
+ *
+ * `preferredUsername` comes straight off a JWT claim with no shape guarantee
+ * -- a service account, a not-quite-provisioned realm user, or simply a blank
+ * string satisfies the type and passes every `??` check unharmed, because `??`
+ * only falls through on `null`/`undefined`, never on `''`. Two call sites each
+ * wrote `principal.preferredUsername ?? principal.sub` and each was one blank
+ * claim away from silently attributing an action to nobody -- which surfaced
+ * as "A change to an approved practice must name the person making it" on a
+ * fully signed-in session, because the fallback never triggered.
+ *
+ * `sub` is the Keycloak subject id and always present on a verified token, so
+ * it is the backstop `||` reaches for when the preferred name is blank.
+ */
+export function principalDisplayName(p: Pick<AuthenticatedPrincipal, 'sub' | 'preferredUsername'>): string {
+  return p.preferredUsername?.trim() || p.sub;
+}
+
 /** Verifies Keycloak-issued RS256 access tokens (user-facing and service-to-service) via JWKS. */
 export class TokenVerifier {
   private readonly jwks: ReturnType<typeof createRemoteJWKSet>;

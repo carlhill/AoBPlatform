@@ -5,15 +5,31 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
+import { OutboundModule } from './outbound/outbound.module';
+import { ActingAsModule } from './acting-as/acting-as.module';
+import { ReviewTasksModule } from './review-tasks/review-tasks.module';
+import { IdentityDashboardModule } from './identity-dashboard/identity-dashboard.module';
 import { IdentityModule } from './identity/identity.module';
 import { VaultModule } from './vault/vault.module';
 import { AgreementsModule } from './agreements/agreements.module';
 import { DevSeedModule } from './dev-seed/dev-seed.module';
 import { VerificationModule } from './verification/verification.module';
 import { CaptureModule } from './capture/capture.module';
+import { KioskModule } from './kiosk/kiosk.module';
+import { DevicesModule } from './devices/devices.module';
+import { TabletSessionsModule } from './tablet-sessions/tablet-sessions.module';
+import { PatientsModule } from './patients/patients.module';
+import { ServiceDescriptionsModule } from './service-descriptions/service-descriptions.module';
 import { PracticesModule } from './practices/practices.module';
+import { TemplatesModule } from './templates/templates.module';
 import { PmsModule } from './pms/pms.module';
+import { AutoCaptureModule } from './auto-capture/auto-capture.module';
+import { ArrivalsModule } from './arrivals/arrivals.module';
+import { InboundModule } from './inbound/inbound.module';
+import { AgreeModule } from './agree/agree.module';
+import { CorrespondenceModule } from './correspondence/correspondence.module';
 import { ReconciliationModule } from './reconciliation/reconciliation.module';
+import { ChaseAttemptsModule } from './chase-attempts/chase-attempts.module';
 import { EnduringModule } from './enduring/enduring.module';
 import { NoticesModule } from './notices/notices.module';
 import { OrganisationsModule } from './organisations/organisations.module';
@@ -22,6 +38,8 @@ import { DomainExceptionFilter } from './common/domain-exception.filter';
 import { DatabaseExceptionFilter } from './common/database-exception.filter';
 import { MessagingModule } from './messaging/messaging.module';
 import { ArtefactsModule } from './artefacts/artefacts.module';
+import { RetentionModule } from './retention/retention.module';
+import { PortalModule } from './portal/portal.module';
 
 /**
  * Thin wiring only. Feature modules (M1 onboarding, M2 capture, M3
@@ -35,21 +53,39 @@ import { ArtefactsModule } from './artefacts/artefacts.module';
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
     PrismaModule,
+    CorrespondenceModule,
     MessagingModule,
     AuthModule,
+    OutboundModule,
+    ActingAsModule,
+    ReviewTasksModule,
     IdentityModule,
     VaultModule,
     AgreementsModule,
     VerificationModule,
     CaptureModule,
+    DevicesModule,
+    KioskModule,
+    TabletSessionsModule,
+    PatientsModule,
+    ServiceDescriptionsModule,
     PracticesModule,
+    TemplatesModule,
     OrganisationsModule,
     AffiliationsModule,
+    IdentityDashboardModule,
     ArtefactsModule,
+    RetentionModule,
     PmsModule,
+    AutoCaptureModule,
+    ArrivalsModule,
+    InboundModule,
+    AgreeModule,
     ReconciliationModule,
+    ChaseAttemptsModule,
     EnduringModule,
     NoticesModule,
+    PortalModule,
     DevSeedModule,
     HealthModule,
   ],

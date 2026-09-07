@@ -1,0 +1,131 @@
+/*
+ * ONE ROW, FOUR QUESTIONS — "Send to the tablet" (CLAUDE.md build brief).
+ *
+ * Reception scans this list all morning and is asking four things about each
+ * agreement: who is this, what is the visit, who is signing, and where does
+ * it go. The row previously borrowed `.sdRow` from `manage.module.css`, built
+ * for the reconciliation screen's D6a row — a name, a label, a select and a
+ * button, four DIRECT children. This row's three columns of controls do not
+ * arrive as four direct children: the identity block, the facts block, the
+ * who-is-signing button and a div wrapping BOTH the tablet select and Send
+ * are three, not four, and the fourth column of `.sdRow`'s grid went to
+ * whatever came next — the blocked notice — squeezed into a track sized for
+ * a single button. The identity column, sharing the leftover space with a
+ * select and a button it was never sized for, shrank until ordinary names
+ * wrapped word by word, and the blocked notice landed inside the send
+ * column rather than under it. This file gives the row its own grid, sized
+ * for exactly what it holds.
+ *
+ * REAL MINIMUM WIDTHS, not `auto` everywhere. A column that can shrink to
+ * nothing is a column whose text wraps a word at a time the moment the page
+ * is narrower than its longest row — which is exactly what happened.
+ */
+
+.row {
+  display: grid;
+  gap: var(--s3);
+  padding: var(--s4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+/*
+ * BELOW 900px THE GRID COLLAPSES TO STACKED SECTIONS, in the same order as
+ * the wide layout: who this is, what the visit is, who is signing, where it
+ * goes. No `grid-template-columns` at all here — a single implicit column,
+ * so every child simply stacks, full width, in document order.
+ */
+@media (min-width: 900px) {
+  .row {
+    grid-template-columns: minmax(12rem, 1fr) minmax(14rem, 1.4fr) auto auto;
+    align-items: start;
+  }
+}
+
+.identity {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s1);
+}
+
+.facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  min-width: 0;
+}
+
+/* Label and value are ONE string (see `serviceFact` / `signingFact` in
+   TabletView.tsx) so there is nothing for a layout to split mid-fact. */
+.fact {
+  margin: 0;
+  overflow-wrap: break-word;
+}
+
+.who {
+  display: flex;
+  align-items: flex-start;
+}
+
+.send {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--s2);
+  min-width: 12rem;
+}
+
+/*
+ * A FULL-WIDTH BAND, beneath the row's own columns — the blocked reason, a
+ * push or who-is-signing outcome, or the who-is-signing panel itself. Below
+ * 900px the row is already one column, so this only matters at the width
+ * where the grid is real; harmless either way.
+ */
+.band {
+  grid-column: 1 / -1;
+}
+
+/*
+ * THE FIX, INSIDE THE BAND THAT STATES THE PROBLEM (Carl, 4 Sep 2026) — the
+ * D6a select and its button, sitting under the refusal sentence rather than
+ * two screens away. It is inside a `Notice`, whose body is already a block, so
+ * this only has to space its own three children and stop the select stretching
+ * to the width of a full-bleed band on a wide monitor.
+ */
+.fix {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s2);
+  margin: var(--s2) 0;
+  max-width: 32rem;
+}
+
+/*
+ * THE ROWS THE PATIENT ACTUALLY CROSSED. The correction panel now opens ALL
+ * five details, so the mark is what carries "this is the one the tablet
+ * reported" — and it is a border and a tint rather than colour alone, because
+ * a colour-only distinction is not a distinction under WCAG 2.2 AA. The field's
+ * own hint says it in words as well, which is the part a screen reader gets.
+ */
+.disputedField {
+  border-left: 3px solid var(--warn);
+  background: var(--warn-wash);
+  padding: var(--s2) var(--s3);
+  border-radius: var(--radius);
+}
+
+/*
+ * THE SHORT SESSION ID (Carl, 4 Sep 2026). Monospace, because its whole job is
+ * to be compared character by character against the eight on the tablet's own
+ * footer — a proportional face makes 8ff09d7b and 8ff09db7 look alike at a
+ * glance, which is the one thing this must not do.
+ */
+.sessionId {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  white-space: nowrap;
+}

@@ -4,7 +4,7 @@ import type { PmsAdapter } from '@aobplatform/contracts';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PMS_ADAPTER } from './pms.tokens';
-import { RendererRegistry } from '../render/renderer-registry';
+import { RendererRegistry, renderInputOf } from '../render/renderer-registry';
 
 const SYSTEM_ACTOR = { principalType: 'system', id: 'core' } as const;
 /** FR-9.3: alert on any stored artefact not in the PMS after this long. */
@@ -47,10 +47,7 @@ export class WriteBackService {
           this.logger.error(`Renderer ${agreement.rendererVersion} not registered — write-back refused.`);
           return false;
         }
-        const rendered = await renderer.render(
-          agreement.particulars as Record<string, unknown>,
-          agreement.renderedLanguages,
-        );
+        const rendered = await renderer.render(renderInputOf(agreement), agreement.renderedLanguages);
         if (rendered.sha256 !== agreement.renderedArtefactHash) {
           this.logger.error(`Render determinism violation on agreement ${agreementId} — write-back refused.`);
           return false;

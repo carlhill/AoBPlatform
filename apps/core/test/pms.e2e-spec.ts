@@ -6,6 +6,10 @@ import type { ValidationResponse } from '@aobplatform/contracts';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { RULES_CLIENT } from '../src/rules-client/rules-client.module';
+import { genericAgreementTemplate } from '@aobplatform/domain';
+
+/** From the shipped template, never retyped — the words are versioned content. */
+const EPISODIC_AFFIRMATIONS = genericAgreementTemplate('episodic').statements.map((s) => s.key);
 
 const passingRules = {
   validate: async (): Promise<ValidationResponse> => ({
@@ -137,7 +141,13 @@ describe('M9 PMS wiring (e2e, real Postgres + mock adapter)', () => {
     const signed = await request(app.getHttpServer())
       .post(`/agreements/${agreementId}/sign`)
       .set('x-practice-id', practiceId)
-      .send({ method: 'drawn', channel: 'in_practice' })
+      /*
+       * TAP-TO-APPROVE, because this suite is about WRITE-BACK and not about
+       * the mark. A `drawn` signature must now arrive with the strokes and the
+       * image it produced (REQ-SIG-01/-02) and is refused without them, which
+       * would make this a test of the signature payload by accident.
+       */
+      .send({ method: 'tap_to_approve', channel: 'in_practice', affirmations: EPISODIC_AFFIRMATIONS })
       .expect(201);
 
     expect(signed.body.status).toBe('stored');

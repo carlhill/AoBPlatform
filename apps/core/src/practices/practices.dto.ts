@@ -1,5 +1,9 @@
 import { Type } from 'class-transformer';
 import {
+  KIOSK_IDLE_TIMEOUT_MAX_SECONDS,
+  KIOSK_IDLE_TIMEOUT_MIN_SECONDS,
+} from '@aobplatform/domain';
+import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
@@ -59,6 +63,39 @@ export class UpdateConfigDto {
   @Min(1)
   @Max(24 * 7) // D-05 upper option
   linkExpiryHours?: number;
+
+  /**
+   * HOW LONG A KIOSK TABLET WAITS BEFORE IT RETURNS TO THE START (Carl, 4 Sep
+   * 2026). Seconds — the console shows minutes and converts, because a person
+   * setting this thinks in minutes and a tablet counting down thinks in
+   * seconds.
+   *
+   * THE BOUNDS ARE HERE, NOT ONLY ON THE INPUT. Below a minute the screen
+   * resets under somebody who is still reading, which would make the ceremony
+   * uncompletable and so would BLOCK CARE (hard rule 8, REQ-REC-04); above
+   * half an hour the tablet is not "between patients", it is left out with
+   * somebody's address on it. Both numbers come from the domain
+   * (`KIOSK_IDLE_TIMEOUT_MIN_SECONDS` / `_MAX_SECONDS`) and are repeated as
+   * literals here only because class-validator decorators take constants.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(KIOSK_IDLE_TIMEOUT_MIN_SECONDS)
+  @Max(KIOSK_IDLE_TIMEOUT_MAX_SECONDS)
+  kioskIdleTimeoutSeconds?: number;
+
+  /**
+   * WHICH AGREEMENT THE PRE-STEP OFFERS FIRST (Carl, 4 Sep 2026; GA-PLAN B6).
+   *
+   * A DEFAULT, NEVER A PERMISSION. Enduring is GP-only and per practitioner ×
+   * patient whatever this says (hard rule 6, REQ-END-01/-01a) — those checks
+   * live on the push and in the domain, where a setting cannot reach them.
+   * What this decides is what a GP practice OFFERS first at the desk, and what
+   * a patient who declines is offered instead.
+   */
+  @IsOptional()
+  @IsBoolean()
+  enduringByDefault?: boolean;
 
   @IsOptional()
   @IsBoolean()

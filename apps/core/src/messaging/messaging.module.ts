@@ -2,6 +2,8 @@ import { Global, Logger, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MESSAGING_GATEWAY, SandboxGateway } from './gateway';
 import { MailhogGateway } from './mailhog.gateway';
+import { EmailComposer } from './composer.service';
+import { PortalRecordIdLine } from './portal-record-id.service';
 
 /**
  * Outbound messaging (CLAUDE.md §7).
@@ -16,6 +18,14 @@ import { MailhogGateway } from './mailhog.gateway';
 @Global()
 @Module({
   providers: [
+    EmailComposer,
+    /*
+     * THE RECORD ID SENTENCE, for any sender whose recipient is a patient with
+     * a portal record (Carl, 4 Sep 2026). It lives here because it is part of
+     * what a message from us looks like, beside the footer — see its own file
+     * for why it is not in the portal module.
+     */
+    PortalRecordIdLine,
     {
       provide: MESSAGING_GATEWAY,
       inject: [ConfigService],
@@ -28,6 +38,6 @@ import { MailhogGateway } from './mailhog.gateway';
       },
     },
   ],
-  exports: [MESSAGING_GATEWAY],
+  exports: [MESSAGING_GATEWAY, EmailComposer, PortalRecordIdLine],
 })
 export class MessagingModule {}

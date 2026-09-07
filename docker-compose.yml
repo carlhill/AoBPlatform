@@ -12,6 +12,7 @@
 #   21024 keycloak          (added when identity work starts — see infra/keycloak)
 #   21025 mailhog (SMTP)    21026 mailhog (web UI)
 #   21001 core              21002 rules              21003 vault
+#   21030 cube (reporting API + playground)
 #   21100 web
 #
 # Windows note (lesson from ReferralPlatform, 2026-08-15): if a host-mapped
@@ -27,6 +28,22 @@
 # vault → rules → core). Every Node service Dockerfile will use the MONOREPO
 # ROOT as build context (it needs packages/*) — see CONVENTIONS.md §8.
 
+# PORTS ARE BOUND TO 127.0.0.1 EXPLICITLY, and that is not tidiness.
+#
+# A bare "21024:8080" publishes on BOTH stacks. On Windows, `localhost`
+# resolves to ::1 first, and Docker Desktop's IPv6 forwarder ACCEPTS the TCP
+# connection and then never answers. Because the connection was accepted, the
+# client never falls back to IPv4 — so a browser spins, Prisma reports "can't
+# reach database server", and an SMTP send hangs instead of refusing. The
+# service is running perfectly throughout.
+#
+# Binding IPv4 only removes the ::1 listener. `localhost` then fails to connect
+# on IPv6, falls straight through to 127.0.0.1, and everything works — including
+# for anyone who types `localhost` out of habit.
+#
+# It also stops the stack listening on every interface, which for a development
+# database holding health data is worth having anyway.
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -37,10 +54,11 @@ services:
       POSTGRES_PASSWORD: aobplatform
       POSTGRES_DB: aobplatform
     ports:
-      - '21020:5432'
+      - '127.0.0.1:21020:5432'
     volumes:
       - ./infra/postgres/init-schemas.sql:/docker-entrypoint-initdb.d/01-init-schemas.sql:ro
       - ./infra/postgres/init-roles.sql:/docker-entrypoint-initdb.d/02-init-roles.sql:ro
+      - ./infra/postgres/init-keycloak.sql:/docker-entrypoint-initdb.d/03-init-keycloak.sql:ro
       - aobplatform-postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U aobplatform']
@@ -53,7 +71,7 @@ services:
     container_name: aobplatform-redis
     restart: unless-stopped
     ports:
-      - '21021:6379'
+      - '127.0.0.1:21021:6379'
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 15s
@@ -68,8 +86,8 @@ services:
     container_name: aobplatform-immudb
     restart: unless-stopped
     ports:
-      - '21022:3322'
-      - '21023:9497'
+      - '127.0.0.1:21022:3322'
+      - '127.0.0.1:21023:9497'
     volumes:
       - aobplatform-immudb-data-v1:/var/lib/immudb
 
@@ -78,25 +96,44 @@ services:
     container_name: aobplatform-keycloak
     restart: unless-stopped
     command: ['start-dev', '--import-realm', '--http-port', '8080']
+    depends_on:
+      postgres: { condition: service_healthy }
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # POSTGRES, NOT H2 — see infra/postgres/init-keycloak.sql for why.
+      #
+      # `start-dev` defaults to an H2 file inside the container's writable
+      # layer, so recreating the container destroys every enrolled passkey. A
+      # password can be reset; a passkey cannot be re-derived. This puts the
+      # credential store on the same volume-backed Postgres as everything else.
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
       # Tokens carry this as `iss` regardless of which host the request hit —
       # validate browser tokens against the PUBLIC issuer (ReferralPlatform
       # lesson: issuer mismatch 401'd every browser call).
       KC_HOSTNAME: http://localhost:21024
     ports:
-      - '21024:8080'
+      - '127.0.0.1:21024:8080'
     volumes:
       - ./infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+      # Our email theme. Keycloak's stock enrolment message leaks a raw message
+      # key ("requiredAction.webauthn-register-passwordless"), addresses the
+      # reader as though they have an administrator, and carries no sender
+      # identity or anti-phishing footer -- while asking them to click a link
+      # and enrol a credential. The LINK mechanism stays Keycloak's; only the
+      # words around it are ours.
+      - ./infra/keycloak/themes/aobplatform:/opt/keycloak/themes/aobplatform:ro
 
   mailhog:
     image: mailhog/mailhog:v1.0.1
     container_name: aobplatform-mailhog
     restart: unless-stopped
     ports:
-      - '21025:1025'
-      - '21026:8025'
+      - '127.0.0.1:21025:1025'
+      - '127.0.0.1:21026:8025'
 
   # ---------------------------------------------------------------------------
   # Application services (containerised runs; day-to-day dev uses the
@@ -117,7 +154,7 @@ services:
       IMMUDB_NAMESPACE: aobvault
       IMMUDB_STATE_PATH: /workspace/.immudb-state/root
     ports:
-      - '21003:3003'
+      - '127.0.0.1:21003:3003'
     depends_on:
       postgres: { condition: service_healthy }
       immudb: { condition: service_started }
@@ -141,7 +178,7 @@ services:
       # default is the honest 501.
       RULES_REGISTER_DRAFT_SET: 'true'
     ports:
-      - '21002:3002'
+      - '127.0.0.1:21002:3002'
     depends_on:
       postgres: { condition: service_healthy }
     healthcheck:
@@ -200,6 +237,22 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: admin
       KEYCLOAK_WEB_CLIENT_ID: web
       CONSOLE_URL: http://localhost:21100
+      # Where an APPLICANT is sent. Separate from CONSOLE_URL on purpose: in a
+      # real deployment the console is internal and this is public, and an
+      # acknowledgement email that pointed at the reviewer's console would be a
+      # rather direct invitation.
+      APPLICATION_STATUS_BASE_URL: ${APPLICATION_STATUS_BASE_URL:-http://localhost:21100}
+      # Printed in the acknowledgement so an applicant has a human route as
+      # well as a link. Empty means the email simply does not offer a phone
+      # number, rather than offering one nobody answers.
+      SUPPORT_PHONE: ${SUPPORT_PHONE:-}
+      # Identity in every outbound message. A message about somebody's
+      # Medicare-related application with no sender, no reason-you-got-this and
+      # no reply route is indistinguishable from phishing — and we ask people to
+      # open links and type codes, which is exactly what phishing asks for.
+      ORGANISATION_NAME: ${ORGANISATION_NAME:-AoBPlatform}
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL:-}
+      PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-}
       # ABN Lookup (ORG-MODEL-PROPOSAL.md §4). EMPTY BY DEFAULT: with no GUID
       # the ABR client runs offline against fixtures and makes no network
       # call, so an unverifiable ABN is refused rather than waved through.
@@ -235,7 +288,7 @@ services:
       SMTP_HOST: mailhog
       SMTP_PORT: 1025
     ports:
-      - '21001:3001'
+      - '127.0.0.1:21001:3001'
     depends_on:
       postgres: { condition: service_healthy }
       core-migrate: { condition: service_completed_successfully }
@@ -253,7 +306,7 @@ services:
     container_name: aobplatform-web
     restart: unless-stopped
     ports:
-      - '21100:3100'
+      - '127.0.0.1:21100:3100'
     depends_on:
       core: { condition: service_healthy }
     healthcheck:
@@ -262,6 +315,86 @@ services:
       timeout: 5s
       retries: 5
       start_period: 25s
+
+  # ---------------------------------------------------------------------------
+  # Cube — the reporting layer.
+  #
+  # WHY IT EXISTS: report requests arrive faster than reports can be built by
+  # hand, and each hand-built one is another place a total can come from. Cube
+  # answers questions nobody anticipated, from one definition of what a message
+  # is.
+  #
+  # WHAT KEEPS TENANTS APART is NOT this service. It is Postgres: the reporting
+  # view is `security_invoker`, Cube connects as a role RLS applies to, and the
+  # practice is pinned on the connection. Cube's own filter is a third layer on
+  # top, not the boundary. See infra/cube/cube.js for the reasoning and
+  # infra/cube/README.md for how it was proved.
+  # ---------------------------------------------------------------------------
+  cube:
+    image: cubejs/cube:v1.3.55
+    container_name: aobplatform-cube
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      CUBEJS_DEV_MODE: 'true'
+      CUBEJS_DB_TYPE: postgres
+      CUBEJS_DB_HOST: postgres
+      CUBEJS_DB_PORT: '5432'
+      CUBEJS_DB_NAME: aobplatform
+
+      # Two credentials, because "one practice" and "all practices" should be a
+      # different login rather than a different variable. cube_reader has RLS
+      # applied; cube_platform_reader carries BYPASSRLS and is reachable only
+      # through a Keycloak-signed platform_admin token.
+      CUBE_DB_USER: cube_reader
+      CUBE_DB_PASS: cube_reader
+      CUBE_PLATFORM_DB_USER: cube_platform_reader
+      CUBE_PLATFORM_DB_PASS: cube_platform_reader
+
+      # A third credential for a third kind of caller. No BYPASSRLS: a policy
+      # keyed on app.practitioner_id is what scopes it, so the database stops
+      # one practitioner reading another rather than Cube's config doing it.
+      CUBE_PRACTITIONER_DB_USER: cube_practitioner_reader
+      CUBE_PRACTITIONER_DB_PASS: cube_practitioner_reader
+
+      # Verified against the realm's JWKS. No second user store, and no shared
+      # secret that could be lifted from a config file.
+      CUBE_KEYCLOAK_URL: http://keycloak:8080
+      CUBE_KEYCLOAK_REALM: aobplatform
+      CUBE_KEYCLOAK_ISSUER: http://localhost:21024/realms/aobplatform
+
+      # Listed, never '*'. Credentials travel on these requests, so a wildcard
+      # would let any page a signed-in user visits query on their behalf.
+      CUBE_CORS_ORIGINS: http://localhost:3100,http://localhost:21100
+
+      # NO TENANT-LESS BACKGROUND REFRESH.
+      #
+      # The scheduler runs with an empty security context, which our
+      # driverFactory refuses -- correctly, because a connection with no
+      # practice is one RLS would return nothing through, and a refresh job
+      # that quietly used the platform credentials instead would be a
+      # background process reading every tenant's data on a timer.
+      #
+      # Pre-aggregations still build, lazily, on the first query for a tenant --
+      # under that tenant's own scoped connection, which is where they belong.
+      # Turning this on later means naming the contexts to refresh
+      # (scheduledRefreshContexts), not relaxing the check.
+      CUBEJS_SCHEDULED_REFRESH_TIMER: 'false'
+
+      # Dev-mode playground needs one; it is not what authorises a query.
+      CUBEJS_API_SECRET: dev-only-not-a-credential
+    ports:
+      - '127.0.0.1:21030:4000'
+    volumes:
+      - ./infra/cube/cube.js:/cube/conf/cube.js:ro
+      - ./infra/cube/model:/cube/conf/model:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:4000/readyz || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
 volumes:
   aobplatform-artefacts:

@@ -1,0 +1,697 @@
+'use client';
+
+/**
+ * The practices this admin works with.
+ *
+ * NOT A DEVELOPMENT AFFORDANCE, which is what the first version of this was.
+ * A practice administrator can legitimately hold several practices — a group
+ * with three clinics, a trust operating two sites under separate ABNs — and
+ * managing them is ordinary work, not an edge case. Making them re-pick from a
+ * warning-boxed dev list every time was wrong.
+ *
+ * WORST FIRST, like everything else here. A group manager opening this wants to
+ * know which of their practices needs attention, not which comes first
+ * alphabetically. The one that cannot capture consent is promoted above the
+ * ones quietly working.
+ *
+ * EVERY STATE, not just approved. Somebody who applies, receives an
+ * acknowledgement and comes here must not find an empty page — so an
+ * application still being read appears too, marked as waiting and leading to
+ * its status page rather than to a hub that approval has not yet opened.
+ *
+ * A refused application appears and is INERT. Hiding it would leave somebody
+ * wondering where their application went; making it clickable would promise
+ * somewhere to go, and there is nowhere.
+ *
+ * WHAT IT WILL LIST once platform sign-in exists: the practices the token says
+ * this person administers. Until then it lists all of them, and says so — an
+ * honest placeholder is better than a list that looks authoritative and is not
+ * scoped to anybody.
+ */
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { AlertTriangle, ArrowRight, Building2, CheckCircle2, Clock, Search, ShieldCheck, X } from 'lucide-react';
+import {
+  matchesFilter,
+  matchesPractice,
+  mayChoosePractice,
+  type PracticeFilter,
+  type SetupGap,
+} from '@aobplatform/domain';
+import { Button, Chip, Field, Notice, Shell, TextInput, ui } from '../ui';
+import { useRefreshable } from '../refresh';
+import { toViewPath } from '../viewPath';
+import { strings } from '../strings';
+import { apiHeaders, attemptSilentLogin, currentSession, beginLogin } from '../auth';
+import styles from './practice.module.css';
+import { SessionControl } from '../SessionControl';
+import { ActingAsBanner, ActingAsStart } from './ActingAs';
+import { fetchActingAs, forgetActingAs } from '../effectivePractice';
+
+const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
+const SELECTION_KEY = 'aob.practiceId';
+
+interface Practice {
+  id: string;
+  name: string;
+  legalName: string | null;
+  tradingNames?: string[] | null;
+  abn: string | null;
+  acn?: string | null;
+  abnStatus: string | null;
+  validationState: string;
+  // Searched on, because these are what somebody actually has to hand when
+  // looking for a clinic: a number from a missed call, an address off a thread.
+  adminName?: string | null;
+  adminEmail?: string | null;
+  adminPhone?: string | null;
+  managerName?: string | null;
+  managerEmail?: string | null;
+  managerPhone?: string | null;
+  locationCount?: number;
+  activeLocationCount?: number;
+}
+
+interface WithReadiness extends Practice {
+  ready: boolean | null;
+  headline: string | null;
+  /** What is missing and where to go and fix it. Empty when nothing is. */
+  gaps: SetupGap[];
+  /** For an application still waiting: where the applicant can watch it. */
+  statusUrl: string | null;
+}
+
+export function PracticeList() {
+  const router = useRouter();
+
+  /*
+   * A PRACTICE USER NEVER SEES THIS PAGE.
+   *
+   * It lists every organisation on the platform. That is right for an operator
+   * choosing which one to work on, and quite wrong for somebody who has exactly
+   * one and whose token says which — they would be looking at other people's
+   * practices, including their names and ABNs.
+   *
+   * Sent to their own hub instead of shown an empty list, because the empty
+   * list would be a lie about what exists rather than a statement about what is
+   * theirs.
+   */
+  const session = currentSession();
+  const scoped = session ? !mayChoosePractice({ roles: session.roles, practiceId: session.practiceId }) : false;
+
+  /*
+   * A COLD LOAD HAS NO SESSION, because the token is held in memory only. That
+   * is exactly how somebody navigating straight here was shown every practice
+   * on the platform: with no session there was no claim to scope them by, and
+   * this page enumerates by design.
+   *
+   * A browser that has signed in before restores silently first, and nothing is
+   * fetched or painted until it has. Only a browser that has never signed in
+   * falls through to the list.
+   */
+  /*
+   * "Restoring" HAS TO BE ABLE TO END, and it could not.
+   *
+   * It used to be plain `!session`, which conflates two different things: a
+   * restore in flight, and a restore that has already failed. Combined with
+   * `if (scoped || restoring) return null` below, the second case rendered
+   * NOTHING, for ever — no error, no sign-in prompt, a blank page.
+   *
+   * Reaching it took one ordinary sequence: sign in, sign out, come back here.
+   * `attemptSilentLogin` allows one attempt per tab (correctly — a
+   * `login_required` answer would otherwise loop), the marker survived the
+   * sign-out, and so the second visit waited on a restore that would never be
+   * attempted.
+   *
+   * The redirect is now the signal. `attemptSilentLogin` resolves `true` when
+   * it is navigating to Keycloak and `false` when it has declined to try, and
+   * only the first is a reason to keep waiting.
+   */
+  const [restoreSettled, setRestoreSettled] = useState(false);
+  const restoring = !session && !restoreSettled;
+
+  /*
+   * ONLY AN OPERATOR IS OFFERED THIS. A practice user reading their own list
+   * has no business acting as anybody, and a control they cannot use is noise
+   * on every row.
+   */
+  const isOperator = Boolean(session?.roles?.includes('platform_admin')) && !session?.practiceId;
+  const [actingOn, setActingOn] = useState<string | null>(null);
+  /** Which row's reason form is open, when the row itself was the thing clicked. */
+  const [openActAs, setOpenActAs] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOperator) return;
+    void fetchActingAs().then((a) => setActingOn(a?.practiceId ?? null));
+  }, [isOperator]);
+
+  useEffect(() => {
+    if (scoped) {
+      router.replace('/practice/setup');
+      return;
+    }
+    if (session || restoreSettled) return;
+    let live = true;
+    void attemptSilentLogin().then((redirecting) => {
+      // `true` means the browser is on its way to Keycloak and this component
+      // is about to be torn down; settling would only paint a flash first.
+      if (live && !redirecting) setRestoreSettled(true);
+    });
+    return () => {
+      live = false;
+    };
+  }, [scoped, session, restoreSettled, router]);
+
+  const [practices, setPractices] = useState<WithReadiness[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<PracticeFilter>('all');
+
+  /*
+   * HOISTED INTO A useCallback so the top-bar refresh can re-run it. It was an
+   * inline effect body, which meant nothing else could ask for the list again
+   * -- and this page is the one most likely to be stale, because it is where an
+   * operator sits while other people are changing the practices on it.
+   */
+  const load = useCallback(() => {
+    if (scoped || restoring) return;
+    let live = true;
+
+    fetch(`${CORE_URL}/organisations?state=all`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then(async (data: { organisations: Practice[] }) => {
+        const list = data.organisations ?? [];
+
+        // Readiness per practice, so the list can lead with the one that needs
+        // attention. Fetched in parallel and failure-tolerant: a practice whose
+        // hub cannot be read still appears, with its readiness unknown rather
+        // than assumed fine.
+        const enriched = await Promise.all(
+          list.map(async (p): Promise<WithReadiness> => {
+            /*
+             * A PENDING application has no hub and no readiness — the hub is
+             * what approval opens. What it has instead is a status page, and
+             * that is where its row should lead. Omitting these rows entirely
+             * was the first version's mistake: somebody applies, receives an
+             * acknowledgement, comes here, and finds nothing at all.
+             */
+            if (p.validationState !== 'validated') {
+              let statusUrl: string | null = null;
+              try {
+                const res = await fetch(`${CORE_URL}/organisations/${p.id}/status-link`);
+                if (res.ok) statusUrl = ((await res.json()) as { statusUrl?: string }).statusUrl ?? null;
+              } catch {
+                // A missing link is not worth failing the row for.
+              }
+              return { ...p, ready: null, headline: null, gaps: [], statusUrl };
+            }
+
+            try {
+              const res = await fetch(`${CORE_URL}/organisations/setup`, {
+                headers: apiHeaders(p.id),
+              });
+              if (!res.ok) return { ...p, ready: null, headline: null, gaps: [], statusUrl: null };
+              const hub = (await res.json()) as {
+                readiness: { ready: boolean; headline: string; gaps?: SetupGap[] };
+              };
+              return {
+                ...p,
+                ready: hub.readiness.ready,
+                headline: hub.readiness.headline,
+                // WHAT IS MISSING, and where it is fixed.
+                gaps: hub.readiness.gaps ?? [],
+                statusUrl: null,
+              };
+            } catch {
+              return { ...p, ready: null, headline: null, gaps: [], statusUrl: null };
+            }
+          }),
+        );
+
+        if (!live) return;
+        /*
+         * Order: what needs work, then what is waiting on us, then what is
+         * quietly running, then what was refused.
+         *
+         * A rejected application sits LAST rather than first, which is the one
+         * departure from worst-first on this page. It is not work — there is
+         * nothing the reader can do about it here — and promoting it would push
+         * the practices they actually operate below a closed one.
+         */
+        const rank = (p: WithReadiness) => {
+          if (p.validationState === 'rejected') return 4;
+          if (p.validationState === 'pending') return 1;
+          if (p.ready === false) return 0;
+          if (p.ready === null) return 2;
+          return 3;
+        };
+        setPractices([...enriched].sort((a, b) => rank(a) - rank(b)));
+      })
+      .catch((e: Error) =>
+        live && setError(e instanceof TypeError ? strings.review.unreachableBody : e.message),
+      );
+
+    return () => {
+      live = false;
+    };
+    // `scoped` and `restoring` decide whether there is anything to fetch at
+    // all, so a change in either has to re-run this.
+  }, [scoped, restoring]);
+
+  useEffect(() => {
+    const cancel = load();
+    return cancel;
+  }, [load]);
+
+  /*
+   * REGISTERED WITH THE TOP-BAR REFRESH. The token is memory-only, so a browser
+   * reload throws the session away and asks for a passkey again.
+   */
+  useRefreshable(load);
+
+  /*
+   * Filtered here rather than on the server. With a handful of practices a
+   * round trip per keystroke buys nothing and costs the instant feedback that
+   * makes a search box worth having. When a group is large enough for this to
+   * matter, the query moves to the API — the matching rules already live in the
+   * domain, so both ends would use the same ones.
+   */
+  const shown = useMemo(() => {
+    if (!practices) return [];
+    return practices.filter(
+      (p) => matchesFilter(filter, p) && matchesPractice(query, p),
+    );
+  }, [practices, query, filter]);
+
+  const filters: PracticeFilter[] = ['all', 'needs_work', 'capturing', 'being_reviewed', 'not_approved'];
+
+  // Nothing at all while the redirect runs. A flash of other practices' names
+  // is still a disclosure of other practices' names.
+  if (scoped || restoring) return null;
+
+  /*
+   * SIGNED OUT, AND SAYING SO. This page enumerates every practice on the
+   * platform, which is not something to show somebody we cannot identify —
+   * and falling through to the list "because auth is staged" is how a missing
+   * session became a disclosure the first time.
+   */
+  if (!session) {
+    return (
+      <Shell right={<SessionControl audience={strings.setup.audience} />}
+      title={strings.auth.signedOutTitle}
+      lead={strings.auth.signedOutBody}
+    >
+        <button type="button" className={ui.buttonLink} onClick={() => void beginLogin()} data-testid="list-sign-in">
+          {strings.auth.signIn}
+        </button>
+      </Shell>
+    );
+  }
+
+  if (error) {
+    return (
+      <Shell right={<SessionControl audience={strings.setup.audience} />}
+      title={strings.practices.title}
+      lead={strings.practices.lead}
+    >
+        <Notice tone="stop" title={strings.practices.notLoaded}>
+          {error}
+        </Notice>
+      </Shell>
+    );
+  }
+
+  return (
+    <Shell right={<SessionControl audience={strings.setup.audience} />}>
+
+      {practices !== null && practices.length > 0 && (
+        <div className={styles.controls}>
+          <div className={styles.searchField}>
+            <Field label={strings.practices.search} hint={strings.practices.searchHint}>
+              {(props) => (
+                <div className={styles.searchWrap}>
+                  <Search size={16} aria-hidden="true" className={styles.searchIcon} />
+                  <TextInput
+                    {...props}
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder={strings.practices.searchPlaceholder}
+                    data-testid="practice-search"
+                  />
+                </div>
+              )}
+            </Field>
+          </div>
+
+          <div className={styles.filterRow} role="group" aria-label={strings.practices.search}>
+            {filters.map((f) => {
+              // The COUNT per filter, so a reader can see there is nothing
+              // under a tab before pressing it and finding an empty list.
+              const count = practices.filter((p) => matchesFilter(f, p)).length;
+              return (
+                <button
+                  key={f}
+                  type="button"
+                  className={`${styles.filterChip} ${filter === f ? styles.filterChipOn : ''}`}
+                  aria-pressed={filter === f}
+                  onClick={() => setFilter(f)}
+                  data-testid={`filter-${f}`}
+                >
+                  {strings.practices.filters[f]}
+                  <span className={styles.filterCount}>{count}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <p className={ui.hint}>
+            {strings.practices.showing} <strong>{shown.length}</strong> {strings.practices.of}{' '}
+            {practices.length}
+            {(query || filter !== 'all') && (
+              <>
+                {' '}
+                <Button
+                  variant="subtle"
+                  onClick={() => {
+                    setQuery('');
+                    setFilter('all');
+                  }}
+                  data-testid="practice-clear"
+                >
+                  <X size={13} aria-hidden="true" />
+                  {strings.practices.clear}
+                </Button>
+              </>
+            )}
+          </p>
+        </div>
+      )}
+
+      {practices === null && <p className={ui.hint}>{strings.review.loading}</p>}
+
+      {practices !== null && practices.length > 0 && shown.length === 0 && (
+        <div className={styles.empty}>
+          <Search size={26} aria-hidden="true" />
+          <p className={styles.emptyTitle}>{strings.practices.noMatch}</p>
+          <p className={ui.hint}>{strings.practices.noMatchHint}</p>
+        </div>
+      )}
+
+      {practices !== null && practices.length === 0 && (
+        <div className={styles.empty}>
+          <Building2 size={26} aria-hidden="true" />
+          <p className={styles.emptyTitle}>{strings.practices.emptyTitle}</p>
+          <p className={ui.hint}>{strings.practices.emptyBody}</p>
+        </div>
+      )}
+
+      <ul className={styles.list}>
+        {shown.map((p) => {
+          const pending = p.validationState === 'pending';
+          const rejected = p.validationState === 'rejected';
+          /*
+           * EVERY row goes to the console, and the console decides what to show.
+           *
+           * A waiting application used to link to the applicant's status page —
+           * a bearer-token URL addressed to somebody with no account. Sending a
+           * signed-in administrator there is jarring and slightly alarming: it
+           * looks like being logged out. The console has its own view of an
+           * application under review, and that is where this belongs.
+           */
+          /*
+           * NOT UNTIL IT HAS BEEN DECIDED.
+           *
+           * An application still being reviewed is not a practice yet, and one
+           * that was refused never became one. Acting as it, or checking its
+           * practitioners against the register, are things you do to an
+           * APPROVED practice — offering them here invites an operator to work
+           * on a record whose whole question is still open, and acting as an
+           * applicant would force a reapproval of an approval that has not
+           * happened.
+           *
+           * The row still appears, and still leads to the review. What is
+           * hidden is the two doors that only make sense once somebody has said
+           * yes.
+           */
+          const decided = !pending && !rejected;
+
+          /*
+           * An operator CAN open an undecided one — the review is theirs. What
+           * they cannot open without acting-as is a decided practice's console.
+           */
+
+          /*
+           * WHERE THE ROW GOES, and for an undecided application that is the
+           * REVIEW, not the console.
+           *
+           * Every row pointed at `/practice/setup`. For an application still
+           * being reviewed that is wrong twice: there is no console yet, and an
+           * operator has no practice claim to open one with — so "See where it
+           * is up to" led nowhere and bounced.
+           *
+           * What an operator actually does with an application under review is
+           * decide it: read the dossier, validate the entity, and only then does
+           * the practice get its administrator invitation and a passkey to
+           * enrol. That is the work, so that is where the row leads.
+           */
+          /*
+           * WHERE THE ROW GOES.
+           *
+           * An undecided application goes to the REVIEW: that is the work, and
+           * there is no console yet to open.
+           *
+           * A decided practice goes to the operator's READ-ONLY view of it.
+           * Clicking a practice used to be the only way to reach its setup, and
+           * the only way to reach that was to act as them -- a recorded
+           * impersonation that tells the practice and forces a reapproval, paid
+           * for the sake of LOOKING. Carl's objection, and he was right: a
+           * price that heavy for reading means people stop reading.
+           *
+           * Acting as them is still one press away, below, where it is a
+           * deliberate act with a stated reason rather than the toll on the
+           * only road in.
+           */
+          const actingHere = actingOn === p.id;
+          const href = !decided
+            ? isOperator
+              ? `/review/${p.id}`
+              : '/practice/setup'
+            : isOperator && !actingHere
+              ? `/platform/practices/${p.id}`
+              : '/practice/setup';
+
+          /*
+           * CLICKING A PRACTICE MUST NOT BOUNCE YOU.
+           *
+           * Every row linked to the console. A practice user can open it; a
+           * platform OPERATOR cannot, because the console needs a practice
+           * claim and their token carries none. So an operator clicking a
+           * practice was sent to /practice/setup, refused by the guard, and
+           * redirected to their own landing page a few seconds later — which
+           * reads as the wrong link rather than as a rule.
+           *
+           * It is a rule, and a good one: an operator reaches a practice's
+           * records by acting as them, with a reason, recorded, and visible to
+           * the practice. So the row now offers exactly that instead of
+           * offering a door that shuts.
+           */
+
+          const body = (
+            <>
+              <div className={styles.rowMain}>
+                <div className={styles.rowName}>{p.name}</div>
+                <div className={styles.rowSub}>
+                  {p.legalName && p.legalName !== p.name ? `${p.legalName} · ` : ''}
+                  ABN {p.abn ?? '—'}
+                </div>
+                {/*
+                  The readiness sentence, not a count. A count reads as
+                  readiness and is not — the same trap the hub itself avoids.
+                */}
+                {p.headline && <p className={styles.rowHeadline}>{p.headline}</p>}
+
+                {pending && <p className={styles.rowHeadline}>{strings.practices.pendingBody}</p>}
+                {rejected && <p className={styles.rowHeadline}>{strings.practices.rejectedBody}</p>}
+              </div>
+
+              <div className={styles.rowAside}>
+                {rejected ? (
+                  <Chip tone="stop">{strings.practices.rejected}</Chip>
+                ) : pending ? (
+                  <Chip tone="warn">
+                    <Clock size={13} aria-hidden="true" />
+                    {strings.practices.pending}
+                  </Chip>
+                ) : p.ready === null ? (
+                  <Chip tone="neutral">{strings.practices.unknown}</Chip>
+                ) : p.ready ? (
+                  <Chip tone="ok">
+                    <CheckCircle2 size={13} aria-hidden="true" />
+                    {strings.practices.capturing}
+                  </Chip>
+                ) : (
+                  /*
+                    THE CHIP NAMES THE WORK. "NEEDS WORK" described a state
+                    without saying which, so the one thing anybody wants from a
+                    status -- what do I do about it -- was the thing it withheld.
+                    The first gap is the one that has to be fixed first, so it is
+                    the one that goes in the chip.
+                  */
+                  <Chip tone="warn">
+                    <AlertTriangle size={13} aria-hidden="true" />
+                    {p.gaps[0]?.label ?? strings.practices.needsWork}
+                  </Chip>
+                )}
+                <span className={styles.rowOpen}>
+                  {isOperator && !decided
+                    ? strings.practices.reviewIt
+                    : isOperator && actingOn === p.id
+                    ? strings.practices.openAsThem
+                    : isOperator
+                    ? strings.practices.viewSetup
+                    : pending || rejected
+                      ? strings.practices.openPending
+                      : strings.practices.open}
+                  <ArrowRight size={15} aria-hidden="true" />
+                </span>
+              </div>
+            </>
+          );
+
+          return (
+            <li key={p.id}>
+              {/*
+                EVERY ROW IS A LINK: the review for an undecided application,
+                the read-only view for a decided one, the console for a
+                practice user — and the working console when the operator is
+                ACTING AS this practice, because the whole point of opening a
+                session is to make changes, and sending them to the view-only
+                twin while it is open answers "where do I edit" with a page
+                that cannot.
+              */}
+              <Link
+                href={href}
+                className={styles.row}
+                onClick={() => window.localStorage.setItem(SELECTION_KEY, p.id)}
+                data-testid={`practice-${p.id}`}
+              >
+                {body}
+              </Link>
+
+                {/*
+                EVERY GAP, WITH SOMEWHERE TO GO. Carl's words: "you have to
+                list what work needs to be done and give a link to the page to
+                do this work." One label in a chip answers "what"; this
+                answers "and then what", which is the half that costs somebody
+                their afternoon.
+
+                SHOWN TO EVERYBODY, including an operator. The first version
+                hid this from them, because these are the practice's own pages
+                and an operator has no claim to open one -- which meant the
+                person most likely to ask "why does this say NO ADMINISTRATOR"
+                was the one person not shown the answer.
+                
+                Now the read-only tree exists, so their links point at the
+                version that cannot change anything. Same list, same order,
+                same sentences; a destination that works for whoever is
+                reading it.
+              */}
+              {p.gaps.length > 0 && (
+                <ul className={styles.rowGaps}>
+                  {p.gaps.map((gap) => (
+                    <li key={gap.label}>
+                      <Link
+                        href={isOperator ? toViewPath(gap.href, p.id) : gap.href}
+                        onClick={() => window.localStorage.setItem(SELECTION_KEY, p.id)}
+                        data-testid={`gap-${p.id}-${gap.label}`}
+                      >
+                        {gap.label}
+                      </Link>
+                      <span className={ui.hint}> — {gap.detail}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+
+              {/*
+                ACTING AS THIS PRACTICE, from the list.
+
+                This control existed only on /practice/users, which is
+                practice_admin-only — so a platform operator could not reach the
+                page that starts the session that would give them a practice
+                claim. The one way in was closed by the thing it was the way in
+                to, and an operator had no route to a practice at all.
+
+                It belongs here in any case: this is the page where an operator
+                picks WHICH practice, so it is where "and work as them" is the
+                obvious next act. Opening a session is still a recorded,
+                reasoned thing — ActingAsStart asks why before it will start.
+              */}
+              {/*
+                TWO WAYS IN, because there are two kinds of work.
+                
+                Checking a practitioner against the AHPRA register is OUR job.
+                Doing it from inside the practice's session would record our
+                attestation as theirs — a self-attestation wearing the name of
+                an independent one — and would force the practice to be
+                reapproved because we did our own work. So it has its own door,
+                entered as the platform.
+
+                Everything the PRACTICE does still needs acting-as, below.
+              */}
+              {isOperator && decided && (
+                <Link
+                  href={`/platform/practices/${p.id}/practitioners/check`}
+                  className={ui.buttonLink}
+                  data-testid={`platform-practitioners-${p.id}`}
+                >
+                  <ShieldCheck size={14} aria-hidden="true" />
+                  {strings.practices.checkAsPlatform}
+                </Link>
+              )}
+
+              {isOperator && decided && actingOn !== p.id && (
+                <ActingAsStart
+                  practiceId={p.id}
+                  practiceName={p.name ?? p.legalName ?? null}
+                  open={openActAs === p.id}
+                  onOpenChange={(o) => setOpenActAs(o ? p.id : null)}
+                  onStarted={() => {
+                    // The cached answer is now wrong, and the menu and the
+                    // guard both read it.
+                    forgetActingAs();
+                    window.localStorage.setItem(SELECTION_KEY, p.id);
+                    router.push('/practice/setup');
+                  }}
+                />
+              )}
+            </li>
+          );
+        })}
+      </ul>
+
+      {/*
+        AN OPEN SESSION, VISIBLE AND ENDABLE FROM HERE. An operator who started
+        one on this page must be able to end it on this page; a session you can
+        only close somewhere else is one people leave open.
+      */}
+      <ActingAsBanner onChange={() => { forgetActingAs(); void fetchActingAs().then((a) => setActingOn(a?.practiceId ?? null)); }} />
+
+      {/*
+        NOT SHOWN TO A PLATFORM OPERATOR. "This list is not yet scoped to you"
+        is an apology to a practice administrator who is seeing other people's
+        practices. An operator seeing every practice is not a gap waiting to be
+        closed — it is the page working, and apologising for it says the
+        opposite of what is true.
+      */}
+      {!isOperator && (
+        <Notice tone="warn" title={strings.practices.scopeHeading}>
+          {strings.practices.scopeBody}
+        </Notice>
+      )}
+    </Shell>
+  );
+}

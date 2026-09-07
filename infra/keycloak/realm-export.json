@@ -11,7 +11,7 @@
   "bruteForceProtected": true,
   "accessTokenLifespan": 300,
   "webAuthnPolicyRpEntityName": "AoBPlatform",
-  "webAuthnPolicyRpId": "",
+  "webAuthnPolicyRpId": "localhost",
   "webAuthnPolicySignatureAlgorithms": [
     "ES256",
     "RS256"
@@ -19,12 +19,12 @@
   "webAuthnPolicyAttestationConveyancePreference": "none",
   "webAuthnPolicyAuthenticatorAttachment": "not specified",
   "webAuthnPolicyRequireResidentKey": "not specified",
-  "webAuthnPolicyUserVerificationRequirement": "preferred",
+  "webAuthnPolicyUserVerificationRequirement": "required",
   "webAuthnPolicyCreateTimeout": 60,
   "webAuthnPolicyAvoidSameAuthenticatorRegister": false,
   "webAuthnPolicyAcceptableAaguids": [],
   "webAuthnPolicyPasswordlessRpEntityName": "AoBPlatform",
-  "webAuthnPolicyPasswordlessRpId": "",
+  "webAuthnPolicyPasswordlessRpId": "localhost",
   "webAuthnPolicyPasswordlessSignatureAlgorithms": [
     "ES256",
     "RS256"
@@ -99,6 +99,10 @@
         "composite": false,
         "clientRole": false,
         "containerId": "aobplatform"
+      },
+      {
+        "name": "platform_admin",
+        "description": "AoBPlatform staff who read applications and approve practices. Cross-tenant: belongs to no practice and carries no practice_id. Granted by invitation only, never self-service."
       }
     ],
     "client": {}
@@ -139,6 +143,49 @@
             "access.token.claim": "true",
             "claim.name": "principal_type",
             "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "practice-id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "practice_id",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "practice_id",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "practitioner-id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "practitioner_id",
+            "claim.name": "practitioner_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "console-role",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "console_role",
+            "claim.name": "console_role",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true"
           }
         }
       ],
@@ -218,6 +265,85 @@
         "email"
       ],
       "name": "Evidence Vault service (service account)"
+    },
+    {
+      "clientId": "console",
+      "name": "Platform operator console (reviewer)",
+      "description": "Reviewer console. Separate from `web` so a practice-admin token is not indistinguishable from a platform-admin one at the API. Passkey required; direct grants off.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:3100/*",
+        "http://localhost:21100/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3100",
+        "http://localhost:21100"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "authenticationFlowBindingOverrides": {
+        "browser": "b6f10000-0000-4000-8000-0000000000c1"
+      },
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "roles",
+        "profile",
+        "backend-services-audience",
+        "basic",
+        "email"
+      ],
+      "protocolMappers": [
+        {
+          "name": "principal-type",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "principal_type",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "principal_type",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "practice-id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "practice_id",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "practice_id",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "console-role",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "console_role",
+            "claim.name": "console_role",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
     }
   ],
   "identityProviders": [],
@@ -395,7 +521,7 @@
   "clientScopes": [
     {
       "name": "backend-services-audience",
-      "description": "Adds every backend service's client id to the aud claim so frontend-issued user tokens can be validated by any backend service they call.",
+      "description": "Adds THIS PRODUCT'S backend service ids to the aud claim. It previously listed thirteen services from another product, copied in with the realm export, while omitting core-service itself - so the audience was too broad to mean anything and did not name the service reading it.",
       "protocol": "openid-connect",
       "attributes": {
         "include.in.token.scope": "true",
@@ -403,146 +529,33 @@
       },
       "protocolMappers": [
         {
-          "name": "admin-console-service-audience",
+          "name": "core-service-audience",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
           "config": {
-            "included.client.audience": "admin-console-service",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
+            "included.client.audience": "core-service",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
           }
         },
         {
-          "name": "fhir-gateway-service-audience",
+          "name": "rules-service-audience",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
           "config": {
-            "included.client.audience": "fhir-gateway-service",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
+            "included.client.audience": "rules-service",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
           }
         },
         {
-          "name": "gp-authorisation-service-audience",
+          "name": "vault-service-audience",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
           "config": {
-            "included.client.audience": "gp-authorisation-service",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        },
-        {
-          "name": "followup-recall-service-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "followup-recall-service",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        },
-        {
-          "name": "identity-access-service-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "identity-access-service",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        },
-        {
-          "name": "referral-service-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "referral-service",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        },
-        {
-          "name": "audit-log-service-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "audit-log-service",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        },
-        {
-          "name": "onboarding-account-service-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "onboarding-account-service",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        },
-        {
-          "name": "directory-service-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "directory-service",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        },
-        {
-          "name": "booking-service-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "booking-service",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        },
-        {
-          "name": "consent-security-service-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "consent-security-service",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        },
-        {
-          "name": "notification-service-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "notification-service",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        },
-        {
-          "name": "specialist-review-service-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "specialist-review-service",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
+            "included.client.audience": "vault-service",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
           }
         }
       ]
@@ -1051,6 +1064,20 @@
       ]
     }
   ],
+  "defaultDefaultClientScopes": [
+    "acr",
+    "basic",
+    "email",
+    "profile",
+    "roles",
+    "web-origins"
+  ],
+  "defaultOptionalClientScopes": [
+    "address",
+    "phone",
+    "microprofile-jwt",
+    "offline_access"
+  ],
   "smtpServer": {
     "host": "mailhog",
     "port": "1025",
@@ -1073,5 +1100,6 @@
       }
     ]
   },
-  "identityProviderMappers": []
+  "identityProviderMappers": [],
+  "browserFlow": "clinician-browser"
 }

@@ -29,10 +29,10 @@
 *Slide 6 row 2. Nobody has shipped one; AutoMed's kiosk does check-in, not AoB. This is the primary channel and the differentiator.*
 
 - **C2.1 (MUST)** Pre-agreement capture at check-in on practice-owned tablet (BYOD ≥10″), staff-assisted verification, drawn signature, target < 45 seconds end-to-end. → REQ-CAP-01.
-- **C2.2 (MUST)** Offline-first: capture and queue locally through an internet outage; validate on sync; alert on any post-sync validation failure.
-- **C2.3 (MUST)** Kiosk mode: locked-down launcher, no OS escape, auto-reset between patients, no residual patient data on device after submission (memory-only render; nothing persisted beyond the encrypted sync queue).
+- **C2.2 (WITHDRAWN, Carl 3 Sep 2026)** ~~Offline-first: capture and queue locally through an internet outage; validate on sync; alert on any post-sync validation failure.~~ Superseded by the zero-footprint kiosk decision (CLAUDE.md §7): the kiosk is cloud-served, persists nothing, and on outage shows "see reception"; care is never blocked (REQ-REC-04) and capture falls back to post-service or paper.
+- **C2.3 (MUST)** Kiosk mode: locked-down browser on a managed tablet (a device setting, not our software), no OS escape, auto-reset between patients, no residual patient data on device after submission (memory-only render; **nothing persisted at all** beyond one revocable pairing credential — Carl, 3 Sep 2026).
 - **C2.4 (MUST)** Accessibility on device: large-text mode, high contrast, read-aloud, staff-assisted mode. → REQ-NFR-05, REQ-VUL-08.
-- **C2.5 (MUST)** RACF visiting-provider batch mode: one offline tablet session capturing for a resident list, per practitioner. → REQ-VUL-07.
+- **C2.5 (MAY — roadmap, Carl 3 Sep 2026)** RACF visiting-provider batch mode for a resident list, per practitioner. Was MUST with an offline tablet session; moved to roadmap when offline-first was withdrawn (C2.2). When revisited the answer is a connected device or the assignor-remote path (REQ-VUL-03), not an offline queue. → REQ-VUL-07.
 - **C2.6 (SHOULD)** Queue-integration hooks so a practice already running AutoMed check-in can trigger our AoB step from their arrival event rather than running two tablets. (Coexist; do not demand the front desk choose.)
 
 ## C3 — Email channel

@@ -314,6 +314,16 @@ describe('M5 enduring lifecycle + M6 reg 89AA notices (e2e, real Postgres)', () 
       );
       expect(events.map((e) => e.state)).toEqual(['composed', 'dispatched', 'delivered', 'read']);
 
+      // The notice keeps its statutory shape AND writes the evidence row that
+      // lets one screen show it beside everything else (plan §4.1, Q5).
+      const correspondence = await prisma.withPractice(practiceId, (tx) =>
+        tx.correspondence.findFirst({ where: { noticeId } }),
+      );
+      expect(correspondence?.subjectType).toBe('Notice');
+      expect(correspondence?.recipientType).toBe('patient');
+      expect(correspondence?.state).toBe('delivered');
+      expect(correspondence?.retentionExpiryDate).not.toBeNull();
+
       const pack = await request(app.getHttpServer())
         .get('/notices/compliance-pack')
         .set('x-practice-id', practiceId)

@@ -163,3 +163,30 @@ describe('no cap on affiliations, velocity is a signal', () => {
     expect(canCaptureUnder(busy, NOW)).toBe(true);
   });
 });
+
+describe('the last day is a whole day', () => {
+  it('CAPTURE RUNS TO THE END OF THE LAST DAY, not to its midnight', () => {
+    /*
+     * Found on screen: a card said both "capture continues until then" and
+     * "this affiliation has ended", on the morning of the end date.
+     *
+     * A date input arrives as midnight. Comparing endsAt > now meant capture
+     * was blocked from 00:00 on somebody’s LAST WORKING DAY — a full day
+     * early — so agreements that should have been captured were refused.
+     */
+    const endsAt = new Date('2026-08-22T00:00:00Z');
+    const affiliation = { status: 'ending', endsAt } as never;
+
+    expect(canCaptureUnder(affiliation, new Date('2026-08-22T00:00:01Z'))).toBe(true);
+    expect(canCaptureUnder(affiliation, new Date('2026-08-22T15:32:00Z'))).toBe(true);
+    expect(canCaptureUnder(affiliation, new Date('2026-08-22T23:59:00Z'))).toBe(true);
+    // And stops once the day is over.
+    expect(canCaptureUnder(affiliation, new Date('2026-08-23T00:00:01Z'))).toBe(false);
+  });
+
+  it('gives no block reason while the last day is still running', () => {
+    // The two halves must agree. They did not, which is the bug.
+    const affiliation = { status: 'ending', endsAt: new Date('2026-08-22T00:00:00Z') } as never;
+    expect(captureBlockReason(affiliation, new Date('2026-08-22T15:32:00Z'))).toBeNull();
+  });
+});

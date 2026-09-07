@@ -24,8 +24,7 @@ for the directory layout and port map.
 | `apps/core` | NestJS modular monolith — modules M1–M8, M12–M14 |
 | `apps/rules` | s 65C Rules & Conformance service + public tester (zero PII) ⚠ human-authored |
 | `apps/vault` | Evidence Vault — append-only, immudb, anchoring ⚠ human-authored |
-| `apps/web` | Next.js console / portal / tester UI |
-| `apps/kiosk` | Expo tablet app (placeholder until Phase 1 reaches it) |
+| `apps/web` | Next.js console / portal / tester UI, and the waiting-room kiosk at `/kiosk` |
 | `apps/connector` | Site-installed PMS connector — mock adapter until D-01 resolves |
 | `packages/domain` | Pure TS domain model + hard-rule guards + named hard-rule tests |
 | `packages/contracts` | FR-9.1 PMS adapter interface; rules + vault service contracts |

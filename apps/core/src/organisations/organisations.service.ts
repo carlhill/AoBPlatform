@@ -1,26 +1,59 @@
 import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
+  establishingEntitlementCheck,
+  type PerformedCheck,
   AbnError,
   AddressError,
   isValidAhpraNumberFormat,
   addressWarnings,
   assertAddressUsable,
+  ContactError,
+  assertContactsIndependent,
+  LOCKED_FIELDS,
+  checksAffectedBy,
+  diffApplication,
   assertOrganisationApplicationValid,
   formatAddress,
   isValidAbnChecksum,
   normaliseAbn,
   parseSingleLine,
   type StructuredAddress,
+  ADDRESS_CHECK_VERSION,
+  kindForAmendment,
+  AddressCheckError,
+  assertRecordableCheck,
+  assertSendableRejection,
+  locationEditability,
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
+import { ActingAsService } from '../acting-as/acting-as.service';
+import { ReviewTasksService } from '../review-tasks/review-tasks.service';
+import { PendingEmailService } from './pending-email.service';
+
+/**
+ * How long an applicant has to act on a correction request.
+ *
+ * Long enough to cover a weekend and a day off; short enough that a copy
+ * forwarded, archived or left in a shared inbox is worthless within a week.
+ */
+const CORRECTION_WINDOW_DAYS = 5;
+
+/**
+ * How long an email-verification link lives.
+ *
+ * Longer than the correction window because it is not urgent: nothing is
+ * waiting on it, and an applicant who opens their mail on Monday should not
+ * find it dead.
+ */
+const EMAIL_VERIFICATION_DAYS = 7;
 import { PracticeAdminService } from '../identity/practice-admin.service';
 import { ChecksService } from './checks.service';
 import { ConfigService } from '@nestjs/config';
 import { ABR_CLIENT, ADDRESS_VALIDATOR } from './organisations.tokens';
 import type { AbrClient } from './abr';
 import type { AddressValidator } from './address-validator';
-import { extractState } from './address-validator';
+import type { Actor } from '../auth/actor.decorator';
 
 /**
  * Organisation onboarding (ORG-MODEL-PROPOSAL.md §4).
@@ -45,6 +78,9 @@ export class OrganisationsService {
     private readonly practiceAdmin: PracticeAdminService,
     private readonly checks: ChecksService,
     private readonly config: ConfigService,
+    private readonly actingAs: ActingAsService,
+    private readonly reviewTasks: ReviewTasksService,
+    private readonly pendingEmail: PendingEmailService,
   ) {}
 
   /**
@@ -111,6 +147,178 @@ export class OrganisationsService {
   }
 
   /**
+   * WHAT THIS ABN RESOLVES TO, before anybody commits to an application.
+   *
+   * The applicant types eleven digits and, until now, learned nothing until
+   * they had filled in two contacts and pressed send — at which point a
+   * mistyped digit came back as a refusal against an entity they had never
+   * seen. This shows them the entity while the field still has focus: the
+   * legal name, the status, the entity type, the registered business names.
+   *
+   * IT DECIDES NOTHING. Registration consults the register again on the server
+   * at submission, and the gate runs there; this is a preview, and a preview
+   * that went stale between here and send is caught by the real check.
+   *
+   * WHAT IT DELIBERATELY DOES NOT SAY: whether this ABN is already registered
+   * on the platform. That would turn an unauthenticated endpoint into a way to
+   * enumerate our customers — the same rule the rejection reasons already
+   * follow.
+   */
+  async abnLookup(rawAbn: string) {
+    const abn = normaliseAbn(rawAbn);
+
+    // Arithmetic first, and locally, exactly as registration does it: a typo
+    // should never cost a network round trip, and "the check digits do not
+    // agree" is a better answer than anything the register would return.
+    if (!isValidAbnChecksum(abn)) {
+      return { abn, checksumValid: false, outcome: 'invalid_checksum' as const };
+    }
+
+    const probe = await this.abr.probe(abn);
+    if (probe.status !== 'found') {
+      return { abn, checksumValid: true, outcome: probe.status, reason: probe.reason };
+    }
+
+    const found = probe.lookup;
+    return {
+      abn: found.abn,
+      checksumValid: true,
+      outcome: 'found' as const,
+      abnStatus: found.abnStatus,
+      /** The gate's own rule, computed once here so the form cannot disagree. */
+      active: found.abnStatus === 'ACTIVE',
+      legalName: found.legalName,
+      /*
+       * BUSINESS names. The ABR stopped collecting TRADING names in May 2012,
+       * so anything still carrying that label is a historical record and must
+       * never be used to decide that a typed name identifies this entity.
+       */
+      businessNames: found.businessNames ?? [],
+      entityType: found.entityType,
+      gstRegistered: found.gstRegistered ?? false,
+      abnStatusEffectiveFrom: found.abnStatusEffectiveFrom ?? null,
+      acn: found.acn ?? null,
+      mainBusinessState: found.mainBusinessState ?? null,
+      mainBusinessPostcode: found.mainBusinessPostcode ?? null,
+    };
+  }
+
+  /**
+   * Ask the register again about a practice already on the platform.
+   *
+   * WHY IT EXISTS. An ABN check is a fact about a day, not a property of an
+   * entity. A practice approved in March against an ACTIVE ABN can be trading
+   * on a cancelled one by September, and the platform would have gone on
+   * showing the March answer for ever. It also upgrades a manual attestation:
+   * an application that fell back to a typed attestation because the register
+   * was down can be re-checked once it is up, and the provenance moves from
+   * "a colleague said the register said so" to "the register said so".
+   *
+   * WHAT IT MAY CHANGE, and what it may not:
+   *   - status, legal name, business names, GST, and the verification stamp —
+   *     yes. These ARE what the register says, and holding a stale copy of
+   *     them is the problem this solves.
+   *   - the ABN — never. A different ABN is a different legal entity and
+   *     therefore a new application, which is the rule the whole entity page
+   *     is built on.
+   *   - the entity type — reported, not rewritten. It feeds the ACN derivation
+   *     the application was gated on, so a change to it is a fact for a human
+   *     to look at rather than something to silently restate.
+   */
+  async recheckAbn(practiceId: string, actor?: Actor) {
+    if (!actor) {
+      throw new BadRequestException(
+        'Re-checking an ABN records who asked and what the register answered, so it requires a signed-in ' +
+          'administrator. No verified session was presented with this request.',
+      );
+    }
+
+    const practice = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.practice.findFirstOrThrow({ where: { id: practiceId } }),
+    );
+    if (!practice.abn) {
+      throw new BadRequestException(
+        'This practice has no ABN recorded, so there is nothing to re-check against the register.',
+      );
+    }
+
+    const probe = await this.abr.probe(practice.abn);
+    if (probe.status !== 'found') {
+      /*
+       * NOTHING IS WRITTEN AND NOTHING IS OVERWRITTEN. A failed re-check is
+       * not evidence about the entity, it is evidence about our afternoon —
+       * and blanking a good stored answer because the register was briefly
+       * unreachable would make the platform less accurate every time the ABR
+       * had an outage.
+       */
+      this.logger.warn(`ABN re-check for practice ${practiceId} could not be completed: ${probe.reason}.`);
+      return { rechecked: false, outcome: probe.status, reason: probe.reason };
+    }
+
+    const found = probe.lookup;
+    const before = {
+      abnStatus: practice.abnStatus,
+      legalName: practice.legalName,
+      entityType: practice.entityType,
+      source: practice.abnVerificationSource,
+    };
+    const statusChanged = (before.abnStatus ?? '') !== found.abnStatus;
+    const entityTypeChanged = Boolean(before.entityType) && before.entityType !== found.entityType;
+    const verifiedAt = new Date();
+
+    const updated = await this.prisma.withPractice(practiceId, async (tx) => {
+      const row = await tx.practice.update({
+        where: { id: practiceId },
+        data: {
+          abnStatus: found.abnStatus,
+          legalName: found.legalName || practice.legalName,
+          // The column is named `tradingNames` for historical reasons; what it
+          // holds, and all it may ever hold, is REGISTERED BUSINESS NAMES.
+          tradingNames: [...(found.businessNames ?? [])],
+          gstRegistered: found.gstRegistered ?? practice.gstRegistered,
+          abnVerifiedAt: verifiedAt,
+          abnVerificationSource: 'abr_api',
+        },
+      });
+
+      await enqueueVaultEvent(tx, {
+        type: 'organisation.abn_rechecked',
+        actor: { principalType: 'staff', id: actor.id },
+        subject: { type: 'Organisation', id: practiceId },
+        payload: {
+          abnStatus: found.abnStatus,
+          previousAbnStatus: before.abnStatus ?? 'unknown',
+          statusChanged,
+          entityTypeChanged,
+          registerEntityType: found.entityType,
+          previousVerificationSource: before.source ?? 'unknown',
+          verificationSource: 'abr_api',
+          checkedBy: actor.name,
+          checkedBySub: actor.id,
+        },
+      });
+      return row;
+    });
+
+    return {
+      rechecked: true,
+      outcome: 'found' as const,
+      abnStatus: updated.abnStatus,
+      active: updated.abnStatus === 'ACTIVE',
+      statusChanged,
+      entityTypeChanged,
+      registerEntityType: found.entityType,
+      legalName: updated.legalName,
+      businessNames: updated.tradingNames,
+      gstRegistered: updated.gstRegistered,
+      abnVerifiedAt: updated.abnVerifiedAt,
+      abnVerificationSource: updated.abnVerificationSource,
+      /** True when this re-check replaced a typed attestation with the register's own answer. */
+      provenanceUpgraded: before.source === 'manual_attestation',
+    };
+  }
+
+  /**
    * Gate 1 + 2. Creates the organisation in `pending`, which can do nothing
    * until a human validates it.
    */
@@ -158,11 +366,50 @@ export class OrganisationsService {
       throw new BadRequestException(`"${input.abn}" is not a valid ABN — the check digits do not agree.`);
     }
 
+    // Contact independence, also before any lookup, for the same reason: it is
+    // offline and certain. The second contact exists to give the reviewer
+    // somebody to call who is not the applicant, so two contacts sharing an
+    // inbox or a handset is one contact wearing a hat. The form refuses this
+    // too, but the form is not the boundary — this endpoint is.
+    try {
+      assertContactsIndependent({
+        adminEmail: input.adminEmail,
+        adminPhone: input.adminPhone,
+        managerEmail: input.managerEmail,
+        managerPhone: input.managerPhone,
+      });
+    } catch (err) {
+      if (err instanceof ContactError) throw new BadRequestException(err.message);
+      throw err;
+    }
+
     // The API wins whenever it can answer. A human attestation is a FALLBACK
     // for environments with no GUID, never an override — otherwise "the ABR
     // says CANCELLED" could be talked around by retyping it.
-    let lookup = await this.abr.lookup(abn);
+    const probe = await this.abr.probe(abn);
+    let lookup = probe.status === 'found' ? probe.lookup : null;
     let source: 'abr_api' | 'manual_attestation' = 'abr_api';
+
+    /*
+     * AN ATTESTATION ANSWERS SILENCE, NOT A NO.
+     *
+     * The register positively saying "No record found" is an ANSWER, and a
+     * typed attestation over the top of it is precisely the override this
+     * fallback was never meant to be — somebody retyping their way past a
+     * register that has just told us the entity is not there. Only
+     * `unreachable` — no GUID, an outage, a timeout, our own credential
+     * refused — opens the attestation path.
+     */
+    if (!lookup && probe.status === 'not_found') {
+      throw new BadRequestException({
+        reason: probe.reason,
+        message:
+          `The Australian Business Register has no record of ABN ${abn}. The check digits agree, so this is a ` +
+          'real ABN pattern that has never been issued, or has been retyped from a different number. Check it ' +
+          'against the register and apply again — there is no way to attest past this, because the register ' +
+          'has answered.',
+      });
+    }
 
     if (!lookup && input.abrAttestation) {
       const attested = input.abrAttestation;
@@ -182,14 +429,27 @@ export class OrganisationsService {
     }
 
     if (!lookup) {
-      throw new BadRequestException(
-        this.abr.kind === 'offline'
-          ? `ABN ${abn} passed its check digits, but no ABN lookup is configured in this environment, so it ` +
-            'cannot be verified against the ABR — and an organisation is never created on an unverified ABN. ' +
-            'Either register for an ABN Lookup GUID at abr.business.gov.au and set ABR_API_GUID, or use one ' +
-            'of the offline fixtures: 53004085616, 51824753556, 13824753558.'
-          : `The ABR returned no record for ABN ${abn}. Check the number, or refer to human validation.`,
-      );
+      /*
+       * THE REGISTER COULD NOT ANSWER, and the two reasons want different
+       * words. An environment with no GUID is a SETUP problem and the reader
+       * is a developer; a live client that could not reach the ABR is an
+       * OUTAGE and the reader is an applicant, who needs the attestation panel
+       * and no mention of environment variables. The `reason` code travels
+       * with both so the form routes on the code rather than on prose.
+       */
+      throw new BadRequestException({
+        reason: probe.status === 'unreachable' ? probe.reason : 'unreachable',
+        message:
+          this.abr.kind === 'offline'
+            ? `ABN ${abn} passed its check digits, but no ABN lookup is configured in this environment, so it ` +
+              'cannot be verified against the ABR — and an organisation is never created on an unverified ABN. ' +
+              'Either register for an ABN Lookup GUID at abr.business.gov.au and set ABR_API_GUID, or use one ' +
+              'of the offline fixtures: 53004085616, 51824753556, 13824753558.'
+            : `ABN ${abn} passed its check digits, but the Australian Business Register could not be reached to ` +
+              'check it, and an organisation is never created on an unverified ABN. Nothing is wrong with the ' +
+              'application: type what the register shows and your name below, and it goes to review with that ' +
+              'noted, or come back and send it once the register is answering again.',
+      });
     }
 
     let gate;
@@ -315,7 +575,45 @@ export class OrganisationsService {
       );
     }
 
+    // Issue the email-verification token before acknowledging, so the
+    // acknowledgement can carry the link. Seven days rather than the
+    // correction window's five: this one is not urgent, and an applicant who
+    // let it lapse should not be chased twice in a week.
+    const [verification] = await this.prisma.$queryRaw<Array<{ token: string; code: string; expiresAt: Date }>>`
+      SELECT * FROM issue_email_verification(${organisation.id}::uuid, ${EMAIL_VERIFICATION_DAYS}::integer)`;
+
+    // Acknowledge, LAST, and never let it fail the registration. Everything
+    // above is committed by this point; an application lost because a mail
+    // server hiccuped would be a far worse outcome than an applicant who does
+    // not receive a receipt.
+    const acknowledgement = await this.practiceAdmin
+      .onApplicationReceived({
+        organisationId: organisation.id,
+        organisationName: organisation.name,
+        adminName: input.adminName,
+        adminEmail: input.adminEmail,
+        statusUrl: `${this.config.get<string>('APPLICATION_STATUS_BASE_URL', 'http://localhost:21100')}/status/${
+          (
+            await this.prisma.$queryRaw<Array<{ statusToken: string }>>`
+              SELECT * FROM find_status_token(${organisation.id}::uuid)`
+          )[0]?.statusToken ?? ''
+        }`,
+        supportPhone: this.config.get<string>('SUPPORT_PHONE'),
+        verifyUrl: verification
+          ? `${this.config.get<string>('APPLICATION_STATUS_BASE_URL', 'http://localhost:21100')}/verify/${
+              verification.token
+            }`
+          : undefined,
+        verifyCode: verification?.code,
+        verifyExpiresAt: verification?.expiresAt,
+      })
+      .catch((err: Error) => {
+        this.logger.error(`The acknowledgement for ${organisation.id} threw: ${err.message}`);
+        return { notified: false, detail: 'The acknowledgement could not be sent.' };
+      });
+
     return {
+      acknowledgement,
       id: organisation.id,
       name: organisation.name,
       abn: organisation.abn,
@@ -368,6 +666,124 @@ export class OrganisationsService {
     };
   }
 
+  /**
+   * The applicant's status and amendment links.
+   *
+   * Read through a SECURITY DEFINER function because a reviewer has no practice
+   * context either — the console is cross-tenant by definition.
+   */
+  async statusLinks(organisationId: string) {
+    const [row] = await this.prisma.$queryRaw<Array<{ statusToken: string }>>`
+      SELECT * FROM find_status_token(${organisationId}::uuid)`;
+    if (!row) throw new NotFoundException('No such application.');
+
+    const base = this.config.get<string>('APPLICATION_STATUS_BASE_URL', 'http://localhost:21100');
+    return {
+      statusUrl: `${base}/status/${row.statusToken}`,
+      amendUrl: `${base}/status/${row.statusToken}/correct`,
+    };
+  }
+
+  /**
+   * Ask the applicant to correct the application, and open a time-boxed window.
+   *
+   * Reviewer-initiated on purpose. Opening the window at submission would start
+   * the clock while the application sits in a queue nobody has reached, so it
+   * could expire before anyone had read it. Opening it here makes it an
+   * attributable act: a named person looked, found something fixable, and said
+   * so.
+   */
+  async requestCorrection(
+    organisationId: string,
+    input: { reason: string; requestedByName: string; windowDays?: number },
+  ) {
+    const days = input.windowDays ?? CORRECTION_WINDOW_DAYS;
+
+    const [opened] = await this.prisma.$queryRaw<Array<{ statusToken: string; correctionExpiresAt: Date }>>`
+      SELECT * FROM open_correction_window(
+        ${organisationId}::uuid, ${days}::integer, ${input.requestedByName}, ${input.reason})`;
+
+    if (!opened) {
+      // The function only touches a PENDING application, so no row back means
+      // it has already been decided.
+      throw new BadRequestException(
+        'This application has already been decided, so there is nothing for the applicant to correct.',
+      );
+    }
+
+    const organisation = await this.prisma.withPractice(organisationId, (tx) =>
+      tx.practice.findFirstOrThrow({ where: { id: organisationId } }),
+    );
+
+    const base = this.config.get<string>('APPLICATION_STATUS_BASE_URL', 'http://localhost:21100');
+    const correctUrl = `${base}/status/${opened.statusToken}/correct`;
+
+    const notified = await this.practiceAdmin.onCorrectionRequested({
+      organisationName: organisation.name,
+      adminName: organisation.adminName,
+      adminEmail: organisation.adminEmail,
+      reason: input.reason,
+      requestedByName: input.requestedByName,
+      correctUrl,
+      expiresAt: opened.correctionExpiresAt,
+      windowDays: days,
+    });
+
+    return {
+      requested: true,
+      expiresAt: opened.correctionExpiresAt,
+      windowDays: days,
+      correctUrl,
+      notified: notified.notified,
+      detail: notified.detail,
+    };
+  }
+
+  /**
+   * Send (or re-send) the email-confirmation link.
+   *
+   * New applications get one automatically at submission. This exists for the
+   * two cases that automation cannot cover: an applicant whose link expired or
+   * never arrived, and an application that predates the feature entirely.
+   *
+   * Reviewer-initiated rather than self-serve, because the applicant's route to
+   * ask for one is to reply to the email — and if they cannot receive our email,
+   * a self-serve button on a page they reach by email helps nobody.
+   */
+  async requestEmailVerification(organisationId: string) {
+    const [issued] = await this.prisma.$queryRaw<
+      Array<{
+        token: string;
+        code: string;
+        expiresAt: Date;
+        adminEmail: string | null;
+        adminName: string | null;
+        name: string;
+      }>
+    >`SELECT * FROM issue_email_verification(${organisationId}::uuid, ${EMAIL_VERIFICATION_DAYS}::integer)`;
+
+    if (!issued) {
+      // The function skips an already-verified address, so no row back means
+      // there was nothing to do — which is a success, not a failure.
+      return { sent: false, detail: 'That address has already been confirmed, so no new link was sent.' };
+    }
+    if (!issued.adminEmail) {
+      return { sent: false, detail: 'No admin email is on record, so there is nowhere to send it.' };
+    }
+
+    const base = this.config.get<string>('APPLICATION_STATUS_BASE_URL', 'http://localhost:21100');
+    const result = await this.practiceAdmin.onEmailVerificationRequested({
+      organisationName: issued.name,
+      adminName: issued.adminName,
+      adminEmail: issued.adminEmail,
+      verifyUrl: `${base}/verify/${issued.token}`,
+      code: issued.code,
+      expiresAt: issued.expiresAt,
+    });
+
+    return { sent: result.notified, expiresAt: issued.expiresAt, detail: result.detail };
+  }
+
   /** Gate 3. The reviewer is NAMED — "approved by the system" is not a thing. */
   async decideValidation(
     organisationId: string,
@@ -383,7 +799,27 @@ export class OrganisationsService {
       /** Required to approve against the score's advice when enforcement is hard. */
       identityOverrideReason?: string;
     },
+    /** The real person deciding. Needed for the separation-of-duties check. */
+    approver?: Actor,
   ) {
+    /*
+     * RULE 7, AND IT RUNS FIRST.
+     *
+     * Somebody who acted as this practice cannot be the person who approves
+     * it. Checked before anything else because it is the control that survives
+     * every other one failing: even if the scoring exclusion for impersonated
+     * evidence were removed by mistake, one individual still could not
+     * manufacture evidence and then bless it.
+     *
+     * Before the state lookup, deliberately. After it, a self-approval on an
+     * already-decided practice would report "already validated" and the
+     * separation check would never run — the same shape of bug the comment
+     * below records about rejection reasons.
+     */
+    if (input.decision === 'validated') {
+      await this.actingAs.assertMayApprove(organisationId, approver);
+    }
+
     if (!input.reviewerName?.trim()) {
       throw new BadRequestException('A validation decision must name the human who made it.');
     }
@@ -416,6 +852,44 @@ export class OrganisationsService {
     const assessment = await this.checks.summary(organisationId);
     const mode = this.enforcement();
 
+    /*
+     * THE ENTITLEMENT COMES OFF THE RECORDED CHECK, not off the request.
+     *
+     * A reviewer who has already recorded a phone call — with the number, where
+     * the number came from, who answered, and an artefact attached — should not
+     * be asked to type it again at the decision, and what they typed should
+     * certainly not outrank what was recorded. Two records of one event can
+     * disagree, and the retyped one is the copy without evidence attached.
+     *
+     * It also fixes an attribution that was quietly wrong: one person rings the
+     * practice and another approves, which is ordinary and arguably better
+     * practice, and the decision used to record the APPROVER as the person who
+     * made the call.
+     *
+     * The inline fields survive as a fallback for the case where no check was
+     * recorded at all. They are used only then.
+     */
+    const established = establishingEntitlementCheck(assessment.history as PerformedCheck[]);
+    const entitlement = established
+      ? {
+          method: established.method,
+          phoneNumber: established.phoneNumber,
+          numberSource: established.numberSource,
+          spokeWithName: established.spokeWithName,
+          checkedByName: established.performedByName,
+          checkedAt: new Date(established.performedAt),
+        }
+      : {
+          method: input.entitlementMethod,
+          phoneNumber: input.entitlementPhoneNumber,
+          numberSource: input.entitlementNumberSource,
+          spokeWithName: input.entitlementSpokeWithName,
+          // Null, so the function falls back to the reviewer — which is right
+          // only here, where reviewer and checker really are the same person.
+          checkedByName: undefined,
+          checkedAt: undefined,
+        };
+
     if (input.decision === 'validated' && mode === 'hard' && !assessment.admission.wouldPass) {
       if (!input.identityOverrideReason?.trim()) {
         throw new BadRequestException(
@@ -445,8 +919,9 @@ export class OrganisationsService {
       }>
     >`SELECT * FROM decide_organisation_validation(
         ${organisationId}::uuid, ${input.decision}, ${input.reviewerName.trim()}, ${input.note ?? null},
-        ${input.entitlementMethod ?? null}, ${input.entitlementPhoneNumber ?? null},
-        ${input.entitlementNumberSource ?? null}, ${input.entitlementSpokeWithName ?? null})`;
+        ${entitlement.method ?? null}, ${entitlement.phoneNumber ?? null},
+        ${entitlement.numberSource ?? null}, ${entitlement.spokeWithName ?? null},
+        ${entitlement.checkedByName ?? null}, ${entitlement.checkedAt ?? null})`;
 
     await enqueueVaultEvent(this.prisma, {
       type: input.decision === 'validated' ? 'organisation.validated' : 'organisation.rejected',
@@ -459,8 +934,16 @@ export class OrganisationsService {
         reviewedBy: input.reviewerName.trim(),
         // The entitlement decision is the substance of the approval, so it is
         // evidence rather than incidental detail.
-        entitlementMethod: input.entitlementMethod ?? 'none',
-        entitlementNumberSource: input.entitlementNumberSource ?? 'n/a',
+        entitlementMethod: entitlement.method ?? 'none',
+        entitlementNumberSource: entitlement.numberSource ?? 'n/a',
+        /*
+         * WHO ESTABLISHED ENTITLEMENT, recorded separately from who approved.
+         * They are often different people and the evidence should say so —
+         * conflating them is how a record comes to assert something nobody did.
+         */
+        entitlementCheckedBy: entitlement.checkedByName ?? input.reviewerName.trim(),
+        entitlementFromRecordedCheck: Boolean(established),
+        entitlementCheckHadEvidence: established?.hasEvidence ?? false,
         // The score is part of the decision record, not a side calculation.
         identityScore: assessment.summary.score,
         identityScoringVersion: assessment.checklistVersion,
@@ -495,7 +978,7 @@ export class OrganisationsService {
             adminName: updated.adminName,
             adminEmail: updated.adminEmail,
             approvedByName: input.reviewerName.trim(),
-            entitlementMethod: input.entitlementMethod,
+            entitlementMethod: entitlement.method,
           })
         : await this.practiceAdmin.onRejected({
             organisationName: updated.name,
@@ -503,6 +986,15 @@ export class OrganisationsService {
             reason: input.note ?? 'The application could not be verified.',
             rejectedByName: input.reviewerName.trim(),
           });
+
+    /*
+     * ANSWERED. Marked cleared by this approval, so the next one starts from
+     * a clean list — and so the log still shows the sessions happened.
+     * Cleared, never deleted.
+     */
+    if (input.decision === 'validated') {
+      await this.actingAs.clearAfterApproval(organisationId, updated.id);
+    }
 
     return {
       id: updated.id,
@@ -551,6 +1043,346 @@ export class OrganisationsService {
    * address validates, because an unconfirmed address must not appear in a
    * s 65C(5)(a) particulars block.
    */
+  /**
+   * Amend an approved practice — the console path the domain already promises.
+   *
+   * `assertAmendmentAllowed` refuses a post-approval amendment through the
+   * applicant link with "changes are made in the console, by a named admin".
+   * This is that path. It covers the sixteen AMENDABLE_FIELDS and refuses the
+   * locked ones with the reasons the domain already words.
+   *
+   * THE CASE THIS EXISTS FOR. The practice administrator leaves suddenly, or
+   * was never comfortable with any of this — an older doctor, a receptionist
+   * who has moved on. Somebody has to be able to put a new person in place, and
+   * the practice cannot do it themselves, because the only account that could
+   * is the one that left.
+   *
+   * So changing `adminEmail` is NOT a contact correction. It is a HANDOVER of
+   * who controls the practice account, and it is treated as one.
+   */
+  async amendApplication(
+    practiceId: string,
+    proposed: Record<string, unknown>,
+    // changedByName arrives from AttributionInterceptor in practice; the
+    // guard below refuses the case where there is neither a session nor a
+    // name, so optional here is not a weakening.
+    meta: { changedByName?: string; reason: string },
+  ) {
+    if (!meta.changedByName?.trim()) {
+      throw new BadRequestException('A change to an approved practice must name the person making it.');
+    }
+    if (!meta.reason?.trim()) {
+      throw new BadRequestException(
+        'A change to an approved practice must record why. This is the record of who was approved, and a ' +
+          'change to it with no stated reason is indistinguishable from a mistake.',
+      );
+    }
+
+    // Locked fields are refused in the domain's own words, so the console and
+    // the applicant link give the same answer to the same question.
+    for (const field of Object.keys(proposed)) {
+      if (proposed[field] !== undefined && field in LOCKED_FIELDS) {
+        throw new BadRequestException(LOCKED_FIELDS[field]);
+      }
+    }
+
+    const current = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.practice.findFirst({ where: { id: practiceId } }),
+    );
+    if (!current) throw new NotFoundException('Practice not found.');
+
+    const changes = diffApplication(current as unknown as Record<string, unknown>, proposed);
+    if (changes.length === 0) {
+      throw new BadRequestException('Nothing was changed, so there is nothing to record.');
+    }
+
+    const next: Record<string, unknown> = {};
+    for (const change of changes) next[change.field] = change.to;
+
+    // FR-1.9 survives the amendment. An edit that quietly collapsed the two
+    // contacts into one inbox or one handset would defeat the reason a second
+    // contact exists, and would do it without anybody noticing.
+    try {
+      assertContactsIndependent({
+        adminEmail: (next.adminEmail ?? current.adminEmail ?? '') as string,
+        adminPhone: (next.adminPhone ?? current.adminPhone ?? '') as string,
+        managerEmail: (next.managerEmail ?? current.managerEmail) as string | null,
+        managerPhone: (next.managerPhone ?? current.managerPhone) as string | null,
+      });
+    } catch (err) {
+      if (err instanceof Error) throw new BadRequestException(err.message);
+      throw err;
+    }
+
+    /*
+     * THE ADMINISTRATOR ADDRESS IS HELD, NOT APPLIED.
+     *
+     * It used to change here and revoke every passkey in the same transaction,
+     * on the reasoning that a handover should not leave the previous holder
+     * signed in. The reasoning is right and the timing was wrong: one console
+     * session was enough to redirect where a practice's mail goes AND lock the
+     * real administrator out, with nothing sent to anybody.
+     *
+     * So it is lifted out of `next` -- every other field on the same save still
+     * applies immediately -- and parked until the new address answers. The old
+     * address keeps working throughout, which is what gives the person being
+     * displaced a way to notice and object.
+     */
+    const emailChange = changes.find((c) => c.field === 'adminEmail');
+    const handover = Boolean(emailChange);
+    if (emailChange) delete next.adminEmail;
+
+    /*
+     * THE SHARED ADDRESS IS HELD TOO, for a different reason: it is not a
+     * credential, but it IS the witness an adminEmail handover is told about
+     * when the old admin inbox is unreachable. Changed in the same breath as
+     * the thing it watches, it would silence itself before it ever saw the
+     * handover it exists to catch. See PendingEmailChange.field.
+     */
+    const groupEmailChange = changes.find((c) => c.field === 'groupEmail');
+    if (groupEmailChange) delete next.groupEmail;
+
+    const pendingAdminEmail = emailChange
+      ? await this.pendingEmail.request(practiceId, {
+          requestedEmail: String(emailChange.to),
+          // BEFORE-values, deliberately. Called with the after-state this would
+          // write to the new address twice and the old one never, which is the
+          // exact failure the whole mechanism exists to prevent.
+          previousAdminEmail: current.adminEmail,
+          previousGroupEmail: current.groupEmail,
+          requestedByName: meta.changedByName!.trim(),
+          otherContactEmails: [current.managerEmail],
+        })
+      : null;
+
+    const pendingGroupEmail = groupEmailChange
+      ? await this.pendingEmail.requestGroupEmail(practiceId, {
+          requestedEmail: String(groupEmailChange.to),
+          previousGroupEmail: current.groupEmail,
+          currentAdminEmail: current.adminEmail,
+          requestedByName: meta.changedByName!.trim(),
+        })
+      : null;
+
+    const updated = await this.prisma.withPractice(practiceId, async (tx) => {
+      const row = await tx.practice.update({
+        where: { id: practiceId },
+        data: {
+          ...next,
+          /*
+           * NOTHING IS CLEARED HERE ANY MORE. The address in force has not
+           * changed yet, so its verification still stands and the passkey
+           * enrolled against it is still the right one. Clearing them at
+           * request time was what locked the administrator out of an account
+           * whose address had not actually moved.
+           *
+           * `confirmEmailChange` does all of it, once somebody has proved they
+           * hold the new address.
+           */
+        },
+      });
+
+      /*
+       * RAISE A REVIEW TASK, in this transaction.
+       *
+       * These fields are amendable precisely because they are not identity
+       * evidence — but "not identity evidence" is not the same as "nobody
+       * should look". An administrator email changing the week before a
+       * payment run is not suspicious on its own and is worth somebody seeing.
+       *
+       * The KIND depends on what moved: changing where our messages go is the
+       * single most useful step for somebody taking over a practice account,
+       * so it raises a high-stakes task that no automated check may close.
+       */
+      const changedFields = changes.map((c) => c.field);
+      await this.reviewTasks.raise(tx, {
+        practiceId,
+        kind: kindForAmendment(changedFields),
+        subjectType: 'Organisation',
+        subjectId: practiceId,
+        summary: 'The practice changed ' + changedFields.join(', '),
+        detail: {
+          reason: meta.reason.trim(),
+          // BEFORE and AFTER, because a reviewer deciding whether a change is
+          // ordinary needs both. This is a work item rather than the evidence
+          // chain, so the values may live here — the vault event still
+          // records only which fields moved.
+          changes: changes.map((c) => ({ field: c.field, from: c.from ?? null, to: c.to ?? null })),
+          handover,
+        },
+        raisedBy: meta.changedByName!.trim(),
+      });
+
+      await enqueueVaultEvent(tx, {
+        type: handover ? 'organisation.admin_handover' : 'organisation.contacts_changed',
+        actor: { principalType: 'staff', id: practiceId },
+        subject: { type: 'Organisation', id: practiceId },
+        payload: {
+          // Non-null by the guard at the top of this method.
+          changedBy: meta.changedByName!.trim(),
+          reason: meta.reason.trim(),
+          // WHICH fields, never the values. An audit event is not a second copy
+          // of the contact book, and a phone number in the evidence chain is
+          // there for ever.
+          fieldsChanged: changes.map((c) => c.field).join(', '),
+          // The consequential half, spelled out: a reader in two years needs to
+          // know whether somebody lost access here. NOTHING is revoked at this
+          // point any more -- the address has not moved yet. The revocation is
+          // recorded against the confirmation, which is where it now happens.
+          passkeysRevoked: 0,
+          handoverNote:
+            [
+              handover && 'The administrator address is held pending confirmation from the new address. Nothing was revoked.',
+              pendingGroupEmail && 'The shared practice address is held pending confirmation from the new address.',
+            ]
+              .filter(Boolean)
+              .join(' ') || 'n/a',
+        },
+      });
+      return row;
+    });
+
+    // Which already-passed checks this touches. A reviewer who verified an
+    // address in March should be told when it changes in September.
+    const recorded = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.practiceCheck.findMany({ where: { outcome: 'passed' }, select: { checkKey: true } }),
+    );
+    const affectedChecks = checksAffectedBy(
+      changes,
+      recorded.map((r) => r.checkKey),
+    );
+
+    const waitingOn: string[] = [];
+    if (pendingAdminEmail) {
+      waitingOn.push(
+        `the administrator address has NOT changed yet: we have written to ${pendingAdminEmail.requestedEmail} ` +
+          `to confirm it, and told ${current.adminEmail ?? 'the previous address'}` +
+          `${current.groupEmail ? ' and ' + current.groupEmail : ''} that it was asked for`,
+      );
+    }
+    if (pendingGroupEmail) {
+      waitingOn.push(
+        `the shared practice address has NOT changed yet: we have written to ` +
+          `${pendingGroupEmail.requestedEmail} to confirm it, and told ` +
+          `${current.groupEmail ?? 'the previous address'}${current.adminEmail ? ' and ' + current.adminEmail : ''} ` +
+          'that it was asked for',
+      );
+    }
+
+    return {
+      id: updated.id,
+      changed: changes.map((c) => c.field),
+      handover,
+      // What is WAITING, so the screen can say so rather than implying the
+      // save did everything asked of it.
+      pending: { adminEmail: pendingAdminEmail, groupEmail: pendingGroupEmail },
+      affectedChecks,
+      next:
+        waitingOn.length > 0
+          ? `Everything else was saved. ${waitingOn.join('; ')}. Each takes effect when its new address ` +
+            'confirms, and until then the current one keeps working.'
+          : 'The details were updated.',
+    };
+  }
+
+  /**
+   * Revoke the outgoing administrator's passkey and point the account at
+   * whoever is taking over.
+   *
+   * THE ACCOUNT IS KEPT. It is the practice's — `admin.<practiceId>`, normally
+   * on a shared mailbox chosen so that a departure does not lock the practice
+   * out. What belongs to a person is the passkey, and that is what goes.
+   *
+   * Only `practice.adminKeycloakUserId` is ever touched — the account WE
+   * created for THIS practice — and never one found by looking up the old
+   * address. The difference is not theoretical: XLEVELUP was registered with an
+   * address that already belonged to a PLATFORM ADMINISTRATOR.
+   */
+  private async handOverAdminAccount(
+    practice: { adminKeycloakUserId: string | null },
+    to: { email?: string | null; name?: string | null },
+  ): Promise<{ passkeysRevoked: number; note: string }> {
+    if (!practice.adminKeycloakUserId) {
+      return {
+        passkeysRevoked: 0,
+        note: 'There was no practice-admin account yet, so there was nothing to revoke.',
+      };
+    }
+    try {
+      return await this.practiceAdmin.handOverPracticeAdminAccount(practice.adminKeycloakUserId, to);
+    } catch (err) {
+      // NEVER fails the amendment. The change to the record is what the
+      // operator asked for and a Keycloak hiccup must not roll it back. But it
+      // is reported loudly, because an amendment that BELIEVED it revoked a
+      // credential and did not is worse than one that never tried.
+      const note = `The previous passkey could NOT be revoked: ${(err as Error).message}`;
+      this.logger.error(`${note} (account ${practice.adminKeycloakUserId})`);
+      return { passkeysRevoked: 0, note };
+    }
+  }
+
+  /**
+   * Send the practice-admin sign-in invitation again.
+   *
+   * WHY THIS HAD TO EXIST. The invitation is created once, at the moment of
+   * approval, and its failure is deliberately non-fatal — an approval must not
+   * be rolled back because a mail server hiccuped. But there was then no way to
+   * try again, so an approved practice whose invitation failed had no route in
+   * at all, for ever.
+   *
+   * And it failed for an entirely ordinary reason: Keycloak enforces one email
+   * per realm, so a practice admin whose address already belongs to another
+   * account — a platform administrator, or the same person at a second
+   * practice — could not be created. The approval succeeded, the invitation did
+   * not, and nothing surfaced it.
+   *
+   * SAFE TO CALL REPEATEDLY. It creates the account if it does not exist and
+   * re-issues the enrolment link either way, which is what somebody chasing a
+   * lost email actually needs.
+   */
+  async resendAdminInvitation(practiceId: string, requestedByName: string) {
+    if (!requestedByName?.trim()) {
+      throw new BadRequestException('Re-sending an invitation must name the person asking for it.');
+    }
+
+    const practice = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.practice.findFirst({ where: { id: practiceId } }),
+    );
+    if (!practice) throw new NotFoundException('Practice not found.');
+
+    if (practice.validationState !== 'validated') {
+      throw new BadRequestException(
+        `This practice is ${practice.validationState}, so there is no sign-in to invite anybody to. ` +
+          'Approval is what opens consent capture, and the invitation goes out with it.',
+      );
+    }
+
+    const result = await this.practiceAdmin.onApproved({
+      organisationId: practiceId,
+      organisationName: practice.name,
+      adminName: practice.adminName,
+      adminEmail: practice.adminEmail,
+      approvedByName: practice.validatedByName ?? requestedByName.trim(),
+      entitlementMethod: practice.entitlementMethod,
+    });
+
+    await this.prisma.withPractice(practiceId, (tx) =>
+      enqueueVaultEvent(tx, {
+        type: 'organisation.invitation_resent',
+        actor: { principalType: 'staff', id: practiceId },
+        subject: { type: 'Organisation', id: practiceId },
+        payload: {
+          requestedBy: requestedByName.trim(),
+          // WHETHER it reached them, not the address itself.
+          invited: result.invited,
+          accountCreated: result.accountCreated,
+        },
+      }),
+    );
+
+    return { ...result, requestedBy: requestedByName.trim() };
+  }
+
   async addLocation(
     practiceId: string,
     input: {
@@ -588,14 +1420,30 @@ export class OrganisationsService {
           active: result.validated,
         },
       });
-      if (result.validated) {
-        await enqueueVaultEvent(tx, {
-          type: 'location.activated',
-          actor: { principalType: 'system', id: 'address_validation' },
-          subject: { type: 'PracticeLocation', id: location.id },
-          payload: { validator: this.addresses.kind, state: location.state ?? 'unknown' },
-        });
-      }
+      /*
+       * ALWAYS, not only when the address happened to validate.
+       *
+       * The event used to fire under `if (result.validated)`, so a location
+       * added with an address the national file did not recognise — which is
+       * the ordinary case for new developments and consulting suites — entered
+       * the system leaving no trace at all. A location's address prints in the
+       * s 65C(5)(a) particulars block of every agreement captured there, so
+       * "who added this place, and when" is not administrative trivia.
+       */
+      await enqueueVaultEvent(tx, {
+        type: result.validated ? 'location.activated' : 'location.added',
+        actor: result.validated
+          ? { principalType: 'system', id: 'address_validation' }
+          : { principalType: 'staff', id: practiceId },
+        subject: { type: 'PracticeLocation', id: location.id },
+        payload: {
+          validator: this.addresses.kind,
+          state: location.state ?? 'unknown',
+          // The distinction that matters later: was this confirmed by the
+          // address file, or is it waiting on a human?
+          addressValidated: result.validated,
+        },
+      });
       return {
         id: location.id,
         address: location.addressCanonical ?? location.address,
@@ -616,9 +1464,60 @@ export class OrganisationsService {
    * as the organisation queue — and recorded as a MANUAL validation so the
    * evidence never claims G-NAF confirmed something it did not.
    */
-  async activateLocation(practiceId: string, locationId: string, reviewerName: string) {
-    if (!reviewerName?.trim()) {
-      throw new BadRequestException('Activating a location must name the human who confirmed the address.');
+  /**
+   * Confirm a location's address. THE PLATFORM'S ACT, NOT THE PRACTICE'S.
+   *
+   * WHO confirmed it is the session user from the verified token — never a
+   * name typed into the request. A self-declared name in an audit record is
+   * indistinguishable later from a verified one, which makes the record worse
+   * than useless: it invites reliance it cannot support.
+   *
+   * Refusing an absent actor is deliberate. This writes an append-only vault
+   * event asserting that a person confirmed an address, and an event naming
+   * nobody cannot be questioned, corrected, or relied on. A 400 here is
+   * recoverable; a permanent record of an anonymous confirmation is not.
+   */
+  async activateLocation(
+    practiceId: string,
+    locationId: string,
+    actor?: Actor,
+    check?: { method?: string; note?: string; artefactId?: string },
+  ) {
+    if (!actor) {
+      throw new BadRequestException(
+        'Confirming an address records who did it, so it requires a signed-in reviewer. ' +
+          'No verified session was presented with this request.',
+      );
+    }
+
+    /*
+     * WHAT WAS ACTUALLY CHECKED. "Confirmed" on its own cannot be weighed by
+     * anybody later — not a regulator, not us, not the reviewer themselves in
+     * six months. The catalogue also refuses a document-based method with no
+     * document attached, because that record would read for ever as though a
+     * document had been examined when none was.
+     */
+    let method;
+    try {
+      method = assertRecordableCheck({
+        method: check?.method ?? '',
+        artefactId: check?.artefactId,
+        note: check?.note,
+      });
+    } catch (err) {
+      if (err instanceof AddressCheckError) throw new BadRequestException(err.message);
+      throw err;
+    }
+
+    // The artefact has to be this practice's. An id from another tenant would
+    // attach their evidence to our record — and confirm its existence.
+    if (check?.artefactId) {
+      const artefact = await this.prisma.withPractice(practiceId, (tx) =>
+        tx.artefact.findFirst({ where: { id: check.artefactId, practiceId } }),
+      );
+      if (!artefact) {
+        throw new BadRequestException('That document is not attached to this practice.');
+      }
     }
     await this.assertValidated(practiceId);
 
@@ -633,15 +1532,244 @@ export class OrganisationsService {
       }
       const updated = await tx.practiceLocation.update({
         where: { id: locationId },
-        data: { active: true, addressValidated: true, gnafVersion: `manual:${reviewerName.trim()}` },
+        data: {
+          active: true,
+          addressValidated: true,
+          gnafVersion: `manual:${actor.name}`,
+          addressCheckMethod: method.key,
+          addressCheckVersion: ADDRESS_CHECK_VERSION,
+          addressCheckNote: check?.note?.trim() || null,
+          addressCheckArtefactId: check?.artefactId ?? null,
+          addressCheckedAt: new Date(),
+          addressCheckedBySub: actor.id,
+          addressCheckedByName: actor.name,
+          // A confirmation ANSWERS an outstanding rejection. Leaving it set
+          // would show the practice "please correct this" under an address we
+          // have just accepted.
+          addressRejectedAt: null,
+          addressRejectedReason: null,
+          addressRejectedDetail: null,
+          addressRejectedByName: null,
+        },
       });
       await enqueueVaultEvent(tx, {
         type: 'location.activated',
+        // THE REVIEWER, not the practice. This said `id: practiceId` until now,
+        // which recorded the practice as having confirmed its own address —
+        // the exact thing restricting the endpoint was meant to prevent. The
+        // control was right and the evidence it produced contradicted it.
+        actor: { principalType: 'staff', id: actor.id },
+        subject: { type: 'PracticeLocation', id: locationId },
+        payload: {
+          validator: 'manual',
+          method: method.key,
+          methodStrength: method.strength,
+          checklistVersion: ADDRESS_CHECK_VERSION,
+          confirmedBy: actor.name,
+          confirmedBySub: actor.id,
+          ...(check?.note?.trim() ? { note: check.note.trim() } : {}),
+          ...(check?.artefactId ? { artefactId: check.artefactId } : {}),
+          onBehalfOfPractice: practiceId,
+          state: updated.state ?? 'unknown',
+        },
+      });
+      return {
+        id: updated.id,
+        active: updated.active,
+        state: updated.state,
+        validator: 'manual' as const,
+        method: method.key,
+      };
+    });
+  }
+
+  /**
+   * Send an address back to the practice, with a reason they can act on.
+   *
+   * WHY THIS HAD TO EXIST. Confirming an address was restricted to platform
+   * operators — correctly, because the practice supplying the evidence cannot
+   * be the party that verifies it. But a reviewer who looked and decided NOT
+   * to confirm had nothing to do except close the tab. The practice was then
+   * locked out of adding practitioners at that site, with no way to learn why
+   * and no way to fix it. A control that can only say yes is not a control;
+   * it is a queue that silently fills up.
+   *
+   * The rejection is a MESSAGE, not a deletion. The address stays exactly as
+   * entered, so the practice can see what we looked at.
+   */
+  async rejectAddress(
+    practiceId: string,
+    locationId: string,
+    actor?: Actor,
+    input?: { reason?: string; detail?: string },
+  ) {
+    if (!actor) {
+      throw new BadRequestException(
+        'Sending an address back records who did it, so it requires a signed-in reviewer.',
+      );
+    }
+
+    let reason;
+    try {
+      reason = assertSendableRejection({ reason: input?.reason ?? '', detail: input?.detail });
+    } catch (err) {
+      if (err instanceof AddressCheckError) throw new BadRequestException(err.message);
+      throw err;
+    }
+
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const location = await tx.practiceLocation.findFirst({ where: { id: locationId } });
+      if (!location) throw new NotFoundException('Location not found in this practice.');
+
+      /*
+       * A CONFIRMED ADDRESS IS NOT SENT BACK THIS WAY. It may already be
+       * printed on captured agreements, so withdrawing it is a different and
+       * heavier act than declining to confirm one in the first place — it has
+       * to reckon with what was captured while it stood.
+       */
+      if (location.addressValidated) {
+        throw new BadRequestException(
+          'This address has already been confirmed and may appear on captured agreements. ' +
+            'Withdrawing a confirmation is a separate step, not a rejection.',
+        );
+      }
+
+      const updated = await tx.practiceLocation.update({
+        where: { id: locationId },
+        data: {
+          active: false,
+          addressRejectedAt: new Date(),
+          addressRejectedReason: reason.key,
+          addressRejectedDetail: input?.detail?.trim() || null,
+          addressRejectedByName: actor.name,
+        },
+      });
+
+      await enqueueVaultEvent(tx, {
+        type: 'location.address_rejected',
+        actor: { principalType: 'staff', id: actor.id },
+        subject: { type: 'PracticeLocation', id: locationId },
+        payload: {
+          reason: reason.key,
+          ...(input?.detail?.trim() ? { detail: input.detail.trim() } : {}),
+          rejectedBy: actor.name,
+          rejectedBySub: actor.id,
+          onBehalfOfPractice: practiceId,
+        },
+      });
+
+      return {
+        id: updated.id,
+        rejectedAt: updated.addressRejectedAt,
+        reason: reason.key,
+        // What the PRACTICE will be shown. Returned so the reviewer can see
+        // exactly what their decision says to somebody else.
+        practiceGuidance: reason.practiceGuidance,
+      };
+    });
+  }
+
+  /**
+   * The practice corrects its own address — UNTIL SOMEBODY CONFIRMS IT.
+   *
+   * The rule lives in the domain (locationEditability) because it is a safety
+   * property, not a screen behaviour: before confirmation the address is a
+   * claim the practice is still making, and correcting it is ordinary work.
+   * After confirmation somebody independent has checked it and it may already
+   * be on captured agreements — a silent edit would invalidate that check
+   * while leaving the confirmation record standing, producing an address
+   * nobody checked that is wearing a confirmation.
+   *
+   * Editing CLEARS ANY REJECTION, because the practice has now answered it.
+   * Leaving it would show them a complaint about text they have just changed.
+   */
+  async updateLocation(
+    practiceId: string,
+    locationId: string,
+    input: {
+      addressLine1?: string;
+      addressLine2?: string;
+      suburb?: string;
+      state?: string;
+      postcode?: string;
+      country?: string;
+      code?: string;
+    },
+  ) {
+    await this.assertValidated(practiceId);
+
+    const existing = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.practiceLocation.findFirst({ where: { id: locationId } }),
+    );
+    if (!existing) throw new NotFoundException('Location not found in this practice.');
+
+    const editability = locationEditability(existing);
+    if (!editability.mayEdit) {
+      throw new BadRequestException(editability.reason ?? 'This address can no longer be edited here.');
+    }
+
+    const structured = this.structureAddress({
+      addressLine1: input.addressLine1 ?? existing.addressLine1 ?? undefined,
+      addressLine2: input.addressLine2 ?? existing.addressLine2 ?? undefined,
+      suburb: input.suburb ?? existing.suburb ?? undefined,
+      state: input.state ?? existing.state ?? undefined,
+      postcode: input.postcode ?? existing.postcode ?? undefined,
+      country: input.country ?? existing.country ?? undefined,
+    });
+    const result = await this.addresses.validate(structured.canonical);
+
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const updated = await tx.practiceLocation.update({
+        where: { id: locationId },
+        data: {
+          address: structured.canonical,
+          addressLine1: structured.address.addressLine1,
+          addressLine2: structured.address.addressLine2,
+          suburb: structured.address.suburb,
+          postcode: structured.address.postcode,
+          country: structured.address.country ?? 'Australia',
+          state: structured.address.state,
+          code: input.code ?? existing.code,
+          addressCanonical: result.canonical,
+          gnafPid: result.gnafPid,
+          gnafVersion: result.gnafVersion,
+          /*
+           * The address file may confirm the NEW text outright, in which case
+           * this needs no human at all. Otherwise it goes back to the queue —
+           * still unconfirmed, but no longer flagged as rejected, because the
+           * practice has answered.
+           */
+          addressValidated: result.validated,
+          active: result.validated,
+          addressRejectedAt: null,
+          addressRejectedReason: null,
+          addressRejectedDetail: null,
+          addressRejectedByName: null,
+        },
+      });
+
+      await enqueueVaultEvent(tx, {
+        type: 'location.address_corrected',
         actor: { principalType: 'staff', id: practiceId },
         subject: { type: 'PracticeLocation', id: locationId },
-        payload: { validator: 'manual', confirmedBy: reviewerName.trim(), state: updated.state ?? 'unknown' },
+        payload: {
+          // BOTH forms, because the point of the record is what changed.
+          previousAddress: existing.address,
+          address: structured.canonical,
+          ...(existing.addressRejectedReason ? { answeredRejection: existing.addressRejectedReason } : {}),
+          validator: this.addresses.kind,
+          addressValidated: result.validated,
+          state: updated.state ?? 'unknown',
+        },
       });
-      return { id: updated.id, active: updated.active, state: updated.state, validator: 'manual' as const };
+
+      return {
+        id: updated.id,
+        address: updated.address,
+        addressValidated: updated.addressValidated,
+        active: updated.active,
+        state: updated.state,
+      };
     });
   }
 
@@ -694,8 +1822,8 @@ export class OrganisationsService {
     }
 
     try {
-      return await this.prisma.withPractice(practiceId, (tx) =>
-        tx.practiceCredential.create({
+      return await this.prisma.withPractice(practiceId, async (tx) => {
+        const credential = await tx.practiceCredential.create({
           data: {
             practiceId,
             credentialType: input.credentialType,
@@ -703,8 +1831,22 @@ export class OrganisationsService {
             label: input.label,
             addedByName: input.addedByName,
           },
-        }),
-      );
+        });
+        await enqueueVaultEvent(tx, {
+          type: 'credential.added',
+          actor: { principalType: 'staff', id: practiceId },
+          subject: { type: 'PracticeCredential', id: credential.id },
+          payload: {
+            credentialType: credential.credentialType,
+            addedBy: input.addedByName ?? 'unnamed',
+            // Entry scores NOTHING; only a recorded check does
+            // (IDENTITY-STRENGTH-DESIGN 1). Saying so in the event keeps that
+            // true for anybody reading the chain rather than the code.
+            verified: false,
+          },
+        });
+        return credential;
+      });
     } catch (err) {
       if ((err as { code?: string }).code === 'P2002') {
         throw new ConflictException(
@@ -718,7 +1860,13 @@ export class OrganisationsService {
 
   async listCredentials(practiceId: string) {
     return this.prisma.withPractice(practiceId, async (tx) => {
-      const rows = await tx.practiceCredential.findMany({ orderBy: { addedAt: 'asc' } });
+      // Removed ones are retained but not LISTED. They are evidence of what
+      // happened, not part of what the practice currently offers — and the
+      // score counts what is offered.
+      const rows = await tx.practiceCredential.findMany({
+        where: { removedAt: null },
+        orderBy: { addedAt: 'asc' },
+      });
       return rows.map((c) => ({
         id: c.id,
         credentialType: c.credentialType,
@@ -775,10 +1923,72 @@ export class OrganisationsService {
     });
   }
 
-  async removeCredential(practiceId: string, credentialId: string) {
-    return this.prisma.withPractice(practiceId, (tx) =>
-      tx.practiceCredential.deleteMany({ where: { id: credentialId } }),
-    );
+  /**
+   * Remove a credential. IT IS NOT DELETED.
+   *
+   * A credential is identity evidence — an HPI-O, an accreditation, a number
+   * offered as proof this is a real health practice. It used to be a hard
+   * `deleteMany` with no event, so it could vanish leaving no record that it
+   * had existed and none that anybody had removed it. Nothing else here works
+   * that way: agreements CEASE and are retained, checks are append-only,
+   * affiliations end rather than disappear.
+   *
+   * It also moved the identity score with no trace of why. The score counts
+   * VERIFIED credentials, so deleting one silently lowered a practice's
+   * standing between two reviews and nothing could explain the drop.
+   *
+   * A REASON IS REQUIRED. "Removed" answers nothing on its own: entered twice,
+   * belonged to a different practice, and turned out to be false are three very
+   * different findings, and only the third says anything about the applicant.
+   */
+  async removeCredential(
+    practiceId: string,
+    credentialId: string,
+    input: { removedByName: string; reason: string },
+  ) {
+    if (!input.removedByName?.trim()) {
+      throw new BadRequestException('Removing a credential must name the person doing it.');
+    }
+    if (!input.reason?.trim()) {
+      throw new BadRequestException(
+        'Removing a credential must record why. "Entered twice", "belongs to another practice" and "turned ' +
+          'out to be false" are very different findings, and only the last says anything about the applicant.',
+      );
+    }
+
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const credential = await tx.practiceCredential.findFirst({
+        where: { id: credentialId, removedAt: null },
+      });
+      if (!credential) {
+        throw new NotFoundException('That credential is not in this practice, or has already been removed.');
+      }
+
+      const updated = await tx.practiceCredential.update({
+        where: { id: credentialId },
+        data: {
+          removedAt: new Date(),
+          removedByName: input.removedByName.trim(),
+          removedReason: input.reason.trim(),
+        },
+      });
+
+      await enqueueVaultEvent(tx, {
+        type: 'credential.removed',
+        actor: { principalType: 'staff', id: practiceId },
+        subject: { type: 'PracticeCredential', id: credentialId },
+        payload: {
+          credentialType: updated.credentialType,
+          removedBy: input.removedByName.trim(),
+          reason: input.reason.trim(),
+          // Whether the score just moved, which is the consequence somebody
+          // reading this later will be trying to explain.
+          wasVerified: Boolean(credential.verifiedAt),
+        },
+      });
+
+      return { id: updated.id, removedAt: updated.removedAt, wasVerified: Boolean(credential.verifiedAt) };
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -791,9 +2001,16 @@ export class OrganisationsService {
       const location = await tx.practiceLocation.findFirst({ where: { id: input.locationId } });
       if (!location) throw new NotFoundException('Location not found in this practice.');
       try {
-        return await tx.department.create({
+        const department = await tx.department.create({
           data: { practiceId, locationId: input.locationId, name: input.name },
         });
+        await enqueueVaultEvent(tx, {
+          type: 'department.added',
+          actor: { principalType: 'staff', id: practiceId },
+          subject: { type: 'Department', id: department.id },
+          payload: { name: department.name, locationId: input.locationId },
+        });
+        return department;
       } catch (err) {
         if ((err as { code?: string }).code === 'P2002') {
           throw new ConflictException(`"${input.name}" already exists at this location.`);

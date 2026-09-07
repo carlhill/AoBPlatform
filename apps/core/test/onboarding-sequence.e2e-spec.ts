@@ -20,6 +20,10 @@ import { MESSAGING_GATEWAY, SandboxGateway } from '../src/messaging/gateway';
 // each suite's cleanup destroy the other's setup depending on run order.
 const COMPANY_ABN = '12001259121';
 const SOLE_ABN = '12001369987';
+// Its own ABN, so proving the database constraint does not consume the one the
+// happy path needs — one organisation per ABN is itself a rule here.
+const CONSTRAINT_ABN = '12001510291';
+const ACK_ABN = '12001620014';
 
 describe('practice onboarding sequence (e2e)', () => {
   let app: INestApplication;
@@ -61,7 +65,7 @@ describe('practice onboarding sequence (e2e)', () => {
   };
 
   const wipe = async () => {
-    for (const abn of [COMPANY_ABN, SOLE_ABN]) {
+    for (const abn of [COMPANY_ABN, SOLE_ABN, CONSTRAINT_ABN, ACK_ABN]) {
       const stale = await prisma.$queryRaw<Array<{ id: string }>>`
         SELECT id FROM find_organisation_by_abn(${abn})`;
       for (const org of stale) {
@@ -115,16 +119,86 @@ describe('practice onboarding sequence (e2e)', () => {
       await api().post('/organisations').send(withoutAddress).expect(400);
     });
 
-    it('REFUSES A MANAGER WHO IS THE APPLICANT — that is not a second contact', async () => {
+    // The second contact exists to give a reviewer somebody to call who is not
+    // the applicant. Both halves of that are tested, because a control that
+    // covers only the inbox is defeated by reusing the handset.
+    it('REFUSES A MANAGER WHO SHARES THE APPLICANT’S EMAIL — one inbox is not two contacts', async () => {
       const res = await api()
         .post('/organisations')
         .send(application({ managerEmail: 'robin@sampletown.invalid' }))
-        // 400, not 500: DatabaseExceptionFilter turns a deliberate CHECK
-        // refusal into an answer the operator can act on. A rule that fires
-        // and reports "Internal server error" is invisible enforcement.
         .expect(400);
-      expect(res.body.message).toMatch(/manager_is_a_different_person/);
-      expect(res.body.sqlState).toBe('23514');
+      // The message names the PROBLEM, not the constraint. An operator cannot
+      // act on "practices_manager_is_a_different_person".
+      expect(res.body.message).toMatch(/one inbox/);
+      expect(res.body.message).toMatch(/FR-1\.9/);
+    });
+
+    it('REFUSES A MANAGER WHO SHARES THE APPLICANT’S PHONE — one handset is not two contacts', async () => {
+      const res = await api()
+        .post('/organisations')
+        .send(application({ managerPhone: '0408169971', adminPhone: '0408169971' }))
+        .expect(400);
+      expect(res.body.message).toMatch(/one handset/);
+      expect(res.body.message).toMatch(/FR-1\.9/);
+    });
+
+    it('refuses a shared phone written in a different format — these are one number', async () => {
+      const res = await api()
+        .post('/organisations')
+        .send(application({ adminPhone: '0408169971', managerPhone: '+61 408 169 971' }))
+        .expect(400);
+      expect(res.body.message).toMatch(/one handset/);
+    });
+
+    // The database carries the same rule, because the service is not the
+    // boundary — anything that writes to the table must be refused too.
+    it('is enforced by the DATABASE as well, not only by the service', async () => {
+      const created = await api()
+        .post('/organisations')
+        .send(application({ abn: CONSTRAINT_ABN }))
+        .expect(201);
+      await expect(
+        prisma.withPractice(created.body.id, (tx) =>
+          tx.$executeRaw`UPDATE practices SET "managerPhone" = "adminPhone" WHERE id = ${created.body.id}::uuid`,
+        ),
+      ).rejects.toThrow(/manager_is_a_different_person/);
+    });
+
+    // The applicant is told the form worked, immediately. Before this existed
+    // they submitted, saw "you will hear from us either way", and then heard
+    // nothing until a decision — which reads as a form that went nowhere, and
+    // the predictable response is to submit again.
+    it('ACKNOWLEDGES the applicant on arrival, with the reference', async () => {
+      const res = await api().post('/organisations').send(application({ abn: ACK_ABN })).expect(201);
+      expect(res.body.acknowledgement.notified).toBe(true);
+
+      // Matched on THIS application's reference, not merely on the subject
+      // line — earlier tests in this suite have acknowledgements in the outbox
+      // too, and finding one of theirs would prove nothing about this one.
+      const ack = outbox.outbox().find((m) => m.subject?.includes(res.body.id));
+      expect(ack).toBeDefined();
+      expect(ack!.to).toBe('robin@sampletown.invalid');
+      // The reference, so a follow-up call has something to quote.
+      expect(ack!.body).toContain(res.body.id);
+      /*
+       * It must not imply an outcome — an acknowledgement that reads as
+       * encouragement is the beginning of "but your email said".
+       *
+       * The guard is on the CLAIM, not on the vocabulary. Banning the word
+       * "approved" outright also bans "your sign-in invitation, if it is
+       * approved", which is a conditional and is exactly the honest way to
+       * describe what happens next. So: no congratulation, no assertion that it
+       * has been accepted, and any mention of approval must be conditional.
+       */
+      expect(ack!.body).not.toMatch(/congratul|success|has been approved|we have approved|you are approved/i);
+      expect(ack!.body).not.toMatch(/your application (has been |was )?(accepted|approved)/i);
+      for (const match of ack!.body.match(/[^.]*\bapprov\w*/gi) ?? []) {
+        expect(match).toMatch(/\bif\b/i);
+      }
+      // And it must not confirm anything about the entity: email is not an
+      // authenticated channel, so this may reveal nothing the applicant did not
+      // already see on their own screen.
+      expect(ack!.body).not.toContain(application().abn);
     });
 
     it('accepts a complete application and stores both contacts', async () => {

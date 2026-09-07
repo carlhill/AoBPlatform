@@ -20,6 +20,7 @@ import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MESSAGING_GATEWAY, type MessagingGateway } from '../messaging/gateway';
 import { correctionBody, noticeBody, noticeSubject } from './notice-template';
+import { CorrespondenceService } from '../correspondence/correspondence.service';
 
 const SYSTEM_ACTOR = { principalType: 'system', id: 'core' } as const;
 
@@ -41,6 +42,7 @@ export class NoticesService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(MESSAGING_GATEWAY) private readonly gateway: MessagingGateway,
+    private readonly correspondence: CorrespondenceService,
   ) {}
 
   /**
@@ -171,26 +173,47 @@ export class NoticesService {
       benefitAmountCents: notice.benefitAmountCents,
     };
     const to = channel === 'email' ? (patient?.email ?? '') : (patient?.mobile ?? '');
-    const result = await this.gateway.dispatch({
-      channel,
-      to,
-      subject: noticeSubject(content),
-      body: notice.correctionReason
-        ? correctionBody(content, practiceName, notice.correctionReason)
-        : noticeBody(content, practiceName),
-    });
+    const subject = noticeSubject(content);
+    const body = notice.correctionReason
+      ? correctionBody(content, practiceName, notice.correctionReason)
+      : noticeBody(content, practiceName);
+    const result = await this.gateway.dispatch({ channel, to, subject, body });
+
+    /*
+     * THE NOTICE KEEPS ITS STATUTORY SHAPE AND ALSO WRITES CORRESPONDENCE
+     * (CONSULTATION-CAPTURE-PLAN.md §4.1, Q5) — the row that lets one screen
+     * show the 89AA notice beside everything else sent to this patient.
+     */
+    const mirror = (tx: Parameters<CorrespondenceService['recordForNotice']>[0], at: Date) =>
+      patient
+        ? this.correspondence.recordForNotice(tx, {
+            noticeId,
+            practiceId,
+            patientId: patient.id,
+            patientName: notice.patientName,
+            to,
+            channel,
+            subject,
+            bodyText: body,
+            accepted: result.accepted,
+            failureReason: result.failureReason,
+            at,
+          })
+        : Promise.resolve(null);
 
     return this.prisma.withPractice(practiceId, async (tx) => {
       if (!result.accepted) {
+        const failedAt = new Date();
         const updated = await tx.notice.update({
           where: { id: noticeId },
           data: {
-            failedAt: new Date(),
+            failedAt,
             failureCode: result.failureCode,
             failureReason: result.failureReason,
             attempts: { increment: 1 },
           },
         });
+        await mirror(tx, failedAt);
         await this.recordState(tx, practiceId, noticeId, 'failed', channel, { code: result.failureCode ?? '' });
         await enqueueVaultEvent(tx, {
           type: 'notice.failed',
@@ -214,6 +237,7 @@ export class NoticesService {
           failureReason: null,
         },
       });
+      await mirror(tx, dispatchedAt);
       await this.recordState(tx, practiceId, noticeId, 'dispatched', channel, {
         gatewayMessageId: result.gatewayMessageId ?? '',
         withinWindow: dispatchedWithinWindow(notice.claimLodgedAt, dispatchedAt),
@@ -237,7 +261,9 @@ export class NoticesService {
     return this.prisma.withPractice(practiceId, async (tx) => {
       const notice = await tx.notice.findFirst({ where: { id: noticeId } });
       if (!notice) throw new NotFoundException('Notice not found.');
-      const updated = await tx.notice.update({ where: { id: noticeId }, data: { deliveredAt: new Date() } });
+      const deliveredAt = new Date();
+      const updated = await tx.notice.update({ where: { id: noticeId }, data: { deliveredAt } });
+      await this.correspondence.markDeliveredForNotice(tx, noticeId, deliveredAt);
       await this.recordState(tx, practiceId, noticeId, 'delivered', notice.dispatchChannel, {});
       await enqueueVaultEvent(tx, {
         type: 'notice.delivered',

@@ -1,0 +1,731 @@
+/**
+ * PUSH-TO-DEVICE CAPTURE — reception hands the patient a locked screen
+ * (TODO.md "Push-to-device capture", "Two front doors", Carl 4 Sep 2026).
+ *
+ * THE SECOND FRONT DOOR, and it is a different use case rather than a
+ * different kiosk. The walk-up kiosk at `/kiosk` is for an unsupported patient
+ * who finds their own name and types their details to prove it is them. This
+ * is for the patient standing AT RECEPTION, whose Medicare card has already
+ * been checked, who has already been matched in the PMS, and who has already
+ * been asked date of birth, mobile, email and address across the desk — the
+ * three-identifier staff check (REQ-VER-03). They never search and they never
+ * type; they tick their details as correct, read, and approve.
+ *
+ * WHY THE PUSH IS STRONGER ON THE HARD RULE, not merely faster. REQ-REG-06
+ * says the particulars must be complete and locked before the signature
+ * control can enable, and signing a draft is the criminal offence in this
+ * regime. In a PULL model a device assembles a payload and then asks. In a
+ * PUSH model the payload is validated and locked on the SERVER before any
+ * device sees it, so a tablet structurally cannot hold a draft.
+ *
+ * THE PUSH IS THE VERIFICATION RECORD. Reception cannot push until the
+ * staff-verified check is recorded, and the push carries the staff identity
+ * (REQ-VER-03/-04). The patient's ticks that follow are NOT a verification and
+ * must never be recorded as one: a displayed value confirmed by whoever holds
+ * the tablet proves nothing about who is holding it. They are a data-accuracy
+ * confirmation, which is part of the agreement ceremony.
+ *
+ * WHAT IS IN THIS FILE. The shapes and rules both halves of the product must
+ * agree on — the state machine, the idle timeout, the field lists, and the
+ * projection that builds the tablet's payload by PICKING permitted fields.
+ * The tablet, the console and the server all read them from here, so no two of
+ * them can hold different opinions about what a session is.
+ */
+
+import type { AgreementType } from './agreement';
+
+/**
+ * THE STATES, and the two halves of the list are the whole design.
+ *
+ * Three of them are LIVE — the tablet is showing something and the session
+ * still owns the device. Four are ENDED, and an ended session is over: it
+ * never reopens, it releases the device, and the tablet's next poll sees
+ * nothing. That is what makes "one session per device" a fact about the
+ * database rather than a hope about the callers.
+ */
+/**
+ * `details_disputed` IS LIVE, NOT AN ENDING (Carl, 4 Sep 2026). The patient
+ * crossed at least one row, so the ceremony stops — Continue is dead on the
+ * tablet — but the SESSION does not, and neither does the device's claim on
+ * it. Reception sees the cross, corrects the detail at the desk (or records
+ * "no change needed") and re-sends, and the re-send is a NEW session. Once the
+ * cross has reached reception the patient cannot tick it after all: the tablet
+ * locks with "please wait for reception", and a second `confirm-details` on a
+ * disputed session is refused with 409 `session_disputed` (Carl, 4 Sep 2026,
+ * later the same day — reception may already be correcting the record, so the
+ * tablet must not carry on against details mid-correction).
+ *
+ * ENDING IT WOULD BE THE WRONG SHAPE for two reasons that both bite. The
+ * device would be released, so the tablet in the patient's hands would fall
+ * back to the idle screen mid-conversation; and reception's live list is built
+ * from ACTIVE sessions, so the one row they need to act on is the one row that
+ * would vanish. A dispute is a fact about the details, not about the session.
+ */
+export const ACTIVE_TABLET_SESSION_STATES = [
+  'pushed',
+  'reading',
+  'details_confirmed',
+  'details_disputed',
+] as const;
+
+/**
+ * THE FIVE WAYS A SESSION ENDS, and only ONE of them touches the agreement.
+ *
+ *  - `signed`      — the assignor signed. The agreement moved; the session
+ *                    merely records that it did.
+ *  - `walked_away` — the "See reception" exit on the tablet, pressed by
+ *                    somebody standing at it. NOTHING on the agreement
+ *                    changes, and that is REQ-REC-04 in a single word: the
+ *                    patient is still seen, and reception chooses a private
+ *                    bill or an episodic agreement after the service. A flow
+ *                    that punished walking away would be a flow that blocks
+ *                    care.
+ *  - `timed_out`   — the CLIENT-SIDE inactivity clock fired on a pushed
+ *                    session; nobody pressed anything (Carl, 4 Sep 2026).
+ *                    Same effect on the record as `walked_away` — the session
+ *                    ends, the agreement is untouched, the device is
+ *                    released back to idle — but a different stored state, so
+ *                    reception can tell "the patient asked for help" from
+ *                    "the patient's record sat on the screen until the clock
+ *                    reset it". Distinct from `expired` below: that is the
+ *                    SERVER giving up after thirty minutes of no request at
+ *                    all; this is the tablet's own five-minute-by-default
+ *                    clock (`useInactivityReset`), which almost always fires
+ *                    first and posts this state itself.
+ *  - `recalled`    — reception took it back from the console. Same: nothing on
+ *                    the agreement changes.
+ *  - `expired`     — thirty minutes with no request reaching the SERVER at
+ *                    all — the backstop for a tablet that never got to post
+ *                    its own timeout (killed, offline, crashed). Same again.
+ *  - `declined_enduring` — the patient read the ongoing agreement and chose
+ *                    "I'd rather agree each visit" (Carl, 4 Sep 2026). It is
+ *                    an ENDING like the four above and it changes NOTHING on
+ *                    the agreement, but it is its own word because it is its
+ *                    own fact and it has its own next step: reception offers
+ *                    an episodic agreement for today's visit instead. Filing
+ *                    it under `walked_away` would lose the one thing worth
+ *                    knowing — the patient did not leave, they answered.
+ *                    Declining an ongoing agreement is not declining care and
+ *                    is not declining bulk billing (hard rule 8, REQ-REC-04).
+ *
+ *  - `signature_failed` — the person signed, the request REACHED the server,
+ *                    and the server refused it (Carl, 7 Sep 2026). It is an
+ *                    ENDING because the tablet has nothing left to offer: the
+ *                    payload it holds is the payload that was just refused, so
+ *                    letting it sit on the signature screen invites the same
+ *                    refusal again while a patient watches. The screen says
+ *                    "please see reception" and clears; the agreement is
+ *                    UNTOUCHED, exactly as with every other ending here, and
+ *                    reception re-sends from a row that names the reason
+ *                    (`signatureFailureReason`).
+ *
+ *                    IT IS NOT AN OUTAGE. A request that never reached the
+ *                    server produces no state at all — the heartbeat's outage
+ *                    screen owns that, and a device asserting an ending it
+ *                    could not have observed would be a device asserting a
+ *                    fact about the server.
+ */
+export const ENDED_TABLET_SESSION_STATES = [
+  'signed',
+  'walked_away',
+  'timed_out',
+  'recalled',
+  'expired',
+  'declined_enduring',
+  'signature_failed',
+] as const;
+
+/**
+ * WHY A SIGNATURE WAS REFUSED — a CODE, never the server's own sentence, and
+ * never anything about the patient (Carl, 7 Sep 2026).
+ *
+ * THE SAME CONSTRUCTION AS `PUSH_BLOCKED_REASONS` and for the same reason: the
+ * console maps each code to its own string-table entry plus a destination, so
+ * a refusal reads as guidance to a receptionist rather than as a server error,
+ * and an UNMAPPED code shows the code itself so it can be diagnosed rather
+ * than disappearing into a generic sentence ("Shortcuts to the answer",
+ * CLAUDE.md §7).
+ *
+ * THESE ARE THE REFUSALS `POST /agreements/:id/sign` ACTUALLY MAKES, read off
+ * that method and given names — not a wish list. The wire is deliberately not
+ * closed to this set: the DTO accepts any snake_case code, because a newer
+ * server refusing for a newer reason must reach reception as its code rather
+ * than be rejected on the way in.
+ */
+export const SIGNATURE_REFUSAL_REASONS = [
+  /**
+   * THE TABLET DID NOT SEND THE TICKED STATEMENTS. The refusal Carl hit on
+   * 7 September 2026: a tab running a bundle from before the statements
+   * existed signed without them, and the server was right to refuse
+   * (`signature_requires_every_statement_affirmed`). Almost always a stale
+   * bundle, which is why the kiosk answers it with one hard reload.
+   */
+  'affirmations_missing',
+  /** REQ-REG-06: the particulars were not complete, locked and validated. */
+  'not_locked',
+  /** Somebody already signed it — a second tablet, the desk, or a double tap. */
+  'already_signed',
+  /** The agreement is not at the signing step at all: declined, expired, still a draft. */
+  'not_awaiting_signature',
+  /** A drawn signature arrived with no strokes, or a tap arrived carrying some. */
+  'signature_capture_invalid',
+  /** The storage-time s 65C pass failed (REQ-65C-01, "and again at storage"). */
+  'storage_validation_failed',
+] as const;
+
+export type SignatureRefusalReason = (typeof SIGNATURE_REFUSAL_REASONS)[number];
+
+export function isSignatureRefusalReason(value: string): value is SignatureRefusalReason {
+  return (SIGNATURE_REFUSAL_REASONS as readonly string[]).includes(value);
+}
+
+export const TABLET_SESSION_STATES = [
+  ...ACTIVE_TABLET_SESSION_STATES,
+  ...ENDED_TABLET_SESSION_STATES,
+] as const;
+
+export type ActiveTabletSessionState = (typeof ACTIVE_TABLET_SESSION_STATES)[number];
+export type EndedTabletSessionState = (typeof ENDED_TABLET_SESSION_STATES)[number];
+export type TabletSessionState = (typeof TABLET_SESSION_STATES)[number];
+
+export function isTabletSessionState(value: string): value is TabletSessionState {
+  return (TABLET_SESSION_STATES as readonly string[]).includes(value);
+}
+
+export function isActiveTabletSessionState(value: string): value is ActiveTabletSessionState {
+  return (ACTIVE_TABLET_SESSION_STATES as readonly string[]).includes(value);
+}
+
+/**
+ * THE STATES THE TABLET MAY SET ITSELF, which is deliberately not all of them.
+ *
+ * A device may say it is showing the agreement, that the person walked away,
+ * or that its own inactivity clock ended the session with nobody there
+ * (`timed_out`, Carl 4 Sep 2026 — same effect as `walked_away`, different
+ * label, so reception can tell the two apart). It may NOT declare itself
+ * signed — that is what a signature event says, and a device that could
+ * assert it would be a device that could assert a contract. It may not
+ * recall itself either; recall is a console act, for the same reason revoke
+ * is (TODO.md "Zero-footprint kiosk"). And it may not declare itself
+ * `expired` — that is the SERVER's own word for giving up on a screen nobody
+ * asked it to watch; a device cannot assert that about itself.
+ */
+/*
+ * `declined_enduring` IS DEVICE-SETTABLE AND THE OTHER ENDINGS ARE NOT, for
+ * the same reason `walked_away` is: it is a thing the person standing at the
+ * tablet DID, and only the tablet was there when they did it. It asserts
+ * nothing about the contract — the agreement is untouched, exactly as a
+ * walk-away leaves it — and what follows is reception's act, not the device's.
+ */
+/*
+ * `signature_failed` IS DEVICE-SETTABLE AND `signed` IS NOT, which reads like
+ * a contradiction and is not (Carl, 7 Sep 2026).
+ *
+ * A device may not declare a signature RECORDED, because that is an assertion
+ * about a contract and only a signature event may make it. Declaring one
+ * REFUSED asserts nothing about the contract — the agreement is untouched —
+ * and the only fact it carries is one the device is the sole witness to: it
+ * asked, and it was told no. The reason travels as the SERVER'S OWN CODE,
+ * echoed back rather than composed by the tablet, so the device is reporting
+ * the answer it was given rather than diagnosing anything.
+ *
+ * A DEVICE CANNOT USE IT TO END A SESSION IT DISLIKES either: the ending it
+ * reaches for when nobody signed is `walked_away`, and this one produces a
+ * reception row that says "send it again", not a row that says anything
+ * happened to the agreement.
+ */
+export const DEVICE_SETTABLE_TABLET_SESSION_STATES = [
+  'reading',
+  'walked_away',
+  'timed_out',
+  'declined_enduring',
+  'signature_failed',
+] as const;
+export type DeviceSettableTabletSessionState = (typeof DEVICE_SETTABLE_TABLET_SESSION_STATES)[number];
+
+export function isDeviceSettableTabletSessionState(
+  value: string,
+): value is DeviceSettableTabletSessionState {
+  return (DEVICE_SETTABLE_TABLET_SESSION_STATES as readonly string[]).includes(value);
+}
+
+/**
+ * THIRTY MINUTES OF NOTHING AND THE SESSION IS OVER.
+ *
+ * A tablet in a waiting room showing somebody's date of birth and address is
+ * the screen-hygiene problem the pull model never had (TODO.md
+ * "Push-to-device capture"). The patient who was called in, or who wandered
+ * off, must not leave their particulars on a screen anyone can read; and the
+ * device must not stay busy so that the next push is refused for a session
+ * nobody is standing at.
+ *
+ * IT CHANGES NOTHING ON THE AGREEMENT. An expiry is the platform giving up on
+ * a screen, never on a patient.
+ */
+export const TABLET_SESSION_IDLE_MS = 30 * 60 * 1000;
+
+export function tabletSessionIsStale(lastStateAt: Date | string, now: Date = new Date()): boolean {
+  const at = lastStateAt instanceof Date ? lastStateAt : new Date(lastStateAt);
+  if (Number.isNaN(at.getTime())) return false;
+  return now.getTime() - at.getTime() >= TABLET_SESSION_IDLE_MS;
+}
+
+/**
+ * WHAT THE PATIENT TICKS, AND WHY IT IS NOT THE IDENTIFIER LIST.
+ *
+ * Three of these — name, date of birth, address — are also approved
+ * identifiers. Two are NOT: a mobile number and an email address are CONTACT
+ * DETAILS and are never identity identifiers (REQ-VER-02; TODO.md calls this
+ * "the Medicare-number mistake, one step sideways"). Show them, confirm them,
+ * and never count them toward the three or log them as an identifier type.
+ *
+ * SO THIS LIST IS DELIBERATELY A DIFFERENT LIST FROM `APPROVED_IDENTIFIER_TYPES`
+ * even though it overlaps it, and the event it produces is deliberately not a
+ * verification event. Ticking a displayed value is a DATA-ACCURACY check by
+ * whoever is holding the tablet; verification is the staff check across the
+ * desk that the push already recorded (REQ-VER-03).
+ */
+export const CONFIRMABLE_DETAIL_TYPES = [
+  'name',
+  'date_of_birth',
+  'address',
+  'mobile',
+  'email',
+] as const;
+
+export type ConfirmableDetailType = (typeof CONFIRMABLE_DETAIL_TYPES)[number];
+
+export function isConfirmableDetailType(value: string): value is ConfirmableDetailType {
+  return (CONFIRMABLE_DETAIL_TYPES as readonly string[]).includes(value);
+}
+
+/**
+ * THE THREE THAT ARE PARTICULARS, AND THE TWO THAT ARE NOT (Carl, 4 Sep 2026).
+ *
+ * Name, date of birth and address are the patient's own particulars — the
+ * D-set facts the agreement is about. A mobile number and an email address are
+ * CONTACT details: they say where a copy of the agreement goes, and they say
+ * nothing about the contract. So correcting one of the first three on a LOCKED
+ * agreement means the artefact that was rendered and hashed no longer states
+ * what the platform holds, and the correction supersedes rather than edits
+ * (HARD-02). Correcting a mobile or an email never does.
+ *
+ * ONE HONEST CAVEAT, STATED HERE BECAUSE IT WILL BE MISREAD OTHERWISE. Of the
+ * three, only the NAME actually reaches the rendered artefact today —
+ * `prepareLock` assembles `patientName` and nothing else about the person, so
+ * a corrected date of birth or address changes no hashed byte as the renderer
+ * currently stands. This list is deliberately WIDER than that: it is the
+ * D-set as Carl named it, it fails toward superseding rather than toward
+ * quietly re-using a locked contract, and a renderer that grows a date of
+ * birth later must not silently turn a safe rule into an unsafe one. Narrowing
+ * it is a decision for Carl, not a tidy-up.
+ */
+export const PARTICULAR_DETAIL_TYPES = ['name', 'date_of_birth', 'address'] as const;
+
+export type ParticularDetailType = (typeof PARTICULAR_DETAIL_TYPES)[number];
+
+export function isParticularDetailType(value: string): value is ParticularDetailType {
+  return (PARTICULAR_DETAIL_TYPES as readonly string[]).includes(value);
+}
+
+/** Does correcting any of these types mean the locked agreement must be superseded? */
+export function correctionTouchesParticulars(types: readonly string[]): boolean {
+  return types.some(isParticularDetailType);
+}
+
+/**
+ * HOW A DISPUTE ENDED, and there are exactly two honest answers (Carl, 4 Sep
+ * 2026).
+ *
+ *  - `corrected`     — reception changed the detail on the platform's mirror.
+ *                      That act has its own event (`patient.details_corrected`);
+ *                      the resolution says WHY it was made.
+ *  - `patient_error` — the detail we hold was right and the patient crossed it
+ *                      anyway. A mis-tap, or an old address read and disowned
+ *                      before the person remembers they moved.
+ *
+ * THE SECOND IS WHY THE CONCEPT EXISTS. Without it, reception's only way out
+ * of a dispute is to "correct" a detail that needs no correction — an event in
+ * the vault claiming a change nobody made — or to leave the cross hanging.
+ *
+ * THERE IS NO THIRD OPTION AND NO FREE TEXT. "Something else happened" is not
+ * a resolution, and a note field on a staff surface is where a patient's
+ * details end up written out in prose beside a record designed to carry none
+ * (REQ-LOG-08).
+ *
+ * IT LIVES HERE, NOT IN THE SERVICE, because four things must agree about it:
+ * the DTO that accepts it, the CHECK constraint that stores it, the row the
+ * console renders, and the vault event that evidences it. A second copy is the
+ * one that drifts.
+ */
+export const DISPUTE_RESOLUTION_OUTCOMES = ['corrected', 'patient_error'] as const;
+
+export type DisputeResolutionOutcome = (typeof DISPUTE_RESOLUTION_OUTCOMES)[number];
+
+export function isDisputeResolutionOutcome(value: string): value is DisputeResolutionOutcome {
+  return (DISPUTE_RESOLUTION_OUTCOMES as readonly string[]).includes(value);
+}
+
+/**
+ * WHAT RECEPTION MAY CORRECT ON THE PLATFORM'S MIRROR, and the list is the
+ * whole of it (TODO.md "Check-your-details", Carl 4 Sep 2026).
+ *
+ * SIX FIELDS, FIVE DETAIL TYPES — the name is two columns and one row on the
+ * tablet, because a patient does not read "given names" and "family name" as
+ * two questions.
+ *
+ * THERE IS NO MEDICARE FIELD HERE AND THERE IS NO WAY TO ADD ONE. The card
+ * number is not an identity identifier, the exclusion is non-configurable
+ * (hard rule 1, REQ-VER-02), and the correction endpoint refuses any field
+ * name matching /medicare/i before it looks at this list at all — the ESLint
+ * rule would fail the build on the identifier as well.
+ *
+ * NOR IS THERE A GENDER, PATIENT RECORD NUMBER OR IHI. Those are identifiers
+ * the patient was never shown and never asked about, so a dispute cannot be
+ * about them and a correction here would be reception editing an identifier
+ * off the back of a screen that did not mention it.
+ */
+export const CORRECTABLE_PATIENT_FIELDS = [
+  'givenNames',
+  'familyName',
+  'dateOfBirth',
+  'address',
+  'mobile',
+  'email',
+] as const;
+
+export type CorrectablePatientField = (typeof CORRECTABLE_PATIENT_FIELDS)[number];
+
+export function isCorrectablePatientField(value: string): value is CorrectablePatientField {
+  return (CORRECTABLE_PATIENT_FIELDS as readonly string[]).includes(value);
+}
+
+/**
+ * WHICH TICK-BOX A CORRECTED COLUMN ANSWERS. The vault event records the TYPE
+ * (REQ-VER-04) — `name`, not "Jamie Sampleton" and not `givenNames` — so the
+ * evidence reads in the same vocabulary the patient's cross did.
+ */
+const DETAIL_TYPE_BY_FIELD: Readonly<Record<CorrectablePatientField, ConfirmableDetailType>> = {
+  givenNames: 'name',
+  familyName: 'name',
+  dateOfBirth: 'date_of_birth',
+  address: 'address',
+  mobile: 'mobile',
+  email: 'email',
+};
+
+export function detailTypeForPatientField(field: CorrectablePatientField): ConfirmableDetailType {
+  return DETAIL_TYPE_BY_FIELD[field];
+}
+
+/**
+ * WHICH ROWS THE TABLET DREW, DECIDED BY THE SERVER RATHER THAN TAKEN FROM THE
+ * DEVICE.
+ *
+ * A row the practice holds nothing for is not drawn — nobody is shown a blank
+ * line and asked whether it is correct — so "every row answered" means exactly
+ * "every type in this list". The tablet derives the same set from the same
+ * payload, and `confirm-details` CHECKS the two agree instead of trusting the
+ * device's arithmetic: a session that reached `details_confirmed` having
+ * answered three of five rows would be a ceremony record that says more than
+ * happened.
+ */
+export function shownDetailTypesFor(patient: TabletSessionPatient): readonly ConfirmableDetailType[] {
+  const shown: ConfirmableDetailType[] = [];
+  for (const type of CONFIRMABLE_DETAIL_TYPES) {
+    const value =
+      type === 'name'
+        ? [patient.givenNames, patient.familyName].map((part) => (part ?? '').trim()).join(' ')
+        : type === 'date_of_birth'
+          ? (patient.dateOfBirth ?? '')
+          : type === 'address'
+            ? (patient.address ?? '')
+            : type === 'mobile'
+              ? (patient.mobile ?? '')
+              : (patient.email ?? '');
+    if (value.trim().length > 0) shown.push(type);
+  }
+  return shown;
+}
+
+/**
+ * WHY A PUSH WAS REFUSED — a CODE, never the rule's own sentence with data
+ * folded into it, and never anything about the patient.
+ *
+ * The console maps each of these to its own string-table entry, so a refusal
+ * reads as guidance to a receptionist rather than as a server error. `other`
+ * is the fallback, so a reason this list has not met yet still renders as
+ * something a person can act on.
+ */
+export const PUSH_BLOCKED_REASONS = [
+  /** No such tablet in this practice. A cross-practice id lands here too — RLS fails closed. */
+  'device_unknown',
+  /** Revoked in the console. It holds no credential and would show nothing. */
+  'device_revoked',
+  /** Registered but never paired: the code was issued and nobody typed it in. */
+  'device_not_paired',
+  /**
+   * TAKEN OUT OF USE BY RECEPTION (Carl, 5 Sep 2026) — flat battery, gone for
+   * repair, wrong desk.
+   *
+   * IT IS NOT A REVOKE, and the difference is the whole reason it exists. The
+   * credential is untouched and the tablet keeps heartbeating, so the console
+   * can still see it and put it back in use with one press; a revoke is an
+   * administrator throwing the credential away. Reception should not have to
+   * do the second thing to achieve the first.
+   *
+   * NOTHING ABOUT IT BLOCKS CARE (hard rule 8, REQ-REC-04). It stops a SCREEN:
+   * the patient is seen, and reception sends to another tablet, bills
+   * privately, or captures after the service.
+   */
+  'device_out_of_use',
+  /** One session per device. The console is told the session id so it can offer Recall. */
+  'device_busy',
+  'agreement_not_found',
+  /** Signed, superseded, declined, expired — past the point a push could mean anything. */
+  'agreement_not_pushable',
+  /** D6a missing, or set from a mapping that has since moved (hard rule 14). */
+  'service_description_missing',
+  /**
+   * D7 is explicit and is set at the DESK, before the push
+   * (`POST /agreements/:id/assignor`). A tablet must never be handed an
+   * agreement whose signing party is unknown.
+   */
+  'who_is_signing_unset',
+  /**
+   * REQ-CHILD-01, failing closed (REQ-CHILD-07) and consistently with
+   * everything else in the capture path: the cascade declines to stage a
+   * flagged patient and the walk-up waiting list omits them, so the push
+   * declines too rather than being the one door left open. Reception carries
+   * on — paper, or a private bill after the service. Nothing here blocks care
+   * (REQ-REC-04).
+   */
+  'patient_confidential',
+  /**
+   * THE AGREEMENT NAMES SOMEBODY WHO CANNOT BE THE PROVIDER ON ONE (Carl,
+   * 5-7 Sep 2026; the billing role).
+   *
+   * The provider on an assignment of benefit is the SERVICING PROVIDER whose
+   * provider number goes on the claim. A practice nurse on a "for and on
+   * behalf of" item bills nothing under their own number, so an agreement in
+   * their name would be evidence of a consent matching no claim anybody can
+   * make.
+   *
+   * IT IS CHECKED HERE AS WELL AS AT ARRIVAL because the role can change after
+   * the agreement was drafted -- a practice correcting a mis-set role on
+   * Thursday should not be able to push Tuesday's draft to a tablet. The fix
+   * is on the affiliation, and the console's copy carries the link.
+   */
+  'provider_not_servicing',
+  /**
+   * ENDURING IS GP-ONLY (hard rule 6, REQ-END-01a). A specialist, allied
+   * health or optometry provider has NO enduring pathway, permanently — the
+   * offer there is an episodic agreement or a Treatment Plan Assignment.
+   *
+   * MISSING IS NOT GP. A provider row with no discipline recorded fails this
+   * check rather than passing it: the consequence of guessing wrong is a
+   * standing commitment to bulk bill entered by somebody who had no pathway
+   * to enter it.
+   */
+  'enduring_not_gp',
+  /**
+   * ENDURING IS PER PRACTITIONER × PATIENT, NEVER PER PRACTICE (hard rule 6,
+   * REQ-END-01). An agreement that does not name exactly one provider and one
+   * patient — an organisation anchor, or a provider that was never set — is
+   * not a thing a tablet may collect a signature on, because the person
+   * signing could not be told who they are agreeing with.
+   */
+  'enduring_not_per_provider',
+  /**
+   * THE BOUNDARY, STATED ON THE SCREEN RATHER THAN GUESSED AT (Carl, 4 Sep
+   * 2026 — it replaces the blanket `enduring_not_supported`).
+   *
+   * Everything up to the s 65C rule set now exists for enduring: the practice
+   * setting, the GP and per-provider checks, the ceremony, the decline path.
+   * What does not exist is the RULE SET's enduring branch — reg 65CB's content
+   * set has no rules written against it, C5 still demands the single service
+   * date a standing agreement has no honest value for, and the conformance
+   * suite has no enduring case.
+   *
+   * The rule set is a HUMAN-AUTHORED ZONE (CLAUDE.md §7), so the platform asks
+   * it and believes the answer: if the registered set returns no verdict on
+   * the enduring content set, SILENCE IS NOT A PASS and the push refuses with
+   * this code. `apps/rules/test/enduring-ruleset.pending.spec.ts` is the
+   * contract the branch is authored against; the moment it passes, this
+   * refusal stops happening on its own.
+   */
+  'enduring_rules_not_authored',
+  'other',
+] as const;
+
+export type PushBlockedReason = (typeof PUSH_BLOCKED_REASONS)[number];
+
+/**
+ * WHAT THE TABLET IS SHOWN ABOUT THE PATIENT, and the list is the contract.
+ *
+ * IT CARRIES VALUES, WHICH THE WALK-UP KIOSK'S WAITING LIST DOES NOT, and the
+ * justification is specific rather than general: THE DEVICE IS PAIRED to this
+ * practice, THE SESSION WAS PUSHED by a named staff member who has just
+ * verified this person across the desk, and THE PERSON READING THE SCREEN IS
+ * THE PERSON THE VALUES BELONG TO — reception hands them the tablet. This is
+ * the one screen in the product where showing a date of birth is showing
+ * somebody their own date of birth, at the moment they were asked for it.
+ * Everything that makes that true is enforced elsewhere: the credential
+ * (device pairing), the staff actor (the push), one session per device (a
+ * partial unique index), and the thirty-minute idle expiry above.
+ *
+ * THERE IS NO MEDICARE NUMBER HERE AND THERE IS NO COLUMN FOR ONE. The card is
+ * checked in the PMS, before the platform is involved, and it is not an
+ * identity identifier in any case (hard rule 1, REQ-VER-02). The named test
+ * `session_payload_never_carries_a_medicare_number` asserts the serialised
+ * payload has no such key.
+ *
+ * NO BENEFIT AND NO DOLLAR AMOUNT — hard rule 4. There is no field for one.
+ */
+export const TABLET_SESSION_PATIENT_FIELDS = [
+  'givenNames',
+  'familyName',
+  /** ISO `yyyy-mm-dd`. Shown to its owner, ticked by its owner. */
+  'dateOfBirth',
+  'address',
+  /** CONTACT, NEVER IDENTITY (REQ-VER-02). */
+  'mobile',
+  'email',
+] as const;
+
+export type TabletSessionPatientField = (typeof TABLET_SESSION_PATIENT_FIELDS)[number];
+
+export interface TabletSessionPatient {
+  givenNames: string;
+  familyName: string;
+  dateOfBirth: string | null;
+  address: string | null;
+  mobile: string | null;
+  email: string | null;
+}
+
+/**
+ * Build the patient block by taking ONLY the permitted fields. Anything else
+ * on the source row — an IHI, a patient record number, a confidentiality flag,
+ * a PMS linkage key — is dropped here and cannot reach a tablet even if
+ * somebody spreads a whole patient record in later. The same construction, and
+ * the same reason, as `projectKioskWaitingRow`.
+ */
+export function projectTabletSessionPatient(source: Record<string, unknown>): TabletSessionPatient {
+  const patient: Record<string, unknown> = {};
+  for (const field of TABLET_SESSION_PATIENT_FIELDS) patient[field] = source[field] ?? null;
+  return patient as unknown as TabletSessionPatient;
+}
+
+/**
+ * WHO IS SIGNING, as the tablet is told it.
+ *
+ * D7 IS EXPLICIT AND IS NEVER INFERRED (CLAUDE.md §3). `isPatient` is the
+ * discriminator; `name` and `relationship` are present only on the other
+ * branch, because a field that is optional in general is a field the reader
+ * has to guess about. The tablet PRINTS this and never asks it — the party was
+ * settled at the desk before the push.
+ */
+export interface TabletSessionAssignor {
+  isPatient: boolean;
+  name?: string;
+  relationship?: string;
+}
+
+/**
+ * THE ONE PAYLOAD `GET /kiosk/session` RETURNS. The tablet builds against this
+ * type and never against the server's code.
+ */
+export interface TabletSessionPayload {
+  id: string;
+  state: ActiveTabletSessionState;
+  /** Which of the four types this is, so the ceremony picks its own heading. */
+  agreementType: AgreementType;
+  patient: TabletSessionPatient;
+  assignor: TabletSessionAssignor;
+  agreementId: string;
+  /**
+   * The `in_practice` capture request this session signs against. Passed
+   * straight back to the EXISTING `POST /agreements/:id/sign`; completing it
+   * closes every other open channel for the agreement (FR-2.7).
+   */
+  captureRequestId: string;
+}
+
+/**
+ * A session as the CONSOLE lists it — a staff surface, so the patient's name
+ * is allowed here exactly as it is on every other practice list. No date of
+ * birth, no address, no contact detail: reception is watching a state, not
+ * mirroring a screen (TODO.md, "reception sees a STATUS ... not a live
+ * mirror: cheaper, and less on screen").
+ */
+export interface TabletSessionRow {
+  id: string;
+  deviceId: string;
+  deviceLabel: string;
+  agreementId: string;
+  agreementType: AgreementType;
+  patientName: string;
+  /**
+   * SO RECEPTION CAN CORRECT A DISPUTED DETAIL FROM THIS ROW. An id, not a
+   * detail: the values themselves are fetched on demand when somebody opens
+   * the correction control, never carried on the three-second poll — this list
+   * stays a status rather than becoming a mirror of the tablet's screen.
+   */
+  patientId: string;
+  providerName: string | null;
+  state: TabletSessionState;
+  /**
+   * WHICH DETAILS THE PATIENT CROSSED — TYPES, never the values behind them
+   * (REQ-VER-04, hard rule 9). Reception reads "Patient says wrong: address,
+   * mobile" and looks up the values on their own screen, which they may see
+   * because it is a staff surface and they asked for them at the desk minutes
+   * ago. The wire never carries them.
+   */
+  disputedDetails: string[];
+  /**
+   * HOW THE DISPUTE ENDED, once reception has said (Carl, 4 Sep 2026).
+   *
+   * `null` while a cross is still unanswered — which is what the console reads
+   * to decide between "here is what to fix" and "Resolved — ready to
+   * re-send". The crossed TYPES stay on the row either way, so reception can
+   * still see WHAT was fixed after it was.
+   *
+   * IT IS A FACT ABOUT THE DISPUTE, NOT A NEW STATE. The session stays
+   * `details_disputed`: the cross happened, and a resolution does not unhappen
+   * it. What follows is a re-send, which builds a fresh session and leaves
+   * this one's resolution on it for the audit trail.
+   */
+  disputeResolution: DisputeResolutionOutcome | null;
+  disputeResolvedAt: string | null;
+  /**
+   * WHY THE SIGNATURE WAS REFUSED, as the server's own CODE (Carl, 7 Sep
+   * 2026). `null` on every session that did not end that way.
+   *
+   * A CODE AND NOT A SENTENCE, so the console owns the words and can carry a
+   * destination with them; an unmapped code is shown as the code rather than
+   * folded into a generic message. Nothing about the patient is in it — it
+   * names a rule, not a person (REQ-LOG-08).
+   */
+  signatureFailureReason: string | null;
+  /** The staff member who pushed it, by display name. */
+  pushedBy: string;
+  pushedAt: string;
+  lastStateAt: string;
+  endedAt: string | null;
+}
+
+/**
+ * MAY THIS SESSION MOVE TO THAT STATE?
+ *
+ * ONE RULE, AND IT IS THE ONLY ONE WORTH ENCODING: an ended session never
+ * moves again. Everything else about the order — ticked before read, read
+ * before signed — is enforced by which endpoint can set which state, which is
+ * a narrower and more honest fence than a transition table nobody can see the
+ * whole of. A recalled session that could be re-opened by a slow poll landing
+ * after the recall is the actual bug this prevents.
+ */
+export function canChangeTabletSessionState(from: string, to: TabletSessionState): boolean {
+  if (!isActiveTabletSessionState(from)) return false;
+  return from !== to;
+}

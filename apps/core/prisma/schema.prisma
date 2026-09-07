@@ -20,24 +20,77 @@ datasource db {
 }
 
 model Practice {
-  id                 String   @id @default(uuid()) @db.Uuid
-  name               String
-  abn                String?
-  pms                String   @default("medtech_evolution")
-  rails              String[] @default([]) // tyro | hicaps
+  id                        String   @id @default(uuid()) @db.Uuid
+  name                      String
+  abn                       String?
+  pms                       String   @default("medtech_evolution")
+  rails                     String[] @default([]) // tyro | hicaps
   /**
    * Drives the public-holiday calendar for 2-business-day terminations (REQ-OFF-03).
    */
-  state              String   @default("NSW")
+  state                     String   @default("NSW")
   // FR-1.4 configuration (defaults stand until the console exposes them)
-  identifierTypes    String[] @default(["name", "date_of_birth", "address"]) // floor 3, Medicare excluded non-configurably
-  linkExpiryHours    Int      @default(48) // D-05 default
-  channelsEnabled    String[] @default(["in_practice", "sms_link", "email_link", "paper"])
+  identifierTypes           String[] @default(["name", "date_of_birth", "address"]) // floor 3, Medicare excluded non-configurably
+  linkExpiryHours           Int      @default(48) // D-05 default
+  channelsEnabled           String[] @default(["in_practice", "sms_link", "email_link", "paper"])
+  /**
+   * D6a WHEN THE PMS SUPPLIED NO APPOINTMENT TYPE (CONSULTATION-CAPTURE-PLAN
+   * §2.4). One of the current `service-descriptions` content list, applied to
+   * every pre-agreement the appointment sweep drafts, so most drafts never
+   * reach the kiosk missing the particular that C6 blocks on.
+   * NULL IS THE HONEST DEFAULT and stays the default. Guessing "General
+   * practitioner attendance" for a practice that has not said so would put a
+   * word the practice never chose onto a contract — the platform asserting a
+   * particular nobody declared. Unset means the draft arrives without D6a and
+   * a person sets it, which is slower and true.
+   */
+  defaultServiceDescription String?
+  /**
+   * THE KIOSK BUILD FLOOR — staged rollout with instant rollback (TODO.md
+   * "Zero-footprint kiosk").
+   * The zero-footprint decision only holds if a rollback REACHES a tablet
+   * whose tab has been open since eight in the morning. Every kiosk request
+   * carries the build it is running; when it is below this string the server
+   * answers `reload: true` and the tab hard-reloads onto whatever the cloud is
+   * now serving. Per practice, because rollout is per practice.
+   * NULL MEANS NO FLOOR, and no tablet reloads. The absence of a setting is
+   * never a reason to restart every tablet in the country.
+   */
+  minimumKioskBuild         String?
+  /**
+   * RETURN TO THE START AFTER THIS LONG WITH NOBODY TOUCHING THE TABLET
+   * (Carl, 4 September 2026). Seconds; five minutes by default; bounded 60 to
+   * 1800 by the DTO and by `isKioskIdleTimeoutInRange` in the domain.
+   * PER PRACTICE, because the right number depends on the room: a tablet at a
+   * busy desk wants it short, and a practice handing one to somebody reading
+   * slowly wants it longer. It is a SCREEN-HYGIENE control rather than a
+   * comfort one — it decides how long a walked-away patient's name, date of
+   * birth and address stay on a device sitting on a counter — which is why the
+   * console explains it that way and why moving it writes a vault event.
+   * NOT NULLABLE. "No setting" must never mean "no timeout": a tablet that
+   * never clears itself is exactly the failure this column exists to prevent,
+   * so the absence of a decision is the default rather than the absence of a
+   * clock.
+   */
+  kioskIdleTimeoutSeconds   Int      @default(300)
+  /**
+   * WHICH AGREEMENT THE PRE-STEP OFFERS FIRST (Carl, 4 Sep 2026; GA-PLAN B6).
+   * For a GP practice the strongest answer at the desk is an ONGOING
+   * agreement: sign once and there is nothing post-service ever, because the
+   * 89AA notice is one-way and is never chased (REQ-END-05, hard rule 7). A
+   * patient who declines gets an agreement for the visit instead, which is
+   * also the only offer for a non-GP provider (REQ-END-01a).
+   * DEFAULT TRUE, and it is a default rather than a permission. Enduring stays
+   * GP-only and per practitioner × patient however this is set (hard rule 6):
+   * a specialist's agreement is not offered as ongoing because this is on, and
+   * turning it off does not make one legal that was not.
+   */
+  enduringByDefault         Boolean  @default(true)
   // Go-live gates (FR-1.7). Both flip via real integrations later; explicit
   // booleans so the checklist is honest, never inferred.
-  writeBackProven    Boolean  @default(false)
-  senderIdRegistered Boolean  @default(false)
-  createdAt          DateTime @default(now())
+  writeBackProven           Boolean  @default(false)
+  senderIdRegistered        Boolean  @default(false)
+  createdAt                 DateTime @default(now())
 
   // --- Organisation registration (FR-1.1, ORG-MODEL-PROPOSAL.md §4) ---
   // Practice IS the "organisation" of that model: the ABN-bearing registered
@@ -48,20 +101,7 @@ model Practice {
    * /**
    * /**
    * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /** The ABR legal entity name. Often NOT what the practice trades as.
+   * The ABR legal entity name. Often NOT what the practice trades as.
    */
   legalName             String?
   /**
@@ -93,6 +133,40 @@ model Practice {
   // --- The applicant (ORG-MODEL-PROPOSAL.md §10, step 1) ---
   // Where the passkey invitation goes. Without an email there is nobody to
   // invite and the sequence stalls at step 3.
+  /// A SHARED MAILBOX for practice-level notices — recertification reminders,
+  /// certification-lapse warnings. Deliberately separate from `adminEmail`.
+  ///
+  /// `adminEmail` identifies a HUMAN who holds the practice-admin role.
+  /// `groupEmail` outlives any individual. Collapsing the two is what creates
+  /// a shared account: if the identity address is also the group address, then
+  /// everybody with mailbox access can request a credential-enrolment link and
+  /// every action becomes attributable to a mailbox rather than a person.
+  ///
+  /// NOTHING ENROLS AGAINST THIS ADDRESS. It receives notices only. That is
+  /// exactly why a change to it is still held and proved, not applied on save
+  /// — see PendingEmailChange.field. groupEmail is the WITNESS an adminEmail
+  /// handover is told about when the old admin inbox is unreachable, and a
+  /// witness changed in the same breath as the thing it watches is a witness
+  /// silenced, not merely updated.
+  groupEmail           String?
+  /// Proven by the same hold-and-prove exchange as adminEmail, just without a
+  /// handover: nobody's credential moves, only the column.
+  groupEmailVerifiedAt DateTime?
+
+  /// PUBLIC, and that is the whole point of them existing separately.
+  ///
+  /// Every other address here belongs to a person or to us: `adminEmail`
+  /// identifies a human and holds their credential, `managerEmail` is the
+  /// second named human, `groupEmail` is an internal notices mailbox. None
+  /// answers "how do I contact this practice", and showing a practitioner the
+  /// administrator's personal address because it was the only one to hand
+  /// would publish a person's details to answer a question about a business.
+  ///
+  /// Optional on purpose: a practice that has not filled these in shows
+  /// nothing, rather than falling back to a private address.
+  businessPhone String?
+  businessEmail String?
+
   adminName     String?
   adminEmail    String?
   adminPhone    String?
@@ -196,8 +270,23 @@ model Practice {
   entitlementNote          String?
 
   // --- The practice admin's account (step 3) ---
-  adminKeycloakUserId    String?
-  adminInvitedAt         DateTime?
+  adminKeycloakUserId String?
+  adminInvitedAt      DateTime?
+
+  /// WHEN THE INVITATION DID NOT HAPPEN, and why.
+  ///
+  /// Validation and invitation are one act. When the second half fails the
+  /// first still stands -- correctly, an approval must not be rolled back
+  /// because an identity provider was unreachable -- and without this the
+  /// failure lived only in a log line. A practice then sits approved with
+  /// nobody able to sign in, discoverable only by noticing an absence.
+  adminInviteFailedAt    DateTime?
+  /// Verbatim, in the identity provider's own words. The commonest of these
+  /// ("an account already exists with this email") is actionable precisely
+  /// because it is specific, and a paraphrase would take that away.
+  adminInviteError       String?
+  /// A first failure is a bounce. A fourth is a decision about this practice.
+  adminInviteAttempts    Int       @default(0)
   adminPasskeyEnrolledAt DateTime?
   /**
    * Which registered name the operator's typed name matched, and how closely.
@@ -222,10 +311,78 @@ model Practice {
   validatedAt     DateTime?
   validationNote  String?
 
+  /**
+   * Bearer token for the public application-status page.
+   * Deliberately NOT the id. A primary key ends up in logs, Referer headers
+   * and pasted support tickets, and a primary key that doubles as a credential
+   * is a credential that leaks — and one that cannot be rotated without
+   * breaking every foreign key pointing at it. This can be reissued on its own.
+   * Read only to compose the acknowledgement link. The status lookup itself
+   * goes through find_application_by_status_token(), whose narrow projection is
+   * the actual security boundary.
+   */
+  statusToken String @unique @default(dbgenerated("encode(gen_random_bytes(32), 'hex')"))
+
+  /// Email confirmation, two-phase: the token addresses the page, the CODE
+  /// confirms. A link alone is consumed by a GET, and mail scanners, link
+  /// previews and antivirus gateways all issue GETs — so a link-only scheme
+  /// confirms addresses with no human involved. See the migration for why the
+  /// attempt cap matters more than the code length.
+  adminEmailVerifiedAt            DateTime?
+  adminEmailVerificationToken     String?   @unique
+  adminEmailVerificationCode      String?
+  adminEmailVerificationSentAt    DateTime?
+  adminEmailVerificationExpiresAt DateTime?
+  adminEmailVerificationAttempts  Int       @default(0)
+
+  /// The practice's backup address — see `Practitioner.backupEmail` for why
+  /// this exists. Never equal to `adminEmail`, by CHECK constraint.
+  ///
+  /// UNPROVED, unlike the practitioner's. Nothing in this codebase writes to a
+  /// practice's backup or reads it back, so there is nothing yet for a proof
+  /// ceremony to protect — adding the token/code/expiry columns here without a
+  /// caller was how core ended up querying a column the database never had.
+  /// The practitioner side (practitioner-email.service.ts) is the model to
+  /// follow when a practice-level version is actually built.
+  backupEmail           String?
+  backupEmailVerifiedAt DateTime?
+
+  /// The correction window. Opened by a reviewer rather than at submission, so
+  /// the clock does not run down while an application waits in a queue nobody
+  /// has reached.
+  correctionRequestedAt     DateTime?
+  correctionExpiresAt       DateTime?
+  correctionRequestedByName String?
+  correctionReason          String?
+
+  /// Applicant amendments. The trail itself is in application_amendments; these
+  /// are markers so the queue can flag an amended application without a join.
+  amendedAt      DateTime?
+  amendmentCount Int       @default(0)
+
   // NOTE: there is deliberately NO banking column here, and there never will
   // be. AoBPlatform holds the consent record, not the money — the payee
   // arrangement is registered directly with Services Australia, with us not
   // in the path. (ORG-MODEL-PROPOSAL.md §8.)
+
+  // --- The letterhead logo (Carl, 5 Sep 2026; W1) ---
+  //
+  // A POINTER, NEVER BYTES. The image is an artefact, addressed by content
+  // hash; these columns say which one is current. Everything ELSE on the
+  // letterhead — legal name, trading names, address, phone, email, ABN — is
+  // already above and is read, never duplicated.
+  //
+  // CLEARING THE LOGO CLEARS THE POINTER AND NEVER DELETES THE ARTEFACT.
+  // Agreements signed under that letterhead embed those exact bytes and have
+  // to keep re-verifying against them (hard rules 11 and 13).
+  logoArtefactId  String?   @db.Uuid
+  logoSha256      String?
+  logoContentType String? // image/png | image/jpeg. SVG is refused twice over.
+  logoWidthPx     Int?
+  logoHeightPx    Int?
+  logoUpdatedAt   DateTime?
+  /// Who put it there, by display name. The vault event holds their subject id.
+  logoUpdatedBy   String?
 
   locations    PracticeLocation[]
   staff        StaffMember[]
@@ -277,10 +434,22 @@ model PracticeCredential {
   addedAt     DateTime @default(now())
   addedByName String?
 
+  /// SOFT DELETE. A credential is identity evidence and is never destroyed —
+  /// removing one records who and why, exactly as ceasing an agreement does.
+  /// The score counts only credentials still offered, so a removal moves it,
+  /// and the reason is what explains the movement to somebody reading later.
+  removedAt     DateTime?
+  removedByName String?
+  removedReason String?
+
   /**
    * The same number twice is a duplicate, not a second signal.
    */
-  @@unique([practiceId, credentialType, credentialValue])
+  /// NOT a Prisma @@unique. Uniqueness applies to LIVE rows only, which needs a
+  /// PARTIAL index (WHERE "removedAt" IS NULL) that Prisma cannot express — a
+  /// removed row would otherwise hold the slot for ever and block re-adding a
+  /// credential that was removed by mistake. It is created in the migration
+  /// 20260822250000_credentials_soft_delete and enforced by the database.
   @@index([practiceId])
   @@map("practice_credentials")
 }
@@ -449,12 +618,40 @@ model PracticeLocation {
   // dependency, and no address ever leaves our infrastructure — which matters
   // because address is one of the six approved patient identifiers.
   addressValidated Boolean @default(false)
+
+  // --- HOW it was confirmed, and by whom (packages/domain/src/address-check.ts) ---
+  // "Confirmed" on its own cannot be weighed by anybody later. A confirmation
+  // that does not say what was checked is an assertion wearing a check's name,
+  // and it reads identically to one that was done properly.
+  /// From ADDRESS_CHECK_METHODS. Never free text.
+  addressCheckMethod     String?
+  /// Which catalogue version defined it. A v1 confirmation must read as v1 for ever.
+  addressCheckVersion    String?
+  addressCheckNote       String?
+  /// The evidence itself. NO foreign key, for the reason given on Artefact:
+  /// evidence outlives its subject, and a key would invert that.
+  addressCheckArtefactId String?   @db.Uuid
+  addressCheckedAt       DateTime?
+  /// The Keycloak subject. Stable, and the thing to join on.
+  addressCheckedBySub    String?
+  /// Display name at the time. Denormalised on purpose — an audit line must
+  /// still read correctly after somebody is renamed or leaves.
+  addressCheckedByName   String?
+
+  // --- Sent back to the practice, with a reason they can act on ---
+  // A reviewer who should NOT confirm previously had nothing to do but walk
+  // away, which left the practice locked out with no way to learn why.
+  addressRejectedAt     DateTime?
+  /// From ADDRESS_REJECTION_REASONS.
+  addressRejectedReason String?
+  addressRejectedDetail String?
+  addressRejectedByName String?
   /**
    * The canonical G-NAF form. What renders on the agreement, not what was typed.
    */
-  addressCanonical String?
-  gnafPid          String?
-  gnafVersion      String?
+  addressCanonical      String?
+  gnafPid               String?
+  gnafVersion           String?
 
   /**
    * A location cannot host affiliations until its address validates. Defaults
@@ -522,6 +719,36 @@ model Practitioner {
   email        String?
 
   /**
+   * A SECOND CHANNEL, and the piece that makes holding an address change
+   * workable rather than merely strict.
+   * Requiring the OLD address to authorise a change defeats takeover
+   * completely and breaks the commonest legitimate case — the old mailbox is
+   * gone, which is WHY they are changing it. A backup is an address that is
+   * not the one being changed, so the warning still reaches somebody.
+   * Never equal to `email`: one inbox covering both is one compromise
+   * covering both. Enforced by a CHECK constraint, because the form is not
+   * the only caller.
+   */
+  backupEmail           String?
+  backupEmailVerifiedAt DateTime?
+
+  /**
+   * PROVING the backup, rather than merely announcing it.
+   * `backupEmailVerifiedAt` existed from the start and nothing ever set it —
+   * the address was stored, a notice was sent, and that was the whole of it.
+   * A backup nobody has ever had an answer from is not a second channel; it
+   * is a guess, discovered to be one at exactly the moment somebody needs it,
+   * during a takeover when the primary is already gone. A typo is the common
+   * case, not an attack.
+   * Same shape as every other proof here: a token in the link, a code for the
+   * human, an expiry, and a count of attempts.
+   */
+  backupEmailToken     String?   @unique
+  backupEmailCode      String?
+  backupEmailExpiresAt DateTime?
+  backupEmailAttempts  Int       @default(0)
+
+  /**
    * Which validated practice created this identity (CONVENTIONS.md §8b).
    * There is no self-registration path, so this always has an answer: "who
    * vouched for this practitioner existing at all" is never unanswerable. No
@@ -533,8 +760,9 @@ model Practitioner {
   /**
    * FR-1.9 — passkey identity. Practitioner-level: you verify a person once.
    */
-  keycloakUserId    String?
-  invitedAt         DateTime?
+  keycloakUserId String?
+  invitedAt      DateTime?
+
   passkeyEnrolledAt DateTime?
   /**
    * Set when a sufficient REQ-PKI-01 ceremony has been performed.
@@ -577,8 +805,10 @@ model Practitioner {
 
   createdAt DateTime @default(now())
 
-  affiliations  Affiliation[]
-  registrations PractitionerRegistration[]
+  affiliations   Affiliation[]
+  registrations  PractitionerRegistration[]
+  /// Every register check, newest last. See PractitionerRegisterCheck.
+  registerChecks PractitionerRegisterCheck[]
 
   @@map("practitioners")
 }
@@ -590,6 +820,44 @@ model Practitioner {
  * conditions, endorsements and notations. Modelling expiry as a single column
  * on the practitioner would silently pick one of them and call it the answer.
  */
+/**
+ * EVERY REGISTER CHECK, not just the most recent.
+ * The three `registrationSighted*` columns on `Practitioner` were overwritten
+ * by each new check, so "who checked this and what did it say" had one answer
+ * at a time and asking again destroyed the previous one. A check is somebody's
+ * statement that on a given day the public register said a particular thing —
+ * it does not stop being true because a later check was made, and the earlier
+ * reading is exactly what somebody needs when asked why a capture in April was
+ * allowed.
+ * The columns on `Practitioner` stay as the CURRENT value. They are now a cache
+ * of the newest row here rather than the only record.
+ */
+model PractitionerRegisterCheck {
+  id             String       @id @default(uuid()) @db.Uuid
+  practitionerId String       @db.Uuid
+  practitioner   Practitioner @relation(fields: [practitionerId], references: [id], onDelete: Cascade)
+
+  /// What the register said, as read on the day.
+  registrationStatus String
+  profession         String?
+  division           String?
+  conditions         String?
+  undertakings       String?
+  reprimands         String?
+
+  /// WHO said so, and how. `source` keeps a human reading the register apart
+  /// from an API answering: different kinds of evidence, and flattening them
+  /// would make the weaker look like the stronger.
+  source        String
+  sightedByName String?
+  sightedAt     DateTime
+
+  createdAt DateTime @default(now())
+
+  @@index([practitionerId, sightedAt])
+  @@map("practitioner_register_checks")
+}
+
 model PractitionerRegistration {
   id               String       @id @default(uuid()) @db.Uuid
   practitionerId   String       @db.Uuid
@@ -642,14 +910,59 @@ model Affiliation {
    */
   pmsLinkageKey  String?
 
-  status        String    @default("invited") // invited | active | ending | ended | rejected
-  invitedAt     DateTime  @default(now())
-  invitedByName String?
+  /**
+   * WHOSE PROVIDER NUMBER THE CLAIM GOES UNDER, at this location
+   * (Carl, 5–7 Sep 2026; `packages/domain/content/billing-roles.json`).
+   *
+   * `servicing_provider` — may be the provider on an agreement; enduring only
+   * if the provider type is general practice as well (hard rule 6).
+   * `works_under_provider` — a practice nurse on "for and on behalf of" items.
+   * The claim goes under the GP, so the assignment does too: never the
+   * provider on an agreement.
+   * `not_billable` — phlebotomist, admin. Generates no Medicare claim at all.
+   *
+   * PER LOCATION BECAUSE THE NUMBER IS. The same person can be a nurse
+   * practitioner at one site and an RN at another, so this cannot live on
+   * `Practitioner`.
+   *
+   * The values are versioned content and the column has a CHECK repeating
+   * them (`affiliations_billing_role_known`). The default is not a guess —
+   * every practitioner on the platform when this landed is a doctor.
+   */
+  billingRole String @default("servicing_provider")
+
+  status    String   @default("invited") // invited | active | ending | ended | rejected
+  invitedAt DateTime @default(now())
+
+  /// The invitation itself: a link to a page, and a CODE to type into it.
+  ///
+  /// Two-phase for the same reason email verification is (see that migration):
+  /// a bare link is consumed by a GET, and scanners, preview bots and "safe
+  /// links" rewriting all issue GETs.
+  ///
+  /// Cleared on ANY answer, accept or decline, so neither a forwarded link nor
+  /// a screenshot of the email can be replayed.
+  inviteToken     String?   @unique
+  inviteCode      String?
+  inviteSentAt    DateTime?
+  inviteExpiresAt DateTime?
+  inviteAttempts  Int       @default(0)
+
+  /// HOW they answered: email_link_and_code | passkey | console.
+  ///
+  /// A token and a code in the SAME email prove somebody read that email. They
+  /// do not prove WHO — that is proof of access to an inbox, and it is recorded
+  /// as exactly that rather than as "the practitioner signed". This column
+  /// exists so that when passkey acceptance lands (FR-1.9) the two remain
+  /// distinguishable in evidence, instead of blurring into one
+  /// undifferentiated "accepted".
+  acceptanceMethod String?
+  invitedByName    String?
   /**
    * Set on acceptance BY THE PRACTITIONER — a practice cannot self-accept.
    */
-  startedAt     DateTime?
-  rejectedAt    DateTime?
+  startedAt        DateTime?
+  rejectedAt       DateTime?
 
   // --- Offboarding: notice runs BEFORE the end date (§6) ---
   /**
@@ -657,26 +970,37 @@ model Affiliation {
    * /**
    * /**
    * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /** Must be <= endsAt. Enforced by a CHECK constraint, not just in code.
+   * Must be <= endsAt. Enforced by a CHECK constraint, not just in code.
    */
   noticeGivenAt DateTime?
   noticeGivenBy String?
-  endsAt        DateTime?
-  endedAt       DateTime?
-  endReason     String? // practitioner_left_location | deregistered | rejected
+
+  // --- Notice given OUTSIDE AoBPlatform (packages/domain/src/departure-notice.ts) ---
+  //
+  // A departure that already happened cannot have been noticed through us.
+  // Refusing to record it did not prevent the departure — it only left the
+  // platform showing a practitioner as active at a location they had left,
+  // which is the worse falsehood.
+  //
+  // So the practice may attest that notice was given elsewhere, and that
+  // attestation is stored AS an attestation. It is never relabelled as our
+  // own notice: the whole value of the record is that a reader can tell the
+  // two apart.
+  /// From EXTERNAL_NOTICE_MEANS. Null means notice came through the platform.
+  externalNoticeMeans      String?
+  /// When notice was ACTUALLY given, outside.
+  externalNoticeGivenAt    DateTime?
+  externalNoticeNote       String?
+  /// Who attested it, from the verified token.
+  externalNoticeAttestedBy String?
+  /// Business days between notice and departure. Negative if notice came after.
+  noticeLeadBusinessDays   Int?
+  /// Set when the record itself shows a problem, so it is visible without
+  /// recomputing: short notice, or notice dated after the departure.
+  noticeAnomaly            String?
+  endsAt                   DateTime?
+  endedAt                  DateTime?
+  endReason                String? // practitioner_left_location | deregistered | rejected
 
   createdAt DateTime @default(now())
 
@@ -711,9 +1035,46 @@ model StaffMember {
    */
   keycloakUserId    String?
   invitedAt         DateTime?
+  /// How many enrolment links we have sent. Counted rather than replaced:
+  /// "written to four times, never signed in" is the situation worth acting
+  /// on, and a single timestamp hides it.
+  invitationsSent   Int       @default(0)
   passkeyEnrolledAt DateTime?
 
+  // --- Console access (packages/domain/src/practice-users.ts) ---
+  //
+  // SEPARATE FROM `role` ON PURPOSE. `role` says what somebody does at the
+  // practice and feeds the assignor block (REQ-VUL-04). This says what they
+  // may do in AoBPlatform. A principal may have no console access at all and
+  // a receptionist may run every report — collapsing the two would grant
+  // access as a side effect of describing a job.
+  //
+  // NULL means no sign-in access. A staff record is not an account until
+  // somebody deliberately makes it one.
+  /// admin | other
+  consoleRole String?
+
+  // WHERE their access reaches. Both null = the whole practice. No foreign
+  // keys: a location can be closed while the person who worked there must
+  // stay identifiable on records they touched.
+  locationId   String? @db.Uuid
+  departmentId String? @db.Uuid
+
+  // --- Inactivity lifecycle ---
+  //
+  // 6 months quiet -> warn. 3 more -> deactivate. NEVER DELETE: somebody who
+  // approved or confirmed something must stay identifiable for as long as
+  // that record matters, which outlasts their employment.
+  lastSignInAt       DateTime?
+  inactivityWarnedAt DateTime?
+  deactivatedAt      DateTime?
+  deactivatedReason  String?
+  /// Who withdrew it. From the verified token, never a typed name.
+  deactivatedByName  String?
+
   @@index([practiceId])
+  /// The console-user list, and the cap count.
+  @@index([practiceId, consoleRole])
   @@map("staff_members")
 }
 
@@ -759,10 +1120,60 @@ model Patient {
   myMedicareRegistered Boolean?
   pmsLinkageKey        String?
 
+  /// WHEN A STAFF MEMBER LAST CORRECTED A DETAIL ON THIS MIRROR ROW, and which
+  /// columns (TODO.md "Check-your-details", Carl 4 Sep 2026).
+  ///
+  /// THE PMS IS STILL THE SOURCE OF TRUTH (REQ-DATA-10). Until the Medtech
+  /// write-back exists (D-01) a correction made in our console lives here and
+  /// the next sync would bring the old value back — which is exactly why the
+  /// timestamp is recorded rather than only the value. When D-01 lands the
+  /// sync compares per FIELD and must not silently overwrite a staff
+  /// correction that is newer than the PMS's own value.
+  ///
+  /// TWO COLUMNS, TWO QUESTIONS. The row-level timestamp answers "has anybody
+  /// touched this mirror since the last sync" cheaply and sortably; the map
+  /// answers "which field, and when" — `{ "address": "2026-09-04T03:11:00Z" }`
+  /// — which is the comparison the sync actually has to make. Six nullable
+  /// timestamp columns would answer the same thing and add six columns to
+  /// every query that reads a patient.
+  ///
+  /// NEITHER HOLDS A VALUE. Field names and times only; what changed lives in
+  /// the encrypted column it changed, and who changed it is on the
+  /// `patient.details_corrected` vault event.
+  detailsCorrectedAt     DateTime?
+  detailsCorrectedFields Json?
+
   agreements Agreement[]
 
   @@index([practiceId])
   @@map("patients")
+}
+
+/**
+ * An appointment as the PMS reported it — the PRE-consultation trigger.
+ * Mirrored for one reason: idempotency. The appointment feed is read again
+ * and again (a morning list, then an arrival slip for the same patient, then
+ * tomorrow's list) and one appointment must never open two capture requests.
+ * `pmsAppointmentKey` is the handle the PMS gave it; everything about the
+ * person stays on `Patient`, mirrored by linkage key as the invoice sync does
+ * (REQ-DATA-10 — the PMS is the source of truth for who they are).
+ * `agreementId` is the pre-agreement drafted for it, or NULL where the
+ * cascade decided not to ask (recorded on a `capture.suppressed` event).
+ */
+model Appointment {
+  id                String   @id @default(uuid()) @db.Uuid
+  practiceId        String   @db.Uuid
+  pmsAppointmentKey String
+  patientId         String?  @db.Uuid
+  providerId        String?  @db.Uuid
+  date              DateTime @db.Date
+  time              String?
+  agreementId       String?  @db.Uuid
+  createdAt         DateTime @default(now())
+
+  @@unique([practiceId, pmsAppointmentKey])
+  @@index([practiceId, date])
+  @@map("appointments")
 }
 
 model Assignor {
@@ -777,6 +1188,24 @@ model Assignor {
   contactMobile         String?
   contactEmail          String?
   preferredLanguage     String?
+  /**
+   * WHEN THE SELF-DECLARATION WAS MADE, not whether it was checked. Reg
+   * 65CB(5) makes authority self-declared (REQ-VUL-02); the platform records
+   * the declaration and never verifies it, and never asks about capacity
+   * (REQ-VUL-05).
+   */
+  authorityDeclaredAt   DateTime?
+  /**
+   * REQ-AGE-01 — the on-screen declaration that the person acting for another
+   * is of full age. A TIMESTAMP OF A DECLARATION, never a date of birth: we
+   * hold no DOB for a third-party assignor, and REQ-AGE-04 forbids trusting
+   * an attestation where one IS held.
+   */
+  declaredOfFullAgeAt   DateTime?
+  /**
+   * C7.2 — channel preference is per ASSIGNOR, because the signer is not always the patient.
+   */
+  preferredChannel      String? // mobile | email
 
   agreements Agreement[]
 
@@ -785,50 +1214,107 @@ model Assignor {
 }
 
 model Agreement {
-  id                    String       @id @default(uuid()) @db.Uuid
-  practiceId            String       @db.Uuid
-  practice              Practice     @relation(fields: [practiceId], references: [id])
-  type                  String // episodic_pre | episodic_post | treatment_plan | enduring
+  id                      String       @id @default(uuid()) @db.Uuid
+  practiceId              String       @db.Uuid
+  practice                Practice     @relation(fields: [practiceId], references: [id])
+  type                    String // episodic_pre | episodic_post | treatment_plan | enduring
   // Polymorphic immutable anchor (HARD-01): provider for everything except
   // the ACCHO/AMS enduring pathway, which anchors to an organisation.
-  anchorKind            String // provider | organisation
-  providerId            String?      @db.Uuid
-  provider              Provider?    @relation(fields: [providerId], references: [id])
+  anchorKind              String // provider | organisation
+  providerId              String?      @db.Uuid
+  provider                Provider?    @relation(fields: [providerId], references: [id])
   /**
    * The new anchor. `providerId` above is the legacy one and is being retired:
    * both are covered by the HARD-01 immutability trigger meanwhile, so neither
    * can be edited on a live agreement.
    */
-  affiliationId         String?      @db.Uuid
-  affiliation           Affiliation? @relation(fields: [affiliationId], references: [id])
-  organisationId        String?      @db.Uuid
-  patientId             String       @db.Uuid
-  patient               Patient      @relation(fields: [patientId], references: [id])
-  assignorId            String       @db.Uuid
-  assignor              Assignor     @relation(fields: [assignorId], references: [id])
-  assignorIsPatient     Boolean // D7 — explicit, never inferred
-  enduringPathway       String? // mymedicare | residential_aged_care | accho_ams
-  status                String       @default("draft")
+  affiliationId           String?      @db.Uuid
+  affiliation             Affiliation? @relation(fields: [affiliationId], references: [id])
+  organisationId          String?      @db.Uuid
+  patientId               String       @db.Uuid
+  patient                 Patient      @relation(fields: [patientId], references: [id])
+  assignorId              String       @db.Uuid
+  assignor                Assignor     @relation(fields: [assignorId], references: [id])
+  assignorIsPatient       Boolean // D7 — explicit, never inferred
+  /**
+   * The assignor this agreement pointed at while the patient was signing for
+   * themselves, remembered when it is re-pointed at somebody else so that
+   * reverting is exact rather than a guess. Without it "the patient is signing
+   * after all" would have to find a self-assignor by name, which is how one
+   * person ends up with three rows and the wrong one gets the copy.
+   */
+  patientAssignorId       String?      @db.Uuid
+  enduringPathway         String? // mymedicare | residential_aged_care | accho_ams
+  status                  String       @default("draft")
+  /**
+   * D6a BEFORE THE LOCK — the Basic Service Description a staff member chose
+   * for a draft pre-agreement the PMS gave no appointment type for.
+   * IT IS NOT THE SNAPSHOT AND MUST NOT BE READ AS ONE. `particulars` below is
+   * the frozen, hashed, rendered contract; this is the one particular the
+   * server could not know, parked on the draft so that `lockParticulars`
+   * assembles it from the platform's OWN records like every other field
+   * (REQ-DATA-11) rather than taking it from whichever client happens to be
+   * locking. It is exactly why the kiosk sends no description: the tablet must
+   * never present a field a patient could fill on the practice's behalf
+   * (Carl, 3 Sep 2026).
+   * WHICH LIST IT CAME FROM IS ON THE VAULT EVENT, not here — the same
+   * reasoning as `relationshipsVersion`. What the practice was OFFERED at the
+   * time is evidence; what the agreement holds now is current state, and the
+   * lock records the rules engine's own `mappingVersion` beside it.
+   * Only ever set while the draft is unlocked; a database trigger refuses a
+   * change after `particularsLockedAt`, because after that the artefact has
+   * been rendered and hashed against these words (HARD-02: corrections
+   * supersede, they do not edit).
+   */
+  serviceDescription      String?
+  /**
+   * The staff member who chose it, by display name. The vault event holds their subject id.
+   */
+  serviceDescriptionSetBy String?
+  serviceDescriptionSetAt DateTime?
   // Snapshot of the s 65C particulars as rendered and locked (REQ-DATA-11).
-  particulars           Json?
-  particularsLockedAt   DateTime?
-  ruleSetVersion        String? // rule 14 / REQ-65C-02
-  mappingVersion        String?
-  renderedLanguages     String[]     @default([])
-  renderedArtefactHash  String? // SHA-256 at render (REQ-VAULT-02)
-  rendererVersion       String? // renderers are versioned content — re-verify with THIS version (rule 13/14)
-  verificationEventId   String?      @db.Uuid
-  signatureEventId      String?      @db.Uuid
-  supersedesAgreementId String?      @db.Uuid // HARD-02: corrections supersede
-  retentionExpiryDate   DateTime?    @db.Date
-  legalHold             Boolean      @default(false)
+  particulars             Json?
+  particularsLockedAt     DateTime?
+  ruleSetVersion          String? // rule 14 / REQ-65C-02
+  mappingVersion          String?
+  renderedLanguages       String[]     @default([])
+  renderedArtefactHash    String? // SHA-256 at render (REQ-VAULT-02)
+  rendererVersion         String? // renderers are versioned content — re-verify with THIS version (rule 13/14)
+  /**
+   * THE WHOLE RENDERED DOCUMENT — letterhead, resolved template words and the
+   * particulars above — exactly as it was hashed at lock (Carl, 5 Sep 2026).
+   * WHY IT IS SEPARATE FROM `particulars`. `particulars` is the s 65C payload
+   * the rules engine validated, and it must stay that and only that. This is
+   * the render INPUT, and it has to be stored rather than recomputed: rebuilding
+   * it at verification time from the practice's CURRENT letterhead and the
+   * CURRENT template would make every stored hash stop verifying the day a
+   * practice changed its phone number.
+   * NULL ON EVERY AGREEMENT LOCKED BEFORE 5 SEPTEMBER 2026, which re-verify
+   * under `pdf-1` from `particulars` alone. That is what versioned renderers
+   * are for (`renderInputOf` in the render module picks between the two).
+   */
+  renderPayload           Json?
+  /**
+   * WHICH WORDS (hard rule 14) — the generic template id, or the practice's own
+   * variant. Beside `ruleSetVersion` and `mappingVersion` because it is the
+   * same kind of fact: what was in force when this agreement was made.
+   */
+  templateId              String?
+  templateVersion         String?
+  /** Which letterhead was on it. `letterheadHashOf` in the render module. */
+  letterheadHash          String?
+  verificationEventId     String?      @db.Uuid
+  signatureEventId        String?      @db.Uuid
+  supersedesAgreementId   String?      @db.Uuid // HARD-02: corrections supersede
+  retentionExpiryDate     DateTime?    @db.Date
+  legalHold               Boolean      @default(false)
   // FR-9.3 write-back tracking: the artefact lands in the PMS patient record
   // (REQ-INT-02); unwritten stored agreements are retried by the sweep and
   // alerted when stale.
-  pmsDocumentKey        String?
-  writtenBackAt         DateTime?
-  createdAt             DateTime     @default(now())
-  updatedAt             DateTime     @updatedAt
+  pmsDocumentKey          String?
+  writtenBackAt           DateTime?
+  createdAt               DateTime     @default(now())
+  updatedAt               DateTime     @updatedAt
 
   @@index([practiceId])
   @@index([patientId])
@@ -992,6 +1478,47 @@ model SignatureEvent {
   ipAddress           String?
   createdAt           DateTime @default(now())
 
+  /**
+   * THE MARK ITSELF (REQ-SIG-01/-02). A `drawn` signature stores two
+   * artefacts — the PNG the pad produced and the strokes with their timing,
+   * exactly as captured — and the event binds BOTH hashes alongside
+   * `artefactHash`, which is the rendered agreement's. Null for every method
+   * that has no mark to store: tap-to-approve is a real signature and draws
+   * nothing.
+   * THE HASHES ARE HERE, THE BYTES ARE NOT. Same division as
+   * `renderedArtefactHash` on an agreement: the encrypted artefact store holds
+   * the content, this row and the vault event hold its identity. The strokes
+   * are the assignor's own hand and never appear in a log or an error.
+   */
+  signatureRasterArtefactId String? @db.Uuid
+  signatureRasterSha256     String?
+  signatureVectorArtefactId String? @db.Uuid
+  signatureVectorSha256     String?
+  /**
+   * The pad's logical size the coordinates were captured against, without
+   * which the vector cannot be redrawn at any other size.
+   */
+  padWidth                  Float?
+  padHeight                 Float?
+  /**
+   * Shape only — how many strokes and points. Never a score, never a judgement.
+   */
+  strokeCount               Int?
+  pointCount                Int?
+
+  /**
+   * WHAT THE ASSIGNOR TICKED (Carl, 5 Sep 2026; W1). Statement KEYS —
+   * `episodic_assign_v1` — never the sentences. The words live in the
+   * template at the version recorded beside them, so a second copy here could
+   * disagree with the document the person actually read.
+   * EVERY STATEMENT OF THE TEMPLATE, ALWAYS. The server refuses a signature
+   * that does not carry them all (`signature_requires_every_statement_affirmed`),
+   * so a partial list is not a state this column can hold.
+   */
+  affirmations              String[] @default([])
+  templateId                String?
+  templateVersion           String?
+
   @@index([practiceId])
   @@index([agreementId])
   @@map("signature_events")
@@ -1122,21 +1649,377 @@ model NoticeDeliveryEvent {
 // unobservable (REQ-INT-04) — recorded explicitly, never inferred.
 
 model ServiceRecord {
-  id                   String   @id @default(uuid()) @db.Uuid
-  practiceId           String   @db.Uuid
-  pmsInvoiceKey        String
-  patientId            String?  @db.Uuid
-  providerId           String?  @db.Uuid
-  serviceDate          DateTime @db.Date
-  mbsItemNumbers       String[]
-  agreementId          String?  @db.Uuid
-  retentionClockSource String   @default("conservative_default") // observed_claim | practice_asserted | conservative_default
-  createdAt            DateTime @default(now())
+  id                      String    @id @default(uuid()) @db.Uuid
+  practiceId              String    @db.Uuid
+  pmsInvoiceKey           String
+  patientId               String?   @db.Uuid
+  providerId              String?   @db.Uuid
+  serviceDate             DateTime  @db.Date
+  mbsItemNumbers          String[]
+  agreementId             String?   @db.Uuid
+  retentionClockSource    String    @default("conservative_default") // observed_claim | practice_asserted | conservative_default
+  /**
+   * WHY THE CASCADE DID NOT ASK, the last time it looked (AutoCaptureSuppressionReason).
+   * The vault event is the record; this is the word the queue screen shows
+   * beside the item so a person can see at a glance what is left to them —
+   * "under 14", "no way to reach", "window closed" — rather than a bare
+   * "needs agreement". Cleared when an agreement is created.
+   */
+  captureSuppressedReason String?
+  captureSuppressedAt     DateTime?
+  createdAt               DateTime  @default(now())
+
+  decisions ReconciliationDecision[]
 
   @@unique([practiceId, pmsInvoiceKey])
   @@index([practiceId])
   @@index([serviceDate])
   @@map("service_records")
+}
+
+/**
+ * FR-7.3 — convert-or-forgo. A service was billed, the patient was seen, and
+ * no agreement was captured; a PERSON decides what happens to the benefit:
+ * bill privately, write it off, or keep trying. "Choose explicitly. Nothing
+ * happens by default, and either choice is recorded." (design, R-3).
+ * APPEND-ONLY. A decision is not edited or deleted; a later one supersedes
+ * it, with its own reason and its own name. The database refuses UPDATE and
+ * DELETE the way it does for signature events.
+ */
+model ReconciliationDecision {
+  id              String        @id @default(uuid()) @db.Uuid
+  practiceId      String        @db.Uuid
+  serviceRecordId String        @db.Uuid
+  serviceRecord   ServiceRecord @relation(fields: [serviceRecordId], references: [id])
+  /// convert_to_private | forgo_benefit | keep_chasing
+  decision        String
+  reason          String?
+  /// The deciding person, from their session. Never free text.
+  decidedBy       String
+  decidedAt       DateTime      @default(now())
+
+  @@index([practiceId, serviceRecordId, decidedAt])
+  @@map("reconciliation_decisions")
+}
+
+/**
+ * What a PERSON at the practice did to chase an agreement — rang the patient,
+ * texted them, caught them at the desk, put a letter in the post — and what
+ * came of it.
+ * Carl, 3 Sep 2026: "we need an audit-trail to show that a practice-user
+ * called the Patient, sent SMS / email and so on ... The Practice will chase
+ * as they will not get paid otherwise." The platform's own attempts are
+ * already evidence (capture requests, correspondence rows); this is the half
+ * that happens off the platform, and it is the half a practice needs when
+ * somebody asks why an item was closed unbilled.
+ * NO IDENTIFIER VALUES (REQ-VER-04): the row says which KIND of contact was
+ * used and WHO was contacted by role — never the number, never the address.
+ * No dollar amount anywhere (rule 4).
+ * SUBJECT IS ServiceRecord OR Agreement, ENFORCED BY A CHECK CONSTRAINT. A
+ * reg 89AA notice is never chased (rule 7, REQ-CHASE-02, REQ-END-05), so
+ * "Notice" is not a value the column will take.
+ * APPEND-ONLY, like reconciliation_decisions: a correction is a new row
+ * pointing at the one it replaces. The database refuses UPDATE and DELETE,
+ * and the runtime role does not hold either privilege on this table.
+ */
+model ChaseAttempt {
+  id         String @id @default(uuid()) @db.Uuid
+  practiceId String @db.Uuid
+
+  /// ServiceRecord | Agreement. Never Notice — see the CHECK constraint.
+  subjectType String
+  subjectId   String @db.Uuid
+
+  /// phone | sms | email | in_person | post
+  channel            String
+  /// reached | no_answer | left_message | refused | wrong_contact
+  outcome            String
+  /// patient | assignor | other — a ROLE, never a name (REQ-VER-04).
+  contactedPartyType String?
+  /// What was said. Never a number, an address or an amount.
+  note               String?
+
+  /// The person, from their session. Never from the request body.
+  attemptedBy   String
+  /// Their realm subject — the thing to join on when a display name changes.
+  attemptedById String
+
+  /// When the contact happened, which may be before it was written down.
+  occurredAt DateTime @default(now())
+  recordedAt DateTime @default(now())
+
+  /// What the ladder said at the time (REQ-CHASE-05) — evidence of the rule, not just the act.
+  band           String
+  daysRemaining  Int
+  attemptOrdinal Int
+
+  /// A correction points at the row it replaces. One correction per row.
+  supersedesId String?       @unique @db.Uuid
+  supersedes   ChaseAttempt? @relation("ChaseAttemptCorrection", fields: [supersedesId], references: [id])
+  supersededBy ChaseAttempt? @relation("ChaseAttemptCorrection")
+
+  @@index([practiceId, subjectType, subjectId, occurredAt])
+  @@map("chase_attempts")
+}
+
+/**
+ * A PRACTICE'S PAIRED TABLET — the one credential the zero-footprint rule
+ * allows on a device (CLAUDE.md §7, TODO.md "Zero-footprint kiosk").
+ * Like a payment terminal paired to a merchant: the console registers a device
+ * and shows a short-lived code, somebody types it into the tablet once, and
+ * the tablet keeps an opaque credential from then on. `/kiosk` no longer takes
+ * a practice id from anybody — the server resolves the practice from the
+ * credential, and RLS re-checks it exactly as before.
+ * ONLY THE HASH IS STORED (the spirit of REQ-VER-04, and the same rule
+ * `capture_requests.tokenHash` already keeps): a database read cannot mint a
+ * working credential, and a credential cannot be recovered for somebody who
+ * lost it — rotate issues a new one.
+ * REVOKE AND ROTATE ARE CONSOLE ACTS, never device acts. A tablet that can
+ * un-pair itself is a tablet a passer-by can un-pair.
+ */
+model Device {
+  id         String @id @default(uuid()) @db.Uuid
+  practiceId String @db.Uuid
+
+  /// What a human calls it, in a list a human reads. "Reception tablet 1".
+  label String
+
+  /// sha256 of the credential's secret half. NEVER the credential itself.
+  /// Null before the first pairing, and again after a revoke or a rotate —
+  /// the credential on the device stops resolving the moment this clears.
+  credentialHash String? @unique
+
+  /// The person who registered it, from their session. Never from the body.
+  createdBy   String
+  createdById String
+  createdAt   DateTime @default(now())
+
+  pairedAt DateTime?
+
+  /// WRITTEN ON EVERY HEARTBEAT SINCE 5 SEP 2026, and the change is deliberate.
+  ///
+  /// It used to be throttled to once a minute, with the argument that nobody
+  /// reads it more often than once a fortnight. That stopped being true when
+  /// reception got "seen 4 s ago" and "not seen for 3 min" on the device row:
+  /// a column written once a minute makes every tablet in a busy practice look
+  /// stale, which is the opposite of what the line is for. A device row is a
+  /// handful of small columns and a practice has a handful of tablets — this
+  /// is a cheap write, and the throttle was buying nothing anybody wanted.
+  lastSeenAt DateTime?
+
+  /// WHERE THE TABLET IS, from `POST /kiosk/heartbeat` (Carl, 4–5 Sep 2026).
+  ///
+  /// One of `KIOSK_SCREENS` — begin, verify, particulars, outage and the rest
+  /// — validated by the DTO against that list. NEVER a heading and never a
+  /// typed value: the headings on this product's screens are often a person's
+  /// name, so the wire carries a word from a fixed list or a 400 (REQ-VER-04,
+  /// hard rule 9).
+  currentScreen String?
+
+  /// The opaque pushed-session id the tablet is showing, or null for a walk-up.
+  /// Reception matches the first eight characters to the session row it
+  /// already has on screen; no name is looked up to decorate a device row.
+  currentSessionId String? @db.Uuid
+
+  /// TAKEN OUT OF USE BY RECEPTION (Carl, 4–5 Sep 2026) — flat battery, gone
+  /// for repair, wrong desk.
+  ///
+  /// IT IS NOT A REVOKE. The credential is untouched and the tablet keeps
+  /// heartbeating, so the console can still see it and one press puts it back.
+  /// Pushes are refused with `device_out_of_use` and the tablet shows a quiet
+  /// "not in use" screen. Reception's switch; revoke stays the administrator's.
+  outOfUseAt DateTime?
+  outOfUseBy String?
+
+  /// "RETURN TO BEGIN" — one pending command, served on heartbeats for two
+  /// minutes and then dropped silently (Carl, 4 Sep 2026).
+  ///
+  /// ONE, NOT A QUEUE. A second press replaces the first: reception wanting
+  /// the tablet back twice wants it back once. The TTL is the guard rail that
+  /// stops a tablet which was asleep at the time from clearing tomorrow's
+  /// patient off the screen tomorrow morning.
+  ///
+  /// CLEARED BY THE TABLET'S ACKNOWLEDGEMENT (`ackCommandId` on the next
+  /// heartbeat), so a command is served once and the row says whether it
+  /// landed.
+  pendingCommandId       String?   @db.Uuid
+  pendingCommandKind     String?
+  pendingCommandIssuedAt DateTime?
+  /// The principal id of the staff member who pressed it. Never a name here —
+  /// the name goes on the vault event, which is the record a person reads.
+  pendingCommandIssuedBy String?
+
+  /// What the tablet last said it was running, so support can read it back
+  /// without asking somebody to look at the device.
+  lastKioskBuild String?
+
+  revokedAt     DateTime?
+  revokedBy     String?
+  /// Why. A device taken out of service and one lost in a taxi are different
+  /// stories, and only one of them is a security event.
+  revokedReason String?
+
+  /// A TEST DEVICE — the ONLY kind that is shown the waiting list (Carl, 4 Sep
+  /// 2026: "the list page is only for testing purposes").
+  ///
+  /// The walk-up tablet must never display other patients' names, so Begin
+  /// goes straight to "Confirm your details" and the server finds the one
+  /// waiting row that matches. `GET /kiosk/waiting-list` answers a device
+  /// without this flag `{ waiting: [], hidden: true }` — and no count either,
+  /// because the count was itself the disclosure Carl removed.
+  ///
+  /// SET FROM THE CONSOLE, NEVER FROM THE TABLET (`PATCH /devices/:id`), for
+  /// the same reason revoke lives there: a device that can turn its own
+  /// disclosure on is a device a passer-by can turn on. Default false.
+  showsWaitingList Boolean @default(false)
+
+  @@index([practiceId])
+  @@map("devices")
+}
+
+/**
+ * THE SHORT-LIVED CODE, in its own table and deliberately NOT practice-scoped
+ * by RLS — for the same reason `vault_outbox` is not.
+ * `POST /devices/pair` is reached by a tablet that has no practice scope yet;
+ * establishing one is the entire point of the call. A policy on
+ * `app.practice_id` would fail closed against the one caller the row exists
+ * for. So the lookup is by hash on a table that carries no patient data at
+ * all — a hash, an expiry and two ids — and the FIRST thing the service does
+ * with the practice it finds is re-enter `withPractice` for every subsequent
+ * read and write.
+ * SINGLE USE IS ENFORCED BY THE UPDATE, not by a read-then-write: consuming a
+ * code is `updateMany` on `consumedAt IS NULL`, so two tablets racing on the
+ * same code produce one credential and one refusal.
+ */
+model DevicePairingCode {
+  id         String @id @default(uuid()) @db.Uuid
+  practiceId String @db.Uuid
+  deviceId   String @db.Uuid
+
+  /// sha256 of the normalised code. The code itself is shown once, on the
+  /// console screen that created it, and is never stored or re-displayed.
+  codeHash String @unique
+
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([deviceId])
+  @@index([expiresAt])
+  @@map("device_pairing_codes")
+}
+
+/**
+ * ONE LOCKED AGREEMENT, ASSIGNED TO ONE NAMED TABLET (TODO.md "Push-to-device
+ * capture" / "Two front doors", Carl 4 Sep 2026).
+ * WHAT A ROW MEANS. Reception has checked the Medicare card in the PMS,
+ * matched the patient, and asked date of birth, mobile, email and address
+ * across the desk — the three-identifier staff check (REQ-VER-03). The push
+ * then validates and LOCKS the particulars server-side and hands the result to
+ * the tablet beside them, so a draft can never reach a device (REQ-REG-06).
+ * The row is the handle both halves hold: the tablet polls for it, the console
+ * watches its state, and recall ends it.
+ * ONE SESSION PER DEVICE IS A PARTIAL UNIQUE INDEX, not a check in a service.
+ * `tablet_sessions_one_active_per_device` is UNIQUE on `deviceId` WHERE
+ * `endedAt IS NULL`. Two receptionists pushing to the same tablet in the same
+ * second produce one session and one refusal, and the refusal carries the
+ * live session's id so the console can offer Recall. A read-then-write would
+ * produce two sessions and a screen nobody could explain.
+ * IT HOLDS NO PATIENT DATA. Ids, a state, a staff name and timestamps. The
+ * particulars live on the agreement, where they are locked and hashed; the
+ * person's details are read live from `patients` for the one screen that shows
+ * them and are never copied here.
+ * ENDING A SESSION NEVER TOUCHES THE AGREEMENT. Walked away, recalled and
+ * expired all leave the agreement exactly as the push left it — the platform
+ * never blocks care (REQ-REC-04), and a patient who declines a screen is still
+ * seen and still billable by another route.
+ */
+model TabletSession {
+  id         String @id @default(uuid()) @db.Uuid
+  practiceId String @db.Uuid
+  deviceId   String @db.Uuid
+
+  agreementId String @db.Uuid
+
+  /// The `in_practice` capture request this session signs against. Opened by
+  /// the push where the agreement had none, so the tablet passes it straight
+  /// back to the EXISTING `POST /agreements/:id/sign`.
+  captureRequestId String? @db.Uuid
+
+  /// The staff-verified event the push recorded. TYPES and an outcome, never
+  /// values (REQ-VER-04) — the event itself lives in `verification_events`.
+  verificationEventId String? @db.Uuid
+
+  /// pushed | reading | details_confirmed | details_disputed | signed | walked_away | timed_out | recalled | expired | declined_enduring | signature_failed
+  state String @default("pushed")
+
+  /// WHY A SIGNATURE WAS REFUSED — the server's own CODE, and only on a
+  /// session that ended `signature_failed` (Carl, 7 Sep 2026).
+  ///
+  /// A CODE AND NEVER A SENTENCE. The console owns the words, so a refusal can
+  /// carry a destination with them, and an unmapped code is shown as the code
+  /// rather than folded into a generic message. The CHECK constrains the SHAPE
+  /// and not the list: a newer server refusing for a newer reason must reach
+  /// reception as its code rather than be rejected on the way in.
+  ///
+  /// Nothing about the patient is in it — it names a rule (REQ-LOG-08).
+  signatureFailureReason String?
+
+  /// WHICH DETAILS THE PATIENT TICKED AS CORRECT — TYPES ONLY, and it is not a
+  /// verification (REQ-VER-03/-04). `mobile` and `email` appear here and are
+  /// CONTACT details, never identity identifiers (REQ-VER-02).
+  detailsConfirmedTypes String[]  @default([])
+  detailsConfirmedAt    DateTime? @db.Timestamptz(3)
+
+  /// WHICH DETAILS THE PATIENT SAID WERE WRONG — TYPES ONLY, on the same five
+  /// permitted words and the same CHECK constraint as the confirmed list
+  /// (REQ-VER-04, hard rule 9). Reception reads these on `/practice/tablet`
+  /// and looks the values up on their own screen; the column never holds one.
+  /// Disjoint from `detailsConfirmedTypes` by construction — a row is ticked
+  /// or crossed, never both.
+  detailsDisputedTypes String[]  @default([])
+  detailsDisputedAt    DateTime? @db.Timestamptz(3)
+
+  /// HOW THE DISPUTE ENDED — `corrected` or `patient_error`, and NULL while a
+  /// cross is still unanswered (Carl, 4 Sep 2026).
+  ///
+  /// A FACT ABOUT THE DISPUTE, NOT A NEW STATE. The session stays
+  /// `details_disputed`: the cross happened, and a resolution does not unhappen
+  /// it. Reception's row reads "Resolved — ready to re-send" off this column,
+  /// and the re-send then builds a FRESH session, leaving this one's resolution
+  /// on it for the audit trail.
+  ///
+  /// A SECOND RESOLUTION REPLACES THE FIRST. Reception may correct a detail and
+  /// then realise it was the patient's error after all; the columns hold the
+  /// latest answer and the outbox holds every one of them, which is the right
+  /// way round — the row is state, the events are history.
+  disputeResolution String?
+
+  /// When, and WHO BY — the staff principal id, never a name. The display name
+  /// belongs on the event (which carries it for an audit line); a name in a
+  /// column goes stale the moment somebody is renamed, and joins to nothing.
+  disputeResolvedAt            DateTime? @db.Timestamptz(3)
+  disputeResolvedByPrincipalId String?
+
+  /// Who pushed it, from their verified session — never from the body. The
+  /// same act is the verification record, so an unattributed push is refused.
+  pushedBy   String
+  pushedById String
+  pushedAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  /// Moves on every state change; the thirty-minute idle expiry measures from
+  /// here rather than from `pushedAt`, so a patient part-way through a long
+  /// read is not thrown off the screen.
+  lastStateAt DateTime @default(now()) @db.Timestamptz(3)
+
+  /// Set exactly once, when the session ends. NULL is what makes it active,
+  /// and what the partial unique index keys on.
+  endedAt DateTime? @db.Timestamptz(3)
+
+  @@index([practiceId])
+  @@index([deviceId])
+  @@index([agreementId])
+  @@map("tablet_sessions")
 }
 
 // FR-11.2 — the vault outbox. Rows are inserted in the SAME transaction as
@@ -1159,4 +2042,929 @@ model VaultOutbox {
 
   @@index([publishedAt, nextAttemptAt])
   @@map("vault_outbox")
+}
+
+/**
+ * The outbound queue — TRANSPORT, not evidence.
+ * `Notice` and `NoticeDeliveryEvent` remain the delivery record (REQ-DEL-01).
+ * This table carries a payload to a destination and records attempts. The
+ * distinction is what makes this table PRUNABLE: once an item is sent and the
+ * evidence layer has been told, the row has no further job, while the notice
+ * it carried must survive two years.
+ * That matters at the modelled volume. 750,000 notices a day is 274 million
+ * rows a year — fine as a working queue that is pruned, ruinous as a permanent
+ * one.
+ * WHY POSTGRES RATHER THAN A BROKER. The enqueue happens in the SAME
+ * TRANSACTION as the evidence write, which makes two failures impossible: a
+ * notice with no send, and a send with no notice. Any out-of-process broker
+ * reintroduces both and then needs an outbox to fix them — which is this
+ * table. `FOR UPDATE SKIP LOCKED` handles the ~21/second average and its peaks
+ * without breathing hard.
+ */
+model OutboundItem {
+  id         String  @id @default(uuid()) @db.Uuid
+  /// NULL is legal for exactly one shape: a message about a practitioner's
+  /// own identity, addressed to them, with no practice to anchor it to (see
+  /// migration 20260824050000). A CHECK constraint enforces that this is the
+  /// only case NULL is allowed in -- never a practice message left blank.
+  practiceId String? @db.Uuid
+
+  /// email | sms | webhook | device
+  channel     String
+  /**
+   * Where it goes. NULL is legal only for `device`: a kiosk item is addressed
+   * to whichever tablet at that practice comes for it, and demanding a device
+   * id up front would mean knowing which screen a patient will walk up to.
+   */
+  destination String?
+
+  /// What this is about, so the evidence layer can be told what happened.
+  subjectType String
+  subjectId   String @db.Uuid
+
+  /**
+   * The body. JSON so a kiosk payload, an email envelope and a webhook body
+   * share one table. Capped in the domain at 256KB — large content belongs in
+   * the artefact store with a reference queued instead, because this table
+   * shares a database with the consent records.
+   */
+  payload Json
+
+  /**
+   * WHAT IT IS, as distinct from how it travels.
+   * email | json | xml | pdf | markdown. `channel` says how it gets there;
+   * this says what the recipient opens. A JSON document can go by webhook or
+   * wait for a kiosk, and the viewer that renders it depends on this, not on
+   * the channel.
+   */
+  mediaType String @default("email")
+
+  // --- WHERE and WHO, so a support call is answerable ---
+  //
+  // "Dr Sorrell never got the notice about the Yagoona site" has to be
+  // answerable by filtering, because the alternative is opening payloads one
+  // at a time — and payloads are the one thing we deliberately do not let
+  // anybody search, since a body search would let somebody trawl for a
+  // patient name across a practice.
+  locationId   String? @db.Uuid
+  departmentId String? @db.Uuid
+
+  /// practitioner | patient | assignor | practice | other
+  recipientType String?
+  recipientId   String? @db.Uuid
+  /**
+   * DENORMALISED, and correctly so. A support call is answered by typing a
+   * name, and resolving one through three joins on a table gaining 274
+   * million rows a year is not a query anybody should run. It is also the
+   * right evidence: this is the name the message was ADDRESSED to at the
+   * time, which is not necessarily the name that record carries today.
+   */
+  recipientName String?
+
+  // --- Resending ---
+  //
+  // A resend is a NEW ROW, not a mutated one. A counter alone would tell you
+  // it went three times; the copies tell you when each went, who asked, and
+  // what the provider said — which is what a support call actually needs.
+  // The count is kept as well so a list can show "sent 3 times" without a
+  // subquery per row.
+  /// The original. NULL on an original.
+  resendOfId   String?       @db.Uuid
+  /// On the ORIGINAL: how many times it has been sent again.
+  resendCount  Int           @default(0)
+  /// The KEY, from `resend_reasons`. Countable — "how often do our messages
+  /// not arrive" is a question about deliverability, and free text cannot
+  /// answer it.
+  resendReason String?
+  reason       ResendReason? @relation(fields: [resendReason], references: [key])
+  /// The WORDS. What makes one resend accountable rather than countable. At
+  /// least three of them; the rule is in the domain.
+  resendNote   String?
+  /// Who asked, from the verified token.
+  resendByName String?
+
+  /// Set when the payload points at a stored file rather than carrying it.
+  artefactId String? @db.Uuid
+
+  /// pending | leased | sent | failed | dead
+  state    String @default("pending")
+  attempts Int    @default(0)
+
+  /// When it may next be attempted. Drives both scheduling and backoff.
+  availableAt DateTime @default(now())
+
+  /**
+   * Who holds it, and until when. A lease that expires IS the recovery
+   * mechanism for a worker that died — nothing has to detect the death, the
+   * lease simply stops being true.
+   */
+  leasedBy       String?
+  leaseExpiresAt DateTime?
+
+  /**
+   * One logical send. Built from what the send IS, never from a timestamp, so
+   * a retry after a crash produces the same key and cannot become a duplicate.
+   * Re-sending a statutory notice is not a duplicate email — it is a second
+   * assertion that notice was given.
+   */
+  idempotencyKey String
+
+  lastError   String?
+  /// Set when the provider gave us an id we can reconcile against later.
+  providerRef String?
+
+  createdAt DateTime  @default(now())
+  sentAt    DateTime?
+
+  @@unique([practiceId, idempotencyKey])
+  @@index([practiceId])
+  @@map("outbound_items")
+}
+
+/**
+ * Work arriving FROM a practice's desktop: a print job, already parsed down to
+ * the s 65C fields (CONSULTATION-CAPTURE-PLAN.md Parts 8 and 9).
+ * THE MIRROR IMAGE OF `outbound_items`, and built the same way on purpose:
+ * the same states, the same lease, the same backoff and attempt budget from
+ * `outbound-queue.ts`, the same "dead is kept, never deleted". What it adds is
+ * the LANE — critical / standard / fyi — declared per document type in
+ * `inbound-lanes.ts`, with one worker per lane so the morning appointment list
+ * can never sit in front of the patient standing at the desk.
+ * The payload is a `PrintJobEnvelope` (contracts/print-capture.ts): patients,
+ * providers, appointments, invoices in adapter shape. Never the document.
+ */
+model InboundPrintJob {
+  id         String @id @default(uuid()) @db.Uuid
+  practiceId String @db.Uuid
+
+  /**
+   * Which desktop (8.5), once devices enrol. NULL until then — the request is
+   * practice-scoped like every other, and `credentialKind` says which model
+   * authenticated it so attribution is never ambiguous about what it rests on
+   * (Part 6 Q9: device key AND shared practice key are both allowed).
+   */
+  deviceId       String?
+  credentialKind String  @default("practice") // device | practice
+
+  documentType          String
+  lane                  String
+  pms                   String
+  parserTemplateVersion String
+  /// SHA-256 of the source print job. Provenance without possession (8.2).
+  sourceSha256          String
+
+  payload Json
+
+  state          String    @default("pending") // pending | leased | done | failed | dead
+  attempts       Int       @default(0)
+  availableAt    DateTime  @default(now())
+  leasedBy       String?
+  leaseExpiresAt DateTime?
+  lastError      String?
+
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+  /// What processing produced — captured / suppressed tallies — so "what did
+  /// that print job do" is answerable from the row.
+  outcome     Json?
+
+  /// The same document printed twice is the same job. Same type, same bytes.
+  @@unique([practiceId, documentType, sourceSha256])
+  @@index([practiceId, lane, state])
+  @@map("inbound_print_jobs")
+}
+
+/**
+ * What was sent, as EVIDENCE — CONSULTATION-CAPTURE-PLAN.md Part 4.
+ * Two stores existed and neither fits. `outbound_items` is transport: it
+ * answers "did it leave, is it stuck" and is pruned after thirty days, so a
+ * patient or practitioner looking at it would watch their own history vanish.
+ * `Notice` is durable but is specifically the reg 89AA notice, with its claim
+ * reference and 24-hour clock. The pending-email confirmations, the acting-as
+ * notices, the invitations, the capture links — none is a Notice, and all of
+ * them are what a practice, a doctor and a patient must be able to see for
+ * the retention period.
+ * So: the evidence twin of every transport row, written in the same
+ * transaction as the send, kept for `retentionExpiryDate`, and — when that
+ * day comes — TOMBSTONED, not deleted: the text goes, the fact that a message
+ * was sent, to whom, about what, stays (`contentRemovedAt`). `legalHold` wins.
+ * NOT a rewrite of Notice: the 89AA notice keeps its statutory shape and also
+ * writes a row here, so one screen can show everything.
+ */
+model Correspondence {
+  id String @id @default(uuid()) @db.Uuid
+
+  /**
+   * NULL for exactly one shape, the same one as outbound_items: a message
+   * about a practitioner's own identity, addressed to them, with no practice
+   * to anchor it to. The CHECK constraint enforces that this is the only case.
+   */
+  practiceId String? @db.Uuid
+
+  /// practice | practitioner | patient | assignor — who it was for.
+  recipientType String?
+  /// The PERSON, never only the address, so a changed address does not orphan history.
+  recipientId   String? @db.Uuid
+  recipientName String?
+  /// The address at the time. NULL for a kiosk (`device`) item, which is addressed to a screen.
+  to            String?
+
+  channel   String
+  mediaType String @default("email")
+
+  subject  String?
+  bodyText String?
+  bodyHtml String?
+  /// Who composed it: aobplatform | keycloak | a named person at the practice.
+  sentBy   String?
+
+  /// What it was about — Agreement, CaptureRequest, PendingEmailChange, ActingAsSession, Notice, Practitioner …
+  subjectType String
+  subjectId   String @db.Uuid
+
+  /// The transport row it mirrors, while that row still exists. Unique: one evidence row per send.
+  outboundItemId String? @unique @db.Uuid
+  /// The 89AA notice it mirrors. Unique for the same reason.
+  noticeId       String? @unique @db.Uuid
+
+  /// queued | sent | delivered | failed | dead — a projection of the transport's states, kept after the transport is pruned.
+  state         String    @default("queued")
+  queuedAt      DateTime  @default(now())
+  sentAt        DateTime?
+  deliveredAt   DateTime?
+  failedAt      DateTime?
+  failureReason String?
+
+  // --- Part 5: retention, soft ---
+  retentionExpiryDate DateTime? @db.Date
+  legalHold           Boolean   @default(false)
+  /// Set by the retention sweep when the text was removed. The row stays.
+  contentRemovedAt    DateTime?
+
+  @@index([practiceId, queuedAt])
+  @@index([recipientType, recipientId, queuedAt])
+  @@index([subjectType, subjectId])
+  @@index([retentionExpiryDate])
+  @@map("correspondence")
+}
+
+/**
+ * A platform operator acting as a practice.
+ * NO RLS, deliberately — the one table where that is correct. A session
+ * belongs to the PLATFORM, not to the practice being acted for, and the
+ * separation-of-duties check reads across practices. Nothing here is patient
+ * data; it is who did what, which is the opposite of a thing to hide.
+ * APPEND-ONLY, enforced by triggers rather than convention: this is the record
+ * of impersonation, so it is precisely the table somebody would want to edit
+ * their way out of. Deletes are refused outright, and who/for whom/why/when
+ * cannot be changed after the fact.
+ */
+model ActingAsSession {
+  id         String @id @default(uuid()) @db.Uuid
+  practiceId String @db.Uuid
+
+  /// The REAL person, from the verified token. Never the practice.
+  operatorSub  String
+  operatorName String
+
+  /// From ACTING_AS_REASONS. Chosen, so "how often, and why" is answerable.
+  reason String
+  note   String?
+
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+  /// expired | ended_by_operator. A session that always expires is somebody
+  /// who never closes them, which is worth being able to see.
+  endedHow  String?
+
+  /// Rule 3: no OTP before, notified after. This is the proof the after happened.
+  practiceNotifiedAt DateTime?
+
+  /// Rule 6: impersonation forces re-approval. Cleared when somebody OTHER
+  /// than the operator approves — see assertMayApproveAfterActingAs.
+  forcedReapproval  Boolean @default(true)
+  clearedByApproval String? @db.Uuid
+
+  createdAt DateTime @default(now())
+
+  @@index([operatorSub, startedAt])
+  @@index([practiceId, startedAt])
+  @@map("acting_as_sessions")
+}
+
+/**
+ * Work arriving INTO the platform that needs a second look.
+ * Separate from OutboundItem on purpose: that carries things LEAVING, this
+ * carries work coming in. One table would mean "queue" meaning two things in
+ * one schema.
+ * THE TASK IS NOT THE EVIDENCE. The amendment record already holds what
+ * changed, who changed it and why. What IS evidence is the RESOLUTION —
+ * "somebody looked at this and accepted it" — and that goes to the vault, so a
+ * task row can be pruned while the decision cannot.
+ */
+model ReviewTask {
+  id         String @id @default(uuid()) @db.Uuid
+  practiceId String @db.Uuid
+
+  /// From REVIEW_TASK_KINDS. The kind carries the stakes, and the stakes
+  /// decide whether an automated check may close it.
+  kind        String
+  subjectType String
+  subjectId   String @db.Uuid
+
+  /// What a reviewer reads first. Written when the task is raised, because
+  /// the raiser knows what changed and a reviewer opening it later should not
+  /// have to reconstruct it.
+  summary String
+  detail  Json   @default("{}")
+
+  state    String   @default("open")
+  raisedBy String
+  raisedAt DateTime @default(now())
+
+  /// Leasing, so a person and a checker cannot both work the same task.
+  claimedBy      String?
+  claimExpiresAt DateTime?
+
+  /// What an automated check thought. ADVICE, recorded whether or not it was
+  /// allowed to act on it — a model that flagged something a person then
+  /// dismissed is worth being able to find later.
+  autoVerdict    String?
+  autoConfidence Float?
+  autoReasoning  String?
+  autoCheckedBy  String?
+  autoCheckedAt  DateTime?
+
+  resolution            String?
+  resolvedBy            String?
+  resolvedAt            DateTime?
+  resolvedNote          String?
+  /// TRUE when no person looked. Its own column rather than inferred from
+  /// resolvedBy, because "was this reviewed by a human" is a question somebody
+  /// will ask of the whole table at once.
+  resolvedAutomatically Boolean   @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([practiceId, raisedAt])
+  @@index([kind, raisedAt])
+  @@map("review_tasks")
+}
+
+/// A change to the administrator's email address, held until it is confirmed.
+///
+/// The rules are in `@aobplatform/domain/pending-email-change` and the reasons
+/// are in the migration. The short version: changing this address redirects the
+/// channel by which a practice finds out anything -- including that its address
+/// was redirected -- so it is proved before it takes effect, and BOTH ends are
+/// told while it waits.
+model PendingEmailChange {
+  id String @id @default(uuid()) @db.Uuid
+
+  /**
+   * EXACTLY ONE SUBJECT. This table was built for a practice's administrator
+   * address, so `practiceId` was the anchor. A practitioner has no practice —
+   * their scope is their affiliations — so theirs cannot hang off it.
+   * Rather than a second table repeating token, code, expiry and outcome, the
+   * change gains a subject: a practice or a practitioner, never both and never
+   * neither. `num_nonnulls(...) = 1` in the database says so; nullable columns
+   * alone would allow a row belonging to nobody.
+   */
+  practiceId     String? @db.Uuid
+  practitionerId String? @db.Uuid
+
+  /// WHICH ADDRESS ON THE PRACTICE. adminEmail or groupEmail — practitioner
+  /// rows have no second field to name, so this stays 'adminEmail' for them by
+  /// convention rather than meaning anything there. The one-live-request index
+  /// is keyed on this too, so a practice can hold a live adminEmail change and
+  /// a live groupEmail change at once without either superseding the other.
+  field String @default("adminEmail")
+
+  requestedEmail     String
+  /// What THE FIELD NAMED ABOVE was AT THE TIME — the previous adminEmail when
+  /// `field` is adminEmail, the previous groupEmail when it is groupEmail.
+  /// `practices` moves on; a reviewer reading history needs the value this
+  /// request was actually about.
+  previousEmail      String?
+  /// The WITNESS for an adminEmail change: the group address BEFORE the save.
+  /// If the group address is changed in the same save, the warning must still
+  /// go where the practice could read it.
+  previousGroupEmail String?
+  /// The WITNESS for a groupEmail change: the admin address at the time, told
+  /// what the practice's shared inbox is becoming. groupEmail has no sign-in
+  /// of its own to protect, so there is no handover here — only a second
+  /// channel to notice the change.
+  previousAdminEmail String?
+
+  requestedAt     DateTime @default(now())
+  requestedByName String
+  expiresAt       DateTime
+
+  /// The link carries the token; the human carries the code. A link alone is
+  /// consumed by a GET, and mail scanners issue GETs.
+  confirmToken String @unique
+  confirmCode  String
+  attempts     Int    @default(0)
+
+  /// Separate from confirmToken, so holding one never implies the other:
+  /// whoever can confirm the change must not thereby be able to cancel the
+  /// warning about it.
+  stopToken String @unique
+
+  /// NULL while waiting. confirmed | stopped | expired | superseded.
+  outcome   String?
+  outcomeAt DateTime?
+  /// The ADDRESS that answered, never free text from whoever answered it.
+  outcomeBy String?
+
+  /// The backup address AT THE TIME, so a reviewer can see which channel was
+  /// actually reachable rather than assuming the old one was.
+  backupEmail String?
+
+  /// When it took effect. The cooling-off window runs from HERE, not from the
+  /// request: somebody who notices late is objecting to the change having
+  /// happened, not to it having been asked for.
+  effectiveAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([practiceId, requestedAt])
+  @@index([practitionerId, requestedAt])
+  @@map("pending_email_changes")
+}
+
+/// The common reasons for sending a message again, as DATA.
+///
+/// A table rather than a list in the code, because somebody will think of a
+/// sixth one and that should not be a code change, a review and a deploy. A
+/// catalogue of common answers changes at the speed of operations.
+///
+/// What deliberately did NOT move here is the rule about how much somebody has
+/// to say — `MIN_RESEND_REASON_WORDS` stays in the domain, because a rule
+/// living in this table could be edited to nothing by whoever was tired of
+/// typing.
+///
+/// Not row-level scoped: a catalogue of words, identical for every practice and
+/// containing nothing about anybody. Scoping it would give each practice its
+/// own list, which is the opposite of what makes the answers countable.
+model ResendReason {
+  /// Stable, and referenced by outboundItems.resendReason. Renaming a label
+  /// must never orphan the records that chose it.
+  key       String   @id
+  label     String
+  detail    String
+  /// Retired rather than deleted: deleting one orphans every record that chose
+  /// it, and "why did we resend these forty" stops having an answer.
+  active    Boolean  @default(true)
+  sortOrder Int      @default(100)
+  createdAt DateTime @default(now())
+
+  outboundItems OutboundItem[]
+
+  @@map("resend_reasons")
+}
+
+// ---------------------------------------------------------------------------
+// M8 — THE PATIENT'S OWN PAGE (C8; REQ-PORT-01..08, FR-8.1/8.2).
+//
+// THE ACCOUNT IS THE HUB AND THE PATIENT CARRIES THE LINKS. A person activates
+// from each practice's signed agreement, after THAT practice verified them
+// across its own counter, so no practice ever learns another exists and no
+// cross-practice identifier is ever needed (TODO.md "The patient links their
+// own practices", Carl 4 Sep 2026). It is the whole reason there is no IHI
+// matching anywhere in this file.
+//
+// NOTHING ABOUT THE PERSON IS STORED HERE. No email, no mobile, no name, no
+// date of birth: contact and identity live on the practice's own patient
+// record, where the PMS is the master (REQ-DATA-10) and where the encryption
+// and the RLS already are. A portal account is an id, two timestamps and a set
+// of links — which is also why crypto-shredding a patient does not leave a
+// second copy of them in this table.
+// ---------------------------------------------------------------------------
+
+/// One person's portal identity. Deliberately almost empty — see above.
+model PortalAccount {
+  id         String    @id @default(uuid()) @db.Uuid
+  createdAt  DateTime  @default(now())
+  /// Refreshed when a session is issued, so a dormant account is visible
+  /// without reading the session table. Never a request-level clock.
+  lastSeenAt DateTime?
+
+  links       PortalAccountPatient[]
+  sessions    PortalSession[]
+  invitations PortalActivationToken[]
+
+  @@map("portal_accounts")
+}
+
+/// ONE LINK PER PRACTICE THE PATIENT ACTIVATED FROM.
+///
+/// `linkedByAgreementId` is the agreement whose activation invitation produced
+/// it — the evidence of WHY this account may see this practice's record. A link
+/// with no agreement behind it would be an assertion that somebody is a patient,
+/// which is exactly what the three-identifier check exists to avoid making.
+model PortalAccountPatient {
+  id                  String        @id @default(uuid()) @db.Uuid
+  accountId           String        @db.Uuid
+  account             PortalAccount @relation(fields: [accountId], references: [id])
+  patientId           String        @db.Uuid
+  practiceId          String        @db.Uuid
+  linkedAt            DateTime      @default(now())
+  linkedByAgreementId String?       @db.Uuid
+
+  /// One link per patient record. A second activation from the same practice
+  /// refreshes nothing and creates nothing.
+  @@unique([accountId, patientId])
+  @@index([accountId])
+  @@index([practiceId])
+  @@map("portal_account_patients")
+}
+
+/// FR-8.2 — short-lived and SERVER-SIDE. The cookie carries an opaque id and
+/// nothing else: no claims, no patient ids, nothing a client could edit. Thirty
+/// minutes, revocable, and every issue writes a `portal.accessed` event.
+model PortalSession {
+  id        String        @id @default(uuid()) @db.Uuid
+  accountId String        @db.Uuid
+  account   PortalAccount @relation(fields: [accountId], references: [id])
+  createdAt DateTime      @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+
+  @@index([accountId])
+  @@map("portal_sessions")
+}
+
+/// FR-1.14 — the invitation minted after a completed signature. OFFERED, never
+/// required (REQ-PORT-08).
+///
+/// ONLY THE HASH IS STORED, exactly as capture links do: a database read must
+/// not be able to mint a working invitation. And the token is not the door —
+/// `POST /portal/activate` also demands the three approved identifiers against
+/// that agreement's own practice, which is what stops a forwarded message on a
+/// shared family phone opening somebody else's record (REQ-VUL, addendum v4).
+model PortalActivationToken {
+  id          String         @id @default(uuid()) @db.Uuid
+  practiceId  String         @db.Uuid
+  agreementId String         @db.Uuid
+  patientId   String         @db.Uuid
+  /// THE ACCOUNT THIS INVITATION WILL LINK INTO, minted with the invitation so
+  /// that the record id in the very first message is the one the patient will
+  /// see on the page (Carl, 4 Sep 2026). Linking still happens at activation
+  /// and only after the three-identifier check; a minted account with no
+  /// `portal_account_patients` row can read nothing. NULL for every invitation
+  /// issued before this existed, which still activates the old way.
+  accountId   String?        @db.Uuid
+  account     PortalAccount? @relation(fields: [accountId], references: [id])
+  tokenHash   String         @unique
+  /// The staff member's principal id, or `system` when minted after signature.
+  mintedById  String
+  createdAt   DateTime       @default(now())
+  expiresAt   DateTime
+  usedAt      DateTime?
+  /// Three wrong answers and this token is finished (423). A fresh invitation
+  /// is a practice act, at the counter.
+  attempts    Int            @default(0)
+  lockedAt    DateTime?
+
+  @@index([practiceId])
+  @@index([agreementId])
+  @@map("portal_activation_tokens")
+}
+
+/// REQ-PORT-05 — the written notice a patient's termination generates.
+///
+/// ITS OWN TABLE AND NOT `notices`, deliberately. `notices` is the reg 89AA
+/// table: it REQUIRES a claim reference, a claim lodgement time and a benefit
+/// amount, because a post-claim notification is what it is for. A termination
+/// notice has none of those, and writing one there would mean inventing a
+/// benefit amount for a document that must not carry one (hard rule 4).
+///
+/// EVERY ROW IS A DRAFT. The wording is human-authored regulatory copy
+/// (packages/domain/content/enduring-termination-notice.json ships empty and
+/// marked draft), so the status is `draft_pending_review` and a review task is
+/// raised beside it. The termination itself is NOT held up by that — the
+/// statutory clock starts at notice and the patient's right does not wait on
+/// our copywriting.
+model PortalTerminationNotice {
+  id              String   @id @default(uuid()) @db.Uuid
+  practiceId      String   @db.Uuid
+  agreementId     String   @unique @db.Uuid
+  /// Who ended it. The account id, never a name.
+  accountId       String   @db.Uuid
+  templateKey     String
+  templateVersion String
+  status          String   @default("draft_pending_review")
+  noticeAt        DateTime
+  effectiveAt     DateTime
+  /// Which state's calendar produced `effectiveAt`, with its dataset provenance.
+  calendarState   String
+  reviewTaskId    String?  @db.Uuid
+  createdAt       DateTime @default(now())
+
+  @@index([practiceId])
+  @@map("portal_termination_notices")
+}
+
+/// FR-1.23 — the patient removes an assignor nomination, with no justification.
+///
+/// A ROW RATHER THAN A COLUMN ON `assignors`, for two reasons. Revocation is
+/// per PATIENT: one assignor may act for two people and being removed by one of
+/// them says nothing about the other. And it is an act with a time and an
+/// author, which a boolean cannot hold — "she was removed in March" and "she
+/// was never nominated" are different histories.
+///
+/// NO REASON COLUMN, and there must never be one. FR-1.23 is explicit that the
+/// patient owes no justification; a nullable field for one becomes a question
+/// on a screen, and then a required question.
+model PortalAssignorRevocation {
+  id         String   @id @default(uuid()) @db.Uuid
+  practiceId String   @db.Uuid
+  accountId  String   @db.Uuid
+  assignorId String   @db.Uuid
+  patientId  String   @db.Uuid
+  revokedAt  DateTime @default(now())
+
+  @@unique([assignorId, patientId])
+  @@index([practiceId])
+  @@map("portal_assignor_revocations")
+}
+
+/// FR-8.2 — THE PASSKEY HALF OF PORTAL AUTHENTICATION (Carl, 4 Sep 2026:
+/// "Implement"; recorded as D-2026-09-04-02).
+///
+/// WHAT A ROW IS. One WebAuthn credential a patient enrolled on one device,
+/// bound to their portal account by the three-identifier bootstrap that was
+/// live when they enrolled it. The bootstrap is what makes the binding mean
+/// something: a credential registered without it would be bound to whoever was
+/// holding the phone, which is the family-phone failure (REQ-VUL, addendum v4)
+/// wearing a nicer hat. So registration is only reachable INSIDE a live portal
+/// session.
+///
+/// WHAT IS NOT HERE. No name, no email, no mobile, no date of birth — the
+/// portal account holds none of those and neither does a credential. A public
+/// key, a counter, a transport hint and an authenticator model id are the whole
+/// of it, and none of them is a patient identifier. `label` is the ONE free-text
+/// field and it is the patient's own words for their own device ("my phone"),
+/// nullable because a patient who names nothing is the normal case.
+///
+/// NO PASSWORD COLUMN AND NO RECOVERY QUESTION, ever. Hard rule 15 is written
+/// about practitioners and admins; a patient portal with a password would be
+/// worse than that rule contemplates, not exempt from it. When a patient loses
+/// every device they re-bootstrap from a fresh invitation at the practice —
+/// which is the same door they came in through, and REQ-PORT-08 means losing
+/// the portal never costs them the ability to sign anything.
+///
+/// `revokedAt` RATHER THAN A DELETE. "This credential was removed in March" and
+/// "this credential never existed" are different facts, and a sign-in attempt
+/// with a revoked credential is worth seeing.
+model PortalCredential {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// The portal account this credential signs in to. No Prisma relation on
+  /// purpose — the foreign key is in the migration; declaring the relation here
+  /// would mean editing `PortalAccount`, and this model is appended.
+  accountId String @db.Uuid
+
+  /// The authenticator's own credential id, base64url. UNIQUE ACROSS THE TABLE:
+  /// a discoverable sign-in arrives with nothing but this, so it is the key the
+  /// account is resolved from, and two accounts sharing one would be an
+  /// ambiguity with a session on the end of it.
+  credentialId String @unique
+
+  /// COSE public key bytes. Public by definition; stored raw because verifying
+  /// a signature needs exactly these bytes and re-encoding them is a way to get
+  /// a verification failure that looks like an attack.
+  publicKey Bytes
+
+  /// The authenticator's signature counter. A value that goes BACKWARDS means
+  /// the credential has been cloned; the service refuses and writes
+  /// `portal.passkey_rejected`. Many modern authenticators pin this at zero,
+  /// which is why the check is "regression", not "no increase".
+  counter BigInt @default(0)
+
+  /// `internal`, `hybrid`, `usb`… A hint for the next sign-in prompt, nothing more.
+  transports String[] @default([])
+
+  /// The authenticator MODEL id — a device type, never a device instance and
+  /// never a person. Kept because "every failure is on one model of phone" is
+  /// otherwise an unanswerable support question.
+  aaguid String @default("")
+
+  /// The patient's own words for their own device. Never generated from a user
+  /// agent string, which is a fingerprint dressed up as a convenience.
+  label String?
+
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+
+  @@index([accountId])
+  @@map("portal_credentials")
+}
+
+/// THE SERVER-STORED CHALLENGE — five minutes, single use, and the reason a
+/// captured registration or sign-in cannot be replayed.
+///
+/// WHY A ROW AND NOT A SIGNED COOKIE. A cookie the client holds cannot be
+/// consumed; the whole property being bought here is that the SECOND use of a
+/// challenge fails, and only a server-side row can be spent. `consumedAt` is
+/// set by a conditional update, so two requests racing on one challenge produce
+/// one winner and one refusal rather than two sessions.
+///
+/// `accountId` AND `sessionId` ARE SET FOR REGISTRATION AND NULL FOR SIGN-IN,
+/// and that asymmetry is the point. Registration happens inside a live session
+/// and the challenge is bound to it, so a registration challenge minted for one
+/// person cannot be finished by another. A sign-in challenge has nobody yet —
+/// resolving who it was is the job of the signature.
+///
+/// IT CARRIES NO PII AND CANNOT: a purpose, a nonce, two timestamps and two
+/// nullable ids.
+model PortalPasskeyChallenge {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// `registration` | `authentication`. A registration challenge presented to
+  /// the sign-in verifier is refused — one nonce, one job.
+  purpose String
+
+  /// The base64url challenge the authenticator signed over.
+  challenge String @unique
+
+  /// Set for registration (bound to the live session), null for sign-in.
+  accountId String? @db.Uuid
+  sessionId String? @db.Uuid
+
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+  consumedAt DateTime?
+
+  @@index([accountId])
+  @@index([expiresAt])
+  @@map("portal_passkey_challenges")
+}
+
+/// A PATIENT WALKED UP TO RECEPTION TO SEE A PROVIDER (Carl, 4 Sep 2026;
+/// TODO.md "Reception-centric: the patient work page" §2).
+///
+/// WHY THE ROW EXISTS AT ALL, when the agreement it produces would seem to be
+/// the record. Three things it answers that nothing else can. WHEN the practice
+/// told us, which is not when we drafted anything. WHAT WE DECIDED and under
+/// WHICH VERSION of the visit policy — an arrival that produced no agreement
+/// (the patient is already covered) leaves no agreement behind, so without this
+/// row a decision and a dropped message look identical. And IDEMPOTENCY: a
+/// connector on a practice's ADSL retries, and `(practiceId, idempotencyKey)`
+/// is what stops one person appearing on the queue twice with two agreements.
+///
+/// IT DOES NOT HOLD THE FIVE DETAILS. The arrival CARRIES them — the PMS is the
+/// source of truth (REQ-DATA-10) — and they land on `patients`, the one mirror,
+/// which is where every other surface reads them. A second copy here would be a
+/// second answer to "what is this person's address", and the two would drift by
+/// the afternoon. What stays is `detailsChanged`: the TYPES that moved on the
+/// mirror, in the tick-box vocabulary (`name`, `address`, `mobile`) — never a
+/// value, old or new (REQ-VER-04, REQ-LOG-08).
+///
+/// THERE IS NO MEDICARE COLUMN AND THERE NEVER WILL BE (hard rule 1, HARD-03),
+/// no benefit and no amount (hard rule 4), and no agreement TYPE sent by the
+/// sender — `visitDecision` is written by the platform's own versioned policy
+/// and the DTO has no field the PMS could use to assert one (hard rules 6, 14).
+model Arrival {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// NO `practice` RELATION FIELD, deliberately — the same shape `Appointment`
+  /// and `ChaseAttempt` use. A relation would need a back-reference added to
+  /// `Practice`, and this model was appended to a schema three other agents
+  /// were editing the same afternoon. Scoping is enforced by RLS on the column
+  /// either way, which is where it belongs (ADR: practice scoping at the DB layer).
+  practiceId String @db.Uuid
+
+  /// The practice's own handle for the patient — the join key for the mirror.
+  pmsPatientRecordNumber String
+
+  /// Resolved at receipt. Null only if resolution failed, which is recorded
+  /// rather than retried silently.
+  patientId  String? @db.Uuid
+  providerId String? @db.Uuid
+  /// What the sender named the provider by, when it was not our id.
+  providerNumber String?
+
+  /// The patient's own assignor record (authorityBasis `self`, D7 explicit).
+  assignorId String? @db.Uuid
+
+  /// True when this arrival is the first time we saw this patient.
+  patientCreated Boolean @default(false)
+
+  /// The detail TYPES the PMS push changed on the mirror. Names, never values.
+  detailsChanged String[] @default([])
+
+  /// `enduring` | `episodic_pre` | `none`, and the rule key that decided.
+  visitDecision String?
+  decisionReason String?
+  /// Hard rule 14 — which table gave the answer above.
+  policyVersion String?
+
+  /// Null when the decision was `none`; nothing was drafted, and that is the answer.
+  agreementId      String? @db.Uuid
+  captureRequestId String? @db.Uuid
+
+  /// By the practice's clock, not ours.
+  arrivedAt  DateTime
+  receivedAt DateTime @default(now())
+
+  /// `connector` | `dev`. A real practice's software and a dev script must
+  /// never look alike in the evidence.
+  source String
+
+  /// The sender's own handle for this arrival. Idempotency is on this.
+  idempotencyKey String
+
+  /**
+   * `received` | `refused` (Carl, 5–7 Sep 2026; the billing role).
+   *
+   * An arrival naming somebody who cannot be the provider on an agreement — a
+   * practice nurse, a phlebotomist — is REFUSED, and reception picks the
+   * provider the claim will go under. The refusal is RECORDED rather than only
+   * returned: "the connector sent us somebody who cannot be the provider" is a
+   * fact about an onboarding, and it has to be visible at the desk.
+   */
+  outcome String @default("received")
+  /// The reason code, e.g. `provider_not_servicing`. Never free prose.
+  refusedReason String?
+  /**
+   * THE PMS'S OWN MESSAGE, HELD ONLY WHILE THE ARRIVAL IS REFUSED.
+   *
+   * Reception's fix is one click — choose the provider, and the platform
+   * replays the arrival it already has — and it cannot replay a message it
+   * threw away. Nothing is mirrored onto the patient row until that click, so
+   * a refused arrival changes nothing about the person; this is what makes
+   * that possible. CLEARED the moment the arrival is accepted, enforced by
+   * `arrivals_payload_held_only_while_refused`, so it is a held message and
+   * never a second copy of the patient record. Same shape and same reasoning
+   * as `InboundPrintJob.payload`.
+   */
+  refusedPayload Json?
+
+  @@unique([practiceId, idempotencyKey])
+  @@index([practiceId, arrivedAt])
+  /// The desk's "Needs a provider" list, and nothing else reads this way.
+  @@index([practiceId, outcome, arrivedAt])
+  @@map("arrivals")
+}
+
+/**
+ * PER-PRACTICE AGREEMENT WORDING (Carl, 5 Sep 2026; PMS_to_AoB_Workflow.md W1).
+ *
+ * The generic templates are versioned content in
+ * `packages/domain/content/agreement-templates.json`. A practice that wants
+ * different words proposes a VARIANT here, in the same schema, validated by
+ * the same loader — so a variant cannot drop a D-element, carry an amount,
+ * offer a practitioner signature or claim the form is approved (hard rules 3,
+ * 4, 12, 14).
+ *
+ * THE STATUS LADDER IS THE POINT. `draft` → `in_review` → `active` → `retired`,
+ * and the step from `in_review` to `active` is a PLATFORM-OPERATOR act. A
+ * practice cannot activate its own legal copy: regulatory wording is read by a
+ * person with the standing to read it, and the database refuses an `active`
+ * row with no named reviewer (`practice_templates_active_was_reviewed`).
+ *
+ * NOTHING IS EDITED IN PLACE ONCE ACTIVE. A change is a NEW version, proposed
+ * and reviewed again, and retiring the current one falls back to the generic —
+ * the same "corrections supersede" shape as HARD-02, for the same reason: an
+ * agreement records which version it was made from, and a version whose words
+ * can change afterwards records nothing.
+ */
+model PracticeAgreementTemplate {
+  id         String @id @default(uuid()) @db.Uuid
+  practiceId String @db.Uuid
+
+  /// episodic | enduring — the two instruments.
+  agreementType String
+  /// Minted by the practice, e.g. `testville-episodic-1`. Unique per type.
+  version       String
+  /// draft | in_review | active | retired
+  status        String @default("draft")
+
+  /// The body, in the generic file's own schema. Validated before it is written.
+  body  Json
+  /// The practice's own note about why these words. Never rendered.
+  notes String?
+
+  submittedByName String?
+  submittedAt     DateTime?
+
+  /// The PLATFORM principal who read the words. Never a practice user.
+  reviewedByName String?
+  reviewedAt     DateTime?
+  /// What the reviewer said. Shown to the practice, verbatim.
+  reviewNotes    String?
+
+  activatedAt DateTime?
+  retiredAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@unique([practiceId, agreementType, version])
+  @@index([practiceId, agreementType])
+  @@index([status, submittedAt])
+  @@map("practice_agreement_templates")
 }

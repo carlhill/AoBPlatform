@@ -1,0 +1,1089 @@
+/*
+ * Shared appearance for the three practice-management pages — locations,
+ * practitioners, affiliations.
+ *
+ * ONE FILE RATHER THAN THREE because these pages are the same page with
+ * different nouns: a list of things, each with a state, each expanding to the
+ * work you can do on it. Three copies would drift, and the drift would show up
+ * as three subtly different ideas of what "not ready" looks like.
+ */
+
+.crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  text-decoration: none;
+  margin-bottom: var(--s4);
+}
+
+.crumb:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* The count line under the page title: how many, and how many are a problem. */
+.tally {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s3);
+  margin: var(--s4) 0 var(--s5);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+.list {
+  list-style: none;
+  margin: 0 0 var(--s6);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+/*
+ * A LEFT EDGE, not a background wash.
+ *
+ * Something needing attention has to be findable while scrolling past a dozen
+ * that do not. A tinted card fights the text on it; a 3px edge is visible at a
+ * glance and costs the content nothing. Never the only signal — every card
+ * carries a chip with a word on it too.
+ */
+.cardNeedsWork {
+  border-left: 3px solid var(--warn);
+}
+
+.cardOk {
+  border-left: 3px solid var(--ok);
+}
+
+.cardStopped {
+  border-left: 3px solid var(--stop);
+}
+
+.cardHead {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s3);
+  padding: var(--s4);
+}
+
+.cardIcon {
+  color: var(--ink-faint);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.cardMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.cardTitle {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.cardSub {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  margin: var(--s1) 0 0;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * THE PLACE OF PRACTICE, which is not a subtitle.
+ *
+ * s 65C(5) identifies a practitioner by name AND the address of the place of
+ * practice, or by the provider number for that place. So on an affiliation card
+ * the location is half the fact, not a caption under the name -- and muted grey
+ * read as decoration next to a bold name.
+ *
+ * Full ink as well as weight: bold in a muted colour still reads as secondary.
+ */
+.cardWhere {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* The consequence sentence — what can or cannot happen because of this state. */
+.cardNote {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  margin: var(--s2) 0 0;
+  line-height: 1.5;
+}
+
+.cardAside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--s2);
+  flex-shrink: 0;
+}
+
+.cardBody {
+  border-top: 1px solid var(--line);
+  padding: var(--s4);
+  background: var(--surface-sunken);
+}
+
+.cardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  padding: 0 var(--s4) var(--s4);
+}
+
+/* A sub-list inside a card: departments under a location. */
+.subList {
+  list-style: none;
+  margin: var(--s2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+.subItem {
+  font-size: var(--text-sm);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--s1) var(--s3);
+  color: var(--ink);
+}
+
+.subHeading {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+
+/* A form that appears inside a card — adding a department, confirming an address. */
+.inlineForm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s3);
+  margin-top: var(--s3);
+}
+
+.inlineForm > div {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.empty {
+  text-align: center;
+  padding: var(--s7) var(--s4);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  color: var(--ink-faint);
+  background: var(--surface);
+  margin-bottom: var(--s5);
+}
+
+.emptyTitle {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--ink);
+  margin: var(--s3) 0 var(--s2);
+}
+
+/*
+ * The add form at the foot of the page, not the head.
+ *
+ * What already exists is what the reader came to check; the form is what they
+ * do next. Putting it first pushes the list below the fold on every visit for
+ * the benefit of the rarer act.
+ */
+.addPanel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--s5);
+}
+
+.addGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--s3) var(--s4);
+  margin-top: var(--s4);
+}
+
+/* Fields that should not stretch to a full column: state, postcode. */
+.narrow {
+  max-width: 220px;
+}
+
+.formActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s3);
+  margin-top: var(--s5);
+}
+
+/*
+ * THE CHECKS BAR — pinned to the foot of the form's own column while the
+ * form scrolls (Carl, 7 Sep 2026: "the yellow box need to be fixed"). The
+ * form is long enough that the box saying what still needs fixing used to
+ * sit below the fold, unseen, while somebody typed. `position: sticky` with
+ * its own background and a top border reads as a bar rather than as content
+ * that happens to have stopped scrolling.
+ */
+.checksBar {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: grid;
+  gap: var(--s2);
+  margin-top: var(--s5);
+  padding: var(--s3) 0;
+  background: var(--surface);
+  border-top: 1px solid var(--line-strong);
+}
+
+/* The collapsed state: one line, always present, wrapping rather than clipping on a narrow screen. */
+.checksSummary {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--warn);
+  text-align: left;
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+
+button.checksSummary {
+  cursor: pointer;
+}
+
+.checksSummaryOk {
+  color: var(--ok);
+}
+
+.checksListWrap {
+  display: grid;
+  gap: var(--s2);
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+/*
+ * AUTO-GROWING, NOT MANUALLY RESIZABLE (Carl, 7 Sep 2026). Height is set from
+ * script as the text changes, so the browser's own drag-handle would fight
+ * that rather than help it.
+ */
+.autoGrowTextarea {
+  resize: none;
+  overflow: hidden;
+}
+
+.suggestions {
+  list-style: none;
+  margin: var(--s2) 0 0;
+  padding: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+.suggestions li {
+  padding: var(--s1) 0;
+}
+
+/*
+ * The address decision panel — confirm with a method, or send it back with a
+ * reason.
+ *
+ * It replaced a single "Confirm" button that could only ever say yes. A
+ * reviewer who looked and decided NOT to confirm had nothing to do but close
+ * the tab, which left the practice blocked with nothing to read.
+ */
+.decision {
+  width: 100%;
+  display: grid;
+  gap: var(--s3);
+  padding: var(--s4);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.decisionTabs {
+  display: flex;
+  gap: var(--s2);
+  flex-wrap: wrap;
+}
+
+/*
+ * What the chosen method establishes, and what it does NOT. The limits are the
+ * half people skip, and a reviewer who only reads what a check proves learns
+ * to over-read their own evidence.
+ */
+.methodDetail {
+  display: grid;
+  gap: var(--s1);
+  padding: var(--s3);
+  background: var(--surface);
+  border-left: 3px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+
+.methodEstablishes {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink);
+}
+
+.methodLimits {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s1);
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+/* "The practice will read:" — a reviewer is writing to somebody else. */
+.previewLabel {
+  margin: 0;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-muted);
+}
+
+.uploadRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+}
+
+.attached {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  font-size: var(--text-sm);
+  color: var(--ok);
+}
+
+/*
+ * The "notice was given elsewhere" attestation.
+ *
+ * Set apart from the rest of the departure form on purpose. It is not another
+ * field — it is somebody putting their name to a statement about what happened
+ * outside this system, and it should not look like a checkbox for a mailing
+ * list.
+ */
+.attestation {
+  display: grid;
+  gap: var(--s3);
+  width: 100%;
+  padding: var(--s4);
+  margin-top: var(--s3);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+/* --- The outbound queue screen ------------------------------------------ */
+
+.queueSummary {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  margin-bottom: var(--s4);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+.queueFilters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--s3);
+  margin-bottom: var(--s4);
+}
+
+.queueList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s2);
+}
+
+.queueRow {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+/*
+ * The whole row is the control. An operator scanning a queue is clicking to
+ * look inside, and a separate "view" link would make the obvious target the
+ * wrong one.
+ */
+.queueRowMain {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 2fr) minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--s3);
+  width: 100%;
+  padding: var(--s3) var(--s4);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.queueRowMain:hover {
+  background: var(--surface-sunken);
+}
+
+.queueMedia {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  color: var(--ink-muted);
+}
+
+.queueDest,
+.queueSubject {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queueDest {
+  color: var(--ink);
+}
+
+.queueSubject {
+  color: var(--ink-muted);
+}
+
+.queueWhen {
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+.queueError {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s1);
+  margin: 0;
+  padding: 0 var(--s4) var(--s3);
+  font-size: var(--text-sm);
+  color: var(--stop);
+}
+
+.viewer {
+  border-top: 1px solid var(--line);
+  padding: var(--s4);
+  background: var(--surface-sunken);
+}
+
+.viewerSubject {
+  margin: 0 0 var(--s2);
+  font-weight: 600;
+}
+
+/*
+ * Source, not rendered. Payloads are assembled from practice-supplied text,
+ * and rendering somebody else's markup inside our console would run it in our
+ * origin. `pre` also happens to be what an operator debugging a queue wants.
+ */
+.viewerBody {
+  margin: 0;
+  padding: var(--s3);
+  max-height: 28rem;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+/*
+ * The queue screen is a TABLE, not prose.
+ *
+ * `ui.pageLead` caps at 62ch, which is right for reading paragraphs and wrong
+ * here — the rest of the screen is full width, so a narrow lead above it reads
+ * as a mistake rather than as a measure.
+ */
+.queueLead {
+  max-width: none;
+}
+
+/*
+ * The search field. These class names were used on this screen before they
+ * existed in this stylesheet — they live in practice.module.css, so on the
+ * queue page they resolved to nothing and the icon rendered as a block ABOVE
+ * the input instead of inside it.
+ */
+.searchWrap {
+  position: relative;
+  display: block;
+}
+
+.searchIcon {
+  position: absolute;
+  left: var(--s3);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-faint);
+  pointer-events: none;
+}
+
+/* Room for the icon, so the caret does not start underneath it. */
+.searchWrap input {
+  padding-left: calc(var(--s3) * 2 + 1rem);
+}
+
+/* Six filters now, so they wrap rather than squeeze. */
+.queueFilters {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+/*
+ * The row gained two columns. Recipient name is the widest because it is what
+ * somebody scans for when a practice rings to say a notice never arrived.
+ */
+.queueRowMain {
+  grid-template-columns: 6.5rem minmax(0, 2.2fr) minmax(0, 1.4fr) auto auto auto;
+}
+
+/* The address under the name — present, quiet, not competing with it. */
+.queueSub {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resendBar {
+  display: grid;
+  gap: var(--s3);
+  padding: var(--s4);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+/*
+ * The column header. Matches .queueRowMain exactly, or the labels drift from
+ * the values beneath them — which is worse than no header at all.
+ */
+.queueHead {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 2.2fr) minmax(0, 1.4fr) auto auto auto;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s2) var(--s4);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: var(--s2);
+}
+
+/* --- The application, in the shape it was filled in ---------------------- */
+
+.applicationSection {
+  padding: var(--s5) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.applicationHeading {
+  margin: 0 0 var(--s2);
+  font-size: var(--text-lg);
+}
+
+.applicationFields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--s4);
+  margin-top: var(--s3);
+}
+
+/* One grid cell: the notice for a field waiting on confirmation, stacked
+   above the field itself rather than beside it. */
+.applicationFieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+/*
+ * A locked value is TEXT with a padlock, not a disabled input. A greyed-out
+ * box invites somebody to keep clicking it; this says the answer is no, once.
+ */
+.applicationLocked {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+  padding: var(--s2) 0;
+  color: var(--ink-muted);
+}
+
+/* --- Totals tables ------------------------------------------------------- */
+
+/*
+ * A real table this time, not a grid of divs. These ARE tabular data — a
+ * screen reader announcing "row: XLEVELUP, email 10" is doing something a
+ * stack of divs cannot.
+ */
+.tableScroll {
+  overflow-x: auto;
+}
+
+.totalsTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.totalsTable th,
+.totalsTable td {
+  padding: var(--s2) var(--s3);
+  text-align: right;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.totalsTable thead th {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+
+/* The name column reads left, everything else is a number and reads right. */
+.totalsTable th:first-child,
+.totalsTable tbody th {
+  text-align: left;
+  font-weight: 600;
+  white-space: normal;
+}
+
+/* States are a different question from types; the rule says so. */
+.stateCol {
+  color: var(--ink-muted);
+}
+
+.totalsTable .stateCol:first-of-type {
+  border-left: 1px solid var(--line);
+}
+
+.totalCol {
+  font-weight: 600;
+}
+
+/* --- The review queue ---------------------------------------------------- */
+
+.reviewList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s4);
+}
+
+.reviewCard {
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+/*
+ * A high-stakes task is marked on the CARD, not only in a chip. These are the
+ * ones no automated check may close, and a reviewer scanning a long queue
+ * should be able to see which they are without reading.
+ */
+.reviewHigh {
+  border-left: 3px solid var(--stop);
+}
+
+.reviewHead {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  margin-bottom: var(--s2);
+}
+
+.reviewKind {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  font-weight: 600;
+}
+
+/* The question, not the title — it is what the reviewer is deciding. */
+.reviewQuestion {
+  margin: 0 0 var(--s3);
+  font-size: var(--text-base);
+  color: var(--ink);
+}
+
+.diffTable {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--s3) 0;
+  font-size: var(--text-sm);
+}
+
+.diffTable th,
+.diffTable td {
+  padding: var(--s2);
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+  word-break: break-word;
+}
+
+.diffTable thead th {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+
+/* Old struck through, new emphasised: the eye should land on what it became. */
+.diffFrom {
+  color: var(--ink-muted);
+  text-decoration: line-through;
+}
+
+.diffTo {
+  font-weight: 600;
+}
+
+.autoVerdict {
+  padding: var(--s3);
+  margin: var(--s3) 0;
+  background: var(--surface-sunken);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+}
+
+.autoHead {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  margin: 0 0 var(--s1);
+}
+
+/*
+ * The decision form: two fields, side by side, ALIGNED AT THE TOP.
+ *
+ * They are not the same height — the note carries a hint underneath and the
+ * decision does not — so aligning them at the bottom left the shorter one
+ * hanging below its neighbour. The note gets the wider share because it is the
+ * one thing here somebody actually writes in.
+ */
+.reviewActions {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) minmax(16rem, 2fr);
+  align-items: start;
+  gap: var(--s3);
+  margin-top: var(--s3);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--line);
+}
+
+/* --- The practice's own people ------------------------------------------- */
+
+/*
+ * The caps, shown as REMAINING rather than used. "Two places left" is the
+ * number somebody about to add a person actually wants; "3 of 5" makes them
+ * do the subtraction.
+ */
+.scopeBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-bottom: var(--s5);
+}
+
+/*
+ * The administrator account, set apart. It is the practice's account rather
+ * than a person's, and that is the thing people misunderstand first — so it
+ * does not sit in the list looking like everybody else.
+ */
+.adminPanel {
+  padding: var(--s4);
+  margin-bottom: var(--s5);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+/*
+ * Claiming sits on its own line, above the decision form.
+ *
+ * It answers a different question — "is anybody already on this" rather than
+ * "what did you conclude" — and sharing a grid row made the claim button look
+ * like a third field of the form.
+ */
+.claimRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  margin-top: var(--s3);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--line);
+}
+
+/*
+ * The decision form. The note wants room to be written in, so it takes the
+ * space and the two controls either side stay at their natural width — a
+ * three-equal-columns grid gave a one-line note box and a stretched button.
+ */
+/* The button sits on its own line. Beside the fields it had to align against
+   two things of different heights and no label of its own, and it always
+   looked dropped whichever way it went. */
+.decideRow {
+  margin-top: var(--s3);
+}
+
+@media (max-width: 40rem) {
+  .reviewActions {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* When the claim row is present it already drew the rule. */
+.claimRow + .reviewActions {
+  border-top: 0;
+  padding-top: 0;
+}
+
+/*
+ * THE ACTING-AS BANNER. Loud on purpose.
+ *
+ * The danger of impersonation is not that it happens, it is that somebody
+ * forgets it is happening — every screen looks exactly like the practice's own
+ * console, because it IS the practice's own console. A quiet, tasteful notice
+ * would be read once and then stop being seen, which is the failure mode.
+ */
+.actingAsBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  margin-bottom: var(--s4);
+  padding: var(--s3) var(--s4);
+  border: 2px solid #b45309;
+  border-radius: 8px;
+  background: #fffbeb;
+  color: #7c2d12;
+}
+
+.actingAsText {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  font-weight: 600;
+}
+
+/*
+ * THE CHART. Deliberately plain, and deliberately not a charting library.
+ *
+ * What is wanted is "let us see the shape of it" — proportional bars with
+ * readable labels — which is a viewBox and some rects. A library would draw a
+ * nicer chart and cost a dependency that ships to every visitor and has to be
+ * kept current, and the time to take that on is after learning what people
+ * actually look at.
+ */
+.chartFigure {
+  margin: var(--s4) 0 0;
+}
+
+.chartSvg {
+  display: block;
+  width: 100%;
+  /* Fixed height with a stretched viewBox: the bars scale horizontally to any
+     width without measuring the container, and stay a readable height. */
+  height: 190px;
+  overflow: visible;
+}
+
+.chartBar {
+  fill: var(--brand, #1f4d7a);
+  opacity: 0.85;
+}
+
+.chartBar:hover {
+  opacity: 1;
+}
+
+.chartAxis {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+/*
+ * Labels in HTML rather than SVG text, so they inherit the page font and can be
+ * thinned or hidden without touching the drawing. `min-width: 0` is what lets
+ * them shrink rather than forcing the row wider than its chart.
+ */
+.chartLabels {
+  display: flex;
+  margin-top: var(--s1);
+}
+
+.chartLabel {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.chartCaption {
+  margin-top: var(--s2);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/*
+ * A MESSAGE AS IT WAS SENT. Monospaced and pre-wrapped because the body was
+ * composed as plain text with its own line breaks and headings — reflowing it
+ * as prose would run "WHAT HAS CHANGED" into the sentence beneath it.
+ *
+ * Scrolls rather than stretching the row: a long notice should not push the
+ * rest of the table off the page.
+ */
+.messageBody {
+  margin: 0;
+  padding: var(--s3);
+  max-height: 24rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, 'Cascadia Mono', Menlo, monospace;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  background: var(--surface-muted, #f7f8f9);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  /*
+   * EXPLICIT, because the parent cell disagrees. This body lives inside a
+   * <td colSpan> of `.totalsTable`, whose own rule right-aligns every cell for
+   * the numeric summaries the table was built for -- a rule with nothing to do
+   * with a paragraph of prose, and one this element inherits by sitting inside
+   * that table rather than by anything of its own. Read text left-aligns.
+   */
+  text-align: left;
+}
+
+
+/* The banner's working door: quiet, but a link that looks like one. */
+.actingAsGo {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  font-weight: 600;
+  white-space: nowrap;
+  color: inherit;
+}
+
+/*
+ * D6a — ONE DRAFT WAITING FOR A DESCRIPTION.
+ *
+ * A stack that becomes a row at tablet width, rather than reusing
+ * `.queueRowMain`'s five-column grid: this row is a name, a label, a select
+ * and a button, and the select needs room to show contractual wording in full
+ * — truncating "General practitioner attendance" to "General practition…" in a
+ * one-third column would hide the very thing being chosen.
+ */
+.sdRow {
+  display: grid;
+  gap: var(--s2);
+  padding: var(--s3) var(--s4);
+}
+
+@media (min-width: 900px) {
+  .sdRow {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.6fr) auto;
+    align-items: end;
+  }
+}
+
+/* --- The tablets page: a pairing code on its own row -------------------- */
+
+/*
+ * "HOW DO I PAIR THESE TABLETS?" (Carl, 4 Sep 2026). A waiting-to-be-paired
+ * row used to say only that a code was outstanding, never the code itself.
+ * Large and monospaced so it can be read off a screen from across a desk, and
+ * grouped by `formatPairingCode` the same way the (now retired) top-of-page
+ * panel grouped it.
+ */
+.codeRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex-wrap: wrap;
+}
+
+.codeValue {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  padding: var(--s2) var(--s4);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink);
+}
+
+/*
+ * "ADD A TABLET" AT THE TOP OF THE PAGE, beside the section heading rather
+ * than in a block of its own at the foot — the one place on this page where
+ * the newest thing, not the existing list, is what the reader came to do.
+ */
+.addInline {
+  margin-bottom: var(--s5);
+}

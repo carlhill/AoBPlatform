@@ -4,6 +4,7 @@ import {
   IdentifierSetError,
   type ApprovedIdentifierType,
 } from '@aobplatform/domain';
+import type { Prisma } from '@prisma/client';
 import type { PmsAdapter } from '@aobplatform/contracts';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -12,6 +13,14 @@ import { PMS_ADAPTER } from '../pms/pms.tokens';
 
 /** D-06 default until a practice-config surface exists: lockout after 5 failed attempts. */
 export const LOCKOUT_AFTER_ATTEMPTS = 5;
+
+/**
+ * The statutory floor of three, until a practice configures its own
+ * (REQ-VER-06). Name, date of birth and address — three of the approved six,
+ * and never the Medicare card number, which is not an identity identifier and
+ * whose exclusion is not configurable (REQ-VER-02, hard rule 1).
+ */
+export const DEFAULT_IDENTIFIER_TYPES = ['name', 'date_of_birth', 'address'] as const;
 
 /** The one message a failed attempt ever returns — never which identifier failed (REQ-SEC-07). */
 export const GENERIC_MISMATCH_MESSAGE = 'Some of those details do not match our records.';
@@ -92,6 +101,124 @@ export class VerificationService {
       });
       return { challengeId: challenge.id, identifierTypes: challenge.identifierTypes };
     });
+  }
+
+  /**
+   * THE STAFF CHECK ACROSS THE DESK, RECORDED — no values, because there were
+   * never any values to have (REQ-VER-03/-04; TODO.md "Push-to-device
+   * capture", Carl 4 Sep 2026).
+   *
+   * WHY THIS IS NOT `attempt`. `attempt` exists for a channel where somebody
+   * STATES identifiers into a form and the server compares them: the remote
+   * link, and the walk-up kiosk where an unsupported patient proves it is
+   * them. Reception is a different act entirely. The receptionist has the
+   * patient in front of them, has already checked the Medicare card in the PMS,
+   * and has already asked date of birth, mobile, email and address across the
+   * desk — THAT is the three-identifier check, and it happened outside this
+   * system. What the platform can record is which TYPES were checked, that
+   * they matched, on which channel, and BY WHOM. Routing it through `attempt`
+   * would mean inventing values to compare, which would be a fabricated
+   * verification dressed as a real one.
+   *
+   * IT TAKES THE CALLER'S TRANSACTION, and that is the point. The push commits
+   * this event, the particulars lock and the tablet session together or not at
+   * all (hard rule 11): a locked agreement on a tablet with no record of who
+   * verified the patient is precisely the evidence gap this product exists to
+   * close.
+   *
+   * THE STAFF IDENTITY IS REQUIRED. A staff-verified event attributed to
+   * nobody is worse than no event: later it cannot be questioned, and it looks
+   * exactly like one that could.
+   *
+   * NO VALUE OF ANY KIND IS WRITTEN HERE, and there is no parameter that could
+   * carry one. `mobile` and `email` are deliberately absent from the identifier
+   * types even though reception asked for them: they are CONTACT details, not
+   * identity identifiers, and counting them toward the three would be the
+   * Medicare-number mistake one step sideways (REQ-VER-02).
+   */
+  async recordStaffVerified(
+    tx: Prisma.TransactionClient,
+    practiceId: string,
+    input: { patientId: string; identifierTypes: string[]; staffId: string; channel?: string },
+  ): Promise<{ verificationEventId: string; identifierTypes: string[] }> {
+    try {
+      assertValidIdentifierSet(input.identifierTypes);
+    } catch (err) {
+      if (err instanceof IdentifierSetError) throw new BadRequestException(err.message);
+      throw err;
+    }
+    if (!input.staffId) {
+      throw new BadRequestException(
+        'A staff-verified check is recorded against the person who made it. Without one it is refused ' +
+          'rather than recorded as nobody (REQ-VER-03).',
+      );
+    }
+    const channel = input.channel ?? 'in_practice';
+    const now = new Date();
+
+    /*
+     * A CHALLENGE ROW, EVEN THOUGH NOBODY WAS CHALLENGED ON A SCREEN. It is
+     * what the event hangs off, it records WHICH types were checked at the
+     * moment they were checked, and it is marked passed immediately with a
+     * single attempt — because that is what happened. Faking a sequence of
+     * attempts would be more misleading than recording the one.
+     */
+    const challenge = await tx.verificationChallenge.create({
+      data: {
+        practiceId,
+        patientId: input.patientId,
+        channel,
+        identifierTypes: input.identifierTypes,
+        attempts: 1,
+        passedAt: now,
+      },
+    });
+
+    // Evidence: types and outcome only — never values (REQ-VER-04).
+    const event = await tx.verificationEvent.create({
+      data: {
+        practiceId,
+        patientId: input.patientId,
+        challengeId: challenge.id,
+        identifierTypes: input.identifierTypes,
+        outcome: 'passed',
+        channel,
+        verifiedByStaffId: input.staffId,
+      },
+    });
+    await enqueueVaultEvent(tx, {
+      type: 'verification.staff_verified',
+      actor: { principalType: 'staff', id: input.staffId },
+      subject: { type: 'VerificationEvent', id: event.id },
+      payload: {
+        outcome: 'passed',
+        channel,
+        /*
+         * THE TYPES THEMSELVES, not merely a count. This event is the whole
+         * evidence of the check — "which three did you ask for" is the
+         * question an auditor asks in 2028 — and a TYPE is not a value
+         * (REQ-VER-04). Joined into one string because a vault payload holds
+         * scalars, and sorted so two events recording the same check compare
+         * equal regardless of the order a caller listed them in.
+         */
+        identifierTypes: [...input.identifierTypes].sort().join(','),
+        identifierTypeCount: input.identifierTypes.length,
+        staffVerified: true,
+      },
+    });
+
+    return { verificationEventId: event.id, identifierTypes: input.identifierTypes };
+  }
+
+  /**
+   * The identifier types this practice challenges on, or the statutory floor
+   * of three (REQ-VER-06). Read through the module rather than copied into
+   * every caller, so a practice that configures a fourth is honoured
+   * everywhere at once.
+   */
+  async identifierTypesFor(practiceId: string): Promise<string[]> {
+    const practice = await this.prisma.withPractice(practiceId, (tx) => tx.practice.findFirst({}));
+    return practice?.identifierTypes?.length ? practice.identifierTypes : [...DEFAULT_IDENTIFIER_TYPES];
   }
 
   /**

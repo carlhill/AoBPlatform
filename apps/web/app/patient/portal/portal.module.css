@@ -1,0 +1,722 @@
+/*
+ * The patient's own page.
+ *
+ * EVERY COLOUR IS A TOKEN from `app/tokens.css`. Nothing is invented here, so
+ * the AA contrast decisions made once in that file hold on this surface too —
+ * and this is the surface where they matter most, because the reader did not
+ * choose to use our software and cannot ring our support line.
+ *
+ * TARGETS ARE 44px. Rows are read on a phone, one-handed, sometimes by somebody
+ * who is unwell. Every control on this page is at least 44 by 44, which is why
+ * `.action` sets both a min-height and a min-width rather than relying on
+ * padding to get there.
+ *
+ * ONE COLUMN, ALWAYS. Cards are independent answers, not a dashboard: side by
+ * side they invite comparison between things that are not comparable, and they
+ * reflow badly at the widths this page is actually read at.
+ */
+
+.page {
+  max-width: 46rem;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+}
+
+/* --- Cards ---------------------------------------------------------------- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--s5);
+}
+
+.cardTitle {
+  font-size: var(--text-xl);
+  margin: 0;
+}
+
+.cardLead {
+  margin: var(--s2) 0 0;
+  color: var(--ink-muted);
+  font-size: var(--text-base);
+}
+
+.cardQuiet {
+  margin: var(--s4) 0 0;
+  color: var(--ink-muted);
+}
+
+.cardError {
+  margin: var(--s4) 0 0;
+  padding: var(--s3);
+  border-left: 3px solid var(--stop);
+  background: var(--stop-wash);
+  color: var(--ink);
+}
+
+/* --- Rows ----------------------------------------------------------------- */
+
+.rows {
+  list-style: none;
+  margin: var(--s4) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+
+.row {
+  border-top: 1px solid var(--line);
+  padding-top: var(--s3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s4);
+  align-items: baseline;
+}
+
+.rowMain {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.rowLabel {
+  display: block;
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+
+.rowValue {
+  display: block;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.rowMeta {
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+
+.groupTitle {
+  font-size: var(--text-lg);
+  margin: var(--s5) 0 0;
+}
+
+/* --- Actions -------------------------------------------------------------- */
+
+.action {
+  font: inherit;
+  font-size: var(--text-base);
+  min-height: 44px;
+  min-width: 44px;
+  padding: var(--s2) var(--s4);
+  border-radius: var(--radius);
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.action:hover:not(:disabled) {
+  background: var(--surface-sunken);
+}
+
+/*
+ * FOCUS IS VISIBLE AND IT IS NOT THE BROWSER'S DEFAULT OUTLINE, which
+ * disappears against the accent fill on the primary action. Two rings, so it
+ * shows on every background on this page.
+ */
+.action:focus-visible,
+.detailLink:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.actionPrimary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 500;
+}
+
+.actionPrimary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.actionQuiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.actionQuiet:hover:not(:disabled) {
+  background: var(--info-wash);
+}
+
+.action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.detailLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--accent);
+}
+
+.dialogBody {
+  color: var(--ink);
+}
+
+.dialogBody p {
+  margin: 0 0 var(--s3);
+}
+
+/* --- Waiting-for-you strip (REQ-PORT-06) ---------------------------------- */
+
+/*
+ * THE ANTI-PHISHING STRIP. Highlighted because it is the answer to "is this
+ * message real" — the patient who has just had a text arrives here to check,
+ * and the check has to be the first thing on the card, not something they
+ * scroll to. Accent wash and a left rule; the words carry the meaning, colour
+ * only reinforces it.
+ */
+.waiting {
+  margin: var(--s4) 0 0;
+  padding: var(--s4);
+  border: 1px solid var(--info);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  background: var(--info-wash);
+}
+
+.waitingTitle {
+  margin: 0 0 var(--s2);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.waitingNote {
+  margin: var(--s3) 0 0;
+  font-size: var(--text-sm);
+  color: var(--ink);
+}
+
+/* --- Access log timeline -------------------------------------------------- */
+
+.timeline {
+  list-style: none;
+  margin: var(--s4) 0 0;
+  padding: 0;
+}
+
+.timelineItem {
+  border-left: 2px solid var(--line-strong);
+  padding: 0 0 var(--s4) var(--s4);
+  position: relative;
+}
+
+.timelineItem:last-child {
+  padding-bottom: 0;
+}
+
+.timelineWhen {
+  display: block;
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+
+/* An action key nobody has written copy for yet — shown, not swallowed. */
+.unmappedKey {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--surface-sunken);
+  padding: 0 var(--s1);
+  border-radius: var(--radius);
+}
+
+/* --- Prose ---------------------------------------------------------------- */
+
+.prose p {
+  margin: var(--s3) 0 0;
+  max-width: 38rem;
+}
+
+/* --- Signed out ----------------------------------------------------------- */
+
+.signedOut {
+  max-width: 34rem;
+  margin: 0 auto;
+}
+
+.devSeam {
+  margin-top: var(--s6);
+  padding: var(--s4);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+}
+
+.devSeamHeading {
+  margin: 0 0 var(--s2);
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-muted);
+}
+
+/* --- Coming later --------------------------------------------------------- */
+
+.quietCard {
+  background: var(--surface-sunken);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  padding: var(--s5);
+  color: var(--ink-muted);
+}
+
+/* --- Sign-in and security (FR-8.2 passkeys) -------------------------------- */
+
+/*
+ * THE ONLY TEXT INPUT ON THIS WHOLE PAGE, and it is optional: a name for a
+ * device, which the patient may leave blank. Everything else here is read-only
+ * or a button, because a patient portal that collects typing is a portal that
+ * has started asking people to correct their own records — which is reception's
+ * job against the PMS, never ours (REQ-DATA-10).
+ *
+ * 44px MINIMUM TARGETS, as everywhere on a patient surface (WCAG 2.2, CLAUDE.md
+ * §6). The row wraps rather than shrinking the field, because a name field that
+ * is 90px wide on a phone is a field nobody fills in.
+ */
+.addPasskey {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s3);
+  margin-top: var(--s5);
+}
+
+.fieldLabel {
+  display: block;
+  width: 100%;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+/* No `:focus-visible` rule here: `tokens.css` gives every input a visible focus
+   ring already, and a second one would only be a chance to get it wrong. */
+.field {
+  flex: 1 1 14rem;
+  min-height: 44px;
+  padding: 0 var(--s3);
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+
+/*
+ * The one way IN from the signed-out screen. Below the REQ-PORT-08 sentence on
+ * purpose: adding a door must not turn this into a page that implies one is
+ * needed.
+ */
+.signInWithPasskey {
+  margin-top: var(--s5);
+}
+
+/*
+ * THE RECORD ID IN THE SESSION BAR, IN FULL (Carl, 4 Sep 2026: "make it
+ * longer so we can see the full id"). The shared .sessionAffiliation clips at
+ * 28ch, which is right for a practice name and wrong for an id whose whole
+ * point is to be compared character by character with one in a message or a
+ * passkey manager. Monospace, never clipped, never upper-cased.
+ */
+.recordId {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  color: var(--ink);
+  white-space: nowrap;
+  text-transform: none;
+  letter-spacing: 0;
+  user-select: all;
+}
+
+/* --- The activation page (FR-1.14) ---------------------------------------- */
+
+/*
+ * ONE CENTRED COLUMN, ONE CARD (Carl, 5 Sep 2026: "do this once and do it
+ * right"). The page before this had the form loose on the page ground with a
+ * grey nested box per identifier, because a `fieldset` carries a border and a
+ * background of its own until it is told not to. A form is one object; the
+ * groups inside it are separated by SPACE, never by another box.
+ *
+ * 40rem, not the 30rem this started at: the date of birth is three controls on
+ * one line and 30rem was the width that made the year wrap.
+ */
+.activate {
+  max-width: 40rem;
+  margin: var(--s6) auto 0;
+}
+
+/*
+ * THE CARD. Same surface, line and radius as every other card on this surface,
+ * so the activation page does not read as a different product from the portal
+ * the patient lands on ten seconds later.
+ *
+ * `gap: var(--s5)` is the ONLY vertical rhythm between groups — no group sets
+ * a bottom margin, so adding or removing an identifier cannot change the
+ * spacing of the ones around it.
+ */
+.activateForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+  margin-top: var(--s6);
+  padding: var(--s5);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+/*
+ * A GROUP IS A `fieldset` OR A `div` AND LOOKS IDENTICAL EITHER WAY. The name
+ * and date groups need `fieldset`/`legend` for their sub-controls to be
+ * announced under one heading (WCAG 2.2 AA, 1.3.1); the single-control groups
+ * do not. So the fieldset is stripped back to a plain block — no border, no
+ * background, no padding, no margin — and both render the same.
+ *
+ * `min-inline-size: 0` because a `fieldset` defaults to `min-content` and would
+ * otherwise refuse to be narrower than its widest child.
+ */
+.activateGroup {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  min-inline-size: 0;
+}
+
+/*
+ * THE GROUP LABEL, one size and one weight for every group whether it is a
+ * `legend` or a `label`. `--s2` to its control is the label→control gap the
+ * whole form uses.
+ */
+.activateLegend {
+  display: block;
+  float: none;
+  margin: 0 0 var(--s2);
+  padding: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ink);
+}
+
+/* The quieter word over one half of a group: "Given name", "Day". */
+.activateSubLabel {
+  display: block;
+  margin: 0 0 var(--s2);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+/*
+ * EVERY BOX ON THE PAGE, input and select alike, stated explicitly rather than
+ * borrowed from `.field` — which is written for a ROW (`flex: 1 1 14rem`) and
+ * became a 200px HEIGHT the moment it was dropped into a column. Height, width
+ * and box model are said here so nothing about the surrounding layout can
+ * change them.
+ *
+ * 44px is the patient-surface target (CLAUDE.md §6, WCAG 2.2). 1rem rather than
+ * `--text-base` because a sub-16px control is what makes iOS Safari zoom the
+ * page on focus.
+ *
+ * NO `appearance: none` on the selects: the browser's own chevron is the
+ * affordance that says "this opens", and removing it without drawing one back
+ * is how a select stops looking like a select. No `:focus-visible` rule either
+ * — `tokens.css` rings every control already, and a second one is only a
+ * chance to get it wrong.
+ */
+.activateInput {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 0 var(--s3);
+  font-family: inherit;
+  font-size: 1rem;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+
+/* GIVEN AND FAMILY NAME, equal halves — one identifier in two boxes. */
+.activateNameRow {
+  display: flex;
+  gap: var(--s3);
+}
+
+.activateNameCell {
+  display: block;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+@media (max-width: 480px) {
+  .activateNameRow {
+    flex-wrap: wrap;
+  }
+
+  .activateNameCell {
+    flex-basis: 100%;
+  }
+}
+
+/*
+ * DAY, MONTH, YEAR — ONE ROW THAT NEVER WRAPS. A wrapped year select reads as
+ * a fourth question. The widths are fixed for the two numeric parts and the
+ * month takes what is left, because the month is the one showing names.
+ */
+.activateDobRow {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--s3);
+}
+
+.activateDobDay {
+  flex: 0 0 6.5rem;
+}
+
+.activateDobMonth {
+  flex: 1 1 auto;
+  min-width: 9rem;
+}
+
+.activateDobYear {
+  flex: 0 0 7rem;
+}
+
+/*
+ * At the narrowest phone the three preferred widths add up to more than the
+ * card, and the rule above forbids the escape hatch of wrapping. So the two
+ * numeric parts give up their floor instead — still one row, still readable,
+ * and the month keeps priority because its labels are the longest.
+ */
+@media (max-width: 26rem) {
+  .activateDobDay {
+    flex: 0 0 4.5rem;
+  }
+
+  .activateDobMonth {
+    min-width: 0;
+  }
+
+  .activateDobYear {
+    flex: 0 0 5.5rem;
+  }
+}
+
+/* The muted line under a group — "Your family and given names count as one." */
+.activateHint {
+  margin: var(--s2) 0 0;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+.activateNote {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+/*
+ * THE REFUSAL, FULL WIDTH AND ABOVE THE BUTTON, because a message that appears
+ * below the control somebody just pressed is a message on a part of the screen
+ * they have already scrolled past. Warn rather than stop: a mismatch is
+ * something to try again, not something that has broken. It still names
+ * nothing (REQ-SEC-07) — the tone is the only thing this rule decides.
+ */
+.activateAlert {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  margin: 0;
+  padding: var(--s3) var(--s4);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--radius);
+  background: var(--warn-wash);
+  color: var(--ink);
+}
+
+.activateAlert p {
+  margin: 0;
+}
+
+.activateAlertHeading {
+  font-weight: 600;
+}
+
+/* The server was unreachable, which IS a stop — different fault, different tone. */
+.activateAlertStop {
+  border-left-color: var(--stop);
+  background: var(--stop-wash);
+}
+
+/*
+ * CONTINUE FIRST, THE REASON IT IS DISABLED BESIDE IT, vertically centred on
+ * the button rather than sitting on its baseline. On a narrow screen the
+ * sentence wraps underneath instead of squeezing the button.
+ */
+.activateActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s3);
+  margin: 0;
+}
+
+/*
+ * THE ONE-LINE WELCOME after an activation. Quiet rather than celebratory: the
+ * patient came to look at a record, and the line exists to point at the passkey
+ * card so the next visit does not need another invitation.
+ */
+.welcome {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin: 0 0 var(--s5);
+  padding: var(--s4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+}
+
+.welcomeText {
+  margin: 0;
+}
+
+/* --- The practice filter (Carl, 5 Sep 2026) ------------------------------- */
+
+/*
+ * SHOWING: ALL PRACTICES | ONE OF THEM. Only drawn where the account is linked
+ * to more than one, so most readers never meet it.
+ *
+ * IT WRAPS RATHER THAN SCROLLS. A horizontally scrolling strip hides options
+ * off the right edge of a phone, and the option somebody wants is as likely to
+ * be the last one as the first. Practice names are long; two lines of buttons
+ * is the honest layout.
+ */
+.filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+  margin-bottom: var(--s1);
+}
+
+.filterLabel {
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+
+.filterOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+/* 44px, like every other target on this page (WCAG 2.2, CLAUDE.md §6). */
+.filterOption {
+  font: inherit;
+  font-size: var(--text-base);
+  min-height: 44px;
+  min-width: 44px;
+  padding: var(--s2) var(--s4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.filterOption:hover {
+  background: var(--surface-sunken);
+}
+
+.filterOption:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/*
+ * THE CHOSEN ONE. Fill AND weight, never colour alone — `aria-pressed` carries
+ * it for a screen reader and the extra weight carries it for somebody who
+ * cannot tell the two fills apart (WCAG 2.2 AA, 1.4.1).
+ */
+.filterOptionOn {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 600;
+}
+
+.filterOptionOn:hover {
+  background: var(--accent-hover);
+}
+
+/* --- Detail reconciliation (Carl, 5 Sep 2026) ----------------------------- */
+
+/*
+ * "YOUR PRACTICES HOLD DIFFERENT DETAILS FOR YOU." Above the practice blocks,
+ * because it is the reason the blocks below it disagree.
+ *
+ * INFORMATION, NOT A WARNING. Two practices holding two addresses for somebody
+ * who has moved is ordinary, and neither copy is an error from where it sits —
+ * so this is the quiet surface and the left rule, not the stop wash.
+ */
+.reconcile {
+  margin: var(--s4) 0 0;
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--line-strong);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+}
+
+.reconcileTitle {
+  margin: 0;
+  font-weight: 600;
+}
+
+.reconcileList {
+  list-style: none;
+  margin: var(--s2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+/*
+ * THE TAG BESIDE THE VALUE ITSELF. Small, and on its own line under the value
+ * rather than beside it: an address wraps to two or three lines on a phone and
+ * a tag sharing that line would be pushed somewhere unreadable.
+ */
+.differsTag {
+  display: inline-block;
+  margin-top: var(--s1);
+  padding: 0 var(--s2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  color: var(--ink-muted);
+  font-size: var(--text-xs);
+}
