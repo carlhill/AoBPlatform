@@ -4392,6 +4392,28 @@ export const strings = {
     whoContactHint: 'A mobile or an email, so their copy of the agreement can reach them.',
     whoMobile: 'Mobile',
     whoEmail: 'Email',
+    /*
+     * THE THREE STEPS, NUMBERED, ON EVERY ROW (Carl, 7 Sep 2026: "change the
+     * workflow to 'who is signing' only -- after that is actioned, enable the
+     * select tablet and send button").
+     *
+     * WHY THE ROW SAYS IT RATHER THAN A HELP PAGE. Carl pushed Kim to a tablet
+     * and told us twice that the desk never asked who was signing. The controls
+     * were all there and all live at once, so nothing on the row said which one
+     * came first -- and the one that mattered looked optional beside a Send
+     * that went straight away. Numbering them makes the order the row's own
+     * fact instead of something a receptionist has to be taught.
+     *
+     * THREE WORDS EACH, because this line is read a hundred times a morning and
+     * never studied once.
+     */
+    stepsLabel: 'Steps to send',
+    stepWhoIsSigning: 'Who is signing',
+    stepChooseTablet: 'Choose a tablet',
+    stepSend: 'Send',
+    /** Spoken, not shown — the number and the tick already say it on screen. */
+    stepDone: 'done',
+    stepNow: 'do this next',
     whoSave: 'Save who is signing',
     whoSaving: 'Saving…',
     whoSaved: 'Saved.',
@@ -4834,6 +4856,25 @@ export const strings = {
         + 'never asks a patient for it.',
       who_is_signing_unset:
         'Say who is signing before you send this one — use “Who is signing?” on this row.',
+      /*
+       * NOBODY HAS BEEN ASKED YET (Carl, 7 Sep 2026: "change the workflow to
+       * 'who is signing' only -- after that is actioned, enable the select
+       * tablet and send button").
+       *
+       * A DIFFERENT FAULT FROM THE ONE ABOVE, and the copy has to say so.
+       * `who_is_signing_unset` is an agreement naming a third party with no
+       * party recorded -- something is missing. This one is an agreement that
+       * says the patient is signing because every agreement says that when it
+       * is drafted: nothing is missing, and nobody has been asked.
+       *
+       * THE CONTROL IS IN THE BAND, not a direction to a screen (CLAUDE.md §7)
+       * -- `fixFor` puts "Who is signing?" here, and it opens with the patient
+       * already ticked, so the common answer is one press.
+       */
+      assignor_not_confirmed:
+        'Confirm who is signing first. This one still has the default — the patient signing for '
+        + 'themselves — and nobody has confirmed it. It opens with the patient already ticked, so '
+        + 'confirming takes one press. The appointment is not affected either way.',
       patient_confidential:
         'This patient’s record is flagged confidential, so nothing about them goes on a waiting-room screen. '
         + 'Take this one on paper or after the service.',

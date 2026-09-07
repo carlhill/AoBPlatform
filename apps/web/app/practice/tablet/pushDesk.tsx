@@ -96,6 +96,14 @@ export interface PushableRow {
   assignorName: string | null;
   assignorRelationship: string | null;
   particularsLocked: boolean;
+  /**
+   * WHEN A PERSON SAID WHO IS SIGNING — `null` until somebody has (Carl, 7 Sep
+   * 2026). Every agreement is drafted with the patient as its own assignor, so
+   * "the patient is signing" is a default and cannot be told apart, on the
+   * record, from an answer; this is the difference. The select and Send stay
+   * dead while it is null, and "Who is signing?" is the row's primary action.
+   */
+  assignorConfirmedAt: string | null;
   pushable: boolean;
   blockedReason: PushBlockedReason | null;
   activeSession: { id: string; deviceId: string; state: string } | null;
@@ -385,6 +393,14 @@ export function describeRefusal(
         text: strings.tablet.blocked.agreement_not_pushable,
         link: destination('/practice/reconciliation', strings.tablet.toReconciliationRow, ctx),
       };
+    /*
+     * NO LINK, AND THAT IS THE POINT (CLAUDE.md §7). The fix is not on another
+     * screen: it is the control `fixFor` puts in this band, on this row. A
+     * destination here would be directions to a place the reader is already
+     * standing in.
+     */
+    case 'assignor_not_confirmed':
+      return { reason, text: strings.tablet.blocked.assignor_not_confirmed };
     case 'device_revoked':
       return {
         reason,
@@ -1084,7 +1100,11 @@ export function usePushDesk(practiceId: string): PushDesk {
        * is about to appear, and the one reception was looking at leaves the
        * list with its capture request closed.
        */
-      const saved = (await res.json().catch(() => ({}))) as { id?: string };
+      const saved = (await res.json().catch(() => ({}))) as {
+        id?: string;
+        assignorConfirmedAt?: string | null;
+        assignorIsPatient?: boolean;
+      };
       const superseded = typeof saved.id === 'string' && saved.id !== row.agreementId;
       setWhoOutcome({
         id: superseded ? (saved.id as string) : row.agreementId,
@@ -1094,6 +1114,39 @@ export function usePushDesk(practiceId: string): PushDesk {
       setWhoFor(null);
       // Re-read rather than patch: what is on screen is what the server thinks.
       await load();
+      /*
+       * AND THE ANSWER THE SERVER JUST GAVE WINS OVER THE LIST IT GAVE A
+       * MOMENT LATER (Carl, 7 Sep 2026: "after that is actioned, enable the
+       * select tablet and send button").
+       *
+       * WHY IT IS APPLIED AFTER THE RE-READ RATHER THAN BEFORE. `load()` is a
+       * fresh fetch, and a fetch that started before this write committed
+       * comes back saying the row is still unconfirmed — so reception presses
+       * Save, watches the row go dead again, and presses it a second time. The
+       * response to their own press is the newer fact; the next poll, three
+       * seconds later, has the last word either way.
+       *
+       * ONLY THE ROW BLOCKED FOR *THIS* REASON becomes sendable. One also
+       * waiting on a description of the service stays blocked and keeps saying
+       * so — flipping it here would offer a Send the server refuses.
+       */
+      const confirmedAt = saved.assignorConfirmedAt ?? new Date().toISOString();
+      setRows((current) =>
+        current
+          ? current.map((r) =>
+              r.agreementId === row.agreementId
+                ? {
+                    ...r,
+                    assignorConfirmedAt: confirmedAt,
+                    assignorIsPatient: saved.assignorIsPatient ?? r.assignorIsPatient,
+                    ...(r.blockedReason === 'assignor_not_confirmed'
+                      ? { pushable: true, blockedReason: null }
+                      : {}),
+                  }
+                : r,
+            )
+          : current,
+      );
     } catch (e) {
       setWhoOutcome({
         id: row.agreementId,
@@ -1806,12 +1859,132 @@ export function EnduringOfferFix({ desk, row }: { desk: PushDesk; row: PushableR
 }
 
 /**
+ * "WHO IS SIGNING?", IN THE BAND THAT SAYS IT IS MISSING (Carl, 7 Sep 2026).
+ *
+ * SHORTCUTS TO THE ANSWER, NOT DIRECTIONS TO A SCREEN (CLAUDE.md §7). The row
+ * cannot go until somebody has been asked; the thing that asks is one press,
+ * and it belongs in the sentence that says so rather than somewhere the reader
+ * has to go and find. It opens the SAME panel the row's own button and its
+ * "Signing:" line open — one question, one panel, three ways in.
+ */
+export function WhoIsSigningFix({ desk, row }: { desk: PushDesk; row: PushableRow }) {
+  return (
+    <div className={rowStyles.fix} data-testid={`who-confirm-fix-${row.agreementId}`}>
+      <div className={styles.formActions}>
+        <Button
+          variant="primary"
+          disabled={!desk.canSend}
+          onClick={() => (desk.whoFor === row.agreementId ? desk.closeWho() : desk.openWho(row))}
+          data-testid={`who-confirm-open-${row.agreementId}`}
+        >
+          <UserRound size={14} aria-hidden="true" />
+          {desk.whoFor === row.agreementId ? strings.tablet.whoClose : strings.tablet.whoOpen}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * WHICH STEP THE ROW IS ON — one function, so the strip and the controls
+ * cannot come to disagree about the order they are both describing.
+ *
+ * `done` is a fact about the record (who is signing has been answered) or about
+ * this screen (a tablet has been chosen). `now` is the single step a
+ * receptionist should be looking at; `next` is everything after it. Exactly one
+ * step is ever `now`, which is what makes the strip readable at a glance rather
+ * than a row of equally-lit chips.
+ */
+export type SendStepState = 'done' | 'now' | 'next';
+
+export function sendSteps(
+  row: Pick<PushableRow, 'assignorConfirmedAt'>,
+  chosenDeviceId: string | undefined,
+): readonly { key: string; label: string; state: SendStepState }[] {
+  const confirmed = row.assignorConfirmedAt !== null;
+  const chosen = Boolean(chosenDeviceId);
+  return [
+    {
+      key: 'who',
+      label: strings.tablet.stepWhoIsSigning,
+      state: confirmed ? 'done' : 'now',
+    },
+    {
+      key: 'tablet',
+      label: strings.tablet.stepChooseTablet,
+      state: !confirmed ? 'next' : chosen ? 'done' : 'now',
+    },
+    {
+      key: 'send',
+      label: strings.tablet.stepSend,
+      // NEVER `done`. Pressing Send makes a session and the row leaves this
+      // list — a ticked third step would be describing something that is no
+      // longer here.
+      state: confirmed && chosen ? 'now' : 'next',
+    },
+  ];
+}
+
+/**
+ * THE THREE STEPS, NUMBERED, ACROSS THE TOP OF THE ROW (Carl, 7 Sep 2026:
+ * "change the workflow to 'who is signing' only -- after that is actioned,
+ * enable the select tablet and send button").
+ *
+ * WHY IT EXISTS. Carl pushed Kim to a tablet and said, twice, that the desk
+ * never asked who was signing. Every control on the row was live at once, so
+ * nothing said which came first — and the one that mattered looked optional
+ * beside a Send that went straight away. The order is now the row's own fact.
+ *
+ * IT IS A LABEL, NOT A CONTROL. Nothing here is pressable: the strip says where
+ * the row is, and the controls it numbers are the things you press. A step that
+ * looked like a button would be a fourth way to open the same panel, and two of
+ * those are already enough.
+ */
+export function SendSteps({ desk, row }: { desk: PushDesk; row: PushableRow }) {
+  const steps = sendSteps(row, desk.target[row.agreementId]);
+  return (
+    <ol
+      className={rowStyles.steps}
+      aria-label={strings.tablet.stepsLabel}
+      data-testid={`steps-${row.agreementId}`}
+    >
+      {steps.map((step, index) => (
+        <li
+          key={step.key}
+          className={rowStyles.step}
+          data-state={step.state}
+          // WHERE THE ROW IS, spoken as a step rather than as a colour.
+          aria-current={step.state === 'now' ? 'step' : undefined}
+          data-testid={`step-${step.key}-${row.agreementId}`}
+        >
+          <span className={rowStyles.stepNumber} aria-hidden="true">
+            {index + 1}
+          </span>
+          {step.label}
+          {/*
+            THE STATE IN WORDS, FOR ANYBODY NOT READING THE WEIGHT OR THE TICK
+            (WCAG 2.2 — colour and weight are never the only carrier).
+          */}
+          {step.state !== 'next' && (
+            <span className={rowStyles.visuallyHidden}>
+              {' '}
+              {step.state === 'done' ? strings.tablet.stepDone : strings.tablet.stepNow}
+            </span>
+          )}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/**
  * WHICH REASON HAS A CONTROL IN ITS OWN BAND — one mapping, so the row's
  * standing "cannot be sent" band and the band after a refused press cannot
  * come to offer different fixes for the same reason.
  */
 function fixFor(desk: PushDesk, row: PushableRow, reason: string | null | undefined): ReactNode {
   if (reason === 'service_description_missing') return <D6aFix desk={desk} row={row} />;
+  if (reason === 'assignor_not_confirmed') return <WhoIsSigningFix desk={desk} row={row} />;
   if (reason === 'enduring_rules_not_authored') return <EnduringOfferFix desk={desk} row={row} />;
   return undefined;
 }
@@ -1854,6 +2027,12 @@ export function AgreementRow({
 
   return (
     <li key={row.agreementId} className={rowStyles.row} data-testid={`pushable-${row.agreementId}`}>
+      {/*
+        THE ORDER, BEFORE ANYTHING ELSE ON THE ROW. It is full width and first
+        because it describes all three columns beneath it (Carl, 7 Sep 2026).
+      */}
+      <SendSteps desk={desk} row={row} />
+
       {/* WHO THIS IS. */}
       <div className={rowStyles.identity}>
         {showPatientName && <strong>{row.patientName}</strong>}
@@ -1956,8 +2135,16 @@ export function AgreementRow({
         what the panel says before anybody types.
       */}
       <div className={rowStyles.who}>
+        {/*
+          THE ROW'S PRIMARY ACTION UNTIL IT IS ANSWERED (Carl, 7 Sep 2026:
+          "change the workflow to 'who is signing' only -- after that is
+          actioned, enable the select tablet and send button"). While nobody
+          has confirmed, this is the only thing on the row that can be pressed
+          and it looks like it; once confirmed it drops back to a quiet way of
+          changing an answer that has already been given.
+        */}
         <Button
-          variant="subtle"
+          variant={row.assignorConfirmedAt ? 'subtle' : 'primary'}
           disabled={!desk.canSend}
           onClick={() => (desk.whoFor === row.agreementId ? desk.closeWho() : desk.openWho(row))}
           data-testid={`who-open-${row.agreementId}`}
@@ -1978,7 +2165,20 @@ export function AgreementRow({
           id={`target-${row.agreementId}`}
           aria-label={strings.tablet.sendChoose}
           value={desk.target[row.agreementId] ?? ''}
-          disabled={!desk.canSend || !row.pushable || desk.free.length === 0 || desk.busyId !== null}
+          /*
+           * DEAD UNTIL WHO IS SIGNING HAS BEEN ANSWERED. The server says the
+           * same thing (`assignor_not_confirmed` makes the row unpushable), and
+           * this states it here too rather than depending on that: the workflow
+           * is "who is signing, then choose a tablet", and a control that can
+           * only fail teaches people the page is broken (CLAUDE.md §6).
+           */
+          disabled={
+            !desk.canSend
+            || !row.pushable
+            || !row.assignorConfirmedAt
+            || desk.free.length === 0
+            || desk.busyId !== null
+          }
           onChange={(e) => desk.setTarget((t) => ({ ...t, [row.agreementId]: e.target.value }))}
           data-testid={`target-${row.agreementId}`}
         >
@@ -1992,7 +2192,11 @@ export function AgreementRow({
         <Button
           variant="primary"
           disabled={
-            !desk.canSend || !row.pushable || !desk.target[row.agreementId] || desk.busyId !== null
+            !desk.canSend
+            || !row.pushable
+            || !row.assignorConfirmedAt
+            || !desk.target[row.agreementId]
+            || desk.busyId !== null
           }
           title={
             row.pushable ? undefined : blockedMessage(row.blockedReason, { providerType: row.providerType })

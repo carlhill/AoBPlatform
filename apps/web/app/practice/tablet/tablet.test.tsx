@@ -34,6 +34,7 @@ import {
   disputedLabels,
   fieldsToCorrect,
   mayPush,
+  sendSteps,
   serviceFact,
   signingFact,
   whoIsBlocked,
@@ -60,6 +61,9 @@ const READY = {
   assignorName: null,
   assignorRelationship: null,
   particularsLocked: false,
+  // SOMEBODY HAS BEEN ASKED WHO IS SIGNING. The push waits for this, so a row
+  // that is meant to be sendable carries it (Carl, 7 Sep 2026).
+  assignorConfirmedAt: '2026-09-07T08:00:00.000Z',
   pushable: true,
   blockedReason: null,
   activeSession: null,
@@ -822,6 +826,201 @@ describe('/practice/tablet — send to the tablet', () => {
     // NO CAPACITY QUESTION ANYWHERE NEAR IT (REQ-VUL-05) — the row says WHO,
     // and never asks anybody to judge whether they may.
     expect(document.body.textContent ?? '').not.toMatch(/capacity|competent|understands/i);
+  });
+
+  /**
+   * WHO IS SIGNING FIRST, THEN THE TABLET (Carl, 7 Sep 2026: "change the
+   * workflow to 'who is signing' only -- after that is actioned, enable the
+   * select tablet and send button").
+   *
+   * Carl pushed Kim to a tablet and said, twice, that the desk never asked.
+   * It never had: every agreement is drafted with the patient as its own
+   * assignor, so "the patient is signing" was a default nobody had confirmed,
+   * and Send went straight away past a question that had not been put.
+   */
+  it('send_and_tablet_select_are_dead_until_who_is_signing_is_saved', async () => {
+    signedInAtPractice();
+    const UNCONFIRMED = {
+      ...READY,
+      assignorConfirmedAt: null,
+      pushable: false,
+      blockedReason: 'assignor_not_confirmed' as const,
+    };
+    stubFetch({ rows: [UNCONFIRMED] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    // BOTH HALVES OF "SEND" ARE DEAD: there is nowhere to choose and nothing
+    // to press.
+    const select = (await screen.findByTestId(`target-${UNCONFIRMED.agreementId}`)) as HTMLSelectElement;
+    const send = (await screen.findByTestId(`send-${UNCONFIRMED.agreementId}`)) as HTMLButtonElement;
+    expect(select.disabled).toBe(true);
+    expect(send.disabled).toBe(true);
+
+    // THE ROW SAYS WHY, IN RECEPTION'S WORDS...
+    const band = await screen.findByTestId(`blocked-${UNCONFIRMED.agreementId}`);
+    expect(band.textContent).toContain(strings.tablet.blocked.assignor_not_confirmed);
+    // ...AND CARRIES THE CONTROL, rather than pointing at another screen.
+    const fix = (await screen.findByTestId(
+      `who-confirm-open-${UNCONFIRMED.agreementId}`,
+    )) as HTMLButtonElement;
+    expect(fix.disabled).toBe(false);
+
+    // AND "Who is signing?" IS THE ROW'S PRIMARY ACTION while it waits — the
+    // only thing on the row that can be pressed.
+    const ask = (await screen.findByTestId(`who-open-${UNCONFIRMED.agreementId}`)) as HTMLButtonElement;
+    expect(ask.disabled).toBe(false);
+    expect(ask.className).not.toBe('');
+  });
+
+  it('saving_who_is_signing_enables_send_without_reload', async () => {
+    signedInAtPractice();
+    const UNCONFIRMED = {
+      ...READY,
+      assignorConfirmedAt: null,
+      pushable: false,
+      blockedReason: 'assignor_not_confirmed' as const,
+    };
+    /*
+     * THE LIST STAYS UNCONFIRMED BEHIND THE SCREEN on purpose: if the enabling
+     * came from the poll rather than from the answer the server just returned,
+     * this test would fail — which is exactly the beat of dead controls Carl
+     * would feel between the press and the refresh.
+     */
+    stubFetch({
+      rows: [UNCONFIRMED],
+      onPost: () => ({
+        ok: true,
+        payload: {
+          id: UNCONFIRMED.agreementId,
+          assignorIsPatient: true,
+          assignorConfirmedAt: '2026-09-07T09:15:00.000Z',
+        },
+      }),
+    });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    fireEvent.click(await screen.findByTestId(`who-open-${UNCONFIRMED.agreementId}`));
+    // "The patient is signing" is ticked when the panel opens, so the common
+    // answer is open then Save.
+    const patientTick = screen.getByRole('checkbox', { name: strings.tablet.whoPatient }) as HTMLInputElement;
+    expect(patientTick.getAttribute('data-state') ?? String(patientTick.checked)).not.toBe('unchecked');
+
+    fireEvent.click(screen.getByTestId(`who-save-${UNCONFIRMED.agreementId}`));
+
+    // THE POST WENT TO THE ONE ENDPOINT THAT RECORDS THE ANSWER.
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));
+    const saved = calls.find((c) => c.method === 'POST')!;
+    expect(saved.url).toContain(`/agreements/${UNCONFIRMED.agreementId}/assignor`);
+    expect(saved.body).toMatchObject({ assignorIsPatient: true });
+
+    // AND THE PAIR CAME ALIVE UNDER RECEPTION'S HAND — from the answer the
+    // server returned, not from a later poll.
+    await waitFor(() =>
+      expect((screen.getByTestId(`target-${UNCONFIRMED.agreementId}`) as HTMLSelectElement).disabled).toBe(
+        false,
+      ),
+    );
+    // Send is the step AFTER choosing a tablet, and it comes alive the moment
+    // one is chosen — no reload, no second press on the panel.
+    fireEvent.change(screen.getByTestId(`target-${UNCONFIRMED.agreementId}`), {
+      target: { value: TABLET.id },
+    });
+    await waitFor(() =>
+      expect((screen.getByTestId(`send-${UNCONFIRMED.agreementId}`) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
+
+    // And the row has stopped saying it is waiting to be asked.
+    expect(screen.queryByTestId(`blocked-${UNCONFIRMED.agreementId}`)).toBeNull();
+    expect(screen.queryByTestId(`who-confirm-open-${UNCONFIRMED.agreementId}`)).toBeNull();
+  });
+
+  /**
+   * THE ROW SAYS WHICH ORDER TO DO THINGS IN (Carl, 7 Sep 2026: "change the
+   * workflow to 'who is signing' only -- after that is actioned, enable the
+   * select tablet and send button").
+   *
+   * Every control was live at once, so nothing on the row said which came
+   * first — and the one that mattered looked optional beside a Send that went
+   * straight away. Exactly one step is ever "now", which is what makes the
+   * strip readable at a glance rather than a row of equally-lit chips.
+   */
+  it('row_shows_the_numbered_workflow', async () => {
+    signedInAtPractice();
+    const UNCONFIRMED = {
+      ...READY,
+      assignorConfirmedAt: null,
+      pushable: false,
+      blockedReason: 'assignor_not_confirmed' as const,
+    };
+    stubFetch({ rows: [UNCONFIRMED] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    // THE ORDER IS ON THE ROW, in words, numbered.
+    const strip = await screen.findByTestId(`steps-${UNCONFIRMED.agreementId}`);
+    expect(strip.textContent).toContain(strings.tablet.stepWhoIsSigning);
+    expect(strip.textContent).toContain(strings.tablet.stepChooseTablet);
+    expect(strip.textContent).toContain(strings.tablet.stepSend);
+    // An ordered list, named — not three chips a screen reader reads as prose.
+    expect(strip.tagName).toBe('OL');
+    expect(strip.getAttribute('aria-label')).toBe(strings.tablet.stepsLabel);
+
+    // NOBODY HAS BEEN ASKED YET: step one is where the row is, and it is the
+    // ONLY step that is.
+    const who = screen.getByTestId(`step-who-${UNCONFIRMED.agreementId}`);
+    const tablet = screen.getByTestId(`step-tablet-${UNCONFIRMED.agreementId}`);
+    const send = screen.getByTestId(`step-send-${UNCONFIRMED.agreementId}`);
+    expect(who.getAttribute('data-state')).toBe('now');
+    expect(who.getAttribute('aria-current')).toBe('step');
+    expect(tablet.getAttribute('data-state')).toBe('next');
+    expect(send.getAttribute('data-state')).toBe('next');
+    expect(tablet.getAttribute('aria-current')).toBeNull();
+    expect(send.getAttribute('aria-current')).toBeNull();
+    // The state is SPOKEN as well as shown, so weight is never the only
+    // carrier (WCAG 2.2).
+    expect(who.textContent).toContain(strings.tablet.stepNow);
+  });
+
+  it('the numbered workflow moves on as each step is answered', async () => {
+    signedInAtPractice();
+    const CONFIRMED = { ...READY };
+    stubFetch({ rows: [CONFIRMED] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    // ASKED AND ANSWERED — step one is done, and step two is where the row is.
+    await waitFor(() =>
+      expect(screen.getByTestId(`step-who-${CONFIRMED.agreementId}`).getAttribute('data-state')).toBe(
+        'done',
+      ),
+    );
+    expect(screen.getByTestId(`step-who-${CONFIRMED.agreementId}`).textContent).toContain(
+      strings.tablet.stepDone,
+    );
+    expect(screen.getByTestId(`step-tablet-${CONFIRMED.agreementId}`).getAttribute('data-state')).toBe(
+      'now',
+    );
+    expect(screen.getByTestId(`step-send-${CONFIRMED.agreementId}`).getAttribute('data-state')).toBe(
+      'next',
+    );
+
+    // A TABLET CHOSEN — and Send is the only thing left.
+    fireEvent.change(screen.getByTestId(`target-${CONFIRMED.agreementId}`), {
+      target: { value: TABLET.id },
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByTestId(`step-tablet-${CONFIRMED.agreementId}`).getAttribute('data-state'),
+      ).toBe('done'),
+    );
+    expect(screen.getByTestId(`step-send-${CONFIRMED.agreementId}`).getAttribute('data-state')).toBe(
+      'now',
+    );
+    /*
+     * SEND IS NEVER "done". Pressing it makes a session and the row leaves this
+     * list — a ticked third step would be describing something no longer here.
+     */
+    expect(sendSteps(CONFIRMED, TABLET.id).map((s) => s.state)).toEqual(['done', 'done', 'now']);
   });
 
   it('who_fact_line_opens_the_panel', async () => {

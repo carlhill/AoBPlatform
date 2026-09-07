@@ -84,6 +84,7 @@ export {
   fieldsToCorrect,
   liveOnly,
   mayPush,
+  sendSteps,
   serviceFact,
   shortSessionId,
   signingFact,

@@ -53,6 +53,9 @@ const READY = {
   assignorName: null,
   assignorRelationship: null,
   particularsLocked: false,
+  // SOMEBODY HAS BEEN ASKED WHO IS SIGNING. The push waits for this, so a row
+  // that is meant to be sendable carries it (Carl, 7 Sep 2026).
+  assignorConfirmedAt: '2026-09-07T08:00:00.000Z',
   pushable: true,
   blockedReason: null,
   activeSession: null,

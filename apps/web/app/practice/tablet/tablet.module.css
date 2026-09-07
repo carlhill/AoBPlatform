@@ -115,6 +115,97 @@
 }
 
 /*
+ * THE THREE STEPS, NUMBERED, ACROSS THE TOP OF THE ROW (Carl, 7 Sep 2026).
+ *
+ * FULL WIDTH AND FIRST, because it is the row's table of contents: who is
+ * signing, then choose a tablet, then Send. It sits above the columns it
+ * numbers rather than inside one of them -- step 1 lives in the `who` column
+ * and steps 2 and 3 in `send`, so anything that tried to sit beside them would
+ * have to pick a column and lie about the other two.
+ *
+ * IT IS AN ORDERED LIST and reads as one: `aria-current="step"` marks where the
+ * row is, and the state words are spoken rather than shown, because the number,
+ * the tick and the weight already say it to anybody who can see them.
+ */
+.steps {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1) var(--s3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+}
+
+/* The numeral, in a circle the eye can count without reading. */
+.stepNumber {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+/* WHERE THE ROW IS NOW — the one step a receptionist should be looking at. */
+.step[data-state='now'] {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.step[data-state='now'] .stepNumber {
+  border-color: currentColor;
+}
+
+/* ALREADY ANSWERED. Quiet, but not gone: the order still has to be readable. */
+.step[data-state='done'] .stepNumber {
+  border-color: transparent;
+  background: var(--ok-soft, var(--line));
+}
+
+/*
+ * SPOKEN, NOT SHOWN. The number, the weight and the tick carry the state to
+ * anybody who can see them; this carries it to everybody else (WCAG 2.2 —
+ * colour and weight are never the only carrier of meaning).
+ */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/*
+ * THE ARROWS BETWEEN THEM ARE DECORATION, and are drawn rather than typed so
+ * no screen reader spells them out mid-sentence.
+ */
+.step + .step::before {
+  content: '';
+  width: 0.75rem;
+  height: 1px;
+  background: var(--line);
+  margin-right: var(--s1);
+}
+
+/*
  * THE FIX, INSIDE THE BAND THAT STATES THE PROBLEM (Carl, 4 Sep 2026) — the
  * D6a select and its button, sitting under the refusal sentence rather than
  * two screens away. It is inside a `Notice`, whose body is already a block, so
