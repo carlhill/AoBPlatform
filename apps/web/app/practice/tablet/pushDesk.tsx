@@ -62,6 +62,7 @@ import {
 } from '../../ui';
 import { strings } from '../../strings';
 import { apiHeaders, currentSession } from '../../auth';
+import { explainFailure } from '../../apiError';
 import { toViewPath } from '../../viewPath';
 import styles from '../manage.module.css';
 import rowStyles from './tablet.module.css';
@@ -1116,7 +1117,11 @@ export function usePushDesk(practiceId: string): PushDesk {
       const res = await fetch(`${CORE_URL}/patients/${subject.patientId}/details`, {
         headers: apiHeaders(practiceId),
       });
-      if (!res.ok) throw new Error((await refusal(res)).message);
+      // `explainFailure`, not `refusal`, here specifically: Carl, 7 Sep 2026 —
+      // with the session expired this read failed and the panel showed nothing
+      // useful. `explainFailure` is the one place that recognises that failure
+      // and says "sign in again" rather than a raw refusal sentence.
+      if (!res.ok) throw new Error(await explainFailure(res));
       const body = (await res.json()) as PatientDetails;
       setDetails(body);
       /*
@@ -2216,16 +2221,61 @@ export function SessionActions({ desk, session }: { desk: PushDesk; session: Tab
  * this correction home, so the sentence is in front of the person typing.
  */
 export function CorrectionPanel({ desk, subject }: { desk: PushDesk; subject: CorrectionSubject }) {
-  if (desk.correctFor !== subject.key) return null;
+  const open = desk.correctFor === subject.key;
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Tracks the LAST `details` this panel actually rendered a load for, so the
+  // scroll-and-focus below fires once per opening (the null → loaded
+  // transition) and never again while the person is simply typing.
+  const loadedForRef = useRef<PatientDetails | null>(null);
+
+  /*
+   * SCROLLED INTO VIEW AND FOCUSED ON THE FIELD THE PATIENT ACTUALLY DISPUTED
+   * (Carl, 7 Sep 2026). Both pages that render this panel now do so from a
+   * button that can be well above or below it on the page — the patient work
+   * page's "Correct it now" banner sits ABOVE the five read-only rows, this
+   * panel renders below them, and opening it used to leave the screen looking
+   * unchanged. `scrollIntoView` is guarded: jsdom does not implement it, and a
+   * unit test rendering this component must not throw over cosmetics.
+   */
+  useEffect(() => {
+    if (!open || desk.details === null || loadedForRef.current === desk.details) return;
+    loadedForRef.current = desk.details;
+    if (typeof panelRef.current?.scrollIntoView === 'function') {
+      panelRef.current.scrollIntoView({ block: 'nearest' });
+    }
+    const disputedFields = fieldsToCorrect(subject.disputedDetails);
+    const target = disputedFields[0] ?? CORRECTABLE_PATIENT_FIELDS[0];
+    panelRef.current
+      ?.querySelector<HTMLInputElement>(`[data-testid="correct-${target}-${subject.key}"]`)
+      ?.focus();
+  }, [open, desk.details, subject.key, subject.disputedDetails]);
+
+  if (!open) return null;
+  // A LOAD THAT FAILED IS NOT "STILL LOADING". `openCorrect` leaves `details`
+  // null on a failure and puts the reason in `correctOutcome` instead — before
+  // today this panel had no idea that had happened and sat on
+  // `correctLoading` forever, with the actual reason (Carl's session had
+  // expired) in a separate notice below it that nobody had scrolled to yet.
+  const failure = desk.correctOutcome?.id === subject.key && !desk.correctOutcome.ok ? desk.correctOutcome : null;
   return (
-    <div className={styles.form} data-testid={`correct-panel-${subject.key}`}>
+    <div ref={panelRef} className={styles.form} data-testid={`correct-panel-${subject.key}`}>
       <p className={ui.hint}>{strings.tablet.correctHeading}</p>
       <p className={ui.hint}>{strings.tablet.correctAllLead}</p>
       <Notice tone="warn" title={strings.tablet.correctAction} data-testid={`correct-caveat-${subject.key}`}>
         {strings.tablet.correctPmsCaveat}
       </Notice>
       {desk.details === null ? (
-        <p className={ui.hint}>{strings.tablet.correctLoading}</p>
+        failure ? (
+          <Notice
+            tone="stop"
+            title={strings.tablet.correctLoadFailedTitle}
+            data-testid={`correct-load-failed-${subject.key}`}
+          >
+            {strings.tablet.correctLoadFailed(failure.text)}
+          </Notice>
+        ) : (
+          <p className={ui.hint}>{strings.tablet.correctLoading}</p>
+        )
       ) : (
         <>
           {desk.details.detailsCorrectedAt && (

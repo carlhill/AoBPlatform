@@ -712,6 +712,53 @@ describe('/practice/patients/<id> — one patient, everything open', () => {
     expect((resolve.body as { resolution: string }).resolution).toBe('no_change_needed');
   });
 
+  it('banner_correct_it_now_opens_the_panel_in_view_and_focuses_the_requested_field', async () => {
+    /*
+     * Carl, 7 Sep 2026: pressed "Correct it now" on the banner, the button
+     * flipped to "Close", and "nothing visible changed" — the panel this
+     * button opens rendered below the five read-only rows, off the visible
+     * part of the screen. The panel now renders directly under the banner
+     * (one instance, shared with the "Correct a detail" button further down),
+     * so opening it from EITHER control lands in the same place: right after
+     * the banner, before `identity-list`, with focus already on the field the
+     * patient actually disputed.
+     */
+    const request = {
+      kind: 'portal_correction_requested' as const,
+      reviewTaskId: TASK,
+      fieldType: 'mobile',
+      requestedAt: '2026-09-04T10:31:00.000Z',
+    };
+    stubFetch({
+      queue: [{ ...QUEUE[0], items: [...QUEUE[0].items, request] }],
+    });
+    render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+
+    const banner = await screen.findByTestId(`correction-request-${TASK}`);
+    fireEvent.click(screen.getByTestId(`correction-request-open-${TASK}`));
+
+    const subjectKey = `patient:${PATIENT}`;
+    const mobileField = await screen.findByTestId(`correct-mobile-${subjectKey}`);
+
+    // FOCUSED, without anybody pressing Tab — the crossed field, not merely
+    // the first one on the form.
+    await waitFor(() => expect(document.activeElement).toBe(mobileField));
+
+    // IN VIEW: the panel sits BEFORE the five read-only rows in the document,
+    // not after them — `compareDocumentPosition` is the DOM's own way of
+    // saying "A comes before B" without depending on any real layout, which
+    // jsdom does not do.
+    const panel = screen.getByTestId(`correct-panel-${subjectKey}`);
+    const rows = screen.getByTestId('identity-list');
+    expect(banner.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(panel.compareDocumentPosition(rows) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // AND THE LOWER "Correct a detail" BUTTON STILL WORKS, closing the very
+    // same panel.
+    fireEvent.click(screen.getByTestId('identity-correct-open'));
+    expect(screen.queryByTestId(`correct-panel-${subjectKey}`)).toBeNull();
+  });
+
   it('a patient with no request has no banner, and a view-only visitor cannot answer one', async () => {
     stubFetch();
     render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
