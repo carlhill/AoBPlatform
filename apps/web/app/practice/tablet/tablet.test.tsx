@@ -746,6 +746,9 @@ describe('console_shows_disputed_details_and_offers_correct_and_resend', () => {
     // ALL FIVE DETAILS — six columns, because a name is two of them and one
     // question. Every one pre-filled with what the platform holds.
     const address = (await screen.findByTestId(`correct-address-${DISPUTED.id}`)) as HTMLInputElement;
+    // The five values are seeded from the details fetch after the inputs exist
+    // -- wait for the pre-fill, not the field (wow.md §2 item 6; flaked on CI 7 Sep 2026).
+    await waitFor(() => expect(address.value).toBe(DETAILS.address));
     const mobile = screen.getByTestId(`correct-mobile-${DISPUTED.id}`) as HTMLInputElement;
     const email = screen.getByTestId(`correct-email-${DISPUTED.id}`) as HTMLInputElement;
     const dob = screen.getByTestId(`correct-dateOfBirth-${DISPUTED.id}`) as HTMLInputElement;
