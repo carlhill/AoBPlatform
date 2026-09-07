@@ -189,7 +189,29 @@ export function CheckDetailsScreen({
     >
       <div className={styles.twoColumn}>
         <div className={`${styles.main} ${styles.detailsMain}`}>
-          <h1 className={styles.h2} data-testid="check-details-heading">
+          {/*
+            THE HEADING CARRIES THE LEDE WITH IT (7 Sep 2026, review of the
+            layout change that moved the lede into the rail).
+
+            MOVING COPY ACROSS A SCREEN MOVES IT IN THE READING ORDER TOO, and
+            that is the half the layout work missed: with the lede at the foot
+            of the rail, somebody hearing this page read out met five rows and
+            ten buttons before "our staff have already confirmed who you are".
+            The sentence that says this is a data check and NOT a verification
+            is the one sentence on K-P1 that must not arrive late — it is the
+            whole reason K-P1 is not K-2.
+
+            `aria-describedby` FIXES IT WITHOUT MOVING THE PIXELS BACK: the
+            description is announced with the heading wherever it sits on the
+            glass, so the sighted reading order and the announced one agree
+            again. The id and the test id deliberately carry the same name,
+            because they name the same sentence.
+          */}
+          <h1
+            className={styles.h2}
+            data-testid="check-details-heading"
+            aria-describedby="check-details-lede"
+          >
             {strings.particulars.headingByAgreementType[agreementType]}
           </h1>
           {/*
@@ -355,7 +377,8 @@ export function CheckDetailsScreen({
             the footer.
           */}
           <div className={styles.railNote}>
-            <p className={styles.railLede} data-testid="check-details-lede">
+            {/* `id` is what the heading's `aria-describedby` above resolves to. */}
+            <p id="check-details-lede" className={styles.railLede} data-testid="check-details-lede">
               {strings.checkDetails.lede}
             </p>
             <p className={styles.railContext} data-testid="check-details-context">

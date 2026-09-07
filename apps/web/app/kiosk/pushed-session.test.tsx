@@ -960,6 +960,13 @@ describe('pushed_k3_back_returns_to_check_details_with_ticks_kept', () => {
  * is no scroll bar", "the footer is too fat", "write to the right side
  * somewhere").
  *
+ * K-P1, NOT K-2, AND THE TEST IS NAMED FOR IT. Carl's screenshot said "K-2"
+ * and the first version of this test took the word from him; the screen with
+ * five ticked rows on it is `CheckDetailsScreen`, which this codebase calls
+ * K-P1 everywhere else. K-2 is `VerifyScreen`, where a walk-up patient TYPES
+ * three identifiers. A test named after the wrong screen sends the next person
+ * to the wrong file (wow.md §2 item 6).
+ *
  * WHAT JSDOM CAN AND CANNOT PROVE, said plainly rather than implied. There is
  * no layout engine here: every box is zero pixels tall, so nothing in this file
  * can assert that the screen fits 1024x768 — and a test that claimed to would
@@ -980,7 +987,7 @@ describe('pushed_k3_back_returns_to_check_details_with_ticks_kept', () => {
  * 2026). That check belongs to whoever changes this screen's spacing next; it
  * cannot be automated in this runner.
  */
-describe('k2_fits_a_landscape_tablet_without_page_scroll', () => {
+describe('kp1_fits_a_landscape_tablet_without_page_scroll', () => {
   it('lays the footer identifiers on one row, and puts the explanatory copy in the right column', async () => {
     asPairedTablet();
     fetchTabletSession.mockResolvedValue({ session: SESSION });
@@ -1021,6 +1028,24 @@ describe('k2_fits_a_landscape_tablet_without_page_scroll', () => {
     const context = screen.getByTestId('check-details-context');
     expect(lede.textContent).toBe(strings.checkDetails.lede);
     expect(context.textContent).toBe(strings.checkDetails.footer);
+
+    /*
+     * AND THE HEADING STILL CARRIES THE LEDE, however far across the screen it
+     * has been moved. Moving copy out of the left column moved it in the
+     * READING ORDER too: without this wire, somebody hearing the page read out
+     * meets five rows before "our staff have already confirmed who you are",
+     * which is the one sentence on K-P1 that must not arrive late.
+     *
+     * The pointer is FOLLOWED, not merely asserted to exist — an
+     * `aria-describedby` naming an id nothing carries is silent, and a test
+     * that only checked the attribute's value would pass on exactly that bug.
+     */
+    const describedBy = screen.getByTestId('check-details-heading').getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    const description = document.getElementById(describedBy as string);
+    expect(description).toBeTruthy();
+    expect(description?.textContent).toBe(strings.checkDetails.lede);
+    expect(description).toBe(lede);
 
     // BOTH IN THE RAIL, beside "See reception" — not in the column with the
     // rows in it.
