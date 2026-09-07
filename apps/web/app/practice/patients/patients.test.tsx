@@ -874,6 +874,17 @@ describe('/practice/patients/<id> — one patient, everything open', () => {
       false,
     );
 
+    // WAIT FOR THE SEND TO FINISH, NOT JUST TO START. Both buttons are disabled
+    // while `lockedBusy` is set; the POST above is recorded on click, but busy
+    // clears only after the stubbed response resolves and the page re-reads.
+    // Clicking dismiss in that gap hits a disabled button and nothing is sent
+    // (wow.md §2 item 6 — failed CI on 57de0f4).
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId(`locked-invitation-dismiss-${LOCK_TASK}`) as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
+
     // DISMISS closes the task through the review-tasks module's own endpoint,
     // and never as `reinvited` — that resolution means a message actually went.
     fireEvent.click(screen.getByTestId(`locked-invitation-dismiss-${LOCK_TASK}`));
