@@ -208,13 +208,55 @@ export class AgreementTemplateError extends Error {
  * function reports on `content/agreement-templates.json` and on a body typed
  * into a console form ten seconds ago.
  */
-export function assertAgreementTemplateBody(
+/**
+ * WHAT KIND OF PROBLEM, AND WHICH ELEMENT IT IS ABOUT (Carl, 7 Sep 2026; W1).
+ *
+ * `assertAgreementTemplateBody` throws the FIRST problem, which is right for a
+ * loader: a bad content file must fail the build with one clear reason. It is
+ * wrong for a console form, where somebody typing wording needs to see every
+ * outstanding reason at once — and needs them keyed, so a missing D-element can
+ * be shown as "Patient's name is not mentioned yet" beside the field rather
+ * than as the loader's sentence about template validation.
+ *
+ * SO THE COLLECTOR IS THE IMPLEMENTATION AND THE ASSERT IS A THIN CALLER. One
+ * set of rules, one set of regexes, one order. A console that duplicated any of
+ * this would be a second opinion about what a lawful agreement says, and the
+ * two would drift.
+ */
+export type AgreementTemplateProblemKind =
+  | 'amount'
+  | 'practitioner_signature'
+  | 'forbidden_word'
+  | 'medicare_number'
+  | 'unbalanced_block'
+  | 'unknown_condition'
+  | 'unknown_placeholder'
+  | 'stray_moustache'
+  | 'missing_element'
+  | 'no_statements';
+
+export interface AgreementTemplateProblem {
+  readonly kind: AgreementTemplateProblemKind;
+  /** The placeholder or condition this is about, where the problem names one. */
+  readonly element?: string;
+  /** The loader's own sentence, without the `where` prefix. */
+  readonly message: string;
+}
+
+/**
+ * Every problem with one template body, in the order the loader would hit them.
+ *
+ * `declared` is the placeholder and condition vocabulary — the content file's,
+ * so a practice variant is checked against exactly what the shipped templates
+ * may use and not against a list the console invented.
+ */
+export function agreementTemplateProblems(
   template: AgreementTemplate,
   declared: { readonly placeholders: readonly string[]; readonly conditions: readonly string[] },
-  where: string,
-): void {
-  const fail = (why: string): never => {
-    throw new AgreementTemplateError(`${where}: ${why}`);
+): AgreementTemplateProblem[] {
+  const problems: AgreementTemplateProblem[] = [];
+  const add = (kind: AgreementTemplateProblemKind, message: string, element?: string): void => {
+    problems.push(element === undefined ? { kind, message } : { kind, element, message });
   };
 
   const lines: string[] = [
@@ -230,26 +272,30 @@ export function assertAgreementTemplateBody(
 
   for (const line of lines) {
     if (AMOUNT.test(line)) {
-      fail(
+      add(
+        'amount',
         `"${trim(line)}" carries a benefit or dollar amount. No agreement artefact may (hard rule 4, ` +
           'REQ-REG-04) — a reg 89AA notice is a different document and is not made from these templates',
       );
     }
     if (PRACTITIONER_SIGNATURE.test(line)) {
-      fail(
+      add(
+        'practitioner_signature',
         `"${trim(line)}" offers a practitioner signature. That was abolished on 1 July 2026 and no ` +
           'artefact may carry one (hard rule 3)',
       );
     }
     if (FORBIDDEN_WORDS.test(line)) {
-      fail(
+      add(
+        'forbidden_word',
         `"${trim(line)}" says "certified", "approved", "accredited" or "government-approved". None is ` +
           'ever permitted about our forms; the permitted phrase is "checked against the s 65C data set" ' +
           '(hard rule 12, REQ-65C-05)',
       );
     }
     if (MEDICARE_NUMBER.test(line)) {
-      fail(
+      add(
+        'medicare_number',
         `"${trim(line)}" mentions a Medicare card number. It is not an identity identifier, the ` +
           'exclusion is not configurable, and no artefact carries one (hard rule 1, REQ-VER-02)',
       );
@@ -260,14 +306,21 @@ export function assertAgreementTemplateBody(
     const opens = [...line.matchAll(BLOCK_OPEN)];
     const closes = [...line.matchAll(BLOCK_CLOSE)];
     if (opens.length !== closes.length) {
-      fail(`"${trim(line)}" has ${opens.length} {{#if/#unless}} and ${closes.length} {{/if or /unless}}`);
+      add(
+        'unbalanced_block',
+        `"${trim(line)}" has ${opens.length} {{#if/#unless}} and ${closes.length} {{/if or /unless}}`,
+      );
     }
     for (const [, , name] of opens) {
-      if (!conditions.has(name)) fail(`"${trim(line)}" branches on {{#…${name}}}, which is not a declared condition`);
+      if (!conditions.has(name)) {
+        add('unknown_condition', `"${trim(line)}" branches on {{#…${name}}}, which is not a declared condition`, name);
+      }
       used.add(name);
     }
     for (const [, name] of line.matchAll(VALUE_PLACEHOLDER)) {
-      if (!placeholders.has(name)) fail(`"${trim(line)}" uses {{${name}}}, which is not a declared placeholder`);
+      if (!placeholders.has(name)) {
+        add('unknown_placeholder', `"${trim(line)}" uses {{${name}}}, which is not a declared placeholder`, name);
+      }
       used.add(name);
     }
 
@@ -279,23 +332,52 @@ export function assertAgreementTemplateBody(
       ...line.match(BLOCK_CLOSE) ?? [],
     ]);
     for (const token of line.match(ANY_MOUSTACHE) ?? []) {
-      if (!recognised.has(token)) fail(`"${trim(line)}" contains ${token}, which is not a placeholder or a block`);
+      if (!recognised.has(token)) {
+        add('stray_moustache', `"${trim(line)}" contains ${token}, which is not a placeholder or a block`);
+      }
     }
   }
 
   for (const required of REQUIRED_TEMPLATE_PLACEHOLDERS[template.agreementType]) {
     if (!used.has(required)) {
-      fail(
+      add(
+        'missing_element',
         `it never renders {{${required}}}. Every ${template.agreementType} agreement must carry the whole ` +
           'data set (REQ-REG-01 D1-D7 / reg 65CB per REQ-END-02); a template that drops one produces an ' +
           'agreement missing a statutory particular',
+        required,
       );
     }
   }
 
   if (template.statements.length === 0) {
-    fail('it has no statements. The assignor ticks each statement before the signature control can enable');
+    add('no_statements', 'it has no statements. The assignor ticks each statement before the signature control can enable');
   }
+
+  return problems;
+}
+
+/**
+ * Validate one template body — the shape a PRACTICE VARIANT is checked against
+ * too, which is why it is exported separately from the whole-file parse. A
+ * practice proposing its own wording gets exactly these refusals, live, with
+ * the reason shown, rather than discovering them at a tablet.
+ *
+ * `where` names the thing being checked in every message, because the same
+ * function reports on `content/agreement-templates.json` and on a body typed
+ * into a console form ten seconds ago.
+ *
+ * IT THROWS THE FIRST PROBLEM AND NOT ALL OF THEM. A loader must fail with one
+ * clear reason; the console reads `agreementTemplateProblems` above when it
+ * wants the whole list.
+ */
+export function assertAgreementTemplateBody(
+  template: AgreementTemplate,
+  declared: { readonly placeholders: readonly string[]; readonly conditions: readonly string[] },
+  where: string,
+): void {
+  const [first] = agreementTemplateProblems(template, declared);
+  if (first) throw new AgreementTemplateError(`${where}: ${first.message}`);
 }
 
 export function parseAgreementTemplates(raw: unknown): AgreementTemplateContent {

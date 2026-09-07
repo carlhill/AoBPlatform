@@ -37,6 +37,8 @@ import styles from '../manage.module.css';
 import { SessionControl } from '../../SessionControl';
 import { apiHeaders } from '../../auth';
 import { useRefreshable } from '../../refresh';
+import { TemplateForm } from './TemplateForm';
+import type { TemplateBody as FormBody } from './templateEditing';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -127,8 +129,6 @@ export function TemplatesView({
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const [editing, setEditing] = useState<'episodic' | 'enduring' | null>(null);
-  const [draftJson, setDraftJson] = useState('');
-  const [draftVersion, setDraftVersion] = useState('');
   const [proposeBusy, setProposeBusy] = useState(false);
   const [proposeError, setProposeError] = useState<string | null>(null);
   const [proposeSaved, setProposeSaved] = useState(false);
@@ -208,26 +208,17 @@ export function TemplatesView({
     }
   }
 
+  /**
+   * OPEN THE FORM. Nothing is serialised here any more: `TemplateForm` builds
+   * its own state from the GENERIC template's shape and fills it from the
+   * existing draft where a key matches, so a draft saved before a section was
+   * added comes back with that section present and empty rather than silently
+   * missing.
+   */
   function startEditing(type: 'episodic' | 'enduring') {
-    const generic = templates?.generic.find((g) => g.agreementType === type);
-    const existingDraft = templates?.variants.find((v) => v.agreementType === type && v.status === 'draft');
-    const body: TemplateBody | undefined = existingDraft?.body ?? generic;
     setEditing(type);
     setProposeError(null);
     setProposeSaved(false);
-    setDraftVersion(existingDraft?.version ?? '');
-    setDraftJson(
-      JSON.stringify(
-        {
-          title: body?.title ?? '',
-          sections: body?.sections ?? [],
-          statements: body?.statements ?? [],
-          footer: body?.footer ?? [],
-        },
-        null,
-        2,
-      ),
-    );
   }
 
   /**
@@ -236,22 +227,16 @@ export function TemplatesView({
    * amount (hard rule 4)" — and a paraphrase would take away the only part a
    * person editing wording can act on (CLAUDE.md §7).
    */
-  async function propose(submit: boolean) {
+  async function propose(version: string, body: FormBody, submit: boolean) {
     if (!editing) return;
     setProposeBusy(true);
     setProposeError(null);
     setProposeSaved(false);
     try {
-      let body: unknown;
-      try {
-        body = JSON.parse(draftJson);
-      } catch {
-        throw new Error(strings.templates.notJson);
-      }
       const res = await fetch(`${CORE_URL}/agreement-templates`, {
         method: 'POST',
         headers: { ...apiHeaders(practiceId), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agreementType: editing, version: draftVersion.trim(), body }),
+        body: JSON.stringify({ agreementType: editing, version, body }),
       });
       if (!res.ok) throw new Error(await refusalMessage(res));
       const saved = (await res.json()) as Variant;
@@ -434,46 +419,24 @@ export function TemplatesView({
                   )}
 
                   {editing === generic.agreementType && (
-                    <div className={styles.addPanel}>
-                      <p className={styles.cardNote}>{s.editorLead}</p>
-                      <p className={styles.cardNote}>{s.editorPlaceholders(templates.placeholders.join(', '))}</p>
-                      <label className={ui.hint} htmlFor="variant-version">
-                        {s.versionLabel}
-                      </label>
-                      <input
-                        id="variant-version"
-                        className={ui.input}
-                        value={draftVersion}
-                        placeholder={s.versionPlaceholder}
-                        onChange={(e) => setDraftVersion(e.target.value)}
-                        data-testid="variant-version"
-                      />
-                      <textarea
-                        className={ui.input}
-                        rows={18}
-                        value={draftJson}
-                        onChange={(e) => setDraftJson(e.target.value)}
-                        aria-label={s.editorLabel}
-                        data-testid="variant-body"
-                      />
-                      {proposeError && <Notice tone="warn">{proposeError}</Notice>}
-                      <div className={styles.formActions}>
-                        <Button onClick={() => void propose(false)} disabled={proposeBusy} data-testid="save-draft">
-                          {s.saveDraft}
-                        </Button>
-                        <Button
-                          variant="primary"
-                          onClick={() => void propose(true)}
-                          disabled={proposeBusy}
-                          data-testid="submit-for-review"
-                        >
-                          {s.submitForReview}
-                        </Button>
-                        <Button variant="subtle" onClick={() => setEditing(null)}>
-                          {s.cancel}
-                        </Button>
-                      </div>
-                    </div>
+                    <TemplateForm
+                      agreementType={generic.agreementType}
+                      generic={generic}
+                      draft={
+                        variants.find((v) => v.agreementType === generic.agreementType && v.status === 'draft')
+                          ?.body
+                      }
+                      placeholders={templates.placeholders}
+                      conditions={templates.conditions}
+                      initialVersion={
+                        variants.find((v) => v.agreementType === generic.agreementType && v.status === 'draft')
+                          ?.version ?? ''
+                      }
+                      busy={proposeBusy}
+                      error={proposeError}
+                      onPropose={(version, body, submit) => void propose(version, body, submit)}
+                      onCancel={() => setEditing(null)}
+                    />
                   )}
                 </div>
               );

@@ -3416,17 +3416,140 @@ export const strings = {
     saveDraft: 'Save as a draft',
     submitForReview: 'Submit for review',
     proposeSaved: 'Saved.',
-    editorLabel: 'The wording, as structured text',
+    /*
+     * THE EDITOR IS A FORM NOW, NOT A JSON TEXTAREA (Carl, 7 Sep 2026): "make
+     * this custom text a form and then you put it together in the right JSON
+     * format". What used to be one `editorLabel` over a box of braces is the
+     * block below.
+     */
     editorLead:
-      'Edit the sections, the statements and the footer. Every element of the s 65C data set must still '
-      + 'appear — the check runs when you save, and names anything missing.',
-    editorPlaceholders: (list: string) =>
-      `The details are filled in where these appear: ${list}. Wrap a paragraph in `
-      + `{{#if isPreAgreement}}…{{/if}} or {{#unless assignorIsPatient}}…{{/unless}} to show it only in `
-      + 'that case.',
+      'Rewrite the wording in your own words. The shape is fixed — the same sections and the same '
+      + 'statements to tick — and every element of the s 65C data set must still appear. The checks beside '
+      + 'the form run as you type.',
     versionLabel: 'Version name',
     versionPlaceholder: 'e.g. our-clinic-episodic-1',
-    notJson: 'That is not valid structured text. Check for a missing comma or bracket.',
+    versionHint:
+      'Lower case, words joined by hyphens, ending in a number. A rewrite mints a new one, so an agreement '
+      + 'already signed still says what it was made from.',
+
+    titleLabel: 'Title',
+    titleHint: 'One line, at the top of the document.',
+
+    sectionsHeading: 'Sections',
+    sectionsHint:
+      'The sections are fixed and appear in this order. You write the heading and the paragraphs under it.',
+    sectionKeyLabel: (key: string) => `Section: ${key}`,
+    sectionHeadingLabel: 'Heading',
+    paragraphLabel: (n: number) => `Paragraph ${n}`,
+    addParagraph: 'Add a paragraph',
+    removeParagraph: 'Remove',
+
+    statementsFormHeading: 'What the person signing ticks',
+    /*
+     * WHY THE COUNT IS FIXED, said as a fact about review rather than as a
+     * refusal. The keys are what a signature records, so adding or removing a
+     * statement changes what a signature MEANS.
+     */
+    statementsFormHint:
+      'These are the statements the person signing ticks, one box each. You can change the words; the '
+      + 'number of statements is fixed, because the tick is recorded against the statement it was given '
+      + 'for. Adding or removing one is a change we would need to look at with you.',
+    statementKeyLabel: (key: string) => `Statement: ${key}`,
+
+    footerHeading: 'Footer',
+    footerHint: 'The small print at the bottom. One line here is one line on the document.',
+
+    /* --- The placeholder picker --- */
+    insertDetail: 'Insert detail',
+    insertDetailChoose: 'Insert detail…',
+    insertOnlyWhen: 'Only when…',
+    /*
+     * PICKED, NEVER TYPED. `{{patientNam}}` renders literal braces onto a
+     * contract; a menu cannot produce one that does not exist.
+     */
+    insertHint:
+      'The details are filled in when the agreement is made. Put the cursor where you want one and choose '
+      + 'it from the menu — do not type the braces yourself.',
+    onlyWhenIf: (label: string) => `Only when ${label}`,
+    onlyWhenUnless: (label: string) => `Only when NOT ${label}`,
+    /** How each placeholder reads to a person. Keyed by the content file's own key. */
+    placeholderLabels: {
+      patientName: 'The patient’s name',
+      agreementDate: 'The date of the agreement',
+      providerDetails: 'The provider’s details',
+      providerName: 'The provider’s name',
+      serviceDate: 'The date of the service',
+      basicServiceDescription: 'A description of the service',
+      mbsItemNumbers: 'The item numbers',
+      mappingVersion: 'The service-description list version',
+      assignorName: 'The name of the person signing',
+      assignorRelationship: 'Their relationship to the patient',
+      enduringPathway: 'How the ongoing agreement is registered',
+      coveredServiceScope: 'What the ongoing agreement covers',
+      notificationMethod: 'How the patient is told',
+      terminationMethod: 'How the agreement is ended',
+      commencementDate: 'The date it starts',
+    } as Record<string, string>,
+    /** The two branches, in words. Keyed by the content file's own condition key. */
+    conditionLabels: {
+      isPreAgreement: 'the agreement is made before the service',
+      assignorIsPatient: 'the patient is signing for themselves',
+    } as Record<string, string>,
+
+    /* --- The live checks --- */
+    checksHeading: 'Checks',
+    checksPassing: 'Everything the s 65C data set needs is here, and nothing that is not allowed.',
+    checksBlocked: (n: number) =>
+      n === 1 ? '1 thing to fix before this can be saved' : `${n} things to fix before this can be saved`,
+    /*
+     * A MISSING ELEMENT IN WORDS (Carl, 7 Sep 2026). "it never renders
+     * {{patientName}}" is the loader talking to a developer; this is what a
+     * practice manager needs to read.
+     */
+    checkMissingElement: (label: string) => `${label} is not mentioned yet.`,
+    checkMissingElementUnlabelled: (key: string) => `The agreement must still mention {{${key}}}.`,
+    checkNeedsTitle: 'The document needs a title.',
+    checkNeedsVersion:
+      'The version name must be lower case, words joined by hyphens, and end in a number — for example '
+      + 'our-clinic-episodic-1.',
+    checkNeedsStatementText: (key: string) => `The statement “${key}” has no words in it.`,
+    saveBlocked: 'Save and Submit open once the checks above pass.',
+
+    /* --- Preview --- */
+    previewShow: 'Preview with sample data',
+    previewHide: 'Close the preview',
+    /*
+     * IT IS NOT THE DOCUMENT, AND IT SAYS SO ON ITSELF. The signed agreement
+     * is rendered once, on the server, and hashed there (hard rule 13). This
+     * is the wording with obviously fake values in it, so a practice can read
+     * their own sentences as a person will.
+     */
+    previewNotice: 'Preview — not the signed document. The details below are made-up samples.',
+    previewBranchNote:
+      'A document takes one branch of each “only when”. This preview shows an agreement made before '
+      + 'the service, signed by someone for the patient.',
+    previewLetterhead: 'Your letterhead prints here',
+    previewFailed:
+      'The preview could not be drawn from this wording yet. The checks above say what is outstanding.',
+    /** Obviously fake, for the preview only. No amount, and no Medicare number. */
+    sampleValues: {
+      patientName: 'Jamie Sampleton',
+      agreementDate: '7 September 2026',
+      providerDetails: 'Dr Sample Provider, 1 Example Street, Sampletown NSW 2000',
+      providerName: 'Dr Sample Provider',
+      serviceDate: '7 September 2026',
+      basicServiceDescription: 'General practitioner attendance',
+      mbsItemNumbers: '23',
+      mappingVersion: 'sample-mapping-1',
+      assignorName: 'Alex Sampleton',
+      assignorRelationship: 'Parent',
+      enduringPathway: 'MyMedicare registration',
+      coveredServiceScope: 'general practitioner attendances with this provider',
+      notificationMethod: 'a text message to the mobile we hold',
+      terminationMethod: 'telling reception, in writing or in person',
+      commencementDate: '7 September 2026',
+    } as Record<string, string>,
+    sampleFallback: (key: string) => `sample ${key}`,
   },
 
   /**

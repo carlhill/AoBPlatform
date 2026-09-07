@@ -46,7 +46,27 @@ const GENERIC = {
   agreementType: 'episodic' as const,
   status: 'draft_pending_review',
   title: 'Sample agreement title',
-  sections: [{ key: 'parties', heading: 'Sample heading', paragraphs: ['Sample paragraph {{patientName}}'] }],
+  /*
+   * IT CARRIES EVERY EPISODIC DATA ELEMENT (Carl, 7 Sep 2026). The editor is a
+   * form now and its checks are the loader's, so a generic that dropped an
+   * element would leave Save dead before any request was made -- and the test
+   * below is about what the SERVER says, which it can only say if the form
+   * lets the request out. The sentences are still deliberately not the shipped
+   * ones: they are versioned content served by the API, so a stub carrying the
+   * real words would let a component that had hardcoded them pass.
+   */
+  sections: [
+    {
+      key: 'parties',
+      heading: 'Sample heading',
+      paragraphs: [
+        'Sample paragraph {{patientName}} {{agreementDate}} {{providerDetails}} {{serviceDate}}',
+        '{{basicServiceDescription}} {{mbsItemNumbers}}',
+        '{{#if isPreAgreement}}Sample pre-service line.{{/if}}',
+        '{{#unless assignorIsPatient}}Sample line for {{assignorName}}, {{assignorRelationship}}.{{/unless}}',
+      ],
+    },
+  ],
   statements: [{ key: 'sample_v1', text: 'Sample statement.' }],
   footer: ['Sample footer.'],
 };
@@ -54,7 +74,17 @@ const GENERIC = {
 const TEMPLATES = {
   contentVersion: 'agreement-templates-test-1',
   generic: [GENERIC, { ...GENERIC, id: 'enduring-generic', version: 'enduring-generic-1', agreementType: 'enduring' as const }],
-  placeholders: ['patientName', 'providerName'],
+  placeholders: [
+    'patientName',
+    'agreementDate',
+    'providerDetails',
+    'providerName',
+    'serviceDate',
+    'basicServiceDescription',
+    'mbsItemNumbers',
+    'assignorName',
+    'assignorRelationship',
+  ],
   conditions: ['assignorIsPatient', 'isPreAgreement'],
   variants: [] as unknown[],
 };
@@ -149,6 +179,15 @@ describe('practice_console_never_offers_to_activate_wording', () => {
 
     fireEvent.click(screen.getByTestId('propose-episodic'));
     fireEvent.change(screen.getByTestId('variant-version'), { target: { value: 'our-1' } });
+
+    /*
+     * THE FORM'S OWN CHECKS PASS FIRST -- the generic above carries every
+     * element -- so Save is live and the request actually goes. The point of
+     * this test is what happens when the SERVER refuses anyway: its sentence
+     * is shown verbatim, because it names the line and the rule and a
+     * paraphrase would take away the actionable half.
+     */
+    await waitFor(() => expect(screen.getByTestId('checks-passing')).toBeTruthy());
     fireEvent.click(screen.getByTestId('save-draft'));
 
     await waitFor(() => expect(screen.getByText(/never renders \{\{serviceDate\}\}/)).toBeTruthy());
