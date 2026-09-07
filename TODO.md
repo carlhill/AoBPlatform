@@ -2272,6 +2272,82 @@ Left open by it, for Carl:
   row that should read "covered by an ongoing agreement with Dr X -- nothing to
   sign" belongs to `patients` / `tablet-sessions`, which this build did not own.
 
+### 2a. Reception types the arrival by hand -- BUILT (7 Sep 2026)
+
+**BUILT 7 Sep 2026 (PMS_to_AoB_Workflow.md row W2, case 4).** A "New agreement"
+button at the top of `/practice/patients` and on the Agreements card of a
+patient's work page opens a form panel that posts the SAME `POST /arrivals`
+with `source: 'reception'` -- one pipeline, the same servicing-provider guard,
+the same versioned visit policy, the same draft, capture request, D6a and lock,
+the same queue row. It closes case 4 (the PMS is down, not integrated, or has
+no record of this walk-in) without a second code path, which matters because
+case 4 is exactly when a practice's own software has failed. New: `POST
+/arrivals/preview` (a read that gives the pipeline's own answer and writes
+nothing, so the form SHOWS what the visit needs instead of offering a choice)
+and `GET /patients/search?q=` (two-character minimum, capped, unpageable, four
+fields -- still not a patient directory). The three reception-only fields
+(`serviceDate`, `serviceDescription`, `assignor`) are refused out loud from any
+other source. The row records `source: 'reception'` and the staff principal
+(`receivedByPrincipalId`, null for every machine push, enforced by
+`arrivals_principal_only_when_typed`). Who signs is set BETWEEN the capture
+request and the lock, because it is a locked particular (hard rule 2), through
+`AgreementsService.changeAssignor` -- so hard rule 10 is enforced by the same
+`buildAssignorForAnother` as everywhere else and not re-implemented. Named
+tests: core `reception_arrival_runs_the_same_pipeline_as_a_pms_arrival`,
+`reception_arrival_records_source_and_principal`,
+`reception_only_fields_are_refused_from_a_connector`,
+`reception_arrival_sets_who_is_signing_before_the_particulars_lock`,
+`reception_arrival_blocks_practice_staff_and_the_under_age_from_signing`,
+`arrival_preview_gives_the_pipelines_answer_and_writes_nothing`, plus
+cross-practice fails closed on both new reads; web
+`new_agreement_form_never_carries_a_medicare_number`,
+`new_agreement_form_offers_only_servicing_providers`,
+`new_agreement_form_shows_the_policy_decision_before_submit`,
+`new_agreement_form_double_submit_drafts_once`,
+`new_agreement_for_someone_else_asks_the_assignors_age`.
+
+Reviewed before "ready to test" (wow.md §1), by a fresh reviewer that did not
+write it. Four items came back and all four are FIXED:
+1. **A walk-in for a known patient blanked their held details.** An arrival is
+   a mirror write (REQ-DATA-10) and the search result carries no address or
+   contact details by design (hard rule 1's minimisation), so posting straight
+   from it would have overwritten a real address with an empty one -- on the
+   very case W2 exists for. The chosen patient's own `GET /patients/:id/details`
+   is now read on selection and travels with the arrival, and Submit is dead
+   with `needAddress` until it lands. Named test
+   `new_agreement_for_a_known_patient_never_blanks_their_held_details`.
+2. **A relationship deriving no authority basis silently dropped the party**,
+   recording the patient as their own assignor after staff said otherwise. The
+   assignor is now always sent, so the DTO refuses it loudly, and the state is
+   blocked in the UI with the offending key shown.
+3. **The success banner said "ready to send to a tablet" for drafts that
+   cannot be sent** -- an enduring one, or one with no D6a. It now uses
+   `createdBlocked` and links to the row that carries the fix.
+4. **`agreement.assignor_changed` always named the platform.** The actor is now
+   threaded through `changeAssignor` from both its controller and the arrival,
+   so an act a receptionist performed names the receptionist. Optional, because
+   the kiosk genuinely has no staff session mid-ceremony.
+
+Left open by it, for Carl:
+- **DECISION NEEDED: the 18+ answer is a DECLARATION, not a date of birth.**
+  The brief for this build said "ask DOB of the assignor". The platform's
+  existing recorded design says the opposite and is pinned by tests at three
+  other doors -- REQ-AGE-01/REQ-VUL-02: what is recorded is a declaration,
+  never verified, and no date of birth for an assignor is asked for or stored
+  anywhere (the kiosk's K-5 screen, the tablet desk's "who is signing" panel,
+  and `buildAssignorForAnother` all take `declaresEighteenOrOver`). This build
+  followed the existing design rather than opening a new store of a birth date
+  for a non-patient. If Carl wants a real date of birth captured, that is a
+  change to REQ-AGE-01's shape and needs a recorded decision first.
+- **A found patient's five details are not re-editable on this form.** Only the
+  practice's own record number is asked for. Changing an address belongs to the
+  Correct control on the work page, which has the evidence path; a second place
+  to change it would have none.
+- **The service description defaults to the practice's and may be changed to
+  another list entry**, never typed (`@IsIn(SERVICE_DESCRIPTIONS)`). A practice
+  with no default still gets the honest "waits on your queue until one is set"
+  path the connector arrivals already take.
+
 ### 3. Shared patient record across practices -- v2, decision first
 Carl's idea: the five details exist once for all practices, so (with the
 patient's approval) a specialist practice can be told the patient changed

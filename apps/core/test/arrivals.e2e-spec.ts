@@ -3,7 +3,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import type { ValidationResponse } from '@aobplatform/contracts';
-import { VISIT_POLICY_VERSION } from '@aobplatform/domain';
+import { ASSIGNOR_RELATIONSHIPS_VERSION, VISIT_POLICY_VERSION } from '@aobplatform/domain';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { RULES_CLIENT } from '../src/rules-client/rules-client.module';
@@ -12,7 +12,17 @@ import { createServicingProvider, deleteSeededAnchors } from './anchor';
 const passingRules = {
   validate: async (): Promise<ValidationResponse> => ({
     valid: true,
-    results: [],
+    /*
+     * C8 IS ANSWERED, NOT MERELY OMITTED (REQ-65C-01). `changeAssignor`
+     * asserts D7 on the payload AS PERSISTED and treats SILENCE AS A FAILURE —
+     * a rule set that returns no C8 verdict has not been asked the question
+     * that endpoint exists to answer, and it raises rather than assuming. So a
+     * mock standing in for a passing rule set has to actually say so, or the
+     * one path in this suite that re-points an assignor (W2's "someone else is
+     * signing") would fail for a reason that has nothing to do with the code
+     * under test.
+     */
+    results: [{ rule: 'C8', outcome: 'pass', message: 'D7 is complete.', citation: 's 65C(4)' }],
     ruleSetVersion: 'test-rules-1',
     mappingVersion: 'test-mapping-1',
   }),
@@ -481,6 +491,425 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
 
       const agreement = await tx.agreement.findFirst({ where: { id: res.body.agreementId } });
       expect(agreement?.affiliationId).toBe(alliedAffiliationId);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // RECEPTION TYPES IT BY HAND — PMS_to_AoB_Workflow.md case 4, row W2
+  // (Carl, 7 Sep 2026: "go").
+  //
+  // THE FORM IS AN ARRIVAL TYPED BY HAND, and these tests exist to pin exactly
+  // that: same pipeline, same visit policy, same guards, same lock, same queue
+  // — differing only in what the evidence says about who spoke.
+  // -------------------------------------------------------------------------
+  describe('reception types the arrival (W2)', () => {
+    /**
+     * A NAME THE PRACTICE-STAFF BLOCK MUST HIT (REQ-VUL-04). Obviously fake,
+     * and deliberately not one of the names any other test in this file uses.
+     */
+    const STAFF_MEMBER_NAME = 'Mai Frontdesk';
+    /** Somebody who cannot be the provider on an agreement — the preview's refusal. */
+    let nurseAffiliationId: string;
+
+    /**
+     * THE RECEPTIONIST, WITH THE PRACTICE'S OWN CLAIM ON THEIR TOKEN.
+     *
+     * `POST /arrivals` is `@PracticeScoped` — the practice's own act, which a
+     * platform operator may perform only by acting AS the practice — so a
+     * token with no practice claim is refused with a 403 before any of this
+     * runs. That refusal is right and is asserted elsewhere in this suite; a
+     * receptionist typing a walk-in has the claim, and this is what one looks
+     * like.
+     */
+    const DESK = { ...RECEPTIONIST, practiceId };
+
+    beforeAll(async () => {
+      await prisma.withPractice(practiceId, async (tx) => {
+        await tx.staffMember.create({
+          data: { practiceId, name: STAFF_MEMBER_NAME, role: 'front_desk' },
+        });
+        nurseAffiliationId = (
+          await createServicingProvider(tx, practiceId, {
+            name: 'Kit Practicenurse',
+            providerType: 'nurse',
+            billingRole: 'works_under_provider',
+          })
+        ).affiliationId;
+      });
+    });
+
+    afterAll(async () => {
+      await prisma.withPractice(practiceId, (tx) =>
+        tx.staffMember.deleteMany({ where: { name: STAFF_MEMBER_NAME } }),
+      );
+    });
+
+    /**
+     * THE NAMED TEST. Identical inputs through the two doors produce an
+     * identical draft, an identical lock and an identical queue row — the only
+     * differences being the ones that SHOULD differ: the source, and the
+     * person the evidence names.
+     *
+     * WHY IT MATTERS MORE THAN IT LOOKS. Case 4 is what a practice falls back
+     * to when its practice management system is down, which is the moment a
+     * second, subtly different code path would do the most damage. There is one
+     * pipeline, or there are two answers to "what does this visit need".
+     */
+    it('reception_arrival_runs_the_same_pipeline_as_a_pms_arrival', async () => {
+      const serviceDate = new Date().toISOString().slice(0, 10);
+
+      const byMachine = await post(
+        arrival({ pmsPatientRecordNumber: 'ARR-W2-PMS', source: 'dev' }),
+      ).expect(201);
+
+      currentPrincipal = DESK;
+      const byHand = await post(
+        arrival({ pmsPatientRecordNumber: 'ARR-W2-DESK', source: 'reception', serviceDate }),
+      ).expect(201);
+      currentPrincipal = null;
+
+      // The decision, the reason and the version that produced them.
+      expect(byHand.body.decision).toEqual(byMachine.body.decision);
+      expect(byHand.body.policyVersion).toBe(byMachine.body.policyVersion);
+      expect(byHand.body.agreementId).toBeTruthy();
+
+      await prisma.withPractice(practiceId, async (tx) => {
+        const typed = await tx.agreement.findFirst({ where: { id: byHand.body.agreementId } });
+        const pushed = await tx.agreement.findFirst({ where: { id: byMachine.body.agreementId } });
+
+        // Same instrument, same particulars, same lock (hard rule 2).
+        expect(typed?.type).toBe(pushed?.type);
+        expect(typed?.serviceDescription).toBe(D6A);
+        expect(pushed?.serviceDescription).toBe(D6A);
+        expect(typed?.status).toBe('awaiting_signature');
+        expect(typed?.particularsLockedAt).not.toBeNull();
+        // D7 explicit and never inferred (CLAUDE.md §3) — the patient signs for
+        // themselves unless the desk said otherwise.
+        expect(typed?.assignorIsPatient).toBe(true);
+        expect(typed?.affiliationId).toBe(pushed?.affiliationId);
+      });
+
+      // Queue-visible by the read the queue itself uses, and pushable on the
+      // same terms — not by a query written for this test.
+      const pushable = await request(app.getHttpServer())
+        .get('/tablet-sessions/pushable')
+        .set('x-practice-id', practiceId)
+        .expect(200);
+      const typedRow = pushable.body.find(
+        (r: { agreementId: string }) => r.agreementId === byHand.body.agreementId,
+      );
+      const pushedRow = pushable.body.find(
+        (r: { agreementId: string }) => r.agreementId === byMachine.body.agreementId,
+      );
+      expect(typedRow.pushable).toBe(true);
+      expect(typedRow.pushable).toBe(pushedRow.pushable);
+      expect(typedRow.serviceDescription).toBe(pushedRow.serviceDescription);
+      expect(typedRow.blockedReason).toBe(pushedRow.blockedReason);
+    });
+
+    /**
+     * WHO SPOKE, AND WHOSE HANDS TYPED IT — the one thing that SHOULD differ.
+     *
+     * A connector arrival is the practice's software speaking and names nobody;
+     * a typed one is an act a named staff member performed, and the row and the
+     * vault event both say so. The id from the signed token, never a name
+     * (REQ-LOG-08) — asserted below, along with no patient value of any kind.
+     */
+    it('reception_arrival_records_source_and_principal', async () => {
+      currentPrincipal = DESK;
+      const res = await post(
+        arrival({ pmsPatientRecordNumber: 'ARR-W2-WHO', source: 'reception' }),
+      ).expect(201);
+      currentPrincipal = null;
+
+      await prisma.withPractice(practiceId, async (tx) => {
+        const row = await tx.arrival.findFirst({ where: { id: res.body.arrivalId } });
+        expect(row?.source).toBe('reception');
+        expect(row?.receivedByPrincipalId).toBe(RECEPTIONIST.sub);
+      });
+
+      const events = await prisma.vaultOutbox.findMany({
+        where: { type: 'arrival.received', subjectId: res.body.arrivalId },
+      });
+      expect(events).toHaveLength(1);
+      const payload = events[0].payload as Record<string, unknown>;
+      expect(payload.source).toBe('reception');
+      expect(payload.receivedBy).toBe(RECEPTIONIST.sub);
+      expect(payload.receivedByType).toBe('staff');
+      // IDS AND FACTS, NEVER A NAME OR A VALUE (REQ-LOG-08, REQ-VER-04).
+      expect(JSON.stringify(payload)).not.toContain(RECEPTIONIST.preferredUsername);
+      expect(JSON.stringify(payload)).not.toContain('Robin');
+      expect(JSON.stringify(payload)).not.toContain('Example Street');
+
+      // And a machine push still names nobody — the null is the fact, and the
+      // database refuses any other combination
+      // (`arrivals_principal_only_when_typed`).
+      const machine = await post(arrival({ pmsPatientRecordNumber: 'ARR-W2-NOBODY' })).expect(201);
+      await prisma.withPractice(practiceId, async (tx) => {
+        const row = await tx.arrival.findFirst({ where: { id: machine.body.arrivalId } });
+        expect(row?.receivedByPrincipalId).toBeNull();
+      });
+    });
+
+    /**
+     * THE THREE FIELDS ONLY A PERSON MAY SEND, refused out loud from anything
+     * else — the same posture the Medicare and agreement-type fences take.
+     *
+     * A connector has nobody to ask which day, which description or who is
+     * signing, which is exactly why the practice's default D6a exists and why
+     * the patient is their own assignor on a machine push (D7, hard rule 10).
+     */
+    it('reception_only_fields_are_refused_from_a_connector', async () => {
+      const extras: Array<Record<string, unknown>> = [
+        { serviceDate: '2026-09-01' },
+        { serviceDescription: D6A },
+        {
+          assignor: {
+            name: 'Sam Sampleton',
+            relationship: 'Mother',
+            authorityBasis: 'parent',
+            declaresEighteenOrOver: true,
+            mobile: '0400 000 111',
+          },
+        },
+      ];
+      for (const extra of extras) {
+        const res = await post(
+          arrival({ pmsPatientRecordNumber: 'ARR-W2-FENCE', source: 'connector', ...extra }),
+        ).expect(400);
+        expect(res.body.message).toMatch(/answers a person at the desk gives/i);
+      }
+      await prisma.withPractice(practiceId, async (tx) => {
+        expect(await tx.arrival.count({ where: { pmsPatientRecordNumber: 'ARR-W2-FENCE' } })).toBe(0);
+        expect(await tx.patient.count({ where: { patientRecordNumber: 'ARR-W2-FENCE' } })).toBe(0);
+      });
+    });
+
+    /**
+     * SOMEBODY ELSE IS SIGNING, SET BEFORE THE LOCK — because who signs is one
+     * of the locked particulars (hard rule 2, REQ-REG-06) and cannot be moved
+     * afterwards. This is the ordering the build exists to get right: an
+     * assignor posted AFTER the arrival would work on an enduring draft, which
+     * is never locked, and fail on every episodic one, which always is.
+     */
+    it('reception_arrival_sets_who_is_signing_before_the_particulars_lock', async () => {
+      currentPrincipal = DESK;
+      const res = await post(
+        arrival({
+          pmsPatientRecordNumber: 'ARR-W2-PARTY',
+          source: 'reception',
+          assignor: {
+            name: 'Alex Notstaff',
+            relationship: 'Mother',
+            relationshipsVersion: ASSIGNOR_RELATIONSHIPS_VERSION,
+            authorityBasis: 'parent',
+            declaresEighteenOrOver: true,
+            mobile: '0400 000 111',
+          },
+        }),
+      ).expect(201);
+      currentPrincipal = null;
+
+      await prisma.withPractice(practiceId, async (tx) => {
+        const agreement = await tx.agreement.findFirst({ where: { id: res.body.agreementId } });
+        expect(agreement?.assignorIsPatient).toBe(false);
+        expect(agreement?.particularsLockedAt).not.toBeNull();
+        const assignor = await tx.assignor.findFirst({ where: { id: agreement!.assignorId } });
+        expect(assignor?.name).toBe('Alex Notstaff');
+        expect(assignor?.authorityBasis).toBe('parent');
+        expect(assignor?.relationshipToPatient).toBe('Mother');
+        // A DECLARATION, recorded and never verified — and no date of birth is
+        // stored for the assignor anywhere (REQ-AGE-01, REQ-VUL-02).
+        expect(assignor?.declaredOfFullAgeAt).not.toBeNull();
+        expect(assignor?.dateOfBirth).toBeNull();
+      });
+
+      /*
+       * AND THE EVENT NAMES THE RECEPTIONIST, NOT THE PLATFORM (found in
+       * review, 7 Sep 2026). D7 is a particular of a contract, so an
+       * `agreement.assignor_changed` saying "the platform did this" about an
+       * act a named staff member performed would be evidence with the witness
+       * removed — the same reasoning `arrival.received` already follows.
+       *
+       * IDS AND FACTS, NEVER A NAME. The payload is asserted to carry neither
+       * the assignor's name nor a contact value (REQ-LOG-08, REQ-VER-04).
+       */
+      const events = await prisma.vaultOutbox.findMany({
+        where: { type: 'agreement.assignor_changed', subjectId: res.body.agreementId },
+      });
+      expect(events).toHaveLength(1);
+      expect(events[0].actor as Record<string, unknown>).toMatchObject({
+        principalType: 'staff',
+        id: RECEPTIONIST.sub,
+      });
+      const payload = events[0].payload as Record<string, unknown>;
+      expect(payload.assignorIsPatient).toBe(false);
+      expect(payload.authorityBasis).toBe('parent');
+      expect(JSON.stringify(payload)).not.toContain('Alex Notstaff');
+      expect(JSON.stringify(payload)).not.toContain('0400 000 111');
+    });
+
+    /**
+     * HARD RULE 10, AT THIS DOOR TOO — and refused BEFORE anything is written,
+     * so the desk fixes one field and sends the same walk-in again rather than
+     * leaving a half-made arrival behind it.
+     *
+     * NEITHER RULE IS RE-IMPLEMENTED HERE: the arrival calls the same
+     * `buildAssignorForAnother` the assignor endpoint does, which is why the
+     * refusals read identically at both doors.
+     */
+    it('reception_arrival_blocks_practice_staff_and_the_under_age_from_signing', async () => {
+      currentPrincipal = DESK;
+
+      // REQ-VUL-04 — a name matching practice staff is hard-blocked, fail closed.
+      const staff = await post(
+        arrival({
+          pmsPatientRecordNumber: 'ARR-W2-STAFF',
+          source: 'reception',
+          assignor: {
+            name: STAFF_MEMBER_NAME,
+            relationship: 'Carer',
+            authorityBasis: 'other_with_note',
+            note: 'Carer',
+            declaresEighteenOrOver: true,
+            mobile: '0400 000 222',
+          },
+        }),
+      ).expect(400);
+      expect(staff.body.message).toMatch(/REQ-VUL-04/);
+
+      // REQ-AGE-01 — the declaration must be present AND true.
+      const young = await post(
+        arrival({
+          pmsPatientRecordNumber: 'ARR-W2-AGE',
+          source: 'reception',
+          assignor: {
+            name: 'Jo Notstaff',
+            relationship: 'Friend',
+            authorityBasis: 'other_with_note',
+            note: 'Friend',
+            declaresEighteenOrOver: false,
+            mobile: '0400 000 333',
+          },
+        }),
+      ).expect(400);
+      expect(young.body.message).toMatch(/REQ-AGE-01/);
+
+      currentPrincipal = null;
+
+      // NOTHING WAS WRITTEN by either refusal — no mirror row, no assignor, no
+      // arrival, no draft. The desk fixes the field and sends the same walk-in.
+      await prisma.withPractice(practiceId, async (tx) => {
+        for (const record of ['ARR-W2-STAFF', 'ARR-W2-AGE']) {
+          expect(await tx.arrival.count({ where: { pmsPatientRecordNumber: record } })).toBe(0);
+          expect(await tx.patient.count({ where: { patientRecordNumber: record } })).toBe(0);
+        }
+        expect(await tx.assignor.count({ where: { name: STAFF_MEMBER_NAME } })).toBe(0);
+      });
+    });
+
+    /**
+     * THE LIVE READ THE FORM SHOWS ABOVE SUBMIT — the same answer, and nothing
+     * written.
+     *
+     * Reception does not CHOOSE what the visit needs; the versioned visit
+     * policy does (hard rules 6 and 14). The form shows the answer before
+     * Submit so nobody discovers it afterwards, and this pins that the preview
+     * and the pipeline give one answer and that the preview leaves no trace.
+     */
+    it('arrival_preview_gives_the_pipelines_answer_and_writes_nothing', async () => {
+      const preview = (body: Record<string, unknown>, scope = practiceId) =>
+        request(app.getHttpServer()).post('/arrivals/preview').set('x-practice-id', scope).send(body);
+
+      const gp = await preview({
+        pmsPatientRecordNumber: 'ARR-W2-PREVIEW',
+        affiliationId: gpAffiliationId,
+      }).expect(201);
+      expect(gp.body.decision).toEqual({ type: 'enduring', reason: 'gp_with_no_active_enduring' });
+      expect(gp.body.policyVersion).toBe(VISIT_POLICY_VERSION);
+      expect(gp.body.providerName).toBe('Dr Sample GP');
+      expect(gp.body.blocked).toBeNull();
+
+      const allied = await preview({
+        pmsPatientRecordNumber: 'ARR-W2-PREVIEW',
+        affiliationId: alliedAffiliationId,
+      }).expect(201);
+      expect(allied.body.decision).toEqual({ type: 'episodic_pre', reason: 'enduring_is_gp_only' });
+
+      // A NURSE COMES BACK AS AN ANSWER, NOT AN ERROR: the pipeline's own
+      // reason code, for the console to map to words and a destination.
+      const nurse = await preview({
+        pmsPatientRecordNumber: 'ARR-W2-PREVIEW',
+        affiliationId: nurseAffiliationId,
+      }).expect(201);
+      expect(nurse.body.decision).toBeNull();
+      expect(nurse.body.blocked.reason).toBe('provider_not_servicing');
+
+      // NOTHING WAS WRITTEN by any of the three.
+      await prisma.withPractice(practiceId, async (tx) => {
+        expect(await tx.arrival.count({ where: { pmsPatientRecordNumber: 'ARR-W2-PREVIEW' } })).toBe(0);
+        expect(await tx.patient.count({ where: { patientRecordNumber: 'ARR-W2-PREVIEW' } })).toBe(0);
+      });
+
+      // And the answer the pipeline then gives is the answer the preview gave.
+      const real = await post(
+        arrival({ pmsPatientRecordNumber: 'ARR-W2-PREVIEW', affiliationId: alliedAffiliationId }),
+      ).expect(201);
+      expect(real.body.decision).toEqual(allied.body.decision);
+      expect(real.body.policyVersion).toBe(allied.body.policyVersion);
+    });
+
+    /**
+     * EVERY NEW READ FAILS CLOSED ACROSS PRACTICES — by RLS, not by a filter.
+     * The preview and the patient search are both new doors into a practice's
+     * own records, and neither may be opened with somebody else's id.
+     */
+    it('the new reads fail closed across practices', async () => {
+      // The preview: another practice's affiliation is not visible, so it is
+      // not found — the answer that admits least.
+      await request(app.getHttpServer())
+        .post('/arrivals/preview')
+        .set('x-practice-id', otherPracticeId)
+        .send({ pmsPatientRecordNumber: 'ARR-W2-SCOPE', affiliationId: alliedAffiliationId })
+        .expect(404);
+
+      // The patient search: this practice's patient exists under this
+      // practice's scope and simply is not there under another's.
+      await post(arrival({ pmsPatientRecordNumber: 'ARR-W2-FIND', familyName: 'Findable' })).expect(201);
+
+      const mine = await request(app.getHttpServer())
+        .get('/patients/search?q=Findable')
+        .set('x-practice-id', practiceId)
+        .expect(200);
+      expect(mine.body.map((r: { familyName: string }) => r.familyName)).toContain('Findable');
+      // FIVE KEYS AND NO MORE. Not a patient directory (REQ-DATA-10), and
+      // never a Medicare number, which has no column here (hard rule 1).
+      expect(Object.keys(mine.body[0]).sort()).toEqual([
+        'dateOfBirth',
+        'familyName',
+        'givenNames',
+        'patientId',
+        'patientRecordNumber',
+      ]);
+      expect(JSON.stringify(mine.body)).not.toMatch(/medicare/i);
+      expect(JSON.stringify(mine.body)).not.toContain('Example Street');
+
+      const theirs = await request(app.getHttpServer())
+        .get('/patients/search?q=Findable')
+        .set('x-practice-id', otherPracticeId)
+        .expect(200);
+      expect(theirs.body).toEqual([]);
+
+      // AND THERE IS NO QUERY THAT RETURNS EVERYBODY. A short term is refused
+      // rather than answered broadly.
+      await request(app.getHttpServer())
+        .get('/patients/search?q=')
+        .set('x-practice-id', practiceId)
+        .expect(400);
+      await request(app.getHttpServer())
+        .get('/patients/search?q=F')
+        .set('x-practice-id', practiceId)
+        .expect(400);
     });
   });
 
