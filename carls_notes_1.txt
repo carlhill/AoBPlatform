@@ -1546,8 +1546,27 @@ The Practitioner own details - Open the practitioners - can update
 The Practitioner  affiliations - Open the affiliations - can request Departure or Depart immediately
 Any messages for the Practitioner  - view only - all messages for 2 years
 Your thoughts
+----------------------------
 
+Fixed and committed: /review/{id} now registers its loaders with the top-bar refresh registry (same pattern as the messages page), so the refresh button appears instead of requiring F5.
 
+Resuming the groupEmail proof-cycle work — I've now read the full PendingEmailService (request/live/resolve/confirm/stop). Confirmed the split I need:
+
+Admin-handover-specific (must NOT run for groupEmail): Keycloak passkey revocation (handOverPracticeAdminAccountFor), the staffMember email sync, adminPasskeyEnrolledAt reset, the organisation.admin_handover vault event, the "passkey to set up" language.
+
+Generic hold-and-prove machinery (fully reusable): token/code generation, the pending_email_change_by_token SECURITY DEFINER lookup, assertConfirmable/assertStoppable/afterStop, the cooling-off stop window, the review-task-on-stop.
+
+------------------------------
+Given that split, I'll implement groupEmail as a parallel, much simpler path rather than branching deep inside this file. Plan, concrete now:
+
+Schema: add field String @default("adminEmail") to PendingEmailChange, drop the old pending_email_changes_one_live index, add pending_email_changes_one_live_per_field UNIQUE on (practiceId, field) WHERE outcome IS NULL AND "practiceId" IS NOT NULL.
+Domain: new recipientsForGroupEmail() in pending-email-change.ts — confirm role goes to the new groupEmail, notify role goes to the current adminEmail (the witness), inverted from today's pairing.
+Service: new methods on PendingEmailService — requestGroupEmail, and branch confirm/stop on found.field (SQL function needs to select field too) so groupEmail confirm just writes practice.groupEmail + groupEmailVerifiedAt, no Keycloak call, no staff sync.
+amendApplication: intercept groupEmail the same way adminEmail is intercepted — pull out of next, route to requestGroupEmail.
+UI: EmailStatusChip/usePendingRefresh on the groupEmail field in ApplicationView.tsx.
+Tests: e2e mirroring the adminEmail suite.
+
+I'll check the pending_email_change_by_token SQL function next since it needs to return field for the branch in step 3.
 
 
 --------------------

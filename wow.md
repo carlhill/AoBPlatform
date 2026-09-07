@@ -43,8 +43,17 @@ Every brief names the paths the agent owns and the paths other running agents ow
 
 Every landing report ends with the URL to open and the steps to try, in the order to try them, plus the decisions the build left for Carl. A report without a test path is not finished.
 
+## 7. Carl's notes travel with the code (Carl, 7 Sep 2026)
+
+`carls_notes_1.txt` is committed with every push from now on — it is Carl's
+running record and belongs in the history beside the work it describes. Claude
+includes it in the next commit whenever it has changed (a `docs(notes)` commit
+of its own if nothing else is going out), scanning the diff first for anything
+that looks like a secret.
+
 ## Change log
 | Date | Change |
 |---|---|
 | 7 Sep 2026 | File created: review-before-ready (§1–2), mechanical commit gating (§3), resume-don't-restart (§4), disjoint paths (§5), test paths in reports (§6). |
+| 7 Sep 2026 | §7: Carl's notes file is committed with every push. |
 | 7 Sep 2026 | §2 item 6: added "wait for the data, not the element" after a second-fetch race failed CI four times in one weekend. |
