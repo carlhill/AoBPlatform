@@ -31,6 +31,7 @@ import type {
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RendererRegistry, renderInputOf } from '../render/renderer-registry';
+import { anchorsForAgreements } from '../affiliations/agreement-anchor';
 import { EnduringService } from '../enduring/enduring.service';
 import { ReviewTasksService } from '../review-tasks/review-tasks.service';
 import { PortalScope } from './portal-scope';
@@ -191,15 +192,18 @@ export class PortalReadsService {
         const ids = agreements.map((a) => a.id);
         const signatures = await tx.signatureEvent.findMany({ where: { agreementId: { in: ids } } });
         const captures = await tx.captureRequest.findMany({ where: { agreementId: { in: ids } } });
-        const providers = await tx.provider.findMany({
-          where: { id: { in: agreements.map((a) => a.providerId).filter((id): id is string => Boolean(id)) } },
-        });
-        return { agreements, signatures, captures, providers };
+        /*
+         * WHO THE PATIENT SAW — read from the anchor, which is the
+         * practitioner at a location for anything made from 7 September 2026
+         * and the legacy `providers` row for anything older. What the patient
+         * is shown is the name on their own agreement either way.
+         */
+        const anchors = await anchorsForAgreements(tx, agreements);
+        return { agreements, signatures, captures, anchors };
       });
 
       const signatureByAgreement = new Map(rows.signatures.map((s) => [s.agreementId, s]));
       const captureByAgreement = new Map(rows.captures.map((c) => [c.agreementId, c]));
-      const providerById = new Map(rows.providers.map((p) => [p.id, p]));
 
       for (const agreement of rows.agreements) {
         const particulars = (agreement.particulars ?? {}) as Record<string, unknown>;
@@ -209,7 +213,7 @@ export class PortalReadsService {
           id: agreement.id,
           practiceId: link.practiceId,
           practiceName: link.practiceName,
-          providerName: agreement.providerId ? (providerById.get(agreement.providerId)?.name ?? null) : null,
+          providerName: rows.anchors.get(agreement.id)?.name ?? null,
           type: agreement.type,
           status: agreement.status,
           serviceDate: typeof particulars.serviceDate === 'string' ? particulars.serviceDate : null,
@@ -333,14 +337,11 @@ export class PortalReadsService {
         const details = await tx.enduringDetail.findMany({
           where: { agreementId: { in: agreements.map((a) => a.id) } },
         });
-        const providers = await tx.provider.findMany({
-          where: { id: { in: agreements.map((a) => a.providerId).filter((id): id is string => Boolean(id)) } },
-        });
-        return { agreements, details, providers };
+        const anchors = await anchorsForAgreements(tx, agreements);
+        return { agreements, details, anchors };
       });
 
       const detailByAgreement = new Map(rows.details.map((d) => [d.agreementId, d]));
-      const providerById = new Map(rows.providers.map((p) => [p.id, p]));
 
       for (const agreement of rows.agreements) {
         const detail = detailByAgreement.get(agreement.id);
@@ -354,7 +355,7 @@ export class PortalReadsService {
           agreementId: agreement.id,
           practiceId: link.practiceId,
           practiceName: link.practiceName,
-          providerName: agreement.providerId ? (providerById.get(agreement.providerId)?.name ?? null) : null,
+          providerName: rows.anchors.get(agreement.id)?.name ?? null,
           activeSince: detail.enteredIntoAt.toISOString().slice(0, 10),
         });
       }

@@ -15,6 +15,7 @@ import {
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import type { Actor } from '../auth/actor.decorator';
 import { PrismaService } from '../prisma/prisma.service';
+import { anchorForAgreement, anchorsForAgreements } from '../affiliations/agreement-anchor';
 import { RULES_CLIENT, RulesClientError } from '../rules-client/rules-client.module';
 
 /** The pre-agreement types D6a applies to. C6 asks the same question. */
@@ -143,11 +144,7 @@ export class ServiceDescriptionsService {
 
       const patients = await tx.patient.findMany({ where: { id: { in: needing.map((a) => a.patientId) } } });
       const patientById = new Map(patients.map((p) => [p.id, p]));
-      const providerIds = needing.map((a) => a.providerId).filter((id): id is string => Boolean(id));
-      const providers = providerIds.length
-        ? await tx.provider.findMany({ where: { id: { in: providerIds } } })
-        : [];
-      const providerById = new Map(providers.map((p) => [p.id, p]));
+      const anchorByAgreement = await anchorsForAgreements(tx, needing);
       const appointments = await tx.appointment.findMany({
         where: { agreementId: { in: needing.map((a) => a.id) } },
       });
@@ -163,7 +160,7 @@ export class ServiceDescriptionsService {
           // An initial and a family name. A staff list never carries the full
           // given names, and it carries no identifier of any kind.
           patientName: patient ? `${patient.givenNames.trim().charAt(0)}. ${patient.familyName}`.trim() : null,
-          providerName: agreement.providerId ? (providerById.get(agreement.providerId)?.name ?? null) : null,
+          providerName: anchorByAgreement.get(agreement.id)?.name ?? null,
           appointmentDate: appointment ? appointment.date.toISOString().slice(0, 10) : null,
           appointmentTime: appointment?.time ?? null,
           currentDescription: agreement.serviceDescription,
@@ -338,17 +335,15 @@ export class ServiceDescriptionsService {
       const agreement = await tx.agreement.findFirst({ where: { id: agreementId } });
       if (!agreement) return null;
       const patient = await tx.patient.findFirst({ where: { id: agreement.patientId } });
-      const provider = agreement.providerId
-        ? await tx.provider.findFirst({ where: { id: agreement.providerId } })
-        : null;
+      const anchor = await anchorForAgreement(tx, agreement);
       const appointment = await tx.appointment.findFirst({ where: { agreementId } });
       const serviceDate = appointment?.date ?? new Date();
       return {
         patientName: patient ? `${patient.givenNames} ${patient.familyName}` : undefined,
         agreementDate: new Date().toISOString().slice(0, 10),
         agreementType: agreement.type,
-        providerName: provider?.name,
-        providerAddress: provider?.placeOfPracticeAddress ?? undefined,
+        providerName: anchor?.name,
+        providerAddress: anchor?.placeOfPracticeAddress ?? undefined,
         serviceDate: serviceDate.toISOString().slice(0, 10),
         basicServiceDescription: agreement.serviceDescription ?? undefined,
         assignorIsPatient: agreement.assignorIsPatient,

@@ -69,6 +69,15 @@ export const AUTO_CAPTURE_SUPPRESSION_REASONS = [
   'patient_unresolved',
   /** The PMS named a provider we could not mirror. */
   'provider_unresolved',
+  /**
+   * The provider was mirrored but matches no practitioner at any of this
+   * practice's locations, so an agreement naming them could not state who
+   * signed for whom or where (s 65C(5)(a); Carl, 7 Sep 2026 — the anchor moved
+   * to the affiliation). SUPPRESSED AND NOT GUESSED: the item stays on the
+   * reconciliation queue where a person can see it, and care is untouched
+   * (hard rule 8).
+   */
+  'provider_not_anchored',
 ] as const;
 
 export type AutoCaptureSuppressionReason = (typeof AUTO_CAPTURE_SUPPRESSION_REASONS)[number];

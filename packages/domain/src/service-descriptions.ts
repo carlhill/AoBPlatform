@@ -107,3 +107,36 @@ export const SERVICE_DESCRIPTIONS_VERSION: string = parsed.version;
 export function isServiceDescription(value: unknown): value is string {
   return typeof value === 'string' && SERVICE_DESCRIPTIONS.includes(value);
 }
+
+/**
+ * D6a, READ THE SAME WAY EVERYWHERE IT MATTERS — ONE COPY (Carl flagged the
+ * gap live, 4 Sep 2026, over `supersedeForCorrection` losing it; unified
+ * 7 Sep 2026 after a review found the helper byte-identical in two services).
+ *
+ * The Basic Service Description lives in the COLUMN when a staff member set it
+ * through the reconciliation surface, and in `particulars.basicServiceDescription`
+ * when it arrived through `lockParticulars`'s own DTO instead. Four places have
+ * to agree on which one wins: the pushable queue's `blockingReason`, the
+ * tablet payload, the kiosk waiting list, and `supersedeForCorrection` — which
+ * must resolve it and copy it forward as a plain column, because a superseding
+ * draft never inherits the old agreement's `particulars`.
+ *
+ * IT LIVES IN THE DOMAIN BECAUSE TWO COPIES OF IT WAS THE PROBLEM. Which D6a
+ * ships on a contract is exactly the kind of decision hard rule 14 exists to
+ * keep from drifting; a function duplicated across two services drifts the
+ * first time somebody fixes one of them.
+ *
+ * Structurally typed rather than taking a Prisma row: `@aobplatform/domain` has
+ * zero runtime dependencies by charter (CONVENTIONS.md §1) and is bundled into
+ * the browser as well as into three Nest services.
+ */
+export function basicServiceDescriptionOf(agreement: {
+  readonly serviceDescription?: string | null;
+  readonly particulars?: unknown;
+}): string | undefined {
+  if (agreement.serviceDescription) return agreement.serviceDescription;
+  const particulars = agreement.particulars as Record<string, unknown> | null | undefined;
+  return typeof particulars?.basicServiceDescription === 'string'
+    ? (particulars.basicServiceDescription as string)
+    : undefined;
+}

@@ -22,6 +22,22 @@ export class CreateAgreementDto {
   @IsIn(['mymedicare', 'residential_aged_care', 'accho_ams'])
   enduringPathway?: 'mymedicare' | 'residential_aged_care' | 'accho_ams';
 
+  /**
+   * THE ANCHOR: the practitioner's affiliation at a location (Carl, 7 Sep
+   * 2026). Through it the PERSON an enduring agreement is per (REQ-END-01,
+   * hard rule 6) and the PLACE whose provider number D4 carries.
+   */
+  @IsOptional()
+  @IsUUID()
+  affiliationId?: string;
+
+  /**
+   * DEPRECATED — the practice-wide `providers` row, accepted for one release
+   * and resolved to the affiliation it can be matched to. An agreement whose
+   * provider cannot be resolved to a practitioner at a location is refused
+   * rather than anchored on a guess. Remove after the connector and every
+   * caller send `affiliationId`.
+   */
   @IsOptional()
   @IsUUID()
   providerId?: string;

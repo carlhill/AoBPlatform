@@ -8,6 +8,7 @@ import {
   correctionTouchesParticulars,
   detailTypeForPatientField,
   isCorrectablePatientField,
+  basicServiceDescriptionOf,
   isServiceDescription,
   mayBeProviderOnAgreement,
   projectTabletSessionPatient,
@@ -20,7 +21,7 @@ import {
   type TabletSessionState,
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
-import { resolveBillingRoleForProvider } from '../affiliations/provider-billing-role';
+import { anchorForAgreement, anchorsForAgreements } from '../affiliations/agreement-anchor';
 import type { Actor } from '../auth/actor.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -1137,21 +1138,14 @@ export class TabletSessionsService {
         where: { id: { in: forToday.map((a) => a.patientId) } },
       });
       const patientById = new Map(patients.map((p) => [p.id, p]));
-      const providerIds = forToday.map((a) => a.providerId).filter((id): id is string => Boolean(id));
-      const providers = providerIds.length
-        ? await tx.provider.findMany({ where: { id: { in: providerIds } } })
-        : [];
-      const providerById = new Map(providers.map((p) => [p.id, p]));
       /*
-       * THE BILLING ROLE PER PROVIDER, RESOLVED ONCE FOR THE WHOLE LIST.
-       * `blockingReason` is synchronous and is called per row -- it must stay
-       * so -- and the providers on a day's queue are a handful, so the lookup
-       * happens here rather than becoming a query per line.
+       * WHO EACH AGREEMENT NAMES, RESOLVED ONCE FOR THE WHOLE LIST -- the
+       * practitioner at a location, with their discipline and their billing
+       * role. `blockingReason` is synchronous and is called per row (it must
+       * stay so), and a day's queue is a handful of practitioners, so the
+       * lookup happens here rather than becoming a query per line.
        */
-      const billingRoleById = new Map<string, string>();
-      for (const provider of providers) {
-        billingRoleById.set(provider.id, (await resolveBillingRoleForProvider(tx, provider)).billingRole);
-      }
+      const anchorByAgreement = await anchorsForAgreements(tx, forToday);
       const assignors = await tx.assignor.findMany({
         where: { id: { in: forToday.map((a) => a.assignorId) } },
       });
@@ -1163,7 +1157,7 @@ export class TabletSessionsService {
       for (const agreement of forToday) {
         const patient = patientById.get(agreement.patientId);
         if (!patient) continue;
-        const provider = agreement.providerId ? providerById.get(agreement.providerId) : undefined;
+        const anchor = anchorByAgreement.get(agreement.id);
         const assignor = assignorById.get(agreement.assignorId);
         const appointment = appointmentByAgreement.get(agreement.id);
         const session = sessionByAgreement.get(agreement.id);
@@ -1172,17 +1166,18 @@ export class TabletSessionsService {
           agreement,
           assignorName: assignor?.name ?? null,
           confidential: patient.confidentialityFlag,
-          providerType: provider?.providerType ?? null,
-          billingRole: provider ? (billingRoleById.get(provider.id) ?? null) : null,
+          providerType: anchor?.providerType ?? null,
+          billingRole: anchor ? anchor.billingRole : null,
         });
 
         // The same D6a read `lockParticulars` does, and the same one
         // `computeSignability` documents: the column while the draft is
         // still open, falling back to the locked snapshot once it is not
-        // (see `d6aOf` below). A locked agreement whose description arrived
+        // (`basicServiceDescriptionOf`, the domain's one copy). A locked
+        // agreement whose description arrived
         // through the lock's own DTO, rather than the staff surface that
         // writes the column, must still show as set here.
-        const d6a = d6aOf(agreement);
+        const d6a = basicServiceDescriptionOf(agreement);
 
         rows.push({
           agreementId: agreement.id,
@@ -1192,8 +1187,8 @@ export class TabletSessionsService {
           // same shape every other console list uses.
           patientName: `${patient.givenNames} ${patient.familyName}`,
           patientId: patient.id,
-          providerName: provider?.name ?? null,
-          providerType: provider?.providerType ?? null,
+          providerName: anchor?.name ?? null,
+          providerType: anchor?.providerType ?? null,
           appointmentDate: appointment ? appointment.date.toISOString().slice(0, 10) : null,
           appointmentTime: appointment?.time ?? null,
           serviceDescription: d6a ?? null,
@@ -1762,23 +1757,28 @@ export class TabletSessionsService {
       if (!agreement) return null;
       const patient = await tx.patient.findFirst({ where: { id: agreement.patientId } });
       const assignor = await tx.assignor.findFirst({ where: { id: agreement.assignorId } });
-      const provider = agreement.providerId
-        ? await tx.provider.findFirst({ where: { id: agreement.providerId } })
-        : null;
+      /*
+       * THE PRACTITIONER AT A LOCATION (Carl, 7 Sep 2026). Their discipline
+       * decides the GP-only enduring check and their billing role decides
+       * whether the claim can go under them at all -- both facts about the
+       * PERSON at the PLACE, which is why the practice-wide row could not
+       * carry them.
+       */
+      const anchor = await anchorForAgreement(tx, agreement);
       const appointment = await tx.appointment.findFirst({ where: { agreementId } });
       return {
         agreement,
         patientName: patient ? `${patient.givenNames} ${patient.familyName}` : '',
         confidential: patient?.confidentialityFlag ?? false,
         assignorName: assignor?.name ?? null,
-        providerName: provider?.name ?? null,
+        providerName: anchor?.name ?? null,
         /*
          * THE DISCIPLINE, BECAUSE ENDURING IS GP-ONLY (hard rule 6,
          * REQ-END-01a). Read here rather than inferred anywhere later, and
-         * `null` where no provider row was found — which the GP check treats
-         * as "not a GP", never as "probably fine".
+         * `null` where no anchor was found — which the GP check treats as
+         * "not a GP", never as "probably fine".
          */
-        providerType: provider?.providerType ?? null,
+        providerType: anchor?.providerType ?? null,
         /*
          * WHOSE PROVIDER NUMBER THE CLAIM GOES UNDER (Carl, 5-7 Sep 2026).
          * `null` where no provider row was found, which the check below skips
@@ -1786,7 +1786,7 @@ export class TabletSessionsService {
          * caught by `enduring_not_per_provider` and by the anchor rules, and
          * inventing a second refusal for it would say the same thing twice.
          */
-        billingRole: provider ? (await resolveBillingRoleForProvider(tx, provider)).billingRole : null,
+        billingRole: anchor ? anchor.billingRole : null,
         appointmentDate: appointment ? appointment.date.toISOString().slice(0, 10) : null,
       };
     });
@@ -1927,7 +1927,7 @@ export class TabletSessionsService {
       const signability = computeSignability(
         {
           particularsLockedAt: agreement.particularsLockedAt,
-          basicServiceDescription: d6aOf(agreement),
+          basicServiceDescription: basicServiceDescriptionOf(agreement),
         },
         isServiceDescription,
       );
@@ -1962,16 +1962,12 @@ export class TabletSessionsService {
         where: { id: { in: agreements.map((a) => a.patientId) } },
       });
       const patientById = new Map(patients.map((p) => [p.id, p]));
-      const providerIds = agreements.map((a) => a.providerId).filter((id): id is string => Boolean(id));
-      const providers = providerIds.length
-        ? await tx.provider.findMany({ where: { id: { in: providerIds } } })
-        : [];
-      const providerById = new Map(providers.map((p) => [p.id, p]));
+      const anchorByAgreement = await anchorsForAgreements(tx, agreements);
 
       return sessions.map((session) => {
         const agreement = agreementById.get(session.agreementId);
         const patient = agreement ? patientById.get(agreement.patientId) : undefined;
-        const provider = agreement?.providerId ? providerById.get(agreement.providerId) : undefined;
+        const anchor = agreement ? anchorByAgreement.get(agreement.id) : undefined;
         return {
           id: session.id,
           deviceId: session.deviceId,
@@ -1983,7 +1979,7 @@ export class TabletSessionsService {
           // state, not mirroring a screen.
           patientName: patient ? `${patient.givenNames} ${patient.familyName}` : '',
           patientId: agreement?.patientId ?? '',
-          providerName: provider?.name ?? null,
+          providerName: anchor?.name ?? null,
           state: session.state as TabletSessionState,
           // TYPES, never the values behind them (REQ-VER-04). Reception reads
           // "Patient says wrong: address, mobile" and looks the values up on
@@ -2115,13 +2111,6 @@ function particularsCorrectedSince(
  * showing "Not set" and refusing to push (kiosk.service.ts's
  * `collectWaiting` makes the identical read, for the identical reason).
  */
-function d6aOf(agreement: Pick<DbAgreement, 'serviceDescription' | 'particulars'>): string | undefined {
-  if (agreement.serviceDescription) return agreement.serviceDescription;
-  const particulars = agreement.particulars as Record<string, unknown> | null;
-  return typeof particulars?.basicServiceDescription === 'string'
-    ? (particulars.basicServiceDescription as string)
-    : undefined;
-}
 
 /**
  * ONE SENTENCE FOR "this session is over", whichever way it ended. A tablet

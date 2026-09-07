@@ -23,6 +23,7 @@ import {
   assertRepointAllowed,
   assertSignatureAllowed,
   assertSignatureCaptureAcceptable,
+  basicServiceDescriptionOf,
   buildAssignorForAnother,
   canTransition,
   HardRuleViolation,
@@ -38,7 +39,7 @@ import {
 } from '@aobplatform/domain';
 import { ArtefactsService } from '../artefacts/artefacts.service';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
-import { resolveBillingRoleForProvider } from '../affiliations/provider-billing-role';
+import { anchorForAgreement } from '../affiliations/agreement-anchor';
 import { PrismaService } from '../prisma/prisma.service';
 import { RULES_CLIENT, RulesClientError } from '../rules-client/rules-client.module';
 import { assertCanBeProviderOnAgreement, assertEnduringAllowed } from '@aobplatform/domain';
@@ -180,8 +181,11 @@ export class AgreementsService {
     if (dto.type === 'enduring' && !dto.enduringPathway) {
       throw new BadRequestException('An enduring agreement requires a pathway (reg 65CA/65CB).');
     }
-    if (expectedAnchor === 'provider' && !dto.providerId) {
-      throw new BadRequestException(`A ${dto.type} agreement anchors to a provider — providerId is required.`);
+    if (expectedAnchor === 'provider' && !dto.affiliationId && !dto.providerId) {
+      throw new BadRequestException(
+        `A ${dto.type} agreement anchors to the practitioner at a location — affiliationId is required ` +
+          '(providerId is accepted for one more release and resolved to it).',
+      );
     }
     if (expectedAnchor === 'organisation' && !dto.organisationId) {
       throw new BadRequestException('An ACCHO/AMS enduring agreement anchors to the organisation (Addendum v3 §1.1).');
@@ -189,9 +193,41 @@ export class AgreementsService {
 
     try {
       return await this.prisma.withPractice(practiceId, async (tx) => {
+        /*
+         * THE ANCHOR IS RESOLVED BEFORE ANYTHING IS WRITTEN, because from
+         * today an agreement without one is refused by the database
+         * (`agreements_new_rows_are_anchored_on_an_affiliation`) and a
+         * constraint violation is a worse sentence than this one.
+         */
+        let affiliationId: string | null = null;
         if (expectedAnchor === 'provider') {
-          const provider = await tx.provider.findFirst({ where: { id: dto.providerId } });
-          if (!provider) throw new NotFoundException('Provider not found in this practice.');
+          const anchor = await anchorForAgreement(tx, {
+            affiliationId: dto.affiliationId ?? null,
+            providerId: dto.providerId ?? null,
+          });
+          if (!anchor) {
+            throw new NotFoundException(
+              dto.affiliationId
+                ? 'That affiliation was not found in this practice.'
+                : 'Provider not found in this practice.',
+            );
+          }
+          /*
+           * A LEGACY `providers` ROW THAT MATCHES NO PRACTITIONER CANNOT
+           * ANCHOR A NEW AGREEMENT. The deprecated `providerId` field is
+           * accepted for one release; what it is not allowed to do is produce
+           * an agreement that cannot say which person, at which address, it
+           * named. Refused with the reason and the fix, rather than a
+           * constraint error with a constraint's name on it.
+           */
+          if (!anchor.affiliationId) {
+            throw new BadRequestException(
+              'That provider is not linked to a practitioner at one of this practice’s locations, so an ' +
+                'agreement naming them could not say who signed for whom or where (s 65C(5)(a)). Add the ' +
+                'practitioner and their affiliation, or send affiliationId. Nothing was guessed.',
+            );
+          }
+          affiliationId = anchor.affiliationId;
           /*
            * THE PROVIDER ON AN AGREEMENT IS THE SERVICING PROVIDER (Carl, 5-7
            * Sep 2026; TODO.md "Billing role on the affiliation").
@@ -203,12 +239,9 @@ export class AgreementsService {
            * one. A rule enforced at one door of four is a rule with three doors,
            * so it lives at the service that owns the guards.
            */
-          assertCanBeProviderOnAgreement(
-            (await resolveBillingRoleForProvider(tx, provider)).billingRole,
-            provider.name,
-          );
+          assertCanBeProviderOnAgreement(anchor.billingRole, anchor.name);
           if (dto.type === 'enduring') {
-            assertEnduringAllowed(provider.providerType as ProviderType, dto.enduringPathway as EnduringPathway);
+            assertEnduringAllowed(anchor.providerType as ProviderType, dto.enduringPathway as EnduringPathway);
           }
         }
         const patient = await tx.patient.findFirst({ where: { id: dto.patientId } });
@@ -221,7 +254,16 @@ export class AgreementsService {
             practiceId,
             type: dto.type,
             anchorKind: expectedAnchor,
-            providerId: expectedAnchor === 'provider' ? dto.providerId : null,
+            /*
+             * BOTH, WHILE BOTH EXIST. `affiliationId` is the anchor; the
+             * legacy `providerId` is written alongside it only when the caller
+             * named one, so that a row created through the deprecated door
+             * still says which `providers` row it came in by. New callers send
+             * `affiliationId` and leave `providerId` null, which is what the
+             * column being dropped will look like.
+             */
+            affiliationId,
+            providerId: expectedAnchor === 'provider' ? (dto.providerId ?? null) : null,
             organisationId: expectedAnchor === 'organisation' ? dto.organisationId : null,
             patientId: dto.patientId,
             assignorId: dto.assignorId,
@@ -234,7 +276,19 @@ export class AgreementsService {
           type: 'agreement.created',
           actor: SYSTEM_ACTOR,
           subject: { type: 'Agreement', id: agreement.id },
-          payload: { agreementType: dto.type, anchorKind: expectedAnchor },
+          payload: {
+            agreementType: dto.type,
+            anchorKind: expectedAnchor,
+            /*
+             * WHICH PRACTITIONER, AT WHICH LOCATION — ids only, which is what
+             * an anchor is. No name, no address, no provider number: the
+             * agreement's own particulars carry those, hashed, and a vault
+             * payload holds scalars that identify rather than describe.
+             */
+            ...(affiliationId ? { affiliationId } : {}),
+            /* Named through the deprecated door, and the record says so. */
+            ...(expectedAnchor === 'provider' && dto.providerId ? { legacyProviderId: dto.providerId } : {}),
+          },
         });
         return agreement;
       });
@@ -302,9 +356,11 @@ export class AgreementsService {
         patientAssignorId: agreement.patientAssignorId,
         enduringPathway: agreement.enduringPathway,
         /*
-         * THE SAME D6a READ `pushable` USES (`d6aOf`, this file's own copy of
-         * `tablet-sessions.service.ts`'s helper — Carl flagged this live, 4
-         * Sep 2026). D6a can live in the COLUMN or, when it arrived through
+         * THE SAME D6a READ `pushable` USES — `basicServiceDescriptionOf` in
+         * `@aobplatform/domain`, ONE copy since 7 Sep 2026 (it was duplicated
+         * here and in `tablet-sessions.service.ts`; Carl flagged the gap live
+         * on 4 Sep and a review found the drift risk on the 7th). D6a can live
+         * in the COLUMN or, when it arrived through
          * `lockParticulars`'s own DTO rather than the staff surface that
          * writes the column, in `particulars.basicServiceDescription`. The old
          * agreement's `particulars` is never copied (see below — it belongs to
@@ -313,7 +369,7 @@ export class AgreementsService {
          * column value now, or it is gone: the new draft would show "Not set"
          * and refuse to push over a detail nobody changed.
          */
-        serviceDescription: d6aOf(agreement),
+        serviceDescription: basicServiceDescriptionOf(agreement),
         serviceDescriptionSetBy: agreement.serviceDescriptionSetBy,
         serviceDescriptionSetAt: agreement.serviceDescriptionSetAt,
         status: 'draft',
@@ -615,9 +671,18 @@ export class AgreementsService {
       }
       const patient = await tx.patient.findFirst({ where: { id: agreement.patientId } });
       if (!patient) throw new NotFoundException('Patient not found.');
-      const provider = agreement.providerId
-        ? await tx.provider.findFirst({ where: { id: agreement.providerId } })
-        : null;
+      /*
+       * D4 IS THE PERSON AND THE PLACE (s 65C(5)(a)), and from 7 September
+       * 2026 it is read from the practitioner's affiliation at a location:
+       * their name, that location's address, and that location's provider
+       * number where one is held — because the number is issued per
+       * practitioner per location (FR-1.8) and a practice-wide row could only
+       * ever have carried one of them.
+       *
+       * An agreement made before the anchor moved reads from its legacy
+       * `providers` row instead, and renders exactly as it always did.
+       */
+      const anchor = await anchorForAgreement(tx, agreement);
       const assignor = await tx.assignor.findFirst({ where: { id: agreement.assignorId } });
       /*
        * AN ENDURING AGREEMENT'S CONTENT SET IS reg 65CB'S, NOT D5/D6a's
@@ -649,9 +714,9 @@ export class AgreementsService {
         patientName: `${patient.givenNames} ${patient.familyName}`,
         agreementDate: dto.agreementDate ?? new Date().toISOString().slice(0, 10),
         agreementType: agreement.type,
-        providerName: provider?.name,
-        providerAddress: provider?.placeOfPracticeAddress ?? undefined,
-        providerNumber: provider?.providerNumber ?? undefined,
+        providerName: anchor?.name,
+        providerAddress: anchor?.placeOfPracticeAddress ?? undefined,
+        providerNumber: anchor?.providerNumber ?? undefined,
         serviceDate: agreement.type === 'enduring' ? undefined : dto.serviceDate,
         /*
          * D6a FROM THE DRAFT WHEN THE CLIENT DID NOT SEND ONE, and that is the
@@ -1413,28 +1478,6 @@ export class AgreementsService {
       tx.agreement.findMany({ where: status ? { status } : undefined, orderBy: { createdAt: 'desc' } }),
     );
   }
-}
-
-/**
- * D6a, READ THE SAME WAY EVERYWHERE IT MATTERS (Carl flagged the gap live, 4
- * Sep 2026, over `supersedeForCorrection` losing it). The description lives in
- * the COLUMN when a staff member set it through the reconciliation surface, or
- * in `particulars.basicServiceDescription` when it arrived through
- * `lockParticulars`'s own DTO instead — `tablet-sessions.service.ts` has its
- * own copy of this exact function for `pushable`'s identical read, and
- * `kiosk.service.ts`'s waiting-list read makes the same check inline. This
- * copy exists so `supersedeForCorrection` can carry the value forward as a
- * plain column on the NEW draft — the new agreement never inherits the old
- * one's `particulars` (that belongs to the lock this draft has not gone
- * through), so a description that only ever lived there must be resolved and
- * copied now or it is silently gone.
- */
-function d6aOf(agreement: Pick<DbAgreement, 'serviceDescription' | 'particulars'>): string | undefined {
-  if (agreement.serviceDescription) return agreement.serviceDescription;
-  const particulars = agreement.particulars as Record<string, unknown> | null;
-  return typeof particulars?.basicServiceDescription === 'string'
-    ? (particulars.basicServiceDescription as string)
-    : undefined;
 }
 
 /**

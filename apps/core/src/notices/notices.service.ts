@@ -18,6 +18,7 @@ import {
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
+import { anchorForAgreement } from '../affiliations/agreement-anchor';
 import { MESSAGING_GATEWAY, type MessagingGateway } from '../messaging/gateway';
 import { correctionBody, noticeBody, noticeSubject } from './notice-template';
 import { CorrespondenceService } from '../correspondence/correspondence.service';
@@ -81,12 +82,12 @@ export class NoticesService {
       }
 
       const patient = await tx.patient.findFirst({ where: { id: agreement.patientId } });
-      const provider = agreement.providerId
-        ? await tx.provider.findFirst({ where: { id: agreement.providerId } })
-        : null;
+      // THE PRACTITIONER, from the anchor — the person the claim went under
+      // and the person reg 89AA requires the notice to name.
+      const anchor = await anchorForAgreement(tx, agreement);
 
       const content: Partial<NoticeContent> = {
-        practitionerName: provider?.name,
+        practitionerName: anchor?.name,
         patientName: patient ? `${patient.givenNames} ${patient.familyName}` : undefined,
         serviceDate: input.serviceDate,
         benefitAmountCents: input.benefitAmountCents,

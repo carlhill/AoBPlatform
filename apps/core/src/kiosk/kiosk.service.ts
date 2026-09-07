@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import {
   computeSignability,
+  basicServiceDescriptionOf,
   isServiceDescription,
   KIOSK_CAPTURABLE_STATUSES,
   kioskIdleTimeoutOrDefault,
@@ -14,6 +15,7 @@ import {
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
+import { anchorsForAgreements } from '../affiliations/agreement-anchor';
 import { DevicesService, type ResolvedDevice } from '../devices/devices.service';
 import { evaluateChallenge, type PatientIdentityRecord } from '../verification/identifier-matching';
 import {
@@ -278,11 +280,12 @@ export class KioskService {
        */
       const patientById = new Map(patients.filter((p) => !p.confidentialityFlag).map((p) => [p.id, p]));
 
-      const providerIds = agreements.map((a) => a.providerId).filter((id): id is string => Boolean(id));
-      const providers = providerIds.length
-        ? await tx.provider.findMany({ where: { id: { in: providerIds } } })
-        : [];
-      const providerById = new Map(providers.map((p) => [p.id, p]));
+      /*
+       * WHO EACH WAITING PATIENT IS HERE TO SEE — the practitioner at a
+       * location (Carl, 7 Sep 2026). A staff-facing list, so a name and
+       * nothing else about the person.
+       */
+      const anchorByAgreement = await anchorsForAgreements(tx, agreements);
 
       const appointments = await tx.appointment.findMany({
         where: { agreementId: { in: agreements.map((a) => a.id) } },
@@ -305,7 +308,7 @@ export class KioskService {
         if (!agreement) continue;
         const patient = patientById.get(agreement.patientId);
         if (!patient) continue;
-        const provider = agreement.providerId ? providerById.get(agreement.providerId) : undefined;
+        const anchor = anchorByAgreement.get(agreement.id);
         const appointment = appointmentByAgreement.get(agreement.id);
 
         /*
@@ -315,18 +318,13 @@ export class KioskService {
          * that named nobody — the patient's effort spent for nothing, and
          * reception with no way to tell who needed fixing. `computeSignability`
          * is the same D6a read `lockParticulars` does
-         * (`dto.basicServiceDescription ?? agreement.serviceDescription`,
+         * (`basicServiceDescriptionOf`, the domain's one copy of that rule —
          * here without a DTO to prefer), matched against the identical
          * `isServiceDescription` list `GET /service-descriptions` serves —
          * cheap and structural, not a rules-engine call per row per poll. K-3's
          * full validation at lock time is still the last line of defence.
          */
-        const particulars = agreement.particulars as Record<string, unknown> | null;
-        const basicServiceDescription =
-          agreement.serviceDescription ??
-          (typeof particulars?.basicServiceDescription === 'string'
-            ? (particulars.basicServiceDescription as string)
-            : undefined);
+        const basicServiceDescription = basicServiceDescriptionOf(agreement);
         const signability = computeSignability(
           { particularsLockedAt: agreement.particularsLockedAt, basicServiceDescription },
           isServiceDescription,
@@ -355,7 +353,7 @@ export class KioskService {
             agreementId: agreement.id,
             patientId: patient.id,
             patientName: `${patient.givenNames} ${patient.familyName}`,
-            providerName: provider?.name ?? null,
+            providerName: anchor?.name ?? null,
             appointmentDate: appointment ? appointment.date.toISOString().slice(0, 10) : null,
             appointmentTime: appointment?.time ?? null,
             agreementStatus: agreement.status,

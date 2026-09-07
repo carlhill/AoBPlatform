@@ -12,6 +12,7 @@ import {
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
+import { anchorForLegacyProvider } from '../affiliations/agreement-anchor';
 import { PMS_ADAPTER } from '../pms/pms.tokens';
 import { PmsSyncService } from '../pms/pms-sync.service';
 import { AgreementsService } from '../agreements/agreements.service';
@@ -153,7 +154,27 @@ export class AutoCaptureService {
       // Already covered — an episodic agreement would be a second consent for
       // a service the enduring one already assigns. Link it so the item leaves
       // the reconciliation queue, and say so.
-      const coverage = await this.enduring.coverage(practiceId, { patientId: patient.id, providerId: provider.id });
+      /*
+        * COVERAGE IS PER PRACTITIONER (REQ-END-01). A service record still
+        * names the legacy `providers` row -- the PMS feed is what fills it and
+        * that mirror has not moved -- so the anchor is resolved first, and the
+        * coverage question is asked about the PERSON where one could be found.
+        * Where none could, the legacy comparison is the only true thing left
+        * to ask, and it is asked rather than nothing.
+        */
+      const anchor = await anchorForLegacyProvider(tx, provider);
+      /*
+       * AND IT MUST REACH A PERSON. From 7 September 2026 an agreement is
+       * anchored on the practitioner at a location; a PMS mirror row that
+       * matches none cannot make one, and the honest answer is to leave the
+       * item on the reconciliation queue rather than draft something that
+       * cannot say whose practice address goes on it.
+       */
+      if (!anchor.affiliationId) return suppress('provider_not_anchored', { providerId: provider.id });
+      const coverage = await this.enduring.coverage(practiceId, {
+        patientId: patient.id,
+        practitionerId: anchor.practitionerId ?? undefined,
+      });
       if (coverage.covered) {
         await tx.serviceRecord.update({ where: { id: record.id }, data: { agreementId: coverage.agreementIds[0] } });
         return suppress('enduring_covered', { coveringAgreementId: coverage.agreementIds[0] });
@@ -175,6 +196,7 @@ export class AutoCaptureService {
         record,
         patient,
         provider,
+        anchor,
         channel,
         assignorId: assignor.id,
         practiceName: practice?.name ?? 'your practice',
@@ -185,7 +207,7 @@ export class AutoCaptureService {
     // PHASE 2 — the draft, through the service that owns the guards.
     const draft = await this.agreements.createDraft(practiceId, {
       type: 'episodic_post',
-      providerId: plan.provider.id,
+      affiliationId: plan.anchor.affiliationId!,
       patientId: plan.patient.id,
       assignorId: plan.assignorId,
       assignorIsPatient: true,
@@ -206,7 +228,7 @@ export class AutoCaptureService {
         practiceId,
         practiceName: plan.practiceName,
         patient: plan.patient,
-        providerName: plan.provider.name,
+        providerName: plan.anchor.name,
         serviceDate: plan.record.serviceDate,
         mbsItemNumbers: plan.record.mbsItemNumbers,
         captureRequestId: opened.captureRequestId,
@@ -311,7 +333,15 @@ export class AutoCaptureService {
       // their name to whoever walks up is the exposure the flag exists to prevent.
       if (patient.confidentialityFlag) return suppress('confidentiality_flag');
 
-      const coverage = await this.enduring.coverage(practiceId, { patientId: patient.id, providerId: provider.id });
+      // Same two questions as the invoice path, in the same order: can this
+      // provider reach a practitioner at a location at all, and is this
+      // patient already covered for that PERSON (REQ-END-01)?
+      const anchor = await anchorForLegacyProvider(tx, provider);
+      if (!anchor.affiliationId) return suppress('provider_not_anchored', { providerId: provider.id });
+      const coverage = await this.enduring.coverage(practiceId, {
+        patientId: patient.id,
+        practitionerId: anchor.practitionerId ?? undefined,
+      });
       if (coverage.covered) {
         await tx.appointment.update({ where: { id: row.id }, data: { agreementId: coverage.agreementIds[0] } });
         return suppress('enduring_covered', { coveringAgreementId: coverage.agreementIds[0] });
@@ -338,6 +368,7 @@ export class AutoCaptureService {
         row,
         patient,
         provider,
+        anchor,
         assignorId: assignor.id,
         defaultServiceDescription: practice?.defaultServiceDescription ?? null,
       };
@@ -347,7 +378,7 @@ export class AutoCaptureService {
     // PHASE 2 — the draft, through the service that owns the guards.
     const draft = await this.agreements.createDraft(practiceId, {
       type: 'episodic_pre',
-      providerId: plan.provider.id,
+      affiliationId: plan.anchor.affiliationId!,
       patientId: plan.patient.id,
       assignorId: plan.assignorId,
       assignorIsPatient: true,
@@ -412,7 +443,7 @@ export class AutoCaptureService {
           captureRequestId: opened.captureRequestId,
           appointmentId: plan.row.id,
           patientName,
-          providerName: plan.provider.name,
+          providerName: plan.anchor.name,
           appointmentDate: appointment.date,
           appointmentTime: appointment.time ?? null,
         },
