@@ -1042,3 +1042,72 @@ describe('ended_session_for_a_moved_on_agreement_offers_no_send_again', () => {
     expect(screen.queryByTestId(`work-session-recall-${WALKED_AWAY.id}`)).toBeNull();
   });
 });
+
+/**
+ * A WAY OUT OF THE CORRECTION PANEL (Carl, 7 Sep 2026, testing the work page).
+ *
+ * There was none beside "Save the correction". The panel could only be shut by
+ * pressing "Correct a detail" again — a toggle nobody reads as "cancel" — and
+ * the red "Nothing was changed" band survived it, so somebody who opened the
+ * panel by mistake was left with a refusal on screen about an act they had
+ * abandoned.
+ *
+ * THE PANEL IS SHARED with `/practice/tablet` (`pushDesk.tsx`), so this is one
+ * component and one behaviour — the two pages cannot drift apart on it.
+ */
+describe('correction_panel_cancel_discards_edits_and_closes', () => {
+  const subjectKey = `patient:${PATIENT}`;
+
+  /** Open the panel and wait for the FIELDS, which arrive on the details
+   *  fetch rather than with the panel itself (wow.md section 2 item 6). */
+  async function openTheCorrectionPanel(): Promise<HTMLElement> {
+    stubFetch();
+    render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+    await waitFor(() => expect(screen.getByTestId('identity-list')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('identity-correct-open'));
+    return (await screen.findByTestId(`correct-address-${subjectKey}`)) as HTMLElement;
+  }
+
+  it('closes the panel, throws the edits away and clears the outcome band', async () => {
+    const address = await openTheCorrectionPanel();
+    fireEvent.change(address, { target: { value: '1 Right Street, Sampletown NSW 2000' } });
+
+    /*
+     * THE RED BAND FIRST, because clearing it is the half that was missing. An
+     * empty save is refused on the client with "Nothing was changed" — reached
+     * here by putting the address back to what it already was.
+     */
+    fireEvent.change(address, { target: { value: '404 Wrongway Parade, Sampletown NSW 2000' } });
+    fireEvent.click(screen.getByTestId(`correct-save-${subjectKey}`));
+    await waitFor(() =>
+      expect(screen.getByTestId("identity-correct-outcome").textContent).toContain(
+        strings.tablet.correctNoChange,
+      ),
+    );
+    // Nothing was sent, which is the point of that refusal.
+    expect(calls.some((call) => call.method === 'PATCH')).toBe(false);
+
+    fireEvent.click(screen.getByTestId(`correct-cancel-${subjectKey}`));
+
+    expect(screen.queryByTestId(`correct-panel-${subjectKey}`)).toBeNull();
+    // The band goes with the form it was about — a message about a form is not
+    // true once the form is gone.
+    expect(screen.queryByTestId("identity-correct-outcome")).toBeNull();
+
+    // AND THE EDITS ARE GONE. Re-opening reads the record again rather than
+    // handing back a draft nobody saved.
+    fireEvent.click(screen.getByTestId('identity-correct-open'));
+    const reopened = await screen.findByTestId(`correct-address-${subjectKey}`);
+    expect((reopened as HTMLInputElement).value).toBe('404 Wrongway Parade, Sampletown NSW 2000');
+  });
+
+  it('Escape does the same as Cancel', async () => {
+    const address = await openTheCorrectionPanel();
+    fireEvent.change(address, { target: { value: 'somewhere else entirely' } });
+
+    fireEvent.keyDown(screen.getByTestId(`correct-panel-${subjectKey}`), { key: 'Escape' });
+
+    expect(screen.queryByTestId(`correct-panel-${subjectKey}`)).toBeNull();
+    expect(calls.some((call) => call.method === 'PATCH')).toBe(false);
+  });
+});

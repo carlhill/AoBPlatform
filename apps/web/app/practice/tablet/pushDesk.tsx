@@ -1211,10 +1211,24 @@ export function usePushDesk(practiceId: string): PushDesk {
     }
   }
 
+  /**
+   * SHUT THE PANEL AND LEAVE NOTHING BEHIND (Carl, 7 Sep 2026).
+   *
+   * THE OUTCOME BAND GOES TOO, and that is the part that was missing. The red
+   * "Nothing was changed" band outlived the panel it belonged to, so somebody
+   * who opened the correction panel by mistake, pressed Save, and shut it was
+   * left with a refusal on screen about an act they had abandoned. A message
+   * about a form is not true once the form is gone.
+   *
+   * A SUCCESSFUL SAVE DOES NOT COME THROUGH HERE — it clears the same three
+   * pieces of state itself and keeps its "Saved" band, which is a fact about
+   * the record rather than about the form.
+   */
   function closeCorrect() {
     setCorrectFor(null);
     setDetails(null);
     setDraft({});
+    setCorrectOutcome(null);
   }
 
   /**
@@ -2372,6 +2386,47 @@ export function CorrectionPanel({ desk, subject }: { desk: PushDesk; subject: Co
       ?.focus();
   }, [open, desk.details, subject.key, subject.disputedDetails]);
 
+  /*
+   * AND ESCAPE DOES THE SAME AS CANCEL. The panel takes focus when it opens
+   * (above), so the key somebody reaches for to undo that is the one that
+   * should close it. Bound on the panel rather than on the document: two open
+   * panels are impossible, but a key handler that lives longer than the thing
+   * it closes is a bug waiting for the next dialog.
+   *
+   * NOT WHILE A SAVE IS IN FLIGHT, for the reason the Cancel button is disabled
+   * then — a request that is going to change a patient's record must not have
+   * its answer hidden.
+   */
+  const escapeTarget = useRef(desk);
+  escapeTarget.current = desk;
+  useEffect(() => {
+    if (!open) return;
+    const node = panelRef.current;
+    if (!node) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      /*
+       * READ THROUGH A REF, so the listener is attached ONCE per opening rather
+       * than on every keystroke. `usePushDesk` returns plain functions, rebuilt
+       * on every render, so depending on `desk.closeCorrect` here would tear
+       * the native listener down and rebuild it each time somebody typed a
+       * character into the form below. Nothing is missed either way; this is
+       * churn removed, not a bug fixed.
+       */
+      const current = escapeTarget.current;
+      if (event.key !== 'Escape' || current.correctBusy) return;
+      /*
+       * THE INNERMOST THING OWNING ESCAPE HANDLES IT. Nothing above this panel
+       * listens for Escape today; if a dialog is ever wrapped around it, this
+       * line is what decides the panel closes and the dialog does not — a
+       * deliberate choice, and the one to revisit there.
+       */
+      event.stopPropagation();
+      current.closeCorrect();
+    };
+    node.addEventListener('keydown', onKeyDown);
+    return () => node.removeEventListener('keydown', onKeyDown);
+  }, [open]);
+
   if (!open) return null;
   // A LOAD THAT FAILED IS NOT "STILL LOADING". `openCorrect` leaves `details`
   // null on a failure and puts the reason in `correctOutcome` instead — before
@@ -2444,6 +2499,25 @@ export function CorrectionPanel({ desk, subject }: { desk: PushDesk; subject: Co
               data-testid={`correct-save-${subject.key}`}
             >
               {desk.correctBusy ? strings.tablet.correctSaving : strings.tablet.correctSave}
+            </Button>
+            {/*
+              AND A WAY OUT BESIDE IT (Carl, 7 Sep 2026). There was none: the
+              only way to shut this panel was to press "Correct" again, which is
+              a toggle nobody reads as "cancel", and the outcome band survived
+              it. A secondary, because leaving without saving must be one press
+              and must not look like the thing to press.
+
+              DISABLED WHILE A SAVE IS IN FLIGHT. Closing the form under a
+              request that is still going to change a patient's record would
+              hide the answer to it.
+            */}
+            <Button
+              variant="subtle"
+              disabled={desk.correctBusy}
+              onClick={desk.closeCorrect}
+              data-testid={`correct-cancel-${subject.key}`}
+            >
+              {strings.tablet.correctCancel}
             </Button>
           </div>
         </>
