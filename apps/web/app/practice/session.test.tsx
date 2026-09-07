@@ -423,7 +423,16 @@ describe('reload_after_interactive_sign_in_restores_silently', () => {
     void attemptSilentLogin('web').then((value) => {
       resolved = value;
     });
-    await settle();
+    /*
+     * WAIT FOR THE REDIRECT, NOT FOR THE CLOCK. Before the `assign`,
+     * `attemptSilentLogin` awaits a real SHA-256 digest for the PKCE challenge
+     * (`crypto.subtle`), which runs on Node's threadpool in real time and is
+     * untouched by the fake timers `settle()` advances. On a fast laptop the
+     * digest lands inside those 25 ticks; on a CI runner it did not, and the
+     * spy read 0 calls (CI on 6d7db27). `vi.waitFor` polls on real timers, so
+     * this waits for the thing the assertion is about (wow.md §2 item 6).
+     */
+    await vi.waitFor(() => expect(assign).toHaveBeenCalledTimes(1), { timeout: 4000 });
 
     expect(assign).toHaveBeenCalledTimes(1);
     expect(String(assign.mock.calls[0][0])).toContain('prompt=none');
