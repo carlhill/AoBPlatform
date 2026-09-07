@@ -503,7 +503,7 @@ function settleSilentRestore(): void {
 }
 
 /**
- * IS A SILENT RESTORE EXPECTED OR RUNNING RIGHT NOW? (Carl, 7 Sep 2026.)
+ * IS A SILENT RESTORE ACTUALLY RUNNING RIGHT NOW? (Carl, 7 Sep 2026.)
  *
  * THE FAULT IT FIXES. Pressing the browser's reload on a console page starts
  * the tab signed out — deliberately, the token is memory-only — and a redirect
@@ -513,20 +513,24 @@ function settleSilentRestore(): void {
  * nobody had been signed out, and the honest thing to say is that we are
  * putting it back.
  *
- * IT IS A PREDICTION, AND IT IS BOUNDED THREE WAYS, because a hopeful
- * "signing you back in…" that never resolves is a worse lie than the one it
- * replaces. It is false the moment a session exists; false as soon as anything
- * settles the question (`attemptSilentLogin` returning false, Keycloak
- * answering `login_required`, a deliberate sign-out); and false once the same
- * grace period `attemptSilentLogin` already trusts has elapsed, so a page that
- * never attempts a restore falls through to the ordinary signed-out state on
- * its own.
+ * IT REPORTS AN ATTEMPT, IT NO LONGER PREDICTS ONE (Carl, 7 Sep 2026, second
+ * round). The window used to open on the PRECONDITIONS — no session, and this
+ * browser has signed in here — which are true on every console page whether or
+ * not anybody asked Keycloak anything. `attemptSilentLogin` was called from two
+ * components, and a page mounting neither (`/practice/setup` mounts neither)
+ * showed "Signing you back in…" for five seconds with no redirect behind it and
+ * then fell to a sign-in prompt, while the Keycloak session was live the whole
+ * time. A promise nobody was keeping.
  *
- * `hasSignedInBefore()` IS THE PRECONDITION, and it is a hint rather than a
- * credential: it holds no token and grants nothing, it is written only by a
- * real sign-in, and `silentLoginFailed()` clears it the moment Keycloak says
- * there is no session to restore. A browser that has never signed in here
- * never sees this state.
+ * SO THE WINDOW IS OPENED BY THE CALL ITSELF, at the moment `attemptSilentLogin`
+ * commits to redirecting. If nothing asks, nothing is claimed.
+ *
+ * IT IS STILL BOUNDED THREE WAYS, because a hopeful "signing you back in…" that
+ * never resolves is a worse lie than the one it replaces. False the moment a
+ * session exists; false as soon as anything settles the question (a restore
+ * that returned, Keycloak answering `login_required`, a deliberate sign-out);
+ * and false once the grace period `attemptSilentLogin` already trusts has
+ * elapsed, so a redirect that never lands falls through on its own.
  */
 export function silentRestoreInFlight(): boolean {
   if (typeof window === 'undefined') return false;
@@ -535,12 +539,33 @@ export function silentRestoreInFlight(): boolean {
     return false;
   }
   if (silentRestoreSettled) return false;
-  if (!hasSignedInBefore()) {
-    restoreWindowOpenedAt = null;
-    return false;
-  }
-  if (restoreWindowOpenedAt === null) restoreWindowOpenedAt = Date.now();
+  // NOBODY STARTED ONE. The whole fault this replaced was a page claiming a
+  // restore was coming when no call had been made.
+  if (restoreWindowOpenedAt === null) return false;
   return Date.now() - restoreWindowOpenedAt < SILENT_REDIRECT_GRACE_MS;
+}
+
+/**
+ * IS THE RESTORE QUESTION STILL OPEN — including "nobody has asked yet"?
+ *
+ * FOR WAITING, NEVER FOR COPY. `silentRestoreInFlight()` above is what a screen
+ * may say something about, because it is true only while a redirect somebody
+ * actually started is outstanding. THIS one is deliberately looser: it is true
+ * from the first render of a document whose browser has signed in here, before
+ * `AccessGuard` has had a chance to call anything.
+ *
+ * WHY THAT LOOSENESS IS NEEDED SOMEWHERE. React runs child effects before
+ * parent ones, so a hook inside the guarded page can run before the guard's own
+ * attempt. `usePractice` falling through in that window is what showed somebody
+ * who typed /practice/locations a chooser listing every practice on the
+ * platform — the disclosure this whole path exists to prevent. Its callers wait
+ * on this and bound the wait themselves; nothing renders a promise from it.
+ */
+export function silentRestoreUnresolved(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (currentSession()) return false;
+  if (silentRestoreSettled) return false;
+  return hasSignedInBefore() !== null;
 }
 
 /**
@@ -600,6 +625,14 @@ export async function attemptSilentLogin(clientId: string = CLIENT_ID): Promise<
   }
 
   sessionStorage.setItem(SILENT_TRIED_KEY, 'true');
+  /*
+   * THE CLAIM STARTS HERE, and nowhere else. Everything above this line is a
+   * reason NOT to attempt; from here a redirect is being built, so this is the
+   * moment a screen may honestly say "signing you back in". Set synchronously,
+   * before the first `await` below, so a component that asks in the same tick
+   * as the call sees it (`silentRestoreInFlight`).
+   */
+  restoreWindowOpenedAt = Date.now();
 
   const verifier = randomString();
   const state = randomString();

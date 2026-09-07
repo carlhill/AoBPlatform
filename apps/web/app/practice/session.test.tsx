@@ -275,19 +275,34 @@ describe('expired_note_names_the_refresh_failure_reason_when_known', () => {
  */
 describe('reload_shows_signing_back_in_not_sign_in', () => {
   /** What a reload of a browser that HAS signed in here looks like from cold. */
-  function asReloadedTab(): void {
+  async function asReloadedTab(): Promise<void> {
     /*
-     * THROUGH THE REAL FUNCTION, not by writing the key. `rememberSignedIn` is
+     * THROUGH THE REAL FUNCTIONS, not by writing keys. `rememberSignedIn` is
      * what a successful sign-in calls, and it does more than store a hint — it
      * reopens the restore question that an earlier sign-out settled. A test
      * that poked localStorage would be simulating half of a sign-in and would
      * pass or fail on what the test before it happened to do.
+     *
+     * AND THE ATTEMPT IS MADE, because since 7 Sep 2026 nothing claims a
+     * restore that nobody started: the window is opened by
+     * `attemptSilentLogin` itself, not by the preconditions. `AccessGuard` is
+     * what makes this call on a real console page; here it stands in for it.
      */
     rememberSignedIn('web');
+    vi.stubGlobal('location', {
+      origin: 'http://localhost:3100',
+      pathname: '/practice/setup',
+      search: '',
+      assign: vi.fn(),
+    });
+    void attemptSilentLogin('web');
+    // The redirect is built behind a real SHA-256 digest; the window itself is
+    // opened synchronously before it, which is what these tests read.
+    await settle();
   }
 
   it('says it is signing you back in, and offers nothing while it does', async () => {
-    asReloadedTab();
+    await asReloadedTab();
     render(<SessionControl audience="Practice admin" />);
     await settle();
 
@@ -305,7 +320,7 @@ describe('reload_shows_signing_back_in_not_sign_in', () => {
   });
 
   it('the gate shows no card at all during that window', async () => {
-    asReloadedTab();
+    await asReloadedTab();
     render(
       <AuthGate>
         <p data-testid="gated-content">the console</p>
@@ -319,7 +334,7 @@ describe('reload_shows_signing_back_in_not_sign_in', () => {
   });
 
   it('falls through to the ordinary signed-out state when the restore does not land', async () => {
-    asReloadedTab();
+    await asReloadedTab();
     render(<SessionControl audience="Practice admin" />);
     await settle();
     expect(screen.getByTestId('session-restoring')).toBeTruthy();

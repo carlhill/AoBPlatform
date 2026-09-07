@@ -30,7 +30,14 @@ import { ShieldAlert } from 'lucide-react';
 import { audiencesOf, landingPath, mayReach, ruleFor } from '@aobplatform/domain';
 import { Notice, Shell, ui } from './ui';
 import { SessionControl } from './SessionControl';
-import { currentSession } from './auth';
+import {
+  attemptSilentLogin,
+  currentSession,
+  hasSignedInBefore,
+  restoreRefusalReason,
+  sessionIdleMinutes,
+  silentRestoreInFlight,
+} from './auth';
 import { useEffectivePractice } from './effectivePractice';
 import { strings } from './strings';
 
@@ -42,6 +49,9 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [refused, setRefused] = useState<'unknown-page' | 'wrong-audience' | 'signed-out' | 'needs-acting-as' | null>(null);
   const [goingTo, setGoingTo] = useState('/');
+  /** A restore this guard asked for, and how it went. See the effects below. */
+  const [restoring, setRestoring] = useState(false);
+  const [restoreRefused, setRestoreRefused] = useState(false);
 
   /*
    * THE PRACTICE CLAIM, INCLUDING THE ONE ACTING-AS GRANTS.
@@ -153,6 +163,86 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
     }
   }, [pathname, practiceId, settled]);
 
+  /*
+   * THE ONE PLACE THE SILENT RESTORE IS ASKED FOR (Carl, 7 Sep 2026, second
+   * round: a NEW tab on /practice/setup with a live Keycloak session showed
+   * "You are not signed in", and no redirect ever left the page).
+   *
+   * WHY IT HAD TO MOVE HERE. `attemptSilentLogin` was called from exactly two
+   * components — `usePractice` and `PracticeList` — so whether a page ever
+   * asked Keycloak anything depended on which hook it happened to mount.
+   * `/practice/setup` mounts neither, and nor do most console pages. Worse,
+   * this guard REPLACES the children of every non-public page when there is no
+   * session, so on those pages the two callers were never rendered at all: no
+   * console page reliably attempted a restore, and the ones that seemed to were
+   * winning a race against `useEffectivePractice` settling.
+   *
+   * THIS COMPONENT IS THE ONE THAT ALWAYS RUNS. It is in the root layout, so
+   * every page renders it, and it already knows from `ruleFor(pathname)`
+   * whether the page is a gated console page or a public one — which is exactly
+   * the question "should this browser be signed in here?". `refused ===
+   * 'signed-out'` IS that condition, already computed above.
+   *
+   * NOTHING PUBLIC IS TOUCHED, and that matters more than it looks: `/kiosk`,
+   * `/patient/*`, `/apply`, `/verify` and `/callback` are all `public` in the
+   * page map, so none of them can be sent to Keycloak from here. A waiting-room
+   * tablet redirected to a sign-in page would be the worst possible version of
+   * this bug (CLAUDE.md §7, zero-footprint kiosk).
+   *
+   * ONLY FOR A BROWSER THAT HAS SIGNED IN HERE. `hasSignedInBefore()` is a hint,
+   * not a credential — it holds no token and grants nothing. Without it, a
+   * first-time visitor would be sent on a pointless round trip to Keycloak and
+   * shown "Signing you back in…" about a session they have never had.
+   *
+   * ONCE PER DOCUMENT: `attemptSilentLogin` keeps its own marker and refuses a
+   * second attempt in the same page load.
+   */
+  useEffect(() => {
+    if (refused !== 'signed-out') return;
+    /*
+     * AGAINST THE CLIENT THIS BROWSER ACTUALLY SIGNED IN WITH, which is what
+     * the hint stores. The console and the reviewer console are separate
+     * Keycloak clients on purpose — a practice token and a platform token must
+     * never be interchangeable (auth.ts) — so restoring a reviewer's session
+     * against the default `web` client would ask the wrong question and get a
+     * wrong or useless answer. It only mattered once the attempt moved here:
+     * the two callers it replaced were practice pages, always `web`.
+     */
+    const client = hasSignedInBefore();
+    if (!client) return;
+    void attemptSilentLogin(client);
+  }, [refused]);
+
+  /*
+   * AND WHAT TO SAY WHILE IT RUNS. Read straight after the attempt above — the
+   * effects run in order, and `attemptSilentLogin` opens its window
+   * synchronously before its first `await`, so the first read already sees it.
+   */
+  useEffect(() => {
+    if (refused !== 'signed-out') {
+      setRestoring(false);
+      setRestoreRefused(false);
+      return;
+    }
+    setRestoring(silentRestoreInFlight());
+    setRestoreRefused(restoreRefusalReason() !== null);
+  }, [refused]);
+
+  /*
+   * A FAST TICK, AND ONLY WHILE THE ATTEMPT IS OPEN. It closes in tens of
+   * milliseconds when Keycloak answers; the redirect tears this document down
+   * when it succeeds, and the grace period ends it when it does not. The
+   * interval stops itself the moment `restoring` goes false.
+   */
+  useEffect(() => {
+    if (!restoring) return;
+    const tick = setInterval(() => {
+      setRestoring(silentRestoreInFlight());
+      setRestoreRefused(restoreRefusalReason() !== null);
+    }, 250);
+    return () => clearInterval(tick);
+  }, [restoring]);
+
   useEffect(() => {
     /*
      * NOT REDIRECTED WHEN SIGNED OUT. They are already at the page they wanted;
@@ -170,10 +260,41 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
   if (refused === 'signed-out') {
     return (
       <Shell right={<SessionControl audience={strings.access.audience} />}>
-        <h1 className={ui.pageTitle}>
-          <ShieldAlert size={20} aria-hidden="true" /> {strings.access.signInTitle}
-        </h1>
-        <Notice tone="warn" title={strings.access.signInNoticeTitle}>{strings.access.signInBody}</Notice>
+        {/*
+          THREE THINGS THIS SCREEN CAN MEAN, and they were all one sentence.
+
+          RESTORING: a redirect to Keycloak is in flight and nobody is being
+          asked for anything. No sign-in prompt and no refusal — offering one
+          would invite a second, interactive login on top of the silent one.
+
+          REFUSED: this browser HAD signed in here and Keycloak has said the
+          session is gone. "You are not signed in" describes that and hides the
+          cause; the idle rule and the way back are what somebody needs.
+
+          NEITHER: the original copy, which is true of a browser that has never
+          been here.
+        */}
+        {restoring ? (
+          <h1 className={ui.pageTitle} data-testid="access-restoring">
+            <ShieldAlert size={20} aria-hidden="true" /> {strings.auth.signingBackIn}
+          </h1>
+        ) : restoreRefused ? (
+          <>
+            <h1 className={ui.pageTitle} data-testid="access-restore-refused">
+              <ShieldAlert size={20} aria-hidden="true" /> {strings.auth.restoreRefusedHeading}
+            </h1>
+            <Notice tone="warn" title={strings.auth.restoreRefusedHeading}>
+              {strings.auth.restoreRefusedBody(sessionIdleMinutes())}
+            </Notice>
+          </>
+        ) : (
+          <>
+            <h1 className={ui.pageTitle} data-testid="access-signed-out">
+              <ShieldAlert size={20} aria-hidden="true" /> {strings.access.signInTitle}
+            </h1>
+            <Notice tone="warn" title={strings.access.signInNoticeTitle}>{strings.access.signInBody}</Notice>
+          </>
+        )}
       </Shell>
     );
   }

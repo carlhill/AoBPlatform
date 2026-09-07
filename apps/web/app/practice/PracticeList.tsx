@@ -44,7 +44,7 @@ import { Button, Chip, Field, Notice, Shell, TextInput, ui } from '../ui';
 import { useRefreshable } from '../refresh';
 import { toViewPath } from '../viewPath';
 import { strings } from '../strings';
-import { apiHeaders, attemptSilentLogin, currentSession, beginLogin } from '../auth';
+import { apiHeaders, currentSession, beginLogin, silentRestoreUnresolved } from '../auth';
 import styles from './practice.module.css';
 import { SessionControl } from '../SessionControl';
 import { ActingAsBanner, ActingAsStart } from './ActingAs';
@@ -125,9 +125,11 @@ export function PracticeList() {
    * sign-out, and so the second visit waited on a restore that would never be
    * attempted.
    *
-   * The redirect is now the signal. `attemptSilentLogin` resolves `true` when
-   * it is navigating to Keycloak and `false` when it has declined to try, and
-   * only the first is a reason to keep waiting.
+   * The ATTEMPT is now the signal, and it is asked for in one place —
+   * `AccessGuard`, which is in the root layout and runs on every page (Carl,
+   * 7 Sep 2026). This waits for that attempt to close and starts none of its
+   * own: `silentRestoreInFlight()` is true only while a redirect that somebody
+   * actually initiated is outstanding, so "restoring" can always end.
    */
   const [restoreSettled, setRestoreSettled] = useState(false);
   const restoring = !session && !restoreSettled;
@@ -154,13 +156,24 @@ export function PracticeList() {
     }
     if (session || restoreSettled) return;
     let live = true;
-    void attemptSilentLogin().then((redirecting) => {
-      // `true` means the browser is on its way to Keycloak and this component
-      // is about to be torn down; settling would only paint a flash first.
-      if (live && !redirecting) setRestoreSettled(true);
-    });
+    let timer = 0;
+    // BOUNDED, so "restoring" can always end — the failure this state exists
+    // for. The same five seconds `attemptSilentLogin` already trusts.
+    const giveUpAt = Date.now() + 5000;
+    const settleWhenTheRestoreIsDone = () => {
+      if (!live) return;
+      // While the question is open this component is about to be torn down by
+      // a redirect; settling would only paint a flash of the prompt first.
+      if (silentRestoreUnresolved() && Date.now() < giveUpAt) {
+        timer = window.setTimeout(settleWhenTheRestoreIsDone, 100);
+        return;
+      }
+      setRestoreSettled(true);
+    };
+    settleWhenTheRestoreIsDone();
     return () => {
       live = false;
+      window.clearTimeout(timer);
     };
   }, [scoped, session, restoreSettled, router]);
 

@@ -22,7 +22,7 @@
 
 import { createContext, useContext, useEffect, useState } from 'react';
 import { mayChoosePractice } from '@aobplatform/domain';
-import { apiHeaders, attemptSilentLogin, currentSession } from '../auth';
+import { apiHeaders, currentSession, silentRestoreUnresolved } from '../auth';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 const SELECTION_KEY = 'aob.practiceId';
@@ -84,16 +84,39 @@ export function usePractice(): PracticeSelection {
      * a chooser listing every practice on the platform: with no session there
      * was no claim to scope them by.
      *
-     * So a browser that has signed in before tries to restore SILENTLY first.
-     * If Keycloak's session is live this returns having started a redirect and
-     * nothing below runs; if it is not, it returns false and the normal gate
-     * takes over.
+     * THE RESTORE ITSELF IS ASKED FOR IN ONE PLACE — `AccessGuard`, which is in
+     * the root layout and therefore runs on every page (Carl, 7 Sep 2026). It
+     * used to be asked for HERE, which meant whether a page ever asked Keycloak
+     * anything depended on which hook it happened to mount; `/practice/setup`
+     * mounts neither this nor `PracticeList`.
+     *
+     * WHAT THIS STILL DOES IS WAIT FOR THE ANSWER, and that half is not
+     * optional: falling through to a stored selection while a redirect is on
+     * its way is what showed somebody who typed /practice/locations a chooser
+     * listing every practice on the platform. So it holds `checked` false until
+     * the attempt has closed, and never starts a second one.
      */
     if (!session) {
-      void attemptSilentLogin().then((started) => {
-        if (!started && live) setChecked(true);
-      });
-      return;
+      let timer = 0;
+      /*
+       * BOUNDED, so a page can never wait for ever on a restore nobody makes.
+       * The same five seconds `attemptSilentLogin` already trusts: a redirect
+       * that has not happened by then is not going to.
+       */
+      const giveUpAt = Date.now() + 5000;
+      const settleWhenTheRestoreIsDone = () => {
+        if (!live) return;
+        if (silentRestoreUnresolved() && Date.now() < giveUpAt) {
+          timer = window.setTimeout(settleWhenTheRestoreIsDone, 100);
+          return;
+        }
+        setChecked(true);
+      };
+      settleWhenTheRestoreIsDone();
+      return () => {
+        live = false;
+        window.clearTimeout(timer);
+      };
     }
 
     /*
