@@ -3211,3 +3211,56 @@ side-effect.
 - [ ] Before GA: a fresh-database rehearsal of the full migration chain on a
       clean Postgres, in order, with the reversal of each tested (wow.md §2
       item 7).
+
+## Handover — state at the usage limit, 7 Sep 2026 (evening; resets 10pm Sydney)
+
+Everything below is on `origin/feat/apply-ui`; nothing is uncommitted.
+
+**Landed today, after the afternoon handover**
+- Who is signing: after the lock, a change SUPERSEDES rather than edits
+  (`57de0f4`, race fix + partial unique index `666154a`); the console button
+  is alive on prepared rows (`8da8976`); every row states who is signing
+  (`5bfcbd2`).
+- Who is signing GATES the push (`e32750f` core: `assignorConfirmedAt/By`,
+  `agreement.assignor_confirmed` event, 409 `assignor_not_confirmed`;
+  `f82d493` console: ①→②→③ strip, select and Send dead until saved, the
+  band carries the fix). Migration `20260907150000_assignor_confirmed`
+  applied to dev by hand (ledger still broken — see the failed-migration
+  section).
+- Silent restore fixed twice: the marker now clears on a successful sign-in
+  (`9083aac`), and the attempt lives in `AccessGuard` so EVERY gated page
+  restores (`9e0c778`) — it had only ever fired from two components. A
+  refused restore says "Your earlier sign-in has ended" with the minutes from
+  `NEXT_PUBLIC_SESSION_IDLE_MINUTES`.
+- Realm idle timeout 30 min → 4 h (D-2026-09-07-01, `969c708`).
+- Cancel (and Escape) on the correction panel, both surfaces (`6d7db27`).
+- Kiosk K-P1: fits a landscape tablet, one-row footer, copy in the rail
+  (`a8ddd20`, `d78fbda`); two-line ceremony header "Agree to bulk billing /
+  by <assignor>", Continue locks the answers, transient failures retry before
+  See reception (inside `e32750f`, documented by `333f42f`); review fixes —
+  abort on unmount, dead rule, lock guard tested (`56b1636`).
+- Docs: PracticeCensus.md, GovAudit pointer, OneDrive move, failed-migration
+  ledger, `.wslconfig` 4 GB cap.
+
+**Two commits crossed (7 Sep, ~18:50).** `e32750f` carries the who-is-signing
+message over the kiosk agent's files and `333f42f` the kiosk message over the
+core files; `6e50229` and `333f42f` document each other. Lesson recorded for
+wow.md §5: staging and committing must be ONE shell invocation — a gap of
+minutes between `git add` and `git commit` lets another agent's staging
+replace the index.
+
+**Not yet reviewed (wow.md §1) — do this first when the limit resets**
+- [ ] Fresh Sonnet review of `e32750f` (core half: migration, vault event,
+      409 path, `settle()` interaction) and `f82d493` (console strip, enable
+      without reload). Neither has had fresh eyes; both touch a migration and
+      a vault event, so neither is "ready" until reviewed.
+- [ ] Confirm the vault container was rebuilt after `agreement.assignor_confirmed`
+      entered `VAULT_EVENT_TYPES` (checked/rebuilt at this handover — see the
+      line below the section).
+
+**Carl's open test list**: Kim's row ①→②→③ on `/practice/tablet`; new tab
+on `/practice/setup`, `/patients`, `/tablet`, `/devices` restores silently;
+kiosk header on every step, Continue lock, retry with core stopped.
+
+**Decisions still waiting on Carl**: unchanged from the afternoon handover,
+plus: name on the kiosk handover screen (currently none, deliberately).
