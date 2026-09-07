@@ -1982,6 +1982,23 @@ Now a working rule in CLAUDE.md section 7.
       showing no card at all. A tab whose OWN session expired still gets the
       amber note; only a page that never held one gets the promise. Named test
       `reload_shows_signing_back_in_not_sign_in`.
+- [x] And the follow-ups from Carl's own reload, same day: the "already tried"
+      marker (`aob.silentTried`) is sessionStorage and survived reloads, so a
+      refused restore silenced every later attempt in that tab -- including
+      after he signed in with his passkey. A successful exchange now clears it,
+      and the one-attempt-per-page-LOAD guard is untouched. A refusal the
+      callback hears (`error=login_required`) is now SHOWN as what it is --
+      "Your earlier sign-in has ended", with the realm's idle minutes read from
+      `NEXT_PUBLIC_SESSION_IDLE_MINUTES` rather than typed into the copy --
+      instead of the generic "you are not signed in", which is only true of a
+      browser that has never been here. Named tests
+      `reload_after_interactive_sign_in_restores_silently` and
+      `refused_restore_says_the_sign_in_ended_not_that_you_never_signed_in`.
+- [x] The correction panel has a Cancel (Carl, 7 Sep 2026). It had only Save,
+      and the red "Nothing was changed" band outlived the panel it was about.
+      Cancel and Escape close it, discard the edits and clear the band; shared
+      component, so `/practice/tablet` and the work page cannot drift. Named
+      test `correction_panel_cancel_discards_edits_and_closes`.
 - [ ] Audit every other "see X" message in the console for the same pattern
       (queue, reconciliation, correspondence, devices) and give each a link
       with the item id.
@@ -3143,3 +3160,30 @@ watcher restarting itself on 6–7 Sep (fixed then by narrowing `--watch-path`).
 - [ ] Half-measure if the move waits: OneDrive cannot exclude a subfolder, so
       "Free up space" on the repo only trims disk, not the index. Not worth
       doing; move instead.
+
+## Housekeeping: the dev database has a failed migration in its ledger (found 7 Sep 2026)
+
+`prisma migrate deploy` refuses to record anything new against the dev
+database because `_prisma_migrations` holds `20260903020000_chase_attempts`
+as **failed** (P3009, failed 2026-09-04 06:08 UTC). Every migration since has
+been applied by hand with psql and is in place — including today's
+`20260907140000_one_successor_per_agreement` (partial unique index on
+`agreements.supersedesAgreementId`) — so the schema is right and the ledger is
+wrong. Found by the supersession build; left alone rather than fixed as a
+side-effect.
+
+- [ ] **Repair the ledger, then let `migrate deploy` run clean.** Check what
+      `chase_attempts` actually left behind (tables, columns, indexes) against
+      its SQL; if it is fully applied, mark it applied
+      (`prisma migrate resolve --applied 20260903020000_chase_attempts`); if
+      partly applied, finish it by hand first. Then `prisma migrate deploy`
+      should record every hand-applied migration as a no-op (they are all
+      `IF NOT EXISTS`) — confirm none tries to re-run.
+- [ ] **Stop it happening again.** The dev loop applies migrations with
+      `docker exec … psql` (see DEV-LOOP.md); make the documented step
+      `prisma migrate deploy` (with `SET search_path TO core` handled by the
+      datasource URL, not by hand) so the ledger and the schema cannot drift.
+      CI already runs migrations from scratch, which is why CI never saw this.
+- [ ] Before GA: a fresh-database rehearsal of the full migration chain on a
+      clean Postgres, in order, with the reversal of each tested (wow.md §2
+      item 7).
