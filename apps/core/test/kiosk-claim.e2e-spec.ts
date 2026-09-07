@@ -100,7 +100,7 @@ describe('the kiosk claim (e2e, real Postgres)', () => {
     person: { givenNames: string; familyName: string; dateOfBirth: string; address: string },
   ) {
     return prisma.withPractice(practiceId, async (tx) => {
-      const provider = await tx.provider.findFirst({});
+      const provider = await tx.affiliation.findFirst({});
       const patient = await tx.patient.create({
         data: {
           practiceId,

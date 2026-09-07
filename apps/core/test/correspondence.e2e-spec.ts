@@ -9,6 +9,7 @@ import { OutboundService } from '../src/outbound/outbound.service';
 import { PractitionerEmailService } from '../src/identity/practitioner-email.service';
 import { CorrespondenceService } from '../src/correspondence/correspondence.service';
 import { MESSAGING_GATEWAY, type MessagingGateway } from '../src/messaging/gateway';
+import { createServicingProvider, deleteSeededAnchors } from './anchor';
 
 /**
  * Correspondence — what was sent, as evidence (CONSULTATION-CAPTURE-PLAN.md
@@ -79,6 +80,8 @@ describe('correspondence (e2e, real Postgres)', () => {
       await tx.agreement.deleteMany({});
       await tx.assignor.deleteMany({});
       await tx.patient.deleteMany({});
+      await tx.provider.deleteMany({});
+      await deleteSeededAnchors(tx);
       await tx.practice.deleteMany({});
     });
     await prisma.withPractice(otherPracticeId, (tx) => tx.practice.deleteMany({}));
@@ -195,12 +198,16 @@ describe('correspondence (e2e, real Postgres)', () => {
         const assignor = await tx.assignor.create({
           data: { practiceId, name: 'Pat Letters', authorityBasis: 'self' },
         });
+        // Anchored on a practitioner at a location, like every agreement made
+        // from 7 September 2026 — the database refuses one without it.
+        const anchor = await createServicingProvider(tx, practiceId, { name: 'Dr Letters Example' });
         return (
           await tx.agreement.create({
             data: {
               practiceId,
               type,
               anchorKind: 'provider',
+              affiliationId: anchor.affiliationId,
               patientId,
               assignorId: assignor.id,
               assignorIsPatient: true,

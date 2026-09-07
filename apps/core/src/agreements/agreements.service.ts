@@ -342,13 +342,38 @@ export class AgreementsService {
     correctedTypes: readonly string[],
     actor: { id: string; name: string },
   ): Promise<DbAgreement> {
+    /*
+     * A CORRECTION OF A PRE-ANCHOR AGREEMENT STILL HAS TO PRODUCE AN ANCHORED
+     * ONE (Carl, 7 Sep 2026). The replacement is created TODAY, so
+     * `agreements_new_rows_are_anchored_on_an_affiliation` applies to it even
+     * though the agreement it supersedes predates the rule. Where the old row
+     * has no `affiliationId`, its legacy provider is resolved here — the same
+     * matching the backfill uses, and the same refusal to guess: an unmatched
+     * one is refused with the fix in the sentence rather than with a
+     * constraint's name. The old agreement is untouched either way; it keeps
+     * its own true record of what it said (HARD-02, hard rule 13).
+     */
+    let affiliationId = agreement.affiliationId;
+    if (!affiliationId && agreement.anchorKind === 'provider') {
+      const anchor = await anchorForAgreement(tx, agreement);
+      if (!anchor?.affiliationId) {
+        throw new BadRequestException(
+          'This agreement names a provider who is not linked to a practitioner at one of this practice’s ' +
+            'locations, so a corrected copy could not say who signed for whom or where (s 65C(5)(a)). Map ' +
+            'that provider to a practitioner first — the practice’s review queue has the task. Nothing was ' +
+            'guessed, and this agreement is unchanged.',
+        );
+      }
+      affiliationId = anchor.affiliationId;
+    }
+
     const replacement = await tx.agreement.create({
       data: {
         practiceId,
         type: agreement.type,
         anchorKind: agreement.anchorKind,
         providerId: agreement.providerId,
-        affiliationId: agreement.affiliationId,
+        affiliationId,
         organisationId: agreement.organisationId,
         patientId: agreement.patientId,
         assignorId: agreement.assignorId,

@@ -363,8 +363,8 @@ describe('M8 patient portal (e2e, real Postgres)', () => {
         await tx.assignor.deleteMany({});
         await tx.provider.deleteMany({});
         await tx.patient.deleteMany({});
-        await tx.practiceLocation.deleteMany({});
         await deleteSeededAnchors(tx);
+        await tx.practiceLocation.deleteMany({});
       await tx.practice.deleteMany({});
       });
     }

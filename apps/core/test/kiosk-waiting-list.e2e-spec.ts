@@ -148,7 +148,7 @@ describe('the kiosk waiting list (e2e, real Postgres)', () => {
     // platform never blocks care, and an unbooked patient at the desk is the
     // case the critical lane exists for.
     const walkIn = await prisma.withPractice(practiceA, async (tx) => {
-      const provider = await tx.provider.findFirst({});
+      const provider = await tx.affiliation.findFirst({});
       const patient = await tx.patient.create({
         data: { practiceId: practiceA, familyName: 'Walkin', givenNames: 'Casey', dateOfBirth: new Date('1988-02-02') },
       });
@@ -299,7 +299,7 @@ describe('the kiosk waiting list (e2e, real Postgres)', () => {
 
     it('drops a signed agreement off the list, and one whose request was completed', async () => {
       const extra = await prisma.withPractice(practiceA, async (tx) => {
-        const provider = await tx.provider.findFirst({});
+        const provider = await tx.affiliation.findFirst({});
         const patient = await tx.patient.create({
           data: { practiceId: practiceA, familyName: 'Done', givenNames: 'Dana', dateOfBirth: new Date('1975-05-05') },
         });
@@ -354,7 +354,7 @@ describe('the kiosk waiting list (e2e, real Postgres)', () => {
      */
     it('is signable once a Basic Service Description from the current mapping is set', async () => {
       const signableAgreementId = await prisma.withPractice(practiceA, async (tx) => {
-        const provider = await tx.provider.findFirst({});
+        const provider = await tx.affiliation.findFirst({});
         const patient = await tx.patient.create({
           data: { practiceId: practiceA, familyName: 'Signable', givenNames: 'Sam', dateOfBirth: new Date('1990-01-01') },
         });

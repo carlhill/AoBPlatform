@@ -627,7 +627,7 @@ export class TabletSessionsService {
           declinedAgreementId: agreement.id,
           offeredAgreementId: offered.agreementId,
           offeredType: 'episodic_pre',
-          providerId: offered.providerId,
+          affiliationId: offered.affiliationId,
           serviceDescriptionCarried: offered.serviceDescription !== null,
           offeredBy: actor.name,
         },
@@ -799,25 +799,28 @@ export class TabletSessionsService {
     source: DbAgreement,
     practiceDefaultD6a: string | null,
     actor: Actor,
-  ): Promise<{ agreementId: string; providerId: string; serviceDescription: string | null }> {
+  ): Promise<{ agreementId: string; affiliationId: string; serviceDescription: string | null }> {
     if (source.type !== 'enduring') {
       throw new ConflictException('Only an ongoing agreement can be replaced by one for the visit.');
     }
-    if (source.anchorKind !== 'provider' || !source.providerId) {
+    if (source.anchorKind !== 'provider' || !source.affiliationId) {
       throw pushRefusals.enduringNotPerProvider();
     }
-    // Held once, after the guard: the same provider carries onto the new
-    // agreement and onto its event (HARD-01 — a replacement offer is the SAME
-    // provider seeing the SAME patient; a different one would need its own
-    // consent).
-    const providerId = source.providerId;
+    /*
+     * Held once, after the guard: the SAME practitioner at the SAME location
+     * carries onto the new agreement and onto its event (HARD-01 — a
+     * replacement offer is the same provider seeing the same patient; a
+     * different one would need its own consent). Since 7 September 2026 that
+     * is the affiliation rather than the practice-wide provider row.
+     */
+    const affiliationId = source.affiliationId;
 
     // The agreements module owns its own table: the draft is created through
     // its API, which re-asserts the anchor and D7 rules and writes its own
     // `agreement.created` event.
     const replacement = await this.agreements.createDraft(practiceId, {
       type: 'episodic_pre',
-      providerId,
+      affiliationId,
       patientId: source.patientId,
       assignorId: source.assignorId,
       assignorIsPatient: source.assignorIsPatient,
@@ -827,7 +830,7 @@ export class TabletSessionsService {
     const d6a = candidate && isServiceDescription(candidate) ? candidate : null;
     if (d6a) await this.serviceDescriptions.setFor(practiceId, replacement.id, d6a, actor);
 
-    return { agreementId: replacement.id, providerId, serviceDescription: d6a };
+    return { agreementId: replacement.id, affiliationId, serviceDescription: d6a };
   }
 
   /**
@@ -847,9 +850,9 @@ export class TabletSessionsService {
    */
   private async openEpisodicForVisit(
     practiceId: string,
-    source: Pick<DbAgreement, 'providerId' | 'patientId'>,
+    source: Pick<DbAgreement, 'affiliationId' | 'patientId'>,
   ): Promise<string | null> {
-    if (!source.providerId) return null;
+    if (!source.affiliationId) return null;
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
     const todayIso = today();
@@ -858,7 +861,7 @@ export class TabletSessionsService {
       const candidates = await tx.agreement.findMany({
         where: {
           type: 'episodic_pre',
-          providerId: source.providerId,
+          affiliationId: source.affiliationId,
           patientId: source.patientId,
           status: { in: [...PUSHABLE_STATUSES] },
           signatureEventId: null,
@@ -1902,7 +1905,14 @@ export class TabletSessionsService {
      * not tell the person signing who they are agreeing with.
      */
     if (agreement.type === 'enduring') {
-      if (agreement.anchorKind !== 'provider' || !agreement.providerId) {
+      /*
+       * "NAMES ONE PROVIDER" IS NOW "NAMES ONE PRACTITIONER AT A LOCATION"
+       * (Carl, 7 Sep 2026). The anchor moved; the rule did not. `providerId`
+       * is still accepted here because agreements made before it moved carry
+       * only that, and refusing to push one of those would be the platform
+       * blocking evidence over a schema change (hard rule 8).
+       */
+      if (agreement.anchorKind !== 'provider' || (!agreement.affiliationId && !agreement.providerId)) {
         return 'enduring_not_per_provider';
       }
       if (context.providerType !== 'general_practitioner') return 'enduring_not_gp';

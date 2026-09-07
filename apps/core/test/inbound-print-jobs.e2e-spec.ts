@@ -6,6 +6,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { MESSAGING_GATEWAY, type MessagingGateway } from '../src/messaging/gateway';
 import { InboundLaneWorkerService } from '../src/inbound/inbound-lane.worker';
+import { createServicingProvider, deleteSeededAnchors } from './anchor';
 
 /**
  * The print channel's queue — CONSULTATION-CAPTURE-PLAN.md Part 8 (8.4) and
@@ -58,7 +59,24 @@ describe('inbound print jobs (e2e, real Postgres)', () => {
     prisma = app.get(PrismaService);
     worker = app.get(InboundLaneWorkerService);
 
-    await prisma.withPractice(practiceId, (tx) => tx.practice.create({ data: { id: practiceId, name: 'Print Channel Test Practice' } }));
+    await prisma.withPractice(practiceId, async (tx) => {
+      await tx.practice.create({ data: { id: practiceId, name: 'Print Channel Test Practice' } });
+      /*
+       * THE PRACTITIONER THE PRINTED DOCUMENTS NAME (Carl, 7 Sep 2026). An
+       * agreement is anchored on a practitioner at a location, and the PMS
+       * feed's `pmsProviderKey` is what links its provider to ours -- so the
+       * affiliation carries that key and the sweep can anchor what it drafts.
+       * Without one the lane suppresses with `provider_not_anchored` and
+       * leaves the item on the reconciliation queue, which is the right
+       * behaviour and not what this suite is testing.
+       */
+      await createServicingProvider(tx, practiceId, {
+        name: provider.name,
+        providerType: 'general_practitioner',
+        pmsLinkageKey: provider.pmsProviderKey,
+        address: provider.locationAddress,
+      });
+    });
   });
 
   afterAll(async () => {
@@ -73,6 +91,7 @@ describe('inbound print jobs (e2e, real Postgres)', () => {
       await tx.assignor.deleteMany({});
       await tx.patient.deleteMany({});
       await tx.provider.deleteMany({});
+      await deleteSeededAnchors(tx);
       await tx.practice.deleteMany({});
     });
     await prisma.vaultOutbox.deleteMany({});
