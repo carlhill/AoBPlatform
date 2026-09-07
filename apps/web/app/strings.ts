@@ -5402,6 +5402,70 @@ export const strings = {
     appName: 'AoBPlatform',
     chrome: {
       stepOf: (step: number, total: number) => `Step ${step} of ${total}`,
+      /*
+       * THE SAME TWO LINES ON TOP OF EVERY PAGE OF THE CEREMONY (Carl, 7 Sep
+       * 2026, testing the pushed flow: "on top of each page of this workflow it
+       * should say 'Agree to bulk billing'; on the next line it should say by
+       * who -- Name of Person").
+       *
+       * LINE ONE IS CONSTANT AND CARRIES NO QUALIFIER. Each step used to head
+       * itself with the agreement type's own sentence -- "Agree to bulk billing
+       * for today's visit" on three of the four types, "Agree to bulk billing"
+       * on the fourth -- so what a patient read at the top changed shape as
+       * they moved through one act. The qualifier is still true and is still
+       * shown; it is `ceremonySubHeading` below, a smaller line under the two.
+       *
+       * LINE TWO NAMES THE PARTY, and it is the answer to the question a
+       * tablet handed across a desk actually raises: whose agreement is this.
+       * It is built by `signingByLine` in `rules/who-is-signing.ts`, which is
+       * the SAME branch K-4's fuller statement goes through -- one reading of
+       * D7 for the whole ceremony, never two.
+       *
+       * NO RELATIONSHIP ON THIS LINE, deliberately. "by Kim Fictional for Alex
+       * Fictional" is who; "as their Mother" is on what footing, and that
+       * belongs where the pen is (K-4's `signingByOther`), not repeated at the
+       * top of five screens.
+       */
+      ceremonyTitle: 'Agree to bulk billing',
+      signingBy: (assignorName: string) => `by ${assignorName}`,
+      signingByFor: (assignorName: string, patientName: string) =>
+        `by ${assignorName} for ${patientName}`,
+      /**
+       * THE DEFENSIVE BRANCH: the record says somebody other than the patient
+       * signs, and has not said who.
+       *
+       * IT NAMES THE PATIENT AND CLAIMS NOTHING ABOUT THE SIGNER. Falling back
+       * to "by <patient>" would be the header ASSERTING D7 is the patient when
+       * the record says it is not -- a wrong fact, printed at the top of every
+       * page, which is worse than a line that says less. This says the one
+       * thing that is known; K-4 still states the pairing above the pad.
+       */
+      signingForPatient: (patientName: string) => `for ${patientName}`,
+      /**
+       * THE QUALIFIER THE HEADING USED TO CARRY, by agreement type, as a third
+       * and smaller line. Empty for an ongoing agreement, which is not about a
+       * visit -- and an empty string draws no line at all rather than an empty
+       * one.
+       */
+      ceremonySubHeading: {
+        episodic_pre: "for today's visit",
+        episodic_post: "for today's visit",
+        treatment_plan: "for today's visit",
+        enduring: '',
+      } as Record<AgreementType, string>,
+      /**
+       * "ONE MOMENT" -- WHAT A TRANSIENT FAILURE SAYS WHILE IT IS BEING RETRIED
+       * (Carl, 7 Sep 2026, after a core restart under the dev watcher threw a
+       * patient's five answers away mid-send).
+       *
+       * IT IS NOT AN ERROR AND MUST NOT READ AS ONE. Nothing has gone wrong
+       * that the patient can act on, their answers are still on the screen, and
+       * in a second or two this will simply move on. If the retries do run out
+       * the existing see-reception path takes over and says so plainly -- so
+       * this line's whole job is to fill the gap without teaching somebody to
+       * press something.
+       */
+      oneMoment: 'One moment…',
       stepDetails: 'your details',
       stepSigning: 'who is signing',
       complete: 'Complete',

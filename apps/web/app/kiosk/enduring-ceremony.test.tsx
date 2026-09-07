@@ -253,10 +253,16 @@ describe('enduring_heading_differs_from_episodic', () => {
     const enduring = render(<Ceremony />);
     await readThroughToTheDocument();
 
-    expect(screen.getByTestId('particulars-heading').textContent).toBe(
-      strings.particulars.headingByAgreementType.enduring,
-    );
-    expect(screen.getByTestId('particulars-heading').textContent).not.toMatch(/visit/i);
+    /*
+     * READ AS THE HEADING BLOCK, not the `h1` alone (7 Sep 2026): the title is
+     * constant on every page of the ceremony now and the type's qualifier is
+     * the smaller line under it. The property is unchanged — an ongoing
+     * agreement is per practitioner x patient and says nothing about a visit
+     * (hard rule 6).
+     */
+    expect(screen.getByTestId('particulars-heading').textContent).toBe(strings.chrome.ceremonyTitle);
+    expect(screen.queryByTestId('ceremony-sub')).toBeNull();
+    expect(screen.getByTestId('ceremony-heading').textContent).not.toMatch(/visit/i);
     enduring.unmount();
 
     // The same ceremony, the same screen, the other type.
@@ -268,10 +274,11 @@ describe('enduring_heading_differs_from_episodic', () => {
     render(<Ceremony />);
     await readThroughToTheDocument();
 
-    expect(screen.getByTestId('particulars-heading').textContent).toBe(
-      strings.particulars.headingByAgreementType.episodic_pre,
+    expect(screen.getByTestId('particulars-heading').textContent).toBe(strings.chrome.ceremonyTitle);
+    expect(screen.getByTestId('ceremony-sub').textContent).toBe(
+      strings.chrome.ceremonySubHeading.episodic_pre,
     );
-    expect(screen.getByTestId('particulars-heading').textContent).toMatch(/visit/i);
+    expect(screen.getByTestId('ceremony-heading').textContent).toMatch(/visit/i);
   });
 });
 

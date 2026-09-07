@@ -1049,10 +1049,76 @@
   gap: var(--s3);
 }
 
+/* --------------------------------------------------------------------------
+ * THE CEREMONY'S HEADING — two constant lines, and a smaller third where the
+ * agreement type has a qualifier (Carl, 7 Sep 2026).
+ *
+ * TIGHT ENOUGH TO READ AS ONE BLOCK. Three separate paragraphs at the column's
+ * own gap would read as three unrelated statements; `--s1` between them makes
+ * a title, a party and a qualifier read as one heading, which is what they
+ * are.
+ *
+ * THE BY-LINE IS NOT MUTED. It names a person, on a tablet handed across a
+ * desk, and "is this even my agreement" is the question it exists to answer —
+ * so it is full ink at reading size, not the grey of a caption. The qualifier
+ * under it is the one that steps back.
+ * ------------------------------------------------------------------------ */
+.ceremonyHeading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 /*
- * ROW PADDING, TIGHTENED FROM `--s3` FOR THE SAME REASON. The 56px control is
- * what sets the row's height and it has not moved: the touch target is
- * untouched (WCAG 2.2 AA 2.5.8), only the dead space around it is.
+ * TIGHT LEADING, BECAUSE THREE LINES NOW SIT WHERE ONE DID. A landscape tablet
+ * has 768px and the five rows and Continue have first claim on them; the
+ * heading pays for its second and third line out of its own leading rather
+ * than out of the ceremony. Nothing shrinks below 16px — the floor on every
+ * surface a patient touches.
+ */
+.ceremonyHeading h1 {
+  line-height: 1.15;
+}
+
+.ceremonyBy {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--ink);
+}
+
+.ceremonySubHeading {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.25;
+  color: var(--ink-muted);
+}
+
+/*
+ * "ONE MOMENT…" — A BLIP BEING RIDDEN OUT, NOT AN ERROR (Carl, 7 Sep 2026).
+ *
+ * IT DELIBERATELY DOES NOT WEAR THE ERROR PALETTE. `.error` is the stop
+ * colour and says something needs a person; this says the opposite — the
+ * answers are safe, nothing is being asked of anybody, and in a second or two
+ * the screen moves on by itself. If the retries run out, THEN the red line and
+ * the desk (`.error`, unchanged).
+ */
+.retrying {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--ink-muted);
+}
+
+/*
+ * ROW PADDING, TIGHTENED FROM `--s3` TO `--s2` (7 Sep 2026) AND THEN TO `--s1`
+ * WHEN THE HEADER GAINED ITS SECOND AND THIRD LINE, FOR THE SAME REASON.
+ *
+ * THE TOUCH TARGET HAS NOT MOVED AND MUST NOT. The 56px control is what sets
+ * the row's height (WCAG 2.2 AA 2.5.8, and Carl's own floor); what shrank is
+ * the dead space around it, and the row is still separated from the next by a
+ * rule. If this ever has to give again, the answer is fewer things on the
+ * screen — never a smaller button.
  */
 .detailRow {
   display: flex;
@@ -1060,7 +1126,7 @@
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  padding: var(--s2) 0;
+  padding: var(--s1) 0;
   border-bottom: 1px solid var(--line);
 }
 

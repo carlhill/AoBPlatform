@@ -44,12 +44,12 @@
  */
 
 import type { ReactNode } from 'react';
-import { Blueprint, Screen } from '../components/Chrome';
+import { Blueprint, CeremonyHeading, Screen } from '../components/Chrome';
 import { SecondaryButton } from '../components/Buttons';
 import { SignaturePad, type SignaturePadHandle } from '../components/SignaturePad';
 import { SignatureControl } from '../components/SignatureControl';
 import type { SignatureValidation } from '../rules/signature-gate';
-import { relationshipLabel } from '../rules/assignor';
+import { signingStatement, type SigningParties } from '../rules/who-is-signing';
 import { strings } from '../strings';
 import styles from '../kiosk.module.css';
 
@@ -57,10 +57,7 @@ export function SignatureScreen({
   practiceName,
   locationLine,
   heading,
-  patientName,
-  assignorIsPatient,
-  assignorName,
-  assignorRelationship,
+  parties,
   validation,
   padRef,
   inkPresent,
@@ -88,25 +85,24 @@ export function SignatureScreen({
   /**
    * WHO THIS AGREEMENT IS ABOUT, AND WHO IS PUTTING A MARK ON IT.
    *
-   * ALL FOUR ARRIVE FROM THE SAME PLACE K-3 READ THEM FROM (`ParticularsView`,
-   * built once in `Ceremony.tsx` from the locked particulars and the pushed
+   * ONE OBJECT SINCE 7 SEP 2026, when the header started naming the party on
+   * every page — the four fields were four props here, and passing them as a
+   * `SigningParties` is what lets this screen and the header go through one
+   * function (`rules/who-is-signing.ts`) rather than two branches.
+   *
+   * IT ARRIVES FROM THE SAME PLACE K-3 READ IT FROM (`ParticularsView`, built
+   * once in `Ceremony.tsx` from the locked particulars and the pushed
    * session). This screen looks nothing up: two screens reading one object is
    * what stops the reading step and the signing step from naming two different
    * parties.
    *
    * `assignorIsPatient` IS THE DISCRIMINATOR AND IS NEVER INFERRED from whether
-   * a name happens to be present (CLAUDE.md §3, D7).
+   * a name happens to be present (CLAUDE.md §3, D7). The relationship is the
+   * RECORD'S own word, passed through `relationshipLabel` inside the helper so
+   * a key-shaped value from an older record still reads as a word rather than
+   * as `family_member`.
    */
-  patientName: string;
-  assignorIsPatient: boolean;
-  assignorName: string | null;
-  /**
-   * The relationship AS THE RECORD CARRIES IT — already a display word on
-   * anything written since the assignor list became content. Passed through
-   * `relationshipLabel` below so a key-shaped value from an older record still
-   * reads as a word rather than as `family_member`.
-   */
-  assignorRelationship: string | null;
+  parties: SigningParties;
   validation: SignatureValidation;
   padRef: { current: SignaturePadHandle | null };
   inkPresent: boolean;
@@ -138,9 +134,13 @@ export function SignatureScreen({
       onLeave={onSeeReception}
     >
       <div className={styles.stack}>
-        <h1 className={styles.h2} data-testid="signature-heading">
-          {heading}
-        </h1>
+        {/*
+          THE CEREMONY'S TWO LINES (Carl, 7 Sep 2026). `heading` still arrives
+          from `Ceremony.tsx` and is still the type's own qualifier — it is
+          simply the third and smallest line now, under a title and a party
+          line that do not change shape between K-P1, K-3 and here.
+        */}
+        <CeremonyHeading parties={parties} subHeading={heading} headingTestId="signature-heading" />
 
         {/*
           WHO IS SIGNING, ABOVE THE PAD AND BEFORE THE BANNER. It is the first
@@ -150,16 +150,16 @@ export function SignatureScreen({
           statement read after the fact.
         */}
         <div className={styles.whoIsSigning}>
+          {/*
+            THE SAME BRANCH THE HEADER'S BY-LINE GOES THROUGH — moved to
+            `rules/who-is-signing.ts` on 7 Sep 2026 when the header started
+            naming the party on every page. Two copies of "who is signing" is
+            how two screens end up naming two different people from one record;
+            this reads the fuller sentence, the header reads the shorter one,
+            and both read the same D7.
+          */}
           <p className={styles.whoIsSigningLine} data-testid="signature-who">
-            {assignorIsPatient
-              ? strings.signature.signingByPatient(patientName)
-              : assignorRelationship
-                ? strings.signature.signingByOther(
-                    assignorName ?? '',
-                    patientName,
-                    relationshipLabel(assignorRelationship),
-                  )
-                : strings.signature.signingByOtherUnstated(assignorName ?? '', patientName)}
+            {signingStatement(parties)}
           </p>
           <p className={styles.muted} data-testid="signature-who-wrong">
             {strings.signature.whoNotRight}

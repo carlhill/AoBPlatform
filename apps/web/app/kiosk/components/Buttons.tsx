@@ -88,12 +88,26 @@ export type GuardedState =
 export function GuardedButton({
   label,
   state,
+  busy,
   onPress,
   testId,
 }: {
   /** The ENABLED label. The blocked branch never renders it. */
   label: string;
   state: GuardedState;
+  /**
+   * THE PRESS LANDED AND THE WORK IS RUNNING (Carl, 7 Sep 2026).
+   *
+   * IT IS ANNOUNCED, NOT ONLY DRAWN. A control that goes quietly dead after a
+   * press tells a sighted user "something is happening" through nothing but
+   * the greying, and tells a screen-reader user nothing at all. `aria-busy`
+   * is the one word for it, and it sits on the control the press landed on.
+   *
+   * THE CALLER STILL PASSES A BLOCKED STATE. This flag says WHY it is
+   * blocked; it does not make it blocked, because a busy control that was
+   * still pressable would be the double-submit this exists to prevent.
+   */
+  busy?: boolean;
   onPress: () => void;
   testId?: string;
 }): ReactNode {
@@ -110,6 +124,7 @@ export function GuardedButton({
           type="button"
           className={`${styles.button} ${styles.buttonBlocked}`}
           disabled
+          aria-busy={busy ? true : undefined}
           aria-label={state.disabledLabel}
           data-testid={testId}
         >

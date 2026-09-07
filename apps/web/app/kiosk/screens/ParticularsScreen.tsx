@@ -87,7 +87,7 @@
 
 import type { ReactNode } from 'react';
 import type { AgreementType } from '@aobplatform/domain';
-import { Blueprint, Kicker, Screen, Tag } from '../components/Chrome';
+import { Blueprint, Kicker, Screen, Tag, CeremonyHeading } from '../components/Chrome';
 import { GuardedButton, SecondaryButton } from '../components/Buttons';
 import { Checkbox } from '../components/Field';
 import { shortHash } from '../components/SignatureControl';
@@ -282,9 +282,25 @@ export function ParticularsScreen({
       <div className={blueprintPanels ? styles.twoColumn : styles.oneColumn}>
         <Blueprint className={styles.document}>
           <div className={styles.documentHeader}>
-            <h1 className={styles.documentTitle} data-testid="particulars-heading">
-              {strings.particulars.headingByAgreementType[view.agreementType]}
-            </h1>
+            {/*
+              THE CEREMONY'S OWN TWO LINES, HERE TOO (Carl, 7 Sep 2026). This
+              screen is a document, so the title sits inside the document
+              header where it always has — but it is now the SAME title, with
+              the same by-line under it, as the step before and the step after.
+              `view` already carries all four party facts, and passing them
+              rather than letting this screen compose a sentence is what keeps
+              K-3 and K-4 naming one person.
+            */}
+            <CeremonyHeading
+              parties={{
+                patientName: view.patientName,
+                assignorIsPatient: view.assignorIsPatient,
+                assignorName: view.assignorName,
+                assignorRelationship: view.assignorRelationship,
+              }}
+              subHeading={strings.chrome.ceremonySubHeading[view.agreementType]}
+              headingTestId="particulars-heading"
+            />
             {view.ruleSetVersion && view.mappingVersion ? (
               <p className={styles.versions} data-testid="versions">
                 {strings.particulars.versions(view.ruleSetVersion, view.mappingVersion)}

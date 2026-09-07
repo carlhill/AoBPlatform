@@ -18,7 +18,7 @@
  */
 
 import type { ReactNode } from 'react';
-import { Blueprint, Screen } from '../components/Chrome';
+import { Blueprint, CeremonyHeading, Screen } from '../components/Chrome';
 import { PrimaryButton } from '../components/Buttons';
 import { strings } from '../strings';
 import styles from '../kiosk.module.css';
@@ -39,10 +39,30 @@ export function HandoverScreen({
   return (
     <Screen practiceName={practiceName} locationLine={locationLine} context={strings.chrome.staffHelp}>
       <div className={styles.centred}>
+        {/*
+          THE CEREMONY'S TITLE, AND DELIBERATELY NOT ITS PARTY (7 Sep 2026).
+          Every other page of the workflow names who the agreement is by; this
+          one must not, and it is the one page where that is true.
+
+          THIS SCREEN IS THE DEVICE BEING HANDED BACK. A recall, a walk-away, a
+          lockout, a failure — in each case the person it was about has stopped
+          holding it, and it sits in a waiting room showing whatever it last
+          drew until somebody taps Start over or the inactivity clock fires. A
+          name on it then is a disclosure to whoever picks it up next, which is
+          the property `return_to_begin_shows_see_reception_before_idle`
+          already asserts and which this deliberately does not break.
+        */}
+        <CeremonyHeading parties={null} />
         <Blueprint className={styles.panel}>
-          <h1 className={styles.h2} data-testid="handover-heading">
+          {/*
+            DEMOTED TO AN `h2` (7 Sep 2026) BECAUSE THE PAGE NOW HAS AN `h1`
+            ABOVE IT. Two `h1`s on one screen is a document with two titles;
+            the test id and the words are unchanged, and this is what it always
+            was in the outline — the reason this particular page ended.
+          */}
+          <h2 className={styles.h2} data-testid="handover-heading">
             {heading}
-          </h1>
+          </h2>
           <p className={styles.body} data-testid="handover-body">
             {body}
           </p>

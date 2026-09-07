@@ -28,6 +28,7 @@ import { strings } from '../strings';
 import { kioskBuildId } from '../session';
 import { readPairingCredential } from '../pairing';
 import { fetchKioskMe } from '../api';
+import { signingByLine, type SigningParties } from '../rules/who-is-signing';
 import styles from '../kiosk.module.css';
 
 /**
@@ -99,6 +100,70 @@ function separated(parts: readonly (ReactNode | null)[]): ReactNode[] {
           </span>,
           part,
         ],
+  );
+}
+
+/**
+ * THE TWO LINES ON TOP OF EVERY PAGE OF THE CEREMONY (Carl, 7 Sep 2026, from
+ * testing the pushed flow: "on top of each page of this workflow it should say
+ * 'Agree to bulk billing'; on the next line it should say by who — Name of
+ * Person").
+ *
+ * WHY IT IS ONE COMPONENT AND NOT FIVE HEADINGS. Every step used to head
+ * itself, from its own string, in its own markup, and the result was a patient
+ * reading a differently-shaped title on each screen of one act — the check step
+ * and the signing step even took theirs from the same table by two different
+ * routes. Writing it once is what makes "the same two lines" true rather than
+ * aspirational, and it is why the by-line cannot drift between the step that
+ * shows the details and the step that takes the signature.
+ *
+ * THE QUALIFIER IS DEMOTED, NOT DROPPED. "for today's visit" is still true and
+ * is still on the screen; it is the third and smallest line, so the two that
+ * matter keep their shape across the ceremony (`chrome.ceremonySubHeading`).
+ *
+ * THE PARTY LINE IS `signingByLine`, WHICH K-4's OWN STATEMENT SHARES A BRANCH
+ * WITH (`rules/who-is-signing.ts`). One reading of D7 for the whole device.
+ *
+ * `headingTestId` AND `describedById` ARE PASSED IN because the screens'
+ * existing test ids and ARIA wiring belong to the screens — the e2e suite and
+ * K-P1's `aria-describedby` both name theirs — and a shared component that
+ * renamed them would break the things that watch this ceremony from outside.
+ */
+export function CeremonyHeading({
+  parties,
+  subHeading,
+  headingTestId,
+  describedById,
+}: {
+  /**
+   * WHO, or null on a screen that does not yet know. The walk-up ceremony
+   * before verification knows nothing about any person — no name, no record —
+   * and a header that guessed would be inventing a party. Null draws the title
+   * and no by-line, which is the honest shape for those screens.
+   */
+  parties: SigningParties | null;
+  /** The type's own qualifier, or an empty string to draw no third line. */
+  subHeading?: string;
+  headingTestId?: string;
+  /** The id of an element describing this heading, if the screen has one. */
+  describedById?: string;
+}): ReactNode {
+  return (
+    <div className={styles.ceremonyHeading} data-testid="ceremony-heading">
+      <h1 className={styles.h2} data-testid={headingTestId} aria-describedby={describedById}>
+        {strings.chrome.ceremonyTitle}
+      </h1>
+      {parties ? (
+        <p className={styles.ceremonyBy} data-testid="ceremony-by">
+          {signingByLine(parties)}
+        </p>
+      ) : null}
+      {subHeading ? (
+        <p className={styles.ceremonySubHeading} data-testid="ceremony-sub">
+          {subHeading}
+        </p>
+      ) : null}
+    </div>
   );
 }
 

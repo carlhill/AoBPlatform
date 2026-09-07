@@ -141,6 +141,8 @@ import { OutOfUseScreen } from './screens/OutOfUseScreen';
 import type { SignaturePadHandle } from './components/SignaturePad';
 import { InactivityWarning } from './components/InactivityWarning';
 import { strings } from './strings';
+import { withTransientRetry } from './rules/retry';
+import type { SigningParties } from './rules/who-is-signing';
 
 /**
  * `booting` IS A REAL STATE, not a loading spinner nobody thought about. On
@@ -254,6 +256,45 @@ export function Ceremony(): ReactNode {
   const [disputeSent, setDisputeSent] = useState(false);
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [confirmError, setConfirmError] = useState(false);
+  /**
+   * CONTINUE HAS BEEN PRESSED (Carl, 7 Sep 2026: "on pressing Continue, the
+   * buttons selected were locked in and all other buttons hidden, then the
+   * check was done if required, then the next page").
+   *
+   * TWO FLAGS, BECAUSE THEY STOP AT DIFFERENT MOMENTS. `confirmLocked` says
+   * the answers are no longer the patient's to change and it does NOT come
+   * back on a failure — the post may have landed, and letting somebody edit an
+   * answer reception has already seen would post a different set against the
+   * same session. `confirmSubmitting` says the round trip is running, and it
+   * does come back, so a patient who wants to press Continue once more can.
+   *
+   * Both reset with the session, in the same places the ticks do.
+   */
+  const [confirmLocked, setConfirmLocked] = useState(false);
+  const [confirmSubmitting, setConfirmSubmitting] = useState(false);
+  /**
+   * A TRANSIENT FAILURE IS BEING RIDDEN OUT (`rules/retry.ts`). Drives the
+   * quiet "One moment…" line and nothing else — it is not an error, and the
+   * screen must not wear the error palette for a blip that is about to clear.
+   *
+   * IN MEMORY, LIKE EVERYTHING ELSE HERE (CLAUDE.md §7). Nothing about a retry
+   * is written anywhere; the state dies with the component and
+   * `kiosk_persists_nothing_but_pairing` still passes.
+   */
+  const [confirmRetrying, setConfirmRetrying] = useState(false);
+
+  /**
+   * CLEAR THE CONTINUE LOCK. Called from every place the ticks themselves are
+   * cleared — a reset, a walk-away, a decline, a failed signature, a new or
+   * re-sent session — so a locked K-P1 can never outlive the answers it locked.
+   * One function rather than three `setState` calls repeated five times, for
+   * the reason a sixth site would otherwise forget one of them.
+   */
+  const resetConfirmLock = useCallback(() => {
+    setConfirmLocked(false);
+    setConfirmSubmitting(false);
+    setConfirmRetrying(false);
+  }, []);
   /**
    * WHAT WAS LAST SENT, so the same answers are never sent twice.
    *
@@ -648,6 +689,7 @@ export function Ceremony(): ReactNode {
     postedAnswersRef.current = '';
     setConfirmBusy(false);
     setConfirmError(false);
+    resetConfirmLock();
     setChallengeId(null);
     setFields([]);
     setStated({});
@@ -737,6 +779,7 @@ export function Ceremony(): ReactNode {
       setAnswers({});
       setDisputeSent(false);
       postedAnswersRef.current = '';
+      resetConfirmLock();
     }
     toHandover(strings.chrome.leaveHeading, strings.chrome.leaveBody);
   }, [pushed, toHandover]);
@@ -773,6 +816,7 @@ export function Ceremony(): ReactNode {
     setAnswers({});
     setDisputeSent(false);
     postedAnswersRef.current = '';
+    resetConfirmLock();
     toHandover(strings.particulars.enduringDeclinedHeading, strings.particulars.enduringDeclinedBody);
   }, [pushed, toHandover]);
 
@@ -836,6 +880,7 @@ export function Ceremony(): ReactNode {
         setAnswers({});
         setDisputeSent(false);
         postedAnswersRef.current = '';
+        resetConfirmLock();
       }
       setSignError(null);
       toHandover(strings.signature.notRecordedHeading, strings.signature.notRecordedBody, true);
@@ -1122,6 +1167,7 @@ export function Ceremony(): ReactNode {
     postedAnswersRef.current = '';
     setConfirmBusy(false);
     setConfirmError(false);
+    resetConfirmLock();
     setPushed(session);
     pushedIdRef.current = session.id;
     setStep('check-details');
@@ -1186,15 +1232,16 @@ export function Ceremony(): ReactNode {
   const answerDetail = useCallback(
     (type: string, answer: DetailAnswer) => {
       /*
-       * BELT AND BRACES (Carl, 4 Sep 2026). `CheckDetailsScreen` already
-       * disables every button while `disputeSent`, but this is the guard that
-       * cannot be bypassed by anything that reaches this function directly.
+       * BELT AND BRACES (Carl, 4 Sep 2026; extended to the Continue lock 7 Sep
+       * 2026). `CheckDetailsScreen` already disables every button in both
+       * states, but this is the guard that cannot be bypassed by anything that
+       * reaches this function directly.
        */
-      if (disputeSent) return;
+      if (disputeSent || confirmLocked) return;
       setConfirmError(false);
       setAnswers((prev) => (prev[type] === answer ? prev : { ...prev, [type]: answer }));
     },
-    [disputeSent],
+    [disputeSent, confirmLocked],
   );
 
   const rowsAllAnswered = allAnswered(detailRows, answers);
@@ -1212,21 +1259,41 @@ export function Ceremony(): ReactNode {
    * IT IS IDEMPOTENT AGAINST THE ANSWER SET, so Continue after an automatic
    * post does not write the same event twice.
    */
+  /**
+   * THE POST ITSELF, AND IT THROWS (split out 7 Sep 2026).
+   *
+   * `sendAnswers` below still swallows — the automatic dispute post has nobody
+   * waiting on it — but Continue now RETRIES a transient failure, and a
+   * function that turns every error into `false` cannot be retried: a dropped
+   * connection and a 409 the server means look identical from the outside. So
+   * the error leaves this one intact and each caller decides.
+   *
+   * IT IS IDEMPOTENT AGAINST THE ANSWER SET (`postedAnswersRef`), which is what
+   * makes it safe to hand to `withTransientRetry`: a retry that follows a POST
+   * that actually landed re-posts nothing and writes no second vault event.
+   */
+  const postAnswers = useCallback(async (): Promise<void> => {
+    if (!pushed) return;
+    if (!allAnswered(detailRows, answers)) return;
+    const signature = answerSignature(detailRows, answers);
+    if (postedAnswersRef.current === signature) return;
+
+    const { confirmed, disputed } = answeredTypes(detailRows, answers);
+    await confirmSessionDetails(pushed.id, confirmed, disputed);
+    postedAnswersRef.current = signature;
+    // THE SCREEN LOCKS THE MOMENT A CROSS HAS ACTUALLY REACHED RECEPTION —
+    // not before, and never for an all-ticks post (Carl's ruling, 4 Sep 2026).
+    if (disputed.length > 0) setDisputeSent(true);
+  }, [pushed, detailRows, answers]);
+
   const sendAnswers = useCallback(async (): Promise<boolean> => {
     if (!pushed) return false;
     if (!allAnswered(detailRows, answers)) return false;
-    const signature = answerSignature(detailRows, answers);
-    if (postedAnswersRef.current === signature) return true;
 
     setConfirmBusy(true);
     setConfirmError(false);
     try {
-      const { confirmed, disputed } = answeredTypes(detailRows, answers);
-      await confirmSessionDetails(pushed.id, confirmed, disputed);
-      postedAnswersRef.current = signature;
-      // THE SCREEN LOCKS THE MOMENT A CROSS HAS ACTUALLY REACHED RECEPTION —
-      // not before, and never for an all-ticks post (Carl's ruling, 4 Sep 2026).
-      if (disputed.length > 0) setDisputeSent(true);
+      await postAnswers();
       return true;
     } catch (err) {
       if (isUnpaired(err)) {
@@ -1241,7 +1308,7 @@ export function Ceremony(): ReactNode {
     } finally {
       setConfirmBusy(false);
     }
-  }, [pushed, detailRows, answers]);
+  }, [pushed, detailRows, answers, postAnswers]);
 
   /**
    * A CROSS REACHES RECEPTION WITHOUT THE PATIENT DOING ANYTHING FURTHER
@@ -1285,12 +1352,66 @@ export function Ceremony(): ReactNode {
     // 2026). Continue is not even rendered then, but this function must
     // refuse too, for the same reason `onAnswer` does.
     if (disputeSent) return;
-    if (!(await sendAnswers())) return;
+
+    /*
+     * THE SCREEN LOCKS ON THE PRESS, BEFORE ANYTHING IS SENT (Carl, 7 Sep 2026:
+     * "on pressing Continue, the buttons selected were locked in and all other
+     * buttons hidden, then the check was done if required, then the next
+     * page").
+     *
+     * ORDER MATTERS AND THIS IS THE ORDER HE ASKED FOR. The answers are the
+     * patient's until they press; from the press they are the record's. Leaving
+     * the rows live through the post meant a tap during the round trip could
+     * change an answer that had already gone, and a second press of Continue
+     * could post twice.
+     */
+    setConfirmLocked(true);
+    setConfirmSubmitting(true);
+    setConfirmError(false);
+    setConfirmRetrying(false);
     try {
-      const current = await fetchAgreement(pushed.agreementId);
+      /*
+       * A BLIP IS NOT A REFUSAL (Carl, 7 Sep 2026). Core restarting under the
+       * dev watcher threw a patient's five answers away mid-send; the POST
+       * failed, the screen went to see-reception, and it came back with every
+       * button live and nothing ticked. Four retries at 1s/2s/4s/8s ride that
+       * out. A 401, a 409 or any other refusal is an ANSWER and is not retried
+       * (`rules/retry.ts`) — and after the retries the existing see-reception
+       * path is exactly what it was, so hard rule 8 is untouched.
+       *
+       * THE FETCH IS INSIDE THE RETRY WITH THE POST, because the failure Carl
+       * hit could land on either and the patient cannot tell them apart. The
+       * post is idempotent, so a retry after a post that succeeded only
+       * re-runs the fetch.
+       */
+      const current = await withTransientRetry(
+        async () => {
+          await postAnswers();
+          return fetchAgreement(pushed.agreementId);
+        },
+        { onRetry: () => setConfirmRetrying(true) },
+      );
       setAgreement(current);
       setStep('particulars');
     } catch (err) {
+      /*
+       * THE ANSWERS STAY ON SCREEN AND STAY LOCKED — `confirmLocked` is NOT
+       * cleared here, and that is deliberate rather than lazy.
+       *
+       * THEY WERE SENT, OR THEY WERE NOT, AND THE DEVICE CANNOT TELL WHICH.
+       * The post may well have landed and the fetch after it failed. Unlocking
+       * would let somebody change an answer that reception has already been
+       * shown, and the next press would post a DIFFERENT set against the same
+       * session. So the rows stay as the patient left them and stay read-only.
+       *
+       * WHAT DOES COME BACK IS CONTINUE. Only `confirmSubmitting` clears, so
+       * the button is pressable again and a second press re-runs the same
+       * idempotent post — a patient who wants to try once more can, and
+       * `postedAnswersRef` means trying costs nothing. The red line beside it
+       * offers the desk, which is the answer when trying does not help.
+       */
+      setConfirmRetrying(false);
+      setConfirmSubmitting(false);
       if (isUnpaired(err)) {
         clearPairingCredential();
         setStep('unpaired');
@@ -1298,7 +1419,7 @@ export function Ceremony(): ReactNode {
       }
       setConfirmError(true);
     }
-  }, [pushed, detailRows, answers, disputeSent, sendAnswers]);
+  }, [pushed, detailRows, answers, disputeSent, postAnswers]);
 
   /**
    * ONCE VERIFICATION HAS PASSED, WHATEVER DOOR IT CAME THROUGH.
@@ -1895,6 +2016,30 @@ export function Ceremony(): ReactNode {
   }, [agreement, row, pushed, pushedPatientName]);
 
   /**
+   * WHO, FOR EVERY PAGE OF THE CEREMONY (Carl, 7 Sep 2026 — "on the next line
+   * it should say by who").
+   *
+   * DERIVED FROM `view`, NOT GATHERED AGAIN. `view` is already the one place
+   * the locked particulars and the pushed session are reconciled, and K-3 and
+   * K-4 already read D7 from it; the header reads the same four fields so no
+   * page of one act can name a different person from the page before it.
+   *
+   * NULL UNTIL SOMEBODY IS KNOWN. A walk-up tablet before verification knows
+   * nothing about any person — no row, no session, no name — and a header that
+   * filled the gap would be inventing a party. An empty `patientName` is
+   * exactly that state, and it draws the title alone.
+   */
+  const parties: SigningParties = useMemo(
+    () => ({
+      patientName: view.patientName,
+      assignorIsPatient: view.assignorIsPatient,
+      assignorName: view.assignorName,
+      assignorRelationship: view.assignorRelationship,
+    }),
+    [view],
+  );
+
+  /**
    * THE OUTAGE SCREEN REPLACES EVERYTHING BELOW IT (TODO.md "Outage screen on
    * the tablet"). Every hook above this line has already run unconditionally,
    * so returning here is safe; nothing after it is a hook. Whatever step the
@@ -2006,10 +2151,14 @@ export function Ceremony(): ReactNode {
             practiceName={practiceName}
             locationLine={locationLine}
             agreementType={pushed?.agreementType ?? 'episodic_pre'}
+            parties={parties}
             rows={detailRows}
             answers={answers}
             disputed={rowsDisputed}
             disputeSent={disputeSent}
+            answersLocked={confirmLocked}
+            submitting={confirmSubmitting}
+            retrying={confirmRetrying}
             saving={confirmBusy}
             saveError={confirmError}
             sessionId={pushed?.id ?? null}
@@ -2110,7 +2259,19 @@ export function Ceremony(): ReactNode {
             */
             onBack={
               pushed
-                ? () => setStep('check-details')
+                ? () => {
+                    /*
+                      GOING BACK RE-OPENS THE STEP (7 Sep 2026). Continue locked
+                      the answers on the way forward; a patient who deliberately
+                      returns to look at their address again is entitled to
+                      change what they said about it, exactly as they were
+                      before the lock existed. The post is idempotent against
+                      the answer SET, so an unchanged set re-posts nothing and a
+                      changed one posts once.
+                    */
+                    resetConfirmLock();
+                    setStep('check-details');
+                  }
                 : particularsLocked
                   ? undefined
                   : () => setStep('assignor')
@@ -2142,10 +2303,7 @@ export function Ceremony(): ReactNode {
               anything up is what stops the reading step and the signing step
               from naming two different parties.
             */
-            patientName={view.patientName}
-            assignorIsPatient={view.assignorIsPatient}
-            assignorName={view.assignorName}
-            assignorRelationship={view.assignorRelationship}
+            parties={parties}
             validation={validation}
             padRef={padRef}
             inkPresent={inkPresent}

@@ -52,13 +52,24 @@ const noop = () => undefined;
 const CHROME = {
   practiceName: 'Sample Practice',
   locationLine: 'NSW',
-  // Only `SignatureScreen` reads these; harmless as extra props everywhere
-  // else, because a spread is not excess-property-checked.
+  /*
+   * Only some of these are read by any one screen; harmless as extra props
+   * everywhere else, because a spread is not excess-property-checked.
+   *
+   * `parties` IS ONE OBJECT SINCE 7 SEP 2026, when the ceremony header started
+   * naming the party on every page and the four fields it used to pass K-4
+   * separately became `SigningParties` (`rules/who-is-signing.ts`).
+   */
   heading: strings.particulars.headingByAgreementType.episodic_pre,
-  patientName: 'Alex Fictional',
-  assignorIsPatient: true,
-  assignorName: null,
-  assignorRelationship: null,
+  parties: {
+    patientName: 'Alex Fictional',
+    assignorIsPatient: true,
+    assignorName: null,
+    assignorRelationship: null,
+  },
+  answersLocked: false,
+  submitting: false,
+  retrying: false,
 };
 const VALID: SignatureValidation = {
   state: 'valid',

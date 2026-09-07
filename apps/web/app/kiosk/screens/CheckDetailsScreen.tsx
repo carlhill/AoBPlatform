@@ -63,7 +63,8 @@
 
 import type { ReactNode } from 'react';
 import type { AgreementType } from '@aobplatform/domain';
-import { Blueprint, Kicker, Screen } from '../components/Chrome';
+import { Blueprint, CeremonyHeading, Kicker, Screen } from '../components/Chrome';
+import type { SigningParties } from '../rules/who-is-signing';
 import { GuardedButton } from '../components/Buttons';
 import type { DetailAnswer, DetailAnswers, DetailRow } from '../rules/pushed-details';
 import { strings } from '../strings';
@@ -128,10 +129,14 @@ export function CheckDetailsScreen({
   practiceName,
   locationLine,
   agreementType,
+  parties,
   rows,
   answers,
   disputed,
   disputeSent,
+  answersLocked,
+  submitting,
+  retrying,
   saving,
   saveError,
   sessionId,
@@ -142,8 +147,10 @@ export function CheckDetailsScreen({
 }: {
   practiceName: string;
   locationLine: string | null;
-  /** Picks the heading, so reading and signing say the same words as K-3 and K-4. */
+  /** Picks the heading's qualifier, so reading and signing say the same words as K-3 and K-4. */
   agreementType: AgreementType;
+  /** Who this agreement is about and who signs it — the header's second line. */
+  parties: SigningParties;
   rows: readonly DetailRow[];
   answers: DetailAnswers;
   /** At least one cross: Continue is dead and the band below says what happens next. */
@@ -157,6 +164,38 @@ export function CheckDetailsScreen({
    * answer on this screen.
    */
   disputeSent: boolean;
+  /**
+   * CONTINUE HAS BEEN PRESSED AND THE ANSWERS ARE NO LONGER THE PATIENT'S TO
+   * CHANGE (Carl, 7 Sep 2026: "on pressing Continue, the buttons selected were
+   * locked in and all other buttons hidden, then the check was done if
+   * required, then the next page").
+   *
+   * IT LOCKS THE SCREEN THE SAME WAY A SENT DISPUTE DOES, and reuses that
+   * treatment rather than inventing a second one: only the chosen answer is
+   * drawn, the placeholder holds the other column, and nothing is pressable.
+   * The two states mean different things — one is "reception has this", the
+   * other is "this has gone, or is going" — but what a patient must not be
+   * able to do in either is change an answer that has already left.
+   *
+   * IT DOES NOT COME BACK ON A FAILURE, which is why it is separate from
+   * `submitting` below: the post may have landed and the fetch after it
+   * failed, and the device cannot tell. Unlocking would let somebody change an
+   * answer reception has already been shown.
+   */
+  answersLocked: boolean;
+  /**
+   * THE ROUND TRIP IS RUNNING. Drives the busy Continue and nothing else, and
+   * unlike `answersLocked` it DOES clear when an attempt gives up — so a
+   * patient who wants to press Continue once more can, against an idempotent
+   * post that costs nothing to repeat.
+   */
+  submitting: boolean;
+  /**
+   * A TRANSIENT FAILURE IS BEING RIDDEN OUT (`rules/retry.ts`). Draws the quiet
+   * "One moment…" line — never the error line, which means something a person
+   * has to act on.
+   */
+  retrying: boolean;
   saving: boolean;
   saveError: boolean;
   /** The pushed session's own id — an audit/testing aid in the footer. See `Chrome.tsx`'s `Screen`. */
@@ -171,6 +210,15 @@ export function CheckDetailsScreen({
   onSeeReception: () => void;
 }): ReactNode {
   const outstanding = rows.filter((row) => answers[row.type] === undefined).length;
+  /*
+   * ONE WORD FOR "THE ANSWERS ARE NO LONGER THE PATIENT'S TO CHANGE", and the
+   * two states that mean it (Carl, 7 Sep 2026). A sent dispute: reception has
+   * the cross and is fixing it. A press of Continue: the set is on its way and
+   * the next screen is coming. Different reasons, identical rule — and drawing
+   * them identically is what stops a patient learning that a locked row
+   * sometimes is not.
+   */
+  const locked = disputeSent || answersLocked;
 
   return (
     <Screen
@@ -190,30 +238,24 @@ export function CheckDetailsScreen({
       <div className={styles.twoColumn}>
         <div className={`${styles.main} ${styles.detailsMain}`}>
           {/*
-            THE HEADING CARRIES THE LEDE WITH IT (7 Sep 2026, review of the
-            layout change that moved the lede into the rail).
+            THE SAME TWO LINES EVERY PAGE OF THE CEREMONY WEARS (Carl, 7 Sep
+            2026), and the type's qualifier under them.
 
-            MOVING COPY ACROSS A SCREEN MOVES IT IN THE READING ORDER TOO, and
-            that is the half the layout work missed: with the lede at the foot
-            of the rail, somebody hearing this page read out met five rows and
-            ten buttons before "our staff have already confirmed who you are".
-            The sentence that says this is a data check and NOT a verification
-            is the one sentence on K-P1 that must not arrive late — it is the
-            whole reason K-P1 is not K-2.
-
-            `aria-describedby` FIXES IT WITHOUT MOVING THE PIXELS BACK: the
-            description is announced with the heading wherever it sits on the
-            glass, so the sighted reading order and the announced one agree
-            again. The id and the test id deliberately carry the same name,
-            because they name the same sentence.
+            THE HEADING CARRIES THE LEDE WITH IT (review of the layout change
+            that moved the lede into the rail). Moving copy across a screen
+            moves it in the READING ORDER too: with the lede at the foot of the
+            rail, somebody hearing this page read out met five rows and ten
+            buttons before "our staff have already confirmed who you are" —
+            the one sentence on K-P1 that must not arrive late, because it is
+            the whole reason K-P1 is not K-2. `aria-describedby` announces it
+            with the heading wherever it sits on the glass.
           */}
-          <h1
-            className={styles.h2}
-            data-testid="check-details-heading"
-            aria-describedby="check-details-lede"
-          >
-            {strings.particulars.headingByAgreementType[agreementType]}
-          </h1>
+          <CeremonyHeading
+            parties={parties}
+            subHeading={strings.chrome.ceremonySubHeading[agreementType]}
+            headingTestId="check-details-heading"
+            describedById="check-details-lede"
+          />
           {/*
             THE LEFT COLUMN IS THE TASK AND NOTHING ELSE (Carl, 7 Sep 2026 —
             "write to the right side somewhere"). The lede that used to sit
@@ -233,8 +275,8 @@ export function CheckDetailsScreen({
              * alone on the disputed row. That makes what the patient selected
              * unmistakable."). Before the lock, both always show.
              */
-            const showTick = !disputeSent || answer === 'right';
-            const showCross = !disputeSent || answer === 'wrong';
+            const showTick = !locked || answer === 'right';
+            const showCross = !locked || answer === 'wrong';
             return (
               <div key={row.type} className={styles.detailRow} data-testid={`detail-row-${row.type}`}>
                 {/* THE TEXT KEEPS THE LEFT EDGE. */}
@@ -263,7 +305,7 @@ export function CheckDetailsScreen({
                       label={strings.checkDetails.right}
                       tone="right"
                       chosen={answer === 'right'}
-                      disabled={disputeSent}
+                      disabled={locked}
                       onPress={() => onAnswer(row.type, 'right')}
                       testId={`detail-tick-${row.type}`}
                     />
@@ -276,7 +318,7 @@ export function CheckDetailsScreen({
                       label={strings.checkDetails.wrong}
                       tone="wrong"
                       chosen={answer === 'wrong'}
-                      disabled={disputeSent}
+                      disabled={locked}
                       onPress={() => onAnswer(row.type, 'wrong')}
                       testId={`detail-cross-${row.type}`}
                     />
@@ -323,15 +365,43 @@ export function CheckDetailsScreen({
             `disputeSent`, the only ways off are a re-send, a recall, See
             reception, or inactivity (Carl's ruling, 4 Sep 2026).
           */}
+          {/*
+            A BLIP BEING RIDDEN OUT (Carl, 7 Sep 2026). `role="status"` so it
+            is announced without stealing focus, and NOT the error line: the
+            answers are safe, nothing is being asked of anybody, and the screen
+            moves on by itself. If the retries run out, `saveError` above takes
+            over and offers the desk.
+          */}
+          {retrying ? (
+            <p className={styles.retrying} role="status" data-testid="check-details-retrying">
+              {strings.chrome.oneMoment}
+            </p>
+          ) : null}
+
           {disputed || disputeSent ? null : (
             <div className={styles.actions}>
               <div className={styles.grow}>
+                {/*
+                  ONCE PRESSED IT KEEPS ITS WORD AND STOPS BEING PRESSABLE
+                  (Carl, 7 Sep 2026). The label stays "Continue" rather than
+                  becoming "Sending…": the button a patient just pressed
+                  changing its name under their finger reads as a different
+                  button, and the state is carried by `aria-busy` and the
+                  disabling, which is what both a screen reader and a second
+                  tap actually need.
+                */}
                 <GuardedButton
                   label={strings.checkDetails.continueAction}
+                  busy={submitting}
                   state={
-                    outstanding === 0 && !saving
-                      ? { disabled: false }
-                      : { disabled: true, disabledLabel: strings.checkDetails.continueBlocked(Math.max(outstanding, 1)) }
+                    submitting
+                      ? { disabled: true, disabledLabel: strings.checkDetails.continueAction }
+                      : outstanding === 0 && !saving
+                        ? { disabled: false }
+                        : {
+                            disabled: true,
+                            disabledLabel: strings.checkDetails.continueBlocked(Math.max(outstanding, 1)),
+                          }
                   }
                   onPress={onContinue}
                   testId="check-details-continue"

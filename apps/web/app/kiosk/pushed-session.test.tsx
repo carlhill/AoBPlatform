@@ -22,12 +22,12 @@
  * reason `walk-up-claim.test.tsx` gives: what matters is which calls the
  * ceremony makes and which screen it lands on.
  */
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { CONFIRMABLE_DETAIL_TYPES, type TabletSessionPayload } from '@aobplatform/domain';
 import { Ceremony } from './Ceremony';
 import { strings } from './strings';
-import type { KioskWaitingRow } from './api';
+import { KioskApiError, type KioskWaitingRow } from './api';
 
 /**
  * The pushed patient. Obviously fake, and carrying no Medicare number —
@@ -1060,5 +1060,387 @@ describe('kp1_fits_a_landscape_tablet_without_page_scroll', () => {
     // or a patient would read the same sentence twice on one screen.
     const footer = identityRow.parentElement;
     expect(footer?.textContent).not.toContain(strings.checkDetails.footer);
+  });
+});
+
+/**
+ * "ON TOP OF EACH PAGE OF THIS WORKFLOW IT SHOULD SAY 'AGREE TO BULK BILLING';
+ * ON THE NEXT LINE IT SHOULD SAY BY WHO — NAME OF PERSON" (Carl, 7 Sep 2026,
+ * testing the pushed flow).
+ *
+ * WHAT WAS WRONG. Each step headed itself, from its own string, so what a
+ * patient read at the top changed shape as they moved through ONE act — and
+ * none of the steps said whose agreement it was. A tablet handed across a desk
+ * raises exactly that question, and the only screen that answered it was the
+ * one with the pen on it.
+ *
+ * THE TWO LINES ARE CONSTANT AND THE PARTY LINE IS ONE FUNCTION. Both go
+ * through `signingByLine` (`rules/who-is-signing.ts`), which is the same
+ * branch K-4's fuller statement reads, so no page of one ceremony can name a
+ * different person from the page before it. That is the property here: the
+ * SAME words on every step, from BOTH fixtures.
+ */
+describe('every_ceremony_step_says_agree_to_bulk_billing_and_by_whom', () => {
+  /** Somebody other than the patient, with a stated relationship. */
+  const OTHER_SIGNS: TabletSessionPayload = {
+    ...SESSION,
+    assignor: { isPatient: false, name: 'Alex Fictional', relationship: 'Mother' },
+  };
+  const OTHER_AGREEMENT = {
+    ...AGREEMENT,
+    assignorIsPatient: false,
+    particulars: {
+      ...AGREEMENT.particulars,
+      assignorName: 'Alex Fictional',
+      assignorRelationship: 'Mother',
+    },
+  };
+
+  /**
+   * Read the heading a patient actually sees — the title line and the party
+   * line as one block, which is how it is rendered and how it is read.
+   */
+  function headingLines(): { title: string; by: string } {
+    return {
+      title: screen.getByTestId('check-details-heading').textContent ?? '',
+      by: screen.getByTestId('ceremony-by').textContent ?? '',
+    };
+  }
+
+  it('says it on K-P1, K-3, the statements and K-4 when the patient signs', async () => {
+    asPairedTablet();
+    fetchTabletSession.mockResolvedValue({ session: SESSION });
+    fetchAgreement.mockResolvedValue(AGREEMENT);
+
+    render(<Ceremony />);
+
+    // K-P1.
+    await waitFor(() => expect(screen.getByTestId('check-details-heading')).toBeTruthy());
+    const expectedBy = strings.chrome.signingBy('Riley Example');
+    expect(headingLines()).toEqual({ title: strings.chrome.ceremonyTitle, by: expectedBy });
+    // The type's qualifier is still shown — demoted to its own smaller line,
+    // not dropped (an episodic agreement IS about today's visit).
+    expect(screen.getByTestId('ceremony-sub').textContent).toBe(
+      strings.chrome.ceremonySubHeading.episodic_pre,
+    );
+
+    // K-3, the reading step, which carries the statements and the document.
+    tickEverything();
+    fireEvent.click(screen.getByTestId('check-details-continue'));
+    await waitFor(() => expect(screen.getByTestId('particulars-heading')).toBeTruthy());
+    expect(screen.getByTestId('particulars-heading').textContent).toBe(strings.chrome.ceremonyTitle);
+    expect(screen.getByTestId('ceremony-by').textContent).toBe(expectedBy);
+
+    // K-4, the pen.
+    fireEvent.click(screen.getByTestId('continue-to-sign'));
+    await waitFor(() => expect(screen.getByTestId('signature-heading')).toBeTruthy());
+    expect(screen.getByTestId('signature-heading').textContent).toBe(strings.chrome.ceremonyTitle);
+    expect(screen.getByTestId('ceremony-by').textContent).toBe(expectedBy);
+
+    // AND THE HEADER'S SHORT FORM AGREES WITH K-4's FULL STATEMENT, which is
+    // the whole reason they share a branch. The header says who; the statement
+    // above the pad says who, for whom, and on what footing.
+    expect(screen.getByTestId('signature-who').textContent).toBe(
+      strings.signature.signingByPatient('Riley Example'),
+    );
+  });
+
+  it('names the assignor AND the patient when someone else signs', async () => {
+    asPairedTablet();
+    fetchTabletSession.mockResolvedValue({ session: OTHER_SIGNS });
+    fetchAgreement.mockResolvedValue(OTHER_AGREEMENT);
+    setTabletSessionState.mockResolvedValue({ id: OTHER_SIGNS.id, state: 'reading' });
+    confirmSessionDetails.mockResolvedValue({ id: OTHER_SIGNS.id, state: 'details_confirmed' });
+
+    render(<Ceremony />);
+
+    await waitFor(() => expect(screen.getByTestId('check-details-heading')).toBeTruthy());
+    const expectedBy = strings.chrome.signingByFor('Alex Fictional', 'Riley Example');
+    expect(headingLines()).toEqual({ title: strings.chrome.ceremonyTitle, by: expectedBy });
+
+    tickEverything();
+    fireEvent.click(screen.getByTestId('check-details-continue'));
+    await waitFor(() => expect(screen.getByTestId('particulars-heading')).toBeTruthy());
+    expect(screen.getByTestId('ceremony-by').textContent).toBe(expectedBy);
+
+    fireEvent.click(screen.getByTestId('continue-to-sign'));
+    await waitFor(() => expect(screen.getByTestId('signature-heading')).toBeTruthy());
+    expect(screen.getByTestId('ceremony-by').textContent).toBe(expectedBy);
+
+    /*
+     * THE RELATIONSHIP IS ON K-4 AND NOWHERE ELSE. The header answers "whose
+     * agreement is this"; the footing belongs where the pen is, and repeating
+     * it at the top of five screens turns a heading into a paragraph.
+     */
+    expect(expectedBy).not.toContain('Mother');
+    expect(screen.getByTestId('signature-who').textContent).toBe(
+      strings.signature.signingByOther('Alex Fictional', 'Riley Example', 'Mother'),
+    );
+  });
+});
+
+/**
+ * "ON PRESSING CONTINUE, THE BUTTONS SELECTED WERE LOCKED IN AND ALL OTHER
+ * BUTTONS HIDDEN, THEN THE CHECK WAS DONE IF REQUIRED, THEN THE NEXT PAGE"
+ * (Carl, 7 Sep 2026, testing the pushed flow).
+ *
+ * THE ORDER IS THE REQUIREMENT. The answers are the patient's until they
+ * press; from the press they are the record's. Leaving the rows live through
+ * the round trip meant a tap during it could change an answer that had already
+ * gone to reception, and a second press of Continue could post twice.
+ *
+ * IT REUSES THE DISPUTE LOCK'S OWN TREATMENT — only the chosen answer drawn,
+ * the other column held by a placeholder — rather than inventing a second
+ * "you cannot change this" look. Two visual grammars for one rule is how a
+ * patient learns that a locked row sometimes is not.
+ */
+describe('continue_locks_the_chosen_answers_and_hides_the_rest', () => {
+  it('leaves each row showing only what was chosen, unpressable, while the post is in flight', async () => {
+    asPairedTablet();
+    fetchTabletSession.mockResolvedValue({ session: SESSION });
+
+    /*
+     * HOLD THE POST OPEN so the in-flight state is observable at all. Without
+     * this the promise resolves on the next microtask and the screen is
+     * already on K-3 by the time anything can look at it — the assertion would
+     * pass or fail on the runner's scheduling rather than on the code.
+     */
+    let releasePost: (() => void) | undefined;
+    confirmSessionDetails.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releasePost = () => resolve({ id: SESSION.id, state: 'details_confirmed' });
+        }),
+    );
+    fetchAgreement.mockResolvedValue(AGREEMENT);
+
+    render(<Ceremony />);
+    await waitFor(() => expect(screen.getByTestId('check-details-heading')).toBeTruthy());
+
+    // Four ticks and one cross would send a dispute on its own, so this is the
+    // all-ticks answer — the one Continue is actually for.
+    tickEverything();
+    for (const type of CONFIRMABLE_DETAIL_TYPES) {
+      expect(screen.getByTestId(`detail-tick-${type}`)).toBeTruthy();
+      expect(screen.getByTestId(`detail-cross-${type}`)).toBeTruthy();
+    }
+
+    fireEvent.click(screen.getByTestId('check-details-continue'));
+
+    // THE CHOSEN ANSWER SURVIVES; THE OTHER ONE IS NOT RENDERED AT ALL — not
+    // drawn-and-greyed, gone (Carl's ruling for the dispute lock, reused here).
+    await waitFor(() => expect(screen.queryByTestId('detail-cross-name')).toBeNull());
+    for (const type of CONFIRMABLE_DETAIL_TYPES) {
+      const tick = screen.getByTestId(`detail-tick-${type}`) as HTMLButtonElement;
+      expect(tick.disabled).toBe(true);
+      expect(screen.queryByTestId(`detail-cross-${type}`)).toBeNull();
+      // WCAG: a locked control keeps its words. It says what it says, it just
+      // cannot be pressed.
+      expect(tick.textContent).toContain(strings.checkDetails.right);
+    }
+
+    /*
+     * CONTINUE KEEPS ITS OWN LABEL AND ANNOUNCES THAT IT IS WORKING. It does
+     * not become "Sending…": a button changing its name under the finger that
+     * just pressed it reads as a different button. `aria-busy` and the
+     * disabling are what a screen reader and a second tap actually need.
+     */
+    const continueButton = screen.getByTestId('check-details-continue') as HTMLButtonElement;
+    expect(continueButton.disabled).toBe(true);
+    expect(continueButton.getAttribute('aria-busy')).toBe('true');
+    expect(continueButton.textContent).toContain(strings.checkDetails.continueAction);
+
+    // A tap that reaches a locked row changes nothing, and posts nothing more.
+    fireEvent.click(screen.getByTestId('detail-tick-name'));
+    fireEvent.click(continueButton);
+    expect(confirmSessionDetails).toHaveBeenCalledTimes(1);
+
+    // THEN the check, THEN the next page — in that order.
+    releasePost?.();
+    await waitFor(() => expect(screen.getByTestId('particulars-heading')).toBeTruthy());
+    expect(confirmSessionDetails).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-opens the step when the patient deliberately goes back to it', async () => {
+    /*
+     * BACK IS NOT A FAILURE. Somebody who returns from K-3 to look at their
+     * address again is entitled to change what they said about it, exactly as
+     * they were before the lock existed — and the post is idempotent against
+     * the answer SET, so an unchanged set re-posts nothing.
+     */
+    asPairedTablet();
+    fetchTabletSession.mockResolvedValue({ session: SESSION });
+    fetchAgreement.mockResolvedValue(AGREEMENT);
+
+    render(<Ceremony />);
+    await waitFor(() => expect(screen.getByTestId('check-details-heading')).toBeTruthy());
+    tickEverything();
+    fireEvent.click(screen.getByTestId('check-details-continue'));
+
+    await waitFor(() => expect(screen.getByTestId('particulars-back')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('particulars-back'));
+
+    await waitFor(() => expect(screen.getByTestId('check-details-heading')).toBeTruthy());
+    for (const type of CONFIRMABLE_DETAIL_TYPES) {
+      const tick = screen.getByTestId(`detail-tick-${type}`) as HTMLButtonElement;
+      // Still ticked — the ticks live in component state and nobody re-ticks
+      // five rows to re-read an address — and pressable again.
+      expect(tick.getAttribute('aria-pressed')).toBe('true');
+      expect(tick.disabled).toBe(false);
+      expect(screen.getByTestId(`detail-cross-${type}`)).toBeTruthy();
+    }
+    expect(confirmSessionDetails).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * A TRANSIENT FAILURE MUST NOT THROW THE ANSWERS AWAY (Carl, 7 Sep 2026).
+ *
+ * WHAT HE SAW, AND THE ROOT CAUSE. Core restarted under the dev watcher while
+ * K-P1 was posting. The POST failed, `confirmError` went red, the ceremony went
+ * to see-reception, the tablet reset itself, and it came back on the same step
+ * with every button live and nothing ticked. The platform had been healthy
+ * again for about a second and a half; the patient re-did work the device had
+ * already collected. That is the impression this product cannot afford at a
+ * reception desk.
+ *
+ * THE DISTINCTION BEING TESTED is between "I could not reach the server" and
+ * "the server said no" (`rules/retry.ts`). A blip is ridden out — four retries
+ * at 1s/2s/4s/8s — and a refusal is not retried at all, because it will say the
+ * same thing next second and two of the refusals are states the ceremony must
+ * move to at once.
+ *
+ * HARD RULE 8 IS UNCHANGED. When the retries run out the tablet still says see
+ * reception, exactly as it did; it just stops doing it for a blip.
+ */
+describe('a_failed_send_keeps_the_answers_and_retries_before_see_reception', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Every tick still ticked, and none of them pressable. */
+  function expectAnswersHeld(): void {
+    for (const type of CONFIRMABLE_DETAIL_TYPES) {
+      const tick = screen.getByTestId(`detail-tick-${type}`) as HTMLButtonElement;
+      expect(tick.getAttribute('aria-pressed')).toBe('true');
+      expect(tick.disabled).toBe(true);
+    }
+  }
+
+  it('rides out two dropped connections, keeps every answer, and lands on the next step', async () => {
+    asPairedTablet();
+    fetchTabletSession.mockResolvedValue({ session: SESSION });
+    fetchAgreement.mockResolvedValue(AGREEMENT);
+
+    /*
+     * A NETWORK THROW, NOT A RESPONSE. `fetch` throws a `TypeError` when
+     * nothing was reached, and `KioskApiError` is only ever constructed from a
+     * real response — so an ordinary Error here is exactly the shape of the
+     * failure Carl hit, and is what `isTransientFailure` treats as worth
+     * repeating.
+     */
+    confirmSessionDetails
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValue({ id: SESSION.id, state: 'details_confirmed' });
+
+    render(<Ceremony />);
+    await waitFor(() => expect(screen.getByTestId('check-details-heading')).toBeTruthy());
+    tickEverything();
+    fireEvent.click(screen.getByTestId('check-details-continue'));
+
+    // THE QUIET LINE, NOT THE RED ONE. Nothing has gone wrong that the patient
+    // can act on, so this must not wear the error palette or offer the desk.
+    const retrying = await screen.findByTestId('check-details-retrying');
+    expect(retrying.textContent).toBe(strings.chrome.oneMoment);
+    expect(retrying.getAttribute('role')).toBe('status');
+    expect(screen.queryByTestId('check-details-error')).toBeNull();
+    expectAnswersHeld();
+
+    // The first two waits, and then the attempt that works.
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(2000);
+
+    await waitFor(() => expect(screen.getByTestId('particulars-heading')).toBeTruthy());
+    expect(confirmSessionDetails).toHaveBeenCalledTimes(3);
+    // The answers were never cleared and never re-collected — the patient
+    // ticked five rows once.
+    expect(screen.queryByTestId('check-details-error')).toBeNull();
+  });
+
+  it('gives up after five attempts and offers the desk, with the answers still on screen', async () => {
+    asPairedTablet();
+    fetchTabletSession.mockResolvedValue({ session: SESSION });
+    fetchAgreement.mockResolvedValue(AGREEMENT);
+    confirmSessionDetails.mockRejectedValue(new TypeError('Failed to fetch'));
+
+    render(<Ceremony />);
+    await waitFor(() => expect(screen.getByTestId('check-details-heading')).toBeTruthy());
+    tickEverything();
+    fireEvent.click(screen.getByTestId('check-details-continue'));
+
+    // One attempt, then a wait, four times over — about fifteen seconds.
+    for (const delay of [1000, 2000, 4000, 8000]) {
+      await vi.advanceTimersByTimeAsync(delay);
+    }
+
+    const error = await screen.findByTestId('check-details-error');
+    expect(error.textContent).toBe(strings.checkDetails.saveFailed);
+    // Hard rule 8 unchanged: the message offers the desk, and the way out is
+    // still on the screen.
+    expect(error.textContent).toContain('reception');
+    expect(screen.getByTestId('leave-for-reception')).toBeTruthy();
+    expect(screen.queryByTestId('check-details-retrying')).toBeNull();
+    expect(confirmSessionDetails).toHaveBeenCalledTimes(5);
+
+    /*
+     * THE ANSWERS ARE STILL THERE AND STILL LOCKED. The post may well have
+     * landed and the fetch after it failed — the device cannot tell — so
+     * unlocking would let somebody change an answer reception has already been
+     * shown. What DOES come back is Continue, so a patient who wants to try
+     * once more can, and the idempotent post makes trying cost nothing.
+     */
+    expectAnswersHeld();
+    expect((screen.getByTestId('check-details-continue') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('does not retry a refusal the server means — it is answered once and acted on', async () => {
+    /*
+     * THE OTHER HALF OF THE RULE, and the half a retry loop would get badly
+     * wrong. A 401 says this tablet is not paired; a 409 says the session is
+     * disputed. Both will say the same thing in a second, both are states the
+     * ceremony must move to AT ONCE, and "no retry loop hammering the server"
+     * is the requirement (TODO.md). So a `KioskApiError` under 500 is an
+     * ANSWER and gets exactly one attempt.
+     *
+     * WHAT THIS SUITE CAN OBSERVE is the attempt count and the absence of the
+     * waiting line — `isUnpaired` is stubbed to `false` in this file's `./api`
+     * mock, deliberately, because the unpaired SCREEN belongs to
+     * `pairing.test.tsx`. The refusal branch that matters here is the one in
+     * `rules/retry.ts`, and it is the count that proves it.
+     */
+    asPairedTablet();
+    fetchTabletSession.mockResolvedValue({ session: SESSION });
+    fetchAgreement.mockResolvedValue(AGREEMENT);
+    confirmSessionDetails.mockRejectedValue(new KioskApiError('session disputed', 409));
+
+    render(<Ceremony />);
+    await waitFor(() => expect(screen.getByTestId('check-details-heading')).toBeTruthy());
+    tickEverything();
+    fireEvent.click(screen.getByTestId('check-details-continue'));
+
+    // Straight to the desk, with no "One moment…" in between: there is nothing
+    // to wait for when the server has already answered.
+    await waitFor(() => expect(screen.getByTestId('check-details-error')).toBeTruthy());
+    expect(screen.queryByTestId('check-details-retrying')).toBeNull();
+    expect(confirmSessionDetails).toHaveBeenCalledTimes(1);
+
+    // And nothing more happens however long the backoff would have run for.
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(confirmSessionDetails).toHaveBeenCalledTimes(1);
   });
 });

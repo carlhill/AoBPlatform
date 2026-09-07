@@ -252,10 +252,22 @@ describe('K-3 — the reading step asks the patient for nothing', () => {
         onSeeReception={noop}
       />,
     );
-    expect(episodic.getByTestId('particulars-heading').textContent).toBe(
-      strings.particulars.headingByAgreementType.episodic_pre,
+    /*
+     * THE TITLE IS CONSTANT AND THE QUALIFIER IS ITS OWN LINE (7 Sep 2026,
+     * when the ceremony header became the same two lines on every page). What
+     * this test protects has not changed one bit — the two types still read
+     * differently, and the ongoing one still says nothing about a visit — but
+     * the words now arrive as `chrome.ceremonyTitle` plus
+     * `chrome.ceremonySubHeading[type]` rather than as one sentence, so the
+     * assertion reads the heading BLOCK a patient sees rather than the `h1`
+     * alone.
+     */
+    expect(episodic.getByTestId('ceremony-heading').textContent).toContain(strings.chrome.ceremonyTitle);
+    expect(episodic.getByTestId('particulars-heading').textContent).toBe(strings.chrome.ceremonyTitle);
+    expect(episodic.getByTestId('ceremony-sub').textContent).toBe(
+      strings.chrome.ceremonySubHeading.episodic_pre,
     );
-    expect(episodic.getByTestId('particulars-heading').textContent).toBe("Agree to bulk billing for today's visit");
+    expect(episodic.getByTestId('ceremony-heading').textContent).toMatch(/visit/i);
     episodic.unmount();
 
     const enduring = render(
@@ -268,15 +280,17 @@ describe('K-3 — the reading step asks the patient for nothing', () => {
         onSeeReception={noop}
       />,
     );
-    expect(enduring.getByTestId('particulars-heading').textContent).toBe(
-      strings.particulars.headingByAgreementType.enduring,
-    );
-    expect(enduring.getByTestId('particulars-heading').textContent).toBe('Agree to bulk billing');
+    expect(enduring.getByTestId('particulars-heading').textContent).toBe(strings.chrome.ceremonyTitle);
+    // NO THIRD LINE AT ALL on an ongoing agreement — an empty qualifier draws
+    // nothing rather than an empty paragraph, so there is no "for" hanging
+    // under a heading that is not about a visit (hard rule 6).
+    expect(enduring.queryByTestId('ceremony-sub')).toBeNull();
+    expect(enduring.getByTestId('ceremony-heading').textContent).not.toMatch(/visit/i);
     enduring.unmount();
 
-    // The whole point: the two are different sentences, not the same one twice.
-    expect(strings.particulars.headingByAgreementType.episodic_pre).not.toBe(
-      strings.particulars.headingByAgreementType.enduring,
+    // The whole point: the two read differently, not the same one twice.
+    expect(strings.chrome.ceremonySubHeading.episodic_pre).not.toBe(
+      strings.chrome.ceremonySubHeading.enduring,
     );
   });
 
