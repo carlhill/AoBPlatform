@@ -44,6 +44,7 @@ import {
 } from '@aobplatform/domain';
 import { Button, Chip, Field, Notice, SelectInput, Section, Shell, TextInput, ui, type Tone } from '../../ui';
 import { strings } from '../../strings';
+import { explainFailure } from '../../apiError';
 import { apiHeaders, currentSession } from '../../auth';
 import { SessionControl } from '../../SessionControl';
 import styles from '../manage.module.css';
@@ -198,7 +199,7 @@ export function PatientsQueueView({ practiceId }: { practiceId: string }) {
         fetch(`${CORE_URL}/arrivals/needing-a-provider`, { headers: scope }),
         fetch(`${CORE_URL}/arrivals/servicing-providers`, { headers: scope }),
       ]);
-      if (!res.ok) throw new Error(String(res.status));
+      if (!res.ok) throw new Error(await explainFailure(res));
       setRows((await res.json()) as PatientQueueRow[]);
       // Neither of the other two is worth failing the page for: the queue is
       // the subject, and a section that cannot be filled shows nothing.

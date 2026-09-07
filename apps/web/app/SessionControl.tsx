@@ -21,12 +21,16 @@
  * or as Riverview Family Practice changes what every button on the page means.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, LogIn, LogOut, Building2, ShieldCheck } from 'lucide-react';
-import { beginLogin, currentSession, signOut as endSession, type Session } from './auth';
+import { beginLogin, currentSession, signOut as endSession, refreshFailureReason, type Session } from './auth';
 import { strings } from './strings';
 import { ui } from './ui';
 import { apiHeaders } from './auth';
+
+/** How often the bar re-checks a session that self-expires silently — not a
+ *  reload, just a re-read of the in-memory value (auth.ts). */
+const LIVE_CHECK_MS = 30_000;
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -44,11 +48,69 @@ export function SessionControl({
   const [session, setSession] = useState<Session | null>(null);
   const [checked, setChecked] = useState(false);
   const [practiceName, setPracticeName] = useState<string | null>(null);
+  /*
+   * "SIGNED IN, ONCE, THEN NOT" — DISTINCT FROM "NEVER SIGNED IN" (Carl, 7 Sep
+   * 2026). A tab that never signed in shows a plain sign-in button; a tab that
+   * DID and then expired shows the same button plus the amber note below, so
+   * the person knows why it reappeared rather than wondering whether they were
+   * ever signed in at all.
+   */
+  const [expired, setExpired] = useState(false);
+  /** Keycloak's own error code for why the background refresh failed, when
+   *  one is known — never a token value (`refreshFailureReason`, auth.ts). */
+  const [expiredReason, setExpiredReason] = useState<string | null>(null);
+  const wasSignedIn = useRef(false);
+
+  const sync = useCallback(() => {
+    const s = currentSession();
+    if (s) {
+      wasSignedIn.current = true;
+      setExpired(false);
+      setExpiredReason(null);
+    } else if (wasSignedIn.current) {
+      setExpired(true);
+      // Guarded, not called bare: a test that mocks `./auth` without this
+      // export must still render the plain "expired" note rather than throw.
+      setExpiredReason(typeof refreshFailureReason === 'function' ? refreshFailureReason() : null);
+    }
+    setSession(s);
+  }, []);
+
+  // A deliberate sign-out (`SessionChangeReason` 'signed-out', auth.ts) is not
+  // an expiry, wherever it was pressed — this bar must not say "your sign-in
+  // has expired" about a session somebody ended on purpose.
+  const onSessionEvent = useCallback(
+    (e: Event) => {
+      if ((e as CustomEvent<{ reason?: string }>).detail?.reason === 'signed-out') {
+        wasSignedIn.current = false;
+        setExpired(false);
+        setExpiredReason(null);
+      }
+      sync();
+    },
+    [sync],
+  );
 
   useEffect(() => {
-    setSession(currentSession());
+    sync();
     setChecked(true);
-  }, []);
+    // The self-expiry in `currentSession()` is lazy — nothing fires it on its
+    // own — so this tab has to go looking. The interval is the backstop; the
+    // event (auth.ts, `dispatchSessionChanged`) and visibility are the fast
+    // paths for a refresh, a sign-in, or a tab regaining focus after being
+    // throttled in the background.
+    const interval = setInterval(sync, LIVE_CHECK_MS);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') sync();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('aob:session-changed', onSessionEvent);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('aob:session-changed', onSessionEvent);
+    };
+  }, [sync, onSessionEvent]);
 
   /*
    * The practice's NAME, which the token does not carry — it carries the id,
@@ -77,6 +139,11 @@ export function SessionControl({
   // Ends the Keycloak session too. A local-only sign-out left the SSO session
   // live, so the next page load silently signed the person back in.
   const signOut = useCallback(() => {
+    // A deliberate sign-out is not an expiry — the note is for a session that
+    // ended without anybody choosing it.
+    wasSignedIn.current = false;
+    setExpired(false);
+    setExpiredReason(null);
     setSession(null);
     endSession();
   }, []);
@@ -89,6 +156,14 @@ export function SessionControl({
     return (
       <span className={ui.sessionBar}>
         <span className={ui.sessionAudience}>{audience}</span>
+        {expired && (
+          <span className={ui.sessionStale} style={{ cursor: 'default' }} data-testid="session-expired-note">
+            <AlertTriangle size={13} aria-hidden="true" />
+            {expiredReason
+              ? strings.auth.sessionExpiredNoteWithReason(expiredReason)
+              : strings.auth.sessionExpiredNote}
+          </span>
+        )}
         <button
           type="button"
           className={ui.sessionButton}

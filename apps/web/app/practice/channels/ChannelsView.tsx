@@ -37,6 +37,7 @@ import {
 } from '@aobplatform/domain';
 import { Button, Checkbox, Chip, Field, Notice, SelectInput, Shell, TextInput, ui } from '../../ui';
 import { strings } from '../../strings';
+import { explainFailure } from '../../apiError';
 import styles from '../manage.module.css';
 import { SessionControl } from '../../SessionControl';
 import { apiHeaders, currentSession } from '../../auth';
@@ -186,7 +187,7 @@ export function ChannelsView({
       const res = await fetch(`${CORE_URL}/service-descriptions/pending`, {
         headers: apiHeaders(practiceId),
       });
-      if (!res.ok) throw new Error(String(res.status));
+      if (!res.ok) throw new Error(await explainFailure(res));
       const rows = (await res.json()) as unknown;
       setPendingCount(Array.isArray(rows) ? rows.length : null);
     } catch {
@@ -229,7 +230,7 @@ export function ChannelsView({
      */
     try {
       const res = await fetch(`${CORE_URL}/devices`, { headers: apiHeaders(practiceId) });
-      if (!res.ok) throw new Error(String(res.status));
+      if (!res.ok) throw new Error(await explainFailure(res));
       const body = (await res.json()) as { devices: DeviceRow[] };
       const paired = body.devices.filter((d) => d.state === 'paired').length;
       const revoked = body.devices.filter((d) => d.state === 'revoked').length;
@@ -252,7 +253,7 @@ export function ChannelsView({
       const res = await fetch(`${CORE_URL}/service-descriptions/settings`, {
         headers: apiHeaders(practiceId),
       });
-      if (!res.ok) throw new Error(String(res.status));
+      if (!res.ok) throw new Error(await explainFailure(res));
       const body = (await res.json()) as Partial<DescriptionSettings>;
       if (typeof body.version !== 'string' || !Array.isArray(body.descriptions)) {
         throw new Error('no list');

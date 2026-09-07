@@ -47,6 +47,27 @@ export const strings = {
     platformUser: 'AoBPlatform',
     /** The session is scoped to a practice whose name has not loaded yet. */
     practiceLoading: 'Practice…',
+    /*
+     * A TAB LEFT OPEN PAST EXPIRY (Carl, 7 Sep 2026). `currentSession()`
+     * self-expires; without this the top bar went on saying "signed in" long
+     * after every write had quietly stopped carrying an Authorization header.
+     * Shown ONLY when this tab held a session earlier — never on a page that
+     * was never signed in, which would just be noise.
+     */
+    sessionExpiredNote: 'Your sign-in has expired',
+    /** The same note, WITH a reason, when the background refresh that should
+     *  have kept the session alive is known to have failed rather than simply
+     *  never having run (auth.ts, `refreshFailureReason`). Keycloak's own
+     *  error code only — `invalid_grant`, `invalid_client` — never a token. */
+    sessionExpiredNoteWithReason: (reason: string) => `Your sign-in expired — renewal failed (${reason})`,
+    /** Heading on the card shown ABOVE still-mounted page content when a
+     *  session ends while the page is open — deliberately not the fuller
+     *  gate.heading/gate.body copy, which is for a page that was never signed
+     *  in at all. */
+    expiredHeading: 'Sign in again to continue',
+    expiredBody:
+      'Your sign-in ended while this page was open. Nothing here has been lost — sign in again and pick up ' +
+      'where you left off.',
   },
   gate: {
     heading: 'Sign in to the practice console',
@@ -976,6 +997,15 @@ export const strings = {
     notSaved: 'That correction was not saved',
     unreachable:
       'We could not reach the service. Nothing was sent and nothing has changed. Please try again in a moment.',
+    /*
+     * THE ONE FAILURE `explainFailure` (apiError.ts) NAMES ITSELF, because it
+     * is the one a person can act on without knowing anything about the
+     * screen they were on: sign in again, press the same button again.
+     */
+    sessionExpired: 'Your sign-in has expired. Sign in again and retry.',
+    /** Never a bare number on its own — the code stays visible, in words,
+     *  when nothing better is available (CLAUDE.md §7). */
+    httpRefused: (status: number) => `The server refused this (HTTP ${status})`,
   },
   org: {
     heading: 'Practice onboarding',
@@ -4478,6 +4508,13 @@ export const strings = {
     /** Beside a field the patient actually crossed. Says what happened, not who was wrong. */
     correctDisputedTag: 'Patient says this is wrong',
     correctLoading: 'Reading the current details…',
+    /** Shown in the panel itself in place of `correctLoading` once the read
+     *  has actually failed — Carl, 7 Sep 2026: a panel opened from the banner
+     *  above sat on "Reading the current details…" forever with the real
+     *  reason (his session had expired) sitting in a separate notice he never
+     *  scrolled to. */
+    correctLoadFailedTitle: 'Could not load the details',
+    correctLoadFailed: (reason: string) => reason,
     correctSave: 'Save the correction',
     correctSaving: 'Saving…',
     correctSaved: 'Saved. Now send it to the tablet again.',

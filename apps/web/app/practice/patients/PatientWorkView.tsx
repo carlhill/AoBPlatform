@@ -59,6 +59,7 @@ import {
 } from '@aobplatform/domain';
 import { Button, Chip, Notice, Section, Shell, ui } from '../../ui';
 import { strings } from '../../strings';
+import { explainFailure } from '../../apiError';
 import { apiHeaders, currentSession } from '../../auth';
 import { SessionControl } from '../../SessionControl';
 import styles from '../manage.module.css';
@@ -227,7 +228,7 @@ export function PatientWorkView({ practiceId, patientId }: { practiceId: string;
         fetch(`${CORE_URL}/patients/${patientId}/timeline`, { headers: apiHeaders(practiceId) }),
         fetch(`${CORE_URL}/patients?open=today`, { headers: apiHeaders(practiceId) }),
       ]);
-      if (!d.ok) throw new Error(String(d.status));
+      if (!d.ok) throw new Error(await explainFailure(d));
       setIdentity((await d.json()) as PatientDetails);
       setIdentityError(null);
       if (t.ok) setTimeline(((await t.json()) as { entries: PatientTimelineEntry[] }).entries);
@@ -267,7 +268,7 @@ export function PatientWorkView({ practiceId, patientId }: { practiceId: string;
           headers: { ...apiHeaders(practiceId), 'content-type': 'application/json' },
           body: JSON.stringify({ resolution: 'no_change_needed' }),
         });
-        if (!res.ok) throw new Error(String(res.status));
+        if (!res.ok) throw new Error(await explainFailure(res));
         setMarkDone(true);
         await readPatient();
       } catch (e) {
@@ -301,7 +302,7 @@ export function PatientWorkView({ practiceId, patientId }: { practiceId: string;
           method: 'POST',
           headers: apiHeaders(practiceId),
         });
-        if (!res.ok) throw new Error(String(res.status));
+        if (!res.ok) throw new Error(await explainFailure(res));
         setLockedOutcome('sent');
         await readPatient();
       } catch (e) {
@@ -329,7 +330,7 @@ export function PatientWorkView({ practiceId, patientId }: { practiceId: string;
           headers: { ...apiHeaders(practiceId), 'content-type': 'application/json' },
           body: JSON.stringify({ resolution: 'no_change_needed' }),
         });
-        if (!res.ok) throw new Error(String(res.status));
+        if (!res.ok) throw new Error(await explainFailure(res));
         setLockedOutcome('dismissed');
         await readPatient();
       } catch (e) {
@@ -595,6 +596,19 @@ export function PatientWorkView({ practiceId, patientId }: { practiceId: string;
           </Notice>
         )}
 
+        {/*
+          THE PANEL LIVES HERE, RIGHT UNDER THE BANNER (Carl, 7 Sep 2026). It
+          used to sit below the five read-only rows, so pressing "Correct it
+          now" up here flipped the button to "Close" with nothing visibly
+          changing above the fold — the panel that had opened was two screens
+          down. One instance, shared with the "Correct a detail" button below
+          (`identity-correct-open`); opening it from either control scrolls it
+          into view and focuses the field the patient actually disputed
+          (`CorrectionPanel`, pushDesk.tsx).
+        */}
+        <CorrectionPanel desk={desk} subject={subject} />
+        <CorrectOutcomeNotice desk={desk} subjectKey={subject.key} testId="identity-correct-outcome" />
+
         <p className={ui.hint}>{strings.patients.identityLead}</p>
 
         {identityError && (
@@ -667,9 +681,6 @@ export function PatientWorkView({ practiceId, patientId }: { practiceId: string;
                   : strings.patients.identityCorrect}
               </Button>
             </div>
-
-            <CorrectionPanel desk={desk} subject={subject} />
-            <CorrectOutcomeNotice desk={desk} subjectKey={subject.key} testId="identity-correct-outcome" />
           </>
         )}
       </Section>

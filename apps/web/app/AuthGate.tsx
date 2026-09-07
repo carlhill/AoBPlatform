@@ -22,9 +22,12 @@
  * password if it tried.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { beginLogin, clearSession, currentSession, type Session } from './auth';
 import { strings } from './strings';
+
+/** How often this gate re-checks a session that self-expires silently. */
+const LIVE_CHECK_MS = 30_000;
 
 /**
  * The development escape hatch, OFF unless explicitly switched on at build
@@ -50,18 +53,68 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [bypassed, setBypassed] = useState(false);
   const [checked, setChecked] = useState(false);
+  /*
+   * WHETHER *THIS PAGE, THIS MOUNT* EVER SAW A SESSION (Carl, 7 Sep 2026).
+   * Read only from the live tracking below — never from `hasSignedInBefore()`
+   * in storage, which answers a different question ("has this browser ever
+   * signed in") and would wrongly let a page that opened signed-out skip
+   * straight to a non-blocking card. The distinction matters for what a
+   * missing session is allowed to mean: a page that never had one still gets
+   * the full blocking gate (a practice screen with nobody signed in is a
+   * disclosure risk, not an inconvenience — see auth.ts); a page that HAD one
+   * and lost it mid-visit gets a card above still-mounted content instead,
+   * so whatever the person was doing is not thrown away under them.
+   */
+  const hadSession = useRef(false);
+
+  const sync = useCallback(() => {
+    const s = currentSession();
+    if (s) hadSession.current = true;
+    setSession(s);
+  }, []);
+
+  /*
+   * A DELIBERATE SIGN-OUT IS NOT AN EXPIRY. `sync()` alone cannot tell the
+   * two apart — both leave `currentSession()` returning null — and getting
+   * this wrong the other way is worse than the bug this file exists to fix:
+   * somebody who pressed Sign Out on a shared machine, believing they had
+   * left, must not have the practice's own data still on screen under a
+   * "sign in again" card. Only the event carries which one happened
+   * (`SessionChangeReason`, auth.ts); a `'signed-out'` reason resets
+   * `hadSession` so the full blocking gate returns, exactly as if this page
+   * had never been signed in at all.
+   */
+  const onSessionEvent = useCallback(
+    (e: Event) => {
+      if ((e as CustomEvent<{ reason?: string }>).detail?.reason === 'signed-out') hadSession.current = false;
+      sync();
+    },
+    [sync],
+  );
 
   useEffect(() => {
-    setSession(currentSession());
+    sync();
     // Survives the redirect back from /callback within the same tab only —
     // the token itself is memory-only and never lands in storage.
     setBypassed(window.sessionStorage.getItem('aob.devBypass') === 'true');
     setChecked(true);
-  }, []);
+    const interval = setInterval(sync, LIVE_CHECK_MS);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') sync();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('aob:session-changed', onSessionEvent);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('aob:session-changed', onSessionEvent);
+    };
+  }, [sync, onSessionEvent]);
 
   const signOut = useCallback(() => {
     clearSession();
     window.sessionStorage.removeItem('aob.devBypass');
+    hadSession.current = false;
     setSession(null);
     setBypassed(false);
   }, []);
@@ -109,6 +162,35 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             </button>
           </p>
           <p style={{ margin: '0.5rem 0 0', color: '#57606a', fontSize: '0.85rem' }}>{strings.gate.bypassNote}</p>
+        </section>
+        {children}
+      </>
+    );
+  }
+
+  /*
+   * SIGNED IN EARLIER ON THIS PAGE, NOT ANY MORE. Carl, 7 Sep 2026: "a console
+   * tab left open shows signed in after the session has expired" — and the
+   * fix for the top bar (SessionControl.tsx) is not enough on its own, because
+   * this gate used to render NOTHING BUT the sign-in card once the session
+   * disappeared, which threw away everything on screen mid-action. Rendering
+   * the children under the card is what makes "sign in again and retry"
+   * literally true rather than a promise: the button somebody was about to
+   * press is still there, in the same state, once they are signed in again.
+   */
+  if (hadSession.current) {
+    return (
+      <>
+        <section aria-label={strings.auth.expiredHeading} style={{ ...card, borderColor: AMBER }} data-testid="auth-gate-expired">
+          <p style={{ margin: 0, color: AMBER }}>
+            <strong>{strings.auth.expiredHeading}</strong>
+          </p>
+          <p style={{ margin: '0.5rem 0 0', color: '#57606a', fontSize: '0.85rem' }}>{strings.auth.expiredBody}</p>
+          <p style={{ margin: '0.75rem 0 0' }}>
+            <button onClick={() => void beginLogin()} data-testid="gate-sign-in-again">
+              {strings.auth.signIn}
+            </button>
+          </p>
         </section>
         {children}
       </>

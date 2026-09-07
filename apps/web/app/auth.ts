@@ -68,6 +68,55 @@ export interface Session {
 let session: Session | null = null;
 
 /*
+ * THE ONE SIGNAL EVERY UI THAT SHOWS "SIGNED IN" LISTENS FOR (Carl, 7 Sep
+ * 2026). `currentSession()` self-expires silently — nothing about reading it
+ * announces that the answer just changed. `SessionControl` and `AuthGate`
+ * used to read it once, on mount, which is why a console tab left open kept
+ * saying "signed in as…" long after the token was gone. Dispatched at every
+ * point `session` actually changes: a successful sign-in, a successful
+ * refresh, a failed refresh (via `clearSession`), an explicit sign-out (same),
+ * and the lazy self-expiry below.
+ *
+ * THE REASON RIDES ALONG, and it is not decoration. `AuthGate` answers a
+ * session that has gone null by leaving the page's content mounted under a
+ * "sign in again" card — deliberately, so nothing somebody was doing is
+ * thrown away. That is exactly wrong for `'signed-out'`: somebody who pressed
+ * Sign Out on a shared machine, believing they had left, must not have the
+ * practice's own data sitting on screen under a banner. Only a reason of
+ * `'expired'` or `'refresh-failed'` — the session dying on its own, unasked —
+ * earns the non-blocking treatment.
+ */
+export type SessionChangeReason = 'signed-in' | 'refreshed' | 'expired' | 'refresh-failed' | 'signed-out';
+
+function dispatchSessionChanged(reason: SessionChangeReason): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent<{ reason: SessionChangeReason }>('aob:session-changed', { detail: { reason } }));
+  }
+}
+
+/*
+ * WHY THE FIRST REFRESH FAILED, so the bar can say something more useful than
+ * "your sign-in has expired" when there is a real reason on hand — Keycloak's
+ * own `error` code (`invalid_grant`, `invalid_client`…), never a token value.
+ * `null` means either nothing has failed yet, or the last thing to happen was
+ * a SUCCESSFUL refresh or an explicit sign-out — both of which clear it below.
+ */
+let lastRefreshFailure: string | null = null;
+
+/** The reason the most recent refresh attempt failed, if the last thing that
+ *  happened to this session was a failure. Read by `SessionControl` to add
+ *  detail to the plain "sign-in has expired" note. */
+export function refreshFailureReason(): string | null {
+  return lastRefreshFailure;
+}
+
+function devWarn(...args: unknown[]): void {
+  // No token values ever reach this — every call site below passes only a
+  // status code and a short error code, never a header or a body in full.
+  if (process.env.NODE_ENV !== 'production') console.warn('[auth]', ...args);
+}
+
+/*
  * THE LOGOUT HINT OUTLIVES THE ACCESS TOKEN, and it has to.
  *
  * Dropping the whole session the moment the access token expired also threw
@@ -88,6 +137,8 @@ export function currentSession(): Session | null {
   if (session && session.expiresAt <= Date.now()) {
     lastIdToken = session.idToken ?? lastIdToken;
     session = null;
+    stopRefresh();
+    dispatchSessionChanged('expired');
   }
   return session;
 }
@@ -97,12 +148,20 @@ export function logoutHint(): string | undefined {
   return currentSession()?.idToken ?? lastIdToken;
 }
 
-export function clearSession(): void {
+/**
+ * `reason` defaults to `'signed-out'` — the caller for whom that is wrong
+ * (the failed-refresh path below) says so explicitly. `AuthGate` treats that
+ * default as "leaving on purpose" and hides whatever the page was showing,
+ * rather than the non-blocking card it offers for a session that died on its
+ * own.
+ */
+export function clearSession(reason: SessionChangeReason = 'signed-out'): void {
   session = null;
   // Cleared HERE and not on expiry: this is somebody actually leaving, so
   // there is no logout still to perform and nothing left to name.
   lastIdToken = undefined;
   stopRefresh();
+  dispatchSessionChanged(reason);
 }
 
 /*
@@ -173,7 +232,10 @@ async function performRefresh(): Promise<void> {
        * rather than both going on claiming a session that Keycloak has
        * already forgotten.
        */
-      clearSession();
+      const body = (await res.json().catch(() => ({}))) as { error?: string; error_description?: string };
+      lastRefreshFailure = body.error ?? String(res.status);
+      devWarn('refresh failed', res.status, body.error);
+      clearSession('refresh-failed');
       return;
     }
 
@@ -202,15 +264,24 @@ async function performRefresh(): Promise<void> {
       refreshToken: body.refresh_token ?? current.refreshToken,
     };
     lastIdToken = body.id_token ?? lastIdToken;
+    lastRefreshFailure = null;
+    dispatchSessionChanged('refreshed');
     scheduleRefresh();
-  } catch {
+  } catch (e) {
     /*
      * A NETWORK BLIP, not a dead session. Retrying immediately would hammer a
      * connection that is already struggling; the existing timer's own next
      * firing (or the tab regaining focus, below) tries again soon enough, and
      * the lazy expiry check in `currentSession()` is still the backstop if
      * every attempt keeps failing until the token genuinely lapses.
+     *
+     * NOT recorded as `lastRefreshFailure` and no event fired: the session is
+     * still live as far as anybody can tell, so surfacing this in the bar
+     * would say "expired" about a session that has not, in fact, expired.
+     * Logged in development only, and only the error's own message — never a
+     * token or a header.
      */
+    devWarn('refresh attempt failed (network)', e instanceof Error ? e.message : e);
   }
 }
 
@@ -415,6 +486,9 @@ export function signOut(): void {
   // Read BEFORE clearing — clearSession() is what drops it.
   const idToken = logoutHint();
   clearSession();
+  // A deliberate sign-out is not a refresh failure — do not let an old one
+  // linger and show up beside the NEXT sign-in's expiry, on the next tab.
+  lastRefreshFailure = null;
   try {
     window.localStorage.removeItem(SEEN_KEY);
     window.sessionStorage.removeItem(SILENT_TRIED_KEY);
@@ -544,6 +618,10 @@ async function exchangeCode(code: string, state: string): Promise<Session> {
   // Remember that this browser has a live Keycloak session, so the NEXT cold
   // page load can restore silently instead of falling back to a chooser.
   rememberSignedIn(clientId);
+  // A fresh, successful sign-in — whatever the last refresh attempt said is
+  // no longer the story.
+  lastRefreshFailure = null;
+  dispatchSessionChanged('signed-in');
   scheduleRefresh();
   return session;
 }

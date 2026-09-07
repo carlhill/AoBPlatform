@@ -38,6 +38,7 @@ import { SessionControl } from '../../SessionControl';
 import { apiHeaders } from '../../auth';
 import { useRefreshable } from '../../refresh';
 import { strings } from '../../strings';
+import { explainFailure } from '../../apiError';
 import { usePractice } from '../usePractice';
 import { MessageLog } from '../../correspondence/MessageLog';
 import styles from '../manage.module.css';
@@ -66,7 +67,7 @@ export function CorrespondenceView({ audience = 'practice' }: { audience?: LogAu
     setError(null);
     try {
       const res = await fetch(`${CORE_URL}/correspondence?limit=300`, { headers: apiHeaders(practiceId) });
-      if (!res.ok) throw new Error(String(res.status));
+      if (!res.ok) throw new Error(await explainFailure(res));
       setRows((await res.json()) as Row[]);
 
       /*
