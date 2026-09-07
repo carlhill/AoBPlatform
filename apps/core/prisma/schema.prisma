@@ -1224,12 +1224,29 @@ model Agreement {
   providerId              String?      @db.Uuid
   provider                Provider?    @relation(fields: [providerId], references: [id])
   /**
-   * The new anchor. `providerId` above is the legacy one and is being retired:
-   * both are covered by the HARD-01 immutability trigger meanwhile, so neither
-   * can be edited on a live agreement.
+   * THE ANCHOR (Carl, 7 Sep 2026). Set on every agreement created from
+   * 7 September 2026 — `agreements_new_rows_are_anchored_on_an_affiliation`
+   * refuses one without it — and through it the practitioner (the PERSON that
+   * REQ-END-01 makes an enduring agreement per) and the location (whose
+   * provider number D4 carries where one is held).
+   *
+   * `providerId` above is the legacy anchor and is being retired: it stays
+   * nullable for the transition because signed agreements are evidence and
+   * their render was hashed against what they said (hard rule 13). Both are
+   * covered by the HARD-01 immutability trigger, which allows this column to
+   * go from NULL to a value exactly once — completing a record, never moving
+   * an anchor — and refuses every other change.
    */
   affiliationId           String?      @db.Uuid
   affiliation             Affiliation? @relation(fields: [affiliationId], references: [id])
+  /**
+   * HOW A PRE-EXISTING AGREEMENT CAME BY ITS ANCHOR: `pms_linkage_key`,
+   * `provider_number` or `ahpra_number`. A TYPE, never a value. NULL on every
+   * agreement anchored at creation, which is all of them from today. Nothing
+   * reads it at runtime; it exists so that a question asked about a
+   * backfilled row in 2028 has an answer other than "somebody ran something".
+   */
+  providerAnchorBackfill  String?
   organisationId          String?      @db.Uuid
   patientId               String       @db.Uuid
   patient                 Patient      @relation(fields: [patientId], references: [id])
@@ -2843,6 +2860,20 @@ model Arrival {
   /// Resolved at receipt. Null only if resolution failed, which is recorded
   /// rather than retried silently.
   patientId  String? @db.Uuid
+  /**
+   * WHO THE PATIENT IS HERE TO SEE, as the practitioner at THIS location
+   * (Carl, 7 Sep 2026). Resolved at receipt from whichever of the four keys
+   * the sender used — the affiliation itself, practitioner + location, the
+   * provider number, or the deprecated `providerId` — and it is what the
+   * agreement is anchored on. No foreign key: this table carries no relations
+   * by design (see the note on `practiceId`).
+   */
+  affiliationId String? @db.Uuid
+  /**
+   * THE LEGACY ANCHOR, kept while the deprecated `providerId` field on the
+   * arrival contract is still accepted. Null on every arrival that named a
+   * practitioner instead.
+   */
   providerId String? @db.Uuid
   /// What the sender named the provider by, when it was not our id.
   providerNumber String?
@@ -2907,6 +2938,7 @@ model Arrival {
   @@index([practiceId, arrivedAt])
   /// The desk's "Needs a provider" list, and nothing else reads this way.
   @@index([practiceId, outcome, arrivedAt])
+  @@index([affiliationId])
   @@map("arrivals")
 }
 

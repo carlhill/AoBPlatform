@@ -188,6 +188,32 @@ export const REVIEW_TASK_KINDS: readonly ReviewTaskKind[] = [
      */
     stakes: 'high',
   }),
+  kind({
+    key: 'agreement_anchor_unresolved',
+    label: 'Agreements name a provider nobody can match to a practitioner',
+    question: 'Which practitioner, at which of your locations, is this provider?',
+    /*
+     * LOW, and the reasoning is what is and is not at risk while it waits.
+     *
+     * These are agreements made before the anchor moved from the practice-wide
+     * `providers` row to the practitioner's affiliation at a location (Carl,
+     * 7 Sep 2026). Nothing about them changes: the particulars are locked, the
+     * artefact is rendered and hashed, and it re-renders from its own stored
+     * payload (hard rule 13). What is missing is the JOIN — being able to say
+     * which PERSON, at which ADDRESS, the agreement named — and that is a
+     * mapping, not a judgement about anybody's consent.
+     *
+     * The backfill would not guess it. Where its three keys found nothing, or
+     * found two candidates, it left the agreement unanchored and raised this
+     * rather than picking: choosing between two doctors by coin toss and
+     * writing the answer into a contract's record is worse than an open
+     * question with somebody's name on it.
+     *
+     * ONE TASK PER PROVIDER, not per agreement. The mapping is made once and
+     * every agreement that named them follows.
+     */
+    stakes: 'low',
+  }),
 ] as const;
 
 export const REVIEW_TASK_KEYS = REVIEW_TASK_KINDS.map((k) => k.key);
