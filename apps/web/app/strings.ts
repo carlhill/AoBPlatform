@@ -70,6 +70,30 @@ export const strings = {
      * signed-out state takes over (`silentRestoreInFlight`, auth.ts).
      */
     signingBackIn: 'Signing you back in…',
+    /**
+     * A RESTORE THAT WAS REFUSED, AND WHY (Carl, 7 Sep 2026).
+     *
+     * "You are not signed in. This page shows real records…" is written for
+     * somebody who has never been here. Carl HAD been, minutes earlier —
+     * Keycloak's SSO session had idled out — so the generic gate described the
+     * state and hid the cause, and left him with no idea why it kept happening.
+     *
+     * IT NAMES THE RULE AND THE WAY BACK. The number is the REALM's, read from
+     * the environment (`sessionIdleMinutes`, auth.ts) rather than typed here: a
+     * confident "30 minutes" beside a realm set to 240 is a lie, and the realm
+     * is the thing that moves.
+     *
+     * AND IT PROMISES THE RETURN, because that is the part somebody hesitates
+     * over — signing in again looks like losing the page they were on, and it
+     * is not (`returnPath`, and the landing rule behind it).
+     *
+     * ONLY FOR A BROWSER THAT HAS SIGNED IN HERE. One that never has keeps the
+     * generic copy, which is true of it.
+     */
+    restoreRefusedHeading: 'Your earlier sign-in has ended',
+    restoreRefusedBody: (minutes: number) =>
+      `Sign-ins end after ${minutes} minutes without activity. Sign in again with your passkey — `
+      + 'you will come back to this page afterwards.',
     signOut: 'Sign out',
     signedInAs: 'Signed in as',
     signedOut: 'Not signed in — the console is running in development mode.',
@@ -4638,6 +4662,20 @@ export const strings = {
     correctLoadFailed: (reason: string) => reason,
     correctSave: 'Save the correction',
     correctSaving: 'Saving…',
+    /**
+     * THE WAY OUT OF THE PANEL (Carl, 7 Sep 2026, testing the work page).
+     *
+     * There was none beside Save. The panel could be shut by pressing "Correct"
+     * again, which is a toggle nobody reads as "cancel" — and the red "Nothing
+     * was changed" band survived it, so a receptionist who opened the panel by
+     * mistake was left with a refusal on screen about something they had not
+     * done.
+     *
+     * IT DISCARDS, and it is a secondary: the whole panel is a staff edit to a
+     * patient's own record, so leaving without saving must be one press and
+     * must not look like the thing to press.
+     */
+    correctCancel: 'Cancel',
     correctSaved: 'Saved. Now send it to the tablet again.',
     correctNoChange: 'Nothing was changed.',
     correctBlockedEmpty: 'Change at least one detail first.',

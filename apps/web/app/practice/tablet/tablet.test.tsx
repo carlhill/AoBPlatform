@@ -332,6 +332,9 @@ vi.mock('../../auth', () => ({
    * every render throw rather than fall through.
    */
   silentRestoreInFlight: () => false,
+  // Nor was one refused: this suite is not about a reload, so the bar shows
+  // its ordinary signed-in state.
+  restoreRefusalReason: () => null,
 }));
 
 function signedInAtPractice() {

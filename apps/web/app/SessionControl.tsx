@@ -28,6 +28,8 @@ import {
   currentSession,
   signOut as endSession,
   refreshFailureReason,
+  restoreRefusalReason,
+  sessionIdleMinutes,
   silentRestoreInFlight,
   type Session,
 } from './auth';
@@ -73,6 +75,14 @@ export function SessionControl({
    * that second the bar said "Sign in", which is not early — it is wrong.
    */
   const [restoring, setRestoring] = useState(false);
+  /*
+   * AND WHETHER A RESTORE WAS REFUSED (Carl, 7 Sep 2026). Different from
+   * `expired`, which is a session that died in THIS tab under somebody: this is
+   * a cold load whose silent restore Keycloak turned down because the SSO
+   * session had idled out. Both end with no session; only one of them means
+   * "your earlier sign-in has ended".
+   */
+  const [restoreRefused, setRestoreRefused] = useState(false);
   const wasSignedIn = useRef(false);
 
   const sync = useCallback(() => {
@@ -98,6 +108,9 @@ export function SessionControl({
         ? silentRestoreInFlight()
         : false,
     );
+    setRestoreRefused(
+      !s && typeof restoreRefusalReason === 'function' ? restoreRefusalReason() !== null : false,
+    );
     setSession(s);
   }, []);
 
@@ -111,6 +124,7 @@ export function SessionControl({
         setExpired(false);
         setExpiredReason(null);
         setRestoring(false);
+        setRestoreRefused(false);
       }
       sync();
     },
@@ -184,6 +198,7 @@ export function SessionControl({
     wasSignedIn.current = false;
     setExpired(false);
     setExpiredReason(null);
+    setRestoreRefused(false);
     setSession(null);
     endSession();
   }, []);
@@ -226,6 +241,24 @@ export function SessionControl({
             {expiredReason
               ? strings.auth.sessionExpiredNoteWithReason(expiredReason)
               : strings.auth.sessionExpiredNote}
+          </span>
+        )}
+        {/*
+          A RESTORE KEYCLOAK REFUSED. Shown INSTEAD of nothing, not instead of
+          the expiry note above — the two cannot both be true, because `expired`
+          is about a session this tab held and this is about a cold load that
+          had none. The heading is the bar's share; the rule and the way back
+          are the gate's, and the `title` carries them for a hover.
+        */}
+        {!expired && restoreRefused && (
+          <span
+            className={ui.sessionStale}
+            style={{ cursor: 'default' }}
+            title={strings.auth.restoreRefusedBody(sessionIdleMinutes())}
+            data-testid="session-restore-refused-note"
+          >
+            <AlertTriangle size={13} aria-hidden="true" />
+            {strings.auth.restoreRefusedHeading}
           </span>
         )}
         <button

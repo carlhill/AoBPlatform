@@ -103,6 +103,51 @@ function dispatchSessionChanged(reason: SessionChangeReason): void {
  */
 let lastRefreshFailure: string | null = null;
 
+/**
+ * WHY A SILENT RESTORE WAS REFUSED, when it was and when this browser had a
+ * sign-in to lose (Carl, 7 Sep 2026).
+ *
+ * IT IS NOT THE SAME FACT AS "NOT SIGNED IN", and the difference is the whole
+ * reason it exists. The gate's ordinary copy — "you are not signed in, this
+ * page shows real records" — is written for somebody who has never been here.
+ * Carl HAD been, minutes earlier; Keycloak's SSO session had simply idled out.
+ * Telling him he was not signed in described the state and hid the cause, and
+ * left him with no idea why it kept happening.
+ *
+ * SET ONLY WHERE BOTH HALVES ARE KNOWN. `silentLoginFailed` reads the
+ * "this browser has signed in here" hint BEFORE clearing it, so a browser that
+ * genuinely has never signed in keeps the generic copy and this stays null.
+ *
+ * IT HOLDS AN OIDC ERROR CODE AND NOTHING ELSE — never a token, never a
+ * username.
+ */
+let lastRestoreRefusal: string | null = null;
+
+/** The OIDC reason the last silent restore was refused, for a browser that had
+ *  signed in here. `null` otherwise, and null again after any sign-in. */
+export function restoreRefusalReason(): string | null {
+  return lastRestoreRefusal;
+}
+
+/**
+ * HOW LONG A SIGN-IN SURVIVES WITHOUT ACTIVITY, in minutes, so the copy can say
+ * it instead of leaving somebody to guess.
+ *
+ * IT IS THE REALM'S NUMBER, NOT OURS. Keycloak enforces the idle timeout and
+ * this only reports it, so it is read from the environment rather than typed
+ * into a sentence — a hardcoded "30 minutes" beside a realm set to 240 is a
+ * confident lie, and the realm is the thing that moves.
+ *
+ * READ STATICALLY, for the reason `session.ts` gives about every
+ * `NEXT_PUBLIC_*` value: Next substitutes the member expression at build time
+ * and a dynamic lookup silently yields `undefined`.
+ */
+export function sessionIdleMinutes(): number {
+  const raw = process.env.NEXT_PUBLIC_SESSION_IDLE_MINUTES;
+  const minutes = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  return Number.isFinite(minutes) && minutes > 0 ? minutes : 30;
+}
+
 /** The reason the most recent refresh attempt failed, if the last thing that
  *  happened to this session was a failure. Read by `SessionControl` to add
  *  detail to the plain "sign-in has expired" note. */
@@ -180,7 +225,12 @@ export function clearSession(reason: SessionChangeReason = 'signed-out'): void {
    * — that is a different fact, and the components tell the two apart by
    * whether the page ever held a session.
    */
-  if (reason === 'signed-out') silentRestoreSettled = true;
+  if (reason === 'signed-out') {
+    silentRestoreSettled = true;
+    // Somebody chose to leave. "Your earlier sign-in has ended" would be true
+    // and patronising; the ordinary gate is right.
+    lastRestoreRefusal = null;
+  }
   stopRefresh();
   dispatchSessionChanged(reason);
 }
@@ -385,8 +435,31 @@ export function rememberSignedIn(clientId: string): void {
    */
   silentRestoreSettled = false;
   restoreWindowOpenedAt = null;
+  lastRestoreRefusal = null;
   try {
     window.localStorage.setItem(SEEN_KEY, clientId);
+    /*
+     * AND THE TAB MAY TRY AGAIN ON ITS NEXT LOAD (Carl, 7 Sep 2026).
+     *
+     * THE BUG THIS FIXES, in his own sequence: reload, the restore is refused
+     * because Keycloak's SSO session had idled out, the "already tried" marker
+     * stays set for the life of the TAB — it is sessionStorage, which survives
+     * reloads — and he then signs in with his passkey. The next reload found
+     * the marker, settled the question without asking, and offered him a
+     * sign-in prompt while Keycloak's session was live. The marker was
+     * answering a question about a state that no longer existed.
+     *
+     * A SUCCESSFUL EXCHANGE IS EXACTLY WHEN IT STOPS BEING TRUE, whether the
+     * exchange came from a passkey or from a silent redirect: either way there
+     * IS a session now, and the next cold load deserves its one attempt at
+     * restoring it.
+     *
+     * THE LOOP GUARD IS UNTOUCHED. `attemptSilentLogin` still sets the marker
+     * before it redirects and still refuses a second attempt in the same
+     * document; this clears it from the CALLBACK's document, which is a
+     * different page load and makes no second attempt of its own.
+     */
+    window.sessionStorage.removeItem(SILENT_TRIED_KEY);
   } catch {
     // Private browsing. The cost is a visible sign-in instead of a silent one.
   }
@@ -492,6 +565,13 @@ export function silentRestoreInFlight(): boolean {
  *
  * ONE ATTEMPT PER PAGE LOAD, tracked in sessionStorage. Without that, a
  * `login_required` answer would send us round the same loop for ever.
+ *
+ * AND THE MARKER IS CLEARED BY A SUCCESSFUL EXCHANGE, not only by signing out
+ * (`rememberSignedIn`). sessionStorage survives a reload, so a marker left
+ * behind by one refused attempt used to outlive the very sign-in that made a
+ * restore possible again — the tab then offered a sign-in prompt with a live
+ * Keycloak session sitting behind it. One attempt per page LOAD is what this
+ * guard is for; one attempt per tab, for ever, is what it had become.
  */
 /**
  * How long to keep believing a silent-login redirect is on its way.
@@ -626,11 +706,20 @@ export function signOut(): void {
   window.location.assign(`${ISSUER}/protocol/openid-connect/logout?${params.toString()}`);
 }
 
-/** Called by the callback when Keycloak answers `login_required`. */
-export function silentLoginFailed(): void {
+/**
+ * Called by the callback when Keycloak answers `login_required`.
+ *
+ * THE HINT IS READ BEFORE IT IS CLEARED, and the order is the point. A browser
+ * that HAD signed in here is being told its session ended; one that never had
+ * is simply not signed in. The two get different copy, and after this function
+ * has run there is no way to tell them apart — so the distinction is captured
+ * on the way past.
+ */
+export function silentLoginFailed(reason = 'login_required'): void {
   // There is no SSO session to restore from — say so on screen immediately
   // rather than waiting out the grace period.
   settleSilentRestore();
+  if (hasSignedInBefore()) lastRestoreRefusal = reason;
   try {
     window.localStorage.removeItem(SEEN_KEY);
   } catch {

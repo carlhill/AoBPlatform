@@ -23,7 +23,15 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { beginLogin, clearSession, currentSession, silentRestoreInFlight, type Session } from './auth';
+import {
+  beginLogin,
+  clearSession,
+  currentSession,
+  restoreRefusalReason,
+  sessionIdleMinutes,
+  silentRestoreInFlight,
+  type Session,
+} from './auth';
 import { strings } from './strings';
 
 /** How often this gate re-checks a session that self-expires silently. */
@@ -74,6 +82,12 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
    * in again, which reads as "you have been signed out" — and nobody had been.
    */
   const [restoring, setRestoring] = useState(false);
+  /*
+   * AND WHETHER KEYCLOAK REFUSED THE RESTORE (Carl, 7 Sep 2026). A cold load
+   * whose SSO session had idled out is not the same fact as somebody who has
+   * never signed in here, and this gate was telling them the same thing.
+   */
+  const [restoreRefused, setRestoreRefused] = useState(false);
 
   const sync = useCallback(() => {
     const s = currentSession();
@@ -87,6 +101,9 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       !s && !hadSession.current && typeof silentRestoreInFlight === 'function'
         ? silentRestoreInFlight()
         : false,
+    );
+    setRestoreRefused(
+      !s && typeof restoreRefusalReason === 'function' ? restoreRefusalReason() !== null : false,
     );
     setSession(s);
   }, []);
@@ -107,6 +124,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       if ((e as CustomEvent<{ reason?: string }>).detail?.reason === 'signed-out') {
         hadSession.current = false;
         setRestoring(false);
+        setRestoreRefused(false);
       }
       sync();
     },
@@ -150,6 +168,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     window.sessionStorage.removeItem('aob.devBypass');
     hadSession.current = false;
     setRestoring(false);
+    setRestoreRefused(false);
     setSession(null);
     setBypassed(false);
   }, []);
@@ -242,6 +261,42 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         </section>
         {children}
       </>
+    );
+  }
+
+  /*
+   * KEYCLOAK REFUSED THE RESTORE, AND THIS BROWSER HAD SIGNED IN HERE (Carl,
+   * 7 Sep 2026). Not "you are not signed in" — he was, minutes earlier, and the
+   * SSO session had simply idled out. That copy described the state and hid the
+   * cause.
+   *
+   * STILL BLOCKING, AND STILL AMBER RATHER THAN RED. The children stay hidden
+   * for the reason the generic gate hides them: a practice screen with nobody
+   * signed in is a disclosure risk, not an inconvenience, and unlike the
+   * expired-mid-visit case there is nothing on screen to preserve — this page
+   * has never rendered its content. What changes is only what the person is
+   * told, and that they are told the way back brings them here.
+   */
+  if (restoreRefused) {
+    return (
+      <section
+        aria-label={strings.auth.restoreRefusedHeading}
+        style={{ ...card, borderColor: AMBER }}
+        data-testid="auth-gate-restore-refused"
+      >
+        <p style={{ margin: 0, color: AMBER }}>
+          <strong>{strings.auth.restoreRefusedHeading}</strong>
+        </p>
+        <p style={{ margin: '0.5rem 0 0', color: '#57606a', fontSize: '0.85rem' }}>
+          {strings.auth.restoreRefusedBody(sessionIdleMinutes())}
+        </p>
+        <p style={{ margin: '0.75rem 0 0' }}>
+          <button onClick={() => void beginLogin()} data-testid="gate-sign-in-after-idle">
+            {strings.auth.signIn}
+          </button>
+        </p>
+        <p style={{ color: '#57606a', fontSize: '0.85rem' }}>{strings.auth.passkeyNote}</p>
+      </section>
     );
   }
 

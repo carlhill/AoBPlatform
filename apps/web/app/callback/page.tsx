@@ -43,7 +43,12 @@ function CallbackInner() {
        * not signed in yet.
        */
       if (error === 'login_required' || error === 'interaction_required') {
-        silentLoginFailed();
+        /*
+         * THE CODE TRAVELS, so the page we land back on can say WHY rather than
+         * only that nobody is signed in. Keycloak's own word, never a token and
+         * never a name (Carl, 7 Sep 2026).
+         */
+        silentLoginFailed(error);
         router.replace(returnPath());
         return;
       }

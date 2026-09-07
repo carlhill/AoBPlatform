@@ -22,7 +22,13 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, screen, cleanup } from '@testing-library/react';
 import { SessionControl } from '../SessionControl';
 import { AuthGate } from '../AuthGate';
-import { completeLogin, clearSession, rememberSignedIn } from '../auth';
+import {
+  attemptSilentLogin,
+  completeLogin,
+  clearSession,
+  rememberSignedIn,
+  silentLoginFailed,
+} from '../auth';
 import { strings } from '../strings';
 
 const VERIFIER_KEY = 'aob.pkce.verifier';
@@ -356,5 +362,162 @@ describe('reload_shows_signing_back_in_not_sign_in', () => {
     expect(screen.getByTestId('session-expired-note').textContent).toContain(
       strings.auth.sessionExpiredNote,
     );
+  });
+});
+
+/**
+ * THE MARKER THAT OUTLIVED THE SIGN-IN IT WAS ABOUT (Carl, 7 Sep 2026).
+ *
+ * HIS SEQUENCE, EXACTLY: reload, the silent restore is refused because
+ * Keycloak's SSO session had idled out, `aob.silentTried` stays set — it is
+ * sessionStorage, which survives reloads — and he then signs in with his
+ * passkey. The next reload found the marker, settled the question without
+ * asking anybody, and offered him a sign-in prompt with a live Keycloak session
+ * sitting behind it. The marker was answering a question about a state that no
+ * longer existed.
+ */
+describe('reload_after_interactive_sign_in_restores_silently', () => {
+  const SILENT_TRIED_KEY = 'aob.silentTried';
+
+  /**
+   * A `location` jsdom will let us watch. Its members live on the prototype, so
+   * spreading the real one copies nothing — the three `auth.ts` actually reads
+   * are given explicitly: `origin` for the redirect uri, `pathname`/`search`
+   * for the return path, and `assign` for the navigation itself.
+   */
+  function stubNavigation(): ReturnType<typeof vi.fn> {
+    const assign = vi.fn();
+    vi.stubGlobal('location', {
+      origin: 'http://localhost:3100',
+      pathname: '/practice/setup',
+      search: '',
+      assign,
+    });
+    return assign;
+  }
+
+  it('a successful exchange clears the marker, so the next load may try again', async () => {
+    // A refused attempt earlier in this tab left the marker behind.
+    sessionStorage.setItem(SILENT_TRIED_KEY, 'true');
+
+    await signIn();
+    expect(sessionStorage.getItem(SILENT_TRIED_KEY)).toBeNull();
+
+    /*
+     * AND THE NEXT COLD LOAD ACTUALLY ASKS. Asserted through the redirect
+     * itself rather than through the marker alone: `attemptSilentLogin`
+     * returning without navigating is precisely the bug, and only the
+     * `prompt=none` URL proves it did not.
+     */
+    clearSession('expired');
+    const assign = stubNavigation();
+
+    /*
+     * NOT AWAITED. The real call resolves only after its five-second grace (or
+     * never, because the document is torn down by the navigation), so awaiting
+     * it here would be waiting for the wrong thing. What is asserted is the
+     * REDIRECT: an `attemptSilentLogin` that settles without navigating is
+     * precisely the bug, and only the `prompt=none` URL proves it did not.
+     */
+    let resolved: boolean | 'pending' = 'pending';
+    void attemptSilentLogin('web').then((value) => {
+      resolved = value;
+    });
+    await settle();
+
+    expect(assign).toHaveBeenCalledTimes(1);
+    expect(String(assign.mock.calls[0][0])).toContain('prompt=none');
+    expect(resolved).toBe('pending');
+    // The loop guard is untouched: the marker is set again before it redirects.
+    expect(sessionStorage.getItem(SILENT_TRIED_KEY)).toBe('true');
+  });
+
+  it('a second attempt in the SAME load is still refused', async () => {
+    // The guard this fix must not remove: one attempt per page LOAD.
+    rememberSignedIn('web');
+    sessionStorage.setItem(SILENT_TRIED_KEY, 'true');
+    const assign = stubNavigation();
+
+    expect(await attemptSilentLogin('web')).toBe(false);
+    expect(assign).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A REFUSED RESTORE SAYS WHY (Carl, 7 Sep 2026).
+ *
+ * "You are not signed in. This page shows real records…" is written for
+ * somebody who has never been here. Carl HAD been, minutes earlier; the SSO
+ * session had idled out. The generic gate described the state and hid the
+ * cause, so the same thing kept happening with no explanation.
+ */
+describe('refused_restore_says_the_sign_in_ended_not_that_you_never_signed_in', () => {
+  it('the gate names the rule and the way back, and the bar carries the heading', async () => {
+    // A browser that HAS signed in here, whose silent restore Keycloak then
+    // refused. `silentLoginFailed` is what the callback calls on
+    // `error=login_required`.
+    rememberSignedIn('web');
+    silentLoginFailed('login_required');
+
+    render(
+      <AuthGate>
+        <p data-testid="gated-content">the console</p>
+      </AuthGate>,
+    );
+    render(<SessionControl audience="Practice admin" />);
+    await settle();
+
+    const card = screen.getByTestId('auth-gate-restore-refused');
+    expect(card.textContent).toContain(strings.auth.restoreRefusedHeading);
+    // The MINUTES come from the realm's own setting, never a number typed into
+    // the sentence — `sessionIdleMinutes()` defaults to 30 with no env set.
+    expect(card.textContent).toContain(strings.auth.restoreRefusedBody(30));
+    expect(screen.getByTestId('gate-sign-in-after-idle')).toBeTruthy();
+
+    // STILL BLOCKING: this page has never rendered its content, and a practice
+    // screen with nobody signed in is a disclosure risk (auth.ts).
+    expect(screen.queryByTestId('gated-content')).toBeNull();
+    // And it is not the generic gate.
+    expect(screen.queryByTestId('auth-gate')).toBeNull();
+
+    expect(screen.getByTestId('session-restore-refused-note').textContent).toContain(
+      strings.auth.restoreRefusedHeading,
+    );
+  });
+
+  it('a browser that has never signed in here keeps the generic copy', async () => {
+    /*
+     * THE SAME CALL, WITHOUT THE HINT. `attemptSilentLogin` is not gated on the
+     * hint, so a first-time browser also gets one `login_required` — and it
+     * must not be told its sign-in "ended", because it never had one.
+     */
+    silentLoginFailed('login_required');
+
+    render(
+      <AuthGate>
+        <p data-testid="gated-content">the console</p>
+      </AuthGate>,
+    );
+    render(<SessionControl audience="Practice admin" />);
+    await settle();
+
+    expect(screen.getByTestId('auth-gate')).toBeTruthy();
+    expect(screen.queryByTestId('auth-gate-restore-refused')).toBeNull();
+    expect(screen.queryByTestId('session-restore-refused-note')).toBeNull();
+    expect(screen.getByTestId('session-sign-in')).toBeTruthy();
+  });
+
+  it('a deliberate sign-out is not a refused restore', async () => {
+    rememberSignedIn('web');
+    silentLoginFailed('login_required');
+    // Somebody pressing Sign out is told the ordinary thing: "your earlier
+    // sign-in has ended" would be true and patronising.
+    clearSession('signed-out');
+
+    render(<SessionControl audience="Practice admin" />);
+    await settle();
+
+    expect(screen.queryByTestId('session-restore-refused-note')).toBeNull();
+    expect(screen.getByTestId('session-sign-in')).toBeTruthy();
   });
 });
