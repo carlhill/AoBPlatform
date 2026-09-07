@@ -52,9 +52,23 @@ every practice's PMS instead of in one versioned place we control. So an
 arrival that *claims* an agreement type is ignored on that point
 (`arrival_type_is_decided_by_the_rule_set_not_the_pms`).
 
+**Which provider the arrival names.** From 7 September 2026 an arrival names
+the practitioner *at a location*: the affiliation id, or the practitioner and
+location together, or -- most likely in practice -- the **provider number**,
+which names both by itself. The server does the resolving; the connector never
+has to learn our ids. "Does this patient already have an active enduring
+agreement with *this provider*" is then asked about the PERSON, so a GP working
+at two of the practice's sites is one practitioner and the patient is not asked
+to sign a second ongoing agreement at the second site (REQ-END-01, hard rule 6;
+`enduring_coverage_is_per_practitioner_across_locations`).
+
 **What "drafts" means.** AoB assembles the agreement's content from what it
 holds: the patient's details from the arrival; the provider's identifying
-details from the practice's provider record (REQ-REG-02); today's date (D2);
+details from the practitioner's **affiliation at the location they are working
+at** -- their name, that location's address and that location's provider number
+where one is held, because the number is issued per practitioner per location
+(REQ-REG-02, s 65C(5)(a) or (b), FR-1.8; the practice-wide "provider record"
+was retired as the anchor on 7 September 2026); today's date (D2);
 for enduring, the commencement and the pathway (MyMedicare); for episodic, the
 service date (D5) and the practice's default service description (D6a). The
 rules engine validates the set, it is locked, and AoB's own template wording

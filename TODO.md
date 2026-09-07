@@ -1084,7 +1084,7 @@ visit policy relies on them:
       the practice address (s 65C(5)(a)) with the location's provider number
       alongside where held. Decide once the Department answers the first two.
 
-## Billing role on the affiliation: who can be the provider on an agreement (Carl, 5-7 Sep 2026) -- BUILT
+## Billing role on the affiliation: who can be the provider on an agreement (Carl, 5-7 Sep 2026) -- BUILT; the guard became REAL on 7 Sep when agreements were anchored on the affiliation
 
 From Carl's Cowork note on Medicare money flow: provider numbers are issued per
 practitioner per location (stem + location character); claims are batched by
@@ -1156,7 +1156,10 @@ tests: `nurse_cannot_be_the_provider_on_an_agreement`,
   `refused_arrival_can_be_resubmitted_with_a_servicing_provider`.
 
 **WHAT THE SCHEMA TURNED OUT TO BE, and it is worth reading before the next
-change here.** `providers` and `affiliations` are two unconnected tables.
+change here -- HISTORICAL from 7 Sep 2026: the two tables are now joined
+through `Agreement.affiliationId` and the guesswork below is gone from every
+path but the deprecated `providerId` door.** `providers` and `affiliations`
+were two unconnected tables.
 `providers` is PRACTICE-scoped, has no `locationId` and no key to anything but
 `practices`, and is the LEGACY agreement anchor (`Agreement.providerId`).
 `affiliations` is the practitioner x location edge and is the anchor
@@ -1169,8 +1172,79 @@ share, strongest first: `pmsLinkageKey`, then `providerNumber`, then
 they agree on the role). Nothing matching answers `servicing_provider` and says
 `resolved: false` -- refusing what cannot be resolved would have stopped every
 arrival in the estate on the day it shipped.
-- [ ] **Next**: write `Agreement.affiliationId` on new agreements and retire
-      `providers` as the anchor, which removes the resolver entirely.
+- [x] **Next**: write `Agreement.affiliationId` on new agreements and retire
+      `providers` as the anchor, which removes the resolver entirely. **Done
+      7 Sep 2026 -- see below.**
+
+**THE ANCHOR MOVED, AND THE BILLING-ROLE GUARD ONLY NOW BITES (Carl, 7 Sep
+2026: "go"). Say this plainly, because the review found it and it is the point
+of the commit.** Until today the guard was FAIL-OPEN. It read the role by
+GUESSING which affiliation a practice-wide `providers` row meant, on three keys
+the two tables happened to share -- and in the dev database (and in any
+practice whose `providers` rows carry no linkage key, provider number or AHPRA
+number, which was all of them) it matched NOTHING, answered the default
+`servicing_provider`, and let every arrival through. A nurse would not have
+been refused; the named tests passed because their fixtures shared a key. From
+this commit the agreement is anchored on the affiliation itself, the role is
+READ off that row rather than inferred, and a practice nurse is refused because
+the platform knows who they are.
+
+**Built (7 Sep 2026).**
+- Migration `20260907040000_agreement_anchored_on_affiliation`:
+  `agreements_new_rows_are_anchored_on_an_affiliation` (a CHECK, so it holds
+  for a script or a future endpoint that forgets, not only for the service),
+  `agreements.providerAnchorBackfill` (a TYPE -- which key matched -- never a
+  value), `arrivals.affiliationId`. HARD-01 narrowed, not weakened: the
+  immutability trigger now allows `affiliationId` NULL -> value exactly once
+  (completing a record) and refuses every other change to it, which is what
+  made the backfill possible at all.
+- **Backfill result on the dev database: 0 of 251 resolved, 251 unresolved
+  across 37 providers, 37 `agreement_anchor_unresolved` review tasks raised
+  (low stakes, one per provider).** Not a bug -- the honest answer. Every
+  `providers` row in dev has an empty `pmsLinkageKey`, `providerNumber` and
+  `ahpraNumber`, so none of the three keys could match anything, and the
+  backfill will not guess. It is also the clearest possible evidence for the
+  fail-open finding above.
+- `Agreement.affiliationId` is the anchor everywhere: `createDraft` (takes
+  `affiliationId`; `providerId` deprecated and resolved, refused with
+  `provider_not_anchored` where it matches no practitioner), D4 at the render
+  (the practitioner's name, that LOCATION's address and that location's
+  provider number), the visit policy's coverage question (per PRACTITIONER, so
+  a GP at two sites is one person), the enduring GP check, the push path, the
+  pushable queue, the kiosk list, the portal, the 89AA notice, the
+  service-description queue and both auto-capture sweeps.
+- Arrival contract: `affiliationId` OR `practitionerId` + `locationId` OR
+  `providerNumber` (the server resolves any of them to the affiliation at the
+  location); `providerId` deprecated, **remove after 30 November 2026**.
+  `arrive.sh` sends `providerNumber` where the affiliation holds one.
+- `POST /practices/:id/providers` creates a Practitioner + Affiliation and
+  returns the affiliation id; it writes no `providers` row. AHPRA is now
+  required on it and the free-text `placeOfPracticeAddress` is gone -- the
+  address on an agreement is the LOCATION's. The go-live checklist counts
+  servicing affiliations rather than `providers` rows, because a practice whose
+  only `providers` rows match no practitioner could not have anchored one
+  agreement and the old count said it was ready.
+- `apps/core/src/affiliations/provider-billing-role.ts` is DELETED. Its
+  three-key matching survives only as `matchAffiliationsForProvider` in
+  `agreement-anchor.ts`, for the deprecated door and the backfill, and it
+  returns ALL candidates so that two answers stay visible instead of one being
+  picked.
+- Named tests: `new_agreements_are_anchored_on_an_affiliation`,
+  `enduring_coverage_is_per_practitioner_across_locations`,
+  `render_d4_reads_the_practitioner_and_the_locations_provider_number`,
+  `backfill_never_guesses_an_anchor`,
+  `arrival_resolves_provider_number_to_the_affiliation_at_the_location`, plus a
+  cross-practice anchor that fails closed.
+- [ ] **Next**: drop `Agreement.providerId`, the `providers` table and the
+      deprecated arrival field together, after 30 November 2026 -- and only
+      once every `agreement_anchor_unresolved` task is closed, because the
+      column is the last thing those agreements say about who they named.
+      `PmsSyncService.ensureProvider` is the one path still WRITING to
+      `providers`: the PMS feed carries no AHPRA number and a `Practitioner`
+      cannot exist without one, so mirroring a PMS provider as a practitioner
+      would mean inventing a national register number. That needs a ruling
+      (make AHPRA nullable on unconfirmed identities? hold PMS providers in
+      their own mirror table?) rather than a guess.
 
 ## Termination effective TIME, not just date (found 7 Sep 2026 via CI)
 
