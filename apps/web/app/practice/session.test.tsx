@@ -22,7 +22,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, screen, cleanup } from '@testing-library/react';
 import { SessionControl } from '../SessionControl';
 import { AuthGate } from '../AuthGate';
-import { completeLogin, clearSession } from '../auth';
+import { completeLogin, clearSession, rememberSignedIn } from '../auth';
 import { strings } from '../strings';
 
 const VERIFIER_KEY = 'aob.pkce.verifier';
@@ -117,6 +117,14 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   sessionStorage.clear();
+  /*
+   * AND THE "THIS BROWSER HAS SIGNED IN BEFORE" HINT, which a real sign-in
+   * writes to localStorage (`rememberSignedIn`). Leaving it behind would make
+   * every test after the first one look like a reload of a browser with a live
+   * SSO session, which is a different starting state from the one most of these
+   * tests mean to set up.
+   */
+  localStorage.clear();
   cleanup();
 });
 
@@ -245,5 +253,108 @@ describe('expired_note_names_the_refresh_failure_reason_when_known', () => {
     const note = screen.getByTestId('session-expired-note');
     expect(note.textContent).toContain('invalid_grant');
     expect(note.textContent).toBe(strings.auth.sessionExpiredNoteWithReason('invalid_grant'));
+  });
+});
+
+/**
+ * A RELOAD IS NOT A SIGN-OUT (Carl, 7 Sep 2026, pressing the browser's reload
+ * on `/practice/setup`).
+ *
+ * The access token is memory-only by design, so a reload starts the tab with no
+ * session and a `prompt=none` redirect then restores it from Keycloak's SSO
+ * session without asking for anything. For that second the bar said "Sign in"
+ * and the gate said "sign in again" — not early, WRONG: nobody had been signed
+ * out, and there was no amber note either, because this tab had never held a
+ * session to lose.
+ */
+describe('reload_shows_signing_back_in_not_sign_in', () => {
+  /** What a reload of a browser that HAS signed in here looks like from cold. */
+  function asReloadedTab(): void {
+    /*
+     * THROUGH THE REAL FUNCTION, not by writing the key. `rememberSignedIn` is
+     * what a successful sign-in calls, and it does more than store a hint — it
+     * reopens the restore question that an earlier sign-out settled. A test
+     * that poked localStorage would be simulating half of a sign-in and would
+     * pass or fail on what the test before it happened to do.
+     */
+    rememberSignedIn('web');
+  }
+
+  it('says it is signing you back in, and offers nothing while it does', async () => {
+    asReloadedTab();
+    render(<SessionControl audience="Practice admin" />);
+    await settle();
+
+    const restoring = screen.getByTestId('session-restoring');
+    expect(restoring.textContent).toContain(strings.auth.signingBackIn);
+    /*
+     * NO SIGN-IN BUTTON. Pressing it would start a second, INTERACTIVE login
+     * on top of the silent one about to land, and ask for a passkey nobody
+     * needed to give.
+     */
+    expect(screen.queryByTestId('session-sign-in')).toBeNull();
+    // AND NO AMBER NOTE. That note is for a session that lived in this tab and
+    // died; this tab has not had one.
+    expect(screen.queryByTestId('session-expired-note')).toBeNull();
+  });
+
+  it('the gate shows no card at all during that window', async () => {
+    asReloadedTab();
+    render(
+      <AuthGate>
+        <p data-testid="gated-content">the console</p>
+      </AuthGate>,
+    );
+    await settle();
+
+    expect(screen.queryByTestId('auth-gate')).toBeNull();
+    expect(screen.queryByTestId('auth-gate-expired')).toBeNull();
+    expect(screen.queryByTestId('gate-sign-in')).toBeNull();
+  });
+
+  it('falls through to the ordinary signed-out state when the restore does not land', async () => {
+    asReloadedTab();
+    render(<SessionControl audience="Practice admin" />);
+    await settle();
+    expect(screen.getByTestId('session-restoring')).toBeTruthy();
+
+    /*
+     * PAST THE GRACE PERIOD `attemptSilentLogin` ALREADY TRUSTS. A redirect
+     * that has not landed by now is not coming — the reachable cause is an
+     * origin Keycloak does not know — and a hopeful message that never resolves
+     * is a worse lie than the one it replaced.
+     */
+    await advanceMs(6_000);
+    await settle();
+
+    expect(screen.queryByTestId('session-restoring')).toBeNull();
+    expect(screen.getByTestId('session-sign-in')).toBeTruthy();
+    // Still no amber note: nothing expired here, this browser simply has no
+    // live SSO session any more.
+    expect(screen.queryByTestId('session-expired-note')).toBeNull();
+  });
+
+  it('a tab whose own session expired keeps the amber note, not the promise', async () => {
+    /*
+     * THE DISTINCTION THIS MUST NOT BLUR. Both states have no session and both
+     * happen in a browser that has signed in before; what separates them is
+     * whether THIS page ever held one. It did, so it is told what happened
+     * rather than promised something that is not coming.
+     */
+    issueRefreshToken = false;
+    await signIn();
+
+    render(<SessionControl audience="Practice admin" />);
+    await settle();
+    expect(screen.getByTestId('session-sign-out')).toBeTruthy();
+
+    await advanceMs(310_000);
+    await settle();
+
+    expect(screen.queryByTestId('session-restoring')).toBeNull();
+    expect(screen.getByTestId('session-sign-in')).toBeTruthy();
+    expect(screen.getByTestId('session-expired-note').textContent).toContain(
+      strings.auth.sessionExpiredNote,
+    );
   });
 });

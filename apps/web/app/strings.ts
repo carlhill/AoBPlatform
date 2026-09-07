@@ -54,6 +54,22 @@ export const strings = {
       'Your session was issued before this realm was corrected and carries no roles, so anything you are '
       + 'entitled to do is hidden rather than refused. Signing in again fixes it.',
     signIn: 'Sign in with your passkey',
+    /**
+     * THE HONEST INTERIM AFTER A RELOAD (Carl, 7 Sep 2026, on pressing the
+     * browser's reload on `/practice/setup`).
+     *
+     * The token is memory-only by design, so a reload starts the tab signed out
+     * and a redirect then restores it from Keycloak's SSO session without
+     * asking for anything. For that second the bar offered "Sign in" and the
+     * gate said "sign in again" — which reads as "I have been signed out", and
+     * nobody had been.
+     *
+     * IT PROMISES ONLY WHAT IT IS DOING. Not "please wait", not "loading" — the
+     * one fact that matters is that nobody is being asked for anything and the
+     * session is coming back. If it turns out not to be, the ordinary
+     * signed-out state takes over (`silentRestoreInFlight`, auth.ts).
+     */
+    signingBackIn: 'Signing you back in…',
     signOut: 'Sign out',
     signedInAs: 'Signed in as',
     signedOut: 'Not signed in — the console is running in development mode.',

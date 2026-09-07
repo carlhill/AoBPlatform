@@ -1957,6 +1957,17 @@ Now a working rule in CLAUDE.md section 7.
       it, read from the same two conditions `blockingReason` uses. Named tests
       `signed_patient_leaves_the_queue` and
       `ended_session_for_a_moved_on_agreement_offers_no_send_again`.
+- [x] Fourth instance, 7 Sep 2026 -- the console's own answer about ITSELF. The
+      browser's reload starts a tab signed out (the token is memory-only by
+      design) and a `prompt=none` redirect restores it a moment later, but for
+      that second the top bar said "Sign in" and the gate said "sign in again":
+      not early, wrong. `silentRestoreInFlight()` (auth.ts) now bounds the
+      interim three ways -- a session existing, the question being settled, or
+      the same grace period `attemptSilentLogin` already trusts -- and the bar
+      says "Signing you back in..." with no controls while it holds, the gate
+      showing no card at all. A tab whose OWN session expired still gets the
+      amber note; only a page that never held one gets the promise. Named test
+      `reload_shows_signing_back_in_not_sign_in`.
 - [ ] Audit every other "see X" message in the console for the same pattern
       (queue, reconciliation, correspondence, devices) and give each a link
       with the item id.

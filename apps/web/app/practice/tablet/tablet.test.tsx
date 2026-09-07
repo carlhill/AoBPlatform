@@ -325,6 +325,13 @@ let session: { roles: string[]; practiceId: string | null; practitionerId?: stri
 vi.mock('../../auth', () => ({
   currentSession: () => session,
   apiHeaders: () => ({ 'x-practice-id': PRACTICE, 'Content-Type': 'application/json' }),
+  /*
+   * THE TOP BAR ASKS WHETHER A SILENT RESTORE IS IN FLIGHT (auth.ts, 7 Sep
+   * 2026). This suite is about the tablet page, not about a reload, so the
+   * honest answer here is "no" — and a mock that simply omits the export makes
+   * every render throw rather than fall through.
+   */
+  silentRestoreInFlight: () => false,
 }));
 
 function signedInAtPractice() {

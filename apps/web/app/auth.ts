@@ -160,6 +160,27 @@ export function clearSession(reason: SessionChangeReason = 'signed-out'): void {
   // Cleared HERE and not on expiry: this is somebody actually leaving, so
   // there is no logout still to perform and nothing left to name.
   lastIdToken = undefined;
+  /*
+   * AND THE "SIGNING YOU BACK IN" WINDOW CLOSES WITH IT. A session ending is
+   * the end of one episode, not the start of another: nothing is being
+   * restored, and a stale open window would let the next cold render inherit a
+   * countdown that began under a different session.
+   *
+   * IT DOES NOT MAKE AN EXPIRY LOOK LIKE A RELOAD. `SessionControl` and
+   * `AuthGate` only ask `silentRestoreInFlight()` about a page that has NOT
+   * held a session in this mount, so a tab whose session expired under
+   * somebody still gets the amber note rather than a promise.
+   */
+  restoreWindowOpenedAt = null;
+  /*
+   * AND A DELIBERATE SIGN-OUT SETTLES THE QUESTION FOR GOOD. Somebody chose to
+   * leave: nothing is being restored, and a gate that showed nothing while it
+   * waited for a restore would leave the practice's own screen up behind it on
+   * a machine whose user believes they have gone. An EXPIRY does not settle it
+   * — that is a different fact, and the components tell the two apart by
+   * whether the page ever held a session.
+   */
+  if (reason === 'signed-out') silentRestoreSettled = true;
   stopRefresh();
   dispatchSessionChanged(reason);
 }
@@ -356,6 +377,14 @@ const SEEN_KEY = 'aob.hasSignedIn';
 const SILENT_TRIED_KEY = 'aob.silentTried';
 
 export function rememberSignedIn(clientId: string): void {
+  /*
+   * A LIVE SSO SESSION EXISTS AGAIN, so the question a future cold render asks
+   * — "is a silent restore coming?" — is open once more. Anything that settled
+   * it earlier (a deliberate sign-out, a `login_required`, a restore that never
+   * landed) was settled about a state that has just been replaced.
+   */
+  silentRestoreSettled = false;
+  restoreWindowOpenedAt = null;
   try {
     window.localStorage.setItem(SEEN_KEY, clientId);
   } catch {
@@ -369,6 +398,76 @@ export function hasSignedInBefore(): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * WHEN WE FIRST STARTED SAYING "SIGNING YOU BACK IN", and why the window opens
+ * then rather than at module load.
+ *
+ * A cold load has no session by construction — the access token lives in a
+ * module variable and nowhere else — so for the first moments of every reload
+ * "not signed in" and "about to be signed back in" look identical from the
+ * inside. What separates them is TIME: a live SSO session answers `prompt=none`
+ * in tens of milliseconds, and one that does not answer is not coming.
+ *
+ * The clock therefore starts when the question is first ASKED — the first paint
+ * of the top bar — which is the moment from which somebody is actually looking
+ * at the claim. Anchoring it to module load would spend part of the budget on
+ * whatever happened before the page rendered, and would make the window
+ * unmeasurable from a test that fakes the clock after importing this module.
+ */
+let restoreWindowOpenedAt: number | null = null;
+
+/**
+ * HAS THE QUESTION BEEN ANSWERED IN THIS DOCUMENT? Set on every path that
+ * decides no silent restore is happening — including the paths that decide it
+ * before trying — so the interim below cannot outlive the fact.
+ */
+let silentRestoreSettled = false;
+
+function settleSilentRestore(): void {
+  silentRestoreSettled = true;
+}
+
+/**
+ * IS A SILENT RESTORE EXPECTED OR RUNNING RIGHT NOW? (Carl, 7 Sep 2026.)
+ *
+ * THE FAULT IT FIXES. Pressing the browser's reload on a console page starts
+ * the tab signed out — deliberately, the token is memory-only — and a redirect
+ * then restores it from Keycloak's SSO session without asking for anything.
+ * For that second the top bar offered "Sign in" and the gate said "sign in
+ * again", with no expiry note. Both were WRONG rather than merely early:
+ * nobody had been signed out, and the honest thing to say is that we are
+ * putting it back.
+ *
+ * IT IS A PREDICTION, AND IT IS BOUNDED THREE WAYS, because a hopeful
+ * "signing you back in…" that never resolves is a worse lie than the one it
+ * replaces. It is false the moment a session exists; false as soon as anything
+ * settles the question (`attemptSilentLogin` returning false, Keycloak
+ * answering `login_required`, a deliberate sign-out); and false once the same
+ * grace period `attemptSilentLogin` already trusts has elapsed, so a page that
+ * never attempts a restore falls through to the ordinary signed-out state on
+ * its own.
+ *
+ * `hasSignedInBefore()` IS THE PRECONDITION, and it is a hint rather than a
+ * credential: it holds no token and grants nothing, it is written only by a
+ * real sign-in, and `silentLoginFailed()` clears it the moment Keycloak says
+ * there is no session to restore. A browser that has never signed in here
+ * never sees this state.
+ */
+export function silentRestoreInFlight(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (currentSession()) {
+    restoreWindowOpenedAt = null;
+    return false;
+  }
+  if (silentRestoreSettled) return false;
+  if (!hasSignedInBefore()) {
+    restoreWindowOpenedAt = null;
+    return false;
+  }
+  if (restoreWindowOpenedAt === null) restoreWindowOpenedAt = Date.now();
+  return Date.now() - restoreWindowOpenedAt < SILENT_REDIRECT_GRACE_MS;
 }
 
 /**
@@ -405,12 +504,20 @@ export function hasSignedInBefore(): string | null {
 const SILENT_REDIRECT_GRACE_MS = 5000;
 
 export async function attemptSilentLogin(clientId: string = CLIENT_ID): Promise<boolean> {
-  if (currentSession()) return false;
+  if (currentSession()) {
+    settleSilentRestore();
+    return false;
+  }
   // NOT gated on the hint. The hint is only written by a NEW sign-in, so
   // gating on it means anybody already signed in when it shipped keeps getting
   // the chooser — which was the whole bug. A browser that has never signed in
   // pays one fast redirect and gets `login_required`, once per page load.
-  if (sessionStorage.getItem(SILENT_TRIED_KEY) === 'true') return false;
+  if (sessionStorage.getItem(SILENT_TRIED_KEY) === 'true') {
+    // Already asked in this tab and not signed in, so nothing is coming: the
+    // bar must say "Sign in" rather than go on promising a restore.
+    settleSilentRestore();
+    return false;
+  }
 
   sessionStorage.setItem(SILENT_TRIED_KEY, 'true');
 
@@ -456,7 +563,12 @@ export async function attemptSilentLogin(clientId: string = CLIENT_ID): Promise<
    * with the document and nothing is painted.
    */
   return new Promise<boolean>((resolve) => {
-    window.setTimeout(() => resolve(false), SILENT_REDIRECT_GRACE_MS);
+    window.setTimeout(() => {
+      // The navigation is not coming. Same moment, same reason, for the caller
+      // and for the top bar.
+      settleSilentRestore();
+      resolve(false);
+    }, SILENT_REDIRECT_GRACE_MS);
   });
 }
 
@@ -516,6 +628,9 @@ export function signOut(): void {
 
 /** Called by the callback when Keycloak answers `login_required`. */
 export function silentLoginFailed(): void {
+  // There is no SSO session to restore from — say so on screen immediately
+  // rather than waiting out the grace period.
+  settleSilentRestore();
   try {
     window.localStorage.removeItem(SEEN_KEY);
   } catch {

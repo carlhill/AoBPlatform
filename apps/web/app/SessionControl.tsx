@@ -22,8 +22,15 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, LogIn, LogOut, Building2, ShieldCheck } from 'lucide-react';
-import { beginLogin, currentSession, signOut as endSession, refreshFailureReason, type Session } from './auth';
+import { AlertTriangle, LogIn, LogOut, Building2, RefreshCw, ShieldCheck } from 'lucide-react';
+import {
+  beginLogin,
+  currentSession,
+  signOut as endSession,
+  refreshFailureReason,
+  silentRestoreInFlight,
+  type Session,
+} from './auth';
 import { strings } from './strings';
 import { ui } from './ui';
 import { apiHeaders } from './auth';
@@ -59,6 +66,13 @@ export function SessionControl({
   /** Keycloak's own error code for why the background refresh failed, when
    *  one is known — never a token value (`refreshFailureReason`, auth.ts). */
   const [expiredReason, setExpiredReason] = useState<string | null>(null);
+  /*
+   * A RELOAD IS NOT A SIGN-OUT (Carl, 7 Sep 2026). The token is memory-only by
+   * design, so pressing the browser's reload starts this tab with no session
+   * and a silent redirect then restores it from Keycloak's SSO session. For
+   * that second the bar said "Sign in", which is not early — it is wrong.
+   */
+  const [restoring, setRestoring] = useState(false);
   const wasSignedIn = useRef(false);
 
   const sync = useCallback(() => {
@@ -73,6 +87,17 @@ export function SessionControl({
       // export must still render the plain "expired" note rather than throw.
       setExpiredReason(typeof refreshFailureReason === 'function' ? refreshFailureReason() : null);
     }
+    /*
+     * ONLY ABOUT A PAGE THAT HAS NEVER HELD A SESSION. A tab whose session
+     * expired under somebody is a different fact and keeps its amber note —
+     * promising them a restore that is not coming would be the old lie with a
+     * friendlier face.
+     */
+    setRestoring(
+      !s && !wasSignedIn.current && typeof silentRestoreInFlight === 'function'
+        ? silentRestoreInFlight()
+        : false,
+    );
     setSession(s);
   }, []);
 
@@ -85,6 +110,7 @@ export function SessionControl({
         wasSignedIn.current = false;
         setExpired(false);
         setExpiredReason(null);
+        setRestoring(false);
       }
       sync();
     },
@@ -111,6 +137,20 @@ export function SessionControl({
       window.removeEventListener('aob:session-changed', onSessionEvent);
     };
   }, [sync, onSessionEvent]);
+
+  /*
+   * A FAST TICK, AND ONLY WHILE THE RESTORE IS OPEN. Thirty seconds is right
+   * for a session that self-expires quietly; it is far too slow for a window
+   * that closes in tens of milliseconds — the bar would go on saying "signing
+   * you back in" long after the answer arrived. `sync` clears `restoring` the
+   * moment the question is settled, which stops this interval as a side
+   * effect: nothing polls once there is nothing left to wait for.
+   */
+  useEffect(() => {
+    if (!restoring) return;
+    const tick = setInterval(sync, 250);
+    return () => clearInterval(tick);
+  }, [restoring, sync]);
 
   /*
    * The practice's NAME, which the token does not carry — it carries the id,
@@ -151,6 +191,30 @@ export function SessionControl({
   // Nothing until the in-memory session has been read, or the bar flickers
   // from "sign in" to "signed in as…" on every page load.
   if (!checked) return null;
+
+  /*
+   * THE RESTORE IS IN FLIGHT — say what is happening, and offer nothing.
+   *
+   * NO SIGN-IN BUTTON, deliberately: pressing it would start a SECOND,
+   * interactive login on top of a silent one that is about to land, and ask
+   * for a passkey nobody needed to give. NO EXPIRY NOTE either, and none is
+   * possible — that note is for a session that lived in THIS tab and died, and
+   * this tab has not had one yet.
+   *
+   * The spinner is the refresh button's own, so "something is happening" looks
+   * the same everywhere in the top bar.
+   */
+  if (!session && restoring) {
+    return (
+      <span className={ui.sessionBar}>
+        <span className={ui.sessionAudience}>{audience}</span>
+        <span className={ui.sessionWho} data-testid="session-restoring">
+          <RefreshCw size={13} aria-hidden="true" className={ui.spinning} />{' '}
+          {strings.auth.signingBackIn}
+        </span>
+      </span>
+    );
+  }
 
   if (!session) {
     return (

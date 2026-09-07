@@ -23,7 +23,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { beginLogin, clearSession, currentSession, type Session } from './auth';
+import { beginLogin, clearSession, currentSession, silentRestoreInFlight, type Session } from './auth';
 import { strings } from './strings';
 
 /** How often this gate re-checks a session that self-expires silently. */
@@ -66,10 +66,28 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
    * so whatever the person was doing is not thrown away under them.
    */
   const hadSession = useRef(false);
+  /*
+   * A RELOAD IS NOT A SIGN-OUT (Carl, 7 Sep 2026). The token is memory-only by
+   * design, so the browser's reload starts this page with no session and a
+   * silent redirect then restores it from Keycloak's SSO session without asking
+   * for anything. This gate used to spend that moment telling somebody to sign
+   * in again, which reads as "you have been signed out" — and nobody had been.
+   */
+  const [restoring, setRestoring] = useState(false);
 
   const sync = useCallback(() => {
     const s = currentSession();
     if (s) hadSession.current = true;
+    /*
+     * ONLY ABOUT A PAGE THAT HAS NEVER HELD A SESSION. One that HAD one and
+     * lost it mid-visit keeps the card-over-content treatment above, which is
+     * what stops somebody's half-finished work being thrown away.
+     */
+    setRestoring(
+      !s && !hadSession.current && typeof silentRestoreInFlight === 'function'
+        ? silentRestoreInFlight()
+        : false,
+    );
     setSession(s);
   }, []);
 
@@ -86,7 +104,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
    */
   const onSessionEvent = useCallback(
     (e: Event) => {
-      if ((e as CustomEvent<{ reason?: string }>).detail?.reason === 'signed-out') hadSession.current = false;
+      if ((e as CustomEvent<{ reason?: string }>).detail?.reason === 'signed-out') {
+        hadSession.current = false;
+        setRestoring(false);
+      }
       sync();
     },
     [sync],
@@ -111,16 +132,43 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     };
   }, [sync, onSessionEvent]);
 
+  /*
+   * A FAST TICK WHILE THE RESTORE IS OPEN, and none afterwards. Thirty seconds
+   * is right for a session that self-expires quietly and far too slow for a
+   * window that closes in tens of milliseconds — this gate renders nothing
+   * during it, and nothing for thirty seconds is its own fault. `sync` clears
+   * `restoring` the moment the question is settled, which stops this interval.
+   */
+  useEffect(() => {
+    if (!restoring) return;
+    const tick = setInterval(sync, 250);
+    return () => clearInterval(tick);
+  }, [restoring, sync]);
+
   const signOut = useCallback(() => {
     clearSession();
     window.sessionStorage.removeItem('aob.devBypass');
     hadSession.current = false;
+    setRestoring(false);
     setSession(null);
     setBypassed(false);
   }, []);
 
   // Avoids flashing the sign-in card before the in-memory session is read.
   if (!checked) return null;
+
+  /*
+   * A SILENT RESTORE IS IN FLIGHT — no card at all, exactly as above.
+   *
+   * NOT A "SIGNING YOU BACK IN" CARD OF ITS OWN. The top bar already says it
+   * (`SessionControl`), and this gate's whole vocabulary is refusals: any card
+   * here reads as a thing standing between somebody and the page. Showing
+   * nothing for the tens of milliseconds a live SSO session takes to answer is
+   * what the `!checked` branch above already does, for the same reason, and
+   * `silentRestoreInFlight` is bounded so this cannot become a page that never
+   * paints.
+   */
+  if (!session && !bypassed && restoring) return null;
 
   if (session) {
     return (
