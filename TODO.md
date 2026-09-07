@@ -3124,3 +3124,22 @@ calls, and core says which mode it is in at startup.
       contradicts CLAUDE.md §7 ("no real Medicare-format numbers in fixtures" —
       same principle). Left alone here because several e2e suites depend on
       those exact numbers; changing them is a small, separate job.
+
+## Housekeeping: move the repo off OneDrive (Carl, 7 Sep 2026)
+
+OneDrive holds an in-memory entry for every file under the synced tree and a
+change-queue slot every time one is touched. With `node_modules`, `.next` and
+the Vitest caches under it that is hundreds of thousands of files touched
+constantly: 370–500 MB of RAM for OneDrive alone, and the cause of the core
+watcher restarting itself on 6–7 Sep (fixed then by narrowing `--watch-path`).
+
+- [ ] **Move the checkout to a plain folder** (e.g. `C:\Projects\AoBPlatform`)
+      and let git be the backup it already is. Ten minutes when no build agent
+      is mid-edit: stop the two previews, move the folder, update
+      `.claude/launch.json` cwd if it is absolute, restart the previews from the
+      new path, re-open the desktop app on the new folder. OneDrive keeps
+      syncing the docs folder if Carl wants a copy there; the code does not
+      need it. Also take `.wslconfig` (4 GB cap, set 7 Sep) as read.
+- [ ] Half-measure if the move waits: OneDrive cannot exclude a subfolder, so
+      "Free up space" on the repo only trims disk, not the index. Not worth
+      doing; move instead.
