@@ -28,6 +28,8 @@ import {
   bodyFromForm,
   formFromBody,
   insertAtCaret,
+  nextVersionName,
+  slugify,
   wrapSelection,
   type TemplateBody,
 } from './templateEditing';
@@ -75,6 +77,8 @@ function renderForm(onPropose = vi.fn()) {
       placeholders={PLACEHOLDERS}
       conditions={CONDITIONS}
       initialVersion="our-clinic-episodic-1"
+      practiceName="Sample Clinic"
+      existingVersions={[]}
       busy={false}
       error={null}
       onPropose={onPropose}
@@ -212,7 +216,37 @@ describe('template_form_blocks_submit_while_a_data_element_is_missing', () => {
     expect(screen.getByText(/ever permitted about our forms/)).toBeTruthy();
   });
 
-  it('a version name in the wrong shape blocks the save and says the shape', () => {
+});
+
+describe('template_version_name_is_generated_and_valid', () => {
+  /*
+   * THE PURE FUNCTIONS FIRST — the part of "generate a version name" that can
+   * be wrong in a way no component test would show: the shape of the slug,
+   * and which existing versions count towards the next number.
+   */
+  it('slugify lower-cases, hyphenates, and never produces a name the pattern would reject', () => {
+    expect(slugify('Testville Family Medical')).toBe('testville-family-medical');
+    expect(slugify('  Extra   Spaces  ')).toBe('extra-spaces');
+    // Starts with a digit: the pattern requires the first character to be a
+    // letter, so a name like this cannot be left to fail — it is repaired.
+    expect(slugify('24/7 Medical')).toBe('practice-24-7-medical');
+    // Nothing left after stripping: still a name, not an empty prefix.
+    expect(slugify('!!!')).toBe('practice');
+  });
+
+  it('nextVersionName numbers one past the highest existing number under the same prefix', () => {
+    expect(nextVersionName('testville', 'episodic', [])).toBe('testville-episodic-1');
+    expect(
+      nextVersionName('testville', 'episodic', [
+        'testville-episodic-1',
+        'testville-episodic-3',
+        'testville-enduring-9', // a different agreement type — does not count
+        'someone-else-episodic-9', // a different practice — does not count
+      ]),
+    ).toBe('testville-episodic-4');
+  });
+
+  it('shows the generated version read-only, and Change reveals an editable field', () => {
     render(
       <TemplateForm
         agreementType="episodic"
@@ -220,17 +254,53 @@ describe('template_form_blocks_submit_while_a_data_element_is_missing', () => {
         placeholders={PLACEHOLDERS}
         conditions={CONDITIONS}
         initialVersion=""
+        practiceName="Xlevelup Medical"
+        existingVersions={['xlevelup-medical-episodic-1']}
         busy={false}
         error={null}
         onPropose={vi.fn()}
         onCancel={vi.fn()}
       />,
     );
+
+    // Generated from the practice name, the agreement type, and the highest
+    // existing number for that pair — never typed, and shown before anybody
+    // does anything.
+    expect(screen.getByText(strings.templates.versionGenerated('xlevelup-medical-episodic-2'))).toBeTruthy();
+    expect(screen.queryByTestId('variant-version')).toBeNull();
+    // Generated, so it already satisfies the shape rule — nothing to fix.
+    expect(screen.queryByText(strings.templates.checkNeedsVersion)).toBeNull();
+
+    fireEvent.click(screen.getByTestId('variant-version-change'));
+    const input = screen.getByTestId('variant-version') as HTMLInputElement;
+    expect(input.value).toBe('xlevelup-medical-episodic-2');
+
+    // Now that a person is editing it, the shape rule can actually be broken.
+    fireEvent.change(input, { target: { value: 'Not A Valid Name' } });
     expect((screen.getByTestId('save-draft') as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(strings.templates.checkNeedsVersion)).toBeTruthy();
 
-    fireEvent.change(screen.getByTestId('variant-version'), { target: { value: 'our-clinic-episodic-1' } });
+    fireEvent.change(input, { target: { value: 'our-own-name-1' } });
     expect((screen.getByTestId('save-draft') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('a draft already in progress keeps its own version rather than being renumbered', () => {
+    render(
+      <TemplateForm
+        agreementType="episodic"
+        generic={GENERIC}
+        placeholders={PLACEHOLDERS}
+        conditions={CONDITIONS}
+        initialVersion="our-clinic-episodic-1"
+        practiceName="Our Clinic"
+        existingVersions={['our-clinic-episodic-1']}
+        busy={false}
+        error={null}
+        onPropose={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(strings.templates.versionGenerated('our-clinic-episodic-1'))).toBeTruthy();
   });
 });
 
@@ -306,5 +376,37 @@ describe('the preview is sample data and says so', () => {
       strings.templates.sampleValues.patientName,
     );
     expect(screen.getByTestId('template-preview').textContent).not.toContain('{{');
+  });
+});
+
+describe('template_statements_are_multiline', () => {
+  it('a statement is a textarea, not a single-line input that clips the sentence', () => {
+    renderForm();
+    const box = screen.getByTestId('statement-sample_details_v1-text');
+    expect(box.tagName).toBe('TEXTAREA');
+    // The floor is two rows, not the one-line box this replaced.
+    expect((box as HTMLTextAreaElement).rows).toBe(2);
+
+    const longStatement =
+      'A second statement long enough that a single-line box would clip it mid-sentence, '
+      + 'which is exactly what was happening before this box could grow.';
+    fireEvent.change(box, { target: { value: longStatement } });
+    expect((box as HTMLTextAreaElement).value).toBe(longStatement);
+
+    // Still wired to the same two pickers a paragraph box has.
+    expect(screen.getByTestId('statement-sample_details_v1-text-insert')).toBeTruthy();
+    expect(screen.getByTestId('statement-sample_details_v1-text-only-when')).toBeTruthy();
+  });
+
+  it('the title grows with the text rather than clipping a heading that wraps', () => {
+    renderForm();
+    const title = screen.getByTestId('template-title');
+    expect(title.tagName).toBe('TEXTAREA');
+    fireEvent.change(title, {
+      target: { value: 'A title long enough to wrap onto a second line on a narrow screen' },
+    });
+    expect((title as HTMLTextAreaElement).value).toBe(
+      'A title long enough to wrap onto a second line on a narrow screen',
+    );
   });
 });

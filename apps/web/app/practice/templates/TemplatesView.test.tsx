@@ -178,11 +178,11 @@ describe('practice_console_never_offers_to_activate_wording', () => {
     await screen.findByTestId('wording-episodic');
 
     fireEvent.click(screen.getByTestId('propose-episodic'));
-    fireEvent.change(screen.getByTestId('variant-version'), { target: { value: 'our-1' } });
 
     /*
      * THE FORM'S OWN CHECKS PASS FIRST -- the generic above carries every
-     * element -- so Save is live and the request actually goes. The point of
+     * element and the version is generated already valid, needing nothing
+     * typed -- so Save is live and the request actually goes. The point of
      * this test is what happens when the SERVER refuses anyway: its sentence
      * is shown verbatim, because it names the line and the rule and a
      * paraphrase would take away the actionable half.

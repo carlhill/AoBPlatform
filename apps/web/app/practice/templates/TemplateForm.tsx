@@ -44,7 +44,7 @@
  * the wording if it did, which is the point of running it here.
  */
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AgreementTemplateError,
   renderAgreementTemplate,
@@ -60,7 +60,9 @@ import {
   checkTemplateForm,
   formFromBody,
   insertAtCaret,
+  nextVersionName,
   sampleValuesFor,
+  slugify,
   wrapSelection,
   type TemplateBody,
   type TemplateFormProblem,
@@ -88,6 +90,7 @@ function Editable({
   value,
   onChange,
   multiline,
+  minRows = 3,
   placeholders,
   conditions,
   testId,
@@ -97,11 +100,27 @@ function Editable({
   value: string;
   onChange: (next: string) => void;
   multiline?: boolean;
+  /** The box's height while empty, and the least it ever shrinks back to. */
+  minRows?: number;
   placeholders: readonly string[];
   conditions: readonly string[];
   testId: string;
 }) {
   const ref = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null);
+
+  /*
+   * AUTO-GROWING, NO MANUAL RESIZE (Carl, 7 Sep 2026). A statement or a title
+   * that wraps used to clip mid-sentence in a fixed box; growing the box to
+   * fit what is typed is the fix, not a resize handle nobody asked for — the
+   * handle is switched off in CSS (`autoGrowTextarea`) and the height is set
+   * here instead, every time the text changes.
+   */
+  useEffect(() => {
+    const el = ref.current;
+    if (!multiline || !(el instanceof HTMLTextAreaElement)) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [multiline, value]);
 
   /** Where the caret is right now, defaulting to the end of the text. */
   const caret = useCallback((): { start: number; end: number } => {
@@ -148,8 +167,8 @@ function Editable({
         <textarea
           id={testId}
           ref={ref as React.RefObject<HTMLTextAreaElement>}
-          className={ui.input}
-          rows={3}
+          className={`${ui.input} ${styles.autoGrowTextarea}`}
+          rows={minRows}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           data-testid={testId}
@@ -220,6 +239,8 @@ export function TemplateForm({
   placeholders,
   conditions,
   initialVersion,
+  practiceName,
+  existingVersions,
   busy,
   error,
   onPropose,
@@ -233,15 +254,44 @@ export function TemplateForm({
   /** Declared by the content file and served by the API — never a list in here. */
   placeholders: readonly string[];
   conditions: readonly string[];
+  /** An existing draft's own version name — carried on, never regenerated. */
   initialVersion: string;
+  /** Trading name, falling back to legal name — read off the practice record, never typed here. */
+  practiceName: string;
+  /** Every version this practice has ever proposed, of either type — for numbering the next one. */
+  existingVersions: readonly string[];
   busy: boolean;
   error: string | null;
   onPropose: (version: string, body: TemplateBody, submit: boolean) => void;
   onCancel: () => void;
 }) {
   const [form, setForm] = useState<TemplateFormState>(() => formFromBody(generic, draft));
-  const [version, setVersion] = useState(initialVersion);
+
+  /*
+   * GENERATED, NOT TYPED (Carl, 7 Sep 2026). "The version name must be lower
+   * case, words joined by hyphens, and end in a number" is a rule about
+   * `TEMPLATE_VERSION_PATTERN`, not a fact a practice manager should have to
+   * satisfy by hand. A fresh proposal (no draft, so `initialVersion` is
+   * empty) gets `<practice-slug>-<agreementType>-<n>`; a draft already in
+   * progress keeps the name it was first saved under. Either way the value is
+   * always well-formed, so the shape check never fires until somebody presses
+   * Change and types something themselves.
+   */
+  const generatedVersion = useMemo(
+    () => nextVersionName(slugify(practiceName), agreementType, existingVersions),
+    [practiceName, agreementType, existingVersions],
+  );
+  const [version, setVersion] = useState(initialVersion || generatedVersion);
+  const [versionEditing, setVersionEditing] = useState(false);
   const [previewing, setPreviewing] = useState(false);
+  /*
+   * EXPANDED BY DEFAULT WHILE BLOCKED. The bar is sticky so the reasons stay
+   * on screen while the form scrolls (Carl, 7 Sep 2026) — but the first time
+   * anything is wrong, showing the list is what tells a practice what to fix.
+   * Collapsing to the one-line count is something a practice chooses once it
+   * has read the list and wants the space back, not the state it opens in.
+   */
+  const [checksExpanded, setChecksExpanded] = useState(true);
 
   const problems: TemplateFormProblem[] = useMemo(
     () =>
@@ -305,22 +355,45 @@ export function TemplateForm({
       <p className={styles.cardNote}>{s.editorLead}</p>
       <p className={styles.cardNote}>{s.insertHint}</p>
 
-      {/* --- The version name ------------------------------------------- */}
-      <label className={ui.hint} htmlFor="variant-version">
-        {s.versionLabel}
-      </label>
-      <input
-        id="variant-version"
-        className={ui.input}
-        value={version}
-        placeholder={s.versionPlaceholder}
-        onChange={(e) => setVersion(e.target.value)}
-        data-testid="variant-version"
-      />
-      <p className={ui.hint}>{s.versionHint}</p>
+      {/* --- The version name --------------------------------------------
+        GENERATED, SHOWN, RARELY CHANGED (Carl, 7 Sep 2026). The technical
+        shape ("lower case, hyphens, ending in a number") is the system's
+        problem to satisfy, not the practice's — so it is satisfied before
+        anybody sees this field. Change reveals the input for the rare case
+        somebody wants a different name; the usual case is reading it and
+        moving on. */}
+      {versionEditing ? (
+        <>
+          <label className={ui.hint} htmlFor="variant-version">
+            {s.versionLabel}
+          </label>
+          <input
+            id="variant-version"
+            className={ui.input}
+            value={version}
+            placeholder={s.versionPlaceholder}
+            onChange={(e) => setVersion(e.target.value)}
+            data-testid="variant-version"
+          />
+          <p className={ui.hint}>{s.versionHint}</p>
+        </>
+      ) : (
+        <div className={styles.cardActions} data-testid="variant-version-display">
+          <p className={styles.cardNote}>{s.versionGenerated(version)}</p>
+          <Button
+            variant="subtle"
+            onClick={() => setVersionEditing(true)}
+            data-testid="variant-version-change"
+          >
+            {s.versionChange}
+          </Button>
+        </div>
+      )}
 
       {/* --- Title -------------------------------------------------------- */}
       <Editable
+        multiline
+        minRows={1}
         label={s.titleLabel}
         hint={s.titleHint}
         value={form.title}
@@ -392,6 +465,8 @@ export function TemplateForm({
         <div key={statement.key} className={styles.methodDetail} data-testid={`statement-${statement.key}`}>
           <p className={styles.cardTitle}>{s.statementKeyLabel(statement.key)}</p>
           <Editable
+            multiline
+            minRows={2}
             label={s.statementKeyLabel(statement.key)}
             value={statement.text}
             onChange={(text) =>
@@ -420,23 +495,47 @@ export function TemplateForm({
         testId="template-footer"
       />
 
-      {/* --- The live checks ------------------------------------------------ */}
-      <div className={styles.methodDetail} data-testid="template-checks">
-        <p className={styles.subHeading}>{s.checksHeading}</p>
+      {/* --- The live checks -------------------------------------------------
+        PINNED WHILE THE FORM SCROLLS (Carl, 7 Sep 2026: "the yellow box need
+        to be fixed"). This is the only part of the form somebody editing
+        wording needs to see at every moment, not just when they happen to
+        have scrolled to the bottom — so it sticks to the foot of the form's
+        own column rather than living wherever the last field left it.
+        Collapsed it is one line, announced as it changes (`role="status"`);
+        expanded it is the same reasons the loader gives, each nameable
+        (CLAUDE.md §7's unmapped-code principle, applied to a check instead of
+        a refusal). */}
+      <div className={styles.checksBar} data-testid="template-checks">
         {blocked ? (
-          <Notice tone="warn" title={s.checksBlocked(problems.length)}>
-            <ul>
-              {problems.map((problem) => (
-                <li key={problem.key} data-testid={`check-${problem.key}`}>
-                  {problem.message}
-                </li>
-              ))}
-            </ul>
-          </Notice>
+          <button
+            type="button"
+            className={styles.checksSummary}
+            aria-expanded={checksExpanded}
+            onClick={() => setChecksExpanded((current) => !current)}
+            data-testid="template-checks-toggle"
+          >
+            <span role="status">{s.checksSummaryBlocked(problems.length, checksExpanded)}</span>
+          </button>
         ) : (
-          <p className={styles.cardNote} data-testid="checks-passing">
+          <p role="status" className={`${styles.checksSummary} ${styles.checksSummaryOk}`} data-testid="checks-passing">
             {s.checksPassing}
           </p>
+        )}
+        {blocked && checksExpanded && (
+          <div role="region" aria-labelledby="template-checks-heading" className={styles.checksListWrap}>
+            <p id="template-checks-heading" className={styles.subHeading}>
+              {s.checksHeading}
+            </p>
+            <Notice tone="warn" title={s.checksBlocked(problems.length)}>
+              <ul>
+                {problems.map((problem) => (
+                  <li key={problem.key} data-testid={`check-${problem.key}`}>
+                    {problem.message}
+                  </li>
+                ))}
+              </ul>
+            </Notice>
+          </div>
         )}
       </div>
 

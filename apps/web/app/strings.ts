@@ -3426,6 +3426,16 @@ export const strings = {
       'Rewrite the wording in your own words. The shape is fixed — the same sections and the same '
       + 'statements to tick — and every element of the s 65C data set must still appear. The checks beside '
       + 'the form run as you type.',
+    /*
+     * GENERATED, NOT TYPED (Carl, 7 Sep 2026). The version name still has to
+     * satisfy `TEMPLATE_VERSION_PATTERN` — lower case, hyphens, ending in a
+     * number — but that is a fact about the pattern, not a form a practice
+     * manager should have to fill in correctly. `versionGenerated` is shown
+     * read-only; the input and its hint below only appear once "Change" is
+     * pressed, for the rare case somebody wants a different name.
+     */
+    versionGenerated: (version: string) => `Version: ${version}`,
+    versionChange: 'Change',
     versionLabel: 'Version name',
     versionPlaceholder: 'e.g. our-clinic-episodic-1',
     versionHint:
@@ -3501,6 +3511,14 @@ export const strings = {
     checksPassing: 'Everything the s 65C data set needs is here, and nothing that is not allowed.',
     checksBlocked: (n: number) =>
       n === 1 ? '1 thing to fix before this can be saved' : `${n} things to fix before this can be saved`,
+    /*
+     * THE STICKY BAR'S ONE LINE (Carl, 7 Sep 2026: "the yellow box need to be
+     * fixed"). Pinned to the foot of the form so it is on screen while
+     * scrolling; collapsed, this is the whole of it, and it says both the
+     * count and what pressing it does.
+     */
+    checksSummaryBlocked: (n: number, expanded: boolean) =>
+      `${n === 1 ? '1 thing to fix' : `${n} things to fix`} — ${expanded ? 'hide' : 'show'}`,
     /*
      * A MISSING ELEMENT IN WORDS (Carl, 7 Sep 2026). "it never renders
      * {{patientName}}" is the loader talking to a developer; this is what a
@@ -4712,16 +4730,26 @@ export const strings = {
       + 'go under and we will carry on with the arrival — nothing has been changed for the patient yet.',
     /** "{provider} works under a provider here" -- the reason, naming the role. */
     reason: (provider: string, role: string) => `${provider} is recorded as “${role}” here.`,
+    /**
+     * The provider named matches no practitioner at any of this practice's
+     * locations, so an agreement naming them could not say who signed for whom
+     * or where. Reception picks the practitioner instead.
+     */
+    notAnchoredReason: (provider: string) =>
+      `${provider} is not linked to a practitioner at any of your locations.`,
     unknownReason: (code: string) => `Refused (${code}). Please tell support this code.`,
     /** When we have never seen this patient, the practice's own handle stands in. */
     recordNumber: (number: string) => `Record number ${number}`,
-    pickLabel: 'The provider the claim will go under',
-    pickPlaceholder: 'Choose a provider…',
+    pickLabel: 'The practitioner the claim will go under',
+    pickPlaceholder: 'Choose a practitioner…',
+    /** Two sites, one person: the label that tells the two choices apart. */
+    choiceAtLocation: (name: string, location: string) => `${name} — ${location}`,
     submit: 'Carry on with this arrival',
     submitting: 'Sending…',
     failed: 'That arrival could not be re-sent',
     noneToChoose:
-      'No servicing provider is recorded at this practice yet. Set a billing role on an affiliation first.',
+      'No servicing practitioner is recorded at any of your locations yet. Add an affiliation, or set its '
+      + 'billing role, first.',
     count: (n: number) => (n === 1 ? '1 arrival needs a provider' : `${n} arrivals need a provider`),
   },
 

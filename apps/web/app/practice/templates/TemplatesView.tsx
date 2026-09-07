@@ -432,6 +432,17 @@ export function TemplatesView({
                         variants.find((v) => v.agreementType === generic.agreementType && v.status === 'draft')
                           ?.version ?? ''
                       }
+                      /*
+                       * TRADING NAME, FALLING BACK TO LEGAL NAME — the same
+                       * choice the letterhead itself makes, read off the
+                       * practice record rather than typed here. `variants`
+                       * at this point is every version of THIS agreement
+                       * type this practice has ever proposed, retired or
+                       * not, which is exactly what the next number must not
+                       * collide with.
+                       */
+                      practiceName={letterhead?.letterhead.tradingName ?? letterhead?.letterhead.legalName ?? ''}
+                      existingVersions={variants.map((v) => v.version)}
                       busy={proposeBusy}
                       error={proposeError}
                       onPropose={(version, body, submit) => void propose(version, body, submit)}

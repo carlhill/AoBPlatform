@@ -178,6 +178,66 @@ export interface TemplateFormProblem {
 /** The version name the endpoint accepts: lower-kebab-case ending in a number. */
 export const TEMPLATE_VERSION_PATTERN = /^[a-z][a-z0-9-]*-[0-9]+$/;
 
+/**
+ * A PRACTICE NAME, MADE INTO THE SHAPE A VERSION NAME CAN START WITH
+ * (Carl, 7 Sep 2026).
+ *
+ * "The version name must be lower case, words joined by hyphens, and end in
+ * a number" is a technical rule about `TEMPLATE_VERSION_PATTERN`, not a fact
+ * about the practice — so the practice is never asked to satisfy it by hand.
+ * This turns whatever the practice record holds into the one thing the
+ * pattern requires of its OWN half: lower case, hyphens, starting with a
+ * letter.
+ *
+ * A NAME THAT STARTS WITH A DIGIT (or is empty once stripped) still has to
+ * produce a version starting with a letter, because the pattern requires it
+ * — `practice-` is prepended rather than the slug being silently dropped, so
+ * "24/7 Medical" still becomes a version rather than failing to generate one.
+ */
+export function slugify(name: string): string {
+  // Anything that is not a lower-case letter or digit becomes a hyphen —
+  // spaces, punctuation, an accented letter alike. Simpler than transliterating
+  // accents, and no less correct: the pattern only cares that what comes out
+  // is lower-kebab-case starting with a letter, not that it reads identically
+  // to the practice name.
+  const base = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (!base) return 'practice';
+  return /^[a-z]/.test(base) ? base : `practice-${base}`;
+}
+
+/**
+ * THE NEXT VERSION NAME FOR THIS PRACTICE AND AGREEMENT TYPE:
+ * `<practice-slug>-<agreementType>-<n>`, where `<n>` is one more than the
+ * highest number already used by one of THIS practice's own templates of
+ * THIS type (Carl, 7 Sep 2026).
+ *
+ * `existingVersions` IS WHATEVER THE PAGE ALREADY FETCHED — every version
+ * string this practice has ever proposed, of either type, retired or not.
+ * Only the ones sharing this exact `<slug>-<agreementType>-` prefix count;
+ * that also means a version proposed before this feature existed, or under a
+ * DIFFERENT practice name (a rename), simply does not collide — the counter
+ * starts again under the new prefix, which is correct: it is a different
+ * name, not the same series continuing.
+ */
+export function nextVersionName(
+  practiceSlug: string,
+  agreementType: AgreementTemplateType,
+  existingVersions: readonly string[],
+): string {
+  const prefix = `${practiceSlug}-${agreementType}-`;
+  let highest = 0;
+  for (const version of existingVersions) {
+    if (!version.startsWith(prefix)) continue;
+    const suffix = version.slice(prefix.length);
+    if (!/^[0-9]+$/.test(suffix)) continue;
+    highest = Math.max(highest, Number(suffix));
+  }
+  return `${prefix}${highest + 1}`;
+}
+
 export function checkTemplateForm(
   form: TemplateFormState,
   input: {
