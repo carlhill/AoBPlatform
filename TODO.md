@@ -2489,6 +2489,40 @@ so "2 Example St" and "2 Example Street" are one address.
 - [ ] v2/v3 placeholders, not built: appointments, referrals (see the
       reception-centric section 4 and "Where this product could go").
 
+### Patient-proposed changes to their own details -- hold and prove (Carl, 7 Sep 2026) -- PROPOSED
+
+Carl: a patient should be able to enter a new email or home address, prove it
+with their passkey, have us tell their backup email (and, for an address, both
+current and backup emails), and keep the right to say "it was not me", in
+which case the change is rolled back.
+
+Agreed shape, reusing the practice-admin email-change machinery (pending change
+by token, cooling-off stop window, review-task-on-stop -- Carl's notes):
+- [ ] **Contact details vs identifiers.** Mobile and email (contact details)
+      take effect on their own after the cooling-off window. Address is one of
+      the three identifiers the kiosk verifies a walk-up against, so it lands
+      on reception's work page as a pre-filled, passkey-verified correction
+      that reception accepts with one click. Name and DOB stay off the portal.
+- [ ] **The practice record stays the master.** Every accepted change reaches
+      the practice's copy through the existing correction path (and the PMS
+      via write-back once D-01 lands); the portal proposes and proves, it does
+      not hold the record.
+- [ ] **Prove with a fresh passkey assertion** (WebAuthn, user verification
+      required). Passkey holders only; invitation-only patients keep "ask the
+      practice".
+- [ ] **Notify every channel we hold**: old email, new email, mobile; plus an
+      optional backup email on the portal account (the first PII the account
+      would hold -- encrypted, revocable like a passkey, its own decision).
+- [ ] **"That wasn't me"**: a single-use stop link in every notification, valid
+      for the window, no sign-in needed. Stop = cancel the pending change
+      (nothing has propagated), revoke portal sessions and passkeys (a passkey
+      that passed means the device is compromised), review task for the
+      practice. Nothing to roll back downstream because nothing reached it.
+- [ ] Vault events for propose / prove / notify / stop / apply -- types only;
+      the proposed value lives encrypted on the pending-change row.
+- [ ] Window length: Carl to set (the admin change uses a cooling-off period;
+      propose the same). Est. ~2 agent-days on the existing machinery.
+
 ### Identity and access -- the part to get right
 - [ ] **Passkey-first, three-identifier bootstrap** (FR-8.2): activation is
       OFFERED after a completed signature (FR-1.14), never required
