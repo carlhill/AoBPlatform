@@ -44,8 +44,23 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RULES_CLIENT, RulesClientError } from '../rules-client/rules-client.module';
 import { assertCanBeProviderOnAgreement, assertEnduringAllowed } from '@aobplatform/domain';
 import type { ChangeAssignorDto, CreateAgreementDto, LockParticularsDto } from './agreements.dto';
+import type { Actor } from '../auth/actor.decorator';
 
 const SYSTEM_ACTOR = { principalType: 'system', id: 'core' } as const;
+
+/**
+ * THE NAMED STAFF MEMBER WHERE THERE IS ONE, THE PLATFORM WHERE THERE IS NOT
+ * (found in review, 7 Sep 2026).
+ *
+ * The subject of a token the realm signed, never a name from a body — a name
+ * in a request is an assertion, an id in a token is a claim somebody signed
+ * (`SessionActor`'s own docstring). The absence is a fact too: a kiosk
+ * re-pointing a draft mid-ceremony genuinely has no staff session, and naming
+ * one there would be inventing a witness.
+ */
+function assignorActor(actor: Actor | undefined): { principalType: string; id: string } {
+  return actor ? { principalType: actor.principalType, id: actor.id } : SYSTEM_ACTOR;
+}
 
 /**
  * WHO "UPLOADED" A SIGNATURE ARTEFACT. Not a name — the artefact rule requires
@@ -456,7 +471,25 @@ export class AgreementsService {
    * with the note "friend"; the platform has no opinion on who a patient
    * brings with them.
    */
-  async changeAssignor(practiceId: string, agreementId: string, dto: ChangeAssignorDto): Promise<DbAgreement> {
+  async changeAssignor(
+    practiceId: string,
+    agreementId: string,
+    dto: ChangeAssignorDto,
+    /**
+     * WHOSE HANDS CHANGED WHO SIGNS (found in review, 7 Sep 2026).
+     *
+     * OPTIONAL, BECAUSE NOT EVERY CALLER HAS ONE. The kiosk re-points a draft
+     * mid-ceremony from a tablet that carries a pairing credential and no
+     * staff session; the platform is the honest actor there. But a
+     * receptionist typing a walk-in, and a staff member using the tablet
+     * desk's "who is signing" panel, are people — and D7 is a particular of
+     * a contract, so an event saying "the platform did this" about an act one
+     * of them performed would be evidence with the witness removed. It is
+     * RECORDED, never read to decide anything: authorisation stays
+     * `@PracticeScoped` and RLS.
+     */
+    actor?: Actor,
+  ): Promise<DbAgreement> {
     try {
       return await this.prisma.withPractice(practiceId, async (tx) => {
         // A cross-practice id finds nothing: RLS filters on the
@@ -489,7 +522,7 @@ export class AgreementsService {
           });
           await enqueueVaultEvent(tx, {
             type: 'agreement.assignor_changed',
-            actor: SYSTEM_ACTOR,
+            actor: assignorActor(actor),
             subject: { type: 'Agreement', id: agreementId },
             // IDs and facts, never a name and never a contact value
             // (REQ-LOG-08, REQ-VER-04).
@@ -562,7 +595,7 @@ export class AgreementsService {
 
         await enqueueVaultEvent(tx, {
           type: 'agreement.assignor_changed',
-          actor: SYSTEM_ACTOR,
+          actor: assignorActor(actor),
           subject: { type: 'Agreement', id: agreementId },
           payload: {
             assignorIsPatient: false,

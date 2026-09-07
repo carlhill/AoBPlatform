@@ -1,10 +1,18 @@
 import { BadRequestException, HttpException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import type { ArrivalProviderChoice, ArrivalReceipt, RefusedArrival } from '@aobplatform/contracts';
+import type {
+  ArrivalPreview,
+  ArrivalProviderChoice,
+  ArrivalReceipt,
+  RefusedArrival,
+} from '@aobplatform/contracts';
+import { ARRIVAL_SOURCE_TYPED_BY_A_PERSON } from '@aobplatform/contracts';
 import {
   BILLING_ROLES_VERSION,
+  buildAssignorForAnother,
   decideVisitAgreement,
   detailTypeForPatientField,
+  HardRuleViolation,
   mayBeProviderOnAgreement,
   providerIsGpFor,
   SERVICE_DESCRIPTIONS_VERSION,
@@ -24,7 +32,8 @@ import {
   anchorsForAgreements,
   type AgreementAnchor,
 } from '../affiliations/agreement-anchor';
-import { ArrivalDto } from './arrivals.dto';
+import type { Actor } from '../auth/actor.decorator';
+import { ArrivalDto, ArrivalPreviewDto } from './arrivals.dto';
 
 /**
  * THE ARRIVAL IS THE PRACTICE'S SOFTWARE SPEAKING, NOT A PERSON. Nobody at the
@@ -33,6 +42,19 @@ import { ArrivalDto } from './arrivals.dto';
  * connector and a dev script from ever looking alike in the evidence.
  */
 const SYSTEM_ACTOR = { principalType: 'system', id: 'arrivals' } as const;
+
+/**
+ * EXCEPT WHEN A PERSON TYPED IT (W2, Carl 7 Sep 2026).
+ *
+ * A `reception` arrival is the one kind somebody's hands actually made, and
+ * the evidence should not say "the platform did this" about an act a named
+ * staff member performed. The subject of the token the realm signed, never a
+ * name from a form (`SessionActor`'s own docstring: a name in a body is an
+ * assertion, an id in a token is a claim somebody signed).
+ */
+function actorFor(actor: Actor | undefined): { principalType: string; id: string } {
+  return actor ? { principalType: actor.principalType, id: actor.id } : SYSTEM_ACTOR;
+}
 
 /**
  * THE ARRIVAL NAMED SOMEBODY WHO CANNOT BE THE PROVIDER ON AN AGREEMENT
@@ -107,7 +129,8 @@ interface DecidedArrival {
   affiliationId: string;
   decision: VisitAgreementDecision;
   practiceDefaultD6a: string | null;
-  arrivalDate: string;
+  /** D5 — the day named by a person, else the calendar day they arrived. */
+  serviceDate: string;
 }
 
 /**
@@ -161,8 +184,19 @@ export class ArrivalsService {
     private readonly enduring: EnduringService,
   ) {}
 
-  async receive(practiceId: string, dto: ArrivalDto, sentFieldNames: string[]): Promise<ArrivalReceipt> {
-    this.assertNothingForbiddenWasSent(sentFieldNames);
+  async receive(
+    practiceId: string,
+    dto: ArrivalDto,
+    sentFieldNames: string[],
+    /**
+     * WHOSE HANDS TYPED IT — present only for a `reception` arrival, absent
+     * for every machine push, and the absence is a fact rather than a gap
+     * (see `actorFor`). The service never READS this to decide anything; it
+     * records it. Authorisation is `@PracticeScoped` and RLS, as it was.
+     */
+    actor?: Actor,
+  ): Promise<ArrivalReceipt> {
+    this.assertNothingForbiddenWasSent(sentFieldNames, dto.source);
 
     // ---------------------------------------------------------------------
     // PHASE 0 — read what already exists, OUTSIDE any transaction the writes
@@ -202,7 +236,7 @@ export class ArrivalsService {
      * three-key guesswork the previous build needed went with the anchor.
      */
     if (!mayBeProviderOnAgreement(anchor.billingRole)) {
-      await this.recordRefusal(practiceId, dto, anchor, patient?.id ?? null, existing?.id);
+      await this.recordRefusal(practiceId, dto, anchor, patient?.id ?? null, actor, existing?.id);
       throw new ArrivalRefusal(
         'provider_not_servicing',
         `${anchor.name} is recorded as "${anchor.billingRole}" at this practice and cannot be the provider ` +
@@ -221,7 +255,15 @@ export class ArrivalsService {
      * nurse.
      */
     if (!anchor.affiliationId) {
-      await this.recordRefusal(practiceId, dto, anchor, patient?.id ?? null, existing?.id, 'provider_not_anchored');
+      await this.recordRefusal(
+        practiceId,
+        dto,
+        anchor,
+        patient?.id ?? null,
+        actor,
+        existing?.id,
+        'provider_not_anchored',
+      );
       throw new ArrivalRefusal(
         'provider_not_anchored',
         `${anchor.name} is not linked to a practitioner at one of this practice’s locations, so an ` +
@@ -229,6 +271,50 @@ export class ArrivalsService {
           'claim will go under.',
         { providerId: anchor.legacyProviderId },
       );
+    }
+
+    /*
+     * AND IF SOMEBODY ELSE IS SIGNING, THEY ARE CHECKED BEFORE A ROW MOVES
+     * (hard rule 10; W2, Carl 7 Sep 2026).
+     *
+     * THE SAME DOMAIN FUNCTION `changeAssignor` WILL RUN — imported, not
+     * reimplemented, because a second copy of "who may be an assignor" is a
+     * second chance to disagree with the first. It hard-blocks practice staff
+     * against the practice's own staff list (REQ-VUL-04, fail closed), refuses
+     * a party who has not declared they are of full age (REQ-AGE-01), refuses
+     * a basis outside REQ-VUL-01's fixed list, refuses `other` without its
+     * note, and refuses a party with no usable contact channel (REQ-REG-08).
+     *
+     * HERE, BEFORE ANYTHING IS WRITTEN, for the same reason the servicing-
+     * provider guard is: a refusal should leave the desk able to fix the one
+     * field and send again, not leave a half-made walk-in behind it. Nothing
+     * is stored by this call — it builds a party in memory and throws if the
+     * party is not one this regime allows. The assignor ROW is created later,
+     * by `changeAssignor` itself, between the capture request and the lock.
+     *
+     * IT NEVER ASKS ABOUT CAPACITY, and there is no parameter for it
+     * (REQ-VUL-05). The absence is the requirement.
+     */
+    if (dto.assignor) {
+      const staffNames = await this.prisma.withPractice(practiceId, async (tx) =>
+        (await tx.staffMember.findMany({ select: { name: true } })).map((s) => s.name),
+      );
+      try {
+        buildAssignorForAnother({
+          name: dto.assignor.name,
+          authorityBasis: dto.assignor.authorityBasis,
+          note: dto.assignor.note,
+          declaresEighteenOrOver: dto.assignor.declaresEighteenOrOver,
+          mobile: dto.assignor.mobile,
+          email: dto.assignor.email,
+          practiceStaffNames: staffNames,
+        });
+      } catch (err) {
+        // The rule's own words, naming the requirement and never the name that
+        // was typed — the same mapping `changeAssignor` makes.
+        if (err instanceof HardRuleViolation) throw new BadRequestException(err.message);
+        throw err;
+      }
     }
 
     const coverage = patient
@@ -322,6 +408,15 @@ export class ArrivalsService {
         policyVersion: decision.policyVersion,
         arrivedAt,
         source: dto.source,
+        /*
+         * WHOSE HANDS TYPED IT, when a person's did — and NULL when nobody's
+         * did, which the database insists on
+         * (`arrivals_principal_only_when_typed`). A connector push naming a
+         * staff member would be a record asserting that somebody at the desk
+         * vouched for a message nobody read.
+         */
+        receivedByPrincipalId:
+          dto.source === ARRIVAL_SOURCE_TYPED_BY_A_PERSON ? (actor?.id ?? null) : null,
         outcome: 'received',
         refusedReason: null,
         refusedPayload: Prisma.DbNull,
@@ -346,7 +441,12 @@ export class ArrivalsService {
        */
       await enqueueVaultEvent(tx, {
         type: 'arrival.received',
-        actor: SYSTEM_ACTOR,
+        /*
+         * THE PLATFORM FOR A MACHINE PUSH, THE NAMED STAFF MEMBER FOR A TYPED
+         * ONE (W2). An event that said "the platform did this" about an act a
+         * receptionist performed would be evidence with the witness removed.
+         */
+        actor: actorFor(actor),
         subject: { type: 'Arrival', id: arrival.id },
         payload: {
           practiceId,
@@ -380,6 +480,16 @@ export class ArrivalsService {
           billingRole: anchor.billingRole,
           billingRolesVersion: BILLING_ROLES_VERSION,
           billingRoleResolved: anchor.billingRoleRecorded,
+          /*
+           * WHO SENT IT, BY ID (W2). An id from a signed token, never a name
+           * — the same rule every other payload in this file follows
+           * (REQ-LOG-08). Empty string for a machine push, because the vault
+           * payload holds scalars and "nobody typed this" is the true answer.
+           */
+          receivedBy: actor?.id ?? '',
+          receivedByType: actor?.principalType ?? 'system',
+          /* D7 as it will stand on the draft, before anything is drafted. */
+          assignorIsPatient: dto.assignor === undefined,
         },
       });
 
@@ -390,7 +500,16 @@ export class ArrivalsService {
         affiliationId: anchor.affiliationId!,
         decision,
         practiceDefaultD6a: practice.defaultServiceDescription,
-        arrivalDate: arrivedAt.toISOString().slice(0, 10),
+        /*
+         * D5 — THE DAY THE SERVICE IS FOR.
+         *
+         * `serviceDate` when a person named one (they may be typing up
+         * yesterday's walk-in after the system came back), otherwise the
+         * calendar day of `arrivedAt` exactly as it always was. The explicit
+         * date is why the reception form sends one at all: this line takes the
+         * UTC calendar day, and 9 a.m. in Sydney is the previous day in UTC.
+         */
+        serviceDate: dto.serviceDate ?? arrivedAt.toISOString().slice(0, 10),
       } satisfies DecidedArrival;
     });
 
@@ -441,6 +560,65 @@ export class ArrivalsService {
       tx.arrival.update({ where: { id: decided.arrivalId }, data: { captureRequestId: opened.captureRequestId } }),
     );
 
+    /*
+     * PHASE 4b — SOMEBODY ELSE IS SIGNING, SAID AT THE DESK (D7, hard rule 10;
+     * W2, Carl 7 Sep 2026). `reception` only — the DTO fence above refuses it
+     * from anything else.
+     *
+     * AFTER THE LOCK IS TOO LATE, AND BEFORE THE QUEUE ROW IS TOO EARLY.
+     *
+     * Too late, because who signs is one of the LOCKED PARTICULARS
+     * (REQ-REG-06, hard rule 2): `assertRepointAllowed` refuses to move it
+     * once phase 5 has locked them — a correction supersedes, it does not edit
+     * (HARD-02). Posting the arrival and then re-pointing it would work on an
+     * enduring draft, which is never locked, and fail on every episodic one,
+     * which always is: the sort of difference a receptionist discovers in
+     * front of a patient.
+     *
+     * Too early, because the platform never blocks care (hard rule 8,
+     * REQ-REC-04). Placed before phase 4, a party the rules engine's C8 check
+     * refused would leave a draft with no capture request and nobody on
+     * reception's queue. Here, the patient is already on the queue with
+     * themselves as assignor before this runs, so the worst case is a refusal
+     * the desk fixes on a row that exists — and the particulars are still
+     * unlocked, so who signs can still be changed there.
+     *
+     * THE HARD-RULE-10 REFUSALS THEMSELVES HAPPEN EARLIER STILL, in phase 0,
+     * over the same `buildAssignorForAnother` — so a staff member or an
+     * undeclared party is refused before a single row moves.
+     *
+     * THROUGH THE SERVICE THAT OWNS THE GUARDS, and not one line of hard rule
+     * 10 lives in this module: `changeAssignor` runs
+     * `buildAssignorForAnother`, which hard-blocks practice staff against the
+     * practice's own staff list (REQ-VUL-04, fail closed), refuses a party who
+     * has not declared they are of full age (REQ-AGE-01), refuses a basis
+     * outside the fixed list, refuses `other` with no note, and refuses a
+     * party with no usable contact channel (REQ-REG-08). It writes its own
+     * `agreement.assignor_changed` event in its own transaction.
+     */
+    if (dto.assignor) {
+      await this.agreements.changeAssignor(
+        practiceId,
+        draft.id,
+        {
+          assignorIsPatient: false,
+          name: dto.assignor.name,
+          authorityBasis: dto.assignor.authorityBasis,
+          note: dto.assignor.note,
+          declaresEighteenOrOver: dto.assignor.declaresEighteenOrOver,
+          relationship: dto.assignor.relationship,
+          relationshipsVersion: dto.assignor.relationshipsVersion,
+          mobile: dto.assignor.mobile,
+          email: dto.assignor.email,
+        },
+        // The receptionist, not the platform — the same reasoning `actorFor`
+        // gives for `arrival.received`, applied to the event that records who
+        // the party to the contract is.
+        actor,
+      );
+    }
+
+
     // ---------------------------------------------------------------------
     // PHASE 5 — D6a, then the lock. EPISODIC ONLY.
     //
@@ -450,36 +628,53 @@ export class ArrivalsService {
     // `enduring_rules_not_authored`). Locking one would mean an agent writing
     // regulation. It sits on the queue with that reason until GA-PLAN B5.
     // ---------------------------------------------------------------------
-    if (decided.decision.type === 'episodic_pre' && decided.practiceDefaultD6a) {
+    /*
+     * D6a — THE PRACTICE'S DEFAULT, OR THE ONE A PERSON CHOSE INSTEAD (W2).
+     *
+     * `dto.serviceDescription` is `reception` only and is `@IsIn` the
+     * versioned list, so it is never typed prose and never a description the
+     * rules engine's C6 check would then refuse (hard rule 14). Where reception
+     * chose nothing, this is exactly the connector's path: the practice's own
+     * default, and no lock at all if the practice has not set one.
+     */
+    const chosenD6a = dto.serviceDescription ?? decided.practiceDefaultD6a;
+
+    if (decided.decision.type === 'episodic_pre' && chosenD6a) {
+      const chosenByAPerson = dto.serviceDescription !== undefined;
       await this.prisma.withPractice(practiceId, async (tx) => {
         await tx.agreement.update({
           where: { id: draft.id },
           data: {
-            serviceDescription: decided.practiceDefaultD6a,
-            // THE PLATFORM DID THIS, and the record says so rather than naming
-            // a staff member who was not there — the same distinction the
-            // appointment sweep draws.
-            serviceDescriptionSetBy: null,
+            serviceDescription: chosenD6a,
+            /*
+             * WHO CHOSE THE WORDS. Null where the PLATFORM did — the practice
+             * default applied to a machine push — rather than naming a staff
+             * member who was not there, the same distinction the appointment
+             * sweep draws. The named staff member where one actually picked
+             * from the list on the reception form.
+             */
+            serviceDescriptionSetBy: chosenByAPerson ? (actor?.id ?? null) : null,
             serviceDescriptionSetAt: new Date(),
           },
         });
         await enqueueVaultEvent(tx, {
           type: 'agreement.service_description_set',
-          actor: SYSTEM_ACTOR,
+          actor: chosenByAPerson ? actorFor(actor) : SYSTEM_ACTOR,
           subject: { type: 'Agreement', id: draft.id },
           payload: {
-            serviceDescription: decided.practiceDefaultD6a!,
+            serviceDescription: chosenD6a,
             serviceDescriptionsVersion: SERVICE_DESCRIPTIONS_VERSION,
-            source: 'practice_default',
+            source: chosenByAPerson ? 'reception' : 'practice_default',
           },
         });
       });
 
       await this.agreements.transition(practiceId, draft.id, 'awaiting_signature');
-      // `serviceDate` is the day they walked in. D6a is read from the column
-      // written above rather than resent, exactly as the staff surface's lock
-      // does (REQ-DATA-11: the client supplies only what the server cannot know).
-      await this.agreements.lockParticulars(practiceId, draft.id, { serviceDate: decided.arrivalDate });
+      // D5 is the day a person named, else the day they walked in. D6a is read
+      // from the column written above rather than resent, exactly as the staff
+      // surface's lock does (REQ-DATA-11: the client supplies only what the
+      // server cannot know).
+      await this.agreements.lockParticulars(practiceId, draft.id, { serviceDate: decided.serviceDate });
     }
     /*
      * NO DEFAULT D6a MEANS NO LOCK — AND NO TRANSITION EITHER. The practice has
@@ -498,6 +693,104 @@ export class ArrivalsService {
   /** One arrival, for the console and for the tests that read it back. */
   async get(practiceId: string, arrivalId: string): Promise<ArrivalReceipt> {
     return this.receiptFor(await this.reread(practiceId, arrivalId), false);
+  }
+
+  /**
+   * "WHAT WOULD THIS VISIT NEED?" — THE SAME ANSWER, WITHOUT THE ARRIVAL
+   * (Carl, 7 Sep 2026; PMS_to_AoB_Workflow.md W2 item 5).
+   *
+   * WHY RECEPTION MAY NOT SIMPLY BE ASKED. What a visit needs — a first
+   * ongoing agreement, an agreement for today's service, or nothing because
+   * one already covers this practitioner — is decided by the versioned visit
+   * policy and never by the sender (hard rules 6 and 14). That holds whether
+   * the sender is a connector or a receptionist: the whole defence against
+   * regulatory whipsaw is that the rule lives in one versioned place. So the
+   * form does not offer a choice; it shows the answer, live, before Submit.
+   *
+   * IT IS THE SAME CODE, NOT A SECOND COPY. The same `findAnchor`, the same
+   * `mayBeProviderOnAgreement` guard, the same `EnduringService.coverage` read
+   * — asked about the PERSON, so a GP working at two of the practice's sites
+   * is one practitioner (REQ-END-01) — and the same `decideVisitAgreement`
+   * over the same four inputs. A preview that could disagree with the pipeline
+   * would be worse than no preview at all.
+   *
+   * IT WRITES NOTHING AND EMITS NOTHING. No mirror row, no assignor, no
+   * arrival, no vault event, no idempotency key. A receptionist changing a
+   * dropdown three times must not put a patient on a queue.
+   *
+   * WHAT IT REFUSES, IT REFUSES AS A VALUE. A nurse or an unanchored provider
+   * comes back as `blocked` with the pipeline's own reason CODE rather than as
+   * a 422, because on this screen it is not an error — it is the answer to a
+   * question that was legitimately asked, and the console maps the code to its
+   * own words and a destination (CLAUDE.md §7).
+   *
+   * A PATIENT THE PRACTICE HAS NEVER SEEN IS NOT AN ERROR EITHER: `coverage`
+   * is simply false, which is the truth about somebody with no record here.
+   */
+  async preview(practiceId: string, dto: ArrivalPreviewDto): Promise<ArrivalPreview> {
+    const { anchor, patient, practice } = await this.prisma.withPractice(practiceId, async (tx) => ({
+      anchor: await this.findAnchor(tx, practiceId, dto),
+      patient: await tx.patient.findFirst({
+        where: { practiceId, patientRecordNumber: dto.pmsPatientRecordNumber },
+        select: { id: true },
+      }),
+      practice: await tx.practice.findFirst({}),
+    }));
+    if (!practice) throw new NotFoundException('Practice not found.');
+
+    const locationLabel = await this.prisma.withPractice(practiceId, async (tx) =>
+      anchor.locationId ? ((await this.locationLabels(tx, [anchor])).get(anchor.locationId) ?? null) : null,
+    );
+
+    // The two refusals the pipeline would make, said as answers rather than
+    // as errors. Both leave `decision` null: nothing could be decided, and the
+    // reason is why.
+    if (!mayBeProviderOnAgreement(anchor.billingRole) || !anchor.affiliationId) {
+      return {
+        decision: null,
+        policyVersion: '',
+        providerName: anchor.name,
+        locationLabel,
+        coveringAgreementId: null,
+        blocked: {
+          reason: anchor.affiliationId ? 'provider_not_servicing' : 'provider_not_anchored',
+          billingRole: anchor.billingRoleRecorded ? anchor.billingRole : null,
+        },
+      };
+    }
+
+    const coverage = patient
+      ? await this.enduring.coverage(practiceId, {
+          patientId: patient.id,
+          // THE PERSON, NOT THE ROW — the same read the pipeline makes, for
+          // the same reason (hard rule 6, REQ-END-01).
+          practitionerId: anchor.practitionerId ?? undefined,
+        })
+      : { covered: false, agreementIds: [] as string[] };
+
+    const decision = decideVisitAgreement({
+      providerIsGp: providerIsGpFor({ billingRole: anchor.billingRole, providerType: anchor.providerType }),
+      activeEnduringForProviderAndPatient: coverage.covered,
+      practiceOffersEnduringByDefault:
+        (practice as unknown as { enduringByDefault?: boolean | null }).enduringByDefault ?? true,
+      // Nothing stores a decline yet — the pipeline says the same, in the same
+      // words, and both will change in one place when something does.
+      patientDeclinedEnduring: false,
+    });
+
+    return {
+      decision: { type: decision.type, reason: decision.reason },
+      policyVersion: decision.policyVersion,
+      providerName: anchor.name,
+      locationLabel,
+      /*
+       * WHICH AGREEMENT SAYS "NOTHING TO SIGN", so the line can LINK to it
+       * rather than assert it (CLAUDE.md §7: shortcuts to the answer). Only
+       * where coverage is what decided; null otherwise.
+       */
+      coveringAgreementId: decision.type === 'none' ? (coverage.agreementIds[0] ?? null) : null,
+      blocked: null,
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -529,6 +822,8 @@ export class ArrivalsService {
     dto: ArrivalDto,
     anchor: ArrivalAnchor,
     patientId: string | null,
+    /** Whose hands typed it, where a person's did. Null for every machine push. */
+    actor: Actor | undefined,
     existingArrivalId?: string,
     reason: 'provider_not_servicing' | 'provider_not_anchored' = 'provider_not_servicing',
   ): Promise<void> {
@@ -547,6 +842,14 @@ export class ArrivalsService {
         providerNumber: dto.providerNumber ?? null,
         arrivedAt: new Date(dto.arrivedAt),
         source: dto.source,
+        /*
+         * A REFUSED TYPED ARRIVAL STILL NAMES WHO TYPED IT. "The desk sent us
+         * somebody who cannot be the provider" is a fact about an onboarding
+         * and it has a witness; a machine push does not, and the column stays
+         * null (`arrivals_principal_only_when_typed`).
+         */
+        receivedByPrincipalId:
+          dto.source === ARRIVAL_SOURCE_TYPED_BY_A_PERSON ? (actor?.id ?? null) : null,
         outcome: 'refused',
         refusedReason: reason,
         refusedPayload: dto as unknown as Prisma.InputJsonValue,
@@ -570,7 +873,7 @@ export class ArrivalsService {
        */
       await enqueueVaultEvent(tx, {
         type: 'arrival.refused',
-        actor: SYSTEM_ACTOR,
+        actor: actorFor(actor),
         subject: { type: 'Arrival', id: arrival.id },
         payload: {
           practiceId,
@@ -722,7 +1025,12 @@ export class ArrivalsService {
    * so what lands on the mirror is what the practice's software said, not what
    * a console form retyped (REQ-DATA-10).
    */
-  async chooseProvider(practiceId: string, arrivalId: string, affiliationId: string): Promise<ArrivalReceipt> {
+  async chooseProvider(
+    practiceId: string,
+    arrivalId: string,
+    affiliationId: string,
+    actor?: Actor,
+  ): Promise<ArrivalReceipt> {
     const row = await this.reread(practiceId, arrivalId);
     if (row.outcome !== 'refused' || !row.refusedPayload) {
       throw new BadRequestException(
@@ -744,12 +1052,20 @@ export class ArrivalsService {
       providerNumber: undefined,
       idempotencyKey: row.idempotencyKey,
     };
-    return this.receive(practiceId, replay, Object.keys(replay));
+    /*
+     * THE ACTOR TRAVELS WITH THE REPLAY. A refused RECEPTION arrival is fixed
+     * by a person at the desk exactly as a refused connector one is, and the
+     * replay is that person's act — the row would otherwise come back with no
+     * `receivedByPrincipalId` and look like a machine push
+     * (`arrivals_principal_only_when_typed` allows it either way; the record
+     * being right is the point, not the constraint).
+     */
+    return this.receive(practiceId, replay, Object.keys(replay), actor);
   }
 
   // -------------------------------------------------------------------------
 
-  private assertNothingForbiddenWasSent(sentFieldNames: string[]): void {
+  private assertNothingForbiddenWasSent(sentFieldNames: string[], source?: string): void {
     const medicare = sentFieldNames.filter((name) => MEDICARE_FIELD.test(name));
     if (medicare.length > 0) {
       throw new BadRequestException(
@@ -767,6 +1083,37 @@ export class ArrivalsService {
           'provider and this patient (REQ-END-01) — and the version travels with the record ' +
           '(hard rule 14). Send the arrival; the answer comes back in the response.',
       );
+    }
+
+    /*
+     * THE THREE FIELDS ONLY A PERSON MAY SEND (W2, Carl 7 Sep 2026).
+     *
+     * `serviceDate`, `serviceDescription` and `assignor` are answers somebody
+     * at the desk gives. A connector has nobody to ask — which is exactly why
+     * the practice's default D6a exists and why the patient is their own
+     * assignor on a machine push — so a PMS body carrying one is refused OUT
+     * LOUD rather than silently stripped, the same posture the Medicare and
+     * agreement-type fences take. `whitelist: true` would have swallowed them
+     * and taught their sender nothing.
+     *
+     * IT IS A CONTRACT FENCE, NOT AN AUTHORISATION ONE. What a caller may do
+     * at all is `@PracticeScoped` and RLS; this says what an arrival MEANS,
+     * so a connector author who assumes they may assert who signs learns it
+     * once. Named test: `reception_only_fields_are_refused_from_a_connector`.
+     */
+    if (source !== ARRIVAL_SOURCE_TYPED_BY_A_PERSON) {
+      const typed = sentFieldNames.filter((name) =>
+        ['serviceDate', 'serviceDescription', 'assignor'].includes(name),
+      );
+      if (typed.length > 0) {
+        throw new BadRequestException(
+          `An arrival from "${source ?? 'an unnamed source'}" may not carry ${typed.join(', ')}. The day ` +
+            'the service is for, the Basic Service Description and who is signing are answers a person ' +
+            'at the desk gives — a practice management system has nobody to ask, which is why the ' +
+            'practice’s default description exists (REQ-REG-01 D6a) and why the patient is their own ' +
+            'assignor on a machine push (D7, hard rule 10). Send source "reception" if a person typed this.',
+        );
+      }
     }
   }
 
@@ -797,7 +1144,13 @@ export class ArrivalsService {
   private async findAnchor(
     tx: Prisma.TransactionClient,
     practiceId: string,
-    dto: ArrivalDto,
+    /*
+     * THE FOUR KEYS AND NOTHING ELSE. Structural rather than `ArrivalDto` so
+     * `POST /arrivals/preview` resolves the provider through the IDENTICAL
+     * code the pipeline does — a preview that answered from its own lookup
+     * would be a preview that can disagree with the thing it previews.
+     */
+    dto: Pick<ArrivalDto, 'affiliationId' | 'practitionerId' | 'locationId' | 'providerNumber' | 'providerId'>,
   ): Promise<ArrivalAnchor> {
     if (dto.affiliationId) {
       const anchor = await anchorForAffiliation(tx, dto.affiliationId);

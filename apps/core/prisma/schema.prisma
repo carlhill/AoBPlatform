@@ -2901,9 +2901,26 @@ model Arrival {
   arrivedAt  DateTime
   receivedAt DateTime @default(now())
 
-  /// `connector` | `dev`. A real practice's software and a dev script must
-  /// never look alike in the evidence.
+  /// `connector` | `dev` | `reception`. A real practice's software, a person
+  /// at the front desk typing it in and a dev script must never look alike in
+  /// the evidence (PMS_to_AoB_Workflow.md case 4, W2).
   source String
+
+  /**
+   * WHOSE HANDS TYPED IT, when a person's did (W2, Carl 7 Sep 2026).
+   *
+   * NULL FOR EVERY MACHINE PUSH, and the null is the fact: a connector arrival
+   * is the practice's SOFTWARE speaking and nobody at the desk pressed
+   * anything, so naming a staff member on one would be inventing a witness.
+   * A `reception` arrival is the opposite — somebody read the details off a
+   * screen and typed them — and the record says who.
+   *
+   * THE KEYCLOAK SUBJECT, NOT A NAME. The same shape and the same reasoning as
+   * `Agreement.serviceDescriptionSetBy` and `Device.createdBy`: an id from a
+   * token the realm signed is evidence, a name from a form is an assertion
+   * (`SessionActor`'s own docstring). No display name is stored here.
+   */
+  receivedByPrincipalId String?
 
   /// The sender's own handle for this arrival. Idempotency is on this.
   idempotencyKey String

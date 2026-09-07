@@ -2,8 +2,9 @@ import { BadRequestException, Body, Controller, Get, Headers, Param, ParseUUIDPi
 import { IsUUID } from 'class-validator';
 import type { Request } from 'express';
 import { PracticeScoped } from '../auth/practice-scope.decorator';
+import { SessionActor, type Actor } from '../auth/actor.decorator';
 import { ArrivalsService } from './arrivals.service';
-import { ArrivalDto } from './arrivals.dto';
+import { ArrivalDto, ArrivalPreviewDto } from './arrivals.dto';
 
 /**
  * Reception naming the practitioner-at-a-location the claim will go under. One
@@ -55,9 +56,40 @@ export class ArrivalsController {
     @Headers('x-practice-id') practiceId: string | undefined,
     @Body() dto: ArrivalDto,
     @Req() req: Request,
+    /**
+     * WHOSE HANDS TYPED IT — undefined for every machine push, and the
+     * undefined is a fact rather than a gap (`Arrival.receivedByPrincipalId`).
+     *
+     * IT AUTHORISES NOTHING. `@PracticeScoped` and RLS already say who may
+     * reach this at all; the actor says who to name in the evidence when a
+     * person, rather than a connector, is the one speaking. That is why an
+     * absent actor is not refused here the way `PATCH /patients/:id/details`
+     * refuses one: a connector legitimately has none.
+     */
+    @SessionActor() actor: Actor | undefined,
   ) {
     const sent = req.body && typeof req.body === 'object' ? Object.keys(req.body as object) : [];
-    return this.arrivals.receive(requirePractice(practiceId), dto, sent);
+    return this.arrivals.receive(requirePractice(practiceId), dto, sent, actor);
+  }
+
+  /**
+   * "WHAT WOULD THIS VISIT NEED?" — READ, NOT WRITE (Carl, 7 Sep 2026;
+   * PMS_to_AoB_Workflow.md W2 item 5).
+   *
+   * A POST BECAUSE IT CARRIES A PATIENT'S RECORD NUMBER, and an identifier
+   * belongs in a body rather than in a URL that lands in every access log and
+   * every browser history (REQ-LOG-08). It is idempotent and writes nothing;
+   * the verb is about where the identifier goes, not about what happens.
+   *
+   * BEFORE `:id/provider` AND `:id`, because `preview` is not a UUID and Nest
+   * matches routes in declaration order — the mistake that shipped a shadowed
+   * route on 7 September (wow.md §1). `:id` is a GET and could not shadow a
+   * POST, but the order says what it means without the reader having to check.
+   */
+  @Post('preview')
+  @PracticeScoped()
+  preview(@Headers('x-practice-id') practiceId: string | undefined, @Body() dto: ArrivalPreviewDto) {
+    return this.arrivals.preview(requirePractice(practiceId), dto);
   }
 
   /**
@@ -91,8 +123,9 @@ export class ArrivalsController {
     @Headers('x-practice-id') practiceId: string | undefined,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ChooseProviderDto,
+    @SessionActor() actor: Actor | undefined,
   ) {
-    return this.arrivals.chooseProvider(requirePractice(practiceId), id, dto.affiliationId);
+    return this.arrivals.chooseProvider(requirePractice(practiceId), id, dto.affiliationId, actor);
   }
 
   /**

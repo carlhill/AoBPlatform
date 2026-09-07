@@ -79,6 +79,31 @@ export class PatientsController {
   }
 
   /**
+   * FIND ONE PATIENT THIS PRACTICE ALREADY HOLDS (Carl, 7 Sep 2026;
+   * PMS_to_AoB_Workflow.md W2 item 1).
+   *
+   * DECLARED BEFORE THE `:id`-SHAPED ROUTES, because `search` is not a UUID
+   * and Nest matches in declaration order — a shadowed route is the exact
+   * mistake wow.md §1 was written about. `:id/timeline` and `:id/details` are
+   * two segments and could not have shadowed it, but the order says so
+   * without the reader having to work it out.
+   *
+   * IT IS STILL NOT A PATIENT DIRECTORY. The service refuses a term shorter
+   * than two characters, caps the answer, offers no paging, and hands back
+   * four fields — id, the two name columns, date of birth and the practice's
+   * own record number. No address, no contact detail, and no Medicare card
+   * number, which is not an identity identifier and has no column here at all
+   * (hard rule 1, REQ-VER-02). Reception uses it to avoid retyping five
+   * details for somebody the platform already knows — and, more to the point,
+   * to avoid mistyping a record number and creating a second copy of a person.
+   */
+  @Get('search')
+  @PracticeScoped()
+  search(@Headers('x-practice-id') practiceId: string | undefined, @Query('q') q?: string) {
+    return this.patients.search(requirePractice(practiceId), q ?? '');
+  }
+
+  /**
    * WHAT HAPPENED TO THIS PATIENT, IN ORDER — the work page's History card.
    *
    * TYPES, TIMES AND SHORT CODES, never values (REQ-VER-04) and never a

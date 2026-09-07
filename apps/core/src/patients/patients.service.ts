@@ -13,6 +13,7 @@ import {
   type PatientTimelineEntry,
   type TabletSessionState,
 } from '@aobplatform/domain';
+import type { PatientSearchResult } from '@aobplatform/contracts';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import type { Actor } from '../auth/actor.decorator';
 import { PrismaService } from '../prisma/prisma.service';
@@ -37,6 +38,17 @@ import { ReviewTasksService } from '../review-tasks/review-tasks.service';
  * their field went.
  */
 const MEDICARE_FIELD = /medicare/i;
+
+/**
+ * TYPE-TO-FIND NEEDS SOMETHING TO GO ON (W2, Carl 7 Sep 2026).
+ *
+ * Two characters, and a cap of twenty answers that cannot be paged past. The
+ * pair is what keeps `GET /patients/search` a way to find ONE person a
+ * receptionist is already looking at and not a way to enumerate a practice's
+ * patients — which `?open=today` refuses for the same reason (REQ-DATA-10).
+ */
+const MIN_SEARCH_TERM = 2;
+const SEARCH_LIMIT = 20;
 
 export interface CorrectionOutcome {
   patientId: string;
@@ -103,6 +115,82 @@ export class PatientsService {
      */
     private readonly reviewTasks: ReviewTasksService,
   ) {}
+
+  /**
+   * FIND SOMEBODY THIS PRACTICE ALREADY HOLDS, BY TYPING PART OF THEIR NAME
+   * (Carl, 7 Sep 2026; PMS_to_AoB_Workflow.md W2 item 1).
+   *
+   * WHY THIS EXISTS AT ALL, GIVEN `?open=today` REFUSES TO LIST EVERYBODY. The
+   * queue answers "who has something open today", and a returning patient
+   * whose practice management system is down has nothing open — that is the
+   * whole case W2 is for. Reception would otherwise retype five details for
+   * somebody the platform already knows and, worse, mistype the record number
+   * and create a second person. So the form can FIND them; it still cannot
+   * LIST them.
+   *
+   * FOUR FENCES, AND THEY ARE WHAT KEEP THIS FROM BECOMING A DIRECTORY:
+   *
+   *   1. A TERM IS REQUIRED, of at least `MIN_SEARCH_TERM` characters. There
+   *      is no query that returns everybody and no way to page toward one; an
+   *      empty or one-character term is refused rather than answered broadly.
+   *   2. THE ANSWER IS CAPPED at `SEARCH_LIMIT` and is not pageable. A term
+   *      that matches half the practice returns a short list and the person at
+   *      the desk types more of the name — which is what they would do anyway.
+   *   3. FOUR FIELDS COME BACK: the id, the two name columns, the date of
+   *      birth that tells two people with one name apart, and the practice's
+   *      own record number, which is the join key an arrival is matched on and
+   *      is what reception is reading off their own screen. NO address, NO
+   *      contact detail, NO history — and no Medicare card number, which is
+   *      not an identity identifier and has no column here at all (hard rule 1,
+   *      REQ-VER-02).
+   *   4. RLS. The scope comes from the caller's own claim, so another
+   *      practice's patient is not filtered out — it is not visible.
+   *
+   * IT MATCHES THE NAME COLUMNS AND THE RECORD NUMBER, case-insensitively,
+   * because a receptionist types whichever of the three is in front of them.
+   * It does NOT match on date of birth: a date is not something anybody types
+   * to find a person, and a birth-date search is a different tool with a
+   * different risk.
+   */
+  async search(practiceId: string, term: string) {
+    const needle = term.trim();
+    if (needle.length < MIN_SEARCH_TERM) {
+      throw new BadRequestException(
+        `Type at least ${MIN_SEARCH_TERM} characters of a name or the practice's own patient record ` +
+          'number. This platform is not a patient directory and there is no list of every patient — ' +
+          'the practice management system holds the patient record (REQ-DATA-10).',
+      );
+    }
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const rows = await tx.patient.findMany({
+        where: {
+          OR: [
+            { familyName: { contains: needle, mode: 'insensitive' } },
+            { givenNames: { contains: needle, mode: 'insensitive' } },
+            { patientRecordNumber: { contains: needle, mode: 'insensitive' } },
+          ],
+        },
+        select: {
+          id: true,
+          givenNames: true,
+          familyName: true,
+          dateOfBirth: true,
+          patientRecordNumber: true,
+        },
+        orderBy: [{ familyName: 'asc' }, { givenNames: 'asc' }],
+        take: SEARCH_LIMIT,
+      });
+      return rows.map(
+        (row): PatientSearchResult => ({
+          patientId: row.id,
+          givenNames: row.givenNames,
+          familyName: row.familyName,
+          dateOfBirth: row.dateOfBirth.toISOString().slice(0, 10),
+          patientRecordNumber: row.patientRecordNumber ?? null,
+        }),
+      );
+    });
+  }
 
   /**
    * THE SIX CORRECTABLE DETAILS AS THEY STAND, FOR THE ONE PERSON ABOUT TO

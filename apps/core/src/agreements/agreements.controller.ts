@@ -68,8 +68,20 @@ export class AgreementsController {
     @Headers('x-practice-id') practiceId: string | undefined,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ChangeAssignorDto,
+    /**
+     * WHOSE HANDS CHANGED WHO SIGNS (found in review, 7 Sep 2026).
+     *
+     * NOT REFUSED WHEN ABSENT, unlike `PATCH /patients/:id/details`, and the
+     * difference is real: the kiosk re-points a draft mid-ceremony from a
+     * tablet that holds a pairing credential and no staff session (K-5), so an
+     * endpoint that demanded an actor would break the patient-facing path. It
+     * is recorded where there IS one — the tablet desk, and the reception
+     * form's arrival — so the vault event names the person rather than the
+     * platform.
+     */
+    @SessionActor() actor: Actor | undefined,
   ) {
-    return this.agreements.changeAssignor(requirePractice(practiceId), id, dto);
+    return this.agreements.changeAssignor(requirePractice(practiceId), id, dto, actor);
   }
 
   @Post(':id/particulars')

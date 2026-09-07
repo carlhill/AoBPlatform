@@ -42,11 +42,25 @@ import type { IsoDate, IsoTimestamp } from '@aobplatform/domain';
 /**
  * WHERE AN ARRIVAL CAME FROM. `connector` is the site-installed Windows
  * connector (outbound-only mTLS); `dev` is `scripts/dev/arrive.sh` and the
- * test suites. Recorded on the row because "a real practice's software said
- * this" and "somebody ran a script" must never look alike in the evidence.
+ * test suites; `reception` is a person at the front desk typing it, because
+ * the practice management system is down, is not integrated, or has never
+ * heard of this walk-in (PMS_to_AoB_Workflow.md case 4, W2). Recorded on the
+ * row because "a real practice's software said this", "somebody at the desk
+ * typed it" and "somebody ran a script" must never look alike in the evidence.
  */
-export const ARRIVAL_SOURCES = ['connector', 'dev'] as const;
+export const ARRIVAL_SOURCES = ['connector', 'dev', 'reception'] as const;
 export type ArrivalSource = (typeof ARRIVAL_SOURCES)[number];
+
+/**
+ * THE ONLY SOURCE THAT MAY CARRY THE THREE RECEPTION-ONLY FIELDS BELOW.
+ *
+ * `serviceDate`, `serviceDescription` and `assignor` are answers a PERSON
+ * gives. A connector has nobody to ask — which is exactly why the practice's
+ * default D6a exists and why the patient is their own assignor on a machine
+ * push — so a body carrying one of them under any other source is refused out
+ * loud rather than silently obeyed.
+ */
+export const ARRIVAL_SOURCE_TYPED_BY_A_PERSON: ArrivalSource = 'reception';
 
 export interface ArrivalEvent {
   /**
@@ -106,6 +120,63 @@ export interface ArrivalEvent {
   readonly arrivedAt: IsoTimestamp;
 
   readonly source: ArrivalSource;
+
+  /**
+   * THE DAY THE SERVICE IS FOR — `reception` ONLY (D5, W2).
+   *
+   * A machine push has no reason to disagree with the day it sent, so the
+   * pipeline takes the service date from `arrivedAt` for every other source.
+   * A person at a desk does have one: they may be typing up yesterday's
+   * walk-in after the system came back. Sent as a plain date rather than
+   * derived from a timestamp because a timestamp near midnight in Sydney is
+   * the day before in UTC, and D5 is a particular of a contract.
+   */
+  readonly serviceDate?: IsoDate;
+
+  /**
+   * D6a, CHOSEN FROM THE VERSIONED LIST — `reception` ONLY (REQ-REG-01 D6a,
+   * hard rule 14).
+   *
+   * Never typed: the value must be one of `SERVICE_DESCRIPTIONS`, string for
+   * string, because the rules engine's C6 check is exact. Omitted, the
+   * practice's own default is used exactly as it is for a connector push.
+   */
+  readonly serviceDescription?: string;
+
+  /**
+   * WHO IS SIGNING, WHEN IT IS NOT THE PATIENT — `reception` ONLY (D7,
+   * hard rule 10, REQ-VUL-01/-04/-05, REQ-AGE-01, REQ-REG-08).
+   *
+   * D7 IS EXPLICIT AND NEVER INFERRED (CLAUDE.md §3), so its absence means
+   * the patient is signing for themselves and says so on the record. A PMS
+   * push may never assert this: the person standing beside the patient is a
+   * fact known at the desk and nowhere else, which is why the field is
+   * refused under any other source.
+   *
+   * THE PLATFORM RUNS THE SAME REFUSALS IT ALWAYS DID. This does not carry a
+   * second copy of hard rule 10 — the arrival hands the party to
+   * `POST /agreements/:id/assignor`'s own service before the particulars are
+   * locked, so practice staff are still hard-blocked against the staff list,
+   * a person acting for another still declares they are of full age, and a
+   * contact channel is still required (REQ-REG-08). No date of birth is asked
+   * for or stored: what is recorded is a declaration (REQ-AGE-01, REQ-VUL-02).
+   * Nothing anywhere asks staff to assess capacity (REQ-VUL-05).
+   */
+  readonly assignor?: {
+    readonly name: string;
+    /** The word the person chose, from `assignor-relationships.json`. */
+    readonly relationship: string;
+    /** Which list they chose from (hard rule 14). */
+    readonly relationshipsVersion?: string;
+    /** reg 65CB(5)'s category, derived from the relationship through that list. */
+    readonly authorityBasis: string;
+    readonly note?: string;
+    /** REQ-AGE-01 — present AND true, or the party is refused. */
+    readonly declaresEighteenOrOver: boolean;
+    /** Contact, never identity (C7.2 / REQ-REG-08). At least one. */
+    readonly mobile?: string;
+    readonly email?: string;
+  };
 
   /**
    * THE SENDER'S OWN HANDLE FOR THIS ARRIVAL. A connector that retries — and
@@ -212,4 +283,80 @@ export interface ArrivalProviderChoice {
   readonly providerType: string;
   /** The practice's own label for the site — its code, else the suburb. */
   readonly locationLabel: string | null;
+}
+
+/**
+ * WHAT THE VISIT WOULD NEED, ASKED BEFORE ANYTHING IS WRITTEN (W2, Carl
+ * 7 Sep 2026).
+ *
+ * WHY A READ AND NOT A GUESS ON THE SCREEN. Reception does not choose what
+ * the visit needs — the versioned visit policy does (hard rules 6 and 14), and
+ * it needs facts the form cannot see: is this practitioner a GP at this
+ * location, do they bill under their own number, does this patient already
+ * hold a live ongoing agreement with this PERSON at any of the practice's
+ * sites. So the form ASKS, and shows the answer above Submit rather than
+ * letting somebody discover it afterwards.
+ *
+ * IT WRITES NOTHING. No mirror row, no assignor, no arrival, no vault event —
+ * it is the same decision function the pipeline runs, over the same reads, and
+ * a preview that left a trace would put a patient on a queue because a
+ * receptionist changed their mind about a dropdown.
+ *
+ * A REFUSAL IS AN ANSWER TOO. `blocked` carries the same reason CODE the
+ * pipeline would refuse with (`provider_not_servicing`, `provider_not_anchored`),
+ * so the console maps it to its own words and a destination rather than
+ * showing prose (CLAUDE.md §7).
+ */
+export interface ArrivalPreview {
+  /** Null when `blocked` — nothing could be decided, and that is why. */
+  readonly decision: {
+    readonly type: 'enduring' | 'episodic_pre' | 'none';
+    readonly reason: string;
+  } | null;
+  /** Hard rule 14: which table would decide. Empty when blocked. */
+  readonly policyVersion: string;
+  /** Who the agreement would name, so the line can read "with Dr X". */
+  readonly providerName: string | null;
+  /** The practice's own label for the site, where the practice has more than one. */
+  readonly locationLabel: string | null;
+  /**
+   * The agreement that already covers this practitioner and patient, when the
+   * answer is `none` — so "nothing to sign" links to the thing that says so
+   * rather than asserting it (CLAUDE.md §7).
+   */
+  readonly coveringAgreementId: string | null;
+  /** The reason code the pipeline would refuse with, and the role that caused it. */
+  readonly blocked: {
+    readonly reason: ArrivalRefusalReason | string;
+    readonly billingRole: string | null;
+  } | null;
+}
+
+/**
+ * ONE PATIENT THIS PRACTICE ALREADY HOLDS, FOUND BY TYPING A NAME (W2).
+ *
+ * FOUR FIELDS, AND THE SHORTNESS IS THE POINT. This platform is not a patient
+ * directory (REQ-DATA-10) and the endpoint behind this refuses to answer
+ * "everybody" — it needs a term, it caps what it returns, and what it returns
+ * is what a receptionist needs to tell two people with one name apart and to
+ * carry the join key forward. No address, no contact detail, no history. Never
+ * a Medicare card number, which is not an identity identifier and is not held
+ * in this platform at all (hard rule 1, REQ-VER-02).
+ */
+export interface PatientSearchResult {
+  readonly patientId: string;
+  readonly givenNames: string;
+  readonly familyName: string;
+  /** YYYY-MM-DD. The one detail that separates two people who share a name. */
+  readonly dateOfBirth: string;
+  /**
+   * The practice's own handle — the join key an arrival is matched on.
+   *
+   * NULL IS POSSIBLE AND IS NOT A BUG. The column is nullable because a
+   * patient can reach this platform by a route that never carried one (a
+   * portal invitation, an older sync). An arrival REQUIRES one, so the form
+   * asks for it when the person it found has none — which is the moment the
+   * practice's own number finally lands on the record.
+   */
+  readonly patientRecordNumber: string | null;
 }
