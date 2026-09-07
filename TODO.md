@@ -1246,6 +1246,26 @@ the platform knows who they are.
       (make AHPRA nullable on unconfirmed identities? hold PMS providers in
       their own mirror table?) rather than a guess.
 
+## `/identity/practices` is slow enough to flake its own tests (found 7 Sep 2026)
+
+Three tests in `org-model.e2e-spec.ts` each GET `/identity/practices`, and on a
+development database that has accumulated ~105 practices one of them times out
+at Jest's 5s default -- a different one each run, which is the signature of the
+FIRST call paying a cold cost rather than of any particular test. The suite
+passes in isolation every time, and the same endpoint answers in 0.23s against
+the already-warm running core.
+
+Not caused by the anchor build (that commit range touches no file under
+`apps/core/src/identity`, `apps/core/src/organisations` or that spec), and it
+should not bite CI, which starts from an empty database. It is still a real
+signal about a cross-tenant dashboard that scans every practice.
+- [ ] Look at what `/identity/practices` actually issues per practice, and
+      whether the scoring is an N+1. A dashboard the platform operator opens
+      over every tenant is the one read that will feel a thousand practices
+      first.
+- [ ] While it stands, the dev database is worth pruning: 105 practices, most
+      of them abandoned test tenants from suites whose teardown failed.
+
 ## Termination effective TIME, not just date (found 7 Sep 2026 via CI)
 
 `terminationEffectiveDate` returns 00:00 UTC on the second business day after
