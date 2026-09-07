@@ -1,6 +1,7 @@
 import {
   assertRepointAllowed,
   assignorContactChannels,
+  assignorRepointDisposition,
   AUTHORITY_BASES_FOR_ANOTHER,
   buildAssignorForAnother,
   canRepointAssignor,
@@ -130,5 +131,68 @@ describe('locked_agreement_cannot_change_assignor (hard rule 2 / REQ-REG-06)', (
     expect(() => assertRepointAllowed({ status: 'draft', particularsLocked: true })).toThrow(
       /REQ-REG-06/,
     );
+  });
+
+  /**
+   * "CANNOT BE EDITED" IS NOT "CANNOT BE CHANGED" (Carl, 7 Sep 2026). Every
+   * row on the tablet desk is locked, because an arrival locks its particulars
+   * as it is posted — so a locked agreement whose party is wrong must have an
+   * answer, and the regime's answer is the one it gives to a wrong name or
+   * address: supersede.
+   */
+  describe('what a request to change who signs should do', () => {
+    it('edits in place only while the particulars can still move', () => {
+      expect(
+        assignorRepointDisposition({ status: 'draft', particularsLocked: false, signed: false }),
+      ).toEqual({ kind: 'in_place' });
+      expect(
+        assignorRepointDisposition({
+          status: 'awaiting_signature',
+          particularsLocked: false,
+          signed: false,
+        }),
+      ).toEqual({ kind: 'in_place' });
+    });
+
+    it('supersedes a locked, unsigned agreement rather than refusing it', () => {
+      expect(
+        assignorRepointDisposition({ status: 'draft', particularsLocked: true, signed: false }),
+      ).toEqual({ kind: 'supersede' });
+      expect(
+        assignorRepointDisposition({
+          status: 'awaiting_signature',
+          particularsLocked: true,
+          signed: false,
+        }),
+      ).toEqual({ kind: 'supersede' });
+    });
+
+    it('refuses once somebody has signed — who signed is a fact about an act', () => {
+      expect(
+        assignorRepointDisposition({ status: 'signed', particularsLocked: true, signed: true }),
+      ).toEqual({ kind: 'refused', reason: 'already_signed' });
+      // The STATUS is enough on its own: a stored agreement is signed evidence
+      // whether or not this caller was handed the event id.
+      expect(
+        assignorRepointDisposition({ status: 'stored', particularsLocked: true, signed: false }),
+      ).toEqual({ kind: 'refused', reason: 'already_signed' });
+    });
+
+    it('refuses an agreement that has left the pathway, or already been superseded', () => {
+      for (const status of ['declined', 'expired', 'void'] as const) {
+        expect(assignorRepointDisposition({ status, particularsLocked: false, signed: false })).toEqual({
+          kind: 'refused',
+          reason: 'agreement_moved_on',
+        });
+      }
+      expect(
+        assignorRepointDisposition({
+          status: 'awaiting_signature',
+          particularsLocked: true,
+          signed: false,
+          superseded: true,
+        }),
+      ).toEqual({ kind: 'refused', reason: 'agreement_moved_on' });
+    });
   });
 });

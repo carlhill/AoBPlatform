@@ -568,12 +568,14 @@ export class ArrivalsService {
      * AFTER THE LOCK IS TOO LATE, AND BEFORE THE QUEUE ROW IS TOO EARLY.
      *
      * Too late, because who signs is one of the LOCKED PARTICULARS
-     * (REQ-REG-06, hard rule 2): `assertRepointAllowed` refuses to move it
-     * once phase 5 has locked them — a correction supersedes, it does not edit
-     * (HARD-02). Posting the arrival and then re-pointing it would work on an
-     * enduring draft, which is never locked, and fail on every episodic one,
-     * which always is: the sort of difference a receptionist discovers in
-     * front of a patient.
+     * (REQ-REG-06, hard rule 2): nothing edits it once phase 5 has locked
+     * them — a correction supersedes, it does not edit (HARD-02). Posting the
+     * arrival and then re-pointing it still works (7 Sep 2026: after the lock,
+     * `POST /agreements/:id/assignor` supersedes rather than refusing), but it
+     * would spend a whole agreement — a second validate, a second render, a
+     * second row in the evidence — on a fact reception already knew when they
+     * typed the arrival. Said here, it is simply what the first agreement
+     * says.
      *
      * Too early, because the platform never blocks care (hard rule 8,
      * REQ-REC-04). Placed before phase 4, a party the rules engine's C8 check

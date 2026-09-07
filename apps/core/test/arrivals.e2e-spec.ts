@@ -687,10 +687,11 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
 
     /**
      * SOMEBODY ELSE IS SIGNING, SET BEFORE THE LOCK — because who signs is one
-     * of the locked particulars (hard rule 2, REQ-REG-06) and cannot be moved
-     * afterwards. This is the ordering the build exists to get right: an
-     * assignor posted AFTER the arrival would work on an enduring draft, which
-     * is never locked, and fail on every episodic one, which always is.
+     * of the locked particulars (hard rule 2, REQ-REG-06) and is never EDITED
+     * afterwards. Said after the arrival it still works, since 7 Sep 2026, but
+     * by superseding: a second agreement, a second render, a second row in the
+     * evidence, for a fact reception already knew. This pins that it lands on
+     * the FIRST one.
      */
     it('reception_arrival_sets_who_is_signing_before_the_particulars_lock', async () => {
       currentPrincipal = DESK;

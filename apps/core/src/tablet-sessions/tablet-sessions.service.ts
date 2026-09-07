@@ -1629,12 +1629,53 @@ export class TabletSessionsService {
       });
       const signed = new Set(agreements.filter((a) => a.signatureEventId !== null).map((a) => a.id));
 
+      /*
+       * A SESSION WHOSE CHANNEL HAS CLOSED IS OVER (Carl, 7 Sep 2026 —
+       * "who is signing" on a locked row).
+       *
+       * A supersession cancels every open capture request on the agreement it
+       * replaces, on every channel at once, because nothing may still be
+       * signed against particulars that have been corrected (HARD-02;
+       * `AgreementsService.supersedeForAssignorChange` and `resend`'s
+       * correction both do it). A tablet still showing that agreement has
+       * nowhere left to sign: `POST /agreements/:id/sign` would refuse it, so
+       * leaving the screen up would hand a patient a control that can only
+       * fail — and would hold the device against the replacement that reception
+       * needs to send.
+       *
+       * ENDED AS `recalled`, WHICH IS WHAT HAPPENED. A person at the desk did
+       * something that took the screen back; it is not an expiry (no clock ran
+       * out) and not a walk-away (nobody left). Nothing on the agreement is
+       * touched here — this method has no `tx.agreement` write and must never
+       * have one — and the patient is still seen either way (hard rule 8,
+       * REQ-REC-04).
+       *
+       * SIGNED WINS, and the order below says so: a session whose request was
+       * COMPLETED by the signature it just collected is `signed`, never
+       * `recalled`.
+       */
+      const requestIds = active
+        .map((s) => s.captureRequestId)
+        .filter((id): id is string => id !== null);
+      const closedRequests = requestIds.length
+        ? new Set(
+            (
+              await tx.captureRequest.findMany({
+                where: { id: { in: requestIds }, status: 'cancelled' },
+                select: { id: true },
+              })
+            ).map((r) => r.id),
+          )
+        : new Set<string>();
+
       for (const session of active) {
         const to: TabletSessionState | null = signed.has(session.agreementId)
           ? 'signed'
-          : session.lastStateAt <= cutoff
-            ? 'expired'
-            : null;
+          : session.captureRequestId && closedRequests.has(session.captureRequestId)
+            ? 'recalled'
+            : session.lastStateAt <= cutoff
+              ? 'expired'
+              : null;
         if (!to) continue;
 
         await tx.tabletSession.update({
@@ -1650,7 +1691,16 @@ export class TabletSessionsService {
            */
           actor: { principalType: 'system', id: 'core' },
           subject: { type: 'TabletSession', id: session.id },
-          payload: { from: session.state, to, agreementId: session.agreementId, agreementChanged: false },
+          payload: {
+            from: session.state,
+            to,
+            agreementId: session.agreementId,
+            agreementChanged: false,
+            // WHY, where the answer is not the clock. A reader asking "why did
+            // that tablet clear" gets it here rather than having to join two
+            // events by hand.
+            ...(to === 'recalled' ? { reason: 'capture_request_cancelled' } : {}),
+          },
         });
       }
     });

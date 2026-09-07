@@ -172,6 +172,58 @@ function isTerminal(status: AgreementStatus): boolean {
   return TERMINAL_STATUSES.includes(status);
 }
 
+/**
+ * WHAT A REQUEST TO CHANGE WHO SIGNS SHOULD DO — the whole decision, in one
+ * place (Carl, 7 Sep 2026: "go — fix who is signing on locked rows").
+ *
+ * WHY IT REPLACED A YES/NO. `canRepointAssignor` above answers "may this be
+ * EDITED in place", and the answer on an arrived patient is always no: an
+ * arrival locks its particulars the moment reception posts it, so every row on
+ * the desk's list is locked and the one control that fixes "the mother is
+ * signing, not the child" was dead by the time anybody could press it.
+ *
+ * BUT "CANNOT BE EDITED" IS NOT "CANNOT BE CHANGED". Who signs is a particular
+ * (REQ-REG-06, hard rule 2, D7), and the regime's answer to a wrong particular
+ * on a locked agreement is the same here as it is for a wrong name or address:
+ * SUPERSEDE (HARD-02). A new agreement carrying `supersedesAgreementId`, with
+ * the corrected party, validated and rendered from scratch; the old one keeps
+ * its own true record of what it said and what it was hashed against.
+ *
+ * THE TWO REFUSALS ARE THE TWO THINGS SUPERSESSION CANNOT UNDO. Once somebody
+ * has SIGNED, the party to the contract is a fact about an act that happened,
+ * and a superseding agreement would not change who signed the first one — the
+ * question is a dispute, not a correction. And an agreement that has already
+ * left the pathway (declined, expired, void) has nothing to supersede: the
+ * next step there is a fresh agreement, not a corrected one. Both come back as
+ * CODES, so the console maps them to its own words with somewhere to go
+ * (CLAUDE.md section 7) rather than showing a server sentence.
+ */
+export type AssignorRepointReason = 'already_signed' | 'agreement_moved_on';
+
+export type AssignorRepointDisposition =
+  /** Not locked yet: move the party on the agreement itself, as it always did. */
+  | { readonly kind: 'in_place' }
+  /** Locked and unsigned: a new agreement carrying `supersedesAgreementId`. */
+  | { readonly kind: 'supersede' }
+  | { readonly kind: 'refused'; readonly reason: AssignorRepointReason };
+
+export function assignorRepointDisposition(state: {
+  readonly status: AgreementStatus;
+  readonly particularsLocked: boolean;
+  /** The signature EVENT, not the status — a signature is a fact, not a state. */
+  readonly signed: boolean;
+  /** Another agreement already carries `supersedesAgreementId` for this one. */
+  readonly superseded?: boolean;
+}): AssignorRepointDisposition {
+  if (state.signed || isContentImmutable(state.status)) {
+    return { kind: 'refused', reason: 'already_signed' };
+  }
+  if (isTerminal(state.status) || state.superseded === true) {
+    return { kind: 'refused', reason: 'agreement_moved_on' };
+  }
+  return state.particularsLocked ? { kind: 'supersede' } : { kind: 'in_place' };
+}
+
 export function assertRepointAllowed(state: {
   readonly status: AgreementStatus;
   readonly particularsLocked: boolean;

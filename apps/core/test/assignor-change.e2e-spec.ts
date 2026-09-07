@@ -496,17 +496,229 @@ describe('re-pointing a draft agreement at another assignor (e2e, real Postgres)
     expect(staffAndYoung.body.message).toContain('REQ-VUL-04');
   });
 
-  it('locked_agreement_cannot_change_assignor', async () => {
+  /**
+   * WHO SIGNS, AFTER THE LOCK — SUPERSEDES (Carl, 7 Sep 2026).
+   *
+   * The rule this replaced said a locked agreement could not change its
+   * assignor at all, which was true of EDITING and read as true of the act.
+   * Since an arrival locks its particulars the moment reception posts it,
+   * every row on the tablet desk is locked and the control was dead on all of
+   * them — so the mother who brought her son had no way through the product.
+   * Hard rule 2 is intact: the locked agreement is not touched. A new one is
+   * made (HARD-02), and these pin that the old one keeps its own true record.
+   */
+  async function lockedDraft(serviceDate = '2026-09-03'): Promise<string> {
     const agreementId = await draft();
     await request(app.getHttpServer())
       .post(`/agreements/${agreementId}/particulars`)
       .set('x-practice-id', practiceId)
-      .send({ serviceDate: '2026-09-03', basicServiceDescription: 'Attendance by a general practitioner' })
+      .send({ serviceDate, basicServiceDescription: 'Attendance by a general practitioner' })
+      .expect(201);
+    return agreementId;
+  }
+
+  it('who_is_signing_on_a_locked_row_supersedes_rather_than_edits', async () => {
+    const agreementId = await lockedDraft();
+    const before = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findFirst({ where: { id: agreementId } }),
+    );
+    expect(before?.particularsLockedAt).not.toBeNull();
+
+    const res = await request(app.getHttpServer())
+      .post(`/agreements/${agreementId}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({
+        assignorIsPatient: false,
+        name: 'Sam Carer',
+        authorityBasis: 'parent',
+        declaresEighteenOrOver: true,
+        mobile: '0400000111',
+      })
       .expect(201);
 
-    // Hard rule 2 / REQ-REG-06. The artefact has been rendered and hashed
-    // against this party; moving it underneath would break the hash the
-    // signature will be bound to. A correction supersedes (HARD-02).
+    // A DIFFERENT AGREEMENT came back, and it points at the one it replaced.
+    expect(res.body.id).not.toBe(agreementId);
+    expect(res.body.supersedesAgreementId).toBe(agreementId);
+    expect(res.body.assignorIsPatient).toBe(false);
+    expect(res.body.patientAssignorId).toBe(patientAssignorId);
+    // It is ready to sign in its own right: validated, rendered, hashed.
+    expect(res.body.particularsLockedAt).not.toBeNull();
+    expect(res.body.status).toBe('awaiting_signature');
+
+    // AND THE OLD ONE IS UNTOUCHED (hard rule 11, hard rule 13). Same party,
+    // same particulars, same hash, same status as before the request.
+    const after = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findFirst({ where: { id: agreementId } }),
+    );
+    expect(after?.assignorIsPatient).toBe(true);
+    expect(after?.assignorId).toBe(patientAssignorId);
+    expect(after?.renderedArtefactHash).toBe(before?.renderedArtefactHash);
+    expect(after?.particulars).toEqual(before?.particulars);
+    expect(after?.status).toBe(before?.status);
+
+    // The evidence says WHY, on the old agreement, and names nobody.
+    const superseded = await prisma.vaultOutbox.findMany({
+      where: { type: 'agreement.superseded', subjectId: agreementId },
+    });
+    expect(superseded).toHaveLength(1);
+    expect((superseded[0].payload as Record<string, unknown>).reason).toBe('assignor_changed');
+    expect((superseded[0].payload as Record<string, unknown>).supersededBy).toBe(res.body.id);
+    expect(JSON.stringify(superseded[0])).not.toContain('Sam Carer');
+
+    // And the party is stated on the NEW agreement, as ids and facts only.
+    const changed = await prisma.vaultOutbox.findMany({
+      where: { type: 'agreement.assignor_changed', subjectId: res.body.id as string },
+    });
+    expect(changed).toHaveLength(1);
+    const payload = changed[0].payload as Record<string, unknown>;
+    expect(payload.assignorIsPatient).toBe(false);
+    expect(payload.assignorId).toBe(res.body.assignorId);
+    expect(payload.supersedesAgreementId).toBe(agreementId);
+    expect(JSON.stringify(changed[0])).not.toContain('Sam Carer');
+    expect(JSON.stringify(changed[0])).not.toContain('0400000111');
+
+    // The replacement is on reception's queue; the old one has nowhere left to
+    // sign, on any channel (FR-2.7).
+    const requests = await prisma.withPractice(practiceId, (tx) =>
+      tx.captureRequest.findMany({ where: { agreementId: res.body.id as string } }),
+    );
+    expect(requests.map((r) => [r.channel, r.status])).toEqual([['in_practice', 'open']]);
+
+    // ASKED FOR TWICE SUPERSEDES ONCE. A second press finds the answer already
+    // on the record and returns it rather than making a third agreement.
+    const again = await request(app.getHttpServer())
+      .post(`/agreements/${agreementId}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({
+        assignorIsPatient: false,
+        name: 'Sam Carer',
+        authorityBasis: 'parent',
+        declaresEighteenOrOver: true,
+        mobile: '0400000111',
+      })
+      .expect(201);
+    expect(again.body.id).toBe(res.body.id);
+    const successors = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findMany({ where: { supersedesAgreementId: agreementId } }),
+    );
+    expect(successors).toHaveLength(1);
+
+    // A DIFFERENT party on a row that has already moved on is refused with the
+    // code that sends the console to the row that is live now.
+    const moved = await request(app.getHttpServer())
+      .post(`/agreements/${agreementId}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({
+        assignorIsPatient: false,
+        name: 'Alex Other',
+        authorityBasis: 'parent',
+        declaresEighteenOrOver: true,
+        mobile: '0400000222',
+      })
+      .expect(409);
+    expect(moved.body.reason).toBe('agreement_moved_on');
+  });
+
+  it('supersession_carries_d6a_and_template_versions', async () => {
+    const agreementId = await lockedDraft('2026-09-04');
+    const before = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findFirst({ where: { id: agreementId } }),
+    );
+
+    const res = await request(app.getHttpServer())
+      .post(`/agreements/${agreementId}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({
+        assignorIsPatient: false,
+        name: 'Sam Carer',
+        authorityBasis: 'parent',
+        declaresEighteenOrOver: true,
+        mobile: '0400000111',
+      })
+      .expect(201);
+
+    const replacement = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findFirst({ where: { id: res.body.id as string } }),
+    );
+
+    // D6a — chosen by a staff member on a staff surface. Losing it would send
+    // reception back to re-choose something nobody changed.
+    expect(replacement?.serviceDescription).toBe('Attendance by a general practitioner');
+    const particulars = replacement?.particulars as Record<string, unknown>;
+    expect(particulars.basicServiceDescription).toBe('Attendance by a general practitioner');
+    // D5 — the visit did not move, only the party did.
+    expect(particulars.serviceDate).toBe('2026-09-04');
+
+    // RULE 14 — the replacement records what it was validated and rendered
+    // under, and nothing changed between the two locks, so they agree.
+    expect(replacement?.templateId).toBe(before?.templateId);
+    expect(replacement?.templateVersion).toBe(before?.templateVersion);
+    expect(replacement?.letterheadHash).toBe(before?.letterheadHash);
+    expect(replacement?.ruleSetVersion).toBe('test-rules-1');
+    expect(replacement?.mappingVersion).toBe('test-mapping-1');
+    expect(replacement?.renderedArtefactHash).not.toBeNull();
+    // A DIFFERENT document, because it names a different party — the point of
+    // superseding rather than editing.
+    expect(replacement?.renderedArtefactHash).not.toBe(before?.renderedArtefactHash);
+  });
+
+  it('staff_assignor_still_hard_blocked_after_lock', async () => {
+    const agreementId = await lockedDraft();
+
+    // REQ-VUL-04, fail closed — and the lock does not soften it. Case and
+    // spacing are folded exactly as they are on an unlocked row.
+    const blocked = await request(app.getHttpServer())
+      .post(`/agreements/${agreementId}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({
+        assignorIsPatient: false,
+        name: '  mai   NGUYEN ',
+        authorityBasis: 'parent',
+        declaresEighteenOrOver: true,
+        mobile: '0400000111',
+      })
+      .expect(400);
+    expect(blocked.body.message).toContain('REQ-VUL-04');
+    expect(JSON.stringify(blocked.body)).not.toContain('Nguyen');
+
+    // A refused party supersedes NOTHING: no replacement, no orphan assignor,
+    // no evidence of a change that did not happen.
+    const successors = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findMany({ where: { supersedesAgreementId: agreementId } }),
+    );
+    expect(successors).toEqual([]);
+    const superseded = await prisma.vaultOutbox.findMany({
+      where: { type: 'agreement.superseded', subjectId: agreementId },
+    });
+    expect(superseded).toEqual([]);
+
+    // And the age gate is no softer either.
+    const young = await request(app.getHttpServer())
+      .post(`/agreements/${agreementId}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({
+        assignorIsPatient: false,
+        name: 'Alex Sibling',
+        authorityBasis: 'parent',
+        declaresEighteenOrOver: false,
+        mobile: '0400000111',
+      })
+      .expect(400);
+    expect(young.body.message).toContain('REQ-AGE-01');
+  });
+
+  it('who_is_signing_refused_once_signed', async () => {
+    const agreementId = await lockedDraft();
+
+    /*
+     * THE SIGNATURE EVENT ID IS THE FACT, so the fixture writes exactly that
+     * and nothing else — the full ceremony is pinned by `signature.e2e-spec`
+     * and re-running it here would be testing that instead of this.
+     */
+    await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.update({ where: { id: agreementId }, data: { signatureEventId: randomUUID() } }),
+    );
+
     const refused = await request(app.getHttpServer())
       .post(`/agreements/${agreementId}/assignor`)
       .set('x-practice-id', practiceId)
@@ -517,16 +729,23 @@ describe('re-pointing a draft agreement at another assignor (e2e, real Postgres)
         declaresEighteenOrOver: true,
         mobile: '0400000111',
       })
-      .expect(400);
-    expect(refused.body.message).toContain('REQ-REG-06');
+      .expect(409);
+    expect(refused.body.reason).toBe('already_signed');
 
-    // Not even back to the patient.
-    await request(app.getHttpServer())
+    // Not even back to the patient: who signed is a fact about an act that
+    // happened, and superseding would not change it.
+    const back = await request(app.getHttpServer())
       .post(`/agreements/${agreementId}/assignor`)
       .set('x-practice-id', practiceId)
       .send({ assignorIsPatient: true })
-      .expect(400);
+      .expect(409);
+    expect(back.body.reason).toBe('already_signed');
 
+    // Nothing was made and nothing was moved.
+    const successors = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findMany({ where: { supersedesAgreementId: agreementId } }),
+    );
+    expect(successors).toEqual([]);
     const after = await prisma.withPractice(practiceId, (tx) =>
       tx.agreement.findFirst({ where: { id: agreementId } }),
     );
