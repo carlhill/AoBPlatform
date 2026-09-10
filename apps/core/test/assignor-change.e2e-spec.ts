@@ -897,6 +897,136 @@ describe('re-pointing a draft agreement at another assignor (e2e, real Postgres)
     expect(superseded).toHaveLength(0);
   });
 
+  /**
+   * FOUND IN REVIEW OF 0e2bbbd (ASSIGNOR-RULES.md rule 2): a Save that repeats
+   * the CURRENT answer exactly — same non-patient signer, same contact —
+   * classified as `classifyAssignorChange` 'none', which the endpoint had no
+   * branch for. It fell into the LOCKED row's ordinary disposition, which is
+   * `supersede`, so a Save that changed nothing made an identical successor.
+   *
+   * WHAT THIS PINS. A locked row, already confirmed, asked to Save the exact
+   * same someone-else answer: the same agreement comes back, no successor is
+   * created, and no new evidence is written — a true no-op, not a second
+   * contract for one visit.
+   */
+  it('an_unchanged_save_after_the_lock_does_not_supersede', async () => {
+    const MOBILE = '0400000111';
+    const EMAIL = 'sam.carer@example.invalid';
+    const live = await lockedWithCarer(MOBILE, EMAIL);
+
+    const before = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findFirst({ where: { id: live.id } }),
+    );
+    // Party changes confirm as part of the same Save that makes them (rule 1);
+    // this row is already answered before the repeat arrives.
+    expect(before?.assignorConfirmedAt).not.toBeNull();
+    const eventsBefore = await prisma.vaultOutbox.findMany({ where: { subjectId: live.id } });
+
+    const res = await request(app.getHttpServer())
+      .post(`/agreements/${live.id}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({ ...CARER, mobile: MOBILE, email: EMAIL })
+      .expect(201);
+
+    // THE SAME AGREEMENT CAME BACK — no successor, no new row.
+    expect(res.body.id).toBe(live.id);
+    const successors = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findMany({ where: { supersedesAgreementId: live.id } }),
+    );
+    expect(successors).toEqual([]);
+
+    // AND NOTHING WAS WRITTEN. Same confirmation, same particulars, same hash,
+    // and not one extra row of evidence.
+    const after = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findFirst({ where: { id: live.id } }),
+    );
+    expect(after?.assignorConfirmedAt?.toISOString()).toBe(before?.assignorConfirmedAt?.toISOString());
+    expect(after?.assignorId).toBe(before?.assignorId);
+    expect(after?.renderedArtefactHash).toBe(before?.renderedArtefactHash);
+    expect(after?.particulars).toEqual(before?.particulars);
+    const eventsAfter = await prisma.vaultOutbox.findMany({ where: { subjectId: live.id } });
+    expect(eventsAfter).toHaveLength(eventsBefore.length);
+  });
+
+  /**
+   * THE OTHER HALF OF THE SAME FIX: a locked row naming somebody other than
+   * the patient, where the confirmation is STILL OWED (`assignorConfirmedAt`
+   * null). Every live write path sets it as part of the same Save that
+   * changes the party, so this state has to be built directly — but the
+   * endpoint reads it from the row, not from how the row got there, and a
+   * repeat of the CURRENT answer must still be the answer to "who is signing"
+   * (rule 1), recorded exactly as the patient's one-press confirm is.
+   */
+  it('an_unchanged_save_on_an_unconfirmed_row_only_confirms', async () => {
+    const agreementId = await lockedDraft();
+    const carerAssignorId = await prisma.withPractice(practiceId, async (tx) => {
+      const created = await tx.assignor.create({
+        data: {
+          practiceId,
+          name: 'Sam Carer',
+          relationshipToPatient: 'Parent',
+          authorityBasis: 'parent',
+          contactMobile: '0400000111',
+          contactEmail: 'sam.carer@example.invalid',
+          authorityDeclaredAt: new Date(),
+          declaredOfFullAgeAt: new Date(),
+        },
+      });
+      await tx.agreement.update({
+        where: { id: agreementId },
+        data: {
+          assignorId: created.id,
+          assignorIsPatient: false,
+          assignorConfirmedAt: null,
+          assignorConfirmedBy: null,
+        },
+      });
+      return created.id;
+    });
+
+    const before = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findFirst({ where: { id: agreementId } }),
+    );
+    expect(before?.assignorConfirmedAt).toBeNull();
+    expect(before?.particularsLockedAt).not.toBeNull();
+
+    const res = await request(app.getHttpServer())
+      .post(`/agreements/${agreementId}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({ ...CARER, mobile: '0400000111', email: 'sam.carer@example.invalid' })
+      .expect(201);
+
+    // THE SAME ROW, NOT A SUCCESSOR.
+    expect(res.body.id).toBe(agreementId);
+    const successors = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findMany({ where: { supersedesAgreementId: agreementId } }),
+    );
+    expect(successors).toEqual([]);
+
+    // THE OWED CONFIRMATION WAS RECORDED — the party itself did not move.
+    const after = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findFirst({ where: { id: agreementId } }),
+    );
+    expect(after?.assignorConfirmedAt).not.toBeNull();
+    expect(after?.assignorId).toBe(carerAssignorId);
+    expect(after?.renderedArtefactHash).toBe(before?.renderedArtefactHash);
+
+    // EXACTLY ONE `agreement.assignor_confirmed` EVENT, and no pretence that
+    // the party changed.
+    const confirmedEvents = await prisma.vaultOutbox.findMany({
+      where: { type: 'agreement.assignor_confirmed', subjectId: agreementId },
+    });
+    expect(confirmedEvents).toHaveLength(1);
+    const changedEvents = await prisma.vaultOutbox.findMany({
+      where: { type: 'agreement.assignor_changed', subjectId: agreementId },
+    });
+    expect(changedEvents).toEqual([]);
+    const supersededEvents = await prisma.vaultOutbox.findMany({
+      where: { type: 'agreement.superseded', subjectId: agreementId },
+    });
+    expect(supersededEvents).toEqual([]);
+  });
+
   it('a_party_change_after_the_lock_still_supersedes', async () => {
     const live = await lockedWithCarer('0400000111', 'sam.carer@example.invalid');
 

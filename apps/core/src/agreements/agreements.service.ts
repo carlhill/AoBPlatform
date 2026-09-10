@@ -821,6 +821,36 @@ export class AgreementsService {
     }
 
     /*
+     * A REPEAT FOR SOMEBODY ELSE WRITES NOTHING — EXCEPT A CONFIRMATION IT MAY
+     * STILL OWE (found in review of 0e2bbbd; ASSIGNOR-RULES.md rule 2).
+     *
+     * `classifyRequestedChange` returning 'none' here means the SAME
+     * non-patient signer — name, relationship, basis, note and contact all
+     * matching the row already on record. GUARDED to that case only
+     * (`!dto.assignorIsPatient`): 'none' for "the patient is signing" falls
+     * through to the check just below instead, which always re-stamps the
+     * confirmation on every press and is untouched by this branch. A repeat
+     * for somebody else is not a correction, so it must not supersede — not
+     * even on a LOCKED agreement, which is exactly the state that was
+     * creating an identical successor for no reason.
+     *
+     * IF THE CONFIRMATION IS STILL OWED (`assignorConfirmedAt` null — nobody
+     * has yet answered who is signing for this row), THIS SAVE IS THAT ANSWER,
+     * recorded exactly as the patient's one-press confirm is (rule 1): one
+     * write, one `agreement.assignor_confirmed` event. Once it is owed no
+     * longer, a repeat is a true no-op — the same row handed back, no write,
+     * no event — before the lock and after it alike.
+     */
+    if (change === 'none' && !dto.assignorIsPatient) {
+      if (state.agreement.assignorConfirmedAt !== null) {
+        return state.agreement;
+      }
+      return this.prisma.withPractice(practiceId, (tx) =>
+        this.writeAssignorConfirmation(tx, agreementId, actor, true),
+      );
+    }
+
+    /*
      * "THE PATIENT IS SIGNING" ON AN AGREEMENT THAT ALREADY SAYS SO IS A
      * CONFIRMATION, NOT A CHANGE (Carl, 7 Sep 2026).
      *
