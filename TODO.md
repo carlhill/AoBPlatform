@@ -3264,3 +3264,24 @@ kiosk header on every step, Continue lock, retry with core stopped.
 
 **Decisions still waiting on Carl**: unchanged from the afternoon handover,
 plus: name on the kiosk handover screen (currently none, deliberately).
+
+## The who-is-signing panel remembers a draft across Close (Carl, 10 Sep 2026) -- review later
+
+Decided 10 Sep (D-2026-09-10-01): the panel keeps what reception typed for a
+row -- carer's name, relationship, mobile, email -- in page memory across
+Close/reopen until it is saved, pushed, the row leaves the list, the practice
+changes, or the page is left. Carl chose this over dropping it on Close after
+losing a carer's details to a missed 18+ tick. It is an asymmetry with the
+correction panel two sections up, which deliberately drops a PATIENT's details
+on Close so nothing sits on a monitor facing the room.
+
+- [ ] **Review whether to age drafts out.** Options if it ever bites: forget a
+      draft after N idle minutes; forget on sign-out and on navigation away;
+      or align with the correction panel and drop on Close with a "keep my
+      typing" affordance. Nothing stored in the browser either way -- memory
+      only. Reopen if a practice raises the monitor-facing-the-room concern for
+      carer details, or if the access log shows unattended consoles.
+- [ ] Console `display: contents` on the ①②③ list items: manual screen-reader
+      spot-check (VoiceOver/Safari, NVDA/Chrome) before wide release -- older
+      WebKit has stripped list semantics under `display: contents` (reviewer
+      note, 10 Sep).

@@ -153,6 +153,34 @@ a per-user profile or a kiosk-style lock, not a shorter timeout); evidence from
 the access log that unattended consoles are being used by someone other than
 the signed-in user.
 
+## D-2026-09-10-01 — The who-is-signing panel keeps its draft across Close
+
+**Decided:** On the practice console (`/practice/tablet` and the patient work
+page), what reception types into the "Who is signing" panel for a row — the
+other person's name, relationship, mobile, email and the 18+ attestation —
+is kept in page memory when the panel is closed and shown again when it is
+reopened, until it is saved, the row is pushed, the row leaves the list, the
+practice changes, or the page is left. Nothing is written to the browser.
+— Carl Hill, 10 September 2026 ("keep it and record it"), after a carer's
+details were lost to a missed 18+ tick followed by Close.
+
+**Why:**
+- **Reception types these once, at a busy desk.** Losing four fields to a
+  missed tick and a reflex Close costs the patient's time as well as the
+  desk's.
+- **It is a carer's contact details, not the patient's clinical record.** The
+  correction panel two sections up deliberately drops a PATIENT's details on
+  Close so nothing sits on a monitor facing the room; this panel holds less,
+  and the page is behind a passkey sign-in with a four-hour idle limit
+  (D-2026-09-07-01).
+- **Memory only.** No localStorage, no IndexedDB; a reload forgets it. The
+  asymmetry with the correction panel is accepted, not accidental.
+
+**What would reopen it:** a practice raising the monitor-facing-the-room
+concern for carer details; the access log showing unattended consoles; or the
+draft outliving its usefulness in practice (then age it out after N idle
+minutes, or forget on sign-out and navigation). Tracked in TODO.md.
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |

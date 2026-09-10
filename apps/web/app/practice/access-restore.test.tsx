@@ -146,7 +146,7 @@ describe('setup_page_attempts_the_silent_restore', () => {
 describe('signing_back_in_is_shown_only_while_an_attempt_is_in_flight', () => {
   it('says it while the redirect is outstanding', async () => {
     rememberSignedIn('web');
-    watchNavigation();
+    const assign = watchNavigation();
 
     renderTheGatedPage();
 
@@ -156,6 +156,18 @@ describe('signing_back_in_is_shown_only_while_an_attempt_is_in_flight', () => {
     // interactive login on top of the silent one about to land.
     expect(screen.queryByTestId('access-signed-out')).toBeNull();
     expect(screen.queryByTestId('access-restore-refused')).toBeNull();
+
+    /*
+     * AND LET THE REDIRECT LAND BEFORE THIS TEST ENDS. The attempt started
+     * above awaits a real SHA-256 digest (the PKCE challenge) on Node's
+     * threadpool before it calls `location.assign`. If this test returns while
+     * that is still pending, the call lands during the NEXT test, on whatever
+     * `location` stub that test has installed — which is how "a refused
+     * restore … does not ask Keycloak again" saw one call it never made (CI on
+     * 57cb3a2, one of two runs). Waiting for the thing the test set in motion
+     * is wow.md §2 item 6 again, this time for test isolation.
+     */
+    await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
   });
 
   it('never says it when no attempt is made', async () => {
