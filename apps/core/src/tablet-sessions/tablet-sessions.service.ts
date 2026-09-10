@@ -78,6 +78,29 @@ export interface PushableRow {
   assignorIsPatient: boolean;
   assignorName: string | null;
   assignorRelationship: string | null;
+  /**
+   * WHERE THE SIGNER'S OWN COPY GOES -- and, because it is on the row, what the
+   * "Who is signing?" panel shows when it is REOPENED (Carl, 10 Sep 2026). A
+   * saved someone-else came back with the name and the relationship in their
+   * controls and the two contact boxes empty, so a second Save meant typing a
+   * mobile and an email that the practice already holds.
+   *
+   * `null` WHENEVER THE PATIENT IS SIGNING, on the same branch the name and the
+   * relationship take: there is no third-party contact to carry, and the
+   * patient's own is not it.
+   *
+   * A CONSOLE ROW, NOT A VERIFICATION AND NOT AN EVIDENCE EVENT. This list is
+   * practice-scoped behind RLS and the practice took these values across the
+   * desk; nothing here is an identifier, so hard rule 9 (REQ-VER-04) is
+   * untouched -- verification logs still carry TYPES and outcomes only. Nothing
+   * is written, so no vault event moves (hard rule 11).
+   *
+   * AND IT NEVER REACHES A TABLET. `TabletSessionPayload.assignor` carries
+   * `isPatient`, `name` and `relationship` and has no field for either of
+   * these; the named e2e asserts their absence from the kiosk payload.
+   */
+  assignorMobile: string | null;
+  assignorEmail: string | null;
   particularsLocked: boolean;
   /**
    * WHEN A PERSON SAID WHO IS SIGNING — `null` until somebody has. The console
@@ -1243,6 +1266,11 @@ export class TabletSessionsService {
           assignorRelationship: agreement.assignorIsPatient
             ? null
             : (assignor?.relationshipToPatient ?? null),
+          // The SAME branch the name and the relationship take, off the SAME
+          // assignor record — so a row can never show a third party's contact
+          // beside "the patient is signing".
+          assignorMobile: agreement.assignorIsPatient ? null : (assignor?.contactMobile ?? null),
+          assignorEmail: agreement.assignorIsPatient ? null : (assignor?.contactEmail ?? null),
           particularsLocked: agreement.particularsLockedAt !== null,
           assignorConfirmedAt: agreement.assignorConfirmedAt
             ? agreement.assignorConfirmedAt.toISOString()

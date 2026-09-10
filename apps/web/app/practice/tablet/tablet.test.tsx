@@ -60,6 +60,9 @@ const READY = {
   assignorIsPatient: true,
   assignorName: null,
   assignorRelationship: null,
+  // NULL WHEREVER THE PATIENT SIGNS — there is no third party to reach.
+  assignorMobile: null,
+  assignorEmail: null,
   particularsLocked: false,
   // SOMEBODY HAS BEEN ASKED WHO IS SIGNING. The push waits for this, so a row
   // that is meant to be sendable carries it (Carl, 7 Sep 2026).
@@ -1267,6 +1270,10 @@ describe('/practice/tablet — send to the tablet', () => {
       // THE WORD THAT IS PRINTED ON THE AGREEMENT, which is what the DTO
       // carries; the select is keyed by the content file's key.
       assignorRelationship: 'Mother',
+      // A ROW SAVED WITH NEITHER — see `reopening_prefills_mobile_and_email_from_the_row`
+      // for the ordinary case, where both are on the row and both come back.
+      assignorMobile: null,
+      assignorEmail: null,
     };
     stubFetch({ rows: [FOR_ANOTHER] });
     render(<TabletView practiceId={PRACTICE} />);
@@ -1284,7 +1291,8 @@ describe('/practice/tablet — send to the tablet', () => {
     expect(
       (screen.getByTestId(`who-relationship-${FOR_ANOTHER.agreementId}`) as HTMLSelectElement).value,
     ).toBe('mother');
-    // NOT ON THE DTO, SO NOT INVENTED.
+    // NULL ON THE ROW, SO BLANK ON THE SCREEN — nothing is invented to fill a
+    // box the record has no answer for.
     expect(
       (screen.getByTestId(`who-mobile-${FOR_ANOTHER.agreementId}`) as HTMLInputElement).value,
     ).toBe('');
@@ -1302,6 +1310,55 @@ describe('/practice/tablet — send to the tablet', () => {
 
     // AND NOTHING HERE ASKS ANYBODY TO JUDGE THE PERSON (REQ-VUL-05).
     expect(document.body.textContent ?? '').not.toMatch(/capacity|competent|understands/i);
+  });
+
+  /**
+   * AND THE CONTACT COMES BACK WITH THE REST OF IT (Carl, 10 Sep 2026).
+   *
+   * Saving a someone-else takes a mobile and/or an email — `whoFault` refuses
+   * the branch with neither, because the copy of the agreement goes to the
+   * SIGNER (REQ-REG-08). Reopening the panel showed the name and the
+   * relationship and two empty boxes, so a second Save meant retyping details
+   * the practice already holds. The row DTO carries them now.
+   */
+  it('reopening_prefills_mobile_and_email_from_the_row', async () => {
+    signedInAtPractice();
+    const FOR_ANOTHER = {
+      ...READY,
+      agreementId: 'agreement-with-contact',
+      patientName: 'Kim Specimen',
+      assignorIsPatient: false,
+      assignorName: 'Alex Fictional',
+      assignorRelationship: 'Mother',
+      // Obviously fake, and reserved-for-testing domains at that.
+      assignorMobile: '+61400000999',
+      assignorEmail: 'someone@example.invalid',
+    };
+    stubFetch({ rows: [FOR_ANOTHER] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    fireEvent.click(await screen.findByTestId(`who-open-${FOR_ANOTHER.agreementId}`));
+
+    // WAIT FOR THE PRE-FILL, not for the box (wow.md §2 item 6) — the panel
+    // renders its inputs before the row's values are seeded into them.
+    const mobile = (await screen.findByTestId(
+      `who-mobile-${FOR_ANOTHER.agreementId}`,
+    )) as HTMLInputElement;
+    await waitFor(() => expect(mobile.value).toBe('+61400000999'));
+
+    // Read synchronously ON PURPOSE: both boxes are seeded from the one draft
+    // in the one state update, so the wait above has already landed this too.
+    const email = screen.getByTestId(`who-email-${FOR_ANOTHER.agreementId}`) as HTMLInputElement;
+    expect(email.value).toBe('someone@example.invalid');
+
+    // AND THE REST OF THE ANSWER IS STILL THERE, so Save needs no retyping at
+    // all: the contact was the last thing missing.
+    expect((screen.getByTestId(`who-name-${FOR_ANOTHER.agreementId}`) as HTMLInputElement).value).toBe(
+      'Alex Fictional',
+    );
+    expect(
+      (screen.getByTestId(`who-relationship-${FOR_ANOTHER.agreementId}`) as HTMLSelectElement).value,
+    ).toBe('mother');
   });
 
   /**

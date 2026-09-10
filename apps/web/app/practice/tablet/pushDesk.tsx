@@ -95,6 +95,14 @@ export interface PushableRow {
   assignorIsPatient: boolean;
   assignorName: string | null;
   assignorRelationship: string | null;
+  /**
+   * THE SIGNER'S CONTACT, SO REOPENING THE PANEL SHOWS WHAT WAS SAVED (Carl,
+   * 10 Sep 2026). `null` on every row the patient is signing. It is where the
+   * assignor's own copy goes (REQ-REG-08) — a console fact off a
+   * practice-scoped list, never an identifier and never sent to a tablet.
+   */
+  assignorMobile: string | null;
+  assignorEmail: string | null;
   particularsLocked: boolean;
   /**
    * WHEN A PERSON SAID WHO IS SIGNING — `null` until somebody has (Carl, 7 Sep
@@ -706,13 +714,17 @@ export function relationshipFromSaved(saved: string | null): { relationship: str
  * saved: the tick off, the name and relationship back in their controls, and
  * the age declaration shown as already given (see `ageIsOnRecord`).
  *
- * MOBILE AND EMAIL COME BACK BLANK, and honestly so: they are not on this
- * DTO. They are the assignor's contact for their own copy of the agreement
- * (REQ-REG-08), not a particular the row carries, and inventing a field to
- * carry them is not this change's to make.
+ * AND MOBILE AND EMAIL COME BACK TOO (Carl, 10 Sep 2026). They were blank
+ * because the row did not carry them, which meant a second Save asked
+ * reception to retype a mobile and an email the practice already holds — and
+ * `whoFault` refuses a someone-else with neither, so the panel demanded them
+ * again. The row DTO carries them now, on the same branch as the name.
  */
 export function whoDraftFromRow(
-  row: Pick<PushableRow, 'assignorIsPatient' | 'assignorName' | 'assignorRelationship'>,
+  row: Pick<
+    PushableRow,
+    'assignorIsPatient' | 'assignorName' | 'assignorRelationship' | 'assignorMobile' | 'assignorEmail'
+  >,
 ): WhoDraft {
   const name = row.assignorName?.trim() ?? '';
   if (row.assignorIsPatient || name.length === 0) {
@@ -723,6 +735,8 @@ export function whoDraftFromRow(
     isPatient: false,
     name,
     ...relationshipFromSaved(row.assignorRelationship),
+    mobile: row.assignorMobile ?? '',
+    email: row.assignorEmail ?? '',
     // GIVEN AT SAVE, SHOWN RATHER THAN ASKED FOR AGAIN. `ageIsOnRecord` is
     // what turns this into a read-only line instead of an unticked box.
     declaredOfAge: true,

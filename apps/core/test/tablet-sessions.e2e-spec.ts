@@ -98,14 +98,30 @@ const c6EvaluatingRules = {
     const p = (payload ?? {}) as Record<string, unknown>;
     const isPre = p.agreementType === 'episodic_pre' || p.agreementType === 'treatment_plan';
     const ok = !isPre || (SERVICE_DESCRIPTIONS as readonly string[]).includes(p.basicServiceDescription as string);
+    /*
+     * AND IT ANSWERS C8, because `POST /agreements/:id/assignor` refuses a rule
+     * set that stays silent on D7 ("silence is not a pass"). The verdict is the
+     * shape of the real one — the patient signing needs nothing more; anybody
+     * else must be named — so a someone-else change is exercised here rather
+     * than waved through.
+     */
+    const d7 =
+      p.assignorIsPatient === true
+      || (typeof p.assignorName === 'string' && p.assignorName.trim().length > 0);
     return {
-      valid: ok,
+      valid: ok && d7,
       results: [
         {
           rule: 'C6',
           outcome: ok ? 'pass' : 'fail',
           message: 'D6a: a pre-agreement requires a basic service description drawn from the current mapping.',
           citation: 's 65C(4); REQ-REG-03',
+        },
+        {
+          rule: 'C8',
+          outcome: d7 ? 'pass' : 'fail',
+          message: 'D7: the party signing must be stated, and named where it is not the patient.',
+          citation: 's 65C(4); REQ-VUL-01',
         },
       ],
       ruleSetVersion: 'test-rules-1',
@@ -1163,6 +1179,90 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
       expect(ids).not.toContain(stale);
       expect(ids).toContain(fresh);
       expect(ids).toContain(openOne);
+    });
+
+    /**
+     * THE SIGNER'S CONTACT IS ON THE ROW, AND ONLY WHERE THERE IS A SIGNER TO
+     * HAVE ONE (Carl, 10 Sep 2026).
+     *
+     * WHAT IT IS FOR. Reception saves "someone else is signing" with a mobile
+     * and an email, shuts the panel, and reopens it — and the two contact boxes
+     * came back empty, because the row carried no such field. A second Save
+     * then demanded values the practice already holds (`whoFault` refuses a
+     * someone-else with neither), which is retyping as a rule rather than as an
+     * accident.
+     *
+     * NULL FOR THE PATIENT, on the same branch the name and the relationship
+     * take. There is no third-party contact on a row the patient signs, and the
+     * patient's own is not a substitute for one.
+     *
+     * WHICH RULES THIS IS NOT NEAR. A pushable row is a practice-scoped console
+     * read behind RLS, of values the practice took across its own desk. It is
+     * not a verification log — those still carry identifier TYPES and outcomes
+     * and never values (hard rule 9, REQ-VER-04) — and a read writes nothing,
+     * so no vault event moves (hard rule 11). The one place it must NOT reach is
+     * a tablet, which is asserted below on the payload itself.
+     */
+    it('pushable_row_carries_the_someone_else_contact_and_null_for_the_patient', async () => {
+      // Obviously fake, and neither is the patient's own (`+61400000001`).
+      const MOBILE = '+61400000999';
+      const EMAIL = 'someone@example.invalid';
+
+      const forAnother = await draft();
+      const patientSigns = await draft();
+
+      await http()
+        .post(`/agreements/${forAnother}/assignor`)
+        .set('x-practice-id', practiceA)
+        .send({
+          assignorIsPatient: false,
+          name: 'Robin Relative',
+          authorityBasis: 'parent',
+          relationship: 'Mother',
+          declaresEighteenOrOver: true,
+          mobile: MOBILE,
+          email: EMAIL,
+        })
+        .expect(201);
+
+      const res = await http().get('/tablet-sessions/pushable').set('x-practice-id', practiceA).expect(200);
+      const rows = res.body as Array<Record<string, unknown>>;
+      const find = (id: string) => rows.find((r) => r.agreementId === id);
+
+      // BOTH, so reopening the panel shows what was saved rather than blanks.
+      expect(find(forAnother)).toMatchObject({
+        assignorIsPatient: false,
+        assignorName: 'Robin Relative',
+        assignorMobile: MOBILE,
+        assignorEmail: EMAIL,
+      });
+
+      // AND NEITHER, on the row the patient is signing.
+      expect(find(patientSigns)).toMatchObject({
+        assignorIsPatient: true,
+        assignorName: null,
+        assignorMobile: null,
+        assignorEmail: null,
+      });
+
+      // AND THE TABLET IS TOLD NONE OF IT. The payload states WHO is signing
+      // and has no field for how to reach them: the copy of the agreement is
+      // the server's to send, and a screen in a waiting room is not the place
+      // for a third party's contact details.
+      await pushTo(tabletA, forAnother).expect(201);
+      const session = await http()
+        .get('/kiosk/session')
+        .set('x-device-credential', tabletACredential)
+        .expect(200);
+
+      const assignor = session.body.session.assignor as Record<string, unknown>;
+      expect(assignor).toMatchObject({ isPatient: false, name: 'Robin Relative' });
+      for (const key of Object.keys(assignor)) expect(key).not.toMatch(/mobile|email|contact/i);
+      const serialised = JSON.stringify(session.body);
+      expect(serialised).not.toContain(MOBILE);
+      expect(serialised).not.toContain(EMAIL);
+      expect(serialised).not.toContain('assignorMobile');
+      expect(serialised).not.toContain('assignorEmail');
     });
   });
 
