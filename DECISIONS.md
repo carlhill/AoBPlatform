@@ -181,6 +181,43 @@ concern for carer details; the access log showing unattended consoles; or the
 draft outliving its usefulness in practice (then age it out after N idle
 minutes, or forget on sign-out and navigation). Tracked in TODO.md.
 
+## D-2026-09-11-01 — A contact-only change to the other signer does not supersede the agreement
+
+**Decided:** When the person signing for the patient keeps the same identity —
+same `assignorIsPatient`, name, relationship, authority basis and note — and
+only their mobile or email changes, the change is recorded in place on the
+agreement's current signer record with a vault event
+`assignor.contact_changed` (ids and field names, never values). The agreement,
+its particulars, its render and its hash are not touched. A change to WHO
+signs still supersedes after the lock, exactly as before. — Carl Hill,
+11 September 2026 ("yes - build the contact-only change"), on the fact that
+no signer contact is rendered into the artefact.
+
+**Why:**
+- **Contact is not a particular.** The s 65C particulars type carries the
+  signer's name and relationship and nothing else about them; the only phone
+  and email on the rendered agreement belong to the practice letterhead
+  (checked 11 Sep 2026: `packages/domain/src/agreement.ts`,
+  `apps/core/src/render/*`). A mobile correction therefore moves no rendered
+  byte and no hash, so hard rules 2 and 13 are not engaged.
+- **Superseding for a typo was the wrong size of answer.** It produced a second
+  agreement, render and hash to fix a number that appears on none of them, and
+  it is what let a mobile change vanish on 10 Sep when the same-answer check
+  compared names only.
+- **Reception expects a typo fix to fix the typo.** One press, one record
+  updated, the row unchanged.
+
+**Boundaries:** only on the newest agreement in a supersession chain
+(otherwise `409 agreement_moved_on`); never on a patient-signer, whose contact
+lives on the patient record (REQ-DATA-10); rule 10 checks unchanged. Rules
+collected in ASSIGNOR-RULES.md.
+
+**What would reopen it:** the Department adding signer contact to the s 65C
+data set or to a prescribed form; a template that prints the signer's contact
+(then it becomes rendered and the change must supersede — the classifier and
+the renderer must be kept in step, and a test should pin that no template
+renders signer contact while this decision stands).
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
