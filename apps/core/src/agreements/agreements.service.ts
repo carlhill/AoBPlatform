@@ -1196,6 +1196,18 @@ export class AgreementsService {
         });
 
         /*
+         * AND THE CONFIRMATION, AS ITS OWN EVENT, ON THE REPLACEMENT — same
+         * reasoning as the in-place path above. `assignorConfirmedAt` is
+         * already set on `replacement` (via `confirmationOf(actor)` in
+         * `createSupersedingDraft`), so the gate reads it either way; this is
+         * the fact evidenced in the vault, not a second source of truth for
+         * it (found in review of 333f42f).
+         */
+        if (dto.assignorIsPatient) {
+          await enqueueVaultEvent(tx, assignorConfirmedEvent(replacement.id, actor));
+        }
+
+        /*
          * AND NOTHING MAY STILL BE SIGNED AGAINST THE OLD ONE. Its evidence
          * stays exactly as it is — the artefact, the hash, the verification —
          * but every channel that could still collect a signature naming the

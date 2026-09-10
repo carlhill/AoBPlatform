@@ -619,6 +619,76 @@ describe('re-pointing a draft agreement at another assignor (e2e, real Postgres)
     expect(moved.body.reason).toBe('agreement_moved_on');
   });
 
+  /**
+   * A REVERT TO THE PATIENT AFTER THE LOCK IS A SUPERSESSION TOO, AND THE
+   * CONFIRMATION IT CARRIES IS EVIDENCED THE SAME WAY THE IN-PLACE PATH
+   * EVIDENCES IT (found in review of 333f42f).
+   *
+   * `assignorConfirmedAt` lands on the replacement via `confirmationOf(actor)`
+   * inside `createSupersedingDraft` either way, so the gate that guards the
+   * push worked before this fix too. What was missing was the EVENT: the
+   * in-place path ("confirming_the_patient_records_who_confirmed_and_when")
+   * writes `agreement.assignor_confirmed` beside `agreement.assignor_changed`
+   * — this pins that the supersession path does too, on the newest agreement.
+   */
+  it('reverting_to_the_patient_after_the_lock_evidences_the_confirmation', async () => {
+    const agreementId = await lockedDraft();
+
+    // SUPERSESSION 1: somebody else is signing.
+    const away = await request(app.getHttpServer())
+      .post(`/agreements/${agreementId}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({
+        assignorIsPatient: false,
+        name: 'Sam Carer',
+        authorityBasis: 'parent',
+        declaresEighteenOrOver: true,
+        mobile: '0400000111',
+      })
+      .expect(201);
+
+    // SUPERSESSION 2: the answer moves back to the patient, on a row that is
+    // ALSO locked — the same "party changed after the lock" ceremony,
+    // travelling in the other direction.
+    const back = await request(app.getHttpServer())
+      .post(`/agreements/${away.body.id}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({ assignorIsPatient: true })
+      .expect(201);
+
+    expect(back.body.id).not.toBe(away.body.id);
+    expect(back.body.supersedesAgreementId).toBe(away.body.id);
+    expect(back.body.assignorIsPatient).toBe(true);
+    expect(back.body.assignorId).toBe(patientAssignorId);
+
+    // THE GATE ALREADY WORKED (the column) — the event did not (found in
+    // review). Both are asserted here so a regression in either direction
+    // fails this test.
+    const replacement = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findFirst({ where: { id: back.body.id as string } }),
+    );
+    expect(replacement?.assignorConfirmedAt).not.toBeNull();
+
+    const changed = await prisma.vaultOutbox.findMany({
+      where: { type: 'agreement.assignor_changed', subjectId: back.body.id as string },
+    });
+    expect(changed).toHaveLength(1);
+
+    const confirmed = await prisma.vaultOutbox.findMany({
+      where: { type: 'agreement.assignor_confirmed', subjectId: back.body.id as string },
+    });
+    expect(confirmed).toHaveLength(1);
+    const payload = confirmed[0].payload as Record<string, unknown>;
+    expect(payload.agreementId).toBe(back.body.id);
+    expect(payload.assignorIsPatient).toBe(true);
+
+    // IDS AND FACTS ONLY (REQ-LOG-08, REQ-VER-04) — no fixture name, no
+    // mobile number, anywhere in the confirmation event.
+    const serialised = JSON.stringify(confirmed[0]);
+    expect(serialised).not.toContain('Sam Carer');
+    expect(serialised).not.toContain('0400000111');
+  });
+
   it('supersession_carries_d6a_and_template_versions', async () => {
     const agreementId = await lockedDraft('2026-09-04');
     const before = await prisma.withPractice(practiceId, (tx) =>
