@@ -28,6 +28,7 @@ import {
   basicServiceDescriptionOf,
   buildAssignorForAnother,
   canTransition,
+  classifyAssignorChange,
   HardRuleViolation,
   normaliseEmail,
   normalisePersonName,
@@ -38,6 +39,8 @@ import {
   validAnchorKindFor,
   type AcceptedSignatureCapture,
   type AgreementStatus,
+  type AssignorChangeKind,
+  type AssignorPartySnapshot,
   type DrawnSignatureCapture,
   type EnduringPathway,
   type ProviderType,
@@ -87,6 +90,31 @@ function assignorRefusal(reason: 'already_signed' | 'agreement_moved_on'): Confl
       : 'This agreement has moved on — it has been superseded, declined or has expired — so there is ' +
         'nothing here to re-point. Nothing was changed.';
   return new ConflictException({ statusCode: 409, message, reason });
+}
+
+/**
+ * A CONTACT CORRECTION ON AN AGREEMENT THE PATIENT IS SIGNING — refused, in
+ * words, rather than written somewhere it does not belong (Carl, 11 Sep 2026,
+ * D-2026-09-11-01).
+ *
+ * WHY IT IS NOT SIMPLY IGNORED. The request asked for something real: somebody
+ * typed a number. Accepting it and writing nothing is the silent discard this
+ * whole endpoint was fixed for on 10 September; writing it onto the patient's
+ * own assignor row would put a contact detail on a record the patient
+ * maintains, from a screen that is not the patient's record.
+ *
+ * A CODE, so the console maps it to its own words with somewhere to go
+ * (CLAUDE.md section 7); 400 rather than 409, because this is a request that
+ * asks for something the endpoint does not do, not a request that arrived late.
+ */
+function patientContactRefusal(): BadRequestException {
+  return new BadRequestException({
+    statusCode: 400,
+    message:
+      'The patient is signing this agreement, so there is no third-party signer to reach — a ' +
+      'patient’s own mobile and email live on the patient record. Nothing was changed.',
+    reason: 'patient_contact_lives_on_the_patient_record',
+  });
 }
 
 /**
@@ -736,7 +764,12 @@ export class AgreementsService {
       const successorAssignor = successor
         ? await tx.assignor.findFirst({ where: { id: successor.assignorId } })
         : null;
-      return { agreement, successor, successorAssignor };
+      /*
+       * AND WHO IT NAMES NOW, because the SORT of change this is can only be
+       * decided against the party already on the record (D-2026-09-11-01).
+       */
+      const assignor = await tx.assignor.findFirst({ where: { id: agreement.assignorId } });
+      return { agreement, assignor, successor, successorAssignor };
     });
 
     const disposition = assignorRepointDisposition({
@@ -758,6 +791,33 @@ export class AgreementsService {
        */
       if (state.successor && this.successorAlreadySays(state, dto)) return state.successor;
       throw assignorRefusal(disposition.reason);
+    }
+
+    /*
+     * WHICH SORT OF CHANGE IS THIS? (Carl, 11 Sep 2026 — D-2026-09-11-01.)
+     *
+     * THE RULING. How the other signer is REACHED — a mobile, an email — is a
+     * DELIVERY DETAIL and not a particular: the s 65C data set carries the
+     * signer's name and relationship, and no signer contact is rendered into
+     * the artefact. So a contact-only correction MUST NOT supersede. It was
+     * superseding, because who signs is a particular and every arrival is
+     * locked by the time it reaches the desk — which spent a whole second
+     * contract, a second validate, a second render and a second row of
+     * evidence restating particulars that had not moved.
+     *
+     * WHO SIGNS IS UNCHANGED BY THIS. A party change is still edited before
+     * the lock and still supersedes after it (hard rule 2, REQ-REG-06,
+     * HARD-02); the refusals above still run first, so a signed agreement and
+     * a row the chain has left behind are answered exactly as they were.
+     *
+     * THE DOMAIN DECIDES, not this method — `classifyAssignorChange` is the
+     * one place the comparison lives, normalised the way the rest of this file
+     * normalises, so the console and the server cannot come to different
+     * answers about what a Save just did.
+     */
+    const change = this.classifyRequestedChange(state, dto);
+    if (change === 'contact_only') {
+      return this.changeAssignorContact(practiceId, agreementId, dto, actor);
     }
 
     /*
@@ -949,6 +1009,236 @@ export class AgreementsService {
 
         await this.assertAssignorPartyPasses(tx, updated);
         return updated;
+      });
+    } catch (err) {
+      if (err instanceof HardRuleViolation) throw new BadRequestException(err.message);
+      throw err;
+    }
+  }
+
+  /**
+   * THE PARTY AS IT STANDS, AND THE PARTY THIS REQUEST WOULD WRITE — the two
+   * snapshots `classifyAssignorChange` compares (D-2026-09-11-01).
+   *
+   * THE REQUESTED SIDE IS BUILT BY THE FUNCTION THE WRITE PATHS BUILD IT WITH,
+   * so the comparison cannot drift from what would actually be stored — the
+   * same reasoning `successorAlreadySays` records, and the same empty staff
+   * list for the same reason: this is a comparison and not an authorisation.
+   * REQ-VUL-04 is enforced against the practice's real list on every write
+   * path, which is where a refusal must come from.
+   *
+   * A DTO THE DOMAIN REFUSES IS NOT A CONTACT CORRECTION. It is reported as a
+   * party change so it travels the ordinary path and meets the ordinary
+   * refusal with the rule named — rather than being answered here by a method
+   * whose job is to sort, not to judge.
+   */
+  private classifyRequestedChange(
+    state: {
+      agreement: DbAgreement;
+      assignor: {
+        name: string;
+        relationshipToPatient: string | null;
+        authorityBasis: string | null;
+        authorityNote: string | null;
+        contactMobile: string | null;
+        contactEmail: string | null;
+      } | null;
+    },
+    dto: ChangeAssignorDto,
+  ): AssignorChangeKind {
+    const current: AssignorPartySnapshot = {
+      assignorIsPatient: state.agreement.assignorIsPatient,
+      name: state.assignor?.name ?? null,
+      relationshipToPatient: state.assignor?.relationshipToPatient ?? null,
+      authorityBasis: state.assignor?.authorityBasis ?? null,
+      authorityNote: state.assignor?.authorityNote ?? null,
+      contactMobile: state.assignor?.contactMobile ?? null,
+      contactEmail: state.assignor?.contactEmail ?? null,
+    };
+
+    if (dto.assignorIsPatient) {
+      return classifyAssignorChange(current, {
+        assignorIsPatient: true,
+        contactMobile: dto.mobile ?? null,
+        contactEmail: dto.email ?? null,
+      });
+    }
+
+    let would: ReturnType<typeof buildAssignorForAnother>;
+    try {
+      would = buildAssignorForAnother({
+        name: dto.name,
+        authorityBasis: dto.authorityBasis,
+        note: dto.note,
+        declaresEighteenOrOver: dto.declaresEighteenOrOver,
+        mobile: dto.mobile,
+        email: dto.email,
+        practiceStaffNames: [],
+      });
+    } catch (err) {
+      // A HARD-RULE REFUSAL IS AN ANSWER — but ANYTHING ELSE IS A BUG and is
+      // rethrown rather than dressed up as a routine sort (the judgement
+      // `successorAlreadySays` already records).
+      if (err instanceof HardRuleViolation) return 'party';
+      throw err;
+    }
+
+    return classifyAssignorChange(current, {
+      assignorIsPatient: false,
+      name: would.name,
+      // The caller's own word where it gave one, the basis's derivation
+      // otherwise — the exact expression both write paths use for the column.
+      relationshipToPatient: dto.relationship?.trim() || would.relationshipToPatient,
+      authorityBasis: would.authorityBasis,
+      authorityNote: would.authorityNote,
+      contactMobile: would.contactMobile,
+      contactEmail: would.contactEmail,
+    });
+  }
+
+  /**
+   * ONLY HOW THE SIGNER IS REACHED CHANGED — written IN PLACE, on the assignor
+   * row, on a locked agreement as readily as on a draft (Carl, 11 Sep 2026,
+   * D-2026-09-11-01).
+   *
+   * WHAT IS NOT TOUCHED, AND WHY THAT IS THE WHOLE POINT. The agreement row,
+   * its particulars, its render and its hash are left exactly as they are
+   * (hard rule 13): a contact is not one of the s 65C particulars, nothing
+   * about it is printed on the artefact, and a document whose bytes did not
+   * change has nothing to re-hash. Superseding to record a corrected mobile
+   * would spend a second contract for one visit — which is what it was doing.
+   *
+   * THE LOCK IS THEREFORE NOT A REFUSAL HERE. The other two still are, and
+   * they are re-decided under this transaction rather than trusted from the
+   * read above: a signature that landed in the gap makes this an agreement
+   * whose evidence is finished, and a supersession that landed in the gap
+   * makes this a row the chain has left behind — the correction belongs on the
+   * agreement that is live, which is what `agreement_moved_on` sends the
+   * console to do.
+   *
+   * IDS AND FIELD NAMES IN THE EVIDENCE, NEVER VALUES (hard rule 9,
+   * REQ-VER-04, REQ-LOG-08). The event says `fields: ['mobile']`; the number
+   * itself never leaves the encrypted store. The write and the event commit in
+   * ONE transaction through the outbox (hard rule 11) — a corrected contact
+   * the evidence cannot account for, or an event about a correction that did
+   * not commit, are both structurally impossible.
+   */
+  private async changeAssignorContact(
+    practiceId: string,
+    agreementId: string,
+    dto: ChangeAssignorDto,
+    actor?: Actor,
+  ): Promise<DbAgreement> {
+    try {
+      return await this.prisma.withPractice(practiceId, async (tx) => {
+        const agreement = await tx.agreement.findFirst({ where: { id: agreementId } });
+        if (!agreement) throw new NotFoundException('Agreement not found.');
+
+        /*
+         * THE PATIENT'S OWN CONTACT IS NOT AN ASSIGNOR'S. Reached when a
+         * caller sends a mobile or an email alongside "the patient is
+         * signing"; refused in words with a code rather than written onto the
+         * patient's assignor row or quietly dropped.
+         */
+        if (agreement.assignorIsPatient) throw patientContactRefusal();
+
+        const successor = await tx.agreement.findFirst({
+          where: { supersedesAgreementId: agreementId },
+        });
+        const disposition = assignorRepointDisposition({
+          status: agreement.status as AgreementStatus,
+          particularsLocked: agreement.particularsLockedAt !== null,
+          signed: agreement.signatureEventId !== null,
+          superseded: successor !== null,
+        });
+        // `supersede` and `in_place` are BOTH fine here — the lock decides
+        // where a PARTICULAR may be written, and this is not one.
+        if (disposition.kind === 'refused') throw assignorRefusal(disposition.reason);
+
+        const current = await tx.assignor.findFirst({ where: { id: agreement.assignorId } });
+        if (!current) {
+          throw new InternalServerErrorException(
+            'This agreement names an assignor that no longer exists, so the contact cannot be corrected.',
+          );
+        }
+
+        /*
+         * EVERY NAME THE PRACTICE KNOWS, active or not (REQ-VUL-04, fail
+         * closed) — the same population every other write path compares
+         * against, because a rule that softened on the contact path would be
+         * no rule. The build also applies REQ-REG-08: a correction that leaves
+         * the signer unreachable is refused, since the copy of the agreement
+         * and every reminder go to them.
+         */
+        const staffNames = (await tx.staffMember.findMany({ select: { name: true } })).map((s) => s.name);
+        const party = buildAssignorForAnother({
+          name: dto.name,
+          authorityBasis: dto.authorityBasis,
+          note: dto.note,
+          declaresEighteenOrOver: dto.declaresEighteenOrOver,
+          mobile: dto.mobile,
+          email: dto.email,
+          practiceStaffNames: staffNames,
+        });
+
+        // WHICH CHANNELS MOVED — the NAMES, which is all the evidence carries.
+        const fields: ('mobile' | 'email')[] = [];
+        if (normalisePhone(party.contactMobile ?? '') !== normalisePhone(current.contactMobile ?? '')) {
+          fields.push('mobile');
+        }
+        if (normaliseEmail(party.contactEmail ?? '') !== normaliseEmail(current.contactEmail ?? '')) {
+          fields.push('email');
+        }
+        /*
+         * NOTHING MOVED AFTER ALL — write nothing and evidence nothing, so the
+         * two stay in step (hard rule 11). Unreachable while the sort above
+         * and the build here agree, and written out rather than assumed.
+         */
+        if (fields.length === 0) return agreement;
+
+        await tx.assignor.update({
+          where: { id: current.id },
+          data: {
+            contactMobile: party.contactMobile,
+            contactEmail: party.contactEmail,
+            // DERIVED, NEVER CARRIED OVER. The preference is "mobile if there
+            // is one" (C7.2); a correction that removes the mobile must not
+            // leave the record preferring a channel that no longer exists.
+            preferredChannel: party.preferredChannel,
+          },
+        });
+
+        await enqueueVaultEvent(tx, {
+          type: 'assignor.contact_changed',
+          actor: assignorActor(actor),
+          // ON THE AGREEMENT, because that is what a question months later is
+          // asked about: this agreement's copy started going somewhere else.
+          subject: { type: 'Agreement', id: agreementId },
+          payload: {
+            agreementId,
+            assignorId: current.id,
+            // ABSENT RATHER THAN NULL where there is no staff session — the
+            // event's own `actor` already says the platform did it.
+            ...(actor ? { changedBy: actor.id } : {}),
+            /*
+             * THE NAMES, JOINED — "mobile", "email" or "mobile,email", in that
+             * fixed order. A vault payload carries scalars only
+             * (`VaultEventInput`), and the joined form is the shape every other
+             * list of field NAMES in this codebase already takes
+             * (`detailTypesChanged`, `identifierTypes`, `correctedTypes`).
+             */
+            fields: fields.join(','),
+          },
+        });
+
+        /*
+         * THE AGREEMENT AS IT WAS READ, UNCHANGED — not re-fetched and not
+         * updated. Its particulars, its render and its hash are the same bytes
+         * they were before this request, which is the fact this whole path
+         * exists to preserve. C8 is not re-asked either: it validates the name
+         * and the relationship, neither of which moved.
+         */
+        return agreement;
       });
     } catch (err) {
       if (err instanceof HardRuleViolation) throw new BadRequestException(err.message);

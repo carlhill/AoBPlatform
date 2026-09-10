@@ -5,6 +5,7 @@ import {
   AUTHORITY_BASES_FOR_ANOTHER,
   buildAssignorForAnother,
   canRepointAssignor,
+  classifyAssignorChange,
   HardRuleViolation,
   isWellFormedEmail,
   isWellFormedMobile,
@@ -194,5 +195,78 @@ describe('locked_agreement_cannot_change_assignor (hard rule 2 / REQ-REG-06)', (
         }),
       ).toEqual({ kind: 'refused', reason: 'agreement_moved_on' });
     });
+  });
+});
+
+/**
+ * WHICH OF THE THREE THINGS A SAVE IS (Carl, 11 Sep 2026 — D-2026-09-11-01).
+ *
+ * The ruling this pins: how the signer is REACHED is a delivery detail, not a
+ * particular, so correcting a mistyped mobile is not the same act as changing
+ * who signs — and must not supersede an agreement.
+ */
+describe('classifying a "who is signing" save (D-2026-09-11-01)', () => {
+  const carer = {
+    assignorIsPatient: false,
+    name: 'Sam Carer',
+    relationshipToPatient: 'parent',
+    authorityBasis: 'parent',
+    authorityNote: null,
+    contactMobile: '0400000111',
+    contactEmail: 'sam.carer@example.invalid',
+  };
+
+  it('a_changed_mobile_is_contact_only_not_a_party_change', () => {
+    expect(classifyAssignorChange(carer, { ...carer, contactMobile: '0400000222' })).toBe('contact_only');
+    expect(classifyAssignorChange(carer, { ...carer, contactEmail: 'elsewhere@example.invalid' })).toBe(
+      'contact_only',
+    );
+    // Adding the second channel is still only a delivery detail.
+    expect(
+      classifyAssignorChange({ ...carer, contactEmail: null }, carer),
+    ).toBe('contact_only');
+  });
+
+  it('the party particulars are what make it a party change', () => {
+    expect(classifyAssignorChange(carer, { ...carer, name: 'Alex Other' })).toBe('party');
+    expect(classifyAssignorChange(carer, { ...carer, relationshipToPatient: 'grandparent' })).toBe('party');
+    expect(classifyAssignorChange(carer, { ...carer, authorityBasis: 'guardian' })).toBe('party');
+    expect(classifyAssignorChange(carer, { ...carer, authorityNote: 'friend' })).toBe('party');
+    // D7 itself, in both directions.
+    expect(classifyAssignorChange(carer, { assignorIsPatient: true })).toBe('party');
+    expect(classifyAssignorChange({ assignorIsPatient: true }, carer)).toBe('party');
+    // A party change subsumes the contact that travelled with it — a new
+    // signer arrives with their own number, and that is one act, not two.
+    expect(classifyAssignorChange(carer, { ...carer, name: 'Alex Other', contactMobile: '0400000222' })).toBe(
+      'party',
+    );
+  });
+
+  it('nothing moved is nothing moved, however it was typed', () => {
+    expect(classifyAssignorChange(carer, carer)).toBe('none');
+    expect(
+      classifyAssignorChange(carer, {
+        ...carer,
+        name: '  sam   carer ',
+        relationshipToPatient: 'Parent',
+        contactMobile: '+61 400 000 111',
+        contactEmail: 'Sam.Carer@Example.invalid',
+      }),
+    ).toBe('none');
+  });
+
+  /**
+   * The bare `{ assignorIsPatient: true }` the desk sends to confirm the
+   * default must stay a confirmation. Reading its silence about contact as
+   * "blank the contact" would turn every morning's one tap into a change.
+   */
+  it('a bare confirmation that the patient is signing is not a contact change', () => {
+    const patient = { assignorIsPatient: true, contactMobile: '0400000333', contactEmail: null };
+    expect(classifyAssignorChange(patient, { assignorIsPatient: true })).toBe('none');
+    // But a contact it DID ask about, and that differs, is reported — so the
+    // service can refuse it in words rather than discarding it silently.
+    expect(classifyAssignorChange(patient, { assignorIsPatient: true, contactMobile: '0400000444' })).toBe(
+      'contact_only',
+    );
   });
 });

@@ -839,6 +839,76 @@ describe('/practice/tablet — send to the tablet', () => {
     await waitFor(() => expect(reopened.value).toBe(NEW_MOBILE));
   });
 
+  /**
+   * A CORRECTED MOBILE IS NOT A NEW AGREEMENT (Carl, 11 Sep 2026 —
+   * D-2026-09-11-01).
+   *
+   * How the signer is REACHED is a delivery detail: the s 65C particulars
+   * carry the signer's name and relationship, and no signer contact is printed
+   * on the artefact. So the server now writes it in place — the same agreement
+   * comes back, its hash and particulars untouched — and the band has to SAY
+   * so. "Saved." was the same word this screen used for an edit that
+   * superseded, which left reception unsure which of the two had happened and
+   * whether the number had taken.
+   *
+   * THE SCREEN DOES NOT DECIDE THE ACT; it asks the domain's own
+   * `classifyAssignorChange` which of the three this was, so the words on
+   * screen cannot disagree with what the server did.
+   */
+  it('saving_only_a_new_mobile_says_contact_updated_not_superseded', async () => {
+    signedInAtPractice();
+    // Obviously fake, and different in the digits that matter.
+    const OLD_MOBILE = '0400 000 001';
+    const NEW_MOBILE = '0400 000 002';
+
+    const CARER = {
+      ...READY,
+      particularsLocked: true,
+      status: 'awaiting_signature',
+      assignorIsPatient: false,
+      assignorName: 'Robin Relative',
+      assignorRelationship: 'Mother',
+      assignorMobile: OLD_MOBILE,
+      assignorEmail: null,
+    };
+    // WHAT THE SERVER RETURNS NOW: the SAME agreement, with the signer's row
+    // updated underneath it. No successor, nothing to move to.
+    const UPDATED = { ...CARER, assignorMobile: NEW_MOBILE };
+
+    const rows: unknown[] = [CARER];
+    stubFetch({
+      rows,
+      onPost: () => {
+        rows.splice(0, rows.length, UPDATED);
+        return { ok: true, payload: { id: CARER.agreementId, assignorIsPatient: false } };
+      },
+    });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    fireEvent.click(await screen.findByTestId(`who-open-${CARER.agreementId}`));
+    const mobile = (await screen.findByTestId(`who-mobile-${CARER.agreementId}`)) as HTMLInputElement;
+    // The box exists before it is seeded from the row — wait for the value,
+    // not the element, or the seed lands on top of the change (wow.md §2.6).
+    await waitFor(() => expect(mobile.value).toBe(OLD_MOBILE));
+    fireEvent.change(mobile, { target: { value: NEW_MOBILE } });
+
+    await waitFor(() =>
+      expect((screen.getByTestId(`who-save-${CARER.agreementId}`) as HTMLButtonElement).disabled).toBe(false),
+    );
+    fireEvent.click(screen.getByTestId(`who-save-${CARER.agreementId}`));
+
+    // IT LANDS ON THE ROW THAT IS STILL THERE, and says what it did.
+    const band = await screen.findByTestId(`who-outcome-${CARER.agreementId}`);
+    await waitFor(() => expect(band.textContent).toContain(strings.tablet.whoSavedContact));
+    expect(band.textContent).not.toContain(strings.tablet.whoSavedSuperseded);
+
+    // AND REOPENING SHOWS THE NUMBER THAT WAS JUST SAVED — the panel re-reads
+    // rather than being patched, so this is the row the server now holds.
+    fireEvent.click(await screen.findByTestId(`who-open-${CARER.agreementId}`));
+    const reopened = (await screen.findByTestId(`who-mobile-${CARER.agreementId}`)) as HTMLInputElement;
+    await waitFor(() => expect(reopened.value).toBe(NEW_MOBILE));
+  });
+
   it('a refusal on a row that has moved on reads in reception’s words, not the server’s', async () => {
     signedInAtPractice();
     const LOCKED = { ...READY, particularsLocked: true, status: 'awaiting_signature' };

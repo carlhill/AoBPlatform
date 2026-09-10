@@ -38,11 +38,13 @@ import {
   MIN_AGE_ASSIGN_FOR_OTHER,
   audiencesOf,
   authorityBasisFor,
+  classifyAssignorChange,
   detailTypeForPatientField,
   isCorrectablePatientField,
   matchesPracticeStaff,
   mayReach,
   relationshipNeedsFreeText,
+  type AssignorPartySnapshot,
   type Audience,
   type CorrectablePatientField,
   type DeviceRow,
@@ -744,6 +746,43 @@ export function whoDraftFromRow(
   };
 }
 
+/**
+ * THE PANEL'S ANSWER, IN THE SHAPE THE DOMAIN COMPARES (Carl, 11 Sep 2026 —
+ * D-2026-09-11-01).
+ *
+ * WHY THE CONSOLE CLASSIFIES AT ALL, when the server is the one that decides.
+ * It does not decide: it only needs to know which of three things just
+ * happened so the band can SAY it. A contact-only Save comes back as the same
+ * agreement, exactly as an in-place party edit on an unlocked row does — the
+ * response alone cannot tell them apart, and "Saved." on a corrected mobile
+ * leaves reception wondering whether the number took.
+ *
+ * AND IT ASKS THE SAME FUNCTION THE SERVER ASKS. Both sides run
+ * `classifyAssignorChange` over snapshots built the same way, so the words on
+ * screen cannot come to disagree with the act the server performed.
+ *
+ * BOTH SIDES GO THROUGH THIS ONE FUNCTION — the saved row via
+ * `whoDraftFromRow`, the typed answer as it stands — so the authority basis
+ * and the relationship are derived identically on each and a difference in
+ * the DERIVATION can never read as a difference in the ANSWER.
+ */
+export function whoSnapshot(draft: WhoDraft): AssignorPartySnapshot {
+  if (draft.isPatient) return { assignorIsPatient: true };
+  const relationship = relationshipNeedsFreeText(draft.relationship)
+    ? draft.describe.trim()
+    : relationshipLabel(draft.relationship);
+  const derived = authorityBasisFor(draft.relationship, relationship);
+  return {
+    assignorIsPatient: false,
+    name: draft.name.trim(),
+    relationshipToPatient: relationship,
+    authorityBasis: derived?.authorityBasis ?? null,
+    authorityNote: derived?.note ?? null,
+    contactMobile: draft.mobile.trim() || null,
+    contactEmail: draft.email.trim() || null,
+  };
+}
+
 /** Which control a refusal belongs under — the one the reader must fix. */
 export type WhoFaultField = 'name' | 'relationship' | 'describe' | 'age' | 'contact';
 
@@ -1302,6 +1341,15 @@ export function usePushDesk(practiceId: string): PushDesk {
       setWhoFaulted((current) => ({ ...current, [row.agreementId]: true }));
       return;
     }
+    /*
+     * WHICH OF THE THREE THINGS THIS SAVE IS, decided against the row as it
+     * stands and by the SAME domain function the server uses
+     * (D-2026-09-11-01). It changes nothing about the request — the server
+     * owns the act — only the words the band uses afterwards, because a
+     * contact-only correction comes back as the same agreement and "Saved."
+     * alone leaves reception wondering whether the number took.
+     */
+    const change = classifyAssignorChange(whoSnapshot(whoDraftFromRow(row)), whoSnapshot(who));
     setWhoBusy(true);
     setWhoOutcome(null);
     try {
@@ -1370,7 +1418,17 @@ export function usePushDesk(practiceId: string): PushDesk {
       const superseded = typeof saved.id === 'string' && saved.id !== row.agreementId;
       setWhoOutcome({
         id: superseded ? (saved.id as string) : row.agreementId,
-        text: superseded ? strings.tablet.whoSavedSuperseded : strings.tablet.whoSaved,
+        /*
+         * WHAT ACTUALLY HAPPENED, IN THREE DIFFERENT SENTENCES. A supersession
+         * says a new agreement exists and where it is; a corrected mobile says
+         * the contact was updated AND, by not mentioning a new agreement, says
+         * the one on screen is still the one being signed.
+         */
+        text: superseded
+          ? strings.tablet.whoSavedSuperseded
+          : change === 'contact_only'
+            ? strings.tablet.whoSavedContact
+            : strings.tablet.whoSaved,
         ok: true,
       });
       setWhoFor(null);

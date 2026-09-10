@@ -784,6 +784,232 @@ describe('re-pointing a draft agreement at another assignor (e2e, real Postgres)
   });
 
   /**
+   * HOW THE SIGNER IS REACHED IS A DELIVERY DETAIL, NOT A PARTICULAR (Carl,
+   * 11 Sep 2026 — D-2026-09-11-01).
+   *
+   * WHAT WAS WRONG, AND IT WAS THE RULING RATHER THAN THE CODE. Every arrival
+   * is locked by the time it reaches the desk, so correcting a mistyped mobile
+   * SUPERSEDED: a second contract for one visit, a second validate, a second
+   * render, a second row of evidence — all to restate particulars that had not
+   * moved. The s 65C particulars carry the signer's NAME and RELATIONSHIP; no
+   * signer contact is rendered into the artefact, so nothing on the document
+   * changes when a number does.
+   *
+   * WHAT THESE FOUR PIN. That a contact-only correction is written in place
+   * and makes no new agreement, leaving the hash, the particulars and the
+   * status exactly as they were (hard rule 13); that WHO SIGNS still
+   * supersedes after the lock, unchanged (hard rule 2, HARD-02); that the
+   * patient's own contact is refused in words rather than written somewhere it
+   * does not belong; and that a row the chain has left behind is still
+   * `agreement_moved_on`, so the correction lands on the agreement that is
+   * live.
+   */
+  const CARER = {
+    assignorIsPatient: false,
+    name: 'Sam Carer',
+    authorityBasis: 'parent',
+    relationship: 'Parent',
+    declaresEighteenOrOver: true,
+  };
+
+  /** A locked agreement whose signer is somebody other than the patient. */
+  async function lockedWithCarer(mobile: string, email: string): Promise<{ id: string; assignorId: string }> {
+    const agreementId = await lockedDraft();
+    const res = await request(app.getHttpServer())
+      .post(`/agreements/${agreementId}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({ ...CARER, mobile, email })
+      .expect(201);
+    // It superseded, as who-signs after the lock does: this is the live row.
+    expect(res.body.supersedesAgreementId).toBe(agreementId);
+    return { id: res.body.id as string, assignorId: res.body.assignorId as string };
+  }
+
+  it('a_contact_only_change_updates_the_signer_and_does_not_supersede', async () => {
+    // Obviously fake, and different in the digits that matter.
+    const OLD_MOBILE = '0400000111';
+    const NEW_MOBILE = '0400000222';
+    const EMAIL = 'sam.carer@example.invalid';
+    const live = await lockedWithCarer(OLD_MOBILE, EMAIL);
+
+    const before = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findFirst({ where: { id: live.id } }),
+    );
+    expect(before?.particularsLockedAt).not.toBeNull();
+
+    const res = await request(app.getHttpServer())
+      .post(`/agreements/${live.id}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({ ...CARER, mobile: NEW_MOBILE, email: EMAIL })
+      .expect(201);
+
+    // THE SAME AGREEMENT CAME BACK. Nothing was superseded, and nothing new
+    // was made — one visit, one contract.
+    expect(res.body.id).toBe(live.id);
+    const successors = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findMany({ where: { supersedesAgreementId: live.id } }),
+    );
+    expect(successors).toHaveLength(0);
+
+    // AND THE AGREEMENT IS UNTOUCHED — same party, same particulars, same
+    // hash, same status (hard rule 13).
+    const after = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findFirst({ where: { id: live.id } }),
+    );
+    expect(after?.assignorId).toBe(live.assignorId);
+    expect(after?.renderedArtefactHash).toBe(before?.renderedArtefactHash);
+    expect(after?.particulars).toEqual(before?.particulars);
+    expect(after?.status).toBe(before?.status);
+    expect(after?.particularsLockedAt?.toISOString()).toBe(before?.particularsLockedAt?.toISOString());
+
+    // THE SIGNER'S ROW IS THE ONE THAT MOVED, in place.
+    const assignor = await prisma.withPractice(practiceId, (tx) =>
+      tx.assignor.findFirst({ where: { id: live.assignorId } }),
+    );
+    expect(assignor?.contactMobile).toBe(NEW_MOBILE);
+    expect(assignor?.contactEmail).toBe(EMAIL);
+    expect(assignor?.preferredChannel).toBe('mobile');
+    // The party itself did not move, which is why this was not a supersession.
+    expect(assignor?.name).toBe('Sam Carer');
+    expect(assignor?.relationshipToPatient).toBe('Parent');
+
+    // ONE EVENT, CARRYING FIELD NAMES AND IDS AND NOTHING ELSE (hard rule 9,
+    // REQ-VER-04). Neither the number it replaced nor the one that replaced it
+    // is anywhere in the evidence.
+    const events = await prisma.vaultOutbox.findMany({
+      where: { type: 'assignor.contact_changed', subjectId: live.id },
+    });
+    expect(events).toHaveLength(1);
+    const payload = events[0].payload as Record<string, unknown>;
+    expect(payload.agreementId).toBe(live.id);
+    expect(payload.assignorId).toBe(live.assignorId);
+    expect(payload.fields).toBe('mobile');
+    const serialised = JSON.stringify(events[0]);
+    expect(serialised).not.toContain(OLD_MOBILE);
+    expect(serialised).not.toContain(NEW_MOBILE);
+    expect(serialised).not.toContain(EMAIL);
+    expect(serialised).not.toContain('Sam Carer');
+
+    // AND NOTHING PRETENDED THE AGREEMENT WAS REPLACED.
+    const superseded = await prisma.vaultOutbox.findMany({
+      where: { type: 'agreement.superseded', subjectId: live.id },
+    });
+    expect(superseded).toHaveLength(0);
+  });
+
+  it('a_party_change_after_the_lock_still_supersedes', async () => {
+    const live = await lockedWithCarer('0400000111', 'sam.carer@example.invalid');
+
+    // A DIFFERENT PERSON IS SIGNING — a particular, so HARD-02 applies exactly
+    // as it did before the contact path existed.
+    const res = await request(app.getHttpServer())
+      .post(`/agreements/${live.id}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({
+        ...CARER,
+        name: 'Alex Other',
+        mobile: '0400000111',
+        email: 'sam.carer@example.invalid',
+      })
+      .expect(201);
+
+    expect(res.body.id).not.toBe(live.id);
+    expect(res.body.supersedesAgreementId).toBe(live.id);
+    expect(res.body.particularsLockedAt).not.toBeNull();
+    expect(res.body.status).toBe('awaiting_signature');
+    // The one it replaced still names the person it always named.
+    const replaced = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findFirst({ where: { id: live.id } }),
+    );
+    expect(replaced?.assignorId).toBe(live.assignorId);
+    // And no contact event was written for a change that was not one.
+    const contactEvents = await prisma.vaultOutbox.findMany({
+      where: { type: 'assignor.contact_changed', subjectId: live.id },
+    });
+    expect(contactEvents).toHaveLength(0);
+  });
+
+  /**
+   * A PATIENT'S OWN MOBILE LIVES ON THE PATIENT RECORD. Sent alongside "the
+   * patient is signing" it is refused with a CODE the console maps to its own
+   * words — never written onto the patient's assignor row, and never dropped
+   * in silence, which is the failure this endpoint was fixed for on 10 Sep.
+   */
+  it('contact_change_on_the_patient_signer_is_refused', async () => {
+    const agreementId = await draft();
+
+    const res = await request(app.getHttpServer())
+      .post(`/agreements/${agreementId}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({ assignorIsPatient: true, mobile: '0400000333' })
+      .expect(400);
+    expect(res.body.reason).toBe('patient_contact_lives_on_the_patient_record');
+
+    // NOTHING WAS WRITTEN — not on the patient's assignor row, and not as a
+    // confirmation the desk never gave.
+    const assignor = await prisma.withPractice(practiceId, (tx) =>
+      tx.assignor.findFirst({ where: { id: patientAssignorId } }),
+    );
+    expect(assignor?.contactMobile).toBeNull();
+    const agreement = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findFirst({ where: { id: agreementId } }),
+    );
+    expect(agreement?.assignorConfirmedAt).toBeNull();
+    const events = await prisma.vaultOutbox.findMany({
+      where: { type: 'assignor.contact_changed', subjectId: agreementId },
+    });
+    expect(events).toHaveLength(0);
+
+    // THE BARE CONFIRMATION IS UNAFFECTED — it is the one tap most mornings.
+    await request(app.getHttpServer())
+      .post(`/agreements/${agreementId}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({ assignorIsPatient: true })
+      .expect(201);
+  });
+
+  /**
+   * ONLY THE NEWEST IN THE CHAIN. A correction typed against the row the chain
+   * has left behind is refused with the code that sends the console to the
+   * agreement that is live — and the same correction, on that agreement, is
+   * written.
+   */
+  it('contact_change_on_a_stale_chain_member_is_refused_as_moved_on', async () => {
+    const stale = await lockedDraft();
+    const first = await request(app.getHttpServer())
+      .post(`/agreements/${stale}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({ ...CARER, mobile: '0400000111', email: 'sam.carer@example.invalid' })
+      .expect(201);
+    const live = first.body.id as string;
+
+    const refused = await request(app.getHttpServer())
+      .post(`/agreements/${stale}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({ ...CARER, mobile: '0400000444', email: 'sam.carer@example.invalid' })
+      .expect(409);
+    expect(refused.body.reason).toBe('agreement_moved_on');
+
+    // The successor kept the number it was made with: a refusal writes nothing.
+    const untouched = await prisma.withPractice(practiceId, (tx) =>
+      tx.assignor.findFirst({ where: { id: first.body.assignorId as string } }),
+    );
+    expect(untouched?.contactMobile).toBe('0400000111');
+
+    // THE SAME CORRECTION, ON THE ROW THAT IS LIVE, IS WRITTEN.
+    const accepted = await request(app.getHttpServer())
+      .post(`/agreements/${live}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({ ...CARER, mobile: '0400000444', email: 'sam.carer@example.invalid' })
+      .expect(201);
+    expect(accepted.body.id).toBe(live);
+    const moved = await prisma.withPractice(practiceId, (tx) =>
+      tx.assignor.findFirst({ where: { id: first.body.assignorId as string } }),
+    );
+    expect(moved?.contactMobile).toBe('0400000444');
+  });
+
+  /**
    * A REVERT TO THE PATIENT AFTER THE LOCK IS A SUPERSESSION TOO, AND THE
    * CONFIRMATION IT CARRIES IS EVIDENCED THE SAME WAY THE IN-PLACE PATH
    * EVIDENCES IT (found in review of 333f42f).

@@ -58,6 +58,28 @@ export const VAULT_EVENT_TYPES = [
    */
   'agreement.assignor_confirmed',
   /**
+   * HOW THE SIGNER IS REACHED CHANGED — a mobile or an email corrected on the
+   * assignor already named on this agreement (Carl, 11 Sep 2026,
+   * D-2026-09-11-01).
+   *
+   * WHY IT IS NOT `assignor_changed`, AND WHY IT DOES NOT SUPERSEDE. Contact
+   * is a DELIVERY DETAIL and not a particular: the s 65C data set carries the
+   * signer's name and relationship, and no signer contact is rendered into the
+   * artefact. So the agreement, its particulars, its render and its hash are
+   * untouched here (hard rule 13) and only the assignor row moves — which is
+   * exactly why the act needs an event of its own, because nothing else in the
+   * evidence would record that the copy of the agreement started going
+   * somewhere else, or when, or whose hands did it.
+   *
+   * FIELD NAMES, NEVER FIELD VALUES (REQ-VER-04, REQ-LOG-08, hard rule 9). The
+   * payload says `fields: "mobile"` — the NAMES of the channels that moved,
+   * joined in a fixed order — and carries the agreement id, the
+   * assignor id and the confirming user's id. The number and the address stay
+   * in the encrypted store, as they must: a contact is not an identifier and
+   * it is not evidence either.
+   */
+  'assignor.contact_changed',
+  /**
    * D6a WAS CHOSEN — the Basic Service Description a pre-agreement needs, set
    * on a STAFF surface before the particulars were locked (hard rule 2), or
    * written by the appointment sweep from the practice's own default.

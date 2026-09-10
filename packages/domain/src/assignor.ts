@@ -366,3 +366,108 @@ export function buildAssignorForAnother(input: AssignorForAnotherInput): Assigno
     preferredChannel,
   };
 }
+
+// ---------------------------------------------------------------------------
+// WHICH OF THE THREE THINGS A "WHO IS SIGNING" SAVE ACTUALLY IS
+// (Carl, 11 Sep 2026 — D-2026-09-11-01).
+//
+// THE RULING. A change to how the other signer is REACHED — a mobile, an
+// email — is a DELIVERY DETAIL, not a particular. The s 65C particulars carry
+// the signer's NAME and RELATIONSHIP and nothing else about them: no signer
+// contact is rendered into the artefact (the render path carries only the
+// practice's own letterhead phone and email). So correcting a mistyped mobile
+// cannot supersede an agreement — superseding would spend a second contract,
+// a second validate, a second render and a second row of evidence restating
+// particulars that did not move.
+//
+// WHO SIGNS IS STILL A PARTICULAR and still behaves exactly as it did: edited
+// before the lock, superseded after it (hard rule 2, REQ-REG-06, HARD-02).
+// This function is only the sorting hat; it decides nothing about what may be
+// written, which is `assignorRepointDisposition`'s job and the service's.
+//
+// NORMALISED THE WAY THE REST OF THIS FILE NORMALISES. Names, notes and
+// relationships through `normalisePersonName`, mobiles through
+// `normalisePhone`, emails through `normaliseEmail` — so "Jane  Smith" and
+// "jane smith" are one person, `+61 400 000 111` and `0400000111` are one
+// number, and a re-typed space is not a change anybody has to be told about.
+//
+// PURE, AND IT NEVER LOGS. Two snapshots in, one word out; no value it is
+// handed reaches a log, an error or an event from here.
+// ---------------------------------------------------------------------------
+
+export type AssignorChangeKind =
+  /** Nothing moved. */
+  | 'none'
+  /** Only how the signer is reached moved — a delivery detail, not a particular. */
+  | 'contact_only'
+  /** Who signs moved: D7, the name, the relationship, the basis or its note. */
+  | 'party';
+
+/**
+ * The party as it stands, or as a request would have it. Every field is
+ * optional because "the patient is signing" has none of them — there is no
+ * third party to name, and the patient's own contact lives on the patient
+ * record rather than on an assignor row.
+ */
+export interface AssignorPartySnapshot {
+  readonly assignorIsPatient: boolean;
+  readonly name?: string | null;
+  readonly relationshipToPatient?: string | null;
+  readonly authorityBasis?: string | null;
+  readonly authorityNote?: string | null;
+  readonly contactMobile?: string | null;
+  readonly contactEmail?: string | null;
+}
+
+function sameWords(a: string | null | undefined, b: string | null | undefined): boolean {
+  return normalisePersonName(a ?? '') === normalisePersonName(b ?? '');
+}
+
+function sameMobile(a: string | null | undefined, b: string | null | undefined): boolean {
+  return normalisePhone(a ?? '') === normalisePhone(b ?? '');
+}
+
+function sameEmail(a: string | null | undefined, b: string | null | undefined): boolean {
+  return normaliseEmail(a ?? '') === normaliseEmail(b ?? '');
+}
+
+export function classifyAssignorChange(
+  current: AssignorPartySnapshot,
+  requested: AssignorPartySnapshot,
+): AssignorChangeKind {
+  // D7 ITSELF. "The patient is signing" and "somebody else is" are different
+  // parties to the contract however alike everything else looks.
+  if (current.assignorIsPatient !== requested.assignorIsPatient) return 'party';
+
+  /*
+   * "THE PATIENT IS SIGNING" HAS NO PARTY PARTICULARS TO DIFFER IN — no name,
+   * no basis, no relationship — which is why the fields are not compared here
+   * (the same judgement `successorAlreadySays` makes).
+   *
+   * A CONTACT IT DID NOT ASK ABOUT IS NOT A REQUEST TO CLEAR ONE. The common
+   * Save on this branch is a bare `{ assignorIsPatient: true }` from the desk
+   * confirming the default, and reading its silence as "blank the contact"
+   * would turn every confirmation into a change. Only a channel the request
+   * actually supplied is compared — and a supplied one that differs is
+   * reported so the service can refuse it in words rather than discarding it
+   * quietly: the patient's contact lives on the patient record.
+   */
+  if (requested.assignorIsPatient) {
+    const asksMobile = (requested.contactMobile ?? '').trim().length > 0;
+    const asksEmail = (requested.contactEmail ?? '').trim().length > 0;
+    if (asksMobile && !sameMobile(current.contactMobile, requested.contactMobile)) return 'contact_only';
+    if (asksEmail && !sameEmail(current.contactEmail, requested.contactEmail)) return 'contact_only';
+    return 'none';
+  }
+
+  // THE PARTICULARS FIRST, because a party change subsumes any contact that
+  // travelled with it — a new signer arrives with their own number.
+  if (!sameWords(current.name, requested.name)) return 'party';
+  if (!sameWords(current.authorityBasis, requested.authorityBasis)) return 'party';
+  if (!sameWords(current.authorityNote, requested.authorityNote)) return 'party';
+  if (!sameWords(current.relationshipToPatient, requested.relationshipToPatient)) return 'party';
+
+  if (!sameMobile(current.contactMobile, requested.contactMobile)) return 'contact_only';
+  if (!sameEmail(current.contactEmail, requested.contactEmail)) return 'contact_only';
+  return 'none';
+}

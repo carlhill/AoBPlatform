@@ -4427,6 +4427,15 @@ export const strings = {
     whoSaving: 'Saving…',
     whoSaved: 'Saved.',
     /*
+     * A CORRECTED MOBILE OR EMAIL, SAID AS WHAT IT IS (Carl, 11 Sep 2026 —
+     * D-2026-09-11-01). How the signer is REACHED is a delivery detail and not
+     * one of the s 65C particulars, so no new agreement was prepared and the
+     * row on screen is still the one being signed. Saying only "Saved." beside
+     * a row that supersedes for every other edit left reception unsure which
+     * of the two had just happened.
+     */
+    whoSavedContact: 'Contact details updated.',
+    /*
      * AND WHAT HAPPENS ON A ROW THAT IS ALREADY PREPARED (Carl, 7 Sep 2026).
      *
      * An arrival locks its particulars as reception posts it, so by the time
@@ -4461,6 +4470,15 @@ export const strings = {
       agreement_moved_on:
         'This agreement has moved on — it has been superseded, declined or has expired — so there is '
         + 'nothing here to change. Use the patient’s current row on this list instead.',
+      /*
+       * THE PATIENT IS SIGNING, so there is no third party to reach and the
+       * patient's own mobile and email are not this screen's to change — the
+       * message says where they ARE changed rather than only what was refused
+       * (CLAUDE.md section 7).
+       */
+      patient_contact_lives_on_the_patient_record:
+        'The patient is signing this agreement, so there is nobody else to reach. A patient’s own '
+        + 'mobile and email are changed on their record, not here. Nothing was changed.',
     } as Record<string, string>,
     whoRefusalUnmapped: (code: string) =>
       `The server reported “${code}”, which this screen does not have wording for yet. Tell us the `
