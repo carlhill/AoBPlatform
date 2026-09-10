@@ -1,11 +1,13 @@
 /*
  * ONE ROW, FOUR QUESTIONS — "Send to the tablet" (CLAUDE.md build brief).
  *
- * SINCE 10 SEP 2026 THE ROW HOLDS TWO CONTENT COLUMNS AND ONE ACTION BAND: who
- * this is, what the visit is, and beneath them the numbered strip that carries
- * all three controls (`.steps`). The two control columns this file used to size
- * — `.who` and `.send` — are gone, because a label above a control in a
- * separate layout is a label that only lines up by luck.
+ * SINCE 10 SEP 2026 THE ROW HOLDS TWO CONTENT COLUMNS AND ONE ACTION AREA
+ * (`.actions`): who this is, what the visit is, and beneath them either the
+ * numbered strip that carries all three controls (`.steps`) or — once the
+ * agreement is on a tablet — that session's chip and record id (`.live`). The
+ * two control columns this file used to size — `.who` and `.send` — are gone,
+ * because a label above a control in a separate layout is a label that only
+ * lines up by luck.
  *
  * Reception scans this list all morning and is asking four things about each
  * agreement: who is this, what is the visit, who is signing, and where does
@@ -108,6 +110,41 @@
 }
 
 /*
+ * THE ACTION AREA — the one region beneath the row's two content columns, and
+ * the reason `.steps` no longer places itself (Carl, 10 Sep 2026).
+ *
+ * It holds the numbered strip while the row is a thing to send, and the live
+ * session's chip and record id once it is on a tablet. One region, so the two
+ * cannot drift into two different places on the row: whatever is here is
+ * always where the last thing was.
+ */
+.actions {
+  grid-column: 1 / -1;
+}
+
+/*
+ * ON A TABLET: THE RIGHT-HAND COLUMN (Carl, 10 Sep 2026, drawn on a screenshot
+ * — "move the chip and the patient id to where the steps were"). The strip
+ * spanned both columns because it carried three controls; a chip and an id do
+ * not need the width, and sitting under the facts rather than under the name
+ * keeps the left column as the answer to "who is this" alone. Below 900px the
+ * row is a single column and this says nothing.
+ */
+@media (min-width: 900px) {
+  .actionsLive {
+    grid-column: 2 / -1;
+  }
+}
+
+/* The chip, and the record id beneath it. */
+.live {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s1);
+}
+
+/*
  * THE THREE STEPS, NUMBERED, EACH ONE OVER THE CONTROL IT NAMES (Carl, 10 Sep
  * 2026, from a mock-up: label, arrow, label, arrow, label on one line, with the
  * "Who is signing?" button, the tablet select and Send on the line beneath).
@@ -125,11 +162,10 @@
  * state is spoken as well as shown (`.visuallyHidden` below), so nothing about
  * where the row is depends on the boxes being drawn.
  *
- * FULL WIDTH, BENEATH THE ROW'S FACTS. It spans every column of the row's own
- * grid because it is the row's action band, and no control lives outside it.
+ * FULL WIDTH, BENEATH THE ROW'S FACTS. `.actions` above is what spans the
+ * row's columns; the strip simply fills it, and no control lives outside it.
  */
 .steps {
-  grid-column: 1 / -1;
   /*
    * NARROW FIRST: the three steps stack, label over control, arrows gone —
    * there is no gap left for an arrow to point across.

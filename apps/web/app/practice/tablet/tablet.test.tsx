@@ -859,11 +859,12 @@ describe('/practice/tablet — send to the tablet', () => {
     // THE ROW SAYS WHY, IN RECEPTION'S WORDS...
     const band = await screen.findByTestId(`blocked-${UNCONFIRMED.agreementId}`);
     expect(band.textContent).toContain(strings.tablet.blocked.assignor_not_confirmed);
-    // ...AND CARRIES THE CONTROL, rather than pointing at another screen.
-    const fix = (await screen.findByTestId(
-      `who-confirm-open-${UNCONFIRMED.agreementId}`,
-    )) as HTMLButtonElement;
-    expect(fix.disabled).toBe(false);
+    /*
+     * ...AND THE BAND IS WORDS ONLY (Carl, 10 Sep 2026: "one close only"). The
+     * control that fixes this is step ① one line above, on the same row — so
+     * the band carries no button of its own, and it still points nowhere else.
+     */
+    expect(band.querySelector('button')).toBeNull();
 
     // AND "Who is signing?" IS THE ROW'S PRIMARY ACTION while it waits — the
     // only thing on the row that can be pressed.
@@ -933,7 +934,9 @@ describe('/practice/tablet — send to the tablet', () => {
 
     // And the row has stopped saying it is waiting to be asked.
     expect(screen.queryByTestId(`blocked-${UNCONFIRMED.agreementId}`)).toBeNull();
-    expect(screen.queryByTestId(`who-confirm-open-${UNCONFIRMED.agreementId}`)).toBeNull();
+    expect(screen.getByTestId(`step-who-${UNCONFIRMED.agreementId}`).getAttribute('data-state')).toBe(
+      'done',
+    );
   });
 
   /**
@@ -1115,6 +1118,55 @@ describe('/practice/tablet — send to the tablet', () => {
     // And pressing it again closes it, exactly as the button does.
     fireEvent.click(screen.getByTestId(`who-fact-${READY.agreementId}`));
     await waitFor(() => expect(screen.queryByTestId(`who-panel-${READY.agreementId}`)).toBeNull());
+  });
+
+  /**
+   * ONE PANEL, ONE CLOSE (Carl, 10 Sep 2026, drawn on a screenshot of an open
+   * "Who is signing" panel: "one close only").
+   *
+   * There were three. The step ① button toggled to "Close"; the standing
+   * "Cannot be sent yet · Confirm who is signing first" band carried a second
+   * copy of the same toggle, so it read "Close" too; and the band a refused
+   * press leaves behind carried a third, stacked directly above the panel's
+   * own Save — which is why the panel looked as though it had Save and Close.
+   * Three identical buttons for one act is a reader working out which one is
+   * theirs.
+   *
+   * WHAT THIS PINS: exactly ONE control on the whole screen says "Close" while
+   * the panel is open, it is the step ① button, and pressing it shuts the
+   * panel. The panel itself keeps Save and nothing else.
+   */
+  it('the_who_panel_has_one_close_and_it_is_the_step_one_button', async () => {
+    signedInAtPractice();
+    const UNCONFIRMED = {
+      ...READY,
+      assignorConfirmedAt: null,
+      pushable: false,
+      blockedReason: 'assignor_not_confirmed' as const,
+    };
+    stubFetch({ rows: [UNCONFIRMED] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    const step = (await screen.findByTestId(`who-open-${UNCONFIRMED.agreementId}`)) as HTMLButtonElement;
+    expect(step.textContent).toContain(strings.tablet.whoOpen);
+    fireEvent.click(step);
+
+    const panel = await screen.findByTestId(`who-panel-${UNCONFIRMED.agreementId}`);
+
+    // ONE "Close" ON THE PAGE, AND IT IS STEP ①'s BUTTON.
+    const closers = [...document.querySelectorAll('button')].filter(
+      (b) => (b.textContent ?? '').trim() === strings.tablet.whoClose,
+    );
+    expect(closers).toEqual([step]);
+
+    // THE PANEL KEEPS SAVE, AND NOTHING THAT SHUTS IT.
+    const inPanel = [...panel.querySelectorAll('button')].map((b) => (b.textContent ?? '').trim());
+    expect(inPanel).toContain(strings.tablet.whoSave);
+    expect(inPanel).not.toContain(strings.tablet.whoClose);
+
+    // AND THE ONE CLOSE CLOSES.
+    fireEvent.click(step);
+    await waitFor(() => expect(screen.queryByTestId(`who-panel-${UNCONFIRMED.agreementId}`)).toBeNull());
   });
 
   it('ui_never_asks_staff_to_assess_capacity', async () => {
@@ -1721,6 +1773,63 @@ describe('the reception-push loop -- set, resolve, send again', () => {
     // EIGHT CHARACTERS, NOT THE WHOLE ID -- long enough to be unique among a
     // morning's sessions, short enough to read across a desk.
     expect(document.body.textContent ?? '').not.toContain(LIVE_UUID.id);
+  });
+
+  /**
+   * AFTER SEND, THE ROW ANSWERS "WHERE IS IT" INSTEAD OF "WHAT NEXT"
+   * (Carl, 10 Sep 2026, drawn on a screenshot of a row with a live session).
+   *
+   * WHY. While an agreement is on a tablet in front of somebody there is
+   * nothing on the row to press — a numbered ①→②→③ over three dead controls
+   * describes work that is already happening. So the action area drops the
+   * strip and holds the session instead: the chip naming the tablet and the
+   * session id, with the record id under it, in the place the steps were.
+   *
+   * AND IT IS ONLY WHILE THE SESSION IS LIVE. A row with nothing on a tablet
+   * still shows the strip, and the ended-session logic (`canSendAgain`) is
+   * untouched — this test pins both directions so the swap cannot quietly
+   * become permanent.
+   */
+  it('after_send_the_row_shows_the_live_session_where_the_steps_were', async () => {
+    signedInAtPractice();
+    const ON_TABLET = {
+      ...READY,
+      activeSession: { id: LIVE_UUID.id, deviceId: TABLET.id, state: 'reading' },
+    };
+    stubFetch({ rows: [ON_TABLET, BLOCKED], sessions: [LIVE_UUID] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    /*
+     * WAIT FOR THE DATA, NOT THE ELEMENT (wow.md §2.6). The row is drawn from
+     * the pushable fetch; the session behind its chip arrives on the sessions
+     * fetch, which lands separately — so wait for the chip's own id.
+     */
+    const onTablet = await screen.findByTestId(`row-actions-${ON_TABLET.agreementId}`);
+    await waitFor(() =>
+      expect(screen.getByTestId(`row-live-${ON_TABLET.agreementId}`)).toBeTruthy(),
+    );
+
+    // THE SESSION IS WHERE THE STEPS WERE: the chip, and the record id beneath.
+    expect(onTablet.textContent).toContain(strings.tablet.onTabletNow(TABLET.label));
+    expect(onTablet.contains(screen.getByTestId(`row-session-id-${ON_TABLET.agreementId}`))).toBe(true);
+    expect(onTablet.contains(screen.getByTestId(`row-patient-id-${ON_TABLET.agreementId}`))).toBe(true);
+    // THE ID IS STILL THE WHOLE ID, still selectable, still copyable.
+    expect(screen.getByTestId(`row-patient-id-${ON_TABLET.agreementId}`).textContent).toContain(
+      ON_TABLET.patientId,
+    );
+
+    // AND THE STRIP AND ITS THREE CONTROLS ARE GONE FROM THIS ROW.
+    expect(screen.queryByTestId(`steps-${ON_TABLET.agreementId}`)).toBeNull();
+    expect(screen.queryByTestId(`who-open-${ON_TABLET.agreementId}`)).toBeNull();
+    expect(screen.queryByTestId(`target-${ON_TABLET.agreementId}`)).toBeNull();
+    expect(screen.queryByTestId(`send-${ON_TABLET.agreementId}`)).toBeNull();
+
+    // THE REVERSE, ON A ROW WITH NOTHING ON A TABLET: the strip is in the
+    // action area, and no session chip or record id is.
+    const pushable = screen.getByTestId(`row-actions-${BLOCKED.agreementId}`);
+    expect(pushable.contains(screen.getByTestId(`steps-${BLOCKED.agreementId}`))).toBe(true);
+    expect(screen.queryByTestId(`row-live-${BLOCKED.agreementId}`)).toBeNull();
+    expect(pushable.contains(screen.getByTestId(`row-patient-id-${BLOCKED.agreementId}`))).toBe(false);
   });
 
   /**

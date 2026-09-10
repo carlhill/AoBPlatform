@@ -1207,6 +1207,14 @@ export function usePushDesk(practiceId: string): PushDesk {
         });
         return;
       }
+      /*
+       * "WHO IS SIGNING · SAVED." HAS BEEN SUPERSEDED (Carl, 10 Sep 2026). It
+       * is a receipt for the step BEFORE this one; once the agreement is on a
+       * tablet the row's own chip says something newer and truer, and leaving
+       * the older band under it is a screen telling reception a thing they
+       * have already moved past.
+       */
+      setWhoOutcome(null);
       await load();
     } catch (e) {
       setPushOutcome({
@@ -1858,32 +1866,26 @@ export function EnduringOfferFix({ desk, row }: { desk: PushDesk; row: PushableR
   );
 }
 
-/**
- * "WHO IS SIGNING?", IN THE BAND THAT SAYS IT IS MISSING (Carl, 7 Sep 2026).
+/*
+ * "WHO IS SIGNING?" HAS EXACTLY ONE BUTTON, AND IT IS STEP ① (Carl, 10 Sep
+ * 2026, on a screenshot: "one close only").
  *
- * SHORTCUTS TO THE ANSWER, NOT DIRECTIONS TO A SCREEN (CLAUDE.md §7). The row
- * cannot go until somebody has been asked; the thing that asks is one press,
- * and it belongs in the sentence that says so rather than somewhere the reader
- * has to go and find. It opens the SAME panel the row's own button and its
- * "Signing:" line open — one question, one panel, three ways in.
+ * WHAT WAS HERE. A `WhoIsSigningFix` put a second copy of the toggle inside
+ * the "Cannot be sent yet · Confirm who is signing first" band — so an open
+ * panel was reached by one control and offered THREE that said "Close": the
+ * step ① button, this one in the standing blocked band, and this one again in
+ * the band a refused press leaves behind, stacked directly above the panel's
+ * own Save. Three ways to shut one panel is not three shortcuts, it is a
+ * reader working out which of three identical buttons is the one that means
+ * what they want.
+ *
+ * WHY REMOVING IT STILL MEETS "SHORTCUTS TO THE ANSWER" (CLAUDE.md §7). The
+ * rule is that a blocked message carries the reason and lands on the item
+ * where it is fixed — not that it must carry a button of its own. The control
+ * that fixes this one is ONE LINE ABOVE the band, on the same row, numbered ①
+ * and lit as the row's primary action while nobody has been asked. The band
+ * keeps its words; nothing was added pointing anywhere else.
  */
-export function WhoIsSigningFix({ desk, row }: { desk: PushDesk; row: PushableRow }) {
-  return (
-    <div className={rowStyles.fix} data-testid={`who-confirm-fix-${row.agreementId}`}>
-      <div className={styles.formActions}>
-        <Button
-          variant="primary"
-          disabled={!desk.canSend}
-          onClick={() => (desk.whoFor === row.agreementId ? desk.closeWho() : desk.openWho(row))}
-          data-testid={`who-confirm-open-${row.agreementId}`}
-        >
-          <UserRound size={14} aria-hidden="true" />
-          {desk.whoFor === row.agreementId ? strings.tablet.whoClose : strings.tablet.whoOpen}
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 /**
  * WHICH STEP THE ROW IS ON — one function, so the strip and the controls
@@ -2103,7 +2105,9 @@ export function SendSteps({ desk, row }: { desk: PushDesk; row: PushableRow }) {
  */
 function fixFor(desk: PushDesk, row: PushableRow, reason: string | null | undefined): ReactNode {
   if (reason === 'service_description_missing') return <D6aFix desk={desk} row={row} />;
-  if (reason === 'assignor_not_confirmed') return <WhoIsSigningFix desk={desk} row={row} />;
+  // `assignor_not_confirmed` deliberately has NO band control: its fix is step
+  // ①, one line above, and one panel gets one button (see the note above
+  // `sendSteps`).
   if (reason === 'enduring_rules_not_authored') return <EnduringOfferFix desk={desk} row={row} />;
   return undefined;
 }
@@ -2140,9 +2144,45 @@ export function AgreementRow({
   heading?: string;
 }) {
   const live = row.activeSession ? desk.sessions.find((s) => s.id === row.activeSession!.id) : undefined;
+  /*
+   * IS IT ON A TABLET RIGHT NOW? — which is a different question from "does
+   * this row have a session", and the one the layout turns on (Carl, 10 Sep
+   * 2026). While a session is live there is nothing on this row to send, so
+   * the steps and their three controls go and the session takes their place.
+   * The moment it ENDS the row is a thing to act on again, so the steps come
+   * back — decided here by `endedAt` alone, leaving `canSendAgain` and the
+   * ended-session controls to say what may be done about the ending itself.
+   */
+  const onTablet = live && live.endedAt === null ? live : undefined;
   const outcome = desk.pushOutcome?.id === row.agreementId ? desk.pushOutcome : null;
   const whoSaid = desk.whoOutcome?.id === row.agreementId ? desk.whoOutcome : null;
   const blocked = whoIsBlocked(desk.who, desk.staffNames);
+
+  /*
+   * THE SESSION CHIP AND THE RECORD ID, BUILT ONCE AND PLACED ONCE. They sit
+   * under the name while the row is still a thing to send, and move into the
+   * action area — where the numbered steps were — once it is on a tablet.
+   * Same elements, same test ids, one place in this file.
+   */
+  const sessionChip = live ? (
+    <Chip tone={STATE_TONE[live.state] ?? 'neutral'}>
+      {strings.tablet.onTabletNow(live.deviceLabel)} ·{' '}
+      <SessionTag id={live.id} testId={`row-session-id-${row.agreementId}`} />
+    </Chip>
+  ) : null;
+  /*
+   * WHICH RECORD THIS ROW IS ABOUT (Carl, 7 Sep 2026) — beside the session
+   * tag, and in the same spirit: an opaque id this platform minted, naming the
+   * same row the vault events name. Never a Medicare number, of which there is
+   * no column anywhere in this system (hard rule 1, REQ-VER-02).
+   */
+  const recordId = (
+    <RecordId
+      label={strings.recordId.patient}
+      value={row.patientId}
+      testId={`row-patient-id-${row.agreementId}`}
+    />
+  );
 
   return (
     <li key={row.agreementId} className={rowStyles.row} data-testid={`pushable-${row.agreementId}`}>
@@ -2164,24 +2204,13 @@ export function AgreementRow({
               : strings.tablet.enduringRowNoProvider
             : [row.providerName, whenLabel(row)].filter(Boolean).join(' · ')}
         </div>
-        {live && (
-          <Chip tone={STATE_TONE[live.state] ?? 'neutral'}>
-            {strings.tablet.onTabletNow(live.deviceLabel)} ·{' '}
-            <SessionTag id={live.id} testId={`row-session-id-${row.agreementId}`} />
-          </Chip>
-        )}
         {/*
-          WHICH RECORD THIS ROW IS ABOUT (Carl, 7 Sep 2026) — beside the
-          session tag, and in the same spirit: an opaque id this platform
-          minted, naming the same row the vault events name. Never a Medicare
-          number, of which there is no column anywhere in this system (hard
-          rule 1, REQ-VER-02).
+          WHILE IT IS ON A TABLET, THE CHIP AND THE ID ARE OVER IN THE ACTION
+          AREA (Carl, 10 Sep 2026) — this column is then the name, the
+          provider and the appointment, and nothing else.
         */}
-        <RecordId
-          label={strings.recordId.patient}
-          value={row.patientId}
-          testId={`row-patient-id-${row.agreementId}`}
-        />
+        {!onTablet && sessionChip}
+        {!onTablet && recordId}
       </div>
 
       {/*
@@ -2238,12 +2267,35 @@ export function AgreementRow({
       </div>
 
       {/*
-        THE ORDER, AND THE THREE CONTROLS IT NUMBERS, IN ONE BAND (Carl, 10 Sep
-        2026). Full width and beneath the facts, in the place the controls
-        already stood: who this is, what the visit is, then what to do about it
-        — with each step's label sitting directly over the control it names.
+        THE ACTION AREA — ONE PLACE, TWO THINGS IT CAN HOLD (Carl, 10 Sep
+        2026, on a screenshot of a row after Send).
+
+        BEFORE THE PUSH: the order, and the three controls it numbers, beneath
+        the facts in the place the controls already stood — who this is, what
+        the visit is, then what to do about it, with each step's label sitting
+        directly over the control it names.
+
+        AFTER THE PUSH: nothing here can be pressed — the agreement is on a
+        tablet in front of somebody, and a numbered ①→②→③ over three dead
+        controls describes work that is already happening. So the strip goes
+        and the row answers the only question left, WHERE IS IT: the chip
+        naming the tablet and the session, with the record id beneath it.
+        Both come back when the session ends and the row is a thing to send
+        again — `canSendAgain` and the ended-session controls are untouched.
       */}
-      <SendSteps desk={desk} row={row} />
+      <div
+        className={`${rowStyles.actions} ${onTablet ? rowStyles.actionsLive : ''}`}
+        data-testid={`row-actions-${row.agreementId}`}
+      >
+        {onTablet ? (
+          <div className={rowStyles.live} data-testid={`row-live-${row.agreementId}`}>
+            {sessionChip}
+            {recordId}
+          </div>
+        ) : (
+          <SendSteps desk={desk} row={row} />
+        )}
+      </div>
 
       {/*
         THE REASON IT CANNOT GO, on the row, always — never only after somebody
