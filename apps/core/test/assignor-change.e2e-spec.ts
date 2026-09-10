@@ -620,6 +620,170 @@ describe('re-pointing a draft agreement at another assignor (e2e, real Postgres)
   });
 
   /**
+   * WHAT CARL FOUND ON 10 SEPTEMBER 2026, on one row: open "Who is signing",
+   * change the carer's MOBILE, Save, reopen — and the OLD mobile is still
+   * there.
+   *
+   * WHY IT HAPPENED. Every arrival is locked by the time it reaches the desk,
+   * so every someone-else Save supersedes and the second Save on that row
+   * always lands on an agreement that has already been replaced.
+   * `successorAlreadySays` decided whether that second Save was a REPEAT of
+   * the first, and it compared only `assignorIsPatient` and the NAME — so a
+   * corrected mobile, a corrected email or a corrected relationship read as
+   * "already said", the existing successor came back unchanged, and nothing
+   * was written. The copy of the agreement and every reminder kept going to
+   * the number the practice had just been told was wrong.
+   *
+   * WHAT THIS PINS. A changed contact is a DIFFERENT answer, so the row that
+   * has moved on refuses with the code that sends the console to the
+   * agreement that is live — and the successor's own contact is left exactly
+   * as it was, because a refusal writes nothing.
+   */
+  it('a_contact_change_on_a_superseded_row_is_not_a_repeat', async () => {
+    const agreementId = await lockedDraft();
+
+    const first = await request(app.getHttpServer())
+      .post(`/agreements/${agreementId}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({
+        assignorIsPatient: false,
+        name: 'Sam Carer',
+        authorityBasis: 'parent',
+        relationship: 'Parent',
+        declaresEighteenOrOver: true,
+        mobile: '0400000111',
+        email: 'sam.carer@example.invalid',
+      })
+      .expect(201);
+    expect(first.body.supersedesAgreementId).toBe(agreementId);
+
+    const contactOf = async (successorId: string) => {
+      const successor = await prisma.withPractice(practiceId, (tx) =>
+        tx.agreement.findFirst({ where: { id: successorId } }),
+      );
+      return prisma.withPractice(practiceId, (tx) =>
+        tx.assignor.findFirst({ where: { id: successor?.assignorId } }),
+      );
+    };
+
+    const before = await contactOf(first.body.id as string);
+    expect(before?.contactMobile).toBe('0400000111');
+
+    /*
+     * THE SAME PERSON, A DIFFERENT NUMBER — the exact reproduction. It is a
+     * change, not a repeat, and it is refused rather than swallowed.
+     */
+    const changed = await request(app.getHttpServer())
+      .post(`/agreements/${agreementId}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({
+        assignorIsPatient: false,
+        name: 'Sam Carer',
+        authorityBasis: 'parent',
+        relationship: 'Parent',
+        declaresEighteenOrOver: true,
+        mobile: '0400000999',
+        email: 'sam.carer@example.invalid',
+      })
+      .expect(409);
+    expect(changed.body.reason).toBe('agreement_moved_on');
+
+    // NOTHING MOVED. The successor still says what it said, and no second
+    // successor was made for the row.
+    const after = await contactOf(first.body.id as string);
+    expect(after?.contactMobile).toBe('0400000111');
+    expect(after?.contactEmail).toBe(before?.contactEmail);
+    const successors = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findMany({ where: { supersedesAgreementId: agreementId } }),
+    );
+    expect(successors).toHaveLength(1);
+
+    // A CHANGED EMAIL IS A CHANGE TOO, and so is a changed relationship —
+    // the whole answer is compared, not the name alone.
+    for (const body of [
+      {
+        assignorIsPatient: false,
+        name: 'Sam Carer',
+        authorityBasis: 'parent',
+        relationship: 'Parent',
+        declaresEighteenOrOver: true,
+        mobile: '0400000111',
+        email: 'different.mailbox@example.invalid',
+      },
+      {
+        assignorIsPatient: false,
+        name: 'Sam Carer',
+        authorityBasis: 'parent',
+        relationship: 'Grandparent',
+        declaresEighteenOrOver: true,
+        mobile: '0400000111',
+        email: 'sam.carer@example.invalid',
+      },
+    ]) {
+      const res = await request(app.getHttpServer())
+        .post(`/agreements/${agreementId}/assignor`)
+        .set('x-practice-id', practiceId)
+        .send(body)
+        .expect(409);
+      expect(res.body.reason).toBe('agreement_moved_on');
+    }
+  });
+
+  /**
+   * AND THE OTHER HALF OF THE SAME RULE: a genuine repeat is still idempotent.
+   *
+   * A DOUBLE PRESS, OR A RETRY AFTER A DROPPED RESPONSE, arrives at a row that
+   * has already been superseded onto exactly this answer — so the answer is
+   * that agreement, not a refusal about a row the caller has stopped looking
+   * at and not a second contract for one visit. Normalisation is what makes
+   * "the same answer" survive the second typing: `+61 400 000 111` and
+   * `0400000111` are one number, and a capitalised mailbox is one mailbox.
+   */
+  it('the_same_answer_twice_still_supersedes_once', async () => {
+    const agreementId = await lockedDraft();
+
+    const first = await request(app.getHttpServer())
+      .post(`/agreements/${agreementId}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({
+        assignorIsPatient: false,
+        name: 'Sam Carer',
+        authorityBasis: 'parent',
+        relationship: 'Parent',
+        declaresEighteenOrOver: true,
+        mobile: '0400000111',
+        email: 'sam.carer@example.invalid',
+      })
+      .expect(201);
+
+    const again = await request(app.getHttpServer())
+      .post(`/agreements/${agreementId}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({
+        assignorIsPatient: false,
+        // Same person, same number, same mailbox — typed the way a second
+        // person at the desk would type them.
+        name: '  sam   carer ',
+        authorityBasis: 'parent',
+        relationship: 'parent',
+        declaresEighteenOrOver: true,
+        mobile: '+61 400 000 111',
+        email: 'Sam.Carer@Example.invalid',
+      })
+      .expect(201);
+
+    expect(again.body.id).toBe(first.body.id);
+    const successors = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findMany({ where: { supersedesAgreementId: agreementId } }),
+    );
+    expect(successors).toHaveLength(1);
+    const superseded = await prisma.vaultOutbox.findMany({
+      where: { type: 'agreement.superseded', subjectId: agreementId },
+    });
+    expect(superseded).toHaveLength(1);
+  });
+
+  /**
    * A REVERT TO THE PATIENT AFTER THE LOCK IS A SUPERSESSION TOO, AND THE
    * CONFIRMATION IT CARRIES IS EVIDENCED THE SAME WAY THE IN-PLACE PATH
    * EVIDENCES IT (found in review of 333f42f).

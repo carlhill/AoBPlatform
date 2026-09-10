@@ -769,6 +769,76 @@ describe('/practice/tablet — send to the tablet', () => {
     expect(band.textContent).toContain(strings.tablet.whoSavedSuperseded);
   });
 
+  /**
+   * CARL'S REPRODUCTION, FROM THE CONSOLE END (10 September 2026): open "Who
+   * is signing", change the carer's mobile, Save, reopen — and the OLD mobile
+   * was still there.
+   *
+   * THE BUG WAS THE SERVER'S. A locked row's Save supersedes, and the second
+   * Save on a row that had already been superseded was treated as a REPEAT of
+   * the first if the NAME matched, so a corrected contact was answered with
+   * the existing successor and nothing was written. The list also kept
+   * offering the replaced row, so reception went on editing the agreement the
+   * chain had left behind.
+   *
+   * WHAT THE CONSOLE HAS TO GET RIGHT, and what this pins. The panel is not
+   * patched from the response: the save forgets its draft and RE-READS, so the
+   * row on screen afterwards is the successor and reopening it seeds the boxes
+   * from that row (`whoDraftFromRow`). The number shown is therefore the one
+   * just saved rather than the one it replaced — with no console change
+   * needed, which is the point of checking it.
+   */
+  it('reopening_after_a_superseding_save_shows_the_new_contact', async () => {
+    signedInAtPractice();
+    // Obviously fake, and different from each other in the digits that matter.
+    const OLD_MOBILE = '0400 000 001';
+    const NEW_MOBILE = '0400 000 002';
+
+    const CARER = {
+      ...READY,
+      particularsLocked: true,
+      status: 'awaiting_signature',
+      assignorIsPatient: false,
+      assignorName: 'Robin Relative',
+      assignorRelationship: 'Mother',
+      assignorMobile: OLD_MOBILE,
+      assignorEmail: null,
+    };
+    const SUCCESSOR = { ...CARER, agreementId: 'agreement-superseding', assignorMobile: NEW_MOBILE };
+
+    const rows: unknown[] = [CARER];
+    stubFetch({
+      rows,
+      onPost: () => {
+        // WHAT THE SERVER DOES NOW: it writes, and the replaced row leaves the
+        // desk so the next edit lands on the agreement that is live.
+        rows.splice(0, rows.length, SUCCESSOR);
+        return { ok: true, payload: { id: SUCCESSOR.agreementId, assignorIsPatient: false } };
+      },
+    });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    fireEvent.click(await screen.findByTestId(`who-open-${CARER.agreementId}`));
+    const mobile = (await screen.findByTestId(`who-mobile-${CARER.agreementId}`)) as HTMLInputElement;
+    // The box exists before it is seeded from the row — wait for the value,
+    // not the element, or the seed lands on top of the change (wow.md §2.6).
+    await waitFor(() => expect(mobile.value).toBe(OLD_MOBILE));
+    fireEvent.change(mobile, { target: { value: NEW_MOBILE } });
+
+    await waitFor(() =>
+      expect((screen.getByTestId(`who-save-${CARER.agreementId}`) as HTMLButtonElement).disabled).toBe(false),
+    );
+    fireEvent.click(screen.getByTestId(`who-save-${CARER.agreementId}`));
+
+    // THE ROW THAT COMES BACK IS THE SUCCESSOR, and reopening ITS panel shows
+    // the number that was just saved rather than the one it replaced.
+    fireEvent.click(await screen.findByTestId(`who-open-${SUCCESSOR.agreementId}`));
+    const reopened = (await screen.findByTestId(
+      `who-mobile-${SUCCESSOR.agreementId}`,
+    )) as HTMLInputElement;
+    await waitFor(() => expect(reopened.value).toBe(NEW_MOBILE));
+  });
+
   it('a refusal on a row that has moved on reads in reception’s words, not the server’s', async () => {
     signedInAtPractice();
     const LOCKED = { ...READY, particularsLocked: true, status: 'awaiting_signature' };

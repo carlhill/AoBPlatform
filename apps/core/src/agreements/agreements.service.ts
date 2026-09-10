@@ -29,6 +29,9 @@ import {
   buildAssignorForAnother,
   canTransition,
   HardRuleViolation,
+  normaliseEmail,
+  normalisePersonName,
+  normalisePhone,
   SignatureCaptureError,
   SIGNATURE_RASTER_PURPOSE,
   SIGNATURE_VECTOR_PURPOSE,
@@ -733,7 +736,7 @@ export class AgreementsService {
       const successorAssignor = successor
         ? await tx.assignor.findFirst({ where: { id: successor.assignorId } })
         : null;
-      return { agreement, successor, successorAssignorName: successorAssignor?.name ?? null };
+      return { agreement, successor, successorAssignor };
     });
 
     const disposition = assignorRepointDisposition({
@@ -955,26 +958,112 @@ export class AgreementsService {
 
   /**
    * IS THE AGREEMENT THAT ALREADY SUPERSEDED THIS ONE THE ANSWER TO THIS
-   * REQUEST? Compared on the two facts D7 actually states — whether the
-   * patient is signing, and if not, the party's NAME — because those are what
-   * the caller asked for. The basis and the contact are derived from or attach
-   * to the party, and a retry that differs only in a typed mobile number is
-   * still the same answer to "who is signing".
+   * REQUEST? — compared on the WHOLE answer (Carl's reproduction, 10 Sep
+   * 2026), not on the name alone.
    *
-   * NAMES ARE COMPARED, NEVER LOGGED OR ECHOED — the same whitespace-and-case
-   * normalisation the staff block uses, so "Jane  Smith" and "jane smith" are
-   * one person for this purpose.
+   * WHAT WAS WRONG. This used to compare only `assignorIsPatient` and the
+   * party's NAME, reasoning that a basis and a contact "attach to the party"
+   * rather than restating who is signing. Every arrival is locked by the time
+   * it reaches the desk, so every someone-else Save supersedes — which means
+   * the second Save on that row always arrives here. Reception opened "Who is
+   * signing", corrected the carer's MOBILE, pressed Save, and got the existing
+   * successor back unchanged: the same name, so "already said", so nothing
+   * written and nothing to see on reopening. A contact change was silently
+   * discarded, and the copy of the agreement kept going to the wrong number.
+   *
+   * WHAT IT COMPARES NOW. Everything the Save would STORE on the assignor row,
+   * derived through `buildAssignorForAnother` — the one function the two write
+   * paths already use — so the comparison cannot drift from what is written:
+   * the name, the authority basis and its note, the relationship (the caller's
+   * own word where it gave one, the basis's otherwise), the mobile and the
+   * email. A dto that the domain refuses outright is not "the same answer"
+   * either; it is refused below, with the code that sends the console to the
+   * row that is live now.
+   *
+   * SAME ANSWER STILL MEANS ONE SUPERSESSION (idempotence — a double press, a
+   * retry after a dropped response). DIFFERENT ANSWER on a row that has
+   * already moved on is `agreement_moved_on`, not a silent no-op: the change
+   * belongs on the agreement that is live, and the console's job is to land
+   * there rather than to be told nothing happened.
+   *
+   * NORMALISED FOR EQUALITY, NEVER LOGGED OR ECHOED. Names through
+   * `normalisePersonName` (the staff block's own reduction, so "Jane  Smith"
+   * and "jane smith" are one person here too); mobiles through
+   * `normalisePhone`, so `+61 400 000 111` and `0400000111` are one number and
+   * a re-typed space is not a change; emails through `normaliseEmail`. No
+   * value reaches a log, an error or an event from this method.
    */
   private successorAlreadySays(
-    state: { successor: DbAgreement | null; successorAssignorName: string | null },
+    state: {
+      successor: DbAgreement | null;
+      successorAssignor: {
+        name: string;
+        relationshipToPatient: string | null;
+        authorityBasis: string | null;
+        authorityNote: string | null;
+        contactMobile: string | null;
+        contactEmail: string | null;
+      } | null;
+    },
     dto: ChangeAssignorDto,
   ): boolean {
     if (!state.successor) return false;
     if (state.successor.assignorIsPatient !== dto.assignorIsPatient) return false;
+    /*
+     * "THE PATIENT IS SIGNING" HAS NO OTHER PARTICULARS. There is no name, no
+     * basis and no third-party contact to differ in — the successor either
+     * says the patient signs or it does not, and it does.
+     */
     if (dto.assignorIsPatient) return true;
-    const said = (dto.name ?? '').trim().split(/\s+/).join(' ').toLowerCase();
-    const has = (state.successorAssignorName ?? '').trim().split(/\s+/).join(' ').toLowerCase();
-    return said.length > 0 && said === has;
+
+    const has = state.successorAssignor;
+    if (!has) return false;
+
+    /*
+     * WHAT THIS SAVE WOULD WRITE, built by the SAME function the write paths
+     * build it with. The staff list is empty deliberately: this is a
+     * comparison and not an authorisation — REQ-VUL-04 is enforced against the
+     * practice's real list on the write path, which is where a refusal must
+     * come from. A dto the domain refuses cannot equal anything, so it falls
+     * through to the refusal.
+     */
+    let would: ReturnType<typeof buildAssignorForAnother>;
+    try {
+      would = buildAssignorForAnother({
+        name: dto.name,
+        authorityBasis: dto.authorityBasis,
+        note: dto.note,
+        declaresEighteenOrOver: dto.declaresEighteenOrOver,
+        mobile: dto.mobile,
+        email: dto.email,
+        practiceStaffNames: [],
+      });
+    } catch (err) {
+      /*
+       * A HARD-RULE REFUSAL IS AN ANSWER — this dto is not what the successor
+       * says, and the row that has moved on refuses. ANYTHING ELSE IS A BUG
+       * and is rethrown rather than dressed up as a business refusal (found in
+       * review, 10 Sep 2026): a `TypeError` in here reading as a routine 409
+       * is a fault nobody would ever be shown.
+       */
+      if (err instanceof HardRuleViolation) return false;
+      throw err;
+    }
+
+    if (normalisePersonName(would.name) !== normalisePersonName(has.name)) return false;
+    if (would.authorityBasis !== (has.authorityBasis ?? '')) return false;
+    if (normalisePersonName(would.authorityNote ?? '') !== normalisePersonName(has.authorityNote ?? '')) {
+      return false;
+    }
+    // The caller's own word where it gave one, the basis's derivation
+    // otherwise — the exact expression both write paths use for the column.
+    const wouldRelationship = dto.relationship?.trim() || would.relationshipToPatient;
+    if (normalisePersonName(wouldRelationship) !== normalisePersonName(has.relationshipToPatient ?? '')) {
+      return false;
+    }
+    if (normalisePhone(would.contactMobile ?? '') !== normalisePhone(has.contactMobile ?? '')) return false;
+    if (normaliseEmail(would.contactEmail ?? '') !== normaliseEmail(has.contactEmail ?? '')) return false;
+    return true;
   }
 
   /**
@@ -1078,7 +1167,7 @@ export class AgreementsService {
            * race by a microsecond reads exactly like one that lost by a minute
            * — a caller must not be able to tell which.
            */
-          const settledState = { successor, successorAssignorName: successorAssignor?.name ?? null };
+          const settledState = { successor, successorAssignor };
           if (successor && this.successorAlreadySays(settledState, dto)) {
             return { kind: 'settled' as const, agreement: successor };
           }

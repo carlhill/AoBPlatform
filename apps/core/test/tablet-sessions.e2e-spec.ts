@@ -1182,6 +1182,93 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
     });
 
     /**
+     * THE DESK ALWAYS SHOWS THE NEWEST AGREEMENT IN THE CHAIN (Carl's
+     * reproduction, 10 September 2026).
+     *
+     * WHAT WENT WRONG. Reception opened "Who is signing" on a row the push had
+     * already locked, named the carer, and saved — which supersedes (HARD-02),
+     * because a locked agreement's party cannot be edited under its own hash
+     * (hard rules 2 and 13). The desk then still offered the OLD agreement: its
+     * ended session kept a "Send again" control, because a supersession does
+     * not move the old agreement's status and `agreementOutcome` read only the
+     * status. So the second Save — the one correcting the carer's mobile —
+     * landed on the row the chain had left behind, and the server's only
+     * honest answer there is `agreement_moved_on`.
+     *
+     * THE FIX IS TO EXCLUDE THE REPLACED ROW, not to soften the refusal. What
+     * makes an agreement "left" here is the fact that is TRUE — another
+     * agreement pointing back at it — rather than a side-effect that usually
+     * accompanies it, so a superseded row with no capture request at all goes
+     * too.
+     */
+    it('a_superseded_agreement_leaves_the_desk_and_its_successor_takes_its_place', async () => {
+      const agreementId = await draft();
+      const pushed = await pushTo(tabletA, agreementId).expect(201);
+
+      // Locked by the push, so who-is-signing supersedes rather than edits.
+      const successor = await http()
+        .post(`/agreements/${agreementId}/assignor`)
+        .set('x-practice-id', practiceA)
+        .send({
+          assignorIsPatient: false,
+          name: 'Robin Relative',
+          authorityBasis: 'parent',
+          relationship: 'Mother',
+          declaresEighteenOrOver: true,
+          // Obviously fake, and not the patient's own.
+          mobile: '+61400000998',
+        })
+        .expect(201);
+      expect(successor.body.supersedesAgreementId).toBe(agreementId);
+
+      /*
+       * A REPLACED ROW WITH NO CAPTURE REQUEST AT ALL — the case the
+       * closed-capture filter never covered, written directly because no
+       * endpoint produces it and the exclusion must not depend on one.
+       */
+      const replaced = await draft();
+      await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.create({
+          data: {
+            practiceId: practiceA,
+            type: 'episodic_pre',
+            anchorKind: 'provider',
+            affiliationId: providerA,
+            patientId: patientA,
+            assignorId: assignorA,
+            assignorIsPatient: true,
+            status: 'draft',
+            serviceDescription: D6A,
+            assignorConfirmedAt: new Date(),
+            supersedesAgreementId: replaced,
+          },
+        }),
+      );
+
+      const list = await http().get('/tablet-sessions/pushable').set('x-practice-id', practiceA).expect(200);
+      const ids = (list.body as Array<Record<string, unknown>>).map((r) => r.agreementId);
+
+      // GONE, and its replacement is there in its place — so the next Save
+      // reception makes writes instead of being refused.
+      expect(ids).not.toContain(agreementId);
+      expect(ids).toContain(successor.body.id);
+      expect(ids).not.toContain(replaced);
+
+      /*
+       * AND THE ENDED SESSION SAYS THE AGREEMENT HAS LEFT, which is what takes
+       * "Send again" off the row: `canSendAgain` reads exactly this field, so
+       * the console and the endpoint cannot come to different answers.
+       */
+      const sessions = await http()
+        .get('/tablet-sessions?active=false')
+        .set('x-practice-id', practiceA)
+        .expect(200);
+      const row = (sessions.body as Array<Record<string, unknown>>).find((r) => r.id === pushed.body.id);
+      expect(row).toMatchObject({ agreementId, agreementOutcome: 'moved_on' });
+      expect(row?.endedAt).not.toBeNull();
+    });
+
+    /**
      * THE SIGNER'S CONTACT IS ON THE ROW, AND ONLY WHERE THERE IS A SIGNER TO
      * HAVE ONE (Carl, 10 Sep 2026).
      *

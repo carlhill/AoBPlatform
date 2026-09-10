@@ -1149,12 +1149,23 @@ export class TabletSessionsService {
    * missing D6a blocks that, and is fixable) but "has it left" — so a draft
    * waiting on a service description still reads as work rather than history.
    */
-  private outcomeOf(agreement: { status: string; signatureEventId: string | null } | undefined):
-    | 'signed'
-    | 'moved_on'
-    | null {
+  private outcomeOf(
+    agreement: { status: string; signatureEventId: string | null } | undefined,
+    /*
+     * AND WHETHER SOMETHING HAS REPLACED IT (Carl's reproduction, 10 Sep
+     * 2026). A supersession does not move the old agreement's status — there
+     * is no `superseded` state in the lifecycle — so this ended session used
+     * to keep offering "Send again" on an agreement that had been replaced,
+     * and reception's next Save landed on the row the chain had left behind.
+     * The caller supplies the fact because it is a second table; the reading
+     * of it stays here, so the console and the endpoint keep ONE definition of
+     * "has it left".
+     */
+    superseded = false,
+  ): 'signed' | 'moved_on' | null {
     if (!agreement) return null;
     if (agreement.signatureEventId) return 'signed';
+    if (superseded) return 'moved_on';
     if (!(PUSHABLE_STATUSES as readonly string[]).includes(agreement.status)) return 'moved_on';
     return null;
   }
@@ -1199,7 +1210,32 @@ export class TabletSessionsService {
       });
       const hasAnyCapture = new Set(captureRequests.map((r) => r.agreementId));
       const hasOpenCapture = new Set(captureRequests.filter((r) => r.status === 'open').map((r) => r.agreementId));
-      const forToday = dueToday.filter((agreement) => !hasAnyCapture.has(agreement.id) || hasOpenCapture.has(agreement.id));
+      /*
+       * AND NEVER THE ONE THAT HAS BEEN REPLACED (Carl's reproduction, 10 Sep
+       * 2026). A superseded agreement keeps its own status — there is no
+       * `superseded` state in the lifecycle, and `supersedeForCorrection`
+       * explains why — so the fact lives where it is true: another agreement
+       * pointing back at this one. Its capture requests are closed on
+       * supersession, which already removes it from this list in the ordinary
+       * case, but "no capture request at all" and "closed" are different rows
+       * here and only one of them was covered. Reading the successor makes the
+       * exclusion a property of the CHAIN rather than of a side-effect, so
+       * reception is always editing the newest agreement for the visit: a
+       * second "Who is signing" Save lands on a row that is still live and
+       * writes, instead of being refused as having moved on.
+       */
+      const successors = await tx.agreement.findMany({
+        where: { supersedesAgreementId: { in: dueToday.map((a) => a.id) } },
+        select: { supersedesAgreementId: true },
+      });
+      const superseded = new Set(
+        successors.map((s) => s.supersedesAgreementId).filter((id): id is string => id !== null),
+      );
+      const forToday = dueToday.filter(
+        (agreement) =>
+          !superseded.has(agreement.id)
+          && (!hasAnyCapture.has(agreement.id) || hasOpenCapture.has(agreement.id)),
+      );
       if (forToday.length === 0) return [];
 
       const patients = await tx.patient.findMany({
@@ -2124,6 +2160,19 @@ export class TabletSessionsService {
       });
       const patientById = new Map(patients.map((p) => [p.id, p]));
       const anchorByAgreement = await anchorsForAgreements(tx, agreements);
+      /*
+       * WHICH OF THESE AGREEMENTS HAS BEEN REPLACED — one query for the whole
+       * list, on the same reasoning as the anchors above. `outcomeOf` turns it
+       * into `moved_on`, which is what stops an ended session offering "Send
+       * again" for a row the chain has moved past.
+       */
+      const successors = await tx.agreement.findMany({
+        where: { supersedesAgreementId: { in: agreements.map((a) => a.id) } },
+        select: { supersedesAgreementId: true },
+      });
+      const superseded = new Set(
+        successors.map((s) => s.supersedesAgreementId).filter((id): id is string => id !== null),
+      );
 
       return sessions.map((session) => {
         const agreement = agreementById.get(session.agreementId);
@@ -2169,7 +2218,7 @@ export class TabletSessionsService {
            * agreement rows this projection already fetched — no extra query,
            * and no second definition of "pushable" (see `outcomeOf`).
            */
-          agreementOutcome: this.outcomeOf(agreement),
+          agreementOutcome: this.outcomeOf(agreement, superseded.has(session.agreementId)),
           pushedBy: session.pushedBy,
           pushedAt: session.pushedAt.toISOString(),
           lastStateAt: session.lastStateAt.toISOString(),
