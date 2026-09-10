@@ -367,3 +367,18 @@
   text-transform: none;
   letter-spacing: 0;
 }
+
+/*
+ * THE FIELD A REFUSED SAVE IS ABOUT (Carl, 10 Sep 2026). The same treatment as
+ * a disputed detail above and for the same reason — a control that needs
+ * attention is marked by BORDER AND WORDS, never by colour alone (WCAG 2.2 AA,
+ * and `ui.module.css`'s own rule for `.inputInvalid`). It wraps the age
+ * declaration, which is a checkbox rather than a field and therefore has no
+ * border of its own to redden.
+ */
+.faultedField {
+  border-left: 3px solid var(--stop);
+  background: var(--stop-wash);
+  padding: var(--s2) var(--s3);
+  border-radius: var(--radius);
+}

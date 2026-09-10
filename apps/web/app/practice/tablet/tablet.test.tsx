@@ -1169,6 +1169,203 @@ describe('/practice/tablet — send to the tablet', () => {
     await waitFor(() => expect(screen.queryByTestId(`who-panel-${UNCONFIRMED.agreementId}`)).toBeNull());
   });
 
+  /**
+   * WHAT WAS TYPED SURVIVES A CLOSE (Carl, 10 Sep 2026).
+   *
+   * He unticked "the patient is signing", typed a carer's full name, chose the
+   * relationship, filled in a mobile and an email, pressed a Save that was
+   * dead, pressed Close, reopened — and every one of those answers had gone,
+   * with the panel back to the patient ticked. A front desk is interrupted
+   * constantly; a form that empties itself when somebody looks away is a form
+   * that gets typed twice, and the second typing is where a name goes wrong.
+   *
+   * IN MEMORY, FOR THE LIFE OF THE PAGE, AND NOWHERE ELSE — React state on a
+   * console screen. Nothing is written to the browser.
+   */
+  it('closing_the_who_panel_keeps_what_was_typed', async () => {
+    signedInAtPractice();
+    stubFetch();
+    render(<TabletView practiceId={PRACTICE} />);
+
+    fireEvent.click(await screen.findByTestId(`who-open-${READY.agreementId}`));
+    fireEvent.click(screen.getByRole('checkbox', { name: strings.tablet.whoPatient }));
+
+    /*
+     * WAIT FOR THE FIELD TO BE SEEDED BEFORE TYPING (wow.md §2 item 6). The
+     * panel seeds itself from the row, which arrived on its own fetch; typing
+     * into a box whose seed has not landed lets the seed overwrite the typing.
+     */
+    const name = (await screen.findByTestId(`who-name-${READY.agreementId}`)) as HTMLInputElement;
+    await waitFor(() => expect(name.value).toBe(''));
+
+    fireEvent.change(name, { target: { value: 'Robin Relative' } });
+    fireEvent.change(screen.getByTestId(`who-relationship-${READY.agreementId}`), {
+      target: { value: 'carer' },
+    });
+    fireEvent.change(screen.getByTestId(`who-mobile-${READY.agreementId}`), {
+      target: { value: '0400 000 001' },
+    });
+    fireEvent.change(screen.getByTestId(`who-email-${READY.agreementId}`), {
+      target: { value: 'robin@example.invalid' },
+    });
+
+    // ESCAPE CLOSES IT, exactly as the one Close button does.
+    fireEvent.keyDown(screen.getByTestId(`who-panel-${READY.agreementId}`), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByTestId(`who-panel-${READY.agreementId}`)).toBeNull());
+
+    // AND SO DOES THE ONE CLOSE THERE IS, the step ① button.
+    fireEvent.click(screen.getByTestId(`who-open-${READY.agreementId}`));
+    expect(await screen.findByTestId(`who-panel-${READY.agreementId}`)).toBeTruthy();
+    fireEvent.click(screen.getByTestId(`who-open-${READY.agreementId}`));
+    await waitFor(() => expect(screen.queryByTestId(`who-panel-${READY.agreementId}`)).toBeNull());
+
+    // AND REOPEN: every answer is still there, and the patient is NOT ticked
+    // back on over the top of them.
+    fireEvent.click(screen.getByTestId(`who-open-${READY.agreementId}`));
+    const reopened = (await screen.findByTestId(`who-name-${READY.agreementId}`)) as HTMLInputElement;
+    await waitFor(() => expect(reopened.value).toBe('Robin Relative'));
+    expect(
+      (screen.getByTestId(`who-relationship-${READY.agreementId}`) as HTMLSelectElement).value,
+    ).toBe('carer');
+    expect((screen.getByTestId(`who-mobile-${READY.agreementId}`) as HTMLInputElement).value).toBe(
+      '0400 000 001',
+    );
+    expect((screen.getByTestId(`who-email-${READY.agreementId}`) as HTMLInputElement).value).toBe(
+      'robin@example.invalid',
+    );
+    expect(
+      screen.getByRole('checkbox', { name: strings.tablet.whoPatient }).getAttribute('aria-checked'),
+    ).toBe('false');
+  });
+
+  /**
+   * A ROW WHOSE ASSIGNOR IS ALREADY SOMEBODY ELSE OPENS SHOWING THEM (Carl,
+   * 10 Sep 2026).
+   *
+   * "The patient is signing, ticked" is the right default for a row whose
+   * saved assignor IS the patient, and for no other row. Reopening Kim's row
+   * — which says one line above that Alex is signing for her — used to show
+   * the default and contradict it, and a Save from that state would have
+   * quietly re-pointed the agreement back at the patient.
+   *
+   * THE AGE DECLARATION IS SHOWN, NOT ASKED AGAIN. It was declared at Save and
+   * it is on the record (REQ-AGE-01) — and it is an AGE attestation, so the
+   * line states it in the past tense and nothing anywhere asks anybody to
+   * judge the person (REQ-VUL-05).
+   *
+   * MOBILE AND EMAIL COME BACK BLANK, honestly: they are not on this row's
+   * DTO, and inventing a field to carry them is not this change's to make.
+   */
+  it('reopening_shows_the_saved_someone_else_not_the_default', async () => {
+    signedInAtPractice();
+    const FOR_ANOTHER = {
+      ...READY,
+      agreementId: 'agreement-for-another',
+      patientName: 'Kim Specimen',
+      assignorIsPatient: false,
+      assignorName: 'Alex Fictional',
+      // THE WORD THAT IS PRINTED ON THE AGREEMENT, which is what the DTO
+      // carries; the select is keyed by the content file's key.
+      assignorRelationship: 'Mother',
+    };
+    stubFetch({ rows: [FOR_ANOTHER] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    fireEvent.click(await screen.findByTestId(`who-open-${FOR_ANOTHER.agreementId}`));
+
+    // WAIT FOR THE PRE-FILL, not for the box (wow.md §2 item 6).
+    const name = (await screen.findByTestId(`who-name-${FOR_ANOTHER.agreementId}`)) as HTMLInputElement;
+    await waitFor(() => expect(name.value).toBe('Alex Fictional'));
+
+    expect(
+      screen.getByRole('checkbox', { name: strings.tablet.whoPatient }).getAttribute('aria-checked'),
+    ).toBe('false');
+    // THE WORD CROSSED BACK ONTO THE VERSIONED LIST IT CAME FROM.
+    expect(
+      (screen.getByTestId(`who-relationship-${FOR_ANOTHER.agreementId}`) as HTMLSelectElement).value,
+    ).toBe('mother');
+    // NOT ON THE DTO, SO NOT INVENTED.
+    expect(
+      (screen.getByTestId(`who-mobile-${FOR_ANOTHER.agreementId}`) as HTMLInputElement).value,
+    ).toBe('');
+    expect(
+      (screen.getByTestId(`who-email-${FOR_ANOTHER.agreementId}`) as HTMLInputElement).value,
+    ).toBe('');
+
+    // ASKED ONCE. The tick is gone and the fact is stated in its place.
+    expect(
+      screen.queryByRole('checkbox', { name: strings.tablet.whoAgeConfirm(MIN_AGE_ASSIGN_FOR_OTHER) }),
+    ).toBeNull();
+    expect(screen.getByTestId(`who-age-on-record-${FOR_ANOTHER.agreementId}`).textContent).toContain(
+      strings.tablet.whoAgeOnRecord(MIN_AGE_ASSIGN_FOR_OTHER),
+    );
+
+    // AND NOTHING HERE ASKS ANYBODY TO JUDGE THE PERSON (REQ-VUL-05).
+    expect(document.body.textContent ?? '').not.toMatch(/capacity|competent|understands/i);
+  });
+
+  /**
+   * SAVE SAYS WHAT IS MISSING, WHERE IT IS MISSING (Carl, 10 Sep 2026).
+   *
+   * The button was dead and the reason sat beside it in small grey text,
+   * describing a checkbox six rows up — "easy to miss", and he missed it. Save
+   * is alive now: pressing it with the age declaration unticked sends nothing,
+   * marks that control, puts the sentence directly under it and moves the
+   * cursor into it.
+   *
+   * HARD RULE 10 IS STILL THE SERVER'S. `buildAssignorForAnother` runs the
+   * identical refusal; this is only the screen telling somebody which box.
+   */
+  it('save_with_no_18_plus_tick_marks_the_box_and_focuses_it', async () => {
+    signedInAtPractice();
+    stubFetch();
+    render(<TabletView practiceId={PRACTICE} />);
+
+    fireEvent.click(await screen.findByTestId(`who-open-${READY.agreementId}`));
+    fireEvent.click(screen.getByRole('checkbox', { name: strings.tablet.whoPatient }));
+
+    const name = (await screen.findByTestId(`who-name-${READY.agreementId}`)) as HTMLInputElement;
+    await waitFor(() => expect(name.value).toBe(''));
+    fireEvent.change(name, { target: { value: 'Robin Relative' } });
+    fireEvent.change(screen.getByTestId(`who-relationship-${READY.agreementId}`), {
+      target: { value: 'carer' },
+    });
+    fireEvent.change(screen.getByTestId(`who-mobile-${READY.agreementId}`), {
+      target: { value: '0400 000 001' },
+    });
+
+    // EVERYTHING BUT THE AGE DECLARATION. Save is ALIVE.
+    const save = screen.getByTestId(`who-save-${READY.agreementId}`) as HTMLButtonElement;
+    expect(save.disabled).toBe(false);
+    fireEvent.click(save);
+
+    // NOTHING WAS SENT.
+    expect(calls.some((c) => c.method === 'POST')).toBe(false);
+
+    // THE REASON IS UNDER THE BOX IT IS ABOUT, AND IT IS SPOKEN.
+    const message = await screen.findByTestId(`who-error-${READY.agreementId}`);
+    expect(message.textContent).toBe(strings.tablet.whoBlockedAge);
+    expect(message.getAttribute('role')).toBe('alert');
+    const age = screen.getByTestId(`who-age-${READY.agreementId}`);
+    expect(age.contains(message)).toBe(true);
+
+    // AND THE CURSOR IS IN IT.
+    const box = screen.getByRole('checkbox', {
+      name: strings.tablet.whoAgeConfirm(MIN_AGE_ASSIGN_FOR_OTHER),
+    });
+    expect(document.activeElement).toBe(box);
+
+    // TICK IT AND THE REFUSAL GOES, AND THE SAVE GOES THROUGH.
+    fireEvent.click(box);
+    await waitFor(() => expect(screen.queryByTestId(`who-error-${READY.agreementId}`)).toBeNull());
+    fireEvent.click(screen.getByTestId(`who-save-${READY.agreementId}`));
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));
+    expect(calls.find((c) => c.method === 'POST')!.body).toMatchObject({
+      assignorIsPatient: false,
+      declaresEighteenOrOver: true,
+    });
+  });
+
   it('ui_never_asks_staff_to_assess_capacity', async () => {
     signedInAtPractice();
     stubFetch();
@@ -1917,6 +2114,9 @@ describe('the gate on who may sign — the same refusals the server makes', () =
     declaredOfAge: true,
     mobile: '0400 000 001',
     email: '',
+    // Nothing on the record yet — this is the draft as somebody typing it has
+    // it, which is what the gate is asked about.
+    ageConfirmedFor: null,
   };
 
   it('practice_staff_hard_blocked_as_assignor — and the refusal never names the match', () => {

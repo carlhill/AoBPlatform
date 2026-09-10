@@ -4389,6 +4389,15 @@ export const strings = {
     whoDescribe: 'Please describe',
     /** Composed from MIN_AGE_ASSIGN_FOR_OTHER — the threshold is never typed here. */
     whoAgeConfirm: (minimumAge: number) => `They confirm they are ${minimumAge} or over`,
+    /*
+     * THE SAME DECLARATION, ALREADY GIVEN (Carl, 10 Sep 2026). Reopening a row
+     * whose assignor was saved with this attestation states it instead of
+     * asking for it again — it was declared at Save and it is on the record.
+     * A statement of fact, in the past tense, with no control beside it; it
+     * says nothing about anybody's capacity, because nobody was ever asked
+     * (REQ-VUL-05).
+     */
+    whoAgeOnRecord: (minimumAge: number) => `They confirmed they are ${minimumAge} or over.`,
     whoContactHint: 'A mobile or an email, so their copy of the agreement can reach them.',
     whoMobile: 'Mobile',
     whoEmail: 'Email',

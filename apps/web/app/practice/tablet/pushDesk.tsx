@@ -616,6 +616,21 @@ export interface WhoDraft {
   declaredOfAge: boolean;
   mobile: string;
   email: string;
+  /**
+   * THE NAME THE AGE DECLARATION ON THE RECORD BELONGS TO — `null` until one
+   * has been saved (Carl, 10 Sep 2026).
+   *
+   * WHY IT IS A NAME AND NOT A BOOLEAN. Reopening a row whose assignor is
+   * already someone else must not ask for the same attestation twice: it was
+   * given at Save and it is on the record, so the panel SHOWS it rather than
+   * asking again. But an attestation is about a PERSON — "Robin Relative is 18
+   * or over" — so the moment somebody types a different name into this panel
+   * the declaration on the record no longer covers who is now named, and the
+   * tick comes back live and unticked. Holding the name is what lets the panel
+   * tell those two situations apart (REQ-AGE-01: declared, recorded, never
+   * verified — and never assumed for a person nobody declared it about).
+   */
+  ageConfirmedFor: string | null;
 }
 
 export const EMPTY_WHO: WhoDraft = {
@@ -626,11 +641,115 @@ export const EMPTY_WHO: WhoDraft = {
   declaredOfAge: false,
   mobile: '',
   email: '',
+  ageConfirmedFor: null,
 };
 
 /**
+ * IS THE AGE DECLARATION ALREADY ON THE RECORD FOR THE PERSON NOW NAMED?
+ *
+ * True only while the panel is on the "someone else" branch AND the name in it
+ * is still the one the saved declaration was given about. The panel shows a
+ * read-only "confirmed" line for exactly this case and the live tick for every
+ * other; nothing here judges capacity, and there is no parameter for one
+ * (REQ-VUL-05) — this is an age attestation and nothing else.
+ */
+export function ageIsOnRecord(draft: WhoDraft): boolean {
+  return !draft.isPatient && draft.ageConfirmedFor !== null && draft.name.trim() === draft.ageConfirmedFor;
+}
+
+/**
+ * KEEP THE TICK AND THE NAME TELLING THE SAME STORY. Applied to every edit the
+ * panel makes: while the record's declaration still covers the name in the
+ * box, `declaredOfAge` stays true and the control is read-only; type a
+ * different name and it drops to false, so Save asks for the attestation about
+ * the person who is actually being named.
+ */
+function reconcileAgeOnRecord(draft: WhoDraft): WhoDraft {
+  if (draft.ageConfirmedFor === null) return draft;
+  const samePerson = draft.name.trim() === draft.ageConfirmedFor;
+  return samePerson === draft.declaredOfAge ? draft : { ...draft, declaredOfAge: samePerson };
+}
+
+/**
+ * THE SAVED RELATIONSHIP, BACK ONTO THE LIST IT CAME FROM.
+ *
+ * The row DTO carries the relationship as the WORD that is printed on the
+ * agreement ("Mother"), because that is the C8 particular; the select is keyed
+ * by the versioned content file's key (`mother`). Reopening a saved row has to
+ * cross back, and it crosses back through the SAME string table and the SAME
+ * option list rather than a second mapping in this file (hard rule 14).
+ *
+ * A WORD THAT IS ON NO OPTION IS FREE TEXT, and lands in the free-text option
+ * carrying itself — which is where it came from, since that is the only branch
+ * that can produce a relationship the list does not contain.
+ */
+export function relationshipFromSaved(saved: string | null): { relationship: string; describe: string } {
+  const value = (saved ?? '').trim();
+  if (value.length === 0) return { relationship: '', describe: '' };
+  const match = ASSIGNOR_RELATIONSHIP_OPTIONS.find(
+    (option) => relationshipLabel(option.key).toLocaleLowerCase() === value.toLocaleLowerCase(),
+  );
+  if (match) return { relationship: match.key, describe: '' };
+  const freeText = ASSIGNOR_RELATIONSHIP_OPTIONS.find((option) => option.freeText);
+  return freeText ? { relationship: freeText.key, describe: value } : { relationship: '', describe: '' };
+}
+
+/**
+ * WHAT THE PANEL OPENS SHOWING, WHEN NOBODY HAS TYPED IN IT YET (Carl, 10 Sep
+ * 2026).
+ *
+ * "THE PATIENT IS SIGNING, TICKED" IS A DEFAULT FOR A ROW WHOSE SAVED ASSIGNOR
+ * IS THE PATIENT — and for no other row. Reopening a row where somebody else
+ * has already been recorded used to throw that answer away and show the
+ * default, so reception read "the patient is signing" on a row that says, one
+ * line above, that Alex is signing for Kim. The panel now shows what was
+ * saved: the tick off, the name and relationship back in their controls, and
+ * the age declaration shown as already given (see `ageIsOnRecord`).
+ *
+ * MOBILE AND EMAIL COME BACK BLANK, and honestly so: they are not on this
+ * DTO. They are the assignor's contact for their own copy of the agreement
+ * (REQ-REG-08), not a particular the row carries, and inventing a field to
+ * carry them is not this change's to make.
+ */
+export function whoDraftFromRow(
+  row: Pick<PushableRow, 'assignorIsPatient' | 'assignorName' | 'assignorRelationship'>,
+): WhoDraft {
+  const name = row.assignorName?.trim() ?? '';
+  if (row.assignorIsPatient || name.length === 0) {
+    return { ...EMPTY_WHO, isPatient: row.assignorIsPatient };
+  }
+  return {
+    ...EMPTY_WHO,
+    isPatient: false,
+    name,
+    ...relationshipFromSaved(row.assignorRelationship),
+    // GIVEN AT SAVE, SHOWN RATHER THAN ASKED FOR AGAIN. `ageIsOnRecord` is
+    // what turns this into a read-only line instead of an unticked box.
+    declaredOfAge: true,
+    ageConfirmedFor: name,
+  };
+}
+
+/** Which control a refusal belongs under — the one the reader must fix. */
+export type WhoFaultField = 'name' | 'relationship' | 'describe' | 'age' | 'contact';
+
+export interface WhoFault {
+  field: WhoFaultField;
+  text: string;
+}
+
+/**
  * THE GATE ON THE "SOMEONE ELSE" BRANCH — the single source of truth behind
- * both the disabled Save and the reason shown beside it.
+ * what Save refuses to send and the reason shown UNDER THE CONTROL IT IS ABOUT.
+ *
+ * IT NAMES THE FIELD NOW, NOT ONLY THE SENTENCE (Carl, 10 Sep 2026). He filled
+ * the panel in, missed the age tick, pressed a Save that was already dead and
+ * read nothing: the reason was small grey text beside the button, describing a
+ * box six rows up. A refusal that does not say WHERE is CLAUDE.md §7's fault
+ * seen inside one form — so the gate returns the field as well as the words,
+ * `whoIsBlocked` keeps returning just the words for the two callers that only
+ * ever wanted a sentence, and the panel marks, explains and focuses the one
+ * control that is in the way.
  *
  * EVERY RULE COMES FROM `@aobplatform/domain`. The age threshold, the
  * relationship-to-authority mapping and the practice-staff comparison are all
@@ -650,19 +769,30 @@ export const EMPTY_WHO: WhoDraft = {
  * THERE IS NO CAPACITY QUESTION HERE and no parameter for one (REQ-VUL-05).
  * The absence is the requirement.
  */
-export function whoIsBlocked(draft: WhoDraft, staffNames: readonly string[]): string | null {
+export function whoFault(draft: WhoDraft, staffNames: readonly string[]): WhoFault | null {
   if (draft.isPatient) return null;
-  if (draft.name.trim().length === 0) return strings.tablet.whoBlockedName;
-  if (draft.relationship.length === 0) return strings.tablet.whoBlockedRelationship;
-  if (relationshipNeedsFreeText(draft.relationship) && draft.describe.trim().length === 0) {
-    return strings.tablet.whoBlockedDescribe;
+  if (draft.name.trim().length === 0) return { field: 'name', text: strings.tablet.whoBlockedName };
+  if (draft.relationship.length === 0) {
+    return { field: 'relationship', text: strings.tablet.whoBlockedRelationship };
   }
-  if (matchesPracticeStaff(draft.name, staffNames)) return strings.tablet.whoBlockedStaff;
-  if (!draft.declaredOfAge) return strings.tablet.whoBlockedAge;
+  if (relationshipNeedsFreeText(draft.relationship) && draft.describe.trim().length === 0) {
+    return { field: 'describe', text: strings.tablet.whoBlockedDescribe };
+  }
+  // THE NAME IS WHAT MATCHED, so the name is what is marked — and the sentence
+  // still never says which staff name it matched (REQ-VUL-04).
+  if (matchesPracticeStaff(draft.name, staffNames)) {
+    return { field: 'name', text: strings.tablet.whoBlockedStaff };
+  }
+  if (!draft.declaredOfAge) return { field: 'age', text: strings.tablet.whoBlockedAge };
   if (draft.mobile.trim().length === 0 && draft.email.trim().length === 0) {
-    return strings.tablet.whoBlockedContact;
+    return { field: 'contact', text: strings.tablet.whoBlockedContact };
   }
   return null;
+}
+
+/** The same gate, as the single sentence its two other callers ask for. */
+export function whoIsBlocked(draft: WhoDraft, staffNames: readonly string[]): string | null {
+  return whoFault(draft, staffNames)?.text ?? null;
 }
 
 /**
@@ -855,7 +985,15 @@ export interface PushDesk {
   setWho: React.Dispatch<React.SetStateAction<WhoDraft>>;
   whoBusy: boolean;
   whoOutcome: { id: string; text: string; ok: boolean } | null;
+  /**
+   * WHICH ROWS HAVE HAD A SAVE REFUSED. A panel marks its field only after
+   * somebody has actually pressed Save on it — a form that goes red while it
+   * is being filled in is a form scolding somebody for not having finished.
+   */
+  whoFaulted: Record<string, boolean>;
+  markWhoFault: (agreementId: string) => void;
   openWho: (row: PushableRow) => void;
+  /** Shuts the panel and KEEPS what is in it (see `whoDrafts`). */
   closeWho: () => void;
   saveWho: (row: PushableRow) => Promise<void>;
   descriptions: { version: string; descriptions: string[] } | null;
@@ -880,9 +1018,30 @@ export function usePushDesk(practiceId: string): PushDesk {
   const [staffNames, setStaffNames] = useState<readonly string[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  /** Which row's who-is-signing panel is open, and what it holds. */
+  /**
+   * WHICH ROW'S WHO-IS-SIGNING PANEL IS OPEN, AND WHAT EVERY ROW'S HOLDS.
+   *
+   * ONE DRAFT PER AGREEMENT, KEPT FOR THE LIFE OF THE PAGE (Carl, 10 Sep
+   * 2026). He unticked "the patient is signing", typed a carer's name,
+   * relationship, mobile and email, pressed Close, reopened — and it was all
+   * gone, back to the patient ticked. Closing a panel is not abandoning what
+   * is in it; the tablet desk is interrupted constantly, and a form that
+   * empties itself when somebody looks away is a form that gets typed twice.
+   *
+   * IN MEMORY AND NOWHERE ELSE. This is React state on a console page, not
+   * storage: nothing here is written to the browser, and a reload starts
+   * clean. A draft is dropped when it stops being a draft — a successful save,
+   * a successful push, or the row leaving the list (`load` prunes).
+   */
   const [whoFor, setWhoFor] = useState<string | null>(null);
-  const [who, setWho] = useState<WhoDraft>(EMPTY_WHO);
+  const [whoDrafts, setWhoDrafts] = useState<Record<string, WhoDraft>>({});
+  /**
+   * WHICH ROWS HAVE HAD A SAVE REFUSED, so the panel marks the field rather
+   * than shouting at somebody who has not finished typing. The FAULT itself is
+   * recomputed live from the draft, so fixing the marked field moves the mark
+   * to whatever is still missing and clears it when nothing is.
+   */
+  const [whoFaulted, setWhoFaulted] = useState<Record<string, boolean>>({});
   const [whoBusy, setWhoBusy] = useState(false);
   const [whoOutcome, setWhoOutcome] = useState<{ id: string; text: string; ok: boolean } | null>(null);
 
@@ -979,6 +1138,22 @@ export function usePushDesk(practiceId: string): PushDesk {
       setRows(freshRows);
       setDevices(freshDevices);
       setSessions(freshSessions);
+      /*
+       * A DRAFT OUTLIVES A CLOSE AND NOT ITS ROW. Once an agreement is off
+       * this list — signed, superseded, expired — the panel it belonged to
+       * cannot be opened again, and holding what somebody typed into it is
+       * holding a name and a mobile number about a person nobody is acting for
+       * any more.
+       */
+      const stillHere = new Set(freshRows.map((r) => r.agreementId));
+      setWhoDrafts((current) => {
+        const kept = Object.fromEntries(Object.entries(current).filter(([id]) => stillHere.has(id)));
+        return Object.keys(kept).length === Object.keys(current).length ? current : kept;
+      });
+      setWhoFaulted((current) => {
+        const kept = Object.fromEntries(Object.entries(current).filter(([id]) => stillHere.has(id)));
+        return Object.keys(kept).length === Object.keys(current).length ? current : kept;
+      });
       setLoadError(null);
       return { rows: freshRows, devices: freshDevices, sessions: freshSessions };
     } catch (e) {
@@ -1021,6 +1196,19 @@ export function usePushDesk(practiceId: string): PushDesk {
    * installed once rather than torn down and rebuilt on every render, which is
    * what turns a three-second poll into a burst.
    */
+  /*
+   * A DRAFT BELONGS TO ONE PRACTICE, AND NEVER FOLLOWS THE PAGE TO ANOTHER.
+   * The platform twin can be re-pointed at a different practice without this
+   * component unmounting, and a half-typed assignor's name surviving that
+   * would be one practice's data on another practice's screen. The prune in
+   * `load` would catch it a beat later; this catches it at the switch.
+   */
+  useEffect(() => {
+    setWhoFor(null);
+    setWhoDrafts({});
+    setWhoFaulted({});
+  }, [practiceId]);
+
   const latest = useRef(load);
   latest.current = load;
   useEffect(() => {
@@ -1029,17 +1217,77 @@ export function usePushDesk(practiceId: string): PushDesk {
     return () => clearInterval(timer);
   }, [practiceId]);
 
-  function openWho(row: PushableRow) {
-    setWhoOutcome(null);
-    setWhoFor(row.agreementId);
-    setWho({
-      ...EMPTY_WHO,
-      isPatient: row.assignorIsPatient,
-      name: row.assignorIsPatient ? '' : (row.assignorName ?? ''),
+  /**
+   * WHAT THIS ROW'S PANEL IS HOLDING — the draft if somebody has typed one,
+   * and what the SAVED assignor says if nobody has.
+   */
+  function whoDraftFor(agreementId: string, row?: PushableRow): WhoDraft {
+    const held = whoDrafts[agreementId];
+    if (held) return held;
+    const known = row ?? rows?.find((r) => r.agreementId === agreementId);
+    return known ? whoDraftFromRow(known) : EMPTY_WHO;
+  }
+
+  const who = whoFor ? whoDraftFor(whoFor) : EMPTY_WHO;
+
+  /**
+   * EVERY EDIT LANDS ON THE OPEN ROW'S OWN DRAFT, seeded from what was saved
+   * the first time somebody touches it — so the panel keeps the same
+   * `React.Dispatch` shape it always had while the state behind it became one
+   * draft per agreement.
+   */
+  const setWho: React.Dispatch<React.SetStateAction<WhoDraft>> = (update) => {
+    const id = whoFor;
+    if (!id) return;
+    setWhoDrafts((current) => {
+      const existing = current[id] ?? whoDraftFor(id);
+      const next = typeof update === 'function' ? update(existing) : update;
+      return { ...current, [id]: reconcileAgeOnRecord(next) };
+    });
+  };
+
+  /** The draft, and its faults, are done with — a save, a push, or a row gone. */
+  function forgetWhoDraft(agreementId: string) {
+    setWhoDrafts((current) => {
+      if (!(agreementId in current)) return current;
+      const { [agreementId]: _gone, ...rest } = current;
+      return rest;
+    });
+    setWhoFaulted((current) => {
+      if (!(agreementId in current)) return current;
+      const { [agreementId]: _gone, ...rest } = current;
+      return rest;
     });
   }
 
+  /**
+   * OPEN THE PANEL — showing the draft if there is one, and what was SAVED if
+   * there is not. Neither is thrown away by opening.
+   */
+  function openWho(row: PushableRow) {
+    setWhoOutcome(null);
+    setWhoFor(row.agreementId);
+    setWhoDrafts((current) =>
+      current[row.agreementId] ? current : { ...current, [row.agreementId]: whoDraftFromRow(row) },
+    );
+  }
+
   async function saveWho(row: PushableRow) {
+    // THE OPEN ROW'S OWN DRAFT, read by id rather than off the render — one
+    // panel is open at a time, and this is the one it is showing.
+    const who = whoDraftFor(row.agreementId, row);
+    /*
+     * SAVE STAYS ALIVE AND REFUSES OUT LOUD (Carl, 10 Sep 2026). A dead button
+     * with the reason beside it in small grey text told him nothing; a live
+     * one that marks the field, says why under it and puts the cursor there
+     * tells him exactly which box. Nothing is sent — this is the same gate the
+     * disabled button used, moved from the attribute into the press — and hard
+     * rule 10 is still the SERVER's to enforce, which it does either way.
+     */
+    if (whoFault(who, staffNames)) {
+      setWhoFaulted((current) => ({ ...current, [row.agreementId]: true }));
+      return;
+    }
     setWhoBusy(true);
     setWhoOutcome(null);
     try {
@@ -1112,6 +1360,13 @@ export function usePushDesk(practiceId: string): PushDesk {
         ok: true,
       });
       setWhoFor(null);
+      /*
+       * AND THE DRAFT IS NO LONGER A DRAFT. It is the record now, so the next
+       * opening of this row reads the SAVED answer back through
+       * `whoDraftFromRow` — the draft outliving its own save is how a panel
+       * comes to show something the server has already been told differently.
+       */
+      forgetWhoDraft(row.agreementId);
       // Re-read rather than patch: what is on screen is what the server thinks.
       await load();
       /*
@@ -1215,6 +1470,10 @@ export function usePushDesk(practiceId: string): PushDesk {
        * have already moved past.
        */
       setWhoOutcome(null);
+      // AND SO HAS ANY UNSAVED DRAFT ON IT. The agreement is on a tablet with
+      // a person reading it; whatever somebody half-typed into this panel
+      // before that is not a thing to hand back to them afterwards.
+      forgetWhoDraft(row.agreementId);
       await load();
     } catch (e) {
       setPushOutcome({
@@ -1755,7 +2014,11 @@ export function usePushDesk(practiceId: string): PushDesk {
     setWho,
     whoBusy,
     whoOutcome,
+    whoFaulted,
+    markWhoFault: (agreementId: string) =>
+      setWhoFaulted((current) => ({ ...current, [agreementId]: true })),
     openWho,
+    // THE DRAFT SURVIVES THE CLOSE. Nothing else here is cleared, on purpose.
     closeWho: () => setWhoFor(null),
     saveWho,
     descriptions,
@@ -2113,6 +2376,42 @@ function fixFor(desk: PushDesk, row: PushableRow, reason: string | null | undefi
 }
 
 /**
+ * WHICH CONTROL EACH FAULT BELONGS TO, BY TEST ID — the one mapping, so the
+ * mark, the message and the cursor cannot land on three different boxes.
+ *
+ * `contact` POINTS AT MOBILE because the pair is "a mobile or an email" and
+ * the mobile is the one reception has to hand; the email beside it is marked
+ * too, since either answers the refusal.
+ */
+const WHO_FAULT_TARGET: Record<WhoFaultField, string> = {
+  name: 'who-name',
+  relationship: 'who-relationship',
+  describe: 'who-describe',
+  age: 'who-age',
+  contact: 'who-mobile',
+};
+
+/**
+ * PUT THE CURSOR IN THE BOX THE REFUSAL IS ABOUT (Carl, 10 Sep 2026).
+ *
+ * The age declaration is a Radix checkbox, which is a `button` inside the
+ * wrapper this looks up rather than the wrapper itself — so the lookup takes
+ * whichever focusable control the target holds, and the wrapper carries the
+ * test id either way.
+ */
+function focusWhoFault(panel: HTMLElement | null, agreementId: string, field: WhoFaultField) {
+  const target = panel?.querySelector<HTMLElement>(
+    `[data-testid="${WHO_FAULT_TARGET[field]}-${agreementId}"]`,
+  );
+  if (!target) return;
+  const focusable =
+    typeof target.focus === 'function' && target.matches('input, select, textarea, button')
+      ? target
+      : target.querySelector<HTMLElement>('input, select, textarea, button');
+  focusable?.focus();
+}
+
+/**
  * ONE AGREEMENT WAITING TO BE SIGNED, WITH EVERY CONTROL THAT ACTS ON IT.
  *
  * Rendered identically by the tablet page's waiting list and by one patient's
@@ -2156,7 +2455,45 @@ export function AgreementRow({
   const onTablet = live && live.endedAt === null ? live : undefined;
   const outcome = desk.pushOutcome?.id === row.agreementId ? desk.pushOutcome : null;
   const whoSaid = desk.whoOutcome?.id === row.agreementId ? desk.whoOutcome : null;
-  const blocked = whoIsBlocked(desk.who, desk.staffNames);
+  /*
+   * WHAT IS IN THE WAY OF SAVING WHO IS SIGNING, AND WHERE (Carl, 10 Sep
+   * 2026). Recomputed on every render from the open draft, and SHOWN only once
+   * a Save has actually been refused — so it marks the box somebody missed
+   * rather than colouring a form nobody has finished. Fixing the marked field
+   * moves the mark to whatever is still missing, and clears it when nothing is.
+   */
+  const fault = whoFault(desk.who, desk.staffNames);
+  const shownFault = desk.whoFaulted[row.agreementId] ? fault : null;
+  /**
+   * THE PANEL'S OWN NODE, so a refused Save can put the cursor in the field it
+   * is complaining about. Scoped to the panel rather than the document: two
+   * rows can hold drafts at once and only one of them is open.
+   */
+  const whoPanelRef = useRef<HTMLDivElement>(null);
+  /** The message id a marked control is described by — one fault, one id. */
+  const whoErrorId = `who-error-${row.agreementId}`;
+  const describedByFault = (field: WhoFaultField, given: string | undefined) =>
+    shownFault?.field === field ? [given, whoErrorId].filter(Boolean).join(' ') : given;
+  const faultMessage = (field: WhoFaultField) =>
+    shownFault?.field === field ? (
+      /*
+       * THE REASON, UNDER THE CONTROL IT IS ABOUT, AND SPOKEN. `role="alert"`
+       * so it reaches a screen reader the moment it appears, and
+       * `aria-describedby` so it is read again with the field the cursor has
+       * just landed in.
+       */
+      <p className={ui.fieldError} role="alert" id={whoErrorId} data-testid={whoErrorId}>
+        {shownFault.text}
+      </p>
+    ) : null;
+  function pressSaveWho() {
+    if (fault) {
+      desk.markWhoFault(row.agreementId);
+      focusWhoFault(whoPanelRef.current, row.agreementId, fault.field);
+      return;
+    }
+    void desk.saveWho(row);
+  }
 
   /*
    * THE SESSION CHIP AND THE RECORD ID, BUILT ONCE AND PLACED ONCE. They sit
@@ -2366,7 +2703,22 @@ export function AgreementRow({
       )}
 
       {desk.whoFor === row.agreementId && (
-        <div className={`${styles.cardBody} ${rowStyles.band}`} data-testid={`who-panel-${row.agreementId}`}>
+        <div
+          ref={whoPanelRef}
+          className={`${styles.cardBody} ${rowStyles.band}`}
+          data-testid={`who-panel-${row.agreementId}`}
+          /*
+           * AND ESCAPE DOES WHAT CLOSE DOES — including keeping the draft.
+           * Bound on the panel, for the reason the correction panel's is: a key
+           * handler that outlives the thing it closes is a bug waiting for the
+           * next dialog.
+           */
+          onKeyDown={(event) => {
+            if (event.key !== 'Escape' || desk.whoBusy) return;
+            event.stopPropagation();
+            desk.closeWho();
+          }}
+        >
           {/*
             WHAT SAVE WILL DO, SAID BEFORE ANYBODY TYPES. On a prepared row the
             server supersedes (HARD-02) rather than editing, so reception gets
@@ -2388,72 +2740,118 @@ export function AgreementRow({
               <p className={ui.hint}>{strings.tablet.whoOther}</p>
               <Field label={strings.tablet.whoName} required>
                 {(p) => (
-                  <TextInput
-                    {...p}
-                    value={desk.who.name}
-                    maxLength={200}
-                    onChange={(e) => desk.setWho((w) => ({ ...w, name: e.target.value }))}
-                    data-testid={`who-name-${row.agreementId}`}
-                  />
+                  <>
+                    <TextInput
+                      {...p}
+                      describedBy={describedByFault('name', p.describedBy)}
+                      invalid={shownFault?.field === 'name'}
+                      value={desk.who.name}
+                      maxLength={200}
+                      onChange={(e) => desk.setWho((w) => ({ ...w, name: e.target.value }))}
+                      data-testid={`who-name-${row.agreementId}`}
+                    />
+                    {faultMessage('name')}
+                  </>
                 )}
               </Field>
               <Field label={strings.tablet.whoRelationship} required>
                 {(p) => (
-                  <SelectInput
-                    {...p}
-                    value={desk.who.relationship}
-                    onChange={(e) => desk.setWho((w) => ({ ...w, relationship: e.target.value }))}
-                    data-testid={`who-relationship-${row.agreementId}`}
-                  >
-                    <option value="">{strings.tablet.whoRelationshipPlaceholder}</option>
-                    {/*
-                      THE OPTIONS AND THEIR ORDER COME FROM VERSIONED CONTENT
-                      (hard rule 14), never from this file. Only the words are
-                      in the string table, keyed by the content file's key.
-                    */}
-                    {ASSIGNOR_RELATIONSHIP_OPTIONS.map((option) => (
-                      <option key={option.key} value={option.key}>
-                        {relationshipLabel(option.key)}
-                      </option>
-                    ))}
-                  </SelectInput>
+                  <>
+                    <SelectInput
+                      {...p}
+                      describedBy={describedByFault('relationship', p.describedBy)}
+                      invalid={shownFault?.field === 'relationship'}
+                      value={desk.who.relationship}
+                      onChange={(e) => desk.setWho((w) => ({ ...w, relationship: e.target.value }))}
+                      data-testid={`who-relationship-${row.agreementId}`}
+                    >
+                      <option value="">{strings.tablet.whoRelationshipPlaceholder}</option>
+                      {/*
+                        THE OPTIONS AND THEIR ORDER COME FROM VERSIONED CONTENT
+                        (hard rule 14), never from this file. Only the words are
+                        in the string table, keyed by the content file's key.
+                      */}
+                      {ASSIGNOR_RELATIONSHIP_OPTIONS.map((option) => (
+                        <option key={option.key} value={option.key}>
+                          {relationshipLabel(option.key)}
+                        </option>
+                      ))}
+                    </SelectInput>
+                    {faultMessage('relationship')}
+                  </>
                 )}
               </Field>
               {relationshipNeedsFreeText(desk.who.relationship) && (
                 <Field label={strings.tablet.whoDescribe} required>
                   {(p) => (
-                    <TextInput
-                      {...p}
-                      value={desk.who.describe}
-                      maxLength={500}
-                      onChange={(e) => desk.setWho((w) => ({ ...w, describe: e.target.value }))}
-                      data-testid={`who-describe-${row.agreementId}`}
-                    />
+                    <>
+                      <TextInput
+                        {...p}
+                        describedBy={describedByFault('describe', p.describedBy)}
+                        invalid={shownFault?.field === 'describe'}
+                        value={desk.who.describe}
+                        maxLength={500}
+                        onChange={(e) => desk.setWho((w) => ({ ...w, describe: e.target.value }))}
+                        data-testid={`who-describe-${row.agreementId}`}
+                      />
+                      {faultMessage('describe')}
+                    </>
                   )}
                 </Field>
               )}
-              <Checkbox
-                checked={desk.who.declaredOfAge}
-                onCheckedChange={(v) => desk.setWho((w) => ({ ...w, declaredOfAge: v }))}
-                // The threshold is imported, never typed here.
-                label={strings.tablet.whoAgeConfirm(MIN_AGE_ASSIGN_FOR_OTHER)}
-              />
+              {/*
+                THE AGE DECLARATION — ASKED ONCE, THEN SHOWN (Carl, 10 Sep
+                2026). A row whose saved assignor is already this person
+                carries their declaration on the record, so reopening the panel
+                states it rather than asking for it a second time. It is an AGE
+                attestation, declared and never verified (REQ-AGE-01,
+                REQ-VUL-02) — nobody here is asked to judge anything about the
+                person (REQ-VUL-05).
+              */}
+              {ageIsOnRecord(desk.who) ? (
+                <p className={ui.hint} data-testid={`who-age-on-record-${row.agreementId}`}>
+                  <Check size={12} aria-hidden="true" />{' '}
+                  {strings.tablet.whoAgeOnRecord(MIN_AGE_ASSIGN_FOR_OTHER)}
+                </p>
+              ) : (
+                <div
+                  className={shownFault?.field === 'age' ? rowStyles.faultedField : undefined}
+                  data-testid={`who-age-${row.agreementId}`}
+                >
+                  <Checkbox
+                    checked={desk.who.declaredOfAge}
+                    onCheckedChange={(v) => desk.setWho((w) => ({ ...w, declaredOfAge: v }))}
+                    // The threshold is imported, never typed here.
+                    label={strings.tablet.whoAgeConfirm(MIN_AGE_ASSIGN_FOR_OTHER)}
+                  />
+                  {faultMessage('age')}
+                </div>
+              )}
               <p className={ui.hint}>{strings.tablet.whoContactHint}</p>
               <Field label={strings.tablet.whoMobile}>
                 {(p) => (
-                  <TextInput
-                    {...p}
-                    value={desk.who.mobile}
-                    maxLength={30}
-                    onChange={(e) => desk.setWho((w) => ({ ...w, mobile: e.target.value }))}
-                    data-testid={`who-mobile-${row.agreementId}`}
-                  />
+                  <>
+                    <TextInput
+                      {...p}
+                      describedBy={describedByFault('contact', p.describedBy)}
+                      invalid={shownFault?.field === 'contact'}
+                      value={desk.who.mobile}
+                      maxLength={30}
+                      onChange={(e) => desk.setWho((w) => ({ ...w, mobile: e.target.value }))}
+                      data-testid={`who-mobile-${row.agreementId}`}
+                    />
+                    {faultMessage('contact')}
+                  </>
                 )}
               </Field>
               <Field label={strings.tablet.whoEmail}>
                 {(p) => (
                   <TextInput
                     {...p}
+                    // MARKED TOO, because either one answers the refusal — but
+                    // the sentence and the cursor sit on the mobile, so the
+                    // reader is not told the same thing twice.
+                    invalid={shownFault?.field === 'contact'}
                     value={desk.who.email}
                     maxLength={254}
                     onChange={(e) => desk.setWho((w) => ({ ...w, email: e.target.value }))}
@@ -2464,20 +2862,24 @@ export function AgreementRow({
             </>
           )}
           <div className={styles.formActions}>
+            {/*
+              SAVE IS ALIVE, AND SAYS WHAT IS MISSING WHERE IT IS MISSING
+              (Carl, 10 Sep 2026). It used to die with the reason beside it in
+              small grey text — "easy to miss", and describing a box six rows
+              up. Pressing it now sends nothing until the panel is complete;
+              what it does instead is mark the offending control, put the
+              reason under it and move the cursor there. The account that may
+              not act at all still gets a dead button, because that is not a
+              thing this reader can fix by typing.
+            */}
             <Button
               variant="primary"
-              disabled={!desk.canSend || desk.whoBusy || blocked !== null}
-              onClick={() => void desk.saveWho(row)}
+              disabled={!desk.canSend || desk.whoBusy}
+              onClick={pressSaveWho}
               data-testid={`who-save-${row.agreementId}`}
             >
               {desk.whoBusy ? strings.tablet.whoSaving : strings.tablet.whoSave}
             </Button>
-            {/* The REASON the button is dead, beside the dead button. */}
-            {blocked && (
-              <span className={ui.hint} data-testid={`who-blocked-${row.agreementId}`}>
-                {blocked}
-              </span>
-            )}
           </div>
         </div>
       )}
