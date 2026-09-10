@@ -29,7 +29,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { CheckCheck, PencilLine, RotateCcw, Send, UserRound } from 'lucide-react';
+import { ArrowRight, Check, CheckCheck, PencilLine, RotateCcw, Send, UserRound } from 'lucide-react';
 import {
   ASSIGNOR_RELATIONSHIPS_VERSION,
   ASSIGNOR_RELATIONSHIP_OPTIONS,
@@ -1926,22 +1926,127 @@ export function sendSteps(
 }
 
 /**
- * THE THREE STEPS, NUMBERED, ACROSS THE TOP OF THE ROW (Carl, 7 Sep 2026:
- * "change the workflow to 'who is signing' only -- after that is actioned,
- * enable the select tablet and send button").
+ * THE THREE STEPS, NUMBERED, WITH THE CONTROL EACH ONE NAMES DIRECTLY BENEATH
+ * IT (Carl, 10 Sep 2026, from a mock-up: "Who is signing over the Who is
+ * signing button, Choose a tablet over the select, Send over Send, an arrow
+ * between them").
  *
  * WHY IT EXISTS. Carl pushed Kim to a tablet and said, twice, that the desk
  * never asked who was signing. Every control on the row was live at once, so
  * nothing said which came first — and the one that mattered looked optional
  * beside a Send that went straight away. The order is now the row's own fact.
  *
- * IT IS A LABEL, NOT A CONTROL. Nothing here is pressable: the strip says where
- * the row is, and the controls it numbers are the things you press. A step that
- * looked like a button would be a fourth way to open the same panel, and two of
- * those are already enough.
+ * WHY THE LABELS MOVED ON TOP OF THE CONTROLS. The first cut put the strip
+ * above the row and the three controls below it, laid out independently — so
+ * the numbers did not sit over the things they name, and at some widths "Send"
+ * sat over the tablet select. Label and control are now the SAME list item and
+ * the SAME grid column (see `.steps` in tablet.module.css), which is what makes
+ * the alignment structural rather than a coincidence of two layouts.
+ *
+ * THE STRIP IS STILL A LABEL, NOT A SET OF EXTRA CONTROLS. Nothing was added
+ * that can be pressed: the pressable things are the row's own three controls,
+ * moved inside the steps that number them.
  */
 export function SendSteps({ desk, row }: { desk: PushDesk; row: PushableRow }) {
   const steps = sendSteps(row, desk.target[row.agreementId]);
+  const blockedReason = row.pushable
+    ? undefined
+    : blockedMessage(row.blockedReason, { providerType: row.providerType });
+
+  /*
+   * THE CONTROL EACH STEP NAMES, keyed by the same step key the strip is built
+   * from — so a step can never end up over the wrong control, and a step
+   * without a control cannot be added by accident.
+   */
+  const controls: Record<string, ReactNode> = {
+    /*
+     * WHO IS SIGNING, SET AT THE DESK — before the push, never on the tablet.
+     *
+     * ALIVE ON EVERY ROW, PREPARED OR NOT (Carl, 7 Sep 2026). It used to die
+     * on `particularsLocked`, and since an arrival locks its particulars as it
+     * is posted that meant every row on this list: the mother who brought her
+     * son met a dead button. Who signs is still a locked particular and is
+     * still never EDITED — after the lock the server supersedes, which is what
+     * the panel says before anybody types.
+     *
+     * THE ROW'S PRIMARY ACTION UNTIL IT IS ANSWERED (Carl, 7 Sep 2026: "change
+     * the workflow to 'who is signing' only -- after that is actioned, enable
+     * the select tablet and send button"). While nobody has confirmed, this is
+     * the only thing on the row that can be pressed and it looks like it; once
+     * confirmed it drops back to a quiet way of changing an answer already
+     * given.
+     */
+    who: (
+      <Button
+        variant={row.assignorConfirmedAt ? 'subtle' : 'primary'}
+        disabled={!desk.canSend}
+        onClick={() => (desk.whoFor === row.agreementId ? desk.closeWho() : desk.openWho(row))}
+        data-testid={`who-open-${row.agreementId}`}
+      >
+        <UserRound size={14} aria-hidden="true" />
+        {desk.whoFor === row.agreementId ? strings.tablet.whoClose : strings.tablet.whoOpen}
+      </Button>
+    ),
+    tablet: (
+      <SelectInput
+        id={`target-${row.agreementId}`}
+        aria-label={strings.tablet.sendChoose}
+        value={desk.target[row.agreementId] ?? ''}
+        /*
+         * DEAD UNTIL WHO IS SIGNING HAS BEEN ANSWERED. The server says the
+         * same thing (`assignor_not_confirmed` makes the row unpushable), and
+         * this states it here too rather than depending on that: the workflow
+         * is "who is signing, then choose a tablet", and a control that can
+         * only fail teaches people the page is broken (CLAUDE.md §6).
+         */
+        disabled={
+          !desk.canSend
+          || !row.pushable
+          || !row.assignorConfirmedAt
+          || desk.free.length === 0
+          || desk.busyId !== null
+        }
+        onChange={(e) => desk.setTarget((t) => ({ ...t, [row.agreementId]: e.target.value }))}
+        data-testid={`target-${row.agreementId}`}
+      >
+        <option value="">{strings.tablet.sendChoose}</option>
+        {desk.free.map((device) => (
+          <option key={device.id} value={device.id}>
+            {device.label}
+          </option>
+        ))}
+      </SelectInput>
+    ),
+    /*
+     * WHERE IT GOES. Send is dead until the row can actually go — a control
+     * that can only fail is a control that teaches people the page is broken
+     * (CLAUDE.md §6). Blocked, its title carries the reason as a tooltip; the
+     * reason itself is stated once, in the full-width band below.
+     */
+    send: (
+      <Button
+        variant="primary"
+        disabled={
+          !desk.canSend
+          || !row.pushable
+          || !row.assignorConfirmedAt
+          || !desk.target[row.agreementId]
+          || desk.busyId !== null
+        }
+        title={blockedReason}
+        onClick={() => void desk.send(row)}
+        data-testid={`send-${row.agreementId}`}
+      >
+        <Send size={14} aria-hidden="true" />
+        {desk.busyId === row.agreementId
+          ? strings.tablet.sending
+          : row.pushable
+            ? strings.tablet.sendAction
+            : strings.tablet.sendBlocked}
+      </Button>
+    ),
+  };
+
   return (
     <ol
       className={rowStyles.steps}
@@ -1957,18 +2062,32 @@ export function SendSteps({ desk, row }: { desk: PushDesk; row: PushableRow }) {
           aria-current={step.state === 'now' ? 'step' : undefined}
           data-testid={`step-${step.key}-${row.agreementId}`}
         >
-          <span className={rowStyles.stepNumber} aria-hidden="true">
-            {index + 1}
+          <span className={rowStyles.stepLabel}>
+            <span className={rowStyles.stepNumber} aria-hidden="true">
+              {/* A TICK ONCE IT IS ANSWERED — the numeral says where, the tick says done. */}
+              {step.state === 'done' ? <Check size={12} /> : index + 1}
+            </span>
+            {step.label}
+            {/*
+              THE STATE IN WORDS, FOR ANYBODY NOT READING THE WEIGHT OR THE TICK
+              (WCAG 2.2 — colour and weight are never the only carrier).
+            */}
+            {step.state !== 'next' && (
+              <span className={rowStyles.visuallyHidden}>
+                {' '}
+                {step.state === 'done' ? strings.tablet.stepDone : strings.tablet.stepNow}
+              </span>
+            )}
           </span>
-          {step.label}
+          {/* THE THING THE LABEL ABOVE IT NAMES, in the same column, always. */}
+          <span className={rowStyles.stepControl}>{controls[step.key]}</span>
           {/*
-            THE STATE IN WORDS, FOR ANYBODY NOT READING THE WEIGHT OR THE TICK
-            (WCAG 2.2 — colour and weight are never the only carrier).
+            THE ARROW BETWEEN THE STEPS IS DECORATION — drawn, hidden from
+            assistive technology, and gone entirely once the columns stack.
           */}
-          {step.state !== 'next' && (
-            <span className={rowStyles.visuallyHidden}>
-              {' '}
-              {step.state === 'done' ? strings.tablet.stepDone : strings.tablet.stepNow}
+          {index < steps.length - 1 && (
+            <span className={rowStyles.stepArrow} aria-hidden="true">
+              <ArrowRight size={14} />
             </span>
           )}
         </li>
@@ -2027,12 +2146,6 @@ export function AgreementRow({
 
   return (
     <li key={row.agreementId} className={rowStyles.row} data-testid={`pushable-${row.agreementId}`}>
-      {/*
-        THE ORDER, BEFORE ANYTHING ELSE ON THE ROW. It is full width and first
-        because it describes all three columns beneath it (Carl, 7 Sep 2026).
-      */}
-      <SendSteps desk={desk} row={row} />
-
       {/* WHO THIS IS. */}
       <div className={rowStyles.identity}>
         {showPatientName && <strong>{row.patientName}</strong>}
@@ -2125,93 +2238,12 @@ export function AgreementRow({
       </div>
 
       {/*
-        WHO IS SIGNING, SET AT THE DESK — before the push, never on the tablet.
-
-        ALIVE ON EVERY ROW, PREPARED OR NOT (Carl, 7 Sep 2026). It used to die
-        on `particularsLocked`, and since an arrival locks its particulars as
-        it is posted that meant every row on this list: the mother who brought
-        her son met a dead button. Who signs is still a locked particular and
-        is still never EDITED — after the lock the server supersedes, which is
-        what the panel says before anybody types.
+        THE ORDER, AND THE THREE CONTROLS IT NUMBERS, IN ONE BAND (Carl, 10 Sep
+        2026). Full width and beneath the facts, in the place the controls
+        already stood: who this is, what the visit is, then what to do about it
+        — with each step's label sitting directly over the control it names.
       */}
-      <div className={rowStyles.who}>
-        {/*
-          THE ROW'S PRIMARY ACTION UNTIL IT IS ANSWERED (Carl, 7 Sep 2026:
-          "change the workflow to 'who is signing' only -- after that is
-          actioned, enable the select tablet and send button"). While nobody
-          has confirmed, this is the only thing on the row that can be pressed
-          and it looks like it; once confirmed it drops back to a quiet way of
-          changing an answer that has already been given.
-        */}
-        <Button
-          variant={row.assignorConfirmedAt ? 'subtle' : 'primary'}
-          disabled={!desk.canSend}
-          onClick={() => (desk.whoFor === row.agreementId ? desk.closeWho() : desk.openWho(row))}
-          data-testid={`who-open-${row.agreementId}`}
-        >
-          <UserRound size={14} aria-hidden="true" />
-          {desk.whoFor === row.agreementId ? strings.tablet.whoClose : strings.tablet.whoOpen}
-        </Button>
-      </div>
-
-      {/*
-        WHERE IT GOES. Send is dead until the row can actually go — a control
-        that can only fail is a control that teaches people the page is broken
-        (CLAUDE.md §6). Blocked, its title carries the reason as a tooltip; the
-        reason itself is stated once, in the full-width band below.
-      */}
-      <div className={rowStyles.send}>
-        <SelectInput
-          id={`target-${row.agreementId}`}
-          aria-label={strings.tablet.sendChoose}
-          value={desk.target[row.agreementId] ?? ''}
-          /*
-           * DEAD UNTIL WHO IS SIGNING HAS BEEN ANSWERED. The server says the
-           * same thing (`assignor_not_confirmed` makes the row unpushable), and
-           * this states it here too rather than depending on that: the workflow
-           * is "who is signing, then choose a tablet", and a control that can
-           * only fail teaches people the page is broken (CLAUDE.md §6).
-           */
-          disabled={
-            !desk.canSend
-            || !row.pushable
-            || !row.assignorConfirmedAt
-            || desk.free.length === 0
-            || desk.busyId !== null
-          }
-          onChange={(e) => desk.setTarget((t) => ({ ...t, [row.agreementId]: e.target.value }))}
-          data-testid={`target-${row.agreementId}`}
-        >
-          <option value="">{strings.tablet.sendChoose}</option>
-          {desk.free.map((device) => (
-            <option key={device.id} value={device.id}>
-              {device.label}
-            </option>
-          ))}
-        </SelectInput>
-        <Button
-          variant="primary"
-          disabled={
-            !desk.canSend
-            || !row.pushable
-            || !row.assignorConfirmedAt
-            || !desk.target[row.agreementId]
-            || desk.busyId !== null
-          }
-          title={
-            row.pushable ? undefined : blockedMessage(row.blockedReason, { providerType: row.providerType })
-          }
-          onClick={() => void desk.send(row)}
-          data-testid={`send-${row.agreementId}`}
-        >
-          <Send size={14} aria-hidden="true" />
-          {desk.busyId === row.agreementId
-            ? strings.tablet.sending
-            : row.pushable
-              ? strings.tablet.sendAction
-              : strings.tablet.sendBlocked}
-        </Button>
-      </div>
+      <SendSteps desk={desk} row={row} />
 
       {/*
         THE REASON IT CANNOT GO, on the row, always — never only after somebody

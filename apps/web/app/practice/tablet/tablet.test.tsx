@@ -980,6 +980,78 @@ describe('/practice/tablet — send to the tablet', () => {
     // The state is SPOKEN as well as shown, so weight is never the only
     // carrier (WCAG 2.2).
     expect(who.textContent).toContain(strings.tablet.stepNow);
+    // AND EACH STEP CARRIES THE CONTROL IT NAMES (Carl, 10 Sep 2026) — the
+    // three controls are inside the three steps, not laid out beneath them.
+    expect(who.contains(screen.getByTestId(`who-open-${UNCONFIRMED.agreementId}`))).toBe(true);
+    expect(tablet.contains(screen.getByTestId(`target-${UNCONFIRMED.agreementId}`))).toBe(true);
+    expect(send.contains(screen.getByTestId(`send-${UNCONFIRMED.agreementId}`))).toBe(true);
+  });
+
+  /**
+   * THE LABEL IS OVER THE THING IT NAMES (Carl, 10 Sep 2026, from a mock-up:
+   * three aligned columns, "Who is signing" over the Who is signing button,
+   * "Choose a tablet" over the select, "Send" over Send, an arrow between).
+   *
+   * WHY A STRUCTURAL TEST RATHER THAN A VISUAL ONE. The first cut laid the
+   * numbered strip out above the row and the controls out below it — two
+   * independent layouts, so a number sat over whatever happened to be under it
+   * at that width. jsdom cannot measure a grid column, so what this pins is the
+   * thing the grid is built on: one list item per step, holding that step's
+   * label and that step's control and NOTHING of any other step's. Two elements
+   * in one list item cannot be pulled into different columns; two elements in
+   * two layouts can.
+   */
+  it('each_step_label_sits_in_the_same_column_as_its_control', async () => {
+    signedInAtPractice();
+    const id = READY.agreementId;
+    stubFetch({ rows: [READY] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    /*
+     * WAIT FOR THE DATA, NOT THE ELEMENT (wow.md §2.6). The select is drawn
+     * with the rows; its options arrive on the devices fetch, which lands
+     * separately. Waiting for an option proves the row is fully rendered.
+     */
+    const target = (await screen.findByTestId(`target-${id}`)) as HTMLSelectElement;
+    await waitFor(() => expect(target.options.length).toBeGreaterThan(1));
+
+    const steps = [
+      {
+        key: 'who',
+        label: strings.tablet.stepWhoIsSigning,
+        control: screen.getByTestId(`who-open-${id}`),
+      },
+      { key: 'tablet', label: strings.tablet.stepChooseTablet, control: target },
+      { key: 'send', label: strings.tablet.stepSend, control: screen.getByTestId(`send-${id}`) },
+    ];
+
+    steps.forEach((step, index) => {
+      const item = screen.getByTestId(`step-${step.key}-${id}`);
+
+      // THE LABEL IS THE FIRST THING IN THE STEP, AND THE CONTROL COMES AFTER
+      // IT — which is what the grid draws as one column, label above control.
+      const label = item.firstElementChild!;
+      expect(label.textContent).toContain(step.label);
+      expect(item.contains(step.control)).toBe(true);
+      expect(
+        label.compareDocumentPosition(step.control) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+
+      // AND NOTHING OF ANY OTHER STEP IS IN THIS COLUMN.
+      steps
+        .filter((other) => other.key !== step.key)
+        .forEach((other) => expect(item.contains(other.control)).toBe(false));
+
+      /*
+       * THE ARROW IS INSIDE THE STEP IT POINTS OUT OF, and there is no fourth
+       * one hanging off the end: label, control and (for the first two) an
+       * arrow, drawn and hidden from assistive technology.
+       */
+      expect(item.childElementCount).toBe(index < steps.length - 1 ? 3 : 2);
+      if (index < steps.length - 1) {
+        expect(item.lastElementChild!.getAttribute('aria-hidden')).toBe('true');
+      }
+    });
   });
 
   it('the numbered workflow moves on as each step is answered', async () => {
@@ -1004,7 +1076,8 @@ describe('/practice/tablet — send to the tablet', () => {
       'next',
     );
 
-    // A TABLET CHOSEN — and Send is the only thing left.
+    // A TABLET CHOSEN — and Send is the only thing left. The select is inside
+    // the step it belongs to now, which is where this reaches for it.
     fireEvent.change(screen.getByTestId(`target-${CONFIRMED.agreementId}`), {
       target: { value: TABLET.id },
     });
