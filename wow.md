@@ -51,9 +51,41 @@ includes it in the next commit whenever it has changed (a `docs(notes)` commit
 of its own if nothing else is going out), scanning the diff first for anything
 that looks like a secret.
 
+## 8. Background commands, and the shells that wait on them (11 Sep 2026)
+
+Two rules, both learned by losing hours to them.
+
+**Never pipe a background command into `tail` or `head` if anything is watching
+its output.** A pipe buffers everything until the command exits, so the output
+file stays empty for the whole run — and if the command never exits, the output
+never arrives at all. On 11 Sep a Jest e2e run was started as
+`npx jest ... 2>&1 | tail -40` with a second shell polling that output file for
+the string `Test Suites:`. The pipe guaranteed the string could never appear
+while the run was alive, so the two deadlocked and sat there for four hours: one
+holding output, the other waiting for it. Let a background command write its
+output plainly; read the tail from the file afterwards if the volume is a
+problem.
+
+**A waiter watches for completion, not for a string.** Polling a log for text is
+a guess about output that a buffer, a crash, a changed summary line or a
+non-zero exit can each falsify — and the waiter then spins forever, because
+nothing tells it the thing it waits for can no longer happen. Prefer the
+harness: a background task notifies on completion by itself, so wait for the
+notification rather than building a `until grep ...; do sleep 5; done` loop. If
+a poll is genuinely unavoidable, bound it with a maximum wait and check the
+process is still alive on every pass.
+
+**Staging and committing are ONE shell invocation.** `git add` in one call and
+`git commit` in the next leaves a window where a parallel agent stages its own
+work into the same index, and the commit carries both. It happened twice on
+4 Sep and again on 11 Sep. Stage by explicit path and commit in the same
+invocation: `git add <paths> && git commit -m ...`. This is §5 enforced at the
+shell rather than in the brief.
+
 ## Change log
 | Date | Change |
 |---|---|
 | 7 Sep 2026 | File created: review-before-ready (§1–2), mechanical commit gating (§3), resume-don't-restart (§4), disjoint paths (§5), test paths in reports (§6). |
 | 7 Sep 2026 | §7: Carl's notes file is committed with every push. |
 | 7 Sep 2026 | §2 item 6: added "wait for the data, not the element" after a second-fetch race failed CI four times in one weekend. |
+| 11 Sep 2026 | §8: background commands never pipe into `tail`/`head`; waiters watch for completion, not a string; staging and committing are one shell invocation. |
