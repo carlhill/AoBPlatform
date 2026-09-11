@@ -3360,3 +3360,66 @@ session.**
   this week's spend.
 - Do not poll. The ten-minute limit-check loop paid a full context round trip on
   every wake to learn nothing; one wake at the reset time does the same job.
+
+## The e2e suite runs against the DEV database and wipes it (11 Sep 2026)
+
+Checked before running the open-handle detector on the post-service spec, and
+the answer stopped that run.
+
+There is no separate test database. `apps/core/jest.e2e.config.js` sets no
+database of its own, nothing in `test/` overrides `DATABASE_URL`, and the only
+env file present is `apps/core/.env` — the same
+`postgresql://…@127.0.0.1:21020/aobplatform?schema=core` the running dev app
+uses. The config even says so: "Suites share one real Postgres."
+
+The suites are not gentle with it. Unfiltered `deleteMany({})` calls empty whole
+tables — patient, agreement, assignor, provider, practice, arrival,
+captureRequest, correspondence, serviceRecord, vaultOutbox — and a few specs
+issue raw `DELETE FROM` against the portal tables. The post-service spec alone
+has twelve. So **a single e2e run destroys every seeded practice, patient and
+queue row on the dev database**, including the five post-service rows waiting to
+be tested.
+
+What to do about it, in order of value:
+
+1. Give e2e its own database. A second database on the same container costs
+   nothing: point the suite at `aobplatform_test` through a `.env.test` that
+   `jest.e2e.config.js` loads in `setupFiles`, and run `migrate deploy` against
+   it. Every wipe then falls on data nobody is looking at, and `maxWorkers: 1`
+   can be revisited separately.
+2. Until that lands, treat any e2e run as destructive. Re-seed afterwards with
+   `scripts/dev/arrive.sh` and `scripts/dev/service-rendered.sh`, and never run
+   one while Carl is mid-test.
+3. Separately, the post-service spec appeared to hang on 11 Sep. The pipe to
+   `tail` explains why nothing was VISIBLE (wow.md §8), but not why the process
+   was still alive after four hours with sixty seconds of CPU. Run it with
+   `--detectOpenHandles` once item 1 makes that safe.
+
+## Who is signing: a saved change loses the patient's place in the queue (Carl, 11 Sep 2026)
+
+Carl: "when updating the patient card with who is signing, it saves correctly
+but loses its place in the list on the page." Diagnosed, not yet fixed.
+
+**Cause.** A party change supersedes rather than edits (D-2026-09-11-01,
+ASSIGNOR-RULES rule 2). `createSupersedingDraft` calls `tx.agreement.create`
+with no `createdAt`, so the successor takes `now()`. The desk then reads
+`readPushableRows`, which orders by `agreement.createdAt` ascending
+(`tablet-sessions.service.ts`), and the superseded row has already left the list
+(rule 4). Net effect: the patient's card vanishes from where reception was
+looking and reappears at the very bottom of the queue, because the queue is
+ordered by when the AGREEMENT was made rather than by when the PATIENT arrived.
+The React keys are stable and the save itself is correct — only the position
+moves.
+
+**Why it matters beyond tidiness.** The desk is a picture of who is waiting. A
+patient who has been there longest belongs at the top; an internal artefact of
+supersession should not send them to the back of the room. Reception loses their
+place mid-task and has to hunt for the card they just edited.
+
+**Likely fix, for a decision before building.** Order the queue by the patient's
+arrival — the appointment or arrival time already joined in `readPushableRows` —
+and fall back to `agreement.createdAt` only where there is no arrival. The
+alternative, carrying the head-of-chain `createdAt` onto each successor, keeps
+the ordering column but makes supersession write a backdated row, which is worse
+evidence for the same result. Needs a named test that a superseded row's
+successor holds the position its predecessor held.
