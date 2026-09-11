@@ -19,9 +19,27 @@ export class CaptureService {
   ) {}
 
   /**
-   * Opens a capture request for a draft agreement. Multiple channels may be
-   * open at once (send SMS and email where both are held — C3.2); completing
-   * any one closes the rest (FR-2.7).
+   * Opens a capture request for an agreement that has not been signed yet.
+   * Multiple channels may be open at once (send SMS and email where both are
+   * held — C3.2); completing any one closes the rest (FR-2.7).
+   *
+   * `awaiting_signature` IS ALLOWED, AND WAS NOT UNTIL 11 SEPTEMBER 2026 (the
+   * post-service push, Carl 11 Sep 2026).
+   *
+   * The guard used to admit only `draft` and `verification_pending`, which was
+   * true of every agreement that reached it: the remote cascade opened its
+   * channel BEFORE locking. The post-service push locks first — it has to,
+   * because reception hands the tablet over and REQ-REG-06 says the particulars
+   * are complete and locked before a signature control can enable — so an
+   * agreement waiting for a signature at the desk could not then be offered a
+   * link when the patient left instead. That is the "platform slows evidence,
+   * never service" case backwards (REQ-REC-04).
+   *
+   * IT WIDENS NOTHING ELSE. An agreement that is signed, stored, superseded,
+   * declined or expired is still refused, which is what the guard is for; the
+   * duplicate-channel check is unchanged (FR-2.7); and the draft-to-
+   * verification_pending transition below still only fires on a draft, so a
+   * locked agreement's status is untouched by opening a channel to it.
    */
   async open(practiceId: string, input: { agreementId: string; channel: string }) {
     const remote = REMOTE_CHANNELS.includes(input.channel);
@@ -30,7 +48,7 @@ export class CaptureService {
     const request = await this.prisma.withPractice(practiceId, async (tx) => {
       const agreement = await tx.agreement.findFirst({ where: { id: input.agreementId } });
       if (!agreement) throw new NotFoundException('Agreement not found.');
-      if (!['draft', 'verification_pending'].includes(agreement.status)) {
+      if (!['draft', 'verification_pending', 'awaiting_signature'].includes(agreement.status)) {
         throw new BadRequestException(`Cannot open capture for an agreement in status ${agreement.status}.`);
       }
       const practice = await tx.practice.findFirst({});

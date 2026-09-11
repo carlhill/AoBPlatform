@@ -1715,11 +1715,63 @@ model ServiceRecord {
   captureSuppressedAt     DateTime?
   createdAt               DateTime  @default(now())
 
+  // ---------------------------------------------------------------------------
+  // THE POST-SERVICE PUSH (Carl, 11 Sep 2026; TODO.md "Two front doors" (b)).
+  //
+  // A rendered service reaches the platform on its way OUT as well as through
+  // the invoice sync: `POST /arrivals/service-rendered` says the patient has
+  // been seen, names the day (D5) and the MBS item numbers (D6b), and the
+  // versioned post-service table decides whether a second signature is owed.
+  // These columns are that decision and its consequences.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * THE PRACTITIONER AT THIS LOCATION — the anchor an agreement is made on
+   * (Carl, 7 Sep 2026). `providerId` above is the legacy practice-wide row the
+   * PMS invoice mirror still fills; this is what the post-service draft is
+   * anchored to, resolved at receipt from whichever key the sender used.
+   */
+  affiliationId           String?   @db.Uuid
+  /// `covered` | `covered_by_enduring` | `episodic_post`, and the rule key that decided.
+  visitDecision           String?
+  decisionReason          String?
+  /// Hard rule 14 — which table gave the answer above.
+  policyVersion           String?
+  /**
+   * WHAT SAYS THE PATIENT OWES NOTHING — the signed pre-agreement for this
+   * practitioner x patient x day, or the live ongoing agreement. Set only on
+   * the two `covered` answers, and the database insists on it
+   * (`service_records_covered_names_what_covered_it`) so the queue line can
+   * LINK to the agreement rather than merely assert one exists.
+   */
+  coveringAgreementId     String?   @db.Uuid
+  /// The in-practice request that put the post-agreement on reception's desk.
+  captureRequestId        String?   @db.Uuid
+  /// `connector` | `dev` | `reception`. A real practice's software, a dev script
+  /// and a person at the desk must never look alike in the evidence.
+  source                  String?
+  /**
+   * WHOSE HANDS TYPED IT, when a person's did. The Keycloak subject, never a
+   * name — an id from a token the realm signed is evidence, a name from a form
+   * is an assertion. Null for every machine push, and the database says so.
+   */
+  receivedByPrincipalId   String?
+  /**
+   * WHEN THE PLATFORM LEARNED THE SERVICE HAD BEEN RENDERED, by the practice's
+   * clock. The base of the thirty-minute clock in `REQ-CHASE-05`'s first rung —
+   * distinct from `serviceDate`, which is a plain calendar day (D5) and cannot
+   * carry a time.
+   */
+  serviceRenderedAt       DateTime?
+  /// When the automated cascade was entered, so it is entered once.
+  chaseStartedAt          DateTime?
+
   decisions ReconciliationDecision[]
 
   @@unique([practiceId, pmsInvoiceKey])
   @@index([practiceId])
   @@index([serviceDate])
+  @@index([practiceId, serviceRenderedAt])
   @@map("service_records")
 }
 

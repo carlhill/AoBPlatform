@@ -94,7 +94,10 @@ describe('the visit policy — what an arrival needs signed (hard rules 6 and 14
     for (const input of everyInput()) {
       expect(decideVisitAgreement(input).policyVersion).toBe(VISIT_POLICY_VERSION);
     }
-    expect(VISIT_POLICY_VERSION).toBe('visit-policy-1');
+    // Bumped to `visit-policy-2` on 11 Sep 2026 when the post-service table
+    // joined the same file. One version for one file: both tables move
+    // together, so a record can never name a table that did not exist.
+    expect(VISIT_POLICY_VERSION).toBe('visit-policy-2');
   });
 
   it('names the rule that decided, so the console can say why', () => {

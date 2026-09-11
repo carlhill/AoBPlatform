@@ -360,3 +360,42 @@ export interface PatientSearchResult {
    */
   readonly patientRecordNumber: string | null;
 }
+
+/**
+ * THE SERVICE HAS BEEN RENDERED — what the platform did about it (Carl,
+ * 11 Sep 2026; TODO.md "Two front doors" decision (b), "Still to build:
+ * Post-service push").
+ *
+ * The second moment on the same desk. The patient has seen the practitioner,
+ * the practice's software says what was done, and the versioned post-service
+ * table decides whether a second signature is owed. The answer comes back in
+ * the response for exactly the reason an arrival's does: the connector's
+ * author should be able to see the platform disagreeing with their assumption
+ * rather than guessing.
+ *
+ * NO AMOUNT ANYWHERE ON THIS SHAPE (hard rule 4). A rendered service carries a
+ * date and item numbers; the benefit is not in the s 65C data set and adding
+ * it is risk.
+ */
+export interface ServiceRenderedReceipt {
+  readonly serviceRecordId: string;
+  readonly patientId: string;
+  readonly decision: {
+    readonly outcome: 'covered' | 'covered_by_enduring' | 'episodic_post';
+    readonly reason: string;
+  };
+  /**
+   * The post-agreement drafted for this service. NULL on both `covered`
+   * answers — nothing was drafted, and that is the answer.
+   */
+  readonly agreementId: string | null;
+  /**
+   * WHAT SAYS THE PATIENT OWES NOTHING, so the queue line can LINK to it
+   * rather than assert it (CLAUDE.md section 7). Null on `episodic_post`.
+   */
+  readonly coveringAgreementId: string | null;
+  /** Hard rule 14: the version of the table that decided. */
+  readonly policyVersion: string;
+  /** True on a retry: this service had already been processed. */
+  readonly repeat: boolean;
+}

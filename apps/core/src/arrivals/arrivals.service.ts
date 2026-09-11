@@ -1,15 +1,25 @@
-import { BadRequestException, HttpException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  HttpException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import type { Agreement as DbAgreement } from '@prisma/client';
 import type {
   ArrivalPreview,
   ArrivalProviderChoice,
   ArrivalReceipt,
   RefusedArrival,
+  ServiceRenderedReceipt,
 } from '@aobplatform/contracts';
 import { ARRIVAL_SOURCE_TYPED_BY_A_PERSON } from '@aobplatform/contracts';
 import {
   BILLING_ROLES_VERSION,
   buildAssignorForAnother,
+  decidePostServiceAgreement,
   decideVisitAgreement,
   detailTypeForPatientField,
   HardRuleViolation,
@@ -33,7 +43,8 @@ import {
   type AgreementAnchor,
 } from '../affiliations/agreement-anchor';
 import type { Actor } from '../auth/actor.decorator';
-import { ArrivalDto, ArrivalPreviewDto } from './arrivals.dto';
+import type { ChangeAssignorDto } from '../agreements/agreements.dto';
+import { ArrivalDto, ArrivalPreviewDto, ServiceRenderedDto } from './arrivals.dto';
 
 /**
  * THE ARRIVAL IS THE PRACTICE'S SOFTWARE SPEAKING, NOT A PERSON. Nobody at the
@@ -98,6 +109,37 @@ const MEDICARE_FIELD = /medicare/i;
  * than silently indulged (hard rules 6 and 14).
  */
 const DECISION_FIELD = /agreement.?type|visit.?decision|^enduring|pathway/i;
+
+/**
+ * AND ANY FIELD THAT CARRIES MONEY (hard rule 4, REQ-REG-04).
+ *
+ * A rendered service is the one message in this module that comes off an
+ * INVOICE, and an invoice has a figure on it. An assignment of benefit does
+ * not: the s 65C data set contains no benefit and no dollar amount, and putting
+ * one on an agreement artefact is unnecessary risk. Refused on the NAME, out
+ * loud, exactly as the Medicare fence is — because the mistake arrives under a
+ * new spelling every time, and a silently stripped field teaches its sender
+ * nothing. Named test: `service_rendered_endpoint_rejects_an_amount`.
+ */
+const AMOUNT_FIELD = /amount|benefit|fee|rebate|price|charge|\$|gst|total/i;
+
+/**
+ * The types a pre-agreement for the day can be. `treatment_plan` is here with
+ * `episodic_pre` because a treatment plan assignment covers the services under
+ * its plan the same way — and both are `isPre` to the rule set's C5/C6.
+ */
+const PRE_AGREEMENT_TYPES_FOR_COVERAGE = ['episodic_pre', 'treatment_plan'] as const;
+
+/**
+ * D5 OFF THE LOCKED SNAPSHOT. The particulars are the agreement's own record of
+ * what it says; reading the column instead would be reading what the platform
+ * holds rather than what was hashed (rule 13).
+ */
+function serviceDateOfAgreement(agreement: DbAgreement): string | undefined {
+  const particulars = agreement.particulars as { serviceDate?: unknown } | null;
+  const value = particulars?.serviceDate;
+  return typeof value === 'string' ? value : undefined;
+}
 
 /** The five details an arrival carries, in the mirror's own column names. */
 const MIRRORED_FIELDS = [
@@ -1067,7 +1109,16 @@ export class ArrivalsService {
 
   // -------------------------------------------------------------------------
 
-  private assertNothingForbiddenWasSent(sentFieldNames: string[], source?: string): void {
+  /**
+   * THE TWO FENCES BOTH DOORS PUT UP (hard rules 1 and 4).
+   *
+   * Shared rather than copied, because a fence enforced at one door of two is a
+   * fence with a door in it. Both refuse OUT LOUD rather than letting
+   * `whitelist: true` strip the field, for the same reason
+   * `PATCH /patients/:id/details` does: stripping is right for a typo and wrong
+   * for a forbidden field, whose sender has to learn it once.
+   */
+  private assertNoMedicareOrAmount(sentFieldNames: string[]): void {
     const medicare = sentFieldNames.filter((name) => MEDICARE_FIELD.test(name));
     if (medicare.length > 0) {
       throw new BadRequestException(
@@ -1076,6 +1127,18 @@ export class ArrivalsService {
           'address, the patient record number and contact details, and nothing else about identity.',
       );
     }
+    const money = sentFieldNames.filter((name) => AMOUNT_FIELD.test(name));
+    if (money.length > 0) {
+      throw new BadRequestException(
+        `No benefit or dollar amount belongs on an agreement artefact — ${money.join(', ')} has no place ` +
+          'here. The s 65C data set contains no amount and adding one is unnecessary risk (hard rule 4, ' +
+          'REQ-REG-04). A rendered service carries the date it was rendered and its MBS item numbers.',
+      );
+    }
+  }
+
+  private assertNothingForbiddenWasSent(sentFieldNames: string[], source?: string): void {
+    this.assertNoMedicareOrAmount(sentFieldNames);
     const decides = sentFieldNames.filter((name) => DECISION_FIELD.test(name));
     if (decides.length > 0) {
       throw new BadRequestException(
@@ -1309,4 +1372,556 @@ export class ArrivalsService {
       repeat,
     };
   }
+
+  // ---------------------------------------------------------------------------
+  // THE SECOND MOMENT — the service has been rendered
+  // ---------------------------------------------------------------------------
+
+  /**
+   * "THIS PATIENT HAS SEEN THE PRACTITIONER, AND HERE IS WHAT WAS DONE" (Carl,
+   * 11 Sep 2026; TODO.md "Two front doors" decision (b), "Still to build:
+   * Post-service push").
+   *
+   * ONE MECHANISM, TWO MOMENTS. `receive` above puts a patient on reception's
+   * desk on the way IN. This puts them back on it on the way OUT, when no
+   * pre-agreement covers the item that was billed — same device pairing, same
+   * session states, same desk, same ceremony. What is different is the data
+   * set: a post-agreement is s 65C(4) table item 6 and carries D5 (the date the
+   * service WAS rendered) and D6b (the MBS item numbers), where a
+   * pre-agreement carries D5 and D6a (REQ-REG-01). No benefit and no dollar
+   * amount on either (hard rule 4).
+   *
+   * THE TAP IS A SIGNATURE, NOT A CONFIRMATION (REQ-REG-07; TODO.md's own
+   * correction to the framing). The patient may have signed a pre-agreement an
+   * hour ago; that signature covers only what its description covered. This is
+   * a NEW agreement for THIS service and it is signed in its own right. What
+   * the earlier step DOES carry forward is that reception has already verified
+   * this person — so the second push records a FRESH staff-verified event with
+   * the same staff identity (REQ-VER-03), at zero cost to the patient.
+   *
+   * THE PMS IS NOT THE MASTER OF WHETHER A SECOND SIGNATURE IS OWED, and that
+   * separation is why this lives here rather than in a `POST /agreements` from
+   * the connector. Whether today's signed pre-agreement covers it, whether a
+   * live ongoing agreement does, or whether nothing does is answered by
+   * `decidePostServiceAgreement` — the versioned table in
+   * `packages/domain/content/visit-agreement-policy.json` — and its version
+   * travels onto the row (hard rule 14).
+   *
+   * COVERED BY AN ONGOING AGREEMENT MEANS NOTHING FOR THE PATIENT, AND NOTHING
+   * HERE FIRES A NOTICE. The reg 89AA notice is the CLAIM's business, within 24
+   * hours, MyMedicare pathway only, one-way and never chased (hard rule 7,
+   * REQ-END-05, REQ-CHASE-02). Wiring it to an invoice would put the 24-hour
+   * clock in the wrong place (CONSULTATION-CAPTURE-PLAN section 3.1).
+   *
+   * IT NEVER BLOCKS CARE (hard rule 8, REQ-REC-04). The service has already
+   * happened. Every failure below leaves the patient seen and billable; the
+   * worst case is that the evidence is slower and reception bills privately or
+   * captures later.
+   *
+   * IN PHASES, NOT ONE TRANSACTION, for the reason `receive` gives at length:
+   * `createDraft`, `CaptureService.open` and `lockParticulars` each open their
+   * OWN transaction because they own their domain guards, and a row created
+   * inside an outer transaction is invisible to them until it commits.
+   */
+  async serviceRendered(
+    practiceId: string,
+    dto: ServiceRenderedDto,
+    sentFieldNames: string[],
+    actor?: Actor,
+  ): Promise<ServiceRenderedReceipt> {
+    this.assertNoMedicareOrAmount(sentFieldNames);
+
+    // -----------------------------------------------------------------------
+    // PHASE 0 — read what already exists, OUTSIDE any transaction the writes
+    // will need. Coverage is other services' answers and they open their own.
+    // -----------------------------------------------------------------------
+    const existing = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.serviceRecord.findFirst({ where: { practiceId, pmsInvoiceKey: dto.idempotencyKey } }),
+    );
+    /*
+     * A REPEAT IS A RETRY, NOT A SECOND VISIT. A connector on a practice's ADSL
+     * resends; one service must never become two post-agreements and the same
+     * person twice on reception's desk. A row that has already been DECIDED
+     * short-circuits; a row the invoice sync created without a decision (the
+     * remote cascade's own path) falls through to be decided here, because the
+     * patient turning up at the desk is new information about a service the
+     * platform already knew about.
+     */
+    if (existing?.visitDecision) return this.serviceReceiptFor(existing, true);
+
+    const { anchor, patient } = await this.prisma.withPractice(practiceId, async (tx) => ({
+      anchor: await this.findAnchor(tx, practiceId, dto),
+      patient: await tx.patient.findFirst({
+        where: { practiceId, patientRecordNumber: dto.pmsPatientRecordNumber },
+      }),
+    }));
+
+    /*
+     * WHOSE NUMBER DOES THE CLAIM GO UNDER — the same question, the same
+     * predicate, the same content file as the arrival (Carl's ruling, 5-7 Sep
+     * 2026). A service rendered by a practice nurse on a "for and on behalf of"
+     * item is billed under somebody else's number, so an agreement in the
+     * nurse's name would evidence a consent matching no claim anybody can make.
+     *
+     * NOT RECORDED AS A REFUSED ROW, unlike the arrival's, and the difference
+     * is deliberate: a refused arrival holds the PMS's own message so reception
+     * can replay it with a provider named, and there is a queue built on that.
+     * There is no such queue for a rendered service, and inventing a half of
+     * one — a stored refusal nothing reads — would be evidence with no reader.
+     * The reason CODE travels in the 422 so the sender sees it.
+     */
+    if (!mayBeProviderOnAgreement(anchor.billingRole)) {
+      throw new ArrivalRefusal(
+        'provider_not_servicing',
+        `${anchor.name} is recorded as "${anchor.billingRole}" at this practice and cannot be the provider ` +
+          'on an agreement — the claim goes under somebody else’s provider number. Send the service under ' +
+          'the provider the claim will go under.',
+        { affiliationId: anchor.affiliationId, billingRole: anchor.billingRole },
+      );
+    }
+    if (!anchor.affiliationId) {
+      throw new ArrivalRefusal(
+        'provider_not_anchored',
+        `${anchor.name} is not linked to a practitioner at one of this practice’s locations, so an ` +
+          'agreement naming them could not say who signed for whom or where (s 65C(5)(a)).',
+        {},
+      );
+    }
+
+    /*
+     * THE PATIENT IS NOT CREATED FROM A BILLING MESSAGE (REQ-DATA-10). An
+     * arrival refreshes the mirror because the PMS is the source of truth and
+     * an arrival is the moment it speaks about a person. This message speaks
+     * about a SERVICE, carries none of the five details, and a record invented
+     * from it would be a patient record with no name anybody checked. The fix
+     * is named rather than implied (CLAUDE.md section 7).
+     */
+    if (!patient) {
+      throw new NotFoundException(
+        `This practice has no patient with record number ${dto.pmsPatientRecordNumber}. A rendered service ` +
+          'carries no patient details and never creates a record from a billing message — send the ' +
+          'arrival for this patient first (POST /arrivals), which is where the mirror is refreshed.',
+      );
+    }
+
+    /*
+     * THE TWO COVERAGE QUESTIONS, ASKED BEFORE ANYTHING IS WRITTEN.
+     *
+     * BOTH ARE PER PRACTITIONER AND PATIENT, never per practice (hard rule 6,
+     * REQ-END-01) — and the enduring one is asked about the PERSON, so a GP at
+     * two of this practice's sites is one practitioner.
+     */
+    const dayKey = {
+      patientId: patient.id,
+      practitionerId: anchor.practitionerId,
+      affiliationId: anchor.affiliationId,
+      serviceDate: dto.serviceDate,
+    };
+    const coveringPreAgreementId = await this.preAgreementForTheDay(practiceId, dayKey, 'signed');
+    const enduringCoverage = await this.enduring.coverage(practiceId, {
+      patientId: patient.id,
+      practitionerId: anchor.practitionerId ?? undefined,
+    });
+
+    const decision = decidePostServiceAgreement({
+      signedPreAgreementForProviderPatientAndDay: coveringPreAgreementId !== null,
+      activeEnduringForProviderAndPatient: enduringCoverage.covered,
+    });
+    const coveringAgreementId =
+      decision.outcome === 'covered'
+        ? coveringPreAgreementId
+        : decision.outcome === 'covered_by_enduring'
+          ? (enduringCoverage.agreementIds[0] ?? null)
+          : null;
+
+    /*
+     * A `covered_by_enduring` ANSWER WITH NOTHING TO NAME IS NOT AN ANSWER. The
+     * database refuses it (`service_records_covered_names_what_covered_it`) and
+     * so does this, one sentence earlier and in words: the queue line has to
+     * LINK to what covered the visit rather than assert that something did.
+     */
+    if (decision.outcome !== 'episodic_post' && !coveringAgreementId) {
+      throw new InternalServerErrorException(
+        `The post-service table answered "${decision.outcome}" for this service but no covering agreement ` +
+          'could be named. Nothing was written; the service is still billable and reception can capture ' +
+          'after the fact (REQ-REC-04).',
+      );
+    }
+
+    // -----------------------------------------------------------------------
+    // PHASE 1 — the service row, the decision and its event, in ONE
+    // transaction; then commit so the services below can see them.
+    // -----------------------------------------------------------------------
+    const renderedAt = new Date();
+    const decided = await this.prisma.withPractice(practiceId, async (tx) => {
+      const written = {
+        patientId: patient.id,
+        providerId: anchor.legacyProviderId,
+        affiliationId: anchor.affiliationId,
+        serviceDate: new Date(dto.serviceDate),
+        mbsItemNumbers: dto.mbsItemNumbers,
+        visitDecision: decision.outcome,
+        decisionReason: decision.reason,
+        policyVersion: decision.policyVersion,
+        coveringAgreementId,
+        /*
+         * A COVERED SERVICE IS LINKED TO WHAT COVERS IT, which is what takes it
+         * off the reconciliation queue (`ReconciliationService.outstanding`
+         * skips a record whose agreement is stored) and out of the remote
+         * cascade's orphan scan. The same move `AutoCaptureService` already
+         * makes for an enduring-covered invoice.
+         */
+        agreementId: coveringAgreementId,
+        source: dto.source,
+        /*
+         * WHOSE HANDS TYPED IT, and NULL when nobody's did — the database
+         * insists (`service_records_principal_only_when_typed`).
+         */
+        receivedByPrincipalId:
+          dto.source === ARRIVAL_SOURCE_TYPED_BY_A_PERSON ? (actor?.id ?? null) : null,
+        serviceRenderedAt: renderedAt,
+      };
+      const record = await tx.serviceRecord.upsert({
+        where: { practiceId_pmsInvoiceKey: { practiceId, pmsInvoiceKey: dto.idempotencyKey } },
+        update: written,
+        create: { practiceId, pmsInvoiceKey: dto.idempotencyKey, ...written },
+      });
+
+      /*
+       * THE EVENT, IN THIS TRANSACTION (FR-11.2, hard rule 11). Ids, the
+       * decision, the policy version, and the COUNT of item numbers rather than
+       * the numbers themselves — the numbers are a particular of the agreement
+       * and that is where they belong (REQ-LOG-08). No name, no address, no
+       * Medicare number (none is held), no amount (hard rule 4).
+       */
+      await enqueueVaultEvent(tx, {
+        type: 'service.rendered',
+        actor: actorFor(actor),
+        subject: { type: 'ServiceRecord', id: record.id },
+        payload: {
+          practiceId,
+          patientId: patient.id,
+          affiliationId: anchor.affiliationId ?? '',
+          practitionerId: anchor.practitionerId ?? '',
+          locationId: anchor.locationId ?? '',
+          source: dto.source,
+          serviceDate: dto.serviceDate,
+          /* D6b's SHAPE, not its content. How many items, never which. */
+          mbsItemCount: dto.mbsItemNumbers.length,
+          postServiceDecision: decision.outcome,
+          decisionReason: decision.reason,
+          policyVersion: decision.policyVersion,
+          decidedBy: 'post_service_policy',
+          coveringAgreementId: coveringAgreementId ?? '',
+          receivedBy: actor?.id ?? '',
+          receivedByType: actor?.principalType ?? 'system',
+        },
+      });
+
+      return record;
+    });
+
+    if (decision.outcome !== 'episodic_post') {
+      /*
+       * NOTHING IS DRAFTED, AND THAT IS THE ANSWER. The patient does nothing at
+       * checkout: today's signed pre-agreement, or a live ongoing agreement,
+       * already assigns the benefit for the service they have just had. Asking
+       * again would collect a second consent for one service.
+       *
+       * THE LINE THAT SAYS SO belongs to the desk, which reads it off the row:
+       * `visitDecision`, `decisionReason` and `coveringAgreementId` are all
+       * here, so the queue can say "Covered by today's agreement" and LINK to
+       * the agreement rather than assert one exists.
+       */
+      this.logger.log(
+        `Service ${decided.id}: ${decision.outcome} (${decision.reason}) — nothing drafted, nothing to sign.`,
+      );
+      return this.serviceReceiptFor(await this.rereadService(practiceId, decided.id), false);
+    }
+
+    // -----------------------------------------------------------------------
+    // PHASE 2 — the draft, through the service that owns the guards.
+    // -----------------------------------------------------------------------
+    const assignor = await this.prisma.withPractice(practiceId, (tx) =>
+      this.selfAssignorForPatient(tx, practiceId, patient),
+    );
+    const draft = await this.agreements.createDraft(practiceId, {
+      type: 'episodic_post',
+      affiliationId: anchor.affiliationId,
+      patientId: patient.id,
+      /*
+       * D7 IS EXPLICIT AND IS NEVER INFERRED (CLAUDE.md section 3). The draft
+       * starts with the patient as their own assignor, exactly as every other
+       * door creates one; where today's pre-agreement said somebody else was
+       * signing, phase 4b re-points it below. The CONFIRMATION is deliberately
+       * NOT carried — `createDraft`'s `carried` argument is untouched — because
+       * a new agreement owes its own confirmation (ASSIGNOR-RULES rule 1).
+       */
+      assignorId: assignor.id,
+      assignorIsPatient: true,
+    });
+
+    // PHASE 3 — link AT ONCE, for the reason the arrival cascade gives: from
+    // here a crash leaves a service WITH an agreement and the existing resend
+    // path, never one that looks untouched and gets a second draft on a retry.
+    await this.prisma.withPractice(practiceId, (tx) =>
+      tx.serviceRecord.update({ where: { id: decided.id }, data: { agreementId: draft.id } }),
+    );
+
+    // PHASE 4 — the in-practice capture request. THIS is what puts them back
+    // on reception's desk, on the same tablet, for the same ceremony.
+    const opened = await this.capture.open(practiceId, { agreementId: draft.id, channel: 'in_practice' });
+    await this.prisma.withPractice(practiceId, (tx) =>
+      tx.serviceRecord.update({ where: { id: decided.id }, data: { captureRequestId: opened.captureRequestId } }),
+    );
+
+    /*
+     * PHASE 4b — THE SIGNER TODAY'S PRE-AGREEMENT ALREADY NAMED (Carl, 11 Sep
+     * 2026, step 3: "prefill from the day's pre-agreement signer ... so step
+     * one is one press; still a press").
+     *
+     * WHAT IS CARRIED AND WHAT IS NOT. The ANSWER is carried — the same person,
+     * the same relationship, the same basis, the same contact — so reception is
+     * not retyping across the desk something they typed an hour ago. The
+     * CONFIRMATION is not: `assignorConfirmedAt` stays null and the push still
+     * refuses `assignor_not_confirmed` until somebody presses step one
+     * (ASSIGNOR-RULES rule 1). A new agreement owes its own confirmation, and
+     * a prefill that also confirmed would be the platform answering a question
+     * on a receptionist's behalf.
+     *
+     * THROUGH THE SERVICE THAT OWNS THE GUARDS, so not one line of hard rule 10
+     * lives here: `changeAssignor` runs `buildAssignorForAnother`, which
+     * hard-blocks practice staff against the practice's own staff list
+     * (REQ-VUL-04, fail closed), refuses a party who has not declared full age
+     * (REQ-AGE-01), refuses a basis outside the fixed list and a party with no
+     * usable contact channel (REQ-REG-08). It never asks about capacity
+     * (REQ-VUL-05).
+     *
+     * AND IT NEVER BLOCKS THE DESK. The patient is already on reception's queue
+     * with themselves as assignor before this runs, so a party the rules engine
+     * refuses leaves a row that exists and can be fixed, rather than a draft
+     * with no capture request (hard rule 8).
+     */
+    const carriedParty = await this.signerOfTodaysPreAgreement(
+      practiceId,
+      /*
+       * ANY pre-agreement for the day, not only a signed one — because a SIGNED
+       * one would have made this service `covered` and there would be no
+       * post-agreement to prefill. The case this serves is the one that
+       * actually happens: reception drafted a pre-agreement naming the child's
+       * mother, the patient never got to the tablet before the service, and the
+       * same person is signing on the way out.
+       */
+      await this.preAgreementForTheDay(practiceId, dayKey, 'any'),
+    );
+    if (carriedParty) {
+      try {
+        await this.agreements.changeAssignor(practiceId, draft.id, carriedParty, actor);
+      } catch (err) {
+        // A refused carry-forward is not a failed capture. The row stays on the
+        // desk with the patient as their own assignor and reception answers
+        // step one themselves, which is exactly where they would have been.
+        this.logger.warn(
+          `Service ${decided.id}: could not carry today's signer onto the post-agreement — ` +
+            `reception answers "who is signing" at the desk. (${(err as Error).message})`,
+        );
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // PHASE 5 — D5 AND D6b, THEN THE LOCK (hard rule 2, REQ-REG-06).
+    //
+    // The particulars are complete and locked on the SERVER before any device
+    // sees anything, so a tablet structurally cannot hold a draft and the
+    // signature control cannot enable on one. D6a is NOT assembled: the Basic
+    // Service Description is a pre-agreement particular (REQ-REG-01 D6a,
+    // "pre-agreements only") and `prepareLock` takes D6b from the DTO instead.
+    // -----------------------------------------------------------------------
+    await this.agreements.transition(practiceId, draft.id, 'awaiting_signature');
+    await this.agreements.lockParticulars(practiceId, draft.id, {
+      serviceDate: dto.serviceDate,
+      mbsItemNumbers: dto.mbsItemNumbers,
+    });
+
+    return this.serviceReceiptFor(await this.rereadService(practiceId, decided.id), false);
+  }
+
+  /**
+   * IS THIS SERVICE ALREADY COVERED BY TODAY'S SIGNED PRE-AGREEMENT?
+   *
+   * PRACTITIONER x PATIENT x DAY, and signed — not merely drafted, because an
+   * agreement nobody put their name to assigns nothing. The practitioner rather
+   * than the affiliation, for the reason REQ-END-01's coverage read gives: a GP
+   * at two of this practice's sites is one person, and a pre-agreement made at
+   * Main Street covers the same patient seen at After Hours.
+   *
+   * THE CONTAINMENT CHECK IS DEFERRED AND THIS IS WHERE IT WOULD GO. "Is the
+   * billed item INSIDE that pre-agreement's Basic Service Description" needs
+   * the REQ-REG-03 mapping of MBS items to descriptions, which does not exist —
+   * it is the quarterly MBS Online ingest with a human-reviewed diff, a
+   * Phase-0/1 job, and CONSULTATION-CAPTURE-PLAN section 3.1 records the check
+   * as blocked on it. Until then a signed pre-agreement for the practitioner,
+   * patient and day COUNTS AS COVERING the service, which is the behaviour that
+   * plan records. Stated here as a deferral with its reference rather than left
+   * as an implicit equality.
+   */
+  private async preAgreementForTheDay(
+    practiceId: string,
+    key: {
+      patientId: string;
+      practitionerId: string | null;
+      affiliationId: string | null;
+      serviceDate: string;
+    },
+    /**
+     * `signed` for the COVERAGE question — an agreement nobody put their name
+     * to assigns nothing. `any` for the prefill, where the point is the answer
+     * reception already gave about who signs, not whether it was acted on.
+     */
+    require: 'signed' | 'any',
+  ): Promise<string | null> {
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const candidates = await tx.agreement.findMany({
+        where: {
+          patientId: key.patientId,
+          type: { in: [...PRE_AGREEMENT_TYPES_FOR_COVERAGE] },
+          ...(require === 'signed' ? { signatureEventId: { not: null } } : {}),
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (candidates.length === 0) return null;
+
+      // AND NEVER ONE THAT HAS BEEN REPLACED. A superseded agreement is a real
+      // thing that really happened, but its successor is the live one and the
+      // two must not both count (HARD-02, ASSIGNOR-RULES rule 4).
+      const successors = await tx.agreement.findMany({
+        where: { supersedesAgreementId: { in: candidates.map((a) => a.id) } },
+        select: { supersedesAgreementId: true },
+      });
+      const superseded = new Set(
+        successors.map((s) => s.supersedesAgreementId).filter((id): id is string => id !== null),
+      );
+
+      const anchors = await anchorsForAgreements(
+        tx,
+        candidates.map((a) => ({ id: a.id, affiliationId: a.affiliationId, providerId: a.providerId })),
+      );
+
+      for (const agreement of candidates) {
+        if (superseded.has(agreement.id)) continue;
+        const anchor = anchors.get(agreement.id) ?? null;
+        /*
+         * THE PERSON FIRST, THE AFFILIATION AS THE FALLBACK. An agreement made
+         * before the anchor moved to affiliations (7 Sep 2026) may resolve to no
+         * practitioner at all; comparing the affiliation is then the only true
+         * thing left to ask, and it is asked rather than nothing.
+         */
+        const samePractitioner =
+          key.practitionerId && anchor?.practitionerId
+            ? anchor.practitionerId === key.practitionerId
+            : agreement.affiliationId !== null && agreement.affiliationId === key.affiliationId;
+        if (!samePractitioner) continue;
+        /*
+         * D5 FROM THE LOCKED SNAPSHOT, and the day it was drafted where there
+         * is no snapshot yet. A SIGNED agreement is always locked, so the
+         * coverage question never takes the fallback; only the prefill does,
+         * where the agreement is still a draft and its D5 has not been written.
+         */
+        const day =
+          serviceDateOfAgreement(agreement) ?? agreement.createdAt.toISOString().slice(0, 10);
+        if (day !== key.serviceDate) continue;
+        return agreement.id;
+      }
+      return null;
+    });
+  }
+
+  /**
+   * WHO SIGNED TODAY'S PRE-AGREEMENT, as a request `changeAssignor` will accept
+   * — or null where the patient signed for themselves, which is the default the
+   * draft already has.
+   *
+   * THE 18+ DECLARATION IS REPORTED AS GIVEN, NEVER RE-ASKED (ASSIGNOR-RULES
+   * rule 9). `declaredOfFullAgeAt` on the signer record is the timestamp of a
+   * declaration the same person made about the same patient earlier the same
+   * day; carrying the fact forward is honest, and inventing one where none was
+   * made is not — so a record with no declaration carries `false` and
+   * `changeAssignor` refuses it, which lands reception back on the panel.
+   */
+  private async signerOfTodaysPreAgreement(
+    practiceId: string,
+    agreementId: string | null,
+  ): Promise<ChangeAssignorDto | null> {
+    if (!agreementId) return null;
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const agreement = await tx.agreement.findFirst({ where: { id: agreementId } });
+      if (!agreement || agreement.assignorIsPatient) return null;
+      const signer = await tx.assignor.findFirst({ where: { id: agreement.assignorId } });
+      if (!signer) return null;
+      return {
+        assignorIsPatient: false,
+        name: signer.name,
+        authorityBasis: signer.authorityBasis,
+        note: signer.authorityNote ?? undefined,
+        declaresEighteenOrOver: signer.declaredOfFullAgeAt !== null,
+        relationship: signer.relationshipToPatient ?? undefined,
+        mobile: signer.contactMobile ?? undefined,
+        email: signer.contactEmail ?? undefined,
+      } satisfies ChangeAssignorDto;
+    });
+  }
+
+  /**
+   * The patient as their own assignor — the same shape, and the same "same
+   * person" test, as `selfAssignorFor` above and the cascade's own: name plus
+   * date of birth plus `authorityBasis: 'self'` within the practice. `Assignor`
+   * has no link to `Patient` because an assignor is often not the patient (D7).
+   */
+  private async selfAssignorForPatient(
+    tx: Prisma.TransactionClient,
+    practiceId: string,
+    patient: { givenNames: string; familyName: string; dateOfBirth: Date },
+  ) {
+    const name = `${patient.givenNames} ${patient.familyName}`;
+    const existing = await tx.assignor.findFirst({
+      where: { practiceId, authorityBasis: 'self', name, dateOfBirth: patient.dateOfBirth },
+    });
+    if (existing) return existing;
+    return tx.assignor.create({
+      data: { practiceId, name, dateOfBirth: patient.dateOfBirth, authorityBasis: 'self' },
+    });
+  }
+
+  private async rereadService(practiceId: string, serviceRecordId: string) {
+    const row = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.serviceRecord.findFirst({ where: { id: serviceRecordId } }),
+    );
+    if (!row) throw new NotFoundException('That rendered service was not found.');
+    return row;
+  }
+
+  private serviceReceiptFor(
+    row: Awaited<ReturnType<ArrivalsService['rereadService']>>,
+    repeat: boolean,
+  ): ServiceRenderedReceipt {
+    return {
+      serviceRecordId: row.id,
+      patientId: row.patientId ?? '',
+      decision: {
+        outcome: (row.visitDecision ?? 'episodic_post') as ServiceRenderedReceipt['decision']['outcome'],
+        reason: row.decisionReason ?? '',
+      },
+      /*
+       * THE AGREEMENT THIS SERVICE PRODUCED, and null on both covered answers —
+       * where `agreementId` names the agreement that COVERS it rather than one
+       * this service made. Two different facts, two different fields, so a
+       * reader can never take one for the other.
+       */
+      agreementId: row.visitDecision === 'episodic_post' ? row.agreementId : null,
+      coveringAgreementId: row.coveringAgreementId,
+      policyVersion: row.policyVersion ?? '',
+      repeat,
+    };
+  }
+
 }

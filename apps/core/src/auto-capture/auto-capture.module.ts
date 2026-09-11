@@ -22,6 +22,6 @@ import { CaptureLinkDispatcher } from './capture-link.dispatcher';
   imports: [PmsModule, AgreementsModule, CaptureModule, EnduringModule, OutboundModule, MessagingModule],
   controllers: [AutoCaptureController],
   providers: [AutoCaptureService, CaptureLinkDispatcher],
-  exports: [AutoCaptureService],
+  exports: [AutoCaptureService, CaptureLinkDispatcher],
 })
 export class AutoCaptureModule {}

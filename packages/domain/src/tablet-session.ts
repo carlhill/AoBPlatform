@@ -683,6 +683,34 @@ export interface TabletSessionPayload {
    */
   patientId: string;
   assignor: TabletSessionAssignor;
+  /**
+   * DOES THIS SESSION STILL OWE THE DETAILS CHECK? (Carl, 11 Sep 2026; the
+   * post-service second push.)
+   *
+   * ONE MECHANISM, TWO MOMENTS — and the patient should not be asked the same
+   * question twice in one visit. K-P1 asks whoever is holding the tablet to tick
+   * that the five details the practice holds are right. On the way IN that is
+   * the first thing they see. On the way OUT, an hour later, the same person is
+   * handed the same tablet for a post-agreement, and asking them to confirm the
+   * same address again is ceremony for its own sake.
+   *
+   * THE SERVER DECIDES IT, NEVER THE DEVICE (REQ-DATA-11: the client supplies
+   * only what the server cannot know). A tablet that could decide to skip a step
+   * of the ceremony would be a tablet deciding what the record says happened.
+   * The server looks for a PUSHED session at this practice, for this patient,
+   * TODAY, whose details were confirmed and not disputed — and skips only then.
+   *
+   * A DISPUTE NEVER SKIPS. If the person crossed a row earlier, the details are
+   * exactly what is in question and the second push asks again.
+   *
+   * IT IS NOT A SHORTCUT PAST ANYTHING LEGAL. The details check is a
+   * DATA-ACCURACY confirmation, not a verification (see above): verification is
+   * the staff check across the desk, which the second push records FRESH with
+   * the same staff identity (REQ-VER-03). Skipping the ticks removes no
+   * evidence the regulation asks for; the affirmations on K-3 and the signature
+   * on K-4 are untouched.
+   */
+  detailsCheck: 'required' | 'confirmed_today';
   agreementId: string;
   /**
    * The `in_practice` capture request this session signs against. Passed

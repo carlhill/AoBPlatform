@@ -177,6 +177,44 @@ export const VAULT_EVENT_TYPES = [
    * the role that produced it.
    */
   'arrival.refused',
+  /**
+   * THE SERVICE HAS BEEN RENDERED — the second moment, on the same desk (Carl,
+   * 11 Sep 2026; TODO.md "Two front doors" decision (b)).
+   *
+   * The patient has seen the practitioner and the practice's software says
+   * what was done: the day (D5) and the MBS item numbers (D6b — post-agreements
+   * only, REQ-REG-01). The versioned post-service table decides whether a
+   * second signature is owed, and this event records the answer it gave and the
+   * version of the table that gave it (hard rule 14).
+   *
+   * WRITTEN IN THE SAME TRANSACTION AS THE SERVICE ROW (hard rule 11,
+   * FR-11.2), so a rendered service with no record of having been received is
+   * structurally impossible.
+   *
+   * THE PAYLOAD CARRIES NO PATIENT VALUE AND NO AMOUNT. Ids, the decision, the
+   * policy version, and the COUNT of item numbers rather than the numbers
+   * themselves — an item number is a fact about a claim, and the agreement is
+   * where it belongs (REQ-LOG-08). No benefit and no dollar figure anywhere:
+   * the s 65C data set has none and adding one is risk (hard rule 4). No
+   * Medicare number, because none is ever held (hard rule 1).
+   */
+  'service.rendered',
+  /**
+   * NOBODY SIGNED AT THE DESK, SO THE LADDER STARTED (REQ-CHASE-05's first
+   * rung; TODO.md "Reminders are the fallback, not the flow").
+   *
+   * The post-service push went out, the patient left another way, and thirty
+   * minutes later the automated cascade opened a remote channel. Recorded
+   * because "why was this patient contacted" is a question the evidence has to
+   * answer, and because the cadence after this rung is banded by days left on
+   * the lodgement window rather than by elapsed time (REQ-CHASE-05), which only
+   * makes sense against a recorded start.
+   *
+   * IT IS NEVER A NOTICE. A reg 89AA notice is one-way and is never chased
+   * (hard rule 7, REQ-END-05, REQ-CHASE-02); the subject here is always an
+   * agreement or the service it belongs to.
+   */
+  'service.chase_started',
   'signature.captured',
   /**
    * FR-7.3 — a person decided what happens to a service that never got its

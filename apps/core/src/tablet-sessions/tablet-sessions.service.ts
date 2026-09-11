@@ -74,6 +74,22 @@ export interface PushableRow {
   /** D6a as it stands, and whether it is from the CURRENT mapping (hard rule 14). */
   serviceDescription: string | null;
   serviceDescriptionValid: boolean;
+  /**
+   * THE POST-SERVICE PARTICULARS — D5 AND D6b (Carl, 11 Sep 2026; TODO.md "Two
+   * front doors" (b)).
+   *
+   * `null` and `[]` on every pre-agreement row, and that is the discriminator
+   * rather than a flag: a post-agreement is s 65C(4) table item 6 and carries
+   * the date the service WAS rendered plus its MBS item numbers, where a
+   * pre-agreement carries a Basic Service Description instead (REQ-REG-01 D6a
+   * "pre-agreements only", D6b "post-agreements only"). The desk row reads
+   * "Post-service · <date> · items <numbers>" off these two.
+   *
+   * NO AMOUNT, AND THERE IS NO FIELD FOR ONE (hard rule 4). The service record
+   * these come from holds none either.
+   */
+  serviceDate: string | null;
+  mbsItemNumbers: string[];
   /** D7 — explicit, never inferred (CLAUDE.md §3). */
   assignorIsPatient: boolean;
   assignorName: string | null;
@@ -112,6 +128,32 @@ export interface PushableRow {
   blockedReason: PushBlockedReason | null;
   /** Where it already is, if it is on a tablet right now. */
   activeSession: { id: string; deviceId: string; state: TabletSessionState } | null;
+}
+
+/**
+ * A SERVICE THAT NEEDED NO SECOND SIGNATURE — a history line on the desk, never
+ * a Send (Carl, 11 Sep 2026; TODO.md "One signature per episodic visit, not
+ * two").
+ *
+ * Deliberately NOT a `PushableRow` with `pushable: false`. A row with a blocked
+ * reason is work somebody has to unblock; this is work that is finished, and
+ * putting the two in one list would mean a receptionist reading a reason code to
+ * learn that there is nothing to do. Its own shape, its own read, and it names
+ * the agreement that covers the visit so the line can link to it.
+ */
+export interface CoveredServiceRow {
+  serviceRecordId: string;
+  patientId: string | null;
+  patientName: string | null;
+  providerName: string | null;
+  /** D5 — the day the service was rendered. */
+  serviceDate: string;
+  /** D6b — the item numbers that were billed. No amount (hard rule 4). */
+  mbsItemNumbers: string[];
+  decision: 'covered' | 'covered_by_enduring';
+  reason: string;
+  policyVersion: string;
+  coveringAgreementId: string | null;
 }
 
 /**
@@ -263,8 +305,27 @@ export class TabletSessionsService {
              * on whether the pair is consistent (C5) — this supplies the two
              * facts and asserts nothing about them.
              */
-            serviceDate: context.appointmentDate ?? today(),
+            /*
+             * D5 — THE VISIT'S DATE. For a pre-agreement it is the appointment
+             * the draft was made for, and today for a walk-in with no booking.
+             * For a POST-agreement it is the day the service WAS rendered, off
+             * the service record the draft was made from (Carl, 11 Sep 2026) —
+             * which matters because C5 requires a post-agreement's service date
+             * to be on or BEFORE its agreement date, and "today" would be a
+             * silent lie about a service rendered yesterday afternoon.
+             */
+            serviceDate: context.serviceDate ?? context.appointmentDate ?? today(),
             agreementDate: today(),
+            /*
+             * D6b — POST-AGREEMENTS ONLY (REQ-REG-01; s 65C(4) table item 6).
+             * `undefined` on every other type, so C7 keeps its "applies to
+             * post-agreements only" branch and nothing invents an item number
+             * for a pre-agreement. The ordinary post-service path locks at
+             * draft time and never reaches here; this is the re-lock for a
+             * post-agreement whose first lock did not commit.
+             */
+            mbsItemNumbers:
+              context.agreement.type === 'episodic_post' ? context.mbsItemNumbers : undefined,
           },
           // The staff-verified event is written in the SAME transaction as the
           // lock, so at this moment the agreement does not yet carry its id.
@@ -1138,6 +1199,82 @@ export class TabletSessionsService {
     return rows;
   }
 
+
+  /**
+   * TODAY'S COVERED SERVICES — the quiet history line, never a Send (Carl,
+   * 11 Sep 2026, step 4).
+   *
+   * A service the platform decided needs no second signature produces no draft,
+   * so it can never appear on `pushable` — that list reads agreements and this
+   * has none of its own. Leaving it invisible would mean reception seeing a
+   * patient walk out with nothing on screen about them and no way to tell
+   * "already covered" from "we forgot": exactly the "generic fallback message
+   * is a defect" case (Carl, 4 Sep 2026).
+   *
+   * SO IT IS A SEPARATE READ AND A SEPARATE SHAPE. Nothing here is pushable,
+   * nothing here has a blocked reason, and the row carries the id of the
+   * agreement that COVERS it so the line can LINK to the answer rather than
+   * assert it ("shortcuts to the answer", CLAUDE.md section 7).
+   *
+   * TODAY ONLY, on the same boundary `pushable` uses — the desk is a day's
+   * work, and yesterday's covered visits are the reporting surface's business.
+   *
+   * A STAFF SURFACE, so the practice's own list of its own patients may carry a
+   * name, exactly as every other console list does. No date of birth, no
+   * address, no contact detail, no identifier — and no amount (hard rule 4):
+   * there is no field for one and the service record holds none.
+   */
+  async coveredToday(practiceId: string): Promise<CoveredServiceRow[]> {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const records = await tx.serviceRecord.findMany({
+        where: {
+          visitDecision: { in: ['covered', 'covered_by_enduring'] },
+          serviceRenderedAt: { gte: startOfDay },
+        },
+        orderBy: { serviceRenderedAt: 'desc' },
+        take: 50,
+      });
+      if (records.length === 0) return [];
+
+      const patientIds = [...new Set(records.map((r) => r.patientId).filter((id): id is string => id !== null))];
+      const patients = patientIds.length
+        ? await tx.patient.findMany({
+            where: { id: { in: patientIds } },
+            select: { id: true, givenNames: true, familyName: true },
+          })
+        : [];
+      const patientById = new Map(patients.map((p) => [p.id, p]));
+
+      const anchors = await anchorsForAgreements(
+        tx,
+        records.map((r) => ({ id: r.id, affiliationId: r.affiliationId, providerId: r.providerId })),
+      );
+
+      return records.map((record) => {
+        const patient = record.patientId ? patientById.get(record.patientId) : undefined;
+        return {
+          serviceRecordId: record.id,
+          patientId: record.patientId,
+          patientName: patient ? `${patient.givenNames} ${patient.familyName}` : null,
+          providerName: anchors.get(record.id)?.name ?? null,
+          serviceDate: record.serviceDate.toISOString().slice(0, 10),
+          mbsItemNumbers: [...record.mbsItemNumbers],
+          /** `covered` | `covered_by_enduring` — two different stories, two codes. */
+          decision: record.visitDecision as CoveredServiceRow['decision'],
+          /** The rule key that decided; the console renders it in its own words. */
+          reason: record.decisionReason ?? '',
+          /** Hard rule 14 — which table gave the answer. */
+          policyVersion: record.policyVersion ?? '',
+          /** What to LINK to. The database refuses a covered row without one. */
+          coveringAgreementId: record.coveringAgreementId,
+        } satisfies CoveredServiceRow;
+      });
+    });
+  }
+
   /**
    * HAS THIS AGREEMENT MOVED PAST THE POINT A TABLET COULD MEAN ANYTHING?
    *
@@ -1250,6 +1387,18 @@ export class TabletSessionsService {
        * lookup happens here rather than becoming a query per line.
        */
       const anchorByAgreement = await anchorsForAgreements(tx, forToday);
+      /*
+       * THE SERVICE BEHIND A POST-AGREEMENT — D5 and D6b (Carl, 11 Sep 2026).
+       * Read for the whole list in one query rather than per row, exactly as
+       * the anchors are: a day's desk is a handful of services, and
+       * `blockingReason` must stay synchronous.
+       */
+      const services = await tx.serviceRecord.findMany({
+        where: { agreementId: { in: forToday.map((a) => a.id) } },
+      });
+      const serviceByAgreement = new Map(
+        services.filter((s) => s.agreementId).map((s) => [s.agreementId as string, s]),
+      );
       const assignors = await tx.assignor.findMany({
         where: { id: { in: forToday.map((a) => a.assignorId) } },
       });
@@ -1264,6 +1413,7 @@ export class TabletSessionsService {
         const anchor = anchorByAgreement.get(agreement.id);
         const assignor = assignorById.get(agreement.assignorId);
         const appointment = appointmentByAgreement.get(agreement.id);
+        const service = serviceByAgreement.get(agreement.id);
         const session = sessionByAgreement.get(agreement.id);
 
         const blocked = this.blockingReason({
@@ -1297,6 +1447,14 @@ export class TabletSessionsService {
           appointmentTime: appointment?.time ?? null,
           serviceDescription: d6a ?? null,
           serviceDescriptionValid: d6a ? isServiceDescription(d6a) : false,
+          /*
+           * D5 AND D6b, OFF THE SERVICE THIS AGREEMENT WAS MADE FOR. Present
+           * only where there is one, which in practice means only on a
+           * post-agreement: a pre-agreement is drafted from an arrival, before
+           * anything has been billed.
+           */
+          serviceDate: service ? service.serviceDate.toISOString().slice(0, 10) : null,
+          mbsItemNumbers: service ? [...service.mbsItemNumbers] : [],
           assignorIsPatient: agreement.assignorIsPatient,
           assignorName: agreement.assignorIsPatient ? null : (assignor?.name ?? null),
           assignorRelationship: agreement.assignorIsPatient
@@ -1372,7 +1530,35 @@ export class TabletSessionsService {
       const patient = await tx.patient.findFirst({ where: { id: agreement.patientId } });
       if (!patient) return null;
       const assignor = await tx.assignor.findFirst({ where: { id: agreement.assignorId } });
-      return { session, agreement, patient, assignor };
+      /*
+       * HAS THIS PERSON ALREADY TICKED THEIR DETAILS TODAY, IN A PUSHED SESSION
+       * AT THIS PRACTICE? (Carl, 11 Sep 2026 — the post-service second push.)
+       *
+       * THE SERVER ANSWERS IT, not the tablet (REQ-DATA-11). Matched on the
+       * PATIENT rather than the agreement, because the whole point is that this
+       * is a SECOND agreement for the same visit; scoped to today, because
+       * yesterday's address is not evidence about today's; and refused where the
+       * earlier session DISPUTED anything, because a crossed row is exactly the
+       * case where the details must be asked about again.
+       *
+       * RLS scopes the read to this practice, so "at this practice" is enforced
+       * at the database rather than remembered here.
+       */
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const samePatientToday = await tx.agreement.findMany({
+        where: { patientId: agreement.patientId },
+        select: { id: true },
+      });
+      const confirmedToday = await tx.tabletSession.findFirst({
+        where: {
+          agreementId: { in: samePatientToday.map((a) => a.id) },
+          detailsConfirmedAt: { gte: startOfDay },
+          detailsDisputedAt: null,
+        },
+        select: { id: true },
+      });
+      return { session, agreement, patient, assignor, detailsConfirmedToday: confirmedToday !== null };
     });
 
     if (!found) return { session: null };
@@ -1411,6 +1597,11 @@ export class TabletSessionsService {
               name: assignor?.name ?? '',
               relationship: assignor?.relationshipToPatient ?? '',
             },
+        /*
+         * WHETHER THE CEREMONY STILL OWES K-P1. Decided here and stated on the
+         * payload, so the tablet renders an answer rather than reaching one.
+         */
+        detailsCheck: found.detailsConfirmedToday ? 'confirmed_today' : 'required',
         agreementId: agreement.id,
         // Passed straight back to the EXISTING `POST /agreements/:id/sign`.
         captureRequestId: session.captureRequestId ?? '',
@@ -1937,6 +2128,13 @@ export class TabletSessionsService {
        */
       const anchor = await anchorForAgreement(tx, agreement);
       const appointment = await tx.appointment.findFirst({ where: { agreementId } });
+      /*
+       * THE SERVICE THIS AGREEMENT WAS MADE FOR, where there is one (Carl,
+       * 11 Sep 2026). Only a post-agreement has one: D5 is the day it was
+       * rendered and D6b is the item numbers, and both are needed if this push
+       * has to lock the particulars itself.
+       */
+      const service = await tx.serviceRecord.findFirst({ where: { agreementId } });
       return {
         agreement,
         patientName: patient ? `${patient.givenNames} ${patient.familyName}` : '',
@@ -1959,6 +2157,10 @@ export class TabletSessionsService {
          */
         billingRole: anchor ? anchor.billingRole : null,
         appointmentDate: appointment ? appointment.date.toISOString().slice(0, 10) : null,
+        /** D5 for a post-agreement — the day the service WAS rendered. */
+        serviceDate: service ? service.serviceDate.toISOString().slice(0, 10) : null,
+        /** D6b — post-agreements only (REQ-REG-01). Empty everywhere else. */
+        mbsItemNumbers: service ? [...service.mbsItemNumbers] : [],
       };
     });
     if (!found) throw pushRefusals.agreementNotFound();

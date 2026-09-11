@@ -1,4 +1,7 @@
 import {
+  ArrayMaxSize,
+  ArrayNotEmpty,
+  IsArray,
   IsBoolean,
   IsIn,
   IsISO8601,
@@ -221,4 +224,111 @@ export class ArrivalPreviewDto {
   @IsOptional() @IsUUID() practitionerId?: string;
   @IsOptional() @IsUUID() locationId?: string;
   @IsOptional() @IsString() @MaxLength(20) providerNumber?: string;
+}
+
+/**
+ * THE SERVICE HAS BEEN RENDERED — the second front door, on the same desk
+ * (Carl, 11 Sep 2026; TODO.md "Two front doors" decision (b)).
+ *
+ * `POST /arrivals` says a person walked IN. This says they have been SEEN, and
+ * what was done: the day the service was rendered (D5) and its MBS item
+ * numbers (D6b). A post-agreement is s 65C(4) table item 6 and D6b is
+ * "post-agreements only" (REQ-REG-01) — so this is the only message in the
+ * platform that may carry item numbers into the capture path, and it carries
+ * nothing else about the claim.
+ *
+ * WHY IT LIVES BESIDE THE ARRIVAL AND NOT ON THE PRINT-JOB LANE. Both doors
+ * are real and they mean different things. `POST /inbound/print-jobs` carries
+ * an INVOICE and feeds the REMOTE cascade — the patient has gone, and a link
+ * goes out to them (CONSULTATION-CAPTURE-PLAN section 3.1). This is the
+ * patient still standing at the desk, and it produces an IN-PRACTICE capture
+ * request on the same tablet reception used an hour ago. One mechanism, two
+ * moments: same device pairing, same session states, same desk. Nothing in
+ * this module names a Medtech endpoint (D-01 is unresolved, CLAUDE.md
+ * section 5).
+ *
+ * THREE FIELDS HAVE NO PLACE TO LAND, AND ALL THREE ABSENCES ARE THE POINT.
+ *
+ * NO MEDICARE NUMBER. The card number is not an identity identifier and the
+ * exclusion is non-configurable (hard rule 1, REQ-VER-02). The service refuses
+ * any key matching /medicare/i OUT LOUD rather than letting `whitelist: true`
+ * strip it silently — the sender's author has to learn it once. Named test:
+ * `service_rendered_endpoint_rejects_a_medicare_number`.
+ *
+ * NO BENEFIT AND NO AMOUNT (hard rule 4, REQ-REG-04). An invoice has a figure
+ * on it; an assignment of benefit does not, and there is no field here for one.
+ * The service refuses any key that looks like one, for the same reason.
+ *
+ * NO DECISION. Whether the visit is already covered by today's signed
+ * pre-agreement, by a live ongoing agreement, or by nothing at all is decided
+ * by the versioned post-service table (hard rules 6 and 14), never by the
+ * sender.
+ *
+ * AND NO PATIENT DETAILS. Unlike an arrival, this message does not refresh the
+ * mirror: the five details rode in on the arrival that put this person on the
+ * queue, and a second copy arriving with an invoice is a second chance for the
+ * two to disagree. A patient this practice has no record of is refused with
+ * the fix — send the arrival first — rather than created from a billing
+ * message (REQ-DATA-10).
+ */
+export class ServiceRenderedDto {
+  /** The practice's own handle for this patient — the join key for our mirror. */
+  @IsString()
+  @MaxLength(100)
+  pmsPatientRecordNumber!: string;
+
+  /**
+   * WHOSE NUMBER THE CLAIM GOES UNDER — any ONE of these four, resolved by the
+   * server through the SAME `findAnchor` the arrival uses. A post-agreement is
+   * anchored on the practitioner at a location for the same reason a
+   * pre-agreement is: s 65C(5)(a) wants the person and the place.
+   */
+  @IsOptional() @IsUUID() affiliationId?: string;
+  @IsOptional() @IsUUID() practitionerId?: string;
+  @IsOptional() @IsUUID() locationId?: string;
+  @IsOptional() @IsString() @MaxLength(20) providerNumber?: string;
+
+  /**
+   * D5 — THE DAY THE SERVICE WAS RENDERED, and it is REQUIRED here where it is
+   * optional on an arrival.
+   *
+   * An arrival can derive it: the person is standing there, so the day they
+   * walked in is the day of the service. A rendered service cannot — the
+   * message may be relayed minutes or hours later, and C5 checks a
+   * post-agreement's service date against its agreement date. A plain date,
+   * never a timestamp: a particular of a contract may not depend on which side
+   * of midnight Greenwich is.
+   */
+  @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) serviceDate!: string;
+
+  /**
+   * D6b — THE MBS ITEM NUMBER(S), post-agreements only (REQ-REG-01 D6b; source:
+   * the PMS invoice).
+   *
+   * SHAPE-CHECKED HERE, VALIDATED BY THE RULES ENGINE. C7 requires at least one
+   * item and matches each against its own format; this DTO refuses an empty
+   * array and an obviously wrong shape at the door so the refusal lands on the
+   * sender rather than on a patient at a tablet. It does not duplicate C7's
+   * judgement — the rules engine still has the last word (a human-authored
+   * zone, CLAUDE.md section 7).
+   */
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  @Matches(/^\d{1,5}$/, { each: true })
+  mbsItemNumbers!: string[];
+
+  @IsIn(ARRIVAL_SOURCES as unknown as string[])
+  source!: string;
+
+  /**
+   * The sender's own handle for this service. A connector on a practice's ADSL
+   * retries, and one visit must never become two post-agreements and two rows
+   * on reception's desk. Stored as the service record's own key, so the
+   * database enforces it under a race as well as in sequence.
+   */
+  @IsString()
+  @MaxLength(200)
+  idempotencyKey!: string;
 }

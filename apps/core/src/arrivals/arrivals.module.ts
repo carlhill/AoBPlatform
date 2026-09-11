@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 import { ArrivalsController } from './arrivals.controller';
 import { ArrivalsService } from './arrivals.service';
+import { PostServiceChaseSweep } from './post-service-chase.sweep';
 import { AgreementsModule } from '../agreements/agreements.module';
+import { AutoCaptureModule } from '../auto-capture/auto-capture.module';
 import { CaptureModule } from '../capture/capture.module';
 import { EnduringModule } from '../enduring/enduring.module';
 
@@ -24,6 +26,12 @@ import { EnduringModule } from '../enduring/enduring.module';
  * place. The mirror write here is the sync's kind, and it stamps nothing that
  * would make a later staff correction look like a machine's.
  *
+ * IT IMPORTS `AutoCaptureModule` FOR ONE THING ONLY (Carl, 11 Sep 2026): the
+ * `CaptureLinkDispatcher` the post-service chase sweep needs to send the first
+ * rung of the cascade. The alternative was a second message composer for the
+ * same message — the "one ladder, two kinds of climber" rule (REQ-CHASE-05)
+ * applies to the words as much as to the counting.
+ *
  * NOR `PmsModule` ITSELF. `PmsSyncService.ensurePatient` matches on
  * `pmsLinkageKey` — the key a sync feed carries — while an arrival carries the
  * practice's own patient record number, which is what reception reads off the
@@ -31,9 +39,9 @@ import { EnduringModule } from '../enduring/enduring.module';
  * difference, and pretending otherwise would make one of them wrong.
  */
 @Module({
-  imports: [AgreementsModule, CaptureModule, EnduringModule],
+  imports: [AgreementsModule, AutoCaptureModule, CaptureModule, EnduringModule],
   controllers: [ArrivalsController],
-  providers: [ArrivalsService],
-  exports: [ArrivalsService],
+  providers: [ArrivalsService, PostServiceChaseSweep],
+  exports: [ArrivalsService, PostServiceChaseSweep],
 })
 export class ArrivalsModule {}

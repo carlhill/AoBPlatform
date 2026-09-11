@@ -140,6 +140,23 @@ export class TabletSessionsController {
   }
 
   /**
+   * TODAY'S SERVICES THAT NEEDED NO SECOND SIGNATURE (Carl, 11 Sep 2026).
+   *
+   * A quiet history line rather than a row with a Send on it: today's signed
+   * agreement, or a live ongoing one, already assigns the benefit for the
+   * service the patient has just had, so there is nothing for them to do. The
+   * row names what covered it so the line can link there.
+   *
+   * BEFORE `tablet-sessions/:id/...`, because `covered` is not a UUID and Nest
+   * matches routes in declaration order (wow.md section 1).
+   */
+  @Get('tablet-sessions/covered')
+  @PracticeScoped()
+  coveredToday(@Headers('x-practice-id') practiceId: string | undefined) {
+    return this.sessions.coveredToday(requirePractice(practiceId));
+  }
+
+  /**
    * Take it back. Nothing on the agreement changes — the particulars stay
    * locked, the capture request stays open, and the patient can be handed the
    * tablet again in a minute or sign by any other channel (REQ-REC-04).

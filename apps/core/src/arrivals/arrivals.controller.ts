@@ -4,7 +4,7 @@ import type { Request } from 'express';
 import { PracticeScoped } from '../auth/practice-scope.decorator';
 import { SessionActor, type Actor } from '../auth/actor.decorator';
 import { ArrivalsService } from './arrivals.service';
-import { ArrivalDto, ArrivalPreviewDto } from './arrivals.dto';
+import { ArrivalDto, ArrivalPreviewDto, ServiceRenderedDto } from './arrivals.dto';
 
 /**
  * Reception naming the practitioner-at-a-location the claim will go under. One
@@ -90,6 +90,44 @@ export class ArrivalsController {
   @PracticeScoped()
   preview(@Headers('x-practice-id') practiceId: string | undefined, @Body() dto: ArrivalPreviewDto) {
     return this.arrivals.preview(requirePractice(practiceId), dto);
+  }
+
+  /**
+   * THE SERVICE HAS BEEN RENDERED — THE SECOND PUSH (Carl, 11 Sep 2026;
+   * TODO.md "Two front doors" decision (b)).
+   *
+   * The patient has seen the practitioner, the service is known, and where no
+   * pre-agreement covers the billed item a post-agreement is drafted, locked
+   * and put on reception's desk for the same tablet. One mechanism, two
+   * moments.
+   *
+   * BEFORE `:id/provider` AND `:id`, because `service-rendered` is not a UUID
+   * and Nest matches routes in declaration order — the mistake that shipped a
+   * shadowed route on 7 September (wow.md section 1).
+   *
+   * `@Req` ALONGSIDE `@Body`, for the same reason `receive` takes it:
+   * `whitelist: true` silently strips an unknown field, which is right for a
+   * typo and WRONG for a forbidden one. A body carrying a Medicare card number
+   * or a dollar amount would vanish and its sender would learn nothing; the raw
+   * key list goes to the service, which refuses both out loud (hard rules 1
+   * and 4).
+   *
+   * 201, NOT 202, and for the same reason the arrival returns one: by the time
+   * this returns the decision is made and recorded, and the post-agreement — if
+   * the service needs one — exists, is validated and locked, and is on the
+   * desk.
+   */
+  @Post('service-rendered')
+  @PracticeScoped()
+  serviceRendered(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Body() dto: ServiceRenderedDto,
+    @Req() req: Request,
+    /** Whose hands typed it — undefined for every machine push, and the undefined is a fact. */
+    @SessionActor() actor: Actor | undefined,
+  ) {
+    const sent = req.body && typeof req.body === 'object' ? Object.keys(req.body as object) : [];
+    return this.arrivals.serviceRendered(requirePractice(practiceId), dto, sent, actor);
   }
 
   /**
