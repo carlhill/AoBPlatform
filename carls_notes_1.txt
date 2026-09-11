@@ -1596,3 +1596,18 @@ Reference: 821709fb-7f89-4fcf-95c0-27c5eb55cec8
 
 do the roles first, then the acting-as build
 
+---------------
+
+Everything now responds:
+
+Service	Port	Status
+core	3001	200
+web and kiosk	3100	200
+rules	21002	200
+vault	21003	200
+keycloak	21024	200
+mailhog	21026	200
+
+Postgres, Redis and immudb are healthy in Docker. One container, aobplatform-cube, reports unhealthy, but only because its health check calls wget and the image does not contain it. The container itself is fine. It has failed that check 4,944 times, so it has never once passed, and the fix is the health check rather than the service.
+
+I have not run the open-handle detector on the post-service spec. That suite runs against the dev database, and you have five seeded rows waiting to be tested, so I did not want to disturb them without checking first whether it targets a separate schema. Worth settling before the next end-to-end run either way.
