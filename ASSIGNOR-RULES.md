@@ -41,9 +41,10 @@ Partial unique index `agreements_one_successor` on `supersedesAgreementId` backs
 ## 4. Open questions
 
 - One signer record per carer per practice, reused across patients (rule 8)? Needs a second identifier to match on and a privacy view; Carl to decide.
-- Whether a contact-only change should be offered on the tablet (patient surface) as well as the desk. Not built; the desk is the only place today.
+- ~~Whether a contact-only change should be offered on the tablet (patient surface) as well as the desk.~~ ANSWERED NO, 11 Sep 2026 (D-2026-09-11-03): the tablet offers to send to the contact on file and never accepts a new one; a wrong address is reception's to fix at the desk. Asked by W6 "send me a copy".
 
 ## Change log
 | Date | Change |
 |---|---|
 | 11 Sep 2026 | v1.0. Written when contact-only changes stopped superseding (D-2026-09-11-01). Collects the rules built 7–11 Sep 2026. |
+| 11 Sep 2026 | §4 open question closed: no contact typing on the tablet (D-2026-09-11-03). |

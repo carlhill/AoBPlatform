@@ -327,6 +327,40 @@ agreement it is covered by on the tablet rather than only at the desk.
 `desk_shows_post_service_rows_with_the_numbered_strip`.
 
 
+## D-2026-09-11-03 — a contact address is never typed on the tablet
+
+**Date:** 11 September 2026. **Decided by:** Carl. **Asked because:** W6
+"send me a copy" has to reach the patient somewhere, and the obvious design is a
+box on the tablet's complete screen.
+
+**The decision.** The tablet OFFERS to send the copy to the contact already on
+file, shown partly masked so the patient can recognise it without it being
+readable across the room. It does not accept a new one. When the address is
+wrong or missing, the tablet says to see reception, and reception makes the
+change on the desk where it already can.
+
+**Why.** Three things line up on the same answer.
+
+- A contact change is a change to a record, and the patient surface is not where
+  records are edited. "Nothing on the patient surface is ever staff entry"
+  (4 Sep) is the same principle from the other side.
+- For a patient signing for themselves, the contact lives on the PATIENT record
+  and the practice management system is the source of truth (ASSIGNOR-RULES
+  rule 6, REQ-DATA-10). A box on the tablet would write to the wrong place, or
+  quietly create a second copy of it.
+- Zero footprint: an address typed on glass has to live somewhere between the
+  keystroke and the send, and the tablet is the one place it may not.
+
+**What this closes.** The open question in ASSIGNOR-RULES.md §4 — "whether a
+contact-only change should be offered on the tablet as well as the desk" — is
+answered no.
+
+**What would reopen it.** A practice where reception cannot reach the desk
+during the ceremony (the roaming-assistant flow, TODO), or evidence that
+patients are routinely leaving without the copy because the address on file is
+stale. Either would be a reason to revisit, and neither is a reason to put a
+free-text box on patient glass without deciding it again.
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
@@ -344,3 +378,4 @@ agreement it is covered by on the tablet rather than only at the desk.
 | 4 Sep | Verification stays at three identifiers | **D-2026-09-04-01 above** |
 | 4 Sep | Patient passkeys live in core, not Keycloak | **D-2026-09-04-02 above** |
 | 11 Sep | Post-service second push; a signed pre-agreement for the day covers the service | **D-2026-09-11-02 above** |
+| 11 Sep | A contact address is never typed on the tablet; the offer goes to what is on file | **D-2026-09-11-03 above** |
