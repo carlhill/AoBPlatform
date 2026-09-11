@@ -82,6 +82,44 @@ work into the same index, and the commit carries both. It happened twice on
 invocation: `git add <paths> && git commit -m ...`. This is §5 enforced at the
 shell rather than in the brief.
 
+## 9. Every rule goes into the right markdown file, always (Carl, 12 Sep 2026)
+
+Carl: *"always write the rules to the appropriate md."* A rule that exists only
+in a chat message, a code comment or one agent's head is not a rule — it is a
+thing that will be re-litigated in a fortnight by somebody who was not there,
+and re-litigated differently.
+
+**When.** The moment a rule is settled, in the same turn, before the next task
+starts. Not at the end of the session, where it is lost to a usage limit or a
+compaction.
+
+**Where — pick by what KIND of statement it is, not by which file is open.**
+
+| The statement | Goes in |
+|---|---|
+| A product or regulatory choice, with a date, who made it and what would reopen it | `DECISIONS.md`, as a `D-YYYY-MM-DD-NN` entry, plus a row in its index table |
+| A rule about who signs, how they are reached, or what may change after the lock | `ASSIGNOR-RULES.md`, with the code that enforces it and the test that names it |
+| A rule about how a Claude session should WORK — reviews, commits, agents, shells | this file |
+| A statutory invariant that must be enforced in code and can never be "improved" | `CLAUDE.md` §2 — and only with Carl saying so in as many words |
+| Work still to do, an open question, or a diagnosis not yet fixed | `TODO.md` |
+| A plan for something not yet built | its own `*.md`, named for the thing (e.g. `PATIENT-WORKFLOW-PAGE.md`) |
+
+**What a written rule carries.** The rule itself; WHY, in enough detail that
+somebody can tell whether the reason still holds; where it is enforced in code
+and the named test; and for a decision, what would reopen it. A rule with no
+reason cannot be safely changed later, because nobody can tell what changing it
+would break.
+
+**And it closes what it answers.** A new decision that settles an open question
+strikes that question through where it was asked and points at the decision, so
+the two never disagree. D-2026-09-11-03 closing `ASSIGNOR-RULES.md` §4 is the
+worked example.
+
+**A decision made by an agent mid-build is still Carl's to confirm.** Write it
+up as an assumption, say so plainly in the report, and rewrite it as a decision
+once he answers — the way the no-typed-address rule went from an assumption in a
+build brief to D-2026-09-11-03.
+
 ## Change log
 | Date | Change |
 |---|---|
@@ -89,3 +127,4 @@ shell rather than in the brief.
 | 7 Sep 2026 | §7: Carl's notes file is committed with every push. |
 | 7 Sep 2026 | §2 item 6: added "wait for the data, not the element" after a second-fetch race failed CI four times in one weekend. |
 | 11 Sep 2026 | §8: background commands never pipe into `tail`/`head`; waiters watch for completion, not a string; staging and committing are one shell invocation. |
+| 12 Sep 2026 | §9: every settled rule is written to the right md in the same turn, with its reason, its enforcement and what would reopen it. |

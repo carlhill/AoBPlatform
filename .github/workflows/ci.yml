@@ -36,8 +36,22 @@ jobs:
       IMMUDB_PORT: '21022'
       VAULT_DATABASE_URL: postgresql://aob_app:aob_app@localhost:21020/aobplatform?schema=vault
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # PINNED TO THE CURRENT MAJORS (12 Sep 2026). v4 of both targets Node 20,
+      # which GitHub deprecated: every run was annotated and the runner was
+      # already forcing them onto Node 24 anyway, so this only makes true what
+      # was happening regardless.
+      #
+      # `cache: npm` STAYS EXPLICIT. setup-node v5 added automatic caching when
+      # package.json carries a `packageManager` field; saying which cache we
+      # want keeps the behaviour the same whether or not that field is ever
+      # added.
+      #
+      # `node-version: 20` BELOW IS A DIFFERENT NUMBER and deliberately left
+      # alone — it is the Node the PRODUCT is built and tested on, not the Node
+      # the action runs on. Changing it is a stack decision (aob-tech-stack.md),
+      # not a deprecation fix.
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
