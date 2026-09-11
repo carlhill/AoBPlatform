@@ -3361,7 +3361,7 @@ session.**
 - Do not poll. The ten-minute limit-check loop paid a full context round trip on
   every wake to learn nothing; one wake at the reset time does the same job.
 
-## The e2e suite runs against the DEV database and wipes it (11 Sep 2026)
+## ~~The e2e suite runs against the DEV database and wipes it~~ — DONE 11 Sep 2026 (`843d8db`, `3ecb86b`)
 
 Checked before running the open-handle detector on the post-service spec, and
 the answer stopped that run.
@@ -3390,7 +3390,28 @@ What to do about it, in order of value:
 2. Until that lands, treat any e2e run as destructive. Re-seed afterwards with
    `scripts/dev/arrive.sh` and `scripts/dev/service-rendered.sh`, and never run
    one while Carl is mid-test.
-3. Separately, the post-service spec appeared to hang on 11 Sep. The pipe to
+**Done, and it turned up worse than the original problem.** The suite runs
+against `aobplatform_test` and refuses any database whose name does not end in
+`_test`; `scripts/dev/test-db.sh` builds it locally as a schema copy and CI
+builds its own with `migrate deploy`. The first draft defaulted to the
+`aobplatform` role, which is the container's SUPERUSER and bypasses row level
+security — every cross-practice test would have gone on passing while proving
+nothing. It now connects as `aob_app`. `reporting-isolation` also had the
+database name hardcoded in its psql calls and was fixed to read `DATABASE_URL`,
+which stops it writing fixture practices into a developer's own database.
+
+Still worth doing: teach the dev loop to use `migrate deploy` and repair the
+failed `20260903020000_chase_attempts` ledger entry, so the local test database
+can be built from migrations rather than copied.
+
+3. ~~Separately, the post-service spec appeared to hang on 11 Sep.~~ SETTLED: it
+   runs in 8 seconds and exits cleanly with `--detectOpenHandles` and no
+   `--forceExit`. There is no leak. The four-hour hang was the pipe into `tail`
+   (wow.md §8); it did not reproduce. The original run was against the dev
+   database and this one was not, so dev data cannot be completely ruled out —
+   but not at the price of wiping the queue to find out.
+
+   Superseded note: the post-service spec appeared to hang on 11 Sep. The pipe to
    `tail` explains why nothing was VISIBLE (wow.md §8), but not why the process
    was still alive after four hours with sixty seconds of CPU. Run it with
    `--detectOpenHandles` once item 1 makes that safe.
