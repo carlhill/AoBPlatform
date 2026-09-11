@@ -1362,12 +1362,31 @@ path shown as the main one.
       service (G-NAF / PAF) and compare number, street, postcode -- the same
       work as the fraud check above. Interim: tolerant compare on those three
       components, recorded as interim.
-- [ ] Post-service push: reception pushes the post-service agreement (drafted
-      from the invoice -- D5 date, D6 items, no dollar amount) to the tablet;
-      patient reads, taps approve; a fresh staff-verified event recorded by
-      the push. Same device pairing and screen hygiene as the pre-service push
-      -- one mechanism, two moments. The 30-minute nudge into the cascade
-      fires only if no post-service signature lands.
+- [x] **BUILT 11 Sep 2026 (`2a9f499`, `d68d6ac`) -- the post-service second
+      push (D-2026-09-11-02).** `POST /arrivals/service-rendered` carries the
+      patient record number, the practitioner by any of the arrival's four keys,
+      D5 and D6b, and nothing else -- no patient details, no Medicare number, no
+      amount, and no decision. A second table in
+      `content/visit-agreement-policy.json` (`visit-policy-2`) decides: a SIGNED
+      pre-agreement for this patient x practitioner x day is `covered` and the
+      patient does nothing; a live ongoing agreement is `covered_by_enduring`
+      (the 89AA notice is the CLAIM's business and nothing here fires one);
+      otherwise an `episodic_post` is drafted, validated, rendered, LOCKED and
+      put on reception's desk for the same tablet. The desk row reads
+      "Post-service · <date> · items <D6b>" with the same 1-2-3 strip, and a
+      covered visit is a quiet history line at `GET /tablet-sessions/covered`
+      that links to the answer. The push records a FRESH staff-verified event
+      with the same staff identity (REQ-VER-03); the tablet skips the details
+      check when the SERVER says this person ticked them here today, and a
+      dispute never skips. The 30-minute nudge into the cascade is
+      `PostServiceChaseSweep`, behind `POST_SERVICE_CHASE_ENABLED` and OFF by
+      default -- `ChaseAttemptsService` records what a person did and exposes no
+      cascade start, so this is the minimal hook and it sends real messages.
+      Dev: `bash scripts/dev/service-rendered.sh` after `arrive.sh`.
+      **Still deferred, out loud:** the containment check ("is the billed item
+      INSIDE the pre-agreement's description") and showing the item numbers'
+      descriptions on the tablet both need the REQ-REG-03 MBS mapping, which
+      does not exist -- there is deliberately no rule-table input for it.
 - [x] **BUILT 4 Sep 2026 (`219d913` and the two before it) -- enduring at the
       kiosk, up to the human-authored boundary (GA-PLAN B5/B6).**
       `practices.enduringByDefault` (default true) on `/practice/channels`,

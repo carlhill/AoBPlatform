@@ -218,6 +218,115 @@ data set or to a prescribed form; a template that prints the signer's contact
 the renderer must be kept in step, and a test should pin that no template
 renders signer contact while this decision stands).
 
+---
+
+## D-2026-09-11-02 — The post-service second push: a rendered service is decided by a versioned table, and a signed pre-agreement for the day covers it
+
+**Decided:** A service the practitioner has rendered reaches the platform as
+`POST /arrivals/service-rendered` — the practice's own handle for the patient,
+the practitioner by any of the four keys an arrival may use, the day the service
+was rendered (D5) and its MBS item numbers (D6b), and nothing else. A second
+table in `packages/domain/content/visit-agreement-policy.json` (bumped to
+`visit-policy-2`) decides what is owed: a SIGNED episodic pre-agreement for this
+patient × this practitioner × this day means `covered` and the patient does
+nothing; a live enduring agreement for that practitioner and patient means
+`covered_by_enduring`; anything else means a new `episodic_post`, drafted,
+validated, rendered, locked and put on reception's desk for the same tablet.
+— Carl Hill, 11 September 2026, from TODO.md "Two front doors" decision (b) and
+"Still to build: Post-service push".
+
+**Why:**
+- A post-agreement is s 65C(4) table item 6 and its data set differs from a
+  pre-agreement's: D5 is the date the service **was** rendered and D6b is the
+  MBS item number(s), "post-agreements only" (REQ-REG-01; source: the PMS
+  invoice). D6a — the Basic Service Description — is "pre-agreements only" and
+  is deliberately not assembled onto a post-agreement.
+- The tap is a **signature in its own right** (REQ-REG-07), never a
+  confirmation of the earlier one: the pre-step's signature covers only what its
+  description covered. What the pre-step carries forward is that reception has
+  already verified this person, so the second push records a **fresh**
+  staff-verified event with the same staff identity (REQ-VER-03) at zero cost to
+  the patient.
+- One signature per episodic visit, not two (TODO.md). Asking a patient whose
+  billed item is already covered would collect a second consent for one service.
+- The decision is versioned content and never the PMS's (hard rule 14). The
+  regulator changed the rules twice and reversed once; a mapping hardcoded in a
+  system we do not control is the failure versioning exists to prevent.
+- Coverage is per practitioner × patient, never per practice (hard rule 6,
+  REQ-END-01) — there is no input here that could widen it.
+- `covered_by_enduring` is its own answer rather than a second `covered`,
+  because an ongoing agreement's **claim** carries a reg 89AA notice, and that
+  is the claim's business: one-way, never gating payment, never chased (hard
+  rule 7, REQ-END-05, REQ-CHASE-02). Nothing in this path fires one, and wiring
+  a notice to an invoice would put the 24-hour clock in the wrong place
+  (CONSULTATION-CAPTURE-PLAN §3.1).
+
+**Two things deliberately deferred, and said out loud rather than guessed:**
+- **The containment check.** "Is the billed item INSIDE that pre-agreement's
+  Basic Service Description" needs the REQ-REG-03 mapping of MBS items to
+  descriptions, which does not exist — it is the quarterly MBS Online ingest
+  with a human-reviewed diff, and CONSULTATION-CAPTURE-PLAN §3.1 already records
+  the check as blocked on it. Until it lands, a signed pre-agreement for the
+  practitioner, patient and day **counts as covering** the service, which is
+  the behaviour that plan records. There is deliberately **no**
+  `itemInsidePreAgreementDescription` input in the table: an input nothing can
+  compute would be a lie in a rule table, and the loader refuses one.
+- **Item numbers are shown as numbers, not as words.** The tablet shows D5 and
+  the item numbers; it cannot show "their Basic Service Descriptions" because
+  the same mapping is missing. Nothing was invented to fill the gap.
+
+**Where the endpoint lives, and why not the print-job lane.** Both doors are
+real and mean different things. `POST /inbound/print-jobs` carries an INVOICE
+and feeds the **remote** cascade — the patient has gone and a link goes out to
+them. This is the patient still standing at the desk, and it produces an
+**in-practice** capture request on the same tablet reception used an hour ago.
+Nothing in either names a Medtech endpoint (D-01 is unresolved, CLAUDE.md §5).
+
+**What it refuses, out loud rather than silently:** any field whose name matches
+/medicare/i (hard rule 1, REQ-VER-02) and any field that looks like money (hard
+rule 4, REQ-REG-04 — an invoice has a figure on it and an assignment of benefit
+does not). It carries no patient details at all and never creates a record from
+a billing message: an unknown record number is refused with the fix named, and
+the mirror is refreshed only by an arrival (REQ-DATA-10).
+
+**Who signs.** The signer of the day's pre-agreement is carried onto the
+post-agreement draft so step ① is one press — but the **confirmation** is not:
+`assignorConfirmedAt` stays null and the push still refuses
+`assignor_not_confirmed` until somebody answers. A new agreement owes its own
+confirmation (ASSIGNOR-RULES rule 1).
+
+**The thirty-minute nudge.** `PostServiceChaseSweep` opens the existing
+cascade's first rung when no signature lands within thirty minutes of the
+platform learning of the service — the visit where the patient left another way,
+or a telehealth service with no desk to come back to (TODO.md: "they run only
+when the patient did not come back to the desk"). After that rung the cadence is
+banded by days left on the lodgement window, not elapsed time (REQ-CHASE-05),
+and the existing ladder owns it. **Behind `POST_SERVICE_CHASE_ENABLED`, off by
+default**, because `ChaseAttemptsService` records what a person did and exposes
+no way to start a cascade, so there was no existing entry point to wire to — and
+it sends real messages, which CLAUDE.md §7 says to ask about rather than switch
+on. Never past the deadline (REQ-CHASE-08), never a confidentiality-flagged
+patient (REQ-CHASE-03), never a notice.
+
+**What would reopen it:** the REQ-REG-03 mapping landing (which adds the
+containment input and its row, and lets the tablet show descriptions beside the
+item numbers); D-01 resolving, which may change where the message comes from but
+not what it says; or a decision that a covered visit should still be shown the
+agreement it is covered by on the tablet rather than only at the desk.
+
+**Built:** 11 September 2026. Named tests
+`post_service_push_drafts_an_episodic_post_from_the_rendered_service`,
+`a_covered_service_drafts_nothing_and_says_so`,
+`post_agreement_carries_d5_and_d6b_and_no_amount`,
+`post_agreement_locked_before_the_tablet_can_sign`,
+`post_push_records_a_fresh_staff_verified_event`,
+`tablet_skips_the_details_check_after_a_same_day_verified_session`,
+`tablet_runs_the_details_check_when_nothing_was_verified_today`,
+`no_signature_in_thirty_minutes_enters_the_cascade`,
+`service_rendered_endpoint_rejects_a_medicare_number`,
+`desk_shows_post_service_rows_with_the_numbered_strip`.
+
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
@@ -234,3 +343,4 @@ renders signer contact while this decision stands).
 | 4 Sep | Walk-up list is testing-only (per-device console flag); Begin → confirm details; no count | TODO |
 | 4 Sep | Verification stays at three identifiers | **D-2026-09-04-01 above** |
 | 4 Sep | Patient passkeys live in core, not Keycloak | **D-2026-09-04-02 above** |
+| 11 Sep | Post-service second push; a signed pre-agreement for the day covers the service | **D-2026-09-11-02 above** |
