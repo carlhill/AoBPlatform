@@ -3304,3 +3304,59 @@ on Close so nothing sits on a monitor facing the room.
       spot-check (VoiceOver/Safari, NVDA/Chrome) before wide release -- older
       WebKit has stripped list semantics under `display: contents` (reviewer
       note, 10 Sep).
+
+## Session cost — what is sent before any work happens (11 Sep 2026)
+
+Carl asked why the five-hour limit drains so fast. Two costs were structural and
+paid on every single request, before a line of the actual task was read.
+
+**Done 11 Sep 2026.**
+
+- The build brief was loaded twice. `CLAUDE.md` and `.claude/CLAUDE.md` were
+  byte-identical, both pulled into context on every request — about 3,500 tokens
+  of pure duplication per call. The `.claude` copy dated from the scaffold commit
+  (`5058d56`) and had never diverged. Removed in `e9ef98b`; the root copy is the
+  one that matters, and a second copy must not come back.
+- Seven claude.ai connectors with no bearing on this product were sent on every
+  request as tool schemas: Atlassian Rovo (41 tools), Phoenix by HG Insights
+  (32), Google Drive (11), Anthropic Economic Index (9), Clarity AI (6), Hugging
+  Face (5), Scholar Gateway (1). All turned off for this session and as the
+  default for new ones.
+- The TradingView server (84 tools, the single largest) was configured at **user**
+  scope in `~/.claude.json`, so Carl's trading tooling loaded into every AoB
+  session. Moved to **local** scope on the Trading project, where it still works
+  and is no longer paid for here. Backup of the old config:
+  `C:\Users\carl\.claude.json.bak-2026-09-11`.
+
+Roughly 190 tool definitions and the duplicate brief now stay out of every
+request — an estimated 30k tokens per call, and every call re-sends the whole
+conversation, so the saving compounds across a session.
+
+**Still to do, and only Carl can do these — they are not reachable from a
+session.**
+
+- The `enterprise-filesystem` desktop extension adds 14 tools that duplicate the
+  built-in file tools exactly. Disable it in the desktop extension settings.
+  `cockroachdb` and `postgres-auditor` are one tool each; `postgres-auditor` may
+  earn its keep against the dev database, so leave those two.
+- The `data` plugin contributes eight servers (Snowflake and Databricks failing
+  for want of a URL, and BigQuery, Hex, Amplitude, Amplitude EU, Atlassian and
+  Definite all unauthenticated). None are used here. Remove the plugin with
+  `/plugin` from an interactive `claude` terminal — the desktop Code tab cannot
+  open that dialog.
+
+**Ways of working, which cost more than the configuration did.**
+
+- Compact at roughly 100k context, as CLAUDE.md §7 already says. The sessions of
+  7–11 Sep ran to exhaustion twice before compacting. Every tool call re-sends
+  the whole history, so the last third of a long session costs several times the
+  first third for identical output. A fresh session per feature, briefed from
+  this file, is cheaper than one long one.
+- Keep Fable for regulatory and design judgement; it draws the limit down fastest
+  per token. Mechanical stretches run on Opus, reviewers and fix-ups on Sonnet
+  (the model split already recorded for 3 Sep 2026).
+- Brief subagents to write test output to a file and report only failures. Whole
+  suite dumps and repeated full reads of `pushDesk.tsx` were a large share of
+  this week's spend.
+- Do not poll. The ten-minute limit-check loop paid a full context round trip on
+  every wake to learn nothing; one wake at the reset time does the same job.
