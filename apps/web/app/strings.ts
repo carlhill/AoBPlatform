@@ -2059,6 +2059,37 @@ export const strings = {
   },
 
   /* P-1, Messages tab — the same log, read by the person who received it. */
+  /*
+   * THE PAGE A COPY LINK LANDS ON — W6, REQ-PORT-02 (the s 65C copy-on-request
+   * obligation automated).
+   *
+   * IT ASKS FOR NOTHING. No sign-in, no identifiers, no details: the link was
+   * sent to an address the practice already held for the person who signed,
+   * and it opens the ONE document they signed. A quiz in front of a copy of
+   * your own signature would be harder than the signature was.
+   *
+   * NOTHING HERE SAYS ANYTHING IS CERTIFIED OR APPROVED (hard rule 12); the
+   * permitted form is "checked against the s 65C data set". No amount appears
+   * on this page or in the document behind it (hard rule 4).
+   */
+  patientCopy: {
+    title: 'Your copy',
+    heading: 'Your copy of the agreement you signed',
+    lede: 'Nothing is needed from you — no account, no sign-in and no details.',
+    preparing: 'Getting your copy…',
+    open: 'Open your copy',
+    checked:
+      'The copy you open is checked against the record made when you signed it. If the two ever disagree it is not shown to you at all.',
+    invalidTitle: 'This link no longer works',
+    invalidBody:
+      'Links expire after a while, and they only work for the person they were sent to. The practice can send you another copy or print one at the desk.',
+    conflictTitle: 'This copy will not be shown',
+    conflictBody:
+      'It no longer matches the record made when you signed it, so we will not show it to you. Please contact the practice — your agreement itself is unaffected.',
+    unreachableTitle: 'We could not reach the platform',
+    unreachableBody: 'Try the link again in a moment. The practice can also give you a copy at the desk.',
+  },
+
   patientMessages: {
     title: 'Messages we sent you',
     lead: 'The same log the practice sees — your half of it.',
@@ -6384,7 +6415,13 @@ export const strings = {
 
     complete: {
       heading: (givenName: string) => `Signed. Thank you, ${givenName}.`,
-      body: 'Reception has been told you are ready. A copy is on its way to you.',
+      /*
+       * IT NO LONGER PROMISES A COPY (W6, 11 Sep 2026). Until "send me a
+       * copy" existed this sentence ended "A copy is on its way to you", and
+       * nothing sent one. The offer below is now the place a copy is
+       * promised, and it promises one only after it has been queued.
+       */
+      body: 'Reception has been told you are ready.',
       /**
        * AND WHAT IT MEANS FOR NEXT TIME, on an ONGOING agreement only (Carl,
        * 4 Sep 2026, wording kept as given).
@@ -6409,6 +6446,56 @@ export const strings = {
       done: 'Done',
       returning: (seconds: number) => `Returns to the start in ${seconds}s`,
       writeBackQueued: 'Being written back to the practice system',
+
+      /*
+       * "SEND ME A COPY" — W6, REQ-PORT-02, which automates the s 65C
+       * copy-on-request obligation.
+       *
+       * THE OPTION LABELS ARE KEYED BY THE CONTENT FILE'S KEYS
+       * (`packages/domain/content/copy-delivery-channels.json`), per REQ-LANG-02
+       * and Carl's 3 Sep rule: the list is content, the words are the string
+       * table, and a translated word can never change which channel is used.
+       *
+       * THE ADDRESS IN THESE LABELS IS ALWAYS THE MASKED ONE (D-2026-09-11-03).
+       * It arrives from the server already masked; there is no unmasked value
+       * anywhere on this device to interpolate even by mistake.
+       *
+       * NOTHING HERE PROMISES ANYTHING ABOUT CARE OR BILLING, and nothing
+       * says a copy is required. A patient who says no thanks has finished
+       * exactly as completely as one who says yes (hard rule 8).
+       */
+      copy: {
+        question: 'Would you like a copy of what you signed?',
+        options: {
+          email: (masked: string) => `Email it to ${masked}`,
+          sms: (masked: string) => `Text it to ${masked}`,
+          not_now: 'No thanks',
+        } as Record<string, string | ((masked: string) => string)>,
+        sending: 'Sending…',
+        sentEmail: 'On its way to your email.',
+        sentSms: 'On its way to your phone.',
+        declined: 'No copy sent. You can ask reception for one at any time.',
+        /*
+         * SHORTCUTS TO THE ANSWER (Carl, 4 Sep 2026) on a surface with no
+         * links: every reason names what is wrong AND where it is fixed, and
+         * on patient glass the destination is always a person at the desk —
+         * never a box to type an address into (D-2026-09-11-03).
+         */
+        reasons: {
+          no_contact_on_file:
+            'We do not have a way to send you a copy. Reception can print one for you or add your details.',
+        } as Record<string, string>,
+        /** An unmapped code SHOWS ITS CODE so it can be diagnosed, never a generic sentence. */
+        unmappedReason: (code: string) => `Reception can give you a copy. (${code})`,
+        /*
+         * THE OFFER ITSELF COULD NOT BE BUILT — the request never landed, so
+         * the platform knows nothing about whether a contact is on file and
+         * must not claim there is none. It says the true thing instead, which
+         * is that the desk can hand one over.
+         */
+        offerUnavailable: 'Reception can give you a copy of what you signed.',
+        failed: 'That did not send just now. Reception can give you a copy — your agreement is signed either way.',
+      },
     },
 
     errors: {

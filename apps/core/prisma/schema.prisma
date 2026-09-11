@@ -3098,3 +3098,64 @@ model PracticeAgreementTemplate {
   @@index([status, submittedAt])
   @@map("practice_agreement_templates")
 }
+
+/// W6 / REQ-PORT-02 — the link that carries a signed agreement back to the
+/// person who signed it. The s 65C copy-on-request obligation, automated.
+///
+/// WHY A LINK AND NOT AN ATTACHMENT. Hard rule 13: the agreement has ONE
+/// deterministic render path. A copy attached at send time would be a second
+/// set of bytes composed by the mail worker, with nothing checking them
+/// against the hash recorded at signature. Serving the link re-renders under
+/// the renderer version on the agreement and compares hashes before a byte
+/// leaves — so a tampered record refuses to serve rather than posting itself.
+///
+/// WHAT THIS ROW DOES NOT HOLD: the address. Not the email, not the mobile,
+/// not a masked form of either. `channel` is the TYPE and `recipientType` says
+/// which record the address was read from — the patient's own when the patient
+/// signed, the assignor's own when somebody else did (ASSIGNOR-RULES rules
+/// 5–6). The address itself stays on that record, where the PMS is master
+/// (REQ-DATA-10), and travels only on the transport row that is pruned at
+/// thirty days.
+///
+/// ONLY THE HASH OF THE SECRET IS STORED, exactly as capture and activation
+/// tokens do it: a database read cannot mint a working link.
+///
+/// IT OPENS MORE THAN ONCE, on purpose. An activation invitation is
+/// single-use because it grants standing access to a whole record; this opens
+/// ONE document that the holder has already signed and already read, and a
+/// patient who taps their own link twice has not done anything wrong. Every
+/// open is its own `artefact.accessed` event, so the count is evidence rather
+/// than a limit.
+model AgreementCopyLink {
+  id          String   @id @default(uuid()) @db.Uuid
+  practiceId  String   @db.Uuid
+  agreementId String   @db.Uuid
+  /// sha256 of the token's secret segment. The token itself is never stored.
+  tokenHash   String   @unique
+  /// email | sms. The channel TYPE, never a destination (hard rule 9).
+  channel     String
+  /// The option key from `content/copy-delivery-channels.json`...
+  optionKey   String
+  /// ...and the version of that file, so a record says what it was offered
+  /// from even after the list changes (hard rule 14).
+  optionsVersion String
+  /// patient | assignor — WHICH RECORD the address was read from, not the address.
+  recipientType String
+  recipientId   String @db.Uuid
+  /// The transport row this link was queued on, for the desk's message log.
+  outboundItemId String? @db.Uuid
+
+  createdAt     DateTime  @default(now())
+  expiresAt     DateTime
+  firstOpenedAt DateTime?
+  lastOpenedAt  DateTime?
+  openCount     Int       @default(0)
+  /// Set when a practice withdraws the link. Never deleted — the vault is
+  /// append-only and so is the reason a copy stopped opening (hard rule 11).
+  revokedAt     DateTime?
+
+  @@index([practiceId])
+  @@index([agreementId])
+  @@index([expiresAt])
+  @@map("agreement_copy_links")
+}

@@ -553,6 +553,55 @@ export function completeCapture(captureRequestId: string): Promise<unknown> {
   return request(`/capture/${captureRequestId}/complete`, { method: 'POST' });
 }
 
+/* -------------------------------------------------------------------------
+ * "SEND ME A COPY" — W6, REQ-PORT-02 (the s 65C copy-on-request obligation).
+ *
+ * TWO CALLS AND NO THIRD, both made AFTER the signature from the thank-you
+ * screen. The tablet asks what may be offered, and says which offer the
+ * patient chose. It cannot say WHERE to send it: there is no parameter for a
+ * destination on either call and there must never be one — the address comes
+ * from the record the signer's contact lives on, and a wrong one is fixed at
+ * reception (D-2026-09-11-03).
+ *
+ * NOTHING HERE IS KEPT. The masked contact goes to component state for the
+ * seconds the screen is up and is dropped with it; nothing is written to
+ * storage, and there is no unmasked address on this device to write
+ * (zero-footprint, CLAUDE.md §7).
+ * ---------------------------------------------------------------------- */
+
+/** A channel the signer may be offered, with the address MASKED by the server. */
+export interface CopyOfferChannelResponse {
+  readonly key: string;
+  readonly channel: 'email' | 'sms';
+  /** e.g. `j•••@e•••.com`. Never the value — there is no field for one. */
+  readonly masked: string;
+}
+
+export interface CopyOfferResponse {
+  readonly channels: readonly CopyOfferChannelResponse[];
+  /** The content file's own "sends nothing" option. */
+  readonly declineKey: string;
+  /** A REASON CODE when no channel could be offered. Mapped to copy and a destination. */
+  readonly unavailable?: string;
+  /** The version of the option list this offer was built from (hard rule 14). */
+  readonly version: string;
+}
+
+export function fetchCopyOffer(agreementId: string): Promise<CopyOfferResponse> {
+  return request<CopyOfferResponse>(`/kiosk/agreements/${agreementId}/copy-offer`);
+}
+
+/** The answer is a channel TYPE and an outcome. No address travels either way. */
+export function requestCopy(
+  agreementId: string,
+  optionKey: string,
+): Promise<{ channel: 'email' | 'sms'; queued: true }> {
+  return request(`/kiosk/agreements/${agreementId}/copy`, {
+    method: 'POST',
+    body: JSON.stringify({ optionKey }),
+  });
+}
+
 /**
  * The practice's own staff names, for the REQ-VUL-04 block. Held in memory for
  * the session and compared against, never displayed. A practice list that

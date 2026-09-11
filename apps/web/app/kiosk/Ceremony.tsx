@@ -2450,6 +2450,14 @@ export function Ceremony(): ReactNode {
             enduringProviderName={
               view.agreementType === 'enduring' ? (view.providerName ?? null) : null
             }
+            /*
+              THE AGREEMENT THE COPY OFFER IS ABOUT (W6, REQ-PORT-02). The
+              thank-you screen asks the server what may be offered and to
+              whom; all it needs from here is which agreement was signed. It
+              never learns an address — the offer comes back masked
+              (D-2026-09-11-03).
+            */
+            agreementId={agreement?.id ?? null}
             sessionId={pushed?.id ?? null}
             patientId={pushed?.patientId ?? null}
             onDone={reset}

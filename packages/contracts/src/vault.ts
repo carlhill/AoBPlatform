@@ -240,6 +240,26 @@ export const VAULT_EVENT_TYPES = [
   'notice.failed',
   'notice.corrected',
   'agreement.terminated',
+  /**
+   * THE PERSON WHO SIGNED ASKED FOR THEIR OWN COPY — W6, REQ-PORT-02, which
+   * is the s 65C copy-on-request obligation automated.
+   *
+   * EVIDENCE, NOT HOUSEKEEPING. "Was the assignor given a copy of what they
+   * signed" is a question this regime asks, and the answer has to survive the
+   * practice changing its mind, its staff and its mail provider. The queued
+   * message and its correspondence twin are transport; this is the record that
+   * the copy was ASKED FOR, by whom, on what channel, against which agreement.
+   *
+   * TYPES AND IDS ONLY (hard rule 9, REQ-VER-04). The payload carries the
+   * agreement, the copy link's id, the channel TYPE — `email` or `sms` — the
+   * option key it was chosen from and the version of the option list. It never
+   * carries an address, a mobile, a name or a masked form of any of them: a
+   * mask is still derived from the value and an event is forever.
+   *
+   * THE OPENING IS `artefact.accessed`, not this. A link that is followed is a
+   * read of evidence and belongs with every other read of it.
+   */
+  'agreement.copy_requested',
   'artefact.accessed',
   'artefact.exported',
   'retention.expiry_scheduled',

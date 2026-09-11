@@ -2,6 +2,7 @@ export * from './ids';
 export * from './identifiers';
 export * from './parties';
 export * from './agreement';
+export * from './agreement-copy';
 export * from './guards';
 export * from './auto-capture';
 export * from './lifecycle';

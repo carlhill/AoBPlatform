@@ -149,6 +149,14 @@ vi.mock('./api', () => ({
   fetchKioskMe,
   fetchWaitingList,
   fetchPracticeStaffNames: vi.fn(async () => []),
+  /*
+   * THE COPY OFFER (W6). K-6 asks for it the moment it renders, so every
+   * suite that reaches the thank-you screen has to answer. Nothing on offer
+   * here — this suite is about the sequence and the wire, and
+   * `send-me-a-copy.test.tsx` is about the offer.
+   */
+  fetchCopyOffer: vi.fn(async () => ({ channels: [], declineKey: 'not_now', version: 'test-copy-1' })),
+  requestCopy: vi.fn(async () => ({ channel: 'email', queued: true })),
   fetchTabletSession,
   confirmSessionDetails,
   setTabletSessionState,

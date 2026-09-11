@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -30,7 +29,8 @@ import type {
 } from '@aobplatform/contracts';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
-import { RendererRegistry, renderInputOf } from '../render/renderer-registry';
+import { RendererRegistry } from '../render/renderer-registry';
+import { verifiedArtefactOf } from '../render/verified-artefact';
 import { anchorsForAgreements } from '../affiliations/agreement-anchor';
 import { EnduringService } from '../enduring/enduring.service';
 import { ReviewTasksService } from '../review-tasks/review-tasks.service';
@@ -267,35 +267,10 @@ export class PortalReadsService {
       );
       if (!agreement) continue;
 
-      if (!agreement.particularsLockedAt || !agreement.renderedArtefactHash) {
-        throw new NotFoundException('This agreement has no signed copy yet.');
-      }
-      const renderer = this.renderers.get(agreement.rendererVersion);
-      if (!renderer) {
-        // 409 rather than 500: the record is intact and the platform simply
-        // cannot honour rule 13 for it today. Saying so is better than serving
-        // bytes whose hash nothing checked.
-        throw new ConflictException(
-          'This copy cannot be re-verified with the renderer it was made under, so it will not be served.',
-        );
-      }
-
-      // `renderInputOf`, not `particulars`: since 5 September 2026 the lock
-      // stores the WHOLE rendered document (letterhead + words + particulars)
-      // and that is what has to be re-rendered to check the hash. Agreements
-      // locked before it still re-render from `particulars` under `pdf-1` —
-      // the helper picks, in one place, for all three re-render call sites.
-      const rendered = await renderer.render(renderInputOf(agreement), agreement.renderedLanguages);
-      if (rendered.sha256 !== agreement.renderedArtefactHash) {
-        this.logger.error(
-          `Agreement ${agreementId} re-rendered to ${rendered.sha256}, recorded ${agreement.renderedArtefactHash}. ` +
-            'Refusing to serve it.',
-        );
-        throw new ConflictException(
-          'This copy no longer matches the hash recorded when it was signed, so it will not be served. ' +
-            'That is a tamper signal, not a transient error.',
-        );
-      }
+      // ONE VERIFICATION, SHARED WITH THE "SEND ME A COPY" LINK (W6). Both
+      // hand a patient the same document; a second copy of the re-render and
+      // the hash comparison would be the place rule 13 drifts.
+      const rendered = await verifiedArtefactOf(this.renderers, agreement, this.logger);
 
       await this.prisma.withPractice(link.practiceId, (tx) =>
         enqueueVaultEvent(tx, {
@@ -309,7 +284,7 @@ export class PortalReadsService {
       return {
         bytes: rendered.bytes,
         mediaType: rendered.mediaType,
-        filename: `agreement-${agreementId}${rendered.mediaType === 'application/pdf' ? '.pdf' : '.json'}`,
+        filename: rendered.filename,
         sha256: rendered.sha256,
       };
     }

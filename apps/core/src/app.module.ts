@@ -40,6 +40,7 @@ import { MessagingModule } from './messaging/messaging.module';
 import { ArtefactsModule } from './artefacts/artefacts.module';
 import { RetentionModule } from './retention/retention.module';
 import { PortalModule } from './portal/portal.module';
+import { AgreementCopyModule } from './agreement-copy/agreement-copy.module';
 
 /**
  * Thin wiring only. Feature modules (M1 onboarding, M2 capture, M3
@@ -86,6 +87,7 @@ import { PortalModule } from './portal/portal.module';
     EnduringModule,
     NoticesModule,
     PortalModule,
+    AgreementCopyModule,
     DevSeedModule,
     HealthModule,
   ],
