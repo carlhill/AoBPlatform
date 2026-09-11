@@ -3504,3 +3504,39 @@ Three things Carl has to decide before this can be built.
 
 Zero-footprint still binds either way: any staff session here is memory-only,
 dies on reload, and nothing about it is written to the device.
+
+## A dev kiosk tab never picks up new code by itself (found 12 Sep 2026)
+
+Carl signed on the tablet after W6 landed and the copy offer did not appear. The
+feature was not at fault; his tab was running the bundle it had loaded hours
+earlier.
+
+**Why it cannot self-heal in dev.** `kioskBuildId()` returns
+`process.env.NEXT_PUBLIC_BUILD_ID` or the literal `'dev'`
+(`apps/web/app/kiosk/session.ts`). CI sets a date-ordered release id, so in a
+real deployment the string changes with every build and the server answers
+`reload: true` to any tablet below the floor. In dev the string is the constant
+`'dev'`, it never changes, no floor is ever crossed, and the reload signal can
+never fire. A long-lived kiosk tab therefore runs whatever it loaded until
+somebody presses refresh — and a restart of the web dev server makes it worse,
+because the tab loses its hot-reload socket and stops getting updates silently.
+
+**Evidence it was the tab and not the server.** The route
+`GET /kiosk/agreements/:id/copy-offer` is mapped in the running core; the new
+string is present in the chunk the dev server serves; no copy link row was ever
+created; and the two test signings at 09:36 and 09:38 produced no copy request
+at all, including the one for a patient who has both an email and a mobile.
+
+**The workaround, until it is fixed:** hard-refresh the kiosk tab after any
+change under `apps/web/app/kiosk/`, and always after restarting the web dev
+server.
+
+**The fix, worth doing because it will cost an hour of confusion every time
+otherwise.** In development only, derive the build id from something that
+actually moves — the dev server's start time, or a hash of the kiosk bundle —
+so the existing floor mechanism does the work it already knows how to do. It
+must stay `'dev'`-like in shape and must not reach production behaviour: the
+rollout floor is a per-practice staged control (CLAUDE.md §7) and this must not
+turn into an automatic reload for real tablets. A named test that a changed
+build id produces `reload: true` already exists for the production path; the dev
+path needs its own.
