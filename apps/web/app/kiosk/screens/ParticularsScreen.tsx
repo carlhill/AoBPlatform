@@ -104,6 +104,20 @@ export interface ParticularsView {
   readonly serviceDate: string | null;
   readonly agreementDate: string | null;
   readonly basicServiceDescription: string | null;
+  /**
+   * D6b — THE MBS ITEM NUMBER(S), POST-AGREEMENTS ONLY (REQ-REG-01; s 65C(4)
+   * table item 6). Carl, 11 Sep 2026, the post-service second push.
+   *
+   * EMPTY ON A PRE-AGREEMENT, and that is the discriminator rather than a flag:
+   * D6a is "pre-agreements only" and D6b is "post-agreements only", so the two
+   * rows are never both drawn and neither is ever drawn blank. A field the
+   * server did not send is not drawn — this screen's own rule, unchanged.
+   *
+   * NO AMOUNT ANYWHERE NEAR IT (hard rule 4, REQ-REG-04). An invoice has a
+   * figure on it; an assignment of benefit does not, and there is no field for
+   * one on this type.
+   */
+  readonly mbsItemNumbers: readonly string[];
   readonly assignorIsPatient: boolean;
   readonly assignorName: string | null;
   readonly assignorRelationship: string | null;
@@ -315,6 +329,21 @@ export function ParticularsScreen({
             <Row label={strings.particulars.serviceDate} value={view.serviceDate} />
             <Row label={strings.particulars.agreementDate} value={view.agreementDate} />
             <Row label={strings.particulars.service} value={view.basicServiceDescription} />
+            {/*
+              D6b — WHAT WAS ACTUALLY DONE, on a post-agreement (REQ-REG-01).
+              Drawn only when the server sent item numbers, which is only on the
+              type that carries them. Never an amount beside them (hard rule 4).
+            */}
+            {view.mbsItemNumbers.length > 0 && (
+              <Row
+                label={
+                  view.mbsItemNumbers.length === 1
+                    ? strings.particulars.item
+                    : strings.particulars.items
+                }
+                value={view.mbsItemNumbers.join(', ')}
+              />
+            )}
             <Row
               label={strings.particulars.assignor}
               value={

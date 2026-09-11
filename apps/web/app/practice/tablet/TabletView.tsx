@@ -54,6 +54,7 @@ import { deviceActivityLine } from '../deviceActivity';
 import styles from '../manage.module.css';
 import {
   AgreementRow,
+  itemsFact,
   CorrectOutcomeNotice,
   CorrectionPanel,
   canSendAgain,
@@ -82,6 +83,7 @@ export {
   describeRefusal,
   disputedLabels,
   fieldsToCorrect,
+  itemsFact,
   liveOnly,
   mayPush,
   sendSteps,
@@ -90,6 +92,7 @@ export {
   signingFact,
   whenLabel,
   whoIsBlocked,
+  type CoveredServiceRow,
   type PatientDetails,
   type PushableRow,
   type RefusalDescription,
@@ -100,7 +103,7 @@ export function TabletView({ practiceId }: { practiceId: string }) {
   // THE TOP BAR'S REFRESH BUTTON works here too (Carl, 5 Sep 2026: 'No refresh
   // button in header'): the Shell shows it only when a page registers a loader.
   useRefreshable(desk.load);
-  const { rows, devices, loadError, canSend, busyId } = desk;
+  const { rows, covered, devices, loadError, canSend, busyId } = desk;
 
   if (loadError && rows === null) {
     return (
@@ -190,6 +193,69 @@ export function TabletView({ practiceId }: { practiceId: string }) {
             <AgreementRow key={row.agreementId} desk={desk} row={row} />
           ))}
         </ul>
+
+        {/*
+          COVERED ALREADY TODAY — A HISTORY LINE, NEVER A SEND (Carl, 11 Sep
+          2026, step 4; TODO.md "One signature per episodic visit, not two").
+
+          WHY IT IS HERE AND NOT HIDDEN. A patient whose billed item is covered
+          by the agreement they signed on the way in does NOTHING at checkout,
+          so nothing about them appears on the queue above — and a receptionist
+          watching them walk out with a blank screen cannot tell "already
+          covered" from "we forgot". The same reasoning that puts BLOCKED rows
+          on the queue rather than dropping them.
+
+          AND IT IS QUIET. No control, no chip, no numbered strip: there is
+          nothing to do. Each line says what covered the visit and links to it,
+          so the answer is one press away rather than a hunt.
+        */}
+        {covered !== null && covered.length > 0 && (
+          <div className={styles.queueSummary} data-testid="covered-summary">
+            <Chip tone="ok">{strings.tablet.coveredCount(covered.length)}</Chip>
+            <span className={ui.hint}>{strings.tablet.coveredTitle}</span>
+          </div>
+        )}
+        {covered !== null && covered.length > 0 && (
+          <>
+            <p className={ui.hint}>{strings.tablet.coveredLead}</p>
+            <ul className={styles.queueList} data-testid="covered-list">
+              {covered.map((line) => (
+                <li
+                  key={line.serviceRecordId}
+                  className={ui.hint}
+                  data-testid={`covered-${line.serviceRecordId}`}
+                >
+                  <strong>{line.patientName ?? strings.tablet.coveredTitle}</strong>{' '}
+                  ·{' '}
+                  {strings.tablet.coveredReason[line.reason]
+                    ?? strings.tablet.coveredReasonUnknown(line.reason)}{' '}
+                  · {strings.tablet.postServiceFact(line.serviceDate, itemsFact(line.mbsItemNumbers))}
+                  {/*
+                    THE PATIENT'S WORK PAGE, NOT AN AGREEMENT PAGE. There is no
+                    `/practice/agreements/:id` in this app (see
+                    `RefusalDescription`), and a link to a route that does not
+                    exist is worse than no link — the closest REAL place to see
+                    the agreement that covers this visit is the patient's own
+                    page, where every agreement of theirs is listed. Drawn only
+                    when the row names a patient, so the destination always
+                    resolves.
+                  */}
+                  {line.coveringAgreementId && line.patientId && (
+                    <>
+                      {' '}
+                      <Link
+                        href={`/practice/patients/${line.patientId}`}
+                        data-testid={`covered-link-${line.serviceRecordId}`}
+                      >
+                        {strings.tablet.coveredOpenAgreement}
+                      </Link>
+                    </>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </Section>
 
       <Section number={2} title={strings.tablet.tabletsTitle}>

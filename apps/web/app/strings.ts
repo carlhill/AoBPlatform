@@ -4320,6 +4320,54 @@ export const strings = {
     d6aLabel: 'Service',
     d6aMissing: 'Not set',
     d6aStale: 'From an older list',
+
+    /*
+     * THE SECOND MOMENT, ON THE SAME DESK (Carl, 11 Sep 2026; TODO.md "Two
+     * front doors" (b)).
+     *
+     * A POST-AGREEMENT SAYS THE DAY AND THE ITEMS, NOT A DESCRIPTION. D6a is a
+     * pre-agreement particular and D6b — the MBS item numbers — is the
+     * post-agreement's (REQ-REG-01; s 65C(4) table item 6), so the row states
+     * what the agreement actually carries rather than a blank "Service: Not
+     * set" that would read as something missing.
+     *
+     * AND NO AMOUNT. There is no benefit or dollar figure on any agreement
+     * artefact and none on the row that names one (hard rule 4, REQ-REG-04).
+     */
+    postServiceLabel: 'Post-service',
+    postServiceItems: (items: string) => `items ${items}`,
+    postServiceItem: (item: string) => `item ${item}`,
+    postServiceNoItems: 'no item numbers recorded',
+    postServiceFact: (when: string, items: string) => `Post-service · ${when} · ${items}`,
+
+    /*
+     * TODAY'S VISITS THAT NEEDED NO SECOND SIGNATURE — a quiet history line,
+     * never a Send (Carl, 11 Sep 2026, step 4).
+     *
+     * IT NAMES WHAT COVERED THE VISIT AND LINKS THERE ("shortcuts to the
+     * answer", CLAUDE.md section 7): a receptionist seeing a patient walk out
+     * with nothing on screen about them cannot tell "already covered" from "we
+     * forgot", and a line with no destination would only half fix that.
+     *
+     * NOTHING HERE CALLS OUR FORMS certified, approved or accredited (rule 12).
+     */
+    coveredTitle: 'Covered already today',
+    coveredLead:
+      'These visits were billed and need no second signature. Nothing is waiting on the patient.',
+    coveredNone: 'Nothing has been covered by an earlier agreement today.',
+    coveredCount: (n: number) => (n === 1 ? '1 visit' : `${n} visits`),
+    /** The reason codes the post-service table can give, in a receptionist's words. */
+    coveredReason: {
+      covered_by_todays_agreement: 'Covered by today’s agreement',
+      covered_by_an_ongoing_agreement: 'Covered by an ongoing agreement',
+    } as Record<string, string>,
+    /**
+     * AN UNMAPPED CODE SHOWS ITSELF (CLAUDE.md section 7). A newer server
+     * deciding for a newer reason must reach reception as something they can
+     * quote down the phone, never as a generic sentence that hides it.
+     */
+    coveredReasonUnknown: (code: string) => `Covered (${code})`,
+    coveredOpenAgreement: 'Open the agreement that covers it →',
     /*
      * WHO IS SIGNING, SAID ON THE ROW (Carl, 7 Sep 2026, twice: "it does not
      * ask me who is approving", "no who is signing").
@@ -6046,6 +6094,22 @@ export const strings = {
       placeOfPractice: 'Place of practice',
       serviceDate: 'Date of service',
       service: 'Service',
+      /*
+       * D6b — THE MBS ITEM NUMBER(S), POST-AGREEMENTS ONLY (REQ-REG-01;
+       * s 65C(4) table item 6). Carl, 11 Sep 2026.
+       *
+       * The row is drawn only when the server sent item numbers, which it does
+       * only for a post-agreement — so a pre-agreement's screen is unchanged
+       * and shows its Basic Service Description as it always did (D6a is
+       * "pre-agreements only").
+       *
+       * AND NO AMOUNT BESIDE IT. The patient is being asked to assign the
+       * benefit, not to approve a figure: the s 65C data set contains no
+       * benefit and no dollar amount, and putting one on this screen would put
+       * it on an agreement artefact (hard rule 4, REQ-REG-04).
+       */
+      items: 'Medicare item numbers',
+      item: 'Medicare item number',
       agreementDate: 'Date of this agreement',
       assignor: 'Signing',
       assignorIsPatient: 'The patient is signing',

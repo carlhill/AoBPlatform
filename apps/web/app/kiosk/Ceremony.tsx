@@ -1205,6 +1205,58 @@ export function Ceremony(): ReactNode {
     }
   }, [tabletSession.session, pushed, step, pushedCeremony]);
 
+
+  /**
+   * THE SECOND PUSH OF THE DAY DOES NOT ASK THE SAME QUESTION TWICE (Carl,
+   * 11 Sep 2026; the post-service second push).
+   *
+   * ONE MECHANISM, TWO MOMENTS — and the same person, the same tablet, an hour
+   * apart. On the way in, K-P1 asks whoever is holding the tablet to tick that
+   * the five details the practice holds are right. On the way out, with a
+   * post-agreement for the service they have just had, asking them to confirm
+   * the same address again is ceremony for its own sake.
+   *
+   * THE SERVER DECIDED IT, NOT THIS SCREEN (REQ-DATA-11). `detailsCheck` comes
+   * back on the session payload: the server looked for a pushed session at this
+   * practice, for this patient, today, whose details were confirmed and NOT
+   * disputed. A tablet that decided for itself to skip a step of the ceremony
+   * would be a tablet deciding what the record says happened.
+   *
+   * WHAT IS NOT SKIPPED. The particulars (K-3), the affirmations on them and
+   * the signature (K-4) all run exactly as they do on a first push — this is a
+   * NEW agreement and it is signed in its own right (REQ-REG-07). Nor is any
+   * evidence lost: the ticks are a DATA-ACCURACY confirmation, never a
+   * verification, and the verification the regulation wants is the staff check
+   * across the desk that this very push recorded FRESH (REQ-VER-03).
+   *
+   * A FAILED FETCH FALLS BACK TO ASKING. If the agreement cannot be read the
+   * ref is released and the ceremony stays on K-P1, where the patient can
+   * answer the rows as they always could — slower, and honest (hard rule 8).
+   */
+  const detailsSkippedForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (step !== 'check-details') return;
+    if (!pushed || pushed.detailsCheck !== 'confirmed_today') return;
+    if (detailsSkippedForRef.current === pushed.id) return;
+    detailsSkippedForRef.current = pushed.id;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const current = await fetchAgreement(pushed.agreementId);
+        if (cancelled) return;
+        setAgreement(current);
+        setStep('particulars');
+      } catch {
+        // Ask after all. Nothing about the agreement changed and nothing was
+        // recorded; the ticks are the honest fallback.
+        if (!cancelled) detailsSkippedForRef.current = null;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [step, pushed]);
+
   /**
    * THE OTHER HALF OF THE LOCK: A RELOAD OR AN HMR REMOUNT MID-SESSION (Carl's
    * ruling, 4 Sep 2026). This component's own memory of having posted a
@@ -2029,6 +2081,15 @@ export function Ceremony(): ReactNode {
       serviceDate: str('serviceDate'),
       agreementDate: str('agreementDate'),
       basicServiceDescription: str('basicServiceDescription'),
+      /*
+       * D6b — POST-AGREEMENTS ONLY (REQ-REG-01). Straight off the locked
+       * particulars, which is the hashed snapshot the PDF is drawn from (rule
+       * 13); empty on every other type, so K-3 draws the row only where the
+       * agreement has one. Nothing here is an amount (hard rule 4).
+       */
+      mbsItemNumbers: Array.isArray(p.mbsItemNumbers)
+        ? (p.mbsItemNumbers as unknown[]).filter((n): n is string => typeof n === 'string')
+        : [],
       /*
        * D7, WITH THE PUSHED SESSION AS THE FALLBACK. The agreement's own field
        * is authoritative and is used the moment it has been fetched; before

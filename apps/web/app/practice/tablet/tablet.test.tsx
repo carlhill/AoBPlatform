@@ -34,6 +34,7 @@ import {
   disputedLabels,
   fieldsToCorrect,
   mayPush,
+  itemsFact,
   sendSteps,
   serviceFact,
   signingFact,
@@ -57,6 +58,10 @@ const READY = {
   appointmentTime: '09:00',
   serviceDescription: 'General practitioner attendance',
   serviceDescriptionValid: true,
+  // D5 AND D6b ARE A POST-AGREEMENT'S PARTICULARS, so a pre-agreement row
+  // carries neither (REQ-REG-01: D6b is "post-agreements only").
+  serviceDate: null,
+  mbsItemNumbers: [] as string[],
   assignorIsPatient: true,
   assignorName: null,
   assignorRelationship: null,
@@ -278,6 +283,8 @@ function stubFetch(
      */
     sessions?: TabletSessionRow[] | (() => TabletSessionRow[]);
     staff?: string[];
+    /** Today's visits that needed no second signature — the history lines. */
+    covered?: unknown[];
     details?: unknown;
     content?: unknown;
     onPost?: (url: string) => { ok: boolean; status?: number; payload?: unknown };
@@ -297,6 +304,12 @@ function stubFetch(
           ? (opts.content ?? DESCRIPTIONS)
           : url.includes('/tablet-sessions/pushable')
           ? (opts.rows ?? [READY, BLOCKED])
+          // BEFORE the bare `/tablet-sessions` branch, because `covered`
+          // contains it and Nest-style prefix matching here is just
+          // `includes` — the same declaration-order trap the server's routes
+          // have (wow.md section 1).
+          : url.includes('/tablet-sessions/covered')
+          ? (opts.covered ?? [])
           : url.includes('/tablet-sessions')
             ? liveSessions
             : url.includes('/practice-users')
@@ -2417,4 +2430,151 @@ describe('the refusal words', () => {
     expect(mayPush(['platform'])).toBe(false);
     expect(mayPush([])).toBe(false);
   });
+
+  // ---------------------------------------------------------------------------
+  // THE SECOND MOMENT — post-service rows and the visits that need nothing
+  // (Carl, 11 Sep 2026; TODO.md "Two front doors" (b)).
+  // ---------------------------------------------------------------------------
+
+  /**
+   * A POST-AGREEMENT ON THE DESK. Same row, same ①→②→③ strip, same Send — one
+   * mechanism, two moments. What differs is the particulars it states: D5 and
+   * D6b, because D6a is "pre-agreements only" and D6b is "post-agreements
+   * only" (REQ-REG-01; s 65C(4) table item 6).
+   */
+  const POST_ROW = {
+    ...READY,
+    agreementId: 'agreement-post',
+    agreementType: 'episodic_post',
+    patientName: 'Jo Postvisit',
+    patientId: 'patient-post',
+    appointmentDate: null,
+    appointmentTime: null,
+    // A post-agreement carries no Basic Service Description, and the row must
+    // not report that as something missing.
+    serviceDescription: null,
+    serviceDescriptionValid: false,
+    serviceDate: '2026-09-11',
+    mbsItemNumbers: ['23', '10990'],
+  };
+
+  it('desk_shows_post_service_rows_with_the_numbered_strip', async () => {
+    signedInAtPractice();
+    stubFetch({ rows: [POST_ROW] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    const row = within(await screen.findByTestId(`pushable-${POST_ROW.agreementId}`));
+
+    // THE FACT LINE SAYS WHAT THE AGREEMENT ACTUALLY CARRIES — the day and the
+    // items — rather than "Service: Not set".
+    const fact = serviceFact(POST_ROW);
+    expect(fact).toContain(strings.tablet.postServiceLabel);
+    expect(fact).toContain('23, 10990');
+    expect(fact).not.toContain(strings.tablet.d6aMissing);
+    expect(row.getByText(fact)).toBeTruthy();
+
+    // ONE MECHANISM, TWO MOMENTS: the same numbered strip, in the same order.
+    expect(
+      row.getByTestId(`step-who-${POST_ROW.agreementId}`).getAttribute('data-state'),
+    ).toBe('done');
+    expect(row.getByTestId(`step-tablet-${POST_ROW.agreementId}`)).toBeTruthy();
+    expect(row.getByTestId(`step-send-${POST_ROW.agreementId}`)).toBeTruthy();
+
+    // NO APPOINTMENT TIME on a visit that is already over — "No appointment
+    // time" would be an odd thing to say about a service that happened.
+    expect(
+      row.getByTestId(`row-line-${POST_ROW.agreementId}`).textContent,
+    ).toContain(strings.tablet.postServiceLabel);
+    expect(
+      row.getByTestId(`row-line-${POST_ROW.agreementId}`).textContent,
+    ).not.toContain(strings.tablet.unbooked);
+
+    // HARD RULE 4 — nothing on this row is money.
+    expect(document.body.textContent).not.toMatch(/\$|benefit amount|rebate/i);
+    // HARD RULE 12 — and nothing calls our forms approved.
+    expect(document.body.textContent).not.toMatch(/certified|accredited|government-approved/i);
+  });
+
+  it('a single item number is said in the singular', () => {
+    expect(itemsFact(['23'])).toBe(strings.tablet.postServiceItem('23'));
+    expect(itemsFact(['23', '36'])).toBe(strings.tablet.postServiceItems('23, 36'));
+    // An empty list is said out loud rather than rendered as a gap.
+    expect(itemsFact([])).toBe(strings.tablet.postServiceNoItems);
+  });
+
+  it('a covered visit is a history line and never a Send', async () => {
+    signedInAtPractice();
+    const COVERED = {
+      serviceRecordId: 'svc-1',
+      patientId: 'patient-covered',
+      patientName: 'Kim Specimen',
+      providerName: 'Dr Example Provider',
+      serviceDate: '2026-09-11',
+      mbsItemNumbers: ['23'],
+      decision: 'covered',
+      reason: 'covered_by_todays_agreement',
+      policyVersion: 'visit-policy-2',
+      coveringAgreementId: 'agreement-covering',
+    };
+    stubFetch({ rows: [], covered: [COVERED] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    const line = await screen.findByTestId(`covered-${COVERED.serviceRecordId}`);
+    // THE REASON, IN OUR WORDS (REQ-LANG-01), not the server's code.
+    expect(line.textContent).toContain(strings.tablet.coveredReason.covered_by_todays_agreement);
+    expect(line.textContent).toContain('Kim Specimen');
+    // D5 and D6b, as on any post row.
+    expect(line.textContent).toContain('2026-09-11');
+    expect(line.textContent).toContain('23');
+
+    // NOTHING TO PRESS ON IT — it is finished work, not blocked work.
+    expect(within(line).queryByRole('button')).toBeNull();
+    expect(screen.queryByTestId(`pushable-${COVERED.serviceRecordId}`)).toBeNull();
+
+    // AND IT LINKS TO THE ANSWER rather than describing where to find it.
+    const link = screen.getByTestId(`covered-link-${COVERED.serviceRecordId}`);
+    expect(link.getAttribute('href')).toBe(`/practice/patients/${COVERED.patientId}`);
+
+    // HARD RULE 4 again: a covered visit was billed, and no figure reaches here.
+    expect(document.body.textContent).not.toMatch(/\$|benefit amount|rebate/i);
+  });
+
+  it('an unmapped covered reason shows its own code rather than a generic sentence', async () => {
+    signedInAtPractice();
+    stubFetch({
+      rows: [],
+      covered: [
+        {
+          serviceRecordId: 'svc-2',
+          patientId: 'patient-2',
+          patientName: 'Alex Fictional',
+          providerName: null,
+          serviceDate: '2026-09-11',
+          mbsItemNumbers: ['36'],
+          decision: 'covered',
+          // A reason a NEWER server decided for, which this bundle has never
+          // met. It must reach reception as something they can quote down the
+          // phone (CLAUDE.md section 7), never be swallowed.
+          reason: 'covered_by_something_new',
+          policyVersion: 'visit-policy-9',
+          coveringAgreementId: 'agreement-x',
+        },
+      ],
+    });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    const line = await screen.findByTestId('covered-svc-2');
+    expect(line.textContent).toContain('covered_by_something_new');
+  });
+
+  it('nothing covered today draws no panel at all', async () => {
+    signedInAtPractice();
+    stubFetch({ covered: [] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    await waitFor(() => expect(screen.getByTestId(`pushable-${READY.agreementId}`)).toBeTruthy());
+    expect(screen.queryByTestId('covered-list')).toBeNull();
+    expect(screen.queryByTestId('covered-summary')).toBeNull();
+  });
+
 });

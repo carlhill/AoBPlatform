@@ -81,6 +81,34 @@ const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
  */
 export const POLL_MS = 3000;
 
+/**
+ * A VISIT THAT NEEDED NO SECOND SIGNATURE — a history line on the desk, never a
+ * Send (Carl, 11 Sep 2026, step 4).
+ *
+ * DELIBERATELY NOT A `PushableRow` WITH `pushable: false`. A row with a blocked
+ * reason is work somebody has to unblock; this is work that is finished, and
+ * putting the two in one list would have a receptionist reading a reason code to
+ * learn there is nothing to do. It names the agreement that covers the visit so
+ * the line can LINK there ("shortcuts to the answer", CLAUDE.md section 7).
+ *
+ * NO AMOUNT, AND NO FIELD FOR ONE (hard rule 4).
+ */
+export interface CoveredServiceRow {
+  serviceRecordId: string;
+  patientId: string | null;
+  patientName: string | null;
+  providerName: string | null;
+  /** D5 — the day the service was rendered. */
+  serviceDate: string;
+  /** D6b — the item numbers that were billed. */
+  mbsItemNumbers: string[];
+  decision: 'covered' | 'covered_by_enduring';
+  /** The rule key that decided; the console says it in its own words. */
+  reason: string;
+  policyVersion: string;
+  coveringAgreementId: string | null;
+}
+
 export interface PushableRow {
   agreementId: string;
   agreementType: string;
@@ -94,6 +122,19 @@ export interface PushableRow {
   appointmentTime: string | null;
   serviceDescription: string | null;
   serviceDescriptionValid: boolean;
+  /**
+   * THE POST-SERVICE PARTICULARS — D5 AND D6b (Carl, 11 Sep 2026; TODO.md "Two
+   * front doors" (b)).
+   *
+   * `null` and `[]` on every pre-agreement row. A post-agreement is s 65C(4)
+   * table item 6 and carries the day the service WAS rendered plus its MBS item
+   * numbers, where a pre-agreement carries a Basic Service Description instead
+   * (REQ-REG-01: D6a "pre-agreements only", D6b "post-agreements only").
+   *
+   * NO AMOUNT, AND NO FIELD FOR ONE (hard rule 4).
+   */
+  serviceDate: string | null;
+  mbsItemNumbers: string[];
   assignorIsPatient: boolean;
   assignorName: string | null;
   assignorRelationship: string | null;
@@ -574,7 +615,26 @@ export function whenLabel(row: Pick<PushableRow, 'appointmentTime'>): string {
  * string rather than as sibling expressions is what rules it out by
  * construction (`row_renders_facts_in_one_line_each`).
  */
-export function serviceFact(row: Pick<PushableRow, 'serviceDescription' | 'serviceDescriptionValid'>): string {
+export function serviceFact(
+  row: Pick<
+    PushableRow,
+    'agreementType' | 'serviceDescription' | 'serviceDescriptionValid' | 'serviceDate' | 'mbsItemNumbers'
+  >,
+): string {
+  /*
+   * A POST-AGREEMENT STATES A DIFFERENT PARTICULAR (Carl, 11 Sep 2026). D6a is
+   * "pre-agreements only" and D6b — the MBS item numbers — is
+   * "post-agreements only" (REQ-REG-01), so a post row saying "Service: Not
+   * set" would report a missing description that the agreement is not supposed
+   * to have. It says the day and the items instead, and no amount (hard rule 4
+   * — there is no field for one on the row and none on the artefact).
+   */
+  if (row.agreementType === 'episodic_post') {
+    return strings.tablet.postServiceFact(
+      row.serviceDate ? bornOn(row.serviceDate) : strings.tablet.d6aMissing,
+      itemsFact(row.mbsItemNumbers),
+    );
+  }
   const value =
     row.serviceDescription && row.serviceDescriptionValid
       ? row.serviceDescription
@@ -582,6 +642,30 @@ export function serviceFact(row: Pick<PushableRow, 'serviceDescription' | 'servi
         ? strings.tablet.d6aStale
         : strings.tablet.d6aMissing;
   return `${strings.tablet.d6aLabel}: ${value}`;
+}
+
+/**
+ * D6b, IN WORDS. "item 23" / "items 23, 10990" — singular and plural said
+ * properly, because a receptionist reading "items 23" once will read every
+ * other number on the screen twice.
+ *
+ * AN EMPTY LIST IS SAID OUT LOUD rather than rendered as an empty gap: a
+ * post-agreement with no item numbers is something to notice, and C7 would
+ * refuse it at the lock anyway.
+ */
+export function itemsFact(items: readonly string[] | null | undefined): string {
+  /*
+   * A MISSING LIST IS THE SAME ANSWER AS AN EMPTY ONE, AND IT MUST NOT THROW.
+   * This is a HISTORY panel: a server that sends an older shape, or a response
+   * that is not what this bundle expects, must leave the desk working — a
+   * receptionist who could not send an agreement because a finished line would
+   * not render would be the platform blocking work over something nobody is
+   * waiting on (hard rule 8, REQ-REC-04). Caught live by the platform twin's
+   * own suite, 11 Sep 2026.
+   */
+  if (!items || items.length === 0) return strings.tablet.postServiceNoItems;
+  if (items.length === 1) return strings.tablet.postServiceItem(items[0]);
+  return strings.tablet.postServiceItems(items.join(', '));
 }
 
 /**
@@ -982,6 +1066,8 @@ export function subjectForPatient(patientId: string, disputedDetails: readonly s
 
 export interface PushDesk {
   rows: PushableRow[] | null;
+  /** Today's visits that needed no second signature. A history line, never a Send. */
+  covered: CoveredServiceRow[] | null;
   devices: DeviceRow[] | null;
   sessions: TabletSessionRow[];
   staffNames: readonly string[];
@@ -1066,6 +1152,7 @@ export interface PushDesk {
  */
 export function usePushDesk(practiceId: string): PushDesk {
   const [rows, setRows] = useState<PushableRow[] | null>(null);
+  const [covered, setCovered] = useState<CoveredServiceRow[] | null>(null);
   const [devices, setDevices] = useState<DeviceRow[] | null>(null);
   const [sessions, setSessions] = useState<TabletSessionRow[]>([]);
   const [staffNames, setStaffNames] = useState<readonly string[]>([]);
@@ -1172,7 +1259,7 @@ export function usePushDesk(practiceId: string): PushDesk {
    */
   const load = useCallback(async () => {
     try {
-      const [p, d, s] = await Promise.all([
+      const [p, d, s, c] = await Promise.all([
         fetch(`${CORE_URL}/tablet-sessions/pushable`, { headers: apiHeaders(practiceId) }),
         fetch(`${CORE_URL}/devices`, { headers: apiHeaders(practiceId) }),
         /*
@@ -1183,11 +1270,31 @@ export function usePushDesk(practiceId: string): PushDesk {
          * which the row reception is looking at has just vanished.
          */
         fetch(`${CORE_URL}/tablet-sessions?active=false`, { headers: apiHeaders(practiceId) }),
+        /*
+         * TODAY'S COVERED VISITS (Carl, 11 Sep 2026). A fourth read rather than
+         * a field on the queue, because nothing in it is pushable and nothing
+         * in it is blocked — it is a different question with a different answer.
+         *
+         * ITS FAILURE IS NOT THE PAGE'S. A desk that could not send because a
+         * history panel would not load would be the platform blocking work over
+         * something nobody is waiting on (hard rule 8), so this one is read
+         * separately and an error leaves the panel empty.
+         */
+        fetch(`${CORE_URL}/tablet-sessions/covered`, { headers: apiHeaders(practiceId) }).catch(
+          () => null,
+        ),
       ]);
       if (!p.ok || !d.ok || !s.ok) throw new Error(String(p.ok ? (d.ok ? s.status : d.status) : p.status));
       const freshRows = (await p.json()) as PushableRow[];
       const freshDevices = ((await d.json()) as { devices: DeviceRow[] }).devices;
       const freshSessions = (await s.json()) as TabletSessionRow[];
+      /*
+       * AND AN ANSWER THAT IS NOT A LIST IS NO LIST (hard rule 8). The desk's
+       * own reads are checked above and throw; this one is a history panel and
+       * must never be the reason a patient cannot be sent to a tablet.
+       */
+      const coveredBody = c && c.ok ? ((await c.json()) as unknown) : null;
+      setCovered(Array.isArray(coveredBody) ? (coveredBody as CoveredServiceRow[]) : []);
       setRows(freshRows);
       setDevices(freshDevices);
       setSessions(freshSessions);
@@ -2049,6 +2156,7 @@ export function usePushDesk(practiceId: string): PushDesk {
 
   return {
     rows,
+    covered,
     devices,
     sessions,
     staffNames,
@@ -2606,12 +2714,21 @@ export function AgreementRow({
           because a standing agreement is not about a booking -- printing
           "9:00" beside it would say the opposite of what it is.
         */}
+        {/*
+          AND A POST-AGREEMENT IS NOT ABOUT A BOOKING EITHER (Carl, 11 Sep
+          2026). The service has already happened, so there is no appointment
+          time to print and "No appointment time" would be an odd thing to say
+          about a visit that is over. The provider, and the day and the items in
+          the facts column below.
+        */}
         <div className={ui.hint} data-testid={`row-line-${row.agreementId}`}>
           {row.agreementType === 'enduring'
             ? row.providerName
               ? strings.tablet.enduringRow(row.providerName)
               : strings.tablet.enduringRowNoProvider
-            : [row.providerName, whenLabel(row)].filter(Boolean).join(' · ')}
+            : row.agreementType === 'episodic_post'
+              ? [row.providerName, strings.tablet.postServiceLabel].filter(Boolean).join(' · ')
+              : [row.providerName, whenLabel(row)].filter(Boolean).join(' · ')}
         </div>
         {/*
           WHILE IT IS ON A TABLET, THE CHIP AND THE ID ARE OVER IN THE ACTION

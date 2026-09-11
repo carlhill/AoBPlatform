@@ -48,6 +48,8 @@ const VIEW: ParticularsView = {
   serviceDate: '2026-09-01',
   agreementDate: '2026-09-01',
   basicServiceDescription: 'General practitioner attendance',
+  // D6b is POST-agreements only (REQ-REG-01), so a pre-agreement carries none.
+  mbsItemNumbers: [] as string[],
   assignorIsPatient: true,
   assignorName: null,
   assignorRelationship: null,

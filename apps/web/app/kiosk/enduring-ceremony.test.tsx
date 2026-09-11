@@ -47,6 +47,7 @@ const SESSION: TabletSessionPayload = {
   },
   assignor: { isPatient: true },
   patientId: 'e609b40e-63aa-56e1-8f5b-2e9bc5aa5133',
+  detailsCheck: 'required',
   agreementId: 'ag-riley-enduring',
   captureRequestId: 'cr-riley-enduring',
 };

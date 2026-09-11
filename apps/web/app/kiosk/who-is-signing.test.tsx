@@ -40,6 +40,7 @@ const SESSION: TabletSessionPayload = {
   },
   patientId: PATIENT_ID,
   assignor: { isPatient: true },
+  detailsCheck: 'required',
   agreementId: 'ag-alex',
   captureRequestId: 'cr-alex',
 };

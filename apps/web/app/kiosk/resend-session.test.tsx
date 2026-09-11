@@ -42,6 +42,7 @@ const SESSION_A: TabletSessionPayload = {
   },
   assignor: { isPatient: true },
   patientId: 'e609b40e-63aa-56e1-8f5b-2e9bc5aa5133',
+  detailsCheck: 'required',
   agreementId: 'ag-riley-a',
   captureRequestId: 'cr-riley-a',
 };
@@ -68,6 +69,7 @@ const SESSION_C_SUPERSEDING: TabletSessionPayload = {
   },
   assignor: { isPatient: true },
   patientId: 'e609b40e-63aa-56e1-8f5b-2e9bc5aa5133',
+  detailsCheck: 'required',
   agreementId: 'ag-riley-superseding',
   captureRequestId: 'cr-riley-superseding',
 };
