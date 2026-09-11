@@ -2578,3 +2578,74 @@ describe('the refusal words', () => {
   });
 
 });
+
+/**
+ * THE QUEUE LINE CARRIES YOU TO THE FAULT (Carl, 11 Sep 2026, on a screenshot
+ * of his own desk: "Have a link here to go to the error so a better solution").
+ *
+ * WHAT HE WAS LOOKING AT. The top of the page said the patient was on a tablet
+ * now and nothing else; the panel that FIXES a crossed detail sat far below,
+ * under the device it belonged to. The page knew what was wrong and made
+ * reception go and find it — the exact shape CLAUDE.md §7 forbids ("shortcuts
+ * to the answer, not directions to a screen").
+ */
+describe('a_live_fault_links_from_the_queue_row_to_the_card_that_fixes_it', () => {
+  const onTablet = {
+    ...READY,
+    activeSession: { id: SESSION.id, deviceId: TABLET.id, state: 'details_disputed' as const },
+  };
+
+  it('names the fault on the row and links to the tablet card', async () => {
+    stubFetch({ sessions: [DISPUTED], rows: [onTablet] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    const link = await screen.findByTestId(`row-fault-link-${READY.agreementId}`);
+    // THE DESTINATION IS THE CARD ITSELF, not the list it lives in.
+    expect(link.getAttribute('href')).toBe(`#tablet-${TABLET.id}`);
+    expect(screen.getByTestId(`row-fault-${READY.agreementId}`).textContent).toContain(
+      strings.tablet.liveFaultDetail,
+    );
+    // AND THE TARGET EXISTS, so the link is never a dead hash.
+    expect(document.getElementById(`tablet-${TABLET.id}`)).toBeTruthy();
+  });
+
+  /**
+   * WHICH DETAIL WAS CROSSED IS NOT ON THE QUEUE LINE (REQ-VER-04, hard rule 9).
+   * The row says THAT something is disputed; the card says which TYPES. Values
+   * never appear on either.
+   */
+  it('says a detail is wrong without naming the value', async () => {
+    stubFetch({ sessions: [DISPUTED], rows: [onTablet] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    const fault = await screen.findByTestId(`row-fault-${READY.agreementId}`);
+    expect(fault.textContent).not.toContain('@');
+    expect(fault.textContent).not.toMatch(/\d{4}/);
+  });
+
+  /**
+   * AND IT STOPS ONCE RECEPTION HAS ANSWERED. The same rule
+   * `SessionDisputeNotices` was fixed for on 4 Sep: a resolved cross is not a
+   * job, and a row that keeps shouting about it at the person who just dealt
+   * with it is the defect, not the feature.
+   */
+  it('goes away once the dispute is resolved', async () => {
+    stubFetch({ sessions: [RESOLVED], rows: [onTablet] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    await waitFor(() => expect(screen.getByTestId(`pushable-${READY.agreementId}`)).toBeTruthy());
+    expect(screen.queryByTestId(`row-fault-${READY.agreementId}`)).toBeNull();
+  });
+
+  /** A session with nothing wrong shows the chip alone, as it always did. */
+  it('says nothing on a healthy session', async () => {
+    stubFetch({
+      sessions: [SESSION],
+      rows: [{ ...READY, activeSession: { id: SESSION.id, deviceId: TABLET.id, state: 'reading' as const } }],
+    });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    await waitFor(() => expect(screen.getByTestId(`pushable-${READY.agreementId}`)).toBeTruthy());
+    expect(screen.queryByTestId(`row-fault-${READY.agreementId}`)).toBeNull();
+  });
+});

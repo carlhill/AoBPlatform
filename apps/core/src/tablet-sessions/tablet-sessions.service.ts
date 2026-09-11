@@ -1405,9 +1405,114 @@ export class TabletSessionsService {
       const assignorById = new Map(assignors.map((a) => [a.id, a]));
       const live = await tx.tabletSession.findMany({ where: { endedAt: null } });
       const sessionByAgreement = new Map(live.map((s) => [s.agreementId, s]));
+      /*
+       * THE DESK IS ORDERED BY WHEN THE PATIENT ARRIVED (Carl, 11 Sep 2026).
+       *
+       * HIS REPORT: "when updating the patient card with who is signing, it
+       * saves correctly but loses its place in the list on the page." A party
+       * change supersedes rather than edits (D-2026-09-11-01), so the Save
+       * creates a NEW agreement with `now()` for its `createdAt`; this list
+       * used to order on that column, so the card left where reception was
+       * looking and reappeared at the very bottom of the queue.
+       *
+       * THE COLUMN WAS THE BUG, not the supersession. This is a picture of who
+       * is waiting in the room, and the person who has been there longest
+       * belongs at the top. `Agreement.createdAt` answers "when did we draft
+       * the paperwork", which supersession is entitled to change; the arrival
+       * answers "when did this patient turn up", which nothing on this screen
+       * may change. So the arrival is what it sorts on.
+       *
+       * AND THE ARRIVAL IS FOUND THROUGH THE CHAIN. `Arrival.agreementId`
+       * points at the agreement drafted when the patient walked in — the HEAD
+       * of the chain — and a successor is a different row that no arrival has
+       * ever named. Reading only the row's own arrival would therefore fix
+       * nothing: every superseded card would still fall to the fallback and
+       * still jump. So each agreement is walked back through
+       * `supersedesAgreementId` to its origin, and the whole chain's earliest
+       * arrival is its place in the queue.
+       */
+      const ancestorCreatedAt = new Map<string, Date>();
+      const parentOf = new Map<string, string>();
+      for (const agreement of forToday) {
+        if (agreement.supersedesAgreementId) parentOf.set(agreement.id, agreement.supersedesAgreementId);
+      }
+      /*
+       * WALKING BACK PAST ROWS THAT HAVE LEFT THIS LIST. A superseded agreement
+       * is excluded from `forToday` above, so its `supersedesAgreementId` is not
+       * in the map yet and a two-hop chain (A <- B <- C) would stop at B. Each
+       * pass reads the ancestors the last one discovered; the loop is bounded so
+       * a cycle — impossible through the `agreements_one_successor` index, but
+       * cheap to rule out — cannot hang the desk.
+       */
+      let frontier = [...parentOf.values()].filter((id) => !parentOf.has(id));
+      for (let hop = 0; hop < 16 && frontier.length > 0; hop += 1) {
+        const ancestors = await tx.agreement.findMany({
+          where: { id: { in: frontier } },
+          select: { id: true, supersedesAgreementId: true, createdAt: true },
+        });
+        for (const a of ancestors) {
+          if (a.supersedesAgreementId) parentOf.set(a.id, a.supersedesAgreementId);
+          ancestorCreatedAt.set(a.id, a.createdAt);
+        }
+        frontier = ancestors
+          .map((a) => a.supersedesAgreementId)
+          .filter((id): id is string => id !== null && !parentOf.has(id) && !ancestorCreatedAt.has(id));
+      }
+      /** Every id in an agreement's chain, itself first, oldest last. */
+      const chainOf = (id: string): string[] => {
+        const chain = [id];
+        let current = id;
+        for (let hop = 0; hop < 16; hop += 1) {
+          const parent = parentOf.get(current);
+          if (!parent || chain.includes(parent)) break;
+          chain.push(parent);
+          current = parent;
+        }
+        return chain;
+      };
+      const everyChainId = [...new Set(forToday.flatMap((a) => chainOf(a.id)))];
+      const arrivals = await tx.arrival.findMany({
+        where: { agreementId: { in: everyChainId } },
+        select: { agreementId: true, arrivedAt: true },
+      });
+      const arrivedAtByAgreement = new Map(
+        arrivals
+          .filter((a): a is typeof a & { agreementId: string } => a.agreementId !== null)
+          .map((a) => [a.agreementId, a.arrivedAt]),
+      );
+      /*
+       * THE FALLBACK IS THE ORIGIN'S OWN `createdAt`, NEVER THE SUCCESSOR'S.
+       * Not every agreement on this desk came from an arrival — a post-service
+       * agreement is drafted after the visit, and a dev script writes some with
+       * no arrival at all — so a fallback is needed. Taking it from the HEAD of
+       * the chain keeps the fix whole: an agreement with no arrival that is then
+       * superseded still holds the position it had, because both rows resolve to
+       * the same origin.
+       */
+      const placeInQueue = (agreement: (typeof forToday)[number]): number => {
+        const chain = chainOf(agreement.id);
+        const arrived = chain
+          .map((id) => arrivedAtByAgreement.get(id))
+          .filter((d): d is Date => d !== undefined)
+          .map((d) => d.getTime());
+        if (arrived.length > 0) return Math.min(...arrived);
+        const origin = chain[chain.length - 1];
+        const originCreated = origin === agreement.id ? agreement.createdAt : ancestorCreatedAt.get(origin);
+        return (originCreated ?? agreement.createdAt).getTime();
+      };
+      /*
+       * A STABLE TIE-BREAK. Two patients can share an arrival time to the
+       * millisecond in a seeded database, and a list whose order flickers
+       * between three-second polls is its own defect. The agreement id is
+       * arbitrary but it is the SAME arbitrary answer every read.
+       */
+      const sortedForToday = [...forToday].sort((a, b) => {
+        const byArrival = placeInQueue(a) - placeInQueue(b);
+        return byArrival !== 0 ? byArrival : a.id.localeCompare(b.id);
+      });
 
       const rows: PushableRow[] = [];
-      for (const agreement of forToday) {
+      for (const agreement of sortedForToday) {
         const patient = patientById.get(agreement.patientId);
         if (!patient) continue;
         const anchor = anchorByAgreement.get(agreement.id);

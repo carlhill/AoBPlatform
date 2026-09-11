@@ -4402,6 +4402,22 @@ export const strings = {
     signingChange: 'change who is signing',
     onTabletNow: (label: string) => `On ${label} now`,
     /**
+     * THE ROW SAYS WHAT WENT WRONG AND CARRIES YOU TO IT (Carl, 11 Sep 2026;
+     * CLAUDE.md §7 "Shortcuts to the answer, not directions to a screen").
+     *
+     * The queue line at the top of the desk knew the patient had crossed a
+     * detail and said nothing about it, while the panel that FIXES it sat far
+     * down the same page behind its own heading. Reception had to know the
+     * page to find the thing the page already knew. So the chip names the
+     * fault and links to the exact card.
+     *
+     * TYPES, NEVER VALUES (REQ-VER-04). What is named here is that a detail is
+     * disputed — never which value the patient says is wrong.
+     */
+    liveFaultDetail: 'A detail is wrong',
+    liveFaultSignature: 'The signature was refused',
+    liveFaultGoTo: (label: string) => `go to ${label}`,
+    /**
      * THE SESSION'S OWN ID, SHORT (Carl, 4 Sep 2026). The tablet's footer
      * shows the same eight characters, so a receptionist and a tablet can be
      * matched by eye — during testing, and later when somebody asks the

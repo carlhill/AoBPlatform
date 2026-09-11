@@ -2715,6 +2715,122 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
    * faithful and that it carries no more about a person than it must: an id, a
    * name, a date of birth, and TYPES.
    */
+  /**
+   * THE DESK IS ORDERED BY WHEN THE PATIENT ARRIVED (Carl, 11 Sep 2026).
+   *
+   * HIS REPORT: "when updating the patient card with who is signing, it saves
+   * correctly but loses its place in the list on the page." A party change
+   * supersedes rather than edits, so the Save writes a NEW agreement with
+   * `now()` for its `createdAt` — and this list used to sort on that column, so
+   * the card reception was working on left its place and reappeared at the very
+   * bottom of the queue.
+   */
+  describe('the queue holds a patient in the place they arrived in', () => {
+    async function arrivedPatient(givenNames: string, arrivedAt: Date) {
+      const { patientId, assignorId } = await prisma.withPractice(practiceA, async (tx) => {
+        const patient = await tx.patient.create({
+          data: {
+            practiceId: practiceA,
+            familyName: 'Queueorder',
+            givenNames,
+            dateOfBirth: new Date('1970-02-02'),
+            genderAsIdentified: 'female',
+            address: '3 Ordering Street, Sampletown NSW 2000',
+            patientRecordNumber: `PRN-ORDER-${givenNames}`,
+            ihi: '8003600000000404',
+          },
+        });
+        const assignor = await tx.assignor.create({
+          data: { practiceId: practiceA, name: `${givenNames} Queueorder`, authorityBasis: 'self' },
+        });
+        return { patientId: patient.id, assignorId: assignor.id };
+      });
+      const agreementId = await draft({ patientId, assignorId });
+      await prisma.withPractice(practiceA, async (tx) => {
+        await tx.arrival.create({
+          data: {
+            practiceId: practiceA,
+            pmsPatientRecordNumber: `PRN-ORDER-${givenNames}`,
+            patientId,
+            assignorId,
+            affiliationId: providerA,
+            agreementId,
+            arrivedAt,
+            source: 'dev',
+            idempotencyKey: `order-${givenNames}-${Date.now()}`,
+          },
+        });
+      });
+      return { patientId, assignorId, agreementId };
+    }
+
+    const queue = async () => {
+      const res = await http().get('/tablet-sessions/pushable').set('x-practice-id', practiceA).expect(200);
+      return res.body as Array<{ agreementId: string; patientId: string }>;
+    };
+
+    it('orders_the_desk_by_arrival_not_by_when_the_agreement_was_drafted', async () => {
+      const now = Date.now();
+      // Deliberately created in the OPPOSITE order to their arrival, so a list
+      // that still sorted on `createdAt` would come back reversed.
+      const late = await arrivedPatient('Zoe', new Date(now - 5 * 60_000));
+      const early = await arrivedPatient('Ada', new Date(now - 45 * 60_000));
+
+      const ids = (await queue()).map((r) => r.patientId);
+      expect(ids.indexOf(early.patientId)).toBeLessThan(ids.indexOf(late.patientId));
+    });
+
+    /**
+     * THE NAMED TEST FOR CARL'S BUG. A superseding agreement is a different row
+     * with a fresh `createdAt`, and no arrival has ever pointed at it — the
+     * arrival names the agreement drafted when the patient walked in. So the
+     * queue has to read the arrival through the CHAIN, or every corrected card
+     * falls to the bottom exactly as it used to.
+     */
+    it('a_superseded_row_keeps_the_place_its_predecessor_held', async () => {
+      const now = Date.now();
+      const first = await arrivedPatient('Ada', new Date(now - 45 * 60_000));
+      const second = await arrivedPatient('Bo', new Date(now - 30 * 60_000));
+      const third = await arrivedPatient('Cleo', new Date(now - 15 * 60_000));
+
+      const before = (await queue()).map((r) => r.patientId);
+      expect(before.indexOf(first.patientId)).toBeLessThan(before.indexOf(second.patientId));
+      expect(before.indexOf(second.patientId)).toBeLessThan(before.indexOf(third.patientId));
+
+      // THE MIDDLE PATIENT'S CARD IS CORRECTED: somebody else is signing, which
+      // supersedes. The successor is the newest agreement in the practice.
+      const successor = await prisma.withPractice(practiceA, async (tx) => {
+        const created = await tx.agreement.create({
+          data: {
+            practiceId: practiceA,
+            type: 'episodic_pre',
+            anchorKind: 'provider',
+            affiliationId: providerA,
+            patientId: second.patientId,
+            assignorId: second.assignorId,
+            status: 'draft',
+            supersedesAgreementId: second.agreementId,
+            // The patient is still the signer here; the point of the test is
+            // the supersession, not who it named.
+            assignorIsPatient: true,
+            assignorConfirmedAt: new Date(),
+            assignorConfirmedBy: 'e2e',
+          },
+        });
+        return created.id;
+      });
+
+      const after = await queue();
+      const ids = after.map((r) => r.patientId);
+      // The predecessor has left the desk and the successor stands in its place.
+      expect(after.map((r) => r.agreementId)).not.toContain(second.agreementId);
+      expect(after.map((r) => r.agreementId)).toContain(successor);
+      // AND THE PLACE IS THE SAME ONE: still between Ada and Cleo, not last.
+      expect(ids.indexOf(first.patientId)).toBeLessThan(ids.indexOf(second.patientId));
+      expect(ids.indexOf(second.patientId)).toBeLessThan(ids.indexOf(third.patientId));
+    });
+  });
+
   describe("reception's work list", () => {
     async function workPatient(givenNames: string) {
       return prisma.withPractice(practiceA, async (tx) => {

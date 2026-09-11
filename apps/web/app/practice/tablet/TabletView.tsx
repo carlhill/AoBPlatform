@@ -290,7 +290,22 @@ export function TabletView({ practiceId }: { practiceId: string }) {
             const ended = !session && lastEnded && canSendAgain(lastEnded) ? lastEnded : undefined;
             const activity = deviceActivityLine(device);
             return (
-              <li key={device.id} className={styles.card} data-testid={`tablet-${device.id}`}>
+              /*
+                THE LANDING PLACE FOR THE QUEUE'S FAULT LINK (Carl, 11 Sep
+                2026). A queue row whose patient has crossed a detail links
+                straight here rather than telling reception to go and look.
+                `tabIndex={-1}` makes the card focusable by script but keeps it
+                out of the tab order, so the jump can move the reading position
+                as well as the scroll — a scroll alone leaves a screen reader
+                where it was.
+              */
+              <li
+                key={device.id}
+                id={`tablet-${device.id}`}
+                tabIndex={-1}
+                className={styles.card}
+                data-testid={`tablet-${device.id}`}
+              >
                 <div className={styles.cardHead}>
                   <span className={styles.cardIcon}>
                     <Tablet size={18} aria-hidden="true" />

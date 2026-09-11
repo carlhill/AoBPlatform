@@ -2681,11 +2681,58 @@ export function AgreementRow({
    * action area — where the numbered steps were — once it is on a tablet.
    * Same elements, same test ids, one place in this file.
    */
+  /*
+   * WHAT HAS GONE WRONG ON THE LIVE SESSION, IF ANYTHING (Carl, 11 Sep 2026).
+   *
+   * ONLY WHILE IT IS STILL SOMEBODY'S TO FIX. A dispute reception has already
+   * answered — corrected, or recorded as no change needed — is resolved, and a
+   * queue line that kept shouting "a detail is wrong" at the person who just
+   * dealt with it is the fault `SessionDisputeNotices` was already fixed for on
+   * 4 Sep. So the resolution closes this too.
+   */
+  const liveFault = !live
+    ? null
+    : live.disputedDetails.length > 0 && !live.disputeResolution
+      ? strings.tablet.liveFaultDetail
+      : live.signatureFailureReason
+        ? strings.tablet.liveFaultSignature
+        : null;
+  /*
+   * AND THE WAY TO IT. A real anchor, so it works from the keyboard, survives
+   * a page with no JavaScript and can be opened in a new tab — with the scroll
+   * and the FOCUS moved by hand on top, because `scrollIntoView` alone leaves a
+   * screen reader reading the queue while the sighted eye is at the card.
+   */
+  const goToFault = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (!live) return;
+    const card = document.getElementById(`tablet-${live.deviceId}`);
+    if (!card) return; // The hash still navigates; nothing here is the only way.
+    event.preventDefault();
+    card.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    card.focus({ preventScroll: true });
+  };
   const sessionChip = live ? (
     <Chip tone={STATE_TONE[live.state] ?? 'neutral'}>
       {strings.tablet.onTabletNow(live.deviceLabel)} ·{' '}
       <SessionTag id={live.id} testId={`row-session-id-${row.agreementId}`} />
     </Chip>
+  ) : null;
+  /*
+   * THE FAULT AND ITS SHORTCUT, BESIDE THE CHIP. Kept OUT of the chip itself:
+   * a link inside a status pill is a small target sitting on a coloured ground,
+   * and the chip is read as one phrase by a screen reader.
+   */
+  const faultLink = live && liveFault ? (
+    <span className={rowStyles.liveFault} data-testid={`row-fault-${row.agreementId}`}>
+      <Chip tone="stop">{liveFault}</Chip>{' '}
+      <a
+        href={`#tablet-${live.deviceId}`}
+        onClick={goToFault}
+        data-testid={`row-fault-link-${row.agreementId}`}
+      >
+        {strings.tablet.liveFaultGoTo(live.deviceLabel)}
+      </a>
+    </span>
   ) : null;
   /*
    * WHICH RECORD THIS ROW IS ABOUT (Carl, 7 Sep 2026) — beside the session
@@ -2736,6 +2783,7 @@ export function AgreementRow({
           provider and the appointment, and nothing else.
         */}
         {!onTablet && sessionChip}
+        {!onTablet && faultLink}
         {!onTablet && recordId}
       </div>
 
@@ -2816,6 +2864,7 @@ export function AgreementRow({
         {onTablet ? (
           <div className={rowStyles.live} data-testid={`row-live-${row.agreementId}`}>
             {sessionChip}
+            {faultLink}
             {recordId}
           </div>
         ) : (

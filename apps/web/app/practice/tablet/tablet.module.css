@@ -382,3 +382,16 @@
   padding: var(--s2) var(--s3);
   border-radius: var(--radius);
 }
+
+/*
+ * THE FAULT AND ITS SHORTCUT ON A QUEUE ROW (Carl, 11 Sep 2026). Sits under
+ * the session chip and wraps with it on a narrow desk; the gap is the chip's
+ * own so the two read as one line rather than two stacked facts.
+ */
+.liveFault {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
