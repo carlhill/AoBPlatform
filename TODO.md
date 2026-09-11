@@ -3416,10 +3416,11 @@ can be built from migrations rather than copied.
    was still alive after four hours with sixty seconds of CPU. Run it with
    `--detectOpenHandles` once item 1 makes that safe.
 
-## Who is signing: a saved change loses the patient's place in the queue (Carl, 11 Sep 2026)
+## ~~Who is signing: a saved change loses the patient's place in the queue~~ — FIXED and confirmed by Carl, 11 Sep 2026 (`843d8db`)
 
 Carl: "when updating the patient card with who is signing, it saves correctly
-but loses its place in the list on the page." Diagnosed, not yet fixed.
+but loses its place in the list on the page." Fixed in `843d8db`; Carl on the
+running desk the same afternoon: "the card stays in place now - works".
 
 **Cause.** A party change supersedes rather than edits (D-2026-09-11-01,
 ASSIGNOR-RULES rule 2). `createSupersedingDraft` calls `tx.agreement.create`
@@ -3437,7 +3438,7 @@ patient who has been there longest belongs at the top; an internal artefact of
 supersession should not send them to the back of the room. Reception loses their
 place mid-task and has to hunt for the card they just edited.
 
-**Likely fix, for a decision before building.** Order the queue by the patient's
+**What was built.** Order the queue by the patient's
 arrival — the appointment or arrival time already joined in `readPushableRows` —
 and fall back to `agreement.createdAt` only where there is no arrival. The
 alternative, carrying the head-of-chain `createdAt` onto each successor, keeps
