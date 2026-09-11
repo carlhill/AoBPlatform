@@ -1,47 +1,296 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
   NotImplementedException,
 } from '@nestjs/common';
 import type { Agreement as DbAgreement, Prisma } from '@prisma/client';
-import type { RulesEngineClient } from '@aobplatform/contracts';
-import { RendererRegistry } from '../render/renderer-registry';
+import { answersEnduringRules, type RulesEngineClient } from '@aobplatform/contracts';
+import { RendererRegistry, renderInputOf } from '../render/renderer-registry';
+import { LetterheadService } from '../practices/letterhead.service';
+import { TemplatesService } from '../templates/templates.service';
+import { RenderRefusal, type AgreementDocument } from '../render/agreement-document';
 import { CaptureService } from '../capture/capture.service';
 import { WriteBackService } from '../pms/write-back.service';
 import {
+  AgreementTemplateError,
+  renderAgreementTemplate,
+  type RenderedAgreementTemplate,
   assertNoForbiddenAgreementFields,
+  assertRepointAllowed,
+  assignorRepointDisposition,
   assertSignatureAllowed,
+  assertSignatureCaptureAcceptable,
+  basicServiceDescriptionOf,
+  buildAssignorForAnother,
   canTransition,
+  classifyAssignorChange,
   HardRuleViolation,
+  normaliseEmail,
+  normalisePersonName,
+  normalisePhone,
+  SignatureCaptureError,
+  SIGNATURE_RASTER_PURPOSE,
+  SIGNATURE_VECTOR_PURPOSE,
   validAnchorKindFor,
+  type AcceptedSignatureCapture,
   type AgreementStatus,
+  type AssignorChangeKind,
+  type AssignorPartySnapshot,
+  type DrawnSignatureCapture,
   type EnduringPathway,
   type ProviderType,
 } from '@aobplatform/domain';
+import { ArtefactsService } from '../artefacts/artefacts.service';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
+import { anchorForAgreement } from '../affiliations/agreement-anchor';
 import { PrismaService } from '../prisma/prisma.service';
 import { RULES_CLIENT, RulesClientError } from '../rules-client/rules-client.module';
-import { assertEnduringAllowed } from '@aobplatform/domain';
-import type { CreateAgreementDto, LockParticularsDto } from './agreements.dto';
+import { assertCanBeProviderOnAgreement, assertEnduringAllowed } from '@aobplatform/domain';
+import type { ChangeAssignorDto, CreateAgreementDto, LockParticularsDto } from './agreements.dto';
+import type { Actor } from '../auth/actor.decorator';
 
 const SYSTEM_ACTOR = { principalType: 'system', id: 'core' } as const;
+
+/**
+ * THE NAMED STAFF MEMBER WHERE THERE IS ONE, THE PLATFORM WHERE THERE IS NOT
+ * (found in review, 7 Sep 2026).
+ *
+ * The subject of a token the realm signed, never a name from a body — a name
+ * in a request is an assertion, an id in a token is a claim somebody signed
+ * (`SessionActor`'s own docstring). The absence is a fact too: a kiosk
+ * re-pointing a draft mid-ceremony genuinely has no staff session, and naming
+ * one there would be inventing a witness.
+ */
+function assignorActor(actor: Actor | undefined): { principalType: string; id: string } {
+  return actor ? { principalType: actor.principalType, id: actor.id } : SYSTEM_ACTOR;
+}
+
+/**
+ * THE TWO WAYS "WHO IS SIGNING" CAN BE TOO LATE — as CODES, the same contract
+ * the push refusals keep (`tablet-sessions/push-refusal.ts`).
+ *
+ * THE CODE IS THE CONTRACT AND THE SENTENCE IS THE FALLBACK. The console owns
+ * the words a receptionist reads and the destination that goes with them
+ * (REQ-LANG-01, CLAUDE.md §7); the sentence here states a RULE for anybody
+ * reading the API directly, and names no patient and no party.
+ *
+ * 409 RATHER THAN 400 for both: the request was well formed and arrived late,
+ * which is a fact about the agreement rather than a fault in the caller.
+ */
+function assignorRefusal(reason: 'already_signed' | 'agreement_moved_on'): ConflictException {
+  const message =
+    reason === 'already_signed'
+      ? 'This agreement has been signed, so who signed it is a fact about an act that happened and ' +
+        'cannot be restated. Nothing was changed.'
+      : 'This agreement has moved on — it has been superseded, declined or has expired — so there is ' +
+        'nothing here to re-point. Nothing was changed.';
+  return new ConflictException({ statusCode: 409, message, reason });
+}
+
+/**
+ * A CONTACT CORRECTION ON AN AGREEMENT THE PATIENT IS SIGNING — refused, in
+ * words, rather than written somewhere it does not belong (Carl, 11 Sep 2026,
+ * D-2026-09-11-01).
+ *
+ * WHY IT IS NOT SIMPLY IGNORED. The request asked for something real: somebody
+ * typed a number. Accepting it and writing nothing is the silent discard this
+ * whole endpoint was fixed for on 10 September; writing it onto the patient's
+ * own assignor row would put a contact detail on a record the patient
+ * maintains, from a screen that is not the patient's record.
+ *
+ * A CODE, so the console maps it to its own words with somewhere to go
+ * (CLAUDE.md section 7); 400 rather than 409, because this is a request that
+ * asks for something the endpoint does not do, not a request that arrived late.
+ */
+function patientContactRefusal(): BadRequestException {
+  return new BadRequestException({
+    statusCode: 400,
+    message:
+      'The patient is signing this agreement, so there is no third-party signer to reach — a ' +
+      'patient’s own mobile and email live on the patient record. Nothing was changed.',
+    reason: 'patient_contact_lives_on_the_patient_record',
+  });
+}
+
+/**
+ * WHO SAID WHO IS SIGNING, AND WHEN — written by every successful Save on
+ * `POST /agreements/:id/assignor` and by nothing else (Carl, 7 Sep 2026).
+ *
+ * THE ID, NEVER THE NAME (REQ-LOG-08). A name in a request is an assertion; a
+ * subject in a token is a claim the realm signed (`SessionActor`'s own
+ * reasoning). NULL where there is no staff session at all — the kiosk
+ * re-points a draft mid-ceremony from a tablet holding a pairing credential,
+ * and naming a witness there would be inventing one.
+ */
+function confirmationOf(actor: Actor | undefined): {
+  assignorConfirmedAt: Date;
+  assignorConfirmedBy: string | null;
+} {
+  return { assignorConfirmedAt: new Date(), assignorConfirmedBy: actor?.id ?? null };
+}
+
+/** IDS AND FACTS ONLY — no name, no patient, no contact value (REQ-VER-04). */
+function assignorConfirmedEvent(agreementId: string, actor: Actor | undefined) {
+  return {
+    type: 'agreement.assignor_confirmed' as const,
+    actor: assignorActor(actor),
+    subject: { type: 'Agreement' as const, id: agreementId },
+    payload: {
+      agreementId,
+      assignorIsPatient: true,
+      /*
+       * ABSENT RATHER THAN NULL where there is no staff session. The event's
+       * own `actor` already says the platform did it — a `confirmedBy: null`
+       * beside that would be the same absence said twice, in a field a reader
+       * would then have to interpret.
+       */
+      ...(actor?.id ? { confirmedBy: actor.id } : {}),
+    },
+  };
+}
+
+/** D5 off an agreement's own locked snapshot. `undefined` where it never had one. */
+function serviceDateOf(agreement: DbAgreement): string | undefined {
+  const particulars = agreement.particulars as Record<string, unknown> | null;
+  const value = particulars?.serviceDate;
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+/** The item numbers the old snapshot stated, carried so the new one states the same. */
+function mbsItemNumbersOf(agreement: DbAgreement): string[] | undefined {
+  const particulars = agreement.particulars as Record<string, unknown> | null;
+  const value = particulars?.mbsItemNumbers;
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  return value.map(String);
+}
+
+/**
+ * WHO "UPLOADED" A SIGNATURE ARTEFACT. Not a name — the artefact rule requires
+ * an attribution and the honest one here is the ceremony, not a person typing.
+ * Who signed is bound through the agreement's assignor record, where it is
+ * scoped and encrypted; repeating it on an artefact row would spread a name
+ * for no evidential gain (REQ-LOG-08).
+ */
+const SIGNATURE_ATTRIBUTION = 'signature ceremony';
+
+/**
+ * PAST THE SIGNATURE ALREADY — which turns `sign` into `already_signed` rather
+ * than `not_awaiting_signature` (Carl, 7 Sep 2026).
+ *
+ * The distinction is the whole value of the code to reception: "somebody has
+ * already signed this, there is nothing to send" is a different next act from
+ * "this is not at the signing step" (a draft, a declined agreement, an expired
+ * one), which usually is a send-again once the reason is fixed.
+ */
+const SIGNED_ALREADY_STATUSES: ReadonlySet<string> = new Set([
+  'signed',
+  'validated',
+  'stored',
+  'active',
+  'claim_linked',
+  'registration_pending',
+  'registered',
+  'registration_overdue',
+]);
+
+/**
+ * HOW LONG THE "IS THE ENDURING BRANCH AUTHORED?" ANSWER IS REUSED. A minute:
+ * long enough that a console list of a dozen enduring rows costs one call,
+ * short enough that registering the rule set is visible without a restart.
+ */
+const ENDURING_PROBE_TTL_MS = 60_000;
 
 function prune(value: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined));
 }
 
+/**
+ * EVERYTHING THE LOCK DECIDED, BEFORE IT WROTE ANYTHING — the snapshot, the
+ * two versions that validated it (hard rule 14) and the hash of the artefact
+ * rendered from it (rule 13).
+ *
+ * It exists so that the writes can be handed to a caller's transaction:
+ * `lockParticulars` prepares and commits in one call, and the push-to-device
+ * flow prepares first and then commits alongside its verification event and
+ * its session, atomically (hard rule 11).
+ */
+/**
+ * THE RULE SET WAS ASKED ABOUT AN ENDURING AGREEMENT AND DID NOT ANSWER
+ * (Carl, 4 Sep 2026; GA-PLAN B5).
+ *
+ * NOT AN HTTP EXCEPTION, deliberately. Every caller of `prepareLock` has its
+ * own vocabulary for a refusal — the tablet push has a CODE the console maps
+ * to a receptionist's words (`enduring_rules_not_authored`), and a direct API
+ * caller wants a status. Throwing a `ConflictException` from here would decide
+ * that for both of them and would put a sentence written for one surface on
+ * the other. So the fact travels as a fact and each caller says it its own way.
+ *
+ * WHY IT IS A REFUSAL AND NOT A PASS. The registered rule set has no enduring
+ * branch: C6 skips D6a for the type and passes trivially, and NOTHING asserts
+ * reg 65CB's content set, the pathway, the GP-only rule or the per-practitioner
+ * anchor. A `valid: true` from that set means "none of the episodic rules
+ * failed", not "this standing commitment to bulk bill is sound" — and silence
+ * is not a pass (the same idiom `setAssignor` applies to a missing C8 verdict).
+ *
+ * IT IS A GAP, NOT A FAULT, and nothing here blocks care (hard rule 8): the
+ * patient is seen, and reception offers an agreement for the visit instead.
+ */
+export class EnduringRulesNotAuthoredError extends Error {
+  constructor(readonly ruleSetVersion: string) {
+    super(
+      `Rule set ${ruleSetVersion} returns no verdict on the enduring content set (reg 65CB), so an enduring ` +
+        'agreement cannot be validated or locked. The s 65C rule set is a human-authored zone (CLAUDE.md §7); ' +
+        'apps/rules/test/enduring-ruleset.pending.spec.ts is the contract the branch is authored against.',
+    );
+    this.name = 'EnduringRulesNotAuthoredError';
+  }
+}
+
+export interface PreparedLock {
+  readonly particulars: Record<string, unknown>;
+  readonly ruleSetVersion: string;
+  readonly mappingVersion: string;
+  readonly renderedArtefactHash: string;
+  readonly rendererVersion: string;
+  readonly languages: readonly string[];
+  /**
+   * THE WHOLE DOCUMENT THAT WAS HASHED — letterhead, resolved words and the
+   * particulars above (Carl, 5 Sep 2026; W1). Stored on the agreement so that
+   * re-rendering to check the hash has something complete to re-render, and so
+   * that a change to ANY rendered element moves the bytes. Before this, the
+   * render input was the particulars alone and correcting a detail the page
+   * did not carry changed nothing (the 4 September note).
+   */
+  readonly renderPayload: AgreementDocument;
+  readonly templateId: string;
+  readonly templateVersion: string;
+  readonly letterheadHash: string;
+  /** The statements the assignor must tick, in order. Keys travel to the signature. */
+  readonly statements: readonly { readonly key: string; readonly text: string }[];
+}
+
 @Injectable()
 export class AgreementsService {
+  private readonly logger = new Logger(AgreementsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     @Inject(RULES_CLIENT) private readonly rules: RulesEngineClient,
     private readonly renderers: RendererRegistry,
     private readonly capture: CaptureService,
     private readonly writeBack: WriteBackService,
+    private readonly artefacts: ArtefactsService,
+    private readonly letterheads: LetterheadService,
+    private readonly templates: TemplatesService,
   ) {}
+
+  /** See `enduringRulesAuthored`. In-process and per-instance, which is all a hint needs to be. */
+  private enduringProbe: { at: number; authored: boolean } | null = null;
 
   /**
    * Creates a draft agreement. Domain guards enforced up front: anchor kind
@@ -49,13 +298,34 @@ export class AgreementsService {
    * (REQ-END-01a), D7 explicit. Every write pairs with a vault outbox row in
    * the SAME transaction (FR-11.2).
    */
-  async createDraft(practiceId: string, dto: CreateAgreementDto): Promise<DbAgreement> {
+  async createDraft(
+    practiceId: string,
+    dto: CreateAgreementDto,
+    /**
+     * A CONFIRMATION CARRIED FORWARD FROM AN AGREEMENT THIS ONE REPLACES —
+     * NOT A DTO FIELD, AND DELIBERATELY (Carl, 7 Sep 2026).
+     *
+     * `assignorConfirmedAt` says a person was asked who is signing, and a
+     * client that could assert it in a request body could assert it about a
+     * conversation nobody had. So it is a SERVICE argument: only another
+     * module, holding an agreement that already carries one, can pass it.
+     *
+     * The one caller is "offer an episodic agreement instead" — same patient,
+     * same visit, same signer, and reception has already answered for it.
+     * Re-asking there would mean pressing a button and being told to press
+     * another one about a question already answered a second earlier.
+     */
+    carried: { assignorConfirmedAt?: Date | null; assignorConfirmedBy?: string | null } = {},
+  ): Promise<DbAgreement> {
     const expectedAnchor = validAnchorKindFor(dto.type, dto.enduringPathway as EnduringPathway | undefined);
     if (dto.type === 'enduring' && !dto.enduringPathway) {
       throw new BadRequestException('An enduring agreement requires a pathway (reg 65CA/65CB).');
     }
-    if (expectedAnchor === 'provider' && !dto.providerId) {
-      throw new BadRequestException(`A ${dto.type} agreement anchors to a provider — providerId is required.`);
+    if (expectedAnchor === 'provider' && !dto.affiliationId && !dto.providerId) {
+      throw new BadRequestException(
+        `A ${dto.type} agreement anchors to the practitioner at a location — affiliationId is required ` +
+          '(providerId is accepted for one more release and resolved to it).',
+      );
     }
     if (expectedAnchor === 'organisation' && !dto.organisationId) {
       throw new BadRequestException('An ACCHO/AMS enduring agreement anchors to the organisation (Addendum v3 §1.1).');
@@ -63,11 +333,55 @@ export class AgreementsService {
 
     try {
       return await this.prisma.withPractice(practiceId, async (tx) => {
+        /*
+         * THE ANCHOR IS RESOLVED BEFORE ANYTHING IS WRITTEN, because from
+         * today an agreement without one is refused by the database
+         * (`agreements_new_rows_are_anchored_on_an_affiliation`) and a
+         * constraint violation is a worse sentence than this one.
+         */
+        let affiliationId: string | null = null;
         if (expectedAnchor === 'provider') {
-          const provider = await tx.provider.findFirst({ where: { id: dto.providerId } });
-          if (!provider) throw new NotFoundException('Provider not found in this practice.');
+          const anchor = await anchorForAgreement(tx, {
+            affiliationId: dto.affiliationId ?? null,
+            providerId: dto.providerId ?? null,
+          });
+          if (!anchor) {
+            throw new NotFoundException(
+              dto.affiliationId
+                ? 'That affiliation was not found in this practice.'
+                : 'Provider not found in this practice.',
+            );
+          }
+          /*
+           * A LEGACY `providers` ROW THAT MATCHES NO PRACTITIONER CANNOT
+           * ANCHOR A NEW AGREEMENT. The deprecated `providerId` field is
+           * accepted for one release; what it is not allowed to do is produce
+           * an agreement that cannot say which person, at which address, it
+           * named. Refused with the reason and the fix, rather than a
+           * constraint error with a constraint's name on it.
+           */
+          if (!anchor.affiliationId) {
+            throw new BadRequestException(
+              'That provider is not linked to a practitioner at one of this practice’s locations, so an ' +
+                'agreement naming them could not say who signed for whom or where (s 65C(5)(a)). Add the ' +
+                'practitioner and their affiliation, or send affiliationId. Nothing was guessed.',
+            );
+          }
+          affiliationId = anchor.affiliationId;
+          /*
+           * THE PROVIDER ON AN AGREEMENT IS THE SERVICING PROVIDER (Carl, 5-7
+           * Sep 2026; TODO.md "Billing role on the affiliation").
+           *
+           * HERE AND NOT ONLY AT ARRIVAL. The arrival is the commonest way an
+           * agreement gets a provider and it refuses a nurse there with its own
+           * reason code -- but it is not the only way. The desk can draft one by
+           * hand, the appointment sweep drafts them, and a correction supersedes
+           * one. A rule enforced at one door of four is a rule with three doors,
+           * so it lives at the service that owns the guards.
+           */
+          assertCanBeProviderOnAgreement(anchor.billingRole, anchor.name);
           if (dto.type === 'enduring') {
-            assertEnduringAllowed(provider.providerType as ProviderType, dto.enduringPathway as EnduringPathway);
+            assertEnduringAllowed(anchor.providerType as ProviderType, dto.enduringPathway as EnduringPathway);
           }
         }
         const patient = await tx.patient.findFirst({ where: { id: dto.patientId } });
@@ -80,20 +394,53 @@ export class AgreementsService {
             practiceId,
             type: dto.type,
             anchorKind: expectedAnchor,
-            providerId: expectedAnchor === 'provider' ? dto.providerId : null,
+            /*
+             * BOTH, WHILE BOTH EXIST. `affiliationId` is the anchor; the
+             * legacy `providerId` is written alongside it only when the caller
+             * named one, so that a row created through the deprecated door
+             * still says which `providers` row it came in by. New callers send
+             * `affiliationId` and leave `providerId` null, which is what the
+             * column being dropped will look like.
+             */
+            affiliationId,
+            providerId: expectedAnchor === 'provider' ? (dto.providerId ?? null) : null,
             organisationId: expectedAnchor === 'organisation' ? dto.organisationId : null,
             patientId: dto.patientId,
             assignorId: dto.assignorId,
             assignorIsPatient: dto.assignorIsPatient,
             enduringPathway: dto.enduringPathway ?? null,
             status: 'draft',
+            /*
+             * UNCONFIRMED UNLESS ANOTHER MODULE CARRIED ONE FORWARD. A draft
+             * created by the arrival cascade or by the New agreement form has
+             * had nobody asked about it yet, and that is the intent: the desk
+             * answers "who is signing" before the push (Carl, 7 Sep 2026).
+             */
+            ...(carried.assignorConfirmedAt !== undefined
+              ? {
+                  assignorConfirmedAt: carried.assignorConfirmedAt,
+                  assignorConfirmedBy: carried.assignorConfirmedBy ?? null,
+                }
+              : {}),
           },
         });
         await enqueueVaultEvent(tx, {
           type: 'agreement.created',
           actor: SYSTEM_ACTOR,
           subject: { type: 'Agreement', id: agreement.id },
-          payload: { agreementType: dto.type, anchorKind: expectedAnchor },
+          payload: {
+            agreementType: dto.type,
+            anchorKind: expectedAnchor,
+            /*
+             * WHICH PRACTITIONER, AT WHICH LOCATION — ids only, which is what
+             * an anchor is. No name, no address, no provider number: the
+             * agreement's own particulars carry those, hashed, and a vault
+             * payload holds scalars that identify rather than describe.
+             */
+            ...(affiliationId ? { affiliationId } : {}),
+            /* Named through the deprecated door, and the record says so. */
+            ...(expectedAnchor === 'provider' && dto.providerId ? { legacyProviderId: dto.providerId } : {}),
+          },
         });
         return agreement;
       });
@@ -104,12 +451,1318 @@ export class AgreementsService {
   }
 
   /**
+   * A LOCKED AGREEMENT WHOSE PARTICULARS HAVE BEEN CORRECTED — SUPERSEDE IT
+   * (HARD-02, and Carl's ruling of 4 Sep 2026 on re-sending a disputed
+   * tablet session).
+   *
+   * WHY THERE IS NO OTHER ANSWER. Once `lockParticulars` has run, the s 65C
+   * snapshot has been validated, rendered and HASHED, and rule 13 says any
+   * later display re-verifies that hash. Editing the snapshot would break it;
+   * editing the patient row and re-rendering would produce a second artefact
+   * for one agreement, which is the same thing wearing a hat. So a corrected
+   * particular produces a NEW agreement carrying `supersedesAgreementId`, and
+   * the old one keeps its own true record of what it said and when.
+   *
+   * WHAT IS COPIED, AND WHY EACH. The anchor (HARD-01 — a superseding
+   * agreement is the SAME provider seeing the SAME patient; a different
+   * provider would be a different agreement needing fresh consent), the
+   * patient, the assignor and D7, the enduring pathway, and D6a — because the
+   * Basic Service Description was chosen by a staff member on a staff surface
+   * and losing it would send reception back to the reconciliation screen to
+   * re-choose something nobody changed (hard rule 14: the version it validates
+   * under is recorded at the new lock, so nothing is smuggled forward).
+   *
+   * WHAT IS NOT COPIED: everything about the LOCK. No particulars, no hash, no
+   * rule-set or mapping version, no verification event, no signature. The new
+   * agreement is a draft, and the push that follows validates and locks it
+   * from scratch against the corrected records (REQ-DATA-11) — which is the
+   * point of the exercise.
+   *
+   * THE OLD AGREEMENT'S STATUS IS LEFT ALONE, deliberately. There is no
+   * `superseded` status in the lifecycle (`packages/domain/src/lifecycle.ts`)
+   * and inventing a transition to `expired` or `declined` here would file this
+   * under a word that means something else — a patient declined nothing and no
+   * clock ran out. What stops the old one being signed is that the caller
+   * closes its capture requests; what records why is the event below. A real
+   * `superseded` status is worth adding and is a domain decision, not a
+   * side-effect of this endpoint.
+   */
+  async supersedeForCorrection(
+    tx: Prisma.TransactionClient,
+    practiceId: string,
+    agreement: DbAgreement,
+    correctedTypes: readonly string[],
+    actor: { id: string; name: string },
+  ): Promise<DbAgreement> {
+    /*
+     * ONE SUCCESSOR PER AGREEMENT, AND THIS PATH CHECKS TOO (found in review,
+     * 7 Sep 2026, alongside the row lock on the assignor path).
+     *
+     * Re-send read the session, not the agreement, so pressing it twice on a
+     * row that had already been corrected and re-sent would have superseded
+     * the same agreement a second time — one visit, two contracts, each
+     * claiming to replace the same one. The correction has already happened
+     * and the replacement already carries it; the honest answer is that
+     * agreement, and the database now refuses the alternative outright
+     * (`agreements_one_successor`).
+     */
+    const existing = await tx.agreement.findFirst({
+      where: { supersedesAgreementId: agreement.id },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (existing) return existing;
+
+    const replacement = await this.createSupersedingDraft(tx, practiceId, agreement, {});
+
+    await enqueueVaultEvent(tx, {
+      type: 'agreement.superseded',
+      // A PERSON, NOT THE SYSTEM. A staff member corrected a detail and asked
+      // for the agreement to go out again; that act is theirs and the record
+      // says so.
+      actor: { principalType: 'staff', id: actor.id },
+      subject: { type: 'Agreement', id: agreement.id },
+      payload: {
+        supersededBy: replacement.id,
+        reason: 'patient_details_corrected',
+        /*
+         * WHICH KINDS OF DETAIL, never the values (REQ-VER-04) — `name`,
+         * `date_of_birth`, `address`: the same five words the tablet's
+         * tick-boxes use.
+         */
+        correctedTypes: [...correctedTypes].sort().join(','),
+        correctedBy: actor.name,
+        agreementType: agreement.type,
+      },
+    });
+
+    return replacement;
+  }
+
+  /**
+   * THE SUPERSEDING DRAFT ITSELF — the copy every supersession makes, with no
+   * opinion about WHY (extracted 7 Sep 2026, when who-is-signing became the
+   * second caller).
+   *
+   * ONE COPY OF "WHAT CARRIES FORWARD", because two would drift and the thing
+   * that drifts is a particular of a contract. Every reason for superseding
+   * copies the same set — the anchor, the patient, the enduring pathway, D6a
+   * and its provenance — and differs only in WHICH FIELDS IT OVERRIDES and
+   * WHICH EVENT IT WRITES. A correction overrides nothing (the details it
+   * corrects live on the patient record, and the new lock re-reads them); a
+   * change of who signs overrides the assignor and D7. Both are below.
+   *
+   * IT WRITES NO EVENT. The caller writes the one that says why, because "why"
+   * is the whole of what a reader will ask this record later.
+   */
+  private async createSupersedingDraft(
+    tx: Prisma.TransactionClient,
+    practiceId: string,
+    agreement: DbAgreement,
+    overrides: {
+      readonly assignorId?: string;
+      readonly assignorIsPatient?: boolean;
+      readonly patientAssignorId?: string | null;
+      readonly assignorConfirmedAt?: Date;
+      readonly assignorConfirmedBy?: string | null;
+    },
+  ): Promise<DbAgreement> {
+    /*
+     * A CORRECTION OF A PRE-ANCHOR AGREEMENT STILL HAS TO PRODUCE AN ANCHORED
+     * ONE (Carl, 7 Sep 2026). The replacement is created TODAY, so
+     * `agreements_new_rows_are_anchored_on_an_affiliation` applies to it even
+     * though the agreement it supersedes predates the rule. Where the old row
+     * has no `affiliationId`, its legacy provider is resolved here — the same
+     * matching the backfill uses, and the same refusal to guess: an unmatched
+     * one is refused with the fix in the sentence rather than with a
+     * constraint's name. The old agreement is untouched either way; it keeps
+     * its own true record of what it said (HARD-02, hard rule 13).
+     */
+    let affiliationId = agreement.affiliationId;
+    if (!affiliationId && agreement.anchorKind === 'provider') {
+      const anchor = await anchorForAgreement(tx, agreement);
+      if (!anchor?.affiliationId) {
+        throw new BadRequestException(
+          'This agreement names a provider who is not linked to a practitioner at one of this practice’s ' +
+            'locations, so a corrected copy could not say who signed for whom or where (s 65C(5)(a)). Map ' +
+            'that provider to a practitioner first — the practice’s review queue has the task. Nothing was ' +
+            'guessed, and this agreement is unchanged.',
+        );
+      }
+      affiliationId = anchor.affiliationId;
+    }
+
+    return tx.agreement.create({
+      data: {
+        practiceId,
+        type: agreement.type,
+        anchorKind: agreement.anchorKind,
+        providerId: agreement.providerId,
+        affiliationId,
+        organisationId: agreement.organisationId,
+        patientId: agreement.patientId,
+        /*
+         * THE PARTY, WHICH IS THE ONE THING A SUPERSESSION MAY LEGITIMATELY
+         * MOVE. D7 is a particular (hard rule 2, CLAUDE.md §3) and is
+         * therefore never EDITED on the old agreement; it is stated afresh on
+         * the new one, which is exactly what superseding is for.
+         */
+        assignorId: overrides.assignorId ?? agreement.assignorId,
+        assignorIsPatient: overrides.assignorIsPatient ?? agreement.assignorIsPatient,
+        patientAssignorId:
+          overrides.patientAssignorId !== undefined
+            ? overrides.patientAssignorId
+            : agreement.patientAssignorId,
+        enduringPathway: agreement.enduringPathway,
+        /*
+         * THE SAME D6a READ `pushable` USES — `basicServiceDescriptionOf` in
+         * `@aobplatform/domain`, ONE copy since 7 Sep 2026 (it was duplicated
+         * here and in `tablet-sessions.service.ts`; Carl flagged the gap live
+         * on 4 Sep and a review found the drift risk on the 7th). D6a can live
+         * in the COLUMN or, when it arrived through
+         * `lockParticulars`'s own DTO rather than the staff surface that
+         * writes the column, in `particulars.basicServiceDescription`. The old
+         * agreement's `particulars` is never copied (see below — it belongs to
+         * the LOCK this draft has not gone through yet), so a description that
+         * only ever lived there must be read out and copied across as a plain
+         * column value now, or it is gone: the new draft would show "Not set"
+         * and refuse to push over a detail nobody changed.
+         */
+        serviceDescription: basicServiceDescriptionOf(agreement),
+        serviceDescriptionSetBy: agreement.serviceDescriptionSetBy,
+        serviceDescriptionSetAt: agreement.serviceDescriptionSetAt,
+        status: 'draft',
+        supersedesAgreementId: agreement.id,
+        /*
+         * A CORRECTION CARRIES THE CONFIRMATION FORWARD; a change of party
+         * brings its own (the caller passes it). Neither re-asks reception
+         * about a question they have already answered for this visit.
+         */
+        assignorConfirmedAt: overrides.assignorConfirmedAt ?? agreement.assignorConfirmedAt,
+        assignorConfirmedBy:
+          overrides.assignorConfirmedAt !== undefined
+            ? (overrides.assignorConfirmedBy ?? null)
+            : agreement.assignorConfirmedBy,
+      },
+    });
+  }
+
+  /**
+   * "THE PATIENT IS SIGNING", ON AN AGREEMENT THAT ALREADY SAYS SO — the
+   * one-tap confirmation (Carl, 7 Sep 2026).
+   *
+   * NOTHING ABOUT THE CONTRACT MOVES. No party is created, no particular is
+   * touched, no artefact is re-rendered; the only thing that changes is that
+   * the record now says a named person was asked and answered, which is what
+   * the push waits for. Safe on a locked agreement for exactly that reason.
+   *
+   * IDEMPOTENT ENOUGH TO PRESS TWICE. A second Save re-stamps the time and the
+   * person, which is the truth — somebody confirmed it again — and writes a
+   * second event saying so. Neither is a change to the agreement.
+   */
+  private async confirmAssignorIsPatient(
+    practiceId: string,
+    agreementId: string,
+    actor?: Actor,
+  ): Promise<DbAgreement> {
+    return this.prisma.withPractice(practiceId, (tx) =>
+      this.writeAssignorConfirmation(tx, agreementId, actor, true),
+    );
+  }
+
+  /**
+   * The write and its event, in ONE transaction (hard rule 11 / FR-11.2): a
+   * confirmation the evidence cannot account for, or an event about a
+   * confirmation that did not commit, are both structurally impossible.
+   */
+  private async writeAssignorConfirmation(
+    tx: Prisma.TransactionClient,
+    agreementId: string,
+    actor: Actor | undefined,
+    emitEvent: boolean,
+  ): Promise<DbAgreement> {
+    const updated = await tx.agreement.update({
+      where: { id: agreementId },
+      data: confirmationOf(actor),
+    });
+    if (emitEvent) await enqueueVaultEvent(tx, assignorConfirmedEvent(agreementId, actor));
+    return updated;
+  }
+
+  /**
+   * SOMEBODY OTHER THAN THE PATIENT IS SIGNING — re-point a draft agreement
+   * at them (REQ-VUL-01/-02/-04, REQ-AGE-01, C7.2, D7).
+   *
+   * WHY THIS ENDPOINT EXISTS. The check-in cascade drafts every `episodic_pre`
+   * with `assignorIsPatient: true` (CONSULTATION-CAPTURE-PLAN.md §2.1 step 4),
+   * which is right most of the time and wrong once a morning: a parent has
+   * brought a child, a spouse or a carer is signing. Nothing could move a
+   * draft onto a different assignor, so the tablet handed over to the desk and
+   * the ceremony restarted by hand (apps/kiosk/README.md).
+   *
+   * IT IS ONE TRANSACTION, AND THAT IS THE POINT (rule 11 / FR-11.2). The
+   * assignor row, the flag on the agreement, the vault outbox event AND the
+   * re-validation all commit or none do: a C8 failure rolls the change back
+   * rather than leaving an agreement pointing at a party the rule set refuses.
+   *
+   * THE GUARDS RUN HERE, NOT ONLY ON THE DEVICE. The kiosk asks the same
+   * questions (`apps/kiosk/src/rules/assignor.ts`), and both surfaces reach
+   * their answer through `@aobplatform/domain` — but this endpoint can be
+   * called directly, so a control that existed only on the tablet would be a
+   * suggestion. In particular the REQ-VUL-04 staff block is enforced against
+   * the practice's own `staffMember` rows, read inside the practice scope,
+   * with the same normalisation the tablet uses.
+   *
+   * WHAT IT NEVER DOES: verify the claimed authority (reg 65CB(5) makes it a
+   * self-declaration — REQ-VUL-02), ask anybody to assess capacity
+   * (REQ-VUL-05), or judge the relationship. A friend is `other_with_note`
+   * with the note "friend"; the platform has no opinion on who a patient
+   * brings with them.
+   */
+  async changeAssignor(
+    practiceId: string,
+    agreementId: string,
+    dto: ChangeAssignorDto,
+    /**
+     * WHOSE HANDS CHANGED WHO SIGNS (found in review, 7 Sep 2026).
+     *
+     * OPTIONAL, BECAUSE NOT EVERY CALLER HAS ONE. The kiosk re-points a draft
+     * mid-ceremony from a tablet that carries a pairing credential and no
+     * staff session; the platform is the honest actor there. But a
+     * receptionist typing a walk-in, and a staff member using the tablet
+     * desk's "who is signing" panel, are people — and D7 is a particular of
+     * a contract, so an event saying "the platform did this" about an act one
+     * of them performed would be evidence with the witness removed. It is
+     * RECORDED, never read to decide anything: authorisation stays
+     * `@PracticeScoped` and RLS.
+     */
+    actor?: Actor,
+  ): Promise<DbAgreement> {
+    /*
+     * WHICH OF THE THREE THINGS THIS REQUEST IS (Carl, 7 Sep 2026). Read
+     * OUTSIDE the write transaction, because a supersession is not one
+     * transaction: it creates a draft, then validates and renders it over the
+     * network, and holding a row lock across that is how a slow rules service
+     * becomes a locked table (the judgement `prepareLock` already makes).
+     */
+    const state = await this.prisma.withPractice(practiceId, async (tx) => {
+      // A cross-practice id finds nothing: RLS filters on the
+      // transaction-local scope, so this fails closed as a 404 rather than
+      // leaking that the agreement exists somewhere else.
+      const agreement = await tx.agreement.findFirst({ where: { id: agreementId } });
+      if (!agreement) throw new NotFoundException('Agreement not found.');
+      /*
+       * HAS SOMEBODY ALREADY SUPERSEDED IT? There is no `superseded` status in
+       * the lifecycle (`supersedeForCorrection` explains why), so the fact
+       * lives where it is true: another agreement pointing back at this one.
+       * Reading it here is what makes "the same change twice supersedes once"
+       * a property of the endpoint rather than of the caller's restraint.
+       */
+      const successor = await tx.agreement.findFirst({
+        where: { supersedesAgreementId: agreement.id },
+        orderBy: { createdAt: 'asc' },
+      });
+      const successorAssignor = successor
+        ? await tx.assignor.findFirst({ where: { id: successor.assignorId } })
+        : null;
+      /*
+       * AND WHO IT NAMES NOW, because the SORT of change this is can only be
+       * decided against the party already on the record (D-2026-09-11-01).
+       */
+      const assignor = await tx.assignor.findFirst({ where: { id: agreement.assignorId } });
+      return { agreement, assignor, successor, successorAssignor };
+    });
+
+    const disposition = assignorRepointDisposition({
+      status: state.agreement.status as AgreementStatus,
+      particularsLocked: state.agreement.particularsLockedAt !== null,
+      signed: state.agreement.signatureEventId !== null,
+      superseded: state.successor !== null,
+    });
+
+    if (disposition.kind === 'refused') {
+      /*
+       * ASKED FOR TWICE IS NOT A FAILURE (idempotence). A double press, or a
+       * retry after a dropped response, arrives at an agreement that has
+       * already been superseded onto exactly the party being asked for — so
+       * the answer is the agreement that says so, not a refusal about a row
+       * the caller has already stopped looking at. A DIFFERENT party is a
+       * different request and is refused: it must land on the row that is live
+       * now, which is what `agreement_moved_on` sends the console to do.
+       */
+      if (state.successor && this.successorAlreadySays(state, dto)) return state.successor;
+      throw assignorRefusal(disposition.reason);
+    }
+
+    /*
+     * WHICH SORT OF CHANGE IS THIS? (Carl, 11 Sep 2026 — D-2026-09-11-01.)
+     *
+     * THE RULING. How the other signer is REACHED — a mobile, an email — is a
+     * DELIVERY DETAIL and not a particular: the s 65C data set carries the
+     * signer's name and relationship, and no signer contact is rendered into
+     * the artefact. So a contact-only correction MUST NOT supersede. It was
+     * superseding, because who signs is a particular and every arrival is
+     * locked by the time it reaches the desk — which spent a whole second
+     * contract, a second validate, a second render and a second row of
+     * evidence restating particulars that had not moved.
+     *
+     * WHO SIGNS IS UNCHANGED BY THIS. A party change is still edited before
+     * the lock and still supersedes after it (hard rule 2, REQ-REG-06,
+     * HARD-02); the refusals above still run first, so a signed agreement and
+     * a row the chain has left behind are answered exactly as they were.
+     *
+     * THE DOMAIN DECIDES, not this method — `classifyAssignorChange` is the
+     * one place the comparison lives, normalised the way the rest of this file
+     * normalises, so the console and the server cannot come to different
+     * answers about what a Save just did.
+     */
+    const change = this.classifyRequestedChange(state, dto);
+    if (change === 'contact_only') {
+      return this.changeAssignorContact(practiceId, agreementId, dto, actor);
+    }
+
+    /*
+     * A REPEAT FOR SOMEBODY ELSE WRITES NOTHING — EXCEPT A CONFIRMATION IT MAY
+     * STILL OWE (found in review of 0e2bbbd; ASSIGNOR-RULES.md rule 2).
+     *
+     * `classifyRequestedChange` returning 'none' here means the SAME
+     * non-patient signer — name, relationship, basis, note and contact all
+     * matching the row already on record. GUARDED to that case only
+     * (`!dto.assignorIsPatient`): 'none' for "the patient is signing" falls
+     * through to the check just below instead, which always re-stamps the
+     * confirmation on every press and is untouched by this branch. A repeat
+     * for somebody else is not a correction, so it must not supersede — not
+     * even on a LOCKED agreement, which is exactly the state that was
+     * creating an identical successor for no reason.
+     *
+     * IF THE CONFIRMATION IS STILL OWED (`assignorConfirmedAt` null — nobody
+     * has yet answered who is signing for this row), THIS SAVE IS THAT ANSWER,
+     * recorded exactly as the patient's one-press confirm is (rule 1): one
+     * write, one `agreement.assignor_confirmed` event. Once it is owed no
+     * longer, a repeat is a true no-op — the same row handed back, no write,
+     * no event — before the lock and after it alike.
+     */
+    if (change === 'none' && !dto.assignorIsPatient) {
+      if (state.agreement.assignorConfirmedAt !== null) {
+        return state.agreement;
+      }
+      return this.prisma.withPractice(practiceId, (tx) =>
+        this.writeAssignorConfirmation(tx, agreementId, actor, true),
+      );
+    }
+
+    /*
+     * "THE PATIENT IS SIGNING" ON AN AGREEMENT THAT ALREADY SAYS SO IS A
+     * CONFIRMATION, NOT A CHANGE (Carl, 7 Sep 2026).
+     *
+     * IT IS THE COMMON CASE AND IT MUST BE ONE TAP. Every agreement is drafted
+     * with the patient as its own assignor, so the answer reception gives most
+     * mornings is the one already on the record. Nothing about D7 moves.
+     *
+     * WHICH IS WHY IT IS WRITTEN IN PLACE EVEN ON A LOCKED AGREEMENT, and why
+     * that does not touch hard rule 2. `assignorConfirmedAt` is not a
+     * particular: it is not in `particulars`, not in the render, not in the
+     * hash, and no artefact states it. Superseding to record it would spend a
+     * whole second agreement — a second validate, a second render, a second row
+     * in the evidence — saying exactly what the first one already said.
+     *
+     * The REFUSALS above still apply: a signed agreement is a record of an act
+     * and nothing is written to it here either.
+     */
+    if (dto.assignorIsPatient && state.agreement.assignorIsPatient) {
+      return this.confirmAssignorIsPatient(practiceId, agreementId, actor);
+    }
+
+    if (disposition.kind === 'supersede') {
+      /*
+       * THE ID, NOT THE ROW. What was read above committed in its own
+       * transaction and is a photograph; the supersession re-reads the row
+       * under a lock and decides again for itself (see below). Handing it this
+       * object would let a stale status choose the act.
+       */
+      return this.supersedeForAssignorChange(practiceId, agreementId, dto, actor);
+    }
+
+    try {
+      return await this.prisma.withPractice(practiceId, async (tx) => {
+        // RE-READ INSIDE THE WRITE, never trusting the read above: the row may
+        // have been locked by a push in the milliseconds between them, and an
+        // edit decided on a stale status is the one thing hard rule 2 exists
+        // to make impossible.
+        const agreement = await tx.agreement.findFirst({ where: { id: agreementId } });
+        if (!agreement) throw new NotFoundException('Agreement not found.');
+
+        // Hard rule 2 / REQ-REG-06, still asserted on the write path. Who
+        // signs is a particular, so it may only be EDITED while the
+        // particulars can still move; past that the branch above supersedes
+        // (HARD-02) rather than reaching here.
+        assertRepointAllowed({
+          status: agreement.status as AgreementStatus,
+          particularsLocked: agreement.particularsLockedAt !== null,
+        });
+
+        if (dto.assignorIsPatient) {
+          /*
+           * REACHED ONLY WHEN THE AGREEMENT NAMES SOMEBODY ELSE — the
+           * confirm-the-patient case short-circuits above. The re-read can
+           * still land here on a row that changed underneath, so it stays
+           * handled: a confirmation, written where a change is not needed.
+           */
+          if (agreement.assignorIsPatient) {
+            return this.writeAssignorConfirmation(tx, agreementId, actor, true);
+          }
+          if (!agreement.patientAssignorId) {
+            throw new BadRequestException(
+              'REQ-VUL-01: this agreement has never had the patient as its own assignor, so there is ' +
+                'nothing to revert to. Create the agreement with the patient assigning, or choose a party.',
+            );
+          }
+          const reverted = await tx.agreement.update({
+            where: { id: agreementId },
+            data: {
+              assignorId: agreement.patientAssignorId,
+              assignorIsPatient: true,
+              // A PERSON ANSWERED. Every successful Save records who and when,
+              // and the push waits for it (`assignor_not_confirmed`).
+              ...confirmationOf(actor),
+            },
+          });
+          await enqueueVaultEvent(tx, {
+            type: 'agreement.assignor_changed',
+            actor: assignorActor(actor),
+            subject: { type: 'Agreement', id: agreementId },
+            // IDs and facts, never a name and never a contact value
+            // (REQ-LOG-08, REQ-VER-04).
+            payload: {
+              assignorIsPatient: true,
+              assignorId: reverted.assignorId,
+              previousAssignorId: agreement.assignorId,
+            },
+          });
+          /*
+           * AND THE CONFIRMATION, AS ITS OWN EVENT. Two facts happened: the
+           * party moved back to the patient, and a named person said so. The
+           * push reads the second one, so it is recorded as itself rather than
+           * inferred from the first.
+           */
+          await enqueueVaultEvent(tx, assignorConfirmedEvent(agreementId, actor));
+          await this.assertAssignorPartyPasses(tx, reverted);
+          return reverted;
+        }
+
+        /*
+         * EVERY NAME THE PRACTICE KNOWS, active or not (REQ-VUL-04, fail
+         * closed). Somebody whose console access was withdrawn last week is
+         * still practice staff this morning, and the list the tablet holds
+         * from `GET /practice-users` includes them — so the server compares
+         * against the same population rather than a narrower one.
+         */
+        const staffNames = (await tx.staffMember.findMany({ select: { name: true } })).map((s) => s.name);
+
+        // Throws a HardRuleViolation naming the rule — and never the name that
+        // was typed — for: no name, a basis outside the fixed list, `other`
+        // without its note, practice staff, not of full age, and no usable
+        // contact channel.
+        const party = buildAssignorForAnother({
+          name: dto.name,
+          authorityBasis: dto.authorityBasis,
+          note: dto.note,
+          declaresEighteenOrOver: dto.declaresEighteenOrOver,
+          mobile: dto.mobile,
+          email: dto.email,
+          practiceStaffNames: staffNames,
+        });
+
+        const declaredAt = new Date();
+        const assignor = await tx.assignor.create({
+          data: {
+            practiceId,
+            name: party.name,
+            // The caller's own word when it gave one (the kiosk's dropdown),
+            // otherwise the one derived from the basis. REQ-VUL-01 keeps
+            // relationship and authority basis as separate attributes.
+            relationshipToPatient: dto.relationship?.trim() || party.relationshipToPatient,
+            authorityBasis: party.authorityBasis,
+            authorityNote: party.authorityNote,
+            contactMobile: party.contactMobile,
+            contactEmail: party.contactEmail,
+            preferredChannel: party.preferredChannel,
+            // The two declarations, recorded and never verified (REQ-VUL-02,
+            // REQ-AGE-01). No date of birth is asked for or stored.
+            authorityDeclaredAt: declaredAt,
+            declaredOfFullAgeAt: declaredAt,
+          },
+        });
+
+        const updated = await tx.agreement.update({
+          where: { id: agreementId },
+          data: {
+            assignorId: assignor.id,
+            assignorIsPatient: false,
+            // Remembered on the way out, so "the patient is signing after all"
+            // is exact rather than a name match.
+            patientAssignorId: agreement.assignorIsPatient
+              ? agreement.assignorId
+              : agreement.patientAssignorId,
+            /*
+             * A PERSON ANSWERED, and the same column records it whichever
+             * answer they gave. `agreement.assignor_changed` below is the
+             * event for this branch — a change IS a confirmation, said once.
+             */
+            ...confirmationOf(actor),
+          },
+        });
+
+        await enqueueVaultEvent(tx, {
+          type: 'agreement.assignor_changed',
+          actor: assignorActor(actor),
+          subject: { type: 'Agreement', id: agreementId },
+          payload: {
+            assignorIsPatient: false,
+            assignorId: assignor.id,
+            previousAssignorId: agreement.assignorId,
+            authorityBasis: party.authorityBasis,
+            // The TYPE of channel, never the number or the address.
+            contactChannelType: party.preferredChannel,
+            hasAuthorityNote: party.authorityNote !== null,
+            // Reg 65CB(5): what was recorded is a declaration, and the record
+            // says so rather than implying anybody checked.
+            authoritySelfDeclared: true,
+            declaredOfFullAge: true,
+            // WHICH LIST THEY CHOSE FROM (hard rule 14). A relationship word is
+            // versioned content; the question asked months later is what the
+            // person was offered at the time, which is evidence rather than
+            // current state — so it lives on the event, not on a column. Absent
+            // for callers that do not use a list.
+            ...(dto.relationshipsVersion ? { relationshipsVersion: dto.relationshipsVersion } : {}),
+          },
+        });
+
+        await this.assertAssignorPartyPasses(tx, updated);
+        return updated;
+      });
+    } catch (err) {
+      if (err instanceof HardRuleViolation) throw new BadRequestException(err.message);
+      throw err;
+    }
+  }
+
+  /**
+   * THE PARTY AS IT STANDS, AND THE PARTY THIS REQUEST WOULD WRITE — the two
+   * snapshots `classifyAssignorChange` compares (D-2026-09-11-01).
+   *
+   * THE REQUESTED SIDE IS BUILT BY THE FUNCTION THE WRITE PATHS BUILD IT WITH,
+   * so the comparison cannot drift from what would actually be stored — the
+   * same reasoning `successorAlreadySays` records, and the same empty staff
+   * list for the same reason: this is a comparison and not an authorisation.
+   * REQ-VUL-04 is enforced against the practice's real list on every write
+   * path, which is where a refusal must come from.
+   *
+   * A DTO THE DOMAIN REFUSES IS NOT A CONTACT CORRECTION. It is reported as a
+   * party change so it travels the ordinary path and meets the ordinary
+   * refusal with the rule named — rather than being answered here by a method
+   * whose job is to sort, not to judge.
+   */
+  private classifyRequestedChange(
+    state: {
+      agreement: DbAgreement;
+      assignor: {
+        name: string;
+        relationshipToPatient: string | null;
+        authorityBasis: string | null;
+        authorityNote: string | null;
+        contactMobile: string | null;
+        contactEmail: string | null;
+      } | null;
+    },
+    dto: ChangeAssignorDto,
+  ): AssignorChangeKind {
+    const current: AssignorPartySnapshot = {
+      assignorIsPatient: state.agreement.assignorIsPatient,
+      name: state.assignor?.name ?? null,
+      relationshipToPatient: state.assignor?.relationshipToPatient ?? null,
+      authorityBasis: state.assignor?.authorityBasis ?? null,
+      authorityNote: state.assignor?.authorityNote ?? null,
+      contactMobile: state.assignor?.contactMobile ?? null,
+      contactEmail: state.assignor?.contactEmail ?? null,
+    };
+
+    if (dto.assignorIsPatient) {
+      return classifyAssignorChange(current, {
+        assignorIsPatient: true,
+        contactMobile: dto.mobile ?? null,
+        contactEmail: dto.email ?? null,
+      });
+    }
+
+    let would: ReturnType<typeof buildAssignorForAnother>;
+    try {
+      would = buildAssignorForAnother({
+        name: dto.name,
+        authorityBasis: dto.authorityBasis,
+        note: dto.note,
+        declaresEighteenOrOver: dto.declaresEighteenOrOver,
+        mobile: dto.mobile,
+        email: dto.email,
+        practiceStaffNames: [],
+      });
+    } catch (err) {
+      // A HARD-RULE REFUSAL IS AN ANSWER — but ANYTHING ELSE IS A BUG and is
+      // rethrown rather than dressed up as a routine sort (the judgement
+      // `successorAlreadySays` already records).
+      if (err instanceof HardRuleViolation) return 'party';
+      throw err;
+    }
+
+    return classifyAssignorChange(current, {
+      assignorIsPatient: false,
+      name: would.name,
+      // The caller's own word where it gave one, the basis's derivation
+      // otherwise — the exact expression both write paths use for the column.
+      relationshipToPatient: dto.relationship?.trim() || would.relationshipToPatient,
+      authorityBasis: would.authorityBasis,
+      authorityNote: would.authorityNote,
+      contactMobile: would.contactMobile,
+      contactEmail: would.contactEmail,
+    });
+  }
+
+  /**
+   * ONLY HOW THE SIGNER IS REACHED CHANGED — written IN PLACE, on the assignor
+   * row, on a locked agreement as readily as on a draft (Carl, 11 Sep 2026,
+   * D-2026-09-11-01).
+   *
+   * WHAT IS NOT TOUCHED, AND WHY THAT IS THE WHOLE POINT. The agreement row,
+   * its particulars, its render and its hash are left exactly as they are
+   * (hard rule 13): a contact is not one of the s 65C particulars, nothing
+   * about it is printed on the artefact, and a document whose bytes did not
+   * change has nothing to re-hash. Superseding to record a corrected mobile
+   * would spend a second contract for one visit — which is what it was doing.
+   *
+   * THE LOCK IS THEREFORE NOT A REFUSAL HERE. The other two still are, and
+   * they are re-decided under this transaction rather than trusted from the
+   * read above: a signature that landed in the gap makes this an agreement
+   * whose evidence is finished, and a supersession that landed in the gap
+   * makes this a row the chain has left behind — the correction belongs on the
+   * agreement that is live, which is what `agreement_moved_on` sends the
+   * console to do.
+   *
+   * IDS AND FIELD NAMES IN THE EVIDENCE, NEVER VALUES (hard rule 9,
+   * REQ-VER-04, REQ-LOG-08). The event says `fields: ['mobile']`; the number
+   * itself never leaves the encrypted store. The write and the event commit in
+   * ONE transaction through the outbox (hard rule 11) — a corrected contact
+   * the evidence cannot account for, or an event about a correction that did
+   * not commit, are both structurally impossible.
+   */
+  private async changeAssignorContact(
+    practiceId: string,
+    agreementId: string,
+    dto: ChangeAssignorDto,
+    actor?: Actor,
+  ): Promise<DbAgreement> {
+    try {
+      return await this.prisma.withPractice(practiceId, async (tx) => {
+        const agreement = await tx.agreement.findFirst({ where: { id: agreementId } });
+        if (!agreement) throw new NotFoundException('Agreement not found.');
+
+        /*
+         * THE PATIENT'S OWN CONTACT IS NOT AN ASSIGNOR'S. Reached when a
+         * caller sends a mobile or an email alongside "the patient is
+         * signing"; refused in words with a code rather than written onto the
+         * patient's assignor row or quietly dropped.
+         */
+        if (agreement.assignorIsPatient) throw patientContactRefusal();
+
+        const successor = await tx.agreement.findFirst({
+          where: { supersedesAgreementId: agreementId },
+        });
+        const disposition = assignorRepointDisposition({
+          status: agreement.status as AgreementStatus,
+          particularsLocked: agreement.particularsLockedAt !== null,
+          signed: agreement.signatureEventId !== null,
+          superseded: successor !== null,
+        });
+        // `supersede` and `in_place` are BOTH fine here — the lock decides
+        // where a PARTICULAR may be written, and this is not one.
+        if (disposition.kind === 'refused') throw assignorRefusal(disposition.reason);
+
+        const current = await tx.assignor.findFirst({ where: { id: agreement.assignorId } });
+        if (!current) {
+          throw new InternalServerErrorException(
+            'This agreement names an assignor that no longer exists, so the contact cannot be corrected.',
+          );
+        }
+
+        /*
+         * EVERY NAME THE PRACTICE KNOWS, active or not (REQ-VUL-04, fail
+         * closed) — the same population every other write path compares
+         * against, because a rule that softened on the contact path would be
+         * no rule. The build also applies REQ-REG-08: a correction that leaves
+         * the signer unreachable is refused, since the copy of the agreement
+         * and every reminder go to them.
+         */
+        const staffNames = (await tx.staffMember.findMany({ select: { name: true } })).map((s) => s.name);
+        const party = buildAssignorForAnother({
+          name: dto.name,
+          authorityBasis: dto.authorityBasis,
+          note: dto.note,
+          declaresEighteenOrOver: dto.declaresEighteenOrOver,
+          mobile: dto.mobile,
+          email: dto.email,
+          practiceStaffNames: staffNames,
+        });
+
+        // WHICH CHANNELS MOVED — the NAMES, which is all the evidence carries.
+        const fields: ('mobile' | 'email')[] = [];
+        if (normalisePhone(party.contactMobile ?? '') !== normalisePhone(current.contactMobile ?? '')) {
+          fields.push('mobile');
+        }
+        if (normaliseEmail(party.contactEmail ?? '') !== normaliseEmail(current.contactEmail ?? '')) {
+          fields.push('email');
+        }
+        /*
+         * NOTHING MOVED AFTER ALL — write nothing and evidence nothing, so the
+         * two stay in step (hard rule 11). Unreachable while the sort above
+         * and the build here agree, and written out rather than assumed.
+         */
+        if (fields.length === 0) return agreement;
+
+        await tx.assignor.update({
+          where: { id: current.id },
+          data: {
+            contactMobile: party.contactMobile,
+            contactEmail: party.contactEmail,
+            // DERIVED, NEVER CARRIED OVER. The preference is "mobile if there
+            // is one" (C7.2); a correction that removes the mobile must not
+            // leave the record preferring a channel that no longer exists.
+            preferredChannel: party.preferredChannel,
+          },
+        });
+
+        await enqueueVaultEvent(tx, {
+          type: 'assignor.contact_changed',
+          actor: assignorActor(actor),
+          // ON THE AGREEMENT, because that is what a question months later is
+          // asked about: this agreement's copy started going somewhere else.
+          subject: { type: 'Agreement', id: agreementId },
+          payload: {
+            agreementId,
+            assignorId: current.id,
+            // ABSENT RATHER THAN NULL where there is no staff session — the
+            // event's own `actor` already says the platform did it.
+            ...(actor ? { changedBy: actor.id } : {}),
+            /*
+             * THE NAMES, JOINED — "mobile", "email" or "mobile,email", in that
+             * fixed order. A vault payload carries scalars only
+             * (`VaultEventInput`), and the joined form is the shape every other
+             * list of field NAMES in this codebase already takes
+             * (`detailTypesChanged`, `identifierTypes`, `correctedTypes`).
+             */
+            fields: fields.join(','),
+          },
+        });
+
+        /*
+         * THE AGREEMENT AS IT WAS READ, UNCHANGED — not re-fetched and not
+         * updated. Its particulars, its render and its hash are the same bytes
+         * they were before this request, which is the fact this whole path
+         * exists to preserve. C8 is not re-asked either: it validates the name
+         * and the relationship, neither of which moved.
+         */
+        return agreement;
+      });
+    } catch (err) {
+      if (err instanceof HardRuleViolation) throw new BadRequestException(err.message);
+      throw err;
+    }
+  }
+
+  /**
+   * IS THE AGREEMENT THAT ALREADY SUPERSEDED THIS ONE THE ANSWER TO THIS
+   * REQUEST? — compared on the WHOLE answer (Carl's reproduction, 10 Sep
+   * 2026), not on the name alone.
+   *
+   * WHAT WAS WRONG. This used to compare only `assignorIsPatient` and the
+   * party's NAME, reasoning that a basis and a contact "attach to the party"
+   * rather than restating who is signing. Every arrival is locked by the time
+   * it reaches the desk, so every someone-else Save supersedes — which means
+   * the second Save on that row always arrives here. Reception opened "Who is
+   * signing", corrected the carer's MOBILE, pressed Save, and got the existing
+   * successor back unchanged: the same name, so "already said", so nothing
+   * written and nothing to see on reopening. A contact change was silently
+   * discarded, and the copy of the agreement kept going to the wrong number.
+   *
+   * WHAT IT COMPARES NOW. Everything the Save would STORE on the assignor row,
+   * derived through `buildAssignorForAnother` — the one function the two write
+   * paths already use — so the comparison cannot drift from what is written:
+   * the name, the authority basis and its note, the relationship (the caller's
+   * own word where it gave one, the basis's otherwise), the mobile and the
+   * email. A dto that the domain refuses outright is not "the same answer"
+   * either; it is refused below, with the code that sends the console to the
+   * row that is live now.
+   *
+   * SAME ANSWER STILL MEANS ONE SUPERSESSION (idempotence — a double press, a
+   * retry after a dropped response). DIFFERENT ANSWER on a row that has
+   * already moved on is `agreement_moved_on`, not a silent no-op: the change
+   * belongs on the agreement that is live, and the console's job is to land
+   * there rather than to be told nothing happened.
+   *
+   * NORMALISED FOR EQUALITY, NEVER LOGGED OR ECHOED. Names through
+   * `normalisePersonName` (the staff block's own reduction, so "Jane  Smith"
+   * and "jane smith" are one person here too); mobiles through
+   * `normalisePhone`, so `+61 400 000 111` and `0400000111` are one number and
+   * a re-typed space is not a change; emails through `normaliseEmail`. No
+   * value reaches a log, an error or an event from this method.
+   */
+  private successorAlreadySays(
+    state: {
+      successor: DbAgreement | null;
+      successorAssignor: {
+        name: string;
+        relationshipToPatient: string | null;
+        authorityBasis: string | null;
+        authorityNote: string | null;
+        contactMobile: string | null;
+        contactEmail: string | null;
+      } | null;
+    },
+    dto: ChangeAssignorDto,
+  ): boolean {
+    if (!state.successor) return false;
+    if (state.successor.assignorIsPatient !== dto.assignorIsPatient) return false;
+    /*
+     * "THE PATIENT IS SIGNING" HAS NO OTHER PARTICULARS. There is no name, no
+     * basis and no third-party contact to differ in — the successor either
+     * says the patient signs or it does not, and it does.
+     */
+    if (dto.assignorIsPatient) return true;
+
+    const has = state.successorAssignor;
+    if (!has) return false;
+
+    /*
+     * WHAT THIS SAVE WOULD WRITE, built by the SAME function the write paths
+     * build it with. The staff list is empty deliberately: this is a
+     * comparison and not an authorisation — REQ-VUL-04 is enforced against the
+     * practice's real list on the write path, which is where a refusal must
+     * come from. A dto the domain refuses cannot equal anything, so it falls
+     * through to the refusal.
+     */
+    let would: ReturnType<typeof buildAssignorForAnother>;
+    try {
+      would = buildAssignorForAnother({
+        name: dto.name,
+        authorityBasis: dto.authorityBasis,
+        note: dto.note,
+        declaresEighteenOrOver: dto.declaresEighteenOrOver,
+        mobile: dto.mobile,
+        email: dto.email,
+        practiceStaffNames: [],
+      });
+    } catch (err) {
+      /*
+       * A HARD-RULE REFUSAL IS AN ANSWER — this dto is not what the successor
+       * says, and the row that has moved on refuses. ANYTHING ELSE IS A BUG
+       * and is rethrown rather than dressed up as a business refusal (found in
+       * review, 10 Sep 2026): a `TypeError` in here reading as a routine 409
+       * is a fault nobody would ever be shown.
+       */
+      if (err instanceof HardRuleViolation) return false;
+      throw err;
+    }
+
+    if (normalisePersonName(would.name) !== normalisePersonName(has.name)) return false;
+    if (would.authorityBasis !== (has.authorityBasis ?? '')) return false;
+    if (normalisePersonName(would.authorityNote ?? '') !== normalisePersonName(has.authorityNote ?? '')) {
+      return false;
+    }
+    // The caller's own word where it gave one, the basis's derivation
+    // otherwise — the exact expression both write paths use for the column.
+    const wouldRelationship = dto.relationship?.trim() || would.relationshipToPatient;
+    if (normalisePersonName(wouldRelationship) !== normalisePersonName(has.relationshipToPatient ?? '')) {
+      return false;
+    }
+    if (normalisePhone(would.contactMobile ?? '') !== normalisePhone(has.contactMobile ?? '')) return false;
+    if (normaliseEmail(would.contactEmail ?? '') !== normaliseEmail(has.contactEmail ?? '')) return false;
+    return true;
+  }
+
+  /**
+   * WHO SIGNS, CHANGED AFTER THE LOCK — BY SUPERSEDING (Carl, 7 Sep 2026: "go
+   * — fix who is signing on locked rows").
+   *
+   * WHY THIS EXISTS AT ALL. An arrival locks its particulars the moment
+   * reception posts it (`arrivals.service.ts` phase 5), so by the time the
+   * patient is at the desk EVERY row on the tablet list is locked — and "Who
+   * is signing?" was dead on all of them. The mother who brought her son had
+   * no way through the product; reception's options were paper or a private
+   * bill.
+   *
+   * WHY IT IS NOT AN EDIT, AND COULD NOT BE. D7 is a particular (hard rule 2,
+   * REQ-REG-06). It has been validated, rendered and HASHED into an artefact
+   * (rule 13); moving the party underneath that hash would leave the stored
+   * document naming one person and the record naming another. So this is the
+   * same answer the regime gives to a wrong name or a wrong address on a
+   * locked agreement: SUPERSEDE (HARD-02) — a new agreement carrying
+   * `supersedesAgreementId`, with the corrected party, validated and rendered
+   * from scratch. The old agreement is not touched: same particulars, same
+   * hash, same status (hard rule 11).
+   *
+   * WHAT CARRIES FORWARD is `createSupersedingDraft`'s list — the anchor, the
+   * patient, D6a and its provenance — plus the SERVICE DATE, read off the old
+   * agreement's own locked snapshot rather than re-derived. D5 is a fact about
+   * the visit and the visit has not changed; asking the clock again would
+   * quietly move the date of service on an agreement nobody meant to move. The
+   * template and letterhead versions are recorded by the new lock, as they are
+   * for every agreement, so the replacement carries a full rule-14 record of
+   * what it was validated and rendered under.
+   *
+   * THE RULE-10 CHECKS RUN FIRST AND UNCHANGED. `buildAssignorForAnother`
+   * hard-blocks practice staff against the practice's own staff list
+   * (REQ-VUL-04, fail closed), refuses a party who has not declared they are of
+   * full age (REQ-AGE-01), refuses a basis outside the fixed list, refuses
+   * `other` with no note, and refuses a party with no usable contact channel. A
+   * refused party supersedes NOTHING: the throw happens before the draft is
+   * created, so the desk keeps exactly the row it started with.
+   *
+   * IT NEVER BLOCKS CARE (hard rule 8, REQ-REC-04). If the replacement cannot
+   * be locked — the rules service is down, a mapping is missing — it is left as
+   * a draft on reception's list with its own reason on it, the patient is still
+   * seen, and the visit can be billed privately or captured after the service.
+   */
+  private async supersedeForAssignorChange(
+    practiceId: string,
+    agreementId: string,
+    dto: ChangeAssignorDto,
+    actor?: Actor,
+  ): Promise<DbAgreement> {
+    let outcome:
+      | { kind: 'created'; id: string; superseded: DbAgreement }
+      | { kind: 'settled'; agreement: DbAgreement };
+    try {
+      outcome = await this.prisma.withPractice(practiceId, async (tx) => {
+        /*
+         * TAKE THE ROW FIRST, THEN DECIDE (found in review, 7 Sep 2026).
+         *
+         * THE DECISION ABOVE WAS MADE IN A TRANSACTION THAT HAS COMMITTED, so
+         * by the time this one opens the agreement may have been signed, or
+         * superseded by the receptionist's own second press. Deciding on that
+         * photograph would let two overlapping calls both write a superseding
+         * agreement — one visit, two contracts, both claiming to replace the
+         * same one — and would let a signature that landed in the gap be
+         * followed by a supersession of what is now signed evidence, which is
+         * exactly the thing `assignorRepointDisposition` refuses.
+         *
+         * `SELECT ... FOR UPDATE` IS THE FIX AND NOT A RETRY LOOP. The second
+         * caller BLOCKS here until the first commits, then reads what the
+         * first wrote and re-decides against it: it finds a successor and
+         * either returns it (the same party asked for twice) or is refused
+         * with `agreement_moved_on`. Serialising two presses on one agreement
+         * costs milliseconds; two agreements for one visit costs an audit.
+         *
+         * RLS STILL APPLIES to the raw statement — the policy is on the table,
+         * not on the client — so a cross-practice id locks nothing and the
+         * read below fails closed as a 404.
+         */
+        await tx.$queryRaw`SELECT "id" FROM "agreements" WHERE "id" = ${agreementId}::uuid FOR UPDATE`;
+
+        const agreement = await tx.agreement.findFirst({ where: { id: agreementId } });
+        if (!agreement) throw new NotFoundException('Agreement not found.');
+        const successor = await tx.agreement.findFirst({
+          where: { supersedesAgreementId: agreementId },
+          orderBy: { createdAt: 'asc' },
+        });
+        const successorAssignor = successor
+          ? await tx.assignor.findFirst({ where: { id: successor.assignorId } })
+          : null;
+
+        const now = assignorRepointDisposition({
+          status: agreement.status as AgreementStatus,
+          particularsLocked: agreement.particularsLockedAt !== null,
+          signed: agreement.signatureEventId !== null,
+          superseded: successor !== null,
+        });
+        if (now.kind !== 'supersede') {
+          /*
+           * THE SAME TWO ANSWERS THE READ PATH GIVES, so a request that lost a
+           * race by a microsecond reads exactly like one that lost by a minute
+           * — a caller must not be able to tell which.
+           */
+          const settledState = { successor, successorAssignor };
+          if (successor && this.successorAlreadySays(settledState, dto)) {
+            return { kind: 'settled' as const, agreement: successor };
+          }
+          throw assignorRefusal(
+            now.kind === 'refused' ? now.reason : 'agreement_moved_on',
+          );
+        }
+
+        // THE PARTY FIRST, so a refusal costs nothing: everything below writes.
+        let assignorId: string;
+        if (dto.assignorIsPatient) {
+          if (!agreement.assignorIsPatient && !agreement.patientAssignorId) {
+            throw new BadRequestException(
+              'REQ-VUL-01: this agreement has never had the patient as its own assignor, so there is ' +
+                'nothing to revert to. Create the agreement with the patient assigning, or choose a party.',
+            );
+          }
+          assignorId = agreement.assignorIsPatient
+            ? agreement.assignorId
+            : (agreement.patientAssignorId as string);
+        } else {
+          /*
+           * EVERY NAME THE PRACTICE KNOWS, active or not (REQ-VUL-04, fail
+           * closed) — the same population the in-place path compares against,
+           * because a rule that softened after the lock would be no rule.
+           */
+          const staffNames = (await tx.staffMember.findMany({ select: { name: true } })).map((s) => s.name);
+          const party = buildAssignorForAnother({
+            name: dto.name,
+            authorityBasis: dto.authorityBasis,
+            note: dto.note,
+            declaresEighteenOrOver: dto.declaresEighteenOrOver,
+            mobile: dto.mobile,
+            email: dto.email,
+            practiceStaffNames: staffNames,
+          });
+          const declaredAt = new Date();
+          const created = await tx.assignor.create({
+            data: {
+              practiceId,
+              name: party.name,
+              relationshipToPatient: dto.relationship?.trim() || party.relationshipToPatient,
+              authorityBasis: party.authorityBasis,
+              authorityNote: party.authorityNote,
+              contactMobile: party.contactMobile,
+              contactEmail: party.contactEmail,
+              preferredChannel: party.preferredChannel,
+              // The two declarations, recorded and never verified (REQ-VUL-02,
+              // REQ-AGE-01). No date of birth is asked for or stored.
+              authorityDeclaredAt: declaredAt,
+              declaredOfFullAgeAt: declaredAt,
+            },
+          });
+          assignorId = created.id;
+        }
+
+        const replacement = await this.createSupersedingDraft(tx, practiceId, agreement, {
+          assignorId,
+          assignorIsPatient: dto.assignorIsPatient,
+          /*
+           * CONFIRMED BY THE SAVE THAT MADE IT. The person answered "who is
+           * signing" and this agreement is that answer — asking them again
+           * about the row their own press produced would be the platform
+           * losing track of its own act.
+           */
+          ...confirmationOf(actor),
+          /*
+           * REMEMBERED ON THE WAY OUT, so "the patient is signing after all" on
+           * the NEW agreement is exact rather than a name match — the same
+           * reason the in-place path keeps it.
+           */
+          patientAssignorId: agreement.assignorIsPatient
+            ? agreement.assignorId
+            : agreement.patientAssignorId,
+        });
+
+        await enqueueVaultEvent(tx, {
+          type: 'agreement.superseded',
+          actor: assignorActor(actor),
+          subject: { type: 'Agreement', id: agreement.id },
+          payload: {
+            supersededBy: replacement.id,
+            reason: 'assignor_changed',
+            agreementType: agreement.type,
+          },
+        });
+
+        await enqueueVaultEvent(tx, {
+          type: 'agreement.assignor_changed',
+          actor: assignorActor(actor),
+          // ON THE NEW AGREEMENT, because that is the one whose party is being
+          // stated; the old one's D7 is exactly what it always was, and the
+          // supersession event above is what links the two.
+          subject: { type: 'Agreement', id: replacement.id },
+          // IDs and facts, never a name and never a contact value (REQ-LOG-08,
+          // REQ-VER-04).
+          payload: {
+            assignorIsPatient: dto.assignorIsPatient,
+            assignorId,
+            previousAssignorId: agreement.assignorId,
+            supersedesAgreementId: agreement.id,
+            ...(dto.assignorIsPatient
+              ? {}
+              : {
+                  authorityBasis: dto.authorityBasis,
+                  // Reg 65CB(5): what was recorded is a declaration, and the
+                  // record says so rather than implying anybody checked.
+                  authoritySelfDeclared: true,
+                  declaredOfFullAge: true,
+                }),
+            // WHICH LIST THEY CHOSE FROM (hard rule 14). Absent for callers
+            // that do not use a list.
+            ...(dto.relationshipsVersion ? { relationshipsVersion: dto.relationshipsVersion } : {}),
+          },
+        });
+
+        /*
+         * AND THE CONFIRMATION, AS ITS OWN EVENT, ON THE REPLACEMENT — same
+         * reasoning as the in-place path above. `assignorConfirmedAt` is
+         * already set on `replacement` (via `confirmationOf(actor)` in
+         * `createSupersedingDraft`), so the gate reads it either way; this is
+         * the fact evidenced in the vault, not a second source of truth for
+         * it (found in review of 333f42f).
+         */
+        if (dto.assignorIsPatient) {
+          await enqueueVaultEvent(tx, assignorConfirmedEvent(replacement.id, actor));
+        }
+
+        /*
+         * AND NOTHING MAY STILL BE SIGNED AGAINST THE OLD ONE. Its evidence
+         * stays exactly as it is — the artefact, the hash, the verification —
+         * but every channel that could still collect a signature naming the
+         * wrong party is closed, on every channel at once (the same act
+         * `resend`'s correction makes, with its own reason on the event). The
+         * live tablet session goes with it: a session whose capture request has
+         * closed has nowhere left to sign, and `settle` ends it as `recalled`
+         * on the next list refresh or tablet poll.
+         */
+        await this.capture.cancelOpenFor(tx, agreement.id, 'assignor_changed');
+        // AND THE REPLACEMENT IS ON RECEPTION'S QUEUE BEFORE IT IS LOCKED, so a
+        // lock that fails leaves work on a screen rather than an orphan.
+        await this.capture.openInPractice(tx, practiceId, replacement.id);
+
+        await this.assertAssignorPartyPasses(tx, replacement);
+        return { kind: 'created' as const, id: replacement.id, superseded: agreement };
+      });
+    } catch (err) {
+      if (err instanceof HardRuleViolation) throw new BadRequestException(err.message);
+      throw err;
+    }
+
+    /*
+     * NOTHING TO LOCK, BECAUSE NOTHING WAS MADE. The row was already superseded
+     * onto this very party by an earlier press; the answer is that agreement,
+     * exactly as the read path would have given it.
+     */
+    if (outcome.kind === 'settled') return outcome.agreement;
+    const replacementId = outcome.id;
+
+    /*
+     * NOW VALIDATE AND RENDER IT — outside the transaction above, because both
+     * are network-shaped work (`prepareLock`'s own reasoning). The replacement
+     * exists and is on the queue by this point, so a failure here leaves a
+     * draft with a reason on it rather than a lost patient.
+     */
+    await this.transition(practiceId, replacementId, 'awaiting_signature');
+    await this.lockParticulars(practiceId, replacementId, {
+      /*
+       * D5 OFF THE OLD SNAPSHOT. The visit did not move; only the party did.
+       * The fallback is today and is unreachable in practice — only a LOCKED
+       * agreement reaches here and a locked episodic one always stated D5 —
+       * but a particular is never left to a `!`.
+       */
+      serviceDate: serviceDateOf(outcome.superseded) ?? new Date().toISOString().slice(0, 10),
+      mbsItemNumbers: mbsItemNumbersOf(outcome.superseded),
+    });
+
+    const locked = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findFirst({ where: { id: replacementId } }),
+    );
+    if (!locked) throw new NotFoundException('Agreement not found.');
+    return locked;
+  }
+
+  /**
+   * C8, asserted on the payload AS PERSISTED rather than on the request that
+   * produced it (REQ-65C-01). The DTO said what was wanted; this asks the rule
+   * set about what is actually now on the record, using the SAME projection
+   * `lockParticulars` will send later — so a change that the lock would refuse
+   * is refused now, while it is still a draft and still cheap to fix.
+   *
+   * Runs inside the caller's transaction on purpose: a failure here rolls the
+   * re-point back rather than leaving an agreement the lock cannot accept.
+   */
+  private async assertAssignorPartyPasses(tx: Prisma.TransactionClient, agreement: DbAgreement): Promise<void> {
+    const assignor = await tx.assignor.findFirst({ where: { id: agreement.assignorId } });
+    const payload = prune({
+      agreementType: agreement.type,
+      assignorIsPatient: agreement.assignorIsPatient,
+      assignorName: agreement.assignorIsPatient ? undefined : assignor?.name,
+      assignorRelationship: agreement.assignorIsPatient
+        ? undefined
+        : (assignor?.relationshipToPatient ?? undefined),
+    });
+
+    const validation = await this.rules.validate({ payload, stage: 'pre_signature' }).catch((err) => {
+      if (err instanceof RulesClientError && err.status === 501) {
+        throw new NotImplementedException(
+          'The s 65C rule set is not registered yet (human-authored zone) — D7 cannot be asserted, ' +
+            'so the assignor cannot be changed.',
+        );
+      }
+      throw err;
+    });
+
+    const c8 = validation.results.find((r) => r.rule === 'C8');
+    if (!c8) {
+      // Silence is not a pass. A rule set that returns no C8 verdict has not
+      // been asked the question this endpoint exists to answer.
+      throw new InternalServerErrorException(
+        `Rule set ${validation.ruleSetVersion} returned no C8 verdict — D7 cannot be asserted, so the ` +
+          'assignor change is refused.',
+      );
+    }
+    if (c8.outcome === 'fail') {
+      // The rule set's own wording, which carries the citation and no PII.
+      throw new BadRequestException({ message: 'C8 (D7): the assignor party is incomplete', rule: 'C8', detail: c8.message });
+    }
+  }
+
+  /**
    * Rule 2 (REQ-REG-06): particulars are validated by the rules engine and
    * locked BEFORE the signature control can ever enable. A rules-engine fail
    * blocks the lock; while no rule set is registered the rules service
    * returns 501 and locking is impossible — blocked states stay unreachable.
+   *
+   * SPLIT INTO `prepareLock` AND `commitLock` (4 Sep 2026), and this method is
+   * now the two of them in a row. The behaviour is unchanged for every existing
+   * caller; what the split buys is that the push-to-device flow can do its
+   * WRITES in the SAME transaction as the staff-verified verification event
+   * and the tablet session (hard rule 11 — a locked agreement with no evidence
+   * of who verified the patient, or evidence of a push that did not happen,
+   * are both structurally impossible). It could not do that while the only
+   * entry point owned its own transaction.
    */
   async lockParticulars(practiceId: string, agreementId: string, dto: LockParticularsDto): Promise<DbAgreement> {
+    const prepared = await this.prepareLock(practiceId, agreementId, dto);
+    return this.prisma.withPractice(practiceId, (tx) => this.commitLock(tx, agreementId, prepared));
+  }
+
+  /**
+   * EVERYTHING THE LOCK DOES BEFORE IT WRITES ANYTHING: assemble the
+   * particulars from the platform's own records, assert the forbidden fields
+   * are absent, ask the rules engine, and render.
+   *
+   * IT DELIBERATELY HOLDS NO TRANSACTION. Two of the three steps are network
+   * calls — the rules service and (in time) the renderer's fonts — and holding
+   * a database transaction open across a network call is how a slow dependency
+   * turns into a locked table. The same reasoning `sign` gives for staging
+   * artefact bytes before it opens its transaction.
+   *
+   * `overrides` EXISTS FOR EXACTLY ONE CALLER and says so. The push records a
+   * staff-verified verification event in the same transaction as the lock, so
+   * at the moment the particulars are assembled the agreement does not yet
+   * carry the event id — and `verificationPassed` would read false for a
+   * patient who was verified across the desk a second ago. The override states
+   * the fact the caller is about to make true, atomically. Nothing else may
+   * use it, and nothing else does.
+   */
+  async prepareLock(
+    practiceId: string,
+    agreementId: string,
+    dto: LockParticularsDto,
+    overrides: { verificationPassed?: true } = {},
+  ): Promise<PreparedLock> {
     // Assemble the particulars from the platform's OWN records (REQ-DATA-11:
     // cache the person, snapshot the agreement) — the client supplies only
     // what the server cannot know; it can never assert a fact the server owns.
@@ -121,10 +1774,41 @@ export class AgreementsService {
       }
       const patient = await tx.patient.findFirst({ where: { id: agreement.patientId } });
       if (!patient) throw new NotFoundException('Patient not found.');
-      const provider = agreement.providerId
-        ? await tx.provider.findFirst({ where: { id: agreement.providerId } })
-        : null;
+      /*
+       * D4 IS THE PERSON AND THE PLACE (s 65C(5)(a)), and from 7 September
+       * 2026 it is read from the practitioner's affiliation at a location:
+       * their name, that location's address, and that location's provider
+       * number where one is held — because the number is issued per
+       * practitioner per location (FR-1.8) and a practice-wide row could only
+       * ever have carried one of them.
+       *
+       * An agreement made before the anchor moved reads from its legacy
+       * `providers` row instead, and renders exactly as it always did.
+       */
+      const anchor = await anchorForAgreement(tx, agreement);
       const assignor = await tx.assignor.findFirst({ where: { id: agreement.assignorId } });
+      /*
+       * AN ENDURING AGREEMENT'S CONTENT SET IS reg 65CB'S, NOT D5/D6a's
+       * (REQ-END-02, REQ-TEST-02: "for enduring forms, reg 65CB").
+       *
+       * D5 is "the date the service will be (pre) or was (post) rendered" and
+       * D6a is "basic description — PRE-AGREEMENTS ONLY" (REQ-REG-01). A
+       * standing agreement is neither: it has no single service date to state
+       * and no one description, which is exactly why the rule set's C5/C6 do
+       * not fit it and why the enduring branch has to be authored rather than
+       * inferred. So neither is assembled here — a serviceDate invented for an
+       * enduring agreement would be a particular the platform made up, hashed
+       * into an artefact and rendered at a patient.
+       *
+       * READ, NOT WRITTEN. The enduring detail is the enduring module's table
+       * and this only reads it, on the precedent every other assembly here
+       * follows: the snapshot has to state what the agreement says, and one
+       * module's tables cannot say it alone.
+       */
+      const enduring =
+        agreement.type === 'enduring'
+          ? await tx.enduringDetail.findFirst({ where: { agreementId } })
+          : null;
 
       // undefined values are pruned: they vanish in the JSON round-trip
       // through Postgres, and rule 13 requires the stored snapshot to
@@ -133,16 +1817,55 @@ export class AgreementsService {
         patientName: `${patient.givenNames} ${patient.familyName}`,
         agreementDate: dto.agreementDate ?? new Date().toISOString().slice(0, 10),
         agreementType: agreement.type,
-        providerName: provider?.name,
-        providerAddress: provider?.placeOfPracticeAddress ?? undefined,
-        providerNumber: provider?.providerNumber ?? undefined,
-        serviceDate: dto.serviceDate,
-        basicServiceDescription: dto.basicServiceDescription,
-        mbsItemNumbers: dto.mbsItemNumbers,
+        providerName: anchor?.name,
+        providerAddress: anchor?.placeOfPracticeAddress ?? undefined,
+        providerNumber: anchor?.providerNumber ?? undefined,
+        serviceDate: agreement.type === 'enduring' ? undefined : dto.serviceDate,
+        /*
+         * D6a FROM THE DRAFT WHEN THE CLIENT DID NOT SEND ONE, and that is the
+         * ordinary case now rather than the exception. The Basic Service
+         * Description is chosen by a staff member on a staff surface
+         * (`POST /service-descriptions/agreements/:id`) and parked on the
+         * agreement, because the kiosk must never present a field a patient
+         * could fill on the practice's behalf (Carl, 3 Sep 2026) — so the
+         * tablet sends nothing and the server reads its own record, exactly as
+         * it does for every other particular above (REQ-DATA-11).
+         *
+         * The DTO still wins where it is given, for the callers that predate
+         * the staff surface.
+         */
+        basicServiceDescription:
+          agreement.type === 'enduring'
+            ? undefined
+            : (dto.basicServiceDescription ?? agreement.serviceDescription ?? undefined),
+        mbsItemNumbers: agreement.type === 'enduring' ? undefined : dto.mbsItemNumbers,
+        /*
+         * reg 65CB'S OWN CONTENT SET, carried only on the type it belongs to
+         * (REQ-END-02). The pathway decides which cessation triggers apply and
+         * whether an 89AA notice is ever sent (REQ-END-05, REQ-END-07); the
+         * covered service classes are the SCOPE the provider is committing to
+         * bulk bill until termination (REQ-END-06a); the notification and
+         * termination methods are how either party reaches the other
+         * (REQ-END-06).
+         *
+         * NO BENEFIT OR DOLLAR AMOUNT, here or anywhere on the artefact (hard
+         * rule 4) — the scope is a list of service classes, never a price.
+         *
+         * ABSENT UNTIL THE ENDURING DETAIL EXISTS, and absent is honest: the
+         * rule set's enduring branch is what decides whether an agreement
+         * missing them may be locked, and it says so with a named failure
+         * rather than this function guessing a default.
+         */
+        enduringPathway: agreement.type === 'enduring' ? (agreement.enduringPathway ?? undefined) : undefined,
+        coveredServiceClasses: enduring ? [...enduring.scopeValues] : undefined,
+        coveredServiceScopeType: enduring?.scopeType ?? undefined,
+        notificationMethod: enduring?.notificationMethod ?? undefined,
+        terminationMethod: enduring?.terminationMethod ?? undefined,
         assignorIsPatient: agreement.assignorIsPatient,
         assignorName: agreement.assignorIsPatient ? undefined : assignor?.name,
         assignorRelationship: agreement.assignorIsPatient ? undefined : (assignor?.relationshipToPatient ?? undefined),
-        verificationPassed: agreement.verificationEventId !== null ? true : undefined,
+        verificationPassed:
+          overrides.verificationPassed ?? (agreement.verificationEventId !== null ? true : undefined),
       });
     });
 
@@ -164,49 +1887,296 @@ export class AgreementsService {
       }
       throw err;
     });
+
+    /*
+     * SILENCE IS NOT A PASS — the enduring boundary, checked BEFORE the
+     * ordinary verdict (Carl, 4 Sep 2026; GA-PLAN B5).
+     *
+     * BEFORE, because the honest answer matters more than the first failure.
+     * An enduring payload put through today's set fails C5 (no service date —
+     * correctly, since a standing agreement has none), and reporting that
+     * would send somebody looking for a date that does not exist instead of
+     * telling them the branch has not been written. The order of these two
+     * lines IS the "shortcuts to the answer" rule (CLAUDE.md §7).
+     */
+    if (particulars.agreementType === 'enduring' && !answersEnduringRules(validation.results)) {
+      throw new EnduringRulesNotAuthoredError(validation.ruleSetVersion);
+    }
+
     if (!validation.valid) {
       const failures = validation.results.filter((r) => r.outcome === 'fail').map((r) => `${r.rule}: ${r.message}`);
       throw new BadRequestException({ message: 's 65C validation failed', failures });
     }
 
+    /*
+     * THE DOCUMENT, ASSEMBLED (Carl, 5 Sep 2026; W1). Three things the
+     * particulars alone never carried: whose practice this is, what the words
+     * mean, and which version of those words was in force.
+     *
+     * ORDER MATTERS HERE. The letterhead and the template are fetched AFTER
+     * the rules verdict, because a payload that will not validate is not worth
+     * a template lookup — and BEFORE the render, because the render is where
+     * they become bytes.
+     */
+    const [{ letterhead, letterheadHash }, resolved] = await Promise.all([
+      this.letterheads.forPractice(practiceId),
+      this.templates.resolve(practiceId, String(particulars.agreementType ?? '')),
+    ]);
+    if (resolved.fallbackReason) {
+      // A stored practice variant that no longer validates. The agreement is
+      // NOT blocked — it falls back to the generic wording (hard rule 8) — but
+      // the reason is loud, because somebody has to fix the variant.
+      this.logger.error(
+        `Practice ${practiceId} has an active agreement template that no longer validates; the generic ` +
+          `wording was used instead. ${resolved.fallbackReason}`,
+      );
+    }
+
+    let template: RenderedAgreementTemplate;
+    try {
+      template = renderAgreementTemplate(resolved.template, templateValuesFor(particulars, validation));
+    } catch (err) {
+      if (err instanceof AgreementTemplateError) {
+        // A particular the words need and the payload does not have. The rules
+        // engine has already passed, so this is a gap between the two — and
+        // rendering braces at a patient is not an option (hard rule 2).
+        throw new BadRequestException(err.message);
+      }
+      throw err;
+    }
+
+    const renderPayload: AgreementDocument = {
+      practiceId,
+      particulars,
+      letterhead,
+      letterheadHash,
+      template,
+      /*
+       * THE DRAFT MARKER IS DECIDED HERE AND STORED, never read at render time
+       * — see `AgreementDocument`. It is on while the words are unreviewed and
+       * we are not in production: a page that failed to say its wording was
+       * unreviewed would be the platform passing draft legal copy off as
+       * settled, and a marker that depended on the environment would make an
+       * agreement stop verifying when it moved between them.
+       */
+      draftMarker:
+        resolved.template.status === 'draft_pending_review' && process.env.NODE_ENV !== 'production',
+    };
+
     // Rule 13 / REQ-VAULT-02: one deterministic render path — the artefact is
     // rendered and hashed at lock time, and the hash is evidenced BEFORE the
     // signature control can enable.
     const languages = ['en'] as const; // bilingual rendering (REQ-LANG-02) arrives with M14
-    const rendered = await this.renderers.current().render(particulars, languages);
+    let rendered;
+    try {
+      rendered = await this.renderers
+        .current()
+        .render(renderPayload as unknown as Record<string, unknown>, languages);
+    } catch (err) {
+      // The render-time guards (hard rules 3, 4 and 12) refuse rather than
+      // redact. A refusal at the lock is a person seeing the reason and fixing
+      // the record it came from; nobody is blocked from being seen or billed.
+      if (err instanceof RenderRefusal) throw new BadRequestException(err.message);
+      throw err;
+    }
 
-    return this.prisma.withPractice(practiceId, async (tx) => {
-      const agreement = await tx.agreement.findFirst({ where: { id: agreementId } });
-      if (!agreement) throw new NotFoundException('Agreement not found.');
-      if (agreement.particularsLockedAt) {
-        throw new BadRequestException('Particulars are already locked — corrections supersede (HARD-02).');
+    return {
+      particulars,
+      ruleSetVersion: validation.ruleSetVersion,
+      mappingVersion: validation.mappingVersion,
+      renderedArtefactHash: rendered.sha256,
+      rendererVersion: rendered.rendererVersion,
+      languages: [...languages],
+      renderPayload,
+      templateId: resolved.template.id,
+      templateVersion: resolved.template.version,
+      letterheadHash,
+      statements: template.statements,
+    };
+  }
+
+  /**
+   * HAS THE ENDURING BRANCH BEEN AUTHORED YET? — the same question
+   * `prepareLock` asks, asked cheaply enough for a LIST (Carl, 4 Sep 2026).
+   *
+   * WHY THE LIST NEEDS TO ASK AT ALL. The console shows the reason a row
+   * cannot go BEFORE anybody presses anything, and a row that says nothing and
+   * then refuses is the fault Carl found on 4 September ("Cannot be sent yet
+   * ... see the practice queue"). So the enduring rows say what they are
+   * waiting for, in the same words the refusal would use.
+   *
+   * ONE PROBE, NOT ONE PER ROW. The question is about the registered RULE SET,
+   * not about any agreement, so the payload is a type and nothing else — no
+   * patient, no provider, nothing that could be PII in a service that holds
+   * none (ADR A-07) — and the answer is cached briefly. A practice with twelve
+   * enduring drafts on screen costs one call, and a rule set registered while
+   * a console tab is open is picked up within the minute.
+   *
+   * FALSE ON ANY DOUBT. An unreachable rules service, a 501, a malformed
+   * answer: all of them mean "this cannot be validated right now", and the
+   * console says so rather than offering a Send that would refuse. Nothing
+   * here blocks care (hard rule 8) — it blocks a screen.
+   */
+  async enduringRulesAuthored(): Promise<boolean> {
+    const now = Date.now();
+    if (this.enduringProbe && this.enduringProbe.at > now - ENDURING_PROBE_TTL_MS) {
+      return this.enduringProbe.authored;
+    }
+    // Declared without an initial value on purpose: both branches below assign
+    // it, and a `false` here would be a value nothing ever reads
+    // (`no-useless-assignment`).
+    let authored: boolean;
+    try {
+      const validation = await this.rules.validate({
+        payload: { agreementType: 'enduring' },
+        stage: 'pre_signature',
+      });
+      authored = answersEnduringRules(validation.results);
+    } catch {
+      authored = false;
+    }
+    this.enduringProbe = { at: now, authored };
+    return authored;
+  }
+
+  /**
+   * THE LOCK'S WRITES, inside a transaction the caller owns.
+   *
+   * The re-read and the already-locked guard happen HERE rather than only in
+   * `prepareLock`, because between preparing and committing anything could
+   * have happened — including another lock. HARD-02 is that corrections
+   * supersede rather than edit, and this is the line that holds it.
+   */
+  async commitLock(
+    tx: Prisma.TransactionClient,
+    agreementId: string,
+    prepared: PreparedLock,
+    extra: Prisma.AgreementUncheckedUpdateInput = {},
+  ): Promise<DbAgreement> {
+    const agreement = await tx.agreement.findFirst({ where: { id: agreementId } });
+    if (!agreement) throw new NotFoundException('Agreement not found.');
+    if (agreement.particularsLockedAt) {
+      throw new BadRequestException('Particulars are already locked — corrections supersede (HARD-02).');
+    }
+    const updated = await tx.agreement.update({
+      where: { id: agreementId },
+      data: {
+        particulars: prepared.particulars as Prisma.InputJsonValue,
+        particularsLockedAt: new Date(),
+        ruleSetVersion: prepared.ruleSetVersion,
+        mappingVersion: prepared.mappingVersion,
+        renderedArtefactHash: prepared.renderedArtefactHash,
+        rendererVersion: prepared.rendererVersion,
+        renderedLanguages: [...prepared.languages],
+        // The whole hashed document, and the two versions rule 14 adds to the
+        // rule set and mapping already above.
+        renderPayload: prepared.renderPayload as unknown as Prisma.InputJsonValue,
+        templateId: prepared.templateId,
+        templateVersion: prepared.templateVersion,
+        letterheadHash: prepared.letterheadHash,
+        ...extra,
+      },
+    });
+    await enqueueVaultEvent(tx, {
+      type: 'agreement.particulars_locked',
+      actor: SYSTEM_ACTOR,
+      subject: { type: 'Agreement', id: agreementId },
+      payload: {
+        ruleSetVersion: prepared.ruleSetVersion,
+        mappingVersion: prepared.mappingVersion,
+        // WHICH WORDS, alongside which rules (hard rule 14). Without it the
+        // evidence says an agreement was locked and validated but not what it
+        // said, which is the question a dispute is actually about.
+        templateId: prepared.templateId,
+        templateVersion: prepared.templateVersion,
+      },
+    });
+    await enqueueVaultEvent(tx, {
+      type: 'agreement.rendered',
+      actor: SYSTEM_ACTOR,
+      subject: { type: 'Agreement', id: agreementId },
+      payload: {
+        artefactSha256: prepared.renderedArtefactHash,
+        rendererVersion: prepared.rendererVersion,
+        letterheadHash: prepared.letterheadHash,
+      },
+    });
+    return updated;
+  }
+
+  /**
+   * THE PUSH'S LOCK — the same commit, plus the two facts that only the push
+   * knows, in the same row update (TODO.md "Push-to-device capture").
+   *
+   * The verification event id, because THE PUSH IS THE VERIFICATION RECORD:
+   * reception cannot push until the staff-verified check has been recorded,
+   * and the agreement carries the id of the event that records it (REQ-VER-03,
+   * REQ-SIG-02 binds it into the signature later).
+   *
+   * And `awaiting_signature`, because the whole point of a push is that the
+   * tablet receives something ready to sign. Doing it here rather than in a
+   * second call is what makes "a draft can never reach a device" true of the
+   * database rather than of the caller's good intentions (REQ-REG-06).
+   */
+  async commitPushLock(
+    tx: Prisma.TransactionClient,
+    agreementId: string,
+    /**
+     * `null` IS THE RE-PUSH, and it is an ordinary thing rather than an edge
+     * case. A session that was recalled, walked away from or expired leaves
+     * the agreement locked at `awaiting_signature`; handing the tablet back to
+     * the same patient must NOT lock it a second time, because a locked
+     * agreement is corrected by superseding and never by editing (HARD-02).
+     * What the re-push does record is a FRESH staff-verified event — reception
+     * has the person in front of them again — and the agreement points at the
+     * newest one, which is what REQ-SIG-02 will bind into the signature.
+     */
+    prepared: PreparedLock | null,
+    verificationEventId: string,
+  ): Promise<DbAgreement> {
+    const before = await tx.agreement.findFirst({ where: { id: agreementId } });
+    if (!before) throw new NotFoundException('Agreement not found.');
+    const from = before.status as AgreementStatus;
+
+    if (!prepared) {
+      if (!before.particularsLockedAt) {
+        // Belt and braces: a caller that skipped the lock on an UNLOCKED
+        // agreement would be putting a draft on a tablet, which is the one
+        // thing this whole flow exists to make impossible (REQ-REG-06).
+        throw new BadRequestException(
+          'Particulars are not locked, so this agreement cannot be sent to a tablet (REQ-REG-06).',
+        );
       }
       const updated = await tx.agreement.update({
         where: { id: agreementId },
-        data: {
-          particulars: particulars as Prisma.InputJsonValue,
-          particularsLockedAt: new Date(),
-          ruleSetVersion: validation.ruleSetVersion,
-          mappingVersion: validation.mappingVersion,
-          renderedArtefactHash: rendered.sha256,
-          rendererVersion: rendered.rendererVersion,
-          renderedLanguages: [...languages],
-        },
+        data: { verificationEventId },
       });
       await enqueueVaultEvent(tx, {
-        type: 'agreement.particulars_locked',
+        type: 'agreement.status_changed',
         actor: SYSTEM_ACTOR,
         subject: { type: 'Agreement', id: agreementId },
-        payload: { ruleSetVersion: validation.ruleSetVersion, mappingVersion: validation.mappingVersion },
-      });
-      await enqueueVaultEvent(tx, {
-        type: 'agreement.rendered',
-        actor: SYSTEM_ACTOR,
-        subject: { type: 'Agreement', id: agreementId },
-        payload: { artefactSha256: rendered.sha256, rendererVersion: rendered.rendererVersion },
+        payload: { from, to: from, verificationEventId, repushed: true },
       });
       return updated;
+    }
+
+    if (!canTransition(from, 'awaiting_signature')) {
+      throw new BadRequestException(`Illegal status transition ${from} → awaiting_signature (REQ-REC-02).`);
+    }
+
+    const updated = await this.commitLock(tx, agreementId, prepared, {
+      verificationEventId,
+      status: 'awaiting_signature',
     });
+    await enqueueVaultEvent(tx, {
+      type: 'agreement.status_changed',
+      actor: SYSTEM_ACTOR,
+      subject: { type: 'Agreement', id: agreementId },
+      // Ids and facts. The verification event holds TYPES and an outcome and
+      // never a value (REQ-VER-04); nothing about the person is here.
+      payload: { from, to: 'awaiting_signature', verificationEventId },
+    });
+    return updated;
   }
 
   /**
@@ -225,12 +2195,29 @@ export class AgreementsService {
       captureRequestId?: string;
       deviceFingerprint?: string;
       ipAddress?: string;
+      signature?: DrawnSignatureCapture;
+      /** The statement keys the assignor ticked. Every one, or the signature is refused. */
+      affirmations?: string[];
     },
   ): Promise<DbAgreement> {
     // Storage-time re-validation (REQ-65C-01: "and again at storage").
     const agreementBefore = await this.get(practiceId, agreementId);
     if (agreementBefore.status !== 'awaiting_signature') {
-      throw new BadRequestException(`Cannot sign an agreement in status ${agreementBefore.status}.`);
+      /*
+       * EVERY REFUSAL ON THIS PATH CARRIES A `reason` CODE (Carl, 7 Sep 2026).
+       *
+       * The sentence is for a developer reading a log; the CODE is what a
+       * receptionist eventually reads, because the tablet echoes it back on
+       * `signature_failed` and the console maps it to copy plus a destination.
+       * A refusal with only prose is a refusal reception can do nothing with
+       * ("Shortcuts to the answer", CLAUDE.md §7).
+       */
+      throw new BadRequestException({
+        message: `Cannot sign an agreement in status ${agreementBefore.status}.`,
+        reason: SIGNED_ALREADY_STATUSES.has(agreementBefore.status)
+          ? 'already_signed'
+          : 'not_awaiting_signature',
+      });
     }
     try {
       assertSignatureAllowed({
@@ -239,9 +2226,75 @@ export class AgreementsService {
         validationPassed: agreementBefore.ruleSetVersion !== null,
       });
     } catch (err) {
-      if (err instanceof HardRuleViolation) throw new BadRequestException(err.message);
+      if (err instanceof HardRuleViolation) {
+        throw new BadRequestException({ message: err.message, reason: 'not_locked' });
+      }
       throw err;
     }
+
+    /*
+     * THE MARK ITSELF (REQ-SIG-01/-02).
+     *
+     * A `drawn` signature must arrive with the strokes and the image they
+     * produced, and no other method may carry them. Checked here — after the
+     * cheap facts about the agreement's own state, before the rules call and
+     * the re-render — so a malformed body never costs a validation round trip
+     * or a rendered PDF, and so a draft is still refused for being a draft
+     * rather than for the shape of its payload.
+     *
+     * THE REFUSAL NEVER QUOTES THE PAYLOAD. The strokes are the assignor's own
+     * hand: identifier-grade, encrypted store only, and never a log line or an
+     * error message.
+     */
+    let capture: AcceptedSignatureCapture | null;
+    try {
+      capture = assertSignatureCaptureAcceptable({ method: dto.method, signature: dto.signature });
+    } catch (err) {
+      if (err instanceof SignatureCaptureError) {
+        throw new BadRequestException({ message: err.message, reason: 'signature_capture_invalid' });
+      }
+      throw err;
+    }
+
+    /*
+     * `signature_requires_every_statement_affirmed` — EVERY TICK BOX, ON THE
+     * SERVER (Carl, 5 Sep 2026; W1).
+     *
+     * The particulars were locked before the tablet drew anything (hard rule
+     * 2), and the ticks are the separate thing: the assignor's affirmations of
+     * what the document says. They are recorded as KEYS on the signature
+     * event, and a signature that does not carry every statement of the
+     * template the agreement was rendered from is refused here rather than
+     * merely discouraged in the UI — the kiosk's gate is markup, and this is
+     * the line that holds for the remote link, the portal and anything built
+     * later.
+     *
+     * AGREEMENTS LOCKED BEFORE TODAY CARRY NO TEMPLATE, so there is nothing to
+     * affirm and nothing is required. That is not a loophole a new agreement
+     * can reach: `prepareLock` has assembled a template on every lock since.
+     */
+    const required = statementKeysOf(agreementBefore);
+    if (required.length > 0) {
+      const ticked = new Set(dto.affirmations ?? []);
+      const missing = required.filter((key) => !ticked.has(key));
+      if (missing.length > 0) {
+        throw new BadRequestException({
+          message:
+            `The person signing has not agreed to every statement on this agreement (${missing.length} of ` +
+            `${required.length} outstanding). A signature is a signature to what the document says, so it ` +
+            'cannot be recorded against statements nobody ticked.',
+          /*
+           * THE CODE MATTERS MORE THAN THE SENTENCE HERE (Carl, 7 Sep 2026).
+           * A tablet running a bundle from before the statements existed
+           * cannot send them and will be refused every time, so the kiosk
+           * reads this code as a reason to hard-reload itself ONCE — a stale
+           * bundle heals without anybody visiting the device.
+           */
+          reason: 'affirmations_missing',
+        });
+      }
+    }
+
     // Storage pass (REQ-65C-01 "and again at storage"): the stored snapshot
     // plus the signature and lock facts, against the SAME rule-set version
     // that validated the lock (rule 14).
@@ -258,7 +2311,10 @@ export class AgreementsService {
       stage: 'storage',
     });
     if (!revalidation.valid) {
-      throw new BadRequestException('Storage-time s 65C validation failed — the agreement cannot be stored.');
+      throw new BadRequestException({
+        message: 'Storage-time s 65C validation failed — the agreement cannot be stored.',
+        reason: 'storage_validation_failed',
+      });
     }
 
     // Rule 13: any later use re-verifies the hash — re-render with the SAME
@@ -270,7 +2326,7 @@ export class AgreementsService {
       );
     }
     const rerendered = await renderer.render(
-      agreementBefore.particulars as Record<string, unknown>,
+      renderInputOf(agreementBefore),
       agreementBefore.renderedLanguages,
     );
     if (rerendered.sha256 !== agreementBefore.renderedArtefactHash) {
@@ -280,7 +2336,56 @@ export class AgreementsService {
       );
     }
 
+    /*
+     * THE BYTES GO TO THE STORE BEFORE THE TRANSACTION OPENS; the ROWS go
+     * inside it (`ArtefactsService.stage` / `recordStaged`).
+     *
+     * That ordering is the same one every artefact upload has always used, and
+     * for the same reason: content with no row is merely orphaned and
+     * identifiable by its hash, whereas a row pointing at content that was
+     * never written is a broken reference. Writing to object storage inside a
+     * transaction would also hold a database transaction open across a network
+     * call, which is how a slow store turns into a locked table.
+     */
+    const stagedRaster = capture
+      ? await this.artefacts.stage(practiceId, {
+          bytes: capture.rasterBytes,
+          purpose: SIGNATURE_RASTER_PURPOSE,
+          filename: `signature-${agreementId}.png`,
+          // NOT the assignor's name. The identity of the signer is bound
+          // through the agreement and its assignor record, where it is
+          // scoped and encrypted; copying it onto an artefact row would put a
+          // name in a second place for no evidential gain (REQ-LOG-08).
+          uploadedByName: SIGNATURE_ATTRIBUTION,
+          subjectType: 'Agreement',
+          subjectId: agreementId,
+        })
+      : null;
+    const stagedVector = capture
+      ? await this.artefacts.stage(practiceId, {
+          bytes: capture.vectorBytes,
+          purpose: SIGNATURE_VECTOR_PURPOSE,
+          filename: `signature-${agreementId}.strokes.json`,
+          // Deliberately no declaredContentType: the strokes are UTF-8 JSON
+          // and the detector calls that `text/plain`. Claiming
+          // `application/json` would flag a "mismatch" on every signature and
+          // train a real one to be ignored.
+          uploadedByName: SIGNATURE_ATTRIBUTION,
+          subjectType: 'Agreement',
+          subjectId: agreementId,
+        })
+      : null;
+
     await this.prisma.withPractice(practiceId, async (tx) => {
+      /*
+       * ONE TRANSACTION: the two artefact rows, their vault events, the
+       * signature event that binds their hashes, and every agreement event
+       * after it (rule 11). A signature bound to an artefact row that rolled
+       * back would be evidence pointing at nothing.
+       */
+      const raster = stagedRaster ? await this.artefacts.recordStaged(tx, practiceId, stagedRaster) : null;
+      const vector = stagedVector ? await this.artefacts.recordStaged(tx, practiceId, stagedVector) : null;
+
       const signatureEvent = await tx.signatureEvent.create({
         data: {
           practiceId,
@@ -295,6 +2400,19 @@ export class AgreementsService {
           verificationEventId: agreementBefore.verificationEventId,
           deviceFingerprint: dto.deviceFingerprint ?? null,
           ipAddress: dto.ipAddress ?? null,
+          signatureRasterArtefactId: raster?.id ?? null,
+          signatureRasterSha256: raster?.sha256 ?? null,
+          signatureVectorArtefactId: vector?.id ?? null,
+          signatureVectorSha256: vector?.sha256 ?? null,
+          padWidth: capture?.padWidth ?? null,
+          padHeight: capture?.padHeight ?? null,
+          strokeCount: capture?.strokeCount ?? null,
+          pointCount: capture?.pointCount ?? null,
+          // KEYS, never the sentences — the words are in the template at the
+          // version recorded beside them.
+          affirmations: required,
+          templateId: agreementBefore.templateId,
+          templateVersion: agreementBefore.templateVersion,
         },
       });
       await enqueueVaultEvent(tx, {
@@ -307,6 +2425,23 @@ export class AgreementsService {
           channel: dto.channel,
           artefactSha256: rerendered.sha256,
           hasVerificationEvent: agreementBefore.verificationEventId !== null,
+          // HOW MANY STATEMENTS WERE AFFIRMED, and under which wording. A
+          // count and two versions, never the sentences (REQ-LOG-08).
+          affirmationCount: required.length,
+          templateVersion: agreementBefore.templateVersion ?? 'none',
+          // BOTH HALVES OF THE MARK, alongside the rendered agreement's hash
+          // (REQ-SIG-02). Hashes and shape only — never the strokes, never the
+          // image, never anything a log could leak. Pruned rather than sent as
+          // nulls, so a tap-to-approve's event carries no empty signature keys
+          // suggesting a drawing that was lost.
+          ...prune({
+            signatureRasterSha256: raster?.sha256,
+            signatureVectorSha256: vector?.sha256,
+            strokeCount: capture?.strokeCount,
+            pointCount: capture?.pointCount,
+            padWidth: capture?.padWidth,
+            padHeight: capture?.padHeight,
+          }),
         },
       });
 
@@ -340,6 +2475,63 @@ export class AgreementsService {
     // sweep retries on failure, so a PMS outage slows evidence, never care.
     await this.writeBack.attempt(practiceId, agreementId);
     return this.get(practiceId, agreementId);
+  }
+
+  /**
+   * SHOW THE SIGNATURE — and re-verify it on the way out (rule 13).
+   *
+   * The agreement's own artefact is re-verified by RE-RENDERING it under the
+   * renderer version that produced it and comparing hashes; a signature cannot
+   * be re-rendered, because it is not derived from anything — so the same rule
+   * is honoured the way the artefact path already honours it: the stored bytes
+   * are hashed again on the way out and refused if they no longer match. That
+   * check lives in `ArtefactsService.download` and is reused rather than
+   * copied, so there is one definition of "these bytes are still the bytes".
+   *
+   * ONE EXTRA LINK IS CHECKED HERE, which download alone cannot: that the hash
+   * the SIGNATURE EVENT bound at signing is still the hash on the artefact
+   * row. Download proves the content matches its row; this proves the row is
+   * the one the signature was bound to. Both must hold, or what is displayed
+   * is not what was signed.
+   */
+  async signatureArtefact(
+    practiceId: string,
+    agreementId: string,
+    kind: 'raster' | 'vector',
+    readByName: string,
+  ): Promise<{ bytes: Uint8Array; headers: Record<string, string> }> {
+    const agreement = await this.get(practiceId, agreementId);
+    if (!agreement.signatureEventId) {
+      throw new NotFoundException('This agreement has not been signed.');
+    }
+    const event = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.signatureEvent.findFirst({ where: { id: agreement.signatureEventId as string, agreementId } }),
+    );
+    if (!event) throw new NotFoundException('Signature event not found for this agreement.');
+
+    const artefactId = kind === 'raster' ? event.signatureRasterArtefactId : event.signatureVectorArtefactId;
+    const boundHash = kind === 'raster' ? event.signatureRasterSha256 : event.signatureVectorSha256;
+    if (!artefactId || !boundHash) {
+      throw new NotFoundException(
+        `This signature was captured by ${event.method} and has no drawn mark to show. Only a drawn ` +
+          'signature stores strokes and an image (REQ-SIG-01).',
+      );
+    }
+
+    const stored = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.artefact.findFirst({ where: { id: artefactId } }),
+    );
+    if (!stored) throw new NotFoundException('The stored signature artefact is missing.');
+    if (stored.sha256 !== boundHash) {
+      throw new BadRequestException(
+        'The stored signature no longer matches the hash the signature event bound at signing, so it will ' +
+          'not be shown. That is a tamper signal, not a transient error (rule 13).',
+      );
+    }
+
+    // Re-hashes the bytes and refuses on a mismatch — the same path, and the
+    // same refusal, as every other artefact display.
+    return this.artefacts.download(practiceId, artefactId, readByName);
   }
 
   /** Status changes route through the domain transition map — nothing else. */
@@ -389,4 +2581,130 @@ export class AgreementsService {
       tx.agreement.findMany({ where: status ? { status } : undefined, orderBy: { createdAt: 'desc' } }),
     );
   }
+}
+
+/**
+ * THE PARTICULARS, TURNED INTO THE VALUES THE WORDS NEED.
+ *
+ * A DELIBERATE, EXPLICIT MAPPING rather than spreading the payload into the
+ * substitution. The template's placeholder names are content — a practice may
+ * rewrite every sentence around them — and the particulars' keys are the
+ * platform's own vocabulary. Coupling them by coincidence of naming would mean
+ * a rename in one silently blanking a particular on a contract in the other.
+ *
+ * THE EM DASH IS THE ANSWER FOR AN ELEMENT THAT DOES NOT APPLY, never an empty
+ * string: `renderAgreementTemplate` throws on a missing value precisely so
+ * that a particular cannot vanish, and the branches (`isPreAgreement`,
+ * `assignorIsPatient`) are what keep an inapplicable element off the page
+ * rather than a blank standing in for it.
+ *
+ * ONE ELEMENT IS NOT SOURCED FROM THE REQUIREMENTS AND SAYS SO:
+ * `commencementDate`. REQ-END-02's reg 65CB content set lists "signature and
+ * date", and `EnduringDetail.enteredIntoAt` is "the date the agreement was
+ * entered into" — neither is called a commencement. Rather than invent a
+ * field, the agreement's own D2 date stands in, which is the day the standing
+ * commitment begins on every reading of REQ-END-06a we have. FLAGGED for Carl:
+ * if reg 65CB carries a distinct commencement element, it belongs here.
+ */
+export function templateValuesFor(
+  particulars: Record<string, unknown>,
+  validation: { readonly mappingVersion: string },
+): { values: Record<string, string>; conditions: Record<string, boolean> } {
+  const text = (key: string): string => {
+    const value = particulars[key];
+    if (Array.isArray(value)) return value.length > 0 ? value.join(', ') : NOT_APPLICABLE;
+    if (value === undefined || value === null || value === '') return NOT_APPLICABLE;
+    return String(value);
+  };
+
+  const agreementType = String(particulars.agreementType ?? '');
+  /*
+   * D4, s 65C(5): NAME + PLACE OF PRACTICE, **OR** PROVIDER NUMBER (REQ-REG-02).
+   *
+   * A provider number is NOT mandatory, and the whole point of (a) is that a
+   * practice can be onboarded without one -- which is also why Carl's ruling
+   * of 5-7 Sep 2026 ALLOWS a servicing provider with no number recorded, and
+   * flags it on the affiliation screen rather than blocking their agreements.
+   * So D4 is never blank, whichever of the two the platform holds.
+   *
+   * BOTH WHERE BOTH ARE HELD, and that is not belt-and-braces. The statute
+   * offers (a) OR (b); a document carrying both satisfies it either way, and
+   * the number is the key a claim is actually made against -- a reader
+   * reconciling this agreement to a claim should not have to go and look it up.
+   * The number is per practitioner PER LOCATION, so the one that renders is the
+   * one for the place of practice named beside it.
+   */
+  const providerName = text('providerName');
+  const providerAddress = particulars.providerAddress;
+  const providerNumber = particulars.providerNumber;
+  const hasAddress = typeof providerAddress === 'string' && providerAddress.trim().length > 0;
+  const hasNumber = typeof providerNumber === 'string' && providerNumber.trim().length > 0;
+  const providerDetails = [
+    providerName,
+    hasAddress ? String(providerAddress) : null,
+    hasNumber ? `provider number ${String(providerNumber)}` : null,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(', ');
+
+  return {
+    values: {
+      patientName: text('patientName'),
+      agreementDate: text('agreementDate'),
+      providerName,
+      providerDetails,
+      serviceDate: text('serviceDate'),
+      basicServiceDescription: text('basicServiceDescription'),
+      mbsItemNumbers: text('mbsItemNumbers'),
+      mappingVersion: validation.mappingVersion,
+      assignorName: text('assignorName'),
+      assignorRelationship: text('assignorRelationship'),
+      enduringPathway: text('enduringPathway'),
+      coveredServiceScope: coveredScopeOf(particulars),
+      notificationMethod: text('notificationMethod'),
+      terminationMethod: text('terminationMethod'),
+      // See the note above: D2 stands in, and the naming says the two are the
+      // same day rather than pretending to a field the docs do not record.
+      commencementDate: text('agreementDate'),
+    },
+    conditions: {
+      assignorIsPatient: particulars.assignorIsPatient !== false,
+      // `treatment_plan` takes the pre-service branch: it is agreed before the
+      // services it covers, which is what D3 is asking.
+      isPreAgreement: agreementType !== 'episodic_post',
+    },
+  };
+}
+
+/** REQ-END-06a — the scope, said as a scope type and its values, never a price. */
+function coveredScopeOf(particulars: Record<string, unknown>): string {
+  const values = particulars.coveredServiceClasses;
+  const scopeType = particulars.coveredServiceScopeType;
+  if (!Array.isArray(values) || values.length === 0) return NOT_APPLICABLE;
+  const list = values.map(String).join(', ');
+  return typeof scopeType === 'string' && scopeType ? `${scopeType}: ${list}` : list;
+}
+
+/**
+ * WHAT AN ELEMENT THAT DOES NOT APPLY PRINTS AS. An em dash, because a blank
+ * on a contract reads as something that failed to print, and because the
+ * substitution refuses an empty value outright.
+ */
+const NOT_APPLICABLE = '—';
+
+/**
+ * The statement keys the agreement's own stored document says must be ticked.
+ *
+ * READ OFF THE STORED DOCUMENT, not off the practice's CURRENT template. What
+ * the person signed is what was rendered and hashed for them; a template
+ * activated between the lock and the signature must not change what they are
+ * required to have agreed to.
+ */
+function statementKeysOf(agreement: Pick<DbAgreement, 'renderPayload'>): string[] {
+  const payload = agreement.renderPayload as { template?: { statements?: unknown } } | null;
+  const statements = payload?.template?.statements;
+  if (!Array.isArray(statements)) return [];
+  return statements
+    .map((s) => (s && typeof s === 'object' ? (s as { key?: unknown }).key : undefined))
+    .filter((key): key is string => typeof key === 'string' && key.length > 0);
 }

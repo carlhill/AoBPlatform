@@ -1,0 +1,65 @@
+/**
+ * Where a sign-in may send the browser afterwards.
+ *
+ * A stored "return to" destination that is followed WITHOUT VALIDATION is an
+ * open redirect. Anything that can write to that storage — a cross-site
+ * scripting bug, a malicious extension, a shared machine — can then send
+ * somebody to an attacker's page immediately after they authenticate, carrying
+ * the momentum and the apparent trust of our own domain. That is how a
+ * convincing phishing flow is built, and the victim has just demonstrated they
+ * are exactly the person worth phishing.
+ *
+ * So this lives in the domain rather than beside the browser code that calls
+ * it: it is a RULE, it has tests, and a rule with tests does not quietly get
+ * relaxed by somebody adding a feature.
+ *
+ * The check is a strict allow-list of shapes, never a blocklist of bad ones.
+ * Blocklists lose — there are more ways to write a foreign origin than anybody
+ * enumerates on a Tuesday afternoon.
+ */
+
+/** Control characters, which can split or truncate a value downstream. */
+// Matching control characters IS the point here; the rule exists to catch
+// them appearing by accident. Written as escapes, never as literal bytes:
+// raw control characters in source survive neither a formatter nor review.
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
+
+/** A URI scheme after any number of leading slashes: `/javascript:`, `//http:`. */
+const SMUGGLED_SCHEME = /^\/+[a-z][a-z0-9+.-]*:/i;
+
+/**
+ * A same-origin path, or `/`.
+ *
+ * Accepts: `/review/abc`, `/practice/setup?x=1`
+ * Refuses: absolute URLs, protocol-relative `//host`, smuggled schemes, control
+ *          characters, and the callback route itself (which would loop).
+ */
+export function safeReturnPath(stored: string | null | undefined): string {
+  if (!stored) return '/';
+
+  const value = stored.trim();
+
+  // Must be a path. Anything carrying a scheme or an authority is somebody
+  // else's origin wearing our clothes.
+  if (!value.startsWith('/')) return '/';
+
+  // `//host` is protocol-relative and resolves to a DIFFERENT HOST. It is the
+  // single most-missed case in redirect validation, because it does begin with
+  // a slash and looks local at a glance.
+  if (value.startsWith('//')) return '/';
+
+  // `/\evil.example` — browsers normalise a backslash to a slash, so this is
+  // protocol-relative in disguise.
+  if (value.startsWith('/\\')) return '/';
+
+  if (SMUGGLED_SCHEME.test(value)) return '/';
+  if (CONTROL_CHARACTERS.test(value)) return '/';
+
+  // Returning to the callback would re-enter the exchange with a spent code.
+  if (value === '/callback' || value.startsWith('/callback?') || value.startsWith('/callback/')) {
+    return '/';
+  }
+
+  return value;
+}

@@ -1,0 +1,9 @@
+{
+  "$comment": "VERSIONED CONTENT, NOT CODE (Carl, 5-7 Sep 2026; hard rule 14). WHICH PEOPLE AT A LOCATION MAY BE THE PROVIDER ON AN AGREEMENT. The provider named on an assignment of benefit is the SERVICING PROVIDER whose provider number goes on the claim -- never, of itself, the person who delivered the service. A practice nurse working on 'for and on behalf of' items delivers the service and bills nothing under their own number; the claim, and therefore the assignment, goes under the GP. A phlebotomist generates no Medicare claim from the practice at all. So the role is a property of the PRACTITIONER AT A LOCATION (an Affiliation), because a provider number is issued per practitioner per location and a nurse practitioner at one site may be an RN at another. Order here IS the order on screen. THE DISPLAY WORDS ARE NOT HERE: they live in the string table keyed by `key` (REQ-LANG-01/-02). Bump `version` on every edit. WHAT THIS FILE CANNOT DO: it cannot let a non-GP hold an enduring agreement. Enduring is GP-only (hard rule 6, REQ-END-01a) and that is checked in code against the provider TYPE as well as the role -- a nurse practitioner is a servicing provider and is still not a GP. Adding a role with `mayBeProviderOnAgreement: true` widens who may be named on an EPISODIC agreement and nothing else.",
+  "version": "billing-roles-2026-09-1",
+  "options": [
+    { "key": "servicing_provider", "mayBeProviderOnAgreement": true },
+    { "key": "works_under_provider", "mayBeProviderOnAgreement": false },
+    { "key": "not_billable", "mayBeProviderOnAgreement": false }
+  ]
+}

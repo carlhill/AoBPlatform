@@ -1,0 +1,1116 @@
+/**
+ * RECEPTION'S WORK LIST AND ONE PATIENT'S PAGE, RENDERED (TODO.md
+ * "Reception-centric: the patient work page", Carl 4 Sep 2026).
+ *
+ * IT EXISTS BECAUSE THESE PAGES CANNOT BE SEEN WITHOUT A PASSKEY. The console
+ * signs in through Keycloak with WebAuthn (hard rule 15 — there is no password
+ * path and never will be), so nobody can open a practice screen in a headless
+ * check. Without this, their first render would happen in front of a practice,
+ * with a patient at the desk.
+ *
+ * WHAT IT PINS, and none of it is cosmetic:
+ *
+ *  - THE QUEUE NAMES ONLY PEOPLE WITH SOMETHING OPEN, and its one line says
+ *    the thing somebody has to act on rather than the thing that happened last.
+ *  - THE WORK PAGE SHOWS THE FIVE DETAILS AND CORRECTS ONE IN PLACE, through
+ *    the same endpoint and the same component as `/practice/tablet` — and
+ *    records no dispute resolution, because nobody crossed anything.
+ *  - THE TABLET CONTROLS ARE THE SAME CONTROLS. Same test ids, same dead
+ *    buttons, same refusal band with the same words, for the same fixture.
+ *  - NO MEDICARE NUMBER AND NO DOLLAR AMOUNT REACHES EITHER SCREEN (hard rules
+ *    1 and 4), and the history carries types, never values (REQ-VER-04).
+ */
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { DeviceRow, PatientQueueRow, TabletSessionRow } from '@aobplatform/domain';
+import { TabletView } from '../tablet/TabletView';
+import { PatientsQueueView, matchesTerm, queueSummary, queueTone } from './PatientsQueueView';
+import { PatientWorkView, agreementHeading, askedAt, detailInSentence, historyLine } from './PatientWorkView';
+import { strings } from '../../strings';
+
+const PRACTICE = 'practice-1';
+const PATIENT = '11111111-1111-4000-8000-000000000001';
+const OTHER_PATIENT = '22222222-2222-4000-8000-000000000002';
+/** The review task a patient's own correction request raises. */
+const TASK = '33333333-3333-4000-8000-000000000003';
+/** And the one a locked portal invitation raises for the practice. */
+const LOCK_TASK = '44444444-4444-4000-8000-000000000004';
+
+/** A row that can go to a tablet, and one that cannot — the same pair the tablet suite uses. */
+const READY = {
+  agreementId: 'agreement-ready',
+  agreementType: 'episodic_pre',
+  status: 'draft',
+  patientName: 'Jamie Sampleton',
+  patientId: PATIENT,
+  providerName: 'Dr Example Provider',
+  providerType: 'general_practitioner',
+  appointmentDate: '2026-09-04',
+  appointmentTime: '09:00',
+  serviceDescription: 'General practitioner attendance',
+  serviceDescriptionValid: true,
+  assignorIsPatient: true,
+  assignorName: null,
+  assignorRelationship: null,
+  particularsLocked: false,
+  // SOMEBODY HAS BEEN ASKED WHO IS SIGNING. The push waits for this, so a row
+  // that is meant to be sendable carries it (Carl, 7 Sep 2026).
+  assignorConfirmedAt: '2026-09-07T08:00:00.000Z',
+  pushable: true,
+  blockedReason: null,
+  activeSession: null,
+};
+
+const BLOCKED = {
+  ...READY,
+  agreementId: 'agreement-blocked',
+  serviceDescription: null,
+  serviceDescriptionValid: false,
+  pushable: false,
+  blockedReason: 'service_description_missing' as const,
+};
+
+const TABLET: DeviceRow = {
+  id: 'device-1',
+  label: 'Carl browser tablet',
+  state: 'paired',
+  createdBy: 'Robin Admin',
+  createdAt: '2026-09-01T00:00:00.000Z',
+  pairedAt: '2026-09-01T01:00:00.000Z',
+  lastSeenAt: '2026-09-04T08:00:00.000Z',
+  lastKioskBuild: '2026.09.04-1',
+  revokedAt: null,
+  revokedBy: null,
+  pairingExpiresAt: null,
+  showsWaitingList: false,
+};
+
+const SESSION: TabletSessionRow = {
+  id: '8ff09d7b-1111-4000-8000-000000000001',
+  deviceId: TABLET.id,
+  deviceLabel: TABLET.label,
+  agreementId: READY.agreementId,
+  agreementType: 'episodic_pre',
+  patientName: 'Jamie Sampleton',
+  patientId: PATIENT,
+  providerName: 'Dr Example Provider',
+  state: 'reading',
+  // The agreement behind it can still go to a tablet — so this session's
+  // ending, when it gets one, is still work rather than history.
+  agreementOutcome: null,
+  disputedDetails: [],
+  disputeResolution: null,
+  disputeResolvedAt: null,
+  signatureFailureReason: null,
+  pushedBy: 'Mai Frontdesk',
+  pushedAt: '2026-09-04T09:05:00.000Z',
+  lastStateAt: '2026-09-04T09:06:00.000Z',
+  endedAt: null,
+};
+
+/** The six correctable details, as the server hands them back. Obviously fake. */
+const DETAILS = {
+  id: PATIENT,
+  givenNames: 'Jamie',
+  familyName: 'Sampleton',
+  dateOfBirth: '1957-03-14',
+  address: '404 Wrongway Parade, Sampletown NSW 2000',
+  mobile: '+61400000404',
+  email: 'jamie.sampleton@example.invalid',
+  detailsCorrectedAt: null,
+};
+
+const DESCRIPTIONS = {
+  version: '2026-08',
+  descriptions: ['General practitioner attendance', 'Specialist attendance'],
+};
+
+const TIMELINE = {
+  patientId: PATIENT,
+  entries: [
+    {
+      at: '2026-09-04T09:05:00.000Z',
+      type: 'session_pushed',
+      agreementId: READY.agreementId,
+      sessionId: SESSION.id,
+    },
+    // TYPES AND AN OUTCOME, never a value (REQ-VER-04).
+    { at: '2026-09-04T09:04:00.000Z', type: 'verification', detail: 'passed', detailTypes: ['name', 'address'] },
+    { at: '2026-09-04T09:00:00.000Z', type: 'agreement_created', agreementId: READY.agreementId },
+  ],
+};
+
+const TRAIL = {
+  subjectType: 'Agreement',
+  subjectId: READY.agreementId,
+  agreementId: READY.agreementId,
+  serviceRecordId: null,
+  serviceDate: null,
+  daysRemaining: 365,
+  band: 'standard',
+  policy: { band: 'standard', attempts: 3, attemptWindowHours: 168, escalation: [], handback: '' },
+  attemptsMade: 1,
+  automatedAttempts: 1,
+  humanAttempts: 0,
+  attemptAllowed: true,
+  nextStep: 'ai',
+  attempts: [],
+};
+
+const QUEUE: PatientQueueRow[] = [
+  {
+    patientId: PATIENT,
+    patientName: 'Jamie Sampleton',
+    dateOfBirth: '1957-03-14',
+    items: [
+      {
+        kind: 'session',
+        agreementId: READY.agreementId,
+        agreementType: 'episodic_pre',
+        sessionId: SESSION.id,
+        sessionState: 'reading',
+        deviceLabel: TABLET.label,
+        endedAt: null,
+        disputedDetails: [],
+        disputeResolution: null,
+      },
+    ],
+  },
+  {
+    patientId: OTHER_PATIENT,
+    patientName: 'Casey Walkin',
+    dateOfBirth: '1988-02-02',
+    items: [
+      {
+        kind: 'awaiting_signature',
+        agreementId: BLOCKED.agreementId,
+        agreementType: 'episodic_pre',
+        pushable: false,
+        blockedReason: 'service_description_missing',
+      },
+    ],
+  },
+];
+
+/**
+ * A LOCKED PORTAL INVITATION, AS THE QUEUE ENDPOINT HANDS IT BACK (Carl, 5 Sep
+ * 2026). It carries the task to close, when it locked and the agreement a new
+ * invitation is minted against — and no identifier type, because the server has
+ * none to give (REQ-VER-04, hard rule 9).
+ */
+const LOCKED = {
+  kind: 'portal_activation_locked' as const,
+  reviewTaskId: LOCK_TASK,
+  invitationId: '55555555-5555-4000-8000-000000000005',
+  agreementId: READY.agreementId,
+  lockedAt: '2026-09-05T02:15:00.000Z',
+};
+
+const calls: Array<{ url: string; method: string; body: unknown }> = [];
+
+function stubFetch(
+  opts: {
+    queue?: PatientQueueRow[];
+    rows?: unknown[];
+    sessions?: TabletSessionRow[];
+    messages?: unknown[];
+    /** Arrivals refused for naming somebody the claim cannot go under. */
+    refused?: unknown[];
+    /** Who reception may choose instead. Servicing providers only. */
+    choices?: unknown[];
+  } = {},
+) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET';
+      calls.push({ url, method, body: init?.body ? JSON.parse(init.body as string) : undefined });
+
+      if (method !== 'GET') {
+        return { ok: true, status: 201, json: async () => ({}) } as unknown as Response;
+      }
+
+      // ORDER MATTERS: the work list's own question is asked of `/patients`
+      // itself, so it is matched before the per-patient reads.
+      const payload = url.includes('/arrivals/needing-a-provider')
+        ? (opts.refused ?? [])
+        : url.includes('/arrivals/servicing-providers')
+          ? (opts.choices ?? [])
+          : url.includes('/patients?open=today')
+        ? (opts.queue ?? QUEUE)
+        : url.includes('/timeline')
+          ? TIMELINE
+          : url.includes('/patients/')
+            ? DETAILS
+            : url.includes('/chase-attempts/')
+              ? TRAIL
+              : url.includes('/correspondence')
+                ? (opts.messages ?? [])
+                : url.includes('/service-descriptions')
+                  ? DESCRIPTIONS
+                  : url.includes('/tablet-sessions/pushable')
+                    ? (opts.rows ?? [READY, BLOCKED])
+                    : url.includes('/tablet-sessions')
+                      ? (opts.sessions ?? [SESSION])
+                        : url.includes('/practice-users')
+                          ? { users: [] }
+                          : { devices: [TABLET] };
+      return { ok: true, status: 200, json: async () => payload } as unknown as Response;
+    }),
+  );
+}
+
+let session: { roles: string[]; practiceId: string | null } | null = null;
+
+/*
+ * WHICH PAGE THE SHELL THINKS IT IS ON. `BackLink` derives the parent from the
+ * path (there is no `back` prop, deliberately — see `BackLink.tsx`), so a test
+ * that wants to prove a page HAS a back link has to tell it where it is.
+ * Without this the hook returns null, every page looks like the root, and the
+ * absence Carl found on 7 Sep would be indistinguishable from the test setup.
+ */
+let pathname = '/practice/patients';
+
+vi.mock('next/navigation', () => ({
+  usePathname: () => pathname,
+}));
+
+vi.mock('../../auth', () => ({
+  currentSession: () => session,
+  apiHeaders: () => ({ 'x-practice-id': PRACTICE, 'Content-Type': 'application/json' }),
+}));
+
+beforeEach(() => {
+  calls.length = 0;
+  pathname = '/practice/patients';
+  session = { roles: ['practice_user'], practiceId: PRACTICE };
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  cleanup();
+});
+
+// ---------------------------------------------------------------------------
+
+describe('/practice/patients — who has something open today', () => {
+  it('queue_lists_only_patients_with_something_open', async () => {
+    stubFetch();
+    render(<PatientsQueueView practiceId={PRACTICE} />);
+
+    await waitFor(() => expect(screen.getByTestId(`patient-${PATIENT}`)).toBeTruthy());
+    expect(screen.getByTestId(`patient-${OTHER_PATIENT}`)).toBeTruthy();
+
+    /*
+     * THE LIST IS EXACTLY WHAT THE SERVER NAMED. There is no "all patients"
+     * question to ask and no way to ask one from here: the page reads
+     * `?open=today` and nothing else, which is what stops a work list from
+     * becoming a patient directory (REQ-DATA-10).
+     */
+    expect(screen.getAllByTestId(/^patient-(?!summary)/)).toHaveLength(2);
+    const asked = calls.filter((call) => call.url.includes('/patients'));
+    expect(asked.length).toBeGreaterThan(0);
+    for (const call of asked) expect(call.url).toContain('open=today');
+
+    // A patient with nothing open is not in the payload, so not on the screen.
+    cleanup();
+    stubFetch({ queue: [] });
+    render(<PatientsQueueView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByText(strings.patients.none)).toBeTruthy());
+    expect(screen.queryByTestId(`patient-${PATIENT}`)).toBeNull();
+  });
+
+  it('queue_rows_show_no_patient_values_but_the_name', async () => {
+    /*
+     * A FRONT-COUNTER LIST POLLED EVERY THREE SECONDS IS A STATUS, NOT A
+     * MIRROR (Carl, 4 Sep 2026). The date of birth disambiguates two people
+     * who share a name, but that happens on the work page, read once when it
+     * opens — not here, on a screen facing the room all morning.
+     */
+    stubFetch();
+    render(<PatientsQueueView practiceId={PRACTICE} />);
+
+    await waitFor(() => expect(screen.getByTestId(`patient-${PATIENT}`)).toBeTruthy());
+    const row = screen.getByTestId(`patient-${PATIENT}`);
+
+    expect(row.textContent).toContain('Jamie Sampleton');
+    expect(row.textContent).not.toContain('1957');
+    expect(row.textContent).not.toContain('March');
+    expect(row.textContent).not.toMatch(/born/i);
+  });
+
+  it('the one line says what somebody has to do, not what happened last', () => {
+    /*
+     * AN UNANSWERED CROSS OUTRANKS A LIVE TABLET. A row that led with "on a
+     * tablet now" while the patient stood at the counter saying their address
+     * was wrong would be true and useless.
+     */
+    const disputed = {
+      items: [
+        { ...QUEUE[0].items[0], disputedDetails: ['address'], disputeResolution: null },
+      ],
+    } as Pick<PatientQueueRow, 'items'>;
+    expect(queueSummary(disputed)).toContain(strings.kiosk.checkDetails.detailNames.address);
+
+    // Answered, and the line becomes the thing left to do.
+    const resolved = {
+      items: [{ ...disputed.items[0], disputeResolution: 'corrected' as const }],
+    };
+    expect(queueSummary(resolved)).toBe(strings.tablet.resolvedTitle);
+
+    // Live: the tablet and the session id both, so the two screens match by eye.
+    expect(queueSummary(QUEUE[0])).toContain(TABLET.label);
+    expect(queueSummary(QUEUE[0])).toContain('8ff09d7b');
+
+    // Waiting, and whether it can actually go.
+    expect(queueSummary(QUEUE[1])).toBe(strings.patients.summaryBlocked);
+    expect(
+      queueSummary({ items: [{ ...QUEUE[1].items[0], pushable: true }] }),
+    ).toBe(strings.patients.summaryAwaiting);
+  });
+
+  it('type-to-find narrows what is on screen and asks the server nothing', async () => {
+    stubFetch();
+    render(<PatientsQueueView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`patient-${PATIENT}`)).toBeTruthy());
+
+    const before = calls.length;
+    fireEvent.change(screen.getByTestId('patients-find'), { target: { value: 'casey' } });
+
+    await waitFor(() => expect(screen.queryByTestId(`patient-${PATIENT}`)).toBeNull());
+    expect(screen.getByTestId(`patient-${OTHER_PATIENT}`)).toBeTruthy();
+    // Not one request: the filter is over rows the server already scoped.
+    expect(calls.length).toBe(before);
+
+    expect(matchesTerm(QUEUE[0], 'sampleton')).toBe(true);
+    expect(matchesTerm(QUEUE[0], 'walkin')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * ARRIVALS WAITING FOR A PROVIDER (Carl, 5–7 Sep 2026; the billing role).
+ *
+ * The practice's software named somebody the claim cannot go under, the
+ * arrival was refused, and there is therefore no agreement, no tablet row and
+ * no work page. Without this section a patient stands at the desk and no
+ * screen in the practice says why nothing has happened.
+ */
+describe('/practice/patients — arrivals that need a provider', () => {
+  const ARRIVAL = 'arrival-1';
+  const KNOWN_ARRIVAL = 'arrival-2';
+
+  const REFUSED = [
+    {
+      arrivalId: ARRIVAL,
+      reason: 'provider_not_servicing',
+      pmsPatientRecordNumber: 'DEV-CASEY-WALKIN',
+      // Never seen before: no name, and no other detail either.
+      patientName: null,
+      affiliationId: 'affiliation-nurse',
+      providerId: null,
+      providerName: 'Nurse Example',
+      billingRole: 'works_under_provider',
+      arrivedAt: '2026-09-07T09:00:00.000Z',
+      source: 'dev',
+    },
+    {
+      arrivalId: KNOWN_ARRIVAL,
+      reason: 'provider_not_servicing',
+      pmsPatientRecordNumber: 'DEV-JAMIE',
+      patientName: 'Jamie Sampleton',
+      affiliationId: 'affiliation-nurse',
+      providerId: null,
+      providerName: 'Nurse Example',
+      billingRole: 'works_under_provider',
+      arrivedAt: '2026-09-07T09:05:00.000Z',
+      source: 'dev',
+    },
+  ];
+
+  /**
+   * PRACTITIONERS AT LOCATIONS, which is what an agreement is anchored on
+   * (Carl, 7 Sep 2026). The same doctor appears twice because they work at two
+   * of the practice's sites and each has its own provider number -- the label
+   * is what tells reception which line is which.
+   */
+  const CHOICES = [
+    {
+      affiliationId: 'affiliation-gp-main',
+      name: 'Dr Example Provider',
+      providerType: 'general_practitioner',
+      locationLabel: 'Main Street',
+    },
+    {
+      affiliationId: 'affiliation-gp-after-hours',
+      name: 'Dr Example Provider',
+      providerType: 'general_practitioner',
+      locationLabel: 'After Hours',
+    },
+  ];
+
+  it('shows the reason on the row, naming the provider and the role', async () => {
+    stubFetch({ refused: REFUSED, choices: CHOICES });
+    render(<PatientsQueueView practiceId={PRACTICE} />);
+
+    const reason = await screen.findByTestId(`needs-provider-reason-${ARRIVAL}`);
+    expect(reason.textContent).toContain('Nurse Example');
+    expect(reason.textContent).toContain(strings.billingRoles.names.works_under_provider);
+  });
+
+  /**
+   * A refused arrival changes nothing about the person, so somebody the
+   * platform has never seen is identified by the practice's OWN record number
+   * — and by nothing else. No date of birth, no address, no contact detail.
+   */
+  it('identifies an unknown walk-in by the practice’s record number and nothing more', async () => {
+    stubFetch({ refused: REFUSED, choices: CHOICES });
+    render(<PatientsQueueView practiceId={PRACTICE} />);
+
+    const row = await screen.findByTestId(`needs-provider-${ARRIVAL}`);
+    expect(row.textContent).toContain('DEV-CASEY-WALKIN');
+    // THE WHOLE DATE, NOT THE YEAR. A bare `/1957|1988/` matches any four
+    // digits that happen to look like a year -- a record number, an
+    // idempotency key, a provider number -- and flaked twice in CI on
+    // exactly that. The fixture's dates of birth are what must not appear.
+    expect(row.textContent).not.toMatch(/1957-03-14|1988-02-02/);
+    // SAME LESSON, THE ADDRESS HALF. `/Parade|Street/` matched the picker's
+    // own site label ("Main Street") the moment locations got names -- a
+    // practice's site is not the patient's address. Match the fixture's.
+    expect(row.textContent).not.toMatch(/404 Wrongway Parade/);
+
+    // A patient the practice already knows shows their name instead.
+    const known = await screen.findByTestId(`needs-provider-${KNOWN_ARRIVAL}`);
+    expect(known.textContent).toContain('Jamie Sampleton');
+  });
+
+  /** The picker cannot offer the person who was refused. */
+  it('offers only the servicing providers the server sent', async () => {
+    stubFetch({ refused: REFUSED, choices: CHOICES });
+    render(<PatientsQueueView practiceId={PRACTICE} />);
+
+    const pick = (await screen.findByTestId(`needs-provider-pick-${ARRIVAL}`)) as HTMLSelectElement;
+    const values = [...pick.options].map((o) => o.value).filter(Boolean);
+    expect(values).toEqual(['affiliation-gp-main', 'affiliation-gp-after-hours']);
+    expect(values).not.toContain('affiliation-nurse');
+    // ONE NAME, TWO SITES, TWO DISTINGUISHABLE LINES. A picker that showed
+    // "Dr Example Provider" twice would make reception guess which desk.
+    const labels = [...pick.options].map((o) => o.textContent).filter(Boolean);
+    expect(labels).toContain('Dr Example Provider — Main Street');
+    expect(labels).toContain('Dr Example Provider — After Hours');
+  });
+
+  it('re-sends the arrival with the chosen provider, and sends nothing else', async () => {
+    stubFetch({ refused: REFUSED, choices: CHOICES });
+    render(<PatientsQueueView practiceId={PRACTICE} />);
+
+    const pick = await screen.findByTestId(`needs-provider-pick-${ARRIVAL}`);
+    fireEvent.change(pick, { target: { value: 'affiliation-gp-main' } });
+    fireEvent.click(screen.getByTestId(`needs-provider-submit-${ARRIVAL}`));
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));
+    const posted = calls.find((c) => c.method === 'POST');
+    expect(posted?.url).toContain(`/arrivals/${ARRIVAL}/provider`);
+    // ONE FIELD. The patient's details are the practice management system's
+    // own, held on the row since it was refused — the console never retypes
+    // one (REQ-DATA-10).
+    expect(posted?.body).toEqual({ affiliationId: 'affiliation-gp-main' });
+  });
+
+  it('shows nothing at all when no arrival is waiting', async () => {
+    stubFetch();
+    render(<PatientsQueueView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`patient-${PATIENT}`)).toBeTruthy());
+    expect(screen.queryByTestId('needs-provider-list')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('/practice/patients/<id> — one patient, everything open', () => {
+  it('work_page_shows_all_five_details_and_corrects_inline', async () => {
+    stubFetch();
+    render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+
+    await waitFor(() => expect(screen.getByTestId('identity-list')).toBeTruthy());
+    const identity = screen.getByTestId('identity-list');
+
+    // THE FIVE DETAILS THE PATIENT IS ASKED TO CHECK, all of them.
+    expect(identity.textContent).toContain('Jamie Sampleton');
+    expect(identity.textContent).toContain('14 March 1957');
+    expect(identity.textContent).toContain('404 Wrongway Parade');
+    expect(identity.textContent).toContain('+61400000404');
+    expect(identity.textContent).toContain('jamie.sampleton@example.invalid');
+
+    // Corrected in place, through the same panel the tablet page opens.
+    fireEvent.click(screen.getByTestId('identity-correct-open'));
+    const panel = await screen.findByTestId(`correct-panel-patient:${PATIENT}`);
+    expect(panel).toBeTruthy();
+
+    // THE FIELDS ARRIVE WITH THE DETAILS FETCH, not with the panel: the panel
+    // opens at once and shows "loading" until GET /patients/:id/details lands,
+    // so wait for the input rather than grabbing it (flaked on a slow CI runner).
+    fireEvent.change(await screen.findByTestId(`correct-address-patient:${PATIENT}`), {
+      target: { value: '1 Right Street, Sampletown NSW 2000' },
+    });
+    fireEvent.click(screen.getByTestId(`correct-save-patient:${PATIENT}`));
+
+    await waitFor(() =>
+      expect(calls.some((call) => call.method === 'PATCH' && call.url.includes(`/patients/${PATIENT}/details`))).toBe(
+        true,
+      ),
+    );
+    const patch = calls.find((call) => call.method === 'PATCH')!;
+    // ONLY WHAT CHANGED. An untouched field must never become a correction event.
+    expect(patch.body).toEqual({ address: '1 Right Street, Sampletown NSW 2000' });
+
+    /*
+     * AND NO DISPUTE RESOLUTION. Nobody crossed anything here — recording one
+     * would put an answer in the vault to a question nobody asked.
+     */
+    expect(calls.some((call) => call.url.includes('/dispute-resolution'))).toBe(false);
+  });
+
+  it('work_page_tablet_controls_match_tablet_page', async () => {
+    /*
+     * THE SAME FIXTURE, THE SAME CONTROLS. Not "similar": the same component,
+     * so the same test ids, the same dead buttons and the same refusal band
+     * with the same words. A second implementation of "may this be sent" is a
+     * second place for a rule to be fixed and one place for it to be forgotten.
+     */
+    const signature = (root: HTMLElement) => ({
+      ids: [...root.querySelectorAll('[data-testid]')]
+        .map((node) => node.getAttribute('data-testid'))
+        .sort(),
+      disabled: [...root.querySelectorAll('button')].map((b) => (b as HTMLButtonElement).disabled),
+      blocked: root.querySelector(`[data-testid="blocked-${BLOCKED.agreementId}"]`)?.textContent,
+    });
+
+    stubFetch();
+    render(<TabletView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`pushable-${BLOCKED.agreementId}`)).toBeTruthy());
+    const fromTablet = signature(screen.getByTestId(`pushable-${BLOCKED.agreementId}`));
+    cleanup();
+
+    stubFetch();
+    render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+    await waitFor(() => expect(screen.getByTestId(`pushable-${BLOCKED.agreementId}`)).toBeTruthy());
+    const fromWork = signature(screen.getByTestId(`pushable-${BLOCKED.agreementId}`));
+
+    // The heading is the one thing the work page adds, because the page is
+    // already about this person and their name is at the top of it.
+    expect(fromWork.ids).toEqual(
+      [...fromTablet.ids, `agreement-heading-${BLOCKED.agreementId}`].sort(),
+    );
+    expect(fromWork.disabled).toEqual(fromTablet.disabled);
+    expect(fromWork.blocked).toBe(fromTablet.blocked);
+    expect(fromWork.blocked).toContain(strings.tablet.blocked.service_description_missing);
+  });
+
+  it('names an enduring agreement under its provider, never practice-wide', () => {
+    /*
+     * HARD RULE 6, IN THE ONE PLACE A RECEPTIONIST WOULD BELIEVE IT. Enduring
+     * is per practitioner × patient and GP-only (REQ-END-01/-01a); a heading
+     * that read "practice-wide" would be the rule broken on screen.
+     */
+    const heading = agreementHeading({ agreementType: 'enduring', providerName: 'Dr Example Provider' });
+    expect(heading).toContain('Dr Example Provider');
+    expect(heading.toLowerCase()).not.toContain('practice');
+    expect(agreementHeading({ agreementType: 'episodic_pre', providerName: null })).toBe(
+      strings.patients.episodicToday,
+    );
+  });
+
+  it('the history reads as types and times, and an unmapped type shows its code', () => {
+    expect(historyLine({ at: '', type: 'session_pushed' })).toBe(
+      strings.patients.historyTypes.session_pushed,
+    );
+    const verification = historyLine({
+      at: '',
+      type: 'verification',
+      detail: 'passed',
+      detailTypes: ['name', 'address'],
+    });
+    expect(verification).toContain(strings.kiosk.checkDetails.detailNames.address);
+    expect(verification).toContain('passed');
+    // Never swallowed: a type this build has not met shows itself.
+    expect(historyLine({ at: '', type: 'something_new' as never })).toBe('something_new');
+  });
+
+  it('queue_shows_patient_correction_requests', async () => {
+    /*
+     * WHAT HAPPENS WHEN THE PATIENT PRESSES THE BUTTON (Carl, 4 Sep 2026). It
+     * is on the queue, in the row's one line, naming the DETAIL they asked
+     * about — "see the review queue" would be a defect, and so would a line
+     * that said only "a correction was requested".
+     */
+    const asked: PatientQueueRow = {
+      patientId: OTHER_PATIENT,
+      patientName: 'Casey Walkin',
+      dateOfBirth: '1988-02-02',
+      items: [
+        {
+          kind: 'portal_correction_requested',
+          reviewTaskId: TASK,
+          fieldType: 'mobile',
+          requestedAt: '2026-09-04T10:31:00.000Z',
+        },
+      ],
+    };
+
+    expect(queueSummary(asked)).toBe(
+      strings.patients.summaryCorrection(strings.kiosk.checkDetails.detailNames.mobile),
+    );
+    // It ranks with the things somebody has to get up for.
+    expect(queueTone(asked)).toBe('warn');
+
+    stubFetch({ queue: [asked] });
+    render(<PatientsQueueView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`patient-${OTHER_PATIENT}`)).toBeTruthy());
+    const row = screen.getByTestId(`patient-summary-${OTHER_PATIENT}`);
+    expect(row.textContent).toContain('Patient asked for a correction');
+    expect(row.textContent).toContain(strings.kiosk.checkDetails.detailNames.mobile);
+    // THE TYPE, NEVER A VALUE. They were never asked for a replacement.
+    expect(screen.getByTestId(`patient-${OTHER_PATIENT}`).textContent).not.toContain('+61400');
+  });
+
+  it('work_page_shows_the_patients_correction_request_and_resolves_it', async () => {
+    const request = {
+      kind: 'portal_correction_requested' as const,
+      reviewTaskId: TASK,
+      fieldType: 'mobile',
+      requestedAt: '2026-09-04T10:31:00.000Z',
+    };
+    stubFetch({
+      queue: [{ ...QUEUE[0], items: [...QUEUE[0].items, request] }],
+    });
+    render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+
+    // THE BANNER IS AT THE TOP OF THEIR OWN PAGE, and it names the detail and
+    // when they asked — not "somebody asked for something".
+    const banner = await screen.findByTestId(`correction-request-${TASK}`);
+    expect(banner.textContent).toContain('The patient asked for a correction');
+    expect(banner.textContent).toContain(detailInSentence('mobile'));
+    // THE DAY AS WELL AS THE TIME: a request made on Sunday night must not read
+    // as though somebody is standing at the desk right now.
+    expect(banner.textContent).toContain(askedAt('2026-09-04T10:31:00.000Z'));
+    expect(banner.textContent).toContain('2026');
+
+    /*
+     * AND THE FIX IS RIGHT THERE: the same correction panel `/practice/tablet`
+     * uses, with the detail they named MARKED exactly as a crossed row is —
+     * and every other field still editable, because they may mention a second
+     * one while somebody is on the phone to them.
+     */
+    fireEvent.click(screen.getByTestId(`correction-request-open-${TASK}`));
+    const subjectKey = `patient:${PATIENT}`;
+    // THE FIELDS ARRIVE WITH THE DETAILS FETCH, after the panel opens — wait for
+    // a field, not the panel (same race as the inline-correct test; flaked on CI 7 Sep 2026).
+    await waitFor(() => expect(screen.getByTestId(`correct-field-mobile-${subjectKey}`)).toBeTruthy());
+    expect(
+      screen.getByTestId(`correct-field-mobile-${subjectKey}`).getAttribute('data-disputed'),
+    ).toBe('true');
+    expect(
+      screen.getByTestId(`correct-field-address-${subjectKey}`).getAttribute('data-disputed'),
+    ).toBe('false');
+
+    /*
+     * MARK AS DONE GOES THROUGH THE REVIEW-TASKS MODULE'S OWN RESOLVE
+     * ENDPOINT — practice-scoped, a named staff member, and a
+     * `review_task.resolved` event. There is no second closing path.
+     */
+    fireEvent.click(screen.getByTestId(`correction-request-done-${TASK}`));
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (call) => call.method === 'POST' && call.url.includes(`/review-tasks/${TASK}/resolve`),
+        ),
+      ).toBe(true),
+    );
+    const resolve = calls.find((call) => call.url.includes(`/review-tasks/${TASK}/resolve`))!;
+    expect((resolve.body as { resolution: string }).resolution).toBe('no_change_needed');
+  });
+
+  it('banner_correct_it_now_opens_the_panel_in_view_and_focuses_the_requested_field', async () => {
+    /*
+     * Carl, 7 Sep 2026: pressed "Correct it now" on the banner, the button
+     * flipped to "Close", and "nothing visible changed" — the panel this
+     * button opens rendered below the five read-only rows, off the visible
+     * part of the screen. The panel now renders directly under the banner
+     * (one instance, shared with the "Correct a detail" button further down),
+     * so opening it from EITHER control lands in the same place: right after
+     * the banner, before `identity-list`, with focus already on the field the
+     * patient actually disputed.
+     */
+    const request = {
+      kind: 'portal_correction_requested' as const,
+      reviewTaskId: TASK,
+      fieldType: 'mobile',
+      requestedAt: '2026-09-04T10:31:00.000Z',
+    };
+    stubFetch({
+      queue: [{ ...QUEUE[0], items: [...QUEUE[0].items, request] }],
+    });
+    render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+
+    const banner = await screen.findByTestId(`correction-request-${TASK}`);
+    fireEvent.click(screen.getByTestId(`correction-request-open-${TASK}`));
+
+    const subjectKey = `patient:${PATIENT}`;
+    const mobileField = await screen.findByTestId(`correct-mobile-${subjectKey}`);
+
+    // FOCUSED, without anybody pressing Tab — the crossed field, not merely
+    // the first one on the form.
+    await waitFor(() => expect(document.activeElement).toBe(mobileField));
+
+    // IN VIEW: the panel sits BEFORE the five read-only rows in the document,
+    // not after them — `compareDocumentPosition` is the DOM's own way of
+    // saying "A comes before B" without depending on any real layout, which
+    // jsdom does not do.
+    const panel = screen.getByTestId(`correct-panel-${subjectKey}`);
+    const rows = screen.getByTestId('identity-list');
+    expect(banner.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(panel.compareDocumentPosition(rows) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // AND THE LOWER "Correct a detail" BUTTON STILL WORKS, closing the very
+    // same panel.
+    fireEvent.click(screen.getByTestId('identity-correct-open'));
+    expect(screen.queryByTestId(`correct-panel-${subjectKey}`)).toBeNull();
+  });
+
+  it('a patient with no request has no banner, and a view-only visitor cannot answer one', async () => {
+    stubFetch();
+    render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+    await waitFor(() => expect(screen.getByTestId('identity-list')).toBeTruthy());
+    expect(screen.queryByTestId(/^correction-request-/)).toBeNull();
+    cleanup();
+
+    // LOOKING, NOT WORKING. The server would refuse them anyway — this is the
+    // screen agreeing with it rather than offering a button that fails.
+    session = { roles: ['platform_operator'], practiceId: null };
+    stubFetch({
+      queue: [
+        {
+          ...QUEUE[0],
+          items: [
+            {
+              kind: 'portal_correction_requested',
+              reviewTaskId: TASK,
+              fieldType: 'mobile',
+              requestedAt: '2026-09-04T10:31:00.000Z',
+            },
+          ],
+        },
+      ],
+    });
+    render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+    const done = await screen.findByTestId(`correction-request-done-${TASK}`);
+    expect((done as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('queue_shows_locked_invitations', async () => {
+    /*
+     * THE PRACTICE IS TOLD, ON THE SCREEN THEY ALREADY STAND AT. The line says
+     * what is wrong and what it needs — not "see the review queue", and not
+     * which detail the person got wrong, which nothing on this platform tells
+     * the practice (REQ-VER-04, hard rule 9).
+     */
+    const locked: PatientQueueRow = {
+      patientId: OTHER_PATIENT,
+      patientName: 'Casey Walkin',
+      dateOfBirth: '1988-02-02',
+      items: [LOCKED],
+    };
+
+    expect(queueSummary(locked)).toBe(strings.patients.summaryLocked);
+    expect(queueTone(locked)).toBe('warn');
+    // A request the patient made in words still outranks it.
+    expect(
+      queueSummary({
+        items: [
+          LOCKED,
+          { kind: 'portal_correction_requested', reviewTaskId: TASK, fieldType: 'mobile' },
+        ],
+      }),
+    ).toContain('Patient asked for a correction');
+
+    stubFetch({ queue: [locked] });
+    render(<PatientsQueueView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`patient-${OTHER_PATIENT}`)).toBeTruthy());
+    const row = screen.getByTestId(`patient-${OTHER_PATIENT}`);
+    expect(row.textContent).toContain(strings.patients.summaryLocked);
+    // NOT WHICH DETAIL, NOT HOW MANY WERE OFFERED, NOT A VALUE.
+    expect(row.textContent).not.toMatch(/address|date of birth|name we hold/i);
+  });
+
+  it('work_page_shows_the_locked_invitation_and_reinvites', async () => {
+    stubFetch({ queue: [{ ...QUEUE[0], items: [...QUEUE[0].items, LOCKED] }] });
+    render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+
+    const banner = await screen.findByTestId(`locked-invitation-${LOCK_TASK}`);
+    expect(banner.textContent).toContain(strings.patients.lockedTitle);
+    // WHEN IT LOCKED, WITH THE DAY — a lock from Sunday night must not read as
+    // though somebody is standing at the desk right now.
+    expect(banner.textContent).toContain(askedAt(LOCKED.lockedAt));
+    expect(banner.textContent).toContain('2026');
+    // AND NEVER WHICH DETAIL DID NOT MATCH.
+    expect(banner.textContent).not.toMatch(/medicare|password|which detail/i);
+
+    /*
+     * SEND A NEW INVITATION GOES TO THE EXISTING MINT ENDPOINT, against the
+     * signed agreement the SERVER chose (FR-1.14). The screen picks no
+     * agreement of its own and resolves no task afterwards — the mint closes
+     * the locked one in its own transaction.
+     */
+    fireEvent.click(screen.getByTestId(`locked-invitation-send-${LOCK_TASK}`));
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (call) =>
+            call.method === 'POST' &&
+            call.url.includes(`/agreements/${READY.agreementId}/portal-invitation`),
+        ),
+      ).toBe(true),
+    );
+    expect(calls.some((call) => call.url.includes('/review-tasks/') && call.method === 'POST')).toBe(
+      false,
+    );
+
+    // WAIT FOR THE SEND TO FINISH, NOT JUST TO START. Both buttons are disabled
+    // while `lockedBusy` is set; the POST above is recorded on click, but busy
+    // clears only after the stubbed response resolves and the page re-reads.
+    // Clicking dismiss in that gap hits a disabled button and nothing is sent
+    // (wow.md §2 item 6 — failed CI on 57de0f4).
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId(`locked-invitation-dismiss-${LOCK_TASK}`) as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
+
+    // DISMISS closes the task through the review-tasks module's own endpoint,
+    // and never as `reinvited` — that resolution means a message actually went.
+    fireEvent.click(screen.getByTestId(`locked-invitation-dismiss-${LOCK_TASK}`));
+    await waitFor(() =>
+      expect(
+        calls.some((call) => call.url.includes(`/review-tasks/${LOCK_TASK}/resolve`)),
+      ).toBe(true),
+    );
+    const dismissed = calls.find((call) => call.url.includes(`/review-tasks/${LOCK_TASK}/resolve`))!;
+    expect((dismissed.body as { resolution: string }).resolution).toBe('no_change_needed');
+  });
+
+  it('a locked invitation with nothing signed says why, and a visitor cannot send one', async () => {
+    /*
+     * THE REASON, NOT A DEAD BUTTON (CLAUDE.md §7). An invitation is minted
+     * against a signed agreement, so a patient with none cannot be re-invited
+     * yet, and the banner says so rather than offering a control that fails.
+     */
+    stubFetch({
+      queue: [{ ...QUEUE[0], items: [{ ...LOCKED, agreementId: undefined }] }],
+    });
+    render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+    await screen.findByTestId(`locked-invitation-no-agreement-${LOCK_TASK}`);
+    expect(
+      (screen.getByTestId(`locked-invitation-send-${LOCK_TASK}`) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    cleanup();
+
+    // LOOKING, NOT WORKING — the server would refuse them anyway.
+    session = { roles: ['platform_operator'], practiceId: null };
+    stubFetch({ queue: [{ ...QUEUE[0], items: [LOCKED] }] });
+    render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+    const send = await screen.findByTestId(`locked-invitation-send-${LOCK_TASK}`);
+    expect((send as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('work_page_never_shows_medicare_or_amounts', async () => {
+    stubFetch();
+    const { container } = render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+
+    await waitFor(() => expect(screen.getByTestId('identity-list')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('work-history')).toBeTruthy());
+
+    const text = container.textContent ?? '';
+    /*
+     * THE MEDICARE CARD NUMBER IS NOT AN IDENTITY IDENTIFIER AND IS NOT HELD
+     * HERE AT ALL (hard rule 1, REQ-VER-02) — there is no column for one, and
+     * this page must never grow a field that asks for one.
+     */
+    expect(text).not.toMatch(/medicare/i);
+    // NO BENEFIT AND NO DOLLAR AMOUNT ON ANY AGREEMENT ARTEFACT (hard rule 4).
+    expect(text).not.toMatch(/\$\s?\d/);
+    // NOR ANY CLAIM OF CERTIFICATION (hard rule 12, REQ-65C-05).
+    expect(text).not.toMatch(/certified|accredited|government-approved/i);
+    // The whole markup, not only the words: no hidden attribute carries one.
+    expect(container.innerHTML).not.toMatch(/medicare/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * THE RECORD LINE (Carl, 7 Sep 2026) — "every page must have the patient GUID
+ * from AoBPlatform somewhere, so we can see which record has the issue. Also
+ * helps with testing."
+ */
+describe('work_page_shows_the_full_patient_id', () => {
+  it('names the whole id under the patient, with a way to copy it', async () => {
+    stubFetch();
+    render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+
+    const line = await screen.findByTestId('work-patient-id');
+    // THE WHOLE ID, NOT A PREFIX. The session tag is what is matched by eye;
+    // this is what is matched exactly, quoted into a ticket, pasted into a query.
+    expect(line.textContent).toContain(PATIENT);
+    expect(line.textContent).toContain(strings.recordId.patient);
+    expect(screen.getByTestId('work-patient-id-copy')).toBeTruthy();
+  });
+
+  it('and every queue row names it too', async () => {
+    stubFetch();
+    render(<PatientsQueueView practiceId={PRACTICE} />);
+
+    const line = await screen.findByTestId(`queue-patient-id-${PATIENT}`);
+    expect(line.textContent).toContain(PATIENT);
+    expect(screen.getByTestId(`queue-patient-id-${OTHER_PATIENT}`).textContent).toContain(OTHER_PATIENT);
+  });
+});
+
+/**
+ * BACK AND REFRESH, WHICH BOTH OF THESE PAGES WERE MISSING (Carl, 7 Sep 2026;
+ * wow.md §2 item 3).
+ *
+ * REFRESH MATTERS MORE HERE THAN IT LOOKS. The console's access token is held
+ * in memory only, by design, so F5 throws the session away and asks somebody to
+ * sign in again — which is why every page registers a loader instead
+ * (`refresh.ts`).
+ */
+describe('patient_pages_have_back_link_and_refresh', () => {
+  it('the queue goes up to setup and can be re-read from the top bar', async () => {
+    pathname = '/practice/patients';
+    stubFetch();
+    render(<PatientsQueueView practiceId={PRACTICE} />);
+
+    await waitFor(() => expect(screen.getByTestId(`patient-${PATIENT}`)).toBeTruthy());
+    expect(screen.getByTestId('shell-back').getAttribute('href')).toBe('/practice/setup');
+    expect(screen.getByTestId('shell-refresh')).toBeTruthy();
+  });
+
+  it('one patient’s page goes up to the queue, and can be re-read too', async () => {
+    pathname = `/practice/patients/${PATIENT}`;
+    stubFetch();
+    render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+
+    await waitFor(() => expect(screen.getByTestId('identity-list')).toBeTruthy());
+    expect(screen.getByTestId('shell-back').getAttribute('href')).toBe('/practice/patients');
+    expect(screen.getByTestId('shell-refresh')).toBeTruthy();
+  });
+});
+
+/**
+ * A SESSION WHOSE AGREEMENT HAS MOVED ON IS HISTORY (Carl, 7 Sep 2026, from
+ * testing: Alex had signed, and his work page still offered "Send again" on the
+ * session he walked away from an hour earlier — an act whose only outcome was
+ * the server's refusal, "This agreement has moved on and cannot be sent to a
+ * tablet").
+ */
+describe('ended_session_for_a_moved_on_agreement_offers_no_send_again', () => {
+  const WALKED_AWAY: TabletSessionRow = {
+    ...SESSION,
+    state: 'walked_away',
+    endedAt: '2026-09-04T09:20:00.000Z',
+  };
+
+  it('keeps the facts and loses the controls once the agreement is signed', async () => {
+    // FIRST, THE CASE THE FIX MUST NOT BREAK: the agreement can still go, so
+    // the ended session is work and "Send again" is the ordinary next thing.
+    stubFetch({ sessions: [WALKED_AWAY] });
+    render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+    expect(await screen.findByTestId(`send-again-${WALKED_AWAY.id}`)).toBeTruthy();
+
+    cleanup();
+
+    // AND THEN THE AGREEMENT IS SIGNED. The row says what happened and which
+    // session it was, and offers nothing.
+    stubFetch({ sessions: [{ ...WALKED_AWAY, agreementOutcome: 'signed' }] });
+    render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+
+    const history = await screen.findByTestId(`work-session-history-${WALKED_AWAY.id}`);
+    expect(history.textContent).toContain(strings.tablet.states.walked_away);
+    expect(history.textContent).toContain(WALKED_AWAY.id.slice(0, 8));
+    expect(history.textContent).toContain(strings.patients.sessionHistorySigned);
+
+    expect(screen.queryByTestId(`send-again-${WALKED_AWAY.id}`)).toBeNull();
+    expect(screen.queryByTestId(`work-session-recall-${WALKED_AWAY.id}`)).toBeNull();
+  });
+});
+
+/**
+ * A WAY OUT OF THE CORRECTION PANEL (Carl, 7 Sep 2026, testing the work page).
+ *
+ * There was none beside "Save the correction". The panel could only be shut by
+ * pressing "Correct a detail" again — a toggle nobody reads as "cancel" — and
+ * the red "Nothing was changed" band survived it, so somebody who opened the
+ * panel by mistake was left with a refusal on screen about an act they had
+ * abandoned.
+ *
+ * THE PANEL IS SHARED with `/practice/tablet` (`pushDesk.tsx`), so this is one
+ * component and one behaviour — the two pages cannot drift apart on it.
+ */
+describe('correction_panel_cancel_discards_edits_and_closes', () => {
+  const subjectKey = `patient:${PATIENT}`;
+
+  /** Open the panel and wait for the FIELDS, which arrive on the details
+   *  fetch rather than with the panel itself (wow.md section 2 item 6). */
+  async function openTheCorrectionPanel(): Promise<HTMLElement> {
+    stubFetch();
+    render(<PatientWorkView practiceId={PRACTICE} patientId={PATIENT} />);
+    await waitFor(() => expect(screen.getByTestId('identity-list')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('identity-correct-open'));
+    return (await screen.findByTestId(`correct-address-${subjectKey}`)) as HTMLElement;
+  }
+
+  it('closes the panel, throws the edits away and clears the outcome band', async () => {
+    const address = await openTheCorrectionPanel();
+    fireEvent.change(address, { target: { value: '1 Right Street, Sampletown NSW 2000' } });
+
+    /*
+     * THE RED BAND FIRST, because clearing it is the half that was missing. An
+     * empty save is refused on the client with "Nothing was changed" — reached
+     * here by putting the address back to what it already was.
+     */
+    fireEvent.change(address, { target: { value: '404 Wrongway Parade, Sampletown NSW 2000' } });
+    fireEvent.click(screen.getByTestId(`correct-save-${subjectKey}`));
+    await waitFor(() =>
+      expect(screen.getByTestId("identity-correct-outcome").textContent).toContain(
+        strings.tablet.correctNoChange,
+      ),
+    );
+    // Nothing was sent, which is the point of that refusal.
+    expect(calls.some((call) => call.method === 'PATCH')).toBe(false);
+
+    fireEvent.click(screen.getByTestId(`correct-cancel-${subjectKey}`));
+
+    expect(screen.queryByTestId(`correct-panel-${subjectKey}`)).toBeNull();
+    // The band goes with the form it was about — a message about a form is not
+    // true once the form is gone.
+    expect(screen.queryByTestId("identity-correct-outcome")).toBeNull();
+
+    // AND THE EDITS ARE GONE. Re-opening reads the record again rather than
+    // handing back a draft nobody saved.
+    fireEvent.click(screen.getByTestId('identity-correct-open'));
+    const reopened = await screen.findByTestId(`correct-address-${subjectKey}`);
+    expect((reopened as HTMLInputElement).value).toBe('404 Wrongway Parade, Sampletown NSW 2000');
+  });
+
+  it('Escape does the same as Cancel', async () => {
+    const address = await openTheCorrectionPanel();
+    fireEvent.change(address, { target: { value: 'somewhere else entirely' } });
+
+    fireEvent.keyDown(screen.getByTestId(`correct-panel-${subjectKey}`), { key: 'Escape' });
+
+    expect(screen.queryByTestId(`correct-panel-${subjectKey}`)).toBeNull();
+    expect(calls.some((call) => call.method === 'PATCH')).toBe(false);
+  });
+});

@@ -20,6 +20,7 @@ import {
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
+import { anchorForAgreement } from '../affiliations/agreement-anchor';
 
 const SYSTEM_ACTOR = { principalType: 'system', id: 'core' } as const;
 
@@ -58,10 +59,15 @@ export class EnduringService {
         throw new BadRequestException('Only an enduring agreement carries reg 65CB detail.');
       }
       if (agreement.anchorKind === 'provider') {
-        const provider = await tx.provider.findFirst({ where: { id: agreement.providerId! } });
-        if (!provider) throw new NotFoundException('Provider not found.');
+        /*
+         * THE DISCIPLINE COMES FROM THE PRACTITIONER, not from a practice-wide
+         * row (Carl, 7 Sep 2026). Enduring is GP-only (REQ-END-01a, hard rule
+         * 6) and "is this person a GP" is a fact about the person.
+         */
+        const anchor = await anchorForAgreement(tx, agreement);
+        if (!anchor) throw new NotFoundException('Provider not found.');
         try {
-          assertEnduringAllowed(provider.providerType as ProviderType, agreement.enduringPathway as EnduringPathway);
+          assertEnduringAllowed(anchor.providerType as ProviderType, agreement.enduringPathway as EnduringPathway);
         } catch (err) {
           if (err instanceof HardRuleViolation) throw new BadRequestException(err.message);
           throw err;
@@ -231,11 +237,48 @@ export class EnduringService {
    * covered by an active enduring agreement?" Used by the capture cascade's
    * first stage and by reconciliation.
    */
-  async coverage(practiceId: string, query: { patientId: string; providerId?: string; at?: string }) {
+  async coverage(
+    practiceId: string,
+    query: { patientId: string; practitionerId?: string; affiliationId?: string; providerId?: string; at?: string },
+  ) {
     const at = query.at ? new Date(query.at) : new Date();
     return this.prisma.withPractice(practiceId, async (tx) => {
+      /*
+       * COVERAGE IS PER PRACTITIONER — THE PERSON — AND NEVER PER AFFILIATION
+       * (REQ-END-01, hard rule 6; Carl, 7 Sep 2026).
+       *
+       * The affiliation is the practitioner x LOCATION edge, so a GP working
+       * at two of a practice's sites holds two of them. Matching on the
+       * affiliation row would make that GP look like two providers and offer
+       * the same patient a second enduring agreement at the second site —
+       * which is the "per practitioner, not per location" reading the FAQ
+       * correction of July 2026 settled. So a caller that names an
+       * affiliation is resolved to the person behind it FIRST, and the search
+       * is on the person. Named test:
+       * `enduring_coverage_is_per_practitioner_across_locations`.
+       *
+       * `providerId` is the legacy anchor and is still answered while
+       * pre-7-September agreements carry it: those rows have no affiliation to
+       * reach a practitioner through, so the only true thing to compare is the
+       * `providers` row itself.
+       */
+      let practitionerId = query.practitionerId;
+      if (!practitionerId && query.affiliationId) {
+        const affiliation = await tx.affiliation.findFirst({
+          where: { id: query.affiliationId },
+          select: { practitionerId: true },
+        });
+        practitionerId = affiliation?.practitionerId;
+      }
+
+      const anchorWhere = practitionerId
+        ? { affiliation: { practitionerId } }
+        : query.providerId
+          ? { providerId: query.providerId }
+          : {};
+
       const agreements = await tx.agreement.findMany({
-        where: { type: 'enduring', patientId: query.patientId, providerId: query.providerId },
+        where: { type: 'enduring', patientId: query.patientId, ...anchorWhere },
       });
       const details = await tx.enduringDetail.findMany({
         where: { agreementId: { in: agreements.map((a) => a.id) } },

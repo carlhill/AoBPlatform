@@ -7,6 +7,12 @@ module.exports = {
   // parallel workers interfere (one suite's cleanup deletes another's
   // evidence rows mid-flight; observed, not theoretical). Serial, always.
   maxWorkers: 1,
+  // Runs before any suite builds a Nest application: clears the ABN Lookup
+  // GUID so e2e never calls the real Australian Business Register. See the
+  // file for why that has to be an empty value rather than a deleted key.
+  // ORDER MATTERS: the database is redirected away from dev BEFORE anything
+  // else in a suite can reach for it. See test-database.setup.ts.
+  setupFiles: ['<rootDir>/test-database.setup.ts', '<rootDir>/offline-abr.setup.ts'],
   testRegex: '.*\\.e2e-spec\\.ts$',
   transform: {
     '^.+\\.ts$': ['ts-jest', { isolatedModules: true }],

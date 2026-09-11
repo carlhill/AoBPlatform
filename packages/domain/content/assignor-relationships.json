@@ -1,0 +1,14 @@
+{
+  "$comment": "VERSIONED CONTENT, NOT CODE (Carl, 3 Sep 2026; hard rule 14). What the person signing for a patient may say they are, and the legal authority basis each answer maps onto. Editing this file changes the K-5 dropdown and the mapping behind it WITHOUT a code change — which is the whole point: the regulator has already moved this regime twice, and a list of relationships is exactly the kind of thing that moves again. Order here IS the order on screen. The DISPLAY WORDS ARE NOT HERE: they live in the string table keyed by `key` (REQ-LANG-01/-02), because they will be translated and a translated word must never be able to change a legal mapping. Bump `version` on every edit; it is recorded alongside the assignor so a stored agreement says which list it was made from. THREE BASES ARE DELIBERATELY UNREACHABLE from any option: `co_resident_relative_18_plus` asserts two people live at one address, and `guardian` and `health_epoa` assert a legal instrument. None can be inferred from a relationship word — a grandparent may or may not live with the patient, and a spouse is not thereby an attorney — so mapping to them would be the platform asserting something nobody declared. Everything that is not a parent or a spouse lands in `other_with_note` carrying the relationship itself as the note, which is what that basis is for.",
+  "version": "relationships-2026-09-1",
+  "options": [
+    { "key": "father", "authorityBasis": "parent" },
+    { "key": "mother", "authorityBasis": "parent" },
+    { "key": "spouse", "authorityBasis": "spouse" },
+    { "key": "carer", "authorityBasis": "other_with_note" },
+    { "key": "grandparent", "authorityBasis": "other_with_note" },
+    { "key": "family_member", "authorityBasis": "other_with_note" },
+    { "key": "friend", "authorityBasis": "other_with_note" },
+    { "key": "other", "authorityBasis": "other_with_note", "freeText": true }
+  ]
+}

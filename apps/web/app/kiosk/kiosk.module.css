@@ -1,0 +1,1293 @@
+/*
+ * The kiosk's appearance, built ON the web app's tokens rather than beside
+ * them.
+ *
+ * Every colour below is a `var(--…)` from `app/tokens.css`; there is not one
+ * hex value in this file. That is the whole point of folding the kiosk into
+ * `apps/web` (Carl, 3 Sep 2026): the Expo build carried its own palette, its
+ * own font stack and its own spacing scale, and two design systems in one
+ * product drift the week after they are written.
+ *
+ * WHAT IS DIFFERENT HERE, AND WHY. Only SIZE. A tablet on a counter is read
+ * standing up, at arm's length, by somebody who may be unwell — so the type
+ * scale and the touch targets are larger than the console's, and nothing else
+ * changes. The smallest target on the device is 44px (`leave`), which is the
+ * WCAG 2.2 floor; the ceremony's own actions are 56 and 72px.
+ *
+ * IT IS ITS OWN FULL-VIEWPORT SHELL. The kiosk deliberately does NOT render
+ * `Shell` — no main menu, no back link, no refresh button. A patient must not
+ * be able to navigate into the console from the waiting room, and a back
+ * control on a ceremony screen is an invitation to re-answer a step that has
+ * already been recorded.
+ */
+
+/*
+ * THREE ROWS, AND THE MIDDLE ONE IS THE ONLY ONE THAT MAY SCROLL (Carl, 7 Sep
+ * 2026 — "format page so there is no scroll bar").
+ *
+ * A GRID, NOT A COLUMN OF FLEX ITEMS, and the difference is `minmax(0, 1fr)`.
+ * A flex child's implicit `min-height: auto` lets tall content push the box
+ * past the viewport and the footer with it; the explicit zero minimum here
+ * makes the content row give way instead, so the footer is PINNED to the foot
+ * of the screen by the layout rather than by `position: fixed` sitting on top
+ * of whatever is underneath it. Nothing in this shell can overlap anything
+ * else.
+ *
+ * `100dvh`, NOT `100vh`. The dynamic unit is the one that tracks a mobile
+ * browser's collapsing address bar; `100vh` on the same device is the TALLER
+ * measurement and would put the footer just below the fold. `inset: 0` gives
+ * the same answer on a tablet in kiosk mode and is the floor under it.
+ */
+.screen {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 100dvh;
+  background: var(--page);
+  color: var(--ink);
+  font-size: 1rem;
+  line-height: 1.5;
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s4);
+  /*
+   * TIGHTENED FROM `--s5` (Carl, 7 Sep 2026). The 44px exit control already
+   * sets this bar's height, so the extra eight pixels above and below it were
+   * buying nothing and were costing the ceremony a row.
+   */
+  padding: var(--s4) var(--s7);
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+
+.headerText {
+  min-width: 0;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex: 0 0 auto;
+}
+
+.practiceName {
+  margin: 0;
+  font-size: 1.625rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.locationLine {
+  margin: 0;
+  font-size: 0.9375rem;
+  color: var(--ink-muted);
+}
+
+/*
+ * THE WAY OUT — 44px exactly, deliberately the smallest target on the device.
+ * A patient must be able to FIND it; they must not be drawn to it instead of
+ * to signing. Outline only, never filled, never accent.
+ */
+.leave {
+  min-height: 44px;
+  padding: 0 var(--s4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink-muted);
+  font: inherit;
+  font-weight: 500;
+  font-size: 0.9375rem;
+  cursor: pointer;
+}
+
+.leave:hover {
+  background: var(--surface-sunken);
+}
+
+/*
+ * THE ONLY SCROLLER ON THE DEVICE, and on the tablet sizes this product
+ * targets it should never actually scroll — the ceremony is laid out to fit
+ * 1024x768 and up. `overflow-y: auto` stays as the floor under a smaller or
+ * zoomed viewport: a screen that cannot fit scrolls its CONTENT, never the
+ * page, so the exit control in the header and the identifiers in the footer
+ * are reachable at every size (hard rule 8 — nothing here may block care).
+ */
+.content {
+  min-height: 0;
+  padding: var(--s5) var(--s7);
+  overflow-y: auto;
+}
+
+/*
+ * ONE ROW OF IDENTIFIERS (Carl, 7 Sep 2026 — "the footer is too fat. Spread
+ * out the text"). Five stacked lines and a tagline beside them cost roughly a
+ * hundred pixels; laid horizontally they cost one.
+ *
+ * IT WRAPS RATHER THAN TRUNCATES. The patient id is a full uuid and stays
+ * full — it is shown so somebody can read it into a support call or drag
+ * across it — so on a narrow tablet the row takes a second line and the grid
+ * above gives up the height. Nothing is ever elided.
+ */
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s1) var(--s5);
+  padding: var(--s3) var(--s7);
+  border-top: 1px solid var(--line);
+}
+
+.footerIdentity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s1) var(--s3);
+  min-width: 0;
+}
+
+/* Decoration between two facts, never part of either (`aria-hidden`). */
+.footerSeparator {
+  font-size: 0.6875rem;
+  line-height: 1;
+  color: var(--ink-muted);
+  opacity: 0.5;
+}
+
+.platformMark {
+  margin: 0;
+  font-size: 0.6875rem;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.footerContext {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+  text-align: right;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* --------------------------------------------------------------------------
+ * Blueprint — the bordered panel with four registration marks. The one visual
+ * idiom carried over from the design handoff, redrawn in CSS.
+ * ------------------------------------------------------------------------ */
+
+.blueprint {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--s5);
+  background: var(--surface);
+}
+
+.blueprintAccented {
+  border-left: 3px solid var(--accent);
+}
+
+.corner {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border: 0 solid var(--accent);
+}
+
+.cornerTl {
+  top: -1px;
+  left: -1px;
+  border-top-width: 1px;
+  border-left-width: 1px;
+}
+
+.cornerTr {
+  top: -1px;
+  right: -1px;
+  border-top-width: 1px;
+  border-right-width: 1px;
+}
+
+.cornerBl {
+  bottom: -1px;
+  left: -1px;
+  border-bottom-width: 1px;
+  border-left-width: 1px;
+}
+
+.cornerBr {
+  bottom: -1px;
+  right: -1px;
+  border-bottom-width: 1px;
+  border-right-width: 1px;
+}
+
+.kicker {
+  display: block;
+  margin: 0 0 var(--s2);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.tag {
+  display: inline-block;
+  padding: var(--s1) var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--ink-muted);
+}
+
+.tagAccent {
+  border-color: var(--accent);
+  background: var(--info-wash);
+  color: var(--accent);
+}
+
+/* --------------------------------------------------------------------------
+ * Buttons. Big, square, and disabled-with-a-reason.
+ * ------------------------------------------------------------------------ */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  min-height: 56px;
+  padding: var(--s3) var(--s6);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 1.0625rem;
+  font-weight: 500;
+  text-align: center;
+  cursor: pointer;
+}
+
+.buttonPrimary {
+  min-height: 72px;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 1.1875rem;
+  font-weight: 600;
+}
+
+.buttonPrimary:hover {
+  background: var(--accent-hover);
+}
+
+.buttonStandard {
+  min-height: 56px;
+  font-size: 1.0625rem;
+}
+
+.buttonSecondary:hover {
+  background: var(--surface-sunken);
+}
+
+.buttonLeft {
+  justify-content: flex-start;
+  text-align: left;
+  width: 100%;
+}
+
+/*
+ * SELECTED IS NOT COLOUR ALONE. The chosen option is filled AND carries
+ * `aria-pressed`, so it announces itself to a screen reader as well as
+ * showing itself to an eye that can tell the two apart.
+ */
+.buttonSelected {
+  border-color: var(--accent);
+  background: var(--info-wash);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/*
+ * THE DISABLED PRIMITIVE. Rendered as a `button[disabled]`, so there is
+ * genuinely nothing to press — not a live control that ignores the press. The
+ * label says what is missing; the reasons list says what each one is.
+ */
+.buttonBlocked {
+  min-height: 72px;
+  border-style: dashed;
+  border-color: var(--line-strong);
+  background: var(--surface-sunken);
+  color: var(--ink-muted);
+  font-size: 1.0625rem;
+  cursor: not-allowed;
+}
+
+.guarded {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  align-items: stretch;
+}
+
+.reasons {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+.reasonRow {
+  display: flex;
+  gap: var(--s2);
+  font-size: 0.9375rem;
+  color: var(--ink-muted);
+}
+
+.reasonOrdinal {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-faint);
+}
+
+/* --------------------------------------------------------------------------
+ * Fields. Every control has a real, visible `<label>` — WCAG 2.2 AA, and the
+ * kiosk has no room for a placeholder standing in for one.
+ * ------------------------------------------------------------------------ */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  min-width: 0;
+}
+
+.fieldLabel {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.input,
+.select {
+  min-height: 56px;
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 1.0625rem;
+  width: 100%;
+}
+
+/*
+ * "FILLED" — HAS A VALUE, NOT VERIFIED (Carl, 4 Sep 2026). The identifiers on
+ * K-2 are not checked until Continue is pressed; this only says a box is no
+ * longer empty. `--ok` is the theme's existing status token (tokens.css),
+ * not a colour invented for this — and per tokens.css's own rule ("status is
+ * never colour alone"), the outline is paired with `.filledTick`, a glyph
+ * beside the label, so the state does not depend on colour alone (WCAG
+ * 1.4.1). An empty or focused-empty field is unaffected — this class is only
+ * ever applied once there is a value.
+ */
+.inputFilled {
+  border-color: var(--ok);
+}
+
+.filledTick {
+  color: var(--ok);
+  font-weight: 700;
+}
+
+.fieldHint {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+}
+
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  min-height: 44px;
+}
+
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.checkboxMark {
+  width: 18px;
+  height: 18px;
+}
+
+.checkboxLabel {
+  font-size: 1.0625rem;
+  cursor: pointer;
+}
+
+/* --------------------------------------------------------------------------
+ * Layout helpers. Two columns where there is room, one where there is not.
+ * ------------------------------------------------------------------------ */
+
+.twoColumn {
+  display: flex;
+  gap: var(--s7);
+  align-items: flex-start;
+}
+
+.oneColumn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 620px;
+}
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  width: 320px;
+  flex: 0 0 auto;
+}
+
+.railBelow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  align-self: stretch;
+}
+
+.railText {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--ink);
+}
+
+/*
+ * THE RIGHT COLUMN EARNS ITS WIDTH (Carl, 7 Sep 2026 — "write to the right
+ * side somewhere"). K-P1's rail held one small card and 320px of nothing while
+ * the left column carried a heading, a lede, five rows and a button and did
+ * not fit. The explanatory copy moved here: the left column is now the task,
+ * the right column is what the task is and where to go if it is wrong.
+ *
+ * LARGER TYPE THAN THE CARD ABOVE IT, not smaller. This is the sentence that
+ * tells somebody why they are being asked, and it was previously set as a
+ * muted lede under the heading where it competed with the rows. Off to the
+ * side it can be read at rest, so it is set at reading size — never below
+ * 1rem, on any surface a patient touches.
+ */
+.railNote {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  padding: var(--s4) var(--s5);
+  border-left: 3px solid var(--accent);
+  background: var(--surface-sunken);
+}
+
+.railLede {
+  margin: 0;
+  font-size: 1.125rem;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.railContext {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.45;
+  color: var(--ink-muted);
+}
+
+/*
+ * WHEN THE COLUMNS STACK, THIS ONE LEADS. Below the 900px breakpoint
+ * `.twoColumn` becomes a single column and DOM order would put the rail after
+ * the rows — which would leave a patient reading "please check these are
+ * right" AFTER they had already checked them. `order` is a presentation
+ * change only: the DOM order is unchanged, so the tab order and a screen
+ * reader still meet the task before the aside on a wide screen, and the
+ * explanation before the task on a narrow one, which is the reading order
+ * each layout actually shows.
+ */
+@media (max-width: 900px) {
+  .railLeading {
+    order: -1;
+  }
+}
+
+.centred {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s6);
+  min-height: 100%;
+  text-align: center;
+  padding: 0 var(--s7);
+}
+
+.h1 {
+  margin: 0;
+  font-size: 2.5rem;
+}
+
+.h1Small {
+  margin: 0;
+  font-size: 2rem;
+}
+
+.h2 {
+  margin: 0;
+  font-size: 1.625rem;
+}
+
+.h3 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.lede {
+  margin: 0;
+  font-size: 1.125rem;
+  color: var(--ink-muted);
+  max-width: 560px;
+}
+
+.body {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.muted {
+  margin: 0;
+  font-size: 0.9375rem;
+  color: var(--ink-muted);
+}
+
+.error {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--stop);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s4);
+  align-items: flex-start;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+.groupLabel {
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s4);
+}
+
+.fullCell {
+  width: 100%;
+}
+
+.pairCell {
+  flex: 3 1 200px;
+}
+
+.dobDayCell {
+  flex: 2 1 130px;
+}
+
+.dobMonthCell {
+  flex: 3 1 190px;
+}
+
+.dobYearCell {
+  flex: 2 1 150px;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+.panelHeading {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 600;
+}
+
+.fieldGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s4);
+}
+
+.gridCell {
+  flex: 1 1 240px;
+}
+
+/* --------------------------------------------------------------------------
+ * The waiting list.
+ * ------------------------------------------------------------------------ */
+
+.listHeader {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  margin-bottom: var(--s5);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+.rowWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+.rowMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+}
+
+.listFooter {
+  margin-top: var(--s4);
+}
+
+/* --------------------------------------------------------------------------
+ * The document (K-3).
+ * ------------------------------------------------------------------------ */
+
+.document {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.documentHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+}
+
+/*
+ * `.documentTitle` WAS DELETED, NOT REAPPLIED (review, 7 Sep 2026).
+ *
+ * K-3's title used to be 1.5rem, a size chosen for a document header when each
+ * step of the ceremony headed itself. It now goes through `CeremonyHeading`
+ * with every other step's, at `.h2`'s 1.625rem, and the rule was left behind
+ * dead.
+ *
+ * KEEPING IT AS AN OVERRIDE WAS THE OTHER OPTION AND IS THE WRONG ONE. The
+ * point of the change Carl asked for is that the top of every page of one act
+ * looks the same; a per-screen size override is the same drift the change
+ * removed, reintroduced a tenth of a millimetre at a time. If K-3's heading
+ * ever needs its own treatment again, it should be because somebody decided
+ * that — not because a stale rule survived.
+ */
+
+.versions {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+}
+
+.grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  padding: var(--s2) 0;
+}
+
+.docRow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.docRowLabel {
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+}
+
+/*
+ * `margin: 0` IS THE FIX FOR THE TALL ROW (Carl, 7 Sep 2026 — "the rows are
+ * tall"). It was the only text class in this file that had not zeroed the
+ * browser's default `1em` paragraph margin, and it is the one that renders a
+ * value: 32 pixels of nothing above and below every detail on K-P1, five times
+ * over, and the same again between the lines of an address on K-3. Every other
+ * `<p>` in this design system sets its own spacing with a flex `gap`; this one
+ * now does too.
+ */
+.docRowValue {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.consent {
+  margin: 0;
+  border-top: 1px solid var(--line);
+  padding-top: var(--s4);
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+}
+
+.hash {
+  margin: var(--s1) 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+  word-break: break-all;
+}
+
+.staffEntry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  margin-top: var(--s3);
+}
+
+/* --------------------------------------------------------------------------
+ * The signature pad (K-4).
+ * ------------------------------------------------------------------------ */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+.pad {
+  position: relative;
+  width: 100%;
+  height: 260px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.padCanvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* The pad captures strokes, not scrolls: without this a drag pans the page. */
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.padRule {
+  position: absolute;
+  left: 60px;
+  right: 60px;
+  bottom: 64px;
+  border-bottom: 1px solid var(--line);
+  pointer-events: none;
+}
+
+.padHint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--s5);
+  margin: 0;
+  text-align: center;
+  font-size: 1rem;
+  color: var(--ink-muted);
+  pointer-events: none;
+}
+
+.signRow {
+  display: flex;
+  gap: var(--s4);
+  align-items: flex-start;
+}
+
+.grow {
+  flex: 1 1 240px;
+  min-width: 240px;
+}
+
+.tapRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s4);
+  align-items: center;
+}
+
+.banner {
+  padding: var(--s4) var(--s5);
+}
+
+@media (max-width: 900px) {
+  .twoColumn {
+    flex-direction: column;
+  }
+
+  .rail {
+    width: 100%;
+  }
+
+  .main {
+    max-width: 760px;
+  }
+
+  .header,
+  .content,
+  .footer {
+    padding-left: var(--s5);
+    padding-right: var(--s5);
+  }
+}
+
+/* --------------------------------------------------------------------------
+ * PAIRING (K-0) and the version banner.
+ *
+ * THE CODE FIELD IS BIG BECAUSE OF WHERE IT IS TYPED: standing up, at a
+ * reception desk, on a tablet held in one hand, from a code being read off a
+ * console screen across the room. Eight characters at 2.5rem with wide
+ * tracking is a code somebody can check against the screen without leaning in,
+ * and the tracking is what stops `VW` reading as `W`.
+ *
+ * UPPERCASE IS A DISPLAY TRANSFORM, NOT AN INPUT RULE. The value in state is
+ * whatever was typed and the server normalises it, so nothing here has to know
+ * about the alphabet — `text-transform` only makes the box agree with the
+ * console.
+ * ------------------------------------------------------------------------ */
+
+.pairingCode {
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.pairingCode input {
+  min-height: 72px;
+  font-size: 2.5rem;
+  font-weight: 500;
+  letter-spacing: 0.28em;
+  /* The trailing letter-space would otherwise push the text off centre. */
+  text-indent: 0.28em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+/*
+ * THE VERSION BANNER SUPPORT CAN READ. Quiet enough that a patient never
+ * notices it, present enough that the first question on a support call — which
+ * build is that tablet running — is answered by looking at the tablet rather
+ * than by talking somebody through a browser menu.
+ */
+.buildMark {
+  margin: 0;
+  font-size: 0.6875rem;
+  letter-spacing: 1px;
+  color: var(--ink-muted);
+  opacity: 0.7;
+}
+
+/* --------------------------------------------------------------------------
+ * "Still there?" — the thirty seconds before the tablet returns to the start
+ * (Carl, 4 September 2026).
+ *
+ * `pointer-events: none` IS THE LOAD-BEARING LINE. The overlay must not
+ * intercept the tap that dismisses it: whatever the patient was reaching for
+ * underneath is still what they hit, and the same tap re-arms the clock. An
+ * overlay that swallowed the first touch would make the warning cost a tap.
+ *
+ * It sits at the FOOT of the screen rather than across it, for the same
+ * reason: nothing a patient is reading is covered, and a notice that appears
+ * over the agreement somebody is part-way through would be the tablet
+ * interrupting the ceremony to ask whether the ceremony is still happening.
+ * ------------------------------------------------------------------------ */
+
+.inactivity {
+  position: fixed;
+  inset: auto 0 0 0;
+  display: flex;
+  justify-content: center;
+  padding: var(--s5);
+  pointer-events: none;
+  z-index: 20;
+}
+
+.inactivityCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  align-items: center;
+  max-width: 520px;
+  padding: var(--s4) var(--s6);
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  text-align: center;
+}
+
+.inactivityHeading {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.inactivityCountdown {
+  margin: 0;
+  font-size: 1rem;
+  /* Tabular figures, so the number does not jog the line as it counts down. */
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.inactivityHint {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--ink-muted);
+}
+
+/*
+ * Announced, never drawn. The countdown is `aria-hidden` and this sentence
+ * carries the whole message once, rather than a number re-read every second.
+ */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/*
+ * THE CONTENT COLUMN WHEN THERE IS NO BLUEPRINT RAIL BESIDE IT (Carl, 4 Sep
+ * 2026). The annotation panels are developer-facing and render only on a test
+ * device; on an ordinary tablet the column takes the width they were holding
+ * rather than leaving it empty.
+ */
+.mainFull {
+  max-width: 100%;
+}
+
+/* --------------------------------------------------------------------------
+ * K-P1's ROWS — the text on the left, a tick and a cross on the right
+ * (Carl, 4 Sep 2026: "Make the big buttons to the right of the text (in case
+ * we are using small tablets). We need a button with a tick and another with
+ * a cross.").
+ *
+ * THE BREAKPOINT IS ABOUT THE TOUCH TARGET, not about taste. A 7-inch tablet
+ * in portrait cannot hold a wrapped street address and a pair of 56px controls
+ * on one line without one of them shrinking, and the one that must never
+ * shrink is the thing a shaky hand has to hit. So below 600px the pair drops
+ * under the value and goes full width, which makes it BIGGER on the smallest
+ * screen rather than smaller.
+ *
+ * NEVER COLOUR ALONE (WCAG 1.4.1). Green and red carry the tone, and a glyph,
+ * a word, a fill and `aria-pressed` all carry the answer as well — because
+ * roughly one man in twelve cannot use the first pair to tell these apart.
+ * ------------------------------------------------------------------------ */
+
+/*
+ * THE COLUMN THE FIVE ROWS LIVE IN — tighter than `.main`'s default gap
+ * (Carl, 7 Sep 2026). Five rows, a heading and a button have to fit 768px of
+ * landscape tablet between a header and a footer, and four pixels a gap over
+ * seven gaps is a row's worth of it. Scoped to K-P1 rather than applied to
+ * `.main`, so the screens that are not tight for space keep the roomier
+ * rhythm they were drawn with.
+ */
+.detailsMain {
+  gap: var(--s3);
+}
+
+/* --------------------------------------------------------------------------
+ * THE CEREMONY'S HEADING — two constant lines, and a smaller third where the
+ * agreement type has a qualifier (Carl, 7 Sep 2026).
+ *
+ * TIGHT ENOUGH TO READ AS ONE BLOCK. Three separate paragraphs at the column's
+ * own gap would read as three unrelated statements; `--s1` between them makes
+ * a title, a party and a qualifier read as one heading, which is what they
+ * are.
+ *
+ * THE BY-LINE IS NOT MUTED. It names a person, on a tablet handed across a
+ * desk, and "is this even my agreement" is the question it exists to answer —
+ * so it is full ink at reading size, not the grey of a caption. The qualifier
+ * under it is the one that steps back.
+ * ------------------------------------------------------------------------ */
+.ceremonyHeading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/*
+ * TIGHT LEADING, BECAUSE THREE LINES NOW SIT WHERE ONE DID. A landscape tablet
+ * has 768px and the five rows and Continue have first claim on them; the
+ * heading pays for its second and third line out of its own leading rather
+ * than out of the ceremony. Nothing shrinks below 16px — the floor on every
+ * surface a patient touches.
+ */
+.ceremonyHeading h1 {
+  line-height: 1.15;
+}
+
+.ceremonyBy {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--ink);
+}
+
+.ceremonySubHeading {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.25;
+  color: var(--ink-muted);
+}
+
+/*
+ * "ONE MOMENT…" — A BLIP BEING RIDDEN OUT, NOT AN ERROR (Carl, 7 Sep 2026).
+ *
+ * IT DELIBERATELY DOES NOT WEAR THE ERROR PALETTE. `.error` is the stop
+ * colour and says something needs a person; this says the opposite — the
+ * answers are safe, nothing is being asked of anybody, and in a second or two
+ * the screen moves on by itself. If the retries run out, THEN the red line and
+ * the desk (`.error`, unchanged).
+ */
+.retrying {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--ink-muted);
+}
+
+/*
+ * ROW PADDING, TIGHTENED FROM `--s3` TO `--s2` (7 Sep 2026) AND THEN TO `--s1`
+ * WHEN THE HEADER GAINED ITS SECOND AND THIRD LINE, FOR THE SAME REASON.
+ *
+ * THE TOUCH TARGET HAS NOT MOVED AND MUST NOT. The 56px control is what sets
+ * the row's height (WCAG 2.2 AA 2.5.8, and Carl's own floor); what shrank is
+ * the dead space around it, and the row is still separated from the next by a
+ * rule. If this ever has to give again, the answer is fewer things on the
+ * screen — never a smaller button.
+ */
+.detailRow {
+  display: flex;
+  gap: var(--s4);
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding: var(--s1) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.detailText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.detailAnswers {
+  display: flex;
+  gap: var(--s3);
+  flex: 0 0 auto;
+}
+
+.answerButton {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  /* The floor Carl asked for, and the floor WCAG 2.2 AA (2.5.8) asks for. */
+  min-height: 56px;
+  min-width: 96px;
+  padding: var(--s2) var(--s4);
+  border: 2px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.answerGlyph {
+  font-size: 1.375rem;
+  line-height: 1;
+}
+
+/* The WORD, under the mark. It is the accessible name, not decoration. */
+.answerLabel {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.answerRight {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.answerWrong {
+  border-color: var(--stop);
+  color: var(--stop);
+}
+
+.answerRight.answerChosen {
+  background: var(--ok-wash);
+  border-width: 3px;
+}
+
+.answerWrong.answerChosen {
+  background: var(--stop-wash);
+  border-width: 3px;
+}
+
+/*
+ * THE LOCKED ROW'S EMPTY SLOT (Carl, 4 Sep 2026): once the screen is locked
+ * the button the patient did NOT choose is not rendered at all, and this
+ * takes its place so the chosen button does not slide into the other one's
+ * column. Same box, no border and no fill — there is nothing here to see.
+ */
+.answerPlaceholder {
+  min-height: 56px;
+  min-width: 96px;
+}
+
+/*
+ * THE BAND A CROSS PRODUCES. It is a status rather than an instruction: by the
+ * time it renders, the cross has already reached reception, so the patient is
+ * told what is happening and that their appointment is unaffected (hard rule
+ * 8, REQ-REC-04) rather than being sent to go and arrange something.
+ */
+.disputeBand {
+  margin: 0;
+  padding: var(--s4) var(--s5);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  background: var(--warn-wash);
+  color: var(--ink);
+  font-size: 1.0625rem;
+  line-height: 1.6;
+}
+
+@media (max-width: 600px) {
+  .detailRow {
+    align-items: stretch;
+  }
+
+  .detailAnswers {
+    flex: 1 1 100%;
+  }
+
+  .answerButton {
+    flex: 1 1 0;
+  }
+
+  .answerPlaceholder {
+    flex: 1 1 0;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   K-4's WHO-IS-SIGNING STATEMENT (Carl, 7 Sep 2026).
+
+   PROMINENT, because the whole fault it fixes was that nobody was told. It is
+   set larger than body text and heavier, above the pad, so it is read before a
+   finger reaches the glass rather than after.
+
+   IT IS NOT AN ALERT AND MUST NOT LOOK LIKE ONE. No stop colour, no icon, no
+   border in the refusal palette: on the overwhelming majority of signings it
+   is simply true, and a screen that shouts a true fact at every patient
+   teaches them to skip it. The quiet line and the exit under it carry the
+   "if this is wrong" half.
+--------------------------------------------------------------------------- */
+.whoIsSigning {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s3);
+  padding: var(--s4) var(--s5);
+  border-left: 3px solid var(--accent);
+  background: var(--surface-sunken);
+}
+
+.whoIsSigningLine {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/* A full record id in the footer. The lesson `tablet.module.css`'s `.sessionId`
+   already carries: monospace, no letter-spacing and no transform, or a uuid is
+   a thing nobody can read a digit out of — and selectable, because the whole
+   point of showing it is that somebody reads it or drags across it. */
+.recordMark {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0;
+  text-transform: none;
+  overflow-wrap: anywhere;
+  user-select: all;
+}

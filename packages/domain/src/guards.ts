@@ -5,6 +5,7 @@
  * build-plan policy). Every guard here has a named test in hard-rules.test.ts.
  */
 import type { AgreementType, EnduringPathway } from './agreement';
+import { mayBeProviderOnAgreement } from './billing-roles';
 import type { ProviderType } from './parties';
 
 /** Statutory dates. These are law, not configuration — rule-set thresholds live in versioned content (rule 14). */
@@ -113,6 +114,37 @@ export function assertEnduringAllowed(providerType: ProviderType, pathway: Endur
     );
   }
   void pathway;
+}
+
+/**
+ * THE PROVIDER ON AN AGREEMENT IS THE SERVICING PROVIDER (Carl, 5–7 Sep 2026;
+ * TODO.md "Billing role on the affiliation").
+ *
+ * WHY THIS IS A GUARD AND NOT A SCREEN RULE. An assignment of benefit assigns
+ * the benefit for a service to the provider whose number the claim goes under.
+ * A practice nurse's name on that contract does not describe a claim anybody
+ * can make — the item goes under the GP "for and on behalf of" — so the
+ * agreement would be evidence of a consent that matches no claim. That is a
+ * defect in the record, and records are the product.
+ *
+ * IT IS CHECKED AT THE SERVICE LAYER, NOT ONLY AT ARRIVAL. The arrival is the
+ * commonest way an agreement gets a provider and it refuses one there
+ * (`provider_not_servicing`, 422), but it is not the only way: the desk can
+ * draft one by hand, and the push path locks one. A rule enforced at one door
+ * of three is a rule with two doors.
+ *
+ * @param billingRole the role recorded on the affiliation for this
+ *                    practitioner AT THIS LOCATION, from versioned content.
+ */
+export function assertCanBeProviderOnAgreement(billingRole: string, describeProvider: string): void {
+  if (!mayBeProviderOnAgreement(billingRole)) {
+    throw new HardRuleViolation(
+      'REQ-REG-02',
+      `${describeProvider} is recorded as "${billingRole}" at this location and cannot be the provider on an ` +
+        'agreement. The provider on an assignment of benefit is the servicing provider whose provider number ' +
+        'goes on the claim — choose the provider the claim will go under.',
+    );
+  }
 }
 
 export function validAnchorKindFor(type: AgreementType, pathway?: EnduringPathway): 'provider' | 'organisation' {

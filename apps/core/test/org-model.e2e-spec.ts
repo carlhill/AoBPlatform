@@ -13,6 +13,42 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AffiliationsService } from '../src/affiliations/affiliations.service';
 
+/**
+ * A platform reviewer, as the auth guard would attach one.
+ *
+ * Confirming an address is now attributed to the SESSION USER rather than
+ * to a name in the request body, so these tests need a session. Overriding
+ * the guard rather than skipping it keeps the endpoint's own refusal path
+ * testable — see the unsigned case below.
+ */
+const REVIEWER_PRINCIPAL = {
+  sub: '00000000-0000-4000-8000-00000000ab01',
+  principalType: 'staff',
+  roles: ['platform_admin'],
+  preferredUsername: 'robin.reviewer',
+  raw: {},
+};
+
+/** Set by tests that need the request to arrive unsigned. */
+let signedIn = true;
+
+/**
+ * The roles the test principal holds. Overridable for one request, so the
+ * refusals can be tested rather than merely written.
+ */
+let principalRoles: string[] = ['platform_admin'];
+
+/**
+ * The practice claim on the test principal, set once the fixture org exists.
+ *
+ * Practice-scoped endpoints (@PracticeScoped) refuse a principal without
+ * one — inviting a practitioner to a location is the practice saying that
+ * person works there, and the platform may not say it for them. Clearing
+ * this for one request is how that refusal gets tested.
+ */
+let principalPracticeId: string | undefined;
+
+
 // Fixture ABNs (see src/organisations/abr.ts). All checksum-valid, none real.
 const COMPANY_ABN = '53004085616'; // ACTIVE, trades as "Sampletown Family Practice"
 const SOLE_ABN = '51824753556'; // ACTIVE sole trader, no derivable ACN
@@ -52,11 +88,16 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
   let affiliationId: string;
 
   const api = () => request(app.getHttpServer());
-  const scoped = (method: 'post' | 'get', path: string) => api()[method](path).set('x-practice-id', orgId);
+  const scoped = (method: 'post' | 'get' | 'patch', path: string) =>
+    api()[method](path).set('x-practice-id', orgId);
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
+    app.use((req: any, _res: unknown, next: () => void) => {
+      if (signedIn) req.principal = { ...REVIEWER_PRINCIPAL, roles: principalRoles, practiceId: principalPracticeId };
+      next();
+    });
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
     await app.init();
     prisma = app.get(PrismaService);
@@ -129,6 +170,8 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
         .send({ ...applicant(), name: 'Sampletown Family Practice', abn: COMPANY_ABN })
         .expect(201);
       orgId = res.body.id;
+    // The fixture practice acts as itself for practice-scoped endpoints.
+    principalPracticeId = orgId;
       expect(res.body.legalName).toBe('Sample Medical Holdings Pty Ltd');
       expect(res.body.nameMatch.tier).toBe('exact');
       expect(res.body.nameMatch.source).toBe('business_name');
@@ -286,7 +329,17 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
         .post(`/organisations/${orgId}/validate`)
         .send({ decision: 'validated', reviewerName: 'Robin Reviewer', note: 'ABR sighted 21 Aug.', ...entitlement })
         .expect(201);
-      expect(res.body.validatedBy).toBe('Robin Reviewer');
+      /*
+       * THE SESSION, NOT THE BODY. The request said "Robin Reviewer" and the
+       * record says `robin.reviewer`, which is the verified token subject.
+       *
+       * A name in a request body is an assertion by the sender: unverified,
+       * trivially false, and once written into an append-only vault event
+       * indistinguishable from one that was checked. AttributionInterceptor
+       * overwrites every attribution field before the handler sees it.
+       */
+      expect(res.body.validatedBy).toBe('robin.reviewer');
+      expect(res.body.validatedBy).not.toBe('Robin Reviewer');
     });
 
     it('APPROVAL_REQUIRES_AN_ENTITLEMENT_CHECK — the ABN gate is not enough', async () => {
@@ -376,19 +429,112 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
       expect(res.body.message).toMatch(/65C\(5\)\(a\)/);
     });
 
-    it('activation names the human who confirmed the address', async () => {
-      await scoped('post', `/organisations/locations/${locationId}/activate`).send({ reviewerName: '' }).expect(400);
+    it('refuses to confirm an address without a signed-in reviewer', async () => {
+      /*
+       * The endpoint records that A PERSON confirmed this address, and that
+       * record is append-only. An anonymous one could never be questioned or
+       * corrected later, so an unsigned request is refused outright rather
+       * than written with a blank name.
+       *
+       * This used to be satisfied by typing any non-empty string into
+       * `reviewerName` — including, in the ordinary case, the name of somebody
+       * who was not there.
+       */
+      signedIn = false;
+      const refused = await scoped('post', `/organisations/locations/${locationId}/activate`)
+        .send({ method: 'site_visit' })
+        .expect(400);
+      expect(refused.body.message).toMatch(/signed-in reviewer/);
+      signedIn = true;
+    });
+
+    it('attributes the confirmation to the session user, not to the request body', async () => {
       const res = await scoped('post', `/organisations/locations/${locationId}/activate`)
-        .send({ reviewerName: 'Robin Reviewer' })
+        // A name in the body is IGNORED, not honoured. `whitelist: true` strips
+        // it, and nothing downstream reads it.
+        .send({ method: 'site_visit', reviewerName: 'Someone Else Entirely', note: 'attended 22 Aug' })
         .expect(201);
       expect(res.body.active).toBe(true);
       expect(res.body.validator).toBe('manual');
     });
 
+    it('REFUSES A DOCUMENT METHOD WITH NO DOCUMENT', async () => {
+      /*
+       * The record would otherwise say a register was checked when nothing was
+       * attached — indistinguishable, later, from one that was done properly.
+       */
+      const res = await scoped('post', `/organisations/locations/${locationId}/activate`)
+        .send({ method: 'government_register' })
+        .expect(400);
+      expect(res.body.message).toMatch(/document has to be attached/);
+    });
+
+    it('refuses a method that is not in the catalogue', async () => {
+      await scoped('post', `/organisations/locations/${locationId}/activate`)
+        .send({ method: 'i_just_know' })
+        .expect(400);
+    });
+
     it('records it as MANUAL, never claiming G-NAF confirmed it', async () => {
       const location = await prisma.withPractice(orgId, (tx) => tx.practiceLocation.findFirst({ where: { id: locationId } }));
-      expect(location?.gnafVersion).toBe('manual:Robin Reviewer');
+      expect(location?.gnafVersion).toBe('manual:robin.reviewer');
       expect(location?.gnafPid).toBeNull();
+    });
+
+    it('sends an address back with a reason the practice can act on', async () => {
+      /*
+       * The half that was missing. A reviewer who looked and decided NOT to
+       * confirm had nothing to do but close the tab, which left the practice
+       * locked out of the site with no way to learn why.
+       */
+      const added = await scoped('post', '/organisations/locations')
+        .send({ addressLine1: 'PO Box 9', suburb: 'Sampletown', state: 'NSW', postcode: '2000', code: 'Postal' })
+        .expect(201);
+      const id = added.body.id;
+
+      const rejected = await scoped('post', `/organisations/locations/${id}/reject-address`)
+        .send({ reason: 'not_a_clinical_site' })
+        .expect(201);
+      expect(rejected.body.reason).toBe('not_a_clinical_site');
+      // The practice is told what to DO, not merely what was wrong.
+      expect(rejected.body.practiceGuidance).toMatch(/clinical address/i);
+
+      // A reason the practice could not act on needs detail.
+      await scoped('post', `/organisations/locations/${id}/reject-address`)
+        .send({ reason: 'evidence_inconsistent' })
+        .expect(400);
+
+      // The practice answers by correcting it, which CLEARS the rejection.
+      const corrected = await scoped('patch', `/organisations/locations/${id}`)
+        .send({ addressLine1: '18 Clinic Lane', suburb: 'Sampletown', state: 'NSW', postcode: '2000' })
+        .expect(200);
+      expect(corrected.body.address).toMatch(/18 Clinic Lane/);
+
+      const after = await prisma.withPractice(orgId, (tx) =>
+        tx.practiceLocation.findFirst({ where: { id } }),
+      );
+      expect(after?.addressRejectedAt).toBeNull();
+      expect(after?.addressRejectedReason).toBeNull();
+    });
+
+    it('WILL NOT EDIT AN ADDRESS THAT HAS BEEN CONFIRMED', async () => {
+      /*
+       * After confirmation the address may already be printed on captured
+       * agreements. A silent edit would invalidate the check while leaving the
+       * confirmation record standing — an address nobody checked, wearing a
+       * confirmation.
+       */
+      const res = await scoped('patch', `/organisations/locations/${locationId}`)
+        .send({ addressLine1: '999 Somewhere Else' })
+        .expect(400);
+      expect(res.body.message).toMatch(/confirmed/i);
+    });
+
+    it('will not reject an address that has already been confirmed', async () => {
+      const res = await scoped('post', `/organisations/locations/${locationId}/reject-address`)
+        .send({ reason: 'address_not_found' })
+        .expect(400);
+      expect(res.body.message).toMatch(/already been confirmed/i);
     });
 
     it('creates departments under a location', async () => {
@@ -426,6 +572,26 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
       const res = await api().get(`/practitioners/directory?ahpraNumber=${AHPRA}`).expect(200);
       expect(res.body.found).toBe(true);
       expect(res.body.practitioner.familyName).toBe('Example');
+    });
+
+    it('A PRACTICE CANNOT RECORD ITS OWN REGISTER CHECK', async () => {
+      /*
+       * The same rule that stops a practice confirming its own address, and
+       * it matters more here: a register check feeds the strength score that
+       * decides whether consent may be captured in that practitioner’s name.
+       *
+       * A practice recording its own practitioner as "Registered" is not a
+       * weaker check — it is a self-attestation wearing the name of an
+       * independent one, and in the audit trail it reads identically to a
+       * real one.
+       */
+      principalRoles = ['practice_principal'];
+      const refused = await api()
+        .post(`/practitioners/${practitionerId}/registration`)
+        .send({ registrationStatus: 'Registered', sightedByName: 'Someone At The Practice' })
+        .expect(403);
+      expect(refused.body.message).toMatch(/platform_admin/);
+      principalRoles = ['platform_admin'];
     });
 
     it('NEVER_RETURNS_A_PROVIDER_NUMBER, or an email', async () => {
@@ -514,14 +680,294 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
   });
 
   // ---------------------------------------------------------------------------
+  describe('the invitation: a link, a code, and only the practitioner (FR-1.8)', () => {
+    let inviteLocationId: string;
+    let inviteAffiliationId: string;
+    let token: string;
+    let code: string;
+
+    beforeAll(async () => {
+      // A second site, so this block does not disturb the affiliation the
+      // offboarding tests below depend on.
+      const location = await scoped('post', '/organisations/locations')
+        .send({ addressLine1: '7 Invitation Way', suburb: 'Sampletown', state: 'NSW', postcode: '2000', code: 'Annexe' })
+        .expect(201);
+      inviteLocationId = location.body.id;
+      await scoped('post', `/organisations/locations/${inviteLocationId}/activate`)
+        .send({ method: 'site_visit' })
+        .expect(201);
+
+      // The second practitioner exists but has no address; an invitation needs
+      // somewhere to go.
+      await prisma.practitioner.update({
+        where: { ahpraNumber: AHPRA_OTHER },
+        data: { email: 'sam.other@example.invalid' },
+      });
+
+      const affiliation = await scoped('post', '/affiliations')
+        .send({
+          ahpraNumber: AHPRA_OTHER,
+          locationId: inviteLocationId,
+          providerNumber: '9999999Z',
+          invitedByName: 'Robin Practicemanager',
+        })
+        .expect(201);
+      inviteAffiliationId = affiliation.body.id;
+    });
+
+    /*
+     * The state that used to be invisible. "Invited" covers both "we have told
+     * them" and "nobody has told them anything", and only one of those is
+     * waiting on the practitioner.
+     */
+    it('A PLATFORM USER CANNOT INVITE ON THE PRACTICE’S BEHALF', async () => {
+      /*
+       * The mirror of the register-check rule, and the pair is the point:
+       * separation of duties cuts both ways. A practice may not verify its
+       * own evidence; the platform may not originate the practice’s
+       * relationships.
+       *
+       * An invitation is how a practitioner comes to be named on consent
+       * records at a site. If a platform operator could send one, a single
+       * person at AoBPlatform could introduce a practitioner into a practice
+       * they do not work for — and the practice’s own records would show the
+       * practice inviting them, with no way to tell afterwards that it had
+       * not.
+       *
+       * A platform user ACTING AS the practice holds that practice’s claim
+       * and passes, which is the intended path and carries its own cost
+       * (CRITICAL-ISSUES.md §5 rules 6 and 7).
+       */
+      principalPracticeId = undefined;
+      const refused = await scoped(
+        'post',
+        `/affiliations/${inviteAffiliationId}/invitation`,
+      ).send({}).expect(403);
+      expect(refused.body.message).toMatch(/practice’s own act/);
+      principalPracticeId = orgId;
+    });
+
+    it('starts with nothing sent, and says so', async () => {
+      const res = await scoped('get', '/affiliations').expect(200);
+      const row = res.body.find((a: { id: string }) => a.id === inviteAffiliationId);
+      expect(row.status).toBe('invited');
+      expect(row.invitationSentAt).toBeNull();
+      expect(row.acceptanceMethod).toBeNull();
+    });
+
+    it('sends it to the PRACTITIONER’S address, not the practice’s', async () => {
+      const res = await scoped('post', `/affiliations/${inviteAffiliationId}/invitation`).expect(201);
+      expect(res.body.notified).toBe(true);
+
+      /*
+       * INSIDE withPractice. Affiliations are RLS-scoped, so an unscoped read
+       * returns NOTHING -- it does not error, it just finds no rows, which is
+       * the exact failure mode CONVENTIONS.md 6 warns about and which this
+       * test hit on its first run.
+       *
+       * Reading the token from the database is the test standing in for the
+       * practitioner's inbox. Nothing in the API hands it to a practice, which
+       * is what the next test asserts.
+       */
+      const row = await prisma.withPractice(orgId, (tx) =>
+        tx.affiliation.findFirstOrThrow({ where: { id: inviteAffiliationId } }),
+      );
+      token = row.inviteToken!;
+      code = row.inviteCode!;
+      expect(token).toHaveLength(64);
+      expect(code).toMatch(/^\d{6}$/);
+    });
+
+    /*
+     * The practice-facing view must never carry either half. A practice that
+     * could read them could accept on the practitioner's behalf, which is the
+     * one thing this entire flow exists to prevent.
+     */
+    it('NEVER_SHOWS_THE_PRACTICE_THE_TOKEN_OR_THE_CODE', async () => {
+      const res = await scoped('get', '/affiliations').expect(200);
+      const serialised = JSON.stringify(res.body);
+      expect(serialised).not.toContain(token);
+      expect(serialised).not.toContain(code);
+      // But it does say the invitation went out, and when it dies.
+      const row = res.body.find((a: { id: string }) => a.id === inviteAffiliationId);
+      expect(row.invitationSentAt).not.toBeNull();
+      expect(row.invitationExpiresAt).not.toBeNull();
+    });
+
+    /*
+     * The deliberate difference from email verification, which reveals nothing
+     * until the code is right. Nobody can consent to an unnamed thing.
+     */
+    it('names the practice and the site BEFORE any code is entered', async () => {
+      const res = await api().get(`/invitations/${token}`).expect(200);
+      expect(res.body.state).toBe('live');
+      expect(res.body.canAnswer).toBe(true);
+      expect(res.body.practiceName).toBe('Sampletown Family Practice');
+      expect(res.body.summary).toContain('Annexe');
+      // Same rule: the practice typed one name, the token carried another,
+      // and the token wins. See AttributionInterceptor.
+      expect(res.body.invitedByName).toBe('robin.reviewer');
+    });
+
+    it('still withholds the provider number, which is not needed to decide', async () => {
+      const res = await api().get(`/invitations/${token}`).expect(200);
+      expect(JSON.stringify(res.body)).not.toContain('9999999Z');
+    });
+
+    it('says what accepting does NOT do, which is the half people skip', async () => {
+      const res = await api().get(`/invitations/${token}`).expect(200);
+      expect(res.body.notConsent).toMatch(/not consent on any patient/i);
+      // And the caveat is not ALSO in the list, or every surface says it twice.
+      expect(JSON.stringify(res.body.consequences)).not.toMatch(/not consent on any patient/i);
+    });
+
+    /*
+     * The cap is what makes six digits safe, not the length. A million
+     * combinations falls to an unthrottled endpoint in minutes.
+     */
+    it('counts a wrong code against the cap, and says how many are left', async () => {
+      const res = await api()
+        .post(`/invitations/${token}/answer`)
+        .send({ code: '000000', decision: 'accept' })
+        .expect(400);
+      expect(res.body.message).toMatch(/4 attempts left/);
+
+      const state = await api().get(`/invitations/${token}`).expect(200);
+      expect(state.body.attemptsLeft).toBe(4);
+    });
+
+    /*
+     * A five-digit typo is not a guess at the code. Spending one of five
+     * attempts on it would lock people out for being clumsy rather than for
+     * being an attacker, so the shape is checked before the cap is touched.
+     */
+    it('A_TYPO_DOES_NOT_COST_AN_ATTEMPT', async () => {
+      await api().post(`/invitations/${token}/answer`).send({ code: '12345x', decision: 'accept' }).expect(400);
+      const state = await api().get(`/invitations/${token}`).expect(200);
+      expect(state.body.attemptsLeft).toBe(4);
+    });
+
+    it('accepts, and records HOW rather than merely that', async () => {
+      const res = await api()
+        .post(`/invitations/${token}/answer`)
+        .send({ code, decision: 'accept' })
+        .expect(201);
+      expect(res.body.status).toBe('active');
+      expect(res.body.acceptanceMethod).toBe('email_link_and_code');
+
+      const row = await scoped('get', '/affiliations').expect(200);
+      const affiliation = row.body.find((a: { id: string }) => a.id === inviteAffiliationId);
+      expect(affiliation.canCapture).toBe(true);
+      expect(affiliation.acceptanceMethod).toBe('email_link_and_code');
+      // The evidence says what it proves, in words, so nobody reading it in two
+      // years mistakes an emailed code for a signature.
+      expect(affiliation.acceptanceMeans).toMatch(/does not prove who/i);
+    });
+
+    it('records the PRACTITIONER as the actor, not the practice', async () => {
+      const events = await prisma.vaultOutbox.findMany({ where: { subjectId: inviteAffiliationId } });
+      const accepted = events.find((e) => e.type === 'affiliation.accepted');
+      expect((accepted?.actor as Record<string, unknown>).principalType).toBe('provider');
+      expect((accepted?.payload as Record<string, unknown>).acceptanceMethod).toBe('email_link_and_code');
+    });
+
+    /*
+     * Single use. A forwarded link or a screenshot of the email must not be
+     * replayable, and the answer to a spent token is the same as to one that
+     * never existed — otherwise this endpoint is an oracle for which
+     * invitations are real.
+     */
+    it('CANNOT_BE_REPLAYED — the token is spent either way', async () => {
+      const state = await api().get(`/invitations/${token}`).expect(200);
+      expect(state.body.state).toBe('not_found');
+      await api().post(`/invitations/${token}/answer`).send({ code, decision: 'accept' }).expect(400);
+    });
+
+    it('answers an invented token exactly as it answers a spent one', async () => {
+      const res = await api().get(`/invitations/${'f'.repeat(64)}`).expect(200);
+      expect(res.body.state).toBe('not_found');
+      expect(res.body.message).toMatch(/not valid/i);
+    });
+
+    it('will not send an invitation for another practice’s affiliation', async () => {
+      const res = await api()
+        .post(`/affiliations/${inviteAffiliationId}/invitation`)
+        .set('x-practice-id', '00000000-0000-0000-0000-000000000000')
+        .expect(404);
+      expect(res.body.message).toMatch(/not in this practice/i);
+    });
+
+    it('will not send one for an affiliation that has already been answered', async () => {
+      const res = await scoped('post', `/affiliations/${inviteAffiliationId}/invitation`).expect(400);
+      expect(res.body.message).toMatch(/nothing to invite/i);
+    });
+  });
+
+
+  // ---------------------------------------------------------------------------
   describe('offboarding: notice BEFORE the end date (§6)', () => {
     it('NO_COOL_OFF_AFTER_DEPARTURE — an end date in the past is refused', async () => {
       const res = await scoped('post', `/affiliations/${affiliationId}/notice`)
         .send({ endsAt: '2020-01-01T00:00:00.000Z', givenByName: 'Robin Practicemanager' })
         .expect(400);
-      expect(res.body.message).toMatch(/BEFORE the affiliation ends/);
-      expect(res.body.message).toMatch(/un-cease/);
+      /*
+       * STILL REFUSED, and the message now says what to do instead.
+       *
+       * The old refusal was right about reg 65CA(8) and wrong about the
+       * record: it did not prevent the departure, it only stopped us knowing
+       * about it, so the platform went on showing the practitioner as ACTIVE
+       * at a location they had already left.
+       */
+      expect(res.body.message).toMatch(/already passed/);
+      expect(res.body.message).toMatch(/outside the platform/);
+      expect(res.body.message).toMatch(/untrue|still working here/);
     });
+
+    it('THE DATABASE ALSO ENFORCES IT, and knows about the attested case', async () => {
+      /*
+       * `affiliations_notice_precedes_end` is a CHECK constraint, and it is
+       * the right place for this rule: the domain and the API can both be
+       * bypassed by a script, and the constraint cannot.
+       *
+       * But it encoded the OLD rule, which merged "when did the agreements
+       * cease" with "was notice given, and by whom". A practitioner who left
+       * on the 19th, recorded on the 22nd, told months earlier in their
+       * employment agreement, is a legitimate record — and the constraint
+       * refused it with a 500, which is how this was found.
+       *
+       * Tested here rather than through the API because the API path mutates
+       * the shared fixture that every later test in this block depends on.
+       */
+      const past = new Date();
+      past.setUTCDate(past.getUTCDate() - 5);
+
+      /*
+       * Run INSIDE withPractice. A raw statement outside it is refused by
+       * RLS before the constraint is ever consulted — it matches zero rows
+       * and resolves happily, which is fail-closed working exactly as
+       * intended and useless as a test of the constraint.
+       */
+      await expect(
+        prisma.withPractice(orgId, (tx) =>
+          tx.$executeRawUnsafe(
+            `UPDATE core.affiliations SET "noticeGivenAt" = now(), "endsAt" = $1 WHERE id = $2::uuid`,
+            past,
+            affiliationId,
+          ),
+        ),
+      ).rejects.toThrow(/notice_precedes_end/);
+
+      // With one, it is permitted — and the attestation must carry its date.
+      await expect(
+        prisma.withPractice(orgId, (tx) =>
+          tx.$executeRawUnsafe(
+            `UPDATE core.affiliations SET "externalNoticeMeans" = 'employment_agreement' WHERE id = $1::uuid`,
+            affiliationId,
+          ),
+        ),
+      ).rejects.toThrow(/external_notice_complete/);
+    });
+
 
     it('accepts a forward-dated notice and keeps the affiliation working', async () => {
       const endsAt = new Date(Date.now() + 10 * 86_400_000).toISOString();
@@ -639,4 +1085,101 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
       expect(res.body.alreadyRecorded).toBe(true);
     });
   });
+  // ---------------------------------------------------------------------------
+  describe('the identity dashboards are cross-tenant and narrow (design §7)', () => {
+    it('scores a practice from its recorded checks, and says what hard mode would decide', async () => {
+      const res = await api().get('/identity/practices').expect(200);
+      const row = res.body.find((r: { id: string }) => r.id === orgId);
+      expect(row).toBeDefined();
+      // The checks recorded earlier in this suite are what produce the score;
+      // the arithmetic itself is the domain's and is tested there.
+      expect(typeof row.score).toBe('number');
+      expect(typeof row.wouldPass).toBe('boolean');
+      expect(Array.isArray(row.wouldFailBecause)).toBe(true);
+    });
+
+    /*
+     * The operational answer, not just the number. A dashboard that shows a
+     * score and leaves the reader to work out what to do about it has moved
+     * the work rather than done it.
+     */
+    it('says what is missing, not merely how much', async () => {
+      const res = await api().get('/identity/practices').expect(200);
+      const failing = res.body.find((r: { wouldPass: boolean }) => !r.wouldPass);
+      if (failing) expect(failing.weakestLink).toBeTruthy();
+    });
+
+    it('never reports a negative time in queue', async () => {
+      const res = await api().get('/identity/practices').expect(200);
+      for (const row of res.body) expect(row.daysInQueue).toBeGreaterThanOrEqual(0);
+    });
+
+    /*
+     * The provider number is the artefact the REQ-PKI family exists to protect,
+     * and a cross-practice view is precisely where it must not appear. It is
+     * also not needed to answer "how well do we know this person".
+     */
+    it('NEVER_CARRIES_A_PROVIDER_NUMBER_ACROSS_PRACTICES', async () => {
+      const res = await api().get('/identity/practitioners').expect(200);
+      const serialised = JSON.stringify(res.body);
+      expect(serialised).not.toContain('1234567A');
+      expect(serialised).not.toContain('9999999Z');
+      expect(serialised).not.toMatch(/"provider_?[Nn]umber"/);
+    });
+
+    it('carries no email address either — only whether one is proven', async () => {
+      const res = await api().get('/identity/practitioners').expect(200);
+      expect(JSON.stringify(res.body)).not.toContain('sam.other@example.invalid');
+    });
+
+    /*
+     * SELF-CONTAINED, on purpose. The first version looked for the practitioner
+     * the deregistration block creates -- and that block deletes them in its
+     * afterAll, so this ran against a row that no longer existed. Reaching into
+     * another describe's fixtures couples two blocks to each other's execution
+     * order, which is a bug waiting for somebody to reorder the file.
+     */
+    it('reports deregistration as BLOCKING rather than as a low score', async () => {
+      const struck = await prisma.practitioner.create({
+        data: {
+          ahpraNumber: 'MED0008181818',
+          familyName: 'Dashboard',
+          givenNames: 'Dee',
+          providerType: 'general_practitioner',
+          deregisteredAt: new Date(),
+          deregisteredReason: 'AHPRA registration cancelled',
+        },
+      });
+      try {
+        const res = await api().get('/identity/practitioners').expect(200);
+        const row = res.body.find((r: { id: string }) => r.id === struck.id);
+        expect(row).toBeDefined();
+        expect(row.blocking.join(' ')).toMatch(/REQ-XFER-08/);
+        // And it is a STOP, not a number to be made up elsewhere.
+        expect(row.blocking.length).toBeGreaterThan(0);
+      } finally {
+        await prisma.practitioner.deleteMany({ where: { id: struck.id } });
+      }
+    });
+
+    it('shows what one fresh register check would restore', async () => {
+      const res = await api().get('/identity/practitioners').expect(200);
+      for (const row of res.body) {
+        expect(row.potentialScore).toBeGreaterThanOrEqual(row.score);
+      }
+    });
+
+    /*
+     * The fact only a cross-practice view can see. No single practice can tell
+     * that every one of a practitioner's affiliations rests on one inbox,
+     * because each sees only its own.
+     */
+    it('counts how each affiliation was accepted, across every practice', async () => {
+      const res = await api().get('/identity/practitioners').expect(200);
+      const other = res.body.find((r: { ahpraNumber: string }) => r.ahpraNumber === AHPRA_OTHER);
+      expect(other.acceptedByEmail).toBe(1);
+      expect(other.acceptedByPasskey).toBe(0);
+    });
+  });
+
 });

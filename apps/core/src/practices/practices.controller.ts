@@ -1,5 +1,6 @@
 import { BadRequestException, Body, Controller, Get, Headers, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
 import { PracticesService } from './practices.service';
+import { SessionActor, type Actor } from '../auth/actor.decorator';
 import {
   CreateAssignorDto,
   CreatePracticeDto,
@@ -37,8 +38,13 @@ export class PracticesController {
     @Headers('x-practice-id') scope: string | undefined,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateConfigDto,
+    // Who moved the kiosk inactivity reset, where there is a verified token to
+    // say so. Not required — this endpoint predates the decorator and is still
+    // reachable without one while `AUTH_ENFORCE` is false — so the service
+    // falls back to the system actor rather than refusing an existing save.
+    @SessionActor() actor?: Actor,
   ) {
-    return this.practices.updateConfig(requireMatch(scope, id), dto);
+    return this.practices.updateConfig(requireMatch(scope, id), dto, actor);
   }
 
   @Post(':id/staff')

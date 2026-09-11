@@ -1,0 +1,37 @@
+-- ---------------------------------------------------------------------------
+-- ONE SUCCESSOR PER AGREEMENT, AS A DATABASE FACT
+-- (found in review, 7 Sep 2026, after "who is signing" began superseding).
+--
+-- WHAT IT PREVENTS. Two supersessions of the SAME agreement: one visit, two
+-- contracts, each claiming to replace the same one, and no story anybody could
+-- reconstruct afterwards. Two presses of "Save who is signing" a beat apart, or
+-- two receptionists on two screens, would each read "locked, unsigned, no
+-- successor" and each write a replacement.
+--
+-- THE SERVICE ALREADY SERIALISES THEM -- `supersedeForAssignorChange` takes
+-- `SELECT ... FOR UPDATE` on the agreement and re-decides under the lock, and
+-- `supersedeForCorrection` returns the successor it finds rather than making a
+-- second. This is the belt to that pair of braces: a rule this important
+-- should not depend on every future caller remembering it, and an index cannot
+-- forget. Same reasoning as `tablet_sessions_one_active_per_device`.
+--
+-- PARTIAL, because NULL is the ordinary case: almost every agreement
+-- supersedes nothing, and Postgres would treat those NULLs as distinct anyway
+-- -- the WHERE clause says so out loud and keeps the index small.
+--
+-- TO REVERSE: DROP INDEX IF EXISTS "agreements_one_successor";
+-- Nothing else changes -- no column is added, no data is rewritten, and the
+-- superseded agreements themselves are untouched (hard rule 11).
+--
+-- IF THIS FAILS on an existing database it is because two rows already
+-- supersede one agreement. That is the bug this index exists to make
+-- impossible; find them with
+--   SELECT "supersedesAgreementId", count(*) FROM "agreements"
+--    WHERE "supersedesAgreementId" IS NOT NULL
+--    GROUP BY 1 HAVING count(*) > 1;
+-- and decide which is the real one BY HAND. Nothing here deletes an agreement:
+-- they are evidence, and the vault's own events say when each was made.
+-- ---------------------------------------------------------------------------
+CREATE UNIQUE INDEX IF NOT EXISTS "agreements_one_successor"
+  ON "agreements" ("supersedesAgreementId")
+  WHERE "supersedesAgreementId" IS NOT NULL;

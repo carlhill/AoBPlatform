@@ -36,8 +36,22 @@ jobs:
       IMMUDB_PORT: '21022'
       VAULT_DATABASE_URL: postgresql://aob_app:aob_app@localhost:21020/aobplatform?schema=vault
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # PINNED TO THE CURRENT MAJORS (12 Sep 2026). v4 of both targets Node 20,
+      # which GitHub deprecated: every run was annotated and the runner was
+      # already forcing them onto Node 24 anyway, so this only makes true what
+      # was happening regardless.
+      #
+      # `cache: npm` STAYS EXPLICIT. setup-node v5 added automatic caching when
+      # package.json carries a `packageManager` field; saying which cache we
+      # want keeps the behaviour the same whether or not that field is ever
+      # added.
+      #
+      # `node-version: 20` BELOW IS A DIFFERENT NUMBER and deliberately left
+      # alone — it is the Node the PRODUCT is built and tested on, not the Node
+      # the action runs on. Changing it is a stack decision (aob-tech-stack.md),
+      # not a deprecation fix.
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
@@ -50,6 +64,34 @@ jobs:
           npm run prisma:generate -w apps/vault
           DATABASE_URL="$ADMIN_DATABASE_URL" npm run prisma:deploy -w apps/core
           VAULT_DATABASE_URL="postgresql://aobplatform:aobplatform@localhost:21020/aobplatform?schema=vault" npm run prisma:deploy -w apps/vault
+      # THE E2E SUITES GET THEIR OWN DATABASE (11 Sep 2026).
+      #
+      # They empty whole tables — unfiltered `deleteMany` on patient, agreement,
+      # assignor, practice, arrival and more — and until 11 Sep they did it to
+      # whatever `DATABASE_URL` named, which locally was the DEV database
+      # somebody was mid-test on. `apps/core/test/test-database.setup.ts` now
+      # redirects them and REFUSES any database whose name does not end in
+      # `_test`, so CI has to provision one or the e2e job cannot connect.
+      #
+      # BUILT THE SAME WAY THE MAIN ONE IS — same init scripts, same
+      # `migrate deploy` — rather than as a copy of it. The local helper
+      # (`scripts/dev/test-db.sh`) copies the dev schema because the DEV
+      # migration ledger still carries a failed migration (TODO.md); CI starts
+      # from an empty database where the ledger replays cleanly, so it replays,
+      # and any drift between the migrations and the schema fails HERE instead
+      # of hiding behind a dump.
+      - name: Initialise the e2e database
+        run: |
+          PGPASSWORD=aobplatform psql -h localhost -p 21020 -U aobplatform -d postgres -c "CREATE DATABASE aobplatform_test;"
+          PGPASSWORD=aobplatform psql -h localhost -p 21020 -U aobplatform -d aobplatform_test -f infra/postgres/init-schemas.sql
+          PGPASSWORD=aobplatform psql -h localhost -p 21020 -U aobplatform -d aobplatform_test -f infra/postgres/init-roles.sql
+          DATABASE_URL="postgresql://aobplatform:aobplatform@localhost:21020/aobplatform_test?schema=core" npm run prisma:deploy -w apps/core
+          VAULT_DATABASE_URL="postgresql://aobplatform:aobplatform@localhost:21020/aobplatform_test?schema=vault" npm run prisma:deploy -w apps/vault
+      # The workspaces consume the packages' BUILD OUTPUT, not their source, so
+      # a clean checkout cannot typecheck until the packages exist: every web
+      # file importing @aobplatform/domain failed with TS2307, and the run died
+      # before lint or the realm guard had reported anything at all.
+      - run: npm run build:packages
       - run: npm run lint
       - run: npm run typecheck
       - name: Realm guard (rule 15 — passkey required, no password path)
@@ -57,4 +99,11 @@ jobs:
       - run: npm run build
       - run: npm run test
       - name: e2e (real Nest apps; core against real Postgres)
+        env:
+          # The artefact store defaults to /var/lib/aobplatform, which the runner cannot create.
+          ARTEFACT_STORE_ROOT: ${{ runner.temp }}/aob-artefacts
+          # The throwaway database built above — as the RLS-constrained app
+          # role, exactly as the main `DATABASE_URL` is, so a policy that only
+          # holds for the owner still fails here.
+          E2E_DATABASE_URL: postgresql://aob_app:aob_app@localhost:21020/aobplatform_test?schema=core
         run: npm run test:e2e

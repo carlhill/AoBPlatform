@@ -1,0 +1,554 @@
+# Critical issues
+
+Things that can lock people out, lose evidence, or let something through that
+should not have got through. Each entry says what happened, what it costs, what
+was done, and what is still open.
+
+This is not a bug list. Ordinary bugs go in the tracker; this file is for
+failures whose consequence is not "a screen is wrong" but "nobody can get in"
+or "the record no longer means what it says".
+
+---
+
+## 1. Keycloak's credential store was ephemeral — RESOLVED 2026-08-22
+
+### What happened
+
+`start-dev` keeps Keycloak's H2 database **inside the container's writable
+layer**. Nothing was mounted over it. So recreating the container — for a port
+change, an image bump, a `docker compose up --build` — destroyed every user,
+every role grant, and every enrolled passkey.
+
+It was found the only way these things are found: a `docker compose up -d` that
+only meant to change a port binding, followed by discovering the first platform
+administrator's account no longer existed.
+
+### Why it was critical rather than annoying
+
+**A password can be reset. A passkey cannot be re-derived.** The private half
+never leaves the person's device, and the public half is what we lost. There is
+no recovery from the server side, no export to restore, nothing to reissue.
+
+Losing the store means re-inviting every administrator and every practitioner,
+and each of them has to be physically present at their own hardware to enrol
+again. For a platform whose entire identity model is passkey-only, one careless
+container rebuild was a full-population lockout.
+
+The failure mode is also silent. The realm re-imports from `realm-export.json`
+on start, so roles and clients come back and the system LOOKS healthy. Only the
+users are gone, and you find out when somebody tries to sign in.
+
+### What was done
+
+Keycloak now uses the **Postgres instance we already run**, in its own database
+(`keycloak`), on the existing persistent volume:
+
+```yaml
+KC_DB: postgres
+KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+```
+
+A separate database rather than a schema inside `aobplatform`, deliberately:
+identity and application data have different retention, different access
+patterns, and — the part that matters — different blast radius. A migration
+that goes wrong on the application side must not be able to take the credential
+store with it.
+
+An H2 file on a Docker volume was tried first and rejected: it starts as root,
+Keycloak runs unprivileged, and it fails to open the file. More importantly it
+would have preserved a development-only storage engine, when the correct answer
+was already running beside it.
+
+### Still open
+
+- **Nothing backs up the `keycloak` database yet.** It now survives a container
+  rebuild; it does not survive a lost volume. Passkeys deserve at least the
+  backup story the application data has.
+- **`admin/admin` is in `docker-compose.yml`.** Correct for a local sink,
+  catastrophic anywhere else — and it is now the last resort for administrator
+  recovery, which makes it the most valuable credential in the system.
+- **~~There is one platform administrator.~~** A second (`admin.carl`) was
+  invited 2026-08-22, so the recovery tool no longer warns.
+
+  This is only a PARTIAL mitigation and the limit is worth stating: both
+  accounts belong to the same person and, at present, the same machine. That
+  protects against losing one credential; it does not protect against losing
+  the device, which would take both. A genuinely independent second
+  administrator is a different person, or at minimum a passkey on separate
+  hardware.
+
+---
+
+## 2. Passkey sign-in refused: UV flag absent — CAUSE IDENTIFIED 2026-08-22
+
+### What happened
+
+Enrolment succeeds; sign-in is refused with:
+
+```
+Validator is configured to check user verified,
+but UV flag in authenticatorData is not set
+```
+
+### The cause: Microsoft Password Manager, not Windows Hello
+
+Windows 11 (24H2 and later) ships a **second passkey provider** alongside
+Windows Hello, and it registers itself as the default handler. Passkeys created
+through it live in Microsoft Password Manager's own vault.
+
+It gave itself away by its own dialog: **"Enter your Microsoft Password Manager
+PIN — confirm your identity by entering the PIN you previously set up."** That
+PIN unlocks the PASSWORD MANAGER'S VAULT. It is not Windows Hello verifying the
+person, and the assertion comes back with the UV flag unset.
+
+This is why the diagnosis took several passes. A PIN prompt appeared, which
+looked exactly like user verification succeeding, and the theory that a
+non-Hello provider was responsible was dropped on that evidence. It was the
+right theory; the PIN belonged to the wrong thing.
+
+The tell was there the whole time in the credential itself:
+
+```
+aaguid     : d3452668-01fd-4c12-926c-83a4204853aa   (Microsoft Password Manager)
+transports : ['internal', 'ble']  /  ['internal', 'hybrid']
+```
+
+None of the published Windows Hello AAGUIDs — `08987058-…`, `9ddd1817-…`,
+`6028b017-…` — appeared on any credential this account ever held.
+
+### The fix
+
+Enrol against **Windows Hello**, not Microsoft Password Manager:
+
+1. Settings → Accounts → **Passkeys** → remove the `localhost` entries.
+2. Settings → Accounts → Passkeys → **Advanced options** → stop Microsoft
+   Password Manager acting as the passkey provider, or
+3. In Chrome's "Create a passkey" dialog, choose **Windows Hello or external
+   security key** rather than the default provider.
+
+Confirm it worked by the prompt: Windows Hello says **"Making sure it's you"**
+or asks for the device PIN under a **Windows Security** header. If the dialog
+says "Microsoft Password Manager", it is the wrong provider again.
+
+### Why the policy was not relaxed
+
+Setting `userVerification` to `preferred` would have made this disappear in
+seconds, and would have been the wrong answer.
+
+`required` is what makes a passkey **two factors**: something you have, and
+something you are or know. At `preferred`, an unlocked stolen laptop approves
+practices. For the role that opens consent capture that is not a trade worth
+making — and it would gut REQ-VAULT-04 while appearing to satisfy it, which is
+worse than not having the requirement at all.
+
+Note what the failure actually protected against: a credential that could be
+used without verifying the holder was refused, exactly as intended. The control
+worked. The problem was that the wrong provider had captured the enrolment.
+
+### What was tightened along the way
+
+- `webAuthnPolicyUserVerificationRequirement` (the plain, two-factor policy)
+  was `preferred` while its passwordless counterpart was `required`. Both are
+  now `required` — a non-verified WebAuthn assertion should not be acceptable
+  on any path in this realm.
+- `webAuthnPolicyRpId` and its passwordless counterpart were **blank**, meaning
+  "whatever host the request arrived on". This stack answers to both
+  `localhost` and `127.0.0.1`, so a credential enrolled via one would silently
+  never match an assertion offered via the other. Both are now pinned to
+  `localhost`.
+
+Neither change fixed this issue. Both were latent traps found while looking.
+
+### On adding a password fallback
+
+Proposed during this incident: go back to username and password, and *also*
+offer a passkey.
+
+**This does not solve the problem it appears to solve, and it costs the model.**
+An account that can fall back to a password is an account whose real strength is
+the password. Every phishing page, every credential-stuffing list and every
+"reset my password" social-engineering call comes back, and the passkey becomes
+a convenience feature sitting on top of the weakness it was adopted to remove.
+For the role that approves practices, the answer to "what if the passkey fails"
+must not be "then use the thing passkeys replaced".
+
+What genuinely addresses the underlying fear — *being locked out* — is:
+
+1. **Durable storage.** Done, issue 1.
+2. **At least two administrators**, so one lost device is never a lockout. Done.
+3. **A recovery path with a real root of trust**, which exists:
+   `reset-platform-admin-passkey.mjs`, restricted to whoever holds the Keycloak
+   administrator credential, revoking every old credential before issuing a new
+   enrolment.
+4. **A hardware security key with a PIN** for anyone whose platform
+   authenticator cannot produce a UV assertion. That preserves the property; a
+   password does not.
+
+### Confirmed working 2026-08-22
+
+Re-enrolled with Microsoft Password Manager switched off in Settings →
+Accounts → Passkeys → Advanced options. The credential now reports:
+
+```
+aaguid     : 08987058-cadc-4b81-b6e1-30de50dcbe96   (Windows Hello Hardware)
+transports : ['internal']
+```
+
+Hardware-backed, platform-only, and sign-in succeeds.
+
+### DECISION 2026-08-22 (Carl): leave the rules as they are, revisit later
+
+**No change.** `userVerification` stays `required` on both policies, there is
+no password fallback, and the enrolment-time AAGUID check is NOT being built
+yet. Revisit before practitioner onboarding goes anywhere near a real clinic.
+
+**What that means in practice, stated plainly so it is not a surprise later:**
+
+- Nothing is weakened. The security property is intact and this is not a
+  workaround — it is a deferral of the *ergonomics* fix, not of the control.
+- Every practitioner on Windows 11 will meet this, because Windows makes
+  Password Manager the default. They will meet it ALONE, at first sign-in,
+  with nobody to ask.
+- Until the check exists, the mitigation is documentation and a support
+  answer: `PASSKEYS.md` names the AAGUIDs and the fix, and
+  `reset-platform-admin-passkey.mjs` re-issues an enrolment link.
+
+**What would change the urgency:** the first practitioner invited to enrol.
+Today the affected population is two platform administrators, both of whom
+know about it. That is why deferring is reasonable now and stops being
+reasonable the moment practitioner sign-in is built — which is tracked in
+TODO.md under *Practitioner sign-in*, and which depends on this.
+
+The three options below are kept intact for that conversation.
+
+### The options, when it is time — practitioners will hit exactly this
+
+Windows makes Password Manager the default. A practitioner enrols, sees "your
+account has been updated", and discovers at their FIRST SIGN-IN — possibly days
+later, possibly mid-clinic — that it does not work, with a message that
+explains nothing.
+
+The gap between the two moments is what makes this serious. At enrolment the
+problem takes thirty seconds to fix. At first sign-in the person is somewhere
+else, doing something else, with a patient waiting.
+
+**Three ways to go, when it is picked up again.**
+
+**1. Keep `required`, detect it at enrolment.** Read the AAGUID as the
+credential is registered; if it belongs to a provider known not to set UV,
+refuse THEN and say why, while it can still be redone in thirty seconds.
+
+*Recommended.* It puts the failure where it is cheap, keeps the security
+property, and needs a list of AAGUIDs we already have to maintain anyway. The
+cost is that the list needs upkeep as providers change behaviour.
+
+**2. Keep `required`, document it.** Cheaper to build and moves the cost onto
+every practitioner and the support line. Every one of them meets the dialog
+once, alone, with nobody to ask.
+
+**3. Drop to `preferred` for practitioners.** Makes the problem vanish, and
+weakens the signature that binds a consent record — "the key was used" and "the
+person was present and verified" stop being the same claim, and the second is
+the one this platform exists to record. Keycloak policies are per-realm, so it
+also means administrators and practitioners in separate realms, which is a
+standing source of drift.
+
+### Why this happens at all: we are stricter than the web
+
+WebAuthn lets a site request `userVerification` as `required`, `preferred` or
+`discouraged`. The overwhelming default on consumer sites is `preferred` —
+"verify if you can, proceed either way" — so an assertion with UV unset sails
+through and Password Manager passkeys work everywhere else.
+
+|  | Most sites | Here |
+|---|---|---|
+| A passkey replaces | the password | the password **and** the second factor |
+| It proves | you hold the device | you hold the device **and** you were verified |
+| UV unset is | accepted | refused |
+
+Password Manager is not broken for the web at large. We are one of the few
+relying parties strict enough to notice.
+
+---
+
+## 3. `localhost` resolves to ::1 and hangs — RESOLVED 2026-08-22
+
+### What happened
+
+Docker Desktop published every port on both IP stacks. On Windows, `localhost`
+resolves to `::1` first, and Docker's IPv6 forwarder **accepts the TCP
+connection and then never answers**.
+
+Accepting is what makes it dangerous. A refusal would fall straight through to
+IPv4; an accepted connection that stalls means the client waits, and never
+tries the address that works.
+
+The symptom is the worst kind — everything looks up, and only the things that
+speak a protocol fail:
+
+| What you see | What is happening |
+|---|---|
+| A socket test says the port is **open** | The TCP connection genuinely succeeds |
+| Prisma says **can't reach database server** | The Postgres handshake never completes |
+| An SMTP send **hangs** to timeout | The same, without the courtesy of a refusal |
+| The browser **spins** on Keycloak | Ditto, for twelve seconds a time |
+| Tests fail **intermittently** | Whichever address the resolver returned first |
+
+That last row cost the most: it was diagnosed as flaky tests and written up as
+suite interference, which it never was.
+
+### What was done
+
+- Every published port in `docker-compose.yml` is bound explicitly to
+  `127.0.0.1`, removing the `::1` listener. `localhost` then fails fast on IPv6
+  and falls through to IPv4, so it works again for anyone who types it out of
+  habit. It also stops a development database holding health data from
+  listening on every interface.
+- `apps/core/.env` uses `127.0.0.1` throughout.
+- The Keycloak CLIs use `127.0.0.1` for **server** calls and keep `localhost`
+  for anything the **browser** follows — the redirect is validated against the
+  client's registered redirect URIs, and "being consistent" there produces a
+  bare 400 with no explanation.
+
+---
+
+## 4. Every browser token was refused: issuer mismatch — RESOLVED 2026-08-22
+
+### What happened
+
+A signed-in platform administrator opened `/review/identity` and got **401**,
+with the banner still reading "signed in as carl@hillsempire.com".
+
+```
+[AuthGuard] Bearer token rejected: unexpected "iss" claim value
+```
+
+### Why nothing had caught it
+
+**Nothing had ever verified a token before.** The reviewer queue fetches with
+no `Authorization` header at all, and `AUTH_ENFORCE=false` lets a request with
+no token straight through. So the guard's verification path had never once run
+against a real browser-issued token, in any environment, ever.
+
+The identity dashboard was the first endpoint to carry `@RequireRoles`, and
+therefore the first request that actually presented one.
+
+### The cause
+
+The token's `iss` claim is minted from **the URL the browser used**:
+
+```
+http://localhost:21024/realms/aobplatform
+```
+
+`apps/core/.env` told core to expect:
+
+```
+http://127.0.0.1:21024/realms/aobplatform
+```
+
+Compared as strings. Never equal. Every browser token refused.
+
+**It was introduced by the ::1 fix.** When every address in that file was
+switched to `127.0.0.1` to stop Docker's IPv6 forwarder hanging, the issuer
+went with them — and the issuer is the one value in the file that is not an
+address to connect to. It is a **string compared against a claim**.
+
+`docker-compose.yml` has had this right since the containers were set up. The
+local `.env` did not, because it was written when core ran in Docker and split
+from it when core moved to the watch loop.
+
+### Why this was more serious than a 401
+
+**`AUTH_ENFORCE=true` would have locked every user out of everything.** With
+enforcement on, a rejected token is not a fall-through — it is the end of the
+request. The release gate was aimed at a system in which no token could pass,
+and the only reason nobody knew is that no endpoint had asked for one.
+
+### The fix
+
+Three URLs, and they are not interchangeable:
+
+| Setting | Value | Why |
+|---|---|---|
+| `KEYCLOAK_PUBLIC_ISSUER` | `localhost` | What the token SAYS. A string, never fetched. |
+| `KEYCLOAK_JWKS_URI` | `127.0.0.1` | Where WE fetch signing keys. Server-to-server. |
+| `KEYCLOAK_ISSUER` | `127.0.0.1` | Where WE mint service tokens. Server-to-server. |
+
+Both `apps/core/.env` and `.env.example` now set all three, with the reasoning
+beside them.
+
+The split was already designed for — `TokenVerifier` documents `issuer` as
+"the PUBLIC issuer" and offers `jwksUri` precisely "when the network path to
+Keycloak differs from the public issuer (the ReferralPlatform issuer-mismatch
+lesson)". The mechanism was there; the config never used it.
+
+### The lesson, and it is the same one as trap 3 in PASSKEYS.md
+
+**"127.0.0.1 everywhere" is not the rule.** The rule is:
+
+- an address something CONNECTS to → `127.0.0.1`
+- a string compared against a token claim, or a URL the BROWSER follows →
+  `localhost`
+
+Getting it backwards produces a bare 401 or a bare 400 with no explanation.
+
+### What would have caught it earlier
+
+An endpoint that required a role, reached by a real browser session — which is
+exactly what found it. Worth remembering when the next auth surface is built:
+**a guard that has never refused anything has never run.**
+
+---
+
+## 5. Impersonation and recertification — RULES AGREED 2026-08-22
+
+Carl approved the five recommendations in
+[RECERTIFICATION-AND-ACTING-AS.md](RECERTIFICATION-AND-ACTING-AS.md) and added
+three requirements. Recorded here rather than only in the proposal, because
+these are the rules that must survive somebody reading the code in a hurry.
+
+### 5.1 The agreed rules
+
+| # | Rule |
+|---|---|
+| 1 | A practice check is worth full weight for **12 months**, decaying to zero at 24. |
+| 2 | Certification lapsing **warns and escalates. It never suspends automatically** — a named human decides. |
+| 3 | **No OTP** before an acting-as session. The practice is notified afterwards. |
+| 4 | Evidence created inside an acting-as session **does not score at all**. |
+| 5 | A platform user acting as a practice **may not remove anything**, including soft deletes. |
+| 6 | **Any impersonation forces re-approval**, even if the practice is currently active. |
+| 7 | That re-approval **must be performed by a different person** from the one who impersonated. |
+| 8 | Recertification is **soft, self-service, and every data point must be addressed**. |
+
+### 5.2 Why 6 and 7 matter more than the rest
+
+Rules 6 and 7 are Carl's, and they are stronger than what was proposed.
+
+The proposal said impersonated evidence should not SCORE. That works only if
+the scoring exclusion is implemented correctly and stays correct — a rule
+enforced by arithmetic that somebody could later "fix".
+
+Rule 7 does not depend on that. **The person who acted as the practice cannot
+be the person who blesses the result.** Even if the scoring exclusion were
+removed tomorrow by mistake, a single individual still could not manufacture
+evidence and approve it. That is separation of duties, and it holds when the
+finer control fails.
+
+Rule 6 is what gives rule 7 teeth. Without it, impersonation is merely logged —
+and a log nobody reads is not a control. With it, impersonation has a COST: it
+puts the practice back through approval. That is a deterrent a busy person
+actually feels, and it means the quick path and the safe path are the same
+path.
+
+**The consequence to accept:** support work becomes more expensive. Acting for
+a practice to fix one field triggers a re-approval that somebody else must do.
+That is the intended trade, not an oversight — and it is an argument for making
+sure practices can do more for themselves, not for softening the rule.
+
+### 5.3 What must be true in the code
+
+- Any write inside an acting-as session carries the session id.
+- `practice_validations` records `actingAsSessionId` and refuses a decision by
+  the principal named on that session. **A hard refusal, not a warning.**
+- The re-approval requirement is raised by the SESSION, not by the field that
+  changed. Somebody impersonating to change nothing still triggers it, because
+  the point is that they were in there.
+- Recertification collects an explicit answer for every data point. There is no
+  "confirm all" — a list where each point must be addressed is harder to do
+  carelessly than to do properly, and that is the entire design.
+
+### 5.4 Still open
+
+- **Whether rule 7 can deadlock a small operator.** With two platform
+  administrators, one impersonating means the other must re-approve. With one,
+  nothing can be re-approved at all. That is arguably correct — a single
+  operator should not be able to impersonate and self-approve — but it means
+  the second administrator is now load-bearing, not a convenience.
+- **What happens to an in-flight recertification when impersonation occurs
+  during it.** Presumably it restarts under a different reviewer. Not decided.
+
+## 6. Separation of duties cuts BOTH ways — RULES AGREED 2026-08-22
+
+Carl, on two separate screens within an hour:
+
+> *"Practice user cannot record a register check. Must be a platform user."*
+
+> *"Send it again and Send Invite and Invite to Location should not be
+> allowed for a Platform user, unless the Platform-user is impersonating a
+> Practice-user. These are Practice-user tasks."*
+
+Those look like two unrelated permission tweaks. They are one rule, and it
+is worth stating as one because a reader who only sees half of it will
+"fix" the other half as an inconsistency.
+
+### 6.1 The rule
+
+| Act | Who | Why |
+|---|---|---|
+| Confirm a location’s address | **Platform only** | The address prints in the s 65C(5)(a) particulars block. Confirming it is verifying evidence, and the party supplying evidence cannot verify it |
+| Record an AHPRA register check | **Platform only** | It is evidence that somebody INDEPENDENT looked, and it feeds the strength score that decides whether consent may be captured in that person’s name |
+| Approve a practice | **Platform only** | It is what opens consent capture |
+| Invite a practitioner to a location | **Practice only** | It is the practice saying "this person works here" |
+| Send or re-send that invitation | **Practice only** | Same act, second half |
+| Record a practitioner’s departure | **Practice only** | The practice is the only party that knows they have gone |
+
+### 6.2 Why it is not merely tidy
+
+**A practice verifying its own evidence** produces a record that reads
+exactly like an independent check and is not one. Not a weaker check — a
+self-attestation wearing an independent one’s name.
+
+**The platform originating a practice’s relationships** is the same defect
+inverted. An invitation is how a practitioner comes to be named on consent
+records at a site. If a platform operator could send one, a single person at
+AoBPlatform could introduce a practitioner into a practice they do not work
+for — and the practice’s own records would show the practice inviting them,
+with no way to tell afterwards that it had not.
+
+### 6.3 How it is written, and why the phrasing matters
+
+Platform-only acts are `@RequireRoles(PLATFORM_ADMIN)`.
+
+Practice-only acts are `@PracticeScoped()`, which refuses a principal whose
+token **carries no practice claim**.
+
+⚠ **Note what it does NOT say.** It does not say "refuse platform roles".
+The distinction is load-bearing: when acting-as is built, a platform user
+impersonating a practice holds that practice’s claim, so they pass this check
+BY CONSTRUCTION rather than by exception. A rule phrased as "not a platform
+user" would have had to be unpicked to allow the very case Carl named.
+
+§5 rules 6 and 7 then supply the cost: any impersonation forces re-approval,
+by a different person. So the permitted path exists and is expensive, which
+is what stops it becoming the normal path.
+
+### 6.4 What is NOT yet true
+
+**Acting-as does not exist yet.** Until it does, a platform operator simply
+cannot invite a practitioner or record a departure for a practice — there is
+no impersonation path to take.
+
+The consequence to know about: a practice that cannot act for itself — no
+admin passkey enrolled yet, an administrator who has left — currently has
+nobody who can invite a practitioner on its behalf. That is the correct
+trade for now (the alternative is an unaudited back door), but it is a real
+gap and it is an argument for building acting-as sooner rather than later.
+
+### 6.5 The guard bug this found
+
+Writing the test for the register-check rule found that `@RequireRoles` was
+**not being enforced at all** in the ordinary case. The role check lived only
+inside the branch that had verified a bearer token, so while
+`AUTH_ENFORCE=false` any decorated endpoint was open to a request that sent
+no `Authorization` header. Not a bypass anyone had to find — sending nothing
+was enough.
+
+That covered approving a practice, confirming an address, and recording a
+register check. All decorated, none defended. **The decorator promised
+something it did not do, which is worse than not having it, because the
+promise is what stopped anybody looking.**
+
+Roles and practice scope are now checked against whatever principal is
+known. `request.principal` is a property on the request object rather than a
+header, so nothing a client sends can forge one.

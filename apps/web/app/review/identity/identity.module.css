@@ -1,0 +1,201 @@
+/*
+ * The two identity dashboards.
+ *
+ * DENSER THAN THE PRACTICE SCREENS, on purpose. A practice admin reads a
+ * handful of rows about their own clinic; a platform operator scans hundreds
+ * looking for the two that need attention today. The unit here is the ROW, not
+ * the card, and the score sits in a fixed column so the eye can run down it.
+ */
+
+.tabs {
+  display: flex;
+  gap: var(--s2);
+  margin: var(--s4) 0 var(--s5);
+  border-bottom: 1px solid var(--line);
+}
+
+.tab {
+  appearance: none;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: var(--s3) var(--s4);
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink-muted);
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+
+.tab:hover {
+  color: var(--ink);
+}
+
+.tabOn {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* The operational question, stated above the list it answers. */
+.question {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 0 var(--s4);
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s4);
+  align-items: flex-end;
+  margin-bottom: var(--s4);
+}
+
+.searchField {
+  flex: 1 1 280px;
+  max-width: 420px;
+}
+
+.filterRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+.filterChip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: var(--s2) var(--s3);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+
+.filterChip:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.filterChipOn {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.filterCount {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+.list {
+  list-style: none;
+  margin: 0 0 var(--s6);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s4);
+  padding: var(--s4);
+  border-bottom: 1px solid var(--line);
+}
+
+.list > li:last-child .row {
+  border-bottom: none;
+}
+
+/*
+ * The score in a FIXED-WIDTH column, tabular figures, so a reader scanning a
+ * hundred rows can run their eye straight down it. A score that shifts left
+ * and right with the length of the name beside it cannot be scanned at all.
+ */
+.score {
+  flex: 0 0 84px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.scoreValue {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.1;
+}
+
+.scoreWeak {
+  color: var(--stop);
+}
+
+.scoreOk {
+  color: var(--ok);
+}
+
+.scoreNote {
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+  margin-top: 2px;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+}
+
+.name {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.sub {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+
+/* The "on what" — the operational answer, not just the number. */
+.weakest {
+  font-size: var(--text-sm);
+  color: var(--ink);
+  margin: var(--s2) 0 0;
+  line-height: 1.5;
+}
+
+.blocking {
+  font-size: var(--text-sm);
+  color: var(--stop);
+  font-weight: 600;
+  margin: var(--s2) 0 0;
+  line-height: 1.5;
+}
+
+.aside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--s2);
+  flex-shrink: 0;
+}
+
+.empty {
+  text-align: center;
+  padding: var(--s7) var(--s4);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  color: var(--ink-faint);
+  background: var(--surface);
+}

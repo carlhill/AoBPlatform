@@ -16,11 +16,22 @@ node infra/keycloak/transform-realm.mjs
 
 - **Realm roles**: `provider`, `practice_principal`, `practice_manager`,
   `front_desk`, `patient`, `assignor`, `system`.
-- **Public client `web`** (console/portal/tester) — authorization code + PKCE,
-  bound via `authenticationFlowBindingOverrides` to the **`clinician-browser`
-  flow, where a WebAuthn passkey is REQUIRED with no password/OTP fallback**.
-  That is rule 15 (REQ-VAULT-04) enforced at the identity layer: practitioner
-  and admin auth is passkeys, no password-only paths.
+- **Realm `browserFlow` is `clinician-browser`** — a WebAuthn passkey is
+  REQUIRED, with the password form DISABLED and no OTP fallback. That is rule
+  15 (REQ-VAULT-04) enforced at the identity layer: practitioner and admin auth
+  is passkeys, no password-only paths.
+
+  **It is bound at the REALM, deliberately.** It used to be only an
+  `authenticationFlowBindingOverrides` entry on `web`, which left every client
+  Keycloak creates for itself — `account-console` above all — falling back to
+  the stock `browser` flow. That flow's Username Password Form is REQUIRED, so
+  opening the account console asked a passkey-only user for a password that had
+  never been set. There was no answer to the prompt. A per-client override only
+  covers the clients you remember to think about, and the built-in ones are
+  exactly the ones you do not.
+- **Public client `web`** (console/portal/tester) — authorization code + PKCE.
+  It keeps its explicit override to the same flow: the realm default now covers
+  it, but `web` is ours and worth stating rather than inheriting.
 - **`patient-carer-browser` flow** (passkey as ALTERNATIVE to password+OTP —
   encouraged, not mandatory) — ready for the patient/assignor portal client
   when M8 auth lands (REQ-CLIENT-02: passkey never a barrier for patients).
@@ -87,3 +98,69 @@ Issuer note (ReferralPlatform lesson): tokens carry the PUBLIC issuer
 (`http://localhost:21024/...`) regardless of which host the request hit —
 containers must validate against that while fetching JWKS via their internal
 route (`TokenVerifier`'s `jwksUri` override exists for exactly this).
+
+## Passkeys have TWO names, and they never match
+
+This confuses everybody once, so it is written down.
+
+| Where | What it shows | Set by |
+|---|---|---|
+| Keycloak's enrolment prompt | the label the person types, e.g. `AoBPasskey1` | the person, at enrolment |
+| Windows / macOS chooser | the WebAuthn **username**, e.g. `carl@hillsempire.com` | us, when the account is created |
+
+Neither system shows the other's name. Somebody who carefully labels their
+credential `AoBPasskey1` is later offered a chooser that says something else
+entirely, does not recognise it, and concludes the passkey did not save.
+
+That is why the username is the person's **email address** — it is the one
+identifier they will recognise in an operating-system dialog they were not
+expecting. It was `admin.<localpart>` first, which recognisably belonged to
+nobody.
+
+To check what the server actually holds, rather than guessing from a dialog:
+
+```bash
+node infra/keycloak/apply-realm-additions.mjs
+```
+
+and for one account, the Admin REST API under
+`/admin/realms/aobplatform/users/{id}/credentials` reports the credential type
+and its Keycloak label.
+
+## Platform administrators
+
+```bash
+node infra/keycloak/invite-platform-admin.mjs --email <address> --name "<full name>"
+```
+
+```bash
+node infra/keycloak/reset-platform-admin-passkey.mjs --email <address> --reason "<why>"
+```
+
+The reset REVOKES every existing passkey before issuing a new enrolment, and
+ends live sessions. Lost and stolen are treated identically because the person
+reporting it usually cannot tell which it was — a phone left in a taxi is
+"lost" until it is not.
+
+Neither command sets a password. There is no password path in this realm for
+these clients, and these commands do not create one.
+
+## Which passkey provider captured the enrolment
+
+Windows 11 ships more than one, and the wrong one silently breaks sign-in.
+
+| AAGUID | Provider | Sets UV? |
+|---|---|---|
+| `08987058-cadc-4b81-b6e1-30de50dcbe96` | Windows Hello Hardware | yes |
+| `9ddd1817-af5a-4672-a2b9-3e3dd95000a9` | Windows Hello Software | yes |
+| `6028b017-b1d4-4c02-b4b3-afcdafc96bb2` | Windows Hello VBS | yes |
+| `d3452668-01fd-4c12-926c-83a4204853aa` | **Microsoft Password Manager** | **no** — see CRITICAL-ISSUES.md §2 |
+
+Microsoft Password Manager prompts for a PIN, which looks exactly like user
+verification and is not: it unlocks the manager's own vault. The realm requires
+UV, the assertion arrives without it, and sign-in is refused with a message
+that explains none of this.
+
+To read the AAGUID on an account's credentials, use the Admin REST API:
+`/admin/realms/aobplatform/users/{id}/credentials` — the `credentialData`
+field carries it.

@@ -1,0 +1,184 @@
+# What was sent, as a thing people can ask questions about.
+#
+# READS THE REPORTING VIEW, never the tables. The view is where the two-year
+# retention and the "no names, no bodies" rule live, so anything modelled here
+# inherits both rather than having to remember them.
+#
+# `practiceId` is a dimension even though nobody would put it on a chart. It has
+# to exist for queryRewrite to filter on it — the tenancy boundary is expressed
+# as a filter over a dimension, so the dimension is part of the boundary.
+
+cubes:
+  - name: OutboundMessages
+    sql_table: reporting.outbound_messages
+    description: >
+      Messages this platform has sent — email, SMS, webhook and device pulls.
+      Counts and destinations only: no recipients, no message content, and
+      nothing identifying a patient or a practitioner.
+
+    joins: []
+
+    dimensions:
+      - name: id
+        sql: id
+        type: string
+        primary_key: true
+        public: false
+
+      # Not for charting. Present because the tenancy filter is applied to it,
+      # and a filter needs something to filter on.
+      - name: practiceId
+        sql: "\"practiceId\""
+        type: string
+        public: false
+
+      - name: organisation
+        sql: "\"practiceName\""
+        type: string
+        title: Organisation
+        description: The practice the message belongs to.
+
+      - name: site
+        sql: "\"locationCode\""
+        type: string
+        title: Site
+        description: >
+          The location it was addressed to. Empty means the message was
+          addressed to the practice itself rather than to one of its sites —
+          a real answer, not missing data.
+
+      - name: department
+        sql: "\"departmentName\""
+        type: string
+        title: Department
+
+      - name: channel
+        sql: channel
+        type: string
+        title: Channel
+        description: How it travels — email, sms, webhook, or a device pull.
+
+      - name: mediaType
+        sql: "\"mediaType\""
+        type: string
+        title: Format
+        description: What was sent — email, json, xml, pdf or markdown.
+
+      - name: state
+        sql: state
+        type: string
+        title: State
+        description: pending, leased, sent, failed or dead.
+
+      # WHO RECEIVED IT, BY TYPE ONLY.
+      #
+      # practitioner, patient, or the practice itself. Deliberately not the
+      # recipient's name or id: a name here is a name a query engine can be
+      # asked to group by, and per-practitioner totals are one join away from
+      # "and at which practices" -- the cross-practice directory the hard rules
+      # forbid. Per-person figures live in the console, scoped, attached to a
+      # decision somebody is accountable for.
+      - name: recipientType
+        sql: "\"recipientType\""
+        type: string
+        title: Who received it
+        description: >
+          practitioner, patient, or the practice itself. Empty where nothing was
+          recorded -- which is not the same as it having gone to the practice.
+
+      # THE RECIPIENT'S NAME, so a report can be broken down per practitioner.
+      #
+      # Scoped by the same RLS as everything else here, so a practice sees the
+      # names of its OWN people and nobody else's -- names it already has on its
+      # affiliations screen. What it does allow is a PLATFORM report grouped by
+      # name across practices; that is accepted because the platform credential
+      # could assemble the same list from the tables anyway, and because the
+      # rule's actual subject is the provider number, which is not here.
+      - name: recipientName
+        sql: "\"recipientName\""
+        type: string
+        title: Recipient
+        description: >
+          Who it was addressed to. Empty for messages to the practice itself, and
+          for anything sent before we recorded it.
+
+      # THE TIME DIMENSION EVERYTHING IS MEASURED AGAINST.
+      #
+      # `occurredAt` is the sent time where there is one and the created time
+      # otherwise, so a message still waiting appears on the day it was raised
+      # instead of vanishing from every report until it goes.
+      - name: occurredAt
+        sql: "\"occurredAt\""
+        type: time
+        title: When
+
+      - name: createdAt
+        sql: "\"createdAt\""
+        type: time
+        title: Raised
+
+      - name: sentAt
+        sql: "\"sentAt\""
+        type: time
+        title: Sent
+
+    measures:
+      - name: count
+        type: count
+        title: Messages
+        description: One per message, whatever became of it.
+
+      - name: sent
+        type: count
+        title: Sent
+        filters:
+          - sql: "{CUBE}.state = 'sent'"
+
+      - name: failed
+        type: count
+        title: Failed
+        filters:
+          - sql: "{CUBE}.state IN ('failed', 'dead')"
+
+      - name: waiting
+        type: count
+        title: Still waiting
+        filters:
+          - sql: "{CUBE}.state IN ('pending', 'leased')"
+
+      # Attempts, not messages. A hundred attempts across ten messages is a
+      # different problem from a hundred messages, and a single "count" hides
+      # which one you have.
+      - name: attempts
+        type: sum
+        sql: attempts
+        title: Delivery attempts
+
+      - name: resends
+        type: sum
+        sql: "\"resendCount\""
+        title: Resends
+        description: Times somebody asked for a message to go again.
+
+    pre_aggregations:
+      # Rolled up by day, which every coarser grain can be built from. Keyed by
+      # practice so a pre-aggregation can never be shared across tenants — the
+      # same reasoning as contextToAppId, one layer down.
+      - name: daily
+        measures:
+          - count
+          - sent
+          - failed
+          - waiting
+        dimensions:
+          - practiceId
+          - organisation
+          - site
+          - department
+          - channel
+          - mediaType
+          - recipientType
+        time_dimension: occurredAt
+        granularity: day
+        refresh_key:
+          every: 1 hour

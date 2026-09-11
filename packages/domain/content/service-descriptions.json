@@ -1,0 +1,11 @@
+{
+  "$comment": "VERSIONED CONTENT, NOT CODE (hard rule 14; CLAUDE.md §7 'option lists are content'). D6a — the Basic Service Description a pre-agreement must carry (s 65C(4), REQ-REG-01 D6a). THIS FILE MUST AGREE, STRING FOR STRING, WITH THE RULES ENGINE'S CURRENT MAPPING. The C6 check is `mapping.descriptions.includes(description)` — exact and case-sensitive by design — so a description this list offers that the mapping does not hold is a description staff can choose and the rules engine will then refuse. `service_descriptions_agree_with_rules_mapping` imports both lists and fails when they diverge; that test is the only thing keeping the two honest, so do not weaken it. IT IS A STOP-GAP. The real mapping is the quarterly MBS Online ingest (1 Jan / 1 Mar / 1 Jul / 1 Nov) with a human-reviewed diff (REQ-REG-03) — a Phase-0/1 job. Until that exists the description is chosen by staff from this short list and `version` records which list they chose from (CONSULTATION-CAPTURE-PLAN §2.4). Never ship a hand-typed mapping as if it were the MBS one, and never claim in any copy that these are certified, approved or accredited (rule 12) — they are checked against the s 65C data set, and that is all. ORDER HERE IS THE ORDER ON SCREEN. Bump `version` on every edit, and bump the rules engine's mapping with it. THE DISPLAY WORDS ARE THE STRINGS THEMSELVES and that is the one place this list differs from `assignor-relationships.json`: these are not labels for a key, they are the exact contractual words the rules engine matches and the renderer prints, so they cannot live in the string table and cannot be translated without changing what the mapping holds (REQ-LANG-02 is answered by rendering both languages of the AGREEMENT, not by substituting the particular).",
+  "version": "dev-mapping-1",
+  "descriptions": [
+    "General practitioner attendance",
+    "Specialist attendance",
+    "Allied health attendance",
+    "Optometry attendance",
+    "Nurse practitioner attendance"
+  ]
+}

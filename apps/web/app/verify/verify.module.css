@@ -1,0 +1,206 @@
+/*
+ * The confirmation screen.
+ *
+ * This page asks somebody to type a code from an email, which is precisely the
+ * interaction a phishing site asks for. So it has to look like it was built by
+ * an organisation rather than thrown together: a contained card, real
+ * hierarchy, generous space, and a code field that is obviously the point of
+ * the page.
+ *
+ * Looking credible is not decoration here — a page that looks improvised
+ * teaches people that improvised-looking pages are normal, which is the exact
+ * habit that makes phishing work.
+ */
+
+.card {
+  max-width: 520px;
+  margin: var(--s6) auto var(--s8);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: var(--s7) var(--s6) var(--s6);
+  box-shadow: 0 1px 2px rgba(22, 24, 26, 0.04), 0 8px 24px rgba(22, 24, 26, 0.06);
+}
+
+.mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  margin-bottom: var(--s5);
+  color: var(--accent);
+}
+
+.markText {
+  font-weight: 600;
+  font-size: var(--text-sm);
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+
+.title {
+  font-size: var(--text-2xl);
+  line-height: 1.25;
+  text-align: center;
+  margin: 0 0 var(--s3);
+  letter-spacing: -0.015em;
+}
+
+.lead {
+  text-align: center;
+  color: var(--ink-muted);
+  margin: 0 auto var(--s6);
+  max-width: 42ch;
+  line-height: 1.6;
+}
+
+/* --- The code field ------------------------------------------------------- */
+
+.codeWrap {
+  margin: 0 0 var(--s5);
+}
+
+.codeLabel {
+  display: block;
+  text-align: center;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--ink-muted);
+  margin-bottom: var(--s3);
+  font-weight: 600;
+}
+
+/*
+ * ONE input, not six boxes.
+ *
+ * Six separate inputs look smarter in a mockup and are worse in every real
+ * use: pasting a code from the email fills only the first, screen readers
+ * announce six unlabelled fields, and backspace behaviour has to be
+ * hand-written and is always slightly wrong. One field with wide tracking
+ * reads the same and behaves correctly with autofill, paste and assistive
+ * technology.
+ *
+ * The dashes underneath give the segmented look without the segmented
+ * problems: a repeating gradient sized to one character advance.
+ */
+.code {
+  display: block;
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 34px;
+  font-weight: 600;
+  text-align: center;
+  letter-spacing: 0.42em;
+  /* Offsets the trailing letter-space so the digits sit optically centred. */
+  text-indent: 0.42em;
+  color: var(--ink);
+  background: var(--surface-sunken);
+  border: 2px solid var(--line-strong);
+  border-radius: 10px;
+  padding: var(--s4) var(--s2) calc(var(--s4) + 6px);
+  caret-color: var(--accent);
+}
+
+.code::placeholder {
+  color: var(--ink-faint);
+  font-weight: 400;
+}
+
+.code:focus-visible {
+  border-color: var(--accent);
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+  background: var(--surface);
+}
+
+.codeInvalid {
+  border-color: var(--stop);
+  background: var(--stop-wash);
+}
+
+.codeHint {
+  text-align: center;
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+  margin: var(--s2) 0 0;
+}
+
+.codeHintWarn {
+  color: var(--stop);
+  font-weight: 600;
+}
+
+.submit {
+  width: 100%;
+  justify-content: center;
+  font-size: var(--text-lg);
+  padding: var(--s3) var(--s4);
+}
+
+/* --- Outcome states ------------------------------------------------------- */
+
+.outcome {
+  text-align: center;
+}
+
+.outcomeIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  margin-bottom: var(--s4);
+}
+
+.outcomeOk {
+  background: var(--ok-wash);
+  color: var(--ok);
+}
+
+.outcomeStop {
+  background: var(--stop-wash);
+  color: var(--stop);
+}
+
+.outcomeWarn {
+  background: var(--warn-wash);
+  color: var(--warn);
+}
+
+/* --- The explanation ------------------------------------------------------ */
+
+/*
+ * Why a code rather than just a link. Boxed and set apart, because it answers
+ * the question a careful person is actually asking — "is this real?" — and an
+ * organisation that explains its own security choices reads very differently
+ * from one that does not.
+ */
+.why {
+  margin-top: var(--s6);
+  padding: var(--s4);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: var(--text-sm);
+  line-height: 1.65;
+  color: var(--ink-muted);
+}
+
+.whyHead {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: var(--s2);
+}
+
+.assurance {
+  margin-top: var(--s4);
+  text-align: center;
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+  line-height: 1.6;
+}

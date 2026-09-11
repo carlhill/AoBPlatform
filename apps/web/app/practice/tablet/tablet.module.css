@@ -1,0 +1,397 @@
+/*
+ * ONE ROW, FOUR QUESTIONS — "Send to the tablet" (CLAUDE.md build brief).
+ *
+ * SINCE 10 SEP 2026 THE ROW HOLDS TWO CONTENT COLUMNS AND ONE ACTION AREA
+ * (`.actions`): who this is, what the visit is, and beneath them either the
+ * numbered strip that carries all three controls (`.steps`) or — once the
+ * agreement is on a tablet — that session's chip and record id (`.live`). The
+ * two control columns this file used to size — `.who` and `.send` — are gone,
+ * because a label above a control in a separate layout is a label that only
+ * lines up by luck.
+ *
+ * Reception scans this list all morning and is asking four things about each
+ * agreement: who is this, what is the visit, who is signing, and where does
+ * it go. The row previously borrowed `.sdRow` from `manage.module.css`, built
+ * for the reconciliation screen's D6a row — a name, a label, a select and a
+ * button, four DIRECT children. This row's three columns of controls do not
+ * arrive as four direct children: the identity block, the facts block, the
+ * who-is-signing button and a div wrapping BOTH the tablet select and Send
+ * are three, not four, and the fourth column of `.sdRow`'s grid went to
+ * whatever came next — the blocked notice — squeezed into a track sized for
+ * a single button. The identity column, sharing the leftover space with a
+ * select and a button it was never sized for, shrank until ordinary names
+ * wrapped word by word, and the blocked notice landed inside the send
+ * column rather than under it. This file gives the row its own grid, sized
+ * for exactly what it holds.
+ *
+ * REAL MINIMUM WIDTHS, not `auto` everywhere. A column that can shrink to
+ * nothing is a column whose text wraps a word at a time the moment the page
+ * is narrower than its longest row — which is exactly what happened.
+ */
+
+.row {
+  display: grid;
+  gap: var(--s3);
+  padding: var(--s4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+/*
+ * BELOW 900px THE GRID COLLAPSES TO STACKED SECTIONS, in the same order as the
+ * wide layout: who this is, what the visit is, then the action band. No
+ * `grid-template-columns` at all here — a single implicit column, so every
+ * child simply stacks, full width, in document order.
+ */
+@media (min-width: 900px) {
+  .row {
+    grid-template-columns: minmax(12rem, 1fr) minmax(14rem, 1.4fr);
+    align-items: start;
+  }
+}
+
+.identity {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s1);
+}
+
+.facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  min-width: 0;
+}
+
+/* Label and value are ONE string (see `serviceFact` / `signingFact` in
+   TabletView.tsx) so there is nothing for a layout to split mid-fact. */
+.fact {
+  margin: 0;
+  overflow-wrap: break-word;
+}
+
+/* THE "Signing: ..." FACT IS ALSO THE CONTROL THAT CHANGES IT (Carl, 7 Sep
+   2026). It has to read as the fact beside it -- same size, same colour, same
+   left edge -- while still being a real <button>: focusable, in the tab order,
+   and with a focus ring. Underlined on hover and on focus so it is discoverable
+   without a second visual weight in a column of facts. */
+.factButton {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.factButton:hover:not(:disabled),
+.factButton:focus-visible {
+  text-decoration: underline;
+}
+
+/* Read-only viewers (the platform twin) keep the fact and lose the press. */
+.factButton:disabled {
+  cursor: default;
+}
+
+/*
+ * A FULL-WIDTH BAND, beneath the row's own columns — the blocked reason, a
+ * push or who-is-signing outcome, or the who-is-signing panel itself. Below
+ * 900px the row is already one column, so this only matters at the width
+ * where the grid is real; harmless either way.
+ */
+.band {
+  grid-column: 1 / -1;
+}
+
+/*
+ * THE ACTION AREA — the one region beneath the row's two content columns, and
+ * the reason `.steps` no longer places itself (Carl, 10 Sep 2026).
+ *
+ * It holds the numbered strip while the row is a thing to send, and the live
+ * session's chip and record id once it is on a tablet. One region, so the two
+ * cannot drift into two different places on the row: whatever is here is
+ * always where the last thing was.
+ */
+.actions {
+  grid-column: 1 / -1;
+}
+
+/*
+ * ON A TABLET: THE RIGHT-HAND COLUMN (Carl, 10 Sep 2026, drawn on a screenshot
+ * — "move the chip and the patient id to where the steps were"). The strip
+ * spanned both columns because it carried three controls; a chip and an id do
+ * not need the width, and sitting under the facts rather than under the name
+ * keeps the left column as the answer to "who is this" alone. Below 900px the
+ * row is a single column and this says nothing.
+ */
+@media (min-width: 900px) {
+  .actionsLive {
+    grid-column: 2 / -1;
+  }
+}
+
+/* The chip, and the record id beneath it. */
+.live {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s1);
+}
+
+/*
+ * THE THREE STEPS, NUMBERED, EACH ONE OVER THE CONTROL IT NAMES (Carl, 10 Sep
+ * 2026, from a mock-up: label, arrow, label, arrow, label on one line, with the
+ * "Who is signing?" button, the tablet select and Send on the line beneath).
+ *
+ * ONE GRID FOR BOTH LINES, WHICH IS THE WHOLE POINT. The first cut laid the
+ * strip out above the row and the controls out below it, two independent
+ * layouts — so a number sat over whatever happened to be under it at that
+ * width, which was not always the thing it named. Here the labels are row 1
+ * and the controls row 2 of the SAME grid, and each step's pair is pinned to
+ * one column, so they cannot drift apart at any width the row has.
+ *
+ * `display: contents` ON THE LIST ITEMS is what lets an <ol>/<li> be that grid:
+ * the li keeps its list semantics and its `aria-current="step"`, and its three
+ * children (label, control, arrow) become grid items of the strip itself. The
+ * state is spoken as well as shown (`.visuallyHidden` below), so nothing about
+ * where the row is depends on the boxes being drawn.
+ *
+ * FULL WIDTH, BENEATH THE ROW'S FACTS. `.actions` above is what spans the
+ * row's columns; the strip simply fills it, and no control lives outside it.
+ */
+.steps {
+  /*
+   * NARROW FIRST: the three steps stack, label over control, arrows gone —
+   * there is no gap left for an arrow to point across.
+   */
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--s1);
+}
+
+.stepLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+}
+
+.stepControl {
+  display: flex;
+  align-items: center;
+}
+
+/* Stacked, the arrow would point at nothing. */
+.stepArrow {
+  display: none;
+}
+
+/*
+ * FROM ~700px: THREE COLUMNS, ARROWS IN THE GAPS BETWEEN THEM. The label and
+ * control tracks are content-sized (`auto`); the two arrow tracks are
+ * `min-content`, so an arrow is exactly as wide as the mark it draws and sits
+ * centred in the gap it was given, on the LABEL line.
+ */
+@media (min-width: 700px) {
+  .steps {
+    display: grid;
+    grid-template-columns: auto min-content auto min-content auto;
+    grid-template-rows: auto auto;
+    justify-content: start;
+    align-items: center;
+    column-gap: var(--s3);
+    row-gap: var(--s1);
+  }
+
+  .step {
+    display: contents;
+  }
+
+  .stepLabel {
+    grid-row: 1;
+  }
+
+  .stepControl {
+    grid-row: 2;
+  }
+
+  .stepArrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    grid-row: 1;
+    /* Inherits the strip's muted colour: present, and never louder than a label. */
+  }
+
+  /* WHICH COLUMN EACH STEP OWNS — label and control together, never apart. */
+  .step:nth-child(1) .stepLabel,
+  .step:nth-child(1) .stepControl {
+    grid-column: 1;
+  }
+
+  .step:nth-child(1) .stepArrow {
+    grid-column: 2;
+  }
+
+  .step:nth-child(2) .stepLabel,
+  .step:nth-child(2) .stepControl {
+    grid-column: 3;
+  }
+
+  .step:nth-child(2) .stepArrow {
+    grid-column: 4;
+  }
+
+  .step:nth-child(3) .stepLabel,
+  .step:nth-child(3) .stepControl {
+    grid-column: 5;
+  }
+
+  /* The tablet select keeps the width it had as a column of its own. */
+  .stepControl select {
+    min-width: 12rem;
+  }
+}
+
+/* The numeral, in a circle the eye can count without reading. */
+.stepNumber {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+/* WHERE THE ROW IS NOW — the one step a receptionist should be looking at. */
+.step[data-state='now'] .stepLabel {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.step[data-state='now'] .stepNumber {
+  border-color: currentColor;
+}
+
+/* ALREADY ANSWERED. Quiet, but not gone: the order still has to be readable. */
+.step[data-state='done'] .stepNumber {
+  border-color: transparent;
+  background: var(--ok-soft, var(--line));
+}
+
+/*
+ * SPOKEN, NOT SHOWN. The number, the weight and the tick carry the state to
+ * anybody who can see them; this carries it to everybody else (WCAG 2.2 —
+ * colour and weight are never the only carrier of meaning).
+ */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/*
+ * THE FIX, INSIDE THE BAND THAT STATES THE PROBLEM (Carl, 4 Sep 2026) — the
+ * D6a select and its button, sitting under the refusal sentence rather than
+ * two screens away. It is inside a `Notice`, whose body is already a block, so
+ * this only has to space its own three children and stop the select stretching
+ * to the width of a full-bleed band on a wide monitor.
+ */
+.fix {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s2);
+  margin: var(--s2) 0;
+  max-width: 32rem;
+}
+
+/*
+ * THE ROWS THE PATIENT ACTUALLY CROSSED. The correction panel now opens ALL
+ * five details, so the mark is what carries "this is the one the tablet
+ * reported" — and it is a border and a tint rather than colour alone, because
+ * a colour-only distinction is not a distinction under WCAG 2.2 AA. The field's
+ * own hint says it in words as well, which is the part a screen reader gets.
+ */
+.disputedField {
+  border-left: 3px solid var(--warn);
+  background: var(--warn-wash);
+  padding: var(--s2) var(--s3);
+  border-radius: var(--radius);
+}
+
+/*
+ * THE SHORT SESSION ID (Carl, 4 Sep 2026). Monospace, because its whole job is
+ * to be compared character by character against the eight on the tablet's own
+ * footer — a proportional face makes 8ff09d7b and 8ff09db7 look alike at a
+ * glance, which is the one thing this must not do.
+ */
+/*
+ * AN ID KEEPS ITS CASE. The status chip it sits in upper-cases its text
+ * (`.chip`), and text-transform inherits -- so "session 4ecda17f" read as
+ * "SESSION 4ECDA17F" on the console while the tablet footer showed the same
+ * id in lower case, and Carl read them as two different sessions (7 Sep 2026).
+ * Hex is compared character by character; it is never upper-cased here.
+ */
+.sessionId {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  white-space: nowrap;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/*
+ * THE FIELD A REFUSED SAVE IS ABOUT (Carl, 10 Sep 2026). The same treatment as
+ * a disputed detail above and for the same reason — a control that needs
+ * attention is marked by BORDER AND WORDS, never by colour alone (WCAG 2.2 AA,
+ * and `ui.module.css`'s own rule for `.inputInvalid`). It wraps the age
+ * declaration, which is a checkbox rather than a field and therefore has no
+ * border of its own to redden.
+ */
+.faultedField {
+  border-left: 3px solid var(--stop);
+  background: var(--stop-wash);
+  padding: var(--s2) var(--s3);
+  border-radius: var(--radius);
+}
+
+/*
+ * THE FAULT AND ITS SHORTCUT ON A QUEUE ROW (Carl, 11 Sep 2026). Sits under
+ * the session chip and wraps with it on a narrow desk; the gap is the chip's
+ * own so the two read as one line rather than two stacked facts.
+ */
+.liveFault {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}

@@ -1,0 +1,51 @@
+/*
+ * The read-only strip, and the region it governs.
+ */
+
+.strip {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  flex-wrap: wrap;
+  padding: var(--s3) var(--s5);
+  background: var(--warn-surface, #fdf6e3);
+  border-bottom: 1px solid var(--warn-line, #b8860b);
+  color: var(--ink);
+  font-size: var(--text-sm);
+}
+
+.stripLink {
+  color: inherit;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+
+/*
+ * A FIELDSET WITH NOTHING OF A FIELDSET ABOUT IT.
+ *
+ * The element is here for `disabled`, which cascades to every nested control by
+ * definition of the HTML rather than by anybody remembering. Its own border,
+ * padding and margin are the browser's, not the design's, so they go.
+ *
+ * `min-inline-size: 0` is not decoration: a fieldset defaults to
+ * `min-inline-size: min-content`, which stops flex and grid children shrinking
+ * and makes wide tables push the page sideways.
+ */
+.region {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-inline-size: 0;
+}
+
+/*
+ * Disabled controls are dimmed by the browser already; this only makes the
+ * cursor say so too, because a control that looks pressable and does nothing on
+ * hover is the same broken promise in a smaller form.
+ */
+.region :disabled {
+  cursor: not-allowed;
+}

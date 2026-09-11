@@ -43,6 +43,7 @@ Also carried over from *identity-security-recommendations.md*: passkeys as step-
 | Data | PostgreSQL (RDS, RLS) · immudb · Redis · S3 (AU) |
 | Async | SQS + scheduled jobs (EventBridge) · outbox pattern for domain-write/vault-event atomicity |
 | Identity | Keycloak (OIDC) · WebAuthn passkeys mandatory for practitioners/admins · custom flows for assignor tiers · myID/TDIF brokerage optional later |
+| Patient identity (portal) | WebAuthn passkeys implemented in core (`@simplewebauthn`), NOT Keycloak users: the three-identifier bootstrap performed by core is what binds a credential to a verified person; discoverable credentials, no username; portal never a precondition of signing (REQ-PORT-08). DECISIONS.md D-2026-09-04-02; reopened by federated patient identity (myGov/myID) |
 | Messaging | Tier-1 SMS gateway with dedicated number per practice + ACMA Sender ID registration (gateway selection is a Phase-0 procurement task — evaluate on deliverability SLA, dedicated-number support, AU data handling; do not commit in this doc) · SES or equivalent for email with DKIM/SPF/DMARC |
 | Documents | Server-side deterministic PDF render (single render path so the hash is stable); pdf/A output for artefacts |
 | AI (Phase 2+) | Managed-follow-up voice/chat agents behind our own API; models hosted with AU data processing; every agent action eventised to the vault; human-handback per REQ-CHASE. Build-out governed by the cost-aware rules (see build plan) |

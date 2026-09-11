@@ -67,16 +67,57 @@ export class MailhogGateway implements MessagingGateway {
    */
   private send(request: DispatchRequest): Promise<string> {
     return new Promise((resolve, reject) => {
-      const message = [
+      // Dot-stuffing: a line consisting of a single dot terminates the DATA
+      // block, so any line that starts with one has to be doubled.
+      const stuff = (text: string) => text.replace(/\r?\n/g, '\r\n').replace(/^\./gm, '..');
+
+      const headers = [
         `From: AoBPlatform <${this.from}>`,
         `To: ${request.to}`,
         `Subject: ${request.subject ?? 'AoBPlatform'}`,
         'MIME-Version: 1.0',
-        'Content-Type: text/plain; charset=utf-8',
-        '',
-        // Dot-stuffing: a line consisting of a single dot terminates the data.
-        request.body.replace(/\r?\n/g, '\r\n').replace(/^\./gm, '..'),
-      ].join('\r\n');
+      ];
+
+      let message: string;
+
+      if (request.html) {
+        /*
+         * multipart/alternative, with the TEXT PART FIRST.
+         *
+         * The order is part of the spec and not a style choice: clients are
+         * meant to render the LAST part they understand, so text-then-html
+         * means an HTML-capable client shows the designed version and a
+         * text-only one falls back cleanly. Reversed, everyone gets plain text.
+         *
+         * The boundary is fixed rather than random because this gateway talks
+         * only to a local sink and a stable boundary makes the raw message
+         * readable when debugging. A real sender would randomise it.
+         */
+        const boundary = '----aobplatform-alt-boundary';
+        headers.push(`Content-Type: multipart/alternative; boundary="${boundary}"`);
+        message = [
+          ...headers,
+          '',
+          'This is a message in MIME format. Your client does not appear to support it.',
+          '',
+          `--${boundary}`,
+          'Content-Type: text/plain; charset=utf-8',
+          'Content-Transfer-Encoding: 8bit',
+          '',
+          stuff(request.body),
+          '',
+          `--${boundary}`,
+          'Content-Type: text/html; charset=utf-8',
+          'Content-Transfer-Encoding: 8bit',
+          '',
+          stuff(request.html),
+          '',
+          `--${boundary}--`,
+        ].join('\r\n');
+      } else {
+        headers.push('Content-Type: text/plain; charset=utf-8');
+        message = [...headers, '', stuff(request.body)].join('\r\n');
+      }
 
       // Each step waits for an expected code, then sends the next command.
       const steps: Array<{ expect: number; send: string | null }> = [

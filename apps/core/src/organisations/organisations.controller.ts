@@ -1,6 +1,32 @@
-import { BadRequestException, Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
-import { Type } from 'class-transformer';
 import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Headers,
+  HttpException,
+  HttpStatus,
+  Ip,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
+import { Type } from 'class-transformer';
+import { LOCKED_FIELDS } from '@aobplatform/domain';
+import { PLATFORM_ADMIN, RequireRoles } from '../auth/roles.decorator';
+import {
+  ADDRESS_CHECK_KEYS,
+  ADDRESS_CHECK_METHODS,
+  ADDRESS_CHECK_VERSION,
+  ADDRESS_REJECTION_KEYS,
+  ADDRESS_REJECTION_REASONS,
+} from '@aobplatform/domain';
+import { SessionActor, type Actor } from '../auth/actor.decorator';
+import { AbnLookupRateLimit } from './abn-lookup-rate-limit';
+import {
+  Equals,
   IsArray,
   IsBoolean,
   IsEmail,
@@ -8,6 +34,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   Min,
   MinLength,
@@ -15,6 +42,8 @@ import {
 } from 'class-validator';
 import { OrganisationsService } from './organisations.service';
 import { ChecksService } from './checks.service';
+import { AuditService } from './audit.service';
+import { SetupService } from './setup.service';
 
 /**
  * What a named human read off abr.business.gov.au, when the platform has no
@@ -184,6 +213,148 @@ export class RegisterOrganisationDto {
   // NOTE: there is no banking field here, and there never will be (§8).
 }
 
+/**
+ * Asking an applicant to correct something.
+ *
+ * The reason is REQUIRED and is sent to the applicant verbatim, so it has to be
+ * something a person outside this building can act on. "Details did not match"
+ * tells them nothing; "the second contact's phone is the same as yours" tells
+ * them exactly what to do.
+ */
+export class RequestCorrectionDto {
+  @IsString()
+  @MinLength(10)
+  reason!: string;
+
+  @IsString()
+  @MinLength(1)
+  requestedByName!: string;
+}
+
+/**
+ * An amendment to an APPROVED practice, from the console.
+ *
+ * Every field optional, and `undefined` means "not touching this one" — which
+ * is not the same as an empty string meaning "clear it". `diffApplication`
+ * depends on that distinction, and getting it wrong once wiped fifteen fields
+ * of a live application while submitting one.
+ *
+ * The locked fields are absent by construction: ABN, ACN, legal name, entity
+ * type and ABN status come from the register, not from a form.
+ */
+export class AmendPracticeDto {
+  @IsOptional() @IsString() name?: string;
+  @IsOptional() @IsString() website?: string;
+
+  @IsOptional() @IsString() adminName?: string;
+  @IsOptional() @IsEmail() adminEmail?: string;
+  @IsOptional() @IsString() adminPhone?: string;
+  @IsOptional() @IsString() adminPosition?: string;
+
+  @IsOptional() @IsString() managerName?: string;
+  @IsOptional() @IsEmail() managerEmail?: string;
+  @IsOptional() @IsString() managerPhone?: string;
+  @IsOptional() @IsString() managerPosition?: string;
+
+  /*
+   * THE PRACTICE'S SHARED ADDRESS, and it was missing.
+   *
+   * `groupEmail` was added to AMENDABLE_FIELDS -- the domain's list of what a
+   * practice may correct about itself -- and never added here. `whitelist:
+   * true` strips a property the DTO does not declare, silently, so the request
+   * reached the service carrying nothing and was answered "Nothing was changed,
+   * so there is nothing to record". True of what arrived, and baffling to
+   * somebody who had just typed an address in.
+   *
+   * The comment below this block predicted exactly this failure for the LOCKED
+   * fields and was written to prevent it. It did not prevent it here, because
+   * nothing tied the two lists together -- so the test that now does is the
+   * actual fix, and this line is the symptom.
+   */
+  @IsOptional() @IsEmail() groupEmail?: string;
+
+  @IsOptional() @IsString() headOfficeLine1?: string;
+  @IsOptional() @IsString() headOfficeLine2?: string;
+  @IsOptional() @IsString() headOfficeSuburb?: string;
+  @IsOptional() @IsString() headOfficeState?: string;
+  @IsOptional() @IsString() headOfficePostcode?: string;
+
+  @IsOptional() @IsInt() @Min(0) statedPractitionerCount?: number;
+
+  /*
+   * THE LOCKED FIELDS ARE DECLARED SO THEY CAN BE REFUSED BY NAME.
+   *
+   * Without them, `whitelist: true` strips an unknown property silently and
+   * the request reaches the service with nothing in it — which then answers
+   * "nothing was changed, so there is nothing to record". True, and useless:
+   * somebody who tried to correct an ABN is told they changed nothing rather
+   * than why they cannot.
+   *
+   * Declared here, present-and-refused, with the domain's own wording, so the
+   * console and the applicant link give the same answer to the same question.
+   */
+  @IsOptional()
+  @Equals(undefined, { message: LOCKED_FIELDS.abn })
+  abn?: undefined;
+
+  @IsOptional()
+  @Equals(undefined, { message: LOCKED_FIELDS.acn })
+  acn?: undefined;
+
+  @IsOptional()
+  @Equals(undefined, { message: LOCKED_FIELDS.legalName })
+  legalName?: undefined;
+
+  @IsOptional()
+  @Equals(undefined, { message: LOCKED_FIELDS.entityType })
+  entityType?: undefined;
+
+  @IsOptional()
+  @Equals(undefined, { message: LOCKED_FIELDS.abnStatus })
+  abnStatus?: undefined;
+
+  /**
+   * Never "the system" — a change to an approved record has an author.
+   *
+   * OPTIONAL ON THE WIRE, because AttributionInterceptor overwrites it
+   * from the verified token before this is read. Requiring it meant every
+   * caller sending a value that is then thrown away, and a screen that
+   * forgot got a validation error about a field it should never have had
+   * to think about. The service refuses when there is neither a session
+   * nor a name, so the guarantee is unchanged.
+   */
+  @IsOptional()
+  @IsString()
+  changedByName?: string;
+
+  /** A change with no stated reason is indistinguishable from a mistake. */
+  @IsString()
+  @MinLength(1)
+  reason!: string;
+}
+
+export class RemoveCredentialDto {
+  /** Never "the system". Removing evidence has an author. */
+  @IsString()
+  @MinLength(1)
+  removedByName!: string;
+
+  /**
+   * "Entered twice", "belongs to another practice" and "turned out to be
+   * false" are very different findings, and only the last says anything about
+   * the applicant. "Removed" on its own answers none of it.
+   */
+  @IsString()
+  @MinLength(1)
+  reason!: string;
+}
+
+export class ResendInvitationDto {
+  @IsString()
+  @MinLength(1)
+  requestedByName!: string;
+}
+
 export class ValidationDecisionDto {
   @IsIn(['validated', 'rejected'])
   decision!: 'validated' | 'rejected';
@@ -267,9 +438,65 @@ export class AddLocationDto {
 }
 
 export class ActivateLocationDto {
+  /**
+   * HOW it was checked. REQUIRED, from the catalogue in the domain.
+   *
+   * There is no reviewerName field on purpose — who did it comes from the
+   * verified token (see SessionActor). And "confirmed" without a method is a
+   * record nobody can weigh later, including the reviewer who wrote it.
+   */
+  @IsIn(ADDRESS_CHECK_KEYS)
+  method!: string;
+
+  @IsOptional()
   @IsString()
-  @MinLength(1)
-  reviewerName!: string;
+  note?: string;
+
+  /** The evidence. Required by the domain for document-based methods. */
+  @IsOptional()
+  @IsUUID()
+  artefactId?: string;
+}
+
+export class RejectAddressDto {
+  @IsIn(ADDRESS_REJECTION_KEYS)
+  reason!: string;
+
+  /** Required by the domain for reasons the practice could not otherwise act on. */
+  @IsOptional()
+  @IsString()
+  detail?: string;
+}
+
+/** The practice correcting its own address, before anybody has confirmed it. */
+export class UpdateLocationDto {
+  @IsOptional()
+  @IsString()
+  addressLine1?: string;
+
+  @IsOptional()
+  @IsString()
+  addressLine2?: string;
+
+  @IsOptional()
+  @IsString()
+  suburb?: string;
+
+  @IsOptional()
+  @IsString()
+  state?: string;
+
+  @IsOptional()
+  @IsString()
+  postcode?: string;
+
+  @IsOptional()
+  @IsString()
+  country?: string;
+
+  @IsOptional()
+  @IsString()
+  code?: string;
 }
 
 export class AddCredentialDto {
@@ -361,7 +588,18 @@ export class OrganisationsController {
   constructor(
     private readonly organisations: OrganisationsService,
     private readonly checks: ChecksService,
+    private readonly auditService: AuditService,
+    private readonly setup: SetupService,
   ) {}
+
+  /**
+   * Per-process, per-address budget for the applicant ABN preview.
+   *
+   * Held on the controller rather than injected because it is one counter with
+   * no dependencies and a documented lifetime — see the file for why it is in
+   * memory, and what changes when core runs more than one task.
+   */
+  private readonly lookupLimit = new AbnLookupRateLimit();
 
   /**
    * The catalogue a reviewer works from. Public: it is the definition of the
@@ -374,6 +612,38 @@ export class OrganisationsController {
   }
 
   /** Everything performed for this practice, plus what hard mode would decide. */
+  /**
+   * Everything that has happened to this application, in one ordered trail.
+   *
+   * Practice-scoped through the header like the rest of the check surface, so
+   * RLS confines it — this is a reviewer looking at one application, not a
+   * platform-wide feed.
+   */
+  /**
+   * The practice setup hub — every card, in one call.
+   *
+   * Assembled server-side rather than by the page, because capture readiness is
+   * a claim about whether a practice can lawfully record consent and a claim
+   * like that gets one implementation, with tests, not a fragment of component
+   * logic that quietly disagrees.
+   */
+  @Get('setup')
+  setupHub(@Headers('x-practice-id') practiceId: string | undefined) {
+    return this.setup.hub(requirePractice(practiceId));
+  }
+
+  /**
+   * Correct the application from the CONSOLE.
+   *
+   * Distinct from the applicant's token route: same rules, no five-day window.
+   * The window time-boxes an emailed link; a session is authorised on its own
+   * terms and expires on its own terms.
+   */
+  @Get('audit')
+  auditTrail(@Headers('x-practice-id') practiceId: string | undefined) {
+    return this.auditService.trail(requirePractice(practiceId));
+  }
+
   @Get('checks')
   checkSummary(@Headers('x-practice-id') practiceId: string | undefined) {
     return this.checks.summary(requirePractice(practiceId));
@@ -388,6 +658,70 @@ export class OrganisationsController {
   @Post()
   register(@Body() dto: RegisterOrganisationDto) {
     return this.organisations.register(dto);
+  }
+
+  /**
+   * WHICH ENTITY IS THIS ABN, asked from the application form.
+   *
+   * Reachable by an applicant who has no account, exactly like `POST
+   * /organisations` above and for the same reason: the person filling in the
+   * form has not been onboarded yet, and requiring a session to check an ABN
+   * would mean checking it after they had committed to the application rather
+   * than before. It is also `@Get` and side-effect-free, so it neither creates
+   * nor changes anything.
+   *
+   * IT SAYS NOTHING ABOUT US. The response is what the Australian Business
+   * Register holds — public information, retrievable by anyone at
+   * abr.business.gov.au — and never whether that ABN is known to this
+   * platform, which would make this an enumeration of our customers.
+   *
+   * RATE LIMITED PER ADDRESS, because every call spends an outbound request
+   * against a Commonwealth service under a GUID that can be revoked. See
+   * abn-lookup-rate-limit.ts for what that limit is and is not.
+   */
+  @Get('abn-lookup')
+  async abnLookup(@Query('abn') abn: string | undefined, @Ip() ip: string) {
+    if (!abn || abn.trim().length === 0) {
+      throw new BadRequestException('An `abn` query parameter is required.');
+    }
+    /*
+     * THE KEY IS THE SOURCE ADDRESS AS EXPRESS REPORTS IT. Behind a load
+     * balancer that is the balancer unless `trust proxy` is set, which would
+     * make this one shared bucket for every applicant — noted rather than
+     * hidden, because the fix belongs with the proxy configuration and the
+     * Redis-backed counter, not here.
+     */
+    const key = ip || 'unknown';
+    if (this.lookupLimit.isLimited(key)) {
+      const retryAfter = this.lookupLimit.retryAfterSeconds(key);
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.TOO_MANY_REQUESTS,
+          reason: 'rate_limited',
+          retryAfterSeconds: retryAfter,
+          message:
+            'That is a lot of ABN checks from one place in a short time. Wait a few minutes and try again — ' +
+            'and note that you can still send the application without this check: the register is consulted ' +
+            'again when it arrives.',
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    this.lookupLimit.record(key);
+    return this.organisations.abnLookup(abn);
+  }
+
+  /**
+   * Ask the register again about a practice already on the platform.
+   *
+   * Practice-scoped through the header like the rest of the entity surface,
+   * and it refuses an unattributed request: it writes an append-only vault
+   * event saying who asked and what the register answered, and an event naming
+   * nobody cannot be questioned, corrected or relied on.
+   */
+  @Post('abn-recheck')
+  recheckAbn(@Headers('x-practice-id') practiceId: string | undefined, @SessionActor() actor: Actor | undefined) {
+    return this.organisations.recheckAbn(requirePractice(practiceId), actor);
   }
 
   /**
@@ -408,12 +742,105 @@ export class OrganisationsController {
     return this.organisations.pendingValidation();
   }
 
+  /**
+   * The applicant's own links, for a reviewer to send them.
+   *
+   * Returns the STATUS TOKEN, never the id. The id is a primary key: it lands
+   * in logs, in Referer headers and in pasted support tickets, and a primary
+   * key that doubles as a credential is a credential that leaks — and one that
+   * cannot be rotated without breaking every foreign key pointing at it.
+   *
+   * Reviewer-facing, so it is not itself token-guarded; it sits behind the same
+   * console gate as the rest of the review surface.
+   */
+  @Get(':organisationId/status-link')
+  statusLink(@Param('organisationId', ParseUUIDPipe) organisationId: string) {
+    return this.organisations.statusLinks(organisationId);
+  }
+
+  /** Ask the applicant to fix something, and open a five-day window. */
+  @Post(':organisationId/request-correction')
+  requestCorrection(
+    @Param('organisationId', ParseUUIDPipe) organisationId: string,
+    @Body() dto: RequestCorrectionDto,
+  ) {
+    return this.organisations.requestCorrection(organisationId, dto);
+  }
+
+  /** Send the applicant a link to confirm they can read mail at their address. */
+  @Post(':organisationId/request-email-verification')
+  requestEmailVerification(@Param('organisationId', ParseUUIDPipe) organisationId: string) {
+    return this.organisations.requestEmailVerification(organisationId);
+  }
+
+  /**
+   * Correct the contact details of a practice that has ALREADY been approved.
+   *
+   * The domain refuses a post-approval amendment through the applicant link
+   * with "changes are made in the console, by a named admin" — this is that
+   * console path, which did not exist. The entity itself is untouchable here:
+   * a different ABN is a different legal entity and therefore a new
+   * application, not an edit.
+   */
+  /**
+   * Send the practice-admin sign-in invitation again.
+   *
+   * The one at approval can fail for ordinary reasons — most commonly because
+   * Keycloak enforces one email per realm and the address already belongs to
+   * another account. Without this, an approved practice whose invitation failed
+   * had no route in at all.
+   */
+  @Post(':organisationId/resend-invitation')
+  resendInvitation(
+    @Param('organisationId', ParseUUIDPipe) organisationId: string,
+    @Body() dto: ResendInvitationDto,
+    @SessionActor() actor: Actor | undefined,
+  ) {
+    // Same trap as amend: the interceptor only overwrites fields that are
+    // PRESENT, so a caller that sends no name gets none. The session is the
+    // reliable source.
+    return this.organisations.resendAdminInvitation(organisationId, actor?.name ?? dto.requestedByName);
+  }
+
+  /**
+   * Amend an approved practice from the console.
+   *
+   * The domain refuses a post-approval amendment through the applicant link
+   * with "changes are made in the console, by a named admin" — this is that
+   * path, over the sixteen AMENDABLE_FIELDS. The entity stays untouchable: a
+   * different ABN is a different legal entity, so it is a new application.
+   *
+   * Changing  is a HANDOVER rather than a correction, because it
+   * transfers who controls the practice account. The outgoing account is
+   * disabled — see amendApplication.
+   */
+  @Patch(':organisationId')
+  amend(
+    @Param('organisationId', ParseUUIDPipe) organisationId: string,
+    @Body() dto: AmendPracticeDto,
+    @SessionActor() actor: Actor | undefined,
+  ) {
+    const { changedByName, reason, ...fields } = dto;
+    /*
+     * THE ACTOR, not the body. AttributionInterceptor only OVERWRITES fields
+     * that are already present, so a screen that sends no changedByName gets
+     * none — which is exactly what happened. Taking it from the verified
+     * session removes the trap: a caller cannot forget a field it never has
+     * to send.
+     */
+    return this.organisations.amendApplication(organisationId, fields, {
+      changedByName: actor?.name ?? changedByName,
+      reason,
+    });
+  }
+
   @Post(':organisationId/validate')
   decide(
     @Param('organisationId', ParseUUIDPipe) organisationId: string,
     @Body() dto: ValidationDecisionDto,
+    @SessionActor() actor: Actor | undefined,
   ) {
-    return this.organisations.decideValidation(organisationId, dto);
+    return this.organisations.decideValidation(organisationId, dto, actor);
   }
 
   @Get('locations')
@@ -426,14 +853,78 @@ export class OrganisationsController {
     return this.organisations.addLocation(requirePractice(practiceId), dto);
   }
 
-  /** Manual address confirmation, until the G-NAF ingest lands (§9). */
+  /**
+   * Confirm a location's address. PLATFORM OPERATOR ONLY.
+   *
+   * NOT THE PRACTICE'S OWN ACT, and this was wrong until Carl caught it. The
+   * address prints in the s 65C(5)(a) particulars block of every agreement
+   * captured at that location, so confirming it is VERIFYING EVIDENCE — and
+   * the practice supplying the evidence cannot be the party that verifies it.
+   *
+   * It is the same rule the credential score already rests on: entering a thing
+   * scores nothing, and only a recorded check by somebody independent gives it
+   * weight. A practice confirming its own address is a practice awarding itself
+   * the check.
+   */
+  @RequireRoles(PLATFORM_ADMIN)
   @Post('locations/:locationId/activate')
   activateLocation(
     @Headers('x-practice-id') practiceId: string | undefined,
     @Param('locationId', ParseUUIDPipe) locationId: string,
     @Body() dto: ActivateLocationDto,
+    @SessionActor() actor: Actor | undefined,
   ) {
-    return this.organisations.activateLocation(requirePractice(practiceId), locationId, dto.reviewerName);
+    return this.organisations.activateLocation(requirePractice(practiceId), locationId, actor, {
+      method: dto.method,
+      note: dto.note,
+      artefactId: dto.artefactId,
+    });
+  }
+
+  /**
+   * Decline to confirm, and tell the practice why. PLATFORM OPERATOR ONLY.
+   *
+   * The counterpart to activate, and the half that was missing: a reviewer who
+   * looked and decided not to confirm previously had nothing to do but close
+   * the tab, leaving the practice locked out of that site with no way to learn
+   * why. A control that can only say yes is a queue, not a control.
+   */
+  @RequireRoles(PLATFORM_ADMIN)
+  @Post('locations/:locationId/reject-address')
+  rejectAddress(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('locationId', ParseUUIDPipe) locationId: string,
+    @Body() dto: RejectAddressDto,
+    @SessionActor() actor: Actor | undefined,
+  ) {
+    return this.organisations.rejectAddress(requirePractice(practiceId), locationId, actor, {
+      reason: dto.reason,
+      detail: dto.detail,
+    });
+  }
+
+  /**
+   * The practice corrects its own address. NOT operator-restricted — this is
+   * the practice's own claim, and correcting it before anybody has checked it
+   * is ordinary work. The domain refuses once it has been confirmed.
+   */
+  @Patch('locations/:locationId')
+  updateLocation(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('locationId', ParseUUIDPipe) locationId: string,
+    @Body() dto: UpdateLocationDto,
+  ) {
+    return this.organisations.updateLocation(requirePractice(practiceId), locationId, dto);
+  }
+
+  /** The catalogues the two screens above render from. */
+  @Get('address-check/catalogue')
+  addressCheckCatalogue() {
+    return {
+      version: ADDRESS_CHECK_VERSION,
+      methods: ADDRESS_CHECK_METHODS,
+      rejectionReasons: ADDRESS_REJECTION_REASONS,
+    };
   }
 
   @Get('credentials')
@@ -461,8 +952,9 @@ export class OrganisationsController {
   removeCredential(
     @Headers('x-practice-id') practiceId: string | undefined,
     @Param('credentialId', ParseUUIDPipe) credentialId: string,
+    @Body() dto: RemoveCredentialDto,
   ) {
-    return this.organisations.removeCredential(requirePractice(practiceId), credentialId);
+    return this.organisations.removeCredential(requirePractice(practiceId), credentialId, dto);
   }
 
   @Get('departments')

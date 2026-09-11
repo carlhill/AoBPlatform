@@ -13,6 +13,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { KEYCLOAK_ADMIN } from '../src/identity/identity.tokens';
+import { createServicingProvider, deleteSeededAnchors } from './anchor';
 
 describe('REQ-PKI-01 enrolment ceremony gate (e2e, real Postgres)', () => {
   let app: INestApplication;
@@ -66,10 +67,8 @@ describe('REQ-PKI-01 enrolment ceremony gate (e2e, real Postgres)', () => {
     await prisma.withPractice(practiceId, async (tx) => {
       await tx.practice.create({ data: { id: practiceId, name: 'Ceremony Test Practice' } });
       providerId = (
-        await tx.provider.create({
-          data: { practiceId, name: 'Dr Ceremony Test', providerType: 'general_practitioner' },
-        })
-      ).id;
+        await createServicingProvider(tx, practiceId, { name: 'Dr Ceremony Test', providerType: 'general_practitioner' })
+      ).providerId;
     });
   });
 
@@ -81,6 +80,7 @@ describe('REQ-PKI-01 enrolment ceremony gate (e2e, real Postgres)', () => {
     // to a throwaway practice id, so leaving them costs nothing.
     await prisma.withPractice(practiceId, async (tx) => {
       await tx.provider.deleteMany({});
+      await deleteSeededAnchors(tx);
       await tx.practice.deleteMany({});
     });
     await prisma.vaultOutbox.deleteMany({});

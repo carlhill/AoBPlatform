@@ -23,8 +23,9 @@ import { apiHeaders } from './auth';
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 /** Deep link into the public ABN Lookup, so the attester can see the register. */
 /** Deep link into the AHPRA public register search. */
-const AHPRA_SEARCH = 'https://www.ahpra.gov.au/Registration/Registers-of-Practitioners.aspx';
-const ABR_VIEW = 'https://abr.business.gov.au/ABN/View?abn=';
+import { EXTERNAL_LINKS, abnLookupUrl } from '@aobplatform/domain';
+
+const AHPRA_SEARCH = EXTERNAL_LINKS.ahpraRegister.url;
 
 const card: React.CSSProperties = {
   border: '1px solid #d0d7de',
@@ -695,7 +696,7 @@ export function OrgConsole() {
             <p style={note}>{strings.org.attestNote}</p>
             <p>
               <a
-                href={ABR_VIEW + encodeURIComponent(regAbn.replace(/[^0-9]/g, ''))}
+                href={abnLookupUrl(regAbn)}
                 target="_blank"
                 rel="noreferrer noopener"
               >

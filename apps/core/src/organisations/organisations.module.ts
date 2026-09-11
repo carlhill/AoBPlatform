@@ -3,7 +3,13 @@ import { IdentityModule } from '../identity/identity.module';
 import { ConfigService } from '@nestjs/config';
 import { OrganisationsController } from './organisations.controller';
 import { OrganisationsService } from './organisations.service';
+import { PendingEmailService } from './pending-email.service';
+import { PendingEmailController } from './pending-email.controller';
 import { ChecksService } from './checks.service';
+import { ApplicantController } from './applicant.controller';
+import { ApplicantService } from './applicant.service';
+import { AuditService } from './audit.service';
+import { SetupService } from './setup.service';
 import { ABR_CLIENT, ADDRESS_VALIDATOR } from './organisations.tokens';
 import { AbrWebServicesClient, OfflineAbrClient } from './abr';
 import { createAddressValidator } from './address-validator';
@@ -20,22 +26,40 @@ import { createAddressValidator } from './address-validator';
  */
 @Module({
   imports: [IdentityModule],
-  controllers: [OrganisationsController],
+  controllers: [OrganisationsController, ApplicantController, PendingEmailController],
   providers: [
     OrganisationsService,
+    PendingEmailService,
     ChecksService,
+    ApplicantService,
+    AuditService,
+    SetupService,
     {
       provide: ABR_CLIENT,
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
-        const guid = config.get<string>('ABR_API_GUID');
+        const logger = new Logger('OrganisationsModule');
+        /*
+         * WHICH CLIENT IS RUNNING IS SAID AT STARTUP, EVERY TIME, in both
+         * branches. "Is this environment actually talking to the register?" is
+         * the first question anyone asks about an onboarding that behaved
+         * oddly, and until now only the offline branch answered it — so a live
+         * environment looked exactly like a broken one in the log.
+         *
+         * THE GUID IS NEVER LOGGED. Not its value, not a prefix of it, not its
+         * length. What is logged is the base URL, which is public.
+         */
+        const guid = (config.get<string>('ABR_API_GUID') ?? config.get<string>('ABR_GUID') ?? '').trim();
         if (!guid) {
-          new Logger('OrganisationsModule').log(
-            'ABR_API_GUID is not set — ABN lookup runs offline against fixtures. No network calls are made.',
+          logger.log(
+            'ABR_API_GUID is not set — ABN lookup runs OFFLINE against fixtures. No network calls are made, ' +
+              'and any ABN outside the fixtures routes onboarding to manual attestation.',
           );
           return new OfflineAbrClient();
         }
-        return new AbrWebServicesClient(guid, config.get<string>('ABR_BASE_URL', 'https://abr.business.gov.au/json'));
+        const baseUrl = config.get<string>('ABR_BASE_URL', 'https://abr.business.gov.au/json');
+        logger.log(`ABN lookup is LIVE against ${baseUrl} (method AbnDetails). The GUID is configured and is never logged.`);
+        return new AbrWebServicesClient(guid, baseUrl);
       },
     },
     {

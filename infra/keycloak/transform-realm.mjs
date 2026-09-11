@@ -96,8 +96,31 @@ if (!publicTemplate || !serviceTemplate) throw new Error('Template clients not f
 const web = structuredClone(publicTemplate);
 web.clientId = 'web';
 web.name = 'Practice console / portal / tester (Next.js)';
-web.redirectUris = ['http://localhost:3100/*', 'http://localhost:21100/*'];
-web.webOrigins = ['http://localhost:3100', 'http://localhost:21100'];
+/*
+ * BOTH LOCAL SPELLINGS, because they are the same machine and different
+ * origins. A browser on 127.0.0.1 asks for a redirect_uri on 127.0.0.1, and an
+ * unregistered one is refused by Keycloak with "Invalid parameter:
+ * redirect_uri" -- while DEV-LOOP.md sends people to 127.0.0.1 for every
+ * service. Registering only one spelling made the documented address a dead
+ * end. The ISSUER is deliberately NOT duplicated: the browser reaches Keycloak
+ * on localhost either way, and `iss` is compared as a string
+ * (CRITICAL-ISSUES.md section 4).
+ *
+ * Dev addresses only. A deployed environment registers its own hostname and
+ * neither of these is present in it.
+ */
+web.redirectUris = [
+  'http://localhost:3100/*',
+  'http://localhost:21100/*',
+  'http://127.0.0.1:3100/*',
+  'http://127.0.0.1:21100/*',
+];
+web.webOrigins = [
+  'http://localhost:3100',
+  'http://localhost:21100',
+  'http://127.0.0.1:3100',
+  'http://127.0.0.1:21100',
+];
 // Binding override stays on the passkey-REQUIRED flow — staff surface, rule 15.
 
 const serviceClient = (clientId, name) => {

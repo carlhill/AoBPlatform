@@ -29,6 +29,10 @@ export interface KeycloakUserSummary {
   id: string;
   username: string;
   email?: string;
+  /** Absent on older payloads; `false` means the account cannot sign in. */
+  enabled?: boolean;
+  /** Keycloak returns every attribute as an array, even single values. */
+  attributes?: Record<string, string[]>;
 }
 
 export class KeycloakAdminError extends Error {
@@ -123,7 +127,27 @@ export class KeycloakAdminClient {
     attributes?: Record<string, string>;
   }): Promise<KeycloakUserSummary> {
     const existing = await this.findByUsername(input.username);
-    if (existing) return existing;
+    if (existing) {
+      /*
+       * A DISABLED account is never silently reused.
+       *
+       * It was disabled for a reason — on this platform, because the person it
+       * belonged to handed over or left. Returning it here would send an
+       * enrolment invitation to an account that cannot sign in (Keycloak
+       * answers `400 User is disabled`, which explains nothing to the operator)
+       * and, worse, would imply the previous holder's credentials are still the
+       * right ones for whoever is arriving.
+       */
+      if (existing.enabled === false) {
+        throw new KeycloakAdminError(
+          `The account "${input.username}" exists but is DISABLED, so it cannot be invited. It was disabled ` +
+            'deliberately — usually because the person holding it handed over — and reusing it would bind a ' +
+            "new person to the previous holder's account. Create a new one instead.",
+          409,
+        );
+      }
+      return existing;
+    }
 
     /**
      * Keycloak enforces a UNIQUE EMAIL PER REALM. A practitioner working at
@@ -186,6 +210,59 @@ export class KeycloakAdminClient {
   }
 
   /** REQ-PKI-04/-05: revoke on departure or deregistration. */
+  /**
+   * The realm roles an account holds.
+   *
+   * Exists so a destructive operation can refuse when the target turns out to
+   * be a platform operator — see disablePracticeAdminAccount. Checking the
+   * role at the moment of the act is worth more than trusting the caller to
+   * have looked.
+   */
+  async realmRolesOf(userId: string): Promise<string[]> {
+    const { body } = await this.request<Array<{ name?: string }>>('GET', `/users/${userId}/role-mappings/realm`);
+    return (body ?? []).map((r) => r.name ?? '').filter(Boolean);
+  }
+
+  /**
+   * Revoke every passkey on an account, without touching the account itself.
+   *
+   * THIS IS WHAT A PRACTICE-ADMIN HANDOVER ACTUALLY NEEDS. The account belongs
+   * to the PRACTICE — `admin.<practiceId>`, usually pointed at a shared mailbox
+   * like aobplatform@practice.com.au precisely so that somebody leaving does
+   * not lock the practice out. What belongs to a PERSON is the passkey: it is
+   * bound to their device and their fingerprint.
+   *
+   * So when an administrator leaves, the thing to remove is the credential, not
+   * the account. Disabling the account would take the practice offline to
+   * punish a departure; leaving the passkey would let somebody who has left
+   * carry on signing in from their own laptop.
+   */
+  async revokePasskeys(userId: string): Promise<number> {
+    const { body } = await this.request<Array<{ id: string; type: string }>>(
+      'GET',
+      `/users/${userId}/credentials`,
+    );
+    const passkeys = (body ?? []).filter((c) => String(c.type).startsWith('webauthn'));
+    for (const credential of passkeys) {
+      await this.request('DELETE', `/users/${userId}/credentials/${credential.id}`);
+    }
+    return passkeys.length;
+  }
+
+  /** Change the address an account is reachable at, and its display name. */
+  async updateUser(
+    userId: string,
+    fields: { email?: string; firstName?: string; lastName?: string; enabled?: boolean },
+  ): Promise<void> {
+    const { body } = await this.request<Record<string, unknown>>('GET', `/users/${userId}`);
+    await this.request('PUT', `/users/${userId}`, {
+      ...(body ?? {}),
+      ...fields,
+      // A changed address is an unproven address, whatever the old one was.
+      ...(fields.email ? { emailVerified: false } : {}),
+    });
+  }
+
   async setEnabled(userId: string, enabled: boolean): Promise<void> {
     await this.request('PUT', `/users/${userId}`, { enabled });
   }

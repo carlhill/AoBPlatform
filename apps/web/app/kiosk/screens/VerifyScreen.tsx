@@ -1,0 +1,416 @@
+'use client';
+
+/**
+ * K-2 — verification, and K-2b's mismatch and lockout states.
+ *
+ * THE FIELD SET IS THE SERVER'S. `identifierTypes` arrives on the waiting-list
+ * response and `identifierFieldsFor` puts it through the domain's own
+ * `assertValidIdentifierSet` before a single input is drawn. There is no
+ * Medicare card field on this screen and no setting on this device that could
+ * add one — the kiosk holds no configuration at all (REQ-VER-02).
+ *
+ * THE INPUTS ARE STRUCTURED; THE CONTRACT IS NOT (Carl, 3 Sep 2026). Two of
+ * the six approved identifiers are composite, and each used to be one free-text
+ * box: a name, and a date the patient had to render as "YYYY-MM-DD". They are
+ * now family/given and three pickers — and `verify-fields.ts` composes each
+ * back into the single string per identifier type that the attempt endpoint
+ * has always taken. The server contract is untouched.
+ *
+ * ADDRESS IS NOT ONE OF THE TWO. It is one free-text line, because a
+ * server-side address-validation endpoint is coming and a split made here
+ * would be redone there. It renders through the same plain-field branch as
+ * gender, the record number and the IHI.
+ *
+ * WHY THAT MATTERS MORE HERE THAN ON AN ORDINARY FORM: a failed attempt says
+ * "some details don't match" and is not allowed to say which (REQ-SEC-07). So
+ * a formatting trap on this screen is unrecoverable by design — the patient
+ * cannot be told that the date was right and only the punctuation was wrong.
+ * Removing the chance to mis-format is the only fix available.
+ *
+ * A MISMATCH SAYS ONE THING, AND IT SAYS IT HERE (Carl, 3 Sep 2026 live test).
+ * "Some details don't match" — never which one, never a highlighted field,
+ * never "two of three". It appears INLINE, above Continue, and the screen does
+ * not move: the Expo build navigated to a separate mismatch screen whose "Try
+ * again" came back to an EMPTY form, so somebody who had mistyped one letter
+ * of an address retyped all three identifiers. Everything entered stays on
+ * screen, in component state, and Continue stays live. Only the third failure
+ * leaves K-2, for the lockout, which clears the form by unmounting it.
+ *
+ * KEEPING THE VALUES IS NOT A BREACH OF THE ZERO-FOOTPRINT RULE. That rule is
+ * about PERSISTENCE — storage, caches, cookies, a service worker, anything
+ * that outlives the tab or reaches another patient. React state is neither
+ * persisted nor shared, and it is dropped by the exit, by the lockout and by
+ * the reset between patients.
+ *
+ * A LOCKOUT ROUTES TO RECEPTION AND SAYS THE APPOINTMENT IS UNAFFECTED
+ * (REQ-REC-04). Nothing on this screen can stop a patient being seen.
+ *
+ * BACK RETURNS TO IDLE, AND CLEARS (Carl, 4 September 2026, reading the live
+ * screen). Somebody presses Begin by mistake, or is handing the tablet back to
+ * the desk; without a Back the only doors were "See reception" — a hand-over
+ * that summons a person who is not needed — and typing three identifiers they
+ * do not have. It is navigation like every other Back on this device: it calls
+ * nothing, spends no attempt, and the DEVICE'S attempt counter lives on the
+ * server precisely so whoever failed a claim cannot reset it from here. What
+ * it does do is DROP EVERY TYPED VALUE, including the sub-fields held in this
+ * file's own form state, which go when the screen unmounts (C2 — no residual
+ * patient data). It is not offered on the lockout branch: the only door there
+ * is the desk.
+ *
+ * THE ANNOTATION RAIL IS FOR A TEST DEVICE (Carl, 4 September 2026). "REQ-VER-
+ * 02" is our vocabulary, not a patient's, and a requirement id beside a form
+ * in a waiting room is a developer's note somebody is being asked to read. The
+ * panel is unchanged and still renders where the waiting list does — it earns
+ * its place when the rule is being demonstrated — and on an ordinary tablet
+ * the form simply takes the width.
+ */
+
+import { useState, type ReactNode } from 'react';
+import { Blueprint, Kicker, Screen } from '../components/Chrome';
+import { GuardedButton, SecondaryButton } from '../components/Buttons';
+import { Field, SelectField } from '../components/Field';
+import type { IdentifierField } from '../rules/identifiers';
+import {
+  composeIdentifier,
+  dayOptions,
+  EMPTY_PARTS,
+  isStructured,
+  monthOptions,
+  readyToSubmit,
+  yearOptions,
+  type IdentifierParts,
+} from '../rules/verify-fields';
+import {
+  KIOSK_MAX_ATTEMPTS,
+  mismatchHeading,
+  mismatchMessage,
+  type VerificationState,
+} from '../rules/verification';
+import { strings } from '../strings';
+import styles from '../kiosk.module.css';
+
+/** Which parts group composes which identifier type. Address is plain text — see verify-fields.ts. */
+const GROUP_FOR_TYPE = {
+  name: 'name',
+  date_of_birth: 'dateOfBirth',
+} as const;
+
+export function VerifyScreen({
+  practiceName,
+  locationLine,
+  fields,
+  stated,
+  state,
+  busy,
+  incomplete,
+  startError,
+  mismatch,
+  onChange,
+  onContinue,
+  onBack,
+  blueprintPanels = false,
+  onSeeReception,
+}: {
+  practiceName: string;
+  locationLine: string | null;
+  fields: readonly IdentifierField[];
+  stated: Readonly<Record<string, string>>;
+  state: VerificationState;
+  busy: boolean;
+  incomplete: boolean;
+  startError: boolean;
+  /** The last attempt did not match. Shown inline; the form keeps what was entered. */
+  mismatch: boolean;
+  onChange: (type: string, value: string) => void;
+  onContinue: () => void;
+  /**
+   * BACK TO IDLE (Carl, 4 Sep 2026). Navigation, never a mutation: the
+   * ceremony's handler drops every typed value and returns to "Agree to bulk
+   * billing". Absent on the lockout branch, where the only door is the desk.
+   */
+  onBack?: () => void;
+  /**
+   * THE ANNOTATION RAIL IS DEVELOPER-FACING (Carl, 4 Sep 2026, reading it on a
+   * patient screen). "REQ-VER-02" beside a form somebody is filling in is a
+   * requirement id in a waiting room; it renders only on a TEST device — the
+   * same flag that banners the waiting list — and on an ordinary tablet the
+   * form takes the full width instead.
+   */
+  blueprintPanels?: boolean;
+  onSeeReception: () => void;
+}): ReactNode {
+  const stepTag = `${strings.chrome.stepOf(1, 4)} — ${strings.chrome.stepDetails}`;
+
+  if (state.kind === 'locked') {
+    return (
+      <Screen
+        practiceName={practiceName}
+        locationLine={locationLine}
+        stepTag={strings.chrome.stepOf(1, 4)}
+        context={strings.verify.lockedFooter}
+        onLeave={onSeeReception}
+      >
+        <Blueprint className={styles.panel}>
+          <h1 className={styles.h3}>{strings.verify.lockedHeading}</h1>
+          <p className={styles.body}>{strings.verify.lockedBody}</p>
+          <p className={styles.muted}>{strings.verify.lockedReassurance}</p>
+        </Blueprint>
+        <div className={styles.actions}>
+          <SecondaryButton
+            label={strings.errors.seeReception}
+            onPress={onSeeReception}
+            testId="locked-reception"
+          />
+        </div>
+      </Screen>
+    );
+  }
+
+  const attempt = state.kind === 'asking' ? state.attempt : 1;
+
+  return (
+    <Screen
+      practiceName={practiceName}
+      locationLine={locationLine}
+      stepTag={stepTag}
+      context={strings.verify.attemptOf(attempt, KIOSK_MAX_ATTEMPTS)}
+      onLeave={onSeeReception}
+    >
+      <div className={blueprintPanels ? styles.twoColumn : styles.oneColumn}>
+        {/*
+          DELIBERATELY NOT KEYED ON THE ATTEMPT. It used to be, because the
+          ceremony cleared `stated` after every attempt and the sub-field state
+          that composes it lives in this form — remounting kept the two from
+          drifting into "the boxes look full and the payload is empty". The
+          ceremony no longer clears on a mismatch, so there is nothing to drift
+          FROM, and remounting here would throw away exactly what the patient
+          is being asked to check. It is still remounted on the way out: the
+          lockout branch above renders a different tree entirely.
+        */}
+        <VerifyForm
+          fields={fields}
+          stated={stated}
+          busy={busy}
+          incomplete={incomplete}
+          startError={startError}
+          mismatch={mismatch}
+          onChange={onChange}
+          onContinue={onContinue}
+          onBack={onBack}
+          wide={!blueprintPanels}
+        />
+        {/*
+          THE BLUEPRINT RAIL, ON A TEST DEVICE ONLY (Carl, 4 Sep 2026). It is
+          the same panel it always was, kept because it is genuinely useful
+          when Carl is demonstrating the rule — and absent from every tablet a
+          practice uses, because "REQ-VER-02" is our vocabulary, not a
+          patient's.
+        */}
+        {blueprintPanels ? (
+          <div className={styles.rail}>
+            <Blueprint>
+              <Kicker label={strings.verify.annotationKicker} />
+              <p className={styles.railText}>{strings.verify.annotationBody}</p>
+            </Blueprint>
+          </div>
+        ) : null}
+      </div>
+    </Screen>
+  );
+}
+
+function VerifyForm({
+  fields,
+  stated,
+  busy,
+  incomplete,
+  startError,
+  mismatch,
+  onChange,
+  onContinue,
+  onBack,
+  wide,
+}: {
+  fields: readonly IdentifierField[];
+  stated: Readonly<Record<string, string>>;
+  busy: boolean;
+  incomplete: boolean;
+  startError: boolean;
+  mismatch: boolean;
+  onChange: (type: string, value: string) => void;
+  onContinue: () => void;
+  onBack?: () => void;
+  /** No rail beside it, so the column takes the width the rail was holding. */
+  wide: boolean;
+}): ReactNode {
+  const [parts, setParts] = useState<IdentifierParts>(EMPTY_PARTS);
+
+  /**
+   * Patch one group of sub-fields and push the recomposed string up. The
+   * composition runs on the value being set rather than on `parts` from the
+   * next render, so the string the ceremony holds is never one keystroke
+   * behind the boxes.
+   */
+  function update<K extends keyof IdentifierParts>(group: K, patch: Partial<IdentifierParts[K]>): void {
+    const next: IdentifierParts = { ...parts, [group]: { ...parts[group], ...patch } };
+    setParts(next);
+    for (const [type, name] of Object.entries(GROUP_FOR_TYPE)) {
+      if (name !== group) continue;
+      onChange(type, composeIdentifier(type, next) ?? '');
+    }
+  }
+
+  const ready = readyToSubmit(
+    fields.map((field) => field.type),
+    parts,
+    stated,
+  );
+
+  return (
+    <div className={`${styles.main} ${wide ? styles.mainFull : ''}`}>
+      <h1 className={styles.h2}>{strings.verify.heading}</h1>
+      <p className={styles.lede}>{strings.verify.lede(fields.length)}</p>
+      {startError ? <p className={styles.error}>{strings.verify.failedToStart}</p> : null}
+      {/*
+        THE SAME FIELD SET AT EVERY WIDTH — always. Only the number of columns
+        changes: sub-fields sit two or three abreast where there is room and
+        wrap where there is not. A narrow window never renders fewer inputs
+        than a wide one, because a turned tablet must not be a different
+        consent form.
+      */}
+      {fields.map((field, index) => (
+        <div key={field.type} className={styles.group}>
+          {/*
+            THE GROUP HEADING EXISTS TO NAME A SET OF SUB-FIELDS, and only the
+            two composite identifiers have any (Carl, 3 Sep 2026 live test).
+            "Your full name" over Given/Family and "Date of birth" over
+            Day/Month/Year are doing work. Over the address, which is one box,
+            the same heading was simply the field's own label printed twice.
+          */}
+          {isStructured(field.type) ? <span className={styles.groupLabel}>{field.label}</span> : null}
+          <div className={styles.row}>
+            {field.type === 'name' ? (
+              <>
+                <Field
+                  label={strings.verify.nameGiven}
+                  value={parts.name.given}
+                  onChangeText={(given) => update('name', { given })}
+                  testId="identifier-name-given"
+                  autoFocus={index === 0}
+                  className={styles.pairCell}
+                />
+                <Field
+                  label={strings.verify.nameFamily}
+                  value={parts.name.family}
+                  onChangeText={(family) => update('name', { family })}
+                  testId="identifier-name-family"
+                  className={styles.pairCell}
+                />
+              </>
+            ) : null}
+
+            {field.type === 'date_of_birth' ? (
+              <>
+                <SelectField
+                  label={strings.verify.dobDay}
+                  value={parts.dateOfBirth.day}
+                  options={dayOptions()}
+                  placeholder={strings.verify.chooseOption}
+                  onValueChange={(day) => update('dateOfBirth', { day })}
+                  testId="identifier-dob-day"
+                  className={styles.dobDayCell}
+                />
+                <SelectField
+                  label={strings.verify.dobMonth}
+                  value={parts.dateOfBirth.month}
+                  options={monthOptions()}
+                  placeholder={strings.verify.chooseOption}
+                  onValueChange={(month) => update('dateOfBirth', { month })}
+                  testId="identifier-dob-month"
+                  className={styles.dobMonthCell}
+                />
+                <SelectField
+                  label={strings.verify.dobYear}
+                  value={parts.dateOfBirth.year}
+                  options={yearOptions()}
+                  placeholder={strings.verify.chooseOption}
+                  onValueChange={(year) => update('dateOfBirth', { year })}
+                  testId="identifier-dob-year"
+                  className={styles.dobYearCell}
+                />
+              </>
+            ) : null}
+
+            {/*
+              ADDRESS AND EVERY OTHER NON-COMPOSITE IDENTIFIER go through this
+              one generic branch. Nothing here composes them; the address takes
+              the full width of its row because a home address reads badly
+              squeezed into half a column.
+            */}
+            {isStructured(field.type) ? null : (
+              /*
+                ONE LABEL AND ONE PLACEHOLDER, NEVER THE SAME WORDS TWICE
+                (Carl, 3 Sep 2026 live test). The address was carrying "Your
+                home address" as a heading AND as its label, and "Street,
+                suburb and postcode" as a placeholder AND as a hint line under
+                the box. Four pieces of chrome for one input, on a screen read
+                standing up by somebody who may be unwell. The hint is passed
+                as the PLACEHOLDER only — `Field` renders a hint line as well
+                when it is given one, which is right for a sentence of guidance
+                and wrong for three words that are already inside the box.
+              */
+              <Field
+                label={field.label}
+                placeholder={field.hint}
+                value={stated[field.type] ?? ''}
+                onChangeText={(next) => onChange(field.type, next)}
+                testId={`identifier-${field.type}`}
+                autoFocus={index === 0}
+                className={styles.fullCell}
+              />
+            )}
+          </div>
+        </div>
+      ))}
+      {incomplete ? <p className={styles.error}>{strings.verify.incomplete}</p> : null}
+      {/*
+        ONE LINE, IN PLACE, NAMING NOTHING. `role="alert"` so it is announced
+        when it appears rather than silently painted — a patient using a screen
+        reader gets told the attempt failed, and gets told exactly as much as
+        everybody else does (REQ-SEC-07).
+      */}
+      {mismatch ? (
+        <Blueprint accented className={styles.panel}>
+          <p className={styles.error} role="alert" data-testid="mismatch-heading">
+            {mismatchHeading()}
+          </p>
+          <p className={styles.body} data-testid="mismatch-body">
+            {mismatchMessage()}
+          </p>
+        </Blueprint>
+      ) : null}
+      <div className={styles.actions}>
+        {/*
+          BACK SITS TO THE LEFT OF CONTINUE, as it does on K-3 and K-4 — a
+          secondary beside the step's own primary, never the header control,
+          which is the way OUT and is a different thing. It calls nothing.
+        */}
+        {onBack ? (
+          <SecondaryButton label={strings.chrome.backAction} onPress={onBack} testId="verify-back" />
+        ) : null}
+        {/*
+          DISABLED UNTIL THE MANDATORY PARTS ARE THERE, and it says so rather
+          than only refusing — the codebase's disabled-with-a-reason primitive.
+          The refusal names no identifier, for the same reason the mismatch
+          copy names none.
+        */}
+        <GuardedButton
+          label={busy ? strings.particulars.validating : strings.verify.continueAction}
+          state={ready ? { disabled: false } : { disabled: true, disabledLabel: strings.verify.continueBlocked }}
+          onPress={onContinue}
+          testId="verify-continue"
+        />
+      </div>
+    </div>
+  );
+}
