@@ -2781,6 +2781,81 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
     });
 
     /**
+     * A CHAIN TWO CORRECTIONS DEEP (A <- B <- C). The single-hop case below is
+     * the one Carl hit; this is the one the chain walk exists for. Only the
+     * newest row is on the desk, and neither of the two it replaced is in the
+     * list to be walked from, so the arrival can only be found by reading past
+     * rows that have already left.
+     */
+    it('holds its place after a second correction on the same card', async () => {
+      const now = Date.now();
+      const first = await arrivedPatient('Ada', new Date(now - 45 * 60_000));
+      const second = await arrivedPatient('Bo', new Date(now - 30 * 60_000));
+      const third = await arrivedPatient('Cleo', new Date(now - 15 * 60_000));
+
+      const supersede = async (previous: string) =>
+        prisma.withPractice(practiceA, async (tx) => {
+          const created = await tx.agreement.create({
+            data: {
+              practiceId: practiceA,
+              type: 'episodic_pre',
+              anchorKind: 'provider',
+              affiliationId: providerA,
+              patientId: second.patientId,
+              assignorId: second.assignorId,
+              status: 'draft',
+              supersedesAgreementId: previous,
+              assignorIsPatient: true,
+              assignorConfirmedAt: new Date(),
+              assignorConfirmedBy: 'e2e',
+            },
+          });
+          return created.id;
+        });
+
+      const b = await supersede(second.agreementId);
+      const c = await supersede(b);
+
+      const after = await queue();
+      const ids = after.map((r) => r.patientId);
+      expect(after.map((r) => r.agreementId)).toContain(c);
+      expect(after.map((r) => r.agreementId)).not.toContain(b);
+      expect(after.map((r) => r.agreementId)).not.toContain(second.agreementId);
+      // STILL IN THE MIDDLE, two corrections later.
+      expect(ids.indexOf(first.patientId)).toBeLessThan(ids.indexOf(second.patientId));
+      expect(ids.indexOf(second.patientId)).toBeLessThan(ids.indexOf(third.patientId));
+    });
+
+    /**
+     * ONE PRACTICE'S ARRIVALS CANNOT ORDER ANOTHER'S DESK. The ordering reads
+     * two more tables than it used to, so the tenancy that holds for the rest of
+     * this endpoint is asserted for the new reads as well rather than assumed.
+     */
+    it('an arrival in another practice cannot reach the order of this one', async () => {
+      const mine = await arrivedPatient('Ada', new Date(Date.now() - 20 * 60_000));
+      /*
+       * SIGNED IN THERE, not merely asking about there. The header alone leaves
+       * the PRINCIPAL at practice A, and the server rightly believes the token
+       * over the header — so a test that only swapped the header would pass
+       * against practice A's own desk and prove nothing. Same shape as
+       * `a work list across a practice boundary shows nothing of the other
+       * practice`.
+       */
+      signedInAt(practiceB);
+      try {
+        const otherDesk = await http()
+          .get('/tablet-sessions/pushable')
+          .set('x-practice-id', practiceB)
+          .expect(200);
+        expect((otherDesk.body as Array<{ patientId: string }>).map((r) => r.patientId)).not.toContain(
+          mine.patientId,
+        );
+      } finally {
+        signedInAt(practiceA);
+      }
+    });
+
+    /**
      * THE NAMED TEST FOR CARL'S BUG. A superseding agreement is a different row
      * with a fresh `createdAt`, and no arrival has ever pointed at it — the
      * arrival names the agreement drafted when the patient walked in. So the

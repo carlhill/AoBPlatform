@@ -2708,7 +2708,17 @@ export function AgreementRow({
     const card = document.getElementById(`tablet-${live.deviceId}`);
     if (!card) return; // The hash still navigates; nothing here is the only way.
     event.preventDefault();
-    card.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    /*
+     * THE SCROLL IS GUARDED AND THE FOCUS IS NOT, and the asymmetry is
+     * deliberate. `scrollIntoView` is cosmetic and jsdom does not implement it,
+     * so a unit test rendering this must not throw over it — the same guard
+     * `CorrectionPanel` already uses for the same reason. `focus` IS the
+     * behaviour: it is what carries a screen reader to the card rather than
+     * leaving it reading the queue, jsdom implements it, and a test asserts it.
+     */
+    if (typeof card.scrollIntoView === 'function') {
+      card.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
     card.focus({ preventScroll: true });
   };
   const sessionChip = live ? (

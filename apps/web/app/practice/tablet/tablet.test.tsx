@@ -2637,6 +2637,25 @@ describe('a_live_fault_links_from_the_queue_row_to_the_card_that_fixes_it', () =
     expect(screen.queryByTestId(`row-fault-${READY.agreementId}`)).toBeNull();
   });
 
+  /**
+   * THE PRESS ACTUALLY LANDS ON THE CARD — the behaviour Carl asked for, rather
+   * than the markup that implies it.
+   *
+   * FOCUS, NOT SCROLL, IS WHAT IS ASSERTED. `scrollIntoView` is cosmetic and
+   * jsdom does not implement it (it is guarded in `goToFault` for exactly that
+   * reason); moving FOCUS is the part that carries a screen reader to the card
+   * instead of leaving it reading the queue, and jsdom does implement that.
+   */
+  it('moves focus to the tablet card when the link is pressed', async () => {
+    stubFetch({ sessions: [DISPUTED], rows: [onTablet] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    const link = await screen.findByTestId(`row-fault-link-${READY.agreementId}`);
+    fireEvent.click(link);
+
+    await waitFor(() => expect(document.activeElement).toBe(document.getElementById(`tablet-${TABLET.id}`)));
+  });
+
   /** A session with nothing wrong shows the chip alone, as it always did. */
   it('says nothing on a healthy session', async () => {
     stubFetch({

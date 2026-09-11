@@ -22,7 +22,23 @@
  * ledger still carries the failed `20260903020000_chase_attempts` (TODO), and a
  * broken ledger must not be the reason nobody can run a test.
  */
-const DEFAULT_TEST_URL = 'postgresql://aobplatform:aobplatform@127.0.0.1:21020/aobplatform_test?schema=core';
+/**
+ * AS `aob_app`, NEVER AS `aobplatform`, AND THIS IS THE IMPORTANT LINE IN THE
+ * FILE.
+ *
+ * `aobplatform` is the container's superuser, and a superuser BYPASSES row
+ * level security outright — `FORCE ROW LEVEL SECURITY` on the tables does not
+ * reach it. The first draft of this file defaulted to it, and the effect was
+ * silent and severe: every cross-practice test in the e2e suite would have kept
+ * passing while proving nothing, because one practice really could read
+ * another's rows. CLAUDE.md §6 requires a cross-practice test that FAILS CLOSED,
+ * and a superuser connection cannot provide one.
+ *
+ * `aob_app` is the constrained role the running application uses (see
+ * `apps/core/.env`) and the one CI runs e2e as. Caught on 11 Sep 2026 by a
+ * tenancy test written the same afternoon, which failed for the right reason.
+ */
+const DEFAULT_TEST_URL = 'postgresql://aob_app:aob_app@127.0.0.1:21020/aobplatform_test?schema=core';
 
 /*
  * AN OVERRIDE IS ALLOWED — CI will have its own — but it is checked, because

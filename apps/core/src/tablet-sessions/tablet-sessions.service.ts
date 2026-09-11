@@ -1501,14 +1501,23 @@ export class TabletSessionsService {
         return (originCreated ?? agreement.createdAt).getTime();
       };
       /*
-       * A STABLE TIE-BREAK. Two patients can share an arrival time to the
-       * millisecond in a seeded database, and a list whose order flickers
-       * between three-second polls is its own defect. The agreement id is
-       * arbitrary but it is the SAME arbitrary answer every read.
+       * A TIE-BREAK THAT SUPERSESSION CANNOT MOVE EITHER. Two patients can share
+       * an arrival time — to the millisecond in a seeded database, and easily on
+       * a PMS feed with coarse timestamps — and a list whose order flickers
+       * between three-second polls is its own defect.
+       *
+       * IT BREAKS ON THE PATIENT, NOT THE AGREEMENT. The agreement id is the
+       * obvious arbitrary key and it is the WRONG one: it changes identity every
+       * time a row is superseded, so two simultaneous arrivals would swap places
+       * the moment one of them was corrected — a smaller copy of the very bug
+       * this ordering fixes. The patient id is just as arbitrary and does not
+       * move.
        */
       const sortedForToday = [...forToday].sort((a, b) => {
         const byArrival = placeInQueue(a) - placeInQueue(b);
-        return byArrival !== 0 ? byArrival : a.id.localeCompare(b.id);
+        if (byArrival !== 0) return byArrival;
+        const byPatient = a.patientId.localeCompare(b.patientId);
+        return byPatient !== 0 ? byPatient : a.id.localeCompare(b.id);
       });
 
       const rows: PushableRow[] = [];

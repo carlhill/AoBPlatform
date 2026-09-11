@@ -44,7 +44,26 @@ import { PrismaService } from '../src/prisma/prisma.service';
  * is asserted does not change: the point is still to connect AS A DIFFERENT
  * ROLE, which is why this goes through psql rather than Prisma at all.
  */
-const PG_ARGS = ['psql', '-U', '{role}', '-d', 'aobplatform', '-A', '-t', '-c', '{sql}'];
+/**
+ * THE SAME DATABASE PRISMA IS WRITING TO, read off `DATABASE_URL` rather than
+ * named here (11 Sep 2026).
+ *
+ * It used to be the literal 'aobplatform'. That was invisible while everything
+ * pointed at one database and became a silent failure the moment e2e got its
+ * own (`test-database.setup.ts`): this suite seeded its fixture through Prisma
+ * into the TEST database and then read it back through psql from the DEV one,
+ * so every count came back zero and the guard test — "has two practices with
+ * messages, or this test proves nothing" — did its job and went red.
+ *
+ * It also means this suite no longer writes fixture practices into whatever
+ * database a developer happens to be using.
+ */
+const TEST_DATABASE = (() => {
+  const url = process.env.DATABASE_URL ?? '';
+  return url.split('/').pop()?.split('?')[0] || 'aobplatform';
+})();
+
+const PG_ARGS = ['psql', '-U', '{role}', '-d', TEST_DATABASE, '-A', '-t', '-c', '{sql}'];
 
 function psqlArgv(role: string, sql: string): { cmd: string; args: string[] } {
   const base = PG_ARGS.map((a) => a.replace('{role}', role).replace('{sql}', sql));
