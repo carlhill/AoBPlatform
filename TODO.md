@@ -3423,3 +3423,62 @@ alternative, carrying the head-of-chain `createdAt` onto each successor, keeps
 the ordering column but makes supersession write a backdated row, which is worse
 evidence for the same result. Needs a named test that a superseded row's
 successor holds the position its predecessor held.
+
+## A roaming assistant who signs the patient on the tablet in their hand (Carl, 11 Sep 2026)
+
+Carl: "for signing, we also have a scenario, where it may not be reception but a
+practice assistant who is walking around with a tablet and will send to the
+tablet she/he is using for the patient to sign/approve. How will we do this?"
+
+Open design question. Nothing is built for it, and it is a THIRD pattern rather
+than a variation on the two that exist.
+
+**What exists today.**
+
+- *Reception push.* Staff at a console pick a patient, pick a device, press
+  Send. The session records who pushed it (`pushedBy`, `pushedById`) from their
+  token, which is what makes the evidence name a person.
+- *Walk-up claim.* A patient at a fixed kiosk types three of their own details
+  and `POST /kiosk/claim` finds their row, rate-limited to three attempts. No
+  staff member is involved and none is recorded.
+
+**Why neither fits.** The assistant is standing beside the patient holding the
+only screen. They cannot use the waiting list, because a tablet is answered
+`{ waiting: [], hidden: true }` on purpose — the count was itself the disclosure
+(Carl, 4 Sep 2026), and `showsWaitingList` is a testing flag the console sets,
+never a tick-box on the tablet. They cannot use the walk-up claim, because that
+is the patient typing their own details and the assistant already knows who the
+patient is. So today they must walk back to a console.
+
+**Option 1 — works now, no build.** The assistant carries a phone with the
+console on it and pushes to the roaming tablet, which appears in the device list
+like any other. The desk is built to stack below 700px, so it should be usable
+at phone width, but that has not been tested on a real handset. Costs two
+devices per assistant and is the obvious stopgap.
+
+**Option 2 — staff-attended mode on the tablet (the proper answer).** The
+assistant authenticates on the tablet, which unlocks a short-lived staff view of
+the waiting list; they pick the patient, the tablet claims that row for itself,
+the staff view closes and the ceremony begins. The assistant's token supplies
+the actor, so `pushedBy` stays truthful and the evidence still names a person.
+
+Three things Carl has to decide before this can be built.
+
+1. **How often the assistant authenticates.** Hard rule 15 is passkeys, no
+   password path. A passkey per patient is heavy when it happens forty times a
+   morning; a session that lasts a shift means handing a patient a tablet with a
+   live staff session on it. The middle answer is a shift-long session that is
+   SUSPENDED for the whole ceremony and needs a gesture to return, with the
+   ceremony unable to be exited without it. Needs his call.
+2. **Whether a waiting list may ever appear on a patient-facing tablet**, even
+   briefly and even while staff hold it. This reverses the 4 Sep reasoning in a
+   narrow case, so it is a decision rather than an implementation detail.
+3. **Nothing about capacity or authority changes.** The assistant operates the
+   device; they never become the signer. Practice staff are hard-blocked as
+   assignors (hard rule 10) and that block must be visibly untouched by this
+   flow. One genuine gain: "who is signing" must be confirmed before a push
+   (ASSIGNOR-RULES rule 1), and an assistant standing with the patient can
+   actually ask, where reception is often guessing.
+
+Zero-footprint still binds either way: any staff session here is memory-only,
+dies on reload, and nothing about it is written to the device.
