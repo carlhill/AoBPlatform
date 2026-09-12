@@ -23,6 +23,34 @@ The distinction is mechanical, not a judgement call: `classifyAssignorChange(cur
 9. **The console remembers a draft across Close, in memory only** (D-2026-09-10-01), until it is saved, pushed, the row leaves the list, the practice changes or the page is left. Reopening a saved someone-else shows what was saved, including contact; the 18+ attestation is shown as given, not asked twice.
 10. **Save says which box.** A missing 18+ tick, name or relationship marks the field, puts the reason beneath it and moves focus there. Save is never a greyed button with small print beside it.
 
+## 2a. Somebody who is both staff and patient (Carl, 12 Sep 2026: "Jo is both — this is a special case")
+
+Practitioners and receptionists get treated too, often at the practice they work
+at. The staff hard-block must not stop them consenting to their own bulk
+billing, and it does not — but the reason is worth stating, because the rule
+reads at first glance as though it might.
+
+**Signing for themselves: allowed, and untouched by the block.** The check lives
+inside `buildAssignorForAnother`, the path taken only when the signer is NOT the
+patient. A patient self-assigning never reaches it. That is the right reading of
+hard rule 10: the block exists to stop a practice's own people signing on behalf
+of patients, which is where the coercion and fraud risk sits, not to deny staff
+the ordinary right to assign their own benefit.
+
+**Signing for anybody else: blocked, exactly as for any other staff member.** A
+doctor cannot sign for their own patient, their colleague, or a family member
+seen at the practice they work at. `matchesPracticeStaff` compares normalised
+names against every name the practice knows, active or not, and fails closed.
+There is no override and none should be added.
+
+**The consequence to watch.** The block matches on NAME, so a staff member and
+an unrelated patient who share a name are treated as the same person, and the
+patient loses the ability to sign for their child. That is the deliberate
+fail-closed choice, and the way out is the desk, not a switch.
+
+Named tests: `staff_assignor_still_hard_blocked_after_lock`, and a case for this
+section — `a_staff_member_may_still_sign_their_own_agreement`.
+
 ## 3. Where each rule is enforced
 
 | Rule | Code | Named tests |
@@ -48,3 +76,4 @@ Partial unique index `agreements_one_successor` on `supersedesAgreementId` backs
 |---|---|
 | 11 Sep 2026 | v1.0. Written when contact-only changes stopped superseding (D-2026-09-11-01). Collects the rules built 7–11 Sep 2026. |
 | 11 Sep 2026 | §4 open question closed: no contact typing on the tablet (D-2026-09-11-03). |
+| 12 Sep 2026 | §2a: somebody who is both staff and patient — self-signing is allowed, signing for another is blocked. |
