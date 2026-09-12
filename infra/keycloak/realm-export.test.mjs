@@ -39,6 +39,20 @@ check('web client binds the clinician browser flow', Boolean(web?.authentication
 // WebAuthn policy present at realm level.
 check('WebAuthn passwordless policy configured', Boolean(realm.webAuthnPolicyPasswordlessRpEntityName));
 
+/*
+ * Themes must be IN THE EXPORT, not only in the running realm.
+ *
+ * Both were once set through the admin console and lived only in the database,
+ * so a container rebuild re-imported this file, the realm came back looking
+ * healthy, and the themes were silently the built-in ones again. The login
+ * theme is what tells somebody enrolling on Windows not to accept Microsoft
+ * Password Manager — the default that enrols successfully and then cannot sign
+ * in (CRITICAL-ISSUES.md item 2). Losing it silently is how that incident
+ * repeats.
+ */
+check('login theme is the aobplatform theme', realm.loginTheme === 'aobplatform');
+check('email theme is the aobplatform theme', realm.emailTheme === 'aobplatform');
+
 // No social/broker identity providers — a deliberate absence given AoB phishing exposure.
 check('no identity-provider brokers', (realm.identityProviders ?? []).length === 0);
 

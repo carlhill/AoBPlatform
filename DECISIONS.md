@@ -361,6 +361,47 @@ patients are routinely leaving without the copy because the address on file is
 stale. Either would be a reason to revisit, and neither is a reason to put a
 free-text box on patient glass without deciding it again.
 
+## D-2026-09-12-01 — Passkey enrolment carries its own per-platform steps, on the page, in a Keycloak theme
+
+**Decided:** The "Passkey Registration" page shows a guidance panel beside the
+box listing the browser and operating-system dialogs the person is about to
+see, chosen from a picker with four entries — Windows PC, Mac, Android, iPhone
+or iPad. The panel lives in a Keycloak **login theme** (`aobplatform`), not in
+`apps/web`, because the page is Keycloak's and always will be. — Carl Hill,
+12 September 2026, from screenshots of his own Windows enrolment.
+
+**Why:**
+- Enrolment is the one moment the platform hands the person to dialogs it did
+  not draw and cannot annotate. Three or four of them appear in a row, none
+  mentions AoBPlatform, and the page behind them says nothing.
+- On Windows the FIRST of those dialogs offers the wrong provider by default.
+  Microsoft Password Manager enrols happily and its PIN unlocks its own vault
+  rather than verifying the person, so the assertion arrives without the UV
+  flag and the next sign-in is refused with a message that explains none of it
+  (CRITICAL-ISSUES.md item 2 — it cost the best part of a day to diagnose the
+  first time). Step 3 of the Windows list, and the note under it, exist to stop
+  that happening to anybody else.
+- Four platforms rather than one, and the picker defaults from the user agent
+  but gates nothing: the person setting a colleague up is frequently not on the
+  colleague's machine.
+
+**Where it is:** `infra/keycloak/themes/aobplatform/login/` — the template
+`webauthn-register.ftl` (stock keycloak.v2 markup, wrapped), the steps in
+`messages/messages_en.properties`, the layout in `resources/css/aob-login.css`.
+The realm binds it via `loginTheme` in `infra/keycloak/realm-export.json`,
+asserted by `npm run validate:realm` so a rebuild cannot quietly lose it.
+
+**Assumption Carl still has to confirm.** Only the **Windows** steps are taken
+from real screenshots. The Mac, Android and iPhone/iPad steps are written from
+the current shape of those dialogs and have not been walked through on a real
+device. They are content, not code — a wrong line is fixed by editing the
+properties file, with no template or code change.
+
+**What would reopen it:** Keycloak shipping usable per-authenticator guidance
+of its own; a decision to front enrolment with our own page in `apps/web` and
+hand Keycloak only the ceremony; or Windows retiring the two-provider dialog,
+which would make the Windows note obsolete rather than merely unnecessary.
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
@@ -379,3 +420,4 @@ free-text box on patient glass without deciding it again.
 | 4 Sep | Patient passkeys live in core, not Keycloak | **D-2026-09-04-02 above** |
 | 11 Sep | Post-service second push; a signed pre-agreement for the day covers the service | **D-2026-09-11-02 above** |
 | 11 Sep | A contact address is never typed on the tablet; the offer goes to what is on file | **D-2026-09-11-03 above** |
+| 12 Sep | Passkey enrolment carries per-platform steps, in a Keycloak login theme | **D-2026-09-12-01 above** |

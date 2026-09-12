@@ -1,0 +1,175 @@
+/*
+ * AoBPlatform login theme -- the passkey enrolment guidance panel.
+ *
+ * Loaded AFTER keycloak.v2's own styles.css (see `styles` in theme.properties),
+ * so everything here is additive and every selector is anchored on a class that
+ * exists on exactly one page: the .aob-* classes in login/webauthn-register.ftl.
+ * No other login screen can be reached by any rule in this file.
+ *
+ * COLOURS COME FROM PATTERNFLY GLOBALS, not from literals. keycloak.v2 flips
+ * the page to dark by putting `pf-v5-theme-dark` on <html> when the operating
+ * system asks for it, and that class works by redefining exactly these
+ * variables. Hard-coding #fff here would give a white panel on a dark page.
+ */
+
+/* --------------------------------------------------------------------------
+ * Layout.
+ *
+ * Single column by default: the aside follows the form, the page scrolls
+ * vertically, nothing overlaps and nothing is positioned. That is the layout a
+ * phone, a narrow window and a zoomed-to-200% desktop all get, and it is the
+ * one that has to be correct (WCAG 2.2 AA reflow -- 1.4.10).
+ *
+ * Two columns only above 1280px, and only there. PatternFly gives the login
+ * container 6.125rem of padding on each side from 1200px up, so a 58rem
+ * container needs 70.25rem (1124px) of viewport before it can sit inside one
+ * without pushing a horizontal scrollbar. 1280px clears that with room.
+ * -------------------------------------------------------------------------- */
+
+@supports selector(:has(*)) {
+  @media (min-width: 1280px) {
+    /*
+     * keycloak.v2 pins the login container to a single 34rem column. Widen it
+     * -- but ONLY the instance that contains our panel, which is the enrolment
+     * page and nothing else. The :has() guard is why this cannot leak onto the
+     * sign-in screen; the @supports guard is why a browser that does not
+     * understand :has() gets the safe single-column stack instead of a squeezed
+     * one.
+     */
+    .pf-v5-c-login__container:has(.aob-guidance) {
+      grid-template-columns: 58rem;
+      max-width: 58rem;
+    }
+
+    .aob-register-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 21rem);
+      gap: var(--pf-v5-global--spacer--xl, 2rem);
+      align-items: start;
+    }
+
+    /* Beside the form, not below it -- the stacking gap is the grid gap now.
+     * INSIDE the @supports on purpose: without :has() the panel is still
+     * stacked under the form at this width and still needs its margin. */
+    .aob-guidance {
+      margin-block-start: 0;
+    }
+  }
+}
+
+/* min-width:0 on both children: without it a long unbroken string in either
+ * column blows the grid track out and takes the page with it. */
+.aob-register-main,
+.aob-guidance {
+  min-width: 0;
+}
+
+/* --------------------------------------------------------------------------
+ * The panel.
+ * -------------------------------------------------------------------------- */
+
+.aob-guidance {
+  margin-block-start: var(--pf-v5-global--spacer--lg, 1.5rem);
+  padding: var(--pf-v5-global--spacer--md, 1rem);
+  border: 1px solid var(--pf-v5-global--BorderColor--100, #d2d2d2);
+  border-radius: var(--pf-v5-global--BorderRadius--sm, 3px);
+  background-color: var(--pf-v5-global--BackgroundColor--200, #f0f0f0);
+  color: var(--pf-v5-global--Color--100, #151515);
+  font-size: var(--pf-v5-global--FontSize--sm, 0.875rem);
+  line-height: 1.5;
+  /* A long dialog name must wrap rather than widen the panel. */
+  overflow-wrap: break-word;
+}
+
+@media (min-width: 1280px) {
+  /* Beside the form, not below it -- drop the stacking gap. */
+  .aob-guidance {
+    margin-block-start: 0;
+  }
+}
+
+.aob-guidance__title {
+  margin: 0 0 var(--pf-v5-global--spacer--xs, 0.25rem);
+  font-size: var(--pf-v5-global--FontSize--md, 1rem);
+  font-weight: var(--pf-v5-global--FontWeight--bold, 700);
+}
+
+.aob-guidance__intro {
+  margin: 0 0 var(--pf-v5-global--spacer--md, 1rem);
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+}
+
+/* --- the picker ---------------------------------------------------------- */
+
+.aob-guidance__picker {
+  margin-block-end: var(--pf-v5-global--spacer--md, 1rem);
+}
+
+.aob-guidance__picker-label {
+  display: block;
+  margin-block-end: var(--pf-v5-global--spacer--xs, 0.25rem);
+  font-weight: var(--pf-v5-global--FontWeight--bold, 700);
+}
+
+.aob-guidance__picker-select {
+  width: 100%;
+  max-width: 100%;
+  /* 44px of pointer target and room for a 200% zoom before the text clips. */
+  min-height: 2.75rem;
+  padding: var(--pf-v5-global--spacer--xs, 0.25rem) var(--pf-v5-global--spacer--sm, 0.5rem);
+  border: 1px solid var(--pf-v5-global--BorderColor--200, #8a8d90);
+  border-radius: var(--pf-v5-global--BorderRadius--sm, 3px);
+  background-color: var(--pf-v5-global--BackgroundColor--100, #fff);
+  color: var(--pf-v5-global--Color--100, #151515);
+  font-size: inherit;
+  font-family: inherit;
+}
+
+/* Never remove the focus ring; make it the visible one PatternFly uses. */
+.aob-guidance__picker-select:focus-visible {
+  outline: 2px solid var(--pf-v5-global--primary-color--100, #06c);
+  outline-offset: 1px;
+}
+
+/* --- the steps ----------------------------------------------------------- */
+
+.aob-guidance__steps + .aob-guidance__steps {
+  margin-block-start: var(--pf-v5-global--spacer--lg, 1.5rem);
+}
+
+.aob-guidance__steps-title {
+  margin: 0 0 var(--pf-v5-global--spacer--sm, 0.5rem);
+  font-size: var(--pf-v5-global--FontSize--sm, 0.875rem);
+  font-weight: var(--pf-v5-global--FontWeight--bold, 700);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+}
+
+.aob-guidance__list {
+  margin: 0;
+  /* Room for a two-digit number without the text hanging off the marker. */
+  padding-inline-start: 1.5rem;
+}
+
+.aob-guidance__list > li + li {
+  margin-block-start: var(--pf-v5-global--spacer--sm, 0.5rem);
+}
+
+/* --- the "watch out for" note -------------------------------------------- */
+
+.aob-guidance__note {
+  margin: var(--pf-v5-global--spacer--md, 1rem) 0 0;
+  padding: var(--pf-v5-global--spacer--sm, 0.5rem) var(--pf-v5-global--spacer--md, 1rem);
+  border-inline-start: 3px solid var(--pf-v5-global--warning-color--100, #f0ab00);
+  background-color: var(--pf-v5-global--BackgroundColor--100, #fff);
+}
+
+.aob-guidance__note-label {
+  display: block;
+}
+
+.aob-guidance__help {
+  margin: var(--pf-v5-global--spacer--md, 1rem) 0 0;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+}

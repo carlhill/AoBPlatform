@@ -343,6 +343,41 @@ PIE data-usage question, the §7 sign-off for the website fetch, the collection
 notice, the retention conflict, and whether a sole trader can reach six points
 at all.
 
+### `transform-realm.mjs` has drifted from the realm it generates
+
+Found 12 Sep 2026, while adding `loginTheme` to the export. The README says to
+edit the transform and re-run it rather than hand-edit the JSON. **Re-running it
+today reverts safety fixes**, so that instruction is now wrong and the README
+says so:
+
+| Key | Committed export | What the transform produces |
+|---|---|---|
+| `webAuthnPolicyUserVerificationRequirement` | `required` | `preferred` |
+| `webAuthnPolicyRpId` / `…PasswordlessRpId` | `localhost` | `""` |
+| realm role | `platform_admin` (with its description) | `platform_operator` |
+| clients | + `console` | `web` only |
+| redirect URIs | `localhost` only | also `127.0.0.1` |
+| SSO timeouts | idle 14400 / max 36000 | absent |
+
+The first two rows are the fixes from CRITICAL-ISSUES.md §2 — a regenerated
+realm would accept a WebAuthn assertion with no user verification, which is the
+exact hole rule 15 exists to close, and it would do it silently.
+
+**Why deferred:** reconciling means reading ReferralPlatform's current export
+too, and deciding for each row whether the transform or the export is right —
+more than a theme change should carry. **Depends on:** nothing; it is an
+afternoon of care. **Until then:** hand-edit `realm-export.json`, and keep
+`npm run validate:realm` as the thing that notices.
+
+### The three unscreenshotted platforms on the enrolment panel
+
+The passkey enrolment guidance panel (D-2026-09-12-01) covers Windows, Mac,
+Android and iPhone/iPad. Only the **Windows** steps came from real screenshots
+of the real flow. The other three need somebody to walk a device through
+enrolment and correct the wording — they are content in
+`infra/keycloak/themes/aobplatform/login/messages/messages_en.properties`, so a
+correction is an edit to that file and nothing else.
+
 ---
 
 ## Rostering — a practitioner who works at more than one practice

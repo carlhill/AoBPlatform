@@ -2,6 +2,8 @@
   "realm": "aobplatform",
   "enabled": true,
   "displayName": "AoBPlatform",
+  "loginTheme": "aobplatform",
+  "emailTheme": "aobplatform",
   "sslRequired": "none",
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,

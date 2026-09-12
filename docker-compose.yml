@@ -119,12 +119,22 @@ services:
       - '127.0.0.1:21024:8080'
     volumes:
       - ./infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
-      # Our email theme. Keycloak's stock enrolment message leaks a raw message
-      # key ("requiredAction.webauthn-register-passwordless"), addresses the
-      # reader as though they have an administrator, and carries no sender
-      # identity or anti-phishing footer -- while asking them to click a link
-      # and enrol a credential. The LINK mechanism stays Keycloak's; only the
-      # words around it are ours.
+      # Our email AND login themes (infra/keycloak/README.md).
+      #
+      # email: Keycloak's stock enrolment message leaks a raw message key
+      # ("requiredAction.webauthn-register-passwordless"), addresses the reader
+      # as though they have an administrator, and carries no sender identity or
+      # anti-phishing footer -- while asking them to click a link and enrol a
+      # credential.
+      #
+      # login: one override, the "Passkey Registration" page, which gains a
+      # panel listing the browser and operating-system dialogs the person is
+      # about to see. On Windows the default one is the WRONG passkey provider
+      # and the failure only shows up at the NEXT sign-in (CRITICAL-ISSUES.md
+      # section 2).
+      #
+      # In both cases the MECHANISM stays Keycloak's; only the words around it
+      # are ours.
       - ./infra/keycloak/themes/aobplatform:/opt/keycloak/themes/aobplatform:ro
 
   mailhog:
