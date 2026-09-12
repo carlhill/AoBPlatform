@@ -786,6 +786,60 @@ Full design: `PRACTICE-SCOPED-LOGIN.md`.
 answered carelessly — in which case the answer is a better moment to ask, never
 a remembered default.
 
+## D-2026-09-12-11 — Authentication is tiered; hard rule 15 narrows to platform operators and patients
+
+**Date:** 12 September 2026. **Decided by:** Carl. **This changes CLAUDE.md hard
+rule 15**, which reads "Practitioner and admin auth is WebAuthn passkeys — no
+password-only paths (REQ-VAULT-04)". It is recorded here rather than absorbed.
+
+**Why the rule could not hold.** Carl: *"We cannot have the passkey solution. The
+login has to be independent of the device being used."* A doctor works from
+whatever computer is in whatever room they are in, in a practice or a hospital.
+Those machines are shared, often locked down, frequently without Bluetooth and
+often without a usable USB port. Every route to a passkey needs the credential on
+that machine (wrong — it stays for the next person), the phone in Bluetooth range
+(no adapter), a security key (no port), or the doctor signing the browser into
+their own account (wrong on a shared machine). There is no fourth option;
+`PRACTITIONER-PASSKEY-DEVICE.md` works through each.
+
+**The decision — three tiers** (`AUTH-TIERS.md`):
+
+1. **Tenant single sign-on** for practices and hospitals with a Microsoft or
+   Google tenant. The target for large practices, not a fallback: more
+   device-independent than anything we could build, and their conditional access
+   does the work. We require a minimum asserted authentication strength and
+   refuse the sign-in otherwise.
+2. **Platform accounts** — username, password and a one-time code — for
+   practices with no tenant.
+3. **Passkeys** remain available to anyone who can use them, and remain the
+   strongest option. Never removed.
+
+**What hard rule 15 still governs, unchanged:** platform operators (our own
+people, on their own machines, with no shared-terminal problem) and patients
+(whose portal passkeys live in core, not Keycloak — D-2026-09-04-02).
+
+**What makes the weaker tier defensible.** The practitioner signs nothing: hard
+rule 3 abolished the practitioner signature field on 1 July 2026, so an
+agreement's evidential weight rests on the PATIENT's signature captured at a
+paired tablet. Practitioner authentication governs who may operate the desk and
+read records — important, and a different bar from the one the statute leans on.
+
+**What tier 2 must carry to earn it:** the authentication method recorded on
+every session so an audit can tell them apart; a fresh second factor before
+high-stakes acts; recovery by administrator re-invitation; and a password policy,
+with passwords never logged.
+
+**Costs nothing and needs nobody's permission.** One-time codes are an open
+standard. There is no registration with Google or Microsoft, no API key, no fee:
+we generate the secret, the app reads a QR, we check the codes. A domain IS
+needed for the product's own address, for email deliverability and for tier 1 —
+but not for the codes.
+
+**What would reopen it.** Clinical terminals that reliably carry Bluetooth or
+accept a security key, which would make tier 3 practical as the default again.
+Or a finding that REQ-VAULT-04 rests on something stronger than the
+now-abolished practitioner signature — worth checking before tier 2 ships.
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
@@ -813,3 +867,4 @@ a remembered default.
 | 12 Sep | A practitioner has one login per practice, but stays one person (re-recorded; was -05) | **D-2026-09-12-08 above** |
 | 12 Sep | Billing identity is practice × location × practitioner; enduring coverage is per practitioner across locations | **D-2026-09-12-09 above** |
 | 12 Sep | Practice bound to the login, location chosen once per session; practice codes allocated and unique | **D-2026-09-12-10 above** |
+| 12 Sep | Authentication is tiered: tenant SSO, platform accounts, passkeys. Hard rule 15 narrows to platform operators and patients | **D-2026-09-12-11 above** |
