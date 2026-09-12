@@ -17,11 +17,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 1959 |
-| Files scanned for exports | 489 |
-| Files scanned for imports | 530 |
-| Exports with no comment of their own | 862 |
-| Exports imported nowhere else | 812 |
+| Exported symbols indexed | 1958 |
+| Files scanned for exports | 490 |
+| Files scanned for imports | 531 |
+| Exports with no comment of their own | 861 |
+| Exports imported nowhere else | 811 |
 
 ## Sections
 
@@ -35,7 +35,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 - [Contracts types](#contracts-types) — 69
 - [Contracts functions and constants](#contracts-functions-and-constants) — 20
 - [Core services, controllers and modules](#core-services-controllers-and-modules) — 268
-- [Core helpers, constants and types](#core-helpers-constants-and-types) — 157
+- [Core helpers, constants and types](#core-helpers-constants-and-types) — 156
 
 ## Web components
 
@@ -1911,7 +1911,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Core helpers, constants and types
 
-157 exports.
+156 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1929,6 +1929,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `KEYCLOAK_ADMIN` | core:identity/identity.tokens.ts |  | **5** · core:identity/identity.module.ts, core:identity/identity.service.ts, core:identity/practice-admin.service.ts, +2 more |
 | `PMS_ADAPTER` | core:pms/pms.tokens.ts |  | **5** · core:auto-capture/auto-capture.service.ts, core:pms/pms-sync.service.ts, core:pms/pms.module.ts, +2 more |
 | `anchorsForAgreements` | core:affiliations/agreement-anchor.ts | The same answer for a list, which is what every queue screen wants: two queries for the anchored rows and one legacy lookup each for the rest, rather than a join per line. | **5** · core:arrivals/arrivals.service.ts, core:kiosk/kiosk.service.ts, core:portal/portal-reads.service.ts, +2 more |
+| `canonicalJson` | core:render/canonical-json.ts | THE ONE CANONICAL SERIALISATION IN THE RENDER PATH — the function that decides what an agreement's hash is computed over. | **4** · core:render/agreement-document.ts, core:render/agreement-pdf-renderer.ts, core:render/pdf-renderer.ts, +1 more |
 | `AgreementRenderer` | core:render/renderer.ts |  | **3** · core:render/agreement-pdf-renderer.ts, core:render/pdf-renderer.ts, core:render/renderer-registry.ts |
 | `CallingDevice` | core:devices/device.decorator.ts | The resolved device, or undefined where none was offered. | **3** · core:agreement-copy/agreement-copy-kiosk.controller.ts, core:kiosk/kiosk.controller.ts, core:tablet-sessions/kiosk-session.controller.ts |
 | `RequiresDevice` | core:devices/device.decorator.ts | This endpoint answers only a PAIRED TABLET. | **3** · core:agreement-copy/agreement-copy-kiosk.controller.ts, core:kiosk/kiosk.controller.ts, core:tablet-sessions/kiosk-session.controller.ts |
@@ -1981,7 +1982,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `anchorForAffiliation` | core:affiliations/agreement-anchor.ts | THE AFFILIATION, AS A PERSON AND A PLACE. | **1** · core:arrivals/arrivals.service.ts |
 | `anchorsForAffiliations` | core:affiliations/agreement-anchor.ts | The batch form. | **1** · core:arrivals/arrivals.service.ts |
 | `assertRenderable` | core:render/agreement-document.ts |  | **1** · core:render/agreement-pdf-renderer.ts |
-| `canonicalJson` | core:render/agreement-document.ts | Sorted-key JSON. | **1** · core:render/agreement-pdf-renderer.ts |
 | `clearPortalCookie` | core:portal/portal-cookie.ts |  | **1** · core:portal/portal.controller.ts |
 | `correctionBody` | core:notices/notice-template.ts | Correction notices supersede rather than replace (REQ-DEL-06). | **1** · core:notices/notices.service.ts |
 | `createAddressValidator` | core:organisations/address-validator.ts |  | **1** · core:organisations/organisations.module.ts |
@@ -2054,7 +2054,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `WRITE_BACK_ALERT_AFTER_MS` | core:pms/write-back.service.ts | FR-9.3: alert on any stored artefact not in the PMS after this long. | 0 |
 | `WRITE_BACK_SWEEP_INTERVAL_MS` | core:pms/write-back.service.ts |  | 0 |
 | `addressMatches` | core:verification/identifier-matching.ts | The address rule (Carl, 3 Sep 2026), and it mirrors `nameMatches` on purpose. | 0 |
-| `canonicalJson` | core:render/renderer.ts |  | 0 |
 | `constantTimeMatch` | core:verification/identifier-matching.ts | Constant-time equality over the normalised values — no early exit an attacker can time. | 0 |
 | `esc` | core:messaging/template.ts | Escape before interpolation. | 0 |
 | `extractState` | core:organisations/address-validator.ts |  | 0 |

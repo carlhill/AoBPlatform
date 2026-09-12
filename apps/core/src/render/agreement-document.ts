@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { canonicalJson } from './canonical-json';
 import type { RenderedAgreementTemplate } from '@aobplatform/domain';
 
 /**
@@ -191,14 +192,12 @@ function clip(line: string): string {
  * Sorted-key JSON. The one definition, shared by the document hash and by both
  * renderers, because two implementations of "canonical" is one too many.
  */
-export function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  const keys = Object.keys(value as Record<string, unknown>).sort();
-  return `{${keys
-    .map((k) => `${JSON.stringify(k)}:${canonicalJson((value as Record<string, unknown>)[k])}`)
-    .join(',')}}`;
-}
+/*
+ * RE-EXPORTED, NOT REDECLARED. The one implementation lives in
+ * `./canonical-json`; this module used to carry a copy. `agreement-pdf-renderer`
+ * imports it from here, so the name stays available at this path.
+ */
+export { canonicalJson };
 
 /** True for a stored payload that is a whole document rather than bare particulars. */
 export function isAgreementDocument(payload: unknown): payload is AgreementDocument {
