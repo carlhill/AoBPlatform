@@ -11,6 +11,51 @@
 > 5. So you can see 1 and 4 are similar — AoB creates the letter, page, pdf.
 > 6. For all of the above, if the API is not working, the Practice-reception-user should be able to drag and drop into AoB.
 
+## 0a. Cases are not modes — the two numbered lists, and how they meet (12 September 2026)
+
+Carl, 12 September 2026: *"in PMS_to_AoB_Workflow.md you mention modes, but
+have not defined them."* Correct, and worse than that: this file numbers things
+1 to 6, `INTEGRATION-MODES.md` numbers things 1 to 3, and nothing said they
+were different questions. They are.
+
+| | Asks | Answers | Lives in |
+|---|---|---|---|
+| **Case 1-6** (§0 above) | What SHAPE does the input arrive in? | Raw elements, a PDF, both, typed by hand, dropped as a file, emailed | This file |
+| **Mode 1-3** | HOW MUCH of it arrives without a person? | Manual, semi-automatic, full automation | `INTEGRATION-MODES.md` |
+
+**The three modes, defined here so this file stands on its own** (the full
+step-by-step data table is `INTEGRATION-MODES.md` §2, which is authoritative):
+
+1. **BASIC — completely manual.** No interface of any kind. Every data element
+   is keyed at reception.
+2. **SEMI-AUTOMATIC.** Some keying by hand — the arrival, typically — and the
+   practice's software sends the post-consultation data on its own.
+3. **FULL AUTOMATION.** The practice's software sends the day's scheduled
+   appointments AND the post-consultation data.
+
+**A mode is made of cases, and that is the whole relationship:**
+
+| Mode | Cases it is built from | Why |
+|---|---|---|
+| **1 — Basic** | **Case 4** (reception types the elements) as the whole of it | Cases 1-3 all require an interface, and this mode has none. Case 4 IS mode 1 |
+| **2 — Semi** | **Case 4** for the arrival + **case 1** for the post-consultation elements; **cases 2/3** where the practice's software sends a document instead | The split is by MOMENT, not by shape: a person announces the visit, a machine reports the service |
+| **3 — Full** | **Case 1** throughout, or **2/3** where documents are sent | The same pipeline; nobody types |
+
+**Cases 6 and 7 belong to every mode, and that is the point of them.**
+Drag-and-drop (case 6) and email-in (§4a) are not a fourth mode and not a
+lesser one. They are what a mode-2 or mode-3 practice falls back to the morning
+their interface is down, and what a mode-1 practice uses when it would rather
+forward a letter than retype it. Hard rule 8 is the reason they exist: an
+integration failure must slow the evidence, never the care, and a practice with
+no working feed still has to be able to get a day's work into the platform.
+
+**Which mode a practice is in can change per moment, not just per practice.**
+The same practice can be mode 3 for appointments and mode 1 for the
+post-consultation, because the two feeds are separate. Nothing in the pipeline
+cares — the arrival contract and the service-rendered contract each accept a
+machine or a person, and the versioned visit policy decides the agreement type
+either way.
+
 ## 1. Thoughts — the one design point that decides everything
 
 **There are two sources and one signed instrument.** Cases 1, 4 and the "raw elements" half of 3 give us *data*; cases 2, the "PDF" half of 3, and 6 give us a *document*. Either way, the thing the patient signs should be **our** rendered agreement, produced by the one deterministic render path (hard rule 13: server-side PDF/A, hashed at render, byte-identical on re-render), from data elements that the rules engine has validated and locked (hard rule 2: particulars complete and locked before signature — signing a draft is the offence in this regime).
@@ -172,3 +217,4 @@ Roughly **9–10 agent-days** for W1–W7, which make all five cases work today 
 | 0.4 | 7 Sep 2026 | W2 BUILT: reception types an arrival by hand (`source: 'reception'`), with `POST /arrivals/preview` and `GET /patients/search` behind it. `typed_and_arrived_agreements_share_one_pipeline` is answered by `reception_arrival_runs_the_same_pipeline_as_a_pms_arrival`. Q9 raised: the assignor's 18+ answer is a declaration, not a date of birth. |
 | 0.3 | 7 Sep 2026 | W1 wording editor is a structured form with live s 65C checks and a sample-data preview; the domain loader gained `agreementTemplateProblems` so the console and the server run one set of rules. |
 | 0.2 | 5 Sep 2026 | W1 BUILT: full data set + letterhead + logo on the render, versioned agreement templates with tick-box statements, per-practice wording with platform review. Q4 answered yes; Q3 still open — the generic wording is a DRAFT pending Carl and counsel. |
+| 0.5 | 12 Sep 2026 | §0a added. Carl: the file mentioned modes without defining them. Cases (input SHAPE) and modes (how much is AUTOMATED) are two different questions with two numbered lists; §0a defines the modes, maps each mode to the cases it is built from, and records that drag-and-drop and email-in belong to every mode because hard rule 8 requires a way in when the interface is down. |

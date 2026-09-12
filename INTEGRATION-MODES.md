@@ -1,5 +1,5 @@
 # INTEGRATION-MODES.md — the three ways a practice feeds AoBPlatform
-### v1.0 · 12 September 2026 · Owner: Carl. Companion to `PMS_to_AoB_Workflow.md` (which is about the five INPUT shapes) and `PRACTICE-ONBOARDING.md`.
+### v1.1 · 12 September 2026 · Owner: Carl. Companion to `PMS_to_AoB_Workflow.md` (the input SHAPES, cases 1-7) and `PRACTICE-ONBOARDING.md`.
 
 Carl, 12 September 2026:
 
@@ -18,11 +18,13 @@ Carl, 12 September 2026:
 He is right that all three will exist, and right that they were only ever
 written down at a high level. This file is the detailed version.
 
-**How this differs from `PMS_to_AoB_Workflow.md`.** That file answers *what
-shape the input arrives in* — raw elements, a PDF, a mix, typed by hand, or
-dropped as a file. This one answers *who supplies each piece of data*, step by
-step, in each of the three modes. They are two cuts through the same pipeline
-and neither replaces the other.
+**How this differs from `PMS_to_AoB_Workflow.md`, since both files number
+things.** That one asks *what SHAPE the input arrives in* and numbers the
+answers **case 1 to 6**, plus the seventh it added later: raw elements, a PDF,
+both, typed by hand, dropped as a file, emailed in. This one asks *HOW MUCH arrives without a person* and numbers
+the answers **mode 1 to 3**. Two different questions, two numbered lists, and
+they are easy to confuse — which is why §1a below says exactly how they meet,
+and `PMS_to_AoB_Workflow.md` §0a says the same thing from the other side.
 
 ---
 
@@ -36,6 +38,30 @@ drive is real, tested code sitting behind that interface.
 
 That is the finding that matters, so it is first. The rest of this file shows
 the working.
+
+## 1a. Which cases each mode is built from
+
+A mode is not an alternative to a case. **A mode is made of cases.**
+
+| Mode | Built from | Why |
+|---|---|---|
+| **1 — Basic** | **Case 4** — reception types the elements | Cases 1 to 3 all need an interface and this mode has none. Case 4 IS mode 1 |
+| **2 — Semi** | **Case 4** for the arrival, **case 1** for the post-consultation elements, **cases 2/3** where a document is sent instead | The split is by MOMENT, not by shape: a person announces the visit, a machine reports the service |
+| **3 — Full** | **Case 1** throughout, or **2/3** where documents are sent | Same pipeline, nobody types |
+
+**Cases 6 and 7 — drag-and-drop and email-in — belong to every mode.** They
+are not a fourth mode and not a lesser one. They are what a mode-2 or mode-3
+practice falls back to on the morning its interface is down, and what a mode-1
+practice uses when it would rather forward a letter than retype it. Hard rule 8
+is why they exist: a failed integration slows the evidence, never the care.
+
+**A practice can be in two modes at once**, and will be. The appointment feed
+and the post-consultation feed are separate, so the same practice can be mode 3
+for bookings and mode 1 for what was billed. Nothing in the pipeline cares: the
+arrival contract and the service-rendered contract each accept a machine or a
+person, and the versioned visit policy decides the agreement type either way.
+**This is the ordinary case, not the exception** — §4's gap A is exactly a
+practice that is mode 3 at the front and has no mode at all at the back.
 
 ## 2. The table Carl asked for
 
@@ -222,3 +248,4 @@ Worth stating, because it is easy to assume otherwise:
 | Date | Change |
 |---|---|
 | 12 Sep 2026 | v1.0. Written when Carl asked for the three modes as one table, with the data at each step down the rows. The two gaps in §4 were found by reading the controllers rather than recalled. |
+| 12 Sep 2026 | §1a added. Carl pointed out the two files both number things and neither said how the numbers relate. A mode is made of cases; drag-and-drop and email-in belong to every mode; a practice can be in two modes at once, which is what gap A actually describes. |
