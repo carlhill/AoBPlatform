@@ -31,6 +31,11 @@ import { audiencesOf, landingPath, mayReach, ruleFor } from '@aobplatform/domain
 import { Notice, Shell, ui } from './ui';
 import { SessionControl } from './SessionControl';
 import {
+  SILENT_RESTORE_PARAM,
+  isSilentRestoreClient,
+  type SilentRestoreClient,
+} from '@aobplatform/contracts';
+import {
   attemptSilentLogin,
   currentSession,
   hasSignedInBefore,
@@ -43,6 +48,41 @@ import { strings } from './strings';
 
 /** Long enough to read the sentence, short enough not to feel stuck. */
 const REDIRECT_AFTER_MS = 4000;
+
+/**
+ * THE CLIENT AN INVITATION NAMED, IF THIS PAGE LOAD IS THE RETURN FROM ONE.
+ *
+ * READ ONCE AND THEN ERASED FROM THE ADDRESS BAR. The marker is a fact about
+ * THIS arrival, not about the page: leaving it there would put it in a
+ * bookmark, a shared link and the back button, where it would ask Keycloak
+ * again on every visit for no reason. `replaceState` keeps the history entry,
+ * so Back still goes where the person expects.
+ *
+ * `attemptSilentLogin` keeps its own once-per-document marker, so stripping
+ * this cannot cause a second attempt and failing to strip it could not cause
+ * one either. This is hygiene, not the guard.
+ */
+function invitationClient(): SilentRestoreClient | null {
+  if (typeof window === 'undefined') return null;
+  /*
+   * NOTHING IN HERE MAY THROW. This runs inside the guard that decides whether
+   * ANY console page renders, so an exception would not degrade the restore —
+   * it would break sign-in for everybody. Reading `search` rather than parsing
+   * `href` is the smaller ask of the environment, and the tidy-up below is
+   * wrapped because it is cosmetic and must never be the reason a page fails.
+   */
+  const named = new URLSearchParams(window.location.search ?? '').get(SILENT_RESTORE_PARAM);
+  if (!named) return null;
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.delete(SILENT_RESTORE_PARAM);
+    window.history.replaceState(null, '', url.toString());
+  } catch {
+    // Left in the address bar. `attemptSilentLogin` still refuses a second
+    // attempt in this document, so the only cost is an untidy URL.
+  }
+  return isSilentRestoreClient(named) ? named : null;
+}
 
 export function AccessGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? '/';
@@ -208,7 +248,21 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
      * wrong or useless answer. It only mattered once the attempt moved here:
      * the two callers it replaced were practice pages, always `web`.
      */
-    const client = hasSignedInBefore();
+    /*
+     * OR BECAUSE AN INVITATION SAID SO (Carl, 12 Sep 2026). A practitioner who
+     * has just registered a passkey through the setup email HAS a realm session
+     * and has never signed in here, so the hint is absent and the first thing
+     * the platform said to them was "you are not signed in". The invitation's
+     * return URL carries `aob_restore=<client>` for exactly this moment.
+     *
+     * IT IS PERMISSION TO ASK, NOT A CREDENTIAL. It grants nothing: the worst a
+     * forged one can do is spend one redirect discovering there is no session,
+     * which is what an honest one does after the session expires. The value is
+     * checked against the two real clients rather than passed to Keycloak as
+     * typed.
+     */
+    const invited = invitationClient();
+    const client = hasSignedInBefore() ?? invited;
     if (!client) return;
     void attemptSilentLogin(client);
   }, [refused]);

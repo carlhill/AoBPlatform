@@ -1,3 +1,4 @@
+import { withSilentRestore } from '@aobplatform/contracts';
 import { assertNotPlaceholderSecret } from './service-token';
 
 /**
@@ -202,7 +203,25 @@ export class KeycloakAdminClient {
    * verified against a live realm, 21 Aug 2026.
    */
   async sendPasskeyEnrolment(userId: string, options: { clientId: string; redirectUri: string; lifespanSeconds?: number }): Promise<void> {
-    const params = new URLSearchParams({ client_id: options.clientId, redirect_uri: options.redirectUri });
+    /*
+     * THE RETURN URL CARRIES THE SILENT-RESTORE MARKER (Carl, 12 Sep 2026).
+     *
+     * Registering a passkey through an action token authenticates the person in
+     * the REALM but leaves this app without a token, because that flow never
+     * went through the app's own redirect. `AccessGuard` would then say "you
+     * are not signed in" to somebody who has just this second proved who they
+     * are — it only attempts a silent restore for a browser that has signed in
+     * here before, and a new practitioner's browser never has.
+     *
+     * So the invitation tells the app it may ask once. The marker is permission
+     * to attempt `prompt=none`, not evidence of anything, and it names the
+     * client the invitation was issued for because a practice token and a
+     * platform token are not interchangeable.
+     */
+    const params = new URLSearchParams({
+      client_id: options.clientId,
+      redirect_uri: withSilentRestore(options.redirectUri, options.clientId),
+    });
     if (options.lifespanSeconds) params.set('lifespan', String(options.lifespanSeconds));
     await this.request('PUT', `/users/${userId}/execute-actions-email?${params.toString()}`, [
       'webauthn-register-passwordless',

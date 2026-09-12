@@ -38,7 +38,14 @@ $userId = $users[0].id
 $email = $users[0].email
 if (-not $email) { throw "'$Username' has no email address, so there is nowhere to send the link." }
 
-$redirect = [System.Uri]::EscapeDataString($Console)
+# THE SILENT-RESTORE MARKER (Carl, 12 Sep 2026; SILENT_RESTORE_PARAM in
+# packages/contracts/src/auth.ts). Registering a passkey through an action token
+# authenticates the person in the realm but leaves the console without a token,
+# so without this they land on "You are not signed in" seconds after proving who
+# they are. It is permission for the console to attempt one prompt=none restore,
+# and it carries no credential.
+$separator = if ($Console -like '*?*') { '&' } else { '?' }
+$redirect = [System.Uri]::EscapeDataString("$Console${separator}aob_restore=web")
 $uri = "$Keycloak/admin/realms/$Realm/users/$userId/execute-actions-email?client_id=web&redirect_uri=$redirect&lifespan=$LifespanSeconds"
 Invoke-RestMethod -Method Put -Uri $uri -Headers $headers -ContentType 'application/json' -Body '["webauthn-register-passwordless"]' | Out-Null
 

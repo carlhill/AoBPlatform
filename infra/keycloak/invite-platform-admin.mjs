@@ -51,6 +51,22 @@ const REALM = process.env.KEYCLOAK_REALM ?? 'aobplatform';
 const ADMIN_USER = process.env.KEYCLOAK_ADMIN_USER ?? 'admin';
 const ADMIN_PASSWORD = process.env.KEYCLOAK_ADMIN_PASSWORD ?? 'admin';
 const CONSOLE_URL = process.env.CONSOLE_URL ?? 'http://localhost:3100';
+
+/**
+ * Add the console's silent-restore marker to a return URL. Kept in step with
+ * `withSilentRestore` in packages/contracts/src/auth.ts, which this script
+ * cannot import — it runs standalone against a realm, with no build step.
+ */
+function withRestoreMarker(target, clientId) {
+  try {
+    const url = new URL(target);
+    url.searchParams.set('aob_restore', clientId);
+    return url.toString();
+  } catch {
+    return target;
+  }
+}
+
 const CLIENT_ID = 'console';
 const ROLE = 'platform_admin';
 /** Long enough to act on across a weekend, short enough that a stale copy is worthless. */
@@ -201,7 +217,11 @@ async function main() {
   const link = await api(
     token,
     `/users/${userId}/execute-actions-email?client_id=${CLIENT_ID}` +
-      `&redirect_uri=${encodeURIComponent(CONSOLE_URL)}&lifespan=${INVITE_LIFETIME_SECONDS}`,
+      // THE SILENT-RESTORE MARKER — see SILENT_RESTORE_PARAM in
+      // packages/contracts/src/auth.ts. `console` rather than `web`: this
+      // invitation is for the PLATFORM console, and a practice token and a
+      // platform token are deliberately not interchangeable.
+      `&redirect_uri=${encodeURIComponent(withRestoreMarker(CONSOLE_URL, 'console'))}&lifespan=${INVITE_LIFETIME_SECONDS}`,
     { method: 'PUT', body: JSON.stringify(['webauthn-register-passwordless']) },
   );
 
