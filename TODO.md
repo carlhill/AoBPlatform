@@ -37,6 +37,107 @@ of the practitioner's queue (`FRONT-DESK-PAGE.md` §6).
 
 ---
 
+## Moving a practitioner's whole list — what the first cut does NOT do (12 Sep 2026)
+
+Carl: *"the assigned practioner has called in sick or all patients have to be
+notified and reassigned to new practitioner... For now just built a feature to
+select the patients and then select a practioner to move them to. Add the
+remaining issues with this workflow to the to do list."*
+
+**Being built now:** select patients on the practitioner queue, choose a
+practitioner, move them. Desk-side only.
+
+Everything below is the rest of the workflow, deferred deliberately.
+
+### 1. The patient has not been asked, and must be
+
+`D-2026-09-12-03` is explicit: a substitution is TWO questions, in order —
+*"do you agree to see Dr Okafor at the same time as your current booking?"*
+and only then the assignment. **The move at the desk answers neither.** It is an
+administrative act that changes who the patient will see, and the patient does
+not know yet.
+
+So the first cut moves the row and leaves the asking undone. The gap is real and
+must not be papered over: whoever picks this up sends the substitution question
+to each moved patient, and the assignment question only to those who say yes.
+
+**Why deferred rather than done:** it is a messaging flow with its own consent
+rules, and building it badly inside a bulk action is how the two questions get
+bundled into one — the exact thing D-03 exists to prevent.
+
+### 2. The agreement names the provider, so moving the patient invalidates it
+
+D4 is the provider's name and place of practice. An agreement made for Dr A does
+not describe a service by Dr B.
+
+| State of the agreement | What moving the patient must do |
+|---|---|
+| Unsigned | **Supersede it** with one naming the new practitioner. Never edit — HARD-02 |
+| Signed | The signed one **stands as evidence** and cannot be touched (hard rule 11). A new agreement is needed for the service that will actually happen |
+
+The first cut supersedes the unsigned case. **The signed case is not handled**
+and is the one to think hardest about: a patient who has already signed for Dr A
+and is then moved has signed for a service nobody will render.
+
+### 3. An ongoing agreement does not travel
+
+Hard rule 6: enduring agreements are per practitioner x patient. A patient with
+an ongoing agreement with Dr A has nothing covering Dr B. Their moved visit needs
+an episodic agreement unless Dr B independently holds one with them.
+
+**Not handled in the first cut.** The visit policy already knows how to answer
+this; it has to be re-asked on the move rather than assumed.
+
+### 4. The target practitioner may not be allowed to take the list
+
+- They must be able to be the provider on an agreement at all
+  (`mayBeProviderOnAgreement`) — a nurse cannot take a GP's list.
+- GP to specialist changes what the visit needs (hard rule 6, REQ-END-01a).
+- They must have a live affiliation **at the location the patient came to**,
+  because D4 is the person AND the place, and billing identity is practice x
+  location x practitioner (D-2026-09-12-09).
+
+The first cut refuses a row it cannot move and says why. **It does not offer a
+fix**, which is a "shortcuts to the answer" gap (CLAUDE.md 7).
+
+### 5. Partial failure must never be silent
+
+Moving fifteen patients where three are refused has to say which three and why,
+and leave the twelve moved. **The first cut does this.** What it does not do is
+offer to retry the three after the reason is fixed.
+
+### 6. Undo
+
+A list moved to the wrong practitioner. Superseding forward is the only
+mechanism the domain allows, so "undo" is a second move back plus a second
+supersession — which is correct but leaves a chain that reads oddly. Worth
+deciding whether the desk shows it as one event.
+
+### 7. Notifying everybody, which is what Carl actually described
+
+*"all patients have to be notified"*. A practitioner calling in sick affects
+people who have not arrived yet, and the day's booked list is exactly what a
+mode-1 practice does not have (`INTEGRATION-MODES.md` V1). So today this can
+only reach people already on the queue. **The absent are unreachable until the
+appointment feed exists.**
+
+### 8. Named tests the full workflow needs
+
+`a_moved_patient_is_asked_before_they_are_moved` ·
+`moving_a_patient_supersedes_an_unsigned_agreement_and_never_edits_it` ·
+`a_signed_agreement_survives_a_move_untouched` ·
+`an_ongoing_agreement_does_not_follow_a_patient_to_another_practitioner` ·
+`a_practitioner_who_cannot_bill_cannot_receive_a_list` ·
+`a_partial_move_reports_every_refusal_and_applies_the_rest`
+
+### Why this is deferred rather than dropped
+
+Carl asked for the mechanical half now because a practice whose doctor is off
+sick needs to move the list this morning, and the consent questions can follow
+in the same day. That is the right order — the platform never blocks care
+(hard rule 8) and a list nobody can move is a blocked morning. But the asking is
+not optional and this entry exists so it is not quietly forgotten.
+
 ## The three integration modes, written down as one table
 
 Asked by Carl, 12 September 2026: *"I/we need to clearly write down the
