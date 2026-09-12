@@ -4317,6 +4317,108 @@ export const strings = {
    * approved by anybody official, and the word would be a claim we may not
    * make.
    */
+  /*
+   * PRACTICE FRONTDESK — the page a person on their first shift can work
+   * (Carl, 12 Sep 2026; FRONT-DESK-PAGE.md).
+   *
+   * THE WORDS ARE THE FEATURE, not a coat of paint on one. The existing desk
+   * is correct and expert: its strings carry "enduring", "affiliation",
+   * "particulars", "assignor", "artefact" and "attestation", every one of them
+   * the right word for the regulator and none of them a word a nineteen-
+   * year-old has heard before Tuesday. This surface says the same facts in the
+   * words the job is done in, and the vocabulary table in §5 of the plan is
+   * the list it may not reach for. Nothing here says "certified", "approved",
+   * "accredited" or "government-approved" either (hard rule 12).
+   *
+   * THE RAIL SAYS A NAME, A TIME AND A GROUP, AND STOPS. It stands at a
+   * counter facing a waiting room, which is the same reasoning that keeps the
+   * waiting list off the tablet — so there is no string here for a reason, a
+   * condition, a provider's opinion or a status chip, because there is no such
+   * thing on the rail to write one for.
+   */
+  frontdesk: {
+    title: 'Practice Frontdesk',
+    lead:
+      'Who is at the desk, who has a tablet, and who is still to come in. Choose a name on the left to see what '
+      + 'happens next for them.',
+    audience: 'Practice',
+    notLoaded: 'This page could not be loaded',
+    /*
+     * HARD RULE 8, IN THE WORDS A FIRST-DAY STARTER NEEDS. They are the person
+     * most likely to think a screen saying something is wrong means a patient
+     * cannot be seen.
+     */
+    neverBlocks:
+      'Nothing on this page holds anybody up. Patients are seen and billed as usual, whatever this screen says.',
+
+    rail: {
+      label: 'Today’s queue',
+      /*
+       * THE THREE GROUPS, TOP TO BOTTOM, AND THE ORDER IS THE POINT: who is in
+       * front of you, who is mid-way through, who is still to come.
+       */
+      hereNow: 'Here now',
+      onATablet: 'On a tablet',
+      expected: 'Expected',
+      /*
+       * THE COUNT IS THE LIVE REGION, NOT THE ROWS (§12.3). A person moving
+       * from Expected to Here now is worth announcing; every poll is not — so
+       * the announcement is a countable fact rather than a list of names read
+       * out again every few seconds.
+       */
+      count: (n: number) => (n === 1 ? '1 person' : `${n} people`),
+      /** Booked for today with no time on the booking. Sorts last, says so. */
+      noTime: 'No time given',
+      hereNoneYet: 'Nobody is waiting at the desk.',
+      tabletNoneYet: 'No tablet is being used right now.',
+      /*
+       * THE EMPTY STATE THAT CARRIES MOST OF THIS GROUP'S VALUE (§12.1).
+       * Appointments reach us only when the practice's software sends them, so
+       * this list is legitimately empty in every practice today. A blank box
+       * would read as broken, and a practice asking "why can't I see my
+       * bookings" would have to ask a person. This answers from the screen.
+       */
+      expectedNoneYet: 'No appointments received from the practice software.',
+      expectedWhy:
+        'When your practice’s software starts sending its booking list, the people booked in today will show '
+        + 'here before they arrive. Nothing is missing from your work in the meantime — everybody who walks in '
+        + 'still appears above.',
+      /** Said out loud for a screen reader, never drawn as a chip. */
+      chosen: 'Chosen',
+    },
+
+    panel: {
+      /*
+       * NOTHING CHOSEN YET. It says what the list is for and, in the same
+       * breath, that looking at it is safe — which is the first thing somebody
+       * on their first shift needs to be told.
+       */
+      nothingChosen: 'Choose a name on the left',
+      nothingChosenLead:
+        'Choosing a name only shows you what happens next for that person. It never sends anything, takes '
+        + 'anything back or changes anything.',
+
+      hereNow: (name: string) => `${name} is waiting at the desk.`,
+      hereNowNext: 'The next step is to send their agreement to a tablet beside you.',
+      onATablet: (name: string, device: string) => `${name} has the ${device} tablet.`,
+      onATabletUnnamed: (name: string) => `${name} has one of your tablets.`,
+      onATabletNext: 'Wait for them to finish, or take the tablet back.',
+      expected: (name: string) => `${name} is booked in for today and has not arrived yet.`,
+      expectedNext: 'There is nothing to do until they walk in. Nobody can sign before they are here.',
+
+      /*
+       * SAY PLAINLY THAT THE BUTTONS ARE NOT HERE YET, AND WHERE THEY ARE.
+       * A page that shows a person and then stops, without saying so, reads as
+       * broken; and "see the practice queue" in prose is the generic fallback
+       * CLAUDE.md §7 calls a defect. So: what is missing, and a link that lands
+       * on the page where the work is done today.
+       */
+      notYet: 'The buttons for this are still being built.',
+      notYetWhere: 'Until they are here, do the work on the tablet page — it opens with the same list.',
+      toTablet: 'Open Send to the tablet',
+    },
+  },
+
   tablet: {
     title: 'Send to the tablet',
     lead:

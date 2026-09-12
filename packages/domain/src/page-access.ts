@@ -320,6 +320,21 @@ export const PAGES: Readonly<Record<string, PageRule>> = {
   },
 
   /*
+   * THE FRONT DESK, FOR SOMEBODY ON THEIR FIRST SHIFT (Carl, 12 Sep 2026;
+   * FRONT-DESK-PAGE.md). The same audience as `/practice/tablet` and for the
+   * identical reason: it is reception's ordinary work, one patient at a time.
+   * It grants nothing the tablet page does not — the queue it shows is the
+   * same practice-scoped read, and every act behind it is the same
+   * `@PracticeScoped` act it already was. What differs is how much of the
+   * domain it puts on screen, which is a question about presentation and not
+   * about access.
+   */
+  '/practice/frontdesk': {
+    audiences: ['practice'],
+    why: 'The front desk’s own queue: who is here, who is on a tablet and who is expected, said in the words the job is done in. The same work as the tablet page, shown so a person on their first shift can do it.',
+  },
+
+  /*
    * RECEPTION'S WORK LIST, AND THE PAGE FOR ONE PATIENT ON IT (Carl, 4 Sep
    * 2026). The same audience as `/practice/tablet` and for the identical
    * reason: this is the front desk's ordinary work, one patient at a time,

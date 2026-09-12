@@ -1,0 +1,209 @@
+/*
+ * PRACTICE FRONTDESK — the rail and the panel (FRONT-DESK-PAGE.md §12).
+ *
+ * TWO COLUMNS, AND THE RAIL IS THE LEFT ONE, DELIBERATELY (§12.2). Reading
+ * order puts it first, and it answers "who am I working on" before "what do I
+ * do", which is the order a beginner needs. The right is where the eye goes
+ * last, and the rail is the thing they look at between every patient.
+ *
+ * IT REFLOWS RATHER THAN SCROLLS SIDEWAYS (WCAG 2.2 AA, 1.4.10). Below the
+ * breakpoint the two columns become one, rail first, at full width — no
+ * horizontal scrollbar and no minimum width that a 320px viewport cannot
+ * meet. The grid is only declared inside the media query for exactly that
+ * reason: the narrow layout is the default, and the wide one is the addition.
+ */
+
+.layout {
+  display: grid;
+  gap: var(--s5);
+  align-items: start;
+}
+
+@media (min-width: 860px) {
+  .layout {
+    grid-template-columns: minmax(15rem, 20rem) minmax(0, 1fr);
+  }
+}
+
+/* ------------------------------------------------------------------ rail */
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  min-width: 0;
+}
+
+.group {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.groupHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  padding: var(--s3) var(--s4);
+  border-bottom: 1px solid var(--line);
+}
+
+.groupTitle {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/*
+ * THE COUNT IS THE LIVE REGION (§12.3), so it is a real element of its own
+ * rather than text inside the heading — a heading whose whole content is
+ * announced on every poll is a heading that gets read out all morning.
+ */
+.groupCount {
+  margin-left: auto;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.row + .row {
+  border-top: 1px solid var(--line);
+}
+
+/*
+ * A REAL BUTTON PER NAME. Keyboard reachable, announces its pressed state, and
+ * — the point of §12.3 — choosing it does nothing but choose it. There is no
+ * control anywhere inside the rail that sends, recalls or confirms anything.
+ */
+.pick {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  width: 100%;
+  padding: var(--s3) var(--s4);
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pick:hover {
+  background: var(--surface-sunken);
+}
+
+.pick:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.pick[aria-pressed='true'] {
+  background: var(--info-wash);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.time {
+  margin-left: auto;
+  flex: none;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.empty {
+  margin: 0;
+  padding: var(--s3) var(--s4);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+/*
+ * THE SENTENCE UNDER AN EMPTY "EXPECTED", which is most of that group's value
+ * (§12.1). Quieter than the group's own empty line and longer, because it is
+ * an explanation rather than a status.
+ */
+.why {
+  margin: 0;
+  padding: 0 var(--s4) var(--s3);
+  font-size: var(--text-sm);
+  color: var(--ink-faint);
+}
+
+/* ----------------------------------------------------------------- panel */
+
+.panel {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: var(--s5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+
+.panelName {
+  margin: 0;
+  font-size: var(--text-xl);
+  color: var(--ink);
+}
+
+.panelLead {
+  margin: 0;
+  color: var(--ink);
+}
+
+.panelNext {
+  margin: 0;
+  color: var(--ink-muted);
+}
+
+/*
+ * SPOKEN, NOT SHOWN. The group heading and the count carry the state to
+ * anybody who can see them; this carries the CHANGE to everybody else, as one
+ * sentence naming the group — "Here now: 2 people" — rather than a bare
+ * number whose heading a screen reader has long since left behind.
+ */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/*
+ * THE WAY ONWARD, AND IT IS A LINK RATHER THAN A BUTTON. Nothing on this page
+ * acts yet; a control styled as a primary button would be the second thing on
+ * screen that looks like the answer, which is the one thing §4 of the plan
+ * asks this page never to have.
+ */
+.toTablet {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  align-self: flex-start;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.toTablet:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

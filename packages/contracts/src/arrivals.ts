@@ -399,3 +399,39 @@ export interface ServiceRenderedReceipt {
   /** True on a retry: this service had already been processed. */
   readonly repeat: boolean;
 }
+
+/**
+ * SOMEBODY BOOKED FOR TODAY WHO HAS NOT WALKED IN YET (Carl, 12 Sep 2026;
+ * FRONT-DESK-PAGE.md §12.4).
+ *
+ * WHY THIS SHAPE IS SO SMALL, AND WHY THAT IS THE POINT. It feeds the
+ * "Expected" group of the front desk's queue rail, and that rail carries a
+ * name, a time and nothing else — it stands at a counter facing a waiting
+ * room, which is the same reasoning that keeps the waiting list off the
+ * tablet. No provider, no reason, no condition, no date of birth, no contact
+ * detail, no identifier of any kind (hard rules 1 and 9), and no amount (hard
+ * rule 4). A field added here is a field on a screen the public can read over
+ * a shoulder.
+ *
+ * NOTHING HERE IS ACTIONABLE, DELIBERATELY. A person who has not arrived
+ * cannot sign, so the row carries no agreement, no session and no control. It
+ * exists so a beginner can see the shape of the morning and so an empty "Here
+ * now" does not read as "nothing to do today".
+ *
+ * THE LIST IS ROUTINELY EMPTY AND THAT IS NOT A FAULT. Appointments reach us
+ * only when the practice's software pushes them, which is behind blocker D-01,
+ * so every caller must be able to say WHY it is empty rather than draw a blank
+ * box.
+ */
+export interface ExpectedAppointment {
+  readonly appointmentId: string;
+  /** Always present: an appointment whose patient did not resolve is not listed. */
+  readonly patientId: string;
+  readonly patientName: string;
+  /**
+   * As the practice's software gave it — a local clock time, never parsed into
+   * an instant here. Null where the feed carried no time, which reads as
+   * "booked for today, no time given" and sorts last.
+   */
+  readonly time: string | null;
+}

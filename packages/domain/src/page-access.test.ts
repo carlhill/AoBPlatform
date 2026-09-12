@@ -96,6 +96,16 @@ describe('reaching a page', () => {
     expect(mayReach('/practice', ordinary)).toBe(true);
     expect(mayReach('/practice/practitioners', ordinary)).toBe(true);
     expect(mayReach('/practice/locations', ordinary)).toBe(true);
+    /*
+     * THE FRONT DESK IS RECEPTION'S, EXACTLY LIKE THE TABLET PAGE (Carl,
+     * 12 Sep 2026; FRONT-DESK-PAGE.md §11). The pair is asserted together
+     * because the whole justification for the new page's audience is that it
+     * is the same one — a drift between them would mean either that reception
+     * cannot do its job or that a beginner's page grants more than the expert
+     * one it simplifies.
+     */
+    expect(mayReach('/practice/tablet', ordinary)).toBe(true);
+    expect(mayReach('/practice/frontdesk', ordinary)).toBe(true);
   });
 
   it('keeps the queue and review screens to the platform, despite their paths', () => {

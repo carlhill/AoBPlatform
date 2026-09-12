@@ -64,6 +64,76 @@ if (duplicates.length > 0) {
 }
 
 /*
+ * THE FRONT DESK'S OWN VOCABULARY, ENFORCED (FRONT-DESK-PAGE.md §5; Carl,
+ * 12 Sep 2026).
+ *
+ * WHY A LINT AND NOT ONLY A TEST. The front desk page exists because the
+ * existing desk speaks the regulator's language and a person on their first
+ * shift does not. Every one of the banned words below is the CORRECT word
+ * somewhere else in this product — which is exactly why the vocabulary drifts
+ * back the first time somebody reuses a string, and why the plan asks for a
+ * lint rule the same shape as the kiosk's storage one. The named test over
+ * `strings.frontdesk` catches it too; this catches it before the tests run,
+ * and names the line.
+ *
+ * COMMENTS ARE EXEMPT, deliberately. The docstrings in that block have to be
+ * able to say WHICH words are banned and why, and a rule that could not be
+ * explained in the file it governs is a rule nobody will keep.
+ *
+ * THE LAST FOUR ARE HARD RULE 12 (REQ-65C-05) and are banned everywhere, not
+ * only here; they are repeated in this list so one read of it says everything
+ * this surface may not say.
+ */
+const BANNED = [
+  'assignor',
+  'episodic',
+  'enduring',
+  'supersede',
+  'particulars',
+  'capture request',
+  'affiliation',
+  'artefact',
+  'attestation',
+  'certified',
+  'approved',
+  'accredited',
+  'government-approved',
+];
+
+const offences = [];
+let inFrontdesk = false;
+for (let i = 0; i < lines.length; i += 1) {
+  const line = lines[i];
+  const trimmed = line.trim();
+  if (/^frontdesk\s*:\s*\{/.test(trimmed)) {
+    inFrontdesk = true;
+    continue;
+  }
+  if (!inFrontdesk) continue;
+  // The block's own closing brace, at the top level of the strings object.
+  if (line === '  },') break;
+  if (trimmed.startsWith('*') || trimmed.startsWith('/*') || trimmed.startsWith('//')) continue;
+  const lowered = line.toLowerCase();
+  for (const word of BANNED) {
+    if (lowered.includes(word)) offences.push({ word, line: i + 1, text: trimmed });
+  }
+}
+
+if (offences.length > 0) {
+  console.error(`\n  ${FILE}\n`);
+  for (const o of offences) {
+    console.error(`  BANNED WORD ON THE FRONT DESK  "${o.word}"  line ${o.line}`);
+    console.error(`    ${o.text}`);
+  }
+  console.error(
+    '\n  FRONT-DESK-PAGE.md §5 lists what to say instead. This page is read by\n' +
+      '  somebody on their first shift; every word above is correct elsewhere and\n' +
+      '  wrong here.\n',
+  );
+  process.exit(1);
+}
+
+/*
  * Unused keys are reported and do NOT fail. Several are read dynamically —
  * `strings.channels.identifierNames[type]` — so a reference scan cannot see
  * them, and failing the build on a false positive would teach everybody to

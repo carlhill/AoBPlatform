@@ -12,6 +12,7 @@ import type {
   ArrivalPreview,
   ArrivalProviderChoice,
   ArrivalReceipt,
+  ExpectedAppointment,
   RefusedArrival,
   ServiceRenderedReceipt,
 } from '@aobplatform/contracts';
@@ -1002,6 +1003,136 @@ export class ArrivalsService {
           source: row.source as RefusedArrival['source'],
         } satisfies RefusedArrival;
       });
+    });
+  }
+
+  /**
+   * BOOKED FOR TODAY, NOT HERE YET — the front desk rail's "Expected" group
+   * (Carl, 12 Sep 2026; FRONT-DESK-PAGE.md §12.4).
+   *
+   * WHY A NEW READ EXISTS AT ALL, when the front desk plan says it should need
+   * none (§7). Everything else that page shows is already answered by
+   * `GET /tablet-sessions/pushable`, which reads AGREEMENTS — and a patient who
+   * has not arrived has none. The appointment rows are written (by the
+   * auto-capture path) and nothing else exposes them, so the only alternatives
+   * were to leave the group out or to let the page INFER who is missing from
+   * the queue it can see. Inferring an absence from a list of presences is
+   * exactly the kind of second implementation §7 exists to prevent, so: one
+   * read, of a table we already write, that answers the one question.
+   *
+   * IT LIVES IN THIS MODULE BECAUSE IT IS A QUESTION ABOUT ARRIVALS. "Which of
+   * today's bookings has not arrived" is defined by the ABSENCE of an arrival;
+   * the arrivals table is this module's own, and the appointment rows are read
+   * across, on the same precedent every other console read in this codebase
+   * follows — writes go through module APIs, reads cross tables.
+   *
+   * WHAT AN "ARRIVAL" COUNTS AS HERE: any arrival today for that patient,
+   * received or refused. A refused arrival means the person IS standing at the
+   * counter and the connector named somebody who cannot be the provider; they
+   * belong on the "Needs a provider" list, not on a list of people yet to walk
+   * in. Calling them expected would send reception looking out of the window
+   * for somebody in front of them.
+   *
+   * AN APPOINTMENT WHOSE PATIENT DID NOT RESOLVE IS NOT LISTED. The rail shows
+   * a name and a time and nothing else, so a row with no name is a row nobody
+   * can use — and inventing a placeholder for it would put a mystery on a
+   * screen instead of a person. The suppression is already recorded against the
+   * appointment where it happened (`patient_unresolved`), which is where an
+   * onboarding problem is diagnosed.
+   *
+   * A NAME AND A TIME, AND NOTHING ELSE (§12.3). No provider, no reason, no
+   * agreement, no identifier of any kind (hard rules 1 and 9), no amount (hard
+   * rule 4). This list faces a waiting room.
+   *
+   * IT IS ROUTINELY EMPTY AND THE CALLER MUST SAY WHY. Appointments only reach
+   * us when the practice's software pushes them, which is behind blocker D-01;
+   * the dev database holds none, today or ever. An empty array here is a true
+   * answer, and the screen's job is to say "no appointments received from the
+   * practice software" rather than draw a blank box.
+   */
+  async expectedToday(practiceId: string): Promise<ExpectedAppointment[]> {
+    /*
+     * THE PRACTICE'S OWN DAY, BY THE SERVER'S CLOCK. `Appointment.date` is a
+     * DATE column, which Prisma reads and writes at UTC midnight of that
+     * calendar day, so the day being asked for is built as one rather than
+     * compared as an instant.
+     *
+     * AND IT IS THE *LOCAL* CALENDAR DAY, WHICH IS NOT WHAT `pushable` USES —
+     * say so rather than let a reader assume they agree. `today()` in
+     * `tablet-sessions.service.ts` is `new Date().toISOString().slice(0, 10)`,
+     * the UTC date, which on a host running in Australia/Sydney reads as
+     * YESTERDAY for the first ten hours of the practice's morning — 8am in
+     * Sydney is 22:00 UTC the day before. On a UTC host (Fargate's default,
+     * and CI's) the two are identical, which is why nothing catches it.
+     *
+     * This one takes the local day because "who is booked in today" is a
+     * question about the room, and answering it with yesterday's book during
+     * the morning would be plainly wrong. `pushable` is NOT changed to match:
+     * it is the live desk, it is not in this page's scope, and quietly moving
+     * its day boundary is exactly the kind of silent fix CLAUDE.md forbids.
+     * Flagged for Carl in FRONT-DESK-PAGE.md — the two should be one helper,
+     * and which of the two definitions wins is his call, not a build's.
+     */
+    const dayStart = new Date();
+    dayStart.setHours(0, 0, 0, 0);
+    const calendarDay = new Date(
+      `${dayStart.getFullYear()}-${String(dayStart.getMonth() + 1).padStart(2, '0')}-${String(
+        dayStart.getDate(),
+      ).padStart(2, '0')}T00:00:00.000Z`,
+    );
+
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const appointments = await tx.appointment.findMany({
+        where: { date: calendarDay },
+        orderBy: [{ time: 'asc' }, { createdAt: 'asc' }],
+      });
+      if (appointments.length === 0) return [];
+
+      const patientIds = [
+        ...new Set(appointments.map((a) => a.patientId).filter((id): id is string => id !== null)),
+      ];
+      if (patientIds.length === 0) return [];
+
+      /*
+       * WHO HAS ALREADY WALKED IN. One read of the practice's own arrivals for
+       * today, matched on the patient — never a per-appointment query, and
+       * never the PMS's appointment key, which an arrival does not carry.
+       */
+      const arrivedToday = await tx.arrival.findMany({
+        where: { arrivedAt: { gte: dayStart }, patientId: { in: patientIds } },
+        select: { patientId: true },
+      });
+      const arrived = new Set(arrivedToday.map((row) => row.patientId));
+
+      const waiting = appointments.filter((a) => a.patientId !== null && !arrived.has(a.patientId));
+      if (waiting.length === 0) return [];
+
+      const patients = await tx.patient.findMany({
+        where: { id: { in: waiting.map((a) => a.patientId as string) } },
+        select: { id: true, givenNames: true, familyName: true, confidentialityFlag: true },
+      });
+      const patientById = new Map(patients.map((p) => [p.id, p]));
+
+      const rows: ExpectedAppointment[] = [];
+      for (const appointment of waiting) {
+        const patient = patientById.get(appointment.patientId as string);
+        /*
+         * A FLAGGED PATIENT IS NOT NAMED ON A SCREEN THAT FACES THE ROOM, on
+         * exactly the reasoning the auto-capture path already applies when it
+         * suppresses one: the exposure the flag exists to prevent is somebody
+         * reading the name over reception's shoulder. Their care and their
+         * billing are untouched (hard rule 8) — reception works them from the
+         * pages that were already theirs.
+         */
+        if (!patient || patient.confidentialityFlag) continue;
+        rows.push({
+          appointmentId: appointment.id,
+          patientId: patient.id,
+          patientName: `${patient.givenNames} ${patient.familyName}`,
+          time: appointment.time,
+        });
+      }
+      return rows;
     });
   }
 

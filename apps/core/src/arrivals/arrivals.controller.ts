@@ -143,6 +143,30 @@ export class ArrivalsController {
     return this.arrivals.needingAProvider(requirePractice(practiceId));
   }
 
+  /**
+   * BOOKED FOR TODAY, NOT HERE YET — the front desk rail's "Expected" group
+   * (Carl, 12 Sep 2026; FRONT-DESK-PAGE.md §12.4).
+   *
+   * THE ONE NEW READ THE FRONT DESK PAGE IS ALLOWED, and the plan says why:
+   * everything else that page shows is answered by `GET
+   * /tablet-sessions/pushable`, which reads agreements, and a patient who has
+   * not arrived has none. The data exists, nothing else exposes it, and the
+   * alternative is the page inferring who is missing — which it must not do.
+   *
+   * BEFORE `:id`, because `expected` is not a UUID and Nest matches routes in
+   * declaration order (wow.md section 1) — the same reason
+   * `needing-a-provider` and `servicing-providers` sit above it.
+   *
+   * `@PracticeScoped` LIKE ITS NEIGHBOURS. Who is booked in at a practice
+   * today is the practice's own business; RLS means another practice's request
+   * finds nothing rather than being filtered down to nothing.
+   */
+  @Get('expected')
+  @PracticeScoped()
+  expectedToday(@Headers('x-practice-id') practiceId: string | undefined) {
+    return this.arrivals.expectedToday(requirePractice(practiceId));
+  }
+
   /** Who reception may choose instead. Servicing providers only, by the same rule that refused. */
   @Get('servicing-providers')
   @PracticeScoped()

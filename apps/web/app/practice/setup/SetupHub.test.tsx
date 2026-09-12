@@ -124,6 +124,26 @@ describe('the Tablets card, and the Kiosk row it must never disagree with', () =
     expect((screen.getByTestId('hub-to-devices') as HTMLAnchorElement).getAttribute('href')).toBe(
       '/practice/devices',
     );
+
+    /*
+     * AND THE FRONT DESK, BESIDE THEM (Carl, 12 Sep 2026: "Add this to the
+     * attached card as Practice Frontdesk"). Same card, same `canOpen`, one
+     * path only — the card and the page must not be able to disagree about
+     * who may open it.
+     */
+    expect(screen.getAllByTestId('hub-to-frontdesk')).toHaveLength(1);
+    expect((screen.getByTestId('hub-to-frontdesk') as HTMLAnchorElement).getAttribute('href')).toBe(
+      '/practice/frontdesk',
+    );
+    expect(tabletsCard.querySelector('[data-testid="hub-to-frontdesk"]')).not.toBeNull();
+    /*
+     * The page's own name, through `openLabel` like every other card link —
+     * which lowercases it and fills the one determiner slot English has, so
+     * the card reads "Open the practice frontdesk".
+     */
+    expect(screen.getByTestId('hub-to-frontdesk').textContent?.toLowerCase()).toContain(
+      strings.frontdesk.title.toLowerCase(),
+    );
   });
 
   it('as the practice, with nothing paired: "No tablet paired yet", NOT STARTED', async () => {
@@ -165,6 +185,14 @@ describe('the Tablets card, and the Kiosk row it must never disagree with', () =
     );
     expect((screen.getByTestId('hub-to-tablet') as HTMLAnchorElement).getAttribute('href')).toBe(
       `/platform/practices/${PRACTICE}/tablet`,
+    );
+    /*
+     * THE FRONT DESK HAS NO READ-ONLY TWIN YET, so `toViewPath` lands the
+     * operator on the practice hub — the truthful destination until one
+     * exists, and never the practice route that would refuse them.
+     */
+    expect((screen.getByTestId('hub-to-frontdesk') as HTMLAnchorElement).getAttribute('href')).toBe(
+      `/platform/practices/${PRACTICE}`,
     );
   });
 

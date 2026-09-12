@@ -256,12 +256,16 @@ the alternative is the page inferring who is missing, which it must not do.
 
 ### 12.5 What this needs before it can be finished
 
-- **An appointment feed.** Until the connector pushes the appointment book,
+- ~~**An appointment feed.** Until the connector pushes the appointment book,
   Expected is permanently empty in every real practice. Worth confirming with
   Carl whether the front desk page ships with the group visible-but-empty (with
-  its explanation) or hidden until a feed exists. Recommendation: visible, so
-  the absence is a visible gap rather than a silent one, and so a practice
-  asking "why can't I see my bookings" gets an answer from the screen.
+  its explanation) or hidden until a feed exists.~~ **BUILT VISIBLE, 12 Sep
+  2026, as the recommendation said and as an assumption still for Carl to
+  confirm.** The group renders with its count, the line "No appointments
+  received from the practice software" and a sentence saying what will fill it,
+  so the absence is a visible gap rather than a silent one and a practice
+  asking "why can't I see my bookings" gets an answer from the screen. Test:
+  `front_desk_expected_group_says_why_it_is_empty`.
 - **A decision on the second question in §11** — strictly one patient at a time.
   The rail makes multi-select technically easy and conceptually expensive; the
   design above assumes one.
@@ -335,3 +339,8 @@ supersession chain or the evidence is touched.
 | 12 Sep 2026 | v1.0. Written when Carl asked for a front-desk page a day-one starter could work. Not built. |
 | 12 Sep 2026 | §12: the queue rail — in flight, on a tablet, expected; and the finding that the appointment feed does not exist yet. Route fixed as /practice/frontdesk. |
 | 12 Sep 2026 | §12.6: reception can change who is next, as a call order that overrides display without ever editing the arrival time. |
+| 12 Sep 2026 | **First slice BUILT** — the route `/practice/frontdesk` (page-access `['practice']`, back link to the setup hub), the "Practice Frontdesk" card beside "Send to the tablet" on the setup hub, and §12's rail. The right-hand panel is a placeholder: it names the chosen person, says what happens next in a sentence and says plainly that §4's one-button action panel is still to come, because its words and its situations need Carl's sign-off first. §12.6's call order is NOT built. |
+| 12 Sep 2026 | The one new read of §12.4 exists: `GET /arrivals/expected` (`@PracticeScoped`), today's appointments with no arrival today, carrying an appointment id, a patient id, a name and a time — and nothing else. It lives in the arrivals module because "who has not arrived" is defined by the absence of an arrival. |
+| 12 Sep 2026 | §5's vocabulary is enforced twice: a lint over the `frontdesk` block of `strings.ts` inside `npm run lint -w apps/web` (comments exempt, so the block can explain its own rule), and the test `front_desk_rail_never_uses_a_domain_word_from_the_banned_list` over every string the surface owns. |
+| 12 Sep 2026 | **A pre-existing defect found while building, NOT fixed here.** "Today" has two definitions in the codebase. `today()` in `tablet-sessions.service.ts` — which `pushable` uses to decide whether an appointment is today's — is the **UTC** date, so on a host running in Australia/Sydney it reads as *yesterday* for the first ten hours of the practice's morning (8am AEST is 22:00 UTC the day before). `GET /arrivals/expected` uses the **local** calendar day, because "who is booked in today" is a question about the room. On a UTC host (Fargate's default, and CI's) the two agree, which is why nothing catches it. They should be one helper; which definition wins is Carl's call, not a build's, so `pushable` was left exactly as it was. |
+| 12 Sep 2026 | **Two assumptions for Carl, made mid-build.** (a) Expected renders visible-but-empty, per §12.5's recommendation. (b) Nobody is named twice: a person already on the queue is not also listed under Expected, because a booking can carry a draft before its patient walks in. The queue wins — it is the list with work on it. Test: `front_desk_expected_never_names_somebody_already_on_the_queue`. |

@@ -35,6 +35,7 @@ import {
   ArrowRight,
   Building2,
   CheckCircle2,
+  ConciergeBell,
   Circle,
   Download,
   ClipboardList,
@@ -555,6 +556,32 @@ export function SetupHub({
             >
               <Send size={14} aria-hidden="true" />
               {openLabel(strings.tablet.title)}
+              <ArrowRight size={14} aria-hidden="true" />
+            </Link>
+          )}
+
+          {/*
+            AND THE FRONT DESK'S OWN VIEW OF THE SAME QUEUE (Carl, 12 Sep 2026:
+            "Add this to the attached card as Practice Frontdesk";
+            FRONT-DESK-PAGE.md §11). Beside "Send to the tablet" rather than in
+            a card of its own, because it is the same morning's work seen a
+            different way — who is here, who has a tablet, who is expected —
+            and a person deciding between the two is deciding how much of the
+            domain they want on screen, not which job they are doing.
+
+            THE SAME `canOpen` THE PAGE ITSELF APPLIES, so the card and the
+            page cannot drift apart. `toViewPath` has no twin for it yet and
+            therefore lands a read-only operator on the practice hub, which is
+            the truthful destination until one exists.
+          */}
+          {canOpen('/practice/frontdesk') && (
+            <Link
+              href={viewOnly ? toViewPath('/practice/frontdesk', practiceId) : '/practice/frontdesk'}
+              className={styles.cardLink}
+              data-testid="hub-to-frontdesk"
+            >
+              <ConciergeBell size={14} aria-hidden="true" />
+              {openLabel(strings.frontdesk.title)}
               <ArrowRight size={14} aria-hidden="true" />
             </Link>
           )}

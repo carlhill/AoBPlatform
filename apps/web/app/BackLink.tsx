@@ -52,6 +52,13 @@ const PARENTS: Readonly<Record<string, string>> = {
   // wonders why a push refused goes the other way.
   '/practice/tablet': '/practice/setup',
   /*
+   * AND THE FRONT DESK GOES TO THE SAME PLACE (Carl, 12 Sep 2026). It is the
+   * tablet page's neighbour in every other sense — same audience, same queue,
+   * same practice — so 'up' from it is the same hub the card that opened it
+   * lives on.
+   */
+  '/practice/frontdesk': '/practice/setup',
+  /*
    * RECEPTION'S QUEUE SITS BESIDE THE TABLETS IT FEEDS (Carl, 7 Sep 2026 —
    * it had no back link at all, so the only way off it was the menu). It is
    * the same working area: the patients with something open, and the devices
