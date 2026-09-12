@@ -179,6 +179,21 @@ export function WaitingView() {
    */
   const setState = useCallback(
     async (arrivalId: string, state: string) => {
+      /*
+       * A VALUE THE SERVER WOULD REFUSE NEVER LEAVES THIS PAGE (Carl, 12 Sep
+       * 2026, who saw "state must be one of the following values…" on his own
+       * screen).
+       *
+       * `pending` is rendered so an untouched row reads honestly and is marked
+       * disabled, but a disabled <option> is a hint rather than a guarantee —
+       * keyboard type-ahead and some assistive tooling can still land on one,
+       * and a stale bundle would not have the attribute at all. The server is
+       * right to refuse it; the page is wrong to ask. So the guard is here as
+       * well, and the control simply does nothing rather than showing somebody
+       * a validation error they cannot act on (CLAUDE.md §7).
+       */
+      const option = VISIT_STATE_OPTIONS.find((o) => o.key === state);
+      if (!option?.settableByHand) return;
       setBusy(arrivalId);
       setRefused((was) => ({ ...was, [arrivalId]: '' }));
       try {

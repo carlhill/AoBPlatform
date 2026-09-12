@@ -3832,3 +3832,28 @@ practice WITHOUT the practitioner becoming a second person — coverage of an
 enduring agreement is per practitioner across locations, and a duplicated
 practitioner row would silently break that. Review once a real practitioner
 works at more than one practice.
+
+## Auth off means anyone can set a visit state, and that one can draft an agreement (found 12 Sep 2026)
+
+Found by the reviewer of the practitioner visit-state build and deliberately
+NOT fixed, because CLAUDE.md §7 says to ask before touching auth flows.
+
+**What it is.** With `AUTH_ENFORCE=false` — the development posture — an
+unauthenticated caller who supplies an `x-practice-id` header is treated as
+practice-scoped and can set any visit state on any arrival at that practice.
+
+**Why it is not simply "the same as everywhere else".** It IS the same staged
+posture the whole console runs under today, and the read endpoints have it too.
+The difference is the blast radius: setting **Completed** is the service-rendered
+signal, so this endpoint can cause an agreement to be drafted, and drafting is a
+write with evidence attached. Every other unauthenticated hole in dev reads.
+
+**Not urgent, and not a production defect** — enforcement is on in any deployed
+environment. It matters for two reasons: a dev machine reachable on a network is
+one curl away from writing evidence rows, and it is the kind of thing that is
+easy to forget when enforcement is finally switched on for real.
+
+**What to decide.** Whether write endpoints that can draft an agreement should
+require a real principal even when `AUTH_ENFORCE=false` — a narrower rule than
+turning enforcement on, and one that could land now without disturbing the
+staged rollout. Carl's call; it touches auth.
