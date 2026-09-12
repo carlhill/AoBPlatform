@@ -234,6 +234,74 @@ or Microsoft's manager, that is fine and already supported. Codes are a
 downgrade. Federation is a conversation about who guarantees identity, not a
 convenience feature.
 
+## 3d. "What about two-factor — a number from Microsoft or Google?"
+
+Carl, pressing on §3c(a). The instinct is defence in depth and it is a good one.
+The answer is that **a passkey is already two factors**, and bolting a code onto
+it adds friction rather than resistance.
+
+### A passkey is possession plus verification, already
+
+Two things must be true before an assertion is produced:
+
+- **Possession** — the private key lives on that phone, tablet or security key
+  and cannot be copied off it.
+- **User verification** — the device checks the person with a face, a
+  fingerprint or its own PIN before it will sign.
+
+The realm already requires the second:
+`webAuthnPolicyPasswordlessUserVerificationRequirement: 'required'`. So a
+practitioner signing in has already produced something they have and something
+they are. A six-digit code would be a **third** factor, and the weakest of the
+three.
+
+### Adding a code makes it worse in one of two ways
+
+- **"Passkey OR password + code"** — the weakest accepted path defines the
+  security of the system. It reintroduces the password hard rule 15 exists to
+  remove, and hands an attacker a phishable route that bypasses the strong one.
+- **"Passkey AND code"** — adds nothing. An attacker who phishes the code still
+  cannot produce the passkey; one who somehow has the passkey device has already
+  passed the device's own verification. Every doctor pays a few seconds per
+  sign-in and the threat model does not move.
+
+### The thing codes defend against does not exist here
+
+TOTP was designed to protect a password from being reused after it leaks. There
+are no passwords. Number-matching push (Microsoft Authenticator's stronger mode)
+defends against approval fatigue, which also only arises when a password has
+already been guessed.
+
+Neither defends against phishing, and phishing is the live threat: a convincing
+copy of our sign-in page can harvest a code and replay it within its window. It
+cannot harvest a passkey, because the assertion is bound to the origin that
+requested it — the browser refuses to sign for the wrong domain. **That
+origin-binding is the property worth protecting, and adding a code does not
+strengthen it.**
+
+### Where step-up IS worth having, it is another passkey touch
+
+For a genuinely high-stakes act — revoking every credential at a practice, say —
+requiring a **fresh passkey assertion** at the moment of the act is the right
+control. Same strength, no new mechanism, no new thing to lose. That is
+step-up done properly and it is worth considering separately from sign-in.
+
+### The real need underneath, which deserves a real answer
+
+The honest worry behind "let's add another factor" is usually **what happens when
+they lose the phone**. That is a recovery problem, not an authentication one, and
+it already has two answers:
+
+1. **Everyone registers two authenticators** (§4) — a phone and a security key —
+   so losing one is an inconvenience rather than a lockout.
+2. **The practice administrator re-invites them**, which the platform already
+   does: the invitation is a one-time link to a fresh enrolment, and the lost
+   credential is revoked. `PRACTICE-SCOPED-LOGIN.md` and the existing
+   `sendPasskeyEnrolment` path cover it.
+
+Recovery is where the effort belongs. A code would not have helped somebody who
+lost the phone the code lives on.
+
 ## 4. The change that enforces it
 
 Set the realm's passwordless policy to
@@ -320,3 +388,4 @@ somebody through saving to Windows Hello, which is exactly what this stops.
 | 12 Sep 2026 | §3a added: what the QR is, and the three ways it differs from WhatsApp — no password, no app, and physical proximity as the security property. |
 | 12 Sep 2026 | §3b added: what to do when the shared PC has no Bluetooth — a USB adapter per machine, a security key per person, or the practitioner working from their own device. |
 | 12 Sep 2026 | §3c added: Google/Microsoft auth pulled apart into TOTP codes (no), passkeys stored in their managers (yes, with the known Microsoft scar), and federation (a question about who guarantees identity). |
+| 12 Sep 2026 | §3d added: why a code is not added to a passkey — the passkey is already possession plus verification, the realm requires it, and the real need underneath is recovery. |
