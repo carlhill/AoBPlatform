@@ -3663,3 +3663,100 @@ two definitions must stop disagreeing inside one function.
 **Also worth doing while in there:** grep for other day boundaries. This one was
 found by accident, and `setHours(0,0,0,0)` appears three times in that file
 alone.
+
+## Should AoBPlatform offer scheduling? (Carl asked, 12 Sep 2026)
+
+Carl: hybrid and manual scheduling is common; offer scheduling free, or free for
+a year, to sweeten adoption; the front desk becomes very efficient because
+everything is on AoBPlatform; and we get the patient relationship, with patients
+booking directly.
+
+**The instinct is right. The conclusion does not follow, and I would not build
+it before GA.**
+
+**What is right about it.** A practice without an appointment feed has a worse
+front desk, and we have just seen that concretely: the Expected group on the new
+page has nothing to show because no appointment ever reaches us. Owning the
+booking would fix that, would remove our dependence on blocker D-01 for arrivals,
+and would give a direct line to the patient.
+
+**Four reasons against, in order of weight.**
+
+1. **It inverts the safety posture the whole product rests on.** Hard rule 8 is
+   that the platform never blocks care, and it is currently keepable because we
+   are not on the critical path — an outage slows evidence, and the practice
+   keeps working off the PMS. Put the appointment book in AoBPlatform and an
+   outage stops the practice seeing anybody. That is a different product with a
+   different availability bar, a different on-call obligation and a different
+   insurance conversation.
+2. **It is a second product, not a feature**, and it lands in a crowded market
+   (HotDoc, AutoMed, HealthEngine, and the schedulers already inside every PMS).
+   GA is April 2027 and the verbal fallback ends 30 June 2027. Anything that
+   competes for the same months competes with the deadline that actually matters.
+3. **It makes us a competitor to the vendors we need.** Medtech is the first
+   customer's PMS and D-01 is already unresolved. Shipping a scheduler is a poor
+   way to open that conversation.
+4. **Free is the expensive part.** Migration off an existing book, dual entry
+   during any hybrid period, and double-booking when two systems both think they
+   own a slot. The support cost of a free scheduler is not free, and it is paid
+   in the months before GA.
+
+**What to do instead, which gets most of the benefit.** A practice's front desk
+does not need us to own the calendar; it needs a working queue. That is already
+being built — the manual card mode and the front desk page give a practice with
+no feed a real queue today (`QUEUE-TICKETS.md`, `FRONT-DESK-PAGE.md`). Offer the
+QUEUE, not the CALENDAR. It is a fraction of the work, it carries none of the
+four risks above, and for a small practice it is the part they actually feel.
+
+**What would change this answer.** Evidence that practices are refusing to adopt
+specifically because we cannot see their book, rather than for price or effort.
+That is worth asking the first ten practices directly, and it is a cheap question.
+
+## A practitioner does not come in (Carl asked, 12 Sep 2026)
+
+Carl: tell the affected patients, tell them they will see another doctor, and
+send the agreement ahead so they do not queue on arrival — pre-check-in, like an
+airline.
+
+**Strong yes, and there is a compliance win in it that a practice will not see
+coming.**
+
+**The win.** An enduring agreement is per practitioner (hard rule 6). If Dr A is
+away and the patient is seen by Dr B, **Dr A's enduring agreement does not cover
+that visit**. A practice running on enduring agreements will assume it does, and
+will bulk-bill a visit with no agreement behind it. Every absence is therefore a
+day of quiet non-compliance that nobody notices. A platform that spots the
+substitution and papers it is doing something no PMS currently does, and it is
+squarely our job rather than an adjacent product.
+
+**How it should work.**
+
+1. The practice marks a practitioner as away for a day or part of one.
+2. The platform lists the affected patients and what each one needs — many will
+   need nothing, because an episodic agreement is per visit anyway.
+3. The practice chooses: reassign to a named covering practitioner, or offer to
+   rebook. **Reassignment is the practice's decision, never ours.**
+4. Patients are told, and the message says who they will see. Not an approval
+   request — a fact, with the choice to rebook.
+5. Only after that, the agreement for the covering practitioner goes out ahead of
+   the visit, using the pre-visit link that already exists.
+
+**Four things to get right.**
+
+- **Do not conflate two consents.** Agreeing to see a different doctor and
+  assigning a benefit are separate. Ask the first before sending the second, or
+  the message reads as "sign this" when the honest question is "is this all
+  right?".
+- **Never block care** (hard rule 8). A patient who ignores the message is seen
+  as normal and signs at the desk. Pre-check-in is a convenience, never a gate.
+- **Real sends cost money and need a registered sender** (CLAUDE.md §7). A day's
+  patients is a bulk send and needs Carl's explicit approval before it leaves the
+  sandbox.
+- **It must not look like an 89AA notice.** Those are one-way, never chased, and
+  never carry approval semantics (hard rule 7). A "your doctor is away" message
+  travelling beside them must be unmistakably different.
+
+**Sequencing.** This depends on knowing who is booked, so it is worth noting that
+it needs an appointment feed — the same gap the scheduling question is really
+about. The difference is that this one is answered by the PMS feed we already
+plan to consume, not by owning the book.
