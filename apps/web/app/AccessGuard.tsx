@@ -37,6 +37,7 @@ import {
 } from '@aobplatform/contracts';
 import {
   attemptSilentLogin,
+  beginLogin,
   currentSession,
   hasSignedInBefore,
   restoreRefusalReason,
@@ -262,7 +263,31 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
      * typed.
      */
     const invited = invitationClient();
-    const client = hasSignedInBefore() ?? invited;
+    /*
+     * AN INVITATION IS SIGNED IN PROPERLY, NOT RESTORED — AND THE DIFFERENCE IS
+     * THE WHOLE BUG (corrected 12 Sep 2026, after the first attempt failed on
+     * Carl's machine).
+     *
+     * The first version of this treated the invitation like a returning tab and
+     * asked Keycloak `prompt=none`. It could never have worked. A
+     * `execute-actions-email` link authenticates FOR THE DURATION OF THE ACTION
+     * and leaves no browser SSO session behind — measured, not assumed: after
+     * three successful registrations Jo had three passkeys and zero sessions.
+     * There was nothing to restore, so the silent attempt returned
+     * `login_required` every time and the person still read "you are not
+     * signed in".
+     *
+     * So the invitation starts a REAL sign-in. It is not a round trip wasted on
+     * somebody who never asked for it: they have this second finished
+     * registering a passkey, they arrived here from our own email, and the
+     * sign-in they get is one touch of the key they just made. `beginLogin`
+     * keeps the destination, so they land where the invitation was pointing.
+     */
+    if (invited) {
+      void beginLogin(invited);
+      return;
+    }
+    const client = hasSignedInBefore();
     if (!client) return;
     void attemptSilentLogin(client);
   }, [refused]);
