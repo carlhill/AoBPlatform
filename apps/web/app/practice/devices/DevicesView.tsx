@@ -51,7 +51,7 @@ import { AlertTriangle, Home, PauseCircle, PlayCircle, RotateCw, ShieldOff, Tabl
 import { formatPairingCode, type DeviceRow } from '@aobplatform/domain';
 import { Button, Checkbox, Chip, Field, Notice, Section, Shell, TextInput, ui, type Tone } from '../../ui';
 import { strings } from '../../strings';
-import { apiHeaders } from '../../auth';
+import { apiHeaders, beginLogin } from '../../auth';
 import { SessionControl } from '../../SessionControl';
 import { deviceActivityLine } from '../deviceActivity';
 import styles from '../manage.module.css';
@@ -97,10 +97,30 @@ const STATE_TONE: Record<string, Tone> = {
  */
 const REFRESH_MS = 5_000;
 
-async function refusalMessage(res: Response): Promise<string> {
-  const body = (await res.json().catch(() => ({}))) as { message?: string | string[] };
-  if (Array.isArray(body.message)) return body.message.join(' ');
-  return body.message ?? String(res.status);
+/**
+ * A REFUSAL THAT KEPT ITS CODE.
+ *
+ * A refusal reduced to a sentence is a refusal a screen cannot act on: "sign
+ * in again" and "your account cannot do this" read similarly and need
+ * different controls. The server sends a `reasonCode` for exactly this, so it
+ * travels with the error rather than being parsed back out of the prose
+ * (CLAUDE.md §7 — every server reason code maps to copy plus a destination,
+ * and an unmapped one shows its code).
+ */
+class Refusal extends Error {
+  constructor(
+    message: string,
+    readonly reasonCode?: string,
+  ) {
+    super(message);
+    this.name = 'Refusal';
+  }
+}
+
+async function refusal(res: Response): Promise<Refusal> {
+  const body = (await res.json().catch(() => ({}))) as { message?: string | string[]; reasonCode?: string };
+  const message = Array.isArray(body.message) ? body.message.join(' ') : (body.message ?? String(res.status));
+  return new Refusal(message, body.reasonCode);
 }
 
 function when(iso: string | null): string {
@@ -116,6 +136,8 @@ export function DevicesView({ practiceId }: { practiceId: string }) {
   const [data, setData] = useState<DevicesResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** The server's own reason code for the last refusal, when it gave one. */
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   /*
@@ -142,7 +164,7 @@ export function DevicesView({ practiceId }: { practiceId: string }) {
   const load = useCallback(async () => {
     try {
       const res = await fetch(`${CORE_URL}/devices`, { headers: apiHeaders(practiceId) });
-      if (!res.ok) throw new Error(await refusalMessage(res));
+      if (!res.ok) throw await refusal(res);
       const body = (await res.json()) as DevicesResponse;
       setData(body);
       setBuildFloor(body.minimumKioskBuild ?? '');
@@ -179,18 +201,20 @@ export function DevicesView({ practiceId }: { practiceId: string }) {
       headers: apiHeaders(practiceId),
       body: JSON.stringify(body),
     });
-    if (!res.ok) throw new Error(await refusalMessage(res));
+    if (!res.ok) throw await refusal(res);
     return (await res.json()) as T;
   }
 
   async function act(run: () => Promise<void>) {
     setBusy(true);
     setError(null);
+    setErrorCode(null);
     try {
       await run();
       await load();
     } catch (e) {
       setError(e instanceof TypeError ? strings.review.unreachableBody : (e as Error).message);
+      setErrorCode(e instanceof Refusal ? (e.reasonCode ?? null) : null);
     } finally {
       setBusy(false);
     }
@@ -322,9 +346,38 @@ export function DevicesView({ practiceId }: { practiceId: string }) {
         {strings.devices.threatNote}
       </Notice>
 
-      {error && (
+      {error && !errorCode && (
         <Notice tone="stop" title={strings.devices.notLoaded}>
           {error}
+        </Notice>
+      )}
+
+      {/*
+        THE SERVER ASKED WHO IS THERE (AUTH-TIERS.md §5.2). Revoking a tablet
+        cannot be undone and a session on a shared clinical terminal may have
+        been left open by somebody else, so core refuses one whose second
+        factor has gone stale. The way out is a control on this page, not a
+        sentence pointing at one: pressing it re-runs the whole sign-in and
+        returns here.
+      */}
+      {errorCode && (
+        <Notice tone="stop" title={strings.devices.stepUpTitle} data-testid="devices-step-up">
+          {errorCode === 'reauthentication_required' && (
+            <>
+              <p>{strings.devices.stepUpReauthenticate}</p>
+              <Button
+                variant="primary"
+                onClick={() => void beginLogin(undefined, { reauthenticate: true })}
+                data-testid="devices-step-up-action"
+              >
+                {strings.devices.stepUpAction}
+              </Button>
+            </>
+          )}
+          {errorCode === 'second_factor_required' && <p>{strings.devices.stepUpSecondFactorMissing}</p>}
+          {errorCode !== 'reauthentication_required' && errorCode !== 'second_factor_required' && (
+            <p data-testid="devices-step-up-unmapped">{strings.devices.stepUpUnmapped(errorCode)}</p>
+          )}
         </Notice>
       )}
 

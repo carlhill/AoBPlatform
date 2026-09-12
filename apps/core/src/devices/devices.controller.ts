@@ -17,6 +17,7 @@ import { DevicesService } from './devices.service';
 import { SessionActor, type Actor } from '../auth/actor.decorator';
 import { PracticeScoped } from '../auth/practice-scope.decorator';
 import { Public } from '../auth/public.decorator';
+import { RequireFreshSecondFactor } from '../auth/fresh-second-factor.decorator';
 
 export class RegisterDeviceDto {
   /** "Reception tablet 1". A name somebody could find the thing by. */
@@ -179,8 +180,25 @@ export class DevicesController {
     return this.devices.setShowsWaitingList(requirePractice(practiceId), id, dto.showsWaitingList, actor);
   }
 
-  /** Take the credential back. The tablet learns on its next request. */
+  /**
+   * Take the credential back. The tablet learns on its next request.
+   *
+   * THE WORKED EXAMPLE FOR THE FRESH SECOND FACTOR (AUTH-TIERS.md §5.2,
+   * D-2026-09-12-11), and it is the right one to start with rather than an
+   * arbitrary choice. Revoking is destructive and immediate: the tablet in
+   * reception stops working on its next request, and there is no undo — the
+   * device has to be paired again with a new code typed on the spot. On a
+   * shared clinical terminal, a session left open is exactly the way somebody
+   * who should not be doing this comes to be doing it.
+   *
+   * Rotate and the settings switch are deliberately NOT gated. Rotate keeps
+   * the device working and only changes its credential; the disclosure switch
+   * is reversible in one click. Sweeping this decorator across all three would
+   * teach people to re-authenticate reflexively, which is the habit a
+   * real-time phishing attack needs.
+   */
   @Post(':id/revoke')
+  @RequireFreshSecondFactor()
   @PracticeScoped()
   revoke(
     @Headers('x-practice-id') practiceId: string | undefined,

@@ -1,5 +1,6 @@
 import { createParamDecorator, type ExecutionContext } from '@nestjs/common';
 import { principalDisplayName, type AuthenticatedPrincipal } from '@aobplatform/auth-client';
+import { authMethodFromAmr, type SessionAuthMethod } from '@aobplatform/domain';
 
 /**
  * WHO IS DOING THIS — taken from the verified token, never from the request
@@ -48,6 +49,27 @@ export interface Actor {
    * ownership check to forget.
    */
   practitionerId?: string;
+  /**
+   * HOW THIS SESSION AUTHENTICATED (AUTH-TIERS.md §5.1, D-2026-09-12-11).
+   *
+   * Tier 2 is the weaker tier — a username, a password and a typed code on a
+   * shared clinical terminal — and what makes it defensible is that an audit
+   * can tell it apart from a passkey session afterwards. So the method travels
+   * with the actor, beside the name, rather than being something a later
+   * investigation has to reconstruct from Keycloak's own logs.
+   *
+   * `unknown` while `AUTH_ENFORCE` is false and the dev header path is still
+   * in use: there is no token, so there is nothing to read, and saying
+   * `unknown` is the honest answer rather than assuming the weakest.
+   */
+  authMethod: SessionAuthMethod;
+  /**
+   * When the person last actually authenticated (`auth_time`), in seconds.
+   *
+   * Absent on a session that did not say. Whether an act may proceed on a
+   * given age is `mayPerformHighStakesAct`'s judgement, not this decorator's.
+   */
+  authTimeSeconds?: number;
 }
 
 /**
@@ -71,5 +93,7 @@ export const SessionActor = createParamDecorator((_data: unknown, context: Execu
     roles: principal.roles ?? [],
     practiceId: principal.practiceId,
     practitionerId: (principal.raw as { practitioner_id?: string } | undefined)?.practitioner_id,
+    authMethod: authMethodFromAmr(principal.amr),
+    authTimeSeconds: principal.authTime,
   };
 });

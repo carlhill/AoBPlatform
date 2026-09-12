@@ -116,6 +116,12 @@ export interface PushableRow {
   patientName: string;
   /** An id, not a detail — it is what lets a row be followed to its patient. */
   patientId: string;
+  /**
+   * The practice's own number for this person — what reception says out loud
+   * and types into the practice's own software. An APPROVED identifier
+   * (hard rule 1); null where the record never carried one.
+   */
+  patientRecordNumber: string | null;
   providerName: string | null;
   providerType: string | null;
   appointmentDate: string | null;

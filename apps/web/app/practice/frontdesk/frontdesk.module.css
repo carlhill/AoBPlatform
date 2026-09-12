@@ -160,6 +160,16 @@
   color: var(--ink);
 }
 
+/*
+ * THE PATIENT ID, UNDER THE NAME. Quieter than the name and than the sentence
+ * below it: it is a handle to read out, not the thing the panel is about.
+ */
+.panelRecordNumber {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
 .panelLead {
   margin: 0;
   color: var(--ink);

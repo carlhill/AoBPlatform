@@ -66,6 +66,28 @@ export interface PushableRow {
    * opens the control that needs them.
    */
   patientId: string;
+  /**
+   * THE PRACTICE'S OWN NUMBER FOR THIS PERSON (Carl, 12 September 2026 —
+   * "patientid missing under patient name").
+   *
+   * It is what reception says out loud and what they type into the practice's
+   * own software, so a desk screen naming a patient without it makes somebody
+   * cross-check by name and date of birth — which is slower and, for two
+   * people who share a name, wrong.
+   *
+   * IT IS AN APPROVED IDENTIFIER, and that is why it may be here at all: the
+   * s 65C identity set is name, date of birth, gender, address, PATIENT RECORD
+   * NUMBER and IHI (hard rule 1, REQ-VER-02). The Medicare card number is not
+   * in that set and is not on this row, and there is no field it could arrive
+   * in.
+   *
+   * NULL IS POSSIBLE AND IS NOT A FAULT. The column is nullable because a
+   * patient can reach the platform by a route that never carried one — a
+   * portal invitation, an older sync — and the screen says so rather than
+   * rendering an empty line (`WaitingRow.patientRecordNumber` carries the same
+   * caveat for the same reason).
+   */
+  patientRecordNumber: string | null;
   providerName: string | null;
   /** So the console offers episodic / Treatment Plan Assignment for a non-GP, never enduring (REQ-END-01a). */
   providerType: string | null;
@@ -1555,6 +1577,7 @@ export class TabletSessionsService {
           // same shape every other console list uses.
           patientName: `${patient.givenNames} ${patient.familyName}`,
           patientId: patient.id,
+          patientRecordNumber: patient.patientRecordNumber ?? null,
           providerName: anchor?.name ?? null,
           providerType: anchor?.providerType ?? null,
           appointmentDate: appointment ? appointment.date.toISOString().slice(0, 10) : null,

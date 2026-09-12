@@ -64,6 +64,9 @@ describe('the practitioner queue — who is waiting for me (e2e, real Postgres)'
     name: 'A practitioner',
     principalType: 'user',
     roles: ['provider'],
+    // A tier 2 session: what a provider on a shared clinical terminal holds
+    // (AUTH-TIERS.md §1). Nothing in this suite turns on it.
+    authMethod: 'password+otp',
     practitionerId,
   });
 

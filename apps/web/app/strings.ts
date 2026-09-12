@@ -4116,6 +4116,31 @@ export const strings = {
     adding: 'Adding…',
 
     /*
+     * WHEN THE SERVER ASKS WHO IS THERE (AUTH-TIERS.md §5.2, D-2026-09-12-11).
+     *
+     * A SHORTCUT TO THE ANSWER, NOT DIRECTIONS TO A SCREEN (CLAUDE.md §7).
+     * The fix for a stale session is not on another page, so there is no link
+     * — there is a control, right here, that re-runs the sign-in and comes
+     * back to this list. The other code has no control, because signing in
+     * again would not help: the account has no second factor to present, and
+     * the sentence says what would.
+     *
+     * `stepUpUnmapped` is the defect case made visible. A reason code this
+     * build has not met shows its own code rather than a soothing generic
+     * sentence, so it can be diagnosed instead of guessed at.
+     */
+    stepUpTitle: 'Confirm it is you',
+    stepUpReauthenticate:
+      'Revoking a tablet cannot be undone, so it needs a sign-in from the last few minutes. Confirm it is you '
+      + 'and this list comes straight back.',
+    stepUpAction: 'Confirm it is you',
+    stepUpSecondFactorMissing:
+      'This account signs in with a password and nothing else, so it cannot revoke a tablet. Add an '
+      + 'authenticator app or a passkey to the account, then try again.',
+    stepUpUnmapped: (code: string) =>
+      `The server refused this and gave a reason this screen does not recognise: ${code}. Nothing was changed.`,
+
+    /*
      * THE CODE, SHOWN ONCE. The screen says so, because a code that cannot be
      * fetched again is a surprise unless it was announced — and the way out of
      * having lost it is Rotate, which is named here rather than left to be
@@ -4571,6 +4596,21 @@ export const strings = {
       nothingChosenLead:
         'Choosing a name only shows you what happens next for that person. It never sends anything, takes '
         + 'anything back or changes anything.',
+
+      /*
+       * THE PRACTICE'S OWN NUMBER, UNDER THE NAME (Carl, 12 September 2026).
+       * Labelled, because a bare string of digits under a person's name could
+       * be read as anything — and what it must NEVER be read as is a Medicare
+       * card number, which is not an identifier in this regime and is not on
+       * this row (hard rule 1). "Patient ID" is what a practice calls it.
+       */
+      patientRecordNumber: (number: string) => `Patient ID ${number}`,
+      /*
+       * SAID, RATHER THAN LEFT BLANK. A record that reached us by a route that
+       * never carried the practice's number is an ordinary thing, and an empty
+       * line under the name would read as a page that had failed to load.
+       */
+      patientRecordNumberUnknown: 'No patient ID on this record',
 
       hereNow: (name: string) => `${name} is waiting at the desk.`,
       hereNowNext: 'The next step is to send their agreement to a tablet beside you.',

@@ -1,0 +1,329 @@
+{
+  "//": "SANDBOX REALM FOR TIER 2 (AUTH-TIERS.md §2/§4/§5, D-2026-09-12-11). NOT the realm anybody signs in to. Applied by tier2-realm.mjs, which refuses to run against any realm but this one. See infra/keycloak/README.md 'The tier 2 sandbox realm'.",
+  "//clientScopes": "DELIBERATELY ABSENT. Listing a subset would REPLACE Keycloak's built-in scopes (profile, email, roles, web-origins, acr, basic) instead of adding to them, and the tokens would quietly lose preferred_username and realm_access. The one scope this product adds - backend-services-audience - is created by the apply script AFTER the realm exists, and attached to the clients there.",
+  "//defaultClientScopes": "Absent on every client for the same reason: Keycloak assigns the realm defaults when the field is null, and the apply script adds ours.",
+
+  "realm": "aobplatform-tier2",
+  "enabled": true,
+  "displayName": "AoBPlatform — tier 2 sandbox",
+  "loginTheme": "aobplatform",
+  "emailTheme": "aobplatform",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+
+  "//login": "Same as the main realm and for the same reason (PRACTICE-SCOPED-LOGIN.md §3, D-2026-09-12-10): one person holds an account per practice, all carrying their own address, so duplicate emails are allowed and email is not a way to sign in.",
+  "loginWithEmailAllowed": false,
+  "duplicateEmailsAllowed": true,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+
+  "//session": "MATCHES THE MAIN REALM EXACTLY so session length is not a second variable while tier 2 is being judged (ssoSessionIdleTimeout 14400 = D-2026-09-07-01, the four-hour idle the console already advertises through NEXT_PUBLIC_SESSION_IDLE_MINUTES).",
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 14400,
+  "ssoSessionMaxLifespan": 36000,
+
+  "//passwordPolicy": "LENGTH OVER COMPLEXITY THEATRE (AUTH-TIERS.md §5.5). Keycloak's own built-ins, no custom provider: a 12-character floor, a 128-character ceiling so a paste cannot be used to exhaust the hasher, not the username, not the email, and five remembered so a reset cannot cycle straight back. No character-class rules - they push people towards Passw0rd! and buy nothing against an offline attack that length does not buy more of.",
+  "passwordPolicy": "length(12) and maxLength(128) and notUsername and notEmail and passwordHistory(5)",
+
+  "//otpPolicy": "PLAIN TOTP, RFC 6238 - the open standard every authenticator app reads. No registration with Google or Microsoft, no API key, no fee (AUTH-TIERS.md §4). otpPolicyCodeReusable stays false: a code accepted twice is a code an observer can replay.",
+  "otpPolicyType": "totp",
+  "otpPolicyAlgorithm": "HmacSHA1",
+  "otpPolicyDigits": 6,
+  "otpPolicyPeriod": 30,
+  "otpPolicyLookAheadWindow": 1,
+  "otpPolicyInitialCounter": 0,
+  "otpPolicyCodeReusable": false,
+  "otpSupportedApplications": [
+    "totpAppFreeOTPName",
+    "totpAppGoogleName",
+    "totpAppMicrosoftAuthenticatorName"
+  ],
+
+  "//webauthn": "IDENTICAL TO THE MAIN REALM, because tier 3 coexists here: a passkey is never removed and never required (AUTH-TIERS.md §2). userVerificationRequirement stays 'required' - the setting that refuses Microsoft Password Manager's PIN, which unlocks a vault rather than verifying a user (README, CRITICAL-ISSUES.md §2).",
+  "webAuthnPolicyRpEntityName": "AoBPlatform",
+  "webAuthnPolicyRpId": "localhost",
+  "webAuthnPolicySignatureAlgorithms": ["ES256", "RS256"],
+  "webAuthnPolicyAttestationConveyancePreference": "none",
+  "webAuthnPolicyAuthenticatorAttachment": "not specified",
+  "webAuthnPolicyRequireResidentKey": "not specified",
+  "webAuthnPolicyUserVerificationRequirement": "required",
+  "webAuthnPolicyCreateTimeout": 60,
+  "webAuthnPolicyAvoidSameAuthenticatorRegister": false,
+  "webAuthnPolicyAcceptableAaguids": [],
+  "webAuthnPolicyPasswordlessRpEntityName": "AoBPlatform",
+  "webAuthnPolicyPasswordlessRpId": "localhost",
+  "webAuthnPolicyPasswordlessSignatureAlgorithms": ["ES256", "RS256"],
+  "webAuthnPolicyPasswordlessAttestationConveyancePreference": "none",
+  "webAuthnPolicyPasswordlessAuthenticatorAttachment": "not specified",
+  "webAuthnPolicyPasswordlessRequireResidentKey": "Yes",
+  "webAuthnPolicyPasswordlessUserVerificationRequirement": "required",
+  "webAuthnPolicyPasswordlessCreateTimeout": 60,
+  "webAuthnPolicyPasswordlessAvoidSameAuthenticatorRegister": false,
+  "webAuthnPolicyPasswordlessAcceptableAaguids": [],
+
+  "smtpServer": {
+    "host": "mailhog",
+    "port": "1025",
+    "from": "noreply@aobplatform.local",
+    "fromDisplayName": "AoBPlatform tier 2 sandbox (local dev)",
+    "auth": "false",
+    "ssl": "false",
+    "starttls": "false"
+  },
+
+  "components": {
+    "org.keycloak.userprofile.UserProfileProvider": [
+      {
+        "providerId": "declarative-user-profile",
+        "subComponents": {},
+        "config": {
+          "kc.user.profile.config": [
+            "{\"attributes\":[{\"name\":\"username\",\"displayName\":\"${username}\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]}},{\"name\":\"email\",\"displayName\":\"${email}\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]}},{\"name\":\"firstName\",\"displayName\":\"${firstName}\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]}},{\"name\":\"lastName\",\"displayName\":\"${lastName}\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]}}],\"unmanagedAttributePolicy\":\"ADMIN_EDIT\"}"
+          ]
+        }
+      }
+    ]
+  },
+
+  "roles": {
+    "realm": [
+      { "name": "provider", "composite": false, "clientRole": false },
+      { "name": "practice_principal", "composite": false, "clientRole": false },
+      { "name": "practice_manager", "composite": false, "clientRole": false },
+      { "name": "front_desk", "composite": false, "clientRole": false },
+      { "name": "patient", "composite": false, "clientRole": false },
+      { "name": "assignor", "composite": false, "clientRole": false },
+      { "name": "system", "composite": false, "clientRole": false },
+      {
+        "name": "platform_admin",
+        "description": "AoBPlatform staff who read applications and approve practices. In THIS realm the role is also an authentication gate: the operator subflow requires a passkey of anybody holding it (D-2026-09-12-11 - hard rule 15 still governs platform operators).",
+        "composite": false,
+        "clientRole": false
+      }
+    ],
+    "client": {}
+  },
+
+  "//authenticatorConfig": "THE AMR VALUES, AND HOW THEY REACH THE TOKEN. Keycloak's AmrProtocolMapper reads the user session's completed executions and, for each, the execution's authenticator config key `default.reference.value` - so the amr claim is produced by naming each credential step here, not by anything the application asserts. `default.reference.maxAge` is how long a step stays in the claim; set to the session idle timeout so the claim describes the whole session for audit. Freshness for a high-stakes act is decided on `auth_time` in core, not by expiring the reference. Values are RFC 8176 tokens (pwd, otp, hwk) rather than our product words - the product vocabulary ('password+otp', 'passkey') is derived from them in packages/domain/src/auth-method.ts, so what is on the wire stays standard.",
+  "authenticatorConfig": [
+    { "alias": "tier2-amr-password", "config": { "default.reference.value": "pwd", "default.reference.maxAge": "14400" } },
+    { "alias": "tier2-amr-otp", "config": { "default.reference.value": "otp", "default.reference.maxAge": "14400" } },
+    { "alias": "tier2-amr-passkey-practice", "config": { "default.reference.value": "hwk", "default.reference.maxAge": "14400" } },
+    { "alias": "tier2-amr-passkey-operator", "config": { "default.reference.value": "hwk", "default.reference.maxAge": "14400" } },
+    { "alias": "tier2-amr-passkey-console", "config": { "default.reference.value": "hwk", "default.reference.maxAge": "14400" } },
+    {
+      "//": "The role gate. condUserRole is checked at authentication time against the account's realm roles, so an operator cannot get a password prompt by arriving at the practice client.",
+      "alias": "tier2-is-platform-operator",
+      "config": { "condUserRole": "platform_admin", "negate": "false" }
+    },
+    {
+      "alias": "tier2-is-not-platform-operator",
+      "config": { "condUserRole": "platform_admin", "negate": "true" }
+    }
+  ],
+
+  "authenticationFlows": [
+    {
+      "alias": "practice-browser",
+      "description": "Tier 2. Username, then either a passkey or a password and a one-time code. Bound at the REALM so Keycloak's own clients (account-console above all) cannot fall back to the stock browser flow - the lesson in infra/keycloak/README.md.",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        { "authenticator": "auth-cookie", "requirement": "ALTERNATIVE", "priority": 10, "userSetupAllowed": false, "autheticatorFlow": false },
+        {
+          "//": "Present and unconfigured. Tier 1 federation is a later, per-practice piece of work (AUTH-TIERS.md §3); with no identity provider registered this execution is a no-op, and having it here means adding one later is a configuration change rather than a flow change.",
+          "authenticator": "identity-provider-redirector",
+          "requirement": "ALTERNATIVE",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
+        },
+        { "requirement": "ALTERNATIVE", "priority": 30, "autheticatorFlow": true, "flowAlias": "practice-browser Forms" }
+      ]
+    },
+    {
+      "alias": "practice-browser Forms",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        { "authenticator": "auth-username-form", "requirement": "REQUIRED", "priority": 10, "userSetupAllowed": false, "autheticatorFlow": false },
+        { "requirement": "REQUIRED", "priority": 20, "autheticatorFlow": true, "flowAlias": "practice-browser Credential" }
+      ]
+    },
+    {
+      "alias": "practice-browser Credential",
+      "description": "Two CONDITIONAL subflows on opposite sides of one role check, so exactly one of them ever runs.",
+      "//": "Written this way rather than as one conditional followed by an alternative because a conditional that PASSES does not stop what follows it - an operator would have been asked for a passkey and then for a password as well. Keycloak stores a flow description in varchar(255), so the reasoning lives here.",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        { "requirement": "CONDITIONAL", "priority": 10, "autheticatorFlow": true, "flowAlias": "practice-browser Operator" },
+        { "requirement": "CONDITIONAL", "priority": 20, "autheticatorFlow": true, "flowAlias": "practice-browser Practice" }
+      ]
+    },
+    {
+      "alias": "practice-browser Operator",
+      "description": "A platform operator still requires a passkey (D-2026-09-12-11). Our own people work on their own machines and have no shared-terminal problem, so weakening their authentication buys nothing.",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        { "authenticator": "conditional-user-role", "requirement": "REQUIRED", "priority": 10, "userSetupAllowed": false, "autheticatorFlow": false, "authenticatorConfig": "tier2-is-platform-operator" },
+        { "authenticator": "webauthn-authenticator-passwordless", "requirement": "REQUIRED", "priority": 20, "userSetupAllowed": false, "autheticatorFlow": false, "authenticatorConfig": "tier2-amr-passkey-operator" }
+      ]
+    },
+    {
+      "alias": "practice-browser Practice",
+      "description": "Everybody who is not a platform operator: practice principals, practice managers, front desk and providers.",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        { "authenticator": "conditional-user-role", "requirement": "REQUIRED", "priority": 10, "userSetupAllowed": false, "autheticatorFlow": false, "authenticatorConfig": "tier2-is-not-platform-operator" },
+        { "requirement": "REQUIRED", "priority": 20, "autheticatorFlow": true, "flowAlias": "practice-browser Practice Credential" }
+      ]
+    },
+    {
+      "alias": "practice-browser Practice Credential",
+      "description": "Passkey OR password-and-code. Tier 3 sits first and stays available to anybody who can use it - never removed, never required (AUTH-TIERS.md §2).",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        { "authenticator": "webauthn-authenticator-passwordless", "requirement": "ALTERNATIVE", "priority": 10, "userSetupAllowed": false, "autheticatorFlow": false, "authenticatorConfig": "tier2-amr-passkey-practice" },
+        { "requirement": "ALTERNATIVE", "priority": 20, "autheticatorFlow": true, "flowAlias": "practice-browser Password+OTP" }
+      ]
+    },
+    {
+      "alias": "practice-browser Password+OTP",
+      "description": "Every sign-in, both steps: a password and a one-time code (AUTH-TIERS.md §4).",
+      "//": "The OTP form is REQUIRED and NOT wrapped in conditional-user-configured, which is the difference between 'a code if you happen to have set one up' and 'a code'. An account without one is sent through CONFIGURE_TOTP on the spot, which is also how enrolment registers the authenticator app in the same pass as the password.",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        { "authenticator": "auth-password-form", "requirement": "REQUIRED", "priority": 10, "userSetupAllowed": false, "autheticatorFlow": false, "authenticatorConfig": "tier2-amr-password" },
+        { "authenticator": "auth-otp-form", "requirement": "REQUIRED", "priority": 20, "userSetupAllowed": false, "autheticatorFlow": false, "authenticatorConfig": "tier2-amr-otp" }
+      ]
+    },
+    {
+      "alias": "operator-browser",
+      "description": "The platform operator console's flow: passkey REQUIRED, password form DISABLED - the shape of the main realm's clinician-browser.",
+      "//": "Belt and braces with the role gate in practice-browser: a per-client binding covers the clients you remember to think about, a role gate covers the people.",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        { "authenticator": "auth-cookie", "requirement": "ALTERNATIVE", "priority": 10, "userSetupAllowed": false, "autheticatorFlow": false },
+        { "requirement": "ALTERNATIVE", "priority": 20, "autheticatorFlow": true, "flowAlias": "operator-browser Forms" }
+      ]
+    },
+    {
+      "alias": "operator-browser Forms",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        { "authenticator": "auth-username-form", "requirement": "REQUIRED", "priority": 10, "userSetupAllowed": false, "autheticatorFlow": false },
+        { "requirement": "REQUIRED", "priority": 20, "autheticatorFlow": true, "flowAlias": "operator-browser Credential" }
+      ]
+    },
+    {
+      "alias": "operator-browser Credential",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        { "authenticator": "webauthn-authenticator-passwordless", "requirement": "REQUIRED", "priority": 10, "userSetupAllowed": false, "autheticatorFlow": false, "authenticatorConfig": "tier2-amr-passkey-console" },
+        { "authenticator": "auth-password-form", "requirement": "DISABLED", "priority": 20, "userSetupAllowed": false, "autheticatorFlow": false }
+      ]
+    }
+  ],
+
+  "browserFlow": "practice-browser",
+
+  "clients": [
+    {
+      "clientId": "web",
+      "name": "Practice console / portal / tester (Next.js)",
+      "//": "SAME ID AND SAME REDIRECT URIS AS THE MAIN REALM, so pointing the stack at this realm is four environment variables and no code change.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:3100/*", "http://localhost:21100/*"],
+      "webOrigins": ["http://localhost:3100", "http://localhost:21100"],
+      "attributes": { "pkce.code.challenge.method": "S256" },
+      "protocolMappers": [
+        { "name": "principal-type", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-attribute-mapper", "consentRequired": false, "config": { "userinfo.token.claim": "true", "user.attribute": "principal_type", "id.token.claim": "true", "access.token.claim": "true", "claim.name": "principal_type", "jsonType.label": "String" } },
+        { "name": "practice-id", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-attribute-mapper", "consentRequired": false, "config": { "userinfo.token.claim": "true", "user.attribute": "practice_id", "id.token.claim": "true", "access.token.claim": "true", "claim.name": "practice_id", "jsonType.label": "String" } },
+        { "name": "practitioner-id", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-attribute-mapper", "consentRequired": false, "config": { "userinfo.token.claim": "true", "user.attribute": "practitioner_id", "id.token.claim": "true", "access.token.claim": "true", "claim.name": "practitioner_id", "jsonType.label": "String" } },
+        { "name": "console-role", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-attribute-mapper", "consentRequired": false, "config": { "userinfo.token.claim": "true", "user.attribute": "console_role", "id.token.claim": "true", "access.token.claim": "true", "introspection.token.claim": "true", "claim.name": "console_role", "jsonType.label": "String" } },
+        {
+          "//": "HOW THE SESSION SAYS WHAT IT WAS AUTHENTICATED WITH (AUTH-TIERS.md §5.1). Keycloak's own mapper; the values come from the authenticator configs above.",
+          "name": "authentication-method-reference",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-amr-mapper",
+          "consentRequired": false,
+          "config": { "id.token.claim": "true", "access.token.claim": "true" }
+        }
+      ]
+    },
+    {
+      "clientId": "console",
+      "name": "Platform operator console (reviewer)",
+      "description": "Reviewer console. Separate from `web` so a practice-admin token is not indistinguishable from a platform-admin one at the API. Passkey required; direct grants off.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:3100/*", "http://localhost:21100/*"],
+      "webOrigins": ["http://localhost:3100", "http://localhost:21100"],
+      "attributes": { "pkce.code.challenge.method": "S256" },
+      "protocolMappers": [
+        { "name": "principal-type", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-attribute-mapper", "consentRequired": false, "config": { "userinfo.token.claim": "true", "user.attribute": "principal_type", "id.token.claim": "true", "access.token.claim": "true", "claim.name": "principal_type", "jsonType.label": "String" } },
+        { "name": "practice-id", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-attribute-mapper", "consentRequired": false, "config": { "userinfo.token.claim": "true", "user.attribute": "practice_id", "id.token.claim": "true", "access.token.claim": "true", "claim.name": "practice_id", "jsonType.label": "String" } },
+        { "name": "console-role", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-attribute-mapper", "consentRequired": false, "config": { "userinfo.token.claim": "true", "user.attribute": "console_role", "id.token.claim": "true", "access.token.claim": "true", "introspection.token.claim": "true", "claim.name": "console_role", "jsonType.label": "String" } },
+        { "name": "authentication-method-reference", "protocol": "openid-connect", "protocolMapper": "oidc-amr-mapper", "consentRequired": false, "config": { "id.token.claim": "true", "access.token.claim": "true" } }
+      ]
+    },
+    { "clientId": "core-service", "name": "Core application (service account)", "enabled": true, "protocol": "openid-connect", "publicClient": false, "standardFlowEnabled": false, "directAccessGrantsEnabled": false, "serviceAccountsEnabled": true, "authorizationServicesEnabled": false, "clientAuthenticatorType": "client-secret", "secret": "change-me-in-local-env" },
+    { "clientId": "rules-service", "name": "Rules & Conformance service (service account)", "enabled": true, "protocol": "openid-connect", "publicClient": false, "standardFlowEnabled": false, "directAccessGrantsEnabled": false, "serviceAccountsEnabled": true, "authorizationServicesEnabled": false, "clientAuthenticatorType": "client-secret", "secret": "change-me-in-local-env" },
+    { "clientId": "vault-service", "name": "Evidence Vault service (service account)", "enabled": true, "protocol": "openid-connect", "publicClient": false, "standardFlowEnabled": false, "directAccessGrantsEnabled": false, "serviceAccountsEnabled": true, "authorizationServicesEnabled": false, "clientAuthenticatorType": "client-secret", "secret": "change-me-in-local-env" }
+  ],
+
+  "//flowBindings": "Per-client browser flow overrides are resolved to flow ids by the apply script, because a realm import cannot reference a flow by alias here: web -> practice-browser, console -> operator-browser.",
+  "flowBindings": {
+    "web": "practice-browser",
+    "console": "operator-browser"
+  },
+
+  "//audienceScope": "Created and attached by the apply script after the realm exists. Same three services and the same reason as the main realm: the aud claim must name the service that reads it.",
+  "audienceScope": {
+    "name": "backend-services-audience",
+    "description": "Adds this product's backend service ids to the aud claim.",
+    "protocol": "openid-connect",
+    "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" },
+    "protocolMappers": [
+      { "name": "core-service-audience", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper", "config": { "included.client.audience": "core-service", "access.token.claim": "true", "id.token.claim": "false" } },
+      { "name": "rules-service-audience", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper", "config": { "included.client.audience": "rules-service", "access.token.claim": "true", "id.token.claim": "false" } },
+      { "name": "vault-service-audience", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper", "config": { "included.client.audience": "vault-service", "access.token.claim": "true", "id.token.claim": "false" } }
+    ]
+  },
+
+  "//requiredActions": "Enabled by the apply script rather than listed here: supplying `requiredActions` on a realm create makes Keycloak register ONLY the listed ones, which would leave the realm without CONFIGURE_TOTP and without UPDATE_PASSWORD - the two tier 2 enrolment depends on. Omitting the field registers every built-in, and the script then asserts the four that matter are enabled.",
+  "requireActionsEnabled": [
+    "CONFIGURE_TOTP",
+    "UPDATE_PASSWORD",
+    "webauthn-register",
+    "webauthn-register-passwordless"
+  ]
+}

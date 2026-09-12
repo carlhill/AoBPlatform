@@ -877,6 +877,9 @@ export class DevicesService {
       name: 'dev seed (not a signed-in user)',
       principalType: 'system',
       roles: [],
+      // Nothing authenticated here. Saying so beats leaving it blank: an audit
+      // line that cannot name a method is what AUTH-TIERS.md §5.1 forbids.
+      authMethod: 'unknown',
     };
     const registered = await this.register(practiceId, label, seed);
     if (showsWaitingList) {
@@ -910,6 +913,9 @@ export class DevicesService {
       name: 'dev seed (not a signed-in user)',
       principalType: 'system',
       roles: [],
+      // Nothing authenticated here. Saying so beats leaving it blank: an audit
+      // line that cannot name a method is what AUTH-TIERS.md §5.1 forbids.
+      authMethod: 'unknown',
     });
   }
 
@@ -923,6 +929,9 @@ export class DevicesService {
       name: 'dev seed (not a signed-in user)',
       principalType: 'system',
       roles: [],
+      // Nothing authenticated here. Saying so beats leaving it blank: an audit
+      // line that cannot name a method is what AUTH-TIERS.md §5.1 forbids.
+      authMethod: 'unknown',
     });
   }
 

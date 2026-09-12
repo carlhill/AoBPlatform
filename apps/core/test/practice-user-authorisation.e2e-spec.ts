@@ -29,8 +29,27 @@ describe('who may manage a practice’s users (e2e, real Postgres)', () => {
   const ADMIN_SUB = 'kc-admin-authorisation-test';
   const ORDINARY_SUB = 'kc-ordinary-authorisation-test';
 
-  const admin = { id: ADMIN_SUB, name: 'The Administrator', principalType: 'staff', roles: [] as string[] };
-  const ordinary = { id: ORDINARY_SUB, name: 'An Ordinary User', principalType: 'staff', roles: [] as string[] };
+  /*
+   * `authMethod` is on every actor now (AUTH-TIERS.md §5.1). These fixtures
+   * stand for a tier 2 session — a password and a one-time code — because that
+   * is what a practice administrator holds once tier 2 ships; nothing in this
+   * suite turns on it, but a session that cannot say how it authenticated is
+   * the thing the claim exists to make impossible.
+   */
+  const admin = {
+    id: ADMIN_SUB,
+    name: 'The Administrator',
+    principalType: 'staff',
+    roles: [] as string[],
+    authMethod: 'password+otp' as const,
+  };
+  const ordinary = {
+    id: ORDINARY_SUB,
+    name: 'An Ordinary User',
+    principalType: 'staff',
+    roles: [] as string[],
+    authMethod: 'password+otp' as const,
+  };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -150,7 +169,13 @@ describe('who may manage a practice’s users (e2e, real Postgres)', () => {
     // The staff row is looked up inside this practice's scope, so an
     // administrator elsewhere resolves to nobody here rather than to somebody
     // with admin rights.
-    const elsewhere = { id: 'kc-admin-of-somewhere-else', name: 'Other Admin', principalType: 'staff', roles: [] };
+    const elsewhere = {
+      id: 'kc-admin-of-somewhere-else',
+      name: 'Other Admin',
+      principalType: 'staff',
+      roles: [],
+      authMethod: 'password+otp' as const,
+    };
     await expect(users.grant(practiceId, newPerson, elsewhere)).rejects.toThrow(/only this practice’s administrator/i);
   });
 
@@ -189,6 +214,8 @@ describe('who may manage a practice’s users (e2e, real Postgres)', () => {
       name: 'Support',
       principalType: 'staff',
       roles: ['platform_admin'],
+      // A platform operator: still a passkey, D-2026-09-12-11.
+      authMethod: 'passkey' as const,
     };
     await expect(users.grant(practiceId, newPerson, looking)).rejects.toThrow(/practice session rather than yours/i);
   });
@@ -200,6 +227,7 @@ describe('who may manage a practice’s users (e2e, real Postgres)', () => {
       principalType: 'staff',
       roles: ['platform_admin'],
       practiceId,
+      authMethod: 'passkey' as const,
     };
     const created = await users.grant(practiceId, newPerson, acting);
     expect(created.id).toBeTruthy();
@@ -217,6 +245,7 @@ describe('who may manage a practice’s users (e2e, real Postgres)', () => {
       principalType: 'staff',
       roles: ['platform_admin'],
       practiceId: '00000000-0000-4000-8000-000000000000',
+      authMethod: 'passkey' as const,
     };
     await expect(users.grant(practiceId, newPerson, elsewhere)).rejects.toThrow(/practice session rather than yours/i);
   });

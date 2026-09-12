@@ -17,25 +17,25 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 1982 |
-| Files scanned for exports | 493 |
-| Files scanned for imports | 534 |
+| Exported symbols indexed | 1993 |
+| Files scanned for exports | 495 |
+| Files scanned for imports | 536 |
 | Exports with no comment of their own | 864 |
-| Exports imported nowhere else | 822 |
+| Exports imported nowhere else | 827 |
 
 ## Sections
 
 - [Web components](#web-components) — 222
 - [Web hooks](#web-hooks) — 13
 - [Web helpers and constants](#web-helpers-and-constants) — 265
-- [Web types](#web-types) — 96
-- [Domain functions](#domain-functions) — 366
-- [Domain constants and content](#domain-constants-and-content) — 229
-- [Domain types](#domain-types) — 270
+- [Web types](#web-types) — 97
+- [Domain functions](#domain-functions) — 369
+- [Domain constants and content](#domain-constants-and-content) — 230
+- [Domain types](#domain-types) — 273
 - [Contracts types](#contracts-types) — 69
 - [Contracts functions and constants](#contracts-functions-and-constants) — 20
 - [Core services, controllers and modules](#core-services-controllers-and-modules) — 268
-- [Core helpers, constants and types](#core-helpers-constants-and-types) — 164
+- [Core helpers, constants and types](#core-helpers-constants-and-types) — 167
 
 ## Web components
 
@@ -296,7 +296,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `apiHeaders` | web:auth.ts | Headers for a core API call: bearer when signed in, dev practice header otherwise. | **46** · web:ConsoleDashboard.tsx, web:HistoryDisclosure.tsx, web:OrgConsole.tsx, +43 more |
 | `currentSession` | web:auth.ts |  | **35** · web:AccessGuard.tsx, web:AuthGate.tsx, web:BackLink.tsx, +32 more |
 | `strings` | web:kiosk/strings.ts | (file) The kiosk's view of the one string table (REQ-LANG-01). | **23** · web:kiosk/Ceremony.tsx, web:kiosk/components/Chrome.tsx, web:kiosk/components/InactivityWarning.tsx, +20 more |
-| `beginLogin` | web:auth.ts | Sends the browser to Keycloak. | **6** · web:AccessGuard.tsx, web:AuthGate.tsx, web:ConsoleDashboard.tsx, +3 more |
+| `beginLogin` | web:auth.ts | Sends the browser to Keycloak. | **7** · web:AccessGuard.tsx, web:AuthGate.tsx, web:ConsoleDashboard.tsx, +4 more |
 | `calendarDate` | web:patient/portal/format.ts | A calendar date — `YYYY-MM-DD`. | **6** · web:patient/portal/cards/AgreementsCard.tsx, web:patient/portal/cards/DetailsCard.tsx, web:patient/portal/cards/EnduringCard.tsx, +3 more |
 | `explainFailure` | web:apiError.ts | Read the server's own reason out of a failed response. | **5** · web:practice/channels/ChannelsView.tsx, web:practice/correspondence/CorrespondenceView.tsx, web:practice/patients/PatientWorkView.tsx, +2 more |
 | `instant` | web:patient/portal/format.ts | An instant — when something happened, in the reader's own time. | **5** · web:patient/portal/cards/AgreementsCard.tsx, web:patient/portal/cards/DataCard.tsx, web:patient/portal/cards/EnduringCard.tsx, +2 more |
@@ -560,7 +560,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web types
 
-96 exports.
+97 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -635,6 +635,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `KioskSignatureMethod` | web:kiosk/rules/signature-payload.ts |  | 0 |
 | `KioskStrings` | web:kiosk/strings.ts |  | 0 |
 | `LockFailure` | web:kiosk/Ceremony.tsx | WHOSE FAULT WAS IT — the distinction the Expo build did not draw, and Carl found it on a live tablet. | 0 |
+| `LoginOptions` | web:auth.ts | ASK KEYCLOAK TO AUTHENTICATE THE PERSON AGAIN, EVEN IF IT ALREADY HAS (AUTH-TIERS.md §5.2, D-2026-09-12-11). | 0 |
 | `MessageBody` | web:correspondence/MessageLog.tsx | What a row said, fetched or held by whoever owns the query. | 0 |
 | `NameParts` | web:kiosk/rules/verify-fields.ts |  | 0 |
 | `Option` | web:kiosk/components/Field.tsx |  | 0 |
@@ -663,7 +664,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Domain functions
 
-366 exports.
+369 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -709,6 +710,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `assertNoForbiddenAgreementFields` | domain:guards.ts | Recursively asserts a payload carries none of the forbidden fields. | **2** · core:agreements/agreements.service.ts, vault:events/events.service.ts |
 | `assertStoppable` | domain:pending-email-change.ts | Stopping is allowed for longer than confirming, and after expiry. | **2** · core:identity/practitioner-email.service.ts, core:organisations/pending-email.service.ts |
 | `assessAdmission` | domain:checks.ts | What HARD enforcement would decide, computed while enforcement is SOFT. | **2** · core:identity-dashboard/identity-dashboard.service.ts, core:organisations/checks.service.ts |
+| `authMethodFromAmr` | domain:auth-method.ts | Read the token's `amr` claim as a product answer. | **2** · core:auth/actor.decorator.ts, core:auth/auth.guard.ts |
 | `buildAssignorForAnother` | domain:assignor.ts | Every refusal on this path, in the order a person would meet them, each throwing a `HardRuleViolation` that names the RULE and never the name that was typed (no PII in errors — definition of done). | **2** · core:agreements/agreements.service.ts, core:arrivals/arrivals.service.ts |
 | `calendarFor` | domain:enduring.ts | Builds the calendar for a state, covering the year of the notice and the next (a late-December notice crosses into January, where the substituted New Year holidays live). | **2** · core:affiliations/affiliations.service.ts, core:enduring/enduring.service.ts |
 | `canActAsAssignor` | domain:guards.ts |  | **2** · web:kiosk/rules/assignor.ts, domain:assignor.ts |
@@ -870,6 +872,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `mayAutoResolve` | domain:review-tasks.ts |  | **1** · core:review-tasks/review-tasks.service.ts |
 | `mayBeSetByHand` | domain:visit-states.ts | MAY THIS STATE BE CHOSEN BY A PERSON? | **1** · core:practitioner-queue/practitioner-queue.service.ts |
 | `mayGroupByOrganisation` | domain:reporting.ts | Whether a scope may be asked for totals broken down by organisation. | **1** · core:outbound/outbound.service.ts |
+| `mayPerformHighStakesAct` | domain:auth-method.ts | May this session perform a high-stakes act? | **1** · core:auth/auth.guard.ts |
 | `maySetVisitState` | domain:visit-states.ts | MAY THIS PERSON SET A STATE ON THIS VISIT (§3a rule 2)? | **1** · core:practitioner-queue/practitioner-queue.service.ts |
 | `needsFourteenthBirthdayAction` | domain:enduring.ts | True when a patient covered under SOMEONE ELSE'S agreement is within the lead window of turning 14. Deterministic from date of birth — there is no excuse for missing it (Addendum v2 §3.3). | **1** · core:enduring/enduring.service.ts |
 | `normalisePairingCode` | domain:devices.ts | What the tablet typed, reduced to what the server stored. | **1** · core:devices/devices.service.ts |
@@ -943,6 +946,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `canAffiliationTransition` | domain:affiliation.ts |  | 0 |
 | `canOfferEnduring` | domain:guards.ts |  | 0 |
 | `canRepointAssignor` | domain:assignor.ts | Hard rule 2 / REQ-REG-06 — WHO SIGNS IS A PARTICULAR, so it may only change while the particulars can still change. | 0 |
+| `carriesSecondFactor` | domain:auth-method.ts | Whether the session presented something beyond a password. | 0 |
 | `ceremonyFailures` | domain:enrolment-ceremony.ts | Non-throwing form, for surfacing the gate in a UI before anyone tries. | 0 |
 | `checksInCategory` | domain:checks.ts |  | 0 |
 | `containsIdentifier` | domain:evidence.ts | Whether an identifier appears anywhere in the extracted text. | 0 |
@@ -1036,7 +1040,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Domain constants and content
 
-229 exports.
+230 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1251,6 +1255,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `RETENTION_YEARS_MIN` | domain:retention.ts |  | 0 |
 | `REVIEW_RESOLUTIONS` | domain:review-tasks.ts | How a task ended. | 0 |
 | `REVIEW_TASK_STATES` | domain:review-tasks.ts |  | 0 |
+| `SECOND_FACTOR_MAX_AGE_SECONDS` | domain:auth-method.ts | HOW FRESH A SECOND FACTOR HAS TO BE FOR A HIGH-STAKES ACT (AUTH-TIERS.md §5.2), in seconds. | 0 |
 | `SELF_ASSIGN_AGE` | domain:enduring.ts |  | 0 |
 | `SENSITIVE_CONTACT_FIELDS` | domain:review-tasks.ts | Which fields, if changed, raise the HIGH-stakes contact task rather than the ordinary one. | 0 |
 | `SIGHTING_FULL_WEIGHT_DAYS` | domain:practitioner-strength.ts | How long a sighting keeps FULL weight, and how long before it is worth zero. | 0 |
@@ -1272,7 +1277,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Domain types
 
-270 exports.
+273 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1357,6 +1362,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PrintDocumentType` | domain:inbound-lanes.ts |  | **1** · contracts:print-capture.ts |
 | `ReconciliationDecision` | domain:reconciliation-decision.ts |  | **1** · core:reconciliation/reconciliation.service.ts |
 | `ReportScope` | domain:reporting.ts |  | **1** · core:outbound/outbound.service.ts |
+| `SessionAuthMethod` | domain:auth-method.ts | What a session was authenticated with, in the product's own words. | **1** · core:auth/actor.decorator.ts |
 | `SetupGap` | domain:setup.ts |  | **1** · web:practice/PracticeList.tsx |
 | `SetupRow` | domain:setup.ts |  | **1** · core:organisations/setup.service.ts |
 | `SignatureEventId` | domain:ids.ts |  | **1** · domain:agreement.ts |
@@ -1531,6 +1537,8 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SignatureRefusalReason` | domain:tablet-session.ts |  | 0 |
 | `SignerContact` | domain:agreement-copy.ts | A contact pair, from whichever record the signer's contact lives on. | 0 |
 | `Stakes` | domain:review-tasks.ts | How much rides on getting this one wrong. | 0 |
+| `StepUpDecision` | domain:auth-method.ts | The answer to "may this session do the irreversible thing", and why not. | 0 |
+| `StepUpRefusal` | domain:auth-method.ts | Why a high-stakes act was refused — the code, not the sentence. | 0 |
 | `StrengthLine` | domain:practitioner-strength.ts | One line of the §6 table, as it applies to one practitioner. | 0 |
 | `TabletSessionAssignor` | domain:tablet-session.ts | WHO IS SIGNING, as the tablet is told it. | 0 |
 | `TabletSessionPatientField` | domain:tablet-session.ts |  | 0 |
@@ -1927,7 +1935,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Core helpers, constants and types
 
-164 exports.
+167 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1985,6 +1993,8 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `DEVICE_REQUIRED` | core:devices/device.decorator.ts |  | **1** · core:devices/device.guard.ts |
 | `DispatchRequest` | core:messaging/gateway.ts | Outbound messaging. | **1** · core:messaging/mailhog.gateway.ts |
 | `DispatchResult` | core:messaging/gateway.ts |  | **1** · core:messaging/mailhog.gateway.ts |
+| `FRESH_SECOND_FACTOR` | core:auth/fresh-second-factor.decorator.ts | Metadata key the guard reads to find out whether this route is gated. | **1** · core:auth/auth.guard.ts |
+| `FreshSecondFactorRequirement` | core:auth/fresh-second-factor.decorator.ts | What the decorator stored: null means the domain's default window. | **1** · core:auth/auth.guard.ts |
 | `GENERIC_MISMATCH_MESSAGE` | core:verification/verification.service.ts | The one message a failed attempt ever returns — never which identifier failed (REQ-SEC-07). | **1** · core:kiosk/kiosk.service.ts |
 | `KioskBuild` | core:devices/device.decorator.ts | What the tablet says it is running, for the forced-reload answer. | **1** · core:kiosk/kiosk.controller.ts |
 | `LegacyProviderRow` | core:affiliations/agreement-anchor.ts | What a `providers` row can be matched on. | **1** · core:pms/pms-sync.service.ts |
@@ -1996,6 +2006,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PortalWebAuthn` | core:portal/portal-webauthn.ts |  | **1** · core:portal/portal-passkey.service.ts |
 | `PreparedLock` | core:agreements/agreements.service.ts |  | **1** · core:tablet-sessions/tablet-sessions.service.ts |
 | `REQUIRED_ROLES` | core:auth/roles.decorator.ts |  | **1** · core:auth/auth.guard.ts |
+| `RequireFreshSecondFactor` | core:auth/fresh-second-factor.decorator.ts | A FRESH SECOND FACTOR BEFORE THIS ACT, not only at sign-in (AUTH-TIERS.md §5.2, D-2026-09-12-11). | **1** · core:devices/devices.controller.ts |
 | `ResolvedChange` | core:identity/practitioner-email.service.ts | The subject of a change, as resolved from a token before any scope exists. | **1** · core:organisations/pending-email.service.ts |
 | `anchorForAffiliation` | core:affiliations/agreement-anchor.ts | THE AFFILIATION, AS A PERSON AND A PLACE. | **1** · core:arrivals/arrivals.service.ts |
 | `anchorsForAffiliations` | core:affiliations/agreement-anchor.ts | The batch form. | **1** · core:arrivals/arrivals.service.ts |

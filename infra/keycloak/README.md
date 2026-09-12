@@ -218,3 +218,114 @@ that explains none of this.
 To read the AAGUID on an account's credentials, use the Admin REST API:
 `/admin/realms/aobplatform/users/{id}/credentials` — the `credentialData`
 field carries it.
+
+## The tier 2 sandbox realm — `aobplatform-tier2`
+
+**A SECOND REALM, not a second application** (Carl asked whether to prototype
+tier 2 in a side app; 12 September 2026). Tier 2 is almost entirely Keycloak
+configuration, so a standalone prototype would have skipped the only parts with
+risk in them: the browser flow itself, how core reads the resulting session,
+and whether the passkey users already in the realm carry on working. A second
+realm exercises all three against the real application, because the app already
+picks its realm from environment variables.
+
+`aobplatform` IS NOT TOUCHED by any of this. `tier2-realm.mjs` compares the
+realm name against a constant before it makes a single request, and every admin
+call it makes asserts the path it is about to use.
+
+### What is in it
+
+Everything the main realm has, plus tier 2 (`AUTH-TIERS.md` §2/§4/§5,
+`DECISIONS.md` D-2026-09-12-11):
+
+- **`practice-browser`**, bound at the realm and on the `web` client. Username,
+  then **either** a passkey **or** a password and a one-time code. The code form
+  is REQUIRED and is deliberately *not* wrapped in `conditional-user-configured`
+  — that wrapper is the difference between "a code" and "a code if you happen
+  to have set one up".
+- **Two CONDITIONAL subflows on opposite sides of one role check.** A holder of
+  `platform_admin` meets `practice-browser Operator`, which REQUIRES a passkey
+  and contains no password form; everybody else meets
+  `practice-browser Practice`. Written this way because a conditional that
+  PASSES does not stop what follows it — one conditional followed by an
+  alternative would have asked an operator for a passkey *and then* a password.
+- **`operator-browser`** on the `console` client: passkey REQUIRED, password
+  form DISABLED, the same shape as `clinician-browser`. Belt and braces with the
+  role gate — a per-client binding covers the clients you remember to think
+  about, a role gate covers the people.
+- **A password policy**: `length(12) and maxLength(128) and notUsername and
+  notEmail and passwordHistory(5)`. Length over complexity theatre, deliberately
+  — character-class rules push people towards `Passw0rd!` and buy nothing an
+  offline attacker cares about. `tier2-realm.test.mjs` asserts none is added.
+- **Plain TOTP**, six digits over thirty seconds, a code never reusable. No
+  registration with Google or Microsoft, no API key, no fee.
+- **An `amr` claim on both public clients.** Keycloak's `oidc-amr-mapper` reads
+  the completed executions and each one's `default.reference.value`, so the
+  token says `["pwd","otp"]` or `["hwk"]`. `packages/domain/src/auth-method.ts`
+  turns that into the product's own words; `apps/core` reads it off the actor.
+
+### Pointing the stack at it, and back
+
+Four variables in `apps/core/.env` and one in `apps/web/.env.local`. Nothing
+else changes: the client ids and every redirect URI are identical, which is
+what `tier2-realm.test.mjs` asserts.
+
+| Variable | Main realm | Sandbox |
+|---|---|---|
+| `KEYCLOAK_PUBLIC_ISSUER` (core) | `http://localhost:21024/realms/aobplatform` | `http://localhost:21024/realms/aobplatform-tier2` |
+| `KEYCLOAK_JWKS_URI` (core) | `http://127.0.0.1:21024/realms/aobplatform/protocol/openid-connect/certs` | `http://127.0.0.1:21024/realms/aobplatform-tier2/protocol/openid-connect/certs` |
+| `KEYCLOAK_ISSUER` (core) | `http://127.0.0.1:21024/realms/aobplatform` | `http://127.0.0.1:21024/realms/aobplatform-tier2` |
+| `KEYCLOAK_REALM` (core) | `aobplatform` | `aobplatform-tier2` |
+| `NEXT_PUBLIC_KEYCLOAK_ISSUER` (web) | unset — `apps/web/app/auth.ts` defaults to the main realm | `http://localhost:21024/realms/aobplatform-tier2` |
+
+The `localhost` / `127.0.0.1` split is not cosmetic and is the same one the
+rest of this file explains: `PUBLIC_ISSUER` is compared to the `iss` claim as a
+STRING and must be what the browser used; the other two are fetched by Node,
+which resolves `localhost` to `::1` first on Windows and dies in Docker's IPv6
+forwarding. Getting it wrong produces `unexpected iss claim value` on every
+browser-issued token, and stays invisible until something verifies one.
+
+Restart core and the Next dev server after changing them. To go back, put the
+five values back — there is no state anywhere else that remembers which realm
+was in use.
+
+### Building it, and proving it
+
+```bash
+node infra/keycloak/tier2-realm.mjs          # build (drops and rebuilds if present)
+node infra/keycloak/tier2-realm.mjs --keep   # only if absent
+node infra/keycloak/tier2-realm.mjs --delete # remove it
+
+node infra/keycloak/tier2-verify.mjs         # password + code, end to end, no browser
+node infra/keycloak/tier2-verify-passkey.mjs # passkeys, with a CDP virtual authenticator
+```
+
+**It rebuilds rather than patches, and that is the point.** Patching flows in
+place is how a script quietly diverges from the file it claims to describe —
+the drift that made `transform-realm.mjs` unsafe to re-run (§ at the top of
+this file). The sandbox holds nothing precious: its accounts are made by the
+two verify scripts, which recreate them.
+
+`tier2-verify.mjs` drives the real HTML forms with a cookie jar and computes
+the one-time codes in Node from the secret Keycloak generated during enrolment,
+so no phone is involved and the run repeats. `tier2-verify-passkey.mjs` needs a
+browser and is separate for that reason.
+
+**`npm run validate:realm` now runs `tier2-realm.test.mjs` too** — a SEPARATE
+guard that never reads `realm-export.json`. Its first two checks are that the
+file names `aobplatform-tier2` and that it is not the realm anybody signs in to.
+
+### Two things worth knowing before this becomes real
+
+- **An account with no credential at all cannot sign in.** Worth stating
+  because the opposite is a plausible Keycloak behaviour: a REQUIRED
+  authenticator the user is not configured for can be turned into a required
+  action and waved through. It is not, here — the realm answers "Invalid
+  username or password" (checked 12 September 2026, and pinned by the first
+  check in `tier2-verify.mjs`). Enrolment therefore has to go through the
+  action-token invitation, which is what the platform already sends.
+- **Required actions run in Keycloak's own priority order, not the order they
+  were asked for.** This realm serves the authenticator setup before the
+  password. Both happen before the person reaches the application, which is
+  what "one pass" means; the order itself is Keycloak's default and nothing
+  should be built on it.

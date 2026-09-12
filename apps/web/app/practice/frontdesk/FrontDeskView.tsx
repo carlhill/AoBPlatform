@@ -669,6 +669,20 @@ function PatientPanel({
       <h2 className={styles.panelName} data-testid="frontdesk-chosen-name">
         {row.patientName}
       </h2>
+      {/*
+        THE PRACTICE'S OWN NUMBER, DIRECTLY UNDER THE NAME (Carl, 12 September
+        2026: "patientid missing under patient name"). It is the handle
+        reception reads out and types into the practice's own software, so a
+        panel that named the person without it made somebody cross-check by
+        name and date of birth -- slower, and wrong for two people who share a
+        name. Said even when absent, because a blank line under a name reads as
+        a page that failed to load.
+      */}
+      <p className={styles.panelRecordNumber} data-testid="frontdesk-chosen-record-number">
+        {row.patientRecordNumber
+          ? strings.frontdesk.panel.patientRecordNumber(row.patientRecordNumber)
+          : strings.frontdesk.panel.patientRecordNumberUnknown}
+      </p>
       <p className={styles.panelLead} data-testid="frontdesk-chosen-what">
         {sentence}
       </p>

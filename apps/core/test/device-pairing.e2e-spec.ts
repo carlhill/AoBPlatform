@@ -42,7 +42,15 @@ let currentPrincipal: Record<string, unknown> | null = null;
  * reaches it only by acting as them.
  */
 function signedInAt(practiceId: string): void {
-  currentPrincipal = { ...ADMIN, practiceId };
+  /*
+   * A TIER 2 SESSION, STATED (AUTH-TIERS.md §5, D-2026-09-12-11). Revoking a
+   * tablet is a high-stakes act and now requires a second factor presented
+   * recently, so a fixture that says nothing about how it authenticated is a
+   * fixture that would be refused — correctly. `authTime` is taken at the
+   * moment of signing in rather than once at module load, so a long suite
+   * does not start failing on its own five-minute-old session.
+   */
+  currentPrincipal = { ...ADMIN, practiceId, amr: ['pwd', 'otp'], authTime: Math.floor(Date.now() / 1000) };
 }
 
 describe('device pairing (e2e, real Postgres)', () => {

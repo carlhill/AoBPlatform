@@ -9,9 +9,11 @@ import {
 import { Reflector } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { TokenVerifier, type AuthenticatedPrincipal } from '@aobplatform/auth-client';
+import { authMethodFromAmr, mayPerformHighStakesAct } from '@aobplatform/domain';
 import { PUBLIC_ENDPOINT } from './public.decorator';
 import { REQUIRED_ROLES } from './roles.decorator';
 import { PRACTICE_SCOPED } from './practice-scope.decorator';
+import { FRESH_SECOND_FACTOR, type FreshSecondFactorRequirement } from './fresh-second-factor.decorator';
 
 declare module 'express' {
   interface Request {
@@ -124,6 +126,57 @@ export class AuthGuard implements CanActivate {
     );
   }
 
+  /**
+   * A HIGH-STAKES ACT ASKS FOR THE SECOND FACTOR AGAIN (AUTH-TIERS.md §5.2).
+   *
+   * The rule itself lives in `@aobplatform/domain` because the console needs
+   * the same answer to decide what to offer, and a rule with two
+   * implementations is a rule with two behaviours.
+   *
+   * THE REFUSAL CARRIES A CODE, NOT ONLY A SENTENCE (CLAUDE.md §7). "Confirm
+   * it's you" and "your account has no second factor" are different problems
+   * with different fixes, and a surface that receives only prose cannot tell
+   * them apart or offer the right control. The two codes are the domain's.
+   */
+  private assertFreshSecondFactor(
+    context: ExecutionContext,
+    request: { method: string; url: string },
+    principal: AuthenticatedPrincipal,
+  ): void {
+    const needed = this.reflector.getAllAndOverride<FreshSecondFactorRequirement>(FRESH_SECOND_FACTOR, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (!needed) return;
+    const decision = mayPerformHighStakesAct({
+      method: authMethodFromAmr(principal.amr),
+      authTimeSeconds: principal.authTime,
+      nowSeconds: Math.floor(Date.now() / 1000),
+      maxAgeSeconds: needed.maxAgeSeconds ?? undefined,
+    });
+    if (decision.allowed) return;
+    /*
+     * NO PII AND NO CREDENTIAL IN THE LOG LINE — not the username, not the
+     * method, and obviously never the password (hard rule 9's spirit,
+     * AUTH-TIERS.md §5.5). The subject id and the route are enough to find
+     * the session, and they are what an operator can act on.
+     */
+    this.logger.warn(
+      `Refused ${request.method} ${request.url} for ${principal.sub}: ${decision.reason}` +
+        (decision.ageSeconds === undefined ? '' : ` (authenticated ${decision.ageSeconds}s ago)`),
+    );
+    throw new ForbiddenException({
+      statusCode: 403,
+      error: 'Forbidden',
+      reasonCode: decision.reason,
+      message:
+        decision.reason === 'second_factor_required'
+          ? 'This account signed in with a password and nothing else, and this act needs a second factor. ' +
+            'Register an authenticator app or a passkey, then try again.'
+          : 'Confirm it is you before doing this. Sign in again — it takes a moment and this act cannot be undone.',
+    });
+  }
+
   private assertRoles(
     context: ExecutionContext,
     request: { method: string; url: string },
@@ -178,6 +231,7 @@ export class AuthGuard implements CanActivate {
       if (known) {
         this.assertRoles(context, request, known);
         this.assertPracticeScope(context, request, known);
+        this.assertFreshSecondFactor(context, request, known);
       }
       return true; // staged: dev header path still works
     }
@@ -207,6 +261,7 @@ export class AuthGuard implements CanActivate {
        */
       this.assertRoles(context, request, principal);
       this.assertPracticeScope(context, request, principal);
+      this.assertFreshSecondFactor(context, request, principal);
 
       return true;
     } catch (err) {

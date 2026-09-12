@@ -389,8 +389,30 @@ export function redirectUri(): string {
   return `${window.location.origin}/callback`;
 }
 
-/** Sends the browser to Keycloak. The passkey ceremony happens there. */
-export async function beginLogin(clientId: string = CLIENT_ID): Promise<void> {
+/**
+ * ASK KEYCLOAK TO AUTHENTICATE THE PERSON AGAIN, EVEN IF IT ALREADY HAS
+ * (AUTH-TIERS.md §5.2, D-2026-09-12-11).
+ *
+ * `prompt=login` is the OIDC way of saying "do not reuse the session cookie".
+ * Without it a re-authentication attempt on a live Keycloak session is
+ * answered instantly from the cookie and nothing is proved — the person would
+ * be bounced through a redirect and land back holding the same stale
+ * `auth_time`, which looks like a bug and is worse than one, because the act
+ * would then be permitted.
+ */
+export interface LoginOptions {
+  /** True before a high-stakes act: re-run the whole sign-in, cookie or not. */
+  reauthenticate?: boolean;
+}
+
+/**
+ * Sends the browser to Keycloak. The credential ceremony happens there.
+ *
+ * The second argument is optional and defaults to today's behaviour, so the
+ * seven existing callers are unchanged (wow.md §10: above about five
+ * importers, add behaviour behind an optional prop).
+ */
+export async function beginLogin(clientId: string = CLIENT_ID, options: LoginOptions = {}): Promise<void> {
   const verifier = randomString();
   const state = randomString();
   sessionStorage.setItem(VERIFIER_KEY, verifier);
@@ -412,6 +434,7 @@ export async function beginLogin(clientId: string = CLIENT_ID): Promise<void> {
     state,
     code_challenge: await challengeFor(verifier),
     code_challenge_method: 'S256',
+    ...(options.reauthenticate ? { prompt: 'login' } : {}),
   });
   window.location.assign(`${ISSUER}/protocol/openid-connect/auth?${params.toString()}`);
 }

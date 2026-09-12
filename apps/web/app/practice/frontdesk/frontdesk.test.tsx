@@ -67,6 +67,9 @@ const row = (over: Partial<PushableRow> = {}): PushableRow => ({
   status: 'draft',
   patientName: 'Jamie Sampleton',
   patientId: '11111111-1111-4000-8000-000000000001',
+  // The practice's own handle. Not a Medicare-format number and not derivable
+  // into one — the shape is the practice's, and this one is obviously fake.
+  patientRecordNumber: 'DEV-JAMIE-SAMPLETON',
   providerName: 'Dr Example Provider',
   providerType: 'general_practitioner',
   appointmentDate: '2026-09-12',
@@ -758,6 +761,33 @@ describe('the patient panel — everything about them, on this page', () => {
     // Still the same patient, still on the panel, now on the newer row.
     expect(screen.getByTestId('frontdesk-chosen-name').textContent).toBe(HERE.patientName);
     expect(screen.getByTestId(`steps-${SUCCESSOR.agreementId}`)).toBeTruthy();
+  });
+
+  /*
+   * Carl, 12 September 2026: "patientid missing under patient name". It is the
+   * handle reception reads out and types into the practice's own software, so
+   * the panel must carry it beside the name rather than making somebody
+   * cross-check by name and date of birth.
+   */
+  it('front_desk_panel_shows_the_practice_patient_id_under_the_name', async () => {
+    const HERE = row({ patientRecordNumber: 'XL-004821' });
+    stubFetch({ rows: [HERE] });
+    render(<FrontDeskView />);
+    await choose(HERE.agreementId, HERE.patientName);
+
+    expect(screen.getByTestId('frontdesk-chosen-record-number').textContent).toBe('Patient ID XL-004821');
+  });
+
+  it('front_desk_panel_says_so_when_there_is_no_patient_id', async () => {
+    const HERE = row({ patientRecordNumber: null });
+    stubFetch({ rows: [HERE] });
+    render(<FrontDeskView />);
+    await choose(HERE.agreementId, HERE.patientName);
+
+    // Said, not blank: an empty line under a name reads as a failed load.
+    expect(screen.getByTestId('frontdesk-chosen-record-number').textContent).toBe(
+      'No patient ID on this record',
+    );
   });
 
   it('front_desk_every_patient_action_is_on_the_page', async () => {

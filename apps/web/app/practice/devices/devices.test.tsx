@@ -527,6 +527,82 @@ describe('/practice/devices — the practice’s tablets', () => {
     expect(calls.find((c) => c.url.includes('/out-of-use'))?.body).toEqual({ outOfUse: true });
   });
 
+  /**
+   * THE SERVER ASKED WHO IS THERE — AUTH-TIERS.md §5.2, D-2026-09-12-11.
+   *
+   * Revoking is the worked example for the fresh second factor: it cannot be
+   * undone, and a tier 2 session lives on a shared clinical terminal somebody
+   * may have walked away from. What this pins is the CONSOLE half — that a
+   * refusal carrying a reason code produces the control that fixes it, and
+   * that a code this build has not met shows its own code rather than a
+   * soothing sentence (CLAUDE.md §7).
+   */
+  describe('a high-stakes act asks for the second factor again', () => {
+    /** The revoke is refused with the server's own shape: a message and a code. */
+    function stubRefusedRevoke(reasonCode: string | undefined, message: string) {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string, init?: RequestInit) => {
+          const method = init?.method ?? 'GET';
+          calls.push({ url, method, body: init?.body ? JSON.parse(init.body as string) : undefined });
+          if (method === 'GET') {
+            return { ok: true, status: 200, json: async () => ({ devices: [PAIRED], minimumKioskBuild: null }) } as unknown as Response;
+          }
+          return {
+            ok: false,
+            status: 403,
+            json: async () => ({ statusCode: 403, error: 'Forbidden', reasonCode, message }),
+          } as unknown as Response;
+        }),
+      );
+    }
+
+    async function attemptRevoke() {
+      render(<DevicesView practiceId={PRACTICE} />);
+      await waitFor(() => expect(screen.getByTestId(`revoke-${PAIRED.id}`)).toBeTruthy());
+      fireEvent.click(screen.getByTestId(`revoke-${PAIRED.id}`));
+      fireEvent.click(screen.getByTestId('device-confirm'));
+      return screen.findByTestId('devices-step-up');
+    }
+
+    it('a_high_stakes_act_asks_for_the_second_factor_again', async () => {
+      stubRefusedRevoke('reauthentication_required', 'Confirm it is you before doing this.');
+      const panel = await attemptRevoke();
+
+      expect(panel.textContent).toContain(strings.devices.stepUpReauthenticate);
+      // A CONTROL, NOT DIRECTIONS. The fix is not on another screen, so there
+      // is no link to one — pressing this re-runs the sign-in and comes back.
+      const action = await screen.findByTestId('devices-step-up-action');
+      expect(action.textContent).toContain(strings.devices.stepUpAction);
+    });
+
+    it('tells a session with no second factor something it can act on instead', async () => {
+      stubRefusedRevoke('second_factor_required', 'This account signed in with a password and nothing else.');
+      const panel = await attemptRevoke();
+      expect(panel.textContent).toContain(strings.devices.stepUpSecondFactorMissing);
+      // Signing in again would produce the same session, so it is not offered.
+      expect(screen.queryByTestId('devices-step-up-action')).toBeNull();
+    });
+
+    it('shows an unmapped reason code rather than a sentence that explains nothing', async () => {
+      stubRefusedRevoke('a_code_this_build_has_never_met', 'Refused.');
+      await attemptRevoke();
+      const unmapped = screen.getByTestId('devices-step-up-unmapped');
+      expect(unmapped.textContent).toContain('a_code_this_build_has_never_met');
+    });
+
+    it('leaves an ordinary refusal exactly as it was', async () => {
+      // No reasonCode: the plain error notice, unchanged, and no step-up panel.
+      stubRefusedRevoke(undefined, 'Something else went wrong.');
+      render(<DevicesView practiceId={PRACTICE} />);
+      await waitFor(() => expect(screen.getByTestId(`revoke-${PAIRED.id}`)).toBeTruthy());
+      fireEvent.click(screen.getByTestId(`revoke-${PAIRED.id}`));
+      fireEvent.click(screen.getByTestId('device-confirm'));
+      await waitFor(() => expect(screen.getByText('Something else went wrong.')).toBeTruthy());
+      expect(screen.queryByTestId('devices-step-up')).toBeNull();
+    });
+  });
+
   it('offers Put back in use on an inactive tablet, and reverses exactly the one boolean', async () => {
     stubFetch([OUT_OF_USE], () => ({ deviceId: OUT_OF_USE.id, outOfUse: false }));
     render(<DevicesView practiceId={PRACTICE} />);
