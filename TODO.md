@@ -3857,3 +3857,56 @@ easy to forget when enforcement is finally switched on for real.
 require a real principal even when `AUTH_ENFORCE=false` — a narrower rule than
 turning enforcement on, and one that could land now without disturbing the
 staged rollout. Carl's call; it touches auth.
+
+---
+
+## Duplication the inventory found on its first run (12 Sep 2026)
+
+`INVENTORY.md` and `npm run inventory` landed on 12 Sep (wow.md §10). Indexing
+1,959 exports turned up thirty symbol names declared in more than one file.
+Most are innocent — `metadata` on every Next route, `AffiliationsView` for the
+practice and the practitioner, two deliberate string tables. These five are
+not, and none is fixed here: they were found while building the index, and
+fixing them belongs in a build of its own with the tests to prove it.
+
+**1. Two `canonicalJson` in the render path.** `apps/core/src/render/
+agreement-document.ts:194` and `apps/core/src/render/renderer.ts:47` are two
+implementations of the same canonicalisation, in the two files that decide what
+gets hashed. Hard rule 13 says one deterministic render path; two sort-and-
+stringify functions that must agree byte for byte, forever, is exactly the
+shape of the bug that rule exists to prevent. Merge them, keep the surviving
+one next to the hasher, and let `two_renders_of_one_agreement_are_byte_
+identical` cover it.
+
+**2. The portal types are forked and have already drifted.** Thirteen
+`Portal*` interfaces are declared in BOTH `packages/contracts/src/portal.ts`
+and `apps/web/app/patient/portal/api.ts`. They are not identical:
+`PortalAgreement` carries `practiceId` in contracts and does not in the web
+copy. `packages/contracts` exists so the client and the server cannot disagree
+about a payload; a hand-written second copy in the client is that guarantee
+switched off. The web app should import them.
+
+**3. `PushableRow` and `CoveredServiceRow` are declared twice** —
+`apps/web/app/practice/tablet/pushDesk.tsx` and
+`apps/core/src/tablet-sessions/tablet-sessions.service.ts`. Same failure as
+above, one wire shape written out by hand on both ends. They belong in
+`packages/contracts`.
+
+**4. `hashSecret` is byte-identical in two places** —
+`apps/core/src/devices/device-credential.ts:42` and
+`apps/core/src/capture/capture-token.ts:24`, both
+`sha256(secret).digest('hex')`. Small, but it is credential hashing: the day
+one of them gains a salt or a work factor and the other does not is the day
+this matters.
+
+**5. Two sets of form primitives.** `Field` and `Checkbox` exist in both
+`apps/web/app/ui/index.tsx` and `apps/web/app/kiosk/components/Field.tsx`, and
+`whenLabel` in both `pushDesk.tsx` and `ServiceDescriptionsNeeded.tsx`. The
+kiosk fork may well be deliberate — a patient-facing control at tablet scale is
+not a console control — but nothing says so in either file. If it is
+deliberate, write the reason in the kiosk one; if it is not, it is the rule of
+three arriving on schedule.
+
+**Why this list is worth keeping.** It is the first evidence that the index
+pays for itself: none of these was discoverable before, and one of them
+(#1) touches a hard rule.

@@ -54,6 +54,20 @@ export default tseslint.config(
   },
   {
     /*
+     * Repo scripts are plain Node ESM run from a shell, not browser or Nest
+     * code: `process` and `console` ARE their interface, and a generator that
+     * cannot report what it wrote is useless. `infra/**` sidesteps this by
+     * being ignored outright; `scripts/**` is linted instead, because
+     * `scripts/dev/inventory.mjs` generates a file the whole team reads and a
+     * typo in it is worth catching. Placed after the shared rules block so its
+     * `no-console` relaxation actually wins.
+     */
+    files: ['scripts/**/*.mjs'],
+    languageOptions: { globals: { process: 'readonly', console: 'readonly' } },
+    rules: { 'no-console': 'off' },
+  },
+  {
+    /*
      * ZERO FOOTPRINT ON THE TABLET — Carl, 3 Sep 2026, recorded in CLAUDE.md
      * §7: "As we could have 1000's of kiosks/tablets, ensure that nothing gets
      * written to the kiosk/tablet ... We do not want the scenario where a bug
