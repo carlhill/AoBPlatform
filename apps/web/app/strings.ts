@@ -38,7 +38,22 @@ export const strings = {
    * nothing anywhere.
    */
   recordId: {
-    patient: 'Patient ID',
+    /*
+     * "AoBPlatform record ID", NOT "Patient ID" (Carl, 12 September 2026, with
+     * both screens side by side: *"Patient ID is on frontdesk it is diff - see
+     * both images"*).
+     *
+     * TWO DIFFERENT THINGS WERE WEARING ONE LABEL. The front desk says
+     * "Patient ID DEV-JO-EXAMPLE" -- the PRACTICE's own number for that person,
+     * the one reception reads out and types into their own software. This says
+     * "Patient ID 37386834-6ffa-..." -- a value THIS platform minted, for a
+     * support ticket. A receptionist reading both would reasonably conclude one
+     * of them was wrong, and neither is.
+     *
+     * The practice's number keeps the plain words, because it is the one that
+     * means something to a person. Ours says whose record it is.
+     */
+    patient: 'AoBPlatform record ID',
     copy: 'Copy',
     copied: 'Copied',
     /** The accessible name on the copy control, so it is not twelve buttons all called "Copy". */
