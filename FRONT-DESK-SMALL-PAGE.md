@@ -118,6 +118,59 @@ One deliberate duplicate, flagged in its own docstring:
 onto this hook in the same commit** (wow.md §10, the rule of three). Only the
 fetches are copied; every decision about what the answers mean is `dayRails`.
 
+## 7a. Filters, which volume makes compulsory (Carl, 12 September 2026)
+
+Carl, on seeding ninety: *"when you have 90 you have to provide filter by name
+or workflow position or name of doctor..."*
+
+He is right, and it is not a nicety at that size — thirty patients per
+practitioner is one practitioner's ordinary day, and three of them is a list
+nobody scrolls. **Three filters, and they combine.**
+
+| Filter | What it narrows to | How |
+|---|---|---|
+| **Name** | One person somebody is asking about at the counter | Type-to-find |
+| **Practitioner** | One doctor's queue | Chooser. Three options today, a select at ten |
+| **Workflow position** | One state — here now, on a tablet, needs a look, finished | **Already built**: the chip strip |
+
+**Type-to-find runs in the BROWSER, over rows the server already scoped.** This
+is not a performance choice, it is the same reasoning `/practice/patients`
+already records for its own find box: it narrows what is on screen and asks the
+server nothing, so it can never become a way to look up somebody who is not
+already on today's list. A server-side patient search on a desk screen would be
+a directory, and this product does not have one.
+
+### The rule that matters more than the filters
+
+**A filter that hides patients must be loud.**
+
+At seven patients a stale filter is a curiosity. At ninety it is a person nobody
+called, because reception looked at a list that said nothing was waiting.
+
+So:
+
+1. **The counts never change when a filter is on.** The chips keep showing the
+   true totals for the day. A filter changes what is LISTED, never what is
+   COUNTED — which also keeps the reconciliation test meaningful, because the
+   chips must still sum to the day register whatever is being shown.
+2. **The page says a filter is on**, in words, where the eye already is — not as
+   a subtle highlight on a chip.
+3. **One click clears everything**, always visible while any filter is active.
+4. **Nothing is filtered by default**, ever, and a filter does not survive a
+   reload. A receptionist starting a shift sees the whole room.
+
+### Not yet built, and why not
+
+Four agents were running when this was written, one of them with an hour of
+queued front-desk work, and the ninety-patient seed did not exist yet. Building
+filters against seven rows would be building blind — the whole point is which
+filter a person reaches for when the list is unusable, and that cannot be judged
+without the list being unusable first.
+
+**Order: the seed lands, then filters, then the wide-versus-compact decision**
+(`SESSION-HANDOVER.md`). Deciding the layout before the filters exist would
+compare two pages that are both unusable at volume.
+
 ## 8. Open for Carl
 
 1. **Should `/practice/today` gain a sixth card for this page?** It is the
@@ -139,3 +192,4 @@ fetches are copied; every decision about what the answers mean is `dayRails`.
    (hard rule 15) and there is no dev seam past `AccessGuard`, so the page was
    verified by 15 named tests, a typecheck, a lint, and `mayReach` against the
    BUILT domain package. Carl sees it first.
+| 12 Sep 2026 | §7a: filters by name, practitioner and workflow position, which ninety patients make compulsory. The rule that carries them: a filter that hides patients must be loud, and the counts never change when one is on. |
