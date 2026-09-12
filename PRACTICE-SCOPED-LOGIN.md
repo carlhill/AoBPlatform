@@ -78,6 +78,74 @@ whole class of problem in §5 disappears.
    three entries when they sign in and must tell them apart at a glance.
    `jsmith@outlook.com.xlevelup` reads plainly; the practice is the last word.
 
+### 3a. The two shapes of account, and the slug (Carl, 12 September 2026)
+
+Carl: *"will the admin user name for xlevelup be `admin.xlevelup`, the default
+for the core admin user for any practice? So Powell St. Practice will be
+`admin.powellstpractice`. And AoB will auto add the code to the email provided
+for any user, so `audrey@hillsempire.com` will be
+`audrey@hillsempire.com.xlevelup` and `audrey@hillsempire.com.powellstpractice`
+if Audrey works at both."*
+
+Yes to all of it. There are exactly **two shapes**, and the difference is not
+cosmetic:
+
+| Shape | Example | Belongs to |
+|---|---|---|
+| `admin.<code>` | `admin.xlevelup`, `admin.powellstpractice` | **The PRACTICE.** One per practice, pointed at a shared mailbox on purpose, so somebody leaving does not lock the practice out (`ROLES.md` rule 3) |
+| `<full email>.<code>` | `audrey@hillsempire.com.xlevelup` | **A PERSON**, at one practice |
+
+**The admin account has no email in its username, and that is the point.** It is
+not a person. What belongs to a person is their passkey; what belongs to the
+practice is the account. Naming it after whoever set it up would be the mistake
+the shared-mailbox rule exists to prevent.
+
+**Audrey at two practices gets two accounts**, `audrey@hillsempire.com.xlevelup`
+and `audrey@hillsempire.com.powellstpractice`, both carrying her own email, both
+carrying the same person claim. Two logins, one person (§1 of
+`PRACTITIONER-IDENTITY.md`).
+
+### 3b. How the slug is made
+
+`Powell St. Practice` → `powellstpractice`. The rules, so two people generating
+one get the same answer:
+
+1. **From the trading name where there is one, else the practice name — never
+   the legal name.** XLEVELUP Medical trades as `XLEVELUP`; its legal name is
+   "The trustee for Hillsempire Family Trust", which nobody would recognise and
+   which changes for reasons that have nothing to do with the practice.
+2. **Lower case, then drop everything that is not a–z or 0–9.** Spaces, full
+   stops, apostrophes, ampersands and hyphens all disappear:
+   `Powell St. Practice` → `powellstpractice`; `O'Brien & Sons Medical` →
+   `obriensonsmedical`.
+3. **Truncate to 24 characters.** Long enough to stay recognisable, short enough
+   that the username does not run away. The longest practice name in the dev
+   data is 30 characters, so this bites rarely.
+4. **If the result is empty or shorter than 3 characters** — a practice named in
+   a non-Latin script, say — fall back to a generated code rather than a
+   mangled one, and mark it as generated.
+5. **Then the allocation check in §5**: unique against every code ever issued,
+   extended deterministically on collision, stored, never re-derived, never
+   reused.
+
+**A practice renaming does not move its code.** The slug is how the code is
+PROPOSED; once allocated it is stored and fixed, because a username must never
+change under a passkey.
+
+### 3c. The one usability risk, and where it is solved
+
+`audrey@hillsempire.com.powellstpractice` is 38 characters and **the part that
+distinguishes it is last** — exactly the part a browser's passkey picker is most
+likely to truncate. Audrey at two practices could be shown two entries that read
+identically for their first thirty characters.
+
+**The username is not what she reads.** A passkey is offered by its WebAuthn
+display name, which is ours to set and is a separate field. So the account is
+created with a display name that leads with what distinguishes it — *"XLEVELUP
+Medical — Audrey Hill"* — while the username stays the machine key. Solving
+readability in the display name rather than by reshaping the username keeps the
+username unique by construction (§3) and legible where it matters.
+
 ## 4. What this requires of Keycloak, and why it is an improvement anyway
 
 **The constraint, measured on the running realm (12 September 2026).** The
@@ -149,10 +217,15 @@ which proves nothing — that is exactly what a 1% risk looks like beforehand.
    across locations and would break).
 5. **The practice code is allocated once, stored, checked unique by the
    database, and never reused.**
-6. **The username is the person's full email, a dot, then the practice code** —
-   `jsmith@outlook.com.xlevelup` — and is stable for the life of the account. A
-   passkey is bound to it.
-7. **The email field on every account is the person's own**, unchanged, on all
+6. **Two username shapes and no others**: `admin.<code>` for the practice's own
+   account, `<full email>.<code>` for a person. Both stable for the life of the
+   account, because a passkey is bound to the username.
+7. **The slug comes from the trading name, is stripped to a-z0-9, truncated to
+   24, and then ALLOCATED** — proposed by rule, fixed by the database, never
+   re-derived after that.
+8. **What a person reads at the passkey picker is the WebAuthn display name**,
+   which leads with the practice. The username is a key, not a label.
+9. **The email field on every account is the person's own**, unchanged, on all
    of their per-practice accounts. The realm allows duplicate emails and does
    not offer email as a way to sign in (§4).
 7. **Nothing here blocks care** (hard rule 8).
@@ -170,6 +243,11 @@ which proves nothing — that is exactly what a 1% risk looks like beforehand.
 - `two_people_with_the_same_email_local_part_at_one_practice_both_get_an_account` — different full emails, so no collision arises at all.
 - `three_accounts_for_one_person_all_carry_their_own_email` — duplicates allowed.
 - `the_realm_never_offers_email_as_a_way_to_sign_in` — guarded in validate:realm.
+- `a_practices_admin_account_is_named_for_the_practice_and_never_for_a_person`
+- `the_slug_is_made_from_the_trading_name_and_strips_everything_but_letters_and_digits` — `Powell St. Practice` → `powellstpractice`.
+- `renaming_a_practice_never_moves_its_code`
+- `a_practice_whose_name_yields_no_usable_slug_gets_a_generated_code_marked_as_generated`
+- `the_passkey_display_name_leads_with_the_practice` — the distinguishing part is not left to a truncated username.
 - `an_unchosen_location_never_stops_a_consultation` — hard rule 8.
 
 ## 8. For Carl
@@ -195,3 +273,4 @@ which proves nothing — that is exactly what a 1% risk looks like beforehand.
 |---|---|
 | 12 Sep 2026 | v1.0. Written when Carl settled the fraud reasoning and asked how the practice code can be guaranteed unique. |
 | 12 Sep 2026 | §3 revised to Carl's form — the FULL email plus the practice code, which makes the username unique by construction. §4 added: it requires duplicate emails allowed and email login off, which hard rule 15 wanted anyway. |
+| 12 Sep 2026 | §3a–3c: the two username shapes confirmed by Carl (`admin.<code>` for the practice, `<full email>.<code>` for a person), the slug rules, and the display-name answer to truncation. |
