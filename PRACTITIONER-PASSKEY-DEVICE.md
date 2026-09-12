@@ -58,6 +58,53 @@ phone route at all, and the security key becomes the only option. That is a
 procurement question for each practice, and it is cheap to answer early and
 expensive to discover late.
 
+## 3a. What the QR actually is — and how it differs from WhatsApp
+
+Carl, reasonably: *"so the way AoB users connect is like how WhatsApp connects.
+The user goes to the AoB landing page and a QR code is shown. The user scans the
+QR code and then on their mobile or tablet they can enter their userid and
+password."*
+
+Same shape, and different in three ways. The differences are the point.
+
+**1. No userid and no password. Anywhere. Ever.** The phone does not ask for
+credentials — it already holds the passkey, and it asks the person to prove they
+are themselves with a face, a fingerprint or the phone's own PIN. Hard rule 15
+is passkeys with no password-only path, and there is no field to type one into.
+WhatsApp's QR links a session; this one performs a cryptographic signature.
+
+**2. There is no AoBPlatform app on the phone.** WhatsApp Web needs the WhatsApp
+app running and signed in. This needs nothing installed: WebAuthn is built into
+iOS and Android, and the phone's own browser or system handles it. There is no
+practitioner app and there will not be one.
+
+**3. The phone must be physically near the computer.** The handshake runs over
+Bluetooth proximity as well as an internet tunnel. WhatsApp's QR can be scanned
+from anywhere in the world; this one cannot. **That is the security property, not
+a limitation** — it is what makes a stolen or screenshotted QR code useless, and
+what stops somebody being talked into approving a sign-in for a computer in
+another country.
+
+**And we do not draw the QR.** It is rendered by the browser and the operating
+system inside their own dialog, after the person chooses "use a phone or tablet".
+Our page has one button on it, "Sign in with your passkey"; everything after
+that belongs to the platform. Nothing about the QR is ours to design, style or
+get wrong.
+
+**What the doctor actually does, in a shared consulting room:**
+
+1. Presses "Sign in with your passkey".
+2. The browser offers its own list; they choose to use a phone.
+3. A QR code appears. They scan it with the phone's camera.
+4. The phone asks "Sign in to AoBPlatform?" and they confirm with Face ID, a
+   fingerprint or their phone PIN.
+5. They are in. The computer never receives the passkey — only a signature.
+
+**Enrolment is simpler still.** If the practitioner opens the invitation email
+ON their phone, the passkey is created there directly and no QR is involved at
+all. That is the path to recommend in the invitation copy: *open this on your
+phone*.
+
 ## 4. The change that enforces it
 
 Set the realm's passwordless policy to
@@ -135,3 +182,4 @@ somebody through saving to Windows Hello, which is exactly what this stops.
 | Date | Change |
 |---|---|
 | 12 Sep 2026 | v1.0. Written when Carl pointed out that a doctor moving between shared consulting-room PCs cannot keep passkeys on them. Confirmed against the running realm: policy permits platform authenticators and real credentials are Windows Hello with internal transport. |
+| 12 Sep 2026 | §3a added: what the QR is, and the three ways it differs from WhatsApp — no password, no app, and physical proximity as the security property. |
