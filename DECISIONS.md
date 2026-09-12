@@ -1378,14 +1378,43 @@ row is how a receptionist calls the wrong person.
 
 ### 3. The new thing: one click to send a patient on
 
-**The mechanism already half exists.** `reassign` is a visit state a
-practitioner can set by hand, and it is the only one that raises a front-desk
-task (`visit-states.json`). So the practitioner says "this patient needs
-somebody else" from their own screen, and it lands at the desk. What does not
-exist is the ACTION on that task.
+**CORRECTED BY CARL, same day, and the correction matters more than the
+mistake.** I had reached for the existing `reassign` state. Carl: *"the Reassign
+in Dr Queue means the Dr cannot see the patient. Lets call the other scenario
+'See Second Dr' or something - to see the specialist. So the patient had two
+appointments on the same day."*
+
+**They are opposite events and must never share a state:**
+
+| | `reassign` | The new one - **see another practitioner** |
+|---|---|---|
+| What happened | The practitioner **cannot** see this patient. Called away, running late, wrong list | The practitioner **has** seen this patient, and now they need somebody else too |
+| Is it a fault? | Yes. Something has gone wrong with the day | No. This is an ordinary two-appointment day |
+| Did the first encounter happen? | **No** | **Yes** |
+| What the first visit does | Does not complete. It is moved or it is cancelled | **Completes normally.** The patient really was seen |
+| What is owed | Nothing new. The same encounter, somebody else | **A second agreement**, for a second encounter under a second provider number |
+
+Collapsing the two would put "the doctor was unavailable" and "the patient needs
+a specialist as well" through one code path, and the evidence would then be
+unable to say which had happened - on a record whose entire purpose is saying
+what happened.
+
+**So a new option, key `see_another_practitioner`.** It is a visit-state option
+like the others, versioned content with its display words in the string table
+(the practice may well call it "See second doctor"; the key stays in the
+domain's own vocabulary, because "Dr" is not a word this codebase uses -
+provider and practitioner are, CLAUDE.md 3).
+
+**What exists and what does not.** `reassign` exists and already raises a
+front-desk task, which is the right mechanism and the wrong meaning. The new
+option, and the ACTION on the task either of them raises, are both unbuilt.
 
 **What the one click does:** creates a SECOND VISIT for the same patient today,
 naming the specialist's affiliation, and puts them in that practitioner's queue.
+
+**Two appointments on one day is the ordinary shape of this**, not an edge case,
+and it is worth saying plainly because it is the thing the model now expresses
+that a one-visit-per-day model could not.
 
 **A second visit, not a move**, and this follows from D-2026-09-12-20 rather
 than being a fresh choice: a second practitioner billing under their own number
