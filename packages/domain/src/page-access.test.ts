@@ -108,6 +108,60 @@ describe('reaching a page', () => {
     expect(mayReach('/practice/frontdesk', ordinary)).toBe(true);
   });
 
+  it('opens the day’s work to every practice account, and to nobody without a practice', () => {
+    /*
+     * WHERE PRACTICE STAFF LAND (PRACTICE-NAVIGATION.md §2, §3), so it must
+     * open for the whole practice audience: an arrival that refuses the person
+     * who was just sent to it is the worst failure this table can have.
+     *
+     * AND EVERY DESTINATION ON IT IS ALREADY OPEN TO THEM — asserted here, at
+     * the table, because the page itself only renders links and cannot make a
+     * door that this does not.
+     */
+    for (const audience of [ordinary, admin]) {
+      expect(mayReach('/practice/today', audience)).toBe(true);
+      for (const destination of [
+        '/practice/frontdesk',
+        '/practice/practitioner/waiting',
+        '/practice/tablet',
+        '/practice/patients',
+        '/practice/correspondence',
+      ]) {
+        expect(mayReach(destination, audience)).toBe(true);
+      }
+    }
+
+    // An operator reaches it by ACTING AS the practice, which is what grants
+    // the claim — never directly, like every other page of a practice's work.
+    expect(mayReach('/practice/today', operator)).toBe(false);
+    expect(mayReach('/practice/today', audiencesOf({ roles: ['platform_admin'], practiceId: 'p1' }))).toBe(true);
+
+    // A practitioner has their own landing and does not hold a practice claim.
+    expect(mayReach('/practice/today', practitioner)).toBe(false);
+    expect(mayReach('/practice/today', stranger)).toBe(false);
+  });
+
+  it('the_setup_hub_still_opens_from_its_own_url', () => {
+    /*
+     * NOTHING MOVED (PRACTICE-NAVIGATION.md §5 rule 3). Landing changed; the
+     * hub did not. A practice account still reaches `/practice/setup` by
+     * bookmark, and so does everything under it — this is the half of the
+     * change that is defined by what did NOT happen, so it is asserted rather
+     * than assumed.
+     */
+    for (const page of [
+      '/practice/setup',
+      '/practice/devices',
+      '/practice/templates',
+      '/practice/application',
+      '/practice/reports',
+      '/practice/reconciliation',
+    ]) {
+      expect(mayReach(page, admin)).toBe(true);
+    }
+    expect(mayReach('/practice/setup', ordinary)).toBe(true);
+  });
+
   it('keeps the queue and review screens to the platform, despite their paths', () => {
     // Three platform screens live under /practice/ and are not practice pages
     // at all — they span every practice. The path is misleading; this is what

@@ -43,6 +43,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import type { WaitingList } from '@aobplatform/domain';
 import { Notice, Shell } from '../../../ui';
@@ -158,6 +159,26 @@ export function WaitingView() {
       title={strings.practitionerQueue.waiting.title}
       lead={strings.practitionerQueue.waiting.lead}
     >
+      {/*
+        BACK TO THE DAY'S WORK — but only for the people who have one (Carl,
+        12 Sep 2026, looking at this page as reception).
+
+        NOT A BACK LINK IN THE HEADER, deliberately. `/practice/today` is a
+        `practice` page and a practitioner's token carries no practice claim, so
+        a link shown to everybody would be a dead end for exactly the people
+        whose own page this is. `scope` already tells us which of the two
+        audiences the server answered for, so the link appears for reception, a
+        manager or an administrator, and never for a practitioner — whose way
+        back is their own landing page.
+      */}
+      {grouped && (
+        <p className={styles.backToToday}>
+          <Link href="/practice/today" data-testid="waiting-to-today">
+            {strings.practitionerQueue.waiting.backToToday}
+          </Link>
+        </p>
+      )}
+
       {/* Hard rule 8, said out loud to the one person who could act on a doubt. */}
       <Notice tone="ok" data-testid="waiting-never-blocks">
         {strings.practitionerQueue.waiting.neverBlocks}

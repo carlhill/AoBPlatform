@@ -36,6 +36,16 @@ const TWINS: readonly string[] = [
   '/reviews',
   '/queue',
   '/reconciliation',
+  /*
+   * THE TWIN EXISTED AND THIS LIST DID NOT KNOW (found 12 Sep 2026, wiring
+   * Messages onto `/practice/today`). `app/platform/practices/[practiceId]/
+   * correspondence` has been there since M-1 was built, but with no line here
+   * every read-only link to it fell through to the practice hub — the "no twin
+   * yet" fallback, silently applied to a page that had one. Exactly the
+   * "adding a twin means adding one line here" failure this file's own
+   * docstring warns about.
+   */
+  '/correspondence',
   '/devices',
   '/tablet',
   '/patients',

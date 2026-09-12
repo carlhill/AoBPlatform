@@ -111,10 +111,18 @@ export function MainMenu() {
         // under a heading about the platform.
         ...(hasPractice ? [{ path: '/practice', label: practiceListLabel }] : []),
         /*
-         * RECEPTION'S OWN WORK LIST, FIRST AMONG THE PRACTICE'S PAGES (Carl,
-         * 4 Sep 2026). It is the screen somebody is on all morning -- one
-         * patient at a time -- and the rest of this group is set-up and
-         * records, opened occasionally.
+         * THE DAY'S WORK, FIRST AMONG THE PRACTICE'S PAGES (Carl, 12 Sep 2026;
+         * PRACTICE-NAVIGATION.md §2). It is where practice staff land and the
+         * one page a whole shift can be worked from; the rest of this group is
+         * setting up and records, opened occasionally.
+         */
+        { path: '/practice/today', label: strings.nav.today },
+        /*
+         * RECEPTION'S OWN WORK LIST (Carl, 4 Sep 2026). It is the screen
+         * somebody is on all morning -- one patient at a time -- and it is
+         * also one of the five destinations on `today`. Listed here as well
+         * because the menu is how somebody deep in the console gets straight
+         * back to it without going home first.
          */
         { path: '/practice/patients', label: strings.patients.navLabel },
         { path: '/practice/setup', label: strings.nav.setup },

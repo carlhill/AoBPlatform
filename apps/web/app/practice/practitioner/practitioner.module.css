@@ -178,3 +178,9 @@
   white-space: nowrap;
   border: 0;
 }
+
+/* The way back to the day's work, for the practice staff who have one. */
+.backToToday {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+}

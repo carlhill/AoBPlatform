@@ -97,6 +97,17 @@ Worth knowing before anybody "fixes" one of these and breaks a token.
    (`PRACTITIONER-QUEUE-PAGE.md` §1). Gating and landing are different
    decisions and the page map expresses only the first.
 
+   **And practice staff land on the day's work, not on the setup hub**
+   (12 Sep 2026, PRACTICE-NAVIGATION.md §3; D-2026-09-12-05). Reception, a
+   manager and an administrator all land on `/practice/today`; the hub had
+   accumulated twelve destinations and was answering two different people's
+   questions at once. A platform operator ACTING AS a practice lands there too,
+   because a practice claim is what acting-as grants and they are standing in
+   for practice staff. Nobody lands on `/practice/setup` any more — it is a
+   place you go, not a place you arrive, and it still opens from its own URL.
+   Named tests: `practice_staff_land_on_todays_work_not_the_setup_hub`,
+   `an_operator_acting_as_a_practice_lands_where_practice_staff_land`.
+
    **Where it lives: `landingPath` in `packages/domain/src/landing.ts`** (built
    12 Sep 2026). It already decided where a practice user, a platform operator
    and a practitioner-without-a-practice go, and it is asked by the OIDC
@@ -137,3 +148,4 @@ Worth knowing before anybody "fixes" one of these and breaks a token.
 | 12 Sep 2026 | v1.0. Written when Carl listed the practice roles. Records what is built, including the three layers and the two naming inconsistencies. |
 | 12 Sep 2026 | Nurse and phlebotomist added as roles by Carl; the blocker is that an arrival naming one is currently refused. |
 | 12 Sep 2026 | Rule 5 given a home: `landingPath`. §7's open question closed. Two page-map entries added for `/practice/practitioner` and `/practice/practitioner/waiting`, the second open to `practice` as well as `practitioner`. |
+| 12 Sep 2026 | Rule 5 extended: practice staff — and an operator acting as a practice — land on `/practice/today`, not on the setup hub. Page-map entry added for it. D-2026-09-12-05. |

@@ -250,7 +250,27 @@ export const PAGES: Readonly<Record<string, PageRule>> = {
     audiences: ['practice', 'platform'],
     why: 'The practice’s hub, and the platform’s list of every organisation. The list is how an operator finds a practice to act as; everything below it stays practice-only.',
   },
-  '/practice/setup': { audiences: ['practice'], why: 'Setting the practice up.' },
+  /*
+   * THE DAY'S WORK, AND WHERE PRACTICE STAFF LAND (Carl, 12 Sep 2026;
+   * PRACTICE-NAVIGATION.md §2).
+   *
+   * `practice` ALONE, and it grants nothing: every destination on it names its
+   * own audiences and is gated by them, so a receptionist sees the four they
+   * may open and an administrator sees the same four. The page is a set of
+   * links, not a source of facts — there is no read behind it of its own.
+   *
+   * WHY IT EXISTS RATHER THAN MORE CARDS ON `/practice/setup`. The hub is
+   * organised by WHAT A THING IS; nobody arrives at a practice console
+   * thinking "I need a configuration page". A receptionist starting a shift
+   * and an administrator changing the letterhead were landing on one screen
+   * and each reading past the other's work. This is the shift's half, and the
+   * hub keeps configuration and oversight (§1).
+   */
+  '/practice/today': {
+    audiences: ['practice'],
+    why: 'The day’s work: the front desk, who is waiting, the tablets, the patients and the messages. Where practice staff land, because the shift is the job.',
+  },
+  '/practice/setup': { audiences: ['practice'], why: 'Setting the practice up. Configuration and oversight — the day’s work is on /practice/today.' },
   '/practice/entity': { audiences: ['practice'], why: 'The practice’s own record.' },
   '/practice/application': { audiences: ['practice'], why: 'What the practice told us, and corrections to it.' },
   '/practice/locations': { audiences: ['practice'], why: 'Sites, and the addresses patients are seen at.' },

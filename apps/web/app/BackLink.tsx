@@ -37,6 +37,16 @@ import styles from './ui/ui.module.css';
  * way the access table says it is.
  */
 const PARENTS: Readonly<Record<string, string>> = {
+  /*
+   * THE TWO PRACTICE HOMES GO UP TO THE LIST OF PRACTICES, and neither goes up
+   * to the other. `today` is the day's work and `setup` is configuration and
+   * oversight (PRACTICE-NAVIGATION.md §2); they are siblings, and a back link
+   * from one to the other would say that one contains the other — which is the
+   * arrangement the split exists to end. The link BETWEEN them is on the setup
+   * hub itself, in the body, pointing at the day's work.
+   */
+  '/practice/today': '/practice',
+  '/practice/correspondence': '/practice',
   '/practice/setup': '/practice',
   '/practice/entity': '/practice/setup',
   '/practice/application': '/practice/setup',
@@ -47,17 +57,16 @@ const PARENTS: Readonly<Record<string, string>> = {
   '/practice/affiliations': '/practice/setup',
   '/practice/users': '/practice/setup',
   '/practice/devices': '/practice/setup',
-  // "Send to the tablet" sits beside the tablets themselves: a receptionist
-  // who has just paired one is one press from using it, and the one who
-  // wonders why a push refused goes the other way.
-  '/practice/tablet': '/practice/setup',
   /*
-   * AND THE FRONT DESK GOES TO THE SAME PLACE (Carl, 12 Sep 2026). It is the
-   * tablet page's neighbour in every other sense — same audience, same queue,
-   * same practice — so 'up' from it is the same hub the card that opened it
-   * lives on.
+   * THE SHIFT'S PAGES GO UP TO THE SHIFT'S HOME (Carl, 12 Sep 2026;
+   * PRACTICE-NAVIGATION.md §2). All three used to go up to `/practice/setup`,
+   * because that is where the cards that opened them lived. The cards moved to
+   * `/practice/today`, and 'up' has to move with them: a back press that lands
+   * a receptionist in the administrator's configuration hub is the same
+   * mis-sorting the split was made to fix, arriving by a different door.
    */
-  '/practice/frontdesk': '/practice/setup',
+  '/practice/tablet': '/practice/setup',
+  '/practice/frontdesk': '/practice/today',
   /*
    * RECEPTION'S QUEUE SITS BESIDE THE TABLETS IT FEEDS (Carl, 7 Sep 2026 —
    * it had no back link at all, so the only way off it was the menu). It is
@@ -93,7 +102,10 @@ const PARENTS: Readonly<Record<string, string>> = {
   '/practice/reviews': '/practice',
   '/practice/queue': '/practice',
   '/practice/reconciliation': '/practice',
-  '/practice/correspondence': '/practice',
+  // '/practice/correspondence' is decided per audience in parentOf -- it is
+  // one of the day's five destinations for a practice user and a
+  // cross-practice screen for an operator.
+
   '/platform/acting-as': '/practice',
   '/practice/reports': '/practice',
 
@@ -152,6 +164,14 @@ function parentOf(pathname: string, hasPractice: boolean): string | null {
    * somewhere they have never been.
    */
   if (pathname === '/practice/reports') return hasPractice ? '/practice/setup' : '/practice';
+  /*
+   * AND CORRESPONDENCE, FOR THE SAME REASON AND A DIFFERENT HOME. For a
+   * practice user it is Messages, one of the five things on `today`
+   * (PRACTICE-NAVIGATION.md §2); for an operator it is one practice's log
+   * reached from the organisation list. A single answer would send one of them
+   * somewhere they have never been.
+   */
+  if (pathname === '/practice/correspondence') return hasPractice ? '/practice/today' : '/practice';
   const platformPractice = platformPracticeParent(pathname);
   if (platformPractice) return platformPractice;
   if (PARENTS[pathname]) return PARENTS[pathname];
@@ -196,6 +216,7 @@ export function BackLink() {
    * a parent would have had to find the right rung to put it on.
    */
   const LABELS: Record<string, string> = {
+    '/practice/today': strings.today.title,
     '/practice/setup': strings.nav.setup,
     '/practice/patients': strings.patients.navLabel,
     '/practice/queue': strings.nav.outbound,

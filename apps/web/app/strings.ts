@@ -911,6 +911,19 @@ export const strings = {
       done: 'Done',
     } as Record<string, string>,
 
+    /*
+     * THE ONE LINK BACK TO THE DAY'S WORK (PRACTICE-NAVIGATION.md §2, §5 rule
+     * 1). The hub stopped carrying the shift's five destinations; somebody who
+     * bookmarked this page before that must still reach them in one press,
+     * rather than discovering that their bookmark now opens the half of the
+     * console they never wanted.
+     */
+    todayTitle: 'The day’s work',
+    todayBody:
+      'The front desk, who is waiting, the tablets, the patients and the messages have their own page now. '
+      + 'This one keeps the setting up and the records.',
+    todayLink: 'Open today',
+
     offlineTitle: 'We cannot reach the server',
     offlineBody:
       'Nothing is shown here because there is no way to read it right now — not because anything is missing. '
@@ -1728,6 +1741,9 @@ export const strings = {
 
     practiceHeading: 'This practice',
     yourPractices: 'Your practices',
+    /* The day's work, first among a practice's pages: it is where the shift is
+     * done, and the rest of this group is opened occasionally. */
+    today: 'Today',
     setup: 'Setup',
     entity: 'The organisation',
     application: 'Your application',
@@ -4336,6 +4352,69 @@ export const strings = {
    * condition, a provider's opinion or a status chip, because there is no such
    * thing on the rail to write one for.
    */
+  /*
+   * THE DAY'S WORK (PRACTICE-NAVIGATION.md §2; Carl, 12 September 2026).
+   *
+   * FIVE DESTINATIONS AND ONE SENTENCE, and the sentence is the one §7 asks
+   * for: with two desks side by side, somebody has to be told which is which
+   * or they will learn it by opening the wrong one twice.
+   *
+   * THE WORDS ARE THE ROOM'S, NOT THE REGULATOR'S, the same rule the front
+   * desk page follows (FRONT-DESK-PAGE.md §5). Nothing here says assignor,
+   * particulars, episodic or artefact — this is the first screen of a shift
+   * and none of those is a word a new starter has heard.
+   */
+  today: {
+    title: 'Today',
+    audience: 'Practice',
+    lead: 'Everything you need during a shift. Setup, reports and the rest are in the menu.',
+
+    frontdeskTitle: 'The front desk',
+    frontdeskBody:
+      'Who is here, who is next, and the single next thing to do for each of them — one patient at a time.',
+    frontdeskLink: 'Open the front desk',
+
+    waitingTitle: 'Who is waiting',
+    waitingBody:
+      'Every practitioner’s list, grouped by practitioner, and whether the paperwork is done. It reports '
+      + 'only, and it never holds anybody up.',
+    waitingLink: 'Open who is waiting',
+
+    tabletTitle: 'Send to the tablet',
+    tabletBody: 'The whole desk at once: every patient waiting, every control, and what each tablet is doing.',
+    tabletLink: 'Open the tablet desk',
+
+    patientsTitle: 'Patients',
+    patientsBody:
+      'The patients with something open today. Open one to do everything for them in one place — their '
+      + 'details, their agreements, the tablet, follow-up and what has been sent.',
+    patientsLink: 'Open the patients',
+
+    messagesTitle: 'Messages',
+    messagesBody: 'Every message sent in this practice’s name, what it said, and whether it arrived.',
+    messagesLink: 'Open the messages',
+
+    /*
+     * THE ONE SENTENCE §7 ASKS FOR. Both desks are today's work and both stay;
+     * what separates them is how much of the domain is on screen, which is a
+     * question about the person reading rather than about the job.
+     */
+    twoDesks:
+      'Two ways into the same morning: the front desk takes one patient at a time in plain words, and the '
+      + 'tablet desk shows everybody at once for somebody who knows their way around it.',
+
+    /*
+     * NOT AN ERROR AND NOT AN EMPTY PAGE. Every destination here is gated by
+     * the same rule the page behind it applies, so an account that may open
+     * none of them is told why rather than shown a heading with nothing under
+     * it.
+     */
+    nothingOpen: 'Nothing here is open to this account',
+    nothingOpenWhy:
+      'Each of these pages decides for itself who may open it, and this sign-in reaches none of them. Ask '
+      + 'whoever looks after your practice’s accounts to check what you have been given.',
+  },
+
   frontdesk: {
     title: 'Practice Frontdesk',
     lead:
@@ -4478,6 +4557,13 @@ export const strings = {
       neverBlocks:
         'Nothing on this page holds anybody up. See your patients exactly as you always would — this page '
         + 'only reports whether the paperwork is done, and it never stops a consultation.',
+      /*
+       * THE WAY BACK, FOR THE PEOPLE WHO HAVE ONE (Carl, 12 Sep 2026). Shown
+       * only when the server answered with the practice-wide scope: a
+       * practitioner's token carries no practice claim, so `/practice/today`
+       * would be a door that does not open for them.
+       */
+      backToToday: '← Back to today',
       /*
        * THE BOUNDARY, SAID ON THE SCREEN (§2). A page called "who is waiting"
        * is the likeliest place in the product to quietly become a second

@@ -105,7 +105,30 @@ export function landingPath(input: LandingInput): string {
    */
   if (isPracticeUser(input) && isPractitioner(input)) return '/practice/practitioner';
 
-  if (isPracticeUser(input)) return '/practice/setup';
+  /*
+   * PRACTICE STAFF LAND ON THE DAY'S WORK, NOT ON THE SETUP HUB (Carl, 12 Sep
+   * 2026; PRACTICE-NAVIGATION.md §2, §3).
+   *
+   * IT USED TO BE `/practice/setup`, and that was the same mistake this
+   * function has now corrected three times in three audiences: sending
+   * somebody to the page that happens to hold the most links rather than to
+   * the page that holds their work. The hub had accumulated twelve
+   * destinations because it was where everything already was, and a
+   * receptionist starting a shift had to read past the letterhead and the
+   * user list to find the queue.
+   *
+   * THE SAME ANSWER FOR EVERY PRACTICE ROLE — reception, manager,
+   * administrator — because everybody starts the day in the room (§3), and
+   * setup is one click from here. It is also the answer for a PLATFORM
+   * OPERATOR ACTING AS A PRACTICE: they hold a practice claim, they reach this
+   * line before the platform case below, and they are standing in for practice
+   * staff, so they land where practice staff land.
+   *
+   * NOTHING MOVED (§5 rule 3). `/practice/setup` is still the setup hub and
+   * still opens from its own URL and its own bookmark; what changed is where
+   * an arrival is put down, and that `today` carries one link back to it.
+   */
+  if (isPracticeUser(input)) return '/practice/today';
   /*
    * THE ORGANISATION LIST, not the review queue.
    *

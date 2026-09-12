@@ -1,8 +1,33 @@
 import { isPlatformOperator, isPracticeUser, landingPath, mayChoosePractice } from './landing';
 
 describe('landingPath', () => {
-  it('sends a practice user to their own hub', () => {
-    expect(landingPath({ practiceId: 'p1' })).toBe('/practice/setup');
+  it('practice_staff_land_on_todays_work_not_the_setup_hub', () => {
+    /*
+     * REVERSED BY CARL, 12 Sep 2026 (PRACTICE-NAVIGATION.md §2, §3). This used
+     * to expect `/practice/setup`, and the hub had by then accumulated twelve
+     * destinations — a receptionist starting a shift and an administrator
+     * changing the letterhead landed on the same screen and each read past the
+     * other's work. Everybody in a practice now lands on the day's work.
+     */
+    expect(landingPath({ practiceId: 'p1' })).toBe('/practice/today');
+    expect(landingPath({ practiceId: 'p1' })).not.toBe('/practice/setup');
+
+    // Every practice role, one answer: the shift is the job (§3).
+    expect(landingPath({ roles: ['front_desk'], practiceId: 'p1' })).toBe('/practice/today');
+    expect(landingPath({ roles: ['practice_manager'], practiceId: 'p1' })).toBe('/practice/today');
+    expect(landingPath({ roles: ['practice_principal'], practiceId: 'p1' })).toBe('/practice/today');
+  });
+
+  it('an_operator_acting_as_a_practice_lands_where_practice_staff_land', () => {
+    /*
+     * ACTING AS A PRACTICE IS STANDING IN FOR ITS STAFF (§3, last row), so the
+     * answer must be the SAME one — asserted against the practice user's own
+     * result rather than against a literal, so the two cannot drift apart the
+     * next time landing moves.
+     */
+    const asStaff = landingPath({ practiceId: 'p1' });
+    expect(landingPath({ roles: ['platform_admin'], practiceId: 'p1' })).toBe(asStaff);
+    expect(landingPath({ roles: ['platform_admin'], practiceId: 'p1' })).toBe('/practice/today');
   });
 
   it('sends a platform operator to the queue', () => {
@@ -35,7 +60,7 @@ describe('landingPath', () => {
    * acting for a practice in this session.
    */
   it('PREFERS THE PRACTICE CLAIM over a platform role', () => {
-    expect(landingPath({ roles: ['platform_admin'], practiceId: 'p1' })).toBe('/practice/setup');
+    expect(landingPath({ roles: ['platform_admin'], practiceId: 'p1' })).toBe('/practice/today');
   });
 
   it('honours where they were actually heading', () => {
@@ -48,8 +73,8 @@ describe('landingPath', () => {
    * cannot be smuggled in through the thing that decides where people land.
    */
   it('REFUSES a foreign destination and decides one itself', () => {
-    expect(landingPath({ practiceId: 'p1', intended: 'https://evil.example' })).toBe('/practice/setup');
-    expect(landingPath({ practiceId: 'p1', intended: '//evil.example' })).toBe('/practice/setup');
+    expect(landingPath({ practiceId: 'p1', intended: 'https://evil.example' })).toBe('/practice/today');
+    expect(landingPath({ practiceId: 'p1', intended: '//evil.example' })).toBe('/practice/today');
     expect(landingPath({ roles: ['platform_admin'], intended: '/callback' })).toBe('/practice');
   });
 });
@@ -133,11 +158,35 @@ describe('choosing a practice', () => {
       );
     });
 
-    it('leaves a practice user who is not a practitioner exactly where they were', () => {
-      // The reversal above must not move anybody else. A manager, a
-      // receptionist and an administrator all still land on the setup hub.
-      expect(landingPath({ practiceId: 'prac1' })).toBe('/practice/setup');
-      expect(landingPath({ roles: ['front_desk'], practiceId: 'prac1' })).toBe('/practice/setup');
+    it('leaves a practice user who is not a practitioner on the practice landing', () => {
+      /*
+       * The practitioner reversal must not move anybody else. A manager, a
+       * receptionist and an administrator all land on the day's work — which
+       * is itself a later reversal (12 Sep 2026, PRACTICE-NAVIGATION.md §3),
+       * and the point of this test is that the two rules stay independent:
+       * a practitioner's page is theirs, and everybody else's is `today`.
+       */
+      expect(landingPath({ practiceId: 'prac1' })).toBe('/practice/today');
+      expect(landingPath({ roles: ['front_desk'], practiceId: 'prac1' })).toBe('/practice/today');
+    });
+
+    it('a_practitioner_lands_on_their_own_page', () => {
+      /*
+       * NAMED FOR PRACTICE-NAVIGATION.md §6, AND IT IS A REGRESSION GUARD
+       * RATHER THAN A NEW RULE: the practitioner landing was built an hour
+       * before `today` was, and moving practice staff must not move a
+       * practitioner. Both shapes of practitioner, in one place.
+       */
+      expect(landingPath({ roles: ['provider'], practitionerId: 'p1', practiceId: 'prac1' })).toBe(
+        '/practice/practitioner',
+      );
+      // And a practitioner with no practice claim keeps their cross-practice
+      // page, which answers a different question (PRACTITIONER-QUEUE-PAGE §1).
+      expect(landingPath({ roles: ['provider'], practitionerId: 'p1' })).toBe('/practitioner');
+      // Never the day's work, and never the setup hub.
+      for (const wrong of ['/practice/today', '/practice/setup']) {
+        expect(landingPath({ roles: ['provider'], practitionerId: 'p1', practiceId: 'prac1' })).not.toBe(wrong);
+      }
     });
 
     it('still honours where they were heading before signing in', () => {

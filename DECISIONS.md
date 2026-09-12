@@ -536,6 +536,72 @@ constraint is the thing to revisit, deliberately); or D-01 resolving in a way
 that makes the PMS the natural place to state a supervising provider, which
 would reopen the 7 September ruling itself and not just this.
 
+## D-2026-09-12-05 — The console has two homes: the day's work, and setting up
+
+**Date:** 12 September 2026. **Decided by:** Carl Hill, rejecting a thirteenth
+card on the setup hub — *"I asked for the practice/practitioner link to be on the
+attached card. That is the wrong place. We need a better starting point for the
+practice-admin, practice-manager or practice-reception."* Name confirmed the same
+day: *"Today is the right word — build the navigation."*
+
+**Decided:**
+
+1. **`/practice/today` is the day's work and the default landing for practice
+   staff.** Five destinations and no more: the front desk, who is waiting, the
+   tablet desk, the patients, the messages.
+2. **`/practice/setup` keeps configuration and oversight** — devices, templates,
+   users, the application, reports, reviews, reconciliation — and carries **one**
+   link back to the day's work.
+3. **Nobody lands on the setup hub any more.** Reception, a manager and an
+   administrator all land on `/practice/today`; a practitioner keeps
+   `/practice/practitioner` (D-2026-09-12 landing rule, ROLES.md §6 rule 5); a
+   platform operator acting as a practice lands where practice staff land,
+   because they are standing in for them.
+4. **Nothing moved URL.** Every route is where it was and every bookmark still
+   works; what changed is what links where and where an arrival is put down.
+
+**Why.** The hub had reached twelve destinations in 752 lines, because it was
+where everything already was. A receptionist starting a shift and an
+administrator changing the letterhead landed on the same screen and each had to
+read past the other's work. The fault is that the hub is organised by WHAT A
+THING IS — and nobody arrives at a practice console thinking "I need a
+configuration page". `today` is organised by why somebody came.
+
+**Where it is enforced.** `landingPath` in `packages/domain/src/landing.ts` (the
+one home for the rule — never a redirect on `/practice/setup`, which would be a
+second answer to a question that already has one); the page map entry for
+`/practice/today` in `packages/domain/src/page-access.ts`; the page itself at
+`apps/web/app/practice/today/`. Named tests:
+`practice_staff_land_on_todays_work_not_the_setup_hub`,
+`a_practitioner_lands_on_their_own_page`,
+`an_operator_acting_as_a_practice_lands_where_practice_staff_land` (in
+`landing.test.ts`), `the_setup_hub_still_opens_from_its_own_url` (in
+`page-access.test.ts` and `SetupHub.test.tsx`),
+`every_daily_destination_is_reachable_from_today_in_one_click` (in
+`today.test.tsx`), and
+`reception_sees_every_practitioner_queue_and_a_practitioner_sees_only_their_own`
+(already held by `practitioner.test.tsx`, unchanged by this).
+
+**Two calls made inside this build, both Carl's to overturn.**
+
+- **The outbound queue (`/practice/queue`) stayed on the setup hub**, although
+  PRACTICE-NAVIGATION.md §1 counts it among the five daily destinations. It is
+  `platform`-only in the page map — every practice's messages, not this
+  practice's — so no practice user has ever seen it there, and moving it to
+  `today` would put a cross-practice operator tool on reception's first screen.
+  Messages on `today` is `/practice/correspondence`, which is the practice's own
+  log. Reopen it by making the outbound queue practice-scoped.
+- **`today` carries no link to `setup`.** §3 says setup is "one click away" for a
+  manager; today it is one click from the main menu, not from the page. Adding a
+  quiet footer link is a one-line change if Carl wants the page itself to carry
+  it — it was left off because §2 says five destinations and nothing else, and
+  the hub is what accumulated.
+
+**What would reopen it.** A practice manager who never touches the counter
+telling us they want to land on setup (§7 asks one real practice this); or a
+sixth thing that is genuinely daily, which is a change to §2 and not a card
+somebody adds.
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
@@ -558,3 +624,4 @@ would reopen the 7 September ruling itself and not just this.
 | 12 Sep | We offer the queue, not the calendar — no scheduling product | **D-2026-09-12-02 above** |
 | 12 Sep | A substitution asks two questions: the doctor first, the benefit second | **D-2026-09-12-03 above** |
 | 12 Sep | A nurse's arrival waits for a billing provider named by RECEPTION, and the fix is a resend | **D-2026-09-12-04 above** |
+| 12 Sep | Two homes: `/practice/today` for the day's work, `/practice/setup` for configuration; nobody lands on the hub | **D-2026-09-12-05 above** |

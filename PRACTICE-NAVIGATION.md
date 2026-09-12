@@ -1,5 +1,5 @@
 # PRACTICE-NAVIGATION.md — where a practice user starts, and why not the setup hub
-### v1.0 · 12 September 2026 · Owner: Carl. A plan, not yet built. Companion to `FRONT-DESK-PAGE.md`, `PRACTITIONER-QUEUE-PAGE.md`, `ROLES.md`.
+### v1.1 · 12 September 2026 · Owner: Carl. **Built** — see §5a. Companion to `FRONT-DESK-PAGE.md`, `PRACTITIONER-QUEUE-PAGE.md`, `ROLES.md`.
 
 Carl, 12 September 2026: *"I asked for the practice/practitioner link to be on
 the attached card. That is the wrong place. We need a better starting point for
@@ -93,6 +93,35 @@ two shapes.
    with `toViewPath`; the new home does the same or it silently breaks the
    platform operator's path.
 
+## 5a. What was built, 12 September 2026
+
+All of §2, §3 and §5. Where the build differs from the plan, and why:
+
+**The outbound queue stayed on the setup hub.** §1 counts it among the five
+daily destinations, and it is the one that did not move. It is `platform`-only
+in the page map — every practice's messages, not this practice's — so no
+practice user has ever seen it, and putting a cross-practice operator tool on
+reception's first screen would be a new mistake rather than a fix for an old
+one. **Messages** on `today` is `/practice/correspondence`, the practice's own
+log. Recorded as D-2026-09-12-05.
+
+**`today` carries no link to `setup`.** §3 says setup is "one click away"; as
+built that click is the main menu rather than the page, because §2 says five
+destinations and nothing else, and the accumulation is what this plan exists to
+stop. A footer link is a one-line change if Carl wants it.
+
+**Three back links moved with the cards that opened them.** `/practice/tablet`,
+`/practice/frontdesk` and `/practice/patients` used to go 'up' to
+`/practice/setup`; they now go up to `/practice/today`, and
+`/practice/correspondence` answers per audience — `today` for a practice user,
+the organisation list for an operator — the way `/practice/reports` already did.
+A back press that lands a receptionist in the configuration hub is the same
+mis-sorting by another door.
+
+**One bug found on the way.** The read-only twin for correspondence has existed
+since M-1 and was missing from the `TWINS` list in `apps/web/app/viewPath.ts`, so
+every view-only link to it silently fell through to the practice hub. Added.
+
 ## 6. Named tests
 
 - `practice_staff_land_on_todays_work_not_the_setup_hub`
@@ -120,3 +149,4 @@ two shapes.
 |---|---|
 | 12 Sep 2026 | v1.0. Written when Carl rejected a thirteenth card on the setup hub and asked for a better starting point. |
 | 12 Sep 2026 | Carl confirmed the name: `/practice/today`. Build queued behind the two agents already in page-access and the landing rule. |
+| 12 Sep 2026 | v1.1. Built. §5a records what differs: the outbound queue stayed on setup, `today` has no link to setup, and three back links moved. D-2026-09-12-05. |
