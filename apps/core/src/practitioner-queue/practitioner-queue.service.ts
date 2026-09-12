@@ -23,6 +23,7 @@ import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AffiliationsService } from '../affiliations/affiliations.service';
 import { ArrivalsService } from '../arrivals/arrivals.service';
+import { idsOf, newestAgreementInChain, receivedArrivalsIn } from '../arrivals/arrival-day';
 import { ReviewTasksService } from '../review-tasks/review-tasks.service';
 import type { Actor } from '../auth/actor.decorator';
 
@@ -74,9 +75,6 @@ export interface VisitStateReceipt {
 
 /** Affiliation statuses that mean somebody is working here now. */
 const LIVE_AFFILIATION_STATUSES = ['active', 'ending'] as const;
-
-/** How far a supersession chain is walked forward. Same bound the desk uses. */
-const MAX_CHAIN_HOPS = 16;
 
 /**
  * WHO IS WAITING, AND IS THEIR PAPERWORK DONE (PRACTITIONER-QUEUE-PAGE.md §3,
@@ -688,20 +686,19 @@ export class PractitionerQueueService {
     startOfDay.setHours(0, 0, 0, 0);
 
     /*
-     * TODAY, AND ONLY WHAT WAS ACCEPTED. A refused arrival is not somebody
-     * waiting — nothing was mirrored onto the patient and the desk is being
-     * asked for a missing field — and putting it on a practitioner's list
-     * would be showing them somebody else's admin.
+     * TODAY, AND ONLY WHAT WAS ACCEPTED — the shared read
+     * (`arrivals/arrival-day.ts`), which the day register makes too. A refused
+     * arrival is not somebody waiting, and arrival order is reception's order;
+     * both rules live in one place so the two pages cannot disagree about who
+     * came in.
      *
-     * ARRIVAL ORDER, WHICH IS RECEPTION'S ORDER (§3, FRONT-DESK-PAGE.md
-     * §12.6). Nothing on this page re-sorts it.
+     * NO UPPER BOUND, DELIBERATELY. This is the live list, and a clock a few
+     * minutes fast at the sender must never drop somebody standing in the room.
+     * The register, which is about a NAMED day, bounds both ends.
      */
-    const arrivals = (
-      await tx.arrival.findMany({
-        where: { arrivedAt: { gte: startOfDay }, outcome: 'received' },
-        orderBy: { arrivedAt: 'asc' },
-      })
-    ).filter((arrival) => keep(whoTheyCameToSee(arrival)));
+    const arrivals = (await receivedArrivalsIn(tx, { from: startOfDay })).filter((arrival) =>
+      keep(whoTheyCameToSee(arrival)),
+    );
 
     if (arrivals.length === 0) return { scope, groups: [] };
 
@@ -720,7 +717,7 @@ export class PractitionerQueueService {
      * the successor five minutes ago, which is the single worst thing this
      * page can get wrong.
      */
-    const newest = await this.newestInChain(tx, idsOf(arrivals.map((a) => a.agreementId)));
+    const newest = await newestAgreementInChain(tx, idsOf(arrivals.map((a) => a.agreementId)));
     const agreements = await tx.agreement.findMany({
       where: { id: { in: [...new Set(newest.values())] } },
       select: { id: true, affiliationId: true, signatureEventId: true },
@@ -907,43 +904,6 @@ export class PractitionerQueueService {
      */
     return 'covered_already';
   }
-
-  /**
-   * THE LAST AGREEMENT IN EACH CHAIN, walked FORWARD from the arrival's own.
-   *
-   * The desk walks BACKWARD, from a live row to the arrival that placed it in
-   * the queue. This page holds the other end — an arrival — and needs the row
-   * that is actually being signed. Bounded, so a cycle (impossible through the
-   * one-successor index, cheap to rule out) cannot hang a practitioner's page.
-   */
-  private async newestInChain(
-    tx: Parameters<Parameters<PrismaService['withPractice']>[1]>[0],
-    agreementIds: string[],
-  ): Promise<Map<string, string>> {
-    const newest = new Map<string, string>(agreementIds.map((id) => [id, id]));
-    let frontier = [...agreementIds];
-
-    for (let hop = 0; hop < MAX_CHAIN_HOPS && frontier.length > 0; hop += 1) {
-      const successors = await tx.agreement.findMany({
-        where: { supersedesAgreementId: { in: frontier } },
-        select: { id: true, supersedesAgreementId: true },
-      });
-      if (successors.length === 0) break;
-
-      const byPredecessor = new Map(
-        successors
-          .filter((s): s is typeof s & { supersedesAgreementId: string } => s.supersedesAgreementId !== null)
-          .map((s) => [s.supersedesAgreementId, s.id]),
-      );
-      for (const [origin, current] of newest) {
-        const next = byPredecessor.get(current);
-        if (next) newest.set(origin, next);
-      }
-      frontier = [...byPredecessor.values()];
-    }
-
-    return newest;
-  }
 }
 
 /**
@@ -960,10 +920,6 @@ const SYSTEM_ACTOR = { principalType: 'system', id: 'practitioner-queue' } as co
 
 function actorFor(actor: Actor | undefined): { principalType: string; id: string } {
   return actor ? { principalType: actor.principalType, id: actor.id } : SYSTEM_ACTOR;
-}
-
-function idsOf(values: ReadonlyArray<string | null | undefined>): string[] {
-  return [...new Set(values.filter((v): v is string => typeof v === 'string' && v.length > 0))];
 }
 
 function nameOf(practitioner: { givenNames: string; familyName: string } | undefined): string | null {

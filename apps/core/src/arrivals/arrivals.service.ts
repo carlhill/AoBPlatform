@@ -12,6 +12,8 @@ import type {
   ArrivalPreview,
   ArrivalProviderChoice,
   ArrivalReceipt,
+  DayRegister,
+  DayRegisterRow,
   ExpectedAppointment,
   RefusedArrival,
   ServiceRenderedReceipt,
@@ -25,12 +27,17 @@ import {
   detailTypeForPatientField,
   HardRuleViolation,
   isBillingRole,
+  latestVisitState,
   mayBeProviderOnAgreement,
+  NotACalendarDay,
+  practiceDayWindow,
   providerIsGpFor,
   servicesNeedABillingProvider,
   SERVICE_DESCRIPTIONS_VERSION,
+  whoTheyCameToSee,
   type ConfirmableDetailType,
   type CorrectablePatientField,
+  type PracticeDayWindow,
   type VisitAgreementDecision,
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
@@ -48,6 +55,7 @@ import {
 import type { Actor } from '../auth/actor.decorator';
 import type { ChangeAssignorDto } from '../agreements/agreements.dto';
 import { ArrivalDto, ArrivalPreviewDto, ServiceRenderedDto } from './arrivals.dto';
+import { idsOf, newestAgreementInChain, receivedArrivalsIn } from './arrival-day';
 
 /**
  * THE ARRIVAL IS THE PRACTICE'S SOFTWARE SPEAKING, NOT A PERSON. Nobody at the
@@ -1349,6 +1357,173 @@ export class ArrivalsService {
         });
       }
       return rows;
+    });
+  }
+
+  /**
+   * THE PRACTICE'S DAY REGISTER — who came in, when, to see whom, and what
+   * happened about their agreement (Carl, 12 September 2026, on
+   * `/practice/frontdesk`: *"Add a button here with a link to show all Patients
+   * seen at this practice today. You could put a filter on this to search for
+   * any day. Default to today."*).
+   *
+   * A REGISTER, NOT A QUEUE, AND THAT IS THE WHOLE DIFFERENCE. Every other list
+   * at this practice is a list of work outstanding — `pushable` excludes signed
+   * agreements by construction, the front desk rail drops a person once their
+   * paperwork is done, and the practitioner's waiting list is about today only.
+   * This one keeps everybody: a day that is entirely finished still has a full
+   * register, and the person somebody is looking for a week later is precisely
+   * the one every queue has already dropped.
+   *
+   * IT REUSES THE WAITING LIST'S TWO HARD-WON READS rather than repeating them
+   * (`arrival-day.ts`, wow.md §10). `receivedArrivalsIn` owns the
+   * `outcome: 'received'` filter and reception's arrival order;
+   * `newestAgreementInChain` owns the walk to the row that actually gets
+   * signed. Both were worked out for `PractitionerQueueService` and a second
+   * copy here would be a second place for the same mistake.
+   *
+   * THE DAY IS THE PRACTICE'S, NOT THE SERVER'S AND NOT UTC. `practiceDayWindow`
+   * measures it in `PRACTICE_TIMEZONE` via `Intl`, so a register opened at 8am
+   * in Sydney is headed with today rather than yesterday however the host is
+   * configured — the defect `today()` in `tablet-sessions.service.ts` still has
+   * and that this deliberately does not copy. Flagged rather than fixed
+   * elsewhere: the other three day boundaries in this codebase disagree with
+   * each other, and which definition wins is Carl's call (CLAUDE.md §7).
+   *
+   * NO IDENTIFIER BUT AN APPROVED ONE, AND NO VALUE IN A LOG (hard rules 1 and
+   * 9). The patient record number is in the s 65C identity set and is why it may
+   * be on a row; the Medicare card number is not, is not read here, and there
+   * is no field on `DayRegisterRow` it could reach. Nothing in this method logs.
+   *
+   * A READ, SO NO EVENT. Nothing is written, so there is no outbox entry and
+   * the vault is untouched — and there is no method here that could grow one.
+   */
+  async day(practiceId: string, date?: string | null): Promise<DayRegister> {
+    let window: PracticeDayWindow;
+    try {
+      window = practiceDayWindow(date);
+    } catch (err) {
+      /*
+       * A BAD DATE IS THE CALLER'S MISTAKE AND IS SAID OUT LOUD, with the shape
+       * that would have worked — never silently nudged to a nearby day, which
+       * would head a register with a day that did not happen.
+       */
+      if (err instanceof NotACalendarDay) throw new BadRequestException(err.message);
+      throw err;
+    }
+
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const arrivals = await receivedArrivalsIn(tx, { from: window.from, to: window.to });
+      if (arrivals.length === 0) return { date: window.day, timezone: window.timezone, rows: [] };
+
+      /*
+       * THE MIRROR IS THE AUTHORITY ON THE RECORD NUMBER, not the arrival's own
+       * copy. The arrival carries the handle the SENDER used, which resolved to
+       * this patient once and may since have been corrected; the mirror is the
+       * row the register is about. The arrival's copy is the fallback for an
+       * arrival that never resolved, where it is the only handle there is.
+       */
+      const patients = await tx.patient.findMany({
+        where: { id: { in: idsOf(arrivals.map((a) => a.patientId)) } },
+        select: { id: true, givenNames: true, familyName: true, patientRecordNumber: true },
+      });
+      const patientById = new Map(patients.map((p) => [p.id, p]));
+
+      const newest = await newestAgreementInChain(tx, idsOf(arrivals.map((a) => a.agreementId)));
+      const agreements = await tx.agreement.findMany({
+        where: { id: { in: [...new Set(newest.values())] } },
+        select: { id: true, status: true, affiliationId: true, signatureEventId: true },
+      });
+      const agreementById = new Map(agreements.map((a) => [a.id, a]));
+
+      /*
+       * THE PEOPLE, BY AFFILIATION — who the patient came to see, and who the
+       * agreement is anchored on, which ARRIVAL-WHO-IS-SEEN.md §6a says are two
+       * facts. Read once for the whole day rather than once a row.
+       */
+      const affiliationRows = await tx.affiliation.findMany({
+        where: {
+          id: {
+            in: idsOf([
+              ...arrivals.map((a) => whoTheyCameToSee(a)),
+              ...agreements.map((a) => a.affiliationId),
+            ]),
+          },
+        },
+        select: { id: true, practitionerId: true },
+      });
+      // Not practice-scoped, deliberately: a practitioner is one human across
+      // the platform, only names are read, and only for affiliations this
+      // practice's own RLS already returned.
+      const practitionerRows = await tx.practitioner.findMany({
+        where: { id: { in: [...new Set(affiliationRows.map((a) => a.practitionerId))] } },
+        select: { id: true, givenNames: true, familyName: true },
+      });
+      const practitionerById = new Map(practitionerRows.map((p) => [p.id, p]));
+      const nameByAffiliation = new Map(
+        affiliationRows.map((a) => {
+          const person = practitionerById.get(a.practitionerId);
+          return [a.id, person ? `${person.givenNames} ${person.familyName}`.trim() : null];
+        }),
+      );
+
+      /*
+       * WHERE EACH VISIT GOT TO. Every saying for the day in one query,
+       * flattened per arrival by the domain's own `latestVisitState` — the
+       * newest wins and the older ones survive beside it. NULL where nobody
+       * said anything, which is not the same statement as `pending`: this page
+       * is a record of what happened, and "nobody recorded a state" is the
+       * honest entry for a visit nobody marked.
+       */
+      const stateRows = await tx.visitState.findMany({
+        where: { arrivalId: { in: arrivals.map((a) => a.id) } },
+        select: { arrivalId: true, state: true, setAt: true },
+        orderBy: { setAt: 'asc' },
+      });
+      const statesByArrival = new Map<string, { state: string; setAt: string }[]>();
+      for (const row of stateRows) {
+        const list = statesByArrival.get(row.arrivalId) ?? [];
+        list.push({ state: row.state, setAt: row.setAt.toISOString() });
+        statesByArrival.set(row.arrivalId, list);
+      }
+
+      const rows: DayRegisterRow[] = arrivals.map((arrival) => {
+        const patient = arrival.patientId ? patientById.get(arrival.patientId) : undefined;
+        const seeing = whoTheyCameToSee(arrival);
+        const agreementId = arrival.agreementId ? (newest.get(arrival.agreementId) ?? null) : null;
+        const agreement = agreementId ? agreementById.get(agreementId) : undefined;
+        const sayings = statesByArrival.get(arrival.id);
+
+        return {
+          arrivalId: arrival.id,
+          patientId: arrival.patientId,
+          /*
+           * NULL RATHER THAN A PLACEHOLDER for an arrival that never resolved
+           * to a record. The register still lists them — somebody walked in —
+           * and the practice's own number below is the handle reception has.
+           */
+          patientName: patient ? `${patient.givenNames} ${patient.familyName}`.trim() : null,
+          patientRecordNumber: patient?.patientRecordNumber ?? arrival.pmsPatientRecordNumber,
+          arrivedAt: arrival.arrivedAt.toISOString(),
+          seenByName: seeing ? (nameByAffiliation.get(seeing) ?? null) : null,
+          /*
+           * ONLY WHERE IT IS SOMEBODY ELSE (§6a). Null on every ordinary GP
+           * visit, so a name here always marks a real difference — "Dr Chen's
+           * agreement" is honest where "their agreement" would not be.
+           */
+          agreementProviderName:
+            agreement?.affiliationId && agreement.affiliationId !== seeing
+              ? (nameByAffiliation.get(agreement.affiliationId) ?? null)
+              : null,
+          agreementId,
+          agreementStatus: agreement?.status ?? null,
+          /* THE SIGNATURE EVENT, never a status column somebody could set. */
+          agreementSigned: Boolean(agreement?.signatureEventId),
+          visitState: sayings && sayings.length > 0 ? latestVisitState(sayings) : null,
+        } satisfies DayRegisterRow;
+      });
+
+      return { date: window.day, timezone: window.timezone, rows };
     });
   }
 

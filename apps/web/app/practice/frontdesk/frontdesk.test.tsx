@@ -772,7 +772,7 @@ describe('the patient panel — everything about them, on this page', () => {
   it('front_desk_panel_shows_the_practice_patient_id_under_the_name', async () => {
     const HERE = row({ patientRecordNumber: 'XL-004821' });
     stubFetch({ rows: [HERE] });
-    render(<FrontDeskView />);
+    render(<FrontDeskView practiceId={PRACTICE} />);
     await choose(HERE.agreementId, HERE.patientName);
 
     expect(screen.getByTestId('frontdesk-chosen-record-number').textContent).toBe('Patient ID XL-004821');
@@ -781,7 +781,7 @@ describe('the patient panel — everything about them, on this page', () => {
   it('front_desk_panel_says_so_when_there_is_no_patient_id', async () => {
     const HERE = row({ patientRecordNumber: null });
     stubFetch({ rows: [HERE] });
-    render(<FrontDeskView />);
+    render(<FrontDeskView practiceId={PRACTICE} />);
     await choose(HERE.agreementId, HERE.patientName);
 
     // Said, not blank: an empty line under a name reads as a failed load.

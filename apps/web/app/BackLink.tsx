@@ -68,6 +68,14 @@ const PARENTS: Readonly<Record<string, string>> = {
   '/practice/tablet': '/practice/setup',
   '/practice/frontdesk': '/practice/today',
   /*
+   * THE DAY REGISTER GOES UP TO THE DESK IT IS OPENED FROM (Carl, 12 Sep
+   * 2026), not to `/practice/today`. The button that leads here is below the
+   * three rails on the front desk page, and 'up' has to be where somebody came
+   * from — a back press that skipped the desk would put a receptionist two
+   * screens away from the patient they were working on.
+   */
+  '/practice/day': '/practice/frontdesk',
+  /*
    * RECEPTION'S QUEUE SITS BESIDE THE TABLETS IT FEEDS (Carl, 7 Sep 2026 —
    * it had no back link at all, so the only way off it was the menu). It is
    * the same working area: the patients with something open, and the devices

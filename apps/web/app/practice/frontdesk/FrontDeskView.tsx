@@ -65,7 +65,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { PencilLine } from 'lucide-react';
+import Link from 'next/link';
+import { CalendarDays, PencilLine } from 'lucide-react';
 import type { ExpectedAppointment } from '@aobplatform/contracts';
 import type { DeviceRow } from '@aobplatform/domain';
 import { Button, Chip, Notice, Shell, ui } from '../../ui';
@@ -458,6 +459,31 @@ export function FrontDeskView({ practiceId }: { practiceId: string }) {
               time: timeLabel(appointment.time),
             }))}
           />
+
+          {/*
+            THE WHOLE DAY, BELOW THE THREE RAILS (Carl, 12 September 2026: *"Add
+            a button here with a link to show all Patients seen at this practice
+            today. You could put a filter on this to search for any day. Default
+            to today."*).
+
+            BELOW THEM RATHER THAN AMONG THEM, and that is the meaning. The
+            three groups above are the morning as it stands, and a person leaves
+            them the moment their paperwork is done; the register keeps
+            everybody, including the people these lists have already finished
+            with. A fourth `RailGroup` would have said the two were the same
+            kind of thing.
+
+            A LINK, WHICH ACTS ON NOTHING. §12.3: there is no control anywhere
+            in this column that sends, recalls or confirms — and a navigation
+            link is the one thing that can be added here without breaking that.
+          */}
+          <p className={styles.dayLink}>
+            <Link href="/practice/day" className={ui.buttonLink} data-testid="frontdesk-to-day">
+              <CalendarDays size={15} aria-hidden="true" />
+              {strings.frontdesk.rail.dayRegister}
+            </Link>
+            <span className={styles.dayWhy}>{strings.frontdesk.rail.dayRegisterWhy}</span>
+          </p>
         </nav>
 
         <section className={styles.panel} aria-label={strings.frontdesk.title} data-testid="frontdesk-panel">

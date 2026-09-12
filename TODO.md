@@ -4003,3 +4003,41 @@ mode — so nothing is broken. Three things are missing:
 
 Worth doing when the practitioner pages are next open. Not urgent: the failure
 today is confusing copy rather than a blocked flow.
+
+## Four answers to "what day is it", and they disagree (12 Sep 2026)
+
+Found while building `/practice/day`. The codebase has four definitions of the
+practice's day and nothing reconciles them:
+
+| Where | What it computes | Right when |
+|---|---|---|
+| `today()` in `apps/core/src/tablet-sessions/tablet-sessions.service.ts` | `new Date().toISOString().slice(0, 10)` -- the **UTC** date | the host is in UTC **and** the practice is too. In Sydney it reads as YESTERDAY for the first ten hours of the morning. |
+| `startOfDay` in `practitioner-queue.service.ts` (`waiting`) and `arrivals.service.ts` (`expectedToday`) | `new Date(); setHours(0,0,0,0)` -- the **server's local** day | the server runs in the practice's timezone. On Fargate and in CI it runs UTC, so it is the row above. |
+| `raiseTheServiceRendered` in `practitioner-queue.service.ts` | the arrival's own local calendar day, stamped at UTC midnight for a `@db.Date` column | same caveat: "local" is the server's, not the practice's. |
+| `practiceDayWindow` in `packages/domain/src/practice-day.ts` (new, 12 Sep) | the calendar day in `PRACTICE_TIMEZONE` (`Australia/Sydney`) via `Intl` | always, wherever it runs. Used by `GET /arrivals/day` and nothing else yet. |
+
+**Why nothing catches it.** On a UTC host the first three are identical, and
+every runner we have is UTC. The defect is invisible in CI by construction --
+which is why `practice-day.test.ts` names instants rather than reading a clock.
+
+**What was NOT done, deliberately.** The other three were left exactly as they
+are (CLAUDE.md §7: no silent fixes to things outside the brief; the
+`expectedToday` comment already flags its own). Changing `pushable`'s day
+boundary moves the live desk's contents for ten hours a day, and that is a
+product decision.
+
+**For Carl.** Should all four become `practiceDayWindow`? And should the zone be
+per practice? There is no timezone column on `Practice` today, so
+`PRACTICE_TIMEZONE` is one Australian clock for everybody -- fine for the first
+customer and wrong for a practice in Perth or Brisbane. Both questions are
+his; neither blocks anything today.
+
+## A day register that could be exported (12 Sep 2026)
+
+`/practice/day` answers "who came in on this day" on screen. It is one obvious
+step from a CSV a practice manager can reconcile against their own software,
+and one more from a date RANGE rather than a single day. Neither was built --
+Carl asked for a day with a filter, and a range changes what the page is. Worth
+asking whether it is wanted before it is added, because an export of this table
+is an export of patient names and record numbers leaving the platform, which is
+a decision rather than a feature.

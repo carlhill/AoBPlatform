@@ -326,3 +326,21 @@
   gap: var(--s2);
   margin: 0;
 }
+
+/*
+ * THE WAY INTO THE WHOLE DAY, under the three groups (Carl, 12 September
+ * 2026). Set apart from the rail's cards rather than styled as a fourth one:
+ * the groups are the morning, and this is the record.
+ */
+.dayLink {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s2);
+  margin: 0;
+}
+
+.dayWhy {
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+}

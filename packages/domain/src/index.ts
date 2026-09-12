@@ -37,6 +37,7 @@ export * from './pending-email-change';
 export * from './page-access';
 export * from './practitioner-departure';
 export * from './reporting';
+export * from './practice-day';
 export * from './packed-reports';
 export * from './departure-notice';
 export * from './outbound-queue';

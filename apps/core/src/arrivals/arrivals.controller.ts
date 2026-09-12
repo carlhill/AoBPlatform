@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Req } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Query, Req } from '@nestjs/common';
 import { IsUUID } from 'class-validator';
 import type { Request } from 'express';
 import { PracticeScoped } from '../auth/practice-scope.decorator';
@@ -165,6 +165,38 @@ export class ArrivalsController {
   @PracticeScoped()
   expectedToday(@Headers('x-practice-id') practiceId: string | undefined) {
     return this.arrivals.expectedToday(requirePractice(practiceId));
+  }
+
+  /**
+   * THE DAY REGISTER — everybody who came in on one day (Carl, 12 September
+   * 2026, on `/practice/frontdesk`: *"Add a button here with a link to show all
+   * Patients seen at this practice today. You could put a filter on this to
+   * search for any day. Default to today."*).
+   *
+   * BEFORE `:id`, because `day` is not a UUID and Nest matches routes in
+   * declaration order — the mistake that shipped a shadowed route on 7
+   * September (wow.md §1) and the same reason `expected`, `needing-a-provider`
+   * and `servicing-providers` all sit above it.
+   *
+   * `date` IN THE QUERY STRING IS SAFE AND AN IDENTIFIER WOULD NOT BE. A
+   * calendar day is not personal data; it lands in an access log and tells
+   * nobody anything about a patient. That is exactly why `preview` is a POST
+   * (REQ-LOG-08) and this is a GET — the rule is about what is in the URL, not
+   * about the verb.
+   *
+   * OMITTED MEANS TODAY, and today is the SERVER's answer by the practice's
+   * clock rather than the browser's guess. A page that filled the parameter in
+   * from its own machine would head the register with whatever day that machine
+   * was having.
+   *
+   * `@PracticeScoped` LIKE ITS NEIGHBOURS. Who came into a practice is the
+   * practice's own business, and RLS means another practice's request finds
+   * nothing rather than being filtered down to nothing.
+   */
+  @Get('day')
+  @PracticeScoped()
+  day(@Headers('x-practice-id') practiceId: string | undefined, @Query('date') date?: string) {
+    return this.arrivals.day(requirePractice(practiceId), date);
   }
 
   /** Who reception may choose instead. Servicing providers only, by the same rule that refused. */

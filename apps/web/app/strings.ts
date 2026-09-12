@@ -4534,6 +4534,21 @@ export const strings = {
        * decision to make on a first shift.
        */
       next: 'Do this next',
+      /*
+       * THE WAY OUT OF THE THREE RAILS AND INTO THE DAY (Carl, 12 September
+       * 2026: *"Add a button here with a link to show all Patients seen at this
+       * practice today."*).
+       *
+       * BELOW THE RAILS, NOT AMONG THEM. The three groups above are the
+       * morning as it stands; this is the day as a whole, including everybody
+       * the rails have already finished with and dropped. A fourth group would
+       * have said they were the same kind of thing.
+       *
+       * IT IS A LINK AND IT ACTS ON NOTHING, which is the rule the whole rail
+       * is built on (§12.3): nothing in this column sends, recalls or confirms.
+       */
+      dayRegister: 'Everybody seen today',
+      dayRegisterWhy: 'The whole day, including the people already finished with — and any earlier day.',
     },
 
     /*
@@ -4733,6 +4748,122 @@ export const strings = {
         'These are the same controls the tablet desk has, for this person only. Nothing here takes you off '
         + 'this page.',
     },
+  },
+
+  /*
+   * THE PRACTICE'S DAY REGISTER — `/practice/day` (Carl, 12 September 2026, on
+   * the front desk page: *"Add a button here with a link to show all Patients
+   * seen at this practice today. You could put a filter on this to search for
+   * any day. Default to today."*).
+   *
+   * A RECORD, NOT A WORK LIST, AND THE WORDS SAY SO. Every other list at this
+   * practice is phrased as something to do; nothing here asks for anything.
+   * Hard rule 8 is stated out loud rather than left to be inferred, because a
+   * screen full of "Not yet" is exactly where a first-day starter would go
+   * looking for a rule that stops a patient being seen.
+   *
+   * NEVER "CERTIFIED", "APPROVED" OR "ACCREDITED" ABOUT ONE OF OUR FORMS (hard
+   * rule 12). "Signed" is what happens; "Signed and stored" is what it becomes.
+   *
+   * THE PRACTICE'S OWN NUMBER IS THE ONLY IDENTIFIER ON THE PAGE, and it is
+   * labelled for the reason the front desk labels it: a bare run of digits
+   * under a name could be read as anything, and what it must never be read as
+   * is a Medicare card number (hard rule 1, REQ-VER-02).
+   */
+  dayRegister: {
+    audience: 'Practice',
+    title: 'Who came in',
+    lead:
+      'Everybody the practice took in on one day, in the order they arrived, and what happened about their '
+      + 'agreement. Change the day to look back.',
+    notLoaded: 'This day could not be loaded',
+    /* Hard rule 8, said to the person most likely to read a table as a rule. */
+    neverBlocks:
+      'This is a record of what happened. Nothing on it holds anybody up — patients are seen and billed as '
+      + 'usual, whatever it says.',
+
+    dateLabel: 'Day',
+    dateHint: 'Any day you like. Leave it on today to watch this morning fill up.',
+    today: 'Back to today',
+    /*
+     * WHICH CLOCK THE DAY WAS MEASURED IN, said on the page rather than
+     * assumed. A register headed "12 September" that quietly meant the UTC day
+     * would be wrong for the whole of a Sydney morning, and nobody reading it
+     * would be able to tell.
+     */
+    timezoneNote: (zone: string) => `A day starts and ends by the practice’s clock (${zone}).`,
+    count: (n: number) => (n === 1 ? '1 person' : `${n} people`),
+    nobody: 'Nobody was taken in on this day.',
+
+    columnName: 'Patient',
+    columnArrived: 'Arrived',
+    columnSeenBy: 'Came to see',
+    columnAgreement: 'Agreement',
+    columnSigned: 'Signed',
+    columnVisit: 'Visit',
+    tableCaption: (date: string) => `Patients taken in on ${date}`,
+
+    /* The same words, and the same reasoning, as the front desk’s own rows. */
+    patientRecordNumber: (number: string) => `Patient ID ${number}`,
+    /*
+     * SOMEBODY WALKED IN AND WE COULD NOT MATCH THEM TO A RECORD. Listed
+     * anyway — a register that quietly dropped them would be wrong without
+     * saying so — and named by the practice’s own number, which is the handle
+     * reception has in front of them.
+     */
+    noPatientRecord: 'No patient record matched',
+    /*
+     * WHOSE AGREEMENT IT IS, where that is somebody other than the person the
+     * patient came to see (ARRIVAL-WHO-IS-SEEN.md §6a). Shown only when the two
+     * differ, so a name here always marks a real difference.
+     */
+    agreementUnder: (name: string) => `${name}’s agreement`,
+    /* Nobody is named on the arrival, or nobody we could resolve. */
+    seenByUnknown: 'Not recorded',
+    /*
+     * NO AGREEMENT AT ALL, AND THAT IS TWO DIFFERENT THINGS SAID IN ONE
+     * HONEST SENTENCE: a visit that needs none (no Medicare claim, so no
+     * benefit to assign) and one where none has been drafted yet. The page
+     * cannot tell them apart from what the server sends, so it does not
+     * pretend to.
+     */
+    noAgreement: 'None on this visit',
+    signedYes: 'Signed',
+    signedNo: 'Not yet',
+    /* Nothing to sign, so neither answer applies. */
+    signedNotApplicable: 'Nothing to sign',
+    /* Nobody recorded where the visit got to. Not a warning; it gates nothing. */
+    visitNotSaid: 'Nobody said',
+    /*
+     * A LIFECYCLE STATE IN THE WORDS THE DESK USES — not the patient portal's,
+     * which are written to the patient ("Waiting for your signature").
+     *
+     * A STATE WITH NO ENTRY SHOWS ITS OWN CODE, never a blank and never a
+     * generic fallback (CLAUDE.md §7): a blank cell in this column would read
+     * as "there is no agreement", which is the most dangerous thing this page
+     * could say by accident.
+     */
+    statuses: {
+      draft: 'Draft',
+      verification_pending: 'Identity check running',
+      verification_failed: 'Identity check did not pass',
+      awaiting_signature: 'Waiting for a signature',
+      signed: 'Signed',
+      validated: 'Signed, checked against the s 65C data set',
+      stored: 'Signed and stored',
+      active: 'Ongoing agreement in place',
+      claim_linked: 'Signed, and a claim has been made',
+      declined: 'Declined',
+      expired: 'Expired',
+      verbal_recorded: 'Recorded verbally',
+      void: 'Void',
+      ceased: 'Ended',
+      registration_pending: 'Waiting on registration',
+      registered: 'Registered',
+      registration_overdue: 'Registration overdue',
+      legal_hold: 'On legal hold',
+      retention_expiry_scheduled: 'Scheduled for deletion',
+    } as Record<string, string>,
   },
 
   /*

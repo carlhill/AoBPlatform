@@ -355,6 +355,29 @@ export const PAGES: Readonly<Record<string, PageRule>> = {
   },
 
   /*
+   * THE PRACTICE'S DAY REGISTER (Carl, 12 Sep 2026, on the front desk page:
+   * *"Add a button here with a link to show all Patients seen at this practice
+   * today. You could put a filter on this to search for any day."*).
+   *
+   * `practice`, THE SAME AUDIENCE AS THE PAGE IT IS LINKED FROM, and it grants
+   * strictly less: the front desk panel shows one patient's details, their
+   * assignor, their agreement and every control that acts on it, while this
+   * shows a name, a time, a provider and a word. It is the same
+   * practice-scoped read behind the same RLS. Making it administrator-only
+   * would mean either that reception cannot look up who came in yesterday, or
+   * that every receptionist is an administrator — and the second is how access
+   * controls die.
+   *
+   * ITS OWN ENTRY, NOT `matchesChildren` ON A NEIGHBOUR. An unclassified page
+   * is REFUSED (`mayReach`), which is the right default, and inheriting an
+   * audience from a parent is how a widening becomes invisible.
+   */
+  '/practice/day': {
+    audiences: ['practice'],
+    why: 'Everybody the practice took in on one day, in arrival order, with what happened about each person’s agreement. A record of what happened — nothing on it acts, and nothing on it can stop a patient being seen.',
+  },
+
+  /*
    * RECEPTION'S WORK LIST, AND THE PAGE FOR ONE PATIENT ON IT (Carl, 4 Sep
    * 2026). The same audience as `/practice/tablet` and for the identical
    * reason: this is the front desk's ordinary work, one patient at a time,

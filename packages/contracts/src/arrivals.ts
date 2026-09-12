@@ -506,3 +506,100 @@ export interface ExpectedAppointment {
    */
   readonly time: string | null;
 }
+
+/**
+ * WHO CAME IN, WHEN, TO SEE WHOM, AND WHAT HAPPENED ABOUT THEIR AGREEMENT
+ * (Carl, 12 September 2026, on `/practice/frontdesk`: *"Add a button here with
+ * a link to show all Patients seen at this practice today. You could put a
+ * filter on this to search for any day. Default to today."*).
+ *
+ * A REGISTER, NOT A WORK QUEUE, and the difference decides what is on the row.
+ * The front desk rail and the practitioner's waiting list both EXCLUDE the
+ * finished — a signed agreement leaves the desk, because a queue is a list of
+ * things to do. This is the opposite: a day that is entirely done still has a
+ * full register, and a person who walked in and left is exactly who somebody
+ * is looking for when they open it a week later.
+ *
+ * WHICH IS ALSO WHY AN UNRESOLVED ARRIVAL IS STILL A ROW. `Arrival.patientId`
+ * is nullable — *"null only if resolution failed"* — and a register that
+ * quietly omitted those people would be a register that was wrong without
+ * saying so. The row carries the practice's own record number, which is the
+ * handle reception has anyway, and `patientName` is null rather than invented.
+ *
+ * ONE APPROVED IDENTIFIER AND NO OTHERS (hard rule 1, REQ-VER-02). The s 65C
+ * identity set is name, date of birth, gender, address, PATIENT RECORD NUMBER
+ * and IHI. The record number is in it, which is why it may be here; the
+ * Medicare card number is not, is not on this row, and there is no field it
+ * could arrive in. No date of birth and no address either — neither is needed
+ * to answer this page's question, and this screen faces a counter.
+ *
+ * NO AMOUNT, AND NO FIELD FOR ONE (hard rule 4).
+ *
+ * IT REPORTS AND IT GATES NOTHING (hard rule 8, REQ-REC-04). Every value below
+ * is a statement about what already happened.
+ */
+export interface DayRegisterRow {
+  /** The arrival — the row's identity. One patient, one day, one walk-in. */
+  readonly arrivalId: string;
+  /** Null where the arrival never resolved to a record on the mirror. */
+  readonly patientId: string | null;
+  /** Null for the same reason. The register says so rather than inventing one. */
+  readonly patientName: string | null;
+  /**
+   * THE PRACTICE'S OWN NUMBER FOR THIS PERSON — off the mirror where the
+   * arrival resolved, and off the arrival's own copy where it did not, which is
+   * the handle the sender used and the only one there is.
+   */
+  readonly patientRecordNumber: string | null;
+  /** When they walked in, ISO 8601. Formatted where it is shown, never here. */
+  readonly arrivedAt: string;
+  /**
+   * WHO THEY CAME TO SEE (`whoTheyCameToSee`), not who the claim goes under.
+   * Null where the arrival named nobody we could resolve.
+   */
+  readonly seenByName: string | null;
+  /**
+   * WHOSE AGREEMENT IT IS, WHERE THAT IS SOMEBODY ELSE
+   * (ARRIVAL-WHO-IS-SEEN.md §6a). For a nurse's patient the agreement is
+   * anchored on the supervising provider. Null whenever the two are the same
+   * person, so a name here always marks a real difference.
+   */
+  readonly agreementProviderName: string | null;
+  /**
+   * THE NEWEST AGREEMENT IN THE CHAIN, never the one the arrival named. An
+   * arrival names the HEAD; a correction supersedes it with a row the arrival
+   * has never heard of, and reading the arrival's own would report "not signed"
+   * for somebody who signed the successor. Null where the visit needed none.
+   */
+  readonly agreementId: string | null;
+  readonly agreementStatus: string | null;
+  /**
+   * SIGNED MEANS THE SIGNATURE EVENT EXISTS — a link in the non-repudiation
+   * chain, never a status column somebody could set by hand.
+   */
+  readonly agreementSigned: boolean;
+  /**
+   * WHERE THE VISIT GOT TO, if anybody said (`content/visit-states.json`).
+   * A KEY, never a word: the list is versioned content and the labels live in
+   * the string table keyed by it (CLAUDE.md §7). Null when nobody recorded one,
+   * which is honest and is not a warning.
+   */
+  readonly visitState: string | null;
+}
+
+/**
+ * ONE PRACTICE'S DAY.
+ *
+ * IT SAYS WHICH DAY IT ANSWERED AND IN WHOSE CLOCK. The caller may send no
+ * date at all, and "today" is then the SERVER's answer — so a page that assumed
+ * its own would be a page that could head a register with the wrong date for
+ * ten hours a day.
+ */
+export interface DayRegister {
+  /** `YYYY-MM-DD`, in `timezone`. */
+  readonly date: string;
+  /** The zone the day was measured in (`PRACTICE_TIMEZONE`). */
+  readonly timezone: string;
+  /** Arrival order, which is reception's order. Nothing re-sorts it. */
+  readonly rows: readonly DayRegisterRow[];
+}
