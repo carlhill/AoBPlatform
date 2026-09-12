@@ -23,9 +23,9 @@
  *    one list with no heading naming them to themselves.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
-import type { WaitingList } from '@aobplatform/domain';
-import { WaitingView, arrivedAtLabel, paperworkLabel } from './waiting/WaitingView';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { VISIT_STATE_OPTIONS, type WaitingList } from '@aobplatform/domain';
+import { WaitingView, arrivedAtLabel, paperworkLabel, visitStateLabel } from './waiting/WaitingView';
 import { PractitionerLandingView, livePractices } from './PractitionerLandingView';
 import { strings } from '../../strings';
 
@@ -44,6 +44,7 @@ const MINE: WaitingList = {
           waitingSince: '2026-09-12T08:55:00.000Z',
           paperwork: 'done',
           agreementProviderName: null,
+          visitState: 'pending',
         },
         {
           arrivalId: 'arrival-2',
@@ -51,6 +52,7 @@ const MINE: WaitingList = {
           waitingSince: '2026-09-12T09:10:00.000Z',
           paperwork: 'not_yet',
           agreementProviderName: null,
+          visitState: 'pending',
         },
       ],
     },
@@ -72,6 +74,7 @@ const GROUPED: WaitingList = {
           paperwork: 'with_the_patient_now',
           // §6a — the agreement is under the supervising provider.
           agreementProviderName: 'Dr Sample Chen',
+          visitState: 'with_patient_now',
         },
       ],
     },
@@ -85,19 +88,35 @@ const GROUPED: WaitingList = {
           waitingSince: '2026-09-12T09:25:00.000Z',
           paperwork: 'nothing_to_sign',
           agreementProviderName: null,
+          visitState: 'pending',
         },
       ],
     },
   ],
 };
 
-const calls: Array<{ url: string; method: string }> = [];
+const calls: Array<{ url: string; method: string; body?: string }> = [];
+
+/**
+ * WHAT THE SERVER SAYS BACK TO ONE PRESS OF THE STATUS CONTROL, and whether it
+ * refuses. Set per test; `null` means the default receipt.
+ */
+let stateReply: { ok?: boolean; body?: unknown } | null = null;
 
 function stubFetch(waiting: unknown, me: unknown = null) {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string, init?: RequestInit) => {
-      calls.push({ url, method: init?.method ?? 'GET' });
+      const method = init?.method ?? 'GET';
+      calls.push({ url, method, body: init?.body ? String(init.body) : undefined });
+      if (url.includes('/state')) {
+        const reply = stateReply ?? {};
+        return {
+          ok: reply.ok ?? true,
+          status: reply.ok === false ? 403 : 200,
+          json: async () => reply.body ?? { renderedOutcome: null, reviewTaskId: null },
+        } as unknown as Response;
+      }
       const payload = url.includes('/practitioner/me') ? me : waiting;
       return { ok: true, status: 200, json: async () => payload } as unknown as Response;
     }),
@@ -147,6 +166,7 @@ vi.mock('../usePractice', () => ({
 
 beforeEach(() => {
   calls.length = 0;
+  stateReply = null;
   // The practitioner is the default reader; the two header tests say otherwise.
   signedIn.session = { ...PRACTITIONER_SESSION };
 });
@@ -240,11 +260,14 @@ describe('/practice/practitioner/waiting — who is waiting for me', () => {
 
     await waitFor(() => expect(screen.getByTestId('waiting-row-arrival-1')).toBeTruthy());
 
+    // NOTHING IS SENT BY MERELY LOOKING. The status control is the one write on
+    // this page and it happens only when somebody chooses; loading the list
+    // issues GETs and nothing else.
     expect(calls.length).toBeGreaterThan(0);
     for (const call of calls) expect(call.method).toBe('GET');
 
     for (const control of document.querySelectorAll('main button, main a')) {
-      expect(control.textContent ?? '').not.toMatch(/send|recall|correct|confirm|sign|save|ask reception/i);
+      expect(control.textContent ?? '').not.toMatch(/send|recall|correct|confirm|sign|ask reception/i);
     }
   });
 
@@ -367,6 +390,167 @@ describe('/practice/practitioner/waiting — who is waiting for me', () => {
     expect(hrefs).not.toContain('/practice/today');
   });
 
+  it('a_state_can_be_set_from_one_labelled_control_per_row', async () => {
+    /*
+     * §3a rule 7: *"One control, not four buttons. A single labelled select per
+     * row — four buttons across fifteen rows is sixty targets on a screen a
+     * doctor glances at."* And WCAG 2.2 AA 4.1.2: fifteen controls all called
+     * "Status" are fifteen indistinguishable combo boxes to a screen reader, so
+     * each is named for the patient it is about.
+     */
+    stubFetch(MINE);
+    render(<WaitingView />);
+
+    await waitFor(() => expect(screen.getByTestId('waiting-state-arrival-1')).toBeTruthy());
+
+    // ONE control per row, and it is a select rather than a row of buttons.
+    const control = screen.getByTestId('waiting-state-arrival-1') as HTMLSelectElement;
+    expect(control.tagName).toBe('SELECT');
+    expect(screen.getAllByRole('combobox').length).toBe(MINE.groups[0]!.rows.length);
+    for (const row of MINE.groups[0]!.rows) {
+      expect(
+        screen.getByRole('combobox', { name: strings.practitionerQueue.waiting.statusFor(row.patientName) }),
+      ).toBeTruthy();
+    }
+
+    /*
+     * THE OPTIONS ARE THE CONTENT FILE'S, IN ITS ORDER (CLAUDE.md §7). Compared
+     * against `VISIT_STATE_OPTIONS` rather than a literal list here, so a
+     * component that grew its own copy would fail this even if the words
+     * matched.
+     */
+    expect([...control.options].map((o) => o.value)).toEqual(VISIT_STATE_OPTIONS.map((o) => o.key));
+
+    // Pending is shown as the current answer and cannot be chosen: §3a's table
+    // gives the starting state no setter.
+    expect(control.value).toBe('pending');
+    expect([...control.options].find((o) => o.value === 'pending')!.disabled).toBe(true);
+    expect([...control.options].find((o) => o.value === 'completed')!.disabled).toBe(false);
+
+    fireEvent.change(control, { target: { value: 'with_patient_now' } });
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));
+    const post = calls.find((c) => c.method === 'POST')!;
+    expect(post.url).toContain('/practitioner-queue/visits/arrival-1/state');
+    // §3a rule 1: NO FREE TEXT ANYWHERE. The body is one key and nothing else,
+    // and there is no name on it — who set it comes off the token.
+    expect(JSON.parse(post.body ?? '{}')).toEqual({ state: 'with_patient_now' });
+  });
+
+  it('a_state_change_records_who_and_when_and_no_text', async () => {
+    /*
+     * The SCREEN half of §3a rule 1: *"Who, what state, when — from the token.
+     * No free text anywhere. A note box here becomes a clinical record within a
+     * week."* So the control offers nowhere to type, and the request carries
+     * nothing but the key. (The server half — the principal off the token and
+     * the timestamp — is asserted in the core e2e suite.)
+     */
+    stubFetch(MINE);
+    render(<WaitingView />);
+    await waitFor(() => expect(screen.getByTestId('waiting-state-arrival-1')).toBeTruthy());
+
+    // Not one text box, textarea or contenteditable anywhere on the page.
+    expect(document.querySelectorAll('main textarea').length).toBe(0);
+    expect(document.querySelectorAll('main [contenteditable]').length).toBe(0);
+    for (const input of document.querySelectorAll('main input')) {
+      expect((input as HTMLInputElement).type).not.toMatch(/^(text|search)$/);
+    }
+
+    fireEvent.change(screen.getByTestId('waiting-state-arrival-1'), { target: { value: 'completed' } });
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));
+    const sent = JSON.parse(calls.find((c) => c.method === 'POST')!.body ?? '{}') as Record<string, unknown>;
+    expect(Object.keys(sent)).toEqual(['state']);
+    for (const forbidden of ['note', 'reason', 'comment', 'by', 'name', 'setBy']) {
+      expect(sent[forbidden]).toBeUndefined();
+    }
+  });
+
+  it('completed_says_what_it_came_to_and_never_claims_a_signature', async () => {
+    /*
+     * §3a rule 3 — Completed IS the service-rendered signal, and what that came
+     * to is the SERVER's answer, said on the row. "Shortcuts to the answer, not
+     * directions to a screen" (CLAUDE.md §7): the message names the reason,
+     * and an unmapped code shows its code rather than a generic line.
+     */
+    stateReply = { body: { renderedOutcome: 'awaiting_item_numbers', reviewTaskId: null } };
+    stubFetch(MINE);
+    render(<WaitingView />);
+    await waitFor(() => expect(screen.getByTestId('waiting-state-arrival-2')).toBeTruthy());
+
+    fireEvent.change(screen.getByTestId('waiting-state-arrival-2'), { target: { value: 'completed' } });
+
+    await waitFor(() => expect(screen.getByTestId('waiting-state-said-arrival-2')).toBeTruthy());
+    const said = screen.getByTestId('waiting-state-said-arrival-2').textContent ?? '';
+    expect(said).toBe(strings.practitionerQueue.waiting.renderedOutcome.awaiting_item_numbers);
+    // Hard rule 12: it never says the paperwork was approved, certified or
+    // accredited — and it never claims a signature that does not exist.
+    expect(said.toLowerCase()).not.toMatch(/certified|approved|accredited|signed/);
+  });
+
+  it('reassign_says_that_nobody_has_been_moved', async () => {
+    /*
+     * §3a rule 4: *"Reassign never reassigns."* A control that sounds as though
+     * it moves somebody and does not is worse than no control, so the page says
+     * plainly what happened — a task for the desk, and nobody moved.
+     */
+    stateReply = { body: { renderedOutcome: null, reviewTaskId: 'task-1' } };
+    stubFetch(MINE);
+    render(<WaitingView />);
+    await waitFor(() => expect(screen.getByTestId('waiting-state-arrival-1')).toBeTruthy());
+
+    fireEvent.change(screen.getByTestId('waiting-state-arrival-1'), { target: { value: 'reassign' } });
+
+    await waitFor(() => expect(screen.getByTestId('waiting-state-said-arrival-1')).toBeTruthy());
+    expect(screen.getByTestId('waiting-state-said-arrival-1').textContent).toBe(
+      strings.practitionerQueue.waiting.reassignRaised,
+    );
+    expect(screen.getByTestId('waiting-state-said-arrival-1').textContent).toMatch(/nobody has been moved/i);
+
+    // And the page's own key says it too, for somebody who has not pressed it yet.
+    expect(screen.getByTestId('waiting-state-key').textContent).toMatch(/moves nobody by itself/i);
+  });
+
+  it('an_unset_state_never_gates_a_consultation_or_a_bill', async () => {
+    /*
+     * §3a rule 5 and hard rule 8. Every row starts on Pending and the page
+     * must never dress that up as an outstanding task, a warning or a
+     * precondition — it says the opposite, in as many words.
+     */
+    stubFetch(MINE);
+    render(<WaitingView />);
+    await waitFor(() => expect(screen.getByTestId('waiting-state-arrival-1')).toBeTruthy());
+
+    expect(screen.getByTestId('waiting-state-never-blocks').textContent).toBe(
+      strings.practitionerQueue.waiting.visitStateNeverBlocks,
+    );
+    const page = document.body.textContent ?? '';
+    expect(page).not.toMatch(/set a status before|must be marked|required before|cannot bill until/i);
+    // Nothing about an untouched row is disabled, hidden or struck through.
+    expect((screen.getByTestId('waiting-state-arrival-1') as HTMLSelectElement).disabled).toBe(false);
+  });
+
+  it('a_refused_state_change_says_why_on_the_row_and_changes_nothing', async () => {
+    /*
+     * A refusal is a message, not a broken page (hard rule 8). It lands on the
+     * ROW it was about — a page-wide banner on a fifteen-row list is a message
+     * about nothing in particular — and the list is still there afterwards.
+     */
+    stateReply = { ok: false, body: { message: 'This patient did not come to see you.' } };
+    stubFetch(MINE);
+    render(<WaitingView />);
+    await waitFor(() => expect(screen.getByTestId('waiting-state-arrival-1')).toBeTruthy());
+
+    fireEvent.change(screen.getByTestId('waiting-state-arrival-1'), { target: { value: 'completed' } });
+
+    await waitFor(() => expect(screen.getByTestId('waiting-state-refused-arrival-1')).toBeTruthy());
+    expect(screen.getByTestId('waiting-state-refused-arrival-1').textContent).toBe(
+      strings.practitionerQueue.waiting.visitStateFailed('This patient did not come to see you.'),
+    );
+    // The other row is untouched, and the list is still readable.
+    expect(screen.queryByTestId('waiting-state-refused-arrival-2')).toBeNull();
+    expect(screen.getByTestId('waiting-row-arrival-2')).toBeTruthy();
+  });
+
   it('says plainly when nobody is waiting, rather than showing an empty table', async () => {
     stubFetch({ scope: 'mine', groups: [] } satisfies WaitingList);
     render(<WaitingView />);
@@ -398,6 +582,28 @@ describe('the waiting list’s own rules, without a screen', () => {
     expect(paperworkLabel('with_the_patient_now')).toBe('With the patient now');
     expect(paperworkLabel('not_yet')).toBe('Not yet');
     expect(paperworkLabel('something_added_later')).toBe('something_added_later');
+  });
+
+  it('an_unmapped_visit_state_shows_its_code', () => {
+    // Same rule, and it matters more here: the option list is versioned content
+    // and can gain a key before the string table does.
+    expect(visitStateLabel('pending')).toBe('Pending');
+    expect(visitStateLabel('with_patient_now')).toBe('With patient now');
+    expect(visitStateLabel('completed')).toBe('Completed');
+    expect(visitStateLabel('reassign')).toBe('Reassign');
+    expect(visitStateLabel('added_next_quarter')).toBe('added_next_quarter');
+  });
+
+  it('has a word for every state the content file offers, and no orphans', () => {
+    /*
+     * Hard rule 14 in the console: the screen renders the FILE, so a key with
+     * no string would render as a raw key in front of a practitioner. Checked
+     * both ways — a string with no key is a word nobody can ever see, which is
+     * how a stale label survives a rename.
+     */
+    const words = strings.practitionerQueue.waiting.visitState;
+    for (const option of VISIT_STATE_OPTIONS) expect(words[option.key]).toBeTruthy();
+    expect(Object.keys(words).sort()).toEqual(VISIT_STATE_OPTIONS.map((o) => o.key).sort());
   });
 });
 

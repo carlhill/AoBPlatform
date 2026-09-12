@@ -188,3 +188,27 @@
   font-size: var(--text-lg, 1.2rem);
   font-weight: 700;
 }
+
+/*
+ * THE STATUS CELL (PRACTITIONER-QUEUE-PAGE.md section 3a). One select, and
+ * beneath it whatever the press came to -- stacked, so a long sentence never
+ * pushes the table sideways (WCAG 2.2 AA, 1.4.10).
+ */
+.status {
+  padding: 0.6rem 0.9rem;
+  vertical-align: top;
+  min-width: 12rem;
+}
+
+.status select {
+  width: 100%;
+}
+
+/* A refusal. Readable at 200% zoom and not colour alone -- it is prose. */
+.refused {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--stop-ink, #8a1c1c);
+}

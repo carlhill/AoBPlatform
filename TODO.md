@@ -3826,7 +3826,7 @@ contradiction. Untested combination today; not worth blocking on.
 
 ## Review later: one practitioner login per practice (Carl, 12 Sep 2026)
 
-Decided as D-2026-09-12-05. Carl asked for it to be reviewed later. The thing to
+Decided as D-2026-09-12-08 (first recorded as -05, lost to a concurrent edit; that number now means something else). Carl asked for it to be reviewed later. The thing to
 check is the tension the decision records: the login must be scoped to a
 practice WITHOUT the practitioner becoming a second person — coverage of an
 enduring agreement is per practitioner across locations, and a duplicated

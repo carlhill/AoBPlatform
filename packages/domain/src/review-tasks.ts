@@ -214,7 +214,41 @@ export const REVIEW_TASK_KINDS: readonly ReviewTaskKind[] = [
      */
     stakes: 'low',
   }),
+  kind({
+    key: 'reassignment_requested',
+    label: 'A practitioner asked for a patient to be seen by somebody else',
+    question: 'Who should see this patient instead, and does their paperwork still hold?',
+    /*
+     * HIGH, and the reason is what has to happen before it can be closed.
+     *
+     * PRACTITIONER-QUEUE-PAGE.md §3a rule 4: *"Reassign never reassigns. A
+     * practitioner pressing it says 'not me'. Who the patient DOES see is
+     * reception's decision on the front desk page, where the covering-doctor
+     * check (an enduring agreement is per practitioner) runs before anything is
+     * re-papered (D-2026-09-12-03: the patient is asked first)."*
+     *
+     * So closing this means a PERSON chose a different practitioner, checked
+     * whether the patient's agreement still covers the visit — an enduring
+     * agreement is per practitioner × patient (hard rule 6, REQ-END-01), so a
+     * covering provider is not covered by it — and, where it does not, asked
+     * the patient. None of that is a comparison an automated check can make,
+     * and a kind that could be closed by one would close tasks nobody had done.
+     *
+     * THE TASK CARRIES IDS AND A STATE KEY AND NOTHING ELSE. No reason, because
+     * §3a rule 1 allows no free text anywhere on this control, and a "why" box
+     * on a practitioner's screen is a clinical note in a fortnight.
+     */
+    stakes: 'high',
+  }),
 ] as const;
+
+/**
+ * THE KIND "REASSIGN" RAISES (PRACTITIONER-QUEUE-PAGE.md §3a rule 4).
+ *
+ * EXPORTED AS A CONSTANT so the one caller does not carry the literal. A string
+ * repeated in a service is a string that gets renamed in one place.
+ */
+export const REASSIGNMENT_TASK_KIND = 'reassignment_requested';
 
 export const REVIEW_TASK_KEYS = REVIEW_TASK_KINDS.map((k) => k.key);
 

@@ -1,5 +1,5 @@
 # PRACTITIONER-IDENTITY.md — one person, many practices, and the identifiers that keep them apart
-### v1.0 · 12 September 2026 · Owner: Carl. Rules. Companion to `ROLES.md`, `PRACTITIONER-QUEUE-PAGE.md`, `PATIENT-IDENTIFIERS.md`, and `DECISIONS.md` D-2026-09-12-05.
+### v1.0 · 12 September 2026 · Owner: Carl. Rules. Companion to `ROLES.md`, `PRACTITIONER-QUEUE-PAGE.md`, `PATIENT-IDENTIFIERS.md`, and `DECISIONS.md` D-2026-09-12-08 (one login per practice) and D-2026-09-12-09 (the billing grain).
 
 Carl, 12 September 2026: *"a practitioner can work at many practices, the
 practitioner-email will not suffice to login to different practices to see their

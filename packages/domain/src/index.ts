@@ -50,6 +50,7 @@ export * from './devices';
 export * from './tablet-session';
 export * from './patient-work';
 export * from './practitioner-queue';
+export * from './visit-states';
 export * from './chase-attempt';
 export * from './assignor';
 export * from './assignor-relationships';

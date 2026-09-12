@@ -214,6 +214,31 @@ export const VAULT_EVENT_TYPES = [
    * (hard rule 7, REQ-END-05, REQ-CHASE-02); the subject here is always an
    * agreement or the service it belongs to.
    */
+  /**
+   * SOMEBODY SAID WHERE A VISIT HAD GOT TO (Carl, 12 Sep 2026;
+   * PRACTITIONER-QUEUE-PAGE.md §3a).
+   *
+   * A practitioner, a receptionist or a manager set one of the four states on
+   * the waiting list: with the patient now, completed, or hand this patient to
+   * somebody else. Recorded because "Completed" is the service-rendered signal
+   * — it is what raises the post-service agreement (§3a rule 3,
+   * VISIT-CHECKLIST.md §6) — and a signal that raised a contract must itself be
+   * evidenced: who said the service happened, and when.
+   *
+   * WRITTEN IN THE SAME TRANSACTION AS THE STATE ROW (hard rule 11, FR-11.2),
+   * so a state with no record of having been set is structurally impossible.
+   *
+   * REVERSIBLE, AND EVERY SAYING IS ITS OWN EVENT. A correction is a new state
+   * row and a new event; nothing is amended and nothing is withdrawn (§3a rule
+   * 6). The history is the point — "she marked it complete, then unmarked it
+   * four minutes later" is a fact somebody may need.
+   *
+   * THE PAYLOAD IS IDS, THE STATE KEY AND THE CONTENT VERSION. No patient name,
+   * no identifier value of any kind (hard rules 1 and 9), no reason, no note,
+   * no triage, no duration and no amount (hard rule 4) — the control has no
+   * free text anywhere and the event has nowhere to carry one (§3a rule 1).
+   */
+  'visit.state_set',
   'service.chase_started',
   'signature.captured',
   /**

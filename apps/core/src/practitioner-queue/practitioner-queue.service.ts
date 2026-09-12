@@ -230,8 +230,22 @@ export class PractitionerQueueService {
    * `serviceRendered` opens its own (as `receive` does, and for the same
    * reason). Whatever it comes to — including a failure — the state is then
    * recorded WITH ITS OUTCOME in one transaction beside its vault event, so a
-   * state with no evidence of having been set is structurally impossible (hard
-   * rule 11). A platform that could not raise the post-agreement has slowed the
+   * state row without its event, or an event without its row, is structurally
+   * impossible (hard rule 11).
+   *
+   * WHAT THAT ORDERING DOES NOT PROMISE, said plainly rather than glossed. If
+   * the post-service path SUCCEEDS and the state transaction then fails, an
+   * agreement exists and no `visit_states` row records the press that caused
+   * it. That is not a gap in the evidence — `serviceRendered` writes its own
+   * `service.rendered` event in its own transaction, so what happened to the
+   * AGREEMENT is fully evidenced either way — it is a gap in the ATTENDANCE
+   * note, which is a working view and not the record of care
+   * (VISIT-CHECKLIST.md §7 rule 6). The caller sees the failure and presses
+   * again; the second press is a retry (`already_decided`) and not a second
+   * visit. The alternative ordering is worse: writing the state first would
+   * mean a row asserting the signal had been raised when it had not.
+   *
+   * A platform that could not raise the post-agreement has slowed the
    * evidence; it has not stopped the patient being seen or billed (REQ-REC-04).
    */
   async setState(
@@ -271,6 +285,7 @@ export class PractitionerQueueService {
           affiliationId: true,
           seeingAffiliationId: true,
           pmsPatientRecordNumber: true,
+          arrivedAt: true,
           outcome: true,
         },
       }),
@@ -330,12 +345,23 @@ export class PractitionerQueueService {
             practiceId,
             kind: REASSIGNMENT_TASK_KIND,
             /*
-             * THE SUBJECT IS THE PATIENT, not the arrival, because that is what
-             * puts it on the patient's own work page at the desk — the same
-             * join `portal_correction_requested` uses. The arrival travels in
-             * `detail` so the desk can land on today's visit.
+             * THE SUBJECT IS THE PATIENT WHERE THERE IS ONE, because that is
+             * what puts the task on the patient's own work page at the desk —
+             * the same join `portal_correction_requested` uses. The arrival
+             * travels in `detail` either way, so the desk can land on today's
+             * visit.
+             *
+             * AND IT IS THE ARRIVAL WHERE THERE IS NOT. `Arrival.patientId` is
+             * nullable — *"null only if resolution failed"* — and a row saying
+             * `subjectType: 'Patient'` over an ARRIVAL id would be a lie the
+             * patient work page could never resolve, and would look exactly
+             * like a task about somebody who does not exist. The request is
+             * still recorded, because refusing it would be blocking on a
+             * missing join (hard rule 8); the desk finds it on the review queue
+             * rather than on a patient page, which is where an unresolved
+             * arrival belongs anyway.
              */
-            subjectType: 'Patient',
+            subjectType: arrival.patientId ? 'Patient' : 'Arrival',
             subjectId: arrival.patientId ?? arrival.id,
             /*
              * NO FREE TEXT FROM THE CALLER (§3a rule 1). This sentence is OURS,
@@ -444,6 +470,8 @@ export class PractitionerQueueService {
       patientId: string | null;
       affiliationId: string | null;
       pmsPatientRecordNumber: string;
+      /** The day the visit is about, by the practice's clock. */
+      arrivedAt: Date;
     },
     actor: Actor | undefined,
   ): Promise<{ outcome: ServiceRenderedOutcome; serviceRecordId: string | null }> {
@@ -460,11 +488,34 @@ export class PractitionerQueueService {
       return { outcome: 'provider_not_named', serviceRecordId: null };
     }
 
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
+    /*
+     * THE ARRIVAL'S OWN DAY, BOUNDED AT BOTH ENDS — not "since midnight".
+     *
+     * A VISIT IS ONE PATIENT ON ONE DAY, and the day is the one they walked in
+     * on (`arrivedAt`, by the practice's clock), not the one the server happens
+     * to be having. An unbounded `gte` would let a `findFirst ... desc` pick a
+     * FUTURE-dated service record, and a window anchored on "now" is a
+     * different window from the arrival's for several hours a day wherever the
+     * server's clock and the practice's disagree. Both would attach the
+     * service-rendered signal to the wrong service, which is the one mistake
+     * here that would put D5 wrong on a contract.
+     *
+     * BUILT WITH `Date.UTC`, AND THAT IS NOT A STYLE CHOICE. `serviceDate` is
+     * `@db.Date` — a plain calendar day (D5), deliberately, because *"a
+     * particular of a contract may not depend on which side of midnight
+     * Greenwich is"*. Prisma compares such a column by the UTC DATE PART of
+     * whatever Date it is given, so a bound built with `setHours(0,0,0,0)` in
+     * Sydney (UTC+10) becomes the PREVIOUS calendar day the moment it crosses
+     * the wire: the window would then match yesterday's invoice and miss
+     * today's, silently. Taking the LOCAL calendar day and stamping it at UTC
+     * midnight asks for the day the practice means.
+     */
+    const day = new Date(arrival.arrivedAt);
+    const dayStart = new Date(Date.UTC(day.getFullYear(), day.getMonth(), day.getDate()));
+    const dayEnd = new Date(Date.UTC(day.getFullYear(), day.getMonth(), day.getDate() + 1));
 
     /*
-     * WHAT THE PRACTICE'S SOFTWARE HAS ALREADY TOLD US ABOUT TODAY'S SERVICE.
+     * WHAT THE PRACTICE'S SOFTWARE HAS ALREADY TOLD US ABOUT THAT DAY'S SERVICE.
      * `PmsSyncService.upsertServiceRecord` writes one of these per invoice,
      * carrying D5 and D6b and no decision; `serviceRendered` is built to fall
      * through on exactly that row (*"a row the invoice sync created without a
@@ -472,13 +523,27 @@ export class PractitionerQueueService {
      * turning up at the desk is new information about a service the platform
      * already knew about"*).
      */
-    const record = await this.prisma.withPractice(practiceId, (tx) =>
-      tx.serviceRecord.findFirst({
-        where: { practiceId, patientId, serviceDate: { gte: startOfDay } },
+    const { record, patient } = await this.prisma.withPractice(practiceId, async (tx) => ({
+      record: await tx.serviceRecord.findFirst({
+        where: { practiceId, patientId, serviceDate: { gte: dayStart, lt: dayEnd } },
         orderBy: { serviceDate: 'desc' },
         select: { id: true, pmsInvoiceKey: true, serviceDate: true, mbsItemNumbers: true, visitDecision: true },
       }),
-    );
+      /*
+       * THE RECORD NUMBER OFF THE MIRROR, NOT OFF THE ARRIVAL'S OWN COPY.
+       * `serviceRendered` joins on `Patient.patientRecordNumber` and refuses
+       * outright where it finds nobody — *"a rendered service carries no
+       * patient details and never creates a record from a billing message"*
+       * (REQ-DATA-10). The arrival carries the handle the SENDER used, which
+       * resolved to this patient once and may since have been corrected on the
+       * mirror. Reading the mirror asks the same question of the same row the
+       * `patientId` above already names, so the two cannot disagree.
+       */
+      patient: await tx.patient.findUnique({
+        where: { id: patientId },
+        select: { patientRecordNumber: true },
+      }),
+    }));
 
     // Already answered. A second press is a retry, not a second visit.
     if (record?.visitDecision) return { outcome: 'already_decided', serviceRecordId: record.id };
@@ -495,7 +560,7 @@ export class PractitionerQueueService {
       const receipt = await this.arrivals.serviceRendered(
         practiceId,
         {
-          pmsPatientRecordNumber: arrival.pmsPatientRecordNumber,
+          pmsPatientRecordNumber: patient?.patientRecordNumber ?? arrival.pmsPatientRecordNumber,
           /* Whose number the claim goes under — the arrival's own billing anchor. */
           affiliationId: billingAffiliationId,
           /* D5 AND D6b ARE THE PMS'S OWN, off the row it wrote. Neither is ours. */
@@ -525,9 +590,20 @@ export class PractitionerQueueService {
        * still stands, the patient has still been seen, and reception can still
        * capture after the fact. Logged without a patient value.
        */
+      /*
+       * THE CLASS AND THE STATUS, NEVER THE MESSAGE (hard rule 9, REQ-VER-04).
+       * `serviceRendered`'s own refusals are written for a HUMAN at a desk and
+       * name the provider (*"Dr Chen is recorded as..."*) or the patient record
+       * number it could not match — both of which are exactly what may not
+       * reach a log. What a log needs is which failure it was, and the reason
+       * CODE where the thrower gave one; the rest is on the state row.
+       */
+      const why = err as { constructor?: { name?: string }; status?: number; reason?: string };
       this.logger.warn(
         `Arrival ${arrival.id}: "completed" could not raise the post-service question — the state is ` +
-          `recorded and the service is still billable. (${(err as Error).message})`,
+          `recorded and the service is still billable. (${why.constructor?.name ?? 'Error'}` +
+          `${typeof why.status === 'number' ? ` ${why.status}` : ''}` +
+          `${typeof why.reason === 'string' ? `: ${why.reason}` : ''})`,
       );
       return { outcome: 'not_raised', serviceRecordId: record.id };
     }

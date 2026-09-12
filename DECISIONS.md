@@ -669,6 +669,65 @@ end) and `completed_records_the_state_and_invents_no_item_numbers` (the ordinary
 case — the state lands, no agreement is drafted, nothing is invented), both in
 `apps/core/test/practitioner-queue.e2e-spec.ts`.
 
+## D-2026-09-12-08 — A practitioner has one login per practice, but stays one person
+
+**Date:** 12 September 2026. **Decided by:** Carl: *"if a practitioner is
+working at 3 practices, the practitioner will have 3 logins, one for each
+practice. Add to todo to review this design decision later."* And: *"We cannot
+use the same email for the passkey. We need email + PracticeId, and for a
+practitioner seeing all their practices the passkey is just the practitioner
+email."*
+
+**RE-RECORDED.** First written as D-2026-09-12-05 and lost when two agents edited
+this file at once; that number now belongs to the console-homes decision.
+
+**The decision.** A practitioner signs in AT a practice and sees only that
+practice's queue, holding one login per practice. Their cross-practice view of
+themselves is reached with their own email alone.
+
+**The constraint that must not break.** Duplicating the LOGIN must never
+duplicate the PERSON: enduring coverage is per practitioner across locations
+(hard rule 6), so a second practitioner row for the same doctor would silently
+stop their standing agreements covering them at the second clinic. Every
+per-practice account carries the same `practitioner_id` claim plus the
+`practiceId` that scopes it. Full rules in `PRACTITIONER-IDENTITY.md`.
+
+**What would reopen it.** Several passkeys proving unmanageable, or the review
+Carl asked for concluding one login can choose a practice at sign-in.
+
+## D-2026-09-12-09 — Billing identity is practice × location × practitioner; enduring coverage is not
+
+**Date:** 12 September 2026. **Decided by:** Carl, checking an understanding:
+*"are we super clear that for billing purposes the biller code with the
+government is at the practice + location + practitioner level and not just
+practice + practitioner level."*
+
+**Confirmed, and stronger than the question put it.** The location is
+load-bearing whichever way a practice satisfies the rule, not only on the
+provider-number branch. s 65C element D4 is met by EITHER (a) the provider's
+name **plus the address of the place of practice at the time of service**, or
+(b) **the provider number for that place of practice** (`aob-requirements.md`
+lines 63–64; check C4; a provider number is optional by design, REQ-REG-02).
+**There is no route to a conforming agreement that does not name the location.**
+
+**The model already reflects it:** `Affiliation` is unique on
+`(practitionerId, locationId)` and carries the `providerNumber`.
+
+**Two grains coexist and both are correct.**
+
+| | Grain | Why |
+|---|---|---|
+| **Billing identity** | practice × location × practitioner | D4. Two sites, two provider numbers, two correct answers |
+| **Enduring coverage** | practitioner, ACROSS locations | Hard rule 6, REQ-END-01a. The standing agreement follows the doctor between sites |
+
+**Confusing them in either direction is a defect.** Collapsing the location
+loses conformance; spreading it into coverage silently stops an enduring
+agreement covering the visit. The tempting mistake is to "simplify" one into the
+other.
+
+**What would reopen it.** A change to the s 65C data set — the regulatory
+whipsaw the versioning defence exists for, not a modelling convenience.
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
@@ -693,3 +752,5 @@ case — the state lands, no agreement is drafted, nothing is invented), both in
 | 12 Sep | A nurse's arrival waits for a billing provider named by RECEPTION, and the fix is a resend | **D-2026-09-12-04 above** |
 | 12 Sep | Two homes: `/practice/today` for the day's work, `/practice/setup` for configuration; nobody lands on the hub | **D-2026-09-12-05 above** |
 | 12 Sep | "Completed" records the visit and raises a post-service agreement only where the invoice already carries D6b — no item number is ever invented (ASSUMPTION) | **D-2026-09-12-07 above** |
+| 12 Sep | A practitioner has one login per practice, but stays one person (re-recorded; was -05) | **D-2026-09-12-08 above** |
+| 12 Sep | Billing identity is practice × location × practitioner; enduring coverage is per practitioner across locations | **D-2026-09-12-09 above** |

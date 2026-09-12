@@ -18,7 +18,22 @@
  * NO BUTTON ACTS ON AN AGREEMENT, and there is nothing on the page that could
  * (§3): *"a practitioner does not send tablets or correct addresses, and a
  * control they will never legitimately use is a control that will one day be
- * pressed by mistake."* The only request this file makes is a GET.
+ * pressed by mistake."* That rule stands. The one control here acts on no
+ * agreement: it records ATTENDANCE — where a visit has got to — and sends no
+ * tablet, corrects no detail and moves no patient (§3a; VISIT-CHECKLIST.md §5:
+ * *"marking your own attendance is not acting on an agreement, so the rule
+ * narrows rather than falls"*).
+ *
+ * ONE LABELLED SELECT PER ROW, NOT FOUR BUTTONS (§3a rule 7): *"four buttons
+ * across fifteen rows is sixty targets on a screen a doctor glances at."* The
+ * options are rendered from `VISIT_STATE_OPTIONS` — the versioned content file
+ * — in FILE ORDER, and this component carries no list of its own, so the four
+ * states change without a code change (CLAUDE.md §7). The words come from the
+ * string table keyed by the option key (REQ-LANG-01).
+ *
+ * EVERY SELECT IS NAMED FOR ITS PATIENT (WCAG 2.2 AA, 4.1.2). Fifteen controls
+ * called "Status" is fifteen indistinguishable combo boxes to somebody using a
+ * screen reader; each one here reads "Status for Jamie Sampleton".
  *
  * "ASK RECEPTION" IS NOT BUILT. §6 lists it as undecided — *"is it worth
  * building in the first version, or is the read-only list enough to start"* —
@@ -44,8 +59,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import type { WaitingList } from '@aobplatform/domain';
-import { Notice, Shell } from '../../../ui';
+import { VISIT_STATE_OPTIONS, type WaitingList } from '@aobplatform/domain';
+import { Notice, SelectInput, Shell } from '../../../ui';
 import { SessionControl } from '../../../SessionControl';
 import { strings } from '../../../strings';
 import { useRefreshable } from '../../../refresh';
@@ -94,11 +109,31 @@ export function paperworkLabel(state: string): string {
   return strings.practitionerQueue.waiting.paperwork[state] ?? state;
 }
 
+/**
+ * THE WORD FOR A VISIT STATE, AND THE CODE ITSELF WHERE THERE IS NO WORD.
+ *
+ * Same rule as `paperworkLabel` and the same reason: the option list is
+ * versioned content and can gain a key before the string table does, so an
+ * unmapped key SHOWS ITS KEY rather than rendering blank. A blank status cell
+ * on this page would read as "nothing has happened", which is a claim.
+ */
+export function visitStateLabel(state: string): string {
+  return strings.practitionerQueue.waiting.visitState[state] ?? state;
+}
+
 export function WaitingView() {
   const { practiceId, checked } = usePractice();
   const search = useSearchParams();
   const [list, setList] = useState<WaitingList | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /*
+   * PER ROW, NOT PER PAGE. A practitioner setting a state on one patient must
+   * not see every other row go grey — and a failure on one row must say which
+   * row it was about. Keyed on the arrival, exactly as the rows are.
+   */
+  const [busy, setBusy] = useState<string | null>(null);
+  const [said, setSaid] = useState<Record<string, string>>({});
+  const [refused, setRefused] = useState<Record<string, string>>({});
 
   /*
    * WHICH PRACTICE, AND THE ORDER IS THE RULE.
@@ -128,6 +163,58 @@ export function WaitingView() {
       setError(err instanceof TypeError ? strings.status.unreachable : (err as Error).message);
     }
   }, [chosen]);
+
+  /**
+   * ONE PRESS OF THE STATUS CONTROL (§3a).
+   *
+   * IT NEVER BLOCKS AND IT NEVER GUESSES (hard rule 8). A refusal leaves the
+   * row exactly where it was and says what happened on the row itself; it does
+   * not clear the list, does not stop the poll and does not stop the
+   * practitioner seeing the patient.
+   *
+   * IT RE-READS RATHER THAN PATCHING THE ROW IN PLACE. What "Completed" came to
+   * — whether an after-visit agreement was raised, or is waiting on the
+   * practice's invoice — is the SERVER's answer, and a component that painted
+   * its own optimistic version would be a second, wrong copy of it.
+   */
+  const setState = useCallback(
+    async (arrivalId: string, state: string) => {
+      setBusy(arrivalId);
+      setRefused((was) => ({ ...was, [arrivalId]: '' }));
+      try {
+        const res = await fetch(`${CORE_URL}/practitioner-queue/visits/${arrivalId}/state`, {
+          method: 'POST',
+          headers: { ...apiHeaders(chosen), 'content-type': 'application/json' },
+          body: JSON.stringify({ state }),
+        });
+        const body = (await res.json().catch(() => ({}))) as {
+          renderedOutcome?: string | null;
+          reviewTaskId?: string | null;
+          message?: string;
+        };
+        if (!res.ok) throw new Error(body.message ?? String(res.status));
+
+        /*
+         * WHAT HAPPENED, IN ONE SENTENCE ON THE ROW. An unmapped outcome code
+         * shows its CODE rather than a generic line — a generic fallback is a
+         * defect (CLAUDE.md §7, "shortcuts to the answer").
+         */
+        const outcome = body.renderedOutcome
+          ? (strings.practitionerQueue.waiting.renderedOutcome[body.renderedOutcome] ?? body.renderedOutcome)
+          : body.reviewTaskId
+            ? strings.practitionerQueue.waiting.reassignRaised
+            : '';
+        setSaid((was) => ({ ...was, [arrivalId]: outcome }));
+        await load();
+      } catch (err) {
+        const why = err instanceof TypeError ? strings.status.unreachable : (err as Error).message;
+        setRefused((was) => ({ ...was, [arrivalId]: strings.practitionerQueue.waiting.visitStateFailed(why) }));
+      } finally {
+        setBusy(null);
+      }
+    },
+    [chosen, load],
+  );
 
   useRefreshable(load);
 
@@ -230,6 +317,7 @@ export function WaitingView() {
                       <th scope="col">{strings.practitionerQueue.waiting.columnName}</th>
                       <th scope="col">{strings.practitionerQueue.waiting.columnWaitingSince}</th>
                       <th scope="col">{strings.practitionerQueue.waiting.columnPaperwork}</th>
+                      <th scope="col">{strings.practitionerQueue.waiting.columnStatus}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -254,6 +342,59 @@ export function WaitingView() {
                         <td className={styles.paperwork} data-testid={`waiting-paperwork-${row.arrivalId}`}>
                           {paperworkLabel(row.paperwork)}
                         </td>
+                        <td className={styles.status}>
+                          {/*
+                            THE OPTIONS ARE THE CONTENT FILE'S, IN ITS ORDER.
+                            This component carries no list of its own, so the
+                            four states change without a code change
+                            (CLAUDE.md §7). `pending` is rendered so an
+                            untouched row reads honestly, and DISABLED because
+                            nobody sets it (§3a's table gives it no setter).
+                          */}
+                          <SelectInput
+                            aria-label={strings.practitionerQueue.waiting.statusFor(row.patientName)}
+                            data-testid={`waiting-state-${row.arrivalId}`}
+                            value={row.visitState}
+                            disabled={busy === row.arrivalId}
+                            onChange={(event) => void setState(row.arrivalId, event.target.value)}
+                          >
+                            {VISIT_STATE_OPTIONS.map((option) => (
+                              <option
+                                key={option.key}
+                                value={option.key}
+                                disabled={!option.settableByHand}
+                              >
+                                {visitStateLabel(option.key)}
+                              </option>
+                            ))}
+                          </SelectInput>
+                          {busy === row.arrivalId && (
+                            <span className={styles.under}>{strings.practitionerQueue.waiting.visitStateSaving}</span>
+                          )}
+                          {/*
+                            WHAT THE PRESS CAME TO, ON THE ROW IT WAS ABOUT.
+                            `role="status"` so a screen reader hears it without
+                            losing the caret (WCAG 2.2 AA, 4.1.3).
+                          */}
+                          {said[row.arrivalId] && (
+                            <span
+                              className={styles.under}
+                              role="status"
+                              data-testid={`waiting-state-said-${row.arrivalId}`}
+                            >
+                              {said[row.arrivalId]}
+                            </span>
+                          )}
+                          {refused[row.arrivalId] && (
+                            <span
+                              className={styles.refused}
+                              role="status"
+                              data-testid={`waiting-state-refused-${row.arrivalId}`}
+                            >
+                              {refused[row.arrivalId]}
+                            </span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -266,6 +407,13 @@ export function WaitingView() {
       {/* What the three words mean, once, rather than in a tooltip nobody opens. */}
       <p className={styles.key} data-testid="waiting-key">
         {strings.practitionerQueue.waiting.paperworkKey}
+      </p>
+      {/* What the four states mean, and that Reassign moves nobody (§3a rule 4). */}
+      <p className={styles.key} data-testid="waiting-state-key">
+        {strings.practitionerQueue.waiting.visitStateKey}
+      </p>
+      <p className={styles.key} data-testid="waiting-state-never-blocks">
+        {strings.practitionerQueue.waiting.visitStateNeverBlocks}
       </p>
       {/* And what this page is NOT (§2), said on the page rather than only in a plan. */}
       <p className={styles.key} data-testid="waiting-paperwork-only">

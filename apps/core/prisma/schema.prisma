@@ -3185,3 +3185,69 @@ model AgreementCopyLink {
   @@index([expiresAt])
   @@map("agreement_copy_links")
 }
+
+/// WHERE A VISIT HAD GOT TO, AS SOMEBODY SAID IT AT THE TIME
+/// (PRACTITIONER-QUEUE-PAGE.md §3a; Carl, 12 Sep 2026).
+///
+/// ONE ROW PER SAYING, NEVER PER VISIT. §3a rule 6: "Reversible and recorded. A
+/// wrong state is corrected, and the correction is kept beside the original
+/// rather than over it." So there is no unique key on the arrival, nothing here
+/// is ever UPDATEd and nothing is ever deleted — a correction is a new row with
+/// a later `setAt`, and the reader takes the newest. The same instinct as hard
+/// rule 11: the vault has no update and no delete either.
+///
+/// IT IS ATTENDANCE, NOT CLINICAL DOCUMENTATION (§3a rule 1, VISIT-CHECKLIST.md
+/// §5). Look at what there is no column for: no reason, no note, no triage
+/// category, no duration, no result, no amount (hard rule 4), no identifier
+/// value (hard rules 1 and 9). "A note box here becomes a clinical record
+/// within a week", so there is no note box and nowhere to put one.
+///
+/// NO FOREIGN KEY, like `Arrival` itself and for the same stated reason: this
+/// family of tables carries none by design and scoping is RLS on `practiceId`.
+///
+/// IT GATES NOTHING (§3a rule 5, hard rule 8). No other query joins on this to
+/// decide whether a patient may be seen or billed, and none ever should.
+model VisitState {
+  id         String @id @default(uuid()) @db.Uuid
+  practiceId String @db.Uuid
+
+  /// The visit — an arrival, which is one patient on one day. The row's subject
+  /// and the only patient-shaped id on it.
+  arrivalId String @db.Uuid
+
+  /// A key from `packages/domain/content/visit-states.json`, never a display
+  /// word. The database CHECK is derived from that list (hard rule 14).
+  state String
+  /// Which version of the list it was chosen from, so a state set in September
+  /// still says what it was offered from after the list changes.
+  statesVersion String
+
+  /// WHO SAID IT — the principal from the token, NEVER a typed name (§3a rule
+  /// 1; VISIT-CHECKLIST.md §7 rule 4). A screen that wants to show a person
+  /// joins on the principal.
+  setByPrincipalId   String
+  /// user | service | system. What KIND of principal, for the same reason the
+  /// vault's actor carries one.
+  setByPrincipalType String
+
+  /// By the server's clock, because it is the ordering fact and a client clock
+  /// would let one browser reorder another's history.
+  setAt DateTime @default(now())
+
+  /// Set only where THIS row was the service-rendered signal and the platform
+  /// could act on it — the id of the `service_records` row that resulted. Null
+  /// where nothing was raised, and the reason why is `renderedOutcome`.
+  serviceRecordId String? @db.Uuid
+  /// What the service-rendered signal came to: a reason code, never prose.
+  /// Null for every state that is not the signal.
+  renderedOutcome String?
+
+  /// The reception task this state raised (`review_tasks`), where it raised
+  /// one. Null otherwise. "Reassign never reassigns" — this is the whole of
+  /// what pressing it does (§3a rule 4).
+  reviewTaskId String? @db.Uuid
+
+  @@index([practiceId, arrivalId, setAt])
+  @@index([practiceId, setAt])
+  @@map("visit_states")
+}

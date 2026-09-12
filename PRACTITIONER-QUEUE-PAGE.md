@@ -290,6 +290,75 @@ is the mechanism `VISIT-CHECKLIST.md` §5 describes.
 7. **One control, not four buttons.** A single labelled select per row — four
    buttons across fifteen rows is sixty targets on a screen a doctor glances at.
 
+### 3b. What was built, 12 September 2026
+
+All seven rules of §3a are built, plus every named test below. What differs from
+the plan, and why:
+
+**One select per row, rendered from a content file.** The four states live in
+`packages/domain/content/visit-states.json` at version `visit-states-2026-09-1`,
+schema-validated at load, with the display words in the string table keyed by
+the option key (CLAUDE.md §7: *"Any list a user picks from — relationships,
+reasons, categories, STATES — lives in a versioned content file"*). The screen
+renders that file in file order and carries no list of its own, so a fifth state
+is a content change plus a database CHECK, not a code change. The version
+travels onto every record written (hard rule 14). The loader refuses a file with
+two starting states, a settable starting state, two service-rendered signals, or
+one option that is both the signal and a task.
+
+**Pending is shown and cannot be chosen.** §3a's table gives it no setter, so it
+is rendered as the current answer — an untouched row reads honestly — and
+disabled in the list, refused by the service, and refused again by a database
+CHECK (`visit_states_never_stores_the_starting_state`). A stored `pending` would
+be somebody moving a patient backwards into "not yet seen" after the
+service-rendered signal had already gone.
+
+**A new table, `visit_states`, and it is append-only.** One row per SAYING,
+never one per visit: a correction is an INSERT with a later `setAt`, the row it
+corrects survives, and the reader takes the newest (§3a rule 6). Nothing in the
+application updates or deletes it. There is no column for a note, a reason, a
+triage category, a duration, a result or an amount — §3a rule 1 has nowhere to
+be broken. Every write carries its `visit.state_set` vault event through the
+outbox in the same transaction (hard rule 11).
+
+**Reassign reuses `review_tasks`.** A new kind, `reassignment_requested`, stakes
+HIGH — closing it means a person chose a different practitioner, checked whether
+the enduring agreement still covers the visit (it is per practitioner × patient,
+hard rule 6) and, where it does not, asked the patient (D-2026-09-12-03). No
+automated check can make that comparison. The task's subject is the PATIENT, so
+it lands on their own work page at the desk through the existing
+`openForPatients` join; the arrival travels in `detail`. No new table, no second
+inbox. Nothing about the arrival changes: the named test asserts the whole row
+is byte-for-byte what it was.
+
+**"Completed" is wired to the signal, and the DATA is what is missing — Carl's
+to decide.** It calls `ArrivalsService.serviceRendered` and reimplements none of
+the decision (hard rule 14). But a post-service agreement's particulars include
+D6b, the MBS item number(s), and REQ-REG-01 sources them from the PMS invoice —
+which a practitioner pressing a button does not have. So the signal is passed
+through where the practice's own software has ALREADY said what was done (an
+undecided `service_records` row carrying its own D5 and D6b, which is what the
+invoice sync writes), and otherwise the state is recorded with
+`awaiting_item_numbers` beside it and **nothing is drafted**. No item number is
+ever invented (CLAUDE.md §7). Written up as **D-2026-09-12-07** with the three
+ways Carl could close it.
+
+**Authorisation is the read's own answer, shared.** `resolveScope` serves both
+the GET and the POST, so what a practitioner can SEE and what they can SET
+cannot drift apart. Not `@PracticeScoped()`, for the reason the GET already
+gives at length: that decorator requires a practice CLAIM and a practitioner's
+token deliberately carries none, so it would close the control to the audience
+§3a wrote it for. Cross-practice fails closed twice over — the practitioner's
+practice is checked against their live affiliations before any scope opens, and
+RLS then hides the row, so the answer is "no such visit" and names nobody.
+
+**Where it is.** `packages/domain/content/visit-states.json` and
+`packages/domain/src/visit-states.ts` (the list, the loader, `latestVisitState`
+and `maySetVisitState`), `apps/core/prisma/migrations/20260912020000_visit_state/`,
+`apps/core/src/practitioner-queue/` (the POST, the authorisation, the
+service-rendered hand-off, the task), `apps/web/app/practice/practitioner/waiting/`
+(the select).
+
 **Named tests:** `a_practitioner_may_set_a_state_only_on_their_own_patients`,
 `completed_raises_the_post_service_agreement`,
 `reassign_creates_a_front_desk_task_and_moves_nobody`,
@@ -316,3 +385,4 @@ is the mechanism `VISIT-CHECKLIST.md` §5 describes.
 | 12 Sep 2026 | Built (§1, §3, §4, §5). Audience widened by Carl: reception, managers and administrators see every practitioner's list, grouped. No card-number column (`Arrival.queueTicket` does not exist). A fourth word, "Nothing to sign", recorded as an assumption in §5a. |
 | 12 Sep 2026 | The way back moved into the shell's header and is decided per audience: `/practice/today` for practice staff, `/practice/practitioner` for a practitioner (§5a). |
 | 12 Sep 2026 | §3a: a per-patient status set from this page — Pending, With patient now, Completed, Reassign. Completed is the service-rendered signal; Reassign creates a front-desk task. |
+| 12 Sep 2026 | §3a **built** (§3b). Four states as versioned content (`visit-states.json`), an append-only `visit_states` table with its vault event, Reassign on the existing `review_tasks` queue as `reassignment_requested`. Completed is wired to `serviceRendered` but raises a post-service agreement only where the invoice already carries D6b — no item number is invented (**D-2026-09-12-07**, Carl's to confirm). |
