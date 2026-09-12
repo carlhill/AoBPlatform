@@ -9,6 +9,42 @@ task and belongs in the code as a TODO comment instead.
 
 ---
 
+## The three integration modes, written down as one table
+
+Asked by Carl, 12 September 2026: *"I/we need to clearly write down the
+workflow for these scenarios. I think we did do them at a high level."*
+
+Three modes, all three of which will exist at go-live:
+
+1. **Basic — completely manual.** No API interface at all. Every piece of data
+   is keyed at reception.
+2. **Semi-automatic.** Some keying by hand (the arrival, say), and the PMS
+   sends the post-consultation data automatically.
+3. **Full automation.** The PMS sends the day's scheduled appointments AND the
+   post-consultation data.
+
+The deliverable Carl asked for is **one table: the data required at each step
+of the process down the rows, the three modes across the columns** — plus, for
+mode 1, the list of what reception must key and whether a screen exists for it
+today, and a plan for the screens that do not.
+
+### Why this is deferred rather than done in the moment
+
+It is not a build; it is the thing that tells us WHICH builds are missing. It
+also cannot be written honestly from memory — the answer to "is there a screen
+for this" has to be read off the controllers and the pages, because a
+half-remembered yes is how a practice gets sold a mode we cannot deliver.
+
+### What it depends on
+
+- **D-01 (Medtech write-back mechanism)** gates modes 2 and 3 for real, but not
+  the table: the table says what the PMS WOULD supply, and the adapter stays
+  behind the FR-9.1 interface either way.
+- Nothing gates mode 1. Mode 1 is entirely ours, and any gap in it is a gap we
+  can close without waiting for anybody.
+
+**Written to `INTEGRATION-MODES.md`.**
+
 ## Contact details on locations and departments
 
 Asked 23 Aug 2026, while adding the practice page a practitioner sees. At least
