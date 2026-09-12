@@ -60,12 +60,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { VISIT_STATE_OPTIONS, type WaitingList } from '@aobplatform/domain';
-import { Notice, SelectInput, Shell } from '../../../ui';
+import type { ArrivalMoveResult, ArrivalProviderChoice } from '@aobplatform/contracts';
+import { Checkbox, Notice, SelectInput, Shell } from '../../../ui';
 import { SessionControl } from '../../../SessionControl';
 import { strings } from '../../../strings';
 import { useRefreshable } from '../../../refresh';
 import { apiHeaders } from '../../../auth';
 import { usePractice } from '../../usePractice';
+import { MovePanel, moveOutcomeWords, type MoveSummary } from './MovePanel';
 import styles from '../practitioner.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
@@ -134,6 +136,21 @@ export function WaitingView() {
   const [busy, setBusy] = useState<string | null>(null);
   const [said, setSaid] = useState<Record<string, string>>({});
   const [refused, setRefused] = useState<Record<string, string>>({});
+
+  /*
+   * MOVING A LIST TO SOMEBODY ELSE (Carl, 12 Sep 2026). RECEPTION'S MODE ONLY —
+   * see `MovePanel`'s own docstring and §3a rule 4. The selection lives here
+   * rather than in the panel because the boxes are on the ROWS, and a component
+   * that owned the selection without owning the rows would be two sources of
+   * truth for one list.
+   */
+  const [picked, setPicked] = useState<Record<string, boolean>>({});
+  const [choices, setChoices] = useState<readonly ArrivalProviderChoice[] | null>(null);
+  const [moving, setMoving] = useState(false);
+  const [moveSummary, setMoveSummary] = useState<MoveSummary | null>(null);
+  const [moveError, setMoveError] = useState<string | null>(null);
+  /** What one row's move came to, keyed on the arrival exactly as the rows are. */
+  const [moveSaid, setMoveSaid] = useState<Record<string, { words: string; moved: boolean; code: string }>>({});
 
   /*
    * WHICH PRACTICE, AND THE ORDER IS THE RULE.
@@ -231,6 +248,64 @@ export function WaitingView() {
     [chosen, load],
   );
 
+  /**
+   * MOVE THE SELECTED PATIENTS (Carl, 12 Sep 2026).
+   *
+   * ONE REQUEST FOR THE WHOLE SELECTION, because partial failure is the
+   * server's answer to give: it applies what it can and refuses the rest, each
+   * with a reason CODE, and a browser looping row by row would invent its own
+   * order and its own idea of what "done" means.
+   *
+   * IT NEVER CLEARS THE LIST AND NEVER BLOCKS (hard rule 8). A refusal leaves
+   * every row where it was, says why on the row it was about, and the patients
+   * are seen exactly as they would have been.
+   */
+  const moveSelected = useCallback(
+    async (toAffiliationId: string) => {
+      const arrivalIds = Object.keys(picked).filter((id) => picked[id]);
+      if (arrivalIds.length === 0 || moving) return;
+      setMoving(true);
+      setMoveError(null);
+      setMoveSummary(null);
+      try {
+        const res = await fetch(`${CORE_URL}/arrivals/move`, {
+          method: 'POST',
+          headers: { ...apiHeaders(chosen), 'content-type': 'application/json' },
+          body: JSON.stringify({ arrivalIds, toAffiliationId }),
+        });
+        const body = (await res.json().catch(() => ({}))) as ArrivalMoveResult & { message?: string };
+        if (!res.ok) throw new Error(body.message ?? String(res.status));
+
+        const words: Record<string, { words: string; moved: boolean; code: string }> = {};
+        for (const outcome of body.outcomes ?? []) {
+          words[outcome.arrivalId] = {
+            words: moveOutcomeWords(outcome),
+            moved: outcome.moved,
+            code: outcome.refusedReason ?? '',
+          };
+        }
+        setMoveSaid((was) => ({ ...was, ...words }));
+        setMoveSummary({
+          moved: body.movedCount,
+          refused: body.refusedCount,
+          signAgain: body.needsANewSignatureCount,
+        });
+        /*
+         * THE SELECTION IS SPENT, INCLUDING THE REFUSED ONES. A refusal is
+         * fixed by choosing a different practitioner, and leaving fifteen boxes
+         * ticked would make the next press look like a retry of the same thing.
+         */
+        setPicked({});
+        await load();
+      } catch (err) {
+        setMoveError(err instanceof TypeError ? strings.status.unreachable : (err as Error).message);
+      } finally {
+        setMoving(false);
+      }
+    },
+    [chosen, load, moving, picked],
+  );
+
   useRefreshable(load);
 
   const latest = useRef(load);
@@ -253,6 +328,32 @@ export function WaitingView() {
    * are. Reception's is grouped, because that IS the page for them.
    */
   const grouped = list?.scope === 'practice';
+  const pickedCount = Object.values(picked).filter(Boolean).length;
+
+  /*
+   * WHO THE LIST CAN BE MOVED TO — read once, and only in reception's mode,
+   * because it is the only mode with the control. The same endpoint the desk's
+   * other pickers use: servicing practitioners at a location, filtered by the
+   * predicate that decides who may be named on an agreement, so this page
+   * carries no rule of its own about who may take a list.
+   */
+  useEffect(() => {
+    if (!checked || !grouped || choices !== null) return;
+    void (async () => {
+      try {
+        const res = await fetch(`${CORE_URL}/arrivals/servicing-providers`, { headers: apiHeaders(chosen) });
+        if (!res.ok) return;
+        setChoices((await res.json()) as ArrivalProviderChoice[]);
+      } catch {
+        /*
+         * A PICKER THAT COULD NOT BE READ IS AN EMPTY PICKER, NOT A BROKEN
+         * PAGE (hard rule 8). The waiting list itself is what this page is for
+         * and it is already on screen; the move control simply has nobody to
+         * offer until the next load.
+         */
+      }
+    })();
+  }, [checked, grouped, chosen, choices]);
 
   return (
     <Shell
@@ -290,6 +391,23 @@ export function WaitingView() {
 
       {grouped && !nobody && <h2 className={styles.groupTitle}>{strings.practitionerQueue.waiting.everyone}</h2>}
 
+      {/*
+        MOVING A LIST IS RECEPTION'S ACT AND NOBODY ELSE'S (§3a rule 4). It is
+        rendered only in the practice-wide mode — which the SERVER chose from
+        the token — so a practitioner's own list has no control on it that acts
+        on an agreement, exactly as §3 requires.
+      */}
+      {grouped && !nobody && (
+        <MovePanel
+          selectedCount={pickedCount}
+          choices={choices}
+          busy={moving}
+          summary={moveSummary}
+          error={moveError}
+          onMove={(to) => void moveSelected(to)}
+        />
+      )}
+
       <div className={styles.groups} data-testid="waiting-groups">
         {groups
           .filter((group) => group.rows.length > 0)
@@ -307,6 +425,27 @@ export function WaitingView() {
                   <span className={styles.groupCount}>
                     {strings.practitionerQueue.waiting.count(group.rows.length)}
                   </span>
+                  {/*
+                    THE SICK-PRACTITIONER CASE IN ONE PRESS. Everybody waiting
+                    for this one person — which is the whole reason the feature
+                    exists — rather than fifteen boxes ticked by hand.
+                  */}
+                  <Checkbox
+                    hideLabel
+                    testId={`waiting-select-group-${group.affiliationId ?? 'unmatched'}`}
+                    label={strings.practitionerQueue.waiting.move.selectEveryone(
+                      group.practitionerName ?? strings.practitionerQueue.waiting.unmatched,
+                    )}
+                    disabled={moving}
+                    checked={group.rows.every((row) => picked[row.arrivalId])}
+                    onCheckedChange={(value) =>
+                      setPicked((was) => {
+                        const next = { ...was };
+                        for (const row of group.rows) next[row.arrivalId] = value;
+                        return next;
+                      })
+                    }
+                  />
                 </div>
               )}
 
@@ -321,6 +460,17 @@ export function WaitingView() {
                   </caption>
                   <thead>
                     <tr>
+                      {/*
+                        THE SELECT COLUMN EXISTS ONLY WHERE THE CONTROL DOES.
+                        Its header is a hidden word rather than a blank cell: a
+                        column with no name is a column a screen reader
+                        announces as nothing at all.
+                      */}
+                      {grouped && (
+                        <th scope="col" className={styles.visuallyHidden}>
+                          {strings.practitionerQueue.waiting.move.chooseLabel}
+                        </th>
+                      )}
                       {/*
                         NO CARD-NUMBER COLUMN. §3 wants the practice's queue
                         ticket "where the practice uses them", and
@@ -338,8 +488,66 @@ export function WaitingView() {
                   <tbody>
                     {group.rows.map((row) => (
                       <tr key={row.arrivalId} data-testid={`waiting-row-${row.arrivalId}`}>
+                        {grouped && (
+                          <td className={styles.select}>
+                            {/*
+                              NAMED FOR ITS PATIENT (WCAG 2.2 AA, 4.1.2).
+                              Fifteen boxes called "Select" are fifteen
+                              indistinguishable controls to somebody listening;
+                              each one here reads "Select Jamie Sampleton".
+                            */}
+                            <Checkbox
+                              hideLabel
+                              testId={`waiting-select-${row.arrivalId}`}
+                              label={strings.practitionerQueue.waiting.move.selectFor(row.patientName)}
+                              checked={Boolean(picked[row.arrivalId])}
+                              disabled={moving}
+                              onCheckedChange={(value) =>
+                                setPicked((was) => ({ ...was, [row.arrivalId]: value }))
+                              }
+                            />
+                          </td>
+                        )}
                         <td>
                           <span className={styles.name}>{row.patientName}</span>
+                          {/*
+                            WHAT THE MOVE CAME TO, ON THE ROW IT WAS ABOUT — the
+                            words for a refusal's reason CODE, and the code
+                            itself where there is no mapping (CLAUDE.md §7).
+                            `role="status"` so it is heard without losing the
+                            caret (WCAG 2.2 AA, 4.1.3).
+                          */}
+                          {moveSaid[row.arrivalId] && (
+                            <span
+                              className={moveSaid[row.arrivalId]!.moved ? styles.under : styles.refused}
+                              role="status"
+                              data-testid={`waiting-move-said-${row.arrivalId}`}
+                            >
+                              {moveSaid[row.arrivalId]!.words}
+                              {/*
+                                AND A LINK TO WHERE IT IS FIXED, for the one
+                                reason whose fix is on another page. A message
+                                that names a queue in prose is the defect this
+                                rule exists to prevent.
+                              */}
+                              {strings.practitionerQueue.waiting.move.refusalLink[
+                                moveSaid[row.arrivalId]!.code
+                              ] && (
+                                <>
+                                  {' '}
+                                  <a
+                                    href={
+                                      strings.practitionerQueue.waiting.move.refusalLink[
+                                        moveSaid[row.arrivalId]!.code
+                                      ]
+                                    }
+                                  >
+                                    {strings.practitionerQueue.waiting.move.refusalLinkLabel}
+                                  </a>
+                                </>
+                              )}
+                            </span>
+                          )}
                           {/*
                             WHOSE AGREEMENT IT IS, WHERE THAT IS SOMEBODY ELSE
                             (§6a). For a nurse the agreement is under the

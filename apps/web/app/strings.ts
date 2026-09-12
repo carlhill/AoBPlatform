@@ -5307,6 +5307,111 @@ export const strings = {
       reassignRaised:
         'The front desk has been asked to find somebody else for this patient. Nobody has been moved yet.',
 
+      /*
+       * MOVING A LIST TO SOMEBODY ELSE — the sick-practitioner morning (Carl,
+       * 12 September 2026). RECEPTION ONLY: the practitioner's own view of this
+       * page has no such control, because deciding who sees a patient instead
+       * is the front desk's act (§3a rule 4) and a control somebody will never
+       * legitimately use is one that will one day be pressed by mistake (§3).
+       */
+      move: {
+        title: 'Move patients to another practitioner',
+        /*
+         * WHAT IT ACTUALLY DOES, ON THE SCREEN, because the person pressing it
+         * is changing a legal record: the agreement names the practitioner, so
+         * moving the patient replaces it with one naming the new practitioner.
+         * The old one is kept exactly as it is.
+         */
+        whatItDoes:
+          'An agreement names the practitioner who will see the patient, so moving somebody replaces theirs '
+          + 'with one naming the practitioner they are moving to. The original is kept exactly as it is and '
+          + 'nothing is billed under it.',
+        /*
+         * THE PATIENT HAS NOT BEEN ASKED, SAID OUT LOUD (D-2026-09-12-03: a
+         * substitution is two questions, in order, and this action asks
+         * neither). Leaving reception to assume it had been asked is how the
+         * two questions get bundled into one.
+         */
+        notAsked:
+          'The patient has not been asked. This changes the paperwork only — ask each person at the desk '
+          + 'whether they are happy to be seen by somebody else.',
+        /* Hard rule 8, about this control rather than about the list. */
+        neverBlocks: 'Moving somebody holds nobody up, and a patient nobody can move is still seen as usual.',
+        /** The accessible name for one row's box. Never generic — one per patient. */
+        selectFor: (patient: string) => `Select ${patient}`,
+        /** The sick-practitioner case in one press: everybody in this group. */
+        selectEveryone: (practitioner: string) => `Select everybody waiting for ${practitioner}`,
+        chooseLabel: 'Move the selected patients to',
+        choosePlaceholder: 'Choose a practitioner',
+        /** The same practitioner at two sites is two choices, and the site tells them apart. */
+        choiceAt: (name: string, location: string) => `${name} — ${location}`,
+        button: (n: number) => (n === 1 ? 'Move 1 patient' : `Move ${n} patients`),
+        moving: 'Moving…',
+        /** Nothing is selected, or nobody is chosen to move them to. */
+        nothingChosen: 'Choose the patients to move, and the practitioner to move them to.',
+        /** The whole press failed — the server was unreachable, or refused it outright. */
+        failed: (why: string) => `Nobody was moved: ${why}`,
+        /*
+         * WHAT THE PRESS CAME TO, IN COUNTS. Partial failure is never silent:
+         * the refused are counted here and each one says why on its own row.
+         */
+        summaryMoved: (n: number) => (n === 1 ? '1 patient moved.' : `${n} patients moved.`),
+        summaryRefused: (n: number) =>
+          n === 1 ? '1 could not be moved — see the row.' : `${n} could not be moved — see their rows.`,
+        summarySignAgain: (n: number) =>
+          n === 1
+            ? '1 of them had already signed and signs again at the desk.'
+            : `${n} of them had already signed and sign again at the desk.`,
+        /** On the row itself, so the answer is where the patient is. */
+        outcomeMoved: 'Moved.',
+        outcomeSignAgain:
+          'Moved. They had already signed for the practitioner they are leaving, so they sign again at the '
+          + 'desk when they come in.',
+        /*
+         * WHY A ROW WAS NOT MOVED, KEYED BY THE SERVER'S REASON CODE — with
+         * what to do about it, not a description of the failure (CLAUDE.md §7).
+         */
+        refusal: {
+          arrival_not_found:
+            'This visit is not on today’s list any more. Refresh the page and look for them again.',
+          arrival_not_received:
+            'This arrival is still waiting for somebody to be named as the provider, which is fixed on the '
+            + 'patients queue.',
+          already_with_that_practitioner: 'This patient is already here to see that practitioner.',
+          target_cannot_be_a_provider:
+            'The claim does not go under that practitioner’s number at this location, so a list cannot be '
+            + 'moved to them. Choose the practitioner the visit will be billed under.',
+          target_not_at_that_location:
+            'That practitioner is not working at the location this patient came to. Choose somebody at the '
+            + 'same location.',
+          no_location_on_the_arrival:
+            'This visit does not say which location the patient came to, so there is nothing to match a '
+            + 'practitioner against. The front desk can send the arrival again.',
+          agreement_not_moved:
+            'This patient’s agreement changed while the list was open, so nothing was moved. Refresh the '
+            + 'page and try again.',
+          move_failed:
+            'Something went wrong before anything was changed for this patient. Nobody else was affected — '
+            + 'try them again.',
+          /*
+           * THE HALF-DONE ONE, SAID PLAINLY. The agreement moved and the visit
+           * row did not, so the two disagree — and the fix is the same button,
+           * which settles it rather than moving them a second time.
+           */
+          move_not_recorded:
+            'This patient’s agreement was moved and their visit was not, so the two disagree. Press Move '
+            + 'again for this patient to settle it — nothing will be duplicated.',
+        } as Record<string, string>,
+        /** The destination for the one refusal whose fix is on another page. */
+        refusalLink: { arrival_not_received: '/practice/patients' } as Record<string, string>,
+        refusalLinkLabel: 'Open the patients queue',
+        /*
+         * AN UNMAPPED CODE SHOWS ITS CODE. A generic fallback is a defect: it
+         * tells the person nothing and hides the diagnosis (CLAUDE.md §7).
+         */
+        refusalUnknown: (code: string) => `Not moved (${code}).`,
+      },
+
       nobodyWaiting: 'Nobody is waiting for you at the moment.',
       nobodyWaitingPractice: 'Nobody is waiting at the moment.',
       /** A group whose arrival named nobody we could match to a practitioner. */

@@ -626,3 +626,122 @@ export interface DayRegister {
   /** Arrival order, which is reception's order. Nothing re-sorts it. */
   readonly rows: readonly DayRegisterRow[];
 }
+
+// ---------------------------------------------------------------------------
+// MOVING A PRACTITIONER'S LIST TO SOMEBODY ELSE (Carl, 12 September 2026:
+// *"the assigned practioner has called in sick... select the patients and then
+// select a practioner to move them to"*).
+// ---------------------------------------------------------------------------
+
+/**
+ * WHY A ROW COULD NOT BE MOVED — a CODE the console maps to words and a
+ * destination, never prose (CLAUDE.md §7, "shortcuts to the answer").
+ *
+ * PARTIAL FAILURE IS NEVER SILENT (TODO.md "Moving a practitioner's whole
+ * list" §5). Twelve moved and three refused reports all three, with the reason
+ * against the row it was about, and applies the twelve.
+ *
+ *  - `arrival_not_found` — no such visit inside this practice's scope. It is
+ *    what an arrival belonging to ANOTHER practice reads as, because RLS never
+ *    returns the row: the move fails closed and says nothing about whose it
+ *    was.
+ *  - `arrival_not_received` — the arrival was refused and is waiting for a
+ *    provider to be named. That is a different fix, on a different list.
+ *  - `already_with_that_practitioner` — the patient is already here to see the
+ *    person they would be moved to. Nothing is written and nothing is
+ *    superseded; a second press of the same button is not a second move.
+ *  - `target_cannot_be_a_provider` — the person chosen is recorded at that
+ *    location as somebody the claim does not go under (a nurse, a
+ *    phlebotomist). `mayBeProviderOnAgreement`, unchanged, and a list cannot
+ *    widen it.
+ *  - `target_not_at_that_location` — D4 is the person AND the place of
+ *    practice (s 65C(5)(a)), and billing identity is practice × location ×
+ *    practitioner (D-2026-09-12-09). Somebody with no live affiliation at the
+ *    site the patient walked into cannot be named on their agreement.
+ *  - `no_location_on_the_arrival` — the arrival never resolved to a
+ *    practitioner at a location, so there is no place to match a target
+ *    against. Nothing is guessed.
+ *  - `agreement_not_moved` — the row's own agreement could not be superseded
+ *    (it had already been superseded by somebody else's press, or the
+ *    replacement could not be created). The arrival is left exactly where it
+ *    was: an agreement naming one practitioner and an arrival naming another
+ *    is the one state this must never produce.
+ *  - `move_failed` — something else went wrong before anything was written.
+ *    Nothing about this patient changed and nothing about the others was
+ *    affected: one row's failure never aborts the press (hard rule 8).
+ *  - `move_not_recorded` — THE HALF-DONE ONE, and it is named rather than
+ *    hidden. The agreement was superseded and the visit's own row was then not
+ *    updated, so the two disagree about who this patient is seeing. Pressing
+ *    Move again for that patient settles it: the retry finds an agreement that
+ *    already names the target, supersedes nothing further, and writes the row.
+ *    A code that said "not moved" would send the desk looking for a problem in
+ *    the wrong place.
+ */
+export const ARRIVAL_MOVE_REFUSALS = [
+  'arrival_not_found',
+  'arrival_not_received',
+  'already_with_that_practitioner',
+  'target_cannot_be_a_provider',
+  'target_not_at_that_location',
+  'no_location_on_the_arrival',
+  'agreement_not_moved',
+  'move_failed',
+  'move_not_recorded',
+] as const;
+export type ArrivalMoveRefusal = (typeof ARRIVAL_MOVE_REFUSALS)[number];
+
+/**
+ * WHAT HAPPENED TO ONE PATIENT. Ids and facts — no name, no identifier value,
+ * no amount (hard rules 1, 4 and 9); the console already holds the names it
+ * put on screen and joins them by `arrivalId`.
+ */
+export interface ArrivalMoveOutcome {
+  readonly arrivalId: string;
+  readonly moved: boolean;
+  /** Null exactly when `moved`. */
+  readonly refusedReason: ArrivalMoveRefusal | null;
+  /**
+   * THE AGREEMENT THAT NAMED THE PRACTITIONER THEY ARE LEAVING. It is NOT
+   * touched — no edit, no void, no annotation (hard rule 11, HARD-02); it is
+   * superseded by one naming the new practitioner, and it stays a true record
+   * of what was agreed before the day overtook it.
+   */
+  readonly supersededAgreementId: string | null;
+  /** The successor, naming the new practitioner. Null where the visit needs none. */
+  readonly newAgreementId: string | null;
+  /**
+   * THEY HAD ALREADY SIGNED, SO THEY MUST SIGN AGAIN (Carl, 12 Sep 2026:
+   * *"the patient will have to resign a new agreement when they come in"*).
+   *
+   * AT THE DESK, WHEN THEY COME IN — they are already on their way, so no
+   * message goes out and no remote signature is asked for. This flag is what
+   * the desk acts on, and it is the whole difference between the signed case
+   * and the unsigned one: the mechanism is identical.
+   */
+  readonly needsANewSignature: boolean;
+  /**
+   * WHAT THE VISIT NEEDS NOW, RE-ASKED OF THE VERSIONED POLICY (hard rules 6
+   * and 14). An ongoing agreement is per practitioner × patient and does not
+   * travel, so the old answer is never carried across. `none` is a real
+   * answer: the new practitioner may already hold one with this patient.
+   */
+  readonly visitDecision: 'enduring' | 'episodic_pre' | 'none' | null;
+  readonly policyVersion: string | null;
+}
+
+/**
+ * ONE PRESS OF "MOVE THESE PATIENTS", ANSWERED IN FULL.
+ *
+ * IT NEVER BLOCKS CARE (hard rule 8, REQ-REC-04). Every patient in this list is
+ * seen exactly as they would have been; what moves is the paperwork, and a
+ * refusal slows the evidence rather than the service.
+ */
+export interface ArrivalMoveResult {
+  readonly toAffiliationId: string;
+  readonly movedCount: number;
+  readonly refusedCount: number;
+  /** How many of the moved must sign again at the desk. */
+  readonly needsANewSignatureCount: number;
+  /** Every row asked about, in the order they were asked. */
+  readonly outcomes: readonly ArrivalMoveOutcome[];
+}

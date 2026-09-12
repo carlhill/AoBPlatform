@@ -564,6 +564,24 @@ export class AgreementsService {
       readonly patientAssignorId?: string | null;
       readonly assignorConfirmedAt?: Date;
       readonly assignorConfirmedBy?: string | null;
+      /**
+       * THE ANCHOR ITSELF — the third reason a supersession exists, and the
+       * only one that changes WHO the agreement is about (Carl, 12 Sep 2026).
+       *
+       * The patient has been moved to another practitioner, and D4 names the
+       * provider and their place of practice (s 65C(5)(a)): an agreement made
+       * for one practitioner does not describe a service by another. The
+       * correction is the same one the regime gives for a wrong name — a new
+       * agreement, never an edit (HARD-02) — and the type comes with it,
+       * because what the visit needs is re-asked of the versioned policy for
+       * the NEW practitioner rather than carried across (hard rules 6 and 14).
+       */
+      readonly affiliationId?: string;
+      readonly type?: string;
+      readonly enduringPathway?: string | null;
+      readonly anchorKind?: string;
+      /** D6a where the parent had none to carry — the practice's own default. */
+      readonly serviceDescription?: string;
     },
   ): Promise<DbAgreement> {
     /*
@@ -577,7 +595,7 @@ export class AgreementsService {
      * constraint's name. The old agreement is untouched either way; it keeps
      * its own true record of what it said (HARD-02, hard rule 13).
      */
-    let affiliationId = agreement.affiliationId;
+    let affiliationId = overrides.affiliationId ?? agreement.affiliationId;
     if (!affiliationId && agreement.anchorKind === 'provider') {
       const anchor = await anchorForAgreement(tx, agreement);
       if (!anchor?.affiliationId) {
@@ -594,9 +612,15 @@ export class AgreementsService {
     return tx.agreement.create({
       data: {
         practiceId,
-        type: agreement.type,
-        anchorKind: agreement.anchorKind,
-        providerId: agreement.providerId,
+        type: overrides.type ?? agreement.type,
+        anchorKind: overrides.anchorKind ?? agreement.anchorKind,
+        /*
+         * THE LEGACY ANCHOR IS DROPPED WHEN A NEW ONE IS NAMED. A move states
+         * the practitioner outright; keeping the old `providers` row beside it
+         * would leave two answers to "who is this agreement for", one of them
+         * the person the patient is being moved away from.
+         */
+        providerId: overrides.affiliationId ? null : agreement.providerId,
         affiliationId,
         organisationId: agreement.organisationId,
         patientId: agreement.patientId,
@@ -612,7 +636,8 @@ export class AgreementsService {
           overrides.patientAssignorId !== undefined
             ? overrides.patientAssignorId
             : agreement.patientAssignorId,
-        enduringPathway: agreement.enduringPathway,
+        enduringPathway:
+          overrides.type !== undefined ? (overrides.enduringPathway ?? null) : agreement.enduringPathway,
         /*
          * THE SAME D6a READ `pushable` USES — `basicServiceDescriptionOf` in
          * `@aobplatform/domain`, ONE copy since 7 Sep 2026 (it was duplicated
@@ -627,7 +652,7 @@ export class AgreementsService {
          * column value now, or it is gone: the new draft would show "Not set"
          * and refuse to push over a detail nobody changed.
          */
-        serviceDescription: basicServiceDescriptionOf(agreement),
+        serviceDescription: basicServiceDescriptionOf(agreement) ?? overrides.serviceDescription ?? null,
         serviceDescriptionSetBy: agreement.serviceDescriptionSetBy,
         serviceDescriptionSetAt: agreement.serviceDescriptionSetAt,
         status: 'draft',
@@ -1670,6 +1695,192 @@ export class AgreementsService {
     );
     if (!locked) throw new NotFoundException('Agreement not found.');
     return locked;
+  }
+
+  /**
+   * THE PATIENT IS SEEING SOMEBODY ELSE TODAY, SO THE AGREEMENT IS SUPERSEDED
+   * (Carl, 12 September 2026 — the practitioner who called in sick).
+   *
+   * WHY IT CANNOT BE AN EDIT, AND THIS IS THE WHOLE REASON THE METHOD EXISTS.
+   * D4 is the provider's name and the address of their place of practice
+   * (s 65C(5)(a)), and it is a PARTICULAR (hard rule 2, REQ-REG-06). An
+   * agreement made for Dr A does not describe a service by Dr B, and moving the
+   * anchor underneath a validated, rendered, hashed artefact would leave the
+   * stored document naming one practitioner and the record naming another
+   * (rule 13). So a move takes the same answer the regime gives to a wrong name
+   * or a wrong party: SUPERSEDE (HARD-02) — a new agreement carrying
+   * `supersedesAgreementId`, anchored on the new practitioner, validated and
+   * rendered from scratch.
+   *
+   * A SIGNED PARENT IS SUPERSEDED TOO, AND IS NOT TOUCHED (Carl, 12 Sep 2026:
+   * *"the patient will have to resign a new agreement when they come in"*).
+   * Supersession never writes to the parent — that is exactly what makes it the
+   * right tool here and why hard rule 11 is not in tension with it. The signed
+   * agreement keeps its signature event, its particulars and its hash: a true
+   * record of what was agreed before the day overtook it. Nothing is voided,
+   * cancelled or annotated, and nothing is billed under it because the
+   * practitioner it names never rendered the service. What differs is what the
+   * PATIENT owes — they sign again, at the desk, when they come in — and the
+   * caller is told so rather than the difference being buried here.
+   *
+   * WHAT THE VISIT NEEDS IS THE CALLER'S ANSWER, NOT THIS METHOD'S. `type` and
+   * `enduringPathway` are passed in because an ongoing agreement is per
+   * practitioner × patient and GP-only (hard rule 6, REQ-END-01/-01a): it does
+   * not travel, and a patient moved from a GP to a specialist needs something
+   * different from what they had. The versioned visit policy decides that
+   * (hard rule 14) and this writes down its answer.
+   *
+   * IT NEVER BLOCKS CARE (hard rule 8, REQ-REC-04). If the replacement cannot
+   * be locked — the rules service is down, a mapping is missing — it is left as
+   * a draft on reception's list with its own reason, the patient is still seen,
+   * and the visit can still be billed.
+   */
+  async supersedeForProviderChange(
+    practiceId: string,
+    agreementId: string,
+    to: {
+      readonly affiliationId: string;
+      readonly type: 'enduring' | 'episodic_pre';
+      readonly enduringPathway?: string | null;
+      /** D6a to carry where the parent has none of its own — the practice's default. */
+      readonly serviceDescriptionFallback?: string | null;
+      /** D5 where the parent never stated one: the day the patient walked in. */
+      readonly serviceDate: string;
+    },
+    actor?: Actor,
+  ): Promise<{ replacementId: string; parentWasSigned: boolean }> {
+    const anchorKind = validAnchorKindFor(to.type, to.enduringPathway as EnduringPathway | undefined);
+    if (anchorKind !== 'provider') {
+      /*
+       * AN ORGANISATION-ANCHORED AGREEMENT NAMES NO PRACTITIONER, so "move this
+       * patient to that practitioner" has nothing to write. Refused rather than
+       * anchored on a person the instrument does not have a field for
+       * (Addendum v3 §1.1).
+       */
+      throw new BadRequestException(
+        'An ACCHO/AMS ongoing agreement is anchored on the organisation, not on a practitioner, so ' +
+          'moving this patient to another practitioner would have nowhere to name them.',
+      );
+    }
+
+    const outcome = await this.prisma.withPractice(practiceId, async (tx) => {
+      /*
+       * TAKE THE ROW FIRST, THEN DECIDE — the same lock, and the same reason,
+       * as `supersedeForAssignorChange`: two presses on one agreement must
+       * serialise rather than produce one visit with two contracts, each
+       * claiming to replace the same one. RLS still applies to the raw
+       * statement, so a cross-practice id locks nothing and the read below
+       * fails closed as a 404.
+       */
+      await tx.$queryRaw`SELECT "id" FROM "agreements" WHERE "id" = ${agreementId}::uuid FOR UPDATE`;
+
+      const agreement = await tx.agreement.findFirst({ where: { id: agreementId } });
+      if (!agreement) throw new NotFoundException('Agreement not found.');
+
+      const successor = await tx.agreement.findFirst({
+        where: { supersedesAgreementId: agreementId },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (successor) {
+        /*
+         * ALREADY SUPERSEDED. If the successor already names the practitioner
+         * being asked for, this is the same press twice — a receptionist
+         * pressing Move again on a list they have not reloaded — and the answer
+         * is that agreement. Anything else is a row that has moved on under the
+         * caller, and superseding it a second time would fork the chain.
+         */
+        if (successor.affiliationId === to.affiliationId) {
+          return {
+            replacementId: successor.id,
+            parentWasSigned: agreement.signatureEventId !== null,
+            settled: true as const,
+          };
+        }
+        throw new BadRequestException(
+          'This agreement has already been replaced by another one, so it cannot be moved. Open the ' +
+            'waiting list again — the patient may have been moved, or their details corrected, since it ' +
+            'was read.',
+        );
+      }
+
+      const replacement = await this.createSupersedingDraft(tx, practiceId, agreement, {
+        affiliationId: to.affiliationId,
+        type: to.type,
+        enduringPathway: to.enduringPathway ?? null,
+        anchorKind,
+        serviceDescription: to.serviceDescriptionFallback ?? undefined,
+      });
+
+      await enqueueVaultEvent(tx, {
+        type: 'agreement.superseded',
+        actor: assignorActor(actor),
+        subject: { type: 'Agreement', id: agreement.id },
+        payload: {
+          supersededBy: replacement.id,
+          reason: 'practitioner_changed',
+          agreementType: agreement.type,
+          /*
+           * IDS, NEVER NAMES (REQ-LOG-08). The two anchors say who the
+           * agreement was for and who it is for now; the parent's own D4 is
+           * exactly what it always was.
+           */
+          fromAffiliationId: agreement.affiliationId ?? '',
+          toAffiliationId: to.affiliationId,
+          /*
+           * AND WHETHER A SIGNATURE IS BEING LEFT BEHIND. The parent is not
+           * touched either way; this is what tells a reader in 2028 why a
+           * second signature exists for one visit.
+           */
+          parentWasSigned: agreement.signatureEventId !== null,
+        },
+      });
+
+      /*
+       * NOTHING MAY STILL BE SIGNED AGAINST THE OLD ONE. Its evidence stays
+       * exactly as it is, and every channel that could still collect a
+       * signature naming the practitioner the patient is no longer seeing is
+       * closed — the same act every other supersession makes, with its own
+       * reason on the event.
+       */
+      await this.capture.cancelOpenFor(tx, agreement.id, 'practitioner_changed');
+      // AND THE REPLACEMENT IS ON RECEPTION'S QUEUE BEFORE IT IS LOCKED, so a
+      // lock that fails leaves work on a screen rather than an orphan.
+      await this.capture.openInPractice(tx, practiceId, replacement.id);
+
+      return {
+        replacementId: replacement.id,
+        parentWasSigned: agreement.signatureEventId !== null,
+        settled: false as const,
+        serviceDate: serviceDateOf(agreement) ?? to.serviceDate,
+        mbsItemNumbers: mbsItemNumbersOf(agreement),
+        serviceDescription: basicServiceDescriptionOf(replacement),
+      };
+    });
+
+    if (outcome.settled) {
+      return { replacementId: outcome.replacementId, parentWasSigned: outcome.parentWasSigned };
+    }
+
+    /*
+     * NOW VALIDATE, RENDER AND LOCK IT — outside the transaction, because both
+     * are network-shaped work, and ONLY for an episodic pre-agreement. An
+     * enduring draft stops at the capture request exactly as it does on the
+     * arrival path: the s 65C rule set has no enduring path yet
+     * (`enduring_rules_not_authored`, a human-authored zone, CLAUDE.md §7), so
+     * locking one would mean an agent writing regulation. It sits on the queue
+     * with that reason. Nor is anything locked with no D6a: an agreement at
+     * `awaiting_signature` with unlocked particulars is the shape hard rule 2
+     * forbids.
+     */
+    if (to.type === 'episodic_pre' && outcome.serviceDescription) {
+      await this.transition(practiceId, outcome.replacementId, 'awaiting_signature');
+      await this.lockParticulars(practiceId, outcome.replacementId, {
+        serviceDate: outcome.serviceDate,
+        mbsItemNumbers: outcome.mbsItemNumbers,
+      });
+    }
+
+    return { replacementId: outcome.replacementId, parentWasSigned: outcome.parentWasSigned };
   }
 
   /**

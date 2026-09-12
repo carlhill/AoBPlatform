@@ -103,12 +103,44 @@ const calls: Array<{ url: string; method: string; body?: string }> = [];
  */
 let stateReply: { ok?: boolean; body?: unknown } | null = null;
 
+/**
+ * WHAT THE SERVER SAYS BACK TO ONE PRESS OF "MOVE THESE PATIENTS", and whether
+ * it refuses. Set per test; `null` means "everybody moved".
+ */
+let moveReply: { ok?: boolean; body?: unknown } | null = null;
+
+/**
+ * WHO THE LIST CAN BE MOVED TO — the page reads them from
+ * `GET /arrivals/servicing-providers`, the same picker read reception's other
+ * pages make, so this fixture is the shape that endpoint returns.
+ */
+const PROVIDERS = [
+  {
+    affiliationId: 'affiliation-cover',
+    name: 'Dr Sample Cover',
+    providerType: 'general_practitioner',
+    locationLabel: 'Main',
+  },
+];
+
 function stubFetch(waiting: unknown, me: unknown = null) {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string, init?: RequestInit) => {
       const method = init?.method ?? 'GET';
       calls.push({ url, method, body: init?.body ? String(init.body) : undefined });
+      if (url.includes('/arrivals/servicing-providers')) {
+        return { ok: true, status: 200, json: async () => PROVIDERS } as unknown as Response;
+      }
+      if (url.includes('/arrivals/move')) {
+        const reply = moveReply ?? {};
+        return {
+          ok: reply.ok ?? true,
+          status: reply.ok === false ? 400 : 201,
+          json: async () =>
+            reply.body ?? { toAffiliationId: 'affiliation-cover', movedCount: 0, refusedCount: 0, needsANewSignatureCount: 0, outcomes: [] },
+        } as unknown as Response;
+      }
       if (url.includes('/state')) {
         const reply = stateReply ?? {};
         return {
@@ -167,6 +199,7 @@ vi.mock('../usePractice', () => ({
 beforeEach(() => {
   calls.length = 0;
   stateReply = null;
+  moveReply = null;
   // The practitioner is the default reader; the two header tests say otherwise.
   signedIn.session = { ...PRACTITIONER_SESSION };
 });
@@ -548,6 +581,200 @@ describe('/practice/practitioner/waiting — who is waiting for me', () => {
     );
     // The other row is untouched, and the list is still readable.
     expect(screen.queryByTestId('waiting-state-refused-arrival-2')).toBeNull();
+    expect(screen.getByTestId('waiting-row-arrival-2')).toBeTruthy();
+  });
+
+
+  // -------------------------------------------------------------------------
+  // Moving a practitioner's list to somebody else (Carl, 12 September 2026).
+  // -------------------------------------------------------------------------
+
+  it('a_practitioners_own_list_has_no_control_that_moves_anybody', async () => {
+    /*
+     * §3 and §3a rule 4: deciding who sees a patient instead is RECEPTION's
+     * act, and a control somebody will never legitimately use is one that will
+     * one day be pressed by mistake. The mode comes from the server's own
+     * `scope`; the page never chooses it, so this cannot be turned on from the
+     * browser.
+     */
+    stubFetch(MINE);
+    render(<WaitingView />);
+    await waitFor(() => expect(screen.getByTestId('waiting-row-arrival-1')).toBeTruthy());
+
+    expect(screen.queryByTestId('waiting-move')).toBeNull();
+    expect(screen.queryByTestId('waiting-select-arrival-1')).toBeNull();
+    // And nothing was asked of the move endpoint or the picker behind it.
+    for (const call of calls) expect(call.url).not.toContain('/arrivals/');
+  });
+
+  it('the_move_control_says_the_patient_has_not_been_asked', async () => {
+    /*
+     * D-2026-09-12-03: a substitution is TWO questions, in order, and this
+     * action asks neither. A desk that assumes the platform did the asking is a
+     * desk that will not ask, so it is on the screen rather than in a plan.
+     */
+    stubFetch(GROUPED);
+    render(<WaitingView />);
+    await waitFor(() => expect(screen.getByTestId('waiting-move')).toBeTruthy());
+
+    expect(screen.getByTestId('waiting-move-not-asked').textContent).toBe(
+      strings.practitionerQueue.waiting.move.notAsked,
+    );
+    // Hard rule 8, about the control rather than about the list.
+    expect(screen.getByTestId('waiting-move-never-blocks').textContent).toBe(
+      strings.practitionerQueue.waiting.move.neverBlocks,
+    );
+  });
+
+  it('reception_can_select_a_whole_practitioners_list_and_move_it', async () => {
+    /*
+     * THE SICK-PRACTITIONER CASE, which is the reason the feature exists: one
+     * press selects everybody waiting for one person, and one request moves
+     * them. The ids on the wire are exactly the rows in that group and nobody
+     * else's.
+     */
+    moveReply = {
+      body: {
+        toAffiliationId: 'affiliation-cover',
+        movedCount: 2,
+        refusedCount: 0,
+        needsANewSignatureCount: 0,
+        outcomes: [
+          { arrivalId: 'arrival-1', moved: true, refusedReason: null, needsANewSignature: false },
+          { arrivalId: 'arrival-2', moved: true, refusedReason: null, needsANewSignature: false },
+        ],
+      },
+    };
+    stubFetch(GROUPED);
+    render(<WaitingView />);
+    await waitFor(() => expect(screen.getByTestId('waiting-select-group-affiliation-chen')).toBeTruthy());
+    // The picker's own options arrive on a SECOND fetch; wait for the content
+    // rather than the container it hangs in (wow.md §2 item 6).
+    const target = screen.getByTestId('waiting-move-target') as HTMLSelectElement;
+    await waitFor(() => expect(target.options.length).toBeGreaterThan(1));
+
+    fireEvent.click(screen.getByTestId('waiting-select-group-affiliation-chen'));
+    fireEvent.change(target, { target: { value: 'affiliation-cover' } });
+    fireEvent.click(screen.getByTestId('waiting-move-go'));
+
+    await waitFor(() => expect(calls.some((c) => c.url.includes('/arrivals/move'))).toBe(true));
+    const sent = JSON.parse(calls.find((c) => c.url.includes('/arrivals/move'))!.body!) as {
+      arrivalIds: string[];
+      toAffiliationId: string;
+    };
+    expect(sent.arrivalIds.sort()).toEqual(['arrival-1', 'arrival-2']);
+    expect(sent.toAffiliationId).toBe('affiliation-cover');
+    // Nobody from another practitioner's group went with them.
+    expect(sent.arrivalIds).not.toContain('arrival-3');
+
+    await waitFor(() => expect(screen.getByTestId('waiting-move-summary')).toBeTruthy());
+    expect(screen.getByTestId('waiting-move-summary').textContent).toContain(
+      strings.practitionerQueue.waiting.move.summaryMoved(2),
+    );
+  });
+
+  it('a_patient_who_had_signed_is_shown_as_needing_a_new_signature', async () => {
+    /*
+     * Carl, 12 September 2026: *"the patient will have to resign a new
+     * agreement when they come in."* The signed agreement is untouched and the
+     * successor is unsigned, so the desk has to know which of the people it
+     * just moved owe a signature — on the row, and in the summary.
+     */
+    moveReply = {
+      body: {
+        toAffiliationId: 'affiliation-cover',
+        movedCount: 2,
+        refusedCount: 0,
+        needsANewSignatureCount: 1,
+        outcomes: [
+          { arrivalId: 'arrival-1', moved: true, refusedReason: null, needsANewSignature: true },
+          { arrivalId: 'arrival-2', moved: true, refusedReason: null, needsANewSignature: false },
+        ],
+      },
+    };
+    stubFetch(GROUPED);
+    render(<WaitingView />);
+    await waitFor(() => expect(screen.getByTestId('waiting-select-arrival-1')).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId('waiting-select-arrival-1'));
+    fireEvent.change(screen.getByTestId('waiting-move-target'), {
+      target: { value: 'affiliation-cover' },
+    });
+    fireEvent.click(screen.getByTestId('waiting-move-go'));
+
+    await waitFor(() => expect(screen.getByTestId('waiting-move-said-arrival-1')).toBeTruthy());
+    expect(screen.getByTestId('waiting-move-said-arrival-1').textContent).toBe(
+      strings.practitionerQueue.waiting.move.outcomeSignAgain,
+    );
+    expect(screen.getByTestId('waiting-move-said-arrival-2').textContent).toBe(
+      strings.practitionerQueue.waiting.move.outcomeMoved,
+    );
+    expect(screen.getByTestId('waiting-move-summary').textContent).toContain(
+      strings.practitionerQueue.waiting.move.summarySignAgain(1),
+    );
+    // AT THE DESK, WHEN THEY COME IN — no message is offered and none is sent.
+    for (const call of calls) expect(call.url).not.toMatch(/message|sms|email|notify/i);
+  });
+
+  it('a_partial_move_reports_every_refusal_and_applies_the_rest', async () => {
+    /*
+     * TODO.md §5: twelve moved and three refused reports all three and applies
+     * the twelve. Every refusal says WHY on the row it was about, in words the
+     * console maps from the server's reason code — and an unmapped code SHOWS
+     * ITS CODE rather than a generic line, which is the defect that rule exists
+     * to prevent (CLAUDE.md §7).
+     */
+    moveReply = {
+      body: {
+        toAffiliationId: 'affiliation-cover',
+        movedCount: 1,
+        refusedCount: 2,
+        needsANewSignatureCount: 0,
+        outcomes: [
+          { arrivalId: 'arrival-1', moved: true, refusedReason: null, needsANewSignature: false },
+          {
+            arrivalId: 'arrival-2',
+            moved: false,
+            refusedReason: 'target_not_at_that_location',
+            needsANewSignature: false,
+          },
+          {
+            arrivalId: 'arrival-3',
+            moved: false,
+            refusedReason: 'something_nobody_has_words_for',
+            needsANewSignature: false,
+          },
+        ],
+      },
+    };
+    stubFetch(GROUPED);
+    render(<WaitingView />);
+    await waitFor(() => expect(screen.getByTestId('waiting-select-arrival-1')).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId('waiting-select-arrival-1'));
+    fireEvent.change(screen.getByTestId('waiting-move-target'), {
+      target: { value: 'affiliation-cover' },
+    });
+    fireEvent.click(screen.getByTestId('waiting-move-go'));
+
+    await waitFor(() => expect(screen.getByTestId('waiting-move-said-arrival-2')).toBeTruthy());
+    expect(screen.getByTestId('waiting-move-said-arrival-1').textContent).toBe(
+      strings.practitionerQueue.waiting.move.outcomeMoved,
+    );
+    expect(screen.getByTestId('waiting-move-said-arrival-2').textContent).toBe(
+      strings.practitionerQueue.waiting.move.refusal.target_not_at_that_location,
+    );
+    // The unmapped one shows its code, so it can be diagnosed rather than
+    // reading as silence.
+    expect(screen.getByTestId('waiting-move-said-arrival-3').textContent).toContain(
+      'something_nobody_has_words_for',
+    );
+
+    const summary = screen.getByTestId('waiting-move-summary').textContent ?? '';
+    expect(summary).toContain(strings.practitionerQueue.waiting.move.summaryMoved(1));
+    expect(summary).toContain(strings.practitionerQueue.waiting.move.summaryRefused(2));
+    // And the list is still on the screen: a refusal is a message, never a
+    // broken page (hard rule 8).
     expect(screen.getByTestId('waiting-row-arrival-2')).toBeTruthy();
   });
 

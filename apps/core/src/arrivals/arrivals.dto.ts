@@ -386,3 +386,41 @@ export class ServiceRenderedDto {
   @MaxLength(200)
   idempotencyKey!: string;
 }
+
+/**
+ * MOVE THESE PATIENTS TO THAT PRACTITIONER (Carl, 12 September 2026: *"the
+ * assigned practioner has called in sick... select the patients and then select
+ * a practioner to move them to"*).
+ *
+ * TWO FIELDS, AND THERE IS NOWHERE TO PUT A THIRD. No message to the patient —
+ * a substitution is TWO questions asked in order (D-2026-09-12-03) and a desk
+ * move answers neither, so building the asking inside a bulk action is how the
+ * two get bundled into one. No agreement type: what the visit needs after the
+ * move is re-asked of the versioned visit policy for the NEW practitioner (hard
+ * rules 6 and 14), never chosen at a desk. No reason field: there is no free
+ * text on this action and nowhere for one to go.
+ *
+ * ARRIVALS, NOT PATIENTS. A visit is one patient on one day, and the thing
+ * being moved is today's visit — a patient id would be a claim about every
+ * visit they will ever have.
+ *
+ * BOUNDED AT FIFTY. A practitioner's whole morning is a dozen or two; fifty is
+ * generous and stops one press turning into an unbounded write. A larger list
+ * is two presses, and both report in full.
+ */
+export class MoveArrivalsDto {
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(50)
+  @IsUUID(undefined, { each: true })
+  arrivalIds!: string[];
+
+  /**
+   * THE AFFILIATION, NOT THE PRACTITIONER. D4 is the person AND the place of
+   * practice (s 65C(5)(a)), and billing identity is practice × location ×
+   * practitioner (D-2026-09-12-09) — so a practitioner id alone could not say
+   * which of their sites the claim goes under.
+   */
+  @IsUUID()
+  toAffiliationId!: string;
+}

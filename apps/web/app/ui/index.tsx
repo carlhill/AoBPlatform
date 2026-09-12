@@ -273,25 +273,45 @@ export function SelectInput({
   );
 }
 
+/**
+ * ONE CHECKBOX, AND FROM 12 SEP 2026 IT ALSO WORKS IN A TABLE ROW.
+ *
+ * `hideLabel` AND `testId` ARE ADDITIONS BEHIND DEFAULTS (wow.md §10: above
+ * about five importers, new behaviour goes behind an optional prop that
+ * defaults to today's). A row of fifteen "Select Jamie Sampleton" labels beside
+ * fifteen boxes is noise on a screen somebody scans — but a box with NO
+ * accessible name is fifteen indistinguishable controls to a screen reader
+ * (WCAG 2.2 AA, 4.1.2), and the answer to that is never "drop the label". So
+ * the label is still written, still associated, and merely not painted.
+ */
 export function Checkbox({
   checked,
   onCheckedChange,
   label,
   hint,
+  hideLabel,
+  disabled,
+  testId,
 }: {
   checked: boolean;
   onCheckedChange: (checked: boolean) => void;
   label: string;
   hint?: string;
+  /** Keep the label for assistive tech and take it off the screen. */
+  hideLabel?: boolean;
+  disabled?: boolean;
+  testId?: string;
 }) {
   const id = useId();
   return (
-    <div className={styles.checkboxRow}>
+    <div className={hideLabel ? styles.checkboxAlone : styles.checkboxRow}>
       <RadixCheckbox.Root
         id={id}
         checked={checked}
+        disabled={disabled}
         onCheckedChange={(value) => onCheckedChange(value === true)}
         className={styles.checkbox}
+        data-testid={testId}
       >
         <RadixCheckbox.Indicator>
           <svg className={styles.checkboxMark} viewBox="0 0 12 12" aria-hidden="true">
@@ -299,7 +319,7 @@ export function Checkbox({
           </svg>
         </RadixCheckbox.Indicator>
       </RadixCheckbox.Root>
-      <div>
+      <div className={hideLabel ? styles.visuallyHidden : undefined}>
         <RadixLabel.Root className={styles.label} htmlFor={id}>
           {label}
         </RadixLabel.Root>

@@ -9,6 +9,9 @@ import {
 import { Prisma } from '@prisma/client';
 import type { Agreement as DbAgreement } from '@prisma/client';
 import type {
+  ArrivalMoveOutcome,
+  ArrivalMoveRefusal,
+  ArrivalMoveResult,
   ArrivalPreview,
   ArrivalProviderChoice,
   ArrivalReceipt,
@@ -57,7 +60,7 @@ import {
 } from '../affiliations/agreement-anchor';
 import type { Actor } from '../auth/actor.decorator';
 import type { ChangeAssignorDto } from '../agreements/agreements.dto';
-import { ArrivalDto, ArrivalPreviewDto, ServiceRenderedDto } from './arrivals.dto';
+import { ArrivalDto, ArrivalPreviewDto, MoveArrivalsDto, ServiceRenderedDto } from './arrivals.dto';
 import { idsOf, newestAgreementInChain, receivedArrivalsIn } from './arrival-day';
 
 /**
@@ -970,7 +973,6 @@ export class ArrivalsService {
       );
     }
 
-
     // ---------------------------------------------------------------------
     // PHASE 5 — D6a, then the lock. EPISODIC ONLY.
     //
@@ -992,34 +994,14 @@ export class ArrivalsService {
     const chosenD6a = dto.serviceDescription ?? decided.practiceDefaultD6a;
 
     if (decided.decision.type === 'episodic_pre' && chosenD6a) {
-      const chosenByAPerson = dto.serviceDescription !== undefined;
-      await this.prisma.withPractice(practiceId, async (tx) => {
-        await tx.agreement.update({
-          where: { id: draft.id },
-          data: {
-            serviceDescription: chosenD6a,
-            /*
-             * WHO CHOSE THE WORDS. Null where the PLATFORM did — the practice
-             * default applied to a machine push — rather than naming a staff
-             * member who was not there, the same distinction the appointment
-             * sweep draws. The named staff member where one actually picked
-             * from the list on the reception form.
-             */
-            serviceDescriptionSetBy: chosenByAPerson ? (actor?.id ?? null) : null,
-            serviceDescriptionSetAt: new Date(),
-          },
-        });
-        await enqueueVaultEvent(tx, {
-          type: 'agreement.service_description_set',
-          actor: chosenByAPerson ? actorFor(actor) : SYSTEM_ACTOR,
-          subject: { type: 'Agreement', id: draft.id },
-          payload: {
-            serviceDescription: chosenD6a,
-            serviceDescriptionsVersion: SERVICE_DESCRIPTIONS_VERSION,
-            source: chosenByAPerson ? 'reception' : 'practice_default',
-          },
-        });
-      });
+      /*
+       * WHO CHOSE THE WORDS — the named staff member where one actually picked
+       * from the list on the reception form, and NOBODY where the PLATFORM
+       * applied the practice's default to a machine push. Written by the shared
+       * `setServiceDescription` below, which the move path also uses, so the
+       * two cannot come to disagree about that distinction (wow.md §10).
+       */
+      await this.setServiceDescription(practiceId, draft.id, chosenD6a, dto.serviceDescription !== undefined, actor);
 
       await this.agreements.transition(practiceId, draft.id, 'awaiting_signature');
       // D5 is the day a person named, else the day they walked in. D6a is read
@@ -1753,6 +1735,532 @@ export class ArrivalsService {
      * being right is the point, not the constraint).
      */
     return this.receive(practiceId, replay, Object.keys(replay), actor);
+  }
+
+  // -------------------------------------------------------------------------
+
+  /**
+   * THE PRACTITIONER HAS CALLED IN SICK — MOVE THEIR PATIENTS TO SOMEBODY ELSE
+   * (Carl, 12 September 2026: *"the assigned practioner has called in sick or
+   * all patients have to be notified and reassigned to new practitioner. For
+   * now just built a feature to select the patients and then select a
+   * practioner to move them to."*).
+   *
+   * IT IS THE MECHANICAL HALF, AND THE OTHER HALF IS WRITTEN DOWN RATHER THAN
+   * FORGOTTEN. TODO.md "Moving a practitioner's whole list" carries everything
+   * this deliberately does NOT do, and its first entry is the one that matters:
+   * a substitution is TWO questions asked in order (D-2026-09-12-03) — *"do you
+   * agree to see Dr Okafor at the same time as your current booking?"* and only
+   * then the assignment — and A DESK MOVE ANSWERS NEITHER. There is no
+   * messaging in this method and no field for any, because building the asking
+   * inside a bulk action is exactly how the two questions get bundled into one.
+   *
+   * WHY THE AGREEMENT CANNOT SIMPLY COME WITH THEM. D4 names the provider and
+   * the address of their place of practice (s 65C(5)(a)); an agreement made for
+   * Dr A does not describe a service by Dr B. So each moved visit's agreement
+   * is SUPERSEDED by one naming the new practitioner — never edited (HARD-02,
+   * hard rule 2) — and the parent is not touched, whether or not it was signed
+   * (hard rule 11). A patient who had already signed must sign again for the
+   * service that will actually happen, at the desk when they come in; the
+   * outcome says so per row (`needsANewSignature`) and no message goes out.
+   *
+   * AND WHAT THE VISIT NEEDS IS RE-ASKED, NEVER CARRIED OVER. An ongoing
+   * agreement is per practitioner × patient and GP-only (hard rule 6,
+   * REQ-END-01/-01a), so it does not travel: a patient moved from a GP to a
+   * specialist needs something different from what they had, and a patient
+   * moved to a GP who already holds one with them needs nothing at all. The
+   * versioned visit policy answers that — the same `decideVisitAgreement` the
+   * arrival ran (hard rule 14) — and reception never chooses an agreement type.
+   *
+   * PARTIAL FAILURE IS NEVER SILENT. Twelve moved and three refused applies the
+   * twelve and reports all three, each with a reason CODE the console maps to
+   * words and a destination (CLAUDE.md §7). One row's refusal stops nothing.
+   *
+   * IT NEVER BLOCKS CARE (hard rule 8, REQ-REC-04). Every one of these patients
+   * is seen exactly as they would have been; what moves is the paperwork.
+   *
+   * ACROSS A PRACTICE BOUNDARY IT FINDS NOTHING. Every read is inside
+   * `withPractice`, so another practice's arrival is not refused — it is
+   * INVISIBLE, and the row reads `arrival_not_found` without saying whose it
+   * was.
+   */
+  async moveToPractitioner(practiceId: string, dto: MoveArrivalsDto, actor?: Actor): Promise<ArrivalMoveResult> {
+    /*
+     * THE TARGET, READ ONCE. Their role and their location do not change
+     * between rows, and re-reading them fifteen times would be fifteen chances
+     * for the answer to differ mid-press.
+     */
+    const target = await this.prisma.withPractice(practiceId, async (tx) => {
+      const affiliation = await tx.affiliation.findFirst({
+        where: { id: dto.toAffiliationId },
+        select: { id: true, status: true },
+      });
+      if (!affiliation) return null;
+      const anchor = await anchorForAffiliation(tx, dto.toAffiliationId);
+      return anchor ? { anchor, live: LIVE_AFFILIATION_STATUSES.includes(affiliation.status) } : null;
+    });
+    /*
+     * A TARGET THIS PRACTICE DOES NOT HAVE IS THE WHOLE REQUEST'S ANSWER, not a
+     * per-row one: there is nothing to report against each patient because
+     * nothing about any of them is wrong. RLS makes another practice's
+     * practitioner read as absent, so this fails closed as well.
+     */
+    if (!target) {
+      throw new NotFoundException(
+        'That practitioner was not found at this practice, so there is nobody to move these patients to. ' +
+          'Nothing has been changed.',
+      );
+    }
+
+    const outcomes: ArrivalMoveOutcome[] = [];
+    // The same arrival named twice in one press is one move, not two.
+    for (const arrivalId of [...new Set(dto.arrivalIds)]) {
+      /*
+       * ONE ROW'S FAILURE IS ONE ROW'S FAILURE (hard rule 8; found in review,
+       * 12 Sep 2026). An exception escaping here would abort the whole press —
+       * the rows already moved would have committed, the rest would never be
+       * attempted, and the caller would be told nobody moved, which is the one
+       * report worse than no report. Anything unexpected becomes a refusal on
+       * the row it happened to, and the loop goes on.
+       */
+      try {
+        outcomes.push(await this.moveOneTo(practiceId, arrivalId, target, actor));
+      } catch (err) {
+        this.logger.warn(
+          `Arrival ${arrivalId}: the move failed before anything was written ` +
+            `(${(err as { constructor?: { name?: string } }).constructor?.name ?? 'Error'}).`,
+        );
+        outcomes.push({
+          arrivalId,
+          moved: false,
+          refusedReason: 'move_failed',
+          supersededAgreementId: null,
+          newAgreementId: null,
+          needsANewSignature: false,
+          visitDecision: null,
+          policyVersion: null,
+        });
+      }
+    }
+
+    return {
+      toAffiliationId: dto.toAffiliationId,
+      movedCount: outcomes.filter((o) => o.moved).length,
+      refusedCount: outcomes.filter((o) => !o.moved).length,
+      needsANewSignatureCount: outcomes.filter((o) => o.needsANewSignature).length,
+      outcomes,
+    };
+  }
+
+  /**
+   * ONE PATIENT, MOVED OR REFUSED — and a refusal leaves the row exactly as it
+   * was.
+   *
+   * THE ORDER OF THE WRITES IS THE SAFETY PROPERTY. The AGREEMENT is superseded
+   * first and the ARRIVAL is re-pointed second, so a failure in the middle of
+   * the sequence leaves the row untouched and refusable rather than leaving an
+   * arrival naming one practitioner and an agreement naming another. The
+   * reverse ordering has no such fallback: nothing in this domain deletes, so
+   * there is no way to un-move a row whose supersession then failed.
+   */
+  private async moveOneTo(
+    practiceId: string,
+    arrivalId: string,
+    target: { anchor: AgreementAnchor; live: boolean },
+    actor?: Actor,
+  ): Promise<ArrivalMoveOutcome> {
+    const refused = (reason: ArrivalMoveRefusal): ArrivalMoveOutcome => ({
+      arrivalId,
+      moved: false,
+      refusedReason: reason,
+      supersededAgreementId: null,
+      newAgreementId: null,
+      needsANewSignature: false,
+      visitDecision: null,
+      policyVersion: null,
+    });
+
+    const read = await this.prisma.withPractice(practiceId, async (tx) => {
+      const arrival = await tx.arrival.findFirst({ where: { id: arrivalId } });
+      if (!arrival) return null;
+      const cameToSee = whoTheyCameToSee(arrival);
+      return {
+        arrival,
+        from: cameToSee ? await anchorForAffiliation(tx, cameToSee) : null,
+        patient: arrival.patientId
+          ? await tx.patient.findUnique({
+              where: { id: arrival.patientId },
+              select: { id: true, givenNames: true, familyName: true, dateOfBirth: true },
+            })
+          : null,
+        practice: await tx.practice.findFirst({}),
+        /*
+         * THE NEWEST AGREEMENT IN THE CHAIN, not the one the arrival named. The
+         * arrival names the HEAD; a correction supersedes it with a row the
+         * arrival has never heard of, and superseding the head a second time
+         * would fork the chain.
+         */
+        newestAgreement: arrival.agreementId
+          ? await tx.agreement.findFirst({
+              where: {
+                id: (await newestAgreementInChain(tx, [arrival.agreementId])).get(arrival.agreementId),
+              },
+              select: { id: true, affiliationId: true, type: true },
+            })
+          : null,
+      };
+    });
+
+    if (!read) return refused('arrival_not_found');
+    const { arrival, from, patient, practice } = read;
+    if (arrival.outcome !== 'received') return refused('arrival_not_received');
+    if (whoTheyCameToSee(arrival) === target.anchor.affiliationId) {
+      return refused('already_with_that_practitioner');
+    }
+
+    /*
+     * A NURSE CANNOT TAKE A GP'S LIST. `mayBeProviderOnAgreement` is the same
+     * predicate that refuses an arrival naming somebody the claim does not go
+     * under, unchanged, and a bulk action may not widen it (REQ-REG-02).
+     */
+    if (!mayBeProviderOnAgreement(target.anchor.billingRole)) {
+      return refused('target_cannot_be_a_provider');
+    }
+    /*
+     * AND THEY MUST BE WORKING WHERE THE PATIENT ACTUALLY IS. D4 is the person
+     * AND the place of practice, and billing identity is practice × location ×
+     * practitioner (D-2026-09-12-09) — so a practitioner with no live
+     * affiliation at the site the patient walked into cannot be named on their
+     * agreement, however willing they are.
+     */
+    if (!from?.locationId) return refused('no_location_on_the_arrival');
+    if (!target.live || target.anchor.locationId !== from.locationId) {
+      return refused('target_not_at_that_location');
+    }
+
+    /*
+     * WHAT THE VISIT NEEDS NOW — ASKED ABOUT THE NEW PRACTITIONER, from the
+     * same versioned table the arrival used (hard rule 14). The old answer is
+     * never carried across: an ongoing agreement is per practitioner × patient
+     * (hard rule 6), so it does not follow the patient, and the new
+     * practitioner may or may not already hold one with them.
+     */
+    const coverage = patient
+      ? await this.enduring.coverage(practiceId, {
+          patientId: patient.id,
+          practitionerId: target.anchor.practitionerId ?? undefined,
+        })
+      : { covered: false };
+    const decision = decideVisitAgreement({
+      providerIsGp: providerIsGpFor({
+        billingRole: target.anchor.billingRole,
+        providerType: target.anchor.providerType,
+      }),
+      activeEnduringForProviderAndPatient: coverage.covered,
+      practiceOffersEnduringByDefault:
+        (practice as unknown as { enduringByDefault?: boolean | null } | null)?.enduringByDefault ?? true,
+      /* Nothing records a decline yet, and a patient never asked has not declined. */
+      patientDeclinedEnduring: false,
+      /* The person seen IS the person billing now — the move made them both. */
+      visitNeedsABillingProvider: servicesNeedABillingProvider(target.anchor.billingRole),
+      billingProviderIsNamed: true,
+    });
+
+    /*
+     * D5 — THE DAY THE SERVICE IS FOR. The visit has not moved in time, only in
+     * whose it is, so it is the day they walked in, exactly as the arrival's
+     * own draft used.
+     */
+    const serviceDate = arrival.arrivedAt.toISOString().slice(0, 10);
+
+    let supersededAgreementId: string | null = null;
+    let newAgreementId: string | null = null;
+    /**
+     * THE AGREEMENT THIS VISIT NO LONGER HAS, where the new practitioner needs
+     * none. It is not superseded, because nothing replaces it, and it is not
+     * touched (hard rule 11) — the arrival simply stops pointing at it, which
+     * `arrivals_none_drafts_nothing` also insists on: a visit that decided
+     * `none` while naming an agreement it drafted is two stories. The id is on
+     * the vault event, so the trail from this visit to that agreement survives.
+     */
+    let leftBehindAgreementId: string | null = null;
+    let needsANewSignature = false;
+    const newest = read.newestAgreement;
+    try {
+      if (newest && decision.type !== 'none' && newest.affiliationId === target.anchor.affiliationId) {
+        /*
+         * IT ALREADY NAMES THEM, so there is nothing to supersede — and this is
+         * how a half-done move is settled rather than compounded (found in
+         * review, 12 Sep 2026). If a previous press superseded the agreement
+         * and then failed to write the arrival, pressing Move again lands here:
+         * the chain is already right, and only the row needs saying. Creating a
+         * second successor naming the same practitioner would be a second
+         * contract for one visit.
+         */
+        newAgreementId = newest.id;
+      } else if (newest && decision.type !== 'none') {
+        const moved = await this.agreements.supersedeForProviderChange(
+          practiceId,
+          newest.id,
+          {
+            affiliationId: target.anchor.affiliationId!,
+            type: decision.type,
+            enduringPathway: decision.enduringPathway ?? null,
+            serviceDescriptionFallback: practice?.defaultServiceDescription ?? null,
+            serviceDate,
+          },
+          actor,
+        );
+        supersededAgreementId = newest.id;
+        newAgreementId = moved.replacementId;
+        /*
+         * THEY HAD SIGNED FOR THE PRACTITIONER THEY ARE LEAVING (Carl, 12 Sep
+         * 2026). The signed agreement stands untouched as a record of what was
+         * agreed; the patient signs the successor AT THE DESK when they come
+         * in. No message and no remote signature — they are already on their
+         * way here.
+         */
+        needsANewSignature = moved.parentWasSigned;
+      } else if (newest) {
+        /*
+         * NOTHING IS NEEDED FOR THE NEW PRACTITIONER — they already hold a live
+         * ongoing agreement with this patient, or their services carry no
+         * claim. The old agreement is still NOT touched (hard rule 11): what
+         * stops is anybody being asked to sign it, because the practitioner it
+         * names is not the one who will render the service.
+         */
+        const stale = newest.id;
+        leftBehindAgreementId = stale;
+        await this.prisma.withPractice(practiceId, (tx) =>
+          this.capture.cancelOpenFor(tx, stale, 'practitioner_changed'),
+        );
+      } else if (patient && decision.type !== 'none') {
+        /*
+         * NOTHING TO SUPERSEDE AND SOMETHING IS NOW NEEDED. The commonest way
+         * here is exactly the case hard rule 6 describes: the patient was
+         * covered by an ongoing agreement with the practitioner they are
+         * leaving, so nothing was drafted this morning, and that agreement does
+         * not follow them.
+         */
+        newAgreementId = await this.draftForMovedVisit(practiceId, {
+          arrival,
+          patient,
+          affiliationId: target.anchor.affiliationId!,
+          decision,
+          practiceDefaultD6a: practice?.defaultServiceDescription ?? null,
+          serviceDate,
+          actor,
+        });
+      }
+    } catch (err) {
+      /*
+       * THE ROW IS LEFT EXACTLY WHERE IT WAS, and the reason is a CODE the
+       * console maps to words. The class and status are logged, never the
+       * message: a refusal from the agreements service is written for a human
+       * at a desk and names the provider (hard rule 9, REQ-LOG-08).
+       */
+      const why = err as { constructor?: { name?: string }; status?: number };
+      this.logger.warn(
+        `Arrival ${arrivalId}: the agreement could not be moved, so the patient was not moved either ` +
+          `(${why.constructor?.name ?? 'Error'}${typeof why.status === 'number' ? ` ${why.status}` : ''}).`,
+      );
+      return refused('agreement_not_moved');
+    }
+
+    /*
+     * AND NOW THE ARRIVAL ITSELF, WITH ITS EVENT IN THE SAME TRANSACTION (hard
+     * rule 11, FR-11.2) — a move with no record of having happened, or a record
+     * of a move that did not commit, are both structurally impossible.
+     *
+     * BOTH FIELDS MOVE. `seeingAffiliationId` is who the patient came to see
+     * and `affiliationId` is whose number the claim goes under
+     * (ARRIVAL-WHO-IS-SEEN.md §2); after this press the new practitioner is
+     * both, which is what "move this patient to them" means at a desk.
+     */
+    try {
+      await this.prisma.withPractice(practiceId, async (tx) => {
+        await tx.arrival.update({
+          where: { id: arrival.id },
+          data: {
+            affiliationId: target.anchor.affiliationId,
+            seeingAffiliationId: target.anchor.affiliationId,
+            /* The head of the chain, where this move is what started one. */
+            ...(newAgreementId && !supersededAgreementId ? { agreementId: newAgreementId } : {}),
+            /*
+             * AND NOTHING WHERE THE NEW PRACTITIONER NEEDS NOTHING. The agreement
+             * drafted this morning for the practitioner they are leaving still
+             * exists and is untouched; this visit no longer points at it, which
+             * `arrivals_none_drafts_nothing` requires and which is also the true
+             * answer — nothing is owed for the visit as it now stands.
+             */
+            ...(decision.type === 'none' ? { agreementId: null, captureRequestId: null } : {}),
+            visitDecision: decision.type,
+            decisionReason: decision.reason,
+            policyVersion: decision.policyVersion,
+          },
+        });
+
+        await enqueueVaultEvent(tx, {
+          type: 'arrival.practitioner_changed',
+          /* The person at the desk who did it, never the platform where there is one. */
+          actor: actorFor(actor),
+          subject: { type: 'Arrival', id: arrival.id },
+          /* IDS AND FACTS ONLY — no name, no identifier value, no amount. */
+          payload: {
+            practiceId,
+            arrivalId: arrival.id,
+            patientId: arrival.patientId ?? '',
+            fromAffiliationId: from.affiliationId ?? '',
+            fromPractitionerId: from.practitionerId ?? '',
+            toAffiliationId: target.anchor.affiliationId ?? '',
+            toPractitionerId: target.anchor.practitionerId ?? '',
+            locationId: from.locationId ?? '',
+            supersededAgreementId: supersededAgreementId ?? '',
+            newAgreementId: newAgreementId ?? '',
+            /* Untouched, unreplaced, and no longer this visit's — see above. */
+            leftBehindAgreementId: leftBehindAgreementId ?? '',
+            needsANewSignature,
+            visitDecision: decision.type,
+            decisionReason: decision.reason,
+            policyVersion: decision.policyVersion,
+            movedBy: actor?.id ?? '',
+            movedByType: actor?.principalType ?? 'system',
+          },
+        });
+      });
+    } catch (err) {
+      /*
+       * THE HALF-DONE CASE, NAMED RATHER THAN HIDDEN (found in review, 12 Sep
+       * 2026). The agreement now names the new practitioner and this row does
+       * not, so the two disagree — and the desk is told exactly that, with a
+       * retry that settles it: pressing Move again finds an agreement that
+       * already names the target, supersedes nothing further, and writes the
+       * row. Reporting "moved" here would hide a real disagreement, and
+       * reporting "not moved" would send somebody looking in the wrong place.
+       */
+      this.logger.error(
+        `Arrival ${arrivalId}: the agreement was moved and the visit row was not — press Move again for ` +
+          `this patient (${(err as { constructor?: { name?: string } }).constructor?.name ?? 'Error'}).`,
+      );
+      return refused('move_not_recorded');
+    }
+
+    return {
+      arrivalId,
+      moved: true,
+      refusedReason: null,
+      supersededAgreementId,
+      newAgreementId,
+      needsANewSignature,
+      visitDecision: decision.type,
+      policyVersion: decision.policyVersion,
+    };
+  }
+
+  /**
+   * A FIRST AGREEMENT FOR A MOVED VISIT — the arrival path's own phases 2 to 5,
+   * for a visit that had nothing to supersede.
+   *
+   * The patient is on reception's queue before anything is locked, for the
+   * reason that path gives: a lock that fails then leaves work on a screen
+   * rather than an orphan (hard rule 8). And an ENDURING draft stops at the
+   * capture request, because the s 65C rule set has no enduring path yet
+   * (`enduring_rules_not_authored`, a human-authored zone).
+   */
+  private async draftForMovedVisit(
+    practiceId: string,
+    input: {
+      arrival: { id: string; assignorId: string | null };
+      patient: { id: string; givenNames: string; familyName: string; dateOfBirth: Date };
+      affiliationId: string;
+      decision: VisitAgreementDecision;
+      practiceDefaultD6a: string | null;
+      serviceDate: string;
+      actor?: Actor;
+    },
+  ): Promise<string> {
+    if (input.decision.type === 'none') throw new Error('a visit that needs nothing has nothing to draft');
+
+    /*
+     * THE PATIENT AS THEIR OWN ASSIGNOR (D7). The arrival's own party where it
+     * has one — this is the same visit and the same signer — and otherwise the
+     * same "same person" test every other path in this file uses. Somebody else
+     * signing is a change made at the desk, never something a move asserts.
+     */
+    const assignorId =
+      input.arrival.assignorId ??
+      (await this.prisma.withPractice(practiceId, (tx) => this.selfAssignorForPatient(tx, practiceId, input.patient)))
+        .id;
+
+    const draft = await this.agreements.createDraft(practiceId, {
+      type: input.decision.type,
+      enduringPathway: input.decision.enduringPathway,
+      affiliationId: input.affiliationId,
+      patientId: input.patient.id,
+      assignorId,
+      assignorIsPatient: true,
+    });
+
+    await this.prisma.withPractice(practiceId, (tx) =>
+      tx.arrival.update({ where: { id: input.arrival.id }, data: { agreementId: draft.id } }),
+    );
+    const opened = await this.capture.open(practiceId, { agreementId: draft.id, channel: 'in_practice' });
+    await this.prisma.withPractice(practiceId, (tx) =>
+      tx.arrival.update({
+        where: { id: input.arrival.id },
+        data: { captureRequestId: opened.captureRequestId },
+      }),
+    );
+
+    if (input.decision.type === 'episodic_pre' && input.practiceDefaultD6a) {
+      await this.setServiceDescription(practiceId, draft.id, input.practiceDefaultD6a, false, input.actor);
+      await this.agreements.transition(practiceId, draft.id, 'awaiting_signature');
+      await this.agreements.lockParticulars(practiceId, draft.id, { serviceDate: input.serviceDate });
+    }
+    return draft.id;
+  }
+
+  /**
+   * D6a ON A DRAFT, AND THE EVENT THAT SAYS WHO CHOSE THE WORDS.
+   *
+   * ONE COPY, TWO CALLERS (wow.md §10). The arrival path writes it for a walk-in
+   * and the move path writes it for a visit that has changed hands; the rule
+   * that a PERSON choosing from the list and the PRACTICE'S DEFAULT being
+   * applied are different facts — `serviceDescriptionSetBy` naming a staff
+   * member only in the first — must not be able to differ between them.
+   */
+  private async setServiceDescription(
+    practiceId: string,
+    agreementId: string,
+    serviceDescription: string,
+    chosenByAPerson: boolean,
+    actor?: Actor,
+  ): Promise<void> {
+    await this.prisma.withPractice(practiceId, async (tx) => {
+      await tx.agreement.update({
+        where: { id: agreementId },
+        data: {
+          serviceDescription,
+          /*
+           * WHO CHOSE THE WORDS. Null where the PLATFORM did — the practice
+           * default applied without anybody picking — rather than naming a
+           * staff member who was not asked.
+           */
+          serviceDescriptionSetBy: chosenByAPerson ? (actor?.id ?? null) : null,
+          serviceDescriptionSetAt: new Date(),
+        },
+      });
+      await enqueueVaultEvent(tx, {
+        type: 'agreement.service_description_set',
+        actor: chosenByAPerson ? actorFor(actor) : SYSTEM_ACTOR,
+        subject: { type: 'Agreement', id: agreementId },
+        payload: {
+          serviceDescription,
+          serviceDescriptionsVersion: SERVICE_DESCRIPTIONS_VERSION,
+          source: chosenByAPerson ? 'reception' : 'practice_default',
+        },
+      });
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -2581,5 +3089,4 @@ export class ArrivalsService {
       repeat,
     };
   }
-
 }

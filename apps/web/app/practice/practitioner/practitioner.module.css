@@ -212,3 +212,27 @@
   line-height: 1.45;
   color: var(--stop-ink, #8a1c1c);
 }
+
+/*
+ * THE SELECT COLUMN (Carl, 12 Sep 2026 — moving a sick practitioner's list).
+ * Narrow, top-aligned with the name beside it, and present only in reception's
+ * mode: a practitioner's own list has no control that acts on an agreement.
+ */
+.select {
+  width: 2.5rem;
+  padding: 0.6rem 0 0.6rem 0.9rem;
+  vertical-align: top;
+}
+
+/*
+ * THE MOVE PANEL. Above the groups rather than beside them, because it acts on
+ * a selection that spans them, and boxed so it reads as one act rather than as
+ * more of the table.
+ */
+.movePanel {
+  margin: var(--s4) 0;
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}

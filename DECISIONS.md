@@ -1447,6 +1447,107 @@ separate waiting room and does not want our queue at all, which is a display
 question rather than a model one.
 
 
+## D-2026-09-12-22 - A practitioner's list can be moved to somebody else at the desk, and a signed agreement is superseded rather than refused
+
+**Date:** 12 September 2026. **Decided by:** Carl: *"the assigned practioner has
+called in sick or all patients have to be notified and reassigned to new
+practitioner. For now just built a feature to select the patients and then
+select a practioner to move them to."* And, on the case the first brief said to
+refuse: *"In this case the patient will have to resign a new agreement when they
+come in."*
+
+**Supersedes nothing; it answers TODO.md "Moving a practitioner's whole list"
+item 2, which is struck through there and points here.**
+
+### What was decided
+
+**1. The move is mechanical, and the asking is not part of it.** Reception
+selects patients on `/practice/practitioner/waiting`, chooses a practitioner,
+and presses once. `D-2026-09-12-03` still stands in full: a substitution is TWO
+questions asked in order, and this action asks neither. No message is sent, no
+remote signature is offered, and there is no field on the endpoint for either -
+because building the asking inside a bulk action is precisely how the two
+questions get bundled into one. TODO.md item 1 keeps the debt visible.
+
+**2. The agreement is SUPERSEDED, never edited** (HARD-02, hard rule 2). D4 is
+the provider's name and the address of their place of practice (s 65C(5)(a)), so
+an agreement made for Dr A does not describe a service by Dr B. The successor
+names the new practitioner; the parent keeps its own particulars, hash and
+status.
+
+**3. And that is true whether or not it was signed** - which is the part Carl
+settled and the first brief had wrong. It was going to REFUSE a signed row on
+hard-rule-11 grounds. That reading was backwards: supersession never writes to
+the parent, which is exactly what makes it the right tool. The signed agreement
+stays byte-identical with its signature event intact, a true record of what was
+agreed before the day overtook it. Nothing is voided, cancelled or annotated,
+and nothing is billed under it because the practitioner it names never rendered
+the service.
+
+| Parent agreement | What the move does | What the patient owes |
+|---|---|---|
+| Unsigned | Supersede with one naming the new practitioner | Sign, as they always would |
+| **Signed** | **Supersede with one naming the new practitioner** | **Sign again, at the desk, when they come in** |
+
+**When they come in - not before.** They are already on their way to the
+practice, so the second signature is a desk act and never a message.
+
+**4. What the visit needs is RE-ASKED, never carried over** (hard rules 6 and
+14). An ongoing agreement is per practitioner x patient and GP-only, so it does
+not travel: a patient moved from a general practitioner to a specialist needs
+something different from what they had, and a patient moved TO somebody who
+already holds one with them needs nothing at all. The same versioned
+`decideVisitAgreement` the arrival ran answers it, and reception never chooses
+the type. Where the answer is `none`, the arrival stops pointing at the
+agreement drafted for the practitioner they left - the row is untouched, but
+`arrivals_none_drafts_nothing` is right that a visit deciding `none` while
+naming an agreement it drafted is two stories.
+
+**5. A target who cannot take the list is refused, per row, with a CODE.** They
+must pass `mayBeProviderOnAgreement` - a nurse cannot take a general
+practitioner's list (REQ-REG-02) - and they must hold a live affiliation AT THE
+LOCATION the patient came to, because D4 is the person AND the place and billing
+identity is practice x location x practitioner (D-2026-09-12-09).
+
+**6. Partial failure is never silent.** Twelve moved and three refused applies
+the twelve and reports all three, each with a reason code the console maps to
+words and, where the fix is on another page, a link to it (CLAUDE.md 7). An
+unmapped code shows its code.
+
+**7. It never blocks care** (hard rule 8) and the page says so.
+
+### Two things decided in the build that Carl has not confirmed
+
+Written as assumptions, in the open (wow.md 9), and to be rewritten as decisions
+or reversed when he answers.
+
+**(a) The control is RECEPTION'S ONLY.** It renders solely in the practice-wide
+mode of the waiting page - the mode the SERVER chooses from the token - and the
+endpoint is practice-scoped, so a practitioner's own token cannot reach it.
+Reasoning: PRACTITIONER-QUEUE-PAGE.md 3 says a practitioner's list carries no
+control that acts on an agreement, and this one supersedes; 3a rule 4 already
+puts "who sees them instead" at the front desk. If Carl wants a practitioner to
+be able to hand their own list over, it is a scope change on both surfaces.
+
+**(b) A move moves BOTH facts.** The arrival's `seeingAffiliationId` (who the
+patient came to see) and `affiliationId` (whose number the claim goes under)
+both become the new practitioner. Reasoning: the desk is saying "this person
+will see them now", and the target has already been checked as somebody the
+claim can go under. The alternative - moving only the billing anchor and leaving
+a nurse as the person seen - is a different act, and nothing on the screen asks
+for it.
+
+### What would reopen it
+
+- A practice that wants the patient asked BEFORE the desk move takes effect,
+  rather than after; that is TODO.md item 1 landing rather than this changing.
+- A signed parent whose successor must carry something forward from the
+  signature (it carries none today, deliberately - the second signature is a
+  fresh act).
+- Undo, which the domain can only express as a second move plus a second
+  supersession (TODO.md item 6).
+
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
@@ -1485,3 +1586,4 @@ question rather than a model one.
 | 12 Sep | An outage never empties the screen: last good data kept and timestamped, writes refused on the control, the page retries itself | **D-2026-09-12-19 above** |
 | 12 Sep | "Finished" needs the consultation done, not just the signature; a step that needs its own agreement is a second visit | **D-2026-09-12-20 above** |
 | 12 Sep | Every practitioner has a queue; position is derived and always said with the practitioner's name; sending a patient on is one click and creates a SECOND visit | **D-2026-09-12-21 above** |
+| 12 Sep | A practitioner's list is moved to somebody else at the desk; the agreement is superseded whether or not it was signed, and a patient who had signed signs again at the desk | **D-2026-09-12-22 above** |

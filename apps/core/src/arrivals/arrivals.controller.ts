@@ -4,7 +4,7 @@ import type { Request } from 'express';
 import { PracticeScoped } from '../auth/practice-scope.decorator';
 import { SessionActor, type Actor } from '../auth/actor.decorator';
 import { ArrivalsService } from './arrivals.service';
-import { ArrivalDto, ArrivalPreviewDto, ServiceRenderedDto } from './arrivals.dto';
+import { ArrivalDto, ArrivalPreviewDto, MoveArrivalsDto, ServiceRenderedDto } from './arrivals.dto';
 
 /**
  * Reception naming the practitioner-at-a-location the claim will go under. One
@@ -197,6 +197,38 @@ export class ArrivalsController {
   @PracticeScoped()
   day(@Headers('x-practice-id') practiceId: string | undefined, @Query('date') date?: string) {
     return this.arrivals.day(requirePractice(practiceId), date);
+  }
+
+  /**
+   * MOVE THESE PATIENTS TO THAT PRACTITIONER — the sick-doctor morning (Carl,
+   * 12 September 2026).
+   *
+   * ON THE ARRIVAL, NOT ON THE QUEUE. What is being moved is a VISIT: the
+   * arrival is the row that says who this patient is here to see, and the
+   * agreement hangs off it. The practitioner queue is a READ and has no write
+   * that touches an agreement (PRACTITIONER-QUEUE-PAGE.md §3), and this one
+   * supersedes agreements — putting it there would have given that page the one
+   * kind of control it says it must never grow.
+   *
+   * BEFORE `:id/provider` AND `:id`, because `move` is not a UUID and Nest
+   * matches routes in declaration order (wow.md §1) — the same reason
+   * `preview`, `service-rendered`, `expected` and `day` all sit above them.
+   *
+   * `@PracticeScoped` LIKE ITS NEIGHBOURS, and that is also who may do it: a
+   * practitioner's token carries no practice claim, so a practitioner cannot
+   * reach this at all. Deciding who sees a patient instead is reception's act
+   * (§3a rule 4), and RLS means another practice's arrival is invisible rather
+   * than refused.
+   */
+  @Post('move')
+  @PracticeScoped()
+  move(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Body() dto: MoveArrivalsDto,
+    /** Who moved them, from the token — never a typed name (REQ-LOG-08). */
+    @SessionActor() actor: Actor | undefined,
+  ) {
+    return this.arrivals.moveToPractitioner(requirePractice(practiceId), dto, actor);
   }
 
   /** Who reception may choose instead. Servicing providers only, by the same rule that refused. */

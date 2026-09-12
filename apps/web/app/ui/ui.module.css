@@ -436,6 +436,33 @@
   margin-bottom: var(--s3);
 }
 
+/*
+ * THE SAME CONTROL IN A TABLE CELL — no gap and no bottom margin, because
+ * there is no visible label beside it to space away from and a row is not a
+ * form (12 Sep 2026, the move control on the practitioner queue).
+ */
+.checkboxAlone {
+  display: flex;
+  align-items: center;
+}
+
+/*
+ * A LABEL THAT IS STILL WRITTEN AND SIMPLY NOT PAINTED. Never `display: none`
+ * and never `visibility: hidden`: both take it away from a screen reader too,
+ * which is the opposite of the point (WCAG 2.2 AA, 4.1.2).
+ */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .checkbox {
   width: 18px;
   height: 18px;

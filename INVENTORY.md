@@ -17,40 +17,40 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2033 |
-| Files scanned for exports | 505 |
-| Files scanned for imports | 546 |
-| Exports with no comment of their own | 867 |
-| Exports imported nowhere else | 836 |
+| Exported symbols indexed | 2041 |
+| Files scanned for exports | 506 |
+| Files scanned for imports | 548 |
+| Exports with no comment of their own | 868 |
+| Exports imported nowhere else | 837 |
 
 ## Sections
 
-- [Web components](#web-components) — 227
+- [Web components](#web-components) — 228
 - [Web hooks](#web-hooks) — 14
-- [Web helpers and constants](#web-helpers-and-constants) — 276
-- [Web types](#web-types) — 102
+- [Web helpers and constants](#web-helpers-and-constants) — 277
+- [Web types](#web-types) — 103
 - [Domain functions](#domain-functions) — 374
 - [Domain constants and content](#domain-constants-and-content) — 233
 - [Domain types](#domain-types) — 275
-- [Contracts types](#contracts-types) — 71
-- [Contracts functions and constants](#contracts-functions-and-constants) — 20
-- [Core services, controllers and modules](#core-services-controllers-and-modules) — 269
+- [Contracts types](#contracts-types) — 74
+- [Contracts functions and constants](#contracts-functions-and-constants) — 21
+- [Core services, controllers and modules](#core-services-controllers-and-modules) — 270
 - [Core helpers, constants and types](#core-helpers-constants-and-types) — 172
 
 ## Web components
 
-227 exports.
+228 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
-| `Notice` | web:ui/index.tsx |  | **65** · web:AccessGuard.tsx, web:HistoryDisclosure.tsx, web:NotFoundView.tsx, +62 more |
+| `Notice` | web:ui/index.tsx |  | **66** · web:AccessGuard.tsx, web:HistoryDisclosure.tsx, web:NotFoundView.tsx, +63 more |
 | `Shell` | web:ui/index.tsx |  | **56** · web:AccessGuard.tsx, web:NotFoundView.tsx, web:apply/ApplyForm.tsx, +53 more |
-| `Button` | web:ui/index.tsx |  | **52** · web:ClearForm.tsx, web:HistoryDisclosure.tsx, web:apply/ApplyForm.tsx, +49 more |
+| `Button` | web:ui/index.tsx |  | **53** · web:ClearForm.tsx, web:HistoryDisclosure.tsx, web:apply/ApplyForm.tsx, +50 more |
 | `SessionControl` | web:SessionControl.tsx | (file) Who is signed in, WHICH PRACTICE they are from, and the way out. | **46** · web:AccessGuard.tsx, web:apply/ApplyForm.tsx, web:help/HelpView.tsx, +43 more |
 | `Chip` | web:ui/index.tsx | The text IS the status. | **34** · web:EmailStatusChip.tsx, web:apply/ApplyForm.tsx, web:apply/GateLedger.tsx, +31 more |
-| `Field` | web:ui/index.tsx |  | **29** · web:apply/ApplyForm.tsx, web:platform/acting-as/history/HistoryView.tsx, web:practice/ActingAs.tsx, +26 more |
+| `Field` | web:ui/index.tsx |  | **30** · web:apply/ApplyForm.tsx, web:platform/acting-as/history/HistoryView.tsx, web:practice/ActingAs.tsx, +27 more |
 | `TextInput` | web:ui/index.tsx |  | **25** · web:apply/ApplyForm.tsx, web:platform/acting-as/history/HistoryView.tsx, web:practice/ActingAs.tsx, +22 more |
-| `SelectInput` | web:ui/index.tsx |  | **21** · web:apply/ApplyForm.tsx, web:practice/ActingAs.tsx, web:practice/PracticePicker.tsx, +18 more |
+| `SelectInput` | web:ui/index.tsx |  | **22** · web:apply/ApplyForm.tsx, web:practice/ActingAs.tsx, web:practice/PracticePicker.tsx, +19 more |
 | `ViewOnly` | web:platform/practices/[practiceId]/ViewOnly.tsx | (file) A practice page opened as the platform: readable, and genuinely inert. | **16** · web:platform/practices/[practiceId]/affiliations/page.tsx, web:platform/practices/[practiceId]/application/page.tsx, web:platform/practices/[practiceId]/channels/page.tsx, +13 more |
 | `PracticeGate` | web:practice/PracticeGate.tsx | (file) "Which practice" resolved, with the two states that answer can be in. | **15** · web:practice/affiliations/page.tsx, web:practice/channels/page.tsx, web:practice/day/page.tsx, +12 more |
 | `Screen` | web:kiosk/components/Chrome.tsx | Header, content and footer. | **12** · web:kiosk/screens/AssignorScreen.tsx, web:kiosk/screens/CheckDetailsScreen.tsx, web:kiosk/screens/CompleteScreen.tsx, +9 more |
@@ -58,7 +58,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `Card` | web:patient/portal/portal-ui.tsx |  | **9** · web:patient/portal/cards/AgreementsCard.tsx, web:patient/portal/cards/DataCard.tsx, web:patient/portal/cards/DetailsCard.tsx, +6 more |
 | `CardState` | web:patient/portal/portal-ui.tsx | Loading, failed, or empty — the three answers that are not data. | **9** · web:patient/portal/cards/AgreementsCard.tsx, web:patient/portal/cards/DataCard.tsx, web:patient/portal/cards/DetailsCard.tsx, +6 more |
 | `Section` | web:ui/index.tsx |  | **9** · web:apply/ApplyForm.tsx, web:practice/devices/DevicesView.tsx, web:practice/entity/EntityView.tsx, +6 more |
-| `Checkbox` | web:ui/index.tsx |  | **7** · web:apply/ApplyForm.tsx, web:patient/agree/[token]/AgreeView.tsx, web:practice/affiliations/AffiliationsView.tsx, +4 more |
+| `Checkbox` | web:ui/index.tsx | ONE CHECKBOX, AND FROM 12 SEP 2026 IT ALSO WORKS IN A TABLE ROW. | **8** · web:apply/ApplyForm.tsx, web:patient/agree/[token]/AgreeView.tsx, web:practice/affiliations/AffiliationsView.tsx, +5 more |
 | `PracticeOverride` | web:practice/usePractice.tsx |  | **7** · web:platform/practices/[practiceId]/application/page.tsx, web:platform/practices/[practiceId]/correspondence/page.tsx, web:platform/practices/[practiceId]/queue/page.tsx, +4 more |
 | `GuardedButton` | web:kiosk/components/Buttons.tsx |  | **6** · web:kiosk/components/SignatureControl.tsx, web:kiosk/screens/AssignorScreen.tsx, web:kiosk/screens/CheckDetailsScreen.tsx, +3 more |
 | `PortalButton` | web:patient/portal/portal-ui.tsx | A BUTTON WITH A 44px TARGET, which is why this is not `Button` from `app/ui`. | **6** · web:patient/portal/PortalView.tsx, web:patient/portal/activate/[token]/ActivateView.tsx, web:patient/portal/cards/DetailsCard.tsx, +3 more |
@@ -152,6 +152,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `MainMenu` | web:MainMenu.tsx | (file) The menu, on every page. | **1** · web:ui/index.tsx |
 | `MessagesCard` | web:patient/portal/cards/MessagesCard.tsx | (file) MESSAGES SENT TO ME — and the structural answer to phishing (REQ-PORT-06). | **1** · web:patient/portal/PortalView.tsx |
 | `MessagesView` | web:practitioner/messages/MessagesView.tsx | (file) What has been sent to this practitioner, wherever they work. | **1** · web:practitioner/messages/page.tsx |
+| `MovePanel` | web:practice/practitioner/waiting/MovePanel.tsx | (file) MOVE THE SELECTED PATIENTS TO ANOTHER PRACTITIONER — the sick-practitioner morning (Carl, 12 September 2026: *"the assigned practioner has called in sick... | **1** · web:practice/practitioner/waiting/WaitingView.tsx |
 | `NotFoundView` | web:NotFoundView.tsx | (file) A page that does not exist, said plainly and then left behind. | **1** · web:not-found.tsx |
 | `NoticesCard` | web:patient/portal/cards/NoticesCard.tsx | (file) MEDICARE CLAIM NOTICES — reg 89AA (REQ-PORT-04, REQ-END-05). | **1** · web:patient/portal/PortalView.tsx |
 | `OrgConsole` | web:OrgConsole.tsx | (file) The organisation / location / practitioner / affiliation console (ORG-MODEL-PROPOSAL.md). | **1** · web:page.tsx |
@@ -294,11 +295,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web helpers and constants
 
-276 exports.
+277 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
-| `strings` | web:strings.ts | (file) String table (REQ-LANG-01): every user-facing string lives here, none inline in components. | **132** · web:AccessGuard.tsx, web:AuthGate.tsx, web:BackLink.tsx, +129 more |
+| `strings` | web:strings.ts | (file) String table (REQ-LANG-01): every user-facing string lives here, none inline in components. | **133** · web:AccessGuard.tsx, web:AuthGate.tsx, web:BackLink.tsx, +130 more |
 | `apiHeaders` | web:auth.ts | Headers for a core API call: bearer when signed in, dev practice header otherwise. | **48** · web:ConsoleDashboard.tsx, web:HistoryDisclosure.tsx, web:OrgConsole.tsx, +45 more |
 | `currentSession` | web:auth.ts |  | **35** · web:AccessGuard.tsx, web:AuthGate.tsx, web:BackLink.tsx, +32 more |
 | `strings` | web:kiosk/strings.ts | (file) The kiosk's view of the one string table (REQ-LANG-01). | **23** · web:kiosk/Ceremony.tsx, web:kiosk/components/Chrome.tsx, web:kiosk/components/InactivityWarning.tsx, +20 more |
@@ -416,6 +417,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `lockParticulars` | web:kiosk/api.ts |  | **1** · web:kiosk/Ceremony.tsx |
 | `mismatchHeading` | web:kiosk/rules/verification.ts |  | **1** · web:kiosk/screens/VerifyScreen.tsx |
 | `mismatchMessage` | web:kiosk/rules/verification.ts | The ONLY failure message. | **1** · web:kiosk/screens/VerifyScreen.tsx |
+| `moveOutcomeWords` | web:practice/practitioner/waiting/MovePanel.tsx | WHAT ONE ROW'S MOVE CAME TO, IN WORDS — beside the patient it was about. | **1** · web:practice/practitioner/waiting/WaitingView.tsx |
 | `nextAnswers` | web:kiosk/rules/pushed-details.ts | THE ONLY WAY AN ANSWER EVER CHANGES (extracted from `Ceremony.tsx` on 7 Sep 2026, in review of the Continue lock). | **1** · web:kiosk/Ceremony.tsx |
 | `nextVersionName` | web:practice/templates/templateEditing.ts | THE NEXT VERSION NAME FOR THIS PRACTICE AND AGREEMENT TYPE: `<practice-slug>-<agreementType>-<n>`, where `<n>` is one more than the highest number already used by one of THIS practice's own templates of THIS type (Carl, 7 Sep 2026). | **1** · web:practice/templates/TemplateForm.tsx |
 | `openDevPortalSession` | web:patient/portal/api.ts | DEV ONLY — mint a portal session for named patients without a passkey. | **1** · web:patient/portal/PortalView.tsx |
@@ -577,7 +579,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web types
 
-102 exports.
+103 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -622,6 +624,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `GateLedgerState` | web:apply/GateLedger.tsx |  | **1** · web:apply/ApplyForm.tsx |
 | `GateState` | web:apply/GateLedger.tsx | ATTESTED is deliberately its own state, not a flavour of `passed`. | **1** · web:status/[token]/StatusView.tsx |
 | `IdentifierParts` | web:kiosk/rules/verify-fields.ts |  | **1** · web:kiosk/screens/VerifyScreen.tsx |
+| `MoveSummary` | web:practice/practitioner/waiting/MovePanel.tsx |  | **1** · web:practice/practitioner/waiting/WaitingView.tsx |
 | `PairedOutcome` | web:kiosk/screens/PairingScreen.tsx |  | **1** · web:kiosk/Ceremony.tsx |
 | `PairingFailure` | web:kiosk/screens/PairingScreen.tsx | What happened to the last attempt. | **1** · web:kiosk/Ceremony.tsx |
 | `ParticularsView` | web:kiosk/screens/ParticularsScreen.tsx |  | **1** · web:kiosk/Ceremony.tsx |
@@ -1071,10 +1074,10 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
+| `CONFIRMABLE_DETAIL_TYPES` | domain:tablet-session.ts | WHAT THE PATIENT TICKS, AND WHY IT IS NOT THE IDENTIFIER LIST. | **5** · core:portal/portal-reads.service.ts, core:tablet-sessions/dispute-resolution.dto.ts, core:tablet-sessions/tablet-sessions.dto.ts, +2 more |
 | `MIN_AGE_ASSIGN_FOR_OTHER` | domain:guards.ts |  | **5** · web:kiosk/rules/assignor.ts, web:kiosk/screens/AssignorScreen.tsx, web:practice/patients/NewAgreementPanel.tsx, +2 more |
 | `ASSIGNOR_RELATIONSHIP_OPTIONS` | domain:assignor-relationships.ts | The list, in file order, which is screen order. | **4** · web:kiosk/rules/assignor.ts, web:kiosk/screens/AssignorScreen.tsx, web:practice/patients/NewAgreementPanel.tsx, +1 more |
 | `CHECK_CATALOGUE` | domain:checks.ts | The catalogue. | **4** · core:artefacts/artefacts.service.ts, core:organisations/audit.service.ts, core:organisations/checks.service.ts, +1 more |
-| `CONFIRMABLE_DETAIL_TYPES` | domain:tablet-session.ts | WHAT THE PATIENT TICKS, AND WHY IT IS NOT THE IDENTIFIER LIST. | **4** · core:portal/portal-reads.service.ts, core:tablet-sessions/dispute-resolution.dto.ts, core:tablet-sessions/tablet-sessions.dto.ts, +1 more |
 | `ASSIGNOR_RELATIONSHIPS_VERSION` | domain:assignor-relationships.ts | Recorded alongside the assignor, so a stored agreement says which list it was made from. | **3** · web:kiosk/rules/assignor.ts, web:practice/patients/NewAgreementPanel.tsx, web:practice/tablet/pushDesk.tsx |
 | `AUTHORITY_BASES_FOR_ANOTHER` | domain:assignor.ts | The fixed list from REQ-VUL-01, for somebody signing FOR ANOTHER PERSON. | **3** · core:agreements/agreements.dto.ts, core:arrivals/arrivals.dto.ts, domain:assignor-relationships.ts |
 | `BILLING_ROLES_VERSION` | domain:billing-roles.ts | Recorded alongside every role change, so a question asked in 2028 has an answer. | **3** · core:affiliations/affiliations.service.ts, core:arrivals/arrivals.service.ts, core:practices/practices.service.ts |
@@ -1589,12 +1592,13 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Contracts types
 
-71 exports.
+74 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
 | `VaultEventInput` | contracts:vault.ts |  | **8** · core:artefacts/artefacts.service.ts, vault:chain/chain-store.contract.ts, vault:chain/chain-store.ts, +5 more |
 | `VaultEventRecord` | contracts:vault.ts |  | **7** · vault:chain/chain-store.ts, vault:chain/immudb-chain-store.ts, vault:chain/in-memory-chain-store.ts, +4 more |
+| `ArrivalProviderChoice` | contracts:arrivals.ts | A SERVICING PRACTITIONER, AT A LOCATION, reception may choose instead. | **5** · core:arrivals/arrivals.service.ts, web:practice/patients/NewAgreementPanel.tsx, web:practice/patients/PatientsQueueView.tsx, +2 more |
 | `DayRegisterRow` | contracts:arrivals.ts | WHO CAME IN, WHEN, TO SEE WHOM, AND WHAT HAPPENED ABOUT THEIR AGREEMENT (Carl, 12 September 2026, on `/practice/frontdesk`: *"Add a button here with a link to show all Patients seen at this practice today. | **5** · core:arrivals/arrivals.service.ts, web:practice/day/DayView.tsx, web:practice/frontdesk/FrontDeskView.tsx, +2 more |
 | `PmsAdapter` | contracts:pms-adapter.ts | The adapter contract. | **5** · connector:mock-adapter.ts, core:auto-capture/auto-capture.service.ts, core:pms/pms-sync.service.ts, +2 more |
 | `RuleResult` | contracts:rules-engine.ts |  | **5** · core:service-descriptions/service-descriptions.service.ts, rules:rules/rule-set-2026-08.draft.ts, rules:rules/rule-set.contract.ts, +2 more |
@@ -1603,18 +1607,20 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PmsPatientRecord` | contracts:pms-adapter.ts |  | **4** · connector:mock-adapter.ts, core:auto-capture/auto-capture.service.ts, core:pms/pms-sync.service.ts, +1 more |
 | `PmsProvider` | contracts:pms-adapter.ts |  | **4** · connector:mock-adapter.ts, core:auto-capture/auto-capture.service.ts, core:pms/pms-sync.service.ts, +1 more |
 | `PrintJobEnvelope` | contracts:print-capture.ts |  | **4** · core:inbound/inbound-lane.worker.ts, core:inbound/inbound-print-jobs.controller.ts, core:inbound/inbound-print-jobs.processor.ts, +1 more |
-| `ArrivalProviderChoice` | contracts:arrivals.ts | A SERVICING PRACTITIONER, AT A LOCATION, reception may choose instead. | **3** · core:arrivals/arrivals.service.ts, web:practice/patients/NewAgreementPanel.tsx, web:practice/patients/PatientsQueueView.tsx |
 | `PmsInvoice` | contracts:pms-adapter.ts |  | **3** · connector:mock-adapter.ts, core:pms/pms-sync.service.ts, contracts:print-capture.ts |
 | `RulesEngineClient` | contracts:rules-engine.ts |  | **3** · core:agreements/agreements.service.ts, core:rules-client/rules-client.module.ts, core:service-descriptions/service-descriptions.service.ts |
 | `ValidationResponse` | contracts:rules-engine.ts |  | **3** · core:rules-client/rules-client.module.ts, rules:rules/rules.controller.ts, rules:rules/rules.service.ts |
 | `ValidationStage` | contracts:rules-engine.ts | REQ-65C-01 runs the validator twice: BEFORE the signature control enables (blocking) and again AT STORAGE (assert). | **3** · rules:rules/rule-set-2026-08.draft.ts, rules:rules/rule-set.ts, rules:rules/rules.service.ts |
 | `VaultClient` | contracts:vault.ts | Append and read. | **3** · core:vault/vault-relay.service.ts, vault-client:client.ts, vault-client:relay.ts |
+| `ArrivalMoveResult` | contracts:arrivals.ts | ONE PRESS OF "MOVE THESE PATIENTS", ANSWERED IN FULL. | **2** · core:arrivals/arrivals.service.ts, web:practice/practitioner/waiting/WaitingView.tsx |
 | `ArrivalPreview` | contracts:arrivals.ts | WHAT THE VISIT WOULD NEED, ASKED BEFORE ANYTHING IS WRITTEN (W2, Carl 7 Sep 2026). | **2** · core:arrivals/arrivals.service.ts, web:practice/patients/NewAgreementPanel.tsx |
 | `PatientSearchResult` | contracts:arrivals.ts | ONE PATIENT THIS PRACTICE ALREADY HOLDS, FOUND BY TYPING A NAME (W2). | **2** · core:patients/patients.service.ts, web:practice/patients/NewAgreementPanel.tsx |
 | `PmsAppointment` | contracts:pms-adapter.ts |  | **2** · connector:mock-adapter.ts, contracts:print-capture.ts |
 | `PortalLink` | contracts:portal.ts | One practice the patient linked for themselves. | **2** · core:portal/portal-reads.service.ts, core:portal/portal.service.ts |
 | `RefusedArrival` | contracts:arrivals.ts | ONE ARRIVAL WAITING FOR RECEPTION TO NAME A PROVIDER. | **2** · core:arrivals/arrivals.service.ts, web:practice/patients/PatientsQueueView.tsx |
 | `VaultEventType` | contracts:vault.ts |  | **2** · vault:events/create-event.dto.ts, vault-client:relay.ts |
+| `ArrivalMoveOutcome` | contracts:arrivals.ts | WHAT HAPPENED TO ONE PATIENT. | **1** · core:arrivals/arrivals.service.ts |
+| `ArrivalMoveRefusal` | contracts:arrivals.ts |  | **1** · core:arrivals/arrivals.service.ts |
 | `ArrivalReceipt` | contracts:arrivals.ts | What the platform did about it. | **1** · core:arrivals/arrivals.service.ts |
 | `PmsAdapterCapabilities` | contracts:pms-adapter.ts | Declared per adapter; the core adjusts behaviour to what is absent. | **1** · connector:mock-adapter.ts |
 | `PortalAccessLogEntry` | contracts:portal.ts | FR-8.2 — "who has looked", as the patient sees it. | **1** · core:portal/portal-reads.service.ts |
@@ -1667,7 +1673,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Contracts functions and constants
 
-20 exports.
+21 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1685,6 +1691,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `answersEnduringRules` | contracts:rules-engine.ts | DID THE RULE SET ANSWER THE ENDURING QUESTIONS AT ALL? | **1** · core:agreements/agreements.service.ts |
 | `isSilentRestoreClient` | contracts:auth.ts |  | **1** · web:AccessGuard.tsx |
 | `withSilentRestore` | contracts:auth.ts | Add the marker to a URL an invitation will return to. | **1** · auth-client:keycloak-admin.ts |
+| `ARRIVAL_MOVE_REFUSALS` | contracts:arrivals.ts | WHY A ROW COULD NOT BE MOVED — a CODE the console maps to words and a destination, never prose (CLAUDE.md §7, "shortcuts to the answer"). | 0 |
 | `ARRIVAL_REFUSAL_REASONS` | contracts:arrivals.ts | WHY AN ARRIVAL WAS REFUSED — a reason CODE, never prose (Carl, 4 Sep 2026: "shortcuts to the answer, not directions to a screen"; 5–7 Sep 2026: the billing role). | 0 |
 | `ENDURING_RULE_IDS` | contracts:rules-engine.ts | THE ENDURING BRANCH'S RULE FAMILY — the boundary between what an agent may build and what a human must author (Carl, 4 Sep 2026; GA-PLAN B5). | 0 |
 | `PORTAL_RECORD_ID_PREFIX` | contracts:portal.ts | THE RECORD ID A PATIENT CAN RECOGNISE (Carl, 4 Sep 2026). | 0 |
@@ -1694,7 +1701,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Core services, controllers and modules
 
-269 exports.
+270 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1703,9 +1710,9 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `OutboundService` | core:outbound/outbound.service.ts | The outbound queue. | **9** · core:acting-as/acting-as.service.ts, core:affiliations/affiliations.service.ts, core:agreement-copy/agreement-copy.service.ts, +6 more |
 | `CaptureService` | core:capture/capture.service.ts |  | **8** · core:agreements/agreements.service.ts, core:arrivals/arrivals.service.ts, core:arrivals/post-service-chase.sweep.ts, +5 more |
 | `EmailComposer` | core:messaging/composer.service.ts | One place that knows what an outbound message from us looks like. | **8** · core:acting-as/acting-as.service.ts, core:affiliations/affiliations.service.ts, core:affiliations/invitation.service.ts, +5 more |
+| `AgreementsService` | core:agreements/agreements.service.ts |  | **7** · core:agree/agree.service.ts, core:agreements/agreements.controller.ts, core:agreements/agreements.module.ts, +4 more |
 | `CorrespondenceService` | core:correspondence/correspondence.service.ts | The evidence twin of every send — CONSULTATION-CAPTURE-PLAN.md Part 4. | **7** · core:agree/agree.service.ts, core:correspondence/correspondence.controller.ts, core:correspondence/correspondence.module.ts, +4 more |
 | `PortalService` | core:portal/portal.service.ts | WHO THE PATIENT IS, AND WHAT THEY MAY SEE — the identity half of C8. | **7** · core:portal/portal-dev.controller.ts, core:portal/portal-invitation.controller.ts, core:portal/portal-passkey.controller.ts, +4 more |
-| `AgreementsService` | core:agreements/agreements.service.ts |  | **6** · core:agree/agree.service.ts, core:agreements/agreements.controller.ts, core:agreements/agreements.module.ts, +3 more |
 | `ArtefactsService` | core:artefacts/artefacts.service.ts | Evidence artefacts. | **6** · core:agreements/agreements.service.ts, core:artefacts/artefacts.controller.ts, core:artefacts/artefacts.module.ts, +3 more |
 | `CaptureModule` | core:capture/capture.module.ts |  | **6** · core:agreements/agreements.module.ts, core:app.module.ts, core:arrivals/arrivals.module.ts, +3 more |
 | `DevicesService` | core:devices/devices.service.ts | DEVICE PAIRING — the one credential the zero-footprint rule allows on a tablet (CLAUDE.md §7; TODO.md "Zero-footprint kiosk", "Push-to-device capture"). | **6** · core:dev-seed/dev-seed.controller.ts, core:devices/device.guard.ts, core:devices/devices.controller.ts, +3 more |
@@ -1718,14 +1725,14 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `EnduringService` | core:enduring/enduring.service.ts |  | **5** · core:arrivals/arrivals.service.ts, core:auto-capture/auto-capture.service.ts, core:enduring/enduring.controller.ts, +2 more |
 | `PmsModule` | core:pms/pms.module.ts |  | **5** · core:agreements/agreements.module.ts, core:app.module.ts, core:auto-capture/auto-capture.module.ts, +2 more |
 | `PortalScope` | core:portal/portal-scope.ts | THE SECOND KEY, for rows that belong to a PERSON rather than to a practice. | **5** · core:portal/portal-dev.controller.ts, core:portal/portal-passkey.service.ts, core:portal/portal-reads.service.ts, +2 more |
+| `TabletSessionsService` | core:tablet-sessions/tablet-sessions.service.ts | PUSH-TO-DEVICE CAPTURE — reception hands the patient a locked screen (TODO.md "Push-to-device capture" and "Two front doors", Carl 4 Sep 2026). | **5** · core:patients/patients.service.ts, core:tablet-sessions/kiosk-session.controller.ts, core:tablet-sessions/tablet-sessions.controller.ts, +2 more |
 | `VerificationModule` | core:verification/verification.module.ts |  | **5** · core:app.module.ts, core:capture/capture.module.ts, core:kiosk/kiosk.module.ts, +2 more |
 | `ActingAsService` | core:acting-as/acting-as.service.ts | Acting as a practice. | **4** · core:acting-as/acting-as.controller.ts, core:acting-as/acting-as.interceptor.ts, core:acting-as/acting-as.module.ts, +1 more |
+| `AppModule` | core:app.module.ts |  | **4** · core:main.ts, rules:main.ts, vault:main.ts, +1 more |
 | `EnduringModule` | core:enduring/enduring.module.ts |  | **4** · core:app.module.ts, core:arrivals/arrivals.module.ts, core:auto-capture/auto-capture.module.ts, +1 more |
 | `IdentityModule` | core:identity/identity.module.ts |  | **4** · core:affiliations/affiliations.module.ts, core:app.module.ts, core:organisations/organisations.module.ts, +1 more |
 | `RenderModule` | core:render/render.module.ts |  | **4** · core:agreement-copy/agreement-copy.module.ts, core:agreements/agreements.module.ts, core:pms/pms.module.ts, +1 more |
-| `TabletSessionsService` | core:tablet-sessions/tablet-sessions.service.ts | PUSH-TO-DEVICE CAPTURE — reception hands the patient a locked screen (TODO.md "Push-to-device capture" and "Two front doors", Carl 4 Sep 2026). | **4** · core:patients/patients.service.ts, core:tablet-sessions/kiosk-session.controller.ts, core:tablet-sessions/tablet-sessions.controller.ts, +1 more |
 | `AgreementCopyService` | core:agreement-copy/agreement-copy.service.ts | W6 — "SEND ME A COPY". | **3** · core:agreement-copy/agreement-copy-kiosk.controller.ts, core:agreement-copy/agreement-copy.controller.ts, core:agreement-copy/agreement-copy.module.ts |
-| `AppModule` | core:app.module.ts |  | **3** · core:main.ts, rules:main.ts, vault:main.ts |
 | `ArrivalsService` | core:arrivals/arrivals.service.ts | "THIS PATIENT HAS JUST ARRIVED AT RECEPTION TO SEE THIS PROVIDER" (Carl, 4 Sep 2026; TODO.md "Reception-centric: the patient work page" §2). | **3** · core:arrivals/arrivals.controller.ts, core:arrivals/arrivals.module.ts, core:practitioner-queue/practitioner-queue.service.ts |
 | `AutoCaptureModule` | core:auto-capture/auto-capture.module.ts |  | **3** · core:app.module.ts, core:arrivals/arrivals.module.ts, core:inbound/inbound.module.ts |
 | `AutoCaptureService` | core:auto-capture/auto-capture.service.ts | The capture cascade, run by the platform with nobody at the practice deciding first — CONSULTATION-CAPTURE-PLAN.md Parts 2 and 3. | **3** · core:auto-capture/auto-capture.controller.ts, core:auto-capture/auto-capture.module.ts, core:inbound/inbound-print-jobs.processor.ts |
@@ -1764,6 +1771,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `InboundPrintJobsProcessor` | core:inbound/inbound-print-jobs.processor.ts | Turns one accepted print job into consequences — the cascade (AutoCaptureService) applied to what the document named. | **2** · core:inbound/inbound-lane.worker.ts, core:inbound/inbound.module.ts |
 | `InvitationService` | core:affiliations/invitation.service.ts | Sending an affiliation invitation, and answering one. | **2** · core:affiliations/affiliations.controller.ts, core:affiliations/affiliations.module.ts |
 | `KioskService` | core:kiosk/kiosk.service.ts | WHO IS HERE, FOR THIS PRACTICE, RIGHT NOW — the one question a tablet in a waiting room asks, and the only gap left between the capture cascade and the kiosk ceremony (CONSULTATION-CAPTURE-PLAN.md §2.2 step 1). | **2** · core:kiosk/kiosk.controller.ts, core:kiosk/kiosk.module.ts |
+| `MoveArrivalsDto` | core:arrivals/arrivals.dto.ts | MOVE THESE PATIENTS TO THAT PRACTITIONER (Carl, 12 September 2026: *"the assigned practioner has called in sick... | **2** · core:arrivals/arrivals.controller.ts, core:arrivals/arrivals.service.ts |
 | `NoticesService` | core:notices/notices.service.ts |  | **2** · core:notices/notices.controller.ts, core:notices/notices.module.ts |
 | `OrganisationsModule` | core:organisations/organisations.module.ts |  | **2** · core:affiliations/affiliations.module.ts, core:app.module.ts |
 | `PatientsService` | core:patients/patients.service.ts | THE PLATFORM'S PATIENT MIRROR, AND THE ONE THING STAFF MAY CHANGE ON IT (TODO.md "Check-your-details: tick or cross per row", Carl 4 Sep 2026). | **2** · core:patients/patients.controller.ts, core:patients/patients.module.ts |
@@ -1974,15 +1982,15 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
-| `Actor` | core:auth/actor.decorator.ts | WHO IS DOING THIS — taken from the verified token, never from the request body. | **40** · core:acting-as/acting-as.controller.ts, core:acting-as/acting-as.service.ts, core:affiliations/affiliations.controller.ts, +37 more |
+| `Actor` | core:auth/actor.decorator.ts | WHO IS DOING THIS — taken from the verified token, never from the request body. | **41** · core:acting-as/acting-as.controller.ts, core:acting-as/acting-as.service.ts, core:affiliations/affiliations.controller.ts, +38 more |
 | `SessionActor` | core:auth/actor.decorator.ts | Resolves the actor, or `undefined` when no verified token is present. | **22** · core:acting-as/acting-as.controller.ts, core:affiliations/affiliations.controller.ts, core:affiliations/practitioner-self.controller.ts, +19 more |
 | `PracticeScoped` | core:auth/practice-scope.decorator.ts | THE PRACTICE'S OWN ACT. | **9** · core:affiliations/affiliations.controller.ts, core:arrivals/arrivals.controller.ts, core:devices/devices.controller.ts, +6 more |
 | `Public` | core:auth/public.decorator.ts | Marks an endpoint reachable without an account. | **9** · core:agree/agree.controller.ts, core:agreement-copy/agreement-copy.controller.ts, core:capture/capture.controller.ts, +6 more |
 | `EmailBlock` | core:messaging/template.ts |  | **8** · core:acting-as/acting-as.service.ts, core:affiliations/invitation.service.ts, core:agreement-copy/agreement-copy.service.ts, +5 more |
 | `MESSAGING_GATEWAY` | core:messaging/gateway.ts |  | **8** · core:identity/practice-admin.service.ts, core:identity/practitioner-email.service.ts, core:messaging/composer.service.ts, +5 more |
+| `ResolvedDevice` | core:devices/devices.service.ts | What the guard needs to know about the caller, and nothing more. | **8** · core:agreement-copy/agreement-copy-kiosk.controller.ts, core:devices/device.decorator.ts, core:devices/device.guard.ts, +5 more |
 | `MessagingGateway` | core:messaging/gateway.ts |  | **7** · core:identity/practice-admin.service.ts, core:identity/practitioner-email.service.ts, core:messaging/composer.service.ts, +4 more |
 | `PLATFORM_ADMIN` | core:auth/roles.decorator.ts | AoBPlatform staff who read applications and approve practices. | **7** · core:acting-as/acting-as.controller.ts, core:affiliations/affiliations.controller.ts, core:identity-dashboard/identity-dashboard.controller.ts, +4 more |
-| `ResolvedDevice` | core:devices/devices.service.ts | What the guard needs to know about the caller, and nothing more. | **7** · core:agreement-copy/agreement-copy-kiosk.controller.ts, core:devices/device.decorator.ts, core:devices/device.guard.ts, +4 more |
 | `RequireRoles` | core:auth/roles.decorator.ts | Requires one of these realm roles on the bearer token. | **6** · core:acting-as/acting-as.controller.ts, core:affiliations/affiliations.controller.ts, core:identity-dashboard/identity-dashboard.controller.ts, +3 more |
 | `anchorForAgreement` | core:affiliations/agreement-anchor.ts | WHO THIS AGREEMENT NAMES. | **6** · core:agreements/agreements.service.ts, core:arrivals/post-service-chase.sweep.ts, core:enduring/enduring.service.ts, +3 more |
 | `KEYCLOAK_ADMIN` | core:identity/identity.tokens.ts |  | **5** · core:identity/identity.module.ts, core:identity/identity.service.ts, core:identity/practice-admin.service.ts, +2 more |

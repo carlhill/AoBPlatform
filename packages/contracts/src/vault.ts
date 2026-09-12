@@ -200,6 +200,33 @@ export const VAULT_EVENT_TYPES = [
    */
   'arrival.ticket_set',
   /**
+   * THE PATIENT WAS MOVED TO ANOTHER PRACTITIONER AT THE DESK (Carl, 12
+   * September 2026: *"the assigned practioner has called in sick... select the
+   * patients and then select a practioner to move them to"*).
+   *
+   * ONE EVENT PER PATIENT MOVED, never one per press. A bulk action is a
+   * convenience at a desk; the record is of what happened to each person, and
+   * a single event covering fifteen of them could not later answer "who moved
+   * this patient, and away from whom".
+   *
+   * IT CARRIES THE TWO AFFILIATIONS AND WHO DID IT. The affiliation is the
+   * practitioner AT a location, which is exactly what D4 states (s 65C(5)(a))
+   * and what the claim's billing identity is per (D-2026-09-12-09) — so "from"
+   * and "to" say both halves of the change. The successor agreement's id is
+   * here beside them, because the move and the supersession are one act at the
+   * desk even though they are two rows in the database.
+   *
+   * NO NAME AND NO IDENTIFIER VALUE (hard rules 1 and 9, REQ-VER-04). Ids, the
+   * re-asked visit decision, the policy version that gave it, and whether the
+   * patient must sign again — nothing a person is called and no amount (hard
+   * rule 4).
+   *
+   * THE PARENT AGREEMENT IS NOT TOUCHED BY IT. A move supersedes (HARD-02); it
+   * never edits, voids or annotates, and a signed parent keeps its signature
+   * event and its hash exactly as they are (hard rule 11).
+   */
+  'arrival.practitioner_changed',
+  /**
    * THE SERVICE HAS BEEN RENDERED — the second moment, on the same desk (Carl,
    * 11 Sep 2026; TODO.md "Two front doors" decision (b)).
    *
