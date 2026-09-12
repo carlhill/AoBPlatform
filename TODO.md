@@ -3809,3 +3809,17 @@ is an **assumption awaiting Carl**.
       pushed down that lane would be refused rather than answered. Worth a look
       when the post-service push meets a real practice.
 
+
+## Small: a billing anchor can be stored on a visit that needs none (found in review, 12 Sep 2026)
+
+If reception sends `billingAffiliationId` on an arrival whose person seen is
+`not_billable` — a phlebotomist — the code resolves and stores it
+(`arrivals.service.ts`, the `else if (dto.billingAffiliationId)` branch is not
+gated on `servicesNeedABillingProvider`). The decision is still correctly `none`
+with `seen_by_a_practitioner_who_does_not_bill`, because that policy row fires
+first, so nothing is drafted and no hard rule is touched.
+
+The only harm is a row carrying an anchor the specification says it should not
+have (`ARRIVAL-WHO-IS-SEEN.md` §3, third row), which will confuse whoever reads
+it next. Either ignore the field for a non-billing visit, or refuse it as a
+contradiction. Untested combination today; not worth blocking on.
