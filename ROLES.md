@@ -76,6 +76,54 @@ Worth knowing before anybody "fixes" one of these and breaks a token.
    underscored forms are what the code and the realm actually hold. Nothing
    should start accepting the hyphenated spellings.
 
+## 5a. A practice may run without practitioner accounts
+
+Carl, 12 September 2026: *"Some practices may not want their doctors to use the
+AoBPlatform. In this case the frontdesk will do what the doctor does. However, I
+believe a better system is if the doctor does it."* Recorded as
+`DECISIONS.md` D-2026-09-12-12.
+
+**The rule: practitioner accounts are optional, per practice.** Where a practice
+does not give its doctors access, reception performs every act a practitioner
+would, and nothing stops working.
+
+**It already works, and that was deliberate rather than lucky.**
+`maySetVisitState` returns true for the `practice` scope on any patient and
+narrows only for a practitioner, who may act on their own patients alone. The
+waiting list already has two modes for the same reason — a practitioner sees
+their own list, practice staff see every list grouped by practitioner. A practice
+with no practitioner accounts therefore uses the same pages with one of the two
+audiences simply absent.
+
+**Three things are lost when reception does it**, and they are the argument for
+preferring that the doctor does:
+
+1. **The moment is guessed rather than known.** "Completed" is the
+   service-rendered signal that raises the after-visit agreement. A doctor
+   presses it when the consultation ends; reception presses it when they notice
+   or when they are told. The paperwork follows the room less closely.
+2. **The assertion becomes second-hand.** Marking a consultation complete states
+   that an encounter happened. When reception marks it, the record says reception
+   asserted it. **That is operational, not evidential** — hard rule 3 abolished
+   the practitioner signature field, so an agreement's weight rests on the
+   PATIENT's signature captured at a paired tablet, and none of it moves.
+3. **The covering-doctor check loses its best trigger.** An enduring agreement is
+   per practitioner, so a patient seen by somebody other than the one their
+   agreement names needs fresh paperwork. The doctor knows immediately who they
+   saw; reception may not.
+
+**So the platform makes the better arrangement easy and never requires it.** The
+practice setting exists so the console stops offering what a practice does not
+use — not so the platform behaves differently.
+
+**Three gaps, none of them blocking** (TODO): a practice setting recording
+whether doctors hold accounts, so the console can tell "no doctors yet" from "no
+doctors ever"; onboarding that does not invite doctors who will never come, and
+does not leave their cards looking unfinished; and front desk copy that does not
+promise an act nobody will perform, because a receptionist waiting for a doctor
+to mark a visit is a visit that never closes. The failure today is confusing
+wording rather than a stuck flow.
+
 ## 6. Rules
 
 1. **A page is gated by audience, never by role.** A new page adds an entry to
@@ -92,7 +140,10 @@ Worth knowing before anybody "fixes" one of these and breaks a token.
    (hard rule 10) and are checked against the staff list by name, active or not,
    failing closed. They may still sign their OWN agreement (`ASSIGNOR-RULES.md`
    §2a).
-5. **Landing follows the person, not the audience.** A practitioner signing in
+5. **Practitioner accounts are optional per practice** (§5a). Every act a
+   practitioner can perform, practice staff can perform for them; no flow may
+   assume a doctor will act.
+6. **Landing follows the person, not the audience.** A practitioner signing in
    at a practice lands on `/practice/practitioner`, not the setup hub
    (`PRACTITIONER-QUEUE-PAGE.md` §1). Gating and landing are different
    decisions and the page map expresses only the first.
@@ -150,3 +201,4 @@ Worth knowing before anybody "fixes" one of these and breaks a token.
 | 12 Sep 2026 | Rule 5 given a home: `landingPath`. §7's open question closed. Two page-map entries added for `/practice/practitioner` and `/practice/practitioner/waiting`, the second open to `practice` as well as `practitioner`. |
 | 12 Sep 2026 | Rule 5 extended: practice staff — and an operator acting as a practice — land on `/practice/today`, not on the setup hub. Page-map entry added for it. D-2026-09-12-05. |
 | 12 Sep 2026 | Practitioner identity and per-practice sign-in split into PRACTITIONER-IDENTITY.md. |
+| 12 Sep 2026 | §5a: a practice may run without practitioner accounts, reception does everything, and what is lost when it does (D-2026-09-12-12). |
