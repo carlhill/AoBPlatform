@@ -21,15 +21,36 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { ActingAsService } from '../src/acting-as/acting-as.service';
 
-/** Two different operators, because the whole rule is about "a different person". */
+/*
+ * Two different operators, because the whole rule is about "a different
+ * person".
+ *
+ * FRESH SUBJECTS EVERY RUN, and that is the fix for a test that passed on a
+ * clean database and failed on a used one (12 September 2026).
+ *
+ * `acting_as_sessions` is APPEND-ONLY, enforced by a database trigger and not
+ * merely by convention -- the point of the table is that an impersonation can
+ * never be erased. The rule under test then asks whether this operator has
+ * EVER acted for this practice, not whether they acted recently.
+ *
+ * With hardcoded subjects, operator B accumulated eleven sessions across
+ * previous runs of this very suite. So "allows a different operator" asked the
+ * server to approve for somebody who genuinely HAD acted, and the server
+ * correctly refused. The test was wrong and the rule was right, which is the
+ * worst way round for a failure to be.
+ *
+ * Deleting the rows is not the answer -- the append-only guarantee is the
+ * feature. A subject nobody has used before is.
+ */
+const RUN = randomUUID().slice(0, 8);
 const OPERATOR_A = {
-  sub: '00000000-0000-4000-8000-0000000000aa',
+  sub: randomUUID(),
   principalType: 'staff',
   roles: ['platform_admin'],
-  preferredUsername: 'operator.a',
+  preferredUsername: `operator.a.${RUN}`,
   raw: {},
 };
-const OPERATOR_B = { ...OPERATOR_A, sub: '00000000-0000-4000-8000-0000000000bb', preferredUsername: 'operator.b' };
+const OPERATOR_B = { ...OPERATOR_A, sub: randomUUID(), preferredUsername: `operator.b.${RUN}` };
 
 let currentPrincipal: Record<string, unknown> | null = OPERATOR_A;
 
