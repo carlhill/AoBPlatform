@@ -17,17 +17,17 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2032 |
+| Exported symbols indexed | 2033 |
 | Files scanned for exports | 505 |
 | Files scanned for imports | 546 |
 | Exports with no comment of their own | 867 |
-| Exports imported nowhere else | 835 |
+| Exports imported nowhere else | 836 |
 
 ## Sections
 
 - [Web components](#web-components) — 227
 - [Web hooks](#web-hooks) — 14
-- [Web helpers and constants](#web-helpers-and-constants) — 275
+- [Web helpers and constants](#web-helpers-and-constants) — 276
 - [Web types](#web-types) — 102
 - [Domain functions](#domain-functions) — 374
 - [Domain constants and content](#domain-constants-and-content) — 233
@@ -294,7 +294,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web helpers and constants
 
-275 exports.
+276 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -479,6 +479,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `closeFixtureSession` | web:patient/portal/fixtures.ts |  | 0 |
 | `describeRefusal` | web:practice/tablet/pushDesk.tsx | WHY THE PUSH WAS REFUSED, in our words, with somewhere to go. | 0 |
 | `detailInSentence` | web:practice/patients/PatientWorkView.tsx | The detail's own label, as it reads inside a sentence rather than above a field. | 0 |
+| `devAgreementType` | web:practice/frontdesk/FrontDeskView.tsx | THE DOMAIN'S OWN NAME FOR THE KIND OF AGREEMENT, IN BRACKETS, AND ONLY OUTSIDE PRODUCTION (Carl, 12 September 2026: *"Should say (enduring / episodic) at least while we are testing."*). | 0 |
 | `deviceSeenAgo` | web:practice/deviceActivity.ts | "4 s", "3 min", "2 hours", "over a day" — deliberately coarse. | 0 |
 | `dynamic` | web:api/kiosk-build/route.ts | Never cached: a cached answer is the same tab staring at its own stale copy. | 0 |
 | `fieldsToCorrect` | web:practice/tablet/pushDesk.tsx |  | 0 |

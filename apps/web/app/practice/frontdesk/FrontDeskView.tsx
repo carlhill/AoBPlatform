@@ -1020,15 +1020,27 @@ function PatientPanel({
               data-state={item.state}
               data-testid={`frontdesk-check-${item.key}`}
             >
-              <div className={styles.checkHead}>
-                <span className={styles.checkLabel}>{strings.frontdesk.checklist.rows[item.key]}</span>
+              {/*
+                COLUMN ONE — THE TAG (Carl, 12 September 2026: *"Put tags in
+                col 1 - left aligned. Put text in col 2 left aligned."*). The
+                three words are different widths, so inline they started every
+                sentence at a different x and the eye could not run down the
+                list. The column is sized by the grid on the list itself, so it
+                follows the longest word rather than a magic number that breaks
+                the day a fifth state word is added.
+              */}
+              <span className={styles.checkTag}>
                 <Chip tone={item.state === 'done' ? 'ok' : item.state === 'outstanding' ? 'warn' : 'neutral'}>
                   <span data-testid={`frontdesk-check-state-${item.key}`}>{stateWord(item.state)}</span>
                 </Chip>
-              </div>
-              <p className={ui.hint} data-testid={`frontdesk-check-detail-${item.key}`}>
-                {detailSentence(item)}
-              </p>
+              </span>
+
+              {/* Column two — everything that is words, all starting on one x. */}
+              <div className={styles.checkBody}>
+                <span className={styles.checkLabel}>{strings.frontdesk.checklist.rows[item.key]}</span>
+                <p className={ui.hint} data-testid={`frontdesk-check-detail-${item.key}`}>
+                  {detailSentence(item)}
+                </p>
               {/*
                 THE VERSIONED POLICY'S OWN ANSWER, WHERE ONE DECIDED THIS ROW
                 (hard rule 14) — and the rule key itself where this screen has
@@ -1054,6 +1066,7 @@ function PatientPanel({
               )}
               {/* CARL'S SECOND NOTE: the send card belongs to this step. */}
               {item.key === 'signed' && sendCard}
+              </div>
             </li>
           ))}
         </ol>
@@ -1166,14 +1179,46 @@ export function stateWord(state: ChecklistRow['state']): string {
         : strings.frontdesk.checklist.state.notNeeded;
 }
 
+/**
+ * THE DOMAIN'S OWN NAME FOR THE KIND OF AGREEMENT, IN BRACKETS, AND ONLY
+ * OUTSIDE PRODUCTION (Carl, 12 September 2026: *"Should say (enduring /
+ * episodic) at least while we are testing."*).
+ *
+ * WHY IT IS A GATE AND NOT A COPY CHANGE. `enduring` and `episodic` are on
+ * this surface's banned list (FRONT-DESK-PAGE.md §5, and
+ * `front_desk_never_uses_a_domain_word_from_the_banned_list` enforces it),
+ * because the page exists to be learnable on a first shift by somebody who has
+ * never heard either word. Carl's own "at least while we are testing" is the
+ * way through: the plain words always ship, and the domain term is appended
+ * for whoever is testing.
+ *
+ * `NODE_ENV !== 'production'` IS THE HOUSE GATE, the same one the renderer's
+ * draft marker uses, rather than a flag invented for this.
+ *
+ * EXPORTED SO ITS OWN TEST CAN DRIVE IT. The affordance is asserted both ways
+ * — absent in the production path, present when the gate is open — so it
+ * cannot silently rot into either a leak or a dead branch.
+ */
+export function devAgreementType(type: string | null | undefined): string {
+  if (!type || process.env.NODE_ENV === 'production') return '';
+  return strings.frontdesk.checklist.detail.devAgreementType(type);
+}
+
 /** The row's own sentence, resolved from the key the computation returned. */
 export function detailSentence(item: ChecklistRow): string {
   const said = strings.frontdesk.checklist.detail;
   switch (item.detail) {
+    /*
+     * THE THREE ROWS THAT NAME A KIND OF AGREEMENT carry the domain's term
+     * behind the development gate — see `devAgreementType`. Nothing else does:
+     * a bracket on a line that is not about an agreement would be noise.
+     */
     case 'todaysVisit':
-      return said.todaysVisit(item.provider ?? null);
+      return said.todaysVisit(item.provider ?? null) + devAgreementType(item.agreementType);
     case 'ongoing':
-      return said.ongoing(item.provider ?? null);
+      return said.ongoing(item.provider ?? null) + devAgreementType(item.agreementType);
+    case 'afterService':
+      return said.afterService + devAgreementType(item.agreementType);
     case 'withThemNow':
       return said.withThemNow(item.device ?? null);
     /*

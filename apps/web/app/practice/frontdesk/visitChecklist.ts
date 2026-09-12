@@ -139,6 +139,21 @@ export interface ChecklistRow {
    * never a word (hard rule 14, REQ-LANG-01). Only on the `consultation` row.
    */
   readonly visitState?: string | null;
+  /**
+   * THE DOMAIN'S OWN NAME FOR THE KIND OF AGREEMENT — `enduring`,
+   * `episodic_pre`, `episodic_post` (Carl, 12 September 2026, on the
+   * "does today's visit need an agreement?" line: *"Should say (enduring /
+   * episodic) at least while we are testing."*).
+   *
+   * IT IS A KEY AND IT IS NOT COPY. The front desk's own words for these are
+   * "an ongoing agreement" and "a one-off agreement for today's visit", and
+   * they always ship — FRONT-DESK-PAGE.md §5 bans the domain terms on this
+   * surface precisely because it must be learnable on day one by somebody who
+   * has never heard them. The key is carried so the screen can APPEND it in
+   * brackets outside production, which is what Carl's "at least while we are
+   * testing" asks for; see `detailSentence`.
+   */
+  readonly agreementType?: string | null;
 }
 
 /**
@@ -227,9 +242,16 @@ export function visitChecklist(
         state: 'done',
         detail: first.agreementType === 'enduring' ? 'ongoing' : 'todaysVisit',
         provider: first.providerName,
+        agreementType: first.agreementType,
       }
     : later
-      ? { key: 'needed', state: 'done', detail: 'afterService', provider: later.providerName }
+      ? {
+          key: 'needed',
+          state: 'done',
+          detail: 'afterService',
+          provider: later.providerName,
+          agreementType: later.agreementType,
+        }
       : { key: 'needed', state: 'not_needed', detail: 'nothingToSign', ruleKey: line?.reason ?? null };
 
   /*

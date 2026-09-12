@@ -389,25 +389,58 @@
   color: var(--ink);
 }
 
+/*
+ * TWO COLUMNS: THE TAG, THEN THE WORDS (Carl, 12 September 2026: *"Put tags in
+ * col 1 - left aligned. Put text in col 2 left aligned."*).
+ *
+ * WHY THE GRID IS ON THE LIST AND NOT ON THE ROW. "Done", "Still to do" and
+ * "Nothing to sign" are different widths, so a row-level layout starts every
+ * sentence at a different x and the eye cannot run down the column. One grid
+ * over the whole list, with `max-content` on the first track, makes every tag
+ * cell as wide as the WIDEST tag — which is what Carl asked for, and it follows
+ * the longest word rather than a magic number somebody has to remember to
+ * change the day a fifth state word is added.
+ *
+ * `display: contents` ON THE ROW, so each `li` contributes its two children
+ * straight into the grid. The list semantics survive it in every current
+ * browser, and the row keeps its `data-state` and its test id — it stops
+ * painting a box, not existing.
+ */
 .checkRows {
   list-style: none;
   margin: var(--s2) 0 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--s3);
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: var(--s3);
+  row-gap: var(--s3);
 }
 
-.checkRow + .checkRow {
+.checkRow {
+  display: contents;
+}
+
+/*
+ * THE DIVIDER GOES ON THE CELLS, because the row itself no longer paints.
+ * Both cells of every row after the first, so the line runs the full width.
+ */
+.checkRow:not(:first-child) > * {
   border-top: 1px solid var(--line);
   padding-top: var(--s3);
 }
 
-.checkHead {
+/* Column one. Top-aligned, so the tag sits against the first line of its text. */
+.checkTag {
+  display: block;
+}
+
+/* Column two — the label, the sentence, and anything that hangs off the row. */
+.checkBody {
   display: flex;
-  align-items: baseline;
-  gap: var(--s3);
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s2);
+  min-width: 0;
 }
 
 .checkLabel {

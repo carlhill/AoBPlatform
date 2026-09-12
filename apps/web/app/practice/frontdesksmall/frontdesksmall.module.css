@@ -324,24 +324,49 @@
 }
 
 /*
- * TODAY'S PAPERWORK, ONE LINE PER ROW. The wide desk gives each of the four a
- * block; there is no room for that under a row, so the state chip, the
- * question and its sentence sit on one wrapping line.
+ * THE PATIENT SERVICE LIST, IN TWO COLUMNS: THE TAG, THEN THE WORDS (Carl,
+ * 12 September 2026: *"Put tags in col 1 - left aligned. Put text in col 2 left
+ * aligned."*).
+ *
+ * ONE GRID OVER THE WHOLE LIST rather than a layout per row, because the tag
+ * words are different widths and a row-level layout starts every sentence at a
+ * different x. `max-content` on the first track makes every tag cell as wide as
+ * the WIDEST tag, so the column follows the longest word rather than a number
+ * somebody has to remember to change.
+ *
+ * `display: contents` on the row, so each `li` puts its two children straight
+ * into the grid. List semantics survive it in every current browser, and the
+ * row keeps its test id — it stops painting, not existing.
+ *
+ * THE SAME TREATMENT AS THE WIDE DESK, deliberately: the list reads identically
+ * whichever front desk somebody is on.
  */
 .checklist {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s2);
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: var(--s2);
+  row-gap: var(--s2);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .checkRow {
+  display: contents;
+}
+
+/* Column one. */
+.checkTag {
+  display: block;
+}
+
+/* Column two — the question and its sentence, both starting on one x. */
+.checkBody {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--s2);
+  min-width: 0;
 }
 
 .checkLabel {

@@ -738,4 +738,33 @@ describe('/practice/frontdesksmall — what it may and may not say', () => {
     expect(chip('here')).toBe(1);
     expect(chip('finished')).toBe(0);
   });
+
+  it('the_service_list_puts_the_tag_in_one_column_and_the_words_in_the_other', async () => {
+    /*
+     * Carl, 12 September 2026: *"Put tags in col 1 - left aligned. Put text in
+     * col 2 left aligned."* Said of THIS page, and applied to both desks so the
+     * list reads the same on either (FRONT-DESK-PAGE.md §17.1).
+     *
+     * WHY IT IS ASSERTED HERE AS WELL AS ON THE WIDE DESK. The two lists are
+     * laid out by two stylesheets, so a change that re-added row-level layout
+     * to one of them would leave the other's test green — and the whole point
+     * of the pairing is that a receptionist moving between them reads one list.
+     *
+     * ON THE STRUCTURE, NOT ON A WIDTH: jsdom does not lay out, so what is
+     * worth pinning is that every row contributes exactly two cells to ONE
+     * grid. That is what makes the tag column follow the longest tag rather
+     * than a magic number that breaks the day a fifth state word is added.
+     */
+    await openTheDesk();
+    fireEvent.click(screen.getByTestId(`frontdesksmall-row-${HERE.agreementId}`));
+
+    const list = await screen.findByTestId(`frontdesksmall-checklist-${HERE.patientId}`);
+    expect(list.children.length).toBeGreaterThan(0);
+    for (const item of [...list.children]) {
+      expect(item.tagName).toBe('LI');
+      expect(item.children).toHaveLength(2);
+      expect((item.children[0] as HTMLElement).className).toMatch(/checkTag/);
+      expect((item.children[1] as HTMLElement).className).toMatch(/checkBody/);
+    }
+  });
 });

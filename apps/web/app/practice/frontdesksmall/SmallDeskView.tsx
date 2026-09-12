@@ -590,19 +590,24 @@ function PatientWork({ desk, row }: { desk: PushDesk; row: PushableRow }) {
       {live && <SessionDisputeNotices session={live} />}
 
       {/*
-        TODAY'S PAPERWORK, AS ONE LINE PER ROW RATHER THAN AS CARDS. The wide
-        desk has room to give each of the four its own block; here the answer
-        has to fit under a row, so the state and the sentence sit on one line
-        and the state is still a WORD as well as a colour.
+        THE PATIENT SERVICE LIST, IN TWO COLUMNS (Carl, 12 September 2026:
+        *"Put tags in col 1 - left aligned. Put text in col 2 left aligned."*).
+        The tag words are different widths, so inline they started every
+        sentence at a different x and the eye could not run down the list. Same
+        treatment as the wide desk, so the list reads identically on either.
       */}
       <ul className={styles.checklist} data-testid={`frontdesksmall-checklist-${row.patientId}`}>
         {checklist.map((item) => (
           <li key={item.key} className={styles.checkRow} data-testid={`frontdesksmall-check-${item.key}`}>
-            <Chip tone={item.state === 'done' ? 'ok' : item.state === 'outstanding' ? 'warn' : 'neutral'}>
-              {stateWord(item.state)}
-            </Chip>
-            <span className={styles.checkLabel}>{strings.frontdesk.checklist.rows[item.key]}</span>
-            <span className={ui.hint}>{detailSentence(item)}</span>
+            <span className={styles.checkTag}>
+              <Chip tone={item.state === 'done' ? 'ok' : item.state === 'outstanding' ? 'warn' : 'neutral'}>
+                {stateWord(item.state)}
+              </Chip>
+            </span>
+            <span className={styles.checkBody}>
+              <span className={styles.checkLabel}>{strings.frontdesk.checklist.rows[item.key]}</span>
+              <span className={ui.hint}>{detailSentence(item)}</span>
+            </span>
           </li>
         ))}
       </ul>

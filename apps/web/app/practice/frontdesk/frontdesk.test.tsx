@@ -35,7 +35,13 @@ import {
   type DeviceRow,
   type TabletSessionRow,
 } from '@aobplatform/domain';
-import { FrontDeskView, stableByFirstSeen, timeLabel } from './FrontDeskView';
+import {
+  FrontDeskView,
+  detailSentence,
+  devAgreementType,
+  stableByFirstSeen,
+  timeLabel,
+} from './FrontDeskView';
 import { TabletView } from '../tablet/TabletView';
 import { dayRails } from './dayRails';
 import { everyServiceResolved } from './visitChecklist';
@@ -551,6 +557,98 @@ describe('/practice/frontdesk — the queue rail', () => {
       typeof value === 'function' ? (value as (...args: string[]) => string)('Name', 'Tablet') : value,
     ).toLowerCase();
     for (const word of banned) expect(said).not.toContain(word);
+
+    /*
+     * AND THE RENDERED SENTENCE FOR THE ONE ROW THAT IS ABOUT A KIND OF
+     * AGREEMENT (Carl, 12 September 2026: *"Should say (enduring / episodic) at
+     * least while we are testing."*).
+     *
+     * WHAT A PRACTICE SEES IS THE PLAIN WORDS — "an ongoing agreement", "a
+     * one-off agreement for today's visit" — and the domain terms are a
+     * DEVELOPMENT AFFORDANCE behind `NODE_ENV`. This half proves the production
+     * path is clean; `the_agreement_type_is_named_in_brackets_only_outside_production`
+     * proves the affordance still exists, so it can neither leak nor rot.
+     */
+    // `vi.stubEnv` rather than an assignment: `process.env.NODE_ENV` is typed
+    // readonly, and `afterEach`'s `unstubAllEnvs` is not needed because this
+    // restores it in the same breath.
+    vi.stubEnv('NODE_ENV', 'production');
+    try {
+      for (const type of ['enduring', 'episodic_pre', 'episodic_post']) {
+        const rows = visitChecklist([row({ agreementType: type })], [], () => null);
+        const line = detailSentence(rows.find((r) => r.key === 'needed')!).toLowerCase();
+        for (const word of banned) expect(line).not.toContain(word);
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('the_agreement_type_is_named_in_brackets_only_outside_production', () => {
+    /*
+     * CARL'S "AT LEAST WHILE WE ARE TESTING", BUILT AS A GATE RATHER THAN AS A
+     * COPY CHANGE. `enduring` and `episodic` are banned on this surface because
+     * it must be learnable on a first shift by somebody who has never heard
+     * them — so the plain words always ship, and the domain's own term is
+     * appended in brackets for whoever is testing.
+     *
+     * `NODE_ENV !== 'production'` IS THE HOUSE GATE, the same one the
+     * renderer's draft marker uses.
+     *
+     * ASSERTED BOTH WAYS, so the affordance cannot rot into a leak or a dead
+     * branch — which is the whole reason it is safe to have at all.
+     */
+    try {
+      vi.stubEnv('NODE_ENV', 'development');
+      expect(devAgreementType('enduring')).toBe(' (enduring)');
+      expect(devAgreementType('episodic_pre')).toBe(' (episodic_pre)');
+      // Nothing to say where there is no agreement to name.
+      expect(devAgreementType(null)).toBe('');
+
+      const ongoing = visitChecklist([row({ agreementType: 'enduring' })], [], () => null);
+      const named = detailSentence(ongoing.find((r) => r.key === 'needed')!);
+      // The plain words are still the sentence; the term is an appendix.
+      expect(named).toContain('ongoing agreement');
+      expect(named).toContain('(enduring)');
+
+      vi.stubEnv('NODE_ENV', 'production');
+      expect(devAgreementType('enduring')).toBe('');
+      const shipped = detailSentence(
+        visitChecklist([row({ agreementType: 'enduring' })], [], () => null)
+          .find((r) => r.key === 'needed')!,
+      );
+      expect(shipped).toContain('ongoing agreement');
+      expect(shipped).not.toContain('(');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('the_service_list_puts_the_tag_in_one_column_and_the_words_in_the_other', async () => {
+    /*
+     * Carl, 12 September 2026: *"Put tags in col 1 - left aligned. Put text in
+     * col 2 left aligned."* The three tag words are different widths, so inline
+     * they started every sentence at a different x and the eye could not run
+     * down the list.
+     *
+     * ASSERTED ON THE STRUCTURE, not on a computed width: jsdom does not lay
+     * out, so what is worth pinning is that every row contributes exactly two
+     * cells to ONE grid — which is what makes the tag column follow the longest
+     * word rather than a magic number.
+     */
+    stubFetch({ rows: [HERE] });
+    render(<FrontDeskView practiceId={PRACTICE} />);
+    await choose(HERE.agreementId, HERE.patientName);
+
+    const list = screen.getByTestId('frontdesk-checklist').querySelector('ol');
+    expect(list).toBeTruthy();
+    for (const item of [...list!.children]) {
+      expect(item.tagName).toBe('LI');
+      // Two children exactly: the tag cell, then the words cell.
+      expect(item.children).toHaveLength(2);
+      expect((item.children[0] as HTMLElement).className).toMatch(/checkTag/);
+      expect((item.children[1] as HTMLElement).className).toMatch(/checkBody/);
+    }
   });
 
   it('front_desk_expected_never_names_somebody_already_on_the_queue', async () => {
@@ -644,7 +742,15 @@ describe('the patient panel — everything about them, on this page', () => {
     expect(screen.getByTestId('frontdesk-check-state-needed').textContent).toBe(
       strings.frontdesk.checklist.state.done,
     );
-    expect(screen.getByTestId('frontdesk-check-detail-needed').textContent).toBe(
+    /*
+     * `toContain`, BECAUSE OUTSIDE PRODUCTION THE LINE ALSO CARRIES THE
+     * DOMAIN'S OWN TERM IN BRACKETS (Carl, 12 September 2026: *"Should say
+     * (enduring / episodic) at least while we are testing."*). The plain
+     * sentence is the part a practice sees and the part this pins;
+     * `the_agreement_type_is_named_in_brackets_only_outside_production` owns
+     * the appendix.
+     */
+    expect(screen.getByTestId('frontdesk-check-detail-needed').textContent).toContain(
       strings.frontdesk.checklist.detail.todaysVisit(HERE.providerName),
     );
     // Drafted, checked and locked — nobody can be asked to sign a draft.

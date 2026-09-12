@@ -651,6 +651,54 @@ report.
   records the rule that separates them and the list will be versioned content.
 
 
+## 17. The service list reads in two columns, and names its own type while we test
+
+Two notes from Carl on `/practice/frontdesksmall`, applied to BOTH desks so the
+list reads the same on either.
+
+### 17.1 Tags in column one, words in column two
+
+Carl: *"Put tags in col 1 – left aligned. Put text in col 2 left aligned."*
+
+`Done`, `Still to do` and `Nothing to sign` are different widths, so inline they
+started every sentence at a different x and the eye could not run down the list.
+
+**One grid over the whole list, not a layout per row.** `grid-template-columns:
+max-content minmax(0, 1fr)` on the `<ol>`/`<ul>`, with `display: contents` on
+each row, so every tag cell is as wide as the WIDEST tag — the column follows
+the longest word rather than a magic number somebody must remember to change
+the day a fifth state word is added. List semantics survive `display: contents`
+in every current browser, and the row keeps its `data-state` and its test id.
+
+Test: `the_service_list_puts_the_tag_in_one_column_and_the_words_in_the_other`.
+
+### 17.2 The kind of agreement, in the plain words always and the domain's term while testing
+
+Carl, on "Does today's visit need an agreement?": *"Should say (enduring /
+episodic) at least while we are testing."*
+
+**This collides with §5 and his own words are the way through.** `enduring` and
+`episodic` are on this surface's banned list because the page has to be
+learnable on a first shift by somebody who has never heard them.
+
+So it is a **development affordance, not a copy change**:
+
+- The line always names the type in the plain words the product uses: **an
+  ongoing agreement**, or **a one-off agreement for today's visit**. ("a one-off"
+  is new — the line used to say only "an agreement for today's visit", which did
+  not name the type at all.)
+- Outside production, the domain's own term is APPENDED in brackets —
+  `(enduring)`, `(episodic_pre)` — gated on `NODE_ENV !== 'production'`, the
+  same gate the renderer's draft marker uses. `devAgreementType` in
+  `FrontDeskView.tsx`.
+- **The vocabulary test got stronger rather than weaker.**
+  `front_desk_never_uses_a_domain_word_from_the_banned_list` now also renders
+  the sentence with the gate CLOSED and asserts the banned words are absent from
+  it; `the_agreement_type_is_named_in_brackets_only_outside_production` asserts
+  the affordance is there with the gate open. It can neither leak into
+  production nor rot into a dead branch.
+
+
 ## Change log
 | Date | Change |
 |---|---|
@@ -678,3 +726,4 @@ report.
 | 12 Sep 2026 | **§15 BUILT.** Six notes taken with the rails on screen: "Here now" is asserted to hold the server's arrival order; the queue number leads each row; "See everyone here at once" points at the tablet desk's own section 1; the tablet's name sits under the patient's on the rows that have one; "Finished" moved below "Needs a look"; and each rail carries its own colour on the heading and the number, all existing tokens and all past AA. |
 | 12 Sep 2026 | **§15.7: both desks name a patient the same way.** `PatientIdentity` (in `app/ui`) renders the practice's own number above our record id, in one order and one set of words, on `/practice/frontdesk` and `/practice/tablet`. `strings.frontdesk.panel.patientRecordNumber` now delegates to `strings.recordId.practiceNumber` rather than being a second copy. |
 | 12 Sep 2026 | **§16 BUILT (D-2026-09-12-20).** The service list gains the visit itself, read from the state the practitioner sets and never minted here; "Finished" is now "every service resolved" over the list rather than a two-clause boolean; `cancelled` exists as a resolved state with nothing producing it yet; a "Waiting to be seen" rail holds the people who have signed and not been called in; and the panel's section carries Carl's name for it, the patient service list. |
+| 12 Sep 2026 | **§17 BUILT.** The patient service list is two columns on both desks — the tag left-aligned in column one, the words left-aligned in column two, sized by one grid so the column follows the longest tag. And the "needs an agreement?" line names the type: the plain words always ("an ongoing agreement", "a one-off agreement for today's visit"), with the domain's own term appended in brackets outside production, gated and tested both ways so the vocabulary rule holds. |

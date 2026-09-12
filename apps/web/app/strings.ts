@@ -4759,8 +4759,8 @@ export const strings = {
       detail: {
         todaysVisit: (provider: string | null) =>
           provider
-            ? `Yes — an agreement for today’s visit with ${provider}.`
-            : 'Yes — an agreement for today’s visit.',
+            ? `Yes — a one-off agreement for today’s visit with ${provider}.`
+            : 'Yes — a one-off agreement for today’s visit.',
         /*
          * AN ONGOING AGREEMENT IS NAMED UNDER ITS PROVIDER, always (hard rule
          * 6, REQ-END-01). There is no such thing as one that covers the whole
@@ -4779,6 +4779,24 @@ export const strings = {
          * An unmapped key shows its key (CLAUDE.md §7).
          */
         noVisitToSee: 'There is no visit for this to be about.',
+        /*
+         * THE DOMAIN'S OWN NAME FOR THE KIND OF AGREEMENT, IN BRACKETS, AND
+         * ONLY OUTSIDE PRODUCTION (Carl, 12 September 2026: *"Should say
+         * (enduring / episodic) at least while we are testing."*).
+         *
+         * THE PLAIN WORDS ALWAYS SHIP and are what a practice sees: "an
+         * ongoing agreement", "a one-off agreement for today's visit".
+         * FRONT-DESK-PAGE.md §5 bans the domain terms on this surface because
+         * the page has to be learnable on day one by somebody who has never
+         * heard them, and Carl's "at least while we are testing" is the way
+         * through: this is a DEVELOPMENT AFFORDANCE gated on
+         * `NODE_ENV !== 'production'`, the same gate the renderer's draft
+         * marker uses, and never a change to the copy.
+         *
+         * A FUNCTION OF ITS ARGUMENT, so no banned word is written down here
+         * and the vocabulary lint over this block stays honest.
+         */
+        devAgreementType: (type: string) => ` (${type})`,
         afterService: 'Yes — an agreement for a service they have already had.',
         nothingToSign: 'No. There is nothing for this person to sign for this visit.',
         /*
