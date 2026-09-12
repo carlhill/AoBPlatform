@@ -888,6 +888,127 @@ materially later or less accurate post-service agreements — which would argue
 for pushing practices harder towards practitioner accounts, not for removing the
 option.
 
+
+## D-2026-09-12-13 - A manual practice must be able to type what was billed; the post-service screen is release-blocking
+
+**Date:** 12 September 2026. **Decided by:** Carl, answering `INTEGRATION-MODES.md`
+section 7 Q1: *"Is a fully manual practice expected to raise post-service
+agreements at go-live? If yes - we need a screen to manually type these
+details."* Yes.
+
+**The decision.** A practice with no interface of any kind MUST be able to raise
+a post-service agreement, and that means a screen where a person types the
+service date (D5) and the MBS item numbers (D6b). It is release-blocking, not a
+gap in a table.
+
+**What is actually missing.** The door exists - `POST /arrivals/service-rendered`
+takes exactly those two things - and nothing calls it from a screen. The
+practitioner queue's "Completed" control does call it and then gives up with
+`awaiting_item_numbers` unless a service record already exists, and service
+records arrive only from invoice sync. So today the whole post-service branch of
+s 65C(4) table item 6 is closed to any practice without a feed. That is the most
+serious finding in `INTEGRATION-MODES.md` and this decision is the answer to it.
+
+**Why it is release-blocking rather than deferrable.** Mode 1 is the only mode
+that is not waiting on somebody outside this project (D-01). If mode 1 cannot
+produce a post-service agreement, then the one integration posture we can ship
+without help covers half the statute. A practice in that position would have to
+either bill outside the platform or not bill - and hard rule 8 says the platform
+never blocks care or billing.
+
+**What it must not become.** A screen for typing item numbers is not a claiming
+screen and must never grow into one: no benefit, no fee, no dollar amount
+anywhere on it or on anything it produces (hard rule 4). It records WHAT WAS
+DONE so the agreement can name it, and nothing about what it is worth.
+
+**What would reopen it.** A first customer who is genuinely mode 2 or mode 3 at
+the back end from day one, AND a decision that no mode-1 practice is sold to
+before the connector lands. Both, not either.
+
+## D-2026-09-12-14 - A practice records its posture per integration point, and the mode is derived from it
+
+**Date:** 12 September 2026. **Decided by:** Carl, answering `INTEGRATION-MODES.md`
+section 7 Q2: *"agree - lets add a column to the practice table or a table
+linked to the Practice table called `practice_posture` and lets record the mode
+the practice is working in and what postures / integrations are automated and
+what is manual."*
+
+**The decision.** A linked table, not a column. Each row is one integration
+POINT and how that practice runs it.
+
+The points, because they move independently: **appointments** (the day's
+bookings), **arrivals**, **service rendered** (what was billed), **write-back**,
+and **patient demographics**. The posture of each is `manual`, `automated` or
+`not_used`.
+
+**Why a table rather than a column, and why per point.** A practice is almost
+never in one mode. The ordinary case is automated at the front and manual at the
+back - which is exactly gap A - and a single `mode` column would have to round
+that to a lie. The points also change at different times: a practice goes live
+manual and turns on the invoice feed months later, and nothing else moves.
+
+**The mode is DERIVED, never stored.** "Mode 1", "mode 2" and "mode 3" are a
+reading of the postures, computed in one place in the domain. Storing both would
+let them disagree, and the day they disagreed nobody would know which one the
+platform had believed.
+
+**It is dated, because the postures are evidence.** An agreement made in March
+was made under March's posture, and an audit asking "was this typed or did it
+arrive from the practice's software" must get March's answer, not today's. So
+rows carry effective dates and are never edited in place.
+
+**The first thing it fixes is gap B.** Write-back needs a linkage key that only
+sync sets, so a hand-keyed patient can never be written back to and shows as
+stale after four hours, forever. With a posture of `not_used` on write-back that
+warning does not fire, because there is nothing to write back into and nothing
+is wrong. Today the platform cannot tell that practice apart from one whose
+connector has died - which is the actual defect.
+
+**What would reopen it.** Evidence that practices really do sit in exactly one
+mode across all five points, which would make the table a column after all.
+
+## D-2026-09-12-15 - A resend of corrected details supersedes; it never edits, and never silently vanishes
+
+**Date:** 12 September 2026. **Raised by:** Carl: *"we have to consider how to
+handle exceptions: If the PMS sends incorrect details, they must be able to
+resend and AoB should be able to handle it."*
+
+**The decision.** A resend is handled by the stage the agreement has reached, and
+the three answers are the platform's existing rules rather than new ones:
+
+| When the correction arrives | What happens |
+|---|---|
+| Before the particulars are locked | The draft is updated. Nothing else is needed |
+| Locked, not yet signed | It SUPERSEDES - a new agreement, `supersedesAgreementId` naming the old one, exactly as a reception correction already does (HARD-02: a locked agreement is corrected by superseding, never by editing) |
+| Signed | The signature stands and the record is immutable (hard rule 11). A correction raises a NEW agreement; the signed one remains as evidence of what was actually agreed, because that is what it is |
+
+**The one new thing needed, and it is the dangerous part.** The arrival contract
+carries an `idempotencyKey` so a RETRY is safe. A resend of CORRECTED details is
+not a retry, and if a connector sends it under the same key the platform will
+recognise a duplicate and do nothing - **the correction disappears silently and
+both sides believe it landed.** That is the worst available outcome and it is
+reachable today.
+
+So the contract must let the two be told apart: a corrected message carries a NEW
+idempotency key and names what it corrects. The same key means "you may not have
+heard me". A new key naming a prior arrival means "what I told you was wrong".
+Anything else is refused with a reason that says which of the two the sender
+meant.
+
+**Every resend is a vault event**, carrying ids, the stage it arrived at and what
+it did - never the corrected values (hard rule 9). An audit must be able to see
+that the practice's software changed its mind, and when.
+
+**It never blocks care** (hard rule 8). A resend that cannot be applied - a
+signed agreement, an unparseable message - becomes a task at the desk with the
+patient named and the reason given, and the patient is seen and billed
+regardless.
+
+**What would reopen it.** A regulator's position that a superseded pre-signature
+agreement must be destroyed rather than retained, which would change what the
+chain keeps rather than how a correction is applied.
+
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
@@ -917,3 +1038,6 @@ option.
 | 12 Sep | Practice bound to the login, location chosen once per session; practice codes allocated and unique | **D-2026-09-12-10 above** |
 | 12 Sep | Authentication is tiered: tenant SSO, platform accounts, passkeys. Hard rule 15 narrows to platform operators and patients | **D-2026-09-12-11 above** |
 | 12 Sep | Practitioner accounts are optional per practice; reception can do everything a doctor would | **D-2026-09-12-12 above** |
+| 12 Sep | A manual practice must be able to type what was billed; the post-service screen is release-blocking | **D-2026-09-12-13 above** |
+| 12 Sep | Practice posture is recorded per integration point; the mode is derived, never stored | **D-2026-09-12-14 above** |
+| 12 Sep | A corrected resend supersedes, needs a new idempotency key, and must never vanish silently | **D-2026-09-12-15 above** |

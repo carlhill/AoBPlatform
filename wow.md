@@ -38,7 +38,33 @@ When a build agent dies on the 5-hour limit, a stall, or a 429: resume it by id 
 
 ## 5. Parallel builds stay on disjoint paths
 
-Every brief names the paths the agent owns and the paths other running agents own. Shared files (`strings.ts`, `schema.prisma`, `TODO.md`, `pushDesk.tsx`) are edited with small anchored edits after re-reading, and staged hunk-by-hunk so one agent's commit never carries another's half-finished work. When a commit does sweep another's hunk in (it happened twice on 4 Sep), fix forward in the next commit; never rewrite pushed history.
+Every brief names the paths the agent owns and the paths other running agents own. Shared files (`strings.ts`, `schema.prisma`, `TODO.md`, `pushDesk.tsx`) are edited with small anchored edits after re-reading, and staged hunk-by-hunk so one agent's commit never carries another's half-finished work. When a commit does sweep another's hunk in (twice on 4 Sep, and again on 12 Sep), fix forward in the next commit; never rewrite pushed history.
+
+### 5a. `git add <paths> && git commit` does NOT commit only those paths (12 Sep 2026)
+
+It commits **the whole index**, and with agents running the index is not yours.
+On 12 September a commit meant to carry six files carried thirty-one: a
+concurrent agent had staged its tier 2 work, and `git commit` took everything
+staged. The commit message described six of them. Nothing was lost, but the
+history now says the patient-ID change contains an authentication build.
+
+Naming paths on `git add` feels like scoping the commit and is not. Two things
+fix it, and the second is better:
+
+1. **Read the index before committing** — `git diff --cached --name-only` — and
+   stop if it holds anything you did not put there.
+2. **Commit with a pathspec**, which ignores the index entirely:
+
+   ```
+   git commit -o path/one.ts path/two.ts -F message.txt
+   ```
+
+   `-o` (`--only`) commits exactly those paths from the working tree and leaves
+   everything else staged for whoever staged it. Use it by default whenever
+   another agent is running.
+
+The failure is silent in the direction that matters: the commit succeeds, the
+tests pass, and the mistake is only visible in `git show --stat` afterwards.
 
 ## 6. Tell Carl what to test, not what was built
 
@@ -208,3 +234,4 @@ than changing what the existing callers get.
 | 11 Sep 2026 | §8: background commands never pipe into `tail`/`head`; waiters watch for completion, not a string; staging and committing are one shell invocation. |
 | 12 Sep 2026 | §9: every settled rule is written to the right md in the same turn, with its reason, its enforcement and what would reopen it. |
 | 12 Sep 2026 | §10: reuse is proved, not promised — generated `INVENTORY.md` as required reading, imported-versus-written in every report, the rule of three, and a test where it matters. Written after the front desk panel shipped a second copy of the tablet page's session controls. §2 gains item 13. |
+| 12 Sep 2026 | 5a added: `git add <paths> && git commit` commits the whole index, not those paths. A concurrent agent's staged work rode into a commit that named six files and carried thirty-one. Use `git commit -o <paths>`, or read `git diff --cached --name-only` first. |

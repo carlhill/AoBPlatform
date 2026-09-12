@@ -1,5 +1,5 @@
 # INTEGRATION-MODES.md — the three ways a practice feeds AoBPlatform
-### v1.1 · 12 September 2026 · Owner: Carl. Companion to `PMS_to_AoB_Workflow.md` (the input SHAPES, cases 1-7) and `PRACTICE-ONBOARDING.md`.
+### v1.2 · 12 September 2026 · Owner: Carl. Companion to `PMS_to_AoB_Workflow.md` (the input SHAPES, cases 1-7) and `PRACTICE-ONBOARDING.md`.
 
 Carl, 12 September 2026:
 
@@ -226,26 +226,95 @@ Worth stating, because it is easy to assume otherwise:
   practice whose connector is down, and a practice with a dead tablet all see
   the patient and bill them.
 
-## 7. For Carl
+## 7. Answered by Carl, 12 September 2026
 
-1. **Gap A is the decision.** Is a fully manual practice expected to raise
-   post-service agreements at go-live? If yes, the post-service screen is
-   release-blocking rather than a gap in a table.
-2. **Gap B — what should a mode-1 practice see?** "Not written back" is
-   correct and honest for a practice with nothing to write back into, but the
-   current staleness warning would fire at them every four hours forever.
-   Suggest a per-practice posture: integrated, or deliberately standalone.
-3. **The day list for mode 1.** A practice with no appointment feed still has
-   a day. Reception building one by hand is one answer; treating arrivals AS
-   the day is another and is cheaper. The second is being built now
-   (`/practice/day`), and it may make a manual appointment list unnecessary —
-   worth deciding before anyone builds one.
-4. **Gender as identified and IHI have columns and no inputs.** Both are in
-   the approved identity set. Either they are keyable or they should not be
-   offered as verification types.
+Q1 and Q2 below were questions when this file was written. Carl answered both
+the same day, and added a third thing nobody had asked. All three are recorded
+as decisions D-2026-09-12-13, -14 and -15.
+
+### 7.1 Gap A — yes, and it is release-blocking (D-2026-09-12-13)
+
+Carl: *"we need a screen to manually type these details."*
+
+A practice with no interface MUST be able to raise a post-service agreement, so
+there must be a screen where a person types the service date (D5) and the MBS
+item numbers (D6b). The door already exists and nothing calls it from a screen.
+
+**It is release-blocking rather than a gap in a table**, because mode 1 is the
+only mode not waiting on somebody outside this project. If mode 1 cannot produce
+a post-service agreement, the one posture we can ship without help covers half
+the statute.
+
+**It is not a claiming screen and must never become one.** No benefit, no fee,
+no dollar amount on it or on anything it produces (hard rule 4). It records what
+was DONE so the agreement can name it, never what it is worth.
+
+### 7.2 Gap B — a posture per integration point, and the mode is derived (D-2026-09-12-14)
+
+Carl: *"lets add a column to the practice table or a table linked to the Practice
+table called `practice_posture` and lets record the mode the practice is working
+in and what postures / integrations are automated and what is manual."*
+
+**A linked table, not a column.** One row per integration POINT, because the
+points move independently:
+
+| Point | Postures |
+|---|---|
+| Appointments — the day's bookings | `manual` · `automated` · `not_used` |
+| Arrivals | `manual` · `automated` · `not_used` |
+| Service rendered — what was billed | `manual` · `automated` · `not_used` |
+| Write-back | `manual` · `automated` · `not_used` |
+| Patient demographics | `manual` · `automated` · `not_used` |
+
+**The mode is derived from the postures and never stored.** §1a already said a
+practice can be in two modes at once and usually will be; a single stored `mode`
+would have to round that to a lie, and if both existed they could disagree.
+
+**The rows are dated and never edited in place**, because the posture is
+evidence. An agreement made in March was made under March's posture, and an
+auditor asking whether it was typed or arrived from the practice's software must
+get March's answer.
+
+**This is what closes gap B.** A write-back posture of `not_used` means the
+stale-artefact warning does not fire, because there is nothing to write back
+into and nothing is wrong. Today the platform cannot tell that practice apart
+from one whose connector has died, which is the actual defect.
+
+### 7.3 The exception nobody had asked about — a corrected resend (D-2026-09-12-15)
+
+Carl: *"we have to consider how to handle exceptions: If the PMS sends incorrect
+details, they must be able to resend and AoB should be able to handle it."*
+
+**The three answers are the platform's existing rules**, chosen by how far the
+agreement has got:
+
+| Stage | What a correction does |
+|---|---|
+| Not yet locked | Updates the draft |
+| Locked, unsigned | **Supersedes** — a new agreement naming the old one, exactly as a reception correction already does |
+| Signed | Nothing to the signed record, which is immutable. A correction raises a new agreement and the signed one stands as evidence of what was agreed |
+
+**The dangerous part is the idempotency key.** The arrival contract carries one
+so a RETRY is safe. A resend of CORRECTED details is not a retry, and a
+connector that sends it under the same key gets silence: the platform sees a
+duplicate, does nothing, and both sides believe the correction landed. **That is
+reachable today and it is the worst available outcome.**
+
+So the two must be distinguishable on the wire. The same key means "you may not
+have heard me". A new key naming a prior arrival means "what I told you was
+wrong". Anything else is refused with a reason saying which the sender meant.
+
+### 7.4 Still open
+
+- **Which domain the product is served from.** It gates real email, real
+  passkeys and tenant single sign-on alike.
+- **Gender as identified, and the IHI.** Both are in the approved identity set,
+  both have columns, and neither can be keyed anywhere. Either they become
+  keyable or they should not be offered as verification types.
 
 ## Change log
 | Date | Change |
 |---|---|
 | 12 Sep 2026 | v1.0. Written when Carl asked for the three modes as one table, with the data at each step down the rows. The two gaps in §4 were found by reading the controllers rather than recalled. |
 | 12 Sep 2026 | §1a added. Carl pointed out the two files both number things and neither said how the numbers relate. A mode is made of cases; drag-and-drop and email-in belong to every mode; a practice can be in two modes at once, which is what gap A actually describes. |
+| 12 Sep 2026 | v1.2. Carl answered §7 Q1 and Q2 and raised the resend exception. Section 7 is now answers, not questions: the post-service screen is release-blocking, practice posture is per integration point with the mode derived, and a corrected resend supersedes and must never vanish behind an idempotency key. Recorded as D-2026-09-12-13, -14, -15. |
