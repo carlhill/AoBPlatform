@@ -63,6 +63,24 @@ type Me = {
   affiliations: Affiliation[];
 };
 
+/**
+ * THE ONE PRACTICE A PRACTITIONER IS WORKING AT, for the session badge — or
+ * null when there is none or more than one, because naming one of two in the
+ * corner of every page would be a guess presented as a fact.
+ */
+export function soleLivePracticeName(
+  affiliations: ReadonlyArray<{ practiceId?: string | null; practiceName?: string | null; status: string }> | undefined,
+): string | null {
+  const live = new Map<string, string | null>();
+  for (const a of affiliations ?? []) {
+    if (a.status !== 'active' && a.status !== 'ending') continue;
+    if (!a.practiceId) continue;
+    if (!live.has(a.practiceId)) live.set(a.practiceId, a.practiceName ?? null);
+  }
+  if (live.size !== 1) return null;
+  return [...live.values()][0];
+}
+
 export function PractitionerHub() {
   const [me, setMe] = useState<Me | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -205,7 +223,7 @@ export function PractitionerHub() {
      * to do something and then not letting them.
      */
     return (
-      <Shell right={<SessionControl audience={strings.practitioner.audience} />}>
+      <Shell right={<SessionControl audience={strings.practitioner.audience} practiceLabel={soleLivePracticeName(me?.affiliations)} />}>
         <h1 className={ui.pageTitle}>{strings.practitioner.title}</h1>
         <Notice tone="warn" title={strings.practitioner.signedOutTitle}>
           {strings.practitioner.signedOutBody}

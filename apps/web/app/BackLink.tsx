@@ -121,6 +121,15 @@ const PARENTS: Readonly<Record<string, string>> = {
 
   '/practitioner/affiliations': '/practitioner',
   '/practitioner/messages': '/practitioner',
+  /*
+   * THE CROSS-PRACTICE HUB GOES UP TO THE PRACTITIONER'S PAGE AT THE PRACTICE
+   * (Carl, 12 Sep 2026, signed in as Dr Huang). `/practitioner` is "about me,
+   * across practices"; `/practice/practitioner` is "my work at this practice
+   * today", and it is where a practitioner lands. Both are practitioner-
+   * audience, so `mayReach` shows this to exactly the people the page is for,
+   * and to nobody else.
+   */
+  '/practitioner': '/practice/practitioner',
 };
 
 /** Pages with an id in the path. Longest match wins, so order matters. */

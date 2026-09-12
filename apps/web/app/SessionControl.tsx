@@ -46,9 +46,23 @@ const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 export function SessionControl({
   audience,
   clientId,
+  practiceLabel,
 }: {
   /** What kind of screen this is — shown when nobody is signed in. */
   audience: string;
+  /**
+   * THE PRACTICE THIS PERSON IS WORKING AT, when the TOKEN cannot say (Carl,
+   * 12 Sep 2026, signed in as Dr Huang: "AOBPLATFORM should actually say the
+   * PracticeName the Practitioner is working at").
+   *
+   * A practitioner's token carries a practitioner claim and, by design, no
+   * practice claim — so `scopedToPractice` is false and the badge fell back to
+   * the platform's own name, which told them nothing. The page that renders
+   * this bar has already read their affiliations, so it may name the practice
+   * here. DISPLAY ONLY: it grants nothing and is never sent anywhere. Ignored
+   * when the token does carry a practice, which stays the source of truth.
+   */
+  practiceLabel?: string | null;
   /** Which Keycloak client to sign in against. The console and the practice
    *  portal are separate clients on purpose, so a practice token and a
    *  platform token are never interchangeable. */
@@ -296,7 +310,7 @@ export function SessionControl({
   const scopedToPractice = Boolean(session.practiceId);
   const affiliation = scopedToPractice
     ? (practiceName ?? strings.auth.practiceLoading)
-    : strings.auth.platformUser;
+    : (practiceLabel?.trim() ? practiceLabel.trim() : strings.auth.platformUser);
 
   return (
     <span className={ui.sessionBar}>

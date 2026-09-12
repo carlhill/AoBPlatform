@@ -119,7 +119,7 @@ export function PractitionerLandingView() {
 
   return (
     <Shell
-      right={<SessionControl audience={strings.practitionerQueue.audience} />}
+      right={<SessionControl audience={strings.practitionerQueue.audience} practiceLabel={only?.name ?? null} />}
       /*
        * THE TITLE NAMES THE PRACTICE AND ITS ADDRESS when there is exactly one
        * (Carl, 12 Sep 2026: "Your page at Practice: <practice-name and
