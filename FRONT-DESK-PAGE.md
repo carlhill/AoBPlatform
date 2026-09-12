@@ -266,8 +266,72 @@ the alternative is the page inferring who is missing, which it must not do.
   The rail makes multi-select technically easy and conceptually expensive; the
   design above assumes one.
 
+### 12.6 Reception can change who is next (Carl, 12 Sep 2026)
+
+Carl: *"we need to allow reception to change the place of a patient in the
+queue. This is how the walk-ins can be processed between other patients."*
+
+**The distinction that makes this safe.** Two different things are being
+confused if this is built carelessly:
+
+| | What it is | May it be edited? |
+|---|---|---|
+| **Arrival time** | When the patient actually turned up. A fact, recorded on the arrival, and part of the record | **Never.** It is evidence, and it is also what stops a corrected card jumping to the bottom of the queue (the fix of 11 Sep 2026) |
+| **Call order** | Who reception intends to see next. An operational decision that changes through the morning | **Yes.** That is the whole request |
+
+So this is a new, optional `callOrder` on the visit that OVERRIDES the display
+order, with the arrival time untouched underneath and still the tie-break for
+everyone who has not been moved. Sort is: anyone with a call order, in that
+order, then everyone else by arrival. Nothing about the agreement, the
+supersession chain or the evidence is touched.
+
+**How reception moves somebody.**
+
+- **"See next"** — the common case by far. A walk-in needs to go in front of the
+  queue, or a patient has been waiting too long. One button, no arithmetic.
+- **Move up / move down** — for the rest. Buttons rather than drag-and-drop:
+  drag is hostile to a first-day user, awkward on a touch screen at a counter,
+  and effectively unusable from a keyboard or a screen reader. Drag can be added
+  later as an *additional* way, never the only one (WCAG 2.2 AA, and
+  `FRONT-DESK-PAGE.md` §6's rule that nothing important is reachable one way).
+- **"Put back in arrival order"** — clears the manual order for everyone. There
+  will be mornings where the list has been shuffled into nonsense, and the way
+  out must be one obvious control rather than moving eight people by hand.
+
+**Rules.**
+
+1. **It never edits the arrival.** The arrival time stays exactly as recorded.
+2. **It is a display order, not a claim about anything.** Nothing downstream
+   reads it — not the agreement, not the policy decision, not the evidence.
+3. **It says who moved whom and when.** Being seen before somebody who arrived
+   earlier is a decision a practice may be asked about, so it is recorded with
+   the staff member and the time. Not a vault event: this is practice operations,
+   not agreement evidence.
+4. **It resets with the day.** A call order means nothing tomorrow.
+5. **It does not touch the card number.** Where a practice uses numbered cards
+   (`QUEUE-TICKETS.md`), the number is the PATIENT's handle and the order is
+   RECEPTION's; moving somebody up does not renumber their card, and the rail
+   shows both without implying they agree.
+6. **The rail still must not re-sort under the hand** (§12.3). A manual move is
+   the one reorder the user asked for, so it animates and is announced; a poll
+   arriving a second later must not undo it.
+7. **Moving somebody is not calling them.** This page does not run the waiting
+   room; it records who is next so the paperwork follows the room. No display
+   board, no announcement, no "now serving".
+
+**Named tests**, in addition to §8:
+
+- `changing_the_call_order_never_changes_the_arrival_time`
+- `see_next_puts_a_walk_in_in_front_without_moving_anybody_elses_arrival`
+- `an_unmoved_patient_is_still_ordered_by_arrival`
+- `the_call_order_is_recorded_with_who_changed_it`
+- `putting_the_queue_back_in_arrival_order_clears_every_manual_position`
+- `the_call_order_does_not_change_a_queue_ticket`
+- `a_poll_does_not_undo_a_move_reception_just_made`
+
 ## Change log
 | Date | Change |
 |---|---|
 | 12 Sep 2026 | v1.0. Written when Carl asked for a front-desk page a day-one starter could work. Not built. |
 | 12 Sep 2026 | §12: the queue rail — in flight, on a tablet, expected; and the finding that the appointment feed does not exist yet. Route fixed as /practice/frontdesk. |
+| 12 Sep 2026 | §12.6: reception can change who is next, as a call order that overrides display without ever editing the arrival time. |

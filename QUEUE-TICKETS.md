@@ -107,6 +107,18 @@ When on, the field appears in three places and nowhere else:
    anything later).
 6. **Never in a log, an error message or a URL.**
 
+## 5a. The ticket is not the running order
+
+Where a practice uses cards, it is tempting to treat the number as the queue.
+It is not. The number is the PATIENT's handle — what they are holding and what
+they will be called by — and the running order is RECEPTION's, changed through
+the morning as walk-ins arrive (`FRONT-DESK-PAGE.md` §12.6).
+
+Moving somebody up the list does **not** renumber their card, and cannot: they
+are holding it. The desk shows both, and they will often disagree — number 14
+being called before number 9 is an ordinary morning, not an error state, and
+nothing on screen should suggest otherwise.
+
 ## 6. Named tests
 
 - `a_queue_ticket_is_never_accepted_as_an_identity_identifier` — the kiosk's verification path refuses it outright.
@@ -117,6 +129,7 @@ When on, the field appears in three places and nowhere else:
 - `queue_tickets_are_invisible_when_the_practice_does_not_use_them`.
 - `a_ticket_event_carries_ids_and_never_the_number`.
 - `queue_tickets_do_not_cross_a_practice_boundary` — fails closed.
+- `moving_a_patient_up_the_queue_does_not_change_their_ticket` — the card is in their hand.
 
 ## 7. Build order
 
