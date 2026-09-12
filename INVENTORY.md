@@ -17,11 +17,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 1981 |
+| Exported symbols indexed | 1982 |
 | Files scanned for exports | 493 |
 | Files scanned for imports | 534 |
 | Exports with no comment of their own | 864 |
-| Exports imported nowhere else | 821 |
+| Exports imported nowhere else | 822 |
 
 ## Sections
 
@@ -35,7 +35,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 - [Contracts types](#contracts-types) — 69
 - [Contracts functions and constants](#contracts-functions-and-constants) — 20
 - [Core services, controllers and modules](#core-services-controllers-and-modules) — 268
-- [Core helpers, constants and types](#core-helpers-constants-and-types) — 163
+- [Core helpers, constants and types](#core-helpers-constants-and-types) — 164
 
 ## Web components
 
@@ -1927,7 +1927,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Core helpers, constants and types
 
-163 exports.
+164 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1965,7 +1965,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `RULES_CLIENT` | core:rules-client/rules-client.module.ts |  | **2** · core:agreements/agreements.service.ts, core:service-descriptions/service-descriptions.service.ts |
 | `RenderedArtefact` | core:render/renderer.ts | Rule 13 — ONE deterministic render path. | **2** · core:render/agreement-pdf-renderer.ts, core:render/pdf-renderer.ts |
 | `VAULT_CLIENT` | core:vault/vault.tokens.ts |  | **2** · core:vault/vault-relay.service.ts, core:vault/vault.module.ts |
-| `allocatePracticeCode` | core:practices/practice-code.ts |  | **2** · core:organisations/organisations.service.ts, core:practices/practices.service.ts |
+| `allocatePracticeCodeIfPossible` | core:practices/practice-code.ts | ALLOCATE, BUT NEVER FAIL THE THING THAT ASKED. | **2** · core:organisations/organisations.service.ts, core:practices/practices.service.ts |
 | `clientKey` | core:portal/portal-client-key.ts | WHAT A RATE LIMITER ON A PUBLIC PORTAL ROUTE COUNTS AGAINST. | **2** · core:portal/portal-passkey.controller.ts, core:portal/portal.controller.ts |
 | `evaluateChallenge` | core:verification/identifier-matching.ts | Evaluates ALL challenged identifiers (never short-circuits on first mismatch — uniform timing) and reports only the aggregate. | **2** · core:kiosk/kiosk.service.ts, core:verification/verification.service.ts |
 | `parseCaptureToken` | core:capture/capture-token.ts |  | **2** · core:agree/agree.service.ts, core:capture/capture.service.ts |
@@ -2076,6 +2076,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `WRITE_BACK_ALERT_AFTER_MS` | core:pms/write-back.service.ts | FR-9.3: alert on any stored artefact not in the PMS after this long. | 0 |
 | `WRITE_BACK_SWEEP_INTERVAL_MS` | core:pms/write-back.service.ts |  | 0 |
 | `addressMatches` | core:verification/identifier-matching.ts | The address rule (Carl, 3 Sep 2026), and it mirrors `nameMatches` on purpose. | 0 |
+| `allocatePracticeCode` | core:practices/practice-code.ts |  | 0 |
 | `constantTimeMatch` | core:verification/identifier-matching.ts | Constant-time equality over the normalised values — no early exit an attacker can time. | 0 |
 | `esc` | core:messaging/template.ts | Escape before interpolation. | 0 |
 | `existingUsername` | core:identity/account-names.ts | The username of an account we already recorded the id of. | 0 |

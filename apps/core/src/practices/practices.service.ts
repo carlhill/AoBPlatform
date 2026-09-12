@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import {
   assertValidIdentifierSet,
@@ -9,7 +9,7 @@ import {
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
-import { allocatePracticeCode } from './practice-code';
+import { allocatePracticeCodeIfPossible } from './practice-code';
 import type { Actor } from '../auth/actor.decorator';
 import type {
   CreateAssignorDto,
@@ -27,6 +27,8 @@ function collapse(value: string): string {
 
 @Injectable()
 export class PracticesService {
+  private readonly logger = new Logger(PracticesService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   /** FR-1.1 — practice record with locations. */
@@ -60,8 +62,8 @@ export class PracticesService {
      * error until rollback. Its own short transaction retries cleanly, and the
      * practice row it needs is committed by then.
      */
-    const allocation = await allocatePracticeCode(this.prisma, practiceId);
-    return { ...practice, code: allocation.code, codeGenerated: allocation.generated };
+    const allocation = await allocatePracticeCodeIfPossible(this.prisma, practiceId, this.logger);
+    return { ...practice, code: allocation?.code ?? null, codeGenerated: allocation?.generated ?? false };
   }
 
   async get(practiceId: string) {

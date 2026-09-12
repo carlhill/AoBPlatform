@@ -76,6 +76,16 @@ describe('practice onboarding sequence (e2e)', () => {
           // Credentials DO have a foreign key: they are current state, not
           // evidence, and have no meaning without the practice.
           await tx.practiceCredential.deleteMany({});
+          // Staff too, and this was missing (found 12 Sep 2026 by running the
+          // suite twice in a row). Approving a practice creates the
+          // administrator's STAFF row as well as their account — that is what
+          // makes `/practice/users` agree with Keycloak — and `staff_members`
+          // has a real foreign key to the practice. So the first run left a
+          // staff row, the second run's wipe hit
+          // `staff_members_practiceId_fkey`, and the suite failed to run at
+          // all. The wipe has to know about every table with a key into the
+          // practice, and this is one.
+          await tx.staffMember.deleteMany({});
           // NOT enrolmentCeremony: it is append-only evidence and the trigger
           // refuses to delete it — correctly, including for a test suite.
           // Attempting it aborted the whole cleanup and left every fixture in

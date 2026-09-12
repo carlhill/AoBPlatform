@@ -27,7 +27,7 @@ import {
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
-import { allocatePracticeCode } from '../practices/practice-code';
+import { allocatePracticeCodeIfPossible } from '../practices/practice-code';
 import { ActingAsService } from '../acting-as/acting-as.service';
 import { ReviewTasksService } from '../review-tasks/review-tasks.service';
 import { PendingEmailService } from './pending-email.service';
@@ -516,7 +516,7 @@ export class OrganisationsService {
      * and "The trustee for Hillsempire Family Trust" is not what anybody would
      * recognise in a passkey picker (§3b rule 1).
      */
-    await allocatePracticeCode(this.prisma, organisationId);
+    await allocatePracticeCodeIfPossible(this.prisma, organisationId, this.logger);
 
     const organisation = await this.prisma.withPractice(organisationId, (tx) =>
       tx.practice.findFirstOrThrow({ where: { id: organisationId } }),

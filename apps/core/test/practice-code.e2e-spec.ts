@@ -22,7 +22,11 @@ import { INestApplication } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
-import { allocatePracticeCode, practiceCode } from '../src/practices/practice-code';
+import {
+  allocatePracticeCode,
+  allocatePracticeCodeIfPossible,
+  practiceCode,
+} from '../src/practices/practice-code';
 import { usernameForPersonAtPractice, usernameForPracticeAdmin } from '../src/identity/account-names';
 
 /**
@@ -284,5 +288,81 @@ describe('the practice code (e2e, real Postgres)', () => {
         { practiceId: id, email: 'somebody@example.invalid', keycloakUserId: randomUUID() },
       ),
     ).toEqual({ username: `somebody@example.invalid.${code}`, grandfathered: false });
+  });
+
+  it('an_old_account_we_never_recorded_the_id_of_is_still_never_duplicated', async () => {
+    /*
+     * THE HOLE THE REALM CHANGE OPENED, closed.
+     *
+     * A person's practice account used to be named with their BARE EMAIL, and
+     * the staff row does not always carry the account id back — repairing
+     * exactly that is why 20260822400000_backfill_admin_staff exists. Missing
+     * such an account used to be harmless: the realm enforced one email per
+     * realm and the create 409'd. Now that duplicate emails are allowed it
+     * would quietly become a SECOND account, and the passkey is on the first.
+     */
+    const id = await makePractice(`Unlinked Account ${RUN}`);
+    const code = await practiceCode(prisma, id);
+    const email = `unlinked.${RUN}@example.invalid`;
+
+    // The old account exists, carries THIS practice, and nothing points at it.
+    realm.set(email, { id: randomUUID(), username: email, attributes: { practice_id: [id] } });
+    expect(
+      await usernameForPersonAtPractice(
+        { prisma, keycloak: keycloak as never },
+        { practiceId: id, email, keycloakUserId: null },
+      ),
+    ).toEqual({ username: email, grandfathered: true });
+
+    // ...but an account of the same name belonging to ANOTHER practice is not
+    // ours to take.
+    realm.set(email, { id: randomUUID(), username: email, attributes: { practice_id: [randomUUID()] } });
+    expect(
+      await usernameForPersonAtPractice(
+        { prisma, keycloak: keycloak as never },
+        { practiceId: id, email, keycloakUserId: null },
+      ),
+    ).toEqual({ username: `${email}.${code}`, grandfathered: false });
+
+    // ...and neither is the CROSS-PRACTICE practitioner account, which wears
+    // the same bare-email name and carries a practitioner rather than a
+    // practice (PRACTITIONER-IDENTITY.md §3). Scoping that to one practice is
+    // the confusion §1 of that document exists to prevent.
+    realm.set(email, { id: randomUUID(), username: email, attributes: { practitioner_id: [randomUUID()] } });
+    expect(
+      await usernameForPersonAtPractice(
+        { prisma, keycloak: keycloak as never },
+        { practiceId: id, email, keycloakUserId: null },
+      ),
+    ).toEqual({ username: `${email}.${code}`, grandfathered: false });
+    realm.delete(email);
+  });
+
+  it('a_practice_created_when_allocation_fails_is_still_created_and_named_later', async () => {
+    /*
+     * Allocation cannot share the create transaction (a refused candidate
+     * poisons it), so a failure would otherwise surface as an exception on a
+     * practice that HAS been committed — and a caller retrying on that error
+     * creates a second practice, orphaning the first behind an id it threw
+     * away. Losing a registration to a naming detail is the worse outcome.
+     */
+    const id = await makePractice(`Allocation Failure ${RUN}`);
+    const warnings: string[] = [];
+    const brokenPrisma = {
+      withPractice: () => Promise.reject(new Error('the database went away')),
+    } as unknown as typeof prisma;
+
+    const failed = await allocatePracticeCodeIfPossible(brokenPrisma, id, {
+      warn: (m: string) => warnings.push(m),
+    });
+    expect(failed).toBeNull();
+    expect(warnings.join(' ')).toContain(id);
+
+    // The practice is still there, still uncoded, and naming it later works.
+    const row = await prisma.withPractice(id, (tx) =>
+      tx.practice.findFirstOrThrow({ where: { id }, select: { code: true } }),
+    );
+    expect(row.code).toBeNull();
+    expect(await practiceCode(prisma, id)).toBe(`allocationfailure${RUN}`);
   });
 });

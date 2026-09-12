@@ -120,3 +120,37 @@ export async function allocatePracticeCode(
 export async function practiceCode(prisma: PrismaService, practiceId: string): Promise<string> {
   return (await allocatePracticeCode(prisma, practiceId)).code;
 }
+
+/**
+ * ALLOCATE, BUT NEVER FAIL THE THING THAT ASKED.
+ *
+ * Creating a practice and allocating its code cannot be one transaction: a
+ * refused candidate poisons the transaction it was tried in, so the retry loop
+ * needs its own. Which leaves a window — the practice row is committed and the
+ * allocation is not — and a caller that saw an exception and retried would
+ * create a SECOND practice, orphaning the first behind an id it has thrown away.
+ *
+ * That is a far worse outcome than an unnamed practice, and an unnamed practice
+ * is barely an outcome at all: `practiceCode` allocates on demand, so the code
+ * appears the first moment anything needs one. The naming of an account is not
+ * a reason to lose a registration (the same judgement `organisations.register`
+ * already makes about its acknowledgement email).
+ *
+ * Returns null when it could not, having logged why.
+ */
+export async function allocatePracticeCodeIfPossible(
+  prisma: PrismaService,
+  practiceId: string,
+  logger: { warn: (message: string) => void },
+): Promise<AllocatedPracticeCode | null> {
+  try {
+    return await allocatePracticeCode(prisma, practiceId);
+  } catch (err) {
+    logger.warn(
+      `Practice ${practiceId} was created but has no code yet: ${err instanceof Error ? err.message : String(err)}. ` +
+        'Nothing is lost — one is allocated the first time an account is named for this practice ' +
+        '(PRACTICE-SCOPED-LOGIN.md §5).',
+    );
+    return null;
+  }
+}

@@ -71,6 +71,34 @@ export async function usernameForPersonAtPractice(
   const kept = await existingUsername(deps.keycloak, input.keycloakUserId);
   if (kept) return { username: kept, grandfathered: true };
 
+  /*
+   * THE ACCOUNT WE NEVER RECORDED THE ID OF.
+   *
+   * Before this scheme a person's practice account was named with their BARE
+   * EMAIL, and the domain row does not always carry the id back: a staff row
+   * whose `keycloakUserId` was never written is exactly what the
+   * 20260822400000_backfill_admin_staff migration existed to repair. Missing
+   * that account used to be harmless, because the realm enforced one email per
+   * realm and the create simply 409'd. It is not harmless now: the realm allows
+   * duplicate emails, so an unnoticed old account means a SECOND account for
+   * somebody who already holds one, and the passkey they use is on the first.
+   *
+   * ADOPTED ONLY WHEN IT IS THIS PRACTICE'S. A bare email is also the username
+   * of the CROSS-PRACTICE practitioner account (PRACTITIONER-IDENTITY.md §3),
+   * which carries `practitioner_id` and deliberately no practice. Claiming that
+   * one here would scope a person-level identity to one practice — the exact
+   * confusion §1 of that document exists to prevent — so the `practice_id`
+   * attribute has to say it is ours, the same check `usernameForPracticeAdmin`
+   * makes on the eight-hex admin name.
+   */
+  const bareEmail = (input.email ?? '').trim();
+  if (bareEmail) {
+    const previous = await deps.keycloak.findByUsername(bareEmail);
+    if (previous?.attributes?.practice_id?.[0] === input.practiceId) {
+      return { username: previous.username, grandfathered: true };
+    }
+  }
+
   const code = await practiceCode(deps.prisma, input.practiceId);
   return { username: personUsername(input.email, code), grandfathered: false };
 }

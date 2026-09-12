@@ -43,7 +43,17 @@ export const PRACTICE_CODE_MAX_LENGTH = 24;
  */
 export const PRACTICE_CODE_MIN_LENGTH = 3;
 
-/** What a code may contain once allocated. The database CHECK says the same. */
+/**
+ * What a code may contain once allocated.
+ *
+ * SAID TWICE, ON PURPOSE, AND THE SECOND PLACE IS NAMED HERE: the identical
+ * pattern is the `practices_code_shape_check` CHECK in
+ * `apps/core/prisma/migrations/20260912030000_practice_code/migration.sql`.
+ * A code goes inside an account key that can never be changed afterwards, so
+ * it is worth refusing a malformed one at the first point AND the last. Change
+ * one of these and you must change the other in the same commit; the e2e in
+ * `apps/core/test/practice-code.e2e-spec.ts` fails when they disagree.
+ */
 export const PRACTICE_CODE_PATTERN = /^[a-z0-9]{3,}$/;
 
 /**

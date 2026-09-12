@@ -62,6 +62,7 @@ DECLARE
   base       TEXT;
   candidate  TEXT;
   attempt    INT;
+  tradingName TEXT;
   wasGenerated BOOLEAN;
 BEGIN
   FOR r IN
@@ -73,9 +74,21 @@ BEGIN
     -- legal name (rule 1): XLEVELUP Medical's legal name is "The trustee for
     -- Hillsempire Family Trust", which nobody would recognise and which changes
     -- for reasons that have nothing to do with the practice.
+    --
+    -- THE FIRST NON-BLANK ONE, not `tradingNames[1]`, because that is what
+    -- `practiceNameForCode` does and the two must not disagree: a row holding
+    -- ARRAY['', 'XLEVELUP'] would otherwise be backfilled from its NAME here
+    -- and from its trading name by the allocator, and the same practice would
+    -- get a different code depending on which of the two named it.
+    SELECT btrim(t) INTO tradingName
+      FROM unnest(coalesce(r."tradingNames", ARRAY[]::text[])) WITH ORDINALITY AS u(t, ord)
+     WHERE btrim(t) <> ''
+     ORDER BY ord
+     LIMIT 1;
+
     base := substr(
       regexp_replace(
-        lower(coalesce(NULLIF(btrim(r."tradingNames"[1]), ''), r."name", '')),
+        lower(coalesce(tradingName, r."name", '')),
         '[^a-z0-9]', '', 'g'
       ), 1, 24);
 

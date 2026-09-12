@@ -149,6 +149,27 @@ describe('REQ-PKI-01 enrolment ceremony gate (e2e, real Postgres)', () => {
       expect(res.body.consumedAt).toBeNull();
     });
 
+    it('an_account_named_for_an_address_is_refused_when_there_is_no_address', async () => {
+      /*
+       * A person's account is named for their email (PRACTICE-SCOPED-LOGIN.md
+       * §3a), so without one there is no name to give it — and no invitation to
+       * send, which is the same fact wearing a different hat. The old scheme
+       * fell back to a slug of the person's NAME, which is how an account key
+       * ended up able to change when somebody married.
+       *
+       * The ceremony recorded above is NOT consumed by a refusal, so the test
+       * that follows still has one to spend.
+       */
+      const res = await request(app.getHttpServer())
+        .post(`/identity/providers/${providerId}/invite`)
+        .set('x-practice-id', practiceId)
+        .send({})
+        .expect(400);
+      expect(res.body.message).toContain('email address');
+      expect(res.body.message).toContain('PRACTICE-SCOPED-LOGIN.md');
+      expect(accounts.size).toBe(0);
+    });
+
     it('now permits the invitation, and the binding cites the attestation', async () => {
       const before = createdUsers;
       await invite().expect(201);

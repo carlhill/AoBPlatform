@@ -127,6 +127,12 @@ describe('org model: organisations, practitioners, affiliations (e2e)', () => {
           // Credentials DO have a foreign key: they are current state, not
           // evidence, and have no meaning without the practice.
           await tx.practiceCredential.deleteMany({});
+          // And staff, which `staff_members_practiceId_fkey` makes mandatory
+          // once a suite has approved a practice — approval creates the
+          // administrator's staff row. Missing it made the SECOND run of this
+          // suite fail to clean up at all (12 Sep 2026; the same one-line gap
+          // as onboarding-sequence.e2e-spec.ts, which says more about why).
+          await tx.staffMember.deleteMany({});
           await tx.practice.deleteMany({});
         });
       }
