@@ -80,6 +80,33 @@ that is the argument for spending real time on it rather than tuning it.
 **This belongs in `FRONT-DESK-PAGE.md` and is parked here only because an agent
 was editing that file at handover.** Move it across tomorrow.
 
+### It got built, and Carl likes it — so the question has changed
+
+Carl, last thing on 12 September, after using it: *"The frontdesksmall is
+growing on me. It is simple and I think effective. Lets review tomorrow."*
+
+`/practice/frontdesksmall` was commissioned as the SMALL-SCREEN answer. If it is
+simply the better desk, then the review tomorrow is not "does it work on a small
+screen" but **"which one is the front desk"**, and that is a bigger and better
+question.
+
+**Two desks is not free, and today already showed the bill.** Every change since
+it landed has had to be applied twice — both patient ids, the checklist
+alignment, the rail colours. Two implementations of one screen drift, and the
+one people use less drifts faster. So the honest options tomorrow are:
+
+1. **Keep both**, and accept that every front-desk change is two changes
+   forever. Only worth it if practices genuinely split into two populations.
+2. **Make the compact one THE front desk**, and retire the wide one. The wide
+   layout's detail panel becomes the wide-screen rendering of the same page
+   rather than a different page.
+3. **One page, two densities** — the same route, the layout responding to the
+   width. This is option 2 done properly and is probably where it ends up.
+
+**Do not decide it from the screenshots.** Decide it from a busy morning: seed
+twenty patients across three practitioners, put two on tablets, finish six, and
+look at both. Seven patients flatters the wide desk because the rails are short.
+
 ### The question that decides the layout, before any pixels
 
 **Is a receptionist working one patient at a time, or watching the room?**
