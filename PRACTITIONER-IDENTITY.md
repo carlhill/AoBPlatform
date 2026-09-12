@@ -38,15 +38,41 @@ So: **duplicate the LOGIN, never the PERSON.**
 | `Affiliation.id` | **The person × a location of a practice** | Ours | **This is the internal GUID Carl asked for.** It already exists |
 | `Affiliation.pmsLinkageKey` | The person × a location | **The practice's** | Their own reference for this practitioner in their software. The join key for API automation |
 
-**One correction to the ask.** The internal GUID exists, but its grain is finer
-than "practice × practitioner": `Affiliation` is unique on
+**One correction to the ask, and it is a regulatory one rather than a modelling
+preference.** The internal GUID exists, but its grain is finer than
+"practice × practitioner": `Affiliation` is unique on
 `(practitionerId, locationId)`, so a doctor working at two sites of one practice
-has two rows. That is right for billing — a provider number is per location —
-but it means "the practice-practitioner combination" is a SET of affiliations,
-not one row. Where something needs one identifier per practice pair, it must
-either pick the affiliation deliberately or be keyed on
-`(practiceId, practitionerId)`. Left as it is, recorded here, because changing
-the grain would touch provider numbers.
+has two rows.
+
+**That is required, not incidental (Carl checked this, 12 Sep 2026).** The s 65C
+data set element D4 is satisfied by EITHER:
+
+- (a) the provider's name **plus the address of the place of practice at the
+  time of service**, or
+- (b) **the provider number for that place of practice**
+  (`aob-requirements.md` lines 63–64; conformance check C4).
+
+The location is load-bearing on BOTH branches. A provider number is issued per
+place of practice, and the fallback names the address of the place of practice.
+So the billing identity is **practice × location × practitioner**, never
+practice × practitioner, and anything that collapses the location loses the one
+fact that makes the agreement conform.
+
+Consequences to hold on to:
+
+1. **Never key billing on `(practiceId, practitionerId)`.** A doctor at two
+   sites has two provider numbers and two correct answers to D4.
+2. **"The practice-practitioner combination" is a SET of affiliations.** Where
+   something genuinely needs one identifier per practice pair — a login, say —
+   it must pick an affiliation deliberately or be keyed above them, and it must
+   not be the thing billing reads.
+3. **A provider number is optional** (REQ-REG-02): branch (a) exists precisely
+   so a practice can onboard without one. The location is still required, since
+   (a) names its address.
+4. **Enduring coverage is the deliberate exception.** It is per practitioner
+   ACROSS locations (hard rule 6) — the person's standing agreement follows
+   them; the billing identity does not. Two different grains, both correct, and
+   confusing them in either direction is a defect.
 
 ## 3. Sign-in
 
@@ -133,3 +159,4 @@ Not yet decided. This is the open question in §6.
 | Date | Change |
 |---|---|
 | 12 Sep 2026 | v1.0. Written from Carl's rules on practitioner identity and per-practice sign-in. |
+| 12 Sep 2026 | §2 hardened: the billing identity is practice × location × practitioner, required by s 65C(5)(a)/(b) on both branches. |
