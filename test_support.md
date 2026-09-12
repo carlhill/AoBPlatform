@@ -81,6 +81,64 @@ The bases are `parent`, `spouse`, `co_resident_relative_18_plus`, `guardian`,
 `health_epoa` and `other_with_note`. The 18+ answer is a DECLARATION, never a
 date of birth.
 
+## The one for a busy morning
+
+```bash
+cd apps/core && npx ts-node -T ../../scripts/dev/seed-busy-day.ts
+```
+
+Ninety arrivals today at XLEVELUP, spread across **three** practitioner
+queues — about thirty each, which is one practitioner's real day. Two patients
+are left holding a tablet, six are signed and finished, eight are deliberately
+left with nobody answering "who is signing" so the "Needs a look" rail is not
+empty, and two are signed for by a spouse. Everything else is ready to send.
+
+**Use it when the question is about a screen at volume.** Seven patients
+flatters every wide layout: short rails hide the cost of five headings, and a
+desk that reads beautifully at seven can be unusable at ninety. This is what
+`/practice/frontdesk` and `/practice/frontdesksmall` were compared on.
+
+**It is a .ts and not a .sh, and the reason is worth knowing.** The arrivals go
+through the front door over HTTP exactly as `arrive.sh` does. But
+`POST /tablet-sessions/devices/:id/push` **refuses an unattributed caller** —
+a push writes a staff-verified event, and an audit line naming nobody is worse
+than a refusal — and there is no dev header that fakes one. So the script boots
+a Nest application context and calls the services directly for the push and the
+signature, with an actor that says out loud it is a seed. It disables the
+`@Interval`/`@Cron` sweeps it inherits from `AppModule` on the way in, because
+core is already running every one of them on :3001.
+
+Knobs, all optional:
+
+```bash
+ARRIVALS=30 RECORD_PREFIX=TRIAL npx ts-node -T ../../scripts/dev/seed-busy-day.ts
+```
+
+`RECORD_PREFIX` is the identity space. Two runs with the same prefix are the
+same people arriving twice, which is usually what you want; **a smaller trial
+run wants its own prefix**, because a patient who has already signed today may
+be decided `none` on a second arrival and would quietly hollow out the real
+run. The idempotency key is deterministic per person per day, so a run
+interrupted halfway tops up rather than duplicating — but that also means a
+second full run on the same prefix is measuring the dedupe path, not the create
+path. `TABLETS` overrides the two device ids; **`e1e2c073-…` "Carl browser
+tablet" is deliberately not one of them** and must stay that way.
+
+**It measures itself, and that is half the point.** Every arrival locks
+particulars and renders a hashed PDF/A artefact, so ninety of them is real
+load. The run prints total wall clock, median / p95 / worst per arrival, the
+first ten against the last ten, and the three console page reads —
+`/tablet-sessions/pushable`, `/arrivals/day`, `/practitioner-queue/waiting` —
+timed before the ninety and again after. Measured 12 Sep 2026: **13.3 s for 90,
+median 142 ms, worst 222 ms, about 10% slower by the end**; the page reads went
+from 25–125 ms at 7 rows to 30–92 ms at 158 rows, i.e. no cliff yet.
+
+**It creates a third practitioner if there is not one.** XLEVELUP has only two
+live practitioner-at-a-location affiliations, so the script pre-registers
+Dr Omar Notional (`MED9000000903`), invites them to a location and accepts on
+their behalf — three ordinary endpoints, not SQL and not a revived `ended` row.
+Idempotent on the AHPRA number.
+
 ## The other two
 
 ```bash
@@ -140,3 +198,4 @@ bash scripts/dev/test-db.sh
 | Date | Change |
 |---|---|
 | 12 Sep 2026 | v1.0. Written when Carl asked for the staging command to live somewhere findable. |
+| 12 Sep 2026 | `seed-busy-day.ts` — ninety arrivals across three queues, for judging a screen at volume rather than at seven. |
