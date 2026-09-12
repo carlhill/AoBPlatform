@@ -4542,7 +4542,7 @@ export const strings = {
         nothingToMake: 'Nothing to make.',
         notSignedYet: 'Not yet. Ask them on a tablet beside you.',
         withThemNow: (device: string | null) =>
-          device ? `They have the ${device} tablet now.` : 'They have one of your tablets now.',
+          device ? `They have the ${device} now.` : 'They have one of your tablets now.',
         signedAndStored: 'Signed and stored.',
         nothingBilledYet:
           'Nothing has been billed after this visit, so there is nothing to sign afterwards.',
@@ -4574,7 +4574,13 @@ export const strings = {
 
       hereNow: (name: string) => `${name} is waiting at the desk.`,
       hereNowNext: 'The next step is to send their agreement to a tablet beside you.',
-      onATablet: (name: string, device: string) => `${name} has the ${device} tablet.`,
+      /*
+       * THE DEVICE LABEL ALREADY SAYS WHAT IT IS. Practices name their tablets
+       * "Blue tablet", "Front desk tablet"; a sentence that appended the word
+       * again read "has the Blue tablet tablet". The label is printed as the
+       * practice wrote it and nothing is added to it.
+       */
+      onATablet: (name: string, device: string) => `${name} has the ${device}.`,
       onATabletUnnamed: (name: string) => `${name} has one of your tablets.`,
       onATabletNext: 'Wait for them to finish, or take the tablet back.',
       expected: (name: string) => `${name} is booked in for today and has not arrived yet.`,
@@ -4604,29 +4610,39 @@ export const strings = {
         `Something has to be sorted out before ${name} can be asked to sign. It is written just below, with the way to fix it.`,
 
       /*
-       * THE ONE PRIMARY BUTTON, LABELLED AS THE THING A PERSON WOULD SAY.
-       * Every other control on the panel is behind the one disclosure below.
+       * WHERE THE PANEL DRAWS ITS OWN BUTTON. A live tablet does NOT: Carl,
+       * 12 Sep 2026 — *"Why are you not just copying the existing logic."* —
+       * so a session on a tablet is answered by the tablet desk's own
+       * `SessionActions` (Recall, Correct, No change needed, Re-send), word
+       * for word, rather than by a simplified button that says a different
+       * thing about the same act. This one is for the case with no session at
+       * all, where the patient mentioned a wrong detail across the counter.
        */
-      bringItBack: 'Bring it back',
       fixTheirDetails: 'Fix their details',
+      /*
+       * WHEN THE DEVICE LIST HAS NOT LANDED. The row knows a tablet is holding
+       * the agreement before the read that names it comes back, and "one of
+       * your tablets" is true where inventing a name would not be.
+       */
+      someTablet: 'one of your tablets',
 
       /*
-       * NOTHING IRREVERSIBLE WITHOUT A PLAIN SENTENCE (§6 rule 1). Taking a
-       * tablet back from somebody who is mid-way through it is the one press
-       * on this page a first-day starter is most likely to regret, so it names
-       * what happens and to whom before it happens — and says, in the same
-       * breath, that nothing is lost, because the fear is what makes people
-       * fetch a supervisor.
+       * THE PAYOFF MOMENT (§4's last row). A row leaves the desk the instant
+       * it is signed, so the panel used to go blank under somebody's hand and
+       * a first-day starter could not tell "it worked" from "I lost my place".
+       * It names the person, says there is nothing left, and gives them the
+       * one press that moves on.
+       *
+       * IT SAYS "NOTHING LEFT TO DO" RATHER THAN CLAIMING A SIGNATURE. A row
+       * can also leave because the visit was cancelled or another desk dealt
+       * with it, and this page cannot tell those apart from the queue alone —
+       * so it states what it knows and nothing more.
        */
-      bringItBackAsk: (name: string, device: string | null) =>
-        device
-          ? `Take the ${device} tablet back from ${name}?`
-          : `Take the tablet back from ${name}?`,
-      bringItBackWhat:
-        'The screen goes back to the start and nothing they have done is lost. You can hand it to them again '
-        + 'straight away, or ask them after they have been seen.',
-      bringItBackYes: 'Yes, bring it back',
-      bringItBackNo: 'No, leave it with them',
+      finished: (name: string) => `Nothing left to do for ${name}.`,
+      finishedLead:
+        'Their row has left the desk. If they still need something, they will come back onto the list on '
+        + 'their own.',
+      nextPatient: 'Next patient',
 
       /*
        * ONE CONTROL FOR EVERYTHING ELSE (§4: "Secondary actions live behind
@@ -5105,6 +5121,28 @@ export const strings = {
         'The patient is signing this agreement, so there is nobody else to reach. A patient’s own '
         + 'mobile and email are changed on their record, not here. Nothing was changed.',
     } as Record<string, string>,
+    /*
+     * THE RULES VERDICT, NAMED (CLAUDE.md section 7; Carl, 12 Sep 2026).
+     *
+     * A party change SUPERSEDES, and the successor is drafted, validated and
+     * re-locked. When that validation refuses, the server answers with a
+     * `failures` array — "C6: D6a: a pre-agreement requires a Basic Service
+     * Description" — and this screen used to throw all of it away and show
+     * only the summary line, which named no rule, no field and nowhere to go.
+     * That is the generic dead end CLAUDE.md section 7 calls a defect.
+     *
+     * THE FAILING RULES ARE SHOWN AS THE SERVER NAMED THEM. They are the one
+     * string somebody can act on or quote, and inventing a friendlier sentence
+     * per rule would be a second copy of a versioned rule set (hard rule 14).
+     * The sentence around them is ours; the diagnosis is the engine's.
+     *
+     * AND IT SAYS NOTHING WAS CHANGED, because nothing was: the save is one
+     * transaction and a refused re-lock leaves the record exactly as it stood.
+     * The patient is bulk billed either way (hard rule 8).
+     */
+    whoRefusalRules: (failures: string) =>
+      `That could not be saved because the form would not be complete: ${failures}. Nothing was changed, `
+      + 'and the patient can still be bulk billed.',
     whoRefusalUnmapped: (code: string) =>
       `The server reported “${code}”, which this screen does not have wording for yet. Tell us the `
       + 'code — nothing was changed, and the patient can still be bulk billed.',

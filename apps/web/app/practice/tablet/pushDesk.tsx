@@ -940,14 +940,33 @@ export function whoIsBlocked(draft: WhoDraft, staffNames: readonly string[]): st
  * `reason` code and a message; nothing here is invented when the body does
  * not have it.
  */
-async function refusal(res: Response): Promise<{ message: string; reason?: string; sessionId?: string }> {
+async function refusal(
+  res: Response,
+): Promise<{ message: string; reason?: string; sessionId?: string; failures?: string[] }> {
   const body = (await res.json().catch(() => ({}))) as {
     message?: string | string[];
     reason?: string;
     sessionId?: string;
+    /**
+     * THE RULES ENGINE'S OWN NAMED VERDICTS — "C6: D6a: a pre-agreement
+     * requires a Basic Service Description" (Carl, 12 Sep 2026).
+     *
+     * WHY IT IS READ HERE AND NOT LEFT BEHIND. A refused lock answers with a
+     * summary line AND this array, and every caller of this helper used to
+     * keep the summary and drop the array — so a receptionist met "s 65C
+     * validation failed", which names no rule, no field and no fix. That is
+     * the dead end CLAUDE.md §7 exists to forbid, and the array is the only
+     * thing on the wire that answers it.
+     */
+    failures?: string[];
   };
   const message = Array.isArray(body.message) ? body.message.join(' ') : (body.message ?? String(res.status));
-  return { message, reason: body.reason, sessionId: body.sessionId };
+  return {
+    message,
+    reason: body.reason,
+    sessionId: body.sessionId,
+    failures: Array.isArray(body.failures) && body.failures.length > 0 ? body.failures : undefined,
+  };
 }
 
 export function when(iso: string): string {
@@ -1506,9 +1525,21 @@ export function usePushDesk(practiceId: string): PushDesk {
          * carry only their own words, which already name the rule and the fix.
          * An unmapped code is SHOWN rather than swallowed.
          */
-        const { message, reason } = await refusal(res);
+        const { message, reason, failures } = await refusal(res);
+        /*
+         * THE RULES VERDICT WINS OVER THE SUMMARY LINE. A party change
+         * supersedes, and the successor is drafted, validated and re-locked —
+         * so this is the one refusal on this endpoint that can come back from
+         * the s 65C engine rather than from a named business rule. Its
+         * `failures` array says WHICH rule and WHICH field; the summary line
+         * ("s 65C validation failed") says nothing anybody can act on.
+         */
         throw new Error(
-          reason ? (strings.tablet.whoRefusals[reason] ?? strings.tablet.whoRefusalUnmapped(reason)) : message,
+          reason
+            ? (strings.tablet.whoRefusals[reason] ?? strings.tablet.whoRefusalUnmapped(reason))
+            : failures
+              ? strings.tablet.whoRefusalRules(failures.join(' · '))
+              : message,
         );
       }
       /*
@@ -2633,48 +2664,6 @@ export function AgreementRow({
    * ended-session controls to say what may be done about the ending itself.
    */
   const onTablet = live && live.endedAt === null ? live : undefined;
-  const outcome = desk.pushOutcome?.id === row.agreementId ? desk.pushOutcome : null;
-  const whoSaid = desk.whoOutcome?.id === row.agreementId ? desk.whoOutcome : null;
-  /*
-   * WHAT IS IN THE WAY OF SAVING WHO IS SIGNING, AND WHERE (Carl, 10 Sep
-   * 2026). Recomputed on every render from the open draft, and SHOWN only once
-   * a Save has actually been refused — so it marks the box somebody missed
-   * rather than colouring a form nobody has finished. Fixing the marked field
-   * moves the mark to whatever is still missing, and clears it when nothing is.
-   */
-  const fault = whoFault(desk.who, desk.staffNames);
-  const shownFault = desk.whoFaulted[row.agreementId] ? fault : null;
-  /**
-   * THE PANEL'S OWN NODE, so a refused Save can put the cursor in the field it
-   * is complaining about. Scoped to the panel rather than the document: two
-   * rows can hold drafts at once and only one of them is open.
-   */
-  const whoPanelRef = useRef<HTMLDivElement>(null);
-  /** The message id a marked control is described by — one fault, one id. */
-  const whoErrorId = `who-error-${row.agreementId}`;
-  const describedByFault = (field: WhoFaultField, given: string | undefined) =>
-    shownFault?.field === field ? [given, whoErrorId].filter(Boolean).join(' ') : given;
-  const faultMessage = (field: WhoFaultField) =>
-    shownFault?.field === field ? (
-      /*
-       * THE REASON, UNDER THE CONTROL IT IS ABOUT, AND SPOKEN. `role="alert"`
-       * so it reaches a screen reader the moment it appears, and
-       * `aria-describedby` so it is read again with the field the cursor has
-       * just landed in.
-       */
-      <p className={ui.fieldError} role="alert" id={whoErrorId} data-testid={whoErrorId}>
-        {shownFault.text}
-      </p>
-    ) : null;
-  function pressSaveWho() {
-    if (fault) {
-      desk.markWhoFault(row.agreementId);
-      focusWhoFault(whoPanelRef.current, row.agreementId, fault.field);
-      return;
-    }
-    void desk.saveWho(row);
-  }
-
   /*
    * THE SESSION CHIP AND THE RECORD ID, BUILT ONCE AND PLACED ONCE. They sit
    * under the name while the row is still a thing to send, and move into the
@@ -2882,6 +2871,95 @@ export function AgreementRow({
         )}
       </div>
 
+      <AgreementBands desk={desk} row={row} />
+    </li>
+  );
+}
+
+/**
+ * THE BANDS UNDER ONE AGREEMENT, AND THE PANEL THEY OPEN — the reason it
+ * cannot go with the fix in it, the outcome of the last press, and the
+ * who-is-signing form itself.
+ *
+ * WHY IT IS ITS OWN COMPONENT (12 Sep 2026). It was the tail of
+ * `AgreementRow` and it still renders there, unchanged and in the same place
+ * — this is a lift, not a redesign, and `/practice/tablet` produces exactly
+ * the same DOM it did before. The front desk (`/practice/frontdesk`) needs
+ * these four things WITHOUT the row's identity column and without a second
+ * numbered strip, because its panel is already about one person and already
+ * shows the steps inside its own checklist. Copying them would be a second
+ * place for the refusal mapping, the fault marking and the supersession
+ * warning to be fixed, and the copy nobody remembered would be the one a
+ * practice met.
+ *
+ * A FRAGMENT, NOT A WRAPPER. The four blocks were siblings inside the row's
+ * `<li>` and they still are: nothing was added to the tree, so no layout,
+ * no test id and no selector moves.
+ */
+export function AgreementBands({
+  desk,
+  row,
+  offerPatientPage = true,
+}: {
+  desk: PushDesk;
+  row: PushableRow;
+  /**
+   * MAY A REFUSAL OFFER THE PATIENT'S OWN PAGE AS ITS DESTINATION?
+   *
+   * `patient_confidential` is the one refusal whose shortcut is a per-PATIENT
+   * screen. On the tablet desk that is exactly right and it stays the default.
+   * The front desk passes `false`, because Carl's §13 constraint is that
+   * nothing about the patient leaves that page — a link that carried them to
+   * another patient screen mid-task is the thing it was written to stop. The
+   * sentence still says what is in the way; only the destination is withheld,
+   * and `describeRefusal` draws no link without a patient id.
+   */
+  offerPatientPage?: boolean;
+}) {
+  const outcome = desk.pushOutcome?.id === row.agreementId ? desk.pushOutcome : null;
+  const whoSaid = desk.whoOutcome?.id === row.agreementId ? desk.whoOutcome : null;
+  /*
+   * WHAT IS IN THE WAY OF SAVING WHO IS SIGNING, AND WHERE (Carl, 10 Sep
+   * 2026). Recomputed on every render from the open draft, and SHOWN only once
+   * a Save has actually been refused — so it marks the box somebody missed
+   * rather than colouring a form nobody has finished. Fixing the marked field
+   * moves the mark to whatever is still missing, and clears it when nothing is.
+   */
+  const fault = whoFault(desk.who, desk.staffNames);
+  const shownFault = desk.whoFaulted[row.agreementId] ? fault : null;
+  /**
+   * THE PANEL'S OWN NODE, so a refused Save can put the cursor in the field it
+   * is complaining about. Scoped to the panel rather than the document: two
+   * rows can hold drafts at once and only one of them is open.
+   */
+  const whoPanelRef = useRef<HTMLDivElement>(null);
+  /** The message id a marked control is described by — one fault, one id. */
+  const whoErrorId = `who-error-${row.agreementId}`;
+  const describedByFault = (field: WhoFaultField, given: string | undefined) =>
+    shownFault?.field === field ? [given, whoErrorId].filter(Boolean).join(' ') : given;
+  const faultMessage = (field: WhoFaultField) =>
+    shownFault?.field === field ? (
+      /*
+       * THE REASON, UNDER THE CONTROL IT IS ABOUT, AND SPOKEN. `role="alert"`
+       * so it reaches a screen reader the moment it appears, and
+       * `aria-describedby` so it is read again with the field the cursor has
+       * just landed in.
+       */
+      <p className={ui.fieldError} role="alert" id={whoErrorId} data-testid={whoErrorId}>
+        {shownFault.text}
+      </p>
+    ) : null;
+  function pressSaveWho() {
+    if (fault) {
+      desk.markWhoFault(row.agreementId);
+      focusWhoFault(whoPanelRef.current, row.agreementId, fault.field);
+      return;
+    }
+    void desk.saveWho(row);
+  }
+
+  return (
+    <>
       {/*
         THE REASON IT CANNOT GO, on the row, always — never only after somebody
         presses something. This is Carl's live test made structural: reception
@@ -2893,7 +2971,7 @@ export function AgreementRow({
             <RefusalOutcomeBody
               info={describeRefusal(row.blockedReason, {
                 providerType: row.providerType,
-                patientId: row.patientId,
+                patientId: offerPatientPage ? row.patientId : undefined,
                 audiences: desk.audiences,
                 practiceId: desk.practiceId,
               })}
@@ -3131,9 +3209,10 @@ export function AgreementRow({
           </div>
         </div>
       )}
-    </li>
+    </>
   );
 }
+
 
 /**
  * WHAT THE PATIENT SAID IS WRONG, AND WHETHER ANYBODY HAS ANSWERED IT.

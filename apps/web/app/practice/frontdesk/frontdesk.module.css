@@ -189,21 +189,130 @@
 }
 
 /*
- * THE WAY ONWARD, AND IT IS A LINK RATHER THAN A BUTTON. Nothing on this page
- * acts yet; a control styled as a primary button would be the second thing on
- * screen that looks like the answer, which is the one thing §4 of the plan
- * asks this page never to have.
+ * EXACTLY ONE ROW IS MARKED "DO THIS NEXT" (§4). A WORD, not a colour and not
+ * an icon: the mark has to survive a monochrome screen, a colour-blind reader
+ * and a screen reader, and the shortest thing that does all three is the
+ * sentence itself (WCAG 2.2 AA, 1.4.1).
  */
-.toTablet {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s2);
-  align-self: flex-start;
+.next {
+  flex: none;
+  padding: 0 var(--s2);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--info-wash);
   color: var(--accent);
-  font-weight: 500;
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
 
-.toTablet:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+/* ------------------------------------------------- today's paperwork */
+
+/*
+ * THE CHECKLIST (VISIT-CHECKLIST.md §9 phase 1). It reads top to bottom as a
+ * list of facts, so it is an ordered list with no controls of its own — the
+ * one control that appears inside it is the numbered send card, which belongs
+ * to row 3 (Carl's second note) and is laid out by the tablet desk's own
+ * stylesheet.
+ */
+.checklist {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  padding: var(--s4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.checklistTitle {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.checkRows {
+  list-style: none;
+  margin: var(--s2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+
+.checkRow + .checkRow {
+  border-top: 1px solid var(--line);
+  padding-top: var(--s3);
+}
+
+.checkHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  flex-wrap: wrap;
+}
+
+.checkLabel {
+  font-weight: 600;
+  color: var(--ink);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------ the one action */
+
+/*
+ * THE PANEL'S ACTION AREA — ONE THING, ALWAYS (§4). Whatever is inside it is
+ * "the answer": the numbered send card, or a single button whose label is the
+ * sentence somebody would say. Everything else on the panel is either the
+ * REASON something cannot go (a band, with its own repair in it) or is behind
+ * the one disclosure below.
+ */
+.action {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  margin-top: var(--s3);
+}
+
+.confirmActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-top: var(--s3);
+}
+
+.disclose {
+  display: flex;
+  margin-top: var(--s2);
+}
+
+/*
+ * THE EXPERT CONTROLS, REVEALED IN PLACE (§13). Set back from the panel so it
+ * reads as a drawer that was opened rather than as more of the same screen —
+ * a beginner who opened it should be able to see at a glance what to close.
+ */
+.expert {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  padding: var(--s4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+
+/*
+ * WHERE THE AGREEMENT IS RIGHT NOW — the same chip the tablet desk shows, on
+ * its own line so it is read before the checklist rather than inside it. A
+ * paragraph rather than a div because it is a sentence made of chips, and
+ * `flex-wrap` because "On Front desk tablet now · a1b2c3d4" plus a fault chip
+ * does not fit a narrow column on one line.
+ */
+.liveLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
 }
