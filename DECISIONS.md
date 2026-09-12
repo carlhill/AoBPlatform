@@ -602,6 +602,73 @@ telling us they want to land on setup (§7 asks one real practice this); or a
 sixth thing that is genuinely daily, which is a change to §2 and not a card
 somebody adds.
 
+## D-2026-09-12-06 — "Completed" records the visit; it raises a post-service agreement only where the invoice has already said what was done
+
+**Status: an ASSUMPTION made mid-build, and Carl's to confirm or overturn**
+(wow.md §9). Recorded 12 September 2026 while building
+PRACTITIONER-QUEUE-PAGE.md §3a.
+
+**The rule as built.** Setting a visit's state to **Completed** on
+`/practice/practitioner/waiting` records the state — who, what, when — and hands
+the service-rendered signal to the existing
+`ArrivalsService.serviceRendered`. That path raises the post-service agreement
+**only where the practice's own software has already told us what was done**: an
+undecided `service_records` row for the patient carrying its own MBS item
+numbers and its own service date, which is what `PmsSyncService` writes from an
+invoice. Where no such row exists — which is the ordinary case at the moment the
+doctor presses the button — the state is recorded, the reason
+`awaiting_item_numbers` is recorded beside it, and **nothing is drafted**. The
+existing invoice and reconciliation paths raise the agreement when the invoice
+arrives, exactly as they do today.
+
+**Why it is not wired straight through.** A post-service agreement's particulars
+include **D6b — the MBS item number(s)** — and REQ-REG-01 sources them from the
+PMS invoice. `lockParticulars` requires them, and hard rule 2 forbids putting a
+signature control in front of anybody over an incomplete payload: signing a
+draft is the criminal offence in this regime. A practitioner pressing
+"Completed" does not know the item numbers, and CLAUDE.md §7 is explicit —
+*"Never invent regulatory facts... do not infer it from training data"*. Deriving
+D6b from a service description, from the visit policy, or from "what this
+practitioner usually bills" would be inventing a statutory particular and
+writing it into a contract's record.
+
+**What §3a rule 3 says, and how far this honours it.** *"Completed is the
+service-rendered signal. It is what raises the post-service agreement
+automatically."* The SIGNAL is wired: Completed calls the one path that owns the
+decision, and it reimplements none of it (hard rule 14 — a second copy of the
+post-service table's answer is exactly what that rule exists to prevent). What
+is missing is not the wiring but the DATA, and it is missing from the page
+rather than from the platform.
+
+**Nothing is blocked either way** (hard rule 8, REQ-REC-04). The press never
+fails, the state is always recorded, the patient is seen and billable, and a
+failure in the post-service path is caught, logged without a patient value, and
+recorded as `not_raised` on the state row.
+
+**The three ways Carl could close this.**
+
+1. **Leave it.** The invoice arrives minutes later and the existing path raises
+   the agreement then. Reception loses nothing; the doctor's press is
+   attendance, which is what §3a's table says it is.
+2. **Ask reception for the item numbers** at the desk when a Completed visit has
+   no invoice yet. Honest, and it is typing at a busy desk — the same objection
+   VISIT-CHECKLIST.md §10 raises about services.
+3. **Wait for D-01.** A Medtech write-back/read-back mechanism would let the
+   connector answer "what was billed" without anybody typing. Blocked; build
+   nothing speculative.
+
+**What would reopen it.** A published source of D6b at the moment of the
+consultation (D-01 resolving, or a practice feed that carries the item before
+the invoice); or Carl deciding that reception should be asked.
+
+**Where it is enforced.** `raiseTheServiceRendered` in
+`apps/core/src/practitioner-queue/practitioner-queue.service.ts`, with the
+outcome codes on `SERVICE_RENDERED_OUTCOMES`. Named tests
+`completed_raises_the_post_service_agreement` (the invoice-known case, end to
+end) and `completed_records_the_state_and_invents_no_item_numbers` (the ordinary
+case — the state lands, no agreement is drafted, nothing is invented), both in
+`apps/core/test/practitioner-queue.e2e-spec.ts`.
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
@@ -625,3 +692,4 @@ somebody adds.
 | 12 Sep | A substitution asks two questions: the doctor first, the benefit second | **D-2026-09-12-03 above** |
 | 12 Sep | A nurse's arrival waits for a billing provider named by RECEPTION, and the fix is a resend | **D-2026-09-12-04 above** |
 | 12 Sep | Two homes: `/practice/today` for the day's work, `/practice/setup` for configuration; nobody lands on the hub | **D-2026-09-12-05 above** |
+| 12 Sep | "Completed" records the visit and raises a post-service agreement only where the invoice already carries D6b — no item number is ever invented (ASSUMPTION) | **D-2026-09-12-06 above** |
