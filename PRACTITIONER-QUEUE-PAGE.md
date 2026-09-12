@@ -150,6 +150,21 @@ permanent false alarm) nor "Done" (a signature that does not exist) is honest,
 so that row reads **Nothing to sign**. If Carl wants three words, the change is
 one line plus its string.
 
+**The way back is in the header, and it depends who is reading** (Carl, 12 Sep
+2026: *"needs a link back to today"*, and then, when it was added to the page
+body, *"no back to today link in header"*). The shell's back control is where
+every other page puts "up", so this page has none of its own. It could not use
+the shell's static route→parent map, though: the page has two audiences, and the
+one parent the map held — `/practice/practitioner` — is a `practitioner` page, so
+`mayReach` correctly refused it to reception and left them with no back link at
+all. It is now decided per audience in `parentOf` (`apps/web/app/BackLink.tsx`),
+beside `/practice/reports` and `/practice/correspondence` which already worked
+that way: `/practice/today` for a practice user, `/practice/practitioner` for a
+practitioner. `mayReach` still checks the answer, so neither audience can be
+shown a door that does not open. Tests
+`back_to_today_is_in_the_header_for_practice_staff` and
+`a_practitioner_is_never_offered_a_door_that_does_not_open`.
+
 **"Ask reception" is not built**, per §6: the read-only list is the first
 version.
 
@@ -252,3 +267,4 @@ because a phlebotomy list looks so much like a work queue.
 | 12 Sep 2026 | Route decided by Carl: `/practice/practitioner` landing, with the queue beneath it. Reachable from the Practitioners card. |
 | 12 Sep 2026 | §6a: nurses and phlebotomists get the same page, once an arrival can carry who the patient is here to see separately from who the claim goes under. |
 | 12 Sep 2026 | Built (§1, §3, §4, §5). Audience widened by Carl: reception, managers and administrators see every practitioner's list, grouped. No card-number column (`Arrival.queueTicket` does not exist). A fourth word, "Nothing to sign", recorded as an assumption in §5a. |
+| 12 Sep 2026 | The way back moved into the shell's header and is decided per audience: `/practice/today` for practice staff, `/practice/practitioner` for a practitioner (§5a). |

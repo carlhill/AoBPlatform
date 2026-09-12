@@ -4558,12 +4558,11 @@ export const strings = {
         'Nothing on this page holds anybody up. See your patients exactly as you always would — this page '
         + 'only reports whether the paperwork is done, and it never stops a consultation.',
       /*
-       * THE WAY BACK, FOR THE PEOPLE WHO HAVE ONE (Carl, 12 Sep 2026). Shown
-       * only when the server answered with the practice-wide scope: a
-       * practitioner's token carries no practice claim, so `/practice/today`
-       * would be a door that does not open for them.
+       * NO BACK STRING HERE. The way back moved into the shell's header with
+       * every other page's (Carl, 12 Sep 2026), and it is named for its
+       * destination there — `nav.backTo` and the destination page's own title,
+       * so this page cannot drift out of step with what `today` is called.
        */
-      backToToday: '← Back to today',
       /*
        * THE BOUNDARY, SAID ON THE SCREEN (§2). A page called "who is waiting"
        * is the likeliest place in the product to quietly become a second

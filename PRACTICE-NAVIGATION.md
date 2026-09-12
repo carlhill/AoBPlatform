@@ -118,6 +118,18 @@ the organisation list for an operator — the way `/practice/reports` already di
 A back press that lands a receptionist in the configuration hub is the same
 mis-sorting by another door.
 
+**And a fourth, which answers per audience** (Carl, 12 Sep 2026: *"needs a link
+back to today"*, then *"no back to today link in header"*).
+`/practice/practitioner/waiting` has two audiences, so it has two parents:
+`/practice/today` for reception, a manager or an administrator, and
+`/practice/practitioner` for a practitioner — whose token carries no practice
+claim, so the day's work is a door that does not open for them. It is decided in
+`parentOf` beside `/practice/reports` and `/practice/correspondence` rather than
+in the static `PARENTS` map, and `mayReach` still checks the answer, so a wrong
+one shows nothing rather than a dead end. Named tests
+`back_to_today_is_in_the_header_for_practice_staff` and
+`a_practitioner_is_never_offered_a_door_that_does_not_open`.
+
 **One bug found on the way.** The read-only twin for correspondence has existed
 since M-1 and was missing from the `TWINS` list in `apps/web/app/viewPath.ts`, so
 every view-only link to it silently fell through to the practice hub. Added.

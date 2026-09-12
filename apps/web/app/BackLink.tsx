@@ -110,16 +110,14 @@ const PARENTS: Readonly<Record<string, string>> = {
   '/practice/reports': '/practice',
 
   /*
-   * THE PRACTITIONER'S QUEUE GOES UP TO THE PRACTITIONER'S OWN PAGE, not to
-   * the setup hub (Carl, 12 Sep 2026; PRACTITIONER-QUEUE-PAGE.md §1). The hub
-   * is the ADMINISTRATOR's page, and "up" from a provider's waiting list must
-   * not be the first place that teaches them to go there.
-   *
-   * `/practice/practitioner` ITSELF HAS NO PARENT, deliberately: it is where a
+   * `/practice/practitioner` HAS NO PARENT, deliberately: it is where a
    * practitioner lands, and a back link on a landing page is a lie about the
    * shape of the product.
+   *
+   * `/practice/practitioner/waiting` is NOT in this table. It has two
+   * audiences and therefore two parents, so it is decided per audience in
+   * `parentOf` beside reports and correspondence.
    */
-  '/practice/practitioner/waiting': '/practice/practitioner',
 
   '/practitioner/affiliations': '/practitioner',
   '/practitioner/messages': '/practitioner',
@@ -172,6 +170,30 @@ function parentOf(pathname: string, hasPractice: boolean): string | null {
    * somewhere they have never been.
    */
   if (pathname === '/practice/correspondence') return hasPractice ? '/practice/today' : '/practice';
+  /*
+   * AND THE WAITING LIST, WHICH HAS TWO AUDIENCES AND SO TWO WAYS BACK (Carl,
+   * 12 Sep 2026, looking at the page as reception: *"needs a link back to
+   * today"*, and then *"no back to today link in header"*).
+   *
+   * It is the same reasoning as reports and correspondence, arriving from
+   * PRACTITIONER-QUEUE-PAGE.md §5a rather than from the navigation split. For
+   * reception, a manager or an administrator this page is one of the day's
+   * jobs and "up" is the day's work. For a PRACTITIONER it cannot be:
+   * `/practice/today` is a `practice` page and their token carries no practice
+   * claim, so up is their own landing page instead.
+   *
+   * A single answer would give one of the two a door that does not open —
+   * which is what it did, in both directions at once: the table sent everybody
+   * to `/practice/practitioner`, `mayReach` correctly refused it to reception,
+   * and reception was left with no back link at all.
+   *
+   * BELT AND BRACES: whichever way this decides, `mayReach` below still checks
+   * the destination against the reader's own audiences, so a wrong answer here
+   * shows nothing rather than a dead end.
+   */
+  if (pathname === '/practice/practitioner/waiting') {
+    return hasPractice ? '/practice/today' : '/practice/practitioner';
+  }
   const platformPractice = platformPracticeParent(pathname);
   if (platformPractice) return platformPractice;
   if (PARENTS[pathname]) return PARENTS[pathname];

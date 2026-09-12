@@ -109,8 +109,28 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
+/*
+ * WHO IS READING, AND IT CHANGES BETWEEN TESTS.
+ *
+ * This page has two audiences and the SHELL's back link now differs between
+ * them, so the session cannot be a constant any more. `vi.hoisted` because
+ * `vi.mock` is lifted above everything else in the file: the holder has to
+ * exist before the factory runs, and the factory only closes over it.
+ */
+const signedIn = vi.hoisted(() => ({
+  session: {
+    roles: ['provider'],
+    practitionerId: 'practitioner-1',
+  } as { roles: string[]; practitionerId?: string; practiceId?: string; consoleRole?: string },
+}));
+
+/** A practitioner: a practitioner claim and, deliberately, no practice claim. */
+const PRACTITIONER_SESSION = { roles: ['provider'], practitionerId: 'practitioner-1' };
+/** Reception, a manager or an administrator: the practice claim is what makes them one. */
+const PRACTICE_SESSION = { roles: ['practice_user'], practiceId: PRACTICE, consoleRole: 'admin' };
+
 vi.mock('../../auth', () => ({
-  currentSession: () => ({ roles: ['provider'], practitionerId: 'practitioner-1' }),
+  currentSession: () => signedIn.session,
   apiHeaders: () => ({ 'Content-Type': 'application/json' }),
   silentRestoreUnresolved: () => null,
 }));
@@ -127,6 +147,8 @@ vi.mock('../usePractice', () => ({
 
 beforeEach(() => {
   calls.length = 0;
+  // The practitioner is the default reader; the two header tests say otherwise.
+  signedIn.session = { ...PRACTITIONER_SESSION };
 });
 
 afterEach(() => {
@@ -288,6 +310,61 @@ describe('/practice/practitioner/waiting — who is waiting for me', () => {
       strings.practitionerQueue.waiting.agreementUnder('Dr Sample Chen'),
     );
     expect(screen.queryByTestId('waiting-under-arrival-1')).toBeNull();
+  });
+
+  it('back_to_today_is_in_the_header_for_practice_staff', async () => {
+    /*
+     * Carl, 12 Sep 2026, reading this page as reception: *"needs a link back
+     * to today"*, and then, when it appeared in the body, *"no back to today
+     * link in header"*. IN THE HEADER means the shell's own back control,
+     * where "← Back to Your practices" sits on every other page — not a
+     * second, page-shaped way back a few pixels below it.
+     *
+     * The BODY link is gone with it: two ways back is one too many, and the
+     * one in the body is the one nobody can find twice.
+     */
+    signedIn.session = { ...PRACTICE_SESSION };
+    stubFetch(GROUPED);
+    render(<WaitingView />);
+
+    await waitFor(() => expect(screen.getByTestId('waiting-group-affiliation-patel')).toBeTruthy());
+
+    const back = screen.getByTestId('shell-back');
+    expect(back.getAttribute('href')).toBe('/practice/today');
+    // Named for where it goes, in the shell's own words rather than this
+    // page's, so it cannot drift out of step with what `today` is called.
+    expect(back.textContent).toContain(strings.nav.backTo.replace('{page}', strings.today.title));
+    // A link, so it is reachable by keyboard without anything else being done.
+    expect(back.tagName).toBe('A');
+
+    // And nothing in the body says it a second time.
+    expect(screen.queryByTestId('waiting-to-today')).toBeNull();
+    const body = document.querySelector('main');
+    expect([...(body?.querySelectorAll('a') ?? [])].map((a) => a.getAttribute('href'))).not.toContain(
+      '/practice/today',
+    );
+  });
+
+  it('a_practitioner_is_never_offered_a_door_that_does_not_open', async () => {
+    /*
+     * `/practice/today` is a `practice` page and a practitioner's token
+     * carries NO practice claim (`page-access.ts`: the claim is what makes
+     * somebody a practice user, not a realm role). A back link shown to
+     * everybody would therefore be a dead end for exactly the people whose own
+     * page this is — so theirs goes to their own landing page instead, and
+     * `mayReach` refuses the other one even if the parent map ever said
+     * otherwise.
+     */
+    signedIn.session = { ...PRACTITIONER_SESSION };
+    stubFetch(MINE);
+    render(<WaitingView />);
+
+    await waitFor(() => expect(screen.getByTestId('waiting-row-arrival-1')).toBeTruthy());
+
+    expect(screen.getByTestId('shell-back').getAttribute('href')).toBe('/practice/practitioner');
+    // Nowhere on the page — header, body or menu — is `/practice/today` offered.
+    const hrefs = [...document.querySelectorAll('a')].map((a) => a.getAttribute('href'));
+    expect(hrefs).not.toContain('/practice/today');
   });
 
   it('says plainly when nobody is waiting, rather than showing an empty table', async () => {
