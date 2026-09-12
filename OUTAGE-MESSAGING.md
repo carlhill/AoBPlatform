@@ -73,10 +73,31 @@ service. That is not improvised advice, it is the platform's documented outage
 posture (CLAUDE.md §7 — capture falls back to post-service), and the screen
 should name it rather than leave a receptionist to invent a plan.
 
-**One hour is a practice-visible number, so it is configuration, not a
-constant** — a threshold hardcoded in a component is the thing hard rule 14
-exists to prevent, even where the rule is about content rather than statute.
-Default one hour.
+**One hour is a SETTING, not a constant** (Carl, 12 September 2026: *"keep the
+hour a configurable settign"*). A threshold compiled into a component is the
+thing hard rule 14 exists to prevent, even where the rule is about content
+rather than statute — and practices will disagree about this one. A single-site
+clinic where reception can see the whole room may want twenty minutes; a large
+practice where the list IS the room may want longer.
+
+**Where it lives:** on the practice, beside the two timing settings that
+already exist and have exactly this shape.
+
+| Setting | Default | Unit |
+|---|---|---|
+| `linkExpiryHours` | 48 | hours |
+| `kioskIdleTimeoutSeconds` | 300 | seconds |
+| **`staleListMinutes`** | **60** | **minutes** |
+
+Minutes, because hours cannot express twenty and seconds would invite a value
+nobody meant. Read through the practice config the console already serves, so
+one number reaches every surface rather than each page carrying its own idea of
+stale.
+
+**It has no screen yet, and neither do its two siblings.** `PATCH
+/practices/:id/config` is endpoint-only — recorded in `INTEGRATION-MODES.md`
+section 3 as one of the gaps a fully manual practice runs into. This setting
+joins that list rather than justifying a one-off control of its own.
 
 ### 3b. Separate what can still be done from what cannot
 
@@ -148,7 +169,8 @@ the product and the one Carl was looking at.
 - `a_stale_list_says_the_time_it_was_true`
 - `a_list_over_an_hour_old_stops_calling_itself_the_waiting_room`
 - `a_list_over_an_hour_old_is_still_on_screen`
-- `the_staleness_threshold_is_configuration_not_a_constant`
+- `the_staleness_threshold_is_read_from_the_practice_setting`
+- `a_practice_that_has_set_no_threshold_gets_sixty_minutes`
 - `a_write_control_is_refused_with_its_reason_on_the_control`
 - `a_read_control_still_works_while_the_service_is_unreachable`
 - `the_page_retries_by_itself_and_says_so`
@@ -171,3 +193,4 @@ the product and the one Carl was looking at.
 |---|---|
 | 12 Sep 2026 | v1.0. Written when Carl saw the front desk reduced to two banners and said the messaging needs to be better. |
 | 12 Sep 2026 | §3a-i: Carl set the threshold at one hour. What expires is the CLAIM, not the list — the rows stay, quieter, and the screen names the post-service fallback. |
+| 12 Sep 2026 | The hour is confirmed as a SETTING: `staleListMinutes` on the practice, default 60, beside `linkExpiryHours` and `kioskIdleTimeoutSeconds`. It has no screen, and nor do its two siblings. |

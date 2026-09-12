@@ -1233,8 +1233,17 @@ was in the room - it is what reception reconciles against afterwards. It simply
 stops looking like a work queue, because acting on an hour-old queue is how the
 wrong person gets called.
 
-**One hour is configuration, not a constant.** A threshold compiled into a
-component is what hard rule 14 exists to prevent.
+**One hour is a SETTING, not a constant** (Carl, confirming: *"keep the hour a
+configurable settign"*). `staleListMinutes` on the practice, default 60, beside
+`linkExpiryHours` (48) and `kioskIdleTimeoutSeconds` (300), which already have
+exactly this shape. Minutes, because hours cannot express twenty. A threshold
+compiled into a component is what hard rule 14 exists to prevent, and practices
+will disagree: a single-site clinic where reception can see the whole room may
+want twenty minutes, a large practice where the list IS the room may want
+longer.
+
+It has no screen, and nor do its two siblings - `PATCH /practices/:id/config`
+is endpoint-only, already recorded as a gap in `INTEGRATION-MODES.md`.
 
 **What would reopen it.** Evidence that a stale list gets somebody called who
 should not have been, which would argue for a shorter hour rather than for
