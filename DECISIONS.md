@@ -1337,6 +1337,87 @@ return to the current behaviour, because the current behaviour states something
 untrue.
 
 
+
+## D-2026-09-12-21 - Every practitioner has their own queue, and sending a patient on is one click
+
+**Date:** 12 September 2026. **Decided by:** Carl: *"For a patient to see the
+specialist after the GP, it should be a one-click process to assign the patient
+to the specialist and add the patient to the specialist queue. I just realised
+that every doctor/practioner in the practice will have their own queue. So we
+need to have the /waiting page show the patients in the queue order and on the
+/frontdesk the name of the doctor and the position in the Dr's queue."*
+
+**Three things, and only one of them is new.**
+
+### 1. Per-practitioner queues already exist
+
+`/practice/practitioner/waiting` already groups today's arrivals by the
+affiliation the patient came to see, and orders each group by arrival. That IS
+a queue per practitioner. What was missing is that it was never called one and
+the position was never shown.
+
+### 2. The position is shown, and it is DERIVED - never stored
+
+A patient's place in a practitioner's queue is their index in that
+practitioner's group. It changes every time somebody ahead of them is called,
+so it is computed on read and written nowhere.
+
+**The dangerous part is that this is a SECOND number on the same row**, and
+`QUEUE-TICKETS.md` section 5a already warned about exactly this: *"the ticket is
+not the running order."* The two must never be confused:
+
+| | What it is | Does it change? |
+|---|---|---|
+| **The queue ticket** (D-2026-09-12-18) | The patient's own handle - the card in their hand, or one we allocated | **Never.** They are holding it |
+| **The position** | Where they are in one practitioner's queue right now | **Constantly.** Somebody ahead gets called and it drops |
+
+**So the position is never rendered as a bare number.** It is said WITH the
+practitioner - *"3rd for Dr Savva"* - which is what Carl asked for anyway when
+he asked for the doctor's name beside it. A lone "3" next to a lone "12" on one
+row is how a receptionist calls the wrong person.
+
+### 3. The new thing: one click to send a patient on
+
+**The mechanism already half exists.** `reassign` is a visit state a
+practitioner can set by hand, and it is the only one that raises a front-desk
+task (`visit-states.json`). So the practitioner says "this patient needs
+somebody else" from their own screen, and it lands at the desk. What does not
+exist is the ACTION on that task.
+
+**What the one click does:** creates a SECOND VISIT for the same patient today,
+naming the specialist's affiliation, and puts them in that practitioner's queue.
+
+**A second visit, not a move**, and this follows from D-2026-09-12-20 rather
+than being a fresh choice: a second practitioner billing under their own number
+needs its own agreement, and an encounter needing its own agreement is a second
+visit. The first visit stays, keeps its own service list, and reaches Finished
+on its own terms - the patient really was seen by the GP, and that record must
+not be rewritten because they then saw somebody else.
+
+**Episodic, never enduring** (hard rule 6, REQ-END-01a). Ongoing agreements are
+per practitioner x patient and general-practice only. A specialist gets an
+episodic agreement or a Treatment Plan Assignment, permanently, and the one-click
+must not be able to produce anything else.
+
+**It goes through the front door everything else goes through.** The click posts
+the arrival contract with `source: 'reception'`, exactly as the new-agreement
+panel does, so the versioned visit policy decides what the second visit needs -
+reception never chooses the agreement type (hard rules 6 and 14).
+
+**One click means one click.** The patient's details are already held; the
+practitioner is named on the task. Nothing is re-keyed, and the only thing
+reception may have to answer is who is signing, which is the one question a
+machine cannot answer for them.
+
+**It gates nothing** (hard rule 8) and it is reversible - a second visit created
+in error is cancelled like any other, and cancelling it leaves the first visit
+untouched.
+
+**What would reopen it.** A practice where the specialist keeps their own
+separate waiting room and does not want our queue at all, which is a display
+question rather than a model one.
+
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
@@ -1374,3 +1455,4 @@ untrue.
 | 12 Sep | The queue number has three sources in precedence -- their card, their software, then one we allocate -- and the source is recorded | **D-2026-09-12-18 above** |
 | 12 Sep | An outage never empties the screen: last good data kept and timestamped, writes refused on the control, the page retries itself | **D-2026-09-12-19 above** |
 | 12 Sep | "Finished" needs the consultation done, not just the signature; a step that needs its own agreement is a second visit | **D-2026-09-12-20 above** |
+| 12 Sep | Every practitioner has a queue; position is derived and always said with the practitioner's name; sending a patient on is one click and creates a SECOND visit | **D-2026-09-12-21 above** |
