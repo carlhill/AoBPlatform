@@ -102,6 +102,7 @@ import {
 import { useWaitingList } from './useWaitingList';
 import { useTabletSession } from './useTabletSession';
 import { useInactivityReset } from './useInactivityReset';
+import { useDevBuildWatch } from './useDevBuildWatch';
 import { useKioskHeartbeat } from './useKioskHeartbeat';
 import { clearPairingCredential, readPairingCredential, writePairingCredential } from './pairing';
 import { challengeIsComplete, identifierFieldsFor, type IdentifierField } from './rules/identifiers';
@@ -451,6 +452,17 @@ export function Ceremony(): ReactNode {
   // The list is polled only while the tablet is between patients. Mid-ceremony
   // the screen is not showing it, and a poll that nobody can see is noise.
   const list = useWaitingList(step === 'idle' || step === 'list');
+  /*
+   * AND IN DEV, WHETHER THE SERVER THIS TAB LOADED FROM IS STILL THE ONE
+   * RUNNING (Carl, 12 Sep 2026). The build floor cannot answer this in dev —
+   * `kioskBuildId()` is the constant `'dev'`, so nothing is ever below
+   * anything. Polled on the same between-patients condition as the list, and
+   * fed to the SAME one-reload-per-tab gate below, so it can no more interrupt
+   * a ceremony than the floor can. The ROUTE decides whether this is
+   * development — `.env.local` already sets a build id of `dev`, so the client
+   * cannot tell from that — and a deployed answer is ignored.
+   */
+  const devBuildChanged = useDevBuildWatch(step === 'idle' || step === 'list');
 
   /**
    * THE PUSHED-SESSION POLL, AND WHEN IT RUNS.
@@ -605,11 +617,11 @@ export function Ceremony(): ReactNode {
    * the reload happens a few seconds later.
    */
   useEffect(() => {
-    if (!(list.reload || staleBundle) || reloadedRef.current) return;
+    if (!(list.reload || staleBundle || devBuildChanged) || reloadedRef.current) return;
     if (step !== 'idle' && step !== 'list') return;
     reloadedRef.current = true;
     window.location.reload();
-  }, [list.reload, staleBundle, step]);
+  }, [list.reload, staleBundle, devBuildChanged, step]);
 
   /**
    * THE EXCHANGE: a code in, a credential out, once.
