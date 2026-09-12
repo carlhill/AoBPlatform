@@ -1009,6 +1009,58 @@ agreement must be destroyed rather than retained, which would change what the
 chain keeps rather than how a correction is applied.
 
 
+
+## D-2026-09-12-16 - A tablet says which front door it offers, and a reception-driven one never says "Begin"
+
+**Date:** 12 September 2026. **Decided by:** Carl, looking at `/kiosk`: *"if the
+reception is pushing to the tablet (not kiosk mode where the patient enters all
+their details) then it should not say Begin (it will confuse the user/patient)
+as the user will press begin and it will go to kiosk mode. It should say
+'Please wait. Loading your details'."*
+
+**The decision.** A tablet carries `acceptsWalkUps`, set from the console and
+nowhere else. With it off, K-1 drops the heading and the button entirely and
+says **"Please wait. Loading your details"** - no control of any kind, so there
+is nothing to press that could start the wrong flow.
+
+**Default ON, so no tablet in service changes behaviour.** The walk-up path is
+a deliberate feature (K-2, the claim-by-three-identifiers front door) and this
+does not retire it. It says WHICH tablets offer it.
+
+**Why the setting is per DEVICE and not per practice.** The same practice runs
+both: a tablet on the counter anybody may pick up, and a tablet reception hands
+to a named person whose agreement has already been sent to it. The confusion
+Carl saw is specific to the second, and a practice-wide switch would force a
+practice to give up one to fix the other.
+
+**Why not solve it with copy alone.** The harm is not the wording, it is the
+button: a patient who presses Begin on a tablet meant for them is asked to type
+details the platform already holds, which is both confusing and a second place
+those details could be got wrong. Removing the control removes the harm; the
+sentence only explains the wait.
+
+**The transient window is NOT solved, and that is recorded rather than
+papered over.** On a walk-up tablet there is still a gap between reception
+pressing Send and that tablet's next poll, during which it truthfully offers
+Begin because it has no information yet. Every poll on the kiosk runs at the
+same cadence, so no existing signal arrives earlier, and inventing a "a session
+is coming for you" signal would not land any sooner. On the tablets Carl was
+describing the problem is gone completely, because they never show Begin at
+all.
+
+**Still recoverable, always** (hard rule 8). Return to Begin works on a
+walk-ups-off tablet and lands it back on the waiting message rather than on a
+button, so a tablet stuck waiting is cleared by reception exactly as any other
+is. Named test: `walk_ups_off_tablet_is_still_recoverable_by_reception`.
+
+**Evidenced** as `device.walk_up_capture_set`, carrying the device label, the
+flag and who set it - no patient data (hard rule 9).
+
+**What would reopen it.** A tablet that genuinely needs both at once: a pushed
+queue AND a walk-up door on the same screen. That is a different screen, not a
+different default.
+
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
@@ -1041,3 +1093,4 @@ chain keeps rather than how a correction is applied.
 | 12 Sep | A manual practice must be able to type what was billed; the post-service screen is release-blocking | **D-2026-09-12-13 above** |
 | 12 Sep | Practice posture is recorded per integration point; the mode is derived, never stored | **D-2026-09-12-14 above** |
 | 12 Sep | A corrected resend supersedes, needs a new idempotency key, and must never vanish silently | **D-2026-09-12-15 above** |
+| 12 Sep | A tablet says which front door it offers; a reception-driven one never shows Begin | **D-2026-09-12-16 above** |
