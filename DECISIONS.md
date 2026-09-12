@@ -840,6 +840,54 @@ accept a security key, which would make tier 3 practical as the default again.
 Or a finding that REQ-VAULT-04 rests on something stronger than the
 now-abolished practitioner signature — worth checking before tier 2 ships.
 
+## D-2026-09-12-12 — A practice may run without practitioner accounts; reception does it instead
+
+**Date:** 12 September 2026. **Decided by:** Carl: *"Some practices may not want
+their doctors to use the AoBPlatform. In this case the frontdesk will do what the
+doctor does. However, I believe a better system is if the doctor does it."*
+
+**The decision.** Practitioner accounts are OPTIONAL per practice. Where a
+practice does not give its doctors access, reception performs every act a
+practitioner would, and nothing about the platform stops working.
+
+**It already works, and that is not an accident.** `maySetVisitState` returns
+true for the `practice` scope on any patient, and only narrows for a
+practitioner, who may act on their own patients alone. The practitioner queue has
+two modes for the same reason: a practitioner sees their own list, practice staff
+see every list grouped. So a practice with no practitioner accounts uses the same
+pages with one of the two audiences absent.
+
+**What is lost when the doctor does not do it, and why Carl's preference is the
+right one.**
+
+1. **The moment is guessed.** "Completed" is the service-rendered signal that
+   raises the post-service agreement. A doctor presses it when the consultation
+   ends; reception presses it when they notice, or when told. The paperwork
+   follows the room less closely.
+2. **The assertion moves.** Marking a consultation complete is a statement that
+   an encounter happened. When reception marks it, the record says reception
+   asserted it — which is honest and recorded, but it is second-hand. **This is
+   operational rather than evidential**: hard rule 3 abolished the practitioner
+   signature, so an agreement's weight rests on the PATIENT's signature at a
+   paired tablet, and none of it moves with this.
+3. **The covering-doctor check loses its best trigger.** An enduring agreement is
+   per practitioner, so a patient seen by somebody other than the one their
+   agreement names needs new paperwork. The doctor knows immediately who they
+   saw; reception may not.
+
+**So the platform must make it easy to prefer the better arrangement**, while
+never requiring it. The practice setting exists so the console stops offering
+what a practice does not use, not so the platform behaves differently.
+
+**What this needs, and does not yet have:** a practice setting recording whether
+practitioners have accounts; onboarding not inviting doctors where they do not;
+and the front desk not implying somebody else will do a thing nobody will do.
+
+**What would reopen it.** Evidence that reception-marked visits produce
+materially later or less accurate post-service agreements — which would argue
+for pushing practices harder towards practitioner accounts, not for removing the
+option.
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
@@ -868,3 +916,4 @@ now-abolished practitioner signature — worth checking before tier 2 ships.
 | 12 Sep | Billing identity is practice × location × practitioner; enduring coverage is per practitioner across locations | **D-2026-09-12-09 above** |
 | 12 Sep | Practice bound to the login, location chosen once per session; practice codes allocated and unique | **D-2026-09-12-10 above** |
 | 12 Sep | Authentication is tiered: tenant SSO, platform accounts, passkeys. Hard rule 15 narrows to platform operators and patients | **D-2026-09-12-11 above** |
+| 12 Sep | Practitioner accounts are optional per practice; reception can do everything a doctor would | **D-2026-09-12-12 above** |

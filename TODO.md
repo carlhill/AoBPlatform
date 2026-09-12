@@ -3949,3 +3949,21 @@ deliberate: it is a human-authored zone and a separate service hashing its own
 artefact, which must not acquire a build-time dependency on the core's render
 path. Two services hashing different things may each own their serialisation;
 one service hashing one thing three ways is the defect.
+
+## A practice that gives its doctors no accounts (D-2026-09-12-12, 12 Sep 2026)
+
+Carl: some practices will not want their doctors on the platform, and reception
+will do what the doctor would. It already works — `maySetVisitState` allows the
+practice scope on any patient, and the waiting list already has a practice-wide
+mode — so nothing is broken. Three things are missing:
+
+1. **A practice setting** recording whether practitioners hold accounts.
+   Without it the console cannot tell "no doctors yet" from "no doctors ever".
+2. **Onboarding should not invite practitioners** where the practice has said
+   no, and should not leave their cards looking unfinished.
+3. **The front desk must not imply somebody else will act.** Copy that says a
+   practitioner will mark the visit is a lie in these practices, and a
+   receptionist waiting for it is a visit that never closes.
+
+Worth doing when the practitioner pages are next open. Not urgent: the failure
+today is confusing copy rather than a blocked flow.
