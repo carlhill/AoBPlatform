@@ -1174,6 +1174,54 @@ original rule feared - the fix there is precedence being applied, not the
 allocation being withdrawn.
 
 
+
+## D-2026-09-12-19 - An outage never empties the screen
+
+**Date:** 12 September 2026. **Decided by:** Carl, looking at the front desk
+with the service unreachable: *"we need better messaging when the app is
+down."*
+
+**What he was looking at.** A page title, two banners, and nothing else. The
+list of who was in the waiting room had been replaced by an apology.
+
+**The decision.** A staff screen that cannot reach the service **keeps its last
+good data**, marked with the time it was true, and refuses only the things that
+actually cannot be done.
+
+**This is hard rule 8 in the interface**, and that is why it is a decision
+rather than a styling preference. The platform never blocks care: a patient is
+seen and billed whatever the screen says. A page that erases the waiting room
+does worse than fail to help - it takes away information the practice already
+had, at the exact moment the practice cannot get it back another way.
+
+**Five requirements**, set out in full in `OUTAGE-MESSAGING.md`:
+
+1. **The list stays**, with "Showing the list from 9:42. Not live." The
+   staleness is a TIME, never a word: "out of date" cannot be acted on, and a
+   time lets a receptionist judge for themselves whether it still describes the
+   room.
+2. **Reading and writing are separated.** Looking at a stale list is safe and
+   stays live. Sending to a tablet is not, and is refused ON THE CONTROL with
+   its reason - not by a banner at the top of the page that the eye has already
+   skipped.
+3. **The page retries itself and says so.** "Please try again in a moment" is
+   an instruction to do what the page should be doing, and it names no control.
+   **A write is never retried automatically**: a send that may or may not have
+   landed is a person's decision.
+4. **One message, not two.** The reassurance folds into the outage line.
+5. **Typed input survives.** Losing a half-finished "who is signing" is a second
+   failure caused by the first, and it is the one that makes people stop
+   trusting the screen.
+
+**It belongs in one shared component.** Twenty-eight surfaces carry their own
+`notLoaded` wording today. The words stay per-page; the behaviour must not, or
+a page opts out by accident and a fix reaches only one of them.
+
+**What would reopen it.** Evidence that a stale list gets somebody called who
+should not have been - which would argue for expiring it rather than for going
+back to an empty page.
+
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
@@ -1209,3 +1257,4 @@ allocation being withdrawn.
 | 12 Sep | A tablet says which front door it offers; a reception-driven one never shows Begin | **D-2026-09-12-16 above** |
 | 12 Sep | Every location carries its own IANA timezone, and so does head office; it is stored, never derived from the state | **D-2026-09-12-17 above** |
 | 12 Sep | The queue number has three sources in precedence -- their card, their software, then one we allocate -- and the source is recorded | **D-2026-09-12-18 above** |
+| 12 Sep | An outage never empties the screen: last good data kept and timestamped, writes refused on the control, the page retries itself | **D-2026-09-12-19 above** |
