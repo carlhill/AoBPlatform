@@ -21,7 +21,7 @@
  * survives. The token still never touches storage.
  */
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { landingPath } from '@aobplatform/domain';
 import { completeLogin, currentSession, returnPath, silentLoginFailed } from '../auth';
@@ -30,6 +30,30 @@ import { strings } from '../strings';
 function CallbackInner() {
   const router = useRouter();
   const [message, setMessage] = useState<string>(strings.auth.completing);
+  /*
+   * NAVIGATE ONCE, READ THE RETURN PATH ONCE (Carl, 12 Sep 2026: Ctrl+F5 on
+   * /practice/setup landed on /practice/today).
+   *
+   * THE MECHANISM. In development React runs every effect twice. Both runs
+   * call `completeLogin`, which de-duplicates to the SAME in-flight promise, so
+   * both `.then`s fire. `returnPath()` deletes the stored path on read: the
+   * first run got `/practice/setup`, the second got nothing, fell to the
+   * audience's default, and its `router.replace` ran last and won.
+   *
+   * WHY NOBODY SAW IT BEFORE TODAY. The practice default WAS `/practice/setup`,
+   * so the wrong answer and the right one were the same page. The moment the
+   * default moved to `/practice/today`, a latent double-consume became a
+   * visible redirect. The bug was always here; the landing change exposed it.
+   *
+   * A REF, NOT STATE: it must not cause a render, and strict mode preserves it
+   * across the simulated remount, which is exactly the case it guards.
+   */
+  const navigated = useRef(false);
+  const navigateOnce = (to: () => string) => {
+    if (navigated.current) return;
+    navigated.current = true;
+    router.replace(to());
+  };
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -49,7 +73,7 @@ function CallbackInner() {
          * never a name (Carl, 7 Sep 2026).
          */
         silentLoginFailed(error);
-        router.replace(returnPath());
+        navigateOnce(() => returnPath());
         return;
       }
       setMessage(`${strings.auth.failed} ${params.get('error_description') ?? error}`);
@@ -76,7 +100,7 @@ function CallbackInner() {
          * nothing decided anything: `returnPath()` answers '/' when there is
          * nowhere stored, and '/' was taken literally.
          */
-        router.replace(
+        navigateOnce(() =>
           landingPath({
             roles: session.roles,
             practiceId: session.practiceId,
@@ -98,7 +122,7 @@ function CallbackInner() {
          * but the session is nonetheless there.
          */
         if (currentSession()) {
-          router.replace(landingPath({ ...currentSession()!, intended: returnPath() }));
+          navigateOnce(() => landingPath({ ...currentSession()!, intended: returnPath() }));
           return;
         }
         setMessage(`${strings.auth.failed} ${String(err)}`);

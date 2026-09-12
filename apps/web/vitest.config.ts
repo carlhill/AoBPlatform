@@ -33,6 +33,7 @@ export default defineConfig({
       'app/kiosk/**/*.test.tsx',
       'app/practice/**/*.test.ts',
       'app/practice/**/*.test.tsx',
+      'app/callback/**/*.test.tsx',
       'app/platform/**/*.test.ts',
       'app/platform/**/*.test.tsx',
       'app/patient/**/*.test.ts',
