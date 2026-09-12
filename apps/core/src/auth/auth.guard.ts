@@ -177,6 +177,49 @@ export class AuthGuard implements CanActivate {
     });
   }
 
+  /**
+   * A PLATFORM OPERATOR'S SESSION MUST NOT SAY IT USED A PASSWORD
+   * (D-2026-09-12-11 — hard rule 15 still governs our own people).
+   *
+   * DEFENCE IN DEPTH, and it is here because the primary defence is somewhere
+   * this service cannot see. The realm decides what an operator must present:
+   * `practice-browser` gates on the `platform_admin` role and requires a
+   * passkey, `operator-browser` has no password execution at all. Both are
+   * asserted by `infra/keycloak/tier2-realm.test.mjs` in CI. But a Keycloak
+   * session is not re-evaluated when a role is added, so somebody promoted to
+   * `platform_admin` mid-afternoon carries on holding the password-and-code
+   * session they signed in with — and a flow binding is one admin-console
+   * click from being wrong. This is the check that notices either.
+   *
+   * IT REFUSES WHAT THE SESSION SAYS, NOT WHAT IT DOES NOT SAY, and the
+   * distinction is load-bearing. `unknown` means the realm issued no `amr`
+   * claim, which is true of the MAIN realm today — it has no amr mapper — so
+   * refusing `unknown` would lock every platform operator out of the console
+   * the moment this shipped. A session that positively states a
+   * password-based method is a different thing: that is an operator who got
+   * in through a path they should not have, and it is refused.
+   */
+  private assertOperatorAuthMethod(
+    request: { method: string; url: string },
+    principal: AuthenticatedPrincipal,
+  ): void {
+    if (!(principal.roles ?? []).includes('platform_admin')) return;
+    const method = authMethodFromAmr(principal.amr);
+    if (method !== 'password+otp' && method !== 'password-only') return;
+    this.logger.warn(
+      `Refused ${request.method} ${request.url} for ${principal.sub}: a platform operator's session states a ` +
+        'password-based method, and rule 15 requires a passkey.',
+    );
+    throw new ForbiddenException({
+      statusCode: 403,
+      error: 'Forbidden',
+      reasonCode: 'operator_requires_passkey',
+      message:
+        'Platform operator accounts sign in with a passkey. This session did not, so it cannot be used here. ' +
+        'Sign out and sign in again with your passkey.',
+    });
+  }
+
   private assertRoles(
     context: ExecutionContext,
     request: { method: string; url: string },
@@ -229,6 +272,7 @@ export class AuthGuard implements CanActivate {
        */
       const known = request.principal as AuthenticatedPrincipal | undefined;
       if (known) {
+        this.assertOperatorAuthMethod(request, known);
         this.assertRoles(context, request, known);
         this.assertPracticeScope(context, request, known);
         this.assertFreshSecondFactor(context, request, known);
@@ -259,6 +303,14 @@ export class AuthGuard implements CanActivate {
        * valid practice-admin token could approve practices, which is the single
        * most privileged act in the system.
        */
+      /*
+       * BEFORE THE ROLE CHECK, not after. The question "is this session
+       * entitled to be a platform operator's at all" comes ahead of "does it
+       * hold the role this endpoint wants" — otherwise an operator on a
+       * password session would pass every endpoint that happens not to
+       * require the role.
+       */
+      this.assertOperatorAuthMethod(request, principal);
       this.assertRoles(context, request, principal);
       this.assertPracticeScope(context, request, principal);
       this.assertFreshSecondFactor(context, request, principal);

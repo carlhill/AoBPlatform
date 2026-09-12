@@ -192,7 +192,14 @@ for (const role of mainRoles) {
 
 // ---- rule 12: never "certified", "approved", "accredited" ------------------
 
-const forbidden = /\b(certified|accredited|government-approved)\b/i;
+/*
+ * ALL FOUR WORDS. Bare "approved" was missing from the first version of this
+ * pattern, and it is the half of rule 12 most likely to be written by
+ * accident — "your device has been approved" reads as ordinary product copy.
+ * "approve" and "approves" are untouched: the platform_admin role description
+ * says operators "approve practices", which is what they do.
+ */
+const forbidden = /\b(certified|approved|accredited|government-approved)\b/i;
 const text = JSON.stringify(realm);
 check('no rule-12 word anywhere in the realm file', !forbidden.test(text));
 

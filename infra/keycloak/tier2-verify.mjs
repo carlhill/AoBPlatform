@@ -513,10 +513,21 @@ async function main() {
     );
   }
 
-  // 8. Nothing about tier 2 reaches the realm the patient portal does not use.
+  /*
+   * 8. THE MAIN REALM IS STILL THERE AND STILL SERVING — nothing more, and the
+   * check is named for exactly that.
+   *
+   * It is deliberately NOT called `a_patient_portal_sign_in_is_unaffected`,
+   * which it would not prove: portal passkeys live in core, not Keycloak
+   * (D-2026-09-04-02), so nothing in this realm could speak to them either
+   * way. That named test is in apps/core/test/auth-tier2.e2e-spec.ts, where it
+   * is checked structurally and behaviourally. What this catches is the thing
+   * THIS script could actually break — the realm Carl signs in with, running
+   * on the same Keycloak.
+   */
   {
     const main = await fetch(`${ADMIN}/realms/aobplatform/.well-known/openid-configuration`);
-    record('a_patient_portal_sign_in_is_unaffected — the main realm still serves', main.ok, `discovery ${main.status}`);
+    record('the main realm is untouched and still serving discovery', main.ok, `discovery ${main.status}`);
   }
 
   const failed = results.filter((r) => !r.ok);

@@ -66,6 +66,69 @@ describe('a_session_records_how_it_authenticated', () => {
   });
 });
 
+describe('a_platform_operator_still_requires_a_passkey', () => {
+  /**
+   * THE REALM IS THE PRIMARY DEFENCE and it is asserted in CI by
+   * `infra/keycloak/tier2-realm.test.mjs`. This is the second one, in core,
+   * for the case the realm cannot cover: a Keycloak session is not
+   * re-evaluated when a role is added, so somebody promoted to
+   * `platform_admin` this afternoon still holds the password-and-code session
+   * they signed in with this morning.
+   */
+  function guardFor(principal: Record<string, unknown>): { guard: AuthGuard; context: ExecutionContext } {
+    // No route metadata at all: this is a session invariant, not a per-route gate.
+    const reflector = { getAllAndOverride: () => undefined } as unknown as Reflector;
+    const config = { get: () => undefined } as unknown as ConfigService;
+    return { guard: new AuthGuard(config, reflector), context: contextWith(principal) };
+  }
+
+  const operator = (amr: string[] | undefined) => ({
+    sub: 'kc-platform-operator',
+    principalType: 'staff',
+    roles: ['platform_admin'],
+    ...(amr ? { amr } : {}),
+    authTime: Math.floor(Date.now() / 1000),
+    raw: {},
+  });
+
+  it('a_platform_operator_still_requires_a_passkey', async () => {
+    const spy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { guard, context } = guardFor(operator(['pwd', 'otp']));
+    await expect(guard.canActivate(context)).rejects.toMatchObject({
+      response: { reasonCode: 'operator_requires_passkey' },
+    });
+    spy.mockRestore();
+  });
+
+  it('lets the same operator through on a passkey', async () => {
+    const { guard, context } = guardFor(operator(['hwk']));
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+  });
+
+  it('does not refuse a session that simply never said', async () => {
+    /*
+     * `unknown` means the realm issued no amr claim, which is true of the MAIN
+     * realm today. Refusing it would lock every platform operator out of the
+     * console the moment this shipped — a check that takes the product down is
+     * not a security control, it is an outage.
+     */
+    const { guard, context } = guardFor(operator(undefined));
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+  });
+
+  it('leaves a practice session on password-and-code alone', async () => {
+    const { guard, context } = guardFor({
+      sub: 'kc-front-desk',
+      principalType: 'staff',
+      roles: ['front_desk'],
+      amr: ['pwd', 'otp'],
+      authTime: Math.floor(Date.now() / 1000),
+      raw: {},
+    });
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+  });
+});
+
 describe('a_password_never_appears_in_a_log_an_event_or_an_error', () => {
   /**
    * WHAT THIS ACTUALLY CHECKS, because the name could be read as a promise

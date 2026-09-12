@@ -67,10 +67,15 @@ async function adminToken() {
 }
 
 /**
- * Every request this script makes carries the realm in its path, and every
- * one of them goes through here. `assertSandbox` is called on the path rather
- * than on a variable so that a hand-written path in a later edit cannot slip
- * past the guard at the top of main().
+ * Every REALM-SCOPED request goes through here, and the PATH is checked rather
+ * than a variable, so a hand-written path in a later edit cannot slip past the
+ * guard at the top of main().
+ *
+ * Two calls deliberately do not use it, because neither names a realm in its
+ * path: minting the admin token against `master`, and the `POST /admin/realms`
+ * that creates the realm. The second is guarded instead by the check in main()
+ * that the FILE names the sandbox — which is the only thing deciding which
+ * realm that POST would create.
  */
 function assertSandbox(path) {
   if (!path.startsWith(`/${SANDBOX_REALM}`) && path !== '') {
@@ -78,11 +83,31 @@ function assertSandbox(path) {
   }
 }
 
-async function api(token, path, init = {}) {
+/**
+ * A TOKEN THAT IS STILL VALID WHEN THE REQUEST GOES OUT.
+ *
+ * Keycloak's `master` admin token lives sixty seconds. Minting one at the top
+ * of a run and using it throughout worked right up until the run grew past a
+ * minute, and then failed as `401 Unauthorized` on whichever call happened to
+ * be in flight when the clock ran out — a failure that moves around, looks
+ * like a permissions problem, and is not one.
+ */
+let cached = { token: null, mintedAt: 0 };
+async function currentToken() {
+  if (cached.token && Date.now() - cached.mintedAt < 30_000) return cached.token;
+  cached = { token: await adminToken(), mintedAt: Date.now() };
+  return cached.token;
+}
+
+async function api(_token, path, init = {}) {
   assertSandbox(path);
   return fetch(`${BASE}/admin/realms${path}`, {
     ...init,
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(init.headers ?? {}) },
+    headers: {
+      Authorization: `Bearer ${await currentToken()}`,
+      'Content-Type': 'application/json',
+      ...(init.headers ?? {}),
+    },
   });
 }
 
@@ -133,7 +158,9 @@ async function main() {
   // and applied by name below, in the order the server needs them.
   const { flowBindings, audienceScope, requireActionsEnabled, ...realm } = spec;
 
-  const token = await adminToken();
+  // Kept as a parameter at the call sites for readability; `api()` ignores it
+  // and uses `currentToken()`, which re-mints before the sixty seconds are up.
+  const token = await currentToken();
   console.log(`\n  Keycloak ${BASE}\n  Sandbox realm ${SANDBOX_REALM}\n`);
 
   if (args.has('--delete')) {
@@ -154,7 +181,7 @@ async function main() {
 
   const created = await fetch(`${BASE}/admin/realms`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${await currentToken()}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(realm),
   });
   if (!created.ok) die(`Could not create ${SANDBOX_REALM}: ${created.status} ${await created.text()}`);
