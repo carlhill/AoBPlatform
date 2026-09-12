@@ -333,6 +333,30 @@ supersession chain or the evidence is touched.
 - `the_call_order_does_not_change_a_queue_ticket`
 - `a_poll_does_not_undo_a_move_reception_just_made`
 
+## 13. Nothing about the patient leaves this page (Carl, 12 Sep 2026)
+
+Carl, approving the build: *"Everything to do with the patient must be on this
+page - no going to another page."*
+
+This is a constraint on every earlier section, and it overrides two of them:
+
+- **The placeholder's "Open Send to the tablet" link goes.** Who is signing,
+  choose a tablet, send, recall, re-send, fix a detail — all of it happens in the
+  right-hand panel for the selected patient. The numbered strip and the
+  correction panel already exist on `/practice/tablet`; they are reused in place
+  here, not linked to.
+- **"Get help" (§4, §6 rule 3) no longer carries the patient to another page.**
+  It reveals the expert controls for that patient inside the panel. The admin
+  desk stays where it is for the people who prefer it; a beginner is never sent
+  there mid-task.
+
+**What still may leave the page:** nothing that is about the patient. Practice
+configuration and evidence review are not patient work and keep their own pages.
+
+**The visit checklist (`VISIT-CHECKLIST.md`) lives in the same panel**, above the
+actions, so one screen answers "what is this patient here for, what is done,
+and what do I do next".
+
 ## Change log
 | Date | Change |
 |---|---|
@@ -344,3 +368,4 @@ supersession chain or the evidence is touched.
 | 12 Sep 2026 | §5's vocabulary is enforced twice: a lint over the `frontdesk` block of `strings.ts` inside `npm run lint -w apps/web` (comments exempt, so the block can explain its own rule), and the test `front_desk_rail_never_uses_a_domain_word_from_the_banned_list` over every string the surface owns. |
 | 12 Sep 2026 | **A pre-existing defect found while building, NOT fixed here.** "Today" has two definitions in the codebase. `today()` in `tablet-sessions.service.ts` — which `pushable` uses to decide whether an appointment is today's — is the **UTC** date, so on a host running in Australia/Sydney it reads as *yesterday* for the first ten hours of the practice's morning (8am AEST is 22:00 UTC the day before). `GET /arrivals/expected` uses the **local** calendar day, because "who is booked in today" is a question about the room. On a UTC host (Fargate's default, and CI's) the two agree, which is why nothing catches it. They should be one helper; which definition wins is Carl's call, not a build's, so `pushable` was left exactly as it was. |
 | 12 Sep 2026 | **Two assumptions for Carl, made mid-build.** (a) Expected renders visible-but-empty, per §12.5's recommendation. (b) Nobody is named twice: a person already on the queue is not also listed under Expected, because a booking can carry a draft before its patient walks in. The queue wins — it is the list with work on it. Test: `front_desk_expected_never_names_somebody_already_on_the_queue`. |
+| 12 Sep 2026 | §13: nothing about the patient leaves the page. Build approved by Carl. |
