@@ -105,13 +105,27 @@ let inFrontdesk = false;
 for (let i = 0; i < lines.length; i += 1) {
   const line = lines[i];
   const trimmed = line.trim();
-  if (/^frontdesk\s*:\s*\{/.test(trimmed)) {
+  /*
+   * BOTH FRONT DESKS. `frontdeskSmall` is the same work on a small screen —
+   * one list instead of five rails — read by the same person on the same
+   * first shift, so it is governed by the same vocabulary. A rule that covered
+   * only the wide desk would let the words drift back in through the page
+   * built to replace it.
+   */
+  if (/^frontdesk(Small)?\s*:\s*\{/.test(trimmed)) {
     inFrontdesk = true;
     continue;
   }
   if (!inFrontdesk) continue;
-  // The block's own closing brace, at the top level of the strings object.
-  if (line === '  },') break;
+  /*
+   * The block's own closing brace, at the top level of the strings object.
+   * It ENDS the block rather than the scan, because there is more than one
+   * block to check and the second one comes later in the file.
+   */
+  if (line === '  },') {
+    inFrontdesk = false;
+    continue;
+  }
   if (trimmed.startsWith('*') || trimmed.startsWith('/*') || trimmed.startsWith('//')) continue;
   const lowered = line.toLowerCase();
   for (const word of BANNED) {

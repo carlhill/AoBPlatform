@@ -14,6 +14,64 @@
  */
 import { CONTACT_CLASH_MESSAGES, type AgreementType } from '@aobplatform/domain';
 
+/**
+ * THE WORDS FOR THE TWO IDS, HOISTED OUT OF THE TABLE SO THEY CAN BE REUSED
+ * INSIDE IT (Carl, 12 September 2026: *"ok. In that case show both ids."*).
+ *
+ * An object literal cannot refer to itself while it is being built, and
+ * `strings.frontdesk.panel` has to hand back exactly these words rather than a
+ * second copy of them — two surfaces printing one person's identifiers
+ * differently is the whole bug this fixes. So they are declared once, here,
+ * and the table exposes them as `strings.recordId`.
+ */
+const recordIdWords = {
+    /*
+     * "AoBPlatform record ID", NOT "Patient ID" (Carl, 12 September 2026, with
+     * both screens side by side: *"Patient ID is on frontdesk it is diff - see
+     * both images"*).
+     *
+     * TWO DIFFERENT THINGS WERE WEARING ONE LABEL. The front desk says
+     * "Patient ID DEV-JO-EXAMPLE" -- the PRACTICE's own number for that person,
+     * the one reception reads out and types into their own software. This says
+     * "Patient ID 37386834-6ffa-..." -- a value THIS platform minted, for a
+     * support ticket. A receptionist reading both would reasonably conclude one
+     * of them was wrong, and neither is.
+     *
+     * The practice's number keeps the plain words, because it is the one that
+     * means something to a person. Ours says whose record it is.
+     */
+    patient: 'AoBPlatform record ID',
+    /*
+     * AND THE PRACTICE'S OWN NUMBER, WHICH GOES ABOVE IT ON EVERY SURFACE
+     * (Carl, 12 September 2026: *"patientid is diff on /tablet and
+     * /frontdesk"*, then *"ok. In that case show both ids."*).
+     *
+     * WHY THE WORDS LIVE HERE RATHER THAN ON A PAGE. The complaint was never
+     * that either value was wrong — it was that two screens a receptionist
+     * uses in the same minute disagreed about WHICH ONE to show. A second pair
+     * of words per surface is how that comes back, so there is one pair and
+     * every surface reads it (`PatientIdentity`).
+     *
+     * "Patient ID" IS WHAT A PRACTICE CALLS IT, and it is an APPROVED
+     * identifier — the s 65C set is name, date of birth, gender, address,
+     * patient record number and IHI (hard rule 1, REQ-VER-02). It is not a
+     * Medicare card number, there is no column for one, and nothing here may
+     * ever be pointed at one.
+     */
+    practiceNumber: (number: string) => `Patient ID ${number}`,
+    /*
+     * SAID, RATHER THAN LEFT BLANK. A record that reached us by a route that
+     * never carried the practice's number is an ordinary thing, and an empty
+     * line under a name reads as a page that failed to load. Our own record id
+     * needs no twin: it always exists.
+     */
+    practiceNumberUnknown: 'No patient ID on this record',
+    copy: 'Copy',
+    copied: 'Copied',
+    /** The accessible name on the copy control, so it is not twelve buttons all called "Copy". */
+    copyLabel: (label: string) => `Copy ${label}`,
+} as const;
+
 export const strings = {
   appName: 'AoBPlatform',
   /**
@@ -37,28 +95,7 @@ export const strings = {
    * needs — hence the copy button, which writes to the clipboard and persists
    * nothing anywhere.
    */
-  recordId: {
-    /*
-     * "AoBPlatform record ID", NOT "Patient ID" (Carl, 12 September 2026, with
-     * both screens side by side: *"Patient ID is on frontdesk it is diff - see
-     * both images"*).
-     *
-     * TWO DIFFERENT THINGS WERE WEARING ONE LABEL. The front desk says
-     * "Patient ID DEV-JO-EXAMPLE" -- the PRACTICE's own number for that person,
-     * the one reception reads out and types into their own software. This says
-     * "Patient ID 37386834-6ffa-..." -- a value THIS platform minted, for a
-     * support ticket. A receptionist reading both would reasonably conclude one
-     * of them was wrong, and neither is.
-     *
-     * The practice's number keeps the plain words, because it is the one that
-     * means something to a person. Ours says whose record it is.
-     */
-    patient: 'AoBPlatform record ID',
-    copy: 'Copy',
-    copied: 'Copied',
-    /** The accessible name on the copy control, so it is not twelve buttons all called "Copy". */
-    copyLabel: (label: string) => `Copy ${label}`,
-  },
+  recordId: recordIdWords,
   auth: {
     /*
      * A TOKEN WITH NO ROLES. Not a permissions problem — a stale session that
@@ -4519,16 +4556,74 @@ export const strings = {
       onATablet: 'On a tablet',
       expected: 'Expected',
       /*
+       * THE THREE GROUPS THAT MAKE THE COLUMN ADD UP (Carl, 12 September 2026:
+       * *"Both pages have to reconcile. Have another list if you have to on
+       * frontdesk as every patient has to be seen."*).
+       *
+       * WHY "NEEDS A LOOK" IS THE IMPORTANT ONE. Somebody who came in, has not
+       * signed and has nothing waiting for them used to appear on no screen at
+       * all. Two of them were sitting in the day's fifteen on the morning this
+       * was written. A person who owes a signature and is on no list is the
+       * worst thing this desk can hold, so the list exists even on the many
+       * days it is empty.
+       *
+       * "NOT ARRIVED TODAY" IS NOT AN ACCUSATION. It is paperwork open at the
+       * desk with nobody recorded as walking in for it today — usually a
+       * correction made after midnight on yesterday's visit, sometimes a form
+       * made ready for a booking before the patient gets here. It is shown
+       * only when it has somebody in it.
+       */
+      finished: 'Finished',
+      needsALook: 'Needs a look',
+      /*
+       * SIGNED, AND STILL WAITING FOR THE PRACTITIONER (D-2026-09-12-20; Carl,
+       * 12 September 2026: *"on /frontdesk the patient goes to 'Finished list'
+       * yet on /waiting the dr has not seen the patient as yet."*).
+       *
+       * NOTHING IS WRONG WITH ANYBODY ON THIS LIST, which is why they are not
+       * under "Needs a look", and there is nothing for the desk to do, which is
+       * why they are not under "Here now". They are the middle of the morning.
+       */
+      waitingToBeSeen: 'Waiting to be seen',
+      notArrived: 'Not arrived today',
+      /*
        * THE COUNT IS THE LIVE REGION, NOT THE ROWS (§12.3). A person moving
        * from Expected to Here now is worth announcing; every poll is not — so
        * the announcement is a countable fact rather than a list of names read
        * out again every few seconds.
+       *
+       * `count` IS THE SPOKEN ONE AND STAYS WHOLE. What is DRAWN is the number
+       * on its own — bold, in the one accent this product has — beside its
+       * word (Carl, on the group headings: *"Make the font bold and a diff
+       * colour for the number - so it stands out"*). A screen reader hears the
+       * sentence; an eye scanning between patients finds the digit.
        */
       count: (n: number) => (n === 1 ? '1 person' : `${n} people`),
+      countUnit: (n: number) => (n === 1 ? 'person' : 'people'),
       /** Booked for today with no time on the booking. Sorts last, says so. */
       noTime: 'No time given',
       hereNoneYet: 'Nobody is waiting at the desk.',
       tabletNoneYet: 'No tablet is being used right now.',
+      finishedNoneYet: 'Nobody has finished yet today.',
+      waitingToBeSeenNoneYet: 'Nobody is waiting for a provider right now.',
+      needsALookNoneYet: 'Nobody is unaccounted for. This is how it should look.',
+      needsALookWhy:
+        'These people came in and have not signed, and there is nothing waiting for them to sign. Nobody '
+        + 'has been held up — they were seen as usual — but their paperwork still has to be caught up.',
+      /*
+       * THE NUMBER THE WHOLE COLUMN HAS TO ADD UP TO, and the sentence that
+       * says so out loud. Two screens quietly disagreeing about the same
+       * morning is what this is here to make impossible to miss: the desk said
+       * three and "who came in" said fifteen, both were right, and neither
+       * said why.
+       */
+      dayTotalUnit: (n: number) => (n === 1 ? 'person came in today' : 'people came in today'),
+      dayTotalWhy:
+        'Here now, on a tablet, needs a look, waiting to be seen and finished add up to this. Expected are '
+        + 'not counted — they have not come in yet.',
+      notArrivedWhy:
+        'There is paperwork open for these people, but nobody has been recorded as coming in for it today. '
+        + 'They are not counted in the number above.',
       /*
        * THE EMPTY STATE THAT CARRIES MOST OF THIS GROUP'S VALUE (§12.1).
        * Appointments reach us only when the practice's software sends them, so
@@ -4564,6 +4659,33 @@ export const strings = {
        */
       dayRegister: 'Everybody seen today',
       dayRegisterWhy: 'The whole day, including the people already finished with — and any earlier day.',
+      /*
+       * SEEING EVERYONE AT ONCE (Carl, 12 September 2026: *"provide a button
+       * to go look at all patients here now (like we have in section [1] of
+       * /tablet page)."*).
+       *
+       * THE SAME PAIR OF DOORS THE TABLET DESK ALREADY HAS, pointing the other
+       * way. That page carries "Work one patient at a time →" to the patients
+       * list; this is its opposite, and the words are the same shape on
+       * purpose so the two read as one product rather than two.
+       *
+       * IT IS A LINK AND IT ACTS ON NOTHING, which is the rule the whole rail
+       * is built on (§12.3).
+       */
+      seeEveryone: 'See everyone here at once →',
+      seeEveryoneWhy:
+        'The tablet desk lists everybody waiting today on one page, with every control beside them.',
+      /**
+       * THE NUMBER ON THE CARD IN THEIR HAND (`QUEUE-TICKETS.md`; Carl, 12
+       * September 2026). Spoken with the word, because a bare "12" read out
+       * beside a name says nothing; drawn as the number alone, because the
+       * card in their hand says nothing else either.
+       *
+       * NOTHING ELSE ON THIS PAGE CALLS IT AN IDENTIFIER, and it is not one
+       * (hard rule 1, REQ-VER-02) — it is a label for a place in a queue on
+       * one day, and it is not the running order (§5a).
+       */
+      ticket: (value: string) => `Number ${value}`,
     },
 
     /*
@@ -4581,7 +4703,18 @@ export const strings = {
      * as certified, checked off by anybody official, or blessed.
      */
     checklist: {
-      title: 'Today’s paperwork',
+      /*
+       * CARL'S NAME FOR IT (`VISIT-CHECKLIST.md` §3a, 12 September 2026):
+       * *"What you call 'Paper work' per patient, I call the patient service
+       * list. We need a patient service list, just like a car has service list
+       * when taken to the service centre."*
+       *
+       * THE SCOPE DID NOT WIDEN WITH THE NAME. It records what the practice
+       * said would happen and whether it happened — never a reason, a finding,
+       * a note, a triage category or a duration. It is not a care plan and it
+       * gates nothing (hard rule 8).
+       */
+      title: 'Patient service list',
       /*
        * SAID ONCE, SO NOBODY LOOKS FOR A TICK BOX. Every row is worked out
        * from the record; there is nothing here for a person to mark, and a
@@ -4593,11 +4726,34 @@ export const strings = {
         done: 'Done',
         outstanding: 'Still to do',
         notNeeded: 'Nothing to sign',
+        /*
+         * DROPPED, WHICH IS NOT THE SAME AS NEVER NEEDED
+         * (`VISIT-CHECKLIST.md` §3a). *Nothing to sign* was never required;
+         * *cancelled* was on the list and was let go — the patient declined,
+         * or ran out of time. Both mean nothing more is owed and both let the
+         * patient reach "Finished"; they are different answers to an auditor.
+         * Nothing produces it yet — the computed rows cannot be dropped — and
+         * the word is here so the state can be added without a second guess at
+         * what it should say.
+         */
+        cancelled: 'Cancelled',
       },
       rows: {
         needed: 'Does today’s visit need an agreement?',
         made: 'The agreement is ready to sign',
         signed: 'Signed on a tablet',
+        /*
+         * HAS THE PATIENT BEEN SEEN? (D-2026-09-12-20; Carl, 12 September
+         * 2026: *"on /frontdesk the patient goes to 'Finished list' yet on
+         * /waiting the dr has not seen the patient as yet."*)
+         *
+         * "SEEN BY THE PROVIDER", NOT "CONSULTATION COMPLETED". Carl's own
+         * words were the second, and CLAUDE.md §3 is the reason they are not
+         * used: it is "service", never "consult" (REQ-MP-01), and "provider",
+         * never "GP". These are also the plainer words of the two for a first
+         * shift, which is what this page is for.
+         */
+        consultation: 'Seen by the provider',
         after: 'Signed after the visit',
       },
       detail: {
@@ -4615,6 +4771,14 @@ export const strings = {
           provider
             ? `Yes — an ongoing agreement with ${provider}.`
             : 'Yes — an ongoing agreement with the provider they are seeing.',
+        /*
+         * AND THE VISIT'S OWN STATE, IN THE WORDS OF THE VERSIONED LIST. The
+         * key comes from `visit-states.json` and the label from the practitioner
+         * queue's own table, so the front desk and the practitioner read one
+         * word for one state — which is the whole point of D-2026-09-12-20.
+         * An unmapped key shows its key (CLAUDE.md §7).
+         */
+        noVisitToSee: 'There is no visit for this to be about.',
         afterService: 'Yes — an agreement for a service they have already had.',
         nothingToSign: 'No. There is nothing for this person to sign for this visit.',
         /*
@@ -4658,19 +4822,19 @@ export const strings = {
         + 'anything back or changes anything.',
 
       /*
-       * THE PRACTICE'S OWN NUMBER, UNDER THE NAME (Carl, 12 September 2026).
-       * Labelled, because a bare string of digits under a person's name could
-       * be read as anything — and what it must NEVER be read as is a Medicare
-       * card number, which is not an identifier in this regime and is not on
-       * this row (hard rule 1). "Patient ID" is what a practice calls it.
+       * THE TWO IDS UNDER THE NAME COME FROM `strings.recordId` (Carl, 12
+       * September 2026: *"patientid is diff on /tablet and /frontdesk"*, then
+       * *"ok. In that case show both ids."*). Two surfaces a receptionist uses
+       * in the same minute disagreeing about which identifier to print is
+       * exactly what one shared pair of words fixes.
+       *
+       * THESE TWO KEYS REMAIN AND DELEGATE, rather than being deleted, because
+       * more than one surface already reads them and a rename is a change to
+       * every one of them at once (wow.md §10: extend behind the existing
+       * name). They are the same string, from one place.
        */
-      patientRecordNumber: (number: string) => `Patient ID ${number}`,
-      /*
-       * SAID, RATHER THAN LEFT BLANK. A record that reached us by a route that
-       * never carried the practice's number is an ordinary thing, and an empty
-       * line under the name would read as a page that had failed to load.
-       */
-      patientRecordNumberUnknown: 'No patient ID on this record',
+      patientRecordNumber: (number: string) => recordIdWords.practiceNumber(number),
+      patientRecordNumberUnknown: recordIdWords.practiceNumberUnknown,
 
       hereNow: (name: string) => `${name} is waiting at the desk.`,
       hereNowNext: 'The next step is to send their agreement to a tablet beside you.',
@@ -4763,6 +4927,62 @@ export const strings = {
         'These are the same controls the tablet desk has, for this person only. Nothing here takes you off '
         + 'this page.',
     },
+  },
+
+  /*
+   * THE FRONT DESK ON A SMALL SCREEN — `/practice/frontdesksmall` (Carl,
+   * 12 September 2026: *"If the Practice has small screens, we will need to go
+   * to a different design."* SESSION-HANDOVER.md, "A proposal for the
+   * small-screen version").
+   *
+   * ONLY WHAT THIS PAGE SAYS THAT THE WIDE DESK DOES NOT. The state names, the
+   * counts, the checklist, every sentence about a patient and the outage
+   * reassurance are read straight from `frontdesk` above — one list and five
+   * rails are two arrangements of one morning, and two vocabularies for it
+   * would be exactly the drift the reconciliation test exists to prevent. Ten
+   * keys here; everything else is shared.
+   *
+   * THE SAME VOCABULARY LINT COVERS BOTH BLOCKS (`check-strings.mjs`). It is
+   * the same job on a smaller screen, read by the same person on the same
+   * first shift, so nothing here may say assignor, ongoing-agreement jargon,
+   * or any of hard rule 12's four words.
+   */
+  frontdeskSmall: {
+    /*
+     * NAMED FOR THE DIFFERENCE, because the choice on the setup card is
+     * between two desks and a receptionist has to be able to make it without
+     * opening the wrong one twice. It is the same work — the words say
+     * "screen", not "job".
+     */
+    title: 'The front desk on a small screen',
+    audience: 'Practice',
+    lead:
+      'Everybody here today in one list, in the order they arrived, with what is happening for each of them. '
+      + 'Open a name to do their work without leaving the list.',
+    /*
+     * HARD RULE 8 IN ONE LINE. The wide desk says this in a banner; three
+     * stacked notices push the work a third of the way down a small screen, so
+     * here it is a sentence in the strip — and it becomes a banner again the
+     * moment the platform cannot be reached, which is when it is worth the
+     * room.
+     */
+    neverBlocks: 'Nothing here holds anybody up.',
+    listLabel: 'Everybody here today',
+    /*
+     * THE CHIPS ARE A FILTER AND THEY SAY SO. A row of counts that also
+     * happens to be pressable is a control nobody finds; naming the group
+     * tells a screen reader what pressing one would do.
+     */
+    filtersLabel: 'Show only one kind — tap again to show everybody',
+    showingOnly: (what: string) => `Showing only “${what}”.`,
+    showAll: 'Show everybody',
+    nobodyYet: 'Nobody has come in yet today.',
+    /*
+     * NO DEAD END. An empty filter is the one place somebody on a first shift
+     * decides the page is broken, so it names what is empty and the control
+     * that undoes it sits beside this sentence.
+     */
+    noneOfThose: (what: string) => `Nobody is in “${what}” right now.`,
   },
 
   /*

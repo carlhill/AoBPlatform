@@ -355,6 +355,23 @@ export const PAGES: Readonly<Record<string, PageRule>> = {
   },
 
   /*
+   * THE SAME FRONT DESK, ON A SMALL SCREEN (Carl, 12 Sep 2026: *"If the
+   * Practice has small screens, we will need to go to a different design"*;
+   * SESSION-HANDOVER.md, "A proposal for the small-screen version").
+   *
+   * THE SAME AUDIENCE AS `/practice/frontdesk`, AND IT HAS TO BE. It is one
+   * dataset shown twice — the same practice-scoped queue, the same day
+   * register, the same `@PracticeScoped` acts — arranged as one list with
+   * filter chips instead of five stacked rails. A different audience here
+   * would mean the same work was reception's on a wide monitor and somebody
+   * else's on a laptop, which is not a statement about access at all.
+   */
+  '/practice/frontdesksmall': {
+    audiences: ['practice'],
+    why: 'The front desk on a small screen: everybody here today in one list, in arrival order, with the state on each row and filter chips above it. The same work and the same reads as the front desk — fewer pixels spent on headings.',
+  },
+
+  /*
    * THE PRACTICE'S DAY REGISTER (Carl, 12 Sep 2026, on the front desk page:
    * *"Add a button here with a link to show all Patients seen at this practice
    * today. You could put a filter on this to search for any day."*).

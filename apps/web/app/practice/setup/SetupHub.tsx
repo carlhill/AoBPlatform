@@ -585,6 +585,35 @@ export function SetupHub({
               <ArrowRight size={14} aria-hidden="true" />
             </Link>
           )}
+
+          {/*
+            AND THE SAME DESK FOR A PRACTICE WITH A SMALL SCREEN (Carl, 12 Sep
+            2026: *"If the Practice has small screens, we will need to go to a
+            different design."*).
+
+            IN THIS CARD, BESIDE THE OTHER TWO, FOR THE SAME REASON THE FRONT
+            DESK IS. It is not a third job — it is the third way into one
+            morning, and the choice between them is about the screen and how
+            much of the domain you want on it, never about which work you are
+            doing. A card of its own would have said otherwise.
+
+            THE SAME `canOpen` AS `/practice/frontdesk`, whose audience it
+            shares exactly, so the card and the page cannot drift apart. Like
+            the front desk it has no read-only twin yet, so `toViewPath` lands
+            an operator on the practice hub — the truthful destination until
+            one exists.
+          */}
+          {canOpen('/practice/frontdesksmall') && (
+            <Link
+              href={viewOnly ? toViewPath('/practice/frontdesksmall', practiceId) : '/practice/frontdesksmall'}
+              className={styles.cardLink}
+              data-testid="hub-to-frontdesksmall"
+            >
+              <ConciergeBell size={14} aria-hidden="true" />
+              {openLabel(strings.frontdeskSmall.title)}
+              <ArrowRight size={14} aria-hidden="true" />
+            </Link>
+          )}
         </section>
 
         {/*

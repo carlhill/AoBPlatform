@@ -68,6 +68,24 @@ const PARENTS: Readonly<Record<string, string>> = {
   '/practice/tablet': '/practice/setup',
   '/practice/frontdesk': '/practice/today',
   /*
+   * THE SMALL-SCREEN DESK GOES UP TO THE HUB THE CARD THAT OPENS IT LIVES ON
+   * (Carl, 12 Sep 2026: *"add it to the same card on /setup under
+   * frontdesk"*), which is the same rule `/practice/tablet` follows and for
+   * the same reason: 'up' has to be somewhere the page can be reached from
+   * again.
+   *
+   * NOT `/practice/today`, EVEN THOUGH THE WIDE DESK GOES THERE. That page is
+   * five destinations and a named test — `is five things and no more` — holds
+   * it at five, because the setup hub reached twelve one reasonable card at a
+   * time. Adding a sixth is a change to PRACTICE-NAVIGATION.md §2 and Carl's
+   * to make, so until he does, Back lands where the link is.
+   *
+   * NOT `/practice/frontdesk` EITHER. Somebody who opened the small-screen
+   * desk chose it; a back press that put them on the wide one would hand them
+   * the layout they deliberately did not want.
+   */
+  '/practice/frontdesksmall': '/practice/setup',
+  /*
    * THE DAY REGISTER GOES UP TO THE DESK IT IS OPENED FROM (Carl, 12 Sep
    * 2026), not to `/practice/today`. The button that leads here is below the
    * three rails on the front desk page, and 'up' has to be where somebody came

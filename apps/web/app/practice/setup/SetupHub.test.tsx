@@ -144,6 +144,22 @@ describe('the Tablets card, and the Kiosk row it must never disagree with', () =
     expect(screen.getByTestId('hub-to-frontdesk').textContent?.toLowerCase()).toContain(
       strings.frontdesk.title.toLowerCase(),
     );
+
+    /*
+     * AND THE SMALL-SCREEN DESK, IN THE SAME CARD (Carl, 12 Sep 2026: *"build
+     * this new design at frontdesksmall and add it to the same card on /setup
+     * under frontdesk"*). Same card, same `canOpen`, one path only — it is the
+     * third way into one morning, not a third job, and a card of its own would
+     * have said otherwise.
+     */
+    expect(screen.getAllByTestId('hub-to-frontdesksmall')).toHaveLength(1);
+    expect((screen.getByTestId('hub-to-frontdesksmall') as HTMLAnchorElement).getAttribute('href')).toBe(
+      '/practice/frontdesksmall',
+    );
+    expect(tabletsCard.querySelector('[data-testid="hub-to-frontdesksmall"]')).not.toBeNull();
+    expect(screen.getByTestId('hub-to-frontdesksmall').textContent?.toLowerCase()).toContain(
+      strings.frontdeskSmall.title.toLowerCase(),
+    );
   });
 
   it('as the practice, with nothing paired: "No tablet paired yet", NOT STARTED', async () => {
@@ -192,6 +208,10 @@ describe('the Tablets card, and the Kiosk row it must never disagree with', () =
      * exists, and never the practice route that would refuse them.
      */
     expect((screen.getByTestId('hub-to-frontdesk') as HTMLAnchorElement).getAttribute('href')).toBe(
+      `/platform/practices/${PRACTICE}`,
+    );
+    // The small-screen desk has none either, and lands in the same place.
+    expect((screen.getByTestId('hub-to-frontdesksmall') as HTMLAnchorElement).getAttribute('href')).toBe(
       `/platform/practices/${PRACTICE}`,
     );
   });
