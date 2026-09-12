@@ -110,6 +110,43 @@ before anybody moves a control.
 5. **Density.** Seven people filled the rail. A real morning is more than that,
    and the whole point of the screen is seeing the room at a glance.
 
+### A proposal for the small-screen version (Claude, 12 September 2026)
+
+Carl: *"If the Practice has small screens, we will need to go to a different
+design. Lets leave that for later, unless you want to propose a design."* Here
+is one, so that "later" starts from something concrete.
+
+**One list, not five.** The five rails are five STATES, and the reason they
+exist is accounting: the day has to partition so the desk and the register
+reconcile. That is a requirement on the DATA, not on the layout. A receptionist
+does not think in states — they think "who do I deal with next".
+
+So: **a single list of everybody here today, in arrival order, each row
+carrying its own state marker.** Above it, one row of filter chips —
+`Here now 7 · On a tablet 0 · Needs a look 0 · Finished 0` — which are also
+where the colour lives, so the eye still lands on the right thing and the
+reconciliation is visible on ONE line instead of in five blocks. Tapping a chip
+filters the list.
+
+**What that buys on a small screen.** Five headings, five counts and five
+empty-state paragraphs collapse into one strip. On the screenshot from today,
+four of the five rails were empty and still consumed most of the column. This
+is the difference between seeing three patients and seeing twelve.
+
+**And the detail panel.** Wide screen: the side panel as now. Narrow screen:
+the row expands IN PLACE, so the patient's work opens under their name and the
+list stays on screen. That also honours §13 more literally than the current
+design does — you never leave the list, so there is nowhere to be sent.
+
+**What it costs, stated honestly.** At-a-glance grouping. Today you can see
+"three people are finished" without reading anything; in this design the chips
+have to carry that, and a chip is smaller than a heading. That is the trade,
+and it is only worth taking if the room is bigger than the screen.
+
+**What must survive the change.** The reconciliation test — the chips must sum
+to the day register exactly as the rails do now — and arrival order, which is
+the one ordering rule on this page.
+
 ### What must not change while improving it
 
 - Everything about the patient stays on this page (Carl, §13).
