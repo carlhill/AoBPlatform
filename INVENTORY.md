@@ -17,11 +17,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 1958 |
-| Files scanned for exports | 490 |
-| Files scanned for imports | 531 |
-| Exports with no comment of their own | 861 |
-| Exports imported nowhere else | 811 |
+| Exported symbols indexed | 1981 |
+| Files scanned for exports | 493 |
+| Files scanned for imports | 534 |
+| Exports with no comment of their own | 864 |
+| Exports imported nowhere else | 821 |
 
 ## Sections
 
@@ -29,13 +29,13 @@ This is required reading before you write a component, a hook or a helper (wow.m
 - [Web hooks](#web-hooks) — 13
 - [Web helpers and constants](#web-helpers-and-constants) — 265
 - [Web types](#web-types) — 96
-- [Domain functions](#domain-functions) — 355
-- [Domain constants and content](#domain-constants-and-content) — 225
-- [Domain types](#domain-types) — 269
+- [Domain functions](#domain-functions) — 366
+- [Domain constants and content](#domain-constants-and-content) — 229
+- [Domain types](#domain-types) — 270
 - [Contracts types](#contracts-types) — 69
 - [Contracts functions and constants](#contracts-functions-and-constants) — 20
 - [Core services, controllers and modules](#core-services-controllers-and-modules) — 268
-- [Core helpers, constants and types](#core-helpers-constants-and-types) — 156
+- [Core helpers, constants and types](#core-helpers-constants-and-types) — 163
 
 ## Web components
 
@@ -663,7 +663,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Domain functions
 
-355 exports.
+366 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -693,6 +693,8 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `matrix` | domain:reporting.ts | Months down the side, positions within the month across the top. | **3** · core:outbound/outbound.service.ts, web:practice/reports/ReportsView.tsx, web:practitioner/messages/MessagesView.tsx |
 | `mayBeProviderOnAgreement` | domain:billing-roles.ts | MAY THIS PERSON BE THE PROVIDER ON AN AGREEMENT AT THIS LOCATION? | **3** · core:arrivals/arrivals.service.ts, core:tablet-sessions/tablet-sessions.service.ts, domain:guards.ts |
 | `normaliseEmail` | domain:contacts.ts | One mailbox, case-insensitively. | **3** · core:agreements/agreements.service.ts, domain:agreement-copy.ts, domain:assignor.ts |
+| `practiceDisplayLabel` | domain:account-naming.ts | The practice's half of that label. | **3** · core:identity/identity.service.ts, core:identity/practice-admin.service.ts, core:practices/practice-users.service.ts |
+| `webAuthnDisplayName` | domain:account-naming.ts | WHAT A PERSON READS AT THE PASSKEY PICKER (section 3c) -- and it leads with the practice, because that is the part that distinguishes it. | **3** · core:identity/identity.service.ts, core:identity/practice-admin.service.ts, core:practices/practice-users.service.ts |
 | `AbnError` | domain:abn.ts |  | **2** · core:common/domain-exception.filter.ts, core:organisations/organisations.service.ts |
 | `AffiliationError` | domain:affiliation.ts |  | **2** · core:affiliations/affiliations.service.ts, core:common/domain-exception.filter.ts |
 | `CeremonyError` | domain:enrolment-ceremony.ts |  | **2** · core:common/domain-exception.filter.ts, core:identity/identity.service.ts |
@@ -755,6 +757,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SignatureCaptureError` | domain:signature.ts |  | **1** · core:agreements/agreements.service.ts |
 | `actingAsReason` | domain:acting-as.ts |  | **1** · core:acting-as/acting-as.service.ts |
 | `addressWarnings` | domain:address.ts | Non-blocking observations, for the same reason G-NAF gaps are non-blocking. | **1** · core:organisations/organisations.service.ts |
+| `adminUsername` | domain:account-naming.ts | THE PRACTICE'S OWN ACCOUNT. | **1** · core:identity/account-names.ts |
 | `afterStop` | domain:pending-email-change.ts | What a stop means for the account, which is more than discarding a row. | **1** · core:organisations/pending-email.service.ts |
 | `agreementTemplateProblems` | domain:agreement-templates.ts | Every problem with one template body, in the order the loader would hit them. | **1** · web:practice/templates/templateEditing.ts |
 | `anniversaryWarningBand` | domain:enduring.ts | The warning band to surface, or null when none is due (REQ-END-03: 90/60/30). | **1** · core:enduring/enduring.service.ts |
@@ -780,6 +783,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `assertNotChurning` | domain:pending-email-change.ts |  | **1** · core:identity/practitioner-email.service.ts |
 | `assertNoticeContentComplete` | domain:notice.ts |  | **1** · core:notices/notices.service.ts |
 | `assertOrganisationApplicationValid` | domain:abn.ts | Throws unless the ABN is well-formed and ACTIVE, the typed name matches a registered name, and any supplied ACN agrees with the one derived from the ABN. | **1** · core:organisations/organisations.service.ts |
+| `assertPracticeCode` | domain:account-naming.ts | A code is checked at every use, not only at allocation. | **1** · core:practices/practice-code.ts |
 | `assertQueueable` | domain:outbound-queue.ts |  | **1** · core:outbound/outbound.service.ts |
 | `assertRecordableCheck` | domain:address-check.ts | Is this confirmation recordable? | **1** · core:organisations/organisations.service.ts |
 | `assertRegistrationPermitsPractice` | domain:ahpra.ts | A blocking check, and a deliberately narrow one: only the registration STATUS refuses. | **1** · core:affiliations/affiliations.service.ts |
@@ -823,9 +827,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `downloadHeaders` | domain:artefact.ts | How an artefact is served. | **1** · core:artefacts/artefacts.service.ts |
 | `duplicateWarning` | domain:evidence.ts | The same bytes, cited for something else. | **1** · core:artefacts/artefacts.service.ts |
 | `escalationLevel` | domain:notice.ts | Highest escalation threshold passed, or null. | **1** · core:notices/notices.service.ts |
+| `extendPracticeCode` | domain:account-naming.ts | ON COLLISION, EXTEND DETERMINISTICALLY (section 3b rule 5, section 5 rule 3): `xlevelup`, then `xlevelup2`, `xlevelup3`. | **1** · core:practices/practice-code.ts |
 | `forcesReapproval` | domain:acting-as.ts | Does starting a session put the practice back through approval? | **1** · core:acting-as/acting-as.service.ts |
 | `formatAddress` | domain:address.ts | The single line that goes into a s 65C particulars block. | **1** · core:organisations/organisations.service.ts |
 | `formatPairingCode` | domain:devices.ts | How the code is SHOWN — grouped in fours, because eight unbroken characters is where people lose their place. | **1** · web:practice/devices/DevicesView.tsx |
+| `generatePracticeCode` | domain:account-naming.ts | The fallback of section 3b rule 4. `randomHex` is injected so a test can pin it; production passes node's crypto. | **1** · core:practices/practice-code.ts |
 | `genericAgreementTemplate` | domain:agreement-templates.ts |  | **1** · core:templates/templates.service.ts |
 | `hasAnniversaryFuse` | domain:enduring.ts |  | **1** · core:enduring/enduring.service.ts |
 | `hasInvitationCapacity` | domain:affiliation.ts |  | **1** · core:affiliations/affiliations.service.ts |
@@ -841,6 +847,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `isBusinessDay` | domain:enduring.ts |  | **1** · domain:departure-notice.ts |
 | `isConfirmableDetailType` | domain:tablet-session.ts |  | **1** · core:portal/portal-reads.service.ts |
 | `isContentImmutable` | domain:lifecycle.ts |  | **1** · domain:assignor.ts |
+| `isGeneratedPracticeCode` | domain:account-naming.ts | True for a code this platform generated rather than read off a name. | **1** · core:practices/practice-code.ts |
 | `isInvitationCodeShaped` | domain:invitation.ts |  | **1** · core:affiliations/invitation.service.ts |
 | `isPullChannel` | domain:outbound-queue.ts |  | **1** · core:outbound/outbound.service.ts |
 | `isReconciliationDecision` | domain:reconciliation-decision.ts |  | **1** · core:reconciliation/reconciliation.service.ts |
@@ -878,11 +885,13 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `parseRetentionYears` | domain:retention.ts | Turn a configured value into a number of years, refusing nonsense. | **1** · core:correspondence/correspondence.service.ts |
 | `parseSingleLine` | domain:address.ts | Best-effort split of a single line, for migrating existing records and for pre-filling the six fields from something already typed. | **1** · core:organisations/organisations.service.ts |
 | `passkeysRemaining` | domain:practice-users.ts | How many passkeys the admin account may still enrol. | **1** · core:practices/practice-users.service.ts |
+| `personUsername` | domain:account-naming.ts | A PERSON, AT ONE PRACTICE -- `audrey@hillsempire.com.xlevelup`. | **1** · core:identity/account-names.ts |
 | `placeOptionsQuery` | domain:packed-reports.ts |  | **1** · web:practice/reports/ReportsView.tsx |
 | `portalRecordIdLine` | domain:patient-message-templates.ts | The one sentence, ready to append (Carl, 4 Sep 2026). | **1** · core:messaging/portal-record-id.service.ts |
 | `practitionerStrength` | domain:practitioner-strength.ts |  | **1** · core:identity-dashboard/identity-dashboard.service.ts |
 | `projectKioskWaitingRow` | domain:kiosk.ts | Build a row by taking ONLY the permitted fields. | **1** · core:kiosk/kiosk.service.ts |
 | `projectTabletSessionPatient` | domain:tablet-session.ts | Build the patient block by taking ONLY the permitted fields. | **1** · core:tablet-sessions/tablet-sessions.service.ts |
+| `proposePracticeCode` | domain:account-naming.ts | THE SLUG (section 3b rules 1-3). | **1** · core:practices/practice-code.ts |
 | `providerIsGpFor` | domain:billing-roles.ts | IS THIS THE GP THE CLAIM GOES UNDER — the one input `decideVisitAgreement` takes, and the only place the two facts are allowed to meet. | **1** · core:arrivals/arrivals.service.ts |
 | `raisesAFrontDeskTask` | domain:visit-states.ts | Setting this asks reception to look, and moves nobody (§3a rule 4). | **1** · core:practitioner-queue/practitioner-queue.service.ts |
 | `recipientsFor` | domain:pending-email-change.ts | Who gets told, given what the practice looked like BEFORE the save. | **1** · core:organisations/pending-email.service.ts |
@@ -913,6 +922,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `warnedAddresses` | domain:pending-email-change.ts | Who is warned, given a backup may or may not exist. | **1** · core:identity/practitioner-email.service.ts |
 | `whoTheyCameToSee` | domain:practitioner-queue.ts | WHICH PRACTITIONER THE PATIENT CAME TO SEE, from the arrival's two fields. | **1** · core:practitioner-queue/practitioner-queue.service.ts |
 | `worstRowsFirst` | domain:setup.ts | Promote the rows that need work. | **1** · core:organisations/setup.service.ts |
+| `AccountNameError` | domain:account-naming.ts |  | 0 |
 | `InvitationError` | domain:invitation.ts |  | 0 |
 | `PageAccessError` | domain:page-access.ts |  | 0 |
 | `ReviewTaskError` | domain:review-tasks.ts |  | 0 |
@@ -1010,6 +1020,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `patientMessageTemplate` | domain:patient-message-templates.ts |  | 0 |
 | `placeFilters` | domain:packed-reports.ts |  | 0 |
 | `postcodeMatchesState` | domain:address.ts |  | 0 |
+| `practiceNameForCode` | domain:account-naming.ts | The trading name if there is one, else the practice name. | 0 |
 | `preferredAssignorChannel` | domain:assignor.ts | The assignor's preferred channel (C7.2 — per ASSIGNOR, not per patient, because the signer is not always the patient). | 0 |
 | `purposeOf` | domain:correspondence-log.ts | What a message was for, from what it was about. | 0 |
 | `raisesConcern` | domain:practitioner-departure.ts |  | 0 |
@@ -1025,7 +1036,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Domain constants and content
 
-225 exports.
+229 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1183,6 +1194,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ENDURING_TERMINATION_NOTICE_IS_DRAFT` | domain:enduring-termination-notice.ts | True while the wording is unwritten. | 0 |
 | `FORBIDDEN_WHILE_ACTING_AS` | domain:acting-as.ts | WHAT AN OPERATOR MAY NOT DO WHILE WEARING A PRACTICE'S FACE. | 0 |
 | `FOURTEENTH_BIRTHDAY_LEAD_DAYS` | domain:enduring.ts | Prompt the practice this far ahead so it is re-papered before an invalid claim, not after. | 0 |
+| `GENERATED_PRACTICE_CODE_PATTERN` | domain:account-naming.ts | A generated code is `p` then twelve hex characters, and it starts with a letter so it can never be mistaken for a truncated ABN or a row number. | 0 |
 | `HOLIDAY_RULES` | domain:public-holidays.ts | The standing rules. | 0 |
 | `IDENTIFIER_MATCH_MEANS` | domain:evidence.ts | Whether a match should be read as reassurance. | 0 |
 | `INACTIVITY_GRACE_MONTHS` | domain:practice-users.ts | Warned this long ago and still absent, and access is withdrawn. | 0 |
@@ -1224,6 +1236,9 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `POST_SERVICE_OUTCOMES` | domain:visit-policy.ts | WHAT THIS *RENDERED* SERVICE NEEDS SIGNED (Carl, 11 Sep 2026; TODO.md "Two front doors" decision (b), "Still to build: Post-service push"). | 0 |
 | `POST_SERVICE_POLICY_INPUTS` | domain:visit-policy.ts | The two input names, which is also the set a post-service `when` may mention. | 0 |
 | `POST_SERVICE_POLICY_RULES` | domain:visit-policy.ts | The post-service table, in file order, which is evaluation order. | 0 |
+| `PRACTICE_CODE_MAX_LENGTH` | domain:account-naming.ts | 24 characters (section 3b rule 3). | 0 |
+| `PRACTICE_CODE_MIN_LENGTH` | domain:account-naming.ts | Under three characters is not a code anybody would recognise -- a practice named in a non-Latin script strips to nothing -- so section 3b rule 4 falls back to a GENERATED code rather than a mangled one, and marks it generated. | 0 |
+| `PRACTICE_CODE_PATTERN` | domain:account-naming.ts | What a code may contain once allocated. | 0 |
 | `PRINT_DOCUMENT_LANES` | domain:inbound-lanes.ts |  | 0 |
 | `PROVIDER_TYPE_PROFESSIONS` | domain:ahpra.ts | Does the AHPRA profession support the provider type a practice is asserting? | 0 |
 | `PURPOSE_FAMILIES` | domain:correspondence-log.ts | WHAT THE THING ACTUALLY IS, in three facts. | 0 |
@@ -1257,7 +1272,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Domain types
 
-269 exports.
+270 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1487,6 +1502,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PostServiceRule` | domain:visit-policy.ts |  | 0 |
 | `Practice` | domain:parties.ts |  | 0 |
 | `PracticeLocation` | domain:parties.ts |  | 0 |
+| `PracticeNaming` | domain:account-naming.ts | THE NAME A CODE IS PROPOSED FROM: the trading name where there is one, else the practice name, NEVER the legal name (section 3b rule 1). | 0 |
 | `PractitionerRecord` | domain:directory.ts | Everything the platform holds about a practitioner. | 0 |
 | `PractitionerStrength` | domain:practitioner-strength.ts |  | 0 |
 | `PractitionerStrengthInput` | domain:practitioner-strength.ts |  | 0 |
@@ -1640,7 +1656,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
-| `PrismaService` | core:prisma/prisma.service.ts | Every practice-scoped read or write goes through withPractice() — RLS policies (FORCE, fail closed) filter on the transaction-local app.practice_id setting, so a query outside withPractice() sees no practice-scoped rows at all. | **56** · core:acting-as/acting-as.service.ts, core:affiliations/affiliations.service.ts, core:affiliations/invitation.service.ts, +53 more |
+| `PrismaService` | core:prisma/prisma.service.ts | Every practice-scoped read or write goes through withPractice() — RLS policies (FORCE, fail closed) filter on the transaction-local app.practice_id setting, so a query outside withPractice() sees no practice-scoped rows at all. | **58** · core:acting-as/acting-as.service.ts, core:affiliations/affiliations.service.ts, core:affiliations/invitation.service.ts, +55 more |
 | `ReviewTasksService` | core:review-tasks/review-tasks.service.ts | Work arriving into the platform that needs a second look. | **12** · core:affiliations/affiliations.service.ts, core:affiliations/practitioner-self.controller.ts, core:identity/practice-admin.service.ts, +9 more |
 | `OutboundService` | core:outbound/outbound.service.ts | The outbound queue. | **9** · core:acting-as/acting-as.service.ts, core:affiliations/affiliations.service.ts, core:agreement-copy/agreement-copy.service.ts, +6 more |
 | `CaptureService` | core:capture/capture.service.ts |  | **8** · core:agreements/agreements.service.ts, core:arrivals/arrivals.service.ts, core:arrivals/post-service-chase.sweep.ts, +5 more |
@@ -1911,7 +1927,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Core helpers, constants and types
 
-156 exports.
+163 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1949,12 +1965,14 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `RULES_CLIENT` | core:rules-client/rules-client.module.ts |  | **2** · core:agreements/agreements.service.ts, core:service-descriptions/service-descriptions.service.ts |
 | `RenderedArtefact` | core:render/renderer.ts | Rule 13 — ONE deterministic render path. | **2** · core:render/agreement-pdf-renderer.ts, core:render/pdf-renderer.ts |
 | `VAULT_CLIENT` | core:vault/vault.tokens.ts |  | **2** · core:vault/vault-relay.service.ts, core:vault/vault.module.ts |
+| `allocatePracticeCode` | core:practices/practice-code.ts |  | **2** · core:organisations/organisations.service.ts, core:practices/practices.service.ts |
 | `clientKey` | core:portal/portal-client-key.ts | WHAT A RATE LIMITER ON A PUBLIC PORTAL ROUTE COUNTS AGAINST. | **2** · core:portal/portal-passkey.controller.ts, core:portal/portal.controller.ts |
 | `evaluateChallenge` | core:verification/identifier-matching.ts | Evaluates ALL challenged identifiers (never short-circuits on first mismatch — uniform timing) and reports only the aggregate. | **2** · core:kiosk/kiosk.service.ts, core:verification/verification.service.ts |
 | `parseCaptureToken` | core:capture/capture-token.ts |  | **2** · core:agree/agree.service.ts, core:capture/capture.service.ts |
 | `readPortalCookie` | core:portal/portal-cookie.ts | The session id the caller presented, or null. | **2** · core:portal/portal-passkey.controller.ts, core:portal/portal.controller.ts |
 | `renderHtml` | core:messaging/template.ts |  | **2** · core:identity/practice-admin.service.ts, core:messaging/composer.service.ts |
 | `renderText` | core:messaging/template.ts | The plain-text alternative, derived from the same blocks so they cannot drift. | **2** · core:identity/practice-admin.service.ts, core:messaging/composer.service.ts |
+| `usernameForPersonAtPractice` | core:identity/account-names.ts | A PERSON, AT ONE PRACTICE -- `audrey@hillsempire.com.xlevelup`. | **2** · core:identity/identity.service.ts, core:practices/practice-users.service.ts |
 | `verifiedArtefactOf` | core:render/verified-artefact.ts |  | **2** · core:agreement-copy/agreement-copy.service.ts, core:portal/portal-reads.service.ts |
 | `AbrClient` | core:organisations/abr.ts |  | **1** · core:organisations/organisations.service.ts |
 | `AddressValidator` | core:organisations/address-validator.ts |  | **1** · core:organisations/organisations.service.ts |
@@ -2001,14 +2019,17 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `parseDeviceCredential` | core:devices/device-credential.ts | Splits a credential into the practice it routes to and the hash to look the device up by. | **1** · core:devices/devices.service.ts |
 | `parsePortalActivationToken` | core:portal/portal-token.ts |  | **1** · core:portal/portal.service.ts |
 | `portalRelyingParty` | core:portal/portal-passkey-config.ts |  | **1** · core:portal/portal-passkey.service.ts |
+| `practiceCode` | core:practices/practice-code.ts | The code, allocating one if this practice predates the scheme or was created by a path that has not been taught to allocate yet. | **1** · core:identity/account-names.ts |
 | `pushRefusals` | core:tablet-sessions/push-refusal.ts |  | **1** · core:tablet-sessions/tablet-sessions.service.ts |
 | `sha256Hex` | core:artefacts/artefact-store.ts |  | **1** · core:artefacts/artefacts.service.ts |
+| `usernameForPracticeAdmin` | core:identity/account-names.ts | THE PRACTICE'S OWN ACCOUNT -- `admin.xlevelup`. | **1** · core:identity/practice-admin.service.ts |
 | `ABN_LOOKUP_LIMIT` | core:organisations/abn-lookup-rate-limit.ts | Twenty previews in ten minutes from one address. | 0 |
 | `ABN_LOOKUP_WINDOW_MS` | core:organisations/abn-lookup-rate-limit.ts |  | 0 |
 | `AGREEMENT_RENDERER` | core:render/renderer.ts |  | 0 |
 | `AbrProbe` | core:organisations/abr.ts | WHY THERE ARE TWO ANSWERS AND NOT ONE. | 0 |
 | `AbrReason` | core:organisations/abr.ts |  | 0 |
 | `AddressValidationResult` | core:organisations/address-validator.ts |  | 0 |
+| `AllocatedPracticeCode` | core:practices/practice-code.ts |  | 0 |
 | `AnchoredRow` | core:affiliations/agreement-anchor.ts | The shape every caller has: an agreement row, or anything carrying the two ids. | 0 |
 | `CLAIM_ATTEMPT_WINDOW_MS` | core:kiosk/claim-rate-limit.ts |  | 0 |
 | `CLAIM_LOCKED_MESSAGE` | core:kiosk/kiosk.service.ts | The one sentence a locked-out tablet shows, and it points at a person. | 0 |
@@ -2041,6 +2062,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PushableRow` | core:tablet-sessions/tablet-sessions.service.ts | A row on the console's left-hand list — a draft that could go to a tablet, or the reason it could not. | 0 |
 | `RELAY_INTERVAL_MS` | core:vault/vault-relay.service.ts |  | 0 |
 | `RecordChaseAttemptInput` | core:chase-attempts/chase-attempts.service.ts |  | 0 |
+| `ResolvedUsername` | core:identity/account-names.ts | What the caller needs to know, and why it is what it is. | 0 |
 | `RetentionSweepResult` | core:retention/retention-sweep.service.ts |  | 0 |
 | `SERVICE_RENDERED_OUTCOMES` | core:practitioner-queue/practitioner-queue.service.ts | WHAT THE SERVICE-RENDERED SIGNAL CAME TO — a reason code, never prose, and never a gate (hard rule 8). | 0 |
 | `ServiceRenderedOutcome` | core:practitioner-queue/practitioner-queue.service.ts |  | 0 |
@@ -2056,6 +2078,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `addressMatches` | core:verification/identifier-matching.ts | The address rule (Carl, 3 Sep 2026), and it mirrors `nameMatches` on purpose. | 0 |
 | `constantTimeMatch` | core:verification/identifier-matching.ts | Constant-time equality over the normalised values — no early exit an attacker can time. | 0 |
 | `esc` | core:messaging/template.ts | Escape before interpolation. | 0 |
+| `existingUsername` | core:identity/account-names.ts | The username of an account we already recorded the id of. | 0 |
 | `extractState` | core:organisations/address-validator.ts |  | 0 |
 | `formatBenefit` | core:notices/notice-template.ts | Reg 89AA notice copy. | 0 |
 | `hashCopySecret` | core:agreement-copy/copy-token.ts |  | 0 |

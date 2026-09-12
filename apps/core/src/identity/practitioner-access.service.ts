@@ -157,12 +157,26 @@ export class PractitionerAccessService {
     }
 
     /*
-     * LOOK BEFORE CREATING. Keycloak enforces one email per realm, so a second
-     * create would fail — but the reason to look first is that finding an
-     * existing account and adopting it keeps ONE identity for the person,
-     * rather than leaving an orphan nothing points at.
+     * LOOK BEFORE CREATING, so that finding an existing account and adopting it
+     * keeps ONE identity for the person rather than leaving an orphan nothing
+     * points at.
+     *
+     * BY USERNAME, NOT BY EMAIL, since 12 Sep 2026 (PRACTICE-SCOPED-LOGIN.md
+     * §4). The realm now allows duplicate emails — Audrey at three practices
+     * has three accounts all carrying her own address — so `findByEmail` no
+     * longer identifies one account and may return a PRACTICE-SCOPED one
+     * (`audrey@hillsempire.com.xlevelup`). Adopting that as the person-level
+     * record would give the cross-practice view an account scoped to one
+     * practice, which is the exact confusion PRACTITIONER-IDENTITY.md §1 exists
+     * to prevent.
+     *
+     * THIS ACCOUNT IS THE BARE EMAIL AND CARRIES NO PRACTICE CODE, deliberately
+     * (PRACTITIONER-IDENTITY.md §3). It is scoped to a PERSON; a code on it
+     * would name a practice it is not for. It is the one shape outside
+     * PRACTICE-SCOPED-LOGIN.md §3a's two, and this is the only place that may
+     * build it.
      */
-    const existing = await this.keycloak.findByEmail(practitioner.email);
+    const existing = await this.keycloak.findByUsername(practitioner.email);
     let userId = existing?.id ?? null;
     let created = false;
 

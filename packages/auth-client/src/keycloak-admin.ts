@@ -106,6 +106,29 @@ export class KeycloakAdminClient {
     return body?.[0] ?? null;
   }
 
+  /**
+   * The account behind an id we already stored.
+   *
+   * EXISTS FOR GRANDFATHERING (PRACTICE-SCOPED-LOGIN.md §3 property 2, §8). A
+   * passkey is bound to a username, so an account that already exists must be
+   * re-found by its ID and keep whatever name it was born with —
+   * `admin.821709fb`, `drjhuang@gmail.com` — rather than be looked up under
+   * whatever the current naming scheme would produce, which would miss it and
+   * create a second account, orphaning a real person's credential.
+   *
+   * Null when the account is gone, so a caller can tell "no account" from "an
+   * account with a different name".
+   */
+  async findById(userId: string): Promise<KeycloakUserSummary | null> {
+    try {
+      const { body } = await this.request<KeycloakUserSummary>('GET', `/users/${encodeURIComponent(userId)}`);
+      return body ?? null;
+    } catch (err) {
+      if (err instanceof KeycloakAdminError && err.status === 404) return null;
+      throw err;
+    }
+  }
+
   async findByUsername(username: string): Promise<KeycloakUserSummary | null> {
     const { body } = await this.request<KeycloakUserSummary[]>(
       'GET',
@@ -151,12 +174,21 @@ export class KeycloakAdminClient {
     }
 
     /**
-     * Keycloak enforces a UNIQUE EMAIL PER REALM. A practitioner working at
-     * two practices gets a different username at each (username carries the
-     * practice) but the same email — so the second invitation 409s. Swallowing
-     * that produced a baffling "created but could not be read back"; surfacing
-     * it names the real situation, which needs a human decision (is this the
-     * same human, and should the accounts be linked?) rather than a duplicate.
+     * A 409 HERE IS NOW A USERNAME CONFLICT, NOT AN EMAIL ONE (12 Sep 2026,
+     * PRACTICE-SCOPED-LOGIN.md §4).
+     *
+     * It used to be an email conflict: the realm enforced one email per realm,
+     * so a practitioner's SECOND practice account — same address, different
+     * username — was refused, and swallowing that produced a baffling "created
+     * but could not be read back". The realm now sets
+     * `duplicateEmailsAllowed: true` (and `loginWithEmailAllowed: false`,
+     * because the two are mutually exclusive), precisely so that Audrey at
+     * three practices can hold three accounts carrying her own address.
+     *
+     * So the address is no longer the thing to report. It is still LOOKED UP
+     * when a conflict happens, because "an account already exists with this
+     * address" is useful context for a human — but it is context, not the
+     * cause, and the message says which.
      */
     const create = await this.request('POST', '/users', {
       username: input.username,
@@ -175,9 +207,10 @@ export class KeycloakAdminClient {
       const byEmail = input.email ? await this.findByEmail(input.email) : null;
       throw new KeycloakAdminError(
         byEmail
-          ? `An account already exists with the email ${input.email} (username "${byEmail.username}"). ` +
-            'Keycloak enforces one email per realm — the same practitioner at a second practice needs a ' +
-            'different address, or the existing account linked rather than duplicated.'
+          ? `Keycloak refused the account "${input.username}" as a conflict. An account does already exist ` +
+            `with the address ${input.email} (username "${byEmail.username}"), which is allowed — the realm ` +
+            'permits duplicate emails so one person can hold an account at each practice. So the clash is on ' +
+            'the USERNAME, which means this practice code and this address have been paired before.'
           : `Keycloak rejected the account for "${input.username}" as a conflict.`,
         409,
       );

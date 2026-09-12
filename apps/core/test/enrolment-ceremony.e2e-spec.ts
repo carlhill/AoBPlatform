@@ -22,14 +22,28 @@ describe('REQ-PKI-01 enrolment ceremony gate (e2e, real Postgres)', () => {
   let providerId: string;
   let createdUsers = 0;
 
+  /*
+   * A STUB THAT REMEMBERS, since 12 Sep 2026 (PRACTICE-SCOPED-LOGIN.md §3
+   * property 2). Account naming now asks the realm "does this account already
+   * exist?" before it asks "what would this be called today", because a
+   * passkey is bound to a username and recomputing one orphans the credential.
+   * A stub that forgot every account could not exercise that at all — and a
+   * re-enrolment (the tests below) is exactly the path that depends on it.
+   */
+  const accounts = new Map<string, { id: string; username: string }>();
   const fakeKeycloak = {
-    createPasskeyOnlyUser: async () => {
+    createPasskeyOnlyUser: async (input: { username: string }) => {
+      const existing = accounts.get(input.username);
+      if (existing) return existing;
       createdUsers += 1;
-      return { id: randomUUID(), username: 'stub' };
+      const user = { id: randomUUID(), username: input.username };
+      accounts.set(user.username, user);
+      return user;
     },
     sendPasskeyEnrolment: async () => undefined,
     setEnabled: async () => undefined,
-    findByUsername: async () => null,
+    findByUsername: async (username: string) => accounts.get(username) ?? null,
+    findById: async (id: string) => [...accounts.values()].find((u) => u.id === id) ?? null,
     assignRealmRoles: async () => undefined,
   };
 
@@ -176,11 +190,29 @@ describe('REQ-PKI-01 enrolment ceremony gate (e2e, real Postgres)', () => {
       expect(createdUsers).toBe(before);
     });
 
-    it('permits it on an explicitly stepped-up ceremony', async () => {
+    it('permits it on an explicitly stepped-up ceremony, on the SAME account', async () => {
       await recordCeremony(goodCeremony({ steppedUp: true })).expect(201);
       const before = createdUsers;
-      await invite().expect(201);
-      expect(createdUsers).toBe(before + 1);
+      const previousUsername = [...accounts.keys()][0];
+      const res = await invite().expect(201);
+
+      /*
+       * NO SECOND ACCOUNT, and this assertion was reversed on 12 Sep 2026.
+       *
+       * It read `before + 1`, which was never the real behaviour — it was an
+       * artefact of a stub that forgot every account and handed back a fresh
+       * id each time. `createPasskeyOnlyUser` is idempotent and returns the
+       * existing account when the username matches.
+       *
+       * Under PRACTICE-SCOPED-LOGIN.md §3 property 2 the reverse is now a
+       * REQUIREMENT rather than an incidental truth: recovery issues a new
+       * credential on the account the person already holds. A second account
+       * would mean a second username, and the passkey they are re-enrolling is
+       * bound to the first one.
+       */
+      expect(createdUsers).toBe(before);
+      expect(res.body.username).toBe(previousUsername);
+      expect(accounts.size).toBe(1);
 
       const events = await prisma.vaultOutbox.findMany({ where: { subjectId: providerId } });
       const reEnrolment = events

@@ -31,6 +31,7 @@ export * from './practitioner-strength';
 export * from './landing';
 export * from './address-check';
 export * from './practice-users';
+export * from './account-naming';
 export * from './external-links';
 export * from './pending-email-change';
 export * from './page-access';

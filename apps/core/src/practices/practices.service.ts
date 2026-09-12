@@ -9,6 +9,7 @@ import {
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
+import { allocatePracticeCode } from './practice-code';
 import type { Actor } from '../auth/actor.decorator';
 import type {
   CreateAssignorDto,
@@ -31,8 +32,8 @@ export class PracticesService {
   /** FR-1.1 — practice record with locations. */
   async create(dto: CreatePracticeDto) {
     const practiceId = randomUUID();
-    return this.prisma.withPractice(practiceId, async (tx) => {
-      const practice = await tx.practice.create({
+    const practice = await this.prisma.withPractice(practiceId, async (tx) =>
+      tx.practice.create({
         data: {
           id: practiceId,
           name: dto.name,
@@ -43,9 +44,24 @@ export class PracticesService {
           locations: { create: dto.locations.map((l) => ({ address: l.address })) },
         },
         include: { locations: true },
-      });
-      return practice;
-    });
+      }),
+    );
+
+    /*
+     * THE CODE IS ALLOCATED WHERE THE PRACTICE IS CREATED
+     * (PRACTICE-SCOPED-LOGIN.md §5; D-2026-09-12-10). It is the practice half
+     * of every account name it will ever hold, so it belongs to the practice
+     * from its first moment rather than being worked out later by whoever
+     * happens to invite the first person.
+     *
+     * OUTSIDE the create transaction, deliberately. Allocation may have to try
+     * a second candidate when the UNIQUE index refuses the first, and a failed
+     * insert inside a transaction poisons it -- every later statement would
+     * error until rollback. Its own short transaction retries cleanly, and the
+     * practice row it needs is committed by then.
+     */
+    const allocation = await allocatePracticeCode(this.prisma, practiceId);
+    return { ...practice, code: allocation.code, codeGenerated: allocation.generated };
   }
 
   async get(practiceId: string) {

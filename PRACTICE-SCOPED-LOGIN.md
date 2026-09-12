@@ -174,6 +174,48 @@ have been reachable. Two things follow:
   drift back — it already guards the passkey posture and this is the same rule
   wearing a different hat.
 
+### 4a. Two things this section assumed, MEASURED on the running realm (12 September 2026)
+
+Both were found while building §3–§5 and verified against Keycloak 26.0.8 with
+a CDP virtual authenticator. Neither changes a rule above; both change what a
+reader should believe about how they land, so they are recorded rather than
+left to be rediscovered.
+
+**1. A person DOES type an identifier.** §4 argues email-as-login is dead
+weight because "nobody types an identifier at all". That is not what the bound
+flow does: `clinician-browser Forms` runs `auth-username-form` as REQUIRED
+before the passkey step, so the sign-in page asks for a username first and the
+passkey ceremony follows it. Switching email login off is still right — with
+duplicate emails an address has three answers — but the consequence is
+concrete: **the username is typed**, and the person shape is 38 characters
+(`audrey@hillsempire.com.powellstpractice`). Whether that is acceptable, or
+whether the flow should offer a discoverable-credential ("sign in with a
+passkey") entry that asks for nothing, is Carl's to decide.
+
+Measured impact of the change on the accounts that exist: every one of them is
+still found by its USERNAME and still reaches the passkey step. The single
+identifier that stops working is `admin.carl@hillsempire.com` — the platform
+admin account whose username is `admin.carl`, not its address. Carl's other
+account, `carl@hillsempire.com`, is unaffected because its username IS the
+address.
+
+**2. Keycloak 26 has no separate WebAuthn display name.** §3c solves the
+truncation problem "in the display name, which is ours to set". It is not ours
+to set in this version: `WebAuthnRegister` hands the template the account's
+USERNAME, and Keycloak's own `webauthnRegister.js` assigns BOTH `user.name` and
+`user.displayName` from it. Setting one would mean forking Keycloak's
+registration script into our theme — which `infra/keycloak/login-theme.test.mjs`
+deliberately forbids, because that page is the only way anybody gets a
+credential in a realm with no password path.
+
+So the label is BUILT and STORED (`webAuthnDisplayName` in
+`packages/domain/src/account-naming.ts`, written to a `display_name` attribute
+on every account the platform creates) but it does not yet reach the chooser.
+The choice for Carl is: fork the script, wait for a Keycloak version that
+exposes the field, or accept that the chooser shows the username. Note that
+point 1 softens the problem — the username is typed before the chooser opens,
+so the chooser is already scoped to one account.
+
 ## 5. The practice code, and how uniqueness is guaranteed
 
 Carl's question: how can the practice half be guaranteed unique?
@@ -274,3 +316,4 @@ which proves nothing — that is exactly what a 1% risk looks like beforehand.
 | 12 Sep 2026 | v1.0. Written when Carl settled the fraud reasoning and asked how the practice code can be guaranteed unique. |
 | 12 Sep 2026 | §3 revised to Carl's form — the FULL email plus the practice code, which makes the username unique by construction. §4 added: it requires duplicate emails allowed and email login off, which hard rule 15 wanted anyway. |
 | 12 Sep 2026 | §3a–3c: the two username shapes confirmed by Carl (`admin.<code>` for the practice, `<full email>.<code>` for a person), the slug rules, and the display-name answer to truncation. |
+| 12 Sep 2026 | Built: the allocated code, the two shapes, grandfathering, and the realm change. §4a added — two assumptions in §3c and §4 measured against the running realm and found not to hold; no rule changed. |

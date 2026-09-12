@@ -1,8 +1,10 @@
 import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { KeycloakAdminClient, KeycloakAdminError } from '@aobplatform/auth-client';
+import { practiceDisplayLabel, webAuthnDisplayName } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
+import { usernameForPracticeAdmin } from './account-names';
 import { ReviewTasksService } from '../review-tasks/review-tasks.service';
 import { KEYCLOAK_ADMIN } from './identity.tokens';
 import { MESSAGING_GATEWAY, type MessagingGateway } from '../messaging/gateway';
@@ -148,51 +150,20 @@ export class PracticeAdminService {
    * the second belt, checked here because it is the last point before the
    * account is switched off.
    */
-  /**
-   * The username for a practice's administrator account.
+  /*
+   * THE ADMIN USERNAME IS NO LONGER BUILT HERE. It is `admin.<code>` now
+   * (PRACTICE-SCOPED-LOGIN.md §3a) — `admin.xlevelup`, readable, allocated
+   * once, and unique because the database says so rather than because a UUID
+   * is long.
    *
-   * IT USES THE WHOLE PRACTICE ID, and the reason is arithmetic. The first
-   * version used the first eight hex characters — 32 bits — and
-   * `createPasskeyOnlyUser` RETURNS an existing account when the username
-   * matches. So a collision would not fail: practice B would be silently handed
-   * practice A's admin account, an account carrying `practice_id: A` as its
-   * token claim. That is a cross-tenant breach, arriving quietly, as a
-   * successful invitation.
-   *
-   * The birthday bound on 32 bits is not comfortable:
-   *
-   *     10,000 practices  ~1.2% chance of at least one collision
-   *     50,000 practices  ~25%
-   *    100,000 practices  ~69%
-   *
-   * A full UUID is unique by construction, so there is nothing to probe for and
-   * no collision path to get right.
-   *
-   * LEGACY SHORT NAMES ARE STILL HONOURED, because accounts already exist with
-   * them — but only after checking that the account really is this practice's.
-   * That check is what the short form never had.
+   * `usernameForPracticeAdmin` in ./account-names carries the three
+   * grandfathering paths this method used to hold, including the check that
+   * saved it: an eight-hex `admin.<prefix>` account is claimed only when its
+   * own `practice_id` attribute says it is ours. 32 bits collide across ten
+   * thousand practices, `createPasskeyOnlyUser` RETURNS the matching account
+   * rather than failing, and the result would have been a cross-tenant breach
+   * arriving quietly as a successful invitation.
    */
-  private async adminUsernameFor(organisationId: string): Promise<string> {
-    const full = `admin.${organisationId}`;
-    if (!this.keycloak) return full;
-
-    if (await this.keycloak.findByUsername(full)) return full;
-
-    const legacy = `admin.${organisationId.slice(0, 8)}`;
-    const existing = await this.keycloak.findByUsername(legacy);
-    if (!existing) return full;
-
-    const claimed = existing.attributes?.practice_id?.[0];
-    if (claimed === organisationId) return legacy;
-
-    // Somebody else's account wearing a name that looks like ours. Never reuse
-    // it; the full form cannot collide.
-    this.logger.warn(
-      `Username "${legacy}" belongs to practice ${claimed ?? 'unknown'}, not ${organisationId}. Using the ` +
-        'full-id form instead. This is the eight-character collision the short name allowed.',
-    );
-    return full;
-  }
 
   /**
    * Hand the practice-admin account to somebody new.
@@ -597,7 +568,22 @@ export class PracticeAdminService {
       };
     }
 
-    const username = await this.adminUsernameFor(input.organisationId);
+    const practice = await this.prisma.withPractice(input.organisationId, (tx) =>
+      tx.practice.findFirst({
+        where: { id: input.organisationId },
+        select: { name: true, tradingNames: true, adminKeycloakUserId: true },
+      }),
+    );
+    const { username, grandfathered } = await usernameForPracticeAdmin(
+      { prisma: this.prisma, keycloak: this.keycloak },
+      { practiceId: input.organisationId, adminKeycloakUserId: practice?.adminKeycloakUserId },
+    );
+    if (grandfathered) {
+      this.logger.log(
+        `Practice ${input.organisationId} keeps the administrator account it already holds. A username is ` +
+          'never changed under a passkey (PRACTICE-SCOPED-LOGIN.md §3 property 2).',
+      );
+    }
     const [firstName, ...rest] = (input.adminName ?? 'Practice Admin').trim().split(/\s+/);
     try {
       const user = await this.keycloak.createPasskeyOnlyUser({
@@ -607,8 +593,15 @@ export class PracticeAdminService {
         lastName: rest.join(' ') || firstName,
         realmRoles: ['practice_principal'],
         // The claim that replaces the dev x-practice-id header once
-        // AUTH_ENFORCE is switched on.
-        attributes: { practice_id: input.organisationId },
+        // AUTH_ENFORCE is switched on. `display_name` is §3c's label: the
+        // practice first, because the account is the PRACTICE'S and nothing
+        // about a person belongs in its name (§3a).
+        attributes: {
+          practice_id: input.organisationId,
+          display_name: practice
+            ? webAuthnDisplayName(practiceDisplayLabel(practice), 'practice administrator')
+            : 'practice administrator',
+        },
       });
 
       await this.keycloak.sendPasskeyEnrolment(user.id, {

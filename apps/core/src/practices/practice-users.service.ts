@@ -14,13 +14,16 @@ import {
   countsToward,
   inactivityAction,
   passkeysRemaining,
+  practiceDisplayLabel,
   scopeOf,
   userStatus,
+  webAuthnDisplayName,
 } from '@aobplatform/domain';
 import { ConfigService } from '@nestjs/config';
 import { KEYCLOAK_ADMIN } from '../identity/identity.tokens';
 import type { KeycloakAdminClient } from '@aobplatform/auth-client';
 import { PrismaService } from '../prisma/prisma.service';
+import { usernameForPersonAtPractice } from '../identity/account-names';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import type { Actor } from '../auth/actor.decorator';
 
@@ -336,10 +339,17 @@ export class PracticeUsersService {
   async invite(practiceId: string, staffId: string, actor?: Actor) {
     await this.assertMayManageUsers(practiceId, actor);
 
-    const member = await this.prisma.withPractice(practiceId, (tx) =>
-      tx.staffMember.findFirst({ where: { id: staffId } }),
-    );
+    const { member, practice } = await this.prisma.withPractice(practiceId, async (tx) => ({
+      member: await tx.staffMember.findFirst({ where: { id: staffId } }),
+      // For §3c's label only. Read here so the invite does not make a second
+      // round trip for a name it is about to print.
+      practice: await tx.practice.findFirst({
+        where: { id: practiceId },
+        select: { name: true, tradingNames: true },
+      }),
+    }));
     if (!member) throw new NotFoundException('That person is not on this practice.');
+    if (!practice) throw new NotFoundException('That practice does not exist.');
 
     if (!member.consoleRole) {
       throw new BadRequestException(
@@ -365,21 +375,34 @@ export class PracticeUsersService {
     }
 
     /*
-     * REUSE THE ACCOUNT IF ONE EXISTS. Keycloak enforces one email per realm,
-     * so creating a second would fail anyway — but the reason to look first is
-     * that re-inviting somebody must not orphan the account they already hold,
-     * along with whatever they have already done under it.
+     * REUSE THE ACCOUNT IF ONE EXISTS, so that re-inviting somebody never
+     * orphans the account they already hold along with whatever they have done
+     * under it.
+     *
+     * FOUND BY USERNAME, NOT BY EMAIL, and that changed on 12 Sep 2026 with the
+     * realm (PRACTICE-SCOPED-LOGIN.md §4). The realm now allows DUPLICATE
+     * EMAILS, because Audrey working at three practices has three accounts all
+     * carrying her own address — so `findByEmail` no longer identifies one
+     * account, and the one it happens to return may belong to a different
+     * practice entirely. Adopting it would hand this practice somebody else's
+     * account, complete with the other practice's `practice_id` claim.
+     * The username carries the practice, so it is the only safe key.
      */
+    const { username, grandfathered } = await usernameForPersonAtPractice(
+      { prisma: this.prisma, keycloak: this.keycloak },
+      { practiceId, email: member.email, keycloakUserId: member.keycloakUserId },
+    );
+
     let keycloakUserId = member.keycloakUserId;
     if (!keycloakUserId) {
-      const existing = await this.keycloak.findByEmail(member.email);
+      const existing = await this.keycloak.findByUsername(username);
       keycloakUserId = existing?.id ?? null;
     }
 
     if (!keycloakUserId) {
       const [firstName, ...rest] = member.name.trim().split(/\s+/);
       const created = await this.keycloak.createPasskeyOnlyUser({
-        username: member.email,
+        username,
         email: member.email,
         firstName: firstName || member.name,
         lastName: rest.join(' ') || firstName || member.name,
@@ -387,9 +410,21 @@ export class PracticeUsersService {
         // ordinary console user gets the least privileged realm role, and what
         // they may do here comes from consoleRole rather than from Keycloak.
         realmRoles: ['front_desk'],
-        attributes: { practice_id: practiceId },
+        // `display_name` leads with the practice (§3c): the username's
+        // distinguishing part is its LAST word, which is where a passkey
+        // chooser truncates.
+        attributes: {
+          practice_id: practiceId,
+          display_name: webAuthnDisplayName(practiceDisplayLabel(practice), member.name),
+        },
       });
       keycloakUserId = created.id;
+    }
+    if (grandfathered) {
+      this.logger.log(
+        `Staff member ${staffId} keeps the account they already hold; a username is never changed under a ` +
+          'passkey (PRACTICE-SCOPED-LOGIN.md §3 property 2).',
+      );
     }
 
     await this.keycloak.sendPasskeyEnrolment(keycloakUserId, {

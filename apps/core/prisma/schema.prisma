@@ -92,6 +92,32 @@ model Practice {
   senderIdRegistered        Boolean  @default(false)
   createdAt                 DateTime @default(now())
 
+  /// THE PRACTICE HALF OF EVERY ACCOUNT NAME (PRACTICE-SCOPED-LOGIN.md §3b/§5;
+  /// D-2026-09-12-10). `xlevelup`, `powellstpractice`.
+  ///
+  /// ALLOCATED, NOT DERIVED, and that is the whole reason it is a column. The
+  /// scheme it replaces took the first eight hex characters of the practice id
+  /// — 32 bits, a birthday problem rather than a one-in-four-billion one, at
+  /// roughly 1.2% across ten thousand Australian practices. A collision there
+  /// is not a failed insert: `createPasskeyOnlyUser` RETURNS the existing
+  /// account when the username matches, so practice B would be silently handed
+  /// practice A's admin account, complete with A's `practice_id` claim.
+  ///
+  /// Proposed from the trading name (never the legal name), stripped to a-z0-9,
+  /// truncated to 24, then extended `xlevelup2` on collision until the UNIQUE
+  /// index below accepts it. STORED and never re-derived: a practice renaming
+  /// must not move its code, because a username must never change under a
+  /// passkey.
+  ///
+  /// NULLABLE only so the column could be added to 142 existing rows before the
+  /// backfill in the same migration filled them. Nothing reads a null.
+  code                      String?  @unique
+  /// TRUE when the name yielded no usable slug and one was generated instead
+  /// (§3b rule 4) — a practice named in a non-Latin script, say. Recorded
+  /// rather than inferred, for the same reason a generated `pmsLinkageKey` is:
+  /// nobody should later mistake our invention for something the practice chose.
+  codeGenerated             Boolean  @default(false)
+
   // --- Organisation registration (FR-1.1, ORG-MODEL-PROPOSAL.md §4) ---
   // Practice IS the "organisation" of that model: the ABN-bearing registered
   // entity that owns locations. It keeps the name `Practice` because it is

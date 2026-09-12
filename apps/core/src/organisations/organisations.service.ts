@@ -27,6 +27,7 @@ import {
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
+import { allocatePracticeCode } from '../practices/practice-code';
 import { ActingAsService } from '../acting-as/acting-as.service';
 import { ReviewTasksService } from '../review-tasks/review-tasks.service';
 import { PendingEmailService } from './pending-email.service';
@@ -502,6 +503,20 @@ export class OrganisationsService {
         ${input.credentialType ?? null}, ${input.credentialValue ?? null},
         ${input.adminPosition ?? null}, ${input.managerName ?? null}, ${input.managerEmail ?? null},
         ${input.managerPhone ?? null}, ${input.managerPosition ?? null})`;
+
+    /*
+     * THE PRACTICE CODE, ALLOCATED AT REGISTRATION (PRACTICE-SCOPED-LOGIN.md
+     * §5; D-2026-09-12-10). It is the practice half of every account name this
+     * organisation will ever hold — `admin.<code>` and `<email>.<code>` — and
+     * it must exist before step 3 invites anybody, which is the very next
+     * thing that happens on approval.
+     *
+     * Proposed from the trading names the ABR just gave us rather than from
+     * the LEGAL name: `register_organisation` has written both by this point,
+     * and "The trustee for Hillsempire Family Trust" is not what anybody would
+     * recognise in a passkey picker (§3b rule 1).
+     */
+    await allocatePracticeCode(this.prisma, organisationId);
 
     const organisation = await this.prisma.withPractice(organisationId, (tx) =>
       tx.practice.findFirstOrThrow({ where: { id: organisationId } }),

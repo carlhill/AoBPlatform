@@ -53,6 +53,33 @@ check('WebAuthn passwordless policy configured', Boolean(realm.webAuthnPolicyPas
 check('login theme is the aobplatform theme', realm.loginTheme === 'aobplatform');
 check('email theme is the aobplatform theme', realm.emailTheme === 'aobplatform');
 
+/*
+ * ONE PERSON, ONE ADDRESS, SEVERAL ACCOUNTS — and therefore no email login
+ * (Carl, 12 Sep 2026; PRACTICE-SCOPED-LOGIN.md §4, D-2026-09-12-10).
+ *
+ * A practitioner working at three practices holds three accounts, named
+ * `<their email>.<practice code>`, and all three carry the SAME email: their
+ * own. The realm shipped with `duplicateEmailsAllowed: false`, so Keycloak
+ * refused the second one.
+ *
+ * The two settings are mutually exclusive by construction — duplicates cannot
+ * be allowed while email is also a way to sign in, because "which account is
+ * jsmith@outlook.com" would then have three answers — so both are asserted
+ * here, together, as one rule.
+ *
+ * THIS IS RULE 15 BEING KEPT, NOT WEAKENED. A passkey is bound to an account
+ * and nobody types an identifier at all: the browser offers the credentials it
+ * holds and the person picks one. Email-as-login exists to serve a
+ * username-and-password flow this product does not have, and switching it off
+ * removes a route that should never have been reachable.
+ *
+ * IN THE EXPORT, not only on the running realm — the same lesson as the themes
+ * above. Both were once set through the admin console, lived only in the
+ * database, and came back as the defaults on the next container rebuild.
+ */
+check('duplicate emails are allowed (one person, one address, an account per practice)', realm.duplicateEmailsAllowed === true);
+check('the_realm_never_offers_email_as_a_way_to_sign_in', realm.loginWithEmailAllowed === false);
+
 // No social/broker identity providers — a deliberate absence given AoB phishing exposure.
 check('no identity-provider brokers', (realm.identityProviders ?? []).length === 0);
 

@@ -14,10 +14,13 @@ import {
   assertCeremonySufficient,
   CeremonyError,
   CEREMONY_FRESHNESS_DAYS,
+  practiceDisplayLabel,
+  webAuthnDisplayName,
   type CeremonyRecord,
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
+import { usernameForPersonAtPractice } from './account-names';
 import { KEYCLOAK_ADMIN } from './identity.tokens';
 
 const SYSTEM_ACTOR = { principalType: 'system', id: 'core' } as const;
@@ -77,13 +80,22 @@ export class IdentityService {
     return this.config.get<string>('CONSOLE_URL', 'http://localhost:21100');
   }
 
-  /** Stable, human-readable, unique per practice. */
-  private usernameFor(name: string, practiceId: string): string {
-    const slug = name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '.')
-      .replace(/^\.|\.$/g, '');
-    return slug + '.' + practiceId.slice(0, 8);
+  /*
+   * THE USERNAME IS NO LONGER BUILT HERE. It was
+   * `<person-name slug>.<first 8 hex of the practice id>`, which is wrong
+   * twice over: 32 bits collide across ten thousand practices
+   * (PRACTICE-SCOPED-LOGIN.md §5), and a person's NAME in an account key means
+   * the key changes when somebody marries. Both shapes now come from
+   * `./account-names`, which is also where an account that already exists is
+   * found and its name kept.
+   */
+
+  /** The practice's own name, for the passkey label that leads with it (§3c). */
+  private async practiceLabel(practiceId: string): Promise<string> {
+    const practice = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.practice.findFirst({ where: { id: practiceId }, select: { name: true, tradingNames: true } }),
+    );
+    return practice ? practiceDisplayLabel(practice) : '';
   }
 
   private splitName(full: string): { firstName: string; lastName: string } {
@@ -282,7 +294,29 @@ export class IdentityService {
     const isReEnrolment = provider.keycloakUserId !== null;
     const ceremony = await this.requireCeremony(practiceId, { providerId }, isReEnrolment);
 
-    const username = this.usernameFor(provider.name, practiceId);
+    /*
+     * A PERSON'S ACCOUNT IS NAMED FOR THEIR EMAIL (§3a), so without one there
+     * is no name to give it -- and no invitation to send either, which is the
+     * same fact wearing a different hat. Refused with the reason and the fix
+     * rather than falling back to a name slug, which is what the old scheme
+     * did and is how an account key ended up changing when somebody married.
+     *
+     * A RE-INVITATION IS UNAFFECTED: the account already exists, its name is
+     * kept whatever shape it is in, and this branch is not reached.
+     */
+    if (!provider.keycloakUserId && !email) {
+      throw new BadRequestException(
+        'An email address is needed to invite ' +
+          provider.name +
+          ': the account is named for it and the enrolment link goes to it (PRACTICE-SCOPED-LOGIN.md §3a). ' +
+          'Add their address on the practitioner and invite again.',
+      );
+    }
+
+    const { username, grandfathered } = await usernameForPersonAtPractice(
+      { prisma: this.prisma, keycloak: admin },
+      { practiceId, email: email ?? '', keycloakUserId: provider.keycloakUserId },
+    );
     const { firstName, lastName } = this.splitName(provider.name);
     const user = await this.createAccount(admin, {
       username,
@@ -291,8 +325,13 @@ export class IdentityService {
       lastName,
       realmRoles: ['provider'],
       // The practice claim is what replaces the dev x-practice-id header once
-      // auth enforcement is switched on.
-      attributes: { practice_id: practiceId, provider_id: providerId },
+      // auth enforcement is switched on. `display_name` is §3c's label —
+      // practice first, because the username's distinguishing part is last.
+      attributes: {
+        practice_id: practiceId,
+        provider_id: providerId,
+        display_name: webAuthnDisplayName(await this.practiceLabel(practiceId), provider.name),
+      },
     });
 
     if (email) {
@@ -338,7 +377,14 @@ export class IdentityService {
       );
     }
 
-    this.logger.log('Invited provider ' + providerId + ' as ' + username + ' (passkey enrolment)');
+    this.logger.log(
+      'Invited provider ' +
+        providerId +
+        (grandfathered
+          ? ' on the account it already held — a username is never changed under a passkey'
+          : ' on a newly named account') +
+        ' (passkey enrolment)',
+    );
     return {
       keycloakUserId: user.id,
       username,
@@ -363,8 +409,22 @@ export class IdentityService {
     const isReEnrolment = staff.keycloakUserId !== null;
     const ceremony = await this.requireCeremony(practiceId, { staffId }, isReEnrolment);
 
-    const username = this.usernameFor(staff.name, practiceId);
     const address = email ?? staff.email ?? undefined;
+    // Same rule as a practitioner: the account is named for the address, so
+    // without one there is nothing to name it and nowhere to send the link.
+    if (!staff.keycloakUserId && !address) {
+      throw new BadRequestException(
+        'An email address is needed to invite ' +
+          staff.name +
+          ': the account is named for it and the enrolment link goes to it (PRACTICE-SCOPED-LOGIN.md §3a). ' +
+          'Add their address on the staff record and invite again.',
+      );
+    }
+
+    const { username, grandfathered } = await usernameForPersonAtPractice(
+      { prisma: this.prisma, keycloak: admin },
+      { practiceId, email: address ?? '', keycloakUserId: staff.keycloakUserId },
+    );
     const { firstName, lastName } = this.splitName(staff.name);
     const user = await this.createAccount(admin, {
       username,
@@ -372,7 +432,11 @@ export class IdentityService {
       firstName,
       lastName,
       realmRoles: [staff.role],
-      attributes: { practice_id: practiceId, staff_id: staffId },
+      attributes: {
+        practice_id: practiceId,
+        staff_id: staffId,
+        display_name: webAuthnDisplayName(await this.practiceLabel(practiceId), staff.name),
+      },
     });
 
     if (address) {
@@ -403,6 +467,15 @@ export class IdentityService {
       });
     });
     await this.consumeCeremony(practiceId, ceremony.id);
+
+    this.logger.log(
+      'Invited staff member ' +
+        staffId +
+        (grandfathered
+          ? ' on the account it already held — a username is never changed under a passkey'
+          : ' on a newly named account') +
+        ' (passkey enrolment)',
+    );
 
     return {
       keycloakUserId: user.id,
