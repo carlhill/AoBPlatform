@@ -95,6 +95,10 @@ describe('the post-service second push (e2e, real Postgres)', () => {
     // NOT a test device: the waiting list is the walk-up kiosk's surface and
     // has nothing to do with a pushed session.
     showsWaitingList: false,
+    // The default every tablet has: it would offer Begin to somebody who walked
+    // up. Irrelevant to a pushed session, and stated so it is not read as a
+    // fixture that happens to be off.
+    acceptsWalkUps: true,
   });
 
   /** A patient the practice already holds, as the arrival would have left them. */

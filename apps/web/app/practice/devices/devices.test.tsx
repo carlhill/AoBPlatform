@@ -354,6 +354,60 @@ describe('/practice/devices — the practice’s tablets', () => {
     expect(patch?.body).toEqual({ showsWaitingList: true });
   });
 
+  it('walk_ups_toggle_is_on_by_default_and_patches_its_own_route', async () => {
+    /*
+     * CARL, 12 SEPTEMBER 2026: "if the reception is pushing to the tablet (not
+     * kiosk mode where the patient enters all their details) then it should not
+     * say Begin (it will confuse the user/patient) ... It should say 'Please
+     * wait. Loading your details'".
+     *
+     * WHAT IS PINNED HERE. It is ON by default, so no tablet already in a
+     * practice changes behaviour — the opposite default from the disclosure
+     * switch above, and the copy has to make that visible or somebody will
+     * untick it while exploring. It writes to its OWN route with exactly one
+     * boolean, so it can never be confused with the settings PATCH whose
+     * missing field means "false". And the hint is written for a receptionist:
+     * the two TABLETS, not the two flows.
+     */
+    stubFetch([PAIRED], () => ({ deviceId: PAIRED.id, acceptsWalkUps: false }));
+    render(<DevicesView practiceId={PRACTICE} />);
+
+    await waitFor(() => expect(screen.getByTestId(`walk-ups-${PAIRED.id}`)).toBeTruthy());
+    const panel = screen.getByTestId(`walk-ups-${PAIRED.id}`);
+    expect(panel.textContent).toContain(strings.devices.walkUpsLabel);
+    // The hint quotes what the patient will actually see, so nobody has to
+    // open the kiosk to find out what the switch does.
+    expect(panel.textContent).toContain(strings.kiosk.idle.waitingForDetails);
+    expect(panel.textContent).toMatch(/next poll/i);
+
+    /*
+     * ON BY DEFAULT, AND THE FIXTURE DOES NOT SAY SO. `PAIRED` carries no
+     * `acceptsWalkUps` at all — the shape an older core sends — and the box is
+     * still ticked. Absent means accepted; anything else would offer to "turn
+     * on" a setting that is already on.
+     */
+    expect(PAIRED.acceptsWalkUps).toBeUndefined();
+    const box = panel.querySelector('button[role="checkbox"]') as HTMLElement;
+    expect(box.getAttribute('aria-checked')).toBe('true');
+
+    fireEvent.click(box);
+    await waitFor(() => expect(calls.some((c) => c.url.includes('/walk-ups'))).toBe(true));
+    const patch = calls.find((c) => c.url.includes('/walk-ups'));
+    expect(patch?.method).toBe('PATCH');
+    expect(patch?.url).toContain(`/devices/${PAIRED.id}/walk-ups`);
+    // Exactly the one boolean, and NOT on the settings route — a body that
+    // also carried `showsWaitingList` would be a disclosure switch riding on a
+    // preference.
+    expect(patch?.body).toEqual({ acceptsWalkUps: false });
+  });
+
+  it('does not offer either tablet toggle on a revoked device — it holds no credential to show anything with', async () => {
+    stubFetch([PAIRED, REVOKED]);
+    render(<DevicesView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`device-${REVOKED.id}`)).toBeTruthy());
+    expect(screen.queryByTestId(`walk-ups-${REVOKED.id}`)).toBeNull();
+  });
+
   it('does not offer the toggle on a revoked tablet — it holds no credential to show anything with', async () => {
     stubFetch([PAIRED, REVOKED]);
     render(<DevicesView practiceId={PRACTICE} />);

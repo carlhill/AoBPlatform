@@ -142,6 +142,22 @@ export interface KioskMeResponse {
    */
   readonly showsWaitingList?: boolean;
   /**
+   * DOES THIS TABLET ACCEPT WALK-UPS? (Carl, 12 Sep 2026 — "if the reception
+   * is pushing to the tablet ... then it should not say Begin (it will confuse
+   * the user/patient) ... It should say 'Please wait. Loading your details'".)
+   *
+   * Answered on the FIRST call the tablet makes, so K-1 knows which front door
+   * it offers before it is drawn — a push-only tablet must never paint Begin,
+   * not even for one frame.
+   *
+   * ABSENT MEANS ACCEPTED, which is the opposite fallback from
+   * `showsWaitingList` above and the right one here: that flag widens a
+   * disclosure and fails closed, this one only narrows what a tablet offers,
+   * and every tablet in service today offers the walk-up path. An older core
+   * that does not send it must leave those tablets exactly as they are.
+   */
+  readonly acceptsWalkUps?: boolean;
+  /**
    * HOW LONG THIS TABLET WAITS BEFORE IT RETURNS TO THE START (Carl, 4 Sep
    * 2026). Seconds, from the PRACTICE — the device holds no setting of its own
    * and could not, because a device with settings is a device somebody can
@@ -372,6 +388,19 @@ export interface KioskHeartbeatResponse {
   readonly outOfUse: boolean;
   /** This tab is below the practice's build floor and must hard-reload. */
   readonly reload: boolean;
+  /**
+   * DOES THIS TABLET ACCEPT WALK-UPS? (Carl, 12 Sep 2026.)
+   *
+   * HERE FOR THE SAME REASON `outOfUse` IS: this is the one poll that runs on
+   * every screen, so it is the only channel that can carry a console change to
+   * a tablet already sitting on its idle screen — no re-pairing, no reload,
+   * nobody walking to the device.
+   *
+   * OPTIONAL ON THE WIRE, AND ABSENT MEANS "THE SERVER DID NOT SAY". The
+   * tablet then keeps the answer `/kiosk/me` gave it at boot rather than
+   * guessing, which is what an older core leaves it with.
+   */
+  readonly acceptsWalkUps?: boolean;
 }
 
 export function sendKioskHeartbeat(body: KioskHeartbeatRequest): Promise<KioskHeartbeatResponse> {

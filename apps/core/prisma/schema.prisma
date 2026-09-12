@@ -1997,6 +1997,27 @@ model Device {
   /// disclosure on is a device a passer-by can turn on. Default false.
   showsWaitingList Boolean @default(false)
 
+  /// DOES THIS TABLET ACCEPT WALK-UPS? (Carl, 12 Sep 2026 — "if the reception
+  /// is pushing to the tablet ... then it should not say Begin (it will
+  /// confuse the user/patient) ... It should say 'Please wait. Loading your
+  /// details'".)
+  ///
+  /// TRUE is the counter tablet: K-1 says Begin, the patient types three
+  /// details, and the server finds the one waiting row that matches. FALSE is
+  /// the tablet reception HANDS to a named patient after pushing their
+  /// agreement to it: their details are already known, so K-1 offers nothing
+  /// to press and waits for the push instead.
+  ///
+  /// DEFAULT TRUE, the opposite direction from `showsWaitingList` above and
+  /// for the opposite reason. That column widens a disclosure, so it defaults
+  /// narrow. This one narrows what a tablet OFFERS, and every device that
+  /// exists today offers the walk-up path — defaulting it false would turn
+  /// every counter tablet into a screen that does nothing.
+  ///
+  /// SET FROM THE CONSOLE, NEVER FROM THE TABLET
+  /// (`PATCH /devices/:id/walk-ups`).
+  acceptsWalkUps Boolean @default(true)
+
   @@index([practiceId])
   @@map("devices")
 }

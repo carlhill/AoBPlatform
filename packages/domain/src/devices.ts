@@ -149,6 +149,25 @@ export interface DeviceRow {
    * uses.
    */
   showsWaitingList: boolean;
+  /**
+   * DOES THIS TABLET ACCEPT WALK-UPS? (Carl, 12 Sep 2026 — "if the reception
+   * is pushing to the tablet ... then it should not say Begin (it will confuse
+   * the user/patient) ... It should say 'Please wait. Loading your details'".)
+   *
+   * TRUE is the counter tablet anyone can pick up: K-1 offers Begin, the
+   * patient states three details and the server finds their one waiting row.
+   * FALSE is the tablet reception hands to a NAMED patient after pushing their
+   * agreement to it — their details are already known, Begin would only mean
+   * "type them again", and K-1 waits for the push instead of offering a
+   * control that starts the wrong flow.
+   *
+   * OPTIONAL ON THE WIRE, AND ABSENT MEANS ACCEPTED. An older core does not
+   * send it and every device that already exists offers walk-ups, so the
+   * fallback has to be the behaviour those tablets already have. This is the
+   * opposite direction from `showsWaitingList`, deliberately: that flag widens
+   * a disclosure and fails closed, this one only narrows what a tablet offers.
+   */
+  acceptsWalkUps?: boolean;
 
   /* ------------------------------------------------------------------ *
    * WHERE THE TABLET IS RIGHT NOW — from the heartbeat (Carl, 4–5 Sep

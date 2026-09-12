@@ -45,6 +45,13 @@ export interface ResolvedDevice {
    * second read to find out whether it may answer with names.
    */
   showsWaitingList: boolean;
+  /**
+   * DOES THIS TABLET ACCEPT WALK-UPS? (Carl, 12 Sep 2026.) Resolved with the
+   * credential, for the same reason as the flag above: both `/kiosk/me` and
+   * the heartbeat answer it, and neither should make a second read to find out
+   * what the tablet already proved when it authenticated.
+   */
+  acceptsWalkUps: boolean;
 }
 
 /**
@@ -275,6 +282,7 @@ export class DevicesService {
         practiceId: device.practiceId,
         label: device.label,
         showsWaitingList: device.showsWaitingList,
+        acceptsWalkUps: device.acceptsWalkUps,
       };
     });
   }
@@ -607,6 +615,7 @@ export class DevicesService {
           revokedBy: device.revokedBy,
           pairingExpiresAt: liveCodeFor.get(device.id)?.toISOString() ?? null,
           showsWaitingList: device.showsWaitingList,
+          acceptsWalkUps: device.acceptsWalkUps,
           /*
            * WHERE THE TABLET IS. A screen NAME from `KIOSK_SCREENS` and an
            * opaque session id — no patient is looked up to decorate this row,
@@ -804,6 +813,67 @@ export class DevicesService {
     });
 
     return { deviceId, showsWaitingList: value };
+  }
+
+  /**
+   * DOES THIS TABLET ACCEPT WALK-UPS? (Carl, 12 Sep 2026, looking at the kiosk
+   * idle screen: "if the reception is pushing to the tablet ... then it should
+   * not say Begin (it will confuse the user/patient) ... It should say 'Please
+   * wait. Loading your details'".)
+   *
+   * WHAT IT SWITCHES IS WHICH FRONT DOOR K-1 OFFERS. On (the default, and
+   * every tablet that exists today) the idle screen says Begin and the patient
+   * states three details for the server to match. Off, the screen offers
+   * nothing to press: the details of the person this tablet is being handed to
+   * are already known, and Begin would only mean "type them again" — into the
+   * wrong flow.
+   *
+   * NOT A DISCLOSURE SWITCH, unlike `setShowsWaitingList` above, and the
+   * difference shows in the default: nobody's name moves either way here, so
+   * the safe value is the one that leaves every existing tablet doing exactly
+   * what it does today. It is still console-only, still needs a named actor,
+   * and still writes an event — because "why did that tablet stop letting
+   * people check themselves in" is a question somebody asks a fortnight later,
+   * and a setting with no record cannot answer it.
+   *
+   * IT IS IDEMPOTENT AND SAYS SO IN THE EVENT. Setting the flag to the value it
+   * already has writes no event — an audit trail of non-changes is an audit
+   * trail nobody reads.
+   */
+  async setAcceptsWalkUps(
+    practiceId: string,
+    deviceId: string,
+    acceptsWalkUps: boolean,
+    actor: Actor | undefined,
+  ): Promise<{ deviceId: string; acceptsWalkUps: boolean }> {
+    const named = this.requireActor(
+      actor,
+      'Turning walk-ups off changes what a patient sees on a tablet in the waiting room, so it is recorded ' +
+        'against the person who did it. This request carries no signed-in user, so it is refused rather ' +
+        'than recorded as nobody.',
+    );
+
+    const value = await this.prisma.withPractice(practiceId, async (tx) => {
+      const device = await tx.device.findFirst({ where: { id: deviceId } });
+      // A cross-practice id finds nothing — RLS filters on the
+      // transaction-local scope, so this fails closed as a 404 rather than
+      // admitting the device exists somewhere else.
+      if (!device) throw new NotFoundException('Device not found.');
+      if (device.acceptsWalkUps === acceptsWalkUps) return device.acceptsWalkUps;
+
+      const updated = await tx.device.update({ where: { id: deviceId }, data: { acceptsWalkUps } });
+      await enqueueVaultEvent(tx, {
+        type: 'device.walk_up_capture_set',
+        actor: { principalType: 'staff', id: named.id },
+        subject: { type: 'Device', id: deviceId },
+        // The label, the new value and who set it. No patient data — this
+        // event is about a device setting, and there is no name to carry.
+        payload: { label: device.label, acceptsWalkUps, setBy: named.name },
+      });
+      return updated.acceptsWalkUps;
+    });
+
+    return { deviceId, acceptsWalkUps: value };
   }
 
   /**

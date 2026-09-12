@@ -204,6 +204,21 @@ export function Ceremony(): ReactNode {
    */
   const [meShowsWaitingList, setMeShowsWaitingList] = useState(false);
   /**
+   * DOES THIS TABLET ACCEPT WALK-UPS — the boot answer (Carl, 12 Sep 2026: "if
+   * the reception is pushing to the tablet ... then it should not say Begin
+   * (it will confuse the user/patient) ... It should say 'Please wait. Loading
+   * your details'").
+   *
+   * TRUE IS THE DEFAULT AND THE FALLBACK, which is the opposite direction from
+   * `meShowsWaitingList` above. That flag governs a disclosure, so every
+   * failure resolves to the narrow answer. This one governs which front door
+   * K-1 offers, nobody's name moves either way, and every tablet in service
+   * today offers Begin — so a server that could not be read, or one too old to
+   * answer, must leave a counter tablet working rather than turn it into a
+   * screen that waits for a push nobody is going to send (hard rule 8).
+   */
+  const [meAcceptsWalkUps, setMeAcceptsWalkUps] = useState(true);
+  /**
    * HOW LONG THIS TABLET WAITS BEFORE IT RETURNS TO THE START (Carl, 4 Sep
    * 2026) — the PRACTICE'S number, read off `/kiosk/me` with everything else
    * the tablet asks about itself.
@@ -544,6 +559,9 @@ export function Ceremony(): ReactNode {
       setLocationLine(me.state ?? null);
       // FAIL CLOSED. Anything but an explicit `true` is a walk-up tablet.
       setMeShowsWaitingList(me.showsWaitingList === true);
+      // ABSENT MEANS ACCEPTED — see the state above. Only an explicit `false`
+      // takes Begin off a tablet.
+      setMeAcceptsWalkUps(me.acceptsWalkUps !== false);
       // Out of range, absent, or a server too old to carry it — all three
       // answer the domain default rather than leaving the clock unset.
       setIdleTimeoutSeconds(kioskIdleTimeoutOrDefault(me.kioskIdleTimeoutSeconds));
@@ -556,6 +574,7 @@ export function Ceremony(): ReactNode {
         setPracticeName('');
         setLocationLine(null);
         setMeShowsWaitingList(false);
+        setMeAcceptsWalkUps(true);
         setStep('unpaired');
         return false;
       }
@@ -600,6 +619,7 @@ export function Ceremony(): ReactNode {
     setPracticeName('');
     setLocationLine(null);
     setMeShowsWaitingList(false);
+    setMeAcceptsWalkUps(true);
     setPushed(null);
     setAnswers({});
     postedAnswersRef.current = '';
@@ -1057,6 +1077,23 @@ export function Ceremony(): ReactNode {
     onCommand: returnToBegin,
   });
   const outage = { active: heartbeat.outage };
+
+  /**
+   * WHICH FRONT DOOR THIS TABLET OFFERS — ANSWERED BY THE POLL, NOT BY START-UP
+   * (Carl, 12 Sep 2026; the same shape as `testDevice` above and for the same
+   * reason).
+   *
+   * `/kiosk/me` answers it once, at boot, which is what the very first render
+   * has to go on — a push-only tablet must not paint Begin even for one frame.
+   * But the console toggle has to REACH a tablet already sitting on its idle
+   * screen: Carl flips it on `/practice/devices` and expects the next poll to
+   * change the screen, with no re-pairing and no reload. The heartbeat runs on
+   * every screen, so its answer wins as soon as there is one.
+   *
+   * `null` IS "NOT TOLD", NOT "OFF". An older core, or a beat that has not
+   * landed, leaves the boot answer standing rather than flipping the screen.
+   */
+  const acceptsWalkUps = heartbeat.acceptsWalkUps ?? meAcceptsWalkUps;
   /*
    * READ A RENDER BEHIND, WRITTEN A LINE AFTER, and that is the correct trade.
    * `heartbeatScreen` is computed above the hook that produces `outage`, so it
@@ -2247,6 +2284,7 @@ export function Ceremony(): ReactNode {
             anyoneWaiting={list.anyoneWaiting}
             online={list.error === null}
             testDevice={testDevice}
+            acceptsWalkUps={acceptsWalkUps}
             onStart={begin}
             onBack={() => setStep('idle')}
             onPick={(picked) => void pick(picked)}

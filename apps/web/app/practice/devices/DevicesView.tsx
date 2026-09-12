@@ -248,6 +248,23 @@ export function DevicesView({ practiceId }: { practiceId: string }) {
     });
 
   /**
+   * DOES THIS TABLET ACCEPT WALK-UPS? (Carl, 12 Sep 2026.)
+   *
+   * ITS OWN ROUTE, not a second field on the settings PATCH: that body carries
+   * a disclosure switch whose absence must never read as "off", and one
+   * request that has to obey two different rules about a missing field is a
+   * request somebody will get wrong.
+   *
+   * Optimistic nothing, same as above: the checkbox reflects the SERVER's
+   * answer, so a refused write leaves the control where it was rather than
+   * showing a state the tablet is not in.
+   */
+  const setWalkUps = (device: DeviceRow, acceptsWalkUps: boolean) =>
+    act(async () => {
+      await post(`/devices/${device.id}/walk-ups`, { acceptsWalkUps }, 'PATCH');
+    });
+
+  /**
    * SEND THAT TABLET BACK TO THE START (Carl, 4–5 Sep 2026).
    *
    * IT REACHES A WALK-UP, which is the case that had no answer before. Recall
@@ -598,6 +615,33 @@ export function DevicesView({ practiceId }: { practiceId: string }) {
                         onCheckedChange={(next) => void setTestDevice(device, next)}
                         label={strings.devices.testDeviceLabel}
                         hint={strings.devices.testDeviceWarning}
+                      />
+                    </div>
+                  )}
+                  {/*
+                    WHICH FRONT DOOR THIS TABLET OFFERS (Carl, 12 Sep 2026).
+                    Beside the disclosure switch because they are the two
+                    things about a tablet that change what a patient sees on
+                    it — but this one is not a disclosure, and the copy does
+                    not borrow that switch's warning tone for a setting that
+                    moves nobody's name.
+
+                    `!== false` IS THE READ, NOT `=== true`. The field is
+                    optional on the wire, and a core too old to send it is a
+                    core whose tablets all accept walk-ups; showing those as
+                    unticked would offer to "turn on" something already on.
+
+                    NOT OFFERED ON A REVOKED DEVICE, for the same reason the
+                    switch above is not: it holds no credential, so the
+                    setting could not reach a screen.
+                  */}
+                  {!device.revokedAt && (
+                    <div className={styles.cardBody} data-testid={`walk-ups-${device.id}`}>
+                      <Checkbox
+                        checked={device.acceptsWalkUps !== false}
+                        onCheckedChange={(next) => void setWalkUps(device, next)}
+                        label={strings.devices.walkUpsLabel}
+                        hint={strings.devices.walkUpsHint}
                       />
                     </div>
                   )}

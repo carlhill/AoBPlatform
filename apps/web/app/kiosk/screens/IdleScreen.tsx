@@ -3,6 +3,15 @@
 /**
  * K-1 — idle. A heading, a button, and nothing else on it.
  *
+ * UNLESS THIS TABLET DOES NOT ACCEPT WALK-UPS (Carl, 12 Sep 2026), in which
+ * case there is no heading and no button — only "Please wait. Loading your
+ * details". Two tablets, two front doors: one sits on a counter for anyone to
+ * pick up, the other is handed to a named patient after reception has pushed
+ * their agreement to it. On the second, Begin means "type in details we
+ * already hold" and pressing it drops the patient into the wrong flow, so it
+ * is not offered. `acceptsWalkUps` is the per-device setting behind it, off
+ * only where the console has turned it off.
+ *
  * WHAT WAS REMOVED, AND WHY IT WAS NOT ENOUGH TO SOFTEN IT (Carl, 4 Sep 2026:
  * "Remove the 'x people ready to sign' text — this is a security feature").
  *
@@ -44,6 +53,7 @@ export function IdleScreen({
   anyoneWaiting = true,
   online,
   testDevice,
+  acceptsWalkUps = true,
   onStart,
   onBack,
   onPick,
@@ -68,12 +78,81 @@ export function IdleScreen({
    * device showing patient names must always say why (Carl, 4 Sep 2026).
    */
   testDevice: boolean;
+  /**
+   * DOES THIS TABLET ACCEPT WALK-UPS? (Carl, 12 Sep 2026: "if the reception is
+   * pushing to the tablet (not kiosk mode where the patient enters all their
+   * details) then it should not say Begin (it will confuse the user/patient)
+   * as the user will press begin and it will go to kiosk mode. It should say
+   * 'Please wait. Loading your details'".)
+   *
+   * TRUE — the default, and every tablet in service before 12 Sep 2026 — is
+   * the counter tablet: heading, Begin, and the walk-up flow behind it. FALSE
+   * is the tablet reception hands to a NAMED patient after pushing their
+   * agreement to it: nothing on this screen is tappable, because the only
+   * thing there was to tap started the wrong flow.
+   *
+   * Optional, defaulting to true, so the twenty-odd existing renders of this
+   * screen keep the behaviour they have (wow.md §10 — a new prop on a shared
+   * component defaults to today's behaviour).
+   */
+  acceptsWalkUps?: boolean;
   onStart: () => void;
   onBack: () => void;
   onPick: (row: KioskWaitingRow) => void;
   onRetry: () => void;
 }): ReactNode {
   const context = online ? strings.chrome.allSynced : strings.chrome.offline;
+
+  /**
+   * WALK-UPS OFF WINS OVER THE MODE, and that is what makes the rule
+   * structural rather than a promise.
+   *
+   * `mode: 'list'` is only reachable through Begin, so a tablet with no Begin
+   * cannot get there today — but "cannot get there today" is the sort of thing
+   * that stops being true when somebody adds a second way onto this screen.
+   * Deciding it here means there is exactly ONE branch that can render a
+   * control which starts the walk-up path, and it is behind this flag
+   * (`walk_up_tablet_off_never_renders_a_start_control`).
+   */
+  if (!acceptsWalkUps) {
+    return (
+      <Screen practiceName={practiceName} locationLine={locationLine} context={context}>
+        <div className={styles.centred}>
+          {/*
+            CARL'S WORDS, AND NOTHING ELSE ON THE SCREEN. No heading above it,
+            no button under it, nothing tappable at all: the patient standing
+            here has already given reception their details across the desk, and
+            every control this screen could offer would ask for them again.
+
+            IT IS NOT A DEAD END (hard rule 8, REQ-REC-04). The tablet keeps
+            heartbeating behind this message, so reception can still push to it,
+            recall it, or press Return to Begin — and a push that never comes
+            costs the patient nothing, because the desk can still capture after
+            the service.
+          */}
+          <h1 className={styles.h1} data-testid="idle-waiting-for-details">
+            {strings.idle.waitingForDetails}
+          </h1>
+          {/*
+            THE FAILURE STILL SHOWS. A tablet that cannot reach the server and
+            says only "Loading your details" is telling a patient to wait for
+            something that is not coming; the reason belongs on the screen where
+            somebody walking past can read it (wow.md §2 item 5).
+          */}
+          {error ? (
+            <p className={styles.error} data-testid="idle-load-failed">
+              {strings.idle.loadFailed}
+            </p>
+          ) : null}
+          {testDevice ? (
+            <p className={styles.error} data-testid="test-device-banner">
+              {strings.idle.testDeviceBanner}
+            </p>
+          ) : null}
+        </div>
+      </Screen>
+    );
+  }
 
   if (mode === 'idle') {
     return (

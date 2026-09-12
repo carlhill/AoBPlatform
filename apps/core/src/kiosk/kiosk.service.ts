@@ -124,6 +124,26 @@ export class KioskService {
      */
     showsWaitingList: boolean;
     /**
+     * DOES THIS TABLET ACCEPT WALK-UPS? (Carl, 12 Sep 2026 — "if the reception
+     * is pushing to the tablet ... then it should not say Begin (it will
+     * confuse the user/patient) ... It should say 'Please wait. Loading your
+     * details'".)
+     *
+     * ANSWERED HERE, ON THE FIRST CALL THE TABLET MAKES, for the same reason
+     * the flag above is: K-1 must know which front door it offers before it is
+     * drawn. Waiting for the heartbeat instead would leave one painted frame
+     * in which a push-only tablet shows Begin, which is the exact frame Carl
+     * was looking at.
+     *
+     * The HEARTBEAT answers it too, and that is not a duplicate — it is how a
+     * change reaches a tablet already sitting on its idle screen, with no
+     * re-pairing and no reload.
+     *
+     * It is a REPORT, not a setting: there is no endpoint a device credential
+     * can reach that changes it (see `PATCH /devices/:id/walk-ups`).
+     */
+    acceptsWalkUps: boolean;
+    /**
      * HOW LONG THIS TABLET WAITS BEFORE IT RETURNS TO THE START (Carl, 4 Sep
      * 2026). Seconds, from the practice.
      *
@@ -152,6 +172,7 @@ export class KioskService {
       state: practice?.state ?? null,
       identifierTypes: practice?.identifierTypes ?? [],
       showsWaitingList: device.showsWaitingList,
+      acceptsWalkUps: device.acceptsWalkUps,
       kioskIdleTimeoutSeconds: kioskIdleTimeoutOrDefault(practice?.kioskIdleTimeoutSeconds),
       kioskBuild,
       reload: await this.devices.shouldReload(device.practiceId, kioskBuild),
@@ -200,6 +221,23 @@ export class KioskService {
     pollMs: number;
     outOfUse: boolean;
     reload: boolean;
+    /**
+     * DOES THIS TABLET ACCEPT WALK-UPS? (Carl, 12 Sep 2026.)
+     *
+     * HERE FOR THE SAME REASON `outOfUse` IS. Both are console switches whose
+     * whole point is that they reach a tablet nobody is touching: Carl flips
+     * the toggle on `/practice/devices` and expects the tablet already sitting
+     * on its idle screen to change on the next poll, with no re-pairing and no
+     * reload. This is the one poll that runs on every screen, so it is the one
+     * place that promise can be kept.
+     *
+     * It costs no query. The flag is resolved with the credential the request
+     * already carried (`ResolvedDevice`), so this is a field on an answer the
+     * tablet was getting anyway — not a second read and not a second poll.
+     *
+     * NOT PATIENT DATA. A boolean about a device (REQ-VER-04, hard rule 9).
+     */
+    acceptsWalkUps: boolean;
   }> {
     const [{ command, outOfUse }, waitingCount, reload] = await Promise.all([
       this.devices.recordHeartbeat(device, {
@@ -220,7 +258,13 @@ export class KioskService {
      * are waiting is itself a disclosure, and it was the first one removed
      * from the ordinary tablet's waiting-list response (Carl, 4 Sep 2026).
      */
-    return { command, pollMs: kioskPollMs(waitingCount), outOfUse, reload };
+    return {
+      command,
+      pollMs: kioskPollMs(waitingCount),
+      outOfUse,
+      reload,
+      acceptsWalkUps: device.acceptsWalkUps,
+    };
   }
 
   /**

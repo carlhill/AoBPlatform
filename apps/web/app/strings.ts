@@ -4211,6 +4211,36 @@ export const strings = {
       + 'the tablet’s next poll.',
     testDeviceSaving: 'Saving…',
 
+    /*
+     * DOES THIS TABLET ACCEPT WALK-UPS? (Carl, 12 Sep 2026, looking at the
+     * kiosk idle screen: "if the reception is pushing to the tablet (not kiosk
+     * mode where the patient enters all their details) then it should not say
+     * Begin (it will confuse the user/patient) as the user will press begin
+     * and it will go to kiosk mode. It should say 'Please wait. Loading your
+     * details'".)
+     *
+     * IN A RECEPTIONIST'S WORDS, NOT THE DOMAIN'S. Nobody at a front desk
+     * thinks "walk-up capture path"; they think "the one on the counter" and
+     * "the one I hand over". So the hint describes the two tablets rather than
+     * the two flows, and says what the patient sees in each case — which is
+     * the thing the person flipping this is actually deciding.
+     *
+     * ON IS THE DEFAULT AND THE COPY SAYS SO, because every tablet already in
+     * a practice is on, and a setting whose default is invisible is a setting
+     * somebody turns off by accident while exploring.
+     *
+     * "Next poll" is a promise this page can keep: the flag rides the
+     * heartbeat, which runs on every screen, so the change reaches a tablet
+     * already sitting on its idle screen within seconds — no re-pairing, no
+     * reload, nobody walking to the device.
+     */
+    walkUpsLabel: 'Anyone can start on this tablet',
+    walkUpsHint:
+      'On — the default — is the tablet that sits on the counter: it says Begin, and the patient types '
+      + 'three details so we can find them. Turn it off for a tablet you hand to one patient after sending '
+      + 'their form to it: it then says “Please wait. Loading your details” and there is nothing for them '
+      + 'to press. Takes effect on the tablet’s next poll.',
+
     revokeAction: 'Revoke',
     /*
      * REVOKING IS THE SECURITY ACT ON THIS PAGE, so it asks — and the
@@ -6376,6 +6406,25 @@ export const strings = {
       nobodyWaiting: 'Nobody is waiting to sign just now.',
       /** Idle screen, in place of Begin, when the server says nobody is waiting (a boolean, never a count). */
       nobodyWaitingIdle: 'Nobody is waiting to sign just now. Please see reception.',
+      /**
+       * K-1 ON A TABLET THAT DOES NOT ACCEPT WALK-UPS — Carl's own words,
+       * 12 Sep 2026, and they are quoted rather than reworded on purpose.
+       *
+       * The patient holding this tablet has just been handed it by reception,
+       * who have their details on screen and are pushing the agreement across
+       * as they speak. "Begin" told that person to type in details the
+       * practice already holds, and pressing it took them into the walk-up
+       * flow — the wrong one. This sentence replaces the heading AND the
+       * button: the screen has nothing to press, because there is nothing for
+       * the patient to do but wait a second or two.
+       *
+       * IT PROMISES ONLY WHAT THE NEXT POLL DELIVERS. Not "your form is on its
+       * way", which the tablet cannot know, and no reassurance about the
+       * appointment, which is not in doubt. If the push never comes, reception
+       * still has every other way to capture (hard rule 8) and Return to Begin
+       * puts the tablet back.
+       */
+      waitingForDetails: 'Please wait. Loading your details',
       /*
        * BEGIN, REPLACED RATHER THAN DISABLED (Carl, 4 Sep 2026). A walk-up
        * tablet with nobody staged has nothing for Begin to open, and a

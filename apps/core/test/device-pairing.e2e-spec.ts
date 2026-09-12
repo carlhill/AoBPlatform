@@ -411,6 +411,171 @@ describe('device pairing (e2e, real Postgres)', () => {
     });
   });
 
+  /**
+   * DOES THIS TABLET ACCEPT WALK-UPS? (Carl, 12 Sep 2026, looking at the kiosk
+   * idle screen: "if the reception is pushing to the tablet (not kiosk mode
+   * where the patient enters all their details) then it should not say Begin
+   * (it will confuse the user/patient) as the user will press begin and it will
+   * go to kiosk mode. It should say 'Please wait. Loading your details'".)
+   *
+   * The screen itself is pinned in `apps/web/app/kiosk/walk-ups.test.tsx`.
+   * What is pinned HERE is the half the tablet cannot see: the default, the
+   * route, the two answers that carry the flag to a device, and the evidence.
+   */
+  describe('walk-ups', () => {
+    it('walk_ups_default_on_so_no_existing_tablet_changes', async () => {
+      const { credential } = await registerAndPair(practiceA, 'Counter tablet');
+      const me = await http().get('/kiosk/me').set('x-device-credential', credential).expect(200);
+      // A tablet nobody has configured is the tablet on the counter. Turning
+      // walk-ups off is an act somebody performs, per device, from the console
+      // — never a value a migration or a registration leaves behind.
+      expect(me.body.acceptsWalkUps).toBe(true);
+    });
+
+    it('walk_up_setting_reaches_the_tablet_on_both_answers_it_already_gets', async () => {
+      const { deviceId, credential } = await registerAndPair(practiceA, 'Handed-over tablet');
+
+      signedInAt(practiceA);
+      const patched = await http()
+        .patch(`/devices/${deviceId}/walk-ups`)
+        .set('x-practice-id', practiceA)
+        .send({ acceptsWalkUps: false })
+        .expect(200);
+      expect(patched.body).toEqual({ deviceId, acceptsWalkUps: false });
+      currentPrincipal = null;
+
+      /*
+       * BOTH, AND FOR DIFFERENT REASONS. `/kiosk/me` is the BOOT answer, so a
+       * push-only tablet never paints Begin even for one frame. The HEARTBEAT
+       * is the one poll that runs on every screen, so a toggle flipped in the
+       * console reaches a tablet already sitting on its idle screen — no
+       * re-pairing, no reload, nobody walking to the device.
+       */
+      const me = await http().get('/kiosk/me').set('x-device-credential', credential).expect(200);
+      expect(me.body.acceptsWalkUps).toBe(false);
+
+      const beat = await http()
+        .post('/kiosk/heartbeat')
+        .set('x-device-credential', credential)
+        .send({ screen: 'begin', sessionId: null, build: null, ackCommandId: null })
+        .expect(201);
+      expect(beat.body.acceptsWalkUps).toBe(false);
+
+      // And back on, the same way. Nothing here is one-directional.
+      signedInAt(practiceA);
+      await http()
+        .patch(`/devices/${deviceId}/walk-ups`)
+        .set('x-practice-id', practiceA)
+        .send({ acceptsWalkUps: true })
+        .expect(200);
+      currentPrincipal = null;
+      await http()
+        .get('/kiosk/me')
+        .set('x-device-credential', credential)
+        .expect(200)
+        .expect((res) => expect(res.body.acceptsWalkUps).toBe(true));
+    });
+
+    it('walk_up_setting_change_is_evidenced_and_carries_no_patient_data', async () => {
+      const { deviceId } = await registerAndPair(practiceA, 'Evidenced walk-up tablet');
+
+      signedInAt(practiceA);
+      await http()
+        .patch(`/devices/${deviceId}/walk-ups`)
+        .set('x-practice-id', practiceA)
+        .send({ acceptsWalkUps: false })
+        .expect(200);
+      currentPrincipal = null;
+
+      const event = await waitFor(() =>
+        prisma.vaultOutbox.findFirst({
+          where: { subjectId: deviceId, type: 'device.walk_up_capture_set' },
+        }),
+      );
+      expect(event).toBeTruthy();
+      expect(event!.subjectType).toBe('Device');
+      expect((event!.actor as { id: string }).id).toBe(ADMIN.sub);
+      // The label, the new value and who set it — the same payload shape as
+      // the disclosure switch, and for the same reason: this is about a
+      // device, and there is no name to carry (hard rule 9, REQ-VER-04).
+      expect(event!.payload).toMatchObject({
+        label: 'Evidenced walk-up tablet',
+        acceptsWalkUps: false,
+      });
+      expect(JSON.stringify(event!.payload)).not.toMatch(/medicare|dateOfBirth|address/i);
+
+      /*
+       * SETTING IT TO WHAT IT ALREADY IS WRITES NOTHING. An audit trail of
+       * non-changes is an audit trail nobody reads — and the console fires this
+       * from a checkbox, so a double-click must not become two events.
+       */
+      signedInAt(practiceA);
+      await http()
+        .patch(`/devices/${deviceId}/walk-ups`)
+        .set('x-practice-id', practiceA)
+        .send({ acceptsWalkUps: false })
+        .expect(200);
+      currentPrincipal = null;
+      expect(
+        await prisma.vaultOutbox.count({
+          where: { subjectId: deviceId, type: 'device.walk_up_capture_set' },
+        }),
+      ).toBe(1);
+    });
+
+    it('refuses an unattributed change, and refuses a body that is not a boolean', async () => {
+      const { deviceId } = await registerAndPair(practiceA, 'Unattributed walk-up tablet');
+
+      // Nobody signed in: recorded as nobody is not an option.
+      await http()
+        .patch(`/devices/${deviceId}/walk-ups`)
+        .set('x-practice-id', practiceA)
+        .send({ acceptsWalkUps: false })
+        .expect(403);
+
+      signedInAt(practiceA);
+      // "The caller forgot to send it" is not "the caller asked for false".
+      await http()
+        .patch(`/devices/${deviceId}/walk-ups`)
+        .set('x-practice-id', practiceA)
+        .send({})
+        .expect(400);
+      await http()
+        .patch(`/devices/${deviceId}/walk-ups`)
+        .set('x-practice-id', practiceA)
+        .send({ acceptsWalkUps: 'no' })
+        .expect(400);
+      currentPrincipal = null;
+
+      expect(
+        await prisma.vaultOutbox.count({
+          where: { subjectId: deviceId, type: 'device.walk_up_capture_set' },
+        }),
+      ).toBe(0);
+    });
+
+    it('cross_practice_walk_up_change_fails_closed', async () => {
+      const { deviceId, credential } = await registerAndPair(practiceA, 'Practice A walk-up tablet');
+
+      // Practice B, signed in at B, reaching for A's device id. RLS filters on
+      // the transaction-local scope, so this is a 404 rather than an admission
+      // that the device exists somewhere else.
+      signedInAt(practiceB);
+      await http()
+        .patch(`/devices/${deviceId}/walk-ups`)
+        .set('x-practice-id', practiceB)
+        .send({ acceptsWalkUps: false })
+        .expect(404);
+      currentPrincipal = null;
+
+      await http()
+        .get('/kiosk/me')
+        .set('x-device-credential', credential)
+        .expect(200)
+        .expect((res) => expect(res.body.acceptsWalkUps).toBe(true));
+    });
+  });
+
   describe('revoke and rotate', () => {
     it('revoked_device_gets_401_and_no_data', async () => {
       const { deviceId, credential } = await registerAndPair(practiceA, 'Lost tablet');

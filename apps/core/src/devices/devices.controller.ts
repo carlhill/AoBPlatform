@@ -61,6 +61,22 @@ export class DeviceSettingsDto {
   showsWaitingList!: boolean;
 }
 
+/** The body of `PATCH /devices/:id/walk-ups` — one boolean, required. */
+export class DeviceWalkUpsDto {
+  /**
+   * DOES THIS TABLET ACCEPT WALK-UPS? (Carl, 12 Sep 2026.)
+   *
+   * ITS OWN DTO AND ITS OWN ROUTE rather than a second field on
+   * `DeviceSettingsDto`. That class's `showsWaitingList` is REQUIRED on
+   * purpose — "the caller forgot to send it" must never be indistinguishable
+   * from "the caller asked for false" — and adding an optional sibling beside
+   * it would make one request body carry both rules at once. Two switches,
+   * two routes, each required on its own.
+   */
+  @IsBoolean()
+  acceptsWalkUps!: boolean;
+}
+
 export class MinimumKioskBuildDto {
   /** `null` clears the floor — an explicit "no tablet needs to reload". */
   @IsOptional()
@@ -169,6 +185,36 @@ export class DevicesController {
    * a tick-box on the tablet"). Same reasoning as revoke: a device that can
    * widen its own disclosure is a device a passer-by can widen.
    */
+  /**
+   * DOES THIS TABLET ACCEPT WALK-UPS? (Carl, 12 Sep 2026 — "if the reception
+   * is pushing to the tablet ... then it should not say Begin (it will confuse
+   * the user/patient) ... It should say 'Please wait. Loading your details'".)
+   *
+   * On (the default) the idle screen offers Begin and the patient states three
+   * details. Off, it offers nothing to press and waits for reception's push.
+   *
+   * DECLARED ABOVE `@Patch(':id')` DELIBERATELY. A single-segment `:id` cannot
+   * match a two-segment path, so this is not shadowed today — but the ordering
+   * is the thing that stays true when somebody later widens that route, and
+   * the shadowing bug this repo has already had once (wow.md §2 item 2) came
+   * from exactly that kind of later edit.
+   *
+   * NOT `@RequireFreshSecondFactor()`, for the reason the settings switch below
+   * is not: it is reversible in one click, it destroys nothing, and gating
+   * every device control behind a re-authentication teaches people to
+   * re-authenticate reflexively — the habit a real-time phishing attack needs.
+   */
+  @Patch(':id/walk-ups')
+  @PracticeScoped()
+  setWalkUps(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: DeviceWalkUpsDto,
+    @SessionActor() actor: Actor | undefined,
+  ) {
+    return this.devices.setAcceptsWalkUps(requirePractice(practiceId), id, dto.acceptsWalkUps, actor);
+  }
+
   @Patch(':id')
   @PracticeScoped()
   updateSettings(

@@ -412,6 +412,19 @@ export const VAULT_EVENT_TYPES = [
    */
   'device.waiting_list_visibility_set',
   /**
+   * A TABLET WAS TOLD WHETHER IT ACCEPTS WALK-UPS (Carl, 12 Sep 2026 — "if the
+   * reception is pushing to the tablet ... it should not say Begin ... It
+   * should say 'Please wait. Loading your details'").
+   *
+   * Not a disclosure switch like the one above: nobody's name moves either
+   * way. It is evidenced because it changes WHICH FRONT DOOR a patient-facing
+   * screen offers, and "why did that tablet stop letting people check
+   * themselves in" is a question somebody will ask a fortnight later. The
+   * payload carries the device label, the new value and who set it — no
+   * patient data, because there is none to carry (hard rule 9).
+   */
+  'device.walk_up_capture_set',
+  /**
    * RECEPTION TOOK A TABLET OUT OF USE, AND PUT IT BACK (Carl, 4–5 Sep 2026,
    * TODO.md "Tablets: make one inactive").
    *

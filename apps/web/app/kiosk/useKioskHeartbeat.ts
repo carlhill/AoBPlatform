@@ -67,6 +67,20 @@ export interface HeartbeatState {
    * reset by one: a tablet that could not be reached has not been put back.
    */
   readonly outOfUse: boolean;
+  /**
+   * DOES THIS TABLET ACCEPT WALK-UPS? (Carl, 12 Sep 2026.)
+   *
+   * `null` UNTIL THE SERVER HAS SAID, and the distinction is load-bearing:
+   * "we have not been told" is not "walk-ups are on". The caller falls back to
+   * the answer `/kiosk/me` gave at boot, which lands before K-1 is ever
+   * painted — so a push-only tablet never shows Begin, not even for the one
+   * frame between the first render and the first heartbeat.
+   *
+   * IT IS HELD THROUGH AN OUTAGE, like `outOfUse`: a tablet that could not be
+   * reached has not been reconfigured, and flipping a patient-facing screen
+   * because one request timed out would be the tablet inventing a setting.
+   */
+  readonly acceptsWalkUps: boolean | null;
 }
 
 const FALLBACK_POLL_MS = 15_000;
@@ -94,6 +108,7 @@ export function useKioskHeartbeat({
 }): HeartbeatState {
   const [outage, setOutage] = useState(false);
   const [outOfUse, setOutOfUse] = useState(false);
+  const [acceptsWalkUps, setAcceptsWalkUps] = useState<boolean | null>(null);
   const outageRef = useRef(false);
   const failuresRef = useRef(0);
   const unpairedRef = useRef(false);
@@ -142,6 +157,10 @@ export function useKioskHeartbeat({
       failuresRef.current = 0;
       if (answer.pollMs > 0) cadenceRef.current = answer.pollMs;
       setOutOfUse(answer.outOfUse);
+      // A SERVER TOO OLD TO SEND IT LEAVES THE BOOT ANSWER STANDING. Only an
+      // explicit boolean moves this; `undefined` is not "false" and is not
+      // "true" either.
+      if (typeof answer.acceptsWalkUps === 'boolean') setAcceptsWalkUps(answer.acceptsWalkUps);
 
       if (answer.command) {
         // Served again until acknowledged, so this is where "once" is decided.
@@ -225,5 +244,5 @@ export function useKioskHeartbeat({
     };
   }, [enabled, poll, pollMs]);
 
-  return { outage, outOfUse };
+  return { outage, outOfUse, acceptsWalkUps };
 }
