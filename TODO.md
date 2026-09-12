@@ -3540,3 +3540,42 @@ rollout floor is a per-practice staged control (CLAUDE.md §7) and this must not
 turn into an automatic reload for real tablets. A named test that a changed
 build id produces `reload: true` already exists for the production path; the dev
 path needs its own.
+
+## A sign-in that works but points at a record that is gone (found 12 Sep 2026)
+
+Carl, on Jo Example after the invitation fix: "Jo.example is not logged in… We
+are missing something." Jo WAS signed in — the header showed the account and a
+Sign out button. What failed was the next step: "That could not be read. We
+could not find your record."
+
+**The cause.** A practitioner's Keycloak account carries the platform's id for
+them in a `practitioner_id` attribute, and the token is how the console knows
+which record is theirs. Jo's said `3b0f57ef-…`; no such practitioner row exists.
+The real Jo is `79ecb368-…`. The account and the record had drifted apart, most
+likely across an earlier invite-and-recreate cycle.
+
+**It is not just Jo.** An audit of every account in the realm found three
+dangling pointers out of seven: Jo's `practitioner_id`, and the `practice_id` on
+two practice-admin accounts (`admin.5cfda308`, `admin.fb1ea38e`). Repointed Jo's
+to the row that exists (12 Sep 2026); the two admin accounts are untouched and
+point at practices that are not there.
+
+**Two real defects behind the data problem.**
+
+1. **Nothing keeps the two in step, and nothing notices when they part.** The id
+   is written into Keycloak when the account is created and never checked again.
+   Deleting or recreating a practitioner leaves an account pointing at nothing,
+   and the person finds out by signing in successfully and then being told their
+   record cannot be read. Worth a startup or scheduled check that reports
+   dangling pointers, and worth making the invite path update the attribute
+   rather than assume it.
+2. **The message is a dead end, which CLAUDE.md §7 forbids.** "We could not find
+   your record" tells the reader nothing and offers nowhere to go. It should name
+   what is wrong in terms someone can act on and carry a way to fix it — for a
+   practitioner, a route to support; for an administrator looking at the same
+   fault, the account and the id it points at.
+
+**Also true and correctly reported:** Jo has no affiliations, so "You are not
+affiliated with any practice at the moment" is accurate rather than a bug. Jo
+needs an affiliation at a practice before the practitioner view shows anything,
+which is a test-data decision for Carl rather than a fix.
