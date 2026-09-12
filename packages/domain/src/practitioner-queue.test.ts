@@ -115,12 +115,22 @@ describe('what a waiting row may carry', () => {
       waitingSince: '2026-09-12T08:55:00.000Z',
       paperwork: 'not_yet',
       agreementProviderName: null,
+      /*
+       * `visitState` IS ON THE ROW AND IS ALLOWED HERE. It says only whether
+       * the practitioner is with this patient, has been, or has not yet been
+       * — it is not a reason, a note, a triage category or a duration, and it
+       * is not an appointment status a practice management system would
+       * recognise. The key list below is the guard, so it is listed rather
+       * than excused.
+       */
+      visitState: 'pending',
     };
     expect(Object.keys(row).sort()).toEqual([
       'agreementProviderName',
       'arrivalId',
       'paperwork',
       'patientName',
+      'visitState',
       'waitingSince',
     ]);
   });
@@ -137,6 +147,7 @@ describe('what a waiting row may carry', () => {
       waitingSince: '2026-09-12T08:55:00.000Z',
       paperwork: 'done',
       agreementProviderName: null,
+      visitState: 'completed',
     };
     const keys = Object.keys(row).join(' ').toLowerCase();
     for (const forbidden of ['medicare', 'ihi', 'dateofbirth', 'dob', 'address', 'recordnumber', 'amount']) {
