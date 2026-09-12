@@ -98,6 +98,15 @@ export interface ArrivalEvent {
    *   * `practitionerId` + `locationId` — the same fact, said separately.
    *   * `providerNumber` — names both by itself, and is the likeliest thing a
    *     PMS holds.
+   *
+   * THESE NAME WHO THE PATIENT CAME TO SEE, AND ARE NEVER REFUSED ON BILLING
+   * GROUNDS (Carl, 12 Sep 2026; ARRIVAL-WHO-IS-SEEN.md §2). Anybody the
+   * practice rosters may be named: a nurse, a phlebotomist, a registrar, a GP.
+   * Whose provider number the CLAIM goes under is a separate fact — the person
+   * seen where they bill under their own number, `billingAffiliationId` where
+   * they do not. Before this the two shared one field, so an arrival naming a
+   * nurse was refused outright and the person the patient actually came to see
+   * was discarded.
    */
   readonly affiliationId?: string;
   readonly practitionerId?: string;
@@ -179,11 +188,42 @@ export interface ArrivalEvent {
   };
 
   /**
+   * WHOSE PROVIDER NUMBER THE CLAIM GOES UNDER, WHEN IT IS NOT THE PERSON THE
+   * PATIENT CAME TO SEE — `reception` ONLY (Carl, 12 Sep 2026;
+   * ARRIVAL-WHO-IS-SEEN.md §3, middle row).
+   *
+   * A nurse or a registrar working under a provider delivers the service and
+   * bills nothing under their own number, so the assignment goes under the
+   * supervising provider. Until somebody names that provider the arrival is
+   * still RECORDED — the patient exists, the visit exists, the person seen is
+   * kept — and the visit decision is `none` with the reason
+   * `billing_provider_not_yet_named`. Sending the same walk-in again under the
+   * same `idempotencyKey` with this field set supersedes that waiting row and
+   * drafts the agreement.
+   *
+   * `mayBeProviderOnAgreement` STILL DECIDES WHO MAY GO HERE, unchanged (hard
+   * rule 6's neighbour, Carl 5–7 Sep 2026): naming a second nurse is refused
+   * with `provider_not_servicing` exactly as it always was. Omitted for an
+   * ordinary GP visit, where the person seen bills under their own number.
+   *
+   * A MACHINE MAY NOT SEND IT, and the refusal is out loud. A
+   * `supervisingProviderId` from the PMS was considered on 7 September 2026 and
+   * rejected: it would have the practice's software deciding whose name goes on
+   * a contract. This is a person's answer at a desk, like D5, D6a and D7.
+   */
+  readonly billingAffiliationId?: string;
+
+  /**
    * THE SENDER'S OWN HANDLE FOR THIS ARRIVAL. A connector that retries — and
    * a connector on a practice's ADSL will retry — must not put the same person
    * on the queue twice with two agreements to sign. The platform is idempotent
    * on (practiceId, idempotencyKey): a repeat returns the first result and
    * writes nothing.
+   *
+   * ONE EXCEPTION, AND IT IS THE FIX RATHER THAN A REPEAT: an arrival that was
+   * accepted but is still waiting for a billing provider is re-decided when the
+   * same key comes back WITH one named, so the walk-in is superseded instead of
+   * duplicated. The same shape a refused arrival's retry has always had.
    */
   readonly idempotencyKey: string;
 }
@@ -192,10 +232,27 @@ export interface ArrivalEvent {
 export interface ArrivalReceipt {
   readonly arrivalId: string;
   readonly patientId: string;
+  /**
+   * WHAT THE VISIT NEEDS — and `none` now has three meanings, told apart by
+   * `reason` and never by the type (Carl, 12 Sep 2026; ARRIVAL-WHO-IS-SEEN.md
+   * §5). `already_covered_by_an_enduring_agreement` and
+   * `seen_by_a_practitioner_who_does_not_bill` are both COMPLETE answers: the
+   * patient is asked for nothing. `billing_provider_not_yet_named` is WAITING:
+   * the visit needs a claim and nobody has said whose number it goes under, so
+   * the desk names one and re-sends. A caller that reads only the type will
+   * treat a waiting arrival as a finished one.
+   */
   readonly decision: {
     readonly type: 'enduring' | 'episodic_pre' | 'none';
     readonly reason: string;
   };
+  /**
+   * WHO THE PATIENT CAME TO SEE, as the practitioner at a location — which is
+   * not always who the claim goes under. The same id the sender named, kept
+   * whatever their billing role; null only on rows written before 12 September
+   * 2026 that had no affiliation at all.
+   */
+  readonly seeingAffiliationId: string | null;
   /** Null when the decision was `none` — nothing was drafted, and that is the answer. */
   readonly agreementId: string | null;
   /** Hard rule 14: the version of the table that decided (`visit-policy-1`). */
@@ -215,10 +272,18 @@ export interface ArrivalReceipt {
  */
 export const ARRIVAL_REFUSAL_REASONS = [
   /**
-   * The person named cannot be the provider on an agreement at this location:
-   * their billing role is `works_under_provider` or `not_billable`. The claim
-   * — and therefore the assignment — goes under somebody else's number, and
-   * reception picks who.
+   * NARROWED ON 12 SEPTEMBER 2026 (ARRIVAL-WHO-IS-SEEN.md §5). It used to mean
+   * "the person named cannot be the provider on an agreement", which refused
+   * every arrival naming a nurse or a phlebotomist and threw away the person
+   * the patient came to see. Those are now RECORDED, with a visit decision from
+   * the versioned policy table. What is left under this code is:
+   *
+   *   * a role this platform does not recognise — a row written by something
+   *     that is not this platform, or a content file rolled back under a
+   *     database that was not. Nothing can be decided from it, so nothing is;
+   *   * `billingAffiliationId` naming somebody who may not be the provider on
+   *     an agreement. Naming a second nurse as the supervising provider is the
+   *     same mistake in a new field and gets the same answer.
    */
   'provider_not_servicing',
   /**
@@ -306,6 +371,12 @@ export interface ArrivalProviderChoice {
  * pipeline would refuse with (`provider_not_servicing`, `provider_not_anchored`),
  * so the console maps it to its own words and a destination rather than
  * showing prose (CLAUDE.md §7).
+ *
+ * A NURSE OR A PHLEBOTOMIST IS NOT BLOCKED HERE ANY MORE (12 Sep 2026). They
+ * come back as a DECISION — `none`, with `seen_by_a_practitioner_who_does_not
+ * _bill` or `billing_provider_not_yet_named` — because that is what the
+ * pipeline will record, and a preview that disagreed with the thing it previews
+ * would be worse than no preview at all.
  */
 export interface ArrivalPreview {
   /** Null when `blocked` — nothing could be decided, and that is why. */

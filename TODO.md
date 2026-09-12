@@ -3760,3 +3760,52 @@ squarely our job rather than an adjacent product.
 it needs an appointment feed — the same gap the scheduling question is really
 about. The difference is that this one is answered by the PMS feed we already
 plan to consume, not by owning the book.
+
+## An arrival carries who was seen — BUILT 12 Sep 2026 (`ARRIVAL-WHO-IS-SEEN.md`)
+
+Carl: *"build the arrival change so nurses can be arrived. It is not just nurses
+— even the phlebotomists can be arrived, if someone has just come for a blood
+test or some other specimen test."*
+
+**What landed.** `Arrival.seeingAffiliationId` (migration
+`20260912010000_arrival_who_is_seen`, applied by hand to dev and test, existing
+rows backfilled from `affiliationId`). A second flag on the versioned role list,
+`servicesNeedABillingProvider` (`billing-roles-2026-09-2`), and two new rows at
+the head of the visit policy table (`visit-policy-3`):
+`seen_by_a_practitioner_who_does_not_bill` and `billing_provider_not_yet_named`.
+An arrival naming a nurse or a phlebotomist is now RECORDED instead of refused,
+and `mayBeProviderOnAgreement` is untouched. See `DECISIONS.md` D-2026-09-12-04
+for the one thing the spec left open (who names the supervising provider) — it
+is an **assumption awaiting Carl**.
+
+**Still to do, and deliberately not in that change:**
+
+- [ ] **The console has no words for the two new reason codes.** `none` now means
+      three things and only the code distinguishes them: already covered, seen by
+      somebody who does not bill (finished), and no billing provider named yet
+      (waiting). Nothing in `strings.ts` maps the last two, and "shortcuts to the
+      answer" (Carl, 4 Sep 2026) wants copy plus a destination for each — the
+      waiting one should land on the arrival with a provider picker already
+      showing the person seen.
+- [ ] **`NewAgreementPanel` blocks Submit on `decision.type === 'none'`**
+      (`needNothingToSign`). That was right when `none` only meant "already
+      covered". For a phlebotomist it now stops reception recording an arrival
+      that the platform is perfectly happy to accept, and for a nurse it stops
+      the one flow that would name the supervising provider. The panel needs to
+      read the REASON, offer a billing-provider picker on
+      `billing_provider_not_yet_named`, and let a `not_billable` visit be
+      submitted with no agreement. Left alone in the 12 Sep build because the
+      surface belongs to the front-desk work and the spec's §8 put the queue
+      pages out of scope.
+- [ ] **A waiting arrival is not on any list.** `GET /arrivals/needing-a-provider`
+      reads `outcome = 'refused'`, and a nurse's arrival is `received`. Until the
+      desk read includes "accepted, nobody named to bill it", the only way to
+      find one is the arrival id. This is the same read the nurse's queue page
+      (`PRACTITIONER-QUEUE-PAGE.md`) will want, so it is worth doing once, there.
+- [ ] **`serviceRendered` still refuses a non-billing practitioner outright**
+      (`provider_not_servicing`). That is correct today — a rendered service that
+      is being claimed has a billing provider by definition — but the
+      post-service door has had no equivalent review, and a specimen collection
+      pushed down that lane would be refused rather than answered. Worth a look
+      when the post-service push meets a real practice.
+

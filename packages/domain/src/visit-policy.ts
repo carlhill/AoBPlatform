@@ -72,9 +72,17 @@ export function isVisitAgreementType(value: string): value is VisitAgreementType
 }
 
 /**
- * EVERYTHING THE DECISION IS ALLOWED TO KNOW. Four booleans, named so that a
+ * EVERYTHING THE DECISION IS ALLOWED TO KNOW. Six booleans, named so that a
  * reader can see hard rule 6 in the type: coverage is per provider AND
- * patient, and there is no fifth field that could widen it to a practice.
+ * patient, and there is no field here — and no field that could be added
+ * without failing `visit_policy_is_per_provider_not_per_practice` — that would
+ * widen it to a practice.
+ *
+ * THE LAST TWO ARRIVED ON 12 SEPTEMBER 2026 and they are about who was SEEN,
+ * not about who may be named on the contract. They exist so that a nurse or a
+ * phlebotomist can be arrived at all (ARRIVAL-WHO-IS-SEEN.md); neither one can
+ * make a non-GP eligible for an enduring agreement, because `providerIsGp`
+ * still comes from `providerIsGpFor` and still requires both of its halves.
  */
 export interface VisitPolicyInput {
   /** From the provider record's `providerType`. Enduring is GP-only (REQ-END-01a). */
@@ -85,14 +93,43 @@ export interface VisitPolicyInput {
   readonly practiceOffersEnduringByDefault: boolean;
   /** This patient has said no to an ongoing agreement before; do not ask again today. */
   readonly patientDeclinedEnduring: boolean;
+  /**
+   * DOES THIS VISIT NEED A BILLING PROVIDER AT ALL (Carl, 12 Sep 2026;
+   * ARRIVAL-WHO-IS-SEEN.md §3)?
+   *
+   * From the BILLING ROLE of the person the patient came to see, through
+   * `servicesNeedABillingProvider` — itself versioned content (hard rule 14),
+   * so the answer for a new kind of practitioner is a row in a JSON file and
+   * never a branch here. False for a phlebotomist taking bloods: the practice
+   * makes no Medicare claim, so there is no assignment of benefit to collect
+   * and `none` is the complete answer.
+   */
+  readonly visitNeedsABillingProvider: boolean;
+  /**
+   * IS THERE A PRACTITIONER THIS AGREEMENT COULD BE ANCHORED ON YET?
+   *
+   * True when the arrival resolved to somebody who may be the provider on an
+   * agreement — the person seen where they bill under their own number, the
+   * supervising provider where one has been named. False for a nurse or a
+   * registrar whose supervising provider nobody has named yet: the arrival is
+   * still RECORDED (the patient exists, the visit exists), and the desk is
+   * asked for the one missing field rather than for the whole message again.
+   *
+   * IT DOES NOT WIDEN WHO MAY BE NAMED ON A CONTRACT. The predicate behind it
+   * is `mayBeProviderOnAgreement`, unchanged — a nurse can never make this
+   * true by being seen.
+   */
+  readonly billingProviderIsNamed: boolean;
 }
 
-/** The four input names, which is also the set a rule's `when` may mention. */
+/** The six input names, which is also the set a rule's `when` may mention. */
 export const VISIT_POLICY_INPUTS: readonly (keyof VisitPolicyInput)[] = [
   'providerIsGp',
   'activeEnduringForProviderAndPatient',
   'practiceOffersEnduringByDefault',
   'patientDeclinedEnduring',
+  'visitNeedsABillingProvider',
+  'billingProviderIsNamed',
 ];
 
 /**

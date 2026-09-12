@@ -2951,6 +2951,28 @@ model Arrival {
    */
   affiliationId String? @db.Uuid
   /**
+   * WHO THE PATIENT CAME TO SEE — WHICH IS NOT ALWAYS WHO THE CLAIM GOES UNDER
+   * (Carl, 12 Sep 2026; ARRIVAL-WHO-IS-SEEN.md §2).
+   *
+   * ONE FIELD WAS DOING TWO JOBS. For a GP the two facts are the same person
+   * and nobody noticed; for a nurse, a registrar or a phlebotomist they are
+   * not, and because only a servicing provider may be named on an agreement
+   * the whole arrival was REFUSED and reception substituted the billable
+   * provider. The person the patient actually came to see was discarded — so
+   * nothing could show a nurse their own queue, and a patient who came only
+   * for a blood test could not be arrived at all.
+   *
+   * ANYBODY THE PRACTICE ROSTERS may be named here: a nurse, a phlebotomist, a
+   * registrar, a GP. It is NEVER refused on billing grounds, and it is never
+   * what an agreement is anchored on — `affiliationId` above keeps that job and
+   * keeps its restriction to a `servicing_provider`. This field is additive:
+   * on an ordinary GP arrival the two hold the same id.
+   *
+   * NO FOREIGN KEY, like every other id on this table (see `practiceId`). RLS
+   * scopes it.
+   */
+  seeingAffiliationId String? @db.Uuid
+  /**
    * THE LEGACY ANCHOR, kept while the deprecated `providerId` field on the
    * arrival contract is still accepted. Null on every arrival that named a
    * practitioner instead.
@@ -3037,6 +3059,10 @@ model Arrival {
   /// The desk's "Needs a provider" list, and nothing else reads this way.
   @@index([practiceId, outcome, arrivedAt])
   @@index([affiliationId])
+  /// "Everybody this practitioner is seeing" — the read the nurse's own queue
+  /// page will make (PRACTITIONER-QUEUE-PAGE.md). Indexed with the arrival
+  /// column, because that page is always about one practitioner on one day.
+  @@index([practiceId, seeingAffiliationId, arrivedAt])
   @@map("arrivals")
 }
 

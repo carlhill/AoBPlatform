@@ -7,19 +7,25 @@ import {
   type VisitPolicyInput,
 } from './visit-policy';
 
-/** Every combination of the four booleans — 16 visits, no examples cherry-picked. */
+/** Every combination of the six booleans — 64 visits, no examples cherry-picked. */
 function everyInput(): VisitPolicyInput[] {
   const all: VisitPolicyInput[] = [];
   for (const providerIsGp of [true, false]) {
     for (const activeEnduringForProviderAndPatient of [true, false]) {
       for (const practiceOffersEnduringByDefault of [true, false]) {
         for (const patientDeclinedEnduring of [true, false]) {
-          all.push({
-            providerIsGp,
-            activeEnduringForProviderAndPatient,
-            practiceOffersEnduringByDefault,
-            patientDeclinedEnduring,
-          });
+          for (const visitNeedsABillingProvider of [true, false]) {
+            for (const billingProviderIsNamed of [true, false]) {
+              all.push({
+                providerIsGp,
+                activeEnduringForProviderAndPatient,
+                practiceOffersEnduringByDefault,
+                patientDeclinedEnduring,
+                visitNeedsABillingProvider,
+                billingProviderIsNamed,
+              });
+            }
+          }
         }
       }
     }
@@ -32,6 +38,28 @@ const gpVisit: VisitPolicyInput = {
   activeEnduringForProviderAndPatient: false,
   practiceOffersEnduringByDefault: true,
   patientDeclinedEnduring: false,
+  /*
+   * THE ORDINARY GP VISIT IS UNCHANGED BY THE 12 SEP 2026 WORK, and that is
+   * what these two values say: the visit needs a billing provider and the
+   * person seen IS one, so both new rows fall through and every assertion
+   * below is about the table exactly as it was.
+   */
+  visitNeedsABillingProvider: true,
+  billingProviderIsNamed: true,
+};
+
+/** The two visits the "who is seen" rows exist for (ARRIVAL-WHO-IS-SEEN.md §3). */
+const phlebotomyVisit: VisitPolicyInput = {
+  ...gpVisit,
+  providerIsGp: false,
+  visitNeedsABillingProvider: false,
+  billingProviderIsNamed: false,
+};
+const nurseVisitWithNobodyBilling: VisitPolicyInput = {
+  ...gpVisit,
+  providerIsGp: false,
+  visitNeedsABillingProvider: true,
+  billingProviderIsNamed: false,
 };
 
 describe('the visit policy — what an arrival needs signed (hard rules 6 and 14)', () => {
@@ -49,7 +77,7 @@ describe('the visit policy — what an arrival needs signed (hard rules 6 and 14
    */
   it('visit_policy_never_offers_enduring_for_non_gp', () => {
     const nonGpVisits = everyInput().filter((input) => !input.providerIsGp);
-    expect(nonGpVisits).toHaveLength(8);
+    expect(nonGpVisits).toHaveLength(32);
     for (const input of nonGpVisits) {
       expect(decideVisitAgreement(input).type).not.toBe('enduring');
     }
@@ -77,9 +105,11 @@ describe('the visit policy — what an arrival needs signed (hard rules 6 and 14
     expect([...VISIT_POLICY_INPUTS].sort()).toEqual(
       [
         'activeEnduringForProviderAndPatient',
+        'billingProviderIsNamed',
         'patientDeclinedEnduring',
         'practiceOffersEnduringByDefault',
         'providerIsGp',
+        'visitNeedsABillingProvider',
       ].sort(),
     );
     for (const rule of VISIT_POLICY_RULES) {
@@ -95,9 +125,10 @@ describe('the visit policy — what an arrival needs signed (hard rules 6 and 14
       expect(decideVisitAgreement(input).policyVersion).toBe(VISIT_POLICY_VERSION);
     }
     // Bumped to `visit-policy-2` on 11 Sep 2026 when the post-service table
-    // joined the same file. One version for one file: both tables move
+    // joined the same file, and to `visit-policy-3` on 12 Sep 2026 when the two
+    // "who was seen" rows landed. One version for one file: both tables move
     // together, so a record can never name a table that did not exist.
-    expect(VISIT_POLICY_VERSION).toBe('visit-policy-2');
+    expect(VISIT_POLICY_VERSION).toBe('visit-policy-3');
   });
 
   it('names the rule that decided, so the console can say why', () => {
@@ -138,6 +169,69 @@ describe('the visit policy — what an arrival needs signed (hard rules 6 and 14
   it('coverage is checked before eligibility: a covered patient is asked for nothing at all', () => {
     for (const input of everyInput().filter((i) => i.activeEnduringForProviderAndPatient)) {
       expect(decideVisitAgreement(input).type).toBe('none');
+    }
+    /*
+     * AND THE REASON IS STILL COVERAGE where coverage is what decided. The two
+     * "who was seen" rows sit ABOVE this one, so a covered patient seeing
+     * somebody who bills reaches the coverage row exactly as before — this is
+     * the assertion that would fail if the new rows had been put in the wrong
+     * place and started swallowing ordinary visits.
+     */
+    expect(decideVisitAgreement({ ...gpVisit, activeEnduringForProviderAndPatient: true }).reason).toBe(
+      'already_covered_by_an_enduring_agreement',
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // WHO THE PATIENT CAME TO SEE (Carl, 12 Sep 2026; ARRIVAL-WHO-IS-SEEN.md).
+  // -------------------------------------------------------------------------
+
+  /**
+   * HARD RULE 14, AND THE POINT OF THE WHOLE CHANGE. "Seen by somebody who does
+   * not bill" is a ROW IN THE TABLE with the file's version on the answer, not
+   * a branch in TypeScript — so it moves without a deploy, and the record made
+   * under it says which table decided.
+   */
+  it('the_decision_for_a_non_billing_visit_comes_from_the_policy_table_with_its_version', () => {
+    const decision = decideVisitAgreement(phlebotomyVisit);
+    expect(decision.type).toBe('none');
+    expect(decision.reason).toBe('seen_by_a_practitioner_who_does_not_bill');
+    expect(decision.policyVersion).toBe(VISIT_POLICY_VERSION);
+    // The key is the TABLE'S, not a literal in code: it is one of the rows.
+    expect(VISIT_POLICY_RULES.map((rule) => rule.key)).toContain(decision.reason);
+    // And no new agreement type was invented for it — `none` is one of the three.
+    expect(decision.enduringPathway).toBeUndefined();
+  });
+
+  /**
+   * THE SECOND OF THE THREE PATHS. A nurse working under a provider needs a
+   * claim, and nobody has said whose number it goes under, so nothing is
+   * drafted YET — a different answer from the phlebotomist's, and the reason
+   * code is the whole difference between "finished" and "waiting".
+   */
+  it('a visit that needs a billing provider and has none waits, and says which field is missing', () => {
+    const decision = decideVisitAgreement(nurseVisitWithNobodyBilling);
+    expect(decision.type).toBe('none');
+    expect(decision.reason).toBe('billing_provider_not_yet_named');
+    // Name the supervising provider and it is an ordinary episodic visit again.
+    expect(decideVisitAgreement({ ...nurseVisitWithNobodyBilling, billingProviderIsNamed: true }).type).toBe(
+      'episodic_pre',
+    );
+  });
+
+  /**
+   * HARD RULE 6, RE-ASSERTED AGAINST THE NEW INPUTS. Neither of them can put a
+   * non-GP on an enduring agreement, over every combination of the other four.
+   */
+  it('an_enduring_agreement_is_still_never_offered_for_a_non_gp', () => {
+    for (const input of everyInput().filter((i) => !i.providerIsGp)) {
+      expect(decideVisitAgreement(input).type).not.toBe('enduring');
+    }
+    // And the two new rows never produce `enduring` for a GP either: they
+    // answer `none`, which asks the patient for nothing at all.
+    for (const input of everyInput().filter((i) => !i.visitNeedsABillingProvider || !i.billingProviderIsNamed)) {
+      expect(decideVisitAgreement(input).type).toBe('none');
+      expect(decideVisitAgreement(input).enduringPathway).toBeUndefined();
     }
   });
 });

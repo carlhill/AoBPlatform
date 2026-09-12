@@ -162,12 +162,13 @@ export class ArrivalDto {
   idempotencyKey!: string;
 
   // -------------------------------------------------------------------------
-  // THE THREE FIELDS ONLY A PERSON MAY SEND (W2, Carl 7 Sep 2026).
+  // THE FOUR FIELDS ONLY A PERSON MAY SEND (W2, Carl 7 Sep 2026; the fourth
+  // added 12 Sep 2026).
   //
   // Every one of them is an answer somebody at the desk gives. A connector has
   // nobody to ask — which is precisely why the practice's default D6a exists
   // and why the patient is their own assignor on a machine push — so the
-  // service REFUSES all three out loud under any source but `reception`
+  // service REFUSES all four out loud under any source but `reception`
   // (`assertNothingForbiddenWasSent`). They are optional even then: a typed
   // arrival that answers none of them behaves exactly like a connector's.
   // -------------------------------------------------------------------------
@@ -198,6 +199,25 @@ export class ArrivalDto {
   @ValidateNested()
   @Type(() => ArrivalAssignorDto)
   assignor?: ArrivalAssignorDto;
+
+  /**
+   * WHOSE PROVIDER NUMBER THE CLAIM GOES UNDER, when it is not the person the
+   * patient came to see (Carl, 12 Sep 2026; ARRIVAL-WHO-IS-SEEN.md §3, middle
+   * row).
+   *
+   * The four keys above name WHO WAS SEEN and are never refused on billing
+   * grounds — a nurse, a registrar, a phlebotomist. This names the SERVICING
+   * PROVIDER the agreement is anchored on, and the service still refuses
+   * anybody whose `mayBeProviderOnAgreement` is false, exactly as it always
+   * did. Omitted where the person seen bills under their own number, which is
+   * the ordinary GP visit and needs nothing new.
+   *
+   * `reception` ONLY, AND THAT IS THE 7 SEPTEMBER RULING KEPT RATHER THAN
+   * REOPENED. A `supervisingProviderId` from the PMS was considered and
+   * rejected then: it would have the practice's software deciding whose name
+   * goes on a contract. A person at the desk may say it; a machine may not.
+   */
+  @IsOptional() @IsUUID() billingAffiliationId?: string;
 }
 
 /**
@@ -224,6 +244,14 @@ export class ArrivalPreviewDto {
   @IsOptional() @IsUUID() practitionerId?: string;
   @IsOptional() @IsUUID() locationId?: string;
   @IsOptional() @IsString() @MaxLength(20) providerNumber?: string;
+
+  /**
+   * WHOSE NUMBER THE CLAIM WOULD GO UNDER, where the person seen does not bill
+   * (12 Sep 2026). The preview must be able to ask the same question the
+   * pipeline will answer, or the form would show "nobody is named to bill it"
+   * to a receptionist who has just named one.
+   */
+  @IsOptional() @IsUUID() billingAffiliationId?: string;
 }
 
 /**

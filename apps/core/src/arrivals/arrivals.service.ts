@@ -24,8 +24,10 @@ import {
   decideVisitAgreement,
   detailTypeForPatientField,
   HardRuleViolation,
+  isBillingRole,
   mayBeProviderOnAgreement,
   providerIsGpFor,
+  servicesNeedABillingProvider,
   SERVICE_DESCRIPTIONS_VERSION,
   type ConfirmableDetailType,
   type CorrectablePatientField,
@@ -168,8 +170,12 @@ interface DecidedArrival {
   arrivalId: string;
   patientId: string;
   assignorId: string;
-  /** The anchor the draft is made on — the practitioner at this location. */
-  affiliationId: string;
+  /**
+   * The anchor the draft is made on — the practitioner at this location whose
+   * number the claim goes under. NULL where nobody bills this visit, in which
+   * case the decision is `none` and nothing is drafted.
+   */
+  affiliationId: string | null;
   decision: VisitAgreementDecision;
   practiceDefaultD6a: string | null;
   /** D5 — the day named by a person, else the calendar day they arrived. */
@@ -260,48 +266,80 @@ export class ArrivalsService {
      * one person on the queue twice. So a refused row falls through to be
      * decided again, and only a row that was actually acted on short-circuits.
      */
-    if (existing && existing.outcome !== 'refused') return this.receiptFor(existing, true);
+    /*
+     * A RESEND THAT SUPPLIES THE MISSING BILLING PROVIDER IS NOT A REPEAT
+     * EITHER — IT IS THE OTHER FIX (Carl, 12 Sep 2026; ARRIVAL-WHO-IS-SEEN.md
+     * §5, middle row).
+     *
+     * An arrival naming a nurse or a registrar is now RECORDED rather than
+     * thrown away, and it sits with no billing provider and nothing drafted
+     * until somebody says whose number the claim goes under. The desk's answer
+     * is the SAME walk-in with `billingAffiliationId` filled in, under the same
+     * idempotency key deliberately, so it supersedes the waiting row instead of
+     * putting one person on the queue twice.
+     *
+     * READ OFF THE ROW, NOT OFF A REASON CODE. "Accepted, nobody named to bill
+     * it, nothing drafted" is three columns; matching on the rule key that
+     * produced it would put a copy of a versioned content decision in
+     * TypeScript, which is the thing hard rule 14 exists to stop.
+     */
+    const waitingForABillingProvider =
+      existing?.outcome === 'received' && existing.affiliationId === null && existing.agreementId === null;
+    const namesABillingProviderNow = dto.billingAffiliationId !== undefined;
+    if (existing && existing.outcome !== 'refused' && !(waitingForABillingProvider && namesABillingProviderNow)) {
+      return this.receiptFor(existing, true);
+    }
 
-    const { anchor, patient } = await this.prisma.withPractice(practiceId, async (tx) => ({
-      anchor: await this.findAnchor(tx, practiceId, dto),
+    /*
+     * WHO THE PATIENT CAME TO SEE — resolved from whichever of the four keys
+     * the sender used, and NOT filtered on billing grounds (Carl, 12 Sep 2026;
+     * ARRIVAL-WHO-IS-SEEN.md §2). Anybody the practice rosters may be named
+     * here: a nurse, a phlebotomist, a registrar, a GP.
+     */
+    const { seen, patient } = await this.prisma.withPractice(practiceId, async (tx) => ({
+      seen: await this.findAnchor(tx, practiceId, dto),
       patient: await tx.patient.findFirst({
         where: { practiceId, patientRecordNumber: dto.pmsPatientRecordNumber },
       }),
     }));
 
     /*
-     * WHOSE NUMBER DOES THE CLAIM GO UNDER — asked before anything is written
-     * (Carl's ruling, 5–7 Sep 2026). The provider on an assignment of benefit
-     * is the servicing provider, never (of itself) the person who delivered
-     * the service, and an arrival naming a nurse is refused so that reception
-     * picks the provider the claim will go under. The role is now read off the
-     * affiliation the arrival resolved to, which is where it lives — the
-     * three-key guesswork the previous build needed went with the anchor.
+     * A ROLE THIS PLATFORM DOES NOT RECOGNISE IS STILL REFUSED, and after
+     * 12 September 2026 it is the only thing at this door that
+     * `provider_not_servicing` means.
+     *
+     * WHY IT CANNOT SIMPLY FALL THROUGH. Every path below asks the versioned
+     * role list two questions — may this person be the provider on an
+     * agreement, and does their work need a billing provider at all — and a
+     * role written by something that is not this platform, or left behind by a
+     * content file rolled back under a database that was not, answers neither.
+     * "We do not know what this person's services need" is not a state in which
+     * to decide that a patient owes no signature.
      */
-    if (!mayBeProviderOnAgreement(anchor.billingRole)) {
-      await this.recordRefusal(practiceId, dto, anchor, patient?.id ?? null, actor, existing?.id);
+    if (!isBillingRole(seen.billingRole)) {
+      await this.recordRefusal(practiceId, dto, seen, patient?.id ?? null, actor, existing?.id);
       throw new ArrivalRefusal(
         'provider_not_servicing',
-        `${anchor.name} is recorded as "${anchor.billingRole}" at this practice and cannot be the provider ` +
-          'on an agreement — the claim goes under somebody else’s provider number. Pick the provider the ' +
-          'claim will go under.',
-        { providerId: anchor.legacyProviderId, affiliationId: anchor.affiliationId, billingRole: anchor.billingRole },
+        `${seen.name} is recorded as "${seen.billingRole}" at this practice, which is not a role this ` +
+          'platform knows. Nothing was decided about the visit. Pick the practitioner the claim will go ' +
+          'under.',
+        { providerId: seen.legacyProviderId, affiliationId: seen.affiliationId, billingRole: seen.billingRole },
       );
     }
 
     /*
-     * AND AN ARRIVAL CANNOT ANCHOR AN AGREEMENT ON A ROW THAT NAMES NO PERSON.
-     * Only the deprecated `providerId` path can reach here: a `providers` row
-     * that matched no affiliation. The agreement it would produce could not
-     * state who signed for whom or where (s 65C(5)(a)), so reception is asked
-     * for the practitioner — the same fix, on the same screen, as a refused
-     * nurse.
+     * AND AN ARRIVAL CANNOT NAME A ROW THAT NAMES NO PERSON. Only the
+     * deprecated `providerId` path can reach here: a `providers` row that
+     * matched no affiliation. It has no practitioner and no place, so it can
+     * be neither who was seen nor who the claim goes under — an agreement made
+     * from it could not state who signed for whom or where (s 65C(5)(a)) — and
+     * reception is asked for the practitioner.
      */
-    if (!anchor.affiliationId) {
+    if (!seen.affiliationId) {
       await this.recordRefusal(
         practiceId,
         dto,
-        anchor,
+        seen,
         patient?.id ?? null,
         actor,
         existing?.id,
@@ -309,11 +347,65 @@ export class ArrivalsService {
       );
       throw new ArrivalRefusal(
         'provider_not_anchored',
-        `${anchor.name} is not linked to a practitioner at one of this practice’s locations, so an ` +
+        `${seen.name} is not linked to a practitioner at one of this practice’s locations, so an ` +
           'agreement naming them could not say who signed for whom or where. Pick the practitioner the ' +
           'claim will go under.',
-        { providerId: anchor.legacyProviderId },
+        { providerId: seen.legacyProviderId },
       );
+    }
+
+    /*
+     * WHOSE NUMBER THE CLAIM GOES UNDER — A DIFFERENT QUESTION FROM THE ONE
+     * ABOVE, and the whole of this change (Carl, 12 Sep 2026).
+     *
+     * `mayBeProviderOnAgreement` IS UNCHANGED AND IS STILL WHAT DECIDES IT
+     * (Carl's ruling, 5–7 Sep 2026; ARRIVAL-WHO-IS-SEEN.md §4.1). The provider
+     * on an assignment of benefit is the servicing provider whose number goes
+     * on the claim, never (of itself) the person who delivered the service. A
+     * nurse can no more be named here today than yesterday. What changed is
+     * only what happens when the person seen is not one: the arrival is
+     * RECORDED with them on it, and the desk is asked for the one missing
+     * field instead of being asked to overwrite the whole answer.
+     *
+     * `billingAffiliationId` IS RECEPTION-ONLY, and that is the 5–7 September
+     * ruling kept rather than reopened: a `supervisingProviderId` from the PMS
+     * was considered and rejected, because it would have the practice's
+     * software deciding whose name goes on a contract. A person at the desk may
+     * say it; a machine may not, and `assertNothingForbiddenWasSent` refuses it
+     * out loud from anything else.
+     *
+     * NULL IS A REAL ANSWER. A phlebotomist taking bloods needs no billing
+     * provider at all, and the versioned policy table — not this code — says so.
+     */
+    let billing: ArrivalAnchor | null = null;
+    if (mayBeProviderOnAgreement(seen.billingRole)) {
+      billing = seen;
+    } else if (dto.billingAffiliationId) {
+      const named = await this.prisma.withPractice(practiceId, (tx) =>
+        anchorForAffiliation(tx, dto.billingAffiliationId!),
+      );
+      if (!named) throw new NotFoundException('That billing affiliation was not found in this practice.');
+      const namedAnchor: ArrivalAnchor = { ...named, legacyProviderId: null };
+      /*
+       * THE PERSON NAMED TO BILL MUST ACTUALLY BE ABLE TO. Naming a second
+       * nurse as the supervising provider is the same mistake in a new field,
+       * and it gets the same refusal and the same reason code it always did.
+       */
+      if (!mayBeProviderOnAgreement(namedAnchor.billingRole)) {
+        await this.recordRefusal(practiceId, dto, namedAnchor, patient?.id ?? null, actor, existing?.id);
+        throw new ArrivalRefusal(
+          'provider_not_servicing',
+          `${namedAnchor.name} is recorded as "${namedAnchor.billingRole}" at this practice and cannot be ` +
+            'the provider on an agreement — the claim goes under somebody else’s provider number. Pick the ' +
+            'provider the claim will go under.',
+          {
+            providerId: null,
+            affiliationId: namedAnchor.affiliationId,
+            billingRole: namedAnchor.billingRole,
+          },
+        );
+      }
+      billing = namedAnchor;
     }
 
     /*
@@ -360,18 +452,26 @@ export class ArrivalsService {
       }
     }
 
-    const coverage = patient
-      ? await this.enduring.coverage(practiceId, {
-          patientId: patient.id,
-          /*
-           * THE PERSON, NOT THE ROW. A GP at two of this practice's locations
-           * is ONE practitioner, so an enduring agreement made at the Main
-           * Street site covers the same patient seeing them at After Hours —
-           * `enduring_coverage_is_per_practitioner_across_locations`.
-           */
-          practitionerId: anchor.practitionerId ?? undefined,
-        })
-      : { covered: false, agreementIds: [] as string[] };
+    /*
+     * COVERAGE IS ASKED ABOUT THE PERSON THE CLAIM GOES UNDER, not the person
+     * who took the bloods. An enduring agreement assigns the benefit for a
+     * practitioner's services (REQ-END-01), and where nobody bills there is no
+     * benefit and nothing to be covered by — so no billing anchor means the
+     * question is not asked at all rather than asked about the wrong person.
+     */
+    const coverage =
+      patient && billing
+        ? await this.enduring.coverage(practiceId, {
+            patientId: patient.id,
+            /*
+             * THE PERSON, NOT THE ROW. A GP at two of this practice's locations
+             * is ONE practitioner, so an enduring agreement made at the Main
+             * Street site covers the same patient seeing them at After Hours —
+             * `enduring_coverage_is_per_practitioner_across_locations`.
+             */
+            practitionerId: billing.practitionerId ?? undefined,
+          })
+        : { covered: false, agreementIds: [] as string[] };
 
     // ---------------------------------------------------------------------
     // PHASE 1 — the mirror, the assignor, the decision, the row and its event,
@@ -385,7 +485,7 @@ export class ArrivalsService {
       const assignor = await this.selfAssignorFor(tx, practiceId, dto);
 
       /*
-       * THE DECISION. Four inputs and nothing else can reach it — in
+       * THE DECISION. Six inputs and nothing else can reach it — in
        * particular there is no practice-wide coverage input, which is hard
        * rule 6 made structural rather than remembered.
        */
@@ -400,10 +500,12 @@ export class ArrivalsService {
          * there are three call sites and the second half was missing from all
          * of them.
          */
-        providerIsGp: providerIsGpFor({
-          billingRole: anchor.billingRole,
-          providerType: anchor.providerType,
-        }),
+        providerIsGp:
+          billing !== null &&
+          providerIsGpFor({
+            billingRole: billing.billingRole,
+            providerType: billing.providerType,
+          }),
         activeEnduringForProviderAndPatient: coverage.covered,
         /*
          * THE PRACTICE'S STANDING SETTING (GA-PLAN B6). Read through a cast
@@ -427,6 +529,20 @@ export class ArrivalsService {
          * somewhere a person can see and revoke it.
          */
         patientDeclinedEnduring: false,
+        /*
+         * WHO WAS SEEN, ASKED OF THE VERSIONED ROLE LIST (Carl, 12 Sep 2026;
+         * hard rule 14). Whether a phlebotomist's visit needs a billing
+         * provider at all is a row in `billing-roles.json`, not a branch here,
+         * so a new kind of practitioner is a content edit and the version
+         * travels onto the record it produced.
+         */
+        visitNeedsABillingProvider: servicesNeedABillingProvider(seen.billingRole),
+        /*
+         * AND WHETHER ANYBODY IS NAMED TO BILL IT YET. False for a nurse whose
+         * supervising provider nobody has said: the arrival is still recorded
+         * and the desk is asked for that one field.
+         */
+        billingProviderIsNamed: billing !== null,
       });
 
       const arrivedAt = new Date(dto.arrivedAt);
@@ -440,8 +556,17 @@ export class ArrivalsService {
        */
       const accepted = {
         patientId: mirror.patientId,
-        affiliationId: anchor.affiliationId,
-        providerId: anchor.legacyProviderId,
+        /*
+         * THE TWO FACTS, KEPT APART (ARRIVAL-WHO-IS-SEEN.md §2). `affiliationId`
+         * is who the claim goes under and is still restricted to a servicing
+         * provider — NULL while nobody has been named, which is a waiting state
+         * the desk can see and fix. `seeingAffiliationId` is who the patient
+         * came to see and is never refused on billing grounds. On an ordinary
+         * GP arrival both hold the same id and nothing about today changes.
+         */
+        affiliationId: billing?.affiliationId ?? null,
+        seeingAffiliationId: seen.affiliationId,
+        providerId: seen.legacyProviderId,
         providerNumber: dto.providerNumber ?? null,
         assignorId: assignor.id,
         patientCreated: mirror.created,
@@ -502,10 +627,20 @@ export class ArrivalsService {
            * named the location edge could not answer it without a join into a
            * table the vault does not hold.
            */
-          affiliationId: anchor.affiliationId ?? '',
-          practitionerId: anchor.practitionerId ?? '',
-          locationId: anchor.locationId ?? '',
-          legacyProviderId: anchor.legacyProviderId ?? '',
+          affiliationId: billing?.affiliationId ?? '',
+          practitionerId: billing?.practitionerId ?? '',
+          /*
+           * AND WHO THE PATIENT CAME TO SEE, WHICH IS NOT ALWAYS THE SAME
+           * PERSON (Carl, 12 Sep 2026). On every event before this one the two
+           * were one id, because an arrival naming anybody else was refused.
+           * IDS ONLY — no name, no role words, nothing a person is called
+           * (hard rule 9, REQ-LOG-08).
+           */
+          seeingAffiliationId: seen.affiliationId ?? '',
+          seeingPractitionerId: seen.practitionerId ?? '',
+          /* Where the patient physically is, which is the seen practitioner's site. */
+          locationId: seen.locationId ?? '',
+          legacyProviderId: seen.legacyProviderId ?? '',
           source: dto.source,
           patientCreated: mirror.created,
           detailTypesChanged: mirror.changedTypes.join(','),
@@ -515,14 +650,28 @@ export class ArrivalsService {
           policyVersion: decision.policyVersion,
           decidedBy: 'visit_policy',
           /*
-           * WHOSE NUMBER THE CLAIM GOES UNDER, and which list said so. Hard
-           * rule 14: the role is versioned content, and an agreement made
-           * under it should be answerable in 2028 without guessing which
+           * THE ROLE OF THE PRACTITIONER THE SENDER NAMED, and which list said
+           * so. Hard rule 14: the role is versioned content, and an agreement
+           * made under it should be answerable in 2028 without guessing which
            * version of the list was live.
+           *
+           * IT IS THE SEEN PERSON'S ROLE, which is what it has always been:
+           * before 12 September 2026 the sender could only name somebody who
+           * billed, so there was one person and one role. `affiliationId`
+           * above says who the claim goes under; this says what the person in
+           * front of the patient is recorded as, which is the fact that
+           * decided the path.
            */
-          billingRole: anchor.billingRole,
+          billingRole: seen.billingRole,
           billingRolesVersion: BILLING_ROLES_VERSION,
-          billingRoleResolved: anchor.billingRoleRecorded,
+          billingRoleResolved: seen.billingRoleRecorded,
+          /*
+           * AND WHETHER ANYBODY IS NAMED TO BILL IT. False is a legitimate,
+           * complete state for a phlebotomist's visit and a waiting one for a
+           * nurse's; the reason code beside it says which (ARRIVAL-WHO-IS-SEEN
+           * §5).
+           */
+          billingProviderIsNamed: billing !== null,
           /*
            * WHO SENT IT, BY ID (W2). An id from a signed token, never a name
            * — the same rule every other payload in this file follows
@@ -540,7 +689,13 @@ export class ArrivalsService {
         arrivalId: arrival.id,
         patientId: mirror.patientId,
         assignorId: assignor.id,
-        affiliationId: anchor.affiliationId!,
+        /*
+         * THE AGREEMENT ANCHOR, WHICH MAY NOT EXIST YET. Null where nobody
+         * bills this visit — a phlebotomist's, or a nurse's before the
+         * supervising provider is named — and in both of those the decision is
+         * `none` and the early return below stops before anything is drafted.
+         */
+        affiliationId: billing?.affiliationId ?? null,
         decision,
         practiceDefaultD6a: practice.defaultServiceDescription,
         /*
@@ -558,19 +713,32 @@ export class ArrivalsService {
 
     if (decided.decision.type === 'none') {
       /*
-       * NOTHING IS DRAFTED, AND THAT IS THE ANSWER (REQ-END-01). A live
-       * enduring agreement already assigns this provider's services for this
-       * patient; asking them to sign again would be collecting a second
-       * consent for a service the first one covers.
+       * NOTHING IS DRAFTED, AND `none` HAS THREE MEANINGS — ALL OF THEM REAL
+       * ANSWERS, TOLD APART BY THE REASON CODE AND NEVER BY A BRANCH HERE
+       * (Carl, 12 Sep 2026; ARRIVAL-WHO-IS-SEEN.md §5).
        *
-       * WHAT IS STILL OWED: the queue line that says so — "covered by an
-       * ongoing agreement with Dr X, nothing to sign". Both queue reads live
-       * in modules this build does not own (`patients`, `tablet-sessions`), so
-       * the fact is recorded here and on the event, and the line is a
+       *   * ALREADY COVERED (REQ-END-01). A live enduring agreement assigns
+       *     this practitioner's services for this patient; asking again would
+       *     collect a second consent for a service the first one covers.
+       *   * SEEN BY SOMEBODY WHO DOES NOT BILL. A phlebotomist taking bloods
+       *     generates no claim from the practice, so there is no benefit to
+       *     assign. Complete, not pending: the platform correctly asks the
+       *     patient for nothing.
+       *   * A BILLING PROVIDER IS NOT NAMED YET. The visit does need a claim
+       *     and nobody has said whose number it goes under. The walk-in is
+       *     recorded, the patient exists, and one field is missing.
+       *
+       * WHAT IS STILL OWED: the queue lines that say each of those in words,
+       * with a link to where the last one is fixed. Both queue reads live in
+       * modules this build does not own (`patients`, `tablet-sessions`), so
+       * the reason is recorded here and on the event, and the line is a
        * follow-up for the work-page owner rather than a reach across a
        * boundary (CLAUDE.md §4).
        */
-      this.logger.log(`Arrival ${decided.arrivalId}: covered by an ongoing agreement — nothing drafted.`);
+      this.logger.log(
+        `Arrival ${decided.arrivalId}: nothing drafted (${decided.decision.reason}, ` +
+          `${decided.decision.policyVersion}).`,
+      );
       return this.receiptFor(await this.reread(practiceId, decided.arrivalId), false);
     }
 
@@ -580,7 +748,12 @@ export class ArrivalsService {
     const draft = await this.agreements.createDraft(practiceId, {
       type: decided.decision.type,
       enduringPathway: decided.decision.enduringPathway,
-      affiliationId: decided.affiliationId,
+      /*
+       * NON-NULL BY THE TIME WE ARE HERE: an arrival with no billing provider
+       * decides `none` (the policy table's `billing_provider_not_yet_named`
+       * row) and returned above, so a draft is never reached without an anchor.
+       */
+      affiliationId: decided.affiliationId!,
       patientId: decided.patientId,
       // D7 is explicit and never inferred: the person who arrived is signing
       // for themselves. Somebody else signing is a change made at the desk
@@ -773,8 +946,8 @@ export class ArrivalsService {
    * is simply false, which is the truth about somebody with no record here.
    */
   async preview(practiceId: string, dto: ArrivalPreviewDto): Promise<ArrivalPreview> {
-    const { anchor, patient, practice } = await this.prisma.withPractice(practiceId, async (tx) => ({
-      anchor: await this.findAnchor(tx, practiceId, dto),
+    const { seen, patient, practice } = await this.prisma.withPractice(practiceId, async (tx) => ({
+      seen: await this.findAnchor(tx, practiceId, dto),
       patient: await tx.patient.findFirst({
         where: { practiceId, patientRecordNumber: dto.pmsPatientRecordNumber },
         select: { id: true },
@@ -784,56 +957,99 @@ export class ArrivalsService {
     if (!practice) throw new NotFoundException('Practice not found.');
 
     const locationLabel = await this.prisma.withPractice(practiceId, async (tx) =>
-      anchor.locationId ? ((await this.locationLabels(tx, [anchor])).get(anchor.locationId) ?? null) : null,
+      seen.locationId ? ((await this.locationLabels(tx, [seen])).get(seen.locationId) ?? null) : null,
     );
 
-    // The two refusals the pipeline would make, said as answers rather than
-    // as errors. Both leave `decision` null: nothing could be decided, and the
-    // reason is why.
-    if (!mayBeProviderOnAgreement(anchor.billingRole) || !anchor.affiliationId) {
+    /*
+     * THE TWO REFUSALS THE PIPELINE WOULD STILL MAKE, said as answers rather
+     * than as errors. Both leave `decision` null: nothing could be decided, and
+     * the reason is why.
+     *
+     * A NURSE IS NO LONGER ONE OF THEM (Carl, 12 Sep 2026). Being seen by
+     * somebody who does not bill is a DECISION now, from the versioned policy
+     * table, and this shows that answer exactly as the pipeline will record it
+     * — a preview that could disagree with the thing it previews would be worse
+     * than no preview at all.
+     */
+    if (!isBillingRole(seen.billingRole) || !seen.affiliationId) {
       return {
         decision: null,
         policyVersion: '',
-        providerName: anchor.name,
+        providerName: seen.name,
         locationLabel,
         coveringAgreementId: null,
         blocked: {
-          reason: anchor.affiliationId ? 'provider_not_servicing' : 'provider_not_anchored',
-          billingRole: anchor.billingRoleRecorded ? anchor.billingRole : null,
+          reason: seen.affiliationId ? 'provider_not_servicing' : 'provider_not_anchored',
+          billingRole: seen.billingRoleRecorded ? seen.billingRole : null,
         },
       };
     }
 
-    const coverage = patient
-      ? await this.enduring.coverage(practiceId, {
-          patientId: patient.id,
-          // THE PERSON, NOT THE ROW — the same read the pipeline makes, for
-          // the same reason (hard rule 6, REQ-END-01).
-          practitionerId: anchor.practitionerId ?? undefined,
-        })
-      : { covered: false, agreementIds: [] as string[] };
+    /*
+     * WHO WOULD BILL IT — the same two steps the pipeline takes, over the same
+     * unchanged `mayBeProviderOnAgreement`.
+     */
+    let billing: AgreementAnchor | null = null;
+    if (mayBeProviderOnAgreement(seen.billingRole)) {
+      billing = seen;
+    } else if (dto.billingAffiliationId) {
+      const named = await this.prisma.withPractice(practiceId, (tx) =>
+        anchorForAffiliation(tx, dto.billingAffiliationId!),
+      );
+      if (!named) throw new NotFoundException('That billing affiliation was not found in this practice.');
+      if (!mayBeProviderOnAgreement(named.billingRole)) {
+        return {
+          decision: null,
+          policyVersion: '',
+          providerName: seen.name,
+          locationLabel,
+          coveringAgreementId: null,
+          blocked: { reason: 'provider_not_servicing', billingRole: named.billingRole },
+        };
+      }
+      billing = named;
+    }
+
+    const coverage =
+      patient && billing
+        ? await this.enduring.coverage(practiceId, {
+            patientId: patient.id,
+            // THE PERSON, NOT THE ROW — the same read the pipeline makes, for
+            // the same reason (hard rule 6, REQ-END-01).
+            practitionerId: billing.practitionerId ?? undefined,
+          })
+        : { covered: false, agreementIds: [] as string[] };
 
     const decision = decideVisitAgreement({
-      providerIsGp: providerIsGpFor({ billingRole: anchor.billingRole, providerType: anchor.providerType }),
+      providerIsGp:
+        billing !== null &&
+        providerIsGpFor({ billingRole: billing.billingRole, providerType: billing.providerType }),
       activeEnduringForProviderAndPatient: coverage.covered,
       practiceOffersEnduringByDefault:
         (practice as unknown as { enduringByDefault?: boolean | null }).enduringByDefault ?? true,
       // Nothing stores a decline yet — the pipeline says the same, in the same
       // words, and both will change in one place when something does.
       patientDeclinedEnduring: false,
+      // The same two inputs the pipeline supplies, from the same content file.
+      visitNeedsABillingProvider: servicesNeedABillingProvider(seen.billingRole),
+      billingProviderIsNamed: billing !== null,
     });
 
     return {
       decision: { type: decision.type, reason: decision.reason },
       policyVersion: decision.policyVersion,
-      providerName: anchor.name,
+      providerName: seen.name,
       locationLabel,
       /*
        * WHICH AGREEMENT SAYS "NOTHING TO SIGN", so the line can LINK to it
        * rather than assert it (CLAUDE.md §7: shortcuts to the answer). Only
-       * where coverage is what decided; null otherwise.
+       * where COVERAGE is what decided — `none` also means "seen by somebody
+       * who does not bill" and "nobody is named to bill it yet", and neither of
+       * those has an agreement to point at. Read off `coverage` rather than off
+       * the rule key, so renaming a row in the content file cannot break it.
        */
-      coveringAgreementId: decision.type === 'none' ? (coverage.agreementIds[0] ?? null) : null,
+      coveringAgreementId:
+        decision.type === 'none' && coverage.covered ? (coverage.agreementIds[0] ?? null) : null,
       blocked: null,
     };
   }
@@ -1299,15 +1515,18 @@ export class ArrivalsService {
      */
     if (source !== ARRIVAL_SOURCE_TYPED_BY_A_PERSON) {
       const typed = sentFieldNames.filter((name) =>
-        ['serviceDate', 'serviceDescription', 'assignor'].includes(name),
+        ['serviceDate', 'serviceDescription', 'assignor', 'billingAffiliationId'].includes(name),
       );
       if (typed.length > 0) {
         throw new BadRequestException(
           `An arrival from "${source ?? 'an unnamed source'}" may not carry ${typed.join(', ')}. The day ` +
-            'the service is for, the Basic Service Description and who is signing are answers a person ' +
-            'at the desk gives — a practice management system has nobody to ask, which is why the ' +
-            'practice’s default description exists (REQ-REG-01 D6a) and why the patient is their own ' +
-            'assignor on a machine push (D7, hard rule 10). Send source "reception" if a person typed this.',
+            'the service is for, the Basic Service Description, who is signing and whose provider number ' +
+            'the claim goes under are answers a person at the desk gives — a practice management system ' +
+            'has nobody to ask, which is why the practice’s default description exists (REQ-REG-01 ' +
+            'D6a) and why the patient is their own assignor on a machine push (D7, hard rule 10). A ' +
+            'supervising provider sent by the PMS was considered and rejected on 7 September 2026 — it ' +
+            'would have the practice’s software deciding whose name goes on a contract. Send source ' +
+            '"reception" if a person typed this.',
         );
       }
     }
@@ -1498,6 +1717,13 @@ export class ArrivalsService {
         type: (row.visitDecision ?? 'none') as ArrivalReceipt['decision']['type'],
         reason: row.decisionReason ?? '',
       },
+      /*
+       * WHO THE PATIENT CAME TO SEE, BACK TO THE SENDER (ARRIVAL-WHO-IS-SEEN
+       * §2). The same id it sent on an ordinary GP arrival, and the nurse or
+       * phlebotomist it sent on the ones that used to be refused — so a caller
+       * can see for itself that the person it named was kept.
+       */
+      seeingAffiliationId: row.seeingAffiliationId,
       agreementId: row.agreementId,
       policyVersion: row.policyVersion ?? '',
       repeat,

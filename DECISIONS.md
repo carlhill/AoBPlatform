@@ -473,6 +473,69 @@ is seen as normal and signs at the desk. Pre-check-in is a convenience.
 than one — in which case the answer is better sequencing inside one flow, never
 one bundled consent.
 
+## D-2026-09-12-04 — Who names the billing provider for a nurse's arrival, and how a waiting arrival is fixed
+
+**Date:** 12 September 2026. **Decided by:** Claude, mid-build, from Carl's
+5–7 September ruling — **an assumption for Carl to confirm or overturn**, written
+up as one rather than left in a code comment (wow.md §9).
+
+**Asked because** `ARRIVAL-WHO-IS-SEEN.md` §3 says a `works_under_provider`
+arrival is accepted and the agreement is drafted "under the supervising
+provider, **once named**", and §5 says "the desk offers the fix, with the person
+seen already filled in" — but the spec does not say who may name that provider,
+by what route, or what carries the fix. Without an answer, "once named" is
+unreachable and the middle row of §3 has no ending.
+
+**The decision, in three parts.**
+
+1. **The arrival contract gains one optional field, `billingAffiliationId`** —
+   whose provider number the claim goes under, when it is not the person the
+   patient came to see. The four existing keys keep their meaning and name WHO
+   WAS SEEN.
+2. **It is `reception` only**, fenced out loud from every other source by
+   `assertNothingForbiddenWasSent`, exactly as D5, D6a and D7 are. This is the
+   7 September ruling KEPT rather than reopened: a `supervisingProviderId` from
+   the PMS was considered then and rejected, because it would have the
+   practice's software deciding whose name goes on a contract. A person at the
+   desk may say it; a machine may not.
+3. **The fix is a resend under the same idempotency key**, not a new endpoint.
+   An arrival that was accepted, has no billing provider and drafted nothing is
+   re-decided when the same key comes back with one named — the same shape a
+   refused arrival's retry has always had, and it supersedes the waiting row
+   rather than putting one person on the queue twice.
+
+**Why a resend rather than an endpoint like `POST /arrivals/:id/provider`.**
+That endpoint replays the sender's own held message (`refusedPayload`), and the
+database refuses to hold a payload on anything but a refused arrival
+(`arrivals_payload_held_only_while_refused`). A waiting arrival is ACCEPTED — its
+patient row is the record from that moment (REQ-DATA-10) — so there is no held
+message to replay, and holding one would be a second copy of the patient record
+sitting in a JSON column. Widening that constraint to make the endpoint work
+would trade a clean invariant for a route.
+
+**`mayBeProviderOnAgreement` is untouched by all of this** (hard rule 6's
+neighbour). `billingAffiliationId` runs the identical check the arrival always
+ran: naming a nurse there is refused with `provider_not_servicing`, pinned by
+`a_nurse_still_cannot_be_the_provider_on_an_agreement` in both
+`packages/domain/src/billing-roles.test.ts` and
+`apps/core/test/arrivals.e2e-spec.ts`.
+
+**And `provider_not_servicing` narrowed rather than disappeared.** At the arrival
+door it now means only two things: a billing role this platform does not
+recognise (fail-closed — "we do not know what this person's services need" is
+never allowed to become "nothing needs signing"), and a `billingAffiliationId`
+naming somebody who may not be the provider on an agreement. An arrival naming
+nobody resolvable is still refused, still with the code it had —
+`provider_not_anchored` — which is `ARRIVAL-WHO-IS-SEEN.md` §5's last row read as
+"this case is unchanged", the safest reading of a row whose code column is
+loose.
+
+**What would reopen it.** Carl saying the desk should get a first-class endpoint
+and screen for naming the billing provider (in which case the payload-holding
+constraint is the thing to revisit, deliberately); or D-01 resolving in a way
+that makes the PMS the natural place to state a supervising provider, which
+would reopen the 7 September ruling itself and not just this.
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
@@ -494,3 +557,4 @@ one bundled consent.
 | 12 Sep | Passkey enrolment carries per-platform steps, in a Keycloak login theme | **D-2026-09-12-01 above** |
 | 12 Sep | We offer the queue, not the calendar — no scheduling product | **D-2026-09-12-02 above** |
 | 12 Sep | A substitution asks two questions: the doctor first, the benefit second | **D-2026-09-12-03 above** |
+| 12 Sep | A nurse's arrival waits for a billing provider named by RECEPTION, and the fix is a resend | **D-2026-09-12-04 above** |

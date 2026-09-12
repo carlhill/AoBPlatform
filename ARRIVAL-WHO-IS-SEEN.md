@@ -115,3 +115,4 @@ than the whole arrival being rejected.
 | Date | Change |
 |---|---|
 | 12 Sep 2026 | v1.0. Written to specify the arrival change Carl asked for, before building it. |
+| 12 Sep 2026 | **Built.** All of §§2–7 landed: `Arrival.seeingAffiliationId` (migration `20260912010000_arrival_who_is_seen`, backfilled), `servicesNeedABillingProvider` on `billing-roles.json` (`billing-roles-2026-09-2`), the two new rows in `visit-agreement-policy.json` (`visit-policy-3`), and every named test in §7. §8 held: nothing in the nurse's queue page, the account roles, or billing. One thing §3's middle row left open — WHO names the supervising provider, and by what route — is answered in `DECISIONS.md` D-2026-09-12-04 as an assumption for Carl: an optional, **reception-only** `billingAffiliationId` on the arrival, and a resend under the same idempotency key as the fix. |

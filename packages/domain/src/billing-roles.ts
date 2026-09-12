@@ -65,6 +65,24 @@ export interface BillingRoleOption {
    * provider type.
    */
   readonly mayBeProviderOnAgreement: boolean;
+  /**
+   * DOES A SERVICE BY SOMEBODY IN THIS ROLE NEED A BILLING PROVIDER NAMED AT
+   * ALL — a different question from the one above, and the whole of Carl's
+   * blood-test case (12 Sep 2026; ARRIVAL-WHO-IS-SEEN.md §3).
+   *
+   * TRUE for a servicing provider (they need one, and they ARE one) and for
+   * somebody working under a provider (they need one, and it is somebody
+   * else — so an arrival naming them is RECORDED and waits rather than being
+   * thrown away). FALSE for a role that generates no Medicare claim from the
+   * practice: a phlebotomist taking bloods needs no billing provider, so no
+   * agreement is drafted and the visit decision `none` is a complete answer.
+   *
+   * IT IS NOT A BILLING JUDGEMENT. It does not say who may claim for a
+   * specimen collection — this platform answers no billing questions
+   * (ARRIVAL-WHO-IS-SEEN.md §8) — only whether an agreement can exist here at
+   * all without a provider number to anchor it on.
+   */
+  readonly servicesNeedABillingProvider: boolean;
 }
 
 export interface BillingRoleContent {
@@ -122,8 +140,29 @@ export function parseBillingRoleContent(raw: unknown): BillingRoleContent {
     if (typeof option.mayBeProviderOnAgreement !== 'boolean') {
       return fail(`options[${index}].mayBeProviderOnAgreement must be a boolean`);
     }
+    if (typeof option.servicesNeedABillingProvider !== 'boolean') {
+      return fail(`options[${index}].servicesNeedABillingProvider must be a boolean`);
+    }
+    /*
+     * A ROLE THAT MAY BE THE PROVIDER NEEDS ONE — ITSELF. The pair
+     * `{ mayBeProviderOnAgreement: true, servicesNeedABillingProvider: false }`
+     * says "this person may be named on the contract, and no contract is
+     * needed", which is two answers to one question. It would send an ordinary
+     * GP arrival down the phlebotomist's path and quietly stop drafting
+     * agreements for a whole practice, so it is refused at load.
+     */
+    if (option.mayBeProviderOnAgreement && !option.servicesNeedABillingProvider) {
+      return fail(
+        `options[${index}].key "${option.key}" may be the provider on an agreement but says its services ` +
+          'need no billing provider. A role that may be named on the contract needs one — itself',
+      );
+    }
 
-    return { key: option.key, mayBeProviderOnAgreement: option.mayBeProviderOnAgreement };
+    return {
+      key: option.key,
+      mayBeProviderOnAgreement: option.mayBeProviderOnAgreement,
+      servicesNeedABillingProvider: option.servicesNeedABillingProvider,
+    };
   });
 
   const servicing = options.find((o) => o.key === DEFAULT_BILLING_ROLE);
@@ -178,6 +217,27 @@ export function isBillingRole(value: string): boolean {
  */
 export function mayBeProviderOnAgreement(billingRole: string): boolean {
   return billingRoleOption(billingRole)?.mayBeProviderOnAgreement === true;
+}
+
+/**
+ * DOES A VISIT TO SOMEBODY IN THIS ROLE NEED A BILLING PROVIDER AT ALL?
+ * (Carl, 12 Sep 2026; ARRIVAL-WHO-IS-SEEN.md §3.)
+ *
+ * The second of the two questions a billing role answers, and the one that
+ * lets a patient who came only for a blood test be arrived. A phlebotomist
+ * generates no Medicare claim from the practice, so their visit needs no
+ * billing provider, no agreement and nothing from the patient — and `none` is
+ * a correct, complete answer rather than a refusal.
+ *
+ * AN UNKNOWN ROLE ANSWERS YES, which is the fail-closed direction here and the
+ * opposite of `mayBeProviderOnAgreement`'s. "We do not recognise this role" can
+ * never be allowed to mean "therefore nothing needs signing": that would turn
+ * a rolled-back content file into a practice that silently stopped capturing
+ * consent. It means "we still need somebody to name", and the caller refuses
+ * the arrival with `provider_not_servicing` before it ever gets this far.
+ */
+export function servicesNeedABillingProvider(billingRole: string): boolean {
+  return billingRoleOption(billingRole)?.servicesNeedABillingProvider !== false;
 }
 
 /**
