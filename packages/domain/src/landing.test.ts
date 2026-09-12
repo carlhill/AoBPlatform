@@ -114,11 +114,30 @@ describe('choosing a practice', () => {
       expect(landingPath({ roles: ['provider'] })).toBe('/help');
     });
 
-    it('yields to a practice claim when somebody has both', () => {
-      // One person, two jobs. The practice hub is the one with work waiting.
+    it('a_practitioner_signing_in_at_a_practice_lands_on_their_own_page', () => {
+      /*
+       * REVERSED BY CARL, 12 Sep 2026 (PRACTITIONER-QUEUE-PAGE.md §1). This
+       * used to expect `/practice/setup` on the reasoning that "the practice
+       * hub is the one with work waiting". It is the ADMINISTRATOR's page, and
+       * sending a provider there is how a person learns to ignore their own
+       * home screen. Both claims now mean the practitioner's page AT that
+       * practice — the narrower fact, which is the same ordering rule that
+       * makes a practice claim beat a platform role.
+       */
       expect(landingPath({ roles: ['provider'], practitionerId: 'p1', practiceId: 'prac1' })).toBe(
+        '/practice/practitioner',
+      );
+      // And never the setup hub, which is the whole point of the rule.
+      expect(landingPath({ roles: ['provider'], practitionerId: 'p1', practiceId: 'prac1' })).not.toBe(
         '/practice/setup',
       );
+    });
+
+    it('leaves a practice user who is not a practitioner exactly where they were', () => {
+      // The reversal above must not move anybody else. A manager, a
+      // receptionist and an administrator all still land on the setup hub.
+      expect(landingPath({ practiceId: 'prac1' })).toBe('/practice/setup');
+      expect(landingPath({ roles: ['front_desk'], practiceId: 'prac1' })).toBe('/practice/setup');
     });
 
     it('still honours where they were heading before signing in', () => {

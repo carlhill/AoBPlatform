@@ -353,6 +353,55 @@ export const PAGES: Readonly<Record<string, PageRule>> = {
   },
 
   /*
+   * A PRACTITIONER'S HOME INSIDE A PRACTICE (Carl, 12 Sep 2026;
+   * PRACTITIONER-QUEUE-PAGE.md §1).
+   *
+   * NOT A DUPLICATE OF `/practitioner`, AND BOTH SHOULD EXIST. `/practitioner`
+   * is about ME, ACROSS PRACTICES — my details, my affiliations, what has been
+   * sent to me — and it follows the person wherever they work. This is MY WORK
+   * AT THIS PRACTICE, TODAY, and it disappears when the affiliation does.
+   *
+   * `practitioner` ALONE, because the page is the practitioner's own home and
+   * has nothing on it a practice user needs. The queue beneath it is the
+   * shared surface, and it names its own audiences.
+   */
+  '/practice/practitioner': {
+    audiences: ['practitioner'],
+    why: 'Where a practitioner lands when they sign in at a practice: who they are, which practice, and the way to their waiting list. It exists so a provider does not land on the administrator’s setup hub.',
+  },
+
+  /*
+   * WHO IS WAITING FOR ME, AND IS THEIR PAPERWORK DONE
+   * (PRACTITIONER-QUEUE-PAGE.md §3).
+   *
+   * TWO AUDIENCES, TWO MODES, ONE PAGE (Carl, 12 Sep 2026, widening §3):
+   *
+   *   - `practitioner` sees THEIR OWN list and only ever their own. §4.2 —
+   *     "Never show another practitioner's list" — and it is enforced at the
+   *     query rather than here: this table answers "may this audience open the
+   *     page", which is coarse, and coarse is not good enough for a rule whose
+   *     failure is one provider reading another's waiting room. The server
+   *     resolves whose list it is from the token's own practitioner claim, so
+   *     there is no parameter in which to ask for somebody else's.
+   *
+   *   - `practice` — an administrator, a manager or reception — sees EVERY
+   *     practitioner's list at this practice, grouped. Knowing who is waiting
+   *     for whom is reception's job, and for them the grouping is the whole
+   *     point. It grants nothing the front desk page does not already show:
+   *     the same practice-scoped read, behind the same RLS, with strictly less
+   *     on it.
+   *
+   * ITS OWN ENTRY RATHER THAN `matchesChildren` ON THE PAGE ABOVE. The parent
+   * is `practitioner`-only and this is wider; inheriting would have made the
+   * widening invisible, and an unclassified child must fail closed rather than
+   * be answered for by its parent.
+   */
+  '/practice/practitioner/waiting': {
+    audiences: ['practitioner', 'practice'],
+    why: 'Who is waiting today and whether their paperwork is done. A practitioner sees only their own list; an administrator, manager or receptionist sees every practitioner’s, grouped, because knowing who is waiting for whom is the front desk’s job. It reports and never gates — nothing on it can stop a patient being seen.',
+  },
+
+  /*
    * PRACTITIONER. Their own affiliations and the notices sent to them, and
    * nothing about a practice's other people. A practitioner works at several
    * practices over time and the platform must never become a directory of who

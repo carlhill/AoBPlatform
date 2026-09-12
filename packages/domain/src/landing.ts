@@ -73,6 +73,38 @@ export function landingPath(input: LandingInput): string {
   // honour, so fall through to deciding one.
   if (intended !== '/') return intended;
 
+  /*
+   * A PRACTITIONER SIGNING IN AT A PRACTICE LANDS ON THEIR OWN PAGE, NEVER ON
+   * THE SETUP HUB (Carl, 12 Sep 2026; PRACTITIONER-QUEUE-PAGE.md §1, ROLES.md
+   * §6 rule 5).
+   *
+   * AND THIS FUNCTION IS THE ONE OBVIOUS HOME FOR THE RULE. ROLES.md §7 lists
+   * "where the landing rule lives" as open, and the answer is: here, with the
+   * other three. Landing is a routing decision ON TOP OF gating, and
+   * `page-access.ts` expresses only the gating — it says which doors OPEN, not
+   * which one somebody is shown first. A redirect in `/practice/setup` that
+   * bounced practitioners away would be the alternative, and it is the shape
+   * this file's own docstring already warns about: three copies of "where
+   * should this person go", drifting, with the drift showing up as somebody
+   * landing on a page that is not theirs. The callers — the OIDC callback, the
+   * root page, any gate holding an unexpected session — already ask this
+   * function and need no change.
+   *
+   * BEFORE THE PLAIN PRACTICE CASE, because it is the NARROWER fact, which is
+   * the same ordering rule the practice claim beats a platform role on. It
+   * REVERSES the earlier answer for somebody holding both claims — that person
+   * used to land on `/practice/setup` on the reasoning that "the practice hub
+   * is the one with work waiting". Carl's decision is that a provider's own
+   * work is waiting too, and the setup hub is the ADMINISTRATOR's page:
+   * sending a provider there is how a person learns to ignore their own home
+   * screen.
+   *
+   * A PRACTITIONER WITH NO PRACTICE CLAIM STILL GOES TO `/practitioner`, below
+   * — that is the cross-practice view of themselves, and it is a different
+   * page answering a different question (§1).
+   */
+  if (isPracticeUser(input) && isPractitioner(input)) return '/practice/practitioner';
+
   if (isPracticeUser(input)) return '/practice/setup';
   /*
    * THE ORGANISATION LIST, not the review queue.

@@ -195,6 +195,40 @@ describe('navigation that does not lie', () => {
     expect(forOrdinary).not.toContain('/practice/queue');
   });
 
+  /*
+   * THE PRACTITIONER'S PAGES AT A PRACTICE (PRACTITIONER-QUEUE-PAGE.md §1,
+   * §3; Carl 12 Sep 2026).
+   */
+  it('gives a practitioner their own home at a practice, and reception no reason to open it', () => {
+    const practitioner = audiencesOf({ practitionerId: 'pr1' });
+    const reception = audiencesOf({ practiceId: 'p1' });
+
+    expect(mayReach('/practice/practitioner', practitioner)).toBe(true);
+    expect(mayReach('/practice/practitioner', reception)).toBe(false);
+  });
+
+  it('opens the waiting list to reception as well, because knowing who is waiting for whom is their job', () => {
+    // Carl, 12 Sep 2026, widening §3: a practitioner sees their own list, an
+    // administrator, manager or receptionist sees every practitioner's,
+    // grouped. WHOSE list is resolved from the token at the query, never here.
+    const practitioner = audiencesOf({ practitionerId: 'pr1' });
+    const reception = audiencesOf({ practiceId: 'p1' });
+    const admin = audiencesOf({ practiceId: 'p1', consoleRole: 'admin' });
+    const stranger = audiencesOf({});
+
+    for (const who of [practitioner, reception, admin]) {
+      expect(mayReach('/practice/practitioner/waiting', who)).toBe(true);
+    }
+    expect(mayReach('/practice/practitioner/waiting', stranger)).toBe(false);
+  });
+
+  it('does not let the practitioner landing page answer for its own child', () => {
+    // `matchesChildren` is opt-in, and the parent is the NARROWER rule. An
+    // unclassified page beneath it must still fail closed rather than inherit.
+    expect(ruleFor('/practice/practitioner/waiting')).toBe(PAGES['/practice/practitioner/waiting']);
+    expect(ruleFor('/practice/practitioner/something-nobody-classified')).toBeNull();
+  });
+
   it('every page names at least one audience', () => {
     // A rule with an empty audience list is unreachable by anybody, which is
     // never what somebody meant to write.

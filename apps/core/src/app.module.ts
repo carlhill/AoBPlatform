@@ -25,6 +25,7 @@ import { TemplatesModule } from './templates/templates.module';
 import { PmsModule } from './pms/pms.module';
 import { AutoCaptureModule } from './auto-capture/auto-capture.module';
 import { ArrivalsModule } from './arrivals/arrivals.module';
+import { PractitionerQueueModule } from './practitioner-queue/practitioner-queue.module';
 import { InboundModule } from './inbound/inbound.module';
 import { AgreeModule } from './agree/agree.module';
 import { CorrespondenceModule } from './correspondence/correspondence.module';
@@ -80,6 +81,9 @@ import { AgreementCopyModule } from './agreement-copy/agreement-copy.module';
     PmsModule,
     AutoCaptureModule,
     ArrivalsModule,
+    // Who is waiting for me today, and is their paperwork done
+    // (PRACTITIONER-QUEUE-PAGE.md). A read-only module: no writes, no events.
+    PractitionerQueueModule,
     InboundModule,
     AgreeModule,
     ReconciliationModule,

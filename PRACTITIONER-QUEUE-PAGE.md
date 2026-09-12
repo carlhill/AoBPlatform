@@ -122,6 +122,46 @@ The flattening to three words belongs in the domain package beside the front
 desk's own view function, so the two pages cannot disagree about what "Done"
 means.
 
+## 5a. What was built, 12 September 2026
+
+Sections 1, 3, 4 and 5 are built. What differs from the plan above, and why:
+
+**The audience is wider than §3 assumed** (Carl, 12 Sep 2026): *"we need a
+better starting point for the practice-admin, practice-manager or
+practice-reception who will also be able to see the practitioner-queue."* So
+`/practice/practitioner/waiting` has two audiences and two modes — a
+`practitioner` sees their own list and only ever their own, and a `practice`
+user sees every practitioner's, grouped. The mode is decided by the SERVER from
+the token and reported back in `scope`; the browser cannot ask for the other
+one. Everything else in §4 is unchanged.
+
+**There is no card-number column.** §3 wants the practice's queue ticket where
+they use them, from `Arrival.queueTicket` — and that column does not exist. A
+column that is always blank is worse than no column, and a number derived from
+something else would be mistaken for the one the room is being called by. It is
+left out entirely until the field lands.
+
+**There is a fourth word, and Carl should confirm it.** §3 names three: Done,
+With the patient now, Not yet. `ARRIVAL-WHO-IS-SEEN.md` §3 then landed a case
+this section was written before — a patient who came only for a specimen
+collection is seen by somebody who bills nothing, so the visit decision is
+`none` and *"that is a correct, complete answer"*. Neither "Not yet" (a
+permanent false alarm) nor "Done" (a signature that does not exist) is honest,
+so that row reads **Nothing to sign**. If Carl wants three words, the change is
+one line plus its string.
+
+**"Ask reception" is not built**, per §6: the read-only list is the first
+version.
+
+**It refreshes quietly**, taking §6's suggestion: a thirty-second poll, no
+sound, no badge, rows keyed on the arrival so a re-read replaces text in place.
+
+**Where it is.** `packages/domain/src/practitioner-queue.ts` (the one
+flattening, and the row shape with no field for a clinical fact),
+`apps/core/src/practitioner-queue/` (the read — arrivals for today, filtered at
+the query, nothing written), `apps/web/app/practice/practitioner/` (both
+pages). The landing rule is in `landingPath` (`ROLES.md` §6 rule 5).
+
 ## 6. For Carl to decide
 
 - ~~Whose screen is it?~~ PARTLY ANSWERED (Carl, 12 Sep 2026): the practitioner
@@ -138,7 +178,10 @@ means.
   practitioner mid-consultation is a distraction. Suggested: refresh quietly,
   never move a row the practitioner is looking at, and no sound or badge ever.
 - **Is "Ask reception" worth building in the first version**, or is the read-only
-  list enough to start?
+  list enough to start? NOT BUILT (12 Sep 2026) — the read-only list shipped
+  first, and this stays open.
+- **Is a fourth word acceptable?** "Nothing to sign", for a visit that needs no
+  agreement at all (§5a). Built as an assumption, and Carl's to confirm.
 
 ## 6a. The nurse and the phlebotomist (Carl, 12 Sep 2026)
 
@@ -208,3 +251,4 @@ because a phlebotomy list looks so much like a work queue.
 | 12 Sep 2026 | v1.0. Written when Carl asked for a practitioner-facing queue page. Not built. |
 | 12 Sep 2026 | Route decided by Carl: `/practice/practitioner` landing, with the queue beneath it. Reachable from the Practitioners card. |
 | 12 Sep 2026 | §6a: nurses and phlebotomists get the same page, once an arrival can carry who the patient is here to see separately from who the claim goes under. |
+| 12 Sep 2026 | Built (§1, §3, §4, §5). Audience widened by Carl: reception, managers and administrators see every practitioner's list, grouped. No card-number column (`Arrival.queueTicket` does not exist). A fourth word, "Nothing to sign", recorded as an assumption in §5a. |

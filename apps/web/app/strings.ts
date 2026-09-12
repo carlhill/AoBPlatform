@@ -4419,6 +4419,119 @@ export const strings = {
     },
   },
 
+  /*
+   * WHO IS WAITING FOR ME, AND IS THEIR PAPERWORK DONE
+   * (PRACTITIONER-QUEUE-PAGE.md; Carl, 12 September 2026).
+   *
+   * "PROVIDER" AND "PRACTITIONER", NEVER "DOCTOR" OR "GP" (CLAUDE.md §3,
+   * REQ-MP-01) — and never "certified", "approved" or "accredited" about a
+   * form (hard rule 12). "Done" means signed and stored, and the word on
+   * screen is "Done".
+   *
+   * EVERY WORD ON THIS PAGE IS A REPORT. Hard rule 8 is not left to be
+   * inferred anywhere in here: `neverBlocks` says it out loud, and no string
+   * below is phrased as a permission, a hold or a requirement.
+   */
+  practitionerQueue: {
+    audience: 'Practitioner',
+    notLoaded: 'This page could not be loaded',
+
+    landing: {
+      title: 'Your page at this practice',
+      /*
+       * WHY THIS PAGE EXISTS, SAID ON IT. §1: the setup hub is the
+       * administrator's page, and sending a provider there is how a person
+       * learns to ignore their own home screen.
+       */
+      lead: 'Your own starting point here. Everything about you across practices is on your practitioner page.',
+      signedInAs: (name: string) => `Signed in as ${name}.`,
+      atPractice: (practice: string) => `You are working at ${practice}.`,
+      /*
+       * MORE THAN ONE PRACTICE IS ORDINARY, not an error. A practitioner works
+       * at several and which ones changes, so the page asks rather than picks
+       * — and it asks with the names in front of them, not in prose.
+       */
+      choosePractice: 'You work at more than one practice. Choose the one you are at today.',
+      noPractice: 'You have no current affiliation with a practice, so there is nothing here yet.',
+      noPracticeWhy:
+        'A practice adds you by inviting you to one of its locations, and you accept from the message it '
+        + 'sends. If you were expecting to see a practice here, ask them to check your listing.',
+      waitingTitle: 'Who is waiting for you',
+      waitingBody:
+        'Today’s patients, in the order they arrived, and whether their paperwork is done. It never holds '
+        + 'anybody up.',
+      waitingLink: 'Open your waiting list',
+      /** Their cross-practice page, which answers a different question (§1). */
+      aboutYouTitle: 'About you',
+      aboutYouBody: 'Your details, where you work, and what has been sent to you — across every practice.',
+      aboutYouLink: 'Open your practitioner page',
+    },
+
+    waiting: {
+      title: 'Who is waiting',
+      lead: 'Today’s patients, in the order they arrived, and whether their paperwork is done.',
+      /*
+       * HARD RULE 8, IN AS MANY WORDS RATHER THAN LEFT TO BE INFERRED (§4.1).
+       * The person reading this is the one who could act on a doubt, so the
+       * doubt is answered before it is had.
+       */
+      neverBlocks:
+        'Nothing on this page holds anybody up. See your patients exactly as you always would — this page '
+        + 'only reports whether the paperwork is done, and it never stops a consultation.',
+      /*
+       * THE BOUNDARY, SAID ON THE SCREEN (§2). A page called "who is waiting"
+       * is the likeliest place in the product to quietly become a second
+       * waiting room, and the honest thing is to say what it is not.
+       */
+      paperworkOnly:
+        'Paperwork only. Why somebody is here, and everything clinical about them, stays in your practice '
+        + 'software.',
+
+      /*
+       * THE COLUMNS (§3). There is deliberately no card-number column: the
+       * practice’s queue ticket is not recorded yet, and a column that is
+       * always blank is worse than no column at all.
+       */
+      columnName: 'Name',
+      columnWaitingSince: 'Waiting since',
+      columnPaperwork: 'Paperwork',
+
+      /*
+       * THE THREE WORDS, PLUS THE ONE FOR A VISIT THAT NEEDS NO AGREEMENT.
+       * "Done" is a signature, stored — never "approved", "certified" or
+       * "accredited" (hard rule 12).
+       */
+      paperwork: {
+        done: 'Done',
+        with_the_patient_now: 'With the patient now',
+        not_yet: 'Not yet',
+        nothing_to_sign: 'Nothing to sign',
+      } as Record<string, string>,
+      /*
+       * AND WHAT EACH WORD MEANS, once, beneath the table rather than as a
+       * tooltip nobody opens.
+       */
+      paperworkKey:
+        'Done means signed and stored. With the patient now means somebody is signing on a tablet. Not yet '
+        + 'means nobody has signed — see them anyway, and the front desk will sort it out.',
+
+      /*
+       * WHOSE AGREEMENT IT IS, where that is somebody else (§6a). Shown only
+       * when it differs, because saying "your agreement" to a nurse would not
+       * be honest and repeating a provider’s own name to them would be noise.
+       */
+      agreementUnder: (provider: string) => `${provider}’s agreement`,
+
+      nobodyWaiting: 'Nobody is waiting for you at the moment.',
+      nobodyWaitingPractice: 'Nobody is waiting at the moment.',
+      /** A group whose arrival named nobody we could match to a practitioner. */
+      unmatched: 'Not yet matched to a practitioner',
+      /** Reception’s view: one group per practitioner (Carl, 12 Sep 2026). */
+      everyone: 'Everyone waiting, by practitioner',
+      count: (n: number) => (n === 1 ? '1 person' : `${n} people`),
+    },
+  },
+
   tablet: {
     title: 'Send to the tablet',
     lead:

@@ -1,0 +1,180 @@
+/*
+ * THE PRACTITIONER'S PAGES AT A PRACTICE (PRACTITIONER-QUEUE-PAGE.md §1, §3).
+ *
+ * ITS OWN FILE RATHER THAN THE SETUP HUB'S. These are not setup screens and
+ * they must not inherit a hub's look by accident — a page that looks like the
+ * administrator's configuration hub is a page a provider reads as somebody
+ * else's.
+ *
+ * IT REFLOWS RATHER THAN SCROLLS SIDEWAYS (WCAG 2.2 AA, 1.4.10). The narrow
+ * layout is the default and the wide one is the addition, so a 320px viewport
+ * never meets a minimum width it cannot satisfy. The waiting table is wrapped
+ * in its own `overflow-x: auto` container as the belt to that braces: three
+ * columns of words fit, and a long practitioner name must not push the page
+ * body sideways.
+ */
+
+.cards {
+  display: grid;
+  gap: var(--s4);
+}
+
+@media (min-width: 720px) {
+  .cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  align-items: flex-start;
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.cardTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.cardBody {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+/* ---------------------------------------------------------------- waiting */
+
+.groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+}
+
+.group {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.groupHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  padding: var(--s3) var(--s4);
+  border-bottom: 1px solid var(--line);
+}
+
+.groupTitle {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.groupCount {
+  margin-left: auto;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+/*
+ * THE TABLE SCROLLS INSIDE ITSELF, NEVER THE PAGE. Wide content gets its own
+ * horizontal scroll container so the body reflows (1.4.10).
+ */
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.table th {
+  text-align: left;
+  padding: var(--s2) var(--s4);
+  font-weight: 600;
+  color: var(--ink-muted);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: var(--s3) var(--s4);
+  color: var(--ink);
+  vertical-align: top;
+}
+
+.table tbody tr + tr td {
+  border-top: 1px solid var(--line);
+}
+
+.name {
+  font-weight: 500;
+}
+
+/*
+ * WHOSE AGREEMENT IT IS, beneath the name and quieter than it (§6a). It is a
+ * qualification of the row, not a second subject.
+ */
+.under {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+}
+
+.time {
+  white-space: nowrap;
+}
+
+/*
+ * THE WORD IS THE WHOLE ANSWER, so it carries weight — and it is a WORD, never
+ * a colour alone: a status that only a colour distinguishes fails 1.4.1.
+ */
+.paperwork {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.empty,
+.key {
+  margin: 0;
+  padding: var(--s4);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+.key {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/*
+ * A CAPTION EVERY TABLE HAS AND NOBODY SEES. A screen reader announcing "table"
+ * with no name, three times on reception's grouped view, tells a listener
+ * nothing about which practitioner's list they are in — and the visible
+ * heading beside it already says it to everybody else.
+ */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

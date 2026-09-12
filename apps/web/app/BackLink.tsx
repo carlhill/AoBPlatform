@@ -97,6 +97,18 @@ const PARENTS: Readonly<Record<string, string>> = {
   '/platform/acting-as': '/practice',
   '/practice/reports': '/practice',
 
+  /*
+   * THE PRACTITIONER'S QUEUE GOES UP TO THE PRACTITIONER'S OWN PAGE, not to
+   * the setup hub (Carl, 12 Sep 2026; PRACTITIONER-QUEUE-PAGE.md §1). The hub
+   * is the ADMINISTRATOR's page, and "up" from a provider's waiting list must
+   * not be the first place that teaches them to go there.
+   *
+   * `/practice/practitioner` ITSELF HAS NO PARENT, deliberately: it is where a
+   * practitioner lands, and a back link on a landing page is a lie about the
+   * shape of the product.
+   */
+  '/practice/practitioner/waiting': '/practice/practitioner',
+
   '/practitioner/affiliations': '/practitioner',
   '/practitioner/messages': '/practitioner',
 };
@@ -190,6 +202,7 @@ export function BackLink() {
     '/review': strings.nav.reviewDossiers,
     '/platform/acting-as': strings.nav.actingAsRegister,
     '/practitioner': strings.nav.practitionerHub,
+    '/practice/practitioner': strings.practitionerQueue.landing.title,
   };
 
   const label = parent.startsWith('/platform/practices/')

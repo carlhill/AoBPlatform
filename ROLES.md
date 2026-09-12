@@ -95,11 +95,24 @@ Worth knowing before anybody "fixes" one of these and breaks a token.
 5. **Landing follows the person, not the audience.** A practitioner signing in
    at a practice lands on `/practice/practitioner`, not the setup hub
    (`PRACTITIONER-QUEUE-PAGE.md` §1). Gating and landing are different
-   decisions and the page map currently expresses only the first.
+   decisions and the page map expresses only the first.
+
+   **Where it lives: `landingPath` in `packages/domain/src/landing.ts`** (built
+   12 Sep 2026). It already decided where a practice user, a platform operator
+   and a practitioner-without-a-practice go, and it is asked by the OIDC
+   callback, the root page and any gate holding an unexpected session — so a
+   redirect on `/practice/setup` would have been a second answer to a question
+   that already had one, and the drift would show up as somebody landing on a
+   page that is not theirs. A token carrying BOTH a practice claim and a
+   practitioner claim now resolves to `/practice/practitioner`, checked before
+   the plain practice case because it is the narrower fact. Named test:
+   `a_practitioner_signing_in_at_a_practice_lands_on_their_own_page`.
 
 ## 7. Open
 
-- **Where the landing rule lives** (rule 5). It has no home yet.
+- ~~**Where the landing rule lives** (rule 5). It has no home yet.~~ ANSWERED
+  (12 Sep 2026): `landingPath`, and rule 5 above says why it belongs there
+  rather than in a redirect on the setup hub.
 - **Whether the two naming inconsistencies in §5 are ever worth resolving.** The
   cost is token reissue and a migration; the benefit is that one word means one
   thing. Not urgent, but it gets more expensive every month.
@@ -123,3 +136,4 @@ Worth knowing before anybody "fixes" one of these and breaks a token.
 |---|---|
 | 12 Sep 2026 | v1.0. Written when Carl listed the practice roles. Records what is built, including the three layers and the two naming inconsistencies. |
 | 12 Sep 2026 | Nurse and phlebotomist added as roles by Carl; the blocker is that an arrival naming one is currently refused. |
+| 12 Sep 2026 | Rule 5 given a home: `landingPath`. §7's open question closed. Two page-map entries added for `/practice/practitioner` and `/practice/practitioner/waiting`, the second open to `practice` as well as `practitioner`. |
