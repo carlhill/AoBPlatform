@@ -4,6 +4,10 @@ Things that are awkward to reconstruct from memory at the moment you need them,
 usually because something is broken and the ordinary route through the console
 is the thing that is broken.
 
+**Looking for test patients rather than a broken thing?** `test_support.md` is
+the one for that — staging a day, who signs, where the data shows up, and how
+to clear it down. This file is for when something is broken.
+
 Everything here talks to the **sandbox** on localhost. Ports come from
 `docker-compose.yml`: Keycloak on 21024, MailHog on 21026, Postgres on 21020,
 core on 21001, the console on 3100.
