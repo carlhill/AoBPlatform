@@ -50,9 +50,35 @@ docker compose stop core web
 |---|---|
 | Anything in `apps/core/src` | Nothing — it restarts itself |
 | Anything in `apps/web/app` | Nothing — Fast Refresh |
-| `packages/domain` and friends | `npm run build -w packages/domain` — the apps consume build output, not source |
+| `packages/domain` and friends | `npm run build -w packages/domain` — the apps consume build output, not source. **And restart the web dev server**, see below |
 | A new migration | Apply it to the running database; see below |
 | `docker-compose.yml`, a Dockerfile, a new dependency | `docker compose up -d --build <service>` |
+
+### A stale `packages/domain/dist` looks exactly like a bug in your feature (12 Sep 2026)
+
+`/practice/day` was added, committed, and answered "There is no such page" for
+an hour. The route was fine. `page-access.ts` in `packages/domain/src` had it;
+`packages/domain/dist/src/page-access.js` did not, because nothing had rebuilt
+the package — so `mayReach` returned false and `AccessGuard` correctly showed
+not-found for a page it had never been told about.
+
+**Two steps, and the second is the one that is easy to miss.** `npm run build
+-w packages/domain` fixes the file on disk, and the running Next dev server
+still holds the old module in memory: it had been up since the previous day,
+and Turbopack does not re-read a workspace dependency it has already bundled.
+The page only appeared after the dev server was restarted.
+
+**How to recognise it.** The symptom is never a compile error. The route
+resolves, the page component is in the payload, and something downstream of a
+domain lookup behaves as though your change was never made — a guard refusing,
+a list empty, an option missing. If a domain change is not showing up, check
+the built file before you debug the feature:
+
+```
+grep -c "the-thing-you-added" packages/domain/dist/src/<file>.js
+```
+
+Zero means you are debugging the wrong layer.
 
 ## Migrations without a rebuild
 

@@ -1061,6 +1061,68 @@ queue AND a walk-up door on the same screen. That is a different screen, not a
 different default.
 
 
+
+## D-2026-09-12-17 - Every location carries its own timezone, and so does head office
+
+**Date:** 12 September 2026. **Decided by:** Carl: *"We have to adjust times to
+local when showing it on the screen. Hence, we need to know which timezone each
+location of the practice is in and the timezone of the headoffice."*
+
+**The decision.** An IANA timezone is stored on **every practice location** and
+on the **practice** (its head office). It replaces `REPORT_TIMEZONE`, a single
+hardcoded `'Australia/Sydney'` that is currently the only answer the platform
+has for anybody.
+
+**Which one applies.** The LOCATION's, always, for anything that happened at a
+location - an arrival, a service, a signature. That is where the clock on the
+wall was. The practice's head-office zone is the fallback for practice-wide
+views that belong to no single site, and for a practice that has not yet
+recorded a location zone.
+
+**A list that spans zones must SAY so.** A practice with a Perth site and a
+Sydney site showing a column of bare times is not merely unhelpful, it is
+wrong: two rows reading "09:30" happened three hours apart. Where a list mixes
+zones the rows carry theirs; where it does not, the page states the one zone
+once.
+
+**It is NOT derivable from the state, and that trap is the reason this is
+stored rather than computed.** Broken Hill is in New South Wales and keeps
+Adelaide time. Eucla is in Western Australia and keeps +8:45. Brisbane and
+Sydney share an offset for half the year and differ by an hour for the other
+half, because Queensland does not observe daylight saving. So the state
+PROPOSES a zone at onboarding and a person confirms it; what is stored is what
+they confirmed.
+
+**Store the zone NAME, never an offset.** `Australia/Adelaide`, not `+09:30`. An
+offset is right until daylight saving moves, and an agreement rendered last
+March must still say what it said last March.
+
+**What it governs, in order of how much it matters:**
+
+1. **Which DAY a record belongs to.** The day register, the waiting list, the
+   front desk and "today" everywhere else. This is where the four disagreeing
+   definitions of today already live (`TODO.md`, 12 Sep).
+2. **The agreement date (D2) and the service date (D5) - and this one is not
+   cosmetic.** They are statutory particulars on a signed instrument. A date
+   computed in UTC is simply the wrong date for the first ten hours of an
+   eastern-Australian morning, and for the first eight of a Perth one. An
+   agreement stating the wrong day is a defective agreement.
+3. **Every time shown on a screen**, which is where Carl came in.
+
+**What must NOT change.** Timestamps are stored as instants and stay that way;
+the zone is applied when a record is READ, displayed or bucketed into a day.
+Storing local times would make the same record mean different things depending
+on who wrote it.
+
+**This supersedes the open question** raised while building `/practice/day`
+("timezone is platform-wide, not per practice - fine for the first customer,
+wrong for Perth or Brisbane"). It was right, and this is the answer.
+
+**What would reopen it.** A practice that operates one site across two zones,
+which no Australian practice does, or a regulator specifying the zone a
+particular date must be stated in.
+
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
@@ -1094,3 +1156,4 @@ different default.
 | 12 Sep | Practice posture is recorded per integration point; the mode is derived, never stored | **D-2026-09-12-14 above** |
 | 12 Sep | A corrected resend supersedes, needs a new idempotency key, and must never vanish silently | **D-2026-09-12-15 above** |
 | 12 Sep | A tablet says which front door it offers; a reception-driven one never shows Begin | **D-2026-09-12-16 above** |
+| 12 Sep | Every location carries its own IANA timezone, and so does head office; it is stored, never derived from the state | **D-2026-09-12-17 above** |
