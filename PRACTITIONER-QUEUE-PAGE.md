@@ -140,6 +140,59 @@ means.
 - **Is "Ask reception" worth building in the first version**, or is the read-only
   list enough to start?
 
+## 6a. The nurse and the phlebotomist (Carl, 12 Sep 2026)
+
+Carl: *"when a patient goes to see the nurse or phlebotomist, the nurse or
+phlebotomist can also land on their page to see the patients in their queue."*
+
+Right, and it needs one thing changed first.
+
+**The obstacle.** The platform already knows that a nurse cannot be the provider
+on an agreement — `billingRole` is a separate fact from `providerType`, and only
+`servicing_provider` may be named on a contract; `works_under_provider` and
+`not_billable` may not (`packages/domain/content/billing-roles.json`). Today an
+arrival that names one of them is **refused** with `provider_not_servicing`, and
+reception is asked to pick the provider the claim goes under instead.
+
+So the person the patient came to see is REPLACED by the person the claim is
+billed to, and the nurse disappears from the record. A nurse's queue cannot be
+built on top of that, because nothing anywhere says the patient is here to see
+the nurse.
+
+**The change.** An arrival should carry both facts, because they are two facts:
+
+| Fact | Today | Needed |
+|---|---|---|
+| Who the patient is here to see | `affiliationId`, refused if they cannot bill | Kept as given — a nurse, a phlebotomist, anybody the practice rosters |
+| Who the claim goes under | The same field, after reception corrects it | Its own field, and still restricted to a `servicing_provider` |
+
+Nothing about the agreement changes: it is still anchored on the billable
+provider, the enduring rules are still GP-only, and an unresolved billing
+provider is still a refusal. What changes is that the platform stops throwing
+away the clinical half of the answer.
+
+**Then the page falls out for free.** `/practice/practitioner/waiting` filters
+on "who the patient is here to see", so a nurse sees their own list, a
+phlebotomist sees theirs, and a GP sees the patients coming to them — including
+those whose bloods are being taken first.
+
+**And what their page says about paperwork is different.** For a nurse, the
+agreement is under somebody else. The three words in §3 still work, but the
+sentence beneath must not imply the nurse owns it. "Dr Chen's agreement — done"
+is honest; "your agreement" would not be.
+
+**One thing it must not become.** A nurse's list is still not a clinical waiting
+room (§2). Same boundary, same reasons, and the temptation is stronger here
+because a phlebotomy list looks so much like a work queue.
+
+**Named tests for this section:**
+
+- `an_arrival_naming_a_nurse_keeps_the_nurse_and_asks_only_for_the_billing_provider`
+- `a_nurse_still_cannot_be_the_provider_on_an_agreement` — the existing rule, unchanged and re-asserted
+- `a_nurse_sees_only_the_patients_here_to_see_them`
+- `a_nurses_page_names_whose_agreement_it_is`
+- `an_enduring_agreement_is_still_never_offered_for_a_non_gp` — hard rule 6, which this must not loosen
+
 ## 7. Named tests
 
 - `the_waiting_list_shows_only_this_practitioners_patients` — fails closed across both practitioner and practice.
@@ -154,3 +207,4 @@ means.
 |---|---|
 | 12 Sep 2026 | v1.0. Written when Carl asked for a practitioner-facing queue page. Not built. |
 | 12 Sep 2026 | Route decided by Carl: `/practice/practitioner` landing, with the queue beneath it. Reachable from the Practitioners card. |
+| 12 Sep 2026 | §6a: nurses and phlebotomists get the same page, once an arrival can carry who the patient is here to see separately from who the claim goes under. |

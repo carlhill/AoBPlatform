@@ -103,11 +103,23 @@ Worth knowing before anybody "fixes" one of these and breaks a token.
 - **Whether the two naming inconsistencies in §5 are ever worth resolving.** The
   cost is token reissue and a migration; the benefit is that one word means one
   thing. Not urgent, but it gets more expensive every month.
-- **A role for a practice's non-clinical staff who are not front desk** — a
-  nurse or a phlebotomist. They cannot be the provider on an agreement (an
-  arrival naming one is refused), and today they have no role of their own.
+- ~~A role for a practice's non-clinical staff who are not front desk.~~
+  ANSWERED (Carl, 12 Sep 2026): **yes, add nurse and phlebotomist**, and give
+  them the same "who is waiting for me" page as a practitioner
+  (`PRACTITIONER-QUEUE-PAGE.md` §6a).
+
+  Two things must stay true while that is built. They still **cannot be the
+  provider on an agreement** — that is `billingRole`, not a job title, and only
+  a `servicing_provider` may be named on a contract. And an **enduring agreement
+  is still GP-only** (hard rule 6), which a new clinical role must not quietly
+  loosen.
+
+  The blocker is that an arrival naming a nurse is refused today, so the
+  clinical half of "who is the patient here to see" is thrown away and their
+  queue cannot be populated. §6a of the queue plan sets out the change.
 
 ## Change log
 | Date | Change |
 |---|---|
 | 12 Sep 2026 | v1.0. Written when Carl listed the practice roles. Records what is built, including the three layers and the two naming inconsistencies. |
+| 12 Sep 2026 | Nurse and phlebotomist added as roles by Carl; the blocker is that an arrival naming one is currently refused. |
