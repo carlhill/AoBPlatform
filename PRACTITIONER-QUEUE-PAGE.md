@@ -7,26 +7,47 @@ so we need a practice/doctordesk — or a better name."*
 
 ---
 
-## 1. The name
+## 1. The name and where it sits
 
-**`/practitioner/waiting`**, titled **"Who is waiting for you"**.
+**Decided by Carl, 12 September 2026**, and it overrides the first version of
+this section:
 
-Three reasons to prefer it to `/practice/doctordesk`:
+> *"We will also need a login for a practitioner via the practice. So the
+> practitioner does not land on the practice/setup but on the practice/
+> practitioner landing page and from there to any other pages we want to give
+> the practitioner e.g. practitioner-queue."*
 
-- **"Doctor" is not a word this product uses.** The domain says **provider** and
-  **practitioner**, never GP or doctor (CLAUDE.md §3, REQ-MP-01). A route is a
-  name too, and the one place a banned term always survives a rename is a URL.
-- **It belongs under `/practitioner`, not `/practice`.** That surface already
-  exists — it is where a provider lands when they sign in, and it already reads
-  "Your practice work". `/practice/*` is the practice console: reception,
-  administration, devices, evidence. Putting a personal list under it would put
-  it behind the wrong audience and in front of the wrong people.
-- **"Waiting" says what it is** in the words the room uses, which is the same
-  test `FRONT-DESK-PAGE.md` applies to everything a non-expert reads.
+So:
 
-If Carl prefers it under the practice console because the screen in a consulting
-room is signed in as the practice rather than the person, that changes the
-answer — see §6, and it changes more than the name.
+| Route | What it is |
+|---|---|
+| `/practice/practitioner` | **New.** Where a practitioner lands when they sign in at a practice. Their home inside the practice console |
+| `/practice/practitioner/waiting` | This page — who is waiting for me today, and is their paperwork done |
+
+**"Doctor" stays out of the URL.** The domain says provider and practitioner,
+never GP or doctor (CLAUDE.md §3, REQ-MP-01), and a route is the one place a
+banned word survives every later rename. That part of the original
+recommendation stands; only the parent changed.
+
+**Why this is not a duplicate of the existing `/practitioner`.** They answer
+different questions and both should exist:
+
+- `/practitioner` is **about me, across practices** — my details, my
+  affiliations, what has been sent to me. Personal, and it follows the person
+  wherever they work.
+- `/practice/practitioner` is **my work at THIS practice, today** — the queue,
+  and whatever else is given to practitioners later. Practice-scoped, and it
+  disappears when the affiliation does.
+
+**The landing rule.** A practitioner signing in at a practice lands on
+`/practice/practitioner`, never `/practice/setup`. The setup hub is the
+administrator's page; sending a provider there is how a person learns to ignore
+their own home screen. This needs the page map to route by what the account IS,
+not only to gate what it may open — see §6.
+
+**On a card.** Carl asked for the queue to be reachable from the Practitioners
+card on the setup hub, beside "Open the practitioners". That is the
+administrator's way in; the practitioner's own way in is the landing page above.
 
 ## 2. The boundary this must not cross
 
@@ -103,11 +124,16 @@ means.
 
 ## 6. For Carl to decide
 
-- **Whose screen is it?** A practitioner signed in as themselves on their own
-  computer, or a screen in a consulting room signed in as the practice? The
-  first is `/practitioner/waiting` as above. The second is a different page with
-  a different access rule, and it needs a view that is safe to leave facing a
-  door — probably card numbers and no names at all.
+- ~~Whose screen is it?~~ PARTLY ANSWERED (Carl, 12 Sep 2026): the practitioner
+  signs in via the practice and lands on `/practice/practitioner`. Still open is
+  the **consulting-room screen** — one left facing a door, signed in as the
+  practice rather than the person. That needs a different view, probably card
+  numbers and no names at all, and it should not be assumed to be this page with
+  the names removed.
+- **What does the page map do about landing?** Today it gates what an audience
+  may OPEN. Landing a practitioner somewhere other than `/practice/setup` is a
+  routing decision on top of that, and it needs one obvious place to live rather
+  than a redirect scattered through pages.
 - **Does it refresh itself, and how loudly?** A list that changes under a
   practitioner mid-consultation is a distraction. Suggested: refresh quietly,
   never move a row the practitioner is looking at, and no sound or badge ever.
@@ -127,3 +153,4 @@ means.
 | Date | Change |
 |---|---|
 | 12 Sep 2026 | v1.0. Written when Carl asked for a practitioner-facing queue page. Not built. |
+| 12 Sep 2026 | Route decided by Carl: `/practice/practitioner` landing, with the queue beneath it. Reachable from the Practitioners card. |
