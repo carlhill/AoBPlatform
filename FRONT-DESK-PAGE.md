@@ -171,10 +171,9 @@ Worth agreeing before building, because "easier" is otherwise unfalsifiable.
 
 ## 11. For Carl to decide
 
-- **Where it lives and who lands there.** A separate route (`/practice/desk`?)
-  that new staff are pointed at, or the default for everybody with the current
-  desk behind a "detailed view" link? The second teaches the product to itself
-  over time; the first is safer for experienced staff who like what they have.
+- ~~Where it lives and who lands there.~~ ANSWERED 12 Sep 2026 (Carl): a
+  separate route, `/practice/frontdesk`, linked from the setup hub as "Practice
+  Frontdesk". The existing pages stay exactly as they are.
 - **Is it one patient at a time, strictly?** The single-column design assumes so.
   A busy Monday with four people at the counter may want two open at once, which
   changes the shape more than it sounds.
@@ -182,7 +181,93 @@ Worth agreeing before building, because "easier" is otherwise unfalsifiable.
   second push is reception's job as well, and leaving it off the beginner page
   means a beginner still has to visit the expert one.
 
+## 12. The queue rail: who is in flight, who is yet to arrive (Carl, 12 Sep 2026)
+
+Carl: *"we need to have like a queue on the left or the right of the page to
+show which patients are in flight and which patients are yet to arrive."*
+
+### 12.1 The honest state of the data
+
+**In flight is fully answerable today.** `GET /tablet-sessions/pushable` already
+returns everyone with something open, ordered by when the patient arrived, with
+each row carrying its live session and its blocked reason.
+
+**Yet to arrive is not, and this is the important finding.** It comes from the
+appointment book, and the appointment book reaches us only when the practice
+management system pushes it — `captureForAppointment` writes `Appointment` rows
+from the auto-capture path. **The dev database currently holds zero
+appointments, today or ever.** In production it depends on the connector, which
+is still behind blocker D-01.
+
+So the rail must be built to show a section that is legitimately empty, and to
+say WHY it is empty rather than looking broken. "No appointments received from
+the practice software" is a true and useful sentence; a blank panel is neither.
+
+### 12.2 The shape
+
+**A rail on the LEFT, not the right.** Reading order puts it first, and it
+answers "who am I working on" before "what do I do", which is the order a
+beginner needs. The right is where the eye goes last, and this is the thing they
+look at between every patient.
+
+Three groups, top to bottom, and the order is the point:
+
+1. **Here now** — arrived, something to do. Ordered by longest wait. Exactly one
+   is marked as next.
+2. **On a tablet** — sent, being read or signed. Shows the device name, because
+   "the blue one" is how the desk talks. Not actionable from the rail; selecting
+   one shows what it is doing.
+3. **Expected** — appointments today with no arrival yet, in time order. When
+   there is no appointment feed, one line saying so, not an empty box.
+
+A count on each group heading. Nothing else: no status chips, no reasons, no
+buttons. The rail is a place to LOOK; the panel is where you act.
+
+### 12.3 Rules the rail must obey
+
+- **Selecting never acts.** Clicking a name fills the panel. Nothing is sent,
+  recalled or confirmed from the rail, ever. A beginner scanning the list must
+  not be able to change anything by accident.
+- **The rail does not re-sort under the hand.** The desk polls every few
+  seconds, and a list that reorders while somebody is reaching for it is how
+  the wrong patient gets selected. New arrivals appear; existing rows hold their
+  place until the selection is cleared or the patient leaves the list.
+- **It never shows more than a name, a time and a group.** No condition, no
+  provider's opinion, no reason. A rail at a front desk faces the room — this is
+  the same reasoning that hides the waiting list on the tablet.
+- **"Expected" is not a work list.** Nothing there can be actioned; a patient who
+  has not arrived cannot sign. It exists so a beginner can see the shape of the
+  morning, and so an empty "Here now" does not read as "nothing to do today".
+- **One live region, politely announced.** A patient moving from Expected to
+  Here now is worth a screen-reader announcement; every poll is not. `aria-live`
+  goes on the group counts, not on the rows.
+
+### 12.4 Where each group comes from
+
+| Group | Source | Notes |
+|---|---|---|
+| Here now | `GET /tablet-sessions/pushable`, rows with no live session | Already arrival-ordered through the supersession chain |
+| On a tablet | The same rows, where `activeSession` is set | The device label is already on the row |
+| Expected | Today's `Appointment` rows with no matching arrival | **Needs a new read.** The only new endpoint the front desk should require, and it is a read of a table we already write |
+
+The Expected group is the one exception to "no new endpoint" in §7, and it is
+worth stating why it is allowed: the data exists, nothing else exposes it, and
+the alternative is the page inferring who is missing, which it must not do.
+
+### 12.5 What this needs before it can be finished
+
+- **An appointment feed.** Until the connector pushes the appointment book,
+  Expected is permanently empty in every real practice. Worth confirming with
+  Carl whether the front desk page ships with the group visible-but-empty (with
+  its explanation) or hidden until a feed exists. Recommendation: visible, so
+  the absence is a visible gap rather than a silent one, and so a practice
+  asking "why can't I see my bookings" gets an answer from the screen.
+- **A decision on the second question in §11** — strictly one patient at a time.
+  The rail makes multi-select technically easy and conceptually expensive; the
+  design above assumes one.
+
 ## Change log
 | Date | Change |
 |---|---|
 | 12 Sep 2026 | v1.0. Written when Carl asked for a front-desk page a day-one starter could work. Not built. |
+| 12 Sep 2026 | §12: the queue rail — in flight, on a tablet, expected; and the finding that the appointment feed does not exist yet. Route fixed as /practice/frontdesk. |
