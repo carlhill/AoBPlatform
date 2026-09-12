@@ -1250,6 +1250,82 @@ should not have been, which would argue for a shorter hour rather than for
 going back to an empty page.
 
 
+
+## D-2026-09-12-20 - "Finished" means the visit is over, not that the paperwork is done
+
+**Date:** 12 September 2026. **Decided by:** Carl, with the front desk and the
+practitioner queue side by side: *"on /frontdesk the patient goes to 'Finished
+list' yet on /waiting the dr has not seen the patient as yet. Hence, we need a
+step 'Consultation completed'."*
+
+**He is right and the word was doing the lying.** The front desk moves a patient
+to Finished when the agreement is signed. Signing happens in the waiting room,
+BEFORE the consultation. So the desk was announcing that a patient was finished
+while the practitioner had not yet called them in.
+
+**The decision, in two parts:**
+
+1. **The visit checklist gains a step: the consultation itself.** It sits after
+   "signed on a tablet" and before anything about billing afterwards.
+2. **A patient reaches "Finished" only when the paperwork is done AND the visit
+   is complete.** Either one alone leaves them on the desk.
+
+**Nothing new has to be invented for it.** The visit state already exists and is
+already set by the person who knows - `pending`, `with_patient_now`,
+`completed`, `reassign`, set from `/practice/practitioner/waiting`, and
+`completed` is already the service-rendered signal (D-2026-09-12-07). What was
+missing is that the front desk could not see it. The step READS that state; it
+does not mint a second one, and there must never be two places that disagree
+about whether a patient has been seen.
+
+**It gates nothing** (hard rule 8). A patient can be seen, billed and sent home
+whatever this checklist says, and the step is a report rather than a
+precondition.
+
+### One visit or two? The test is whether it needs its own agreement
+
+Carl's note raises two more cases, and they resolve in opposite directions:
+
+> *"if the patient has to see a nurse or do bloods then these will also be
+> steps here before the patient goes to the Finished List. Also, if the patient
+> has to see another doctor in the practice and that doctor is a specialist
+> then the patient will need to added to the Queue again and assigned to the
+> specialist with the episodic agreement process."*
+
+**The rule that separates them: does this encounter need its own agreement?**
+
+| | Needs its own agreement? | So it is |
+|---|---|---|
+| Seeing a nurse, giving bloods, a dressing | No - the claim still goes under the servicing provider already named on the agreement | **A STEP** inside this visit |
+| Seeing a second practitioner who bills under their own number, e.g. a specialist | Yes | **A SECOND VISIT** - back on the queue, assigned to them, its own episodic agreement |
+
+**Why that is the right line and not an arbitrary one.** Billing identity is
+practice x location x practitioner (D-2026-09-12-09). An encounter that does not
+change whose provider number the claim goes under has not changed the contract,
+so it cannot need a second one. An encounter that does change it needs its own,
+because the agreement names the provider.
+
+**Episodic for the specialist, never enduring, permanently** (hard rule 6,
+REQ-END-01a). Ongoing agreements are per practitioner x patient and GP-only.
+Carl's note says episodic and that is not a preference, it is the rule.
+
+**The step LIST is versioned content, not code.** Nurse, bloods and whatever a
+practice adds next are options a practice picks from, so they live in a
+versioned content file under `packages/domain/content/` with their words in the
+string table, on the standing rule for every option list (CLAUDE.md 7, first
+instance `assignor-relationships.json`). Hardcoding "bloods" into a component is
+how the next practice's list becomes a code change.
+
+**Built now:** the consultation step, and Finished requiring both. **Not built:**
+the configurable ancillary steps and the second-visit flow, which are recorded
+here so they are not re-decided.
+
+**What would reopen it.** A practice where reception genuinely wants the desk to
+clear on signature alone - which would be a per-practice setting rather than a
+return to the current behaviour, because the current behaviour states something
+untrue.
+
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
@@ -1286,3 +1362,4 @@ going back to an empty page.
 | 12 Sep | Every location carries its own IANA timezone, and so does head office; it is stored, never derived from the state | **D-2026-09-12-17 above** |
 | 12 Sep | The queue number has three sources in precedence -- their card, their software, then one we allocate -- and the source is recorded | **D-2026-09-12-18 above** |
 | 12 Sep | An outage never empties the screen: last good data kept and timestamped, writes refused on the control, the page retries itself | **D-2026-09-12-19 above** |
+| 12 Sep | "Finished" needs the consultation done, not just the signature; a step that needs its own agreement is a second visit | **D-2026-09-12-20 above** |
