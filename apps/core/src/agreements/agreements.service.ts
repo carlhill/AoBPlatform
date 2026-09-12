@@ -2160,7 +2160,32 @@ export class AgreementsService {
       return updated;
     }
 
-    if (!canTransition(from, 'awaiting_signature')) {
+    /*
+     * ALREADY AT `awaiting_signature`, AND STILL UNLOCKED — the lock is what is
+     * missing, not the status, and this push is what supplies it.
+     *
+     * The state is legitimate and reached every day. A WALK-UP verifies at the
+     * tablet, and `Ceremony.afterVerified` moves the agreement to
+     * `awaiting_signature` the moment verification passes — before the
+     * particulars are locked, because on that path the assignor is still to be
+     * chosen (K-5). If the patient then walks back to the desk and reception
+     * sends the tablet, the push arrives at exactly this row: status ahead,
+     * particulars behind.
+     *
+     * `canTransition` says no, correctly — `awaiting_signature` is not in its
+     * own successor list and a self-transition is not a transition. So the
+     * question is not asked at all when the status is not moving. What the push
+     * does here is commit the lock; the status it would have set is the status
+     * it already has.
+     *
+     * NOTHING IS WEAKENED. `sign()` still refuses an unlocked agreement
+     * (hard rule 2, REQ-REG-06), so this path cannot put a draft under a
+     * signature — it is the path that STOPS one being there, by locking the
+     * particulars before the tablet goes out.
+     *
+     * Named test: `push_locks_an_agreement_a_walk_up_already_advanced`.
+     */
+    if (from !== 'awaiting_signature' && !canTransition(from, 'awaiting_signature')) {
       throw new BadRequestException(`Illegal status transition ${from} → awaiting_signature (REQ-REC-02).`);
     }
 

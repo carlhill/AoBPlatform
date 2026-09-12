@@ -428,6 +428,51 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
       expect(after!.status).toBe('draft');
     });
 
+    /*
+     * THE WALK-UP THAT CAME BACK TO THE DESK (Carl, 12 September 2026 —
+     * "only Jo can be sent to the tablet").
+     *
+     * A patient who verifies at the tablet without being sent one moves the
+     * agreement to `awaiting_signature` the moment verification passes
+     * (`Ceremony.afterVerified`) — BEFORE the particulars are locked, because
+     * on that path who signs is still to be chosen. If they then walk back to
+     * reception and reception sends the tablet, the push meets a row whose
+     * status is ahead of its lock.
+     *
+     * That refused, and refused with an internal sentence about a status
+     * transition: `commitPushLock` asked `canTransition` whether
+     * `awaiting_signature` may become `awaiting_signature`, which it may not,
+     * because a self-transition is not a transition. Three of the four rows on
+     * Carl's desk were in exactly this state and none of them could be sent.
+     *
+     * The status is not moving, so the question is not asked. What the push
+     * supplies is the LOCK, which is the thing that was missing — and hard
+     * rule 2 is untouched, because `sign()` still refuses an unlocked
+     * agreement and this is the path that stops one reaching a signature.
+     */
+    it('push_locks_an_agreement_a_walk_up_already_advanced', async () => {
+      const agreementId = await draft();
+      // What the kiosk does after verification passes, and all it does.
+      await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.update({ where: { id: agreementId }, data: { status: 'awaiting_signature' } }),
+      );
+      const before = await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.findFirst({ where: { id: agreementId } }),
+      );
+      expect(before!.particularsLockedAt).toBeNull();
+
+      await pushTo(tabletA, agreementId).expect(201);
+
+      const after = await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.findFirst({ where: { id: agreementId } }),
+      );
+      // The lock happened, on the row the status had already run ahead of.
+      expect(after!.particularsLockedAt).not.toBeNull();
+      expect(after!.ruleSetVersion).toBe('test-rules-1');
+      expect(after!.renderedArtefactHash).toEqual(expect.any(String));
+      expect(after!.status).toBe('awaiting_signature');
+    });
+
     it('push_refuses_a_draft_without_d6a — and the draft is untouched', async () => {
       const agreementId = await draft({ description: null });
 
