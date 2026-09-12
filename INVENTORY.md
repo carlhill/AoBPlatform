@@ -17,21 +17,21 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2010 |
-| Files scanned for exports | 499 |
-| Files scanned for imports | 540 |
-| Exports with no comment of their own | 864 |
-| Exports imported nowhere else | 832 |
+| Exported symbols indexed | 2032 |
+| Files scanned for exports | 505 |
+| Files scanned for imports | 546 |
+| Exports with no comment of their own | 867 |
+| Exports imported nowhere else | 835 |
 
 ## Sections
 
-- [Web components](#web-components) — 224
-- [Web hooks](#web-hooks) — 13
-- [Web helpers and constants](#web-helpers-and-constants) — 267
-- [Web types](#web-types) — 97
-- [Domain functions](#domain-functions) — 372
-- [Domain constants and content](#domain-constants-and-content) — 231
-- [Domain types](#domain-types) — 274
+- [Web components](#web-components) — 227
+- [Web hooks](#web-hooks) — 14
+- [Web helpers and constants](#web-helpers-and-constants) — 275
+- [Web types](#web-types) — 102
+- [Domain functions](#domain-functions) — 374
+- [Domain constants and content](#domain-constants-and-content) — 233
+- [Domain types](#domain-types) — 275
 - [Contracts types](#contracts-types) — 71
 - [Contracts functions and constants](#contracts-functions-and-constants) — 20
 - [Core services, controllers and modules](#core-services-controllers-and-modules) — 269
@@ -39,20 +39,20 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web components
 
-224 exports.
+227 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
-| `Notice` | web:ui/index.tsx |  | **64** · web:AccessGuard.tsx, web:HistoryDisclosure.tsx, web:NotFoundView.tsx, +61 more |
-| `Shell` | web:ui/index.tsx |  | **55** · web:AccessGuard.tsx, web:NotFoundView.tsx, web:apply/ApplyForm.tsx, +52 more |
-| `Button` | web:ui/index.tsx |  | **51** · web:ClearForm.tsx, web:HistoryDisclosure.tsx, web:apply/ApplyForm.tsx, +48 more |
-| `SessionControl` | web:SessionControl.tsx | (file) Who is signed in, WHICH PRACTICE they are from, and the way out. | **45** · web:AccessGuard.tsx, web:apply/ApplyForm.tsx, web:help/HelpView.tsx, +42 more |
-| `Chip` | web:ui/index.tsx | The text IS the status. | **33** · web:EmailStatusChip.tsx, web:apply/ApplyForm.tsx, web:apply/GateLedger.tsx, +30 more |
+| `Notice` | web:ui/index.tsx |  | **65** · web:AccessGuard.tsx, web:HistoryDisclosure.tsx, web:NotFoundView.tsx, +62 more |
+| `Shell` | web:ui/index.tsx |  | **56** · web:AccessGuard.tsx, web:NotFoundView.tsx, web:apply/ApplyForm.tsx, +53 more |
+| `Button` | web:ui/index.tsx |  | **52** · web:ClearForm.tsx, web:HistoryDisclosure.tsx, web:apply/ApplyForm.tsx, +49 more |
+| `SessionControl` | web:SessionControl.tsx | (file) Who is signed in, WHICH PRACTICE they are from, and the way out. | **46** · web:AccessGuard.tsx, web:apply/ApplyForm.tsx, web:help/HelpView.tsx, +43 more |
+| `Chip` | web:ui/index.tsx | The text IS the status. | **34** · web:EmailStatusChip.tsx, web:apply/ApplyForm.tsx, web:apply/GateLedger.tsx, +31 more |
 | `Field` | web:ui/index.tsx |  | **29** · web:apply/ApplyForm.tsx, web:platform/acting-as/history/HistoryView.tsx, web:practice/ActingAs.tsx, +26 more |
 | `TextInput` | web:ui/index.tsx |  | **25** · web:apply/ApplyForm.tsx, web:platform/acting-as/history/HistoryView.tsx, web:practice/ActingAs.tsx, +22 more |
 | `SelectInput` | web:ui/index.tsx |  | **21** · web:apply/ApplyForm.tsx, web:practice/ActingAs.tsx, web:practice/PracticePicker.tsx, +18 more |
 | `ViewOnly` | web:platform/practices/[practiceId]/ViewOnly.tsx | (file) A practice page opened as the platform: readable, and genuinely inert. | **16** · web:platform/practices/[practiceId]/affiliations/page.tsx, web:platform/practices/[practiceId]/application/page.tsx, web:platform/practices/[practiceId]/channels/page.tsx, +13 more |
-| `PracticeGate` | web:practice/PracticeGate.tsx | (file) "Which practice" resolved, with the two states that answer can be in. | **14** · web:practice/affiliations/page.tsx, web:practice/channels/page.tsx, web:practice/day/page.tsx, +11 more |
+| `PracticeGate` | web:practice/PracticeGate.tsx | (file) "Which practice" resolved, with the two states that answer can be in. | **15** · web:practice/affiliations/page.tsx, web:practice/channels/page.tsx, web:practice/day/page.tsx, +12 more |
 | `Screen` | web:kiosk/components/Chrome.tsx | Header, content and footer. | **12** · web:kiosk/screens/AssignorScreen.tsx, web:kiosk/screens/CheckDetailsScreen.tsx, web:kiosk/screens/CompleteScreen.tsx, +9 more |
 | `Blueprint` | web:kiosk/components/Chrome.tsx |  | **11** · web:kiosk/screens/AssignorScreen.tsx, web:kiosk/screens/CheckDetailsScreen.tsx, web:kiosk/screens/HandoverScreen.tsx, +8 more |
 | `Card` | web:patient/portal/portal-ui.tsx |  | **9** · web:patient/portal/cards/AgreementsCard.tsx, web:patient/portal/cards/DataCard.tsx, web:patient/portal/cards/DetailsCard.tsx, +6 more |
@@ -62,26 +62,28 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PracticeOverride` | web:practice/usePractice.tsx |  | **7** · web:platform/practices/[practiceId]/application/page.tsx, web:platform/practices/[practiceId]/correspondence/page.tsx, web:platform/practices/[practiceId]/queue/page.tsx, +4 more |
 | `GuardedButton` | web:kiosk/components/Buttons.tsx |  | **6** · web:kiosk/components/SignatureControl.tsx, web:kiosk/screens/AssignorScreen.tsx, web:kiosk/screens/CheckDetailsScreen.tsx, +3 more |
 | `PortalButton` | web:patient/portal/portal-ui.tsx | A BUTTON WITH A 44px TARGET, which is why this is not `Button` from `app/ui`. | **6** · web:patient/portal/PortalView.tsx, web:patient/portal/activate/[token]/ActivateView.tsx, web:patient/portal/cards/DetailsCard.tsx, +3 more |
-| `RecordId` | web:ui/index.tsx | WHICH RECORD IS THIS PAGE ABOUT (Carl, 7 Sep 2026) — "every page must have the patient GUID from AoBPlatform somewhere, so we can see which record has the issue. | **6** · web:practice/patients/NewAgreementPanel.tsx, web:practice/patients/PatientWorkView.tsx, web:practice/patients/PatientsQueueView.tsx, +3 more |
 | `SecondaryButton` | web:kiosk/components/Buttons.tsx |  | **6** · web:kiosk/screens/AssignorScreen.tsx, web:kiosk/screens/CompleteScreen.tsx, web:kiosk/screens/IdleScreen.tsx, +3 more |
 | `PrimaryButton` | web:kiosk/components/Buttons.tsx |  | **5** · web:kiosk/screens/CompleteScreen.tsx, web:kiosk/screens/HandoverScreen.tsx, web:kiosk/screens/IdleScreen.tsx, +2 more |
+| `RecordId` | web:ui/index.tsx |  | **5** · web:practice/patients/NewAgreementPanel.tsx, web:practice/patients/PatientWorkView.tsx, web:practice/patients/PatientsQueueView.tsx, +2 more |
 | `CeremonyHeading` | web:kiosk/components/Chrome.tsx | THE TWO LINES ON TOP OF EVERY PAGE OF THE CEREMONY (Carl, 7 Sep 2026, from testing the pushed flow: "on top of each page of this workflow it should say 'Agree to bulk billing'; on the next line it should say by who — Name of Person"). | **4** · web:kiosk/screens/CheckDetailsScreen.tsx, web:kiosk/screens/HandoverScreen.tsx, web:kiosk/screens/ParticularsScreen.tsx, +1 more |
 | `ConfirmDialog` | web:patient/portal/portal-ui.tsx | ARE YOU SURE — for the three acts on this page that reach the server and change something: asking for a correction, ending an enduring agreement, and withdrawing somebody's authority. | **4** · web:patient/portal/cards/DetailsCard.tsx, web:patient/portal/cards/EnduringCard.tsx, web:patient/portal/cards/PasskeysCard.tsx, +1 more |
+| `CorrectOutcomeNotice` | web:practice/tablet/pushDesk.tsx | The outcome of the last correction or resolution on this session, if any. | **4** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/SmallDeskView.tsx, web:practice/patients/PatientWorkView.tsx, +1 more |
+| `CorrectionPanel` | web:practice/tablet/pushDesk.tsx | THE CORRECTION PANEL — every detail, with the crossed ones MARKED (Carl, 4 Sep 2026: "just in case the patient says my mobile is also wrong but I ticked yes"). | **4** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/SmallDeskView.tsx, web:practice/patients/PatientWorkView.tsx, +1 more |
 | `Kicker` | web:kiosk/components/Chrome.tsx |  | **4** · web:kiosk/screens/AssignorScreen.tsx, web:kiosk/screens/CheckDetailsScreen.tsx, web:kiosk/screens/ParticularsScreen.tsx, +1 more |
-| `CorrectOutcomeNotice` | web:practice/tablet/pushDesk.tsx | The outcome of the last correction or resolution on this session, if any. | **3** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/patients/PatientWorkView.tsx, web:practice/tablet/TabletView.tsx |
-| `CorrectionPanel` | web:practice/tablet/pushDesk.tsx | THE CORRECTION PANEL — every detail, with the crossed ones MARKED (Carl, 4 Sep 2026: "just in case the patient says my mobile is also wrong but I ticked yes"). | **3** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/patients/PatientWorkView.tsx, web:practice/tablet/TabletView.tsx |
+| `SessionActions` | web:practice/tablet/pushDesk.tsx | WHAT RECEPTION CAN DO TO A LIVE SESSION: take the screen back, correct the detail the patient crossed, say no change was needed, send it again. | **4** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/SmallDeskView.tsx, web:practice/patients/PatientWorkView.tsx, +1 more |
+| `SessionDisputeNotices` | web:practice/tablet/pushDesk.tsx | WHAT THE PATIENT SAID IS WRONG, AND WHETHER ANYBODY HAS ANSWERED IT. | **4** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/SmallDeskView.tsx, web:practice/patients/PatientWorkView.tsx, +1 more |
+| `SessionTag` | web:practice/tablet/pushDesk.tsx | The short id, in the one typeface it can be compared in. | **4** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/SmallDeskView.tsx, web:practice/patients/PatientWorkView.tsx, +1 more |
 | `Field` | web:kiosk/components/Field.tsx | (file) The kiosk's form controls. | **3** · web:kiosk/screens/AssignorScreen.tsx, web:kiosk/screens/PairingScreen.tsx, web:kiosk/screens/VerifyScreen.tsx |
 | `MessageLog` | web:correspondence/MessageLog.tsx | (file) One log, two audiences — the design handoff's M-1 and the Messages tab of P-1. | **3** · web:patient/messages/[token]/PatientMessagesView.tsx, web:practice/correspondence/CorrespondenceView.tsx, web:practitioner/messages/MessagesView.tsx |
+| `PatientIdentity` | web:ui/index.tsx | WHO THIS ROW IS ABOUT, IN THE SAME TWO LINES ON EVERY SURFACE (Carl, 12 September 2026: *"patientid is diff on /tablet and /frontdesk"*, and then *"ok. | **3** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/SmallDeskView.tsx, web:practice/tablet/pushDesk.tsx |
 | `PractitionersView` | web:practice/practitioners/PractitionersView.tsx | (file) The practice's roster of practitioners. | **3** · web:platform/practices/[practiceId]/practitioners/check/page.tsx, web:platform/practices/[practiceId]/practitioners/page.tsx, web:practice/practitioners/page.tsx |
 | `ReviewerGate` | web:review/ReviewerGate.tsx | (file) The reviewer's sign-in gate. | **3** · web:review/[id]/page.tsx, web:review/identity/page.tsx, web:review/page.tsx |
 | `SendAgain` | web:practice/tablet/pushDesk.tsx | SEND IT AGAIN, ON THE ROW THAT SAID IT ENDED (Carl, 4 Sep 2026). | **3** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/patients/PatientWorkView.tsx, web:practice/tablet/TabletView.tsx |
-| `SessionActions` | web:practice/tablet/pushDesk.tsx | WHAT RECEPTION CAN DO TO A LIVE SESSION: take the screen back, correct the detail the patient crossed, say no change was needed, send it again. | **3** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/patients/PatientWorkView.tsx, web:practice/tablet/TabletView.tsx |
-| `SessionDisputeNotices` | web:practice/tablet/pushDesk.tsx | WHAT THE PATIENT SAID IS WRONG, AND WHETHER ANYBODY HAS ANSWERED IT. | **3** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/patients/PatientWorkView.tsx, web:practice/tablet/TabletView.tsx |
 | `SessionOutcomeNotice` | web:practice/tablet/pushDesk.tsx | The outcome of the last recall, re-send or send-again on this session. | **3** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/patients/PatientWorkView.tsx, web:practice/tablet/TabletView.tsx |
-| `SessionTag` | web:practice/tablet/pushDesk.tsx | The short id, in the one typeface it can be compared in. | **3** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/patients/PatientWorkView.tsx, web:practice/tablet/TabletView.tsx |
 | `ActingAsBanner` | web:practice/ActingAs.tsx | The banner. | **2** · web:practice/PracticeList.tsx, web:practice/users/UsersView.tsx |
 | `ActingAsStart` | web:practice/ActingAs.tsx | Starting one. | **2** · web:practice/PracticeList.tsx, web:practice/users/UsersView.tsx |
 | `AffiliationsView` | web:practice/affiliations/AffiliationsView.tsx | (file) Affiliations — the edge between a practitioner and a place. | **2** · web:platform/practices/[practiceId]/affiliations/page.tsx, web:practice/affiliations/page.tsx |
+| `AgreementBands` | web:practice/tablet/pushDesk.tsx | THE BANDS UNDER ONE AGREEMENT, AND THE PANEL THEY OPEN — the reason it cannot go with the fix in it, the outcome of the last press, and the who-is-signing form itself. | **2** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/SmallDeskView.tsx |
 | `AgreementRow` | web:practice/tablet/pushDesk.tsx | ONE AGREEMENT WAITING TO BE SIGNED, WITH EVERY CONTROL THAT ACTS ON IT. | **2** · web:practice/patients/PatientWorkView.tsx, web:practice/tablet/TabletView.tsx |
 | `ApplicationView` | web:practice/application/ApplicationView.tsx | (file) The practice's own application, filled in. | **2** · web:platform/practices/[practiceId]/application/page.tsx, web:practice/application/page.tsx |
 | `AuditTrail` | web:review/AuditTrail.tsx |  | **2** · web:practice/entity/EntityView.tsx, web:review/[id]/DossierView.tsx |
@@ -103,6 +105,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ReportsView` | web:practice/reports/ReportsView.tsx | (file) The packaged reports, answered by Cube. | **2** · web:platform/practices/[practiceId]/reports/page.tsx, web:practice/reports/page.tsx |
 | `ReviewsView` | web:practice/reviews/ReviewsView.tsx | (file) The review queue — changes that need a second look. | **2** · web:platform/practices/[practiceId]/reviews/page.tsx, web:practice/reviews/page.tsx |
 | `SelectField` | web:kiosk/components/Field.tsx |  | **2** · web:kiosk/screens/AssignorScreen.tsx, web:kiosk/screens/VerifyScreen.tsx |
+| `SendSteps` | web:practice/tablet/pushDesk.tsx | THE THREE STEPS, NUMBERED, WITH THE CONTROL EACH ONE NAMES DIRECTLY BENEATH IT (Carl, 10 Sep 2026, from a mock-up: "Who is signing over the Who is signing button, Choose a tablet over the select, Send over Send, an arrow between them"). | **2** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/SmallDeskView.tsx |
 | `SetupHub` | web:practice/setup/SetupHub.tsx | (file) The practice setup hub. | **2** · web:platform/practices/[practiceId]/page.tsx, web:practice/setup/page.tsx |
 | `SummaryView` | web:practice/queue/SummaryView.tsx | (file) Queue totals — by practice, or by site and department. | **2** · web:practice/queuebyOrg/page.tsx, web:practice/queuebyOrgLocDepartment/page.tsx |
 | `TabletView` | web:practice/tablet/TabletView.tsx | (file) SEND TO THE TABLET — reception's half of the push (TODO.md "Two front doors", Carl 4 Sep 2026). | **2** · web:platform/practices/[practiceId]/tablet/page.tsx, web:practice/tablet/page.tsx |
@@ -116,7 +119,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `AddressEdit` | web:practice/locations/AddressDecision.tsx | The practice correcting its own address. | **1** · web:practice/locations/LocationsView.tsx |
 | `AffiliationsView` | web:practitioner/affiliations/AffiliationsView.tsx | (file) A practitioner's affiliations, and leaving one. | **1** · web:practitioner/affiliations/page.tsx |
 | `AgreeView` | web:patient/agree/[token]/AgreeView.tsx | (file) A patient approving their bulk-billing agreement, from the link we sent. | **1** · web:patient/agree/[token]/page.tsx |
-| `AgreementBands` | web:practice/tablet/pushDesk.tsx | THE BANDS UNDER ONE AGREEMENT, AND THE PANEL THEY OPEN — the reason it cannot go with the fix in it, the outcome of the last press, and the who-is-signing form itself. | **1** · web:practice/frontdesk/FrontDeskView.tsx |
 | `AgreementCopyView` | web:patient/agreement-copy/[token]/AgreementCopyView.tsx | (file) WHERE A COPY LINK LANDS — W6, REQ-PORT-02, the s 65C copy-on-request obligation automated. | **1** · web:patient/agreement-copy/[token]/page.tsx |
 | `AgreementsCard` | web:patient/portal/cards/AgreementsCard.tsx | (file) MY AGREEMENTS — every bulk-billing agreement this person is party to (REQ-PORT-01/-02). | **1** · web:patient/portal/PortalView.tsx |
 | `ApplyForm` | web:apply/ApplyForm.tsx |  | **1** · web:apply/page.tsx |
@@ -171,11 +173,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `QueueView` | web:review/QueueView.tsx | (file) The human validation queue — gate 3. | **1** · web:review/page.tsx |
 | `RefreshButton` | web:RefreshButton.tsx | (file) The refresh control in the top bar. | **1** · web:ui/index.tsx |
 | `ReportView` | web:practice/queue/ReportView.tsx | (file) How much was sent, over time. | **1** · web:practice/queue/SummaryView.tsx |
-| `SendSteps` | web:practice/tablet/pushDesk.tsx | THE THREE STEPS, NUMBERED, WITH THE CONTROL EACH ONE NAMES DIRECTLY BENEATH IT (Carl, 10 Sep 2026, from a mock-up: "Who is signing over the Who is signing button, Choose a tablet over the select, Send over Send, an arrow between them"). | **1** · web:practice/frontdesk/FrontDeskView.tsx |
 | `ServiceDescriptionsNeeded` | web:practice/reconciliation/ServiceDescriptionsNeeded.tsx | (file) D6a, ON A STAFF SURFACE — the drafts that cannot be completed until somebody chooses the basic description of the service. | **1** · web:practice/reconciliation/ReconciliationView.tsx |
 | `SignatureControl` | web:kiosk/components/SignatureControl.tsx | (file) THE REQ-REG-06 CONTROL. | **1** · web:kiosk/screens/SignatureScreen.tsx |
 | `SignaturePad` | web:kiosk/components/SignaturePad.tsx | (file) Signing on glass — a `<canvas>` and pointer events, no drawing library and no new runtime dependency. | **1** · web:kiosk/screens/SignatureScreen.tsx |
 | `SignatureScreen` | web:kiosk/screens/SignatureScreen.tsx | (file) K-4 — signing. | **1** · web:kiosk/Ceremony.tsx |
+| `SmallDeskView` | web:practice/frontdesksmall/SmallDeskView.tsx | (file) THE FRONT DESK ON A SMALL SCREEN — one list, not five rails. | **1** · web:practice/frontdesksmall/page.tsx |
 | `StatusView` | web:status/[token]/StatusView.tsx |  | **1** · web:status/[token]/page.tsx |
 | `StopEmailChangeView` | web:practice/stop-email-change/StopEmailChangeView.tsx | (file) "Stop this change" — the page the warning links to. | **1** · web:practice/stop-email-change/page.tsx |
 | `TemplateForm` | web:practice/templates/TemplateForm.tsx | (file) THE WORDING EDITOR — a form, not a box of JSON (Carl, 7 Sep 2026; W1). | **1** · web:practice/templates/TemplatesView.tsx |
@@ -207,6 +209,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `EnduringOfferFix` | web:practice/tablet/pushDesk.tsx | THE OTHER FIX IN A BAND, AND THE ONE RECEPTION COULD NOT MAKE AT ALL (Carl, 5 Sep 2026; CLAUDE.md §7 "shortcuts to the answer", second instance). | 0 |
 | `EntityPage` | web:practice/entity/page.tsx |  | 0 |
 | `FrontDeskPage` | web:practice/frontdesk/page.tsx | `/practice/frontdesk` — Practice Frontdesk (Carl, 12 Sep 2026; FRONT-DESK-PAGE.md §11, "a separate route, linked from the setup hub"). | 0 |
+| `FrontDeskSmallPage` | web:practice/frontdesksmall/page.tsx | `/practice/frontdesksmall` — the front desk on a small screen (Carl, 12 September 2026: *"If the Practice has small screens, we will need to go to a different design."*; SESSION-HANDOVER.md, "A proposal for the small-screen version"). | 0 |
 | `HelpPage` | web:help/page.tsx |  | 0 |
 | `Home` | web:page.tsx | (file) The root, which is a SIGNPOST rather than a destination. | 0 |
 | `IdentityDashboardPage` | web:review/identity/page.tsx |  | 0 |
@@ -270,17 +273,18 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web hooks
 
-13 exports.
+14 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
-| `useRefreshable` | web:refresh.ts | Register this page's reload. | **28** · web:patient/portal/PortalView.tsx, web:patient/portal/activate/[token]/ActivateView.tsx, web:platform/acting-as/ActingAsRegister.tsx, +25 more |
+| `useRefreshable` | web:refresh.ts | Register this page's reload. | **29** · web:patient/portal/PortalView.tsx, web:patient/portal/activate/[token]/ActivateView.tsx, web:platform/acting-as/ActingAsRegister.tsx, +26 more |
 | `usePractice` | web:practice/usePractice.tsx | (file) Which practice is this page about? | **9** · web:practice/PracticeGate.tsx, web:practice/application/ApplicationView.tsx, web:practice/correspondence/CorrespondenceView.tsx, +6 more |
 | `useLiveRefresh` | web:useLiveRefresh.tsx | (file) Re-fetch a screen that is waiting on somebody else. | **4** · web:practice/affiliations/AffiliationsView.tsx, web:practice/queue/QueueView.tsx, web:practice/queue/SummaryView.tsx, +1 more |
+| `usePushDesk` | web:practice/tablet/pushDesk.tsx | EVERYTHING RECEPTION CAN DO TO A TABLET, IN ONE PLACE — the fetches, the three-second poll, and the outcome of the last thing anybody pressed. | **4** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/SmallDeskView.tsx, web:practice/patients/PatientWorkView.tsx, +1 more |
 | `useEffectivePractice` | web:effectivePractice.ts | The practice claim this browser effectively holds, and whether we know yet. | **3** · web:AccessGuard.tsx, web:BackLink.tsx, web:MainMenu.tsx |
-| `usePushDesk` | web:practice/tablet/pushDesk.tsx | EVERYTHING RECEPTION CAN DO TO A TABLET, IN ONE PLACE — the fetches, the three-second poll, and the outcome of the last thing anybody pressed. | **3** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/patients/PatientWorkView.tsx, web:practice/tablet/TabletView.tsx |
 | `usePendingRefresh` | web:EmailStatusChip.tsx | Reload automatically WHILE something is pending, and only then. | **2** · web:practice/application/ApplicationView.tsx, web:practitioner/PractitionerHub.tsx |
 | `useAddressCatalogue` | web:practice/locations/AddressDecision.tsx |  | **1** · web:practice/locations/LocationsView.tsx |
+| `useDayReads` | web:practice/frontdesksmall/useDayReads.ts | (file) THE TWO READS THE TABLET DESK DOES NOT MAKE — today's booking list and today's register — polled on the same three seconds `usePushDesk` uses. | **1** · web:practice/frontdesksmall/SmallDeskView.tsx |
 | `useDevBuildWatch` | web:kiosk/useDevBuildWatch.ts | (file) A DEV TAB NOTICES THAT THE SERVER IT LOADED FROM HAS GONE (Carl, 12 Sep 2026: "fix the dev kiosk build id so it reloads"). | **1** · web:kiosk/Ceremony.tsx |
 | `useHasRefresh` | web:refresh.ts | Whether anything on this page can be refreshed. | **1** · web:RefreshButton.tsx |
 | `useInactivityReset` | web:kiosk/useInactivityReset.ts | (file) RETURN TO THE START WHEN THE TABLET IS UNTOUCHED (Carl, 4 September 2026). | **1** · web:kiosk/Ceremony.tsx |
@@ -290,12 +294,12 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web helpers and constants
 
-267 exports.
+275 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
-| `strings` | web:strings.ts | (file) String table (REQ-LANG-01): every user-facing string lives here, none inline in components. | **131** · web:AccessGuard.tsx, web:AuthGate.tsx, web:BackLink.tsx, +128 more |
-| `apiHeaders` | web:auth.ts | Headers for a core API call: bearer when signed in, dev practice header otherwise. | **47** · web:ConsoleDashboard.tsx, web:HistoryDisclosure.tsx, web:OrgConsole.tsx, +44 more |
+| `strings` | web:strings.ts | (file) String table (REQ-LANG-01): every user-facing string lives here, none inline in components. | **132** · web:AccessGuard.tsx, web:AuthGate.tsx, web:BackLink.tsx, +129 more |
+| `apiHeaders` | web:auth.ts | Headers for a core API call: bearer when signed in, dev practice header otherwise. | **48** · web:ConsoleDashboard.tsx, web:HistoryDisclosure.tsx, web:OrgConsole.tsx, +45 more |
 | `currentSession` | web:auth.ts |  | **35** · web:AccessGuard.tsx, web:AuthGate.tsx, web:BackLink.tsx, +32 more |
 | `strings` | web:kiosk/strings.ts | (file) The kiosk's view of the one string table (REQ-LANG-01). | **23** · web:kiosk/Ceremony.tsx, web:kiosk/components/Chrome.tsx, web:kiosk/components/InactivityWarning.tsx, +20 more |
 | `beginLogin` | web:auth.ts | Sends the browser to Keycloak. | **7** · web:AccessGuard.tsx, web:AuthGate.tsx, web:ConsoleDashboard.tsx, +4 more |
@@ -303,12 +307,15 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `explainFailure` | web:apiError.ts | Read the server's own reason out of a failed response. | **5** · web:practice/channels/ChannelsView.tsx, web:practice/correspondence/CorrespondenceView.tsx, web:practice/patients/PatientWorkView.tsx, +2 more |
 | `instant` | web:patient/portal/format.ts | An instant — when something happened, in the reader's own time. | **5** · web:patient/portal/cards/AgreementsCard.tsx, web:patient/portal/cards/DataCard.tsx, web:patient/portal/cards/EnduringCard.tsx, +2 more |
 | `toViewPath` | web:viewPath.ts |  | **5** · web:practice/PracticeList.tsx, web:practice/channels/ChannelsView.tsx, web:practice/setup/SetupHub.tsx, +2 more |
+| `STATE_TONE` | web:practice/tablet/pushDesk.tsx |  | **4** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/SmallDeskView.tsx, web:practice/patients/PatientWorkView.tsx, +1 more |
 | `isUnpaired` | web:kiosk/api.ts | THE SERVER SAYS THIS TABLET IS NOT PAIRED — revoked, rotated, or holding a credential from a practice that no longer knows it. | **4** · web:kiosk/Ceremony.tsx, web:kiosk/useKioskHeartbeat.ts, web:kiosk/useTabletSession.ts, +1 more |
+| `subjectForSession` | web:practice/tablet/pushDesk.tsx | A session, as the thing a correction is about. | **4** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/SmallDeskView.tsx, web:practice/patients/PatientWorkView.tsx, +1 more |
 | `KioskApiError` | web:kiosk/api.ts | Thrown for any non-2xx. | **3** · web:kiosk/Ceremony.tsx, web:kiosk/rules/retry.ts, web:kiosk/useKioskHeartbeat.ts |
-| `STATE_TONE` | web:practice/tablet/pushDesk.tsx |  | **3** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/patients/PatientWorkView.tsx, web:practice/tablet/TabletView.tsx |
+| `arrivedAtLabel` | web:practice/practitioner/waiting/WaitingView.tsx | THE TIME THEY ARRIVED, IN THE PRACTICE'S OWN CLOCK-FACE TERMS. | **3** · web:practice/day/DayView.tsx, web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/SmallDeskView.tsx |
 | `bornOn` | web:practice/tablet/pushDesk.tsx | "3 March 1957" — the same date, read the way a receptionist reads one. | **3** · web:practice/patients/NewAgreementPanel.tsx, web:practice/patients/PatientWorkView.tsx, web:practice/patients/PatientsQueueView.tsx |
 | `canSendAgain` | web:practice/tablet/pushDesk.tsx | MAY THIS ENDED SESSION BE SENT AGAIN? | **3** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/patients/PatientWorkView.tsx, web:practice/tablet/TabletView.tsx |
 | `dayOptions` | web:kiosk/rules/verify-fields.ts | 1–31. The pickers do not validate the calendar — a wrong date is a mismatch, not an error screen. | **3** · web:kiosk/screens/VerifyScreen.tsx, web:patient/portal/activate/[token]/ActivateView.tsx, web:practice/patients/NewAgreementPanel.tsx |
+| `disputedLabels` | web:practice/tablet/pushDesk.tsx | WHAT THE PATIENT CROSSED, IN WORDS — "address, mobile number". | **3** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/SmallDeskView.tsx, web:practice/patients/PatientsQueueView.tsx |
 | `kioskBuildId` | web:kiosk/session.ts | WHICH BUILD THIS TAB IS RUNNING — the rollback mechanism, not a vanity string (TODO.md "Zero-footprint kiosk": "a version banner support can read, and a forced-reload signal so a rollback reaches every open tab"). | **3** · web:kiosk/api.ts, web:kiosk/components/Chrome.tsx, web:kiosk/useKioskHeartbeat.ts |
 | `monthOptions` | web:kiosk/rules/verify-fields.ts | Month NAMES, valued as '01'–'12'. | **3** · web:kiosk/screens/VerifyScreen.tsx, web:patient/portal/activate/[token]/ActivateView.tsx, web:practice/patients/NewAgreementPanel.tsx |
 | `readPairingCredential` | web:kiosk/pairing.ts | The credential this tablet holds, or null if it holds none. | **3** · web:kiosk/Ceremony.tsx, web:kiosk/api.ts, web:kiosk/components/Chrome.tsx |
@@ -316,13 +323,13 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `restoreRefusalReason` | web:auth.ts | The OIDC reason the last silent restore was refused, for a browser that had signed in here. | **3** · web:AccessGuard.tsx, web:AuthGate.tsx, web:SessionControl.tsx |
 | `sessionIdleMinutes` | web:auth.ts | HOW LONG A SIGN-IN SURVIVES WITHOUT ACTIVITY, in minutes, so the copy can say it instead of leaving somebody to guess. | **3** · web:AccessGuard.tsx, web:AuthGate.tsx, web:SessionControl.tsx |
 | `silentRestoreInFlight` | web:auth.ts | IS A SILENT RESTORE ACTUALLY RUNNING RIGHT NOW? | **3** · web:AccessGuard.tsx, web:AuthGate.tsx, web:SessionControl.tsx |
-| `subjectForSession` | web:practice/tablet/pushDesk.tsx | A session, as the thing a correction is about. | **3** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/patients/PatientWorkView.tsx, web:practice/tablet/TabletView.tsx |
+| `subjectForPatient` | web:practice/tablet/pushDesk.tsx | A patient with nothing on a tablet -- a correction with no dispute to close. | **3** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/SmallDeskView.tsx, web:practice/patients/PatientWorkView.tsx |
 | `yearOptions` | web:kiosk/rules/verify-fields.ts |  | **3** · web:kiosk/screens/VerifyScreen.tsx, web:patient/portal/activate/[token]/ActivateView.tsx, web:practice/patients/NewAgreementPanel.tsx |
 | `PortalApiError` | web:patient/portal/api.ts | Thrown for any non-2xx. | **2** · web:patient/portal/activate/[token]/ActivateView.tsx, web:patient/portal/fixtures.ts |
 | `clearSession` | web:auth.ts | `reason` defaults to `'signed-out'` — the caller for whom that is wrong (the failed-refresh path below) says so explicitly. | **2** · web:AuthGate.tsx, web:ConsoleDashboard.tsx |
 | `composeDateOfBirth` | web:kiosk/rules/verify-fields.ts | ISO `YYYY-MM-DD`, because that is what the server compares against: it takes the first ten characters of the stated value and matches them against the date it holds. | **2** · web:patient/portal/activate/[token]/ActivateView.tsx, web:practice/patients/NewAgreementPanel.tsx |
+| `dayRails` | web:practice/frontdesk/dayRails.ts | THE DAY'S ROWS, IN GROUPS THAT ACCOUNT FOR ALL OF THEM. | **2** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/deskLines.ts |
 | `deviceActivityLine` | web:practice/deviceActivity.ts | The line itself, or `null` where there is honestly nothing to say. | **2** · web:practice/devices/DevicesView.tsx, web:practice/tablet/TabletView.tsx |
-| `disputedLabels` | web:practice/tablet/pushDesk.tsx | WHAT THE PATIENT CROSSED, IN WORDS — "address, mobile number". | **2** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/patients/PatientsQueueView.tsx |
 | `fetchKioskMe` | web:kiosk/api.ts | Who this tablet is: the practice name and state for the header, the label somebody gave the device, and whether this tab is below the build floor. | **2** · web:kiosk/Ceremony.tsx, web:kiosk/components/Chrome.tsx |
 | `forgetActingAs` | web:effectivePractice.ts | Dropped when a session starts or ends, so the next read is honest. | **2** · web:platform/acting-as/ActingAsRegister.tsx, web:practice/PracticeList.tsx |
 | `identifierFieldsFor` | web:kiosk/rules/identifiers.ts | Builds the field set for the challenge. | **2** · web:kiosk/Ceremony.tsx, web:patient/portal/activate/[token]/ActivateView.tsx |
@@ -331,7 +338,9 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `signInWithPasskey` | web:patient/portal/api.ts | SIGN IN WITH A PASSKEY — no username, no identifier, nothing typed. | **2** · web:patient/portal/PortalView.tsx, web:patient/portal/activate/[token]/ActivateView.tsx |
 | `signOut` | web:auth.ts | Sign out — OF KEYCLOAK, not just of this tab. | **2** · web:SessionControl.tsx, web:review/ReviewerGate.tsx |
 | `silentRestoreUnresolved` | web:auth.ts | IS THE RESTORE QUESTION STILL OPEN — including "nobody has asked yet"? | **2** · web:practice/PracticeList.tsx, web:practice/usePractice.tsx |
-| `subjectForPatient` | web:practice/tablet/pushDesk.tsx | A patient with nothing on a tablet -- a correction with no dispute to close. | **2** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/patients/PatientWorkView.tsx |
+| `situationFor` | web:practice/frontdesk/visitChecklist.ts | THE ONE SITUATION THIS PERSON IS IN, so the panel can show ONE next thing (FRONT-DESK-PAGE.md §4). | **2** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/SmallDeskView.tsx |
+| `visitChecklist` | web:practice/frontdesk/visitChecklist.ts | THE ROWS FOR ONE PATIENT'S DAY — four of paperwork, and the visit itself. | **2** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/SmallDeskView.tsx |
+| `visitStateLabel` | web:practice/practitioner/waiting/WaitingView.tsx | THE WORD FOR A VISIT STATE, AND THE CODE ITSELF WHERE THERE IS NO WORD. | **2** · web:practice/day/DayView.tsx, web:practice/frontdesk/FrontDeskView.tsx |
 | `when` | web:practice/tablet/pushDesk.tsx |  | **2** · web:practice/patients/PatientWorkView.tsx, web:practice/tablet/TabletView.tsx |
 | `EMPTY_CHOICE` | web:kiosk/rules/assignor.ts |  | **1** · web:kiosk/Ceremony.tsx |
 | `EMPTY_PARTS` | web:kiosk/rules/verify-fields.ts |  | **1** · web:kiosk/screens/VerifyScreen.tsx |
@@ -345,7 +354,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `answerSignature` | web:kiosk/rules/pushed-details.ts | ONE STRING FOR ONE SET OF ANSWERS, so the screen can tell whether what it is about to send is what it already sent. | **1** · web:kiosk/Ceremony.tsx |
 | `answeredTypes` | web:kiosk/rules/pushed-details.ts | WHAT GOES ON THE WIRE — the ANSWERED TYPES, in the domain's order, split into the ticked and the crossed, and nothing else (REQ-VER-04, hard rule 9). | **1** · web:kiosk/Ceremony.tsx |
 | `anyDisputed` | web:kiosk/rules/pushed-details.ts | At least one cross — which disables Continue and summons reception. | **1** · web:kiosk/Ceremony.tsx |
-| `arrivedAtLabel` | web:practice/practitioner/waiting/WaitingView.tsx | THE TIME THEY ARRIVED, IN THE PRACTICE'S OWN CLOCK-FACE TERMS. | **1** · web:practice/day/DayView.tsx |
 | `artefactUrl` | web:patient/portal/api.ts | The agreement AS SIGNED. | **1** · web:patient/portal/cards/AgreementsCard.tsx |
 | `assignorRequestFrom` | web:kiosk/rules/assignor.ts | The body for `POST /agreements/:id/assignor`, composed from the choice. | **1** · web:kiosk/Ceremony.tsx |
 | `attemptChallenge` | web:kiosk/api.ts |  | **1** · web:kiosk/Ceremony.tsx |
@@ -367,9 +375,14 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `confirmSessionDetails` | web:kiosk/api.ts | THE TICKS AND THE CROSSES — TYPES ONLY, NEVER VALUES (REQ-VER-04, hard rule 9). | **1** · web:kiosk/Ceremony.tsx |
 | `coreBaseUrl` | web:kiosk/session.ts |  | **1** · web:kiosk/api.ts |
 | `decideAssignor` | web:kiosk/rules/assignor.ts |  | **1** · web:kiosk/Ceremony.tsx |
+| `deskCounts` | web:practice/frontdesksmall/deskLines.ts | HOW MANY LINES ARE IN EACH STATE — the chips, and the whole reconciliation on one line. | **1** · web:practice/frontdesksmall/SmallDeskView.tsx |
+| `deskLines` | web:practice/frontdesksmall/deskLines.ts | EVERYBODY HERE TODAY, IN ONE LIST. | **1** · web:practice/frontdesksmall/SmallDeskView.tsx |
 | `detailRowsFor` | web:kiosk/rules/pushed-details.ts | The rows to draw, in the domain's order, with the empty ones dropped. | **1** · web:kiosk/Ceremony.tsx |
+| `detailSentence` | web:practice/frontdesk/FrontDeskView.tsx | The row's own sentence, resolved from the key the computation returned. | **1** · web:practice/frontdesksmall/SmallDeskView.tsx |
+| `deviceLabelFor` | web:practice/frontdesk/FrontDeskView.tsx | WHICH TABLET, BY THE NAME THE DESK USES FOR IT — "the blue one" is how the room talks (§12.2). | **1** · web:practice/frontdesksmall/SmallDeskView.tsx |
 | `evaluateAssignorGate` | web:kiosk/rules/assignor.ts |  | **1** · web:kiosk/Ceremony.tsx |
 | `evaluateSignatureGate` | web:kiosk/rules/signature-gate.ts | The only sanctioned way any surface may decide whether the signature control enables. | **1** · web:kiosk/Ceremony.tsx |
+| `everyServiceResolved` | web:practice/frontdesk/visitChecklist.ts | IS EVERY SERVICE ON THIS PATIENT'S LIST RESOLVED? | **1** · web:practice/frontdesk/dayRails.ts |
 | `fetchAccessLog` | web:patient/portal/api.ts |  | **1** · web:patient/portal/PortalView.tsx |
 | `fetchActingAs` | web:effectivePractice.ts |  | **1** · web:practice/PracticeList.tsx |
 | `fetchActivationChallenge` | web:patient/portal/api.ts | WHAT THE INVITATION LINK OPENS. | **1** · web:patient/portal/activate/[token]/ActivateView.tsx |
@@ -426,18 +439,19 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `signingByLine` | web:kiosk/rules/who-is-signing.ts | The header's second line, on every page: "by Alex Fictional", or "by Kim Fictional for Alex Fictional". | **1** · web:kiosk/components/Chrome.tsx |
 | `signingStatement` | web:kiosk/rules/who-is-signing.ts | K-4's fuller statement, above the pad: "Alex Fictional is signing." or "Kim Fictional is signing for Alex Fictional as their Mother." | **1** · web:kiosk/screens/SignatureScreen.tsx |
 | `silentLoginFailed` | web:auth.ts | Called by the callback when Keycloak answers `login_required`. | **1** · web:callback/page.tsx |
-| `situationFor` | web:practice/frontdesk/visitChecklist.ts | THE ONE SITUATION THIS PERSON IS IN, so the panel can show ONE next thing (FRONT-DESK-PAGE.md §4). | **1** · web:practice/frontdesk/FrontDeskView.tsx |
 | `slugify` | web:practice/templates/templateEditing.ts | A PRACTICE NAME, MADE INTO THE SHAPE A VERSION NAME CAN START WITH (Carl, 7 Sep 2026). | **1** · web:practice/templates/TemplateForm.tsx |
+| `stableByFirstSeen` | web:practice/frontdesk/FrontDeskView.tsx | HOLD THE ORDER SOMEBODY IS LOOKING AT (§12.3). | **1** · web:practice/frontdesksmall/SmallDeskView.tsx |
 | `startChallenge` | web:kiosk/api.ts |  | **1** · web:kiosk/Ceremony.tsx |
+| `stateWord` | web:practice/frontdesk/FrontDeskView.tsx | DONE, STILL TO DO, DROPPED, OR NOTHING TO SIGN — the words, from the table. | **1** · web:practice/frontdesksmall/SmallDeskView.tsx |
 | `terminateEnduring` | web:patient/portal/api.ts | ENDING AN ENDURING AGREEMENT — the patient's own right under 65CA(7)(b), held even where somebody else entered the agreement for them (REQ-END-06). | **1** · web:patient/portal/PortalView.tsx |
+| `timeLabel` | web:practice/frontdesk/FrontDeskView.tsx | The time on a row, or the honest statement that the booking carried none. | **1** · web:practice/frontdesksmall/SmallDeskView.tsx |
 | `transitionAgreement` | web:kiosk/api.ts | Moves a verified draft to the signing step. | **1** · web:kiosk/Ceremony.tsx |
 | `trimStatedValues` | web:kiosk/rules/verify-fields.ts | TRIMS WHAT LEAVES THE DEVICE, NEVER WHAT IS TYPED (Carl, 3 Sep 2026). | **1** · web:kiosk/Ceremony.tsx |
-| `visitChecklist` | web:practice/frontdesk/visitChecklist.ts | THE FOUR ROWS FOR ONE PATIENT'S DAY. | **1** · web:practice/frontdesk/FrontDeskView.tsx |
-| `visitStateLabel` | web:practice/practitioner/waiting/WaitingView.tsx | THE WORD FOR A VISIT STATE, AND THE CODE ITSELF WHERE THERE IS NO WORD. | **1** · web:practice/day/DayView.tsx |
 | `whoIsBlocked` | web:practice/tablet/pushDesk.tsx | The same gate, as the single sentence its two other callers ask for. | **1** · web:practice/patients/NewAgreementPanel.tsx |
 | `withTransientRetry` | web:kiosk/rules/retry.ts | Run `attempt`, and on a transient failure run it again after each delay. | **1** · web:kiosk/Ceremony.tsx |
 | `wrapSelection` | web:practice/templates/templateEditing.ts | WRAP THE SELECTION IN A CONDITION — "only when…". | **1** · web:practice/templates/TemplateForm.tsx |
 | `writePairingCredential` | web:kiosk/pairing.ts | Remember the credential this tablet was just given. | **1** · web:kiosk/Ceremony.tsx |
+| `ARRIVED_STATES` | web:practice/frontdesksmall/deskLines.ts | The four states that partition the register — the sum the chips must make. | 0 |
 | `FIELDS_FOR_DISPUTED_TYPE` | web:practice/tablet/pushDesk.tsx | WHICH COLUMNS ANSWER A CROSSED ROW. | 0 |
 | `FIXTURE_ACTIVATION_ANSWERS` | web:patient/portal/fixtures.ts | WHAT THE ACTIVATION PAGE ANSWERS FROM WHEN CORE IS NOT RUNNING. | 0 |
 | `GATE_REASONS` | web:kiosk/rules/signature-gate.ts | Reasons are engineering-legible, not patient-legible: they are shown to whoever is standing at the tablet so a staff member can act on them, and they never name a patient detail value. | 0 |
@@ -446,6 +460,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `OFFER_RETURN_SECONDS` | web:kiosk/screens/CompleteScreen.tsx | LONGER WHILE A QUESTION IS ON SCREEN (W6). | 0 |
 | `PAIRING_CREDENTIAL_KEY` | web:kiosk/pairing.ts | The only key the kiosk may ever persist. | 0 |
 | `PERSISTABLE_KEYS` | web:kiosk/pairing.ts | THE ALLOW-LIST. | 0 |
+| `RESOLVED_SERVICE_STATES` | web:practice/frontdesk/visitChecklist.ts | WHICH STATES MEAN AN ITEM NEEDS NOTHING MORE. | 0 |
 | `RETURN_SECONDS` | web:kiosk/screens/CompleteScreen.tsx | The Expo build's timeout, unchanged. | 0 |
 | `RETURN_TO_BEGIN_HOLD_MS` | web:kiosk/Ceremony.tsx | HOW LONG "Please see reception" STAYS UP before the tablet returns to Begin on its own (Carl, 4–5 Sep 2026). | 0 |
 | `RetryAborted` | web:kiosk/rules/retry.ts | THE ERROR AN ABORT PRODUCES. | 0 |
@@ -464,7 +479,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `closeFixtureSession` | web:patient/portal/fixtures.ts |  | 0 |
 | `describeRefusal` | web:practice/tablet/pushDesk.tsx | WHY THE PUSH WAS REFUSED, in our words, with somewhere to go. | 0 |
 | `detailInSentence` | web:practice/patients/PatientWorkView.tsx | The detail's own label, as it reads inside a sentence rather than above a field. | 0 |
-| `deviceLabelFor` | web:practice/frontdesk/FrontDeskView.tsx | WHICH TABLET, BY THE NAME THE DESK USES FOR IT — "the blue one" is how the room talks (§12.2). | 0 |
 | `deviceSeenAgo` | web:practice/deviceActivity.ts | "4 s", "3 min", "2 hours", "over a day" — deliberately coarse. | 0 |
 | `dynamic` | web:api/kiosk-build/route.ts | Never cached: a cached answer is the same tab staring at its own stale copy. | 0 |
 | `fieldsToCorrect` | web:practice/tablet/pushDesk.tsx |  | 0 |
@@ -552,8 +566,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `signedLabel` | web:practice/day/DayView.tsx | WHETHER IT IS SIGNED, IN THREE ANSWERS RATHER THAN TWO. | 0 |
 | `signingFact` | web:practice/tablet/pushDesk.tsx | "Signing: the patient" / "Signing: Alex Fictional for Kim Specimen — mother" — the same one-string treatment as `serviceFact`. | 0 |
 | `soleLivePracticeName` | web:practitioner/PractitionerHub.tsx | THE ONE PRACTICE A PRACTITIONER IS WORKING AT, for the session badge — or null when there is none or more than one, because naming one of two in the corner of every page would be a guess presented as a fact. | 0 |
-| `stableByFirstSeen` | web:practice/frontdesk/FrontDeskView.tsx | HOLD THE ORDER SOMEBODY IS LOOKING AT (§12.3). | 0 |
-| `timeLabel` | web:practice/frontdesk/FrontDeskView.tsx | The time on a row, or the honest statement that the booking carried none. | 0 |
 | `todayLocal` | web:practice/patients/NewAgreementPanel.tsx | TODAY, BY THE PRACTICE'S CLOCK — never `toISOString().slice(0, 10)`. | 0 |
 | `waitedFor` | web:review/QueueView.tsx | How long it has waited, in the terms a person would say it. | 0 |
 | `whenLabel` | web:practice/reconciliation/ServiceDescriptionsNeeded.tsx | "Thu 3 Sep, 09:00" — or nothing, for a walk-in with no booked time. | 0 |
@@ -564,12 +576,13 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web types
 
-97 exports.
+102 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
 | `Loadable` | web:patient/portal/portal-ui.tsx | What a card has been handed. | **10** · web:patient/portal/PortalView.tsx, web:patient/portal/cards/AgreementsCard.tsx, web:patient/portal/cards/DataCard.tsx, +7 more |
 | `Tone` | web:ui/index.tsx |  | **9** · web:apply/GateLedger.tsx, web:correspondence/MessageLog.tsx, web:practice/affiliations/AffiliationsView.tsx, +6 more |
+| `PushableRow` | web:practice/tablet/pushDesk.tsx |  | **6** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesk/dayRails.ts, web:practice/frontdesk/visitChecklist.ts, +3 more |
 | `Session` | web:auth.ts |  | **4** · web:AuthGate.tsx, web:ConsoleDashboard.tsx, web:SessionControl.tsx, +1 more |
 | `SignatureValidation` | web:kiosk/rules/signature-gate.ts |  | **4** · web:kiosk/Ceremony.tsx, web:kiosk/components/SignatureControl.tsx, web:kiosk/screens/ParticularsScreen.tsx, +1 more |
 | `SigningParties` | web:kiosk/rules/who-is-signing.ts | The four facts a screen needs to say who is signing. | **4** · web:kiosk/Ceremony.tsx, web:kiosk/components/Chrome.tsx, web:kiosk/screens/CheckDetailsScreen.tsx, +1 more |
@@ -583,7 +596,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PortalNotice` | web:patient/portal/api.ts | `GET /portal/notices` — reg 89AA claim notifications. | **3** · web:patient/portal/PortalView.tsx, web:patient/portal/cards/NoticesCard.tsx, web:patient/portal/fixtures.ts |
 | `PortalPasskey` | web:patient/portal/api.ts | ONE CREDENTIAL, AS THE "SIGN-IN AND SECURITY" CARD LISTS IT. | **3** · web:patient/portal/PortalView.tsx, web:patient/portal/cards/PasskeysCard.tsx, web:patient/portal/fixtures.ts |
 | `PortalVisit` | web:patient/portal/api.ts | `GET /portal/visits` — where an agreement was made. | **3** · web:patient/portal/PortalView.tsx, web:patient/portal/cards/VisitsCard.tsx, web:patient/portal/fixtures.ts |
-| `PushableRow` | web:practice/tablet/pushDesk.tsx |  | **3** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesk/visitChecklist.ts, web:practice/patients/PatientWorkView.tsx |
 | `AssignorChoice` | web:kiosk/rules/assignor.ts |  | **2** · web:kiosk/Ceremony.tsx, web:kiosk/screens/AssignorScreen.tsx |
 | `AssignorGate` | web:kiosk/rules/assignor.ts | THE LIVE GATE FOR THE "SOMEONE ELSE" BRANCH — the single source of truth behind both the `GuardedButton` on K-5 (which must be disabled, with a reason, before anybody presses Continue — CLAUDE.md §6: blocked states are unreachable, not merely inert) and `decideAssignor`'s final allow/refuse call below, so the two can never drift apart on what counts as blocked. | **2** · web:kiosk/Ceremony.tsx, web:kiosk/screens/AssignorScreen.tsx |
 | `DateOfBirthParts` | web:kiosk/rules/verify-fields.ts |  | **2** · web:patient/portal/activate/[token]/ActivateView.tsx, web:practice/patients/NewAgreementPanel.tsx |
@@ -593,13 +605,18 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PortalActivationChallenge` | web:patient/portal/api.ts | `GET /portal/activate/:token/challenge` — which boxes the activation page should draw (FR-1.14). | **2** · web:patient/portal/activate/[token]/ActivateView.tsx, web:patient/portal/fixtures.ts |
 | `PortalLink` | web:patient/portal/api.ts | One practice this account is linked to. | **2** · web:patient/portal/PortalView.tsx, web:patient/portal/cards/PracticeFilter.tsx |
 | `PortalTermination` | web:patient/portal/api.ts | `POST /portal/enduring/:id/terminate` — the written notice, and when it bites. | **2** · web:patient/portal/cards/EnduringCard.tsx, web:patient/portal/fixtures.ts |
+| `PushDesk` | web:practice/tablet/pushDesk.tsx | (file) THE PUSH DESK — the one implementation of reception's tablet controls, rendered by two pages (Carl, 4 Sep 2026). | **2** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/SmallDeskView.tsx |
 | `SignaturePadHandle` | web:kiosk/components/SignaturePad.tsx |  | **2** · web:kiosk/Ceremony.tsx, web:kiosk/screens/SignatureScreen.tsx |
 | `TemplateBody` | web:practice/templates/templateEditing.ts | Exactly the four fields `POST /agreement-templates` reads out of `body`. | **2** · web:practice/templates/TemplateForm.tsx, web:practice/templates/TemplatesView.tsx |
 | `VerificationState` | web:kiosk/rules/verification.ts |  | **2** · web:kiosk/Ceremony.tsx, web:kiosk/screens/VerifyScreen.tsx |
 | `AgreementResponse` | web:kiosk/api.ts | `GET /agreements/:id` — only the fields the ceremony reads. | **1** · web:kiosk/Ceremony.tsx |
 | `ChecklistRow` | web:practice/frontdesk/visitChecklist.ts |  | **1** · web:practice/frontdesk/FrontDeskView.tsx |
+| `ChecklistState` | web:practice/frontdesk/visitChecklist.ts | WHERE ONE SERVICE ON THIS PATIENT'S LIST HAS GOT TO (`VISIT-CHECKLIST.md` §3a; Carl, 12 September 2026: *"What you call 'Paper work' per patient, I call the patient service list. | **1** · web:practice/frontdesk/dayRails.ts |
 | `CopyOfferResponse` | web:kiosk/api.ts |  | **1** · web:kiosk/screens/CompleteScreen.tsx |
 | `CoveredServiceRow` | web:practice/tablet/pushDesk.tsx | A VISIT THAT NEEDED NO SECOND SIGNATURE — a history line on the desk, never a Send (Carl, 11 Sep 2026, step 4). | **1** · web:practice/frontdesk/visitChecklist.ts |
+| `DayRailRow` | web:practice/frontdesk/dayRails.ts | ONE LINE ON THE RAIL. | **1** · web:practice/frontdesksmall/deskLines.ts |
+| `DeskLine` | web:practice/frontdesksmall/deskLines.ts | ONE LINE OF THE LIST. | **1** · web:practice/frontdesksmall/SmallDeskView.tsx |
+| `DeskState` | web:practice/frontdesksmall/deskLines.ts | THE SIX MARKERS A LINE CAN CARRY, and the first five are the chips. | **1** · web:practice/frontdesksmall/SmallDeskView.tsx |
 | `DetailRow` | web:kiosk/rules/pushed-details.ts |  | **1** · web:kiosk/screens/CheckDetailsScreen.tsx |
 | `GateLedgerState` | web:apply/GateLedger.tsx |  | **1** · web:apply/ApplyForm.tsx |
 | `GateState` | web:apply/GateLedger.tsx | ATTESTED is deliberately its own state, not a flavour of `passed`. | **1** · web:status/[token]/StatusView.tsx |
@@ -608,7 +625,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PairingFailure` | web:kiosk/screens/PairingScreen.tsx | What happened to the last attempt. | **1** · web:kiosk/Ceremony.tsx |
 | `ParticularsView` | web:kiosk/screens/ParticularsScreen.tsx |  | **1** · web:kiosk/Ceremony.tsx |
 | `PortalSession` | web:patient/portal/api.ts | `GET /portal/session`. | **1** · web:patient/portal/fixtures.ts |
-| `PushDesk` | web:practice/tablet/pushDesk.tsx | (file) THE PUSH DESK — the one implementation of reception's tablet controls, rendered by two pages (Carl, 4 Sep 2026). | **1** · web:practice/frontdesk/FrontDeskView.tsx |
 | `QueueRow` | web:review/QueueView.tsx | One row of the pending queue, as the API returns it. | **1** · web:review/[id]/DossierView.tsx |
 | `RecordCheckInput` | web:review/CheckRecorder.tsx |  | **1** · web:review/[id]/DossierView.tsx |
 | `SignRequestBody` | web:kiosk/rules/signature-payload.ts |  | **1** · web:kiosk/api.ts |
@@ -624,10 +640,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ChallengeResponse` | web:kiosk/api.ts |  | 0 |
 | `ChangeAssignorRequest` | web:kiosk/api.ts | SOMEBODY OTHER THAN THE PATIENT IS SIGNING — or the patient is after all. | 0 |
 | `ChecklistDetail` | web:practice/frontdesk/visitChecklist.ts | WHICH SENTENCE THE ROW SAYS. | 0 |
-| `ChecklistKey` | web:practice/frontdesk/visitChecklist.ts | The four rows of `VISIT-CHECKLIST.md` §2 that are ours. | 0 |
-| `ChecklistState` | web:practice/frontdesk/visitChecklist.ts | Done, still to do, or not something this visit needs at all. | 0 |
+| `ChecklistKey` | web:practice/frontdesk/visitChecklist.ts | THE ROWS OF `VISIT-CHECKLIST.md` §2 THAT ARE OURS — four of paperwork, and since D-2026-09-12-20 the visit itself between them. | 0 |
 | `CopyOfferChannelResponse` | web:kiosk/api.ts | A channel the signer may be offered, with the address MASKED by the server. | 0 |
 | `CorrectionSubject` | web:practice/tablet/pushDesk.tsx | WHAT ONE CORRECTION IS ABOUT. | 0 |
+| `DayRails` | web:practice/frontdesk/dayRails.ts | The groups a day's rows can be printed under. | 0 |
+| `DayReads` | web:practice/frontdesksmall/useDayReads.ts |  | 0 |
 | `EmailStatus` | web:EmailStatusChip.tsx |  | 0 |
 | `GuardedState` | web:kiosk/components/Buttons.tsx |  | 0 |
 | `HeartbeatState` | web:kiosk/useKioskHeartbeat.ts |  | 0 |
@@ -668,7 +685,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Domain functions
 
-372 exports.
+374 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -695,6 +712,8 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `isBillingRole` | domain:billing-roles.ts |  | **3** · core:affiliations/affiliations.service.ts, core:arrivals/arrivals.service.ts, core:practices/practices.service.ts |
 | `isCorrectablePatientField` | domain:tablet-session.ts |  | **3** · core:patients/patients.service.ts, core:tablet-sessions/tablet-sessions.service.ts, web:practice/tablet/pushDesk.tsx |
 | `isServiceDescription` | domain:service-descriptions.ts | Is this exactly one of the descriptions the current list offers? | **3** · core:kiosk/kiosk.service.ts, core:service-descriptions/service-descriptions.service.ts, core:tablet-sessions/tablet-sessions.service.ts |
+| `isTheServiceRenderedSignal` | domain:visit-states.ts | Setting this is the service-rendered signal (§3a rule 3). | **3** · core:practitioner-queue/practitioner-queue.service.ts, web:practice/frontdesk/dayRails.ts, web:practice/frontdesk/visitChecklist.ts |
+| `latestVisitState` | domain:visit-states.ts | WHERE A VISIT HAS GOT TO — the newest record, or the starting state. | **3** · core:arrivals/arrivals.service.ts, core:practitioner-queue/practitioner-queue.service.ts, core:tablet-sessions/tablet-sessions.service.ts |
 | `matrix` | domain:reporting.ts | Months down the side, positions within the month across the top. | **3** · core:outbound/outbound.service.ts, web:practice/reports/ReportsView.tsx, web:practitioner/messages/MessagesView.tsx |
 | `mayBeProviderOnAgreement` | domain:billing-roles.ts | MAY THIS PERSON BE THE PROVIDER ON AN AGREEMENT AT THIS LOCATION? | **3** · core:arrivals/arrivals.service.ts, core:tablet-sessions/tablet-sessions.service.ts, domain:guards.ts |
 | `normaliseEmail` | domain:contacts.ts | One mailbox, case-insensitively. | **3** · core:agreements/agreements.service.ts, domain:agreement-copy.ts, domain:assignor.ts |
@@ -731,7 +750,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `isPairingCodeShape` | domain:devices.ts | Shape only — whether it is a LIVE code is the server's question, not this one. | **2** · core:devices/devices.service.ts, web:kiosk/screens/PairingScreen.tsx |
 | `isValidAbnChecksum` | domain:abn.ts | The ATO's published ABN check: subtract 1 from the leading digit, apply the weights, and the weighted sum must be divisible by 89. | **2** · core:organisations/organisations.service.ts, web:apply/ApplyForm.tsx |
 | `kioskPollMs` | domain:kiosk.ts |  | **2** · core:devices/devices.service.ts, core:kiosk/kiosk.service.ts |
-| `latestVisitState` | domain:visit-states.ts | WHERE A VISIT HAS GOT TO — the newest record, or the starting state. | **2** · core:arrivals/arrivals.service.ts, core:practitioner-queue/practitioner-queue.service.ts |
 | `matchesPracticeStaff` | domain:assignor.ts | REQ-VUL-04 / hard rule 10 — the practice-staff comparison. | **2** · web:kiosk/rules/assignor.ts, web:practice/tablet/pushDesk.tsx |
 | `mayChoosePractice` | domain:landing.ts | May this person choose which practice they are looking at? | **2** · web:practice/PracticeList.tsx, web:practice/usePractice.tsx |
 | `normaliseAbn` | domain:abn.ts | Strip the spaces the ABR itself prints ("51 824 753 556"). | **2** · core:organisations/organisations.service.ts, web:apply/ApplyForm.tsx |
@@ -863,7 +881,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `isReportGrain` | domain:reporting.ts |  | **1** · core:outbound/outbound.service.ts |
 | `isSessionLive` | domain:acting-as.ts | Is this session still live? | **1** · core:acting-as/acting-as.service.ts |
 | `isTaskClaimable` | domain:review-tasks.ts | Is this task available to be picked up? | **1** · core:review-tasks/review-tasks.service.ts |
-| `isTheServiceRenderedSignal` | domain:visit-states.ts | Setting this is the service-rendered signal (§3a rule 3). | **1** · core:practitioner-queue/practitioner-queue.service.ts |
 | `isWithinNoticeWindow` | domain:notice.ts |  | **1** · core:notices/notices.service.ts |
 | `kindForAmendment` | domain:review-tasks.ts |  | **1** · core:organisations/organisations.service.ts |
 | `kioskBuildIsStale` | domain:devices.ts | THE FORCED RELOAD — the other half of the zero-footprint bargain. | **1** · core:devices/devices.service.ts |
@@ -881,8 +898,10 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `mayPerformHighStakesAct` | domain:auth-method.ts | May this session perform a high-stakes act? | **1** · core:auth/auth.guard.ts |
 | `maySetVisitState` | domain:visit-states.ts | MAY THIS PERSON SET A STATE ON THIS VISIT (§3a rule 2)? | **1** · core:practitioner-queue/practitioner-queue.service.ts |
 | `needsFourteenthBirthdayAction` | domain:enduring.ts | True when a patient covered under SOMEONE ELSE'S agreement is within the lead window of turning 14. Deterministic from date of birth — there is no excuse for missing it (Addendum v2 §3.3). | **1** · core:enduring/enduring.service.ts |
+| `nextAllocatedTicket` | domain:queue-ticket.ts | THE NEXT NUMBER TO ALLOCATE, given what this practice has already issued TODAY. | **1** · core:arrivals/arrivals.service.ts |
 | `normalisePairingCode` | domain:devices.ts | What the tablet typed, reduced to what the server stored. | **1** · core:devices/devices.service.ts |
 | `normalisePersonName` | domain:assignor.ts | How a typed name is reduced before it is compared to the practice's staff list. | **1** · core:agreements/agreements.service.ts |
+| `normaliseQueueTicket` | domain:queue-ticket.ts | A TICKET AS IT IS STORED — trimmed, upper-cased, and cut to length. | **1** · core:arrivals/arrivals.service.ts |
 | `noticeDeadline` | domain:notice.ts | The clock starts at CLAIM LODGEMENT, not at the service (reg 89AA). | **1** · core:notices/notices.service.ts |
 | `noticeToPractice` | domain:acting-as.ts | What the practice is told afterwards. | **1** · core:acting-as/acting-as.service.ts |
 | `noticeToPracticeOnEnd` | domain:acting-as.ts | What the practice is told once the session ENDS — the second half of the pair with {@link noticeToPractice}. | **1** · core:acting-as/acting-as.service.ts |
@@ -1047,7 +1066,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Domain constants and content
 
-231 exports.
+233 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1255,6 +1274,8 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PROVIDER_TYPE_PROFESSIONS` | domain:ahpra.ts | Does the AHPRA profession support the provider type a practice is asserting? | 0 |
 | `PURPOSE_FAMILIES` | domain:correspondence-log.ts | WHAT THE THING ACTUALLY IS, in three facts. | 0 |
 | `PUSH_BLOCKED_REASONS` | domain:tablet-session.ts | WHY A PUSH WAS REFUSED — a CODE, never the rule's own sentence with data folded into it, and never anything about the patient. | 0 |
+| `QUEUE_TICKET_MAX_LENGTH` | domain:queue-ticket.ts | The longest a ticket may be. | 0 |
+| `QUEUE_TICKET_SOURCES` | domain:queue-ticket.ts | WHERE A NUMBER CAME FROM, IN PRECEDENCE ORDER (Carl, 12 September 2026; D-2026-09-12-18). | 0 |
 | `RECONCILIATION_DECISIONS` | domain:reconciliation-decision.ts |  | 0 |
 | `REGISTRATION_SOURCES` | domain:ahpra.ts | How the registration details were obtained. | 0 |
 | `REPORT_SCOPES` | domain:reporting.ts | WHOSE NUMBERS SOMEBODY MAY SEE. | 0 |
@@ -1285,7 +1306,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Domain types
 
-274 exports.
+275 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1369,6 +1390,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PracticeDayWindow` | domain:practice-day.ts | ONE DAY IN THE PRACTICE'S ZONE, AS A HALF-OPEN INTERVAL OF INSTANTS. | **1** · core:arrivals/arrivals.service.ts |
 | `PracticeFilter` | domain:search.ts | The status a row is filtered by. | **1** · web:practice/PracticeList.tsx |
 | `PrintDocumentType` | domain:inbound-lanes.ts |  | **1** · contracts:print-capture.ts |
+| `QueueTicketSource` | domain:queue-ticket.ts |  | **1** · core:arrivals/arrivals.service.ts |
 | `ReconciliationDecision` | domain:reconciliation-decision.ts |  | **1** · core:reconciliation/reconciliation.service.ts |
 | `ReportScope` | domain:reporting.ts |  | **1** · core:outbound/outbound.service.ts |
 | `SessionAuthMethod` | domain:auth-method.ts | What a session was authenticated with, in the product's own words. | **1** · core:auth/actor.decorator.ts |
@@ -1572,8 +1594,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 |---|---|---|---|
 | `VaultEventInput` | contracts:vault.ts |  | **8** · core:artefacts/artefacts.service.ts, vault:chain/chain-store.contract.ts, vault:chain/chain-store.ts, +5 more |
 | `VaultEventRecord` | contracts:vault.ts |  | **7** · vault:chain/chain-store.ts, vault:chain/immudb-chain-store.ts, vault:chain/in-memory-chain-store.ts, +4 more |
+| `DayRegisterRow` | contracts:arrivals.ts | WHO CAME IN, WHEN, TO SEE WHOM, AND WHAT HAPPENED ABOUT THEIR AGREEMENT (Carl, 12 September 2026, on `/practice/frontdesk`: *"Add a button here with a link to show all Patients seen at this practice today. | **5** · core:arrivals/arrivals.service.ts, web:practice/day/DayView.tsx, web:practice/frontdesk/FrontDeskView.tsx, +2 more |
 | `PmsAdapter` | contracts:pms-adapter.ts | The adapter contract. | **5** · connector:mock-adapter.ts, core:auto-capture/auto-capture.service.ts, core:pms/pms-sync.service.ts, +2 more |
 | `RuleResult` | contracts:rules-engine.ts |  | **5** · core:service-descriptions/service-descriptions.service.ts, rules:rules/rule-set-2026-08.draft.ts, rules:rules/rule-set.contract.ts, +2 more |
+| `DayRegister` | contracts:arrivals.ts | ONE PRACTICE'S DAY. | **4** · core:arrivals/arrivals.service.ts, web:practice/day/DayView.tsx, web:practice/frontdesk/FrontDeskView.tsx, +1 more |
+| `ExpectedAppointment` | contracts:arrivals.ts | SOMEBODY BOOKED FOR TODAY WHO HAS NOT WALKED IN YET (Carl, 12 Sep 2026; FRONT-DESK-PAGE.md §12.4). | **4** · core:arrivals/arrivals.service.ts, web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/deskLines.ts, +1 more |
 | `PmsPatientRecord` | contracts:pms-adapter.ts |  | **4** · connector:mock-adapter.ts, core:auto-capture/auto-capture.service.ts, core:pms/pms-sync.service.ts, +1 more |
 | `PmsProvider` | contracts:pms-adapter.ts |  | **4** · connector:mock-adapter.ts, core:auto-capture/auto-capture.service.ts, core:pms/pms-sync.service.ts, +1 more |
 | `PrintJobEnvelope` | contracts:print-capture.ts |  | **4** · core:inbound/inbound-lane.worker.ts, core:inbound/inbound-print-jobs.controller.ts, core:inbound/inbound-print-jobs.processor.ts, +1 more |
@@ -1584,9 +1609,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ValidationStage` | contracts:rules-engine.ts | REQ-65C-01 runs the validator twice: BEFORE the signature control enables (blocking) and again AT STORAGE (assert). | **3** · rules:rules/rule-set-2026-08.draft.ts, rules:rules/rule-set.ts, rules:rules/rules.service.ts |
 | `VaultClient` | contracts:vault.ts | Append and read. | **3** · core:vault/vault-relay.service.ts, vault-client:client.ts, vault-client:relay.ts |
 | `ArrivalPreview` | contracts:arrivals.ts | WHAT THE VISIT WOULD NEED, ASKED BEFORE ANYTHING IS WRITTEN (W2, Carl 7 Sep 2026). | **2** · core:arrivals/arrivals.service.ts, web:practice/patients/NewAgreementPanel.tsx |
-| `DayRegister` | contracts:arrivals.ts | ONE PRACTICE'S DAY. | **2** · core:arrivals/arrivals.service.ts, web:practice/day/DayView.tsx |
-| `DayRegisterRow` | contracts:arrivals.ts | WHO CAME IN, WHEN, TO SEE WHOM, AND WHAT HAPPENED ABOUT THEIR AGREEMENT (Carl, 12 September 2026, on `/practice/frontdesk`: *"Add a button here with a link to show all Patients seen at this practice today. | **2** · core:arrivals/arrivals.service.ts, web:practice/day/DayView.tsx |
-| `ExpectedAppointment` | contracts:arrivals.ts | SOMEBODY BOOKED FOR TODAY WHO HAS NOT WALKED IN YET (Carl, 12 Sep 2026; FRONT-DESK-PAGE.md §12.4). | **2** · core:arrivals/arrivals.service.ts, web:practice/frontdesk/FrontDeskView.tsx |
 | `PatientSearchResult` | contracts:arrivals.ts | ONE PATIENT THIS PRACTICE ALREADY HOLDS, FOUND BY TYPING A NAME (W2). | **2** · core:patients/patients.service.ts, web:practice/patients/NewAgreementPanel.tsx |
 | `PmsAppointment` | contracts:pms-adapter.ts |  | **2** · connector:mock-adapter.ts, contracts:print-capture.ts |
 | `PortalLink` | contracts:portal.ts | One practice the patient linked for themselves. | **2** · core:portal/portal-reads.service.ts, core:portal/portal.service.ts |

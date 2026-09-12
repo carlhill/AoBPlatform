@@ -9,6 +9,34 @@ task and belongs in the code as a TODO comment instead.
 
 ---
 
+## A patient on "Needs a look" has no control that restarts their paperwork
+
+Built 12 September 2026: `/practice/frontdesk`'s rails now partition the day, so
+somebody who came in, has not signed and has nothing open for them appears on
+the **Needs a look** rail instead of on no screen at all
+(`FRONT-DESK-PAGE.md` §14). Two of them were sitting in the dev database's
+fifteen-arrival day when this was written.
+
+**What is missing.** The rail makes them visible. It offers nothing to press.
+Their agreement is unsigned, every capture request against it has been
+cancelled or has run out, and nothing in the product will ever open another
+one, so the row is a permanent statement of a problem with no fix beside it —
+which is the shape `CLAUDE.md` §7 calls a defect ("shortcuts to the answer, not
+directions to a screen").
+
+**Why it was deferred rather than done.** The two honest options are different
+products. One is a "start it again" that opens a fresh capture request on the
+existing agreement and puts the row back on the queue; the other is to leave it
+to the post-service chase and say so on the rail. Which is right depends on
+whether reception should be able to reopen a visit's paperwork at all, and that
+is Carl's call, not a build's. A half-built control that flags somebody's
+morning is worse than none — the same reasoning that left "ask reception" out
+of the practitioner's queue (`FRONT-DESK-PAGE.md` §6).
+
+**What it depends on.** Nothing technical. It is one decision.
+
+---
+
 ## The three integration modes, written down as one table
 
 Asked by Carl, 12 September 2026: *"I/we need to clearly write down the

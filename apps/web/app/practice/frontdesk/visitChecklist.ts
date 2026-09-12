@@ -27,13 +27,70 @@
  */
 
 import type { CoveredServiceRow, PushableRow } from '../tablet/pushDesk';
-import type { TabletSessionRow } from '@aobplatform/domain';
+import { isTheServiceRenderedSignal, type TabletSessionRow } from '@aobplatform/domain';
 
-/** Done, still to do, or not something this visit needs at all. */
-export type ChecklistState = 'done' | 'outstanding' | 'not_needed';
+/**
+ * WHERE ONE SERVICE ON THIS PATIENT'S LIST HAS GOT TO
+ * (`VISIT-CHECKLIST.md` §3a; Carl, 12 September 2026: *"What you call
+ * 'Paper work' per patient, I call the patient service list. We need a patient
+ * service list, just like a car has service list when taken to the service
+ * centre."*).
+ *
+ * `cancelled` IS NOT `not_needed`, AND THE DIFFERENCE IS THE POINT. *Not
+ * needed* was never required — the versioned visit policy said no agreement was
+ * owed. *Cancelled* was on the list and was dropped: the patient declined the
+ * blood test, or ran out of time. A car service list tells them apart and so
+ * does this, because "we never planned to" and "we planned to and did not" are
+ * different answers to an auditor and to the patient.
+ *
+ * NOTHING PRODUCES `cancelled` YET. The four computed rows cannot be dropped —
+ * they are derived, not chosen — so it arrives with the practice's own items
+ * (a nurse, bloods), which are versioned content and not built. It is in the
+ * type now so that `everyServiceResolved` is written against the whole set
+ * from the start, rather than being widened later by somebody who has to work
+ * out what "resolved" was supposed to mean.
+ */
+export type ChecklistState = 'done' | 'outstanding' | 'not_needed' | 'cancelled';
 
-/** The four rows of `VISIT-CHECKLIST.md` §2 that are ours. */
-export type ChecklistKey = 'needed' | 'made' | 'signed' | 'after';
+/**
+ * WHICH STATES MEAN AN ITEM NEEDS NOTHING MORE. Done, never needed, or
+ * deliberately dropped — three different facts and one consequence.
+ */
+export const RESOLVED_SERVICE_STATES: readonly ChecklistState[] = ['done', 'not_needed', 'cancelled'];
+
+/**
+ * IS EVERY SERVICE ON THIS PATIENT'S LIST RESOLVED?
+ *
+ * CARL'S RULE, AS THE GENERAL ONE (`VISIT-CHECKLIST.md` §3a): *"Only when all
+ * services are completed or some are cancelled does the client go to
+ * Finished."*
+ *
+ * WRITTEN OVER THE LIST RATHER THAN AS A BOOLEAN OF TWO CLAUSES, deliberately.
+ * Today the list is the computed paperwork rows plus the visit itself, so this
+ * reduces to "the paperwork is done and the patient has been seen" — the
+ * narrower rule D-2026-09-12-20 first recorded. When a practice's own items
+ * arrive, Finished has to change meaning WITHOUT anyone editing this function,
+ * and a two-clause boolean is exactly the shape that would have to be edited.
+ *
+ * AN EMPTY LIST IS RESOLVED. There is nothing outstanding, which is the honest
+ * answer and the one every caller wants.
+ */
+export function everyServiceResolved(items: readonly { readonly state: ChecklistState }[]): boolean {
+  return items.every((item) => RESOLVED_SERVICE_STATES.includes(item.state));
+}
+
+/**
+ * THE ROWS OF `VISIT-CHECKLIST.md` §2 THAT ARE OURS — four of paperwork, and
+ * since D-2026-09-12-20 the visit itself between them.
+ *
+ * `consultation` SITS AFTER `signed` AND BEFORE `after`, which is where Carl
+ * drew it (12 September 2026, with the two pages side by side: *"on /frontdesk
+ * the patient goes to 'Finished list' yet on /waiting the dr has not seen the
+ * patient as yet. Hence, we need a step 'Consultation completed'."*). The order
+ * is the morning's: sign in the waiting room, then be seen, then anything the
+ * visit turned out to need afterwards.
+ */
+export type ChecklistKey = 'needed' | 'made' | 'signed' | 'consultation' | 'after';
 
 /**
  * WHICH SENTENCE THE ROW SAYS. A key, resolved against the string table by the
@@ -52,7 +109,15 @@ export type ChecklistDetail =
   | 'withThemNow'
   | 'signedAndStored'
   | 'nothingBilledYet'
-  | 'afterOutstanding';
+  | 'afterOutstanding'
+  /*
+   * THE VISIT'S OWN STATE, RENDERED FROM THE VERSIONED LIST rather than from a
+   * sentence per state written here. The keys are content (`visit-states.json`)
+   * and their words are in the string table keyed by the key, so a fifth state
+   * reaches this row without a code change — and an unmapped one shows its own
+   * key rather than a blank (CLAUDE.md §7).
+   */
+  | 'visitState';
 
 export interface ChecklistRow {
   readonly key: ChecklistKey;
@@ -69,6 +134,11 @@ export interface ChecklistRow {
    * quote rather than as a sentence that hides it (CLAUDE.md §7).
    */
   readonly ruleKey?: string | null;
+  /**
+   * WHICH VISIT STATE THIS ROW IS REPORTING — a KEY from `visit-states.json`,
+   * never a word (hard rule 14, REQ-LANG-01). Only on the `consultation` row.
+   */
+  readonly visitState?: string | null;
 }
 
 /**
@@ -120,7 +190,7 @@ export function situationFor(
 }
 
 /**
- * THE FOUR ROWS FOR ONE PATIENT'S DAY.
+ * THE ROWS FOR ONE PATIENT'S DAY — four of paperwork, and the visit itself.
  *
  * `rows` and `covered` are this patient's slice of the two lists the desk
  * already holds. A patient can legitimately appear in both — signed on the way
@@ -211,5 +281,40 @@ export function visitChecklist(
     ? { key: 'after', state: 'outstanding', detail: 'afterOutstanding', provider: later.providerName }
     : { key: 'after', state: 'not_needed', detail: 'nothingBilledYet' };
 
-  return [needed, made, signed, afterRow];
+  /*
+   * ROW 4 (AND ROW 5 IS THE OLD ROW 4) — HAS THE PATIENT BEEN SEEN?
+   * D-2026-09-12-20, from Carl with the two pages side by side: *"on /frontdesk
+   * the patient goes to 'Finished list' yet on /waiting the dr has not seen the
+   * patient as yet. Hence, we need a step 'Consultation completed'."*
+   *
+   * THE WORD WAS DOING THE LYING. Signing happens in the waiting room, BEFORE
+   * the service, so a desk that read "signed" as "finished" announced that a
+   * patient was done while the practitioner had not yet called them in.
+   *
+   * IT READS THE STATE AND NEVER MINTS ONE. `pending` | `with_patient_now` |
+   * `completed` | `reassign` are already set from
+   * `/practice/practitioner/waiting` by the person who knows, and
+   * `completed` is already the service-rendered signal (D-2026-09-12-07). Two
+   * places disagreeing about whether somebody has been seen would be worse than
+   * the bug this fixes, so this row is a READ.
+   *
+   * NULL MEANS THERE IS NO VISIT TO BE IN A STATE — a post-service agreement
+   * drafted after the fact, a draft with no arrival behind it — and the row
+   * says "nothing to see" rather than reporting a state nobody holds.
+   *
+   * IT GATES NOTHING (hard rule 8, REQ-REC-04). No value here disables a
+   * control or refuses a send.
+   */
+  const seenBy = first ?? later;
+  const state = seenBy?.visitState ?? null;
+  const consultation: ChecklistRow = state === null
+    ? { key: 'consultation', state: 'not_needed', detail: 'visitState', visitState: null }
+    : {
+        key: 'consultation',
+        state: isTheServiceRenderedSignal(state) ? 'done' : 'outstanding',
+        detail: 'visitState',
+        visitState: state,
+      };
+
+  return [needed, made, signed, consultation, afterRow];
 }

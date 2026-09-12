@@ -56,6 +56,55 @@
 }
 
 /*
+ * A COLOUR PER RAIL, ON THE HEADING AND ON THE NUMBER (Carl, 12 September
+ * 2026: *"Put colour on the list heading and the number. Reason: I want my eye
+ * to be drawn to each list."*).
+ *
+ * THE REASON DECIDES THE DESIGN. This is not a severity scale and must not be
+ * read as one — Carl is LOCATING the lists, not triaging them, so each rail
+ * gets its own colour and the eye lands on the right heading directly instead
+ * of reading four of them to find the third.
+ *
+ * "HERE NOW" IS NOT COLOURED, and that is the strongest treatment rather than
+ * the weakest: `--ink` is the darkest text this product has, it is the work,
+ * and Carl asked for a colour on the others.
+ *
+ * EVERY VALUE IS AN EXISTING TOKEN and each passes WCAG 2.2 AA for small text
+ * on `--surface` (#ffffff): `--ok` #1a6c37 is 6.5:1, `--warn` #7a5300 is
+ * 6.6:1, `--info` #1f4d7a is 8.6:1, `--ink-muted` #55595e is 7.4:1. No colour
+ * was invented for this.
+ *
+ * COLOUR IS NEVER THE ONLY CARRIER (1.4.1). Every heading says in words what
+ * its rail is, the counts are spoken as whole sentences by the live region
+ * beside them, and there is no key anywhere that has to be learned.
+ *
+ * `--info` IS THE SAME HEX AS `--accent`, which the token file reserves for
+ * focus and the primary action. Carl has decided the blue stays; the
+ * distinction is kept as a TREATMENT — the accent is a solid FILL on a button,
+ * this is text on a plain background — so the two do not read as the same
+ * control.
+ */
+.toneOk .groupTitle,
+.toneOk .countNumber {
+  color: var(--ok);
+}
+
+.toneWarn .groupTitle,
+.toneWarn .countNumber {
+  color: var(--warn);
+}
+
+.toneInfo .groupTitle,
+.toneInfo .countNumber {
+  color: var(--info);
+}
+
+.toneQuiet .groupTitle,
+.toneQuiet .countNumber {
+  color: var(--ink-muted);
+}
+
+/*
  * THE COUNT IS THE LIVE REGION (§12.3), so it is a real element of its own
  * rather than text inside the heading — a heading whose whole content is
  * announced on every poll is a heading that gets read out all morning.
@@ -63,6 +112,61 @@
 .groupCount {
   margin-left: auto;
   font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+/*
+ * THE NUMBER, PICKED OUT OF ITS HEADING (Carl, 12 September 2026, annotating
+ * the "3 people" / "0 people" counts: *"Make the font bold and a diff colour
+ * for the number - so it stands out"*).
+ *
+ * `--ink` IS THE BASE AND EACH RAIL'S TONE OVERRIDES IT above — "Here now"
+ * takes no colour at all, which is the STRONGEST treatment on the column
+ * rather than the weakest, because it is the work.
+ *
+ * THE WORD BESIDE IT STAYS QUIET, so the contrast between them is what carries
+ * the emphasis rather than the number simply being loud. And the colour is
+ * never the only signal (1.4.1): the number is bold and a size larger, and the
+ * whole count is spoken as one sentence by the live region next to it.
+ */
+.countNumber {
+  font-weight: 700;
+  font-size: var(--text-base);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * THE DAY'S TOTAL, ABOVE EVERY GROUP — the number the four arrived rails have
+ * to add up to, and the reason the two pages can be trusted to agree.
+ */
+.total {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  margin: 0;
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.totalCount {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+/* Bigger than a group's, because it is the figure the others are checked against. */
+.totalNumber {
+  font-weight: 700;
+  font-size: var(--text-lg);
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  margin-right: var(--s2);
+}
+
+.totalWhy {
+  font-size: var(--text-xs);
   color: var(--ink-muted);
 }
 
@@ -83,6 +187,7 @@
  */
 .pick {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: var(--s3);
   width: 100%;
@@ -109,8 +214,52 @@
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
+/*
+ * A ROW THAT IS ONLY A ROW — the finished and needs-a-look groups, which have
+ * no queue row behind them and so nothing to select. Laid out exactly like
+ * `.pick` so the column reads as one list, and deliberately without its hover,
+ * focus ring or pressed state: nothing here suggests it can be pressed.
+ */
+.read {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s3);
+  width: 100%;
+  padding: var(--s3) var(--s4);
+  color: var(--ink);
+}
+
 .name {
   min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * THE NUMBER ON THE CARD, LEADING THE ROW (QUEUE-TICKETS.md §4.2: *"as the
+ * leading element of each row in the queue rail, because 'call number twelve'
+ * is the job"*). Fixed-width digits so a column of them lines up, and set in
+ * the row's own ink rather than an accent — it is a handle, not a status.
+ */
+.ticket {
+  flex: none;
+  min-width: 2.25rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+/*
+ * WHICH TABLET THEY HAVE, IN THE PRACTICE'S OWN WORDS (Carl, 12 September
+ * 2026). Small, quiet, on its own line under the name, and the label is
+ * printed exactly as the practice wrote it with nothing added around it — a
+ * sentence built around it produces "has the Blue tablet tablet".
+ */
+.device {
+  display: block;
+  width: 100%;
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
   overflow-wrap: anywhere;
 }
 
@@ -343,4 +492,20 @@
 .dayWhy {
   font-size: var(--text-xs);
   color: var(--ink-muted);
+}
+
+/*
+ * THE OTHER DOOR, UNDER THE GROUP IT IS ABOUT (Carl, 12 September 2026). Set
+ * inside the group's card rather than beside it, because it is about THAT
+ * list; the day-register link below the rail is about the whole day and is
+ * laid out apart from every group for the same reason.
+ */
+.groupLink {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s1);
+  margin: 0;
+  padding: var(--s3) var(--s4);
+  border-top: 1px solid var(--line);
 }

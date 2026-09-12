@@ -161,6 +161,32 @@ export class ArrivalDto {
   @MaxLength(200)
   idempotencyKey!: string;
 
+  /**
+   * THE NUMBER ON THE CARD, WHERE THERE IS A CARD (`QUEUE-TICKETS.md`).
+   *
+   * ACCEPTED FROM EVERY SOURCE, unlike the four fields below, and that is the
+   * point of it: a practice running a manual card box types it, a practice
+   * whose software carries a queue number sends it, and where neither does the
+   * platform allocates one. The service decides which of the three it was from
+   * `source` — the caller never asserts the provenance (D-2026-09-12-18).
+   *
+   * BOUNDED HERE, BUT LOOSELY, AND THE LOOSENESS IS THE POINT (caught in
+   * review, 12 Sep 2026). The real limit is eight characters and it is enforced
+   * where the value is normalised — trimmed, upper-cased, cut —
+   * (`normaliseQueueTicket`) and again by the database
+   * (`arrivals_ticket_is_short`). If THIS bound were eight, a connector sending
+   * `" A123456 "` — seven characters of ticket and two of whitespace — would
+   * have the WHOLE ARRIVAL refused with a 400, and a patient at the desk would
+   * not be on anybody's queue because of a space. A ticket may never stop a
+   * flow (QUEUE-TICKETS.md §5.1, hard rule 8).
+   *
+   * THE BOUND STILL EXISTS, because an unbounded string field is how this
+   * quietly becomes somewhere a name or an identifier gets posted (hard rule 1:
+   * a ticket is not an identity identifier and nothing verifies by it). It is
+   * a sanity limit at the edge, not the rule.
+   */
+  @IsOptional() @IsString() @MaxLength(64) queueTicket?: string;
+
   // -------------------------------------------------------------------------
   // THE FOUR FIELDS ONLY A PERSON MAY SEND (W2, Carl 7 Sep 2026; the fourth
   // added 12 Sep 2026).

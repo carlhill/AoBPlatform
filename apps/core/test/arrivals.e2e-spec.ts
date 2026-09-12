@@ -8,6 +8,7 @@ import {
   BILLING_ROLES_VERSION,
   VISIT_POLICY_RULES,
   VISIT_POLICY_VERSION,
+  VISIT_STATES_VERSION,
 } from '@aobplatform/domain';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
@@ -1740,6 +1741,376 @@ describe('arrivals — the PMS push, our side (e2e, real Postgres)', () => {
         })
         .expect(400);
       expect(manual.body.message).toMatch(/servicing provider/i);
+    });
+  });
+
+  /**
+   * THE NUMBER ON THE CARD IN THE PATIENT'S HAND (`QUEUE-TICKETS.md`; Carl,
+   * 12 September 2026: *"some practices have a manual card system... This
+   * allows the automated system via PMS + AoBPlatform, or Manual Card +
+   * AoBPlatform, or just AoBPlatform."*).
+   *
+   * WHAT THIS BLOCK PINS. The three sources in precedence order
+   * (D-2026-09-12-18), that a practice which does not use cards gets nothing at
+   * all, that the event records the FACT and never the number, and that the
+   * ticket reaches reception's desk through the supersession chain — which is
+   * the whole reason it lives on the arrival rather than on the agreement.
+   *
+   * IT IS NOT AN IDENTITY IDENTIFIER (hard rule 1, REQ-VER-02) and nothing here
+   * treats it as one: no read finds a person by it, and it reaches no
+   * verification path.
+   */
+  describe('the number on the card in the patient’s hand', () => {
+    const cardPracticeId = randomUUID();
+    let cardAffiliationId: string;
+
+    const cardArrival = (over: Record<string, unknown> = {}) => ({
+      ...arrival({ affiliationId: cardAffiliationId, ...over }),
+    });
+    const postCard = (body: Record<string, unknown>) =>
+      request(app.getHttpServer()).post('/arrivals').set('x-practice-id', cardPracticeId).send(body);
+
+    beforeAll(async () => {
+      await prisma.withPractice(cardPracticeId, async (tx) => {
+        await tx.practice.create({
+          data: {
+            id: cardPracticeId,
+            name: 'Card Box Medical',
+            defaultServiceDescription: D6A,
+            // The setting is the switch. Off everywhere else in this suite.
+            usesQueueTickets: true,
+          },
+        });
+        cardAffiliationId = (
+          await createServicingProvider(tx, cardPracticeId, {
+            name: 'Ash Sample',
+            providerType: 'allied_health',
+          })
+        ).affiliationId;
+      });
+    });
+
+    afterAll(async () => {
+      await prisma.withPractice(cardPracticeId, async (tx) => {
+        await tx.arrival.deleteMany({});
+        await tx.outboundItem.deleteMany({});
+        await tx.captureRequest.deleteMany({});
+        await tx.agreement.deleteMany({});
+        await tx.assignor.deleteMany({});
+        await tx.patient.deleteMany({});
+        await tx.provider.deleteMany({});
+        await deleteSeededAnchors(tx);
+        await tx.practice.deleteMany({});
+      });
+    });
+
+    it('a_queue_ticket_off_the_practices_own_card_is_recorded_as_theirs', async () => {
+      /*
+       * PRECEDENCE 1 (D-2026-09-12-18). A person at the desk read the number
+       * off the card the patient is holding, so the source is `practice_card`
+       * — and it is DERIVED from how the arrival reached us rather than
+       * asserted by the caller, because a connector claiming a number came off
+       * a card box nobody was standing at would be evidence with an invented
+       * witness.
+       */
+      /*
+       * WITH THIS PRACTICE'S OWN CLAIM ON THE TOKEN. `POST /arrivals` is
+       * `@PracticeScoped`, so a receptionist typing a walk-in carries it and a
+       * token without it is refused before any of this runs.
+       */
+      currentPrincipal = { ...RECEPTIONIST, practiceId: cardPracticeId };
+      const res = await postCard(
+        cardArrival({ source: 'reception', pmsPatientRecordNumber: 'CARD-0001', queueTicket: ' a12 ' }),
+      ).expect(201);
+
+      await prisma.withPractice(cardPracticeId, async (tx) => {
+        const row = await tx.arrival.findFirst({ where: { id: res.body.arrivalId } });
+        // Trimmed and upper-cased; a short STRING, never parsed to a number.
+        expect(row?.queueTicket).toBe('A12');
+        expect(row?.queueTicketSource).toBe('practice_card');
+      });
+    });
+
+    it('a_queue_ticket_from_the_practices_software_is_recorded_as_theirs', async () => {
+      /*
+       * PRECEDENCE 2. The same number arriving on a machine push is their
+       * SOFTWARE's, not a card somebody handed over, and the two are different
+       * facts a year later.
+       */
+      const res = await postCard(
+        cardArrival({ pmsPatientRecordNumber: 'CARD-0002', queueTicket: 'B7' }),
+      ).expect(201);
+
+      await prisma.withPractice(cardPracticeId, async (tx) => {
+        const row = await tx.arrival.findFirst({ where: { id: res.body.arrivalId } });
+        expect(row?.queueTicket).toBe('B7');
+        expect(row?.queueTicketSource).toBe('practice_software');
+      });
+    });
+
+    it('a_queue_ticket_is_allocated_only_when_nothing_else_supplies_one', async () => {
+      /*
+       * PRECEDENCE 3, and the narrowing of *"never generated by us"*. Where a
+       * practice has neither a card box nor a feed carrying a number there is
+       * no other queue for ours to compete with, so ours is the only handle the
+       * patient has — and it says so in `queueTicketSource`.
+       *
+       * IT COUNTS ONLY WHAT WE ALLOCATED. `A12` and `B7` above came from the
+       * practice and must not push our sequence to `A13`; the first number we
+       * issue at this practice today is `1`.
+       */
+      const first = await postCard(cardArrival({ pmsPatientRecordNumber: 'CARD-0003' })).expect(201);
+      const second = await postCard(cardArrival({ pmsPatientRecordNumber: 'CARD-0004' })).expect(201);
+
+      await prisma.withPractice(cardPracticeId, async (tx) => {
+        const one = await tx.arrival.findFirst({ where: { id: first.body.arrivalId } });
+        const two = await tx.arrival.findFirst({ where: { id: second.body.arrivalId } });
+        expect(one?.queueTicket).toBe('1');
+        expect(one?.queueTicketSource).toBe('allocated');
+        expect(two?.queueTicket).toBe('2');
+        expect(two?.queueTicketSource).toBe('allocated');
+      });
+    });
+
+    it('queue_tickets_are_invisible_when_the_practice_does_not_use_them', async () => {
+      /*
+       * §4: the setting is default OFF and *"when off, no field appears
+       * anywhere"*. Nothing is allocated, and a number sent anyway is simply
+       * not stored — the practice has not asked for a queue and the platform
+       * does not start one for them.
+       *
+       * AND NOTHING IS REFUSED (§5.1, hard rule 8). The arrival succeeds
+       * exactly as every other test in this suite expects it to.
+       */
+      const res = await post(arrival({ pmsPatientRecordNumber: 'NO-CARDS', queueTicket: 'Z9' })).expect(201);
+
+      await prisma.withPractice(practiceId, async (tx) => {
+        const row = await tx.arrival.findFirst({ where: { id: res.body.arrivalId } });
+        expect(row?.queueTicket).toBeNull();
+        expect(row?.queueTicketSource).toBeNull();
+      });
+    });
+
+    it('a_ticket_event_carries_ids_and_never_the_number', async () => {
+      /*
+       * §5.5, and hard rule 9's spirit. The number is a label for a place in a
+       * queue on one day: it is handed to the wrong person regularly and left
+       * face up on a counter, and it proves nothing later. What IS worth
+       * proving is where it came from.
+       *
+       * ASSERTED OVER THE WHOLE PAYLOAD, not over the two fields we happen to
+       * have written — a future field carrying the value would slip past a
+       * narrower check.
+       */
+      const res = await postCard(
+        cardArrival({ pmsPatientRecordNumber: 'CARD-EVENT', queueTicket: 'C42' }),
+      ).expect(201);
+
+      const events = await prisma.vaultOutbox.findMany({
+        where: { subjectType: 'Arrival', subjectId: res.body.arrivalId },
+      });
+      const ticketEvent = events.find((e) => e.type === 'arrival.ticket_set');
+      expect(ticketEvent).toBeTruthy();
+      expect(JSON.stringify(ticketEvent?.payload)).not.toContain('C42');
+      expect((ticketEvent?.payload as Record<string, unknown>).ticketSet).toBe(true);
+      expect((ticketEvent?.payload as Record<string, unknown>).ticketSource).toBe('practice_software');
+    });
+
+    it('a_superseded_row_keeps_its_queue_ticket', async () => {
+      /*
+       * THE WHOLE REASON IT LIVES ON THE ARRIVAL (§3). A correction supersedes:
+       * the agreement reception was looking at is replaced by a new row no
+       * arrival has ever named. If the number were on the agreement it would
+       * have to be copied forward by hand, and one day it would not be —
+       * replacing who signs does not hand the patient a new card.
+       *
+       * The desk reads it back through the SAME chain walk that already orders
+       * the queue by arrival (`readPushableRows`), so this comes free.
+       */
+      const res = await postCard(
+        cardArrival({ pmsPatientRecordNumber: 'CARD-CHAIN', queueTicket: 'D5' }),
+      ).expect(201);
+
+      let successorId = '';
+      await prisma.withPractice(cardPracticeId, async (tx) => {
+        const head = await tx.agreement.findFirstOrThrow({ where: { id: res.body.agreementId } });
+        /*
+         * THE SUCCESSOR, BUILT FROM THE FIELDS THAT MATTER RATHER THAN CLONED.
+         * This test is about the CHAIN, not about the copy: what it needs is a
+         * live row pointing back at the head, under the same patient and the
+         * same anchor.
+         */
+        successorId = (await tx.agreement.create({
+          data: {
+            practiceId: cardPracticeId,
+            type: head.type,
+            anchorKind: head.anchorKind,
+            patientId: head.patientId,
+            assignorId: head.assignorId,
+            assignorIsPatient: head.assignorIsPatient,
+            affiliationId: head.affiliationId,
+            providerId: head.providerId,
+            status: head.status,
+            serviceDescription: head.serviceDescription,
+            supersedesAgreementId: head.id,
+          },
+        })).id;
+        // The head leaves the desk the way supersession leaves it: its open
+        // request closes, so only the successor is pushable.
+        await tx.captureRequest.updateMany({
+          where: { agreementId: head.id, status: 'open' },
+          data: { status: 'cancelled' },
+        });
+      });
+
+      const desk = await request(app.getHttpServer())
+        .get('/tablet-sessions/pushable')
+        .set('x-practice-id', cardPracticeId)
+        .expect(200);
+
+      /*
+       * BY ITS OWN ID. Other people are on this desk with their own numbers,
+       * so "the row that is not the head" would find whoever happened to be
+       * first — a substring-shaped assertion in a different costume
+       * (wow.md §2 item 6's neighbour).
+       */
+      const successor = desk.body.find((r: { agreementId: string }) => r.agreementId === successorId);
+      expect(successor).toBeTruthy();
+      expect(successor.queueTicket).toBe('D5');
+      // And the head has left the desk, the way supersession leaves it.
+      expect(desk.body.some((r: { agreementId: string }) => r.agreementId === res.body.agreementId))
+        .toBe(false);
+    });
+
+    it('queue_tickets_do_not_cross_a_practice_boundary', async () => {
+      /*
+       * §5.4: a number means nothing outside its practice and its day, and the
+       * query must be scoped so it cannot be used to find a person across
+       * either. RLS, not a filter — the read finds nothing rather than
+       * returning something filtered down to nothing.
+       */
+      const rows = await prisma.withPractice(practiceId, (tx) =>
+        tx.arrival.findMany({ where: { queueTicket: { not: null } } }),
+      );
+      expect(rows).toHaveLength(0);
+    });
+  });
+
+  /**
+   * WHERE THE VISIT ITSELF HAS GOT TO, ON RECEPTION'S OWN LIST
+   * (D-2026-09-12-20; Carl, 12 September 2026: *"on /frontdesk the patient goes
+   * to 'Finished list' yet on /waiting the dr has not seen the patient as
+   * yet."*).
+   *
+   * WHY THIS IS AN E2E AND NOT A UNIT TEST. The front desk decides whether a
+   * patient is finished from `PushableRow.visitState`, and that field is
+   * produced by a CHAIN WALK back to the arrival — the same walk that carries
+   * the arrival time and the card number. A front-end fixture cannot fail when
+   * that walk breaks; only this can.
+   */
+  describe('where the visit has got to, on reception’s list', () => {
+    it('the_desk_reads_the_visit_state_the_practitioner_set', async () => {
+      /*
+       * NO ROW MEANS THE STARTING STATE, NOT NULL. An arrival exists, so
+       * "nobody has said anything yet" is `pending` and not an absence — which
+       * is what `latestVisitState` answers for an empty list, and what the
+       * checklist reports as "still to do".
+       */
+      const res = await post(arrival({ pmsPatientRecordNumber: 'ARR-VISIT-STATE' })).expect(201);
+
+      const before = await request(app.getHttpServer())
+        .get('/tablet-sessions/pushable')
+        .set('x-practice-id', practiceId)
+        .expect(200);
+      const beforeRow = before.body.find(
+        (r: { agreementId: string }) => r.agreementId === res.body.agreementId,
+      );
+      expect(beforeRow?.visitState).toBe('pending');
+
+      /*
+       * THEN THE NEWEST SAYING WINS, and the older one survives beside it — a
+       * correction is kept rather than written over (`visit_states` has no
+       * unique key on the arrival, deliberately).
+       */
+      await prisma.withPractice(practiceId, async (tx) => {
+        for (const [state, minutes] of [['with_patient_now', 1], ['completed', 2]] as const) {
+          await tx.visitState.create({
+            data: {
+              practiceId,
+              arrivalId: res.body.arrivalId,
+              state,
+              // Hard rule 14: which version of the list produced this key.
+              statesVersion: VISIT_STATES_VERSION,
+              setByPrincipalId: RECEPTIONIST.sub,
+              setByPrincipalType: 'staff',
+              setAt: new Date(Date.now() + minutes * 60_000),
+            },
+          });
+        }
+      });
+
+      const after = await request(app.getHttpServer())
+        .get('/tablet-sessions/pushable')
+        .set('x-practice-id', practiceId)
+        .expect(200);
+      const afterRow = after.body.find(
+        (r: { agreementId: string }) => r.agreementId === res.body.agreementId,
+      );
+      expect(afterRow?.visitState).toBe('completed');
+    });
+
+    it('a_superseded_row_reports_the_visit_state_of_its_own_arrival', async () => {
+      /*
+       * THE REGRESSION THIS EXISTS FOR. A correction replaces the agreement the
+       * arrival named with a row no arrival has ever heard of. If the desk read
+       * only the row's OWN arrival it would report `pending` for a patient the
+       * practitioner has already seen — and the front desk would hold them out
+       * of "Finished" forever. The state is found through the chain, exactly as
+       * the arrival time and the card number are.
+       */
+      const res = await post(arrival({ pmsPatientRecordNumber: 'ARR-VISIT-CHAIN' })).expect(201);
+
+      let successorId = '';
+      await prisma.withPractice(practiceId, async (tx) => {
+        await tx.visitState.create({
+          data: {
+            practiceId,
+            arrivalId: res.body.arrivalId,
+            state: 'completed',
+            statesVersion: VISIT_STATES_VERSION,
+            setByPrincipalId: RECEPTIONIST.sub,
+            setByPrincipalType: 'staff',
+          },
+        });
+        const head = await tx.agreement.findFirstOrThrow({ where: { id: res.body.agreementId } });
+        successorId = (await tx.agreement.create({
+          data: {
+            practiceId,
+            type: head.type,
+            anchorKind: head.anchorKind,
+            patientId: head.patientId,
+            assignorId: head.assignorId,
+            assignorIsPatient: head.assignorIsPatient,
+            affiliationId: head.affiliationId,
+            providerId: head.providerId,
+            status: head.status,
+            serviceDescription: head.serviceDescription,
+            supersedesAgreementId: head.id,
+          },
+        })).id;
+        await tx.captureRequest.updateMany({
+          where: { agreementId: head.id, status: 'open' },
+          data: { status: 'cancelled' },
+        });
+      });
+
+      const desk = await request(app.getHttpServer())
+        .get('/tablet-sessions/pushable')
+        .set('x-practice-id', practiceId)
+        .expect(200);
+      const successor = desk.body.find((r: { agreementId: string }) => r.agreementId === successorId);
+      expect(successor).toBeTruthy();
+      expect(successor.visitState).toBe('completed');
     });
   });
 });

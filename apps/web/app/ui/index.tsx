@@ -458,6 +458,68 @@ export function Button({
  * says nothing and the id is still on screen and still selectable, which is the
  * behaviour that was there before the button existed.
  */
+/**
+ * WHO THIS ROW IS ABOUT, IN THE SAME TWO LINES ON EVERY SURFACE (Carl, 12
+ * September 2026: *"patientid is diff on /tablet and /frontdesk"*, and then
+ * *"ok. In that case show both ids."*).
+ *
+ * WHAT WENT WRONG, AND IT IS WORTH BEING PRECISE. Neither page was wrong.
+ * `/practice/frontdesk` printed the PRACTICE's own number for the person —
+ * `DEV-JO-EXAMPLE`, the handle reception reads out and types into their own
+ * software. `/practice/tablet` printed the id THIS platform minted, which is
+ * what a support ticket needs because a practice number is not unique across
+ * practices. A receptionist moving between the two in the same minute saw two
+ * different identifiers for one person and reasonably concluded one of them
+ * was a bug.
+ *
+ * SO BOTH, IN ONE ORDER, EVERYWHERE. The practice's number first, because it
+ * is the one that means something to a person in a room; ours underneath and
+ * quieter, keeping its Copy control, because it is the one that has to be
+ * matched exactly. One component so the order cannot drift, and one pair of
+ * words in `strings.recordId` so the wording cannot either.
+ *
+ * NULL IS ORDINARY AND IS SAID OUT LOUD. A patient can reach the platform by a
+ * route that never carried the practice's number; an empty line under a name
+ * reads as a page that failed to load. Our own id always exists, so it needs
+ * no such twin.
+ *
+ * NEITHER VALUE IS A MEDICARE NUMBER AND THERE IS NO COLUMN FOR ONE ANYWHERE
+ * (hard rule 1, REQ-VER-02). The practice's patient record number IS in the
+ * approved s 65C set; ours is an opaque id we minted. Nothing else may be
+ * rendered here.
+ */
+export function PatientIdentity({
+  practiceNumber,
+  recordId,
+  testId,
+  className,
+}: {
+  /** The practice's own number for this person. Null where the record carries none. */
+  practiceNumber: string | null;
+  /** The id this platform minted. Always present. */
+  recordId: string;
+  testId?: string;
+  className?: string;
+}) {
+  return (
+    <span className={`${styles.patientIdentity} ${className ?? ''}`} data-testid={testId}>
+      <span
+        className={styles.patientIdentityNumber}
+        data-testid={testId ? `${testId}-practice` : undefined}
+      >
+        {practiceNumber
+          ? strings.recordId.practiceNumber(practiceNumber)
+          : strings.recordId.practiceNumberUnknown}
+      </span>
+      <RecordId
+        label={strings.recordId.patient}
+        value={recordId}
+        testId={testId ? `${testId}-record` : undefined}
+      />
+    </span>
+  );
+}
+
 export function RecordId({
   label,
   value,

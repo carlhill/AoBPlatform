@@ -57,7 +57,7 @@ import {
   Chip,
   Field,
   Notice,
-  RecordId,
+  PatientIdentity,
   SelectInput,
   TextInput,
   ui,
@@ -163,6 +163,40 @@ export interface PushableRow {
   assignorConfirmedAt: string | null;
   pushable: boolean;
   blockedReason: PushBlockedReason | null;
+  /**
+   * THE NUMBER ON THE CARD IN THE PATIENT'S HAND (`QUEUE-TICKETS.md`; Carl,
+   * 12 September 2026). Read by the server through the same chain that orders
+   * the queue, so a corrected row keeps its number — replacing who signs does
+   * not hand the patient a new card.
+   *
+   * NULL AT EVERY PRACTICE THAT DOES NOT HAND OUT CARDS, which is the default
+   * and is what keeps it invisible without a second flag.
+   *
+   * NOT AN IDENTITY IDENTIFIER (hard rule 1, REQ-VER-02) and never on an
+   * artefact (hard rule 4). It is a label for a place in a queue on one day.
+   *
+   * OPTIONAL ON THE TYPE, ALWAYS PRESENT ON THE WIRE. The server sends the
+   * field on every row; `?` is here so a row built by hand — a fixture, a
+   * mock, a page written before this existed — does not have to name a
+   * practice setting it is not about. Read it as `?? null`.
+   */
+  queueTicket?: string | null;
+  /**
+   * WHERE THE VISIT ITSELF HAS GOT TO (D-2026-09-12-20; Carl, 12 September
+   * 2026: *"on /frontdesk the patient goes to 'Finished list' yet on /waiting
+   * the dr has not seen the patient as yet."*).
+   *
+   * A KEY FROM THE VERSIONED LIST (`visit-states.json`), read and never minted
+   * here: it is set from `/practice/practitioner/waiting` by the person who
+   * knows, and two screens disagreeing about whether a patient has been seen
+   * would be worse than the bug it fixes. Null where no arrival started the
+   * chain, which is not the same statement as `pending`.
+   *
+   * OPTIONAL ON THE TYPE, ALWAYS PRESENT ON THE WIRE — see `queueTicket`.
+   *
+   * IT GATES NOTHING (hard rule 8). It is a report.
+   */
+  visitState?: string | null;
   activeSession: { id: string; deviceId: string; state: string } | null;
 }
 
@@ -2740,15 +2774,25 @@ export function AgreementRow({
     </span>
   ) : null;
   /*
-   * WHICH RECORD THIS ROW IS ABOUT (Carl, 7 Sep 2026) — beside the session
-   * tag, and in the same spirit: an opaque id this platform minted, naming the
-   * same row the vault events name. Never a Medicare number, of which there is
-   * no column anywhere in this system (hard rule 1, REQ-VER-02).
+   * WHICH PERSON THIS ROW IS ABOUT — BOTH IDS, IN THE ORDER EVERY SURFACE USES
+   * (Carl, 12 September 2026: *"patientid is diff on /tablet and
+   * /frontdesk"*, then *"ok. In that case show both ids."*).
+   *
+   * THIS ROW USED TO SHOW ONLY OURS while the front desk showed only the
+   * practice's, and a receptionist moving between the two in the same minute
+   * saw two different identifiers for one person. Neither was wrong; the
+   * disagreement was. `PatientIdentity` is the one component both now render,
+   * so the order and the words cannot drift apart again.
+   *
+   * NEITHER IS A MEDICARE NUMBER AND THERE IS NO COLUMN FOR ONE ANYWHERE
+   * (hard rule 1, REQ-VER-02). The practice's patient record number is in the
+   * approved s 65C set; ours is an opaque id this platform minted, naming the
+   * same row the vault events name.
    */
   const recordId = (
-    <RecordId
-      label={strings.recordId.patient}
-      value={row.patientId}
+    <PatientIdentity
+      practiceNumber={row.patientRecordNumber}
+      recordId={row.patientId}
       testId={`row-patient-id-${row.agreementId}`}
     />
   );

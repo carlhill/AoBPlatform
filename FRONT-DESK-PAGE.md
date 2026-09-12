@@ -360,6 +360,297 @@ configuration and evidence review are not patient work and keep their own pages.
 actions, so one screen answers "what is this patient here for, what is done,
 and what do I do next".
 
+## 14. The rails partition the day, so the two pages reconcile (Carl, 12 September 2026)
+
+Carl, with `/practice/frontdesk` open beside `/practice/practitioner/waiting`:
+*"Both pages have to reconcile. Have another list if you have to on frontdesk
+as every patient has to be seen."* And, on the `3 people` / `0 people` counts:
+*"Make the font bold and a diff colour for the number - so it stands out."*
+
+### 14.1 What was wrong
+
+The waiting page showed **15** people for the day and the desk showed **3**.
+Both numbers were right and neither said so, which makes the desk look broken.
+Measured on the dev database, the fifteen were:
+
+| | Arrivals | Where they were on the desk |
+|---|---|---|
+| Signed and finished | 8 | nowhere |
+| Replaced by a corrected agreement | 4 | only as their successor, under somebody else's row |
+| Something open | 1 | Here now |
+| Unsigned, nothing open for them | 2 | **nowhere** |
+
+The last two are the reason this section exists. They came in, they owe a
+signature, nothing is waiting for them, and **no screen in the product named
+them**. A patient in that state is the worst thing this desk can hold, because
+it is the only kind of problem nobody can be asked to fix.
+
+### 14.2 The fix is a partition, not a fourth list
+
+A list that is merely ADDED goes missing again the next time somebody tightens
+a filter. A partition cannot. **Every row of the day register lands in exactly
+one rail**, so the rails sum to the register's own count by construction rather
+than by two screens happening to agree.
+
+| Rail | What is in it | In the total? |
+|---|---|---|
+| **Here now** | Came in, something to do, no tablet out | yes |
+| **On a tablet** | Reading or signing right now | yes |
+| **Finished** | Came in, nothing left — signed, or nothing to sign | yes |
+| **Needs a look** | Came in, has not signed, nothing open. The anomaly rail | yes |
+| **Not arrived today** | Paperwork open at the desk with no arrival recorded today | **no** |
+| **Expected** | Booked today, has not come in | **no** |
+
+**The denominator is `GET /arrivals/day` and not the queue.** The queue is a
+list of WORK, so it drops a person the moment their paperwork is done, is
+replaced, or runs out of road — which is exactly how twelve people went
+missing. The register is the only read at this practice that keeps everybody.
+Both pages ask the same endpoint the same question with no date, so "today" is
+the server's answer by the practice's clock and never the browser's guess.
+
+**Supersession disappears at the join.** A register row carries the NEWEST
+agreement in its chain (`newestAgreementInChain`) and the queue only ever
+carries the newest (`readPushableRows` excludes anything replaced), so a
+corrected patient's arrival and their successor agreement meet on one id. The
+four "replaced" rows above now sit under their own names.
+
+**One fallback, on the person.** `offerEpisodicInstead` creates a new agreement
+that does not supersede the one it stands in for — it cannot, they are
+different instruments with different evidence — so that patient's arrival and
+their queue row share no agreement id. What is left over is matched by patient,
+in arrival order, one queue row to one arrival. Without it a single visit would
+be counted twice: once as an anomaly and once as work.
+
+### 14.3 Rules the new rails obey
+
+1. **Finished and Needs a look are not controls.** There is no queue row behind
+   either, so there is nothing for the panel to be about and no act that could
+   be offered; a button that fills the panel with nothing is a dead end a
+   first-day starter cannot get back out of. They are rows to read (§12.2).
+2. **"Needs a look" says what it means, in the room's words.** Nobody was held
+   up — they were seen as usual (hard rule 8) — it is the paperwork that has to
+   be caught up.
+3. **A visit with nothing to sign is Finished, never an anomaly.** "Not yet"
+   against somebody who came in for a blood test would be a permanent false
+   alarm, and a rail people learn to ignore is the same as no rail. Same
+   reasoning as `signedLabel` on `/practice/day`.
+4. **The register failing does not empty the desk.** Until it lands, and for as
+   long as it fails, the rail is the two queue-only groups the page had before
+   and there is no total. Hard rule 8: a read that failed slows the evidence,
+   never the service.
+5. **The number is picked out of its heading, not shouted.** `--accent`
+   (#1f4d7a) on `--surface` (#ffffff) is 8.6:1 — past AA and past AAA — and it
+   is already what the "Do this next" mark uses, so no colour was invented.
+   Colour is never the only signal (1.4.1): the number is bold and a size
+   larger, and the whole count is still spoken as one sentence by the live
+   region beside it.
+
+### 14.4 Named tests
+
+- `front_desk_rails_add_up_to_the_day_register` — **the deliverable.** Rendered,
+  not only computed, because the drift being guarded against is a SCREEN
+  quietly showing fewer people than the day holds.
+- `front_desk_every_arrival_is_in_exactly_one_rail` — the same claim made
+  structurally, over `dayRails`.
+- `front_desk_a_corrected_patient_is_counted_once_not_twice`
+- `front_desk_needs_a_look_names_whoever_owes_a_signature_and_has_nothing_open`
+- `front_desk_a_visit_with_nothing_to_sign_is_finished_and_never_an_anomaly`
+- `front_desk_work_with_no_arrival_recorded_today_is_shown_and_left_out_of_the_total`
+- `front_desk_an_agreement_offered_instead_still_belongs_to_its_arrival`
+- `front_desk_without_the_day_register_still_shows_everybody_on_the_queue`
+- `front_desk_the_count_draws_the_number_apart_from_the_word`
+
+### 14.5 For Carl to decide
+
+- **There is still no control that restarts a "needs a look" patient's
+  paperwork.** The rail makes them visible, which was the ask; what reception
+  presses next does not exist. The honest options are a "start it again" that
+  opens a fresh capture on the existing agreement, or leaving it to the
+  post-service chase. Building half of one would be worse than neither
+  (§6's reasoning about "ask reception"), so nothing was built.
+- **"Not arrived today" is shown only when it has somebody in it**, unlike
+  "Expected", which is always visible because its emptiness needs explaining.
+  Assumption, made mid-build.
+- **The total counts arrivals, not distinct people** — which is what
+  `/practice/day` counts, and matching it is the point. On the dev database's
+  fifteen-arrival day that is eight people who came in fifteen times. If the
+  word should be "visits" rather than "people", it changes on both pages
+  together or not at all.
+
+
+## 15. What the rail says about each person, and in what order (Carl, 12 September 2026)
+
+Six notes, all made with the new rails on screen. They are here rather than
+folded into §14 because §14 is about the ARITHMETIC and these are about the
+reading.
+
+### 15.1 "Here now" is always in the order people will be seen
+
+Carl: *"always sort Here Now in seq of being seen."* That is arrival order, and
+it is the SERVER's answer twice over: `readPushableRows` walks each agreement
+back through `supersedesAgreementId` to the arrival that started it (the fix of
+11 September 2026, so a corrected card keeps its place), and the day register is
+`arrivedAt asc`. **Nothing on this page may re-sort it**, which is what
+`front_desk_here_now_is_in_the_order_people_will_be_seen` asserts, by handing
+the page a register and a queue whose orders differ and requiring the
+register's.
+
+### 15.2 The number on the card leads each row
+
+Carl: *"Show the practice-queueid - the card with the number or from the PMS or
+the Q-id AoB allocated."* `QUEUE-TICKETS.md` is the design and its build steps 1
+and 3 are now done; see that document's change log. The number is the PATIENT's
+handle, never the running order (§5a there), and it is not an identity
+identifier (hard rule 1).
+
+### 15.3 A way to see everyone at once
+
+Carl: *"provide a button to go look at all patients here now (like we have in
+section [1] of /tablet page)."* It points at `/practice/tablet`, whose section 1
+IS that list, rather than growing a second everybody-at-once view here — the
+pairing already exists in the other direction ("Work one patient at a time →").
+It navigates and acts on nothing, and it is not about a patient, so §13 stands.
+
+### 15.4 The tablet's name on the rows that have one
+
+Small, quiet, under the name, printed exactly as the practice wrote it with
+nothing added around it — a sentence built around the label produces "has the
+Blue tablet tablet".
+
+### 15.5 "Finished" goes below "Needs a look"
+
+Finished is the one arrived rail nobody has to act on, so it goes last of them.
+The order is: Here now, On a tablet, Needs a look, Finished, Expected — with
+"Not arrived today" between them when it has anybody in it.
+
+### 15.6 A colour per rail, on the heading and the number
+
+Carl: *"Put colour on the list heading and the number. Reason: I want my eye to
+be drawn to each list."*
+
+**The reason decides the design.** This is a set of LANDMARKS, not a severity
+scale: Carl is locating the lists, not triaging them, so each rail carries its
+own colour and none of them ranks the others. The alternative that was argued
+for and rejected — one amber signal on "Needs a look" and everything else
+de-emphasised — answers a question he did not ask.
+
+| Rail | Token | Contrast on `--surface` |
+|---|---|---|
+| Here now | `--ink` (uncoloured, and the strongest treatment: it is the work) | 15.9:1 |
+| On a tablet | `--ok` | 6.5:1 |
+| Needs a look | `--warn` | 6.6:1 |
+| Finished | `--info` | 8.6:1 |
+| Not arrived today, Expected | `--ink-muted` | 7.4:1 |
+
+Every value is an existing token and every one passes WCAG 2.2 AA for small
+text. **Colour is never the only carrier** (1.4.1): every heading says in words
+what its rail is, the counts are spoken as whole sentences by the live region
+beside them, and there is no key to learn.
+
+`--info` is the same hex as `--accent`, which `tokens.css` reserves for focus
+and the primary action. Carl has decided the blue stays; the distinction is kept
+as a TREATMENT — the accent is a solid FILL on a button, this is text on a plain
+background.
+
+### 15.7 One person, the same two ids, on both desks
+
+Carl: *"patientid is diff on /tablet and /frontdesk"*, then *"ok. In that case
+show both ids."*
+
+**Neither page was wrong, which is why it looked like a bug.** The front desk
+printed the PRACTICE's own number — the handle reception reads out and types
+into their own software. The tablet desk printed the id this platform minted,
+which is what a support ticket needs because a practice number is not unique
+across practices. A receptionist moving between the two in the same minute saw
+two identifiers for one patient.
+
+So both, in one order, from one component: `PatientIdentity` in
+`apps/web/app/ui/index.tsx`, with one pair of words in `strings.recordId`.
+The practice's number first and prominent; ours underneath, quieter, keeping
+its Copy control. A missing practice number is said out loud; ours always
+exists and needs no such twin. Named tests:
+`the_tablet_desk_and_the_front_desk_name_a_patient_the_same_way` and
+`a_patient_with_no_practice_number_says_so_on_both_desks`.
+
+### 15.8 Named tests
+
+- `front_desk_here_now_is_in_the_order_people_will_be_seen`
+- `front_desk_shows_the_number_on_the_card_in_the_patients_hand`
+- `queue_tickets_are_invisible_when_the_practice_does_not_use_them`
+- `front_desk_offers_a_way_to_see_everyone_here_at_once`
+- `front_desk_names_the_tablet_a_patient_has`
+- `front_desk_puts_finished_below_needs_a_look`
+- `front_desk_gives_each_rail_its_own_colour`
+- `the_tablet_desk_and_the_front_desk_name_a_patient_the_same_way`
+
+
+## 16. "Finished" means the visit is over (D-2026-09-12-20; VISIT-CHECKLIST.md §3a)
+
+Carl, with the two pages side by side: *"on /frontdesk the patient goes to
+'Finished list' yet on /waiting the dr has not seen the patient as yet. Hence,
+we need a step 'Consultation completed'."* And, reaching the same model from the
+other end: *"What you call 'Paper work' per patient, I call the patient service
+list… Only when all services are completed or some are cancelled does the client
+go to Finished."*
+
+**The word was doing the lying.** Signing happens in the waiting room, BEFORE
+the service, so the desk announced that a patient was finished while the
+practitioner had not yet called them in.
+
+### 16.1 What was built
+
+- **The service list gains the visit itself**, between "Signed on a tablet" and
+  "Signed after the visit" — where Carl drew it. It reads the visit state the
+  practitioner already sets from `/practice/practitioner/waiting`; it never
+  mints one, because two screens disagreeing about whether a patient has been
+  seen is worse than the bug. `PushableRow.visitState` carries it, read through
+  the same chain walk that carries the arrival time and the card number.
+- **Finished is "every service on the list is resolved"**, written over the
+  list (`everyServiceResolved`) rather than as `signed && seen`. Today the list
+  holds the signature and the visit, so it reduces to the narrower rule; when a
+  practice's own items arrive, Finished changes meaning without that condition
+  being edited.
+- **`cancelled` joins `done` / `outstanding` / `not_needed`** as a state, and
+  counts as resolved. *Nothing produces it yet* — the computed rows are derived
+  and cannot be dropped — but the type and the word exist so nobody later has to
+  guess what "resolved" was meant to include.
+- **A new rail, "Waiting to be seen"**, between "Needs a look" and "Finished".
+  Somebody who has signed and has not been called in is not an anomaly (nothing
+  is wrong) and is not the desk's work (there is nothing for reception to do).
+  Without it, "either one alone leaves the patient on the desk" has nowhere to
+  put them.
+- **The panel's section is called the patient service list**, Carl's name. The
+  scope did not widen with it: it records what the practice said would happen
+  and whether it happened, never a reason, a finding, a note, a triage category
+  or a duration.
+
+### 16.2 It gates nothing
+
+Hard rule 8, REQ-REC-04. No value of the visit state disables a control,
+refuses a send or changes whether a patient is seen or billed. The step is a
+report.
+
+### 16.3 Named tests
+
+- `a_signed_agreement_alone_does_not_finish_a_visit`
+- `finished_needs_the_paperwork_done_and_the_visit_complete`
+- `finished_is_every_service_resolved_and_not_a_pair_of_booleans`
+- `the_visit_checklist_carries_the_consultation_between_signing_and_afterwards`
+- `the_front_desk_and_the_practitioner_queue_never_disagree_about_who_has_been_seen`
+  — driven off `VISIT_STATE_OPTIONS`, so a fifth state fails this rather than
+  quietly rendering its key on one page and a word on the other.
+- `front_desk_rails_add_up_to_the_day_register`, still green with the new
+  membership.
+
+### 16.4 For Carl
+
+- **"Waiting to be seen" is drawn quiet (`--ink-muted`), not coloured.** It is
+  inside the day's total but there is nothing for reception to do on it, and a
+  sixth colour would start to read as a scale. Say if it should carry one.
+- **Nurse, bloods and the second-doctor case are NOT built** — D-2026-09-12-20
+  records the rule that separates them and the list will be versioned content.
+
+
 ## Change log
 | Date | Change |
 |---|---|
@@ -382,3 +673,8 @@ and what do I do next".
 | 12 Sep 2026 | **§4's last row is built.** A signed agreement leaves the queue at once, so the panel used to empty itself under somebody's hand at the one moment the page should be clearest. It now says "Nothing left to do for <name>" with one "Next patient" press. It does NOT say "signed": a row can also leave because the visit was cancelled or another desk dealt with it, and the queue alone cannot tell those apart. |
 | 12 Sep 2026 | **§4's "marks exactly one row do this next" is built** — the top of *Here now*, which is the longest wait because the server orders the queue by arrival through the supersession chain and this page never re-sorts. A WORD, not a colour (WCAG 2.2 AA 1.4.1). §12.6's call order is still NOT built. |
 | 12 Sep 2026 | **Three things left for Carl.** (a) **The §5 vocabulary rule stops at the strings this page owns.** The shared bands and controls it now renders read from `strings.tablet`, which the lint does not cover, and three of them break §5 in front of a beginner: `toAffiliations` ("Open Affiliations →"), `blocked.enduring_rules_not_authored` ("the enduring rule set") and `whoRefusals.agreement_moved_on` ("superseded"). Fixing them changes the tablet desk's words too, which is a decision rather than a build, so they were left. The alternative — a second wording per surface — is the thing §7 forbids. (b) The per-visit status being built on the practitioner side (`packages/domain/content/visit-states.json`) is NOT read into the checklist: `GET /tablet-sessions/pushable` does not carry it yet, and adding the read would have meant editing core and contracts while another agent held them. (c) Whether Recall should ask a question first — see the row above. |
+| 12 Sep 2026 | **§14 BUILT.** The rails partition the day: `Finished`, `Needs a look` and `Not arrived today` join `Here now`, `On a tablet` and `Expected`, and the first four sum to `GET /arrivals/day`'s own count for the same day, printed at the top of the column. `dayRails.ts` is pure and unit-tested; `front_desk_rails_add_up_to_the_day_register` asserts the sum on the rendered page. Two people who had come in, owed a signature and appeared on no screen anywhere now appear on one. |
+| 12 Sep 2026 | The group counts draw the NUMBER apart from its word — bold, `--accent`, 8.6:1 on the panel — per Carl's annotation. `count()` stays whole for the live region, because a bare "3" announced minutes after its heading tells nobody anything. |
+| 12 Sep 2026 | **§15 BUILT.** Six notes taken with the rails on screen: "Here now" is asserted to hold the server's arrival order; the queue number leads each row; "See everyone here at once" points at the tablet desk's own section 1; the tablet's name sits under the patient's on the rows that have one; "Finished" moved below "Needs a look"; and each rail carries its own colour on the heading and the number, all existing tokens and all past AA. |
+| 12 Sep 2026 | **§15.7: both desks name a patient the same way.** `PatientIdentity` (in `app/ui`) renders the practice's own number above our record id, in one order and one set of words, on `/practice/frontdesk` and `/practice/tablet`. `strings.frontdesk.panel.patientRecordNumber` now delegates to `strings.recordId.practiceNumber` rather than being a second copy. |
+| 12 Sep 2026 | **§16 BUILT (D-2026-09-12-20).** The service list gains the visit itself, read from the state the practitioner sets and never minted here; "Finished" is now "every service resolved" over the list rather than a two-clause boolean; `cancelled` exists as a resolved state with nothing producing it yet; a "Waiting to be seen" rail holds the people who have signed and not been called in; and the panel's section carries Carl's name for it, the patient service list. |

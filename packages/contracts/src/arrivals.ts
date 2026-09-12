@@ -226,6 +226,29 @@ export interface ArrivalEvent {
    * duplicated. The same shape a refused arrival's retry has always had.
    */
   readonly idempotencyKey: string;
+
+  /**
+   * THE NUMBER ON THE CARD IN THE PATIENT'S HAND, IF THERE IS ONE
+   * (`QUEUE-TICKETS.md`; Carl, 12 September 2026).
+   *
+   * OPTIONAL ALWAYS, AND IT GATES NOTHING (§5.1, hard rule 8). A practice with
+   * no card box sends none; a practice with one whose box has run out sends
+   * none for that patient; neither is refused anything.
+   *
+   * WHERE IT CAME FROM IS DERIVED FROM `source`, NOT SENT (D-2026-09-12-18).
+   * A ticket on a `reception` arrival was read off the practice's own card by
+   * a person (`practice_card`); a ticket on a machine push came from their
+   * software (`practice_software`); and where a practice uses tickets and
+   * neither supplied one, the platform allocates (`allocated`). Letting the
+   * caller assert the provenance would let a connector claim a number came off
+   * a card box nobody was standing at.
+   *
+   * IT IS NOT AN IDENTITY IDENTIFIER AND NOTHING VERIFIES BY IT (hard rule 1,
+   * REQ-VER-02), it never reaches a rendered agreement (hard rule 4), and it
+   * is normalised — trimmed, upper-cased, eight characters at most — before it
+   * is stored.
+   */
+  readonly queueTicket?: string;
 }
 
 /** What the platform did about it. */

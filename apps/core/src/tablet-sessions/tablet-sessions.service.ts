@@ -10,6 +10,7 @@ import {
   isCorrectablePatientField,
   basicServiceDescriptionOf,
   isServiceDescription,
+  latestVisitState,
   mayBeProviderOnAgreement,
   projectTabletSessionPatient,
   shownDetailTypesFor,
@@ -148,6 +149,50 @@ export interface PushableRow {
   assignorConfirmedAt: string | null;
   pushable: boolean;
   blockedReason: PushBlockedReason | null;
+  /**
+   * THE NUMBER ON THE CARD IN THE PATIENT'S HAND (`QUEUE-TICKETS.md`; Carl,
+   * 12 September 2026: *"Show the practice-queueid - the card with the number
+   * or from the PMS or the Q-id AoB allocated."*).
+   *
+   * READ THROUGH THE CHAIN TO THE ARRIVAL, exactly as the queue's ORDER is —
+   * so a corrected or superseded row keeps its number for free, which is the
+   * whole reason the ticket lives on the arrival and not on the agreement
+   * (§3). Replacing who signs does not hand the patient a new card.
+   *
+   * NULL AT EVERY PRACTICE THAT DOES NOT HAND OUT CARDS
+   * (`Practice.usesQueueTickets`, default off), which is what keeps this
+   * invisible rather than needing a second flag on the row.
+   *
+   * IT IS NOT AN IDENTITY IDENTIFIER (hard rule 1, REQ-VER-02): nothing
+   * verifies by it, no verification log records it, and it never reaches a
+   * rendered agreement.
+   */
+  queueTicket: string | null;
+  /**
+   * WHERE THE VISIT ITSELF HAS GOT TO — `pending` | `with_patient_now` |
+   * `completed` | `reassign` (D-2026-09-12-20; Carl, 12 September 2026, with
+   * the two pages side by side: *"on /frontdesk the patient goes to 'Finished
+   * list' yet on /waiting the dr has not seen the patient as yet. Hence, we
+   * need a step 'Consultation completed'."*).
+   *
+   * IT IS READ, NEVER MINTED HERE. The state already exists and is already set
+   * by the person who knows, from `/practice/practitioner/waiting`; what was
+   * missing is that the front desk could not SEE it, so a signed agreement —
+   * signed in the waiting room, BEFORE the service — read as a finished visit.
+   * Two places disagreeing about whether a patient has been seen would be
+   * worse than the bug it fixes, so this is the same read the waiting list
+   * makes, flattened by the domain's own `latestVisitState`.
+   *
+   * NULL WHERE NO ARRIVAL STARTED THIS CHAIN — a post-service agreement, or a
+   * draft a script wrote — which is not the same statement as `pending`.
+   *
+   * A KEY, NEVER A WORD: the list is versioned content and the labels live in
+   * the string table keyed by it (hard rule 14, REQ-LANG-01).
+   *
+   * IT GATES NOTHING (hard rule 8, REQ-REC-04). No value here changes whether
+   * this row may be sent, and nothing downstream reads it as a permission.
+   */
+  visitState: string | null;
   /** Where it already is, if it is on a tablet right now. */
   activeSession: { id: string; deviceId: string; state: TabletSessionState } | null;
 }
@@ -1495,13 +1540,82 @@ export class TabletSessionsService {
       const everyChainId = [...new Set(forToday.flatMap((a) => chainOf(a.id)))];
       const arrivals = await tx.arrival.findMany({
         where: { agreementId: { in: everyChainId } },
-        select: { agreementId: true, arrivedAt: true },
+        select: { id: true, agreementId: true, arrivedAt: true, queueTicket: true },
       });
       const arrivedAtByAgreement = new Map(
         arrivals
           .filter((a): a is typeof a & { agreementId: string } => a.agreementId !== null)
           .map((a) => [a.agreementId, a.arrivedAt]),
       );
+      /*
+       * THE QUEUE NUMBER, OFF THE SAME ROW AND THROUGH THE SAME CHAIN
+       * (`QUEUE-TICKETS.md` §3: *"the desk already knows how to find it"*).
+       * The walk-back above exists for the ORDER; the ticket comes free with
+       * it, which is precisely why the ticket belongs on the arrival — a
+       * superseded row keeps its number without anybody copying one forward.
+       */
+      const ticketByAgreement = new Map(
+        arrivals
+          .filter((a): a is typeof a & { agreementId: string } => a.agreementId !== null)
+          .map((a) => [a.agreementId, a.queueTicket]),
+      );
+      /** The card this agreement's whole chain was started on, if there was one. */
+      const ticketFor = (agreementId: string): string | null => {
+        for (const id of chainOf(agreementId)) {
+          const ticket = ticketByAgreement.get(id);
+          if (ticket) return ticket;
+        }
+        return null;
+      };
+
+      /*
+       * AND WHERE THE VISIT ITSELF HAS GOT TO (D-2026-09-12-20). Every saying
+       * for these arrivals in one query, flattened per arrival by the domain's
+       * own `latestVisitState` — the newest wins and the older ones survive
+       * beside it, because a correction is kept rather than overwritten.
+       *
+       * THE SAME READ THE WAITING LIST MAKES, and deliberately so: the front
+       * desk could not see this state, which is why it announced a patient was
+       * finished before the practitioner had called them in. A second opinion
+       * here would be two screens disagreeing about whether somebody has been
+       * seen, which is worse than the bug.
+       *
+       * FOUND THROUGH THE CHAIN, like the arrival time and the card number, so
+       * a corrected agreement keeps the answer its own arrival gave.
+       */
+      const arrivalIdByAgreement = new Map(
+        arrivals
+          .filter((a): a is typeof a & { agreementId: string } => a.agreementId !== null)
+          .map((a) => [a.agreementId, a.id]),
+      );
+      const sayings = await tx.visitState.findMany({
+        where: { arrivalId: { in: arrivals.map((a) => a.id) } },
+        select: { arrivalId: true, state: true, setAt: true },
+        orderBy: { setAt: 'asc' },
+      });
+      const sayingsByArrival = new Map<string, { state: string; setAt: string }[]>();
+      for (const saying of sayings) {
+        const list = sayingsByArrival.get(saying.arrivalId) ?? [];
+        list.push({ state: saying.state, setAt: saying.setAt.toISOString() });
+        sayingsByArrival.set(saying.arrivalId, list);
+      }
+      const visitStateFor = (agreementId: string): string | null => {
+        for (const id of chainOf(agreementId)) {
+          const arrivalId = arrivalIdByAgreement.get(id);
+          if (!arrivalId) continue;
+          /*
+           * NO ROW MEANS THE STARTING STATE, NOT "UNKNOWN". `pending` is where
+           * every visit begins and nobody sets it; an arrival exists, so the
+           * honest answer is that nothing has happened yet — which is exactly
+           * what `latestVisitState` returns for an empty list, so the branch
+           * that used to be written out here would have been a second copy of
+           * the domain's own answer.
+           */
+          return latestVisitState(sayingsByArrival.get(arrivalId) ?? []);
+        }
+        // No arrival anywhere in the chain: there is no visit to be in a state.
+        return null;
+      };
       /*
        * THE FALLBACK IS THE ORIGIN'S OWN `createdAt`, NEVER THE SUCCESSOR'S.
        * Not every agreement on this desk came from an arrival — a post-service
@@ -1608,6 +1722,10 @@ export class TabletSessionsService {
             : null,
           pushable: blocked === null,
           blockedReason: blocked,
+          /* Off the arrival that started the chain — see `ticketFor`. */
+          queueTicket: ticketFor(agreement.id),
+          /* And where the visit got to, off the same arrival (D-2026-09-12-20). */
+          visitState: visitStateFor(agreement.id),
           activeSession: session
             ? { id: session.id, deviceId: session.deviceId, state: session.state as TabletSessionState }
             : null,

@@ -1009,6 +1009,29 @@
    IT WRAPS RATHER THAN OVERFLOWS. Thirty-six characters do not fit beside a
    name on a phone, and a horizontally scrolling row is worse than two lines.
 --------------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------------
+   THE TWO IDS FOR ONE PERSON, IN ONE ORDER ON EVERY SURFACE (Carl, 12
+   September 2026). Stacked rather than inline: they are two different
+   identifiers and printing them on one line invites somebody to read them as
+   one value. The practice's own number carries the weight, because it is the
+   one a person says out loud; ours keeps `.recordId`'s quiet monospace
+   underneath.
+--------------------------------------------------------------------------- */
+.patientIdentity {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s1);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.patientIdentityNumber {
+  font-size: var(--text-sm);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
 .recordId {
   display: inline-flex;
   align-items: baseline;

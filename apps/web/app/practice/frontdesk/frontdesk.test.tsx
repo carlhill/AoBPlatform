@@ -28,9 +28,17 @@
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { ExpectedAppointment } from '@aobplatform/contracts';
-import { PUSH_BLOCKED_REASONS, type DeviceRow, type TabletSessionRow } from '@aobplatform/domain';
+import type { DayRegister, DayRegisterRow, ExpectedAppointment } from '@aobplatform/contracts';
+import {
+  PUSH_BLOCKED_REASONS,
+  VISIT_STATE_OPTIONS,
+  type DeviceRow,
+  type TabletSessionRow,
+} from '@aobplatform/domain';
 import { FrontDeskView, stableByFirstSeen, timeLabel } from './FrontDeskView';
+import { TabletView } from '../tablet/TabletView';
+import { dayRails } from './dayRails';
+import { everyServiceResolved } from './visitChecklist';
 import { situationFor, visitChecklist } from './visitChecklist';
 import { describeRefusal, type PushableRow, type CoveredServiceRow } from '../tablet/pushDesk';
 import { strings } from '../../strings';
@@ -87,6 +95,12 @@ const row = (over: Partial<PushableRow> = {}): PushableRow => ({
   assignorConfirmedAt: '2026-09-12T08:00:00.000Z',
   pushable: true,
   blockedReason: null,
+  /*
+   * NO CARD BOX AT THIS PRACTICE, which is the default
+   * (`Practice.usesQueueTickets`) and is what keeps the number off every row
+   * that does not ask for one. The ticket tests override it.
+   */
+  queueTicket: null,
   activeSession: null,
   ...over,
 });
@@ -141,6 +155,101 @@ const BOOKED: ExpectedAppointment = {
   time: '10:30',
 };
 
+/**
+ * A ROW OF THE DAY REGISTER, as `GET /arrivals/day` hands it back. Obviously
+ * fake identities, an approved identifier only (the practice's own number —
+ * hard rule 1, REQ-VER-02) and no Medicare-format number anywhere, because
+ * there is no field for one.
+ */
+const arrival = (over: Partial<DayRegisterRow> = {}): DayRegisterRow => ({
+  arrivalId: 'arrival-1',
+  patientId: HERE.patientId,
+  patientName: HERE.patientName,
+  patientRecordNumber: 'DEV-JAMIE-SAMPLETON',
+  arrivedAt: '2026-09-12T09:00:00.000Z',
+  seenByName: 'Dr Example Provider',
+  agreementProviderName: null,
+  agreementId: HERE.agreementId,
+  agreementStatus: 'draft',
+  agreementSigned: false,
+  visitState: null,
+  ...over,
+});
+
+const register = (rows: readonly DayRegisterRow[]): DayRegister => ({
+  date: '2026-09-12',
+  timezone: 'Australia/Sydney',
+  rows,
+});
+
+/**
+ * ONE MORNING THAT REPRODUCES CARL'S, IN MINIATURE (12 September 2026: the
+ * waiting page said fifteen, the desk said three, and twelve people were
+ * invisible).
+ *
+ * SIX ARRIVALS AND EVERY SHAPE THAT WENT MISSING:
+ *  - Jamie, on the queue with nothing on a tablet          → Here now
+ *  - Robin, reading on a tablet                            → On a tablet
+ *  - Dana, signed and gone from the queue                  → Finished
+ *  - Frankie, came in for a blood test and signs nothing   → Finished
+ *  - Kit, corrected — the arrival names the OLD agreement,
+ *    the queue names its successor                         → Here now
+ *  - Morgan, unsigned with nothing open for them           → NEEDS A LOOK
+ */
+const SIGNED = arrival({
+  arrivalId: 'arrival-signed',
+  patientId: '66666666-6666-4000-8000-000000000006',
+  patientName: 'Dana Signed',
+  agreementId: 'agreement-signed',
+  agreementStatus: 'stored',
+  agreementSigned: true,
+  arrivedAt: '2026-09-12T08:30:00.000Z',
+});
+const NOTHING_TO_SIGN = arrival({
+  arrivalId: 'arrival-bloods',
+  patientId: '77777777-7777-4000-8000-000000000007',
+  patientName: 'Frankie Bloods',
+  agreementId: null,
+  agreementStatus: null,
+  agreementSigned: false,
+  arrivedAt: '2026-09-12T08:40:00.000Z',
+});
+/** The successor the register already walked forward to (`newestAgreementInChain`). */
+const CORRECTED_ROW = row({
+  agreementId: 'agreement-successor',
+  patientName: 'Kit Corrected',
+  patientId: '88888888-8888-4000-8000-000000000008',
+  appointmentTime: '09:30',
+});
+const CORRECTED = arrival({
+  arrivalId: 'arrival-corrected',
+  patientId: CORRECTED_ROW.patientId,
+  patientName: CORRECTED_ROW.patientName,
+  agreementId: CORRECTED_ROW.agreementId,
+  arrivedAt: '2026-09-12T08:50:00.000Z',
+});
+const UNACCOUNTED = arrival({
+  arrivalId: 'arrival-unaccounted',
+  patientId: '99999999-9999-4000-8000-000000000009',
+  patientName: 'Morgan Overlooked',
+  agreementId: 'agreement-abandoned',
+  agreementStatus: 'awaiting_signature',
+  agreementSigned: false,
+  arrivedAt: '2026-09-12T08:20:00.000Z',
+});
+const HERE_ARRIVAL = arrival({ arrivalId: 'arrival-here' });
+const TABLET_ARRIVAL = arrival({
+  arrivalId: 'arrival-tablet',
+  patientId: ON_TABLET.patientId,
+  patientName: ON_TABLET.patientName,
+  agreementId: ON_TABLET.agreementId,
+  arrivedAt: '2026-09-12T09:10:00.000Z',
+});
+
+/** The whole morning, in the order people walked in — which is the register's order. */
+const MORNING = [UNACCOUNTED, SIGNED, NOTHING_TO_SIGN, CORRECTED, HERE_ARRIVAL, TABLET_ARRIVAL];
+const MORNING_QUEUE = [HERE, ON_TABLET, CORRECTED_ROW];
+
 const calls: Array<{ url: string; method: string }> = [];
 
 function stubFetch(
@@ -150,6 +259,13 @@ function stubFetch(
     devices?: DeviceRow[];
     sessions?: TabletSessionRow[];
     covered?: unknown[];
+    /**
+     * TODAY'S REGISTER. Left UNDEFINED by every test written before the rails
+     * had to add up, and the endpoint then answers with something that is not
+     * a register — which is exactly the "it never landed" case, and those
+     * tests go on asserting the queue-only rail they were written for.
+     */
+    day?: DayRegister;
     /** A read that refuses — the cross-practice case, and the outage case. */
     status?: number;
   } = {},
@@ -167,7 +283,9 @@ function stubFetch(
        * the general one — the same declaration-order trap the server's routes
        * have (wow.md §2 item 2).
        */
-      const payload = url.includes('/arrivals/expected')
+      const payload = url.includes('/arrivals/day')
+        ? (opts.day ?? { notARegister: true })
+        : url.includes('/arrivals/expected')
         ? (opts.expected ?? [])
         : url.includes('/tablet-sessions/pushable')
           ? (opts.rows ?? [HERE, ON_TABLET])
@@ -775,7 +893,16 @@ describe('the patient panel — everything about them, on this page', () => {
     render(<FrontDeskView practiceId={PRACTICE} />);
     await choose(HERE.agreementId, HERE.patientName);
 
-    expect(screen.getByTestId('frontdesk-chosen-record-number').textContent).toBe('Patient ID XL-004821');
+    expect(screen.getByTestId('frontdesk-chosen-record-number-practice').textContent)
+      .toBe('Patient ID XL-004821');
+
+    /*
+     * AND OUR OWN RECORD ID UNDERNEATH (Carl, 12 September 2026: *"ok. In that
+     * case show both ids."*). Both, in one order, on every surface — see
+     * `the_tablet_desk_and_the_front_desk_name_a_patient_the_same_way`.
+     */
+    expect(screen.getByTestId('frontdesk-chosen-record-number-record').textContent)
+      .toContain(HERE.patientId);
   });
 
   it('front_desk_panel_says_so_when_there_is_no_patient_id', async () => {
@@ -785,9 +912,12 @@ describe('the patient panel — everything about them, on this page', () => {
     await choose(HERE.agreementId, HERE.patientName);
 
     // Said, not blank: an empty line under a name reads as a failed load.
-    expect(screen.getByTestId('frontdesk-chosen-record-number').textContent).toBe(
+    expect(screen.getByTestId('frontdesk-chosen-record-number-practice').textContent).toBe(
       'No patient ID on this record',
     );
+    // Ours always exists, so it needs no such twin and is still there.
+    expect(screen.getByTestId('frontdesk-chosen-record-number-record').textContent)
+      .toContain(HERE.patientId);
   });
 
   it('front_desk_every_patient_action_is_on_the_page', async () => {
@@ -1034,7 +1164,15 @@ describe('the checklist, computed', () => {
       coveringAgreementId: null,
     };
     const list = visitChecklist([], [line], noDevice);
-    expect(list.map((r) => r.state)).toEqual(['not_needed', 'not_needed', 'not_needed', 'not_needed']);
+    // Five rows since D-2026-09-12-20: the visit itself sits between "signed"
+    // and "signed after the visit", and here there is no visit to report on.
+    expect(list.map((r) => r.state)).toEqual([
+      'not_needed',
+      'not_needed',
+      'not_needed',
+      'not_needed',
+      'not_needed',
+    ]);
     expect(list[0].ruleKey).toBe('covered_by_an_ongoing_agreement');
     // The word itself, from the table, and the same one the queue page uses.
     expect(strings.frontdesk.checklist.state.notNeeded).toBe(
@@ -1122,5 +1260,716 @@ describe('the checklist, computed', () => {
     expect(
       situationFor(ON_TABLET, { disputedDetails: ['address'], disputeResolution: 'corrected' }),
     ).toBe('on_a_tablet');
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * THE TWO PAGES RECONCILE, AND THE TEST IS THE DELIVERABLE (Carl, 12 September
+ * 2026, with `/practice/frontdesk` open beside
+ * `/practice/practitioner/waiting`: *"Both pages have to reconcile. Have
+ * another list if you have to on frontdesk as every patient has to be seen."*).
+ *
+ * WHAT WENT WRONG. The day held fifteen arrivals and the desk showed three.
+ * Eight had signed and finished, four had been replaced by a corrected
+ * agreement and appeared only as somebody else's successor, and two had come
+ * in, not signed, had nothing open for them and were on no screen anywhere.
+ * Both numbers were right. Neither page said so, so the desk looked broken and
+ * the two people who owed a signature were invisible.
+ *
+ * THE SHAPE OF THE FIX, AND WHY IT IS A PARTITION RATHER THAN A FOURTH LIST.
+ * A list that is merely ADDED can go missing again the next time a filter is
+ * tightened. A partition cannot: every row of the register lands in exactly
+ * one rail, so the four rails sum to the register's own count by construction
+ * and `front_desk_rails_add_up_to_the_day_register` fails the moment anything
+ * starts dropping people again.
+ */
+describe('/practice/frontdesk — the rails add up to the day', () => {
+  it('front_desk_rails_add_up_to_the_day_register', async () => {
+    /*
+     * THE ONE THAT MATTERS. `Here now + On a tablet + Finished + Needs a look`
+     * IS the number `/practice/day` prints for the same day. Expected sits
+     * outside it, because a person who has not come in is not part of the day
+     * the register is counting.
+     *
+     * ASSERTED ON THE RENDERED PAGE and not only on the pure function, because
+     * the drift this guards against is a SCREEN quietly showing fewer people
+     * than the day holds — which is a thing a component can do all by itself
+     * with a filter the helper never sees.
+     */
+    stubFetch({
+      rows: MORNING_QUEUE,
+      day: register(MORNING),
+      sessions: [session()],
+      expected: [BOOKED],
+    });
+    render(<FrontDeskView practiceId={PRACTICE} />);
+
+    const total = await screen.findByTestId('frontdesk-day-total-number');
+    expect(total.textContent).toBe(String(MORNING.length));
+
+    const counted = (group: string) =>
+      screen.getByTestId(`frontdesk-group-${group}`).querySelectorAll('[data-testid^="frontdesk-row-"]')
+        .length;
+
+    await waitFor(() => expect(counted('finished')).toBe(2));
+    const sum = counted('here') + counted('tablet') + counted('needs-a-look')
+      + counted('waiting-to-be-seen') + counted('finished');
+    expect(sum).toBe(MORNING.length);
+    expect(String(sum)).toBe(total.textContent);
+
+    // And the booking that has not walked in is NOT in that sum. Awaited on
+    // its own, because `/arrivals/expected` is a THIRD fetch and the finished
+    // count above only proves the register landed (wow.md §2 item 6).
+    await waitFor(() => expect(counted('expected')).toBe(1));
+  });
+
+  it('front_desk_every_arrival_is_in_exactly_one_rail', () => {
+    /*
+     * THE SAME CLAIM, MADE STRUCTURALLY. The rendered test above proves the
+     * numbers agree on one morning; this proves the mechanism cannot do
+     * anything else — every arrival appears once across the arrived rails, and
+     * no row appears twice.
+     *
+     * ALL FIVE OF THEM, and the list is spread out rather than summed off
+     * `arrivedToday`, so a rail that started dropping people into nowhere
+     * fails here rather than being hidden by a total computed from the same
+     * arrays.
+     */
+    const rails = dayRails({ queue: MORNING_QUEUE, day: MORNING });
+    const arrived = [
+      ...rails.here,
+      ...rails.onTablet,
+      ...rails.needsALook,
+      ...rails.waitingToBeSeen,
+      ...rails.finished,
+    ];
+    expect(arrived).toHaveLength(MORNING.length);
+    expect(rails.arrivedToday).toBe(MORNING.length);
+    expect(new Set(arrived.map((r) => r.key)).size).toBe(MORNING.length);
+    // Nobody on the queue is left over on a morning where everybody came in.
+    expect(rails.notArrived).toHaveLength(0);
+  });
+
+  it('front_desk_a_corrected_patient_is_counted_once_not_twice', () => {
+    /*
+     * THE FOUR "SUPERSEDED" ROWS OF CARL'S TABLE. The arrival names the
+     * agreement drafted when the patient walked in; a correction replaced it,
+     * and the register already walked the chain forward
+     * (`newestAgreementInChain`) while the queue only ever carries the newest
+     * (`readPushableRows` excludes anything replaced). So the two meet on ONE
+     * id and Kit is one person here, under their own name, rather than an
+     * anomaly plus a stranger's queue row.
+     */
+    const rails = dayRails({ queue: [CORRECTED_ROW], day: [CORRECTED] });
+    expect(rails.here.map((r) => r.name)).toEqual(['Kit Corrected']);
+    expect(rails.needsALook).toHaveLength(0);
+    expect(rails.notArrived).toHaveLength(0);
+    expect(rails.arrivedToday).toBe(1);
+  });
+
+  it('front_desk_needs_a_look_names_whoever_owes_a_signature_and_has_nothing_open', async () => {
+    /*
+     * THE WORST STATE THIS DESK CAN HOLD, MADE VISIBLE. Morgan came in, has not
+     * signed, and every attempt to capture their signature has been cancelled
+     * or has run out — so the queue drops them and, before this, no screen
+     * named them at all.
+     *
+     * AND THE RAIL SAYS WHAT IT MEANS. Hard rule 8: nobody was held up, they
+     * were seen as usual, and it is the PAPERWORK that has to be caught up.
+     */
+    stubFetch({ rows: MORNING_QUEUE, day: register(MORNING), sessions: [session()] });
+    render(<FrontDeskView practiceId={PRACTICE} />);
+
+    const group = await screen.findByTestId('frontdesk-group-needs-a-look');
+    await waitFor(() =>
+      expect(within(group).getByTestId(`frontdesk-row-${UNACCOUNTED.arrivalId}`).textContent).toContain(
+        'Morgan Overlooked',
+      ),
+    );
+    expect(screen.getByTestId('frontdesk-why-needs-a-look').textContent).toBe(
+      strings.frontdesk.rail.needsALookWhy,
+    );
+
+    /*
+     * AND IT IS NOT A CONTROL. There is no queue row behind it, so there is
+     * nothing for the panel to be about; a button here would be a dead end a
+     * first-day starter could not get back out of. The rail is a place to look
+     * (§12.2).
+     */
+    expect(within(group).queryAllByRole('button')).toHaveLength(0);
+  });
+
+  it('front_desk_a_visit_with_nothing_to_sign_is_finished_and_never_an_anomaly', () => {
+    /*
+     * "Not yet" about a patient who came in for a blood test would be a
+     * PERMANENT false alarm, and a rail people learn to ignore is the same as
+     * no rail. The same reasoning `signedLabel` applies on `/practice/day`.
+     */
+    const rails = dayRails({ queue: [], day: [NOTHING_TO_SIGN, SIGNED, UNACCOUNTED] });
+    expect(rails.finished.map((r) => r.name)).toEqual(['Frankie Bloods', 'Dana Signed']);
+    expect(rails.needsALook.map((r) => r.name)).toEqual(['Morgan Overlooked']);
+  });
+
+  it('front_desk_work_with_no_arrival_recorded_today_is_shown_and_left_out_of_the_total', () => {
+    /*
+     * A CORRECTION MADE AFTER MIDNIGHT ON YESTERDAY'S VISIT is on today's desk
+     * and in no register for today. It must not vanish — it is work, and every
+     * patient has to be seen — and it must not be counted, or the total would
+     * stop being the register's own number and the proof would be a
+     * coincidence.
+     */
+    const rails = dayRails({ queue: [HERE, CORRECTED_ROW], day: [HERE_ARRIVAL] });
+    expect(rails.here.map((r) => r.name)).toEqual(['Jamie Sampleton']);
+    expect(rails.notArrived.map((r) => r.name)).toEqual(['Kit Corrected']);
+    expect(rails.arrivedToday).toBe(1);
+  });
+
+  it('front_desk_an_agreement_offered_instead_still_belongs_to_its_arrival', () => {
+    /*
+     * `offerEpisodicInstead` creates a NEW agreement that does NOT replace the
+     * one it stands in for — it could not, they are different instruments with
+     * different evidence — so the arrival and the queue row share no agreement
+     * id. Matching what is left over BY PERSON puts them back together;
+     * without it this one visit would be counted twice, once as an anomaly and
+     * once as work.
+     */
+    const offered = row({
+      agreementId: 'agreement-offered-instead',
+      patientId: UNACCOUNTED.patientId as string,
+      patientName: UNACCOUNTED.patientName as string,
+    });
+    const rails = dayRails({ queue: [offered], day: [UNACCOUNTED] });
+    expect(rails.here.map((r) => r.name)).toEqual(['Morgan Overlooked']);
+    expect(rails.needsALook).toHaveLength(0);
+    expect(rails.notArrived).toHaveLength(0);
+    expect(rails.arrivedToday).toBe(1);
+  });
+
+  it('front_desk_without_the_day_register_still_shows_everybody_on_the_queue', async () => {
+    /*
+     * HARD RULE 8 (REQ-REC-04). A read that failed slows the evidence and never
+     * the service: the register is what the four arrived rails are made of, so
+     * without it there are two rails and no total — and every person with work
+     * open is still on screen and still actionable. An empty desk because one
+     * GET did not answer would be the platform holding up the room.
+     */
+    stubFetch({ rows: [HERE, ON_TABLET], sessions: [session()] });
+    render(<FrontDeskView practiceId={PRACTICE} />);
+
+    await waitFor(() => expect(screen.getByTestId(`frontdesk-row-${HERE.agreementId}`)).toBeTruthy());
+    expect(screen.getByTestId(`frontdesk-row-${ON_TABLET.agreementId}`)).toBeTruthy();
+    expect(screen.queryByTestId('frontdesk-day-total')).toBeNull();
+    expect(screen.queryByTestId('frontdesk-group-needs-a-look')).toBeNull();
+  });
+
+  it('front_desk_the_count_draws_the_number_apart_from_the_word', async () => {
+    /*
+     * CARL, ON THE GROUP HEADINGS: *"Make the font bold and a diff colour for
+     * the number - so it stands out"*. The digit is its own element so it can
+     * carry the weight and the accent; the whole count still reads as one
+     * sentence, and the spoken version beside it still names its group, because
+     * "3" announced on its own tells nobody anything.
+     *
+     * COLOUR IS NEVER THE ONLY SIGNAL (WCAG 2.2 AA 1.4.1) — the number is bold
+     * and a size larger too, and `--accent` on `--surface` is 8.6:1.
+     */
+    stubFetch({ rows: MORNING_QUEUE, day: register(MORNING), sessions: [session()] });
+    render(<FrontDeskView practiceId={PRACTICE} />);
+
+    const count = await screen.findByTestId('frontdesk-count-here');
+    await waitFor(() => expect(count.textContent).toBe(strings.frontdesk.rail.count(2)));
+    const number = count.querySelector('span');
+    expect(number?.textContent).toBe('2');
+    expect(number?.className).toMatch(/countNumber/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * WHAT THE RAIL SAYS ABOUT EACH PERSON, AND IN WHAT ORDER (Carl, 12 September
+ * 2026, on the rails once they were live).
+ *
+ * Five notes, all about the same column: sort "Here now" the way people will
+ * be seen; show the number on the card in their hand; give a way to see
+ * everybody at once; name the tablet somebody has; and put "Finished" last,
+ * because it is the one rail nobody has to act on.
+ */
+describe('/practice/frontdesk — what the rail says, and in what order', () => {
+  it('front_desk_here_now_is_in_the_order_people_will_be_seen', async () => {
+    /*
+     * Carl: *"always sort Here Now in seq of being seen."*
+     *
+     * WHICH IS ARRIVAL ORDER, AND IT IS THE SERVER'S ANSWER. `readPushableRows`
+     * walks each agreement back through `supersedesAgreementId` to the arrival
+     * that started it and sorts on that, so a corrected card keeps its place
+     * (the fix of 11 September 2026); the day register is `arrivedAt asc` for
+     * the same reason. NOTHING ON THIS PAGE MAY RE-SORT IT — which is what
+     * this asserts, by handing it a register and a queue whose orders differ
+     * and requiring the register's.
+     *
+     * THE REGISTER WINS BECAUSE IT IS ARRIVAL ORDER OUTRIGHT, where the queue
+     * is arrival order through a chain; on a well-behaved day the two agree,
+     * and where they cannot the earlier arrival is the person who has waited
+     * longest.
+     */
+    stubFetch({
+      // Deliberately NOT the register's order — the page must ignore this one.
+      rows: [CORRECTED_ROW, HERE],
+      day: register([HERE_ARRIVAL, CORRECTED]),
+    });
+    render(<FrontDeskView practiceId={PRACTICE} />);
+
+    const group = await screen.findByTestId('frontdesk-group-here');
+    await waitFor(() =>
+      expect(group.querySelectorAll('[data-testid^="frontdesk-row-"]')).toHaveLength(2),
+    );
+    expect(
+      [...group.querySelectorAll('[data-testid^="frontdesk-row-"]')].map((n) =>
+        n.getAttribute('data-testid'),
+      ),
+    ).toEqual([`frontdesk-row-${HERE.agreementId}`, `frontdesk-row-${CORRECTED_ROW.agreementId}`]);
+
+    // And exactly one row is marked next: the top of the list, said out loud.
+    expect(group.querySelectorAll('[data-testid^="frontdesk-next-"]')).toHaveLength(1);
+    expect(screen.getByTestId(`frontdesk-next-${HERE.agreementId}`)).toBeTruthy();
+  });
+
+  it('front_desk_shows_the_number_on_the_card_in_the_patients_hand', async () => {
+    /*
+     * Carl: *"Show the practice-queueid - the card with the number or from the
+     * PMS or the Q-id AoB allocated."* QUEUE-TICKETS.md §4.2 puts it as the
+     * LEADING element of the row, because "call number twelve" is the job.
+     *
+     * IT IS NOT AN IDENTITY IDENTIFIER (hard rule 1, REQ-VER-02) and nothing on
+     * this page treats it as one: it is not searched on, not typed into a
+     * verification, and it is not the running order either (§5a) — number 14
+     * called before number 9 is an ordinary morning, and nothing here sorts on
+     * it.
+     */
+    const ticketed = row({ queueTicket: 'A12' });
+    stubFetch({ rows: [ticketed], day: register([HERE_ARRIVAL]) });
+    render(<FrontDeskView practiceId={PRACTICE} />);
+
+    const badge = await screen.findByTestId(`frontdesk-ticket-${ticketed.agreementId}`);
+    expect(badge.textContent).toContain('A12');
+    // Spoken with its word, because a stray digit beside a name says nothing.
+    expect(badge.textContent).toContain(strings.frontdesk.rail.ticket('A12'));
+
+    // And it leads the row, before the name.
+    const rowNode = screen.getByTestId(`frontdesk-row-${ticketed.agreementId}`);
+    const order = [...rowNode.querySelectorAll('span')].map((n) => n.className);
+    expect(order.findIndex((c) => /ticket/.test(c))).toBeLessThan(
+      order.findIndex((c) => /name/.test(c)),
+    );
+  });
+
+  it('queue_tickets_are_invisible_when_the_practice_does_not_use_them', async () => {
+    /*
+     * QUEUE-TICKETS.md §4: a practice setting, default OFF, and *"when off, no
+     * field appears anywhere"*. No ticket is allocated at such a practice, so
+     * the row carries null and the rail draws nothing — the absence of the
+     * number IS the switch, rather than a second flag the page has to read.
+     */
+    stubFetch({ rows: [HERE], day: register([HERE_ARRIVAL]) });
+    render(<FrontDeskView practiceId={PRACTICE} />);
+
+    await waitFor(() => expect(screen.getByTestId(`frontdesk-row-${HERE.agreementId}`)).toBeTruthy());
+    expect(screen.queryByTestId(`frontdesk-ticket-${HERE.agreementId}`)).toBeNull();
+  });
+
+  it('front_desk_offers_a_way_to_see_everyone_here_at_once', async () => {
+    /*
+     * Carl: *"provide a button to go look at all patients here now (like we
+     * have in section [1] of /tablet page)."* That section is the tablet
+     * desk's whole list of everybody waiting today, so this points at it
+     * rather than growing a second everybody-at-once list of its own (§7).
+     *
+     * IT NAVIGATES AND IT DOES NOT ACT, which is the rail's own rule (§12.3),
+     * and it is not about a patient, so §13 is untouched.
+     */
+    stubFetch({ rows: [HERE] });
+    render(<FrontDeskView practiceId={PRACTICE} />);
+
+    const link = await screen.findByTestId('frontdesk-see-everyone');
+    expect(link.getAttribute('href')).toBe('/practice/tablet');
+    expect(link.textContent).toBe(strings.frontdesk.rail.seeEveryone);
+    // It lives inside "Here now", the group it is about.
+    expect(within(screen.getByTestId('frontdesk-group-here')).getByTestId('frontdesk-see-everyone'))
+      .toBeTruthy();
+  });
+
+  it('front_desk_names_the_tablet_a_patient_has', async () => {
+    /*
+     * Carl: the tablet's name on the "On a tablet" rows, in a small font. The
+     * practice names its own devices and the label is already on the row data,
+     * so it is printed EXACTLY as they wrote it with nothing added around it —
+     * a sentence built around the label produces "has the Blue tablet tablet".
+     */
+    stubFetch({
+      rows: [ON_TABLET],
+      day: register([TABLET_ARRIVAL]),
+      sessions: [session()],
+      devices: [TABLET],
+    });
+    render(<FrontDeskView practiceId={PRACTICE} />);
+
+    const note = await screen.findByTestId(`frontdesk-device-${ON_TABLET.agreementId}`);
+    expect(note.textContent).toBe(TABLET.label);
+  });
+
+  it('front_desk_puts_finished_below_needs_a_look', async () => {
+    /*
+     * Carl: *"Move Finished below Needs a look."* Finished is the one arrived
+     * rail nobody has to act on, so it goes last of them; the anomaly sits
+     * directly under the work, where somebody scanning the column reaches it
+     * before the people they have nothing left to do for.
+     *
+     * ASSERTED ON DOCUMENT ORDER, not on a style, because that is what a
+     * screen reader and a keyboard follow too.
+     */
+    stubFetch({ rows: MORNING_QUEUE, day: register(MORNING), sessions: [session()] });
+    render(<FrontDeskView practiceId={PRACTICE} />);
+
+    await screen.findByTestId('frontdesk-group-finished');
+    const groups = [...screen.getByTestId('frontdesk-rail').querySelectorAll('[data-testid^="frontdesk-group-"]')]
+      .map((node) => node.getAttribute('data-testid'));
+    /*
+     * AND "WAITING TO BE SEEN" BETWEEN THEM (D-2026-09-12-20): nothing is
+     * wrong with anybody on it and there is nothing for the desk to do, so it
+     * is neither the anomaly above it nor the finished below.
+     */
+    expect(groups).toEqual([
+      'frontdesk-group-here',
+      'frontdesk-group-tablet',
+      'frontdesk-group-needs-a-look',
+      'frontdesk-group-waiting-to-be-seen',
+      'frontdesk-group-finished',
+      'frontdesk-group-expected',
+    ]);
+  });
+
+  it('front_desk_gives_each_rail_its_own_colour', async () => {
+    /*
+     * Carl: *"Put colour on the list heading and the number. Reason: I want my
+     * eye to be drawn to each list."*
+     *
+     * A PLACE, NOT A SEVERITY. The reason decides the design: he is LOCATING
+     * the lists, not ranking them, so each rail carries its own tone and
+     * "Here now" carries none — uncoloured `--ink` is the strongest treatment
+     * on the column, because it is the work.
+     *
+     * COLOUR IS NEVER THE ONLY CARRIER (WCAG 2.2 AA 1.4.1), which is the half
+     * of this worth asserting: every heading still says in words what its rail
+     * is, and the count is still spoken as a whole sentence beside it.
+     */
+    stubFetch({ rows: MORNING_QUEUE, day: register(MORNING), sessions: [session()] });
+    render(<FrontDeskView practiceId={PRACTICE} />);
+
+    await screen.findByTestId('frontdesk-group-finished');
+    const toneOf = (group: string) => screen.getByTestId(`frontdesk-group-${group}`).className;
+    expect(toneOf('here')).not.toMatch(/tone/);
+    expect(toneOf('tablet')).toMatch(/toneOk/);
+    expect(toneOf('needs-a-look')).toMatch(/toneWarn/);
+    expect(toneOf('finished')).toMatch(/toneInfo/);
+    expect(toneOf('expected')).toMatch(/toneQuiet/);
+
+    // The words still carry it, so nothing here depends on seeing a colour.
+    for (const [group, title] of [
+      ['here', strings.frontdesk.rail.hereNow],
+      ['tablet', strings.frontdesk.rail.onATablet],
+      ['needs-a-look', strings.frontdesk.rail.needsALook],
+      ['finished', strings.frontdesk.rail.finished],
+      ['expected', strings.frontdesk.rail.expected],
+    ] as const) {
+      expect(within(screen.getByTestId(`frontdesk-group-${group}`)).getByRole('heading').textContent)
+        .toBe(title);
+    }
+  });
+
+  it('front_desk_shows_work_with_no_arrival_recorded_today', async () => {
+    /*
+     * A CORRECTION MADE AFTER MIDNIGHT ON YESTERDAY'S VISIT is on today's desk
+     * and in no register for today. Every patient has to be seen, so it is
+     * drawn — with the sentence saying why it is there and that it is not part
+     * of the number above — and the group is absent altogether on a day where
+     * everybody came in, because a permanently empty box saying so would be
+     * noise on a first shift.
+     */
+    stubFetch({ rows: [HERE, CORRECTED_ROW], day: register([HERE_ARRIVAL]) });
+    render(<FrontDeskView practiceId={PRACTICE} />);
+
+    const group = await screen.findByTestId('frontdesk-group-not-arrived');
+    expect(within(group).getByTestId(`frontdesk-row-${CORRECTED_ROW.agreementId}`).textContent)
+      .toContain('Kit Corrected');
+    expect(screen.getByTestId('frontdesk-why-not-arrived').textContent)
+      .toBe(strings.frontdesk.rail.notArrivedWhy);
+    // It is still work, so it can still be chosen.
+    expect(within(group).queryAllByRole('button')).toHaveLength(1);
+    // And it is outside the total, which counts only the register's own rows.
+    expect(screen.getByTestId('frontdesk-day-total-number').textContent).toBe('1');
+  });
+
+  it('front_desk_a_visit_with_nothing_to_sign_never_takes_another_visits_work', () => {
+    /*
+     * CAUGHT IN REVIEW, 12 September 2026, before it could happen to anybody.
+     *
+     * The by-person fallback exists for `offerEpisodicInstead`, whose new
+     * agreement does not replace the one it stands in for. But a patient can
+     * hold TWO arrivals on one day, and if the first of them needed no
+     * agreement at all — a blood test — an unguarded fallback would let that
+     * finished visit claim the open queue row belonging to the second. The two
+     * would then be reported the wrong way round: the blood test as work, and
+     * the visit that really owes a signature as an anomaly.
+     */
+    const bloods = arrival({
+      arrivalId: 'arrival-bloods-first',
+      patientId: HERE.patientId,
+      patientName: HERE.patientName,
+      agreementId: null,
+      agreementStatus: null,
+      arrivedAt: '2026-09-12T08:00:00.000Z',
+    });
+    const later = arrival({
+      arrivalId: 'arrival-second-visit',
+      patientId: HERE.patientId,
+      patientName: HERE.patientName,
+      // A different agreement id: the queue row is the one offered instead.
+      agreementId: 'agreement-first-attempt',
+      arrivedAt: '2026-09-12T11:00:00.000Z',
+    });
+    const rails = dayRails({ queue: [HERE], day: [bloods, later] });
+
+    expect(rails.finished.map((r) => r.key)).toEqual(['arrival-bloods-first']);
+    expect(rails.here.map((r) => r.key)).toEqual([HERE.agreementId]);
+    expect(rails.needsALook).toHaveLength(0);
+    expect(rails.arrivedToday).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * ONE PERSON, THE SAME TWO IDS, ON BOTH DESKS (Carl, 12 September 2026:
+ * *"patientid is diff on /tablet and /frontdesk"*, then *"ok. In that case
+ * show both ids."*).
+ *
+ * NEITHER PAGE WAS WRONG, WHICH IS WHY IT LOOKED LIKE A BUG. The front desk
+ * printed the PRACTICE's own number for the person — the handle reception
+ * reads out and types into their own software. The tablet desk printed the id
+ * this platform minted, which is what a support ticket needs because a
+ * practice number is not unique across practices. A receptionist moving
+ * between the two in the same minute saw two identifiers for one patient.
+ *
+ * SO BOTH, IN ONE ORDER, FROM ONE COMPONENT. This is wow.md §10 rule 4 —
+ * *"reuse is proved by a test where it matters"* — rendered for real on both
+ * pages rather than asserted about a helper neither of them has to use.
+ */
+describe('the two desks name a patient the same way', () => {
+  it('the_tablet_desk_and_the_front_desk_name_a_patient_the_same_way', async () => {
+    const NAMED = row({ patientRecordNumber: 'XL-004821' });
+
+    stubFetch({ rows: [NAMED] });
+    const desk = render(<FrontDeskView practiceId={PRACTICE} />);
+    await choose(NAMED.agreementId, NAMED.patientName);
+    const onFrontDesk = screen.getByTestId('frontdesk-chosen-record-number');
+    const frontDeskText = onFrontDesk.textContent ?? '';
+    desk.unmount();
+
+    stubFetch({ rows: [NAMED] });
+    render(<TabletView practiceId={PRACTICE} />);
+    const onTabletDesk = await screen.findByTestId(`row-patient-id-${NAMED.agreementId}`);
+
+    /*
+     * THE SAME TWO FACTS, IN THE SAME ORDER, IN THE SAME WORDS. Compared as
+     * text rather than by counting elements, because what Carl saw was the
+     * text.
+     */
+    expect(frontDeskText).toBe(onTabletDesk.textContent);
+    expect(frontDeskText).toContain(strings.recordId.practiceNumber('XL-004821'));
+    expect(frontDeskText).toContain(strings.recordId.patient);
+    expect(frontDeskText).toContain(NAMED.patientId);
+    // The practice's number comes first: it is the one a person says out loud.
+    expect(frontDeskText.indexOf('XL-004821')).toBeLessThan(frontDeskText.indexOf(NAMED.patientId));
+
+    // AND NEITHER IS A MEDICARE NUMBER. There is no column for one anywhere.
+    expect(document.body.textContent).not.toMatch(/medicare/i);
+  });
+
+  it('a_patient_with_no_practice_number_says_so_on_both_desks', async () => {
+    /*
+     * NULL IS ORDINARY, NOT A FAULT. A patient can reach the platform by a
+     * route that never carried the practice's number, and a blank line under a
+     * name reads as a page that failed to load. Our own id always exists, so
+     * it needs no twin — which is the asymmetry worth pinning.
+     */
+    const UNNUMBERED = row({ patientRecordNumber: null });
+
+    stubFetch({ rows: [UNNUMBERED] });
+    const desk = render(<FrontDeskView practiceId={PRACTICE} />);
+    await choose(UNNUMBERED.agreementId, UNNUMBERED.patientName);
+    const frontDeskText = screen.getByTestId('frontdesk-chosen-record-number').textContent ?? '';
+    desk.unmount();
+
+    stubFetch({ rows: [UNNUMBERED] });
+    render(<TabletView practiceId={PRACTICE} />);
+    const onTabletDesk = await screen.findByTestId(`row-patient-id-${UNNUMBERED.agreementId}`);
+
+    expect(frontDeskText).toContain(strings.recordId.practiceNumberUnknown);
+    expect(frontDeskText).toBe(onTabletDesk.textContent);
+    expect(frontDeskText).toContain(UNNUMBERED.patientId);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * "FINISHED" MEANS THE VISIT IS OVER, NOT THAT THE PAPERWORK IS DONE
+ * (D-2026-09-12-20; `VISIT-CHECKLIST.md` §3a; Carl, 12 September 2026, with
+ * the two pages side by side: *"on /frontdesk the patient goes to 'Finished
+ * list' yet on /waiting the dr has not seen the patient as yet. Hence, we need
+ * a step 'Consultation completed'."*).
+ *
+ * THE WORD WAS DOING THE LYING. Signing happens in the waiting room, BEFORE
+ * the service, so the desk announced that a patient was finished while the
+ * practitioner had not yet called them in.
+ *
+ * AND THE RULE IS CARL'S GENERAL ONE, not a two-clause boolean: *"Only when
+ * all services are completed or some are cancelled does the client go to
+ * Finished."* Today the list is the signature and the visit, so it reduces to
+ * the narrow rule — but it is written over the list, so a practice's own items
+ * change what Finished means without this condition being edited.
+ */
+describe('/practice/frontdesk — a patient is finished when their service list is', () => {
+  /** No devices read in these: the checklist's device label is not what is under test. */
+  const noDevice = () => null;
+
+  /** The register row for somebody who signed on the way in. */
+  const signedNotSeen = arrival({
+    arrivalId: 'arrival-signed-waiting',
+    patientId: '66666666-6666-4000-8000-00000000000a',
+    patientName: 'Rowan Waiting',
+    agreementId: 'agreement-signed-waiting',
+    agreementStatus: 'stored',
+    agreementSigned: true,
+    visitState: 'pending',
+  });
+
+  it('a_signed_agreement_alone_does_not_finish_a_visit', () => {
+    /*
+     * THE BUG, PINNED. Rowan signed and the practitioner has not called them
+     * in. Before this they were reported as Finished; now they are waiting to
+     * be seen — which is neither an anomaly (nothing is wrong) nor the desk's
+     * work (there is nothing for reception to do).
+     */
+    const rails = dayRails({ queue: [], day: [signedNotSeen] });
+    expect(rails.finished).toHaveLength(0);
+    expect(rails.waitingToBeSeen.map((r) => r.name)).toEqual(['Rowan Waiting']);
+    expect(rails.needsALook).toHaveLength(0);
+    // And the day still adds up, which is what §14 exists for.
+    expect(rails.arrivedToday).toBe(1);
+  });
+
+  it('finished_needs_the_paperwork_done_and_the_visit_complete', () => {
+    /*
+     * BOTH HALVES, AND EACH ALONE. The fourth case — nothing to sign and the
+     * visit complete — is the phlebotomist's patient, who signs nothing and is
+     * finished the moment they have been seen.
+     */
+    const seen = { ...signedNotSeen, visitState: 'completed' };
+    const notSignedNotSeen = { ...signedNotSeen, agreementSigned: false, agreementStatus: 'awaiting_signature' };
+    const notSignedButSeen = { ...notSignedNotSeen, visitState: 'completed' };
+    const nothingToSignAndSeen = {
+      ...signedNotSeen,
+      agreementId: null,
+      agreementStatus: null,
+      agreementSigned: false,
+      visitState: 'completed',
+    };
+
+    expect(dayRails({ queue: [], day: [seen] }).finished).toHaveLength(1);
+    expect(dayRails({ queue: [], day: [notSignedNotSeen] }).finished).toHaveLength(0);
+    expect(dayRails({ queue: [], day: [notSignedButSeen] }).finished).toHaveLength(0);
+    expect(dayRails({ queue: [], day: [nothingToSignAndSeen] }).finished).toHaveLength(1);
+
+    /*
+     * AN UNSIGNED AGREEMENT WITH NOTHING OPEN IS STILL THE ANOMALY, whether or
+     * not the patient has been seen — they owe a signature and no screen but
+     * this one names them.
+     */
+    expect(dayRails({ queue: [], day: [notSignedButSeen] }).needsALook).toHaveLength(1);
+  });
+
+  it('finished_is_every_service_resolved_and_not_a_pair_of_booleans', () => {
+    /*
+     * `VISIT-CHECKLIST.md` §3a, written as the general rule so a practice's own
+     * items change what Finished means without this being edited. `cancelled`
+     * resolves an item exactly as `done` and `not_needed` do — three different
+     * facts, one consequence — and it is in the type now precisely so nobody
+     * has to guess later what "resolved" was supposed to include.
+     */
+    expect(everyServiceResolved([])).toBe(true);
+    expect(everyServiceResolved([{ state: 'done' }, { state: 'not_needed' }])).toBe(true);
+    expect(everyServiceResolved([{ state: 'done' }, { state: 'cancelled' }])).toBe(true);
+    expect(everyServiceResolved([{ state: 'done' }, { state: 'outstanding' }])).toBe(false);
+  });
+
+  it('the_visit_checklist_carries_the_consultation_between_signing_and_afterwards', () => {
+    /*
+     * WHERE CARL DREW IT on his screenshot: after "signed on a tablet" and
+     * before anything about billing afterwards. The order is the morning's.
+     *
+     * AND IT READS THE STATE RATHER THAN MINTING ONE. `completed` is the
+     * domain's service-rendered signal, so the row is `done` for it and
+     * outstanding for everything before it.
+     */
+    const waiting = visitChecklist([row({ visitState: 'pending' })], [], noDevice);
+    expect(waiting.map((r) => r.key)).toEqual(['needed', 'made', 'signed', 'consultation', 'after']);
+    const step = waiting.find((r) => r.key === 'consultation');
+    expect(step?.state).toBe('outstanding');
+    expect(step?.visitState).toBe('pending');
+
+    const withThem = visitChecklist([row({ visitState: 'with_patient_now' })], [], noDevice);
+    expect(withThem.find((r) => r.key === 'consultation')?.state).toBe('outstanding');
+
+    const done = visitChecklist([row({ visitState: 'completed' })], [], noDevice);
+    expect(done.find((r) => r.key === 'consultation')?.state).toBe('done');
+
+    // No arrival behind the chain: there is no visit for this to be about.
+    const noVisit = visitChecklist([row({ visitState: null })], [], noDevice);
+    expect(noVisit.find((r) => r.key === 'consultation')?.state).toBe('not_needed');
+  });
+
+  it('the_front_desk_and_the_practitioner_queue_never_disagree_about_who_has_been_seen', async () => {
+    /*
+     * ONE STATE, ONE WORD, TWO SCREENS. The front desk does not compute
+     * whether somebody has been seen — it reads the state the practitioner set
+     * — and it prints it with the practitioner queue's OWN label function over
+     * the versioned content's OWN keys. Two places disagreeing about whether a
+     * patient has been seen would be worse than the bug this fixes.
+     *
+     * ASSERTED OVER EVERY KEY IN THE CONTENT FILE, not over the three this
+     * build happened to think of: a fifth state added to `visit-states.json`
+     * fails this test rather than quietly rendering its key on one page and a
+     * word on the other.
+     */
+    for (const option of VISIT_STATE_OPTIONS) {
+      const step = visitChecklist([row({ visitState: option.key })], [], noDevice)
+        .find((r) => r.key === 'consultation');
+      expect(step?.visitState).toBe(option.key);
+      expect(strings.practitionerQueue.waiting.visitState[option.key]).toBeTruthy();
+      // Done exactly for the one option the domain calls the service-rendered
+      // signal — never for a literal this file chose.
+      expect(step?.state).toBe(option.isTheServiceRenderedSignal ? 'done' : 'outstanding');
+    }
+
+    // And on the page, in the practitioner's words.
+    stubFetch({ rows: [row({ visitState: 'with_patient_now' })] });
+    render(<FrontDeskView practiceId={PRACTICE} />);
+    await choose(HERE.agreementId, HERE.patientName);
+    expect(screen.getByTestId('frontdesk-checklist').textContent)
+      .toContain(strings.practitionerQueue.waiting.visitState.with_patient_now);
   });
 });

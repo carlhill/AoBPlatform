@@ -178,6 +178,28 @@ export const VAULT_EVENT_TYPES = [
    */
   'arrival.refused',
   /**
+   * THE PATIENT WAS GIVEN A QUEUE NUMBER (`QUEUE-TICKETS.md` §5.5; Carl,
+   * 12 September 2026).
+   *
+   * IT RECORDS THAT A TICKET WAS SET AND WHERE IT CAME FROM — NEVER THE NUMBER
+   * ITSELF. The value is not needed to prove anything later: it is a label for
+   * a person's place in a queue on one day, it is handed to the wrong person
+   * regularly, and it is left face up on a counter. What IS worth proving is
+   * the provenance — "off their card box" and "we made this up" answer
+   * different questions a year later (D-2026-09-12-18).
+   *
+   * IT IS NOT AN IDENTITY IDENTIFIER AND THE VAULT MUST NOT LEARN TO TREAT IT
+   * AS ONE (hard rule 1, REQ-VER-02). The approved set is fixed at six and a
+   * seventh appearing in the evidence chain is exactly how it would gain one
+   * by accident. The house style for anything that identifies a person in a
+   * room is the TYPE and the outcome (hard rule 9's spirit), and this follows
+   * it.
+   *
+   * WRITTEN IN THE SAME TRANSACTION AS THE ARRIVAL (hard rule 11), through the
+   * outbox like every other event.
+   */
+  'arrival.ticket_set',
+  /**
    * THE SERVICE HAS BEEN RENDERED — the second moment, on the same desk (Carl,
    * 11 Sep 2026; TODO.md "Two front doors" decision (b)).
    *

@@ -147,10 +147,20 @@ nothing on screen should suggest otherwise.
 
 ## 7. Build order
 
-1. **The column and the setting.** `Arrival.queueTicket`, `Practice.usesQueueTickets`, migration, the event. No UI.
-2. **The existing desk.** The field in the send step, the number on the row, the duplicate warning. This is where a real practice would start using it tomorrow.
-3. **The front desk page**, once `FRONT-DESK-PAGE.md` §4 is signed off — the ticket leads each rail row.
-4. **The kiosk line**, if Carl wants it.
+1. ~~**The column and the setting.**~~ **BUILT 12 Sep 2026.** `Arrival.queueTicket`
+   and `Arrival.queueTicketSource`, `Practice.usesQueueTickets`, migration
+   `20260912050000_queue_tickets` (with the CHECKs: the source is one of the
+   three, the two columns are null together, and the number is at most eight
+   characters), the allocation, and the `arrival.ticket_set` event.
+2. **The existing desk.** The field in the send step and the duplicate warning
+   are NOT built — there is no way to TYPE a number at the desk yet, so today a
+   ticket reaches us only on the arrival (a `reception` arrival carrying one, a
+   PMS push carrying one) or is allocated. The number itself is on the row:
+   `PushableRow.queueTicket`, read through the supersession chain.
+3. ~~**The front desk page.**~~ **BUILT 12 Sep 2026** (Carl: *"Show the
+   practice-queueid"*). The ticket leads each rail row on `/practice/frontdesk`.
+   The patient PANEL does not carry it yet.
+4. **The kiosk line**, if Carl wants it. Still §8's first open question.
 
 ## 8. For Carl to decide
 
@@ -163,3 +173,5 @@ nothing on screen should suggest otherwise.
 |---|---|
 | 12 Sep 2026 | v1.0. Written when Carl asked for a queue-card field so a manual card system can work alongside the platform. Not built. |
 | 12 Sep 2026 | §3 narrowed: three sources in precedence — their card, their software, then one we allocate — and the source is recorded alongside. D-2026-09-12-18. |
+| 12 Sep 2026 | **Build steps 1 and 3 BUILT.** The columns, the setting, the three sources in precedence, the allocation and the event; the number leading each row of the front desk rail, read through the same chain walk that already orders the queue. Named tests: `a_queue_ticket_off_the_practices_own_card_is_recorded_as_theirs`, `a_queue_ticket_from_the_practices_software_is_recorded_as_theirs`, `a_queue_ticket_is_allocated_only_when_nothing_else_supplies_one`, `queue_tickets_are_invisible_when_the_practice_does_not_use_them`, `a_ticket_event_carries_ids_and_never_the_number`, `a_superseded_row_keeps_its_queue_ticket`, `queue_tickets_do_not_cross_a_practice_boundary`, `a_queue_ticket_is_a_short_string_and_never_a_number`, `an_allocated_ticket_counts_only_what_we_allocated`, `front_desk_shows_the_number_on_the_card_in_the_patients_hand`. |
+| 12 Sep 2026 | **What is NOT built, and it is step 2.** There is no input anywhere for a receptionist to TYPE a card number, so a practice running a manual card box cannot yet use one unless the number arrives on the arrival. The duplicate warning (§5.3), editing a mistyped ticket (§5.2), the kiosk line (§4.3) and the panel's own copy of the number are all still to come. §6's `a_queue_ticket_is_never_accepted_as_an_identity_identifier`, `a_queue_ticket_never_reaches_the_agreement_artefact`, `a_duplicate_ticket_warns_and_still_sends` and `moving_a_patient_up_the_queue_does_not_change_their_ticket` wait on those, and on §12.6's call order. |

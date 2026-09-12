@@ -41,16 +41,28 @@
  *
  * NOTHING IS RE-DERIVED (§7). Every fact comes from `usePushDesk` — the same
  * hook, the same reads and the same three-second poll the tablet desk uses —
- * plus the rail's one extra read, `GET /arrivals/expected`. There is no new
- * endpoint, no second copy of the refusal mapping and no second definition of
- * what "can be sent" means. A second implementation aimed at beginners would
- * be the one that quietly went wrong.
+ * plus two reads of its own: `GET /arrivals/expected` for the booking list and
+ * `GET /arrivals/day` for the register the rails are checked against. There is
+ * no new endpoint, no second copy of the refusal mapping and no second
+ * definition of what "can be sent" means. A second implementation aimed at
+ * beginners would be the one that quietly went wrong.
+ *
+ * AND THE RAILS ADD UP (§14; Carl, 12 September 2026: *"Both pages have to
+ * reconcile."*). The desk showed three, `/practice/day` showed fifteen, both
+ * were right, and twelve people — including two who had come in and owed a
+ * signature — were on no screen at all. The four arrived rails are now a
+ * PARTITION of the register's rows (`dayRails`), so the number at the top of
+ * the column is the same number the register prints for the same day, by
+ * construction rather than by coincidence.
  *
  * THE RAIL IS A PLACE TO LOOK; THE PANEL IS WHERE YOU ACT (§12.2). Three
  * rules hold it there, each with a named test:
  *
  *  - CHOOSING NEVER ACTS (`front_desk_rail_never_acts_on_selection`). Every
- *    row is a `<button>` whose entire effect is `setChosen`.
+ *    row that CAN be chosen is a `<button>` whose entire effect is `setChosen`;
+ *    a row with no queue row behind it — a finished visit, an arrival with
+ *    nothing open — is not a control at all, because a button that fills the
+ *    panel with nothing is a dead end a first-day starter cannot get out of.
  *  - IT DOES NOT RE-SORT UNDER THE HAND
  *    (`front_desk_rail_keeps_its_order_between_polls`). See `stableByFirstSeen`.
  *  - A NAME, A TIME AND A GROUP, AND NOTHING ELSE
@@ -66,10 +78,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { CalendarDays, PencilLine } from 'lucide-react';
-import type { ExpectedAppointment } from '@aobplatform/contracts';
+import { CalendarDays, PencilLine, Users } from 'lucide-react';
+import type { DayRegister, DayRegisterRow, ExpectedAppointment } from '@aobplatform/contracts';
 import type { DeviceRow } from '@aobplatform/domain';
-import { Button, Chip, Notice, Shell, ui } from '../../ui';
+import { Button, Chip, Notice, PatientIdentity, Shell, ui } from '../../ui';
 import { SessionControl } from '../../SessionControl';
 import { strings } from '../../strings';
 import { useRefreshable } from '../../refresh';
@@ -99,6 +111,8 @@ import {
   type PushDesk,
   type PushableRow,
 } from '../tablet/pushDesk';
+import { arrivedAtLabel, visitStateLabel } from '../practitioner/waiting/WaitingView';
+import { dayRails } from './dayRails';
 import { situationFor, visitChecklist, type ChecklistRow } from './visitChecklist';
 import styles from './frontdesk.module.css';
 
@@ -199,6 +213,22 @@ export function FrontDeskView({ practiceId }: { practiceId: string }) {
    */
   const desk = usePushDesk(practiceId);
   const [expected, setExpected] = useState<ExpectedAppointment[]>([]);
+  /**
+   * TODAY'S REGISTER — every person who came in, including the ones the queue
+   * has finished with (`GET /arrivals/day`, no date, so the day is the
+   * SERVER's by the practice's clock and never this machine's guess).
+   *
+   * IT IS THE DENOMINATOR AND NOT DECORATION. The four arrived rails are a
+   * partition of these rows, so the column adds up to the same number
+   * `/practice/day` prints for the same day — which is the whole of Carl's
+   * *"both pages have to reconcile"*.
+   *
+   * NULL MEANS "NOT READ", NOT "NOBODY CAME IN". Until it lands, and for as
+   * long as it fails, the rail is the queue-only pair of groups the page had
+   * before and there is no total on screen. Hard rule 8: a read that failed
+   * slows the evidence, never the service.
+   */
+  const [register, setRegister] = useState<DayRegister | null>(null);
   const [chosen, setChosen] = useState<Chosen | null>(null);
   /**
    * WHO HAS JUST LEFT THE DESK, held only long enough to say so (§4's last
@@ -217,6 +247,8 @@ export function FrontDeskView({ practiceId }: { practiceId: string }) {
    */
   const queueOrder = useRef(new Map<string, number>());
   const expectedOrder = useRef(new Map<string, number>());
+  /** And a third, for the register, for the same reason and pruned the same way. */
+  const dayOrder = useRef(new Map<string, number>());
 
   /*
    * A CHOICE BELONGS TO ONE PRACTICE AND NEVER FOLLOWS THE PAGE TO ANOTHER,
@@ -229,6 +261,8 @@ export function FrontDeskView({ practiceId }: { practiceId: string }) {
     setExpertFor(null);
     queueOrder.current = new Map();
     expectedOrder.current = new Map();
+    dayOrder.current = new Map();
+    setRegister(null);
   }, [practiceId]);
 
   /*
@@ -246,38 +280,88 @@ export function FrontDeskView({ practiceId }: { practiceId: string }) {
   }, [practiceId]);
 
   /*
-   * THE TOP BAR'S REFRESH BUTTON RE-READS BOTH HALVES OF THE PAGE — and its
+   * AND THE READ THAT MAKES THE COLUMN ADD UP — the same `GET /arrivals/day`
+   * that `/practice/day` makes, with NO DATE, because the day is the server's
+   * answer by the practice's clock. Two pages asking the same endpoint the
+   * same question is what "reconcile by construction" means here; a front desk
+   * that worked out its own day would be the second definition of "today" this
+   * codebase already has too many of.
+   *
+   * A FAILURE LEAVES THE REGISTER AS IT WAS rather than blanking it, so a
+   * single dropped poll does not make the four arrived rails and the total
+   * flicker out from under somebody mid-patient. The queue-only fallback is
+   * for a register that has NEVER landed.
+   */
+  const loadDay = useCallback(async () => {
+    const answer = await fetch(`${CORE_URL}/arrivals/day`, { headers: apiHeaders(practiceId) }).catch(
+      () => null,
+    );
+    if (!answer || !answer.ok) return;
+    const body = (await answer.json().catch(() => null)) as DayRegister | null;
+    if (!body || !Array.isArray(body.rows)) return;
+    setRegister(body);
+  }, [practiceId]);
+
+  /*
+   * THE TOP BAR'S REFRESH BUTTON RE-READS EVERY HALF OF THE PAGE — and its
    * identity has to be STABLE, or `useRefreshable` de-registers and
    * re-registers it on every render (three times a second, once the poll is
-   * running). `usePushDesk` returns a fresh object each render, so the two
+   * running). `usePushDesk` returns a fresh object each render, so the
    * loaders are read through a ref rather than closed over.
    */
-  const loaders = useRef({ desk: desk.load, expected: loadExpected });
-  loaders.current = { desk: desk.load, expected: loadExpected };
+  const loaders = useRef({ desk: desk.load, expected: loadExpected, day: loadDay });
+  loaders.current = { desk: desk.load, expected: loadExpected, day: loadDay };
   const reload = useCallback(async () => {
-    await Promise.all([loaders.current.desk(), loaders.current.expected()]);
+    await Promise.all([loaders.current.desk(), loaders.current.expected(), loaders.current.day()]);
   }, []);
   useRefreshable(reload);
 
-  const latest = useRef(loadExpected);
-  latest.current = loadExpected;
+  const latest = useRef({ expected: loadExpected, day: loadDay });
+  latest.current = { expected: loadExpected, day: loadDay };
   useEffect(() => {
-    void latest.current();
-    const timer = setInterval(() => void latest.current(), POLL_MS);
+    const both = () => {
+      void latest.current.expected();
+      void latest.current.day();
+    };
+    both();
+    const timer = setInterval(both, POLL_MS);
     return () => clearInterval(timer);
   }, [practiceId]);
 
   /*
-   * THE TWO GROUPS THE QUEUE ANSWERS, SPLIT ON THE ONE FIELD THAT DECIDES IT
-   * (§12.4). The server's order is preserved inside each; nothing here sorts.
+   * THE QUEUE AND THE REGISTER, EACH HELD IN THE ORDER SOMEBODY IS LOOKING AT
+   * (§12.3). Both arrive in arrival order — the queue through the supersession
+   * chain, the register straight off `arrivedAt` — and nothing below re-sorts
+   * either, so "who has waited longest" is still the server's answer.
    */
   const rows = desk.rows;
   const queue = useMemo(
     () => stableByFirstSeen(rows ?? [], (row) => row.agreementId, queueOrder.current),
     [rows],
   );
-  const here = queue.filter((row) => row.activeSession === null);
-  const onTablet = queue.filter((row) => row.activeSession !== null);
+  const registerRows = register?.rows;
+  const day = useMemo(
+    () =>
+      registerRows
+        ? stableByFirstSeen(
+            registerRows as readonly DayRegisterRow[],
+            (row) => row.arrivalId,
+            dayOrder.current,
+          )
+        : null,
+    [registerRows],
+  );
+
+  /*
+   * FIVE GROUPS, AND THE FIRST FOUR ARE A PARTITION OF THE DAY (`dayRails`).
+   * Every row of the register lands in exactly one of them, so
+   * `rails.arrivedToday` IS the number `/practice/day` prints for the same
+   * day — which is the reconciliation, done by construction rather than by
+   * two screens happening to agree.
+   */
+  const rails = useMemo(() => dayRails({ queue, day }), [queue, day]);
+  const here = rails.here;
+  const onTablet = rails.onTablet;
 
   /*
    * AND NOBODY IS IN TWO PLACES AT ONCE. A booking can have a draft waiting on
@@ -343,7 +427,7 @@ export function FrontDeskView({ practiceId }: { practiceId: string }) {
    * re-sorts it. Not a priority scheme: the list said out loud, so there is no
    * decision to make.
    */
-  const nextKey = here[0]?.agreementId ?? null;
+  const nextKey = here[0]?.key ?? null;
 
   /** Choosing anybody clears the line about whoever has just left. */
   const choosePerson = (next: Chosen) => {
@@ -403,37 +487,219 @@ export function FrontDeskView({ practiceId }: { practiceId: string }) {
 
       <div className={styles.layout}>
         <nav className={styles.rail} aria-label={strings.frontdesk.rail.label} data-testid="frontdesk-rail">
+          {/*
+            THE NUMBER THE COLUMN ADDS UP TO (Carl, 12 September 2026: *"Both
+            pages have to reconcile."*). It is `/practice/day`'s own count for
+            the same day, and the four groups beneath it are a partition of the
+            rows behind it — so a receptionist who sees fifteen there and three
+            here can read where the other twelve went instead of concluding the
+            desk is broken.
+
+            ONLY WHEN THE REGISTER HAS LANDED. A total nobody can stand behind
+            is worse than no total, so a read that has never answered leaves
+            the page exactly as it was before this existed.
+          */}
+          {rails.arrivedToday !== null && (
+            <p className={styles.total} data-testid="frontdesk-day-total">
+              <span className={styles.totalCount}>
+                <span className={styles.totalNumber} data-testid="frontdesk-day-total-number">
+                  {rails.arrivedToday}
+                </span>
+                {strings.frontdesk.rail.dayTotalUnit(rails.arrivedToday)}
+              </span>
+              <span className={styles.totalWhy}>{strings.frontdesk.rail.dayTotalWhy}</span>
+            </p>
+          )}
+
           <RailGroup
             kind="patient"
             testId="here"
+            tone="plain"
             title={strings.frontdesk.rail.hereNow}
             empty={strings.frontdesk.rail.hereNoneYet}
             chosen={chosen}
             nextKey={nextKey}
             onChoose={choosePerson}
+            /*
+              THE OTHER DOOR, UNDER THE GROUP IT IS ABOUT (Carl, 12 September
+              2026: *"provide a button to go look at all patients here now
+              (like we have in section [1] of /tablet page)."*).
+
+              IT IS THE TABLET DESK'S OWN SECTION 1, which is that page's
+              whole list of everybody waiting today with every control beside
+              them — and it is REUSED rather than rebuilt here, because a
+              second everybody-at-once list aimed at beginners would be the one
+              that quietly went wrong (§7). The pairing already exists in the
+              other direction: that page carries "Work one patient at a time →"
+              to the patients list.
+
+              A LINK, WHICH ACTS ON NOTHING — the rule the whole rail is built
+              on (§12.3) — and it is not about a patient, so §13 is untouched.
+            */
+            link={{
+              href: '/practice/tablet',
+              label: strings.frontdesk.rail.seeEveryone,
+              why: strings.frontdesk.rail.seeEveryoneWhy,
+              testId: 'frontdesk-see-everyone',
+            }}
             items={here.map((row) => ({
-              key: row.agreementId,
+              key: row.key,
               selectKey: row.patientId,
-              name: row.patientName,
-              time: timeLabel(row.appointmentTime),
+              name: row.name,
+              time: timeLabel(row.time),
+              ticket: row.queueTicket,
+              device: null,
             }))}
           />
 
           <RailGroup
             kind="patient"
             testId="tablet"
+            tone="ok"
             title={strings.frontdesk.rail.onATablet}
             empty={strings.frontdesk.rail.tabletNoneYet}
             chosen={chosen}
             nextKey={null}
             onChoose={choosePerson}
             items={onTablet.map((row) => ({
-              key: row.agreementId,
+              key: row.key,
               selectKey: row.patientId,
-              name: row.patientName,
-              time: timeLabel(row.appointmentTime),
+              name: row.name,
+              time: timeLabel(row.time),
+              ticket: row.queueTicket,
+              /*
+                WHICH TABLET, BY THE NAME THE PRACTICE GAVE IT (Carl, 12
+                September 2026). Printed exactly as they wrote it and with
+                nothing added around it — a sentence built around the label
+                produces "has the Blue tablet tablet". Null while the devices
+                read has not landed, and the row then says nothing rather than
+                inventing a name.
+              */
+              device: deviceLabelFor(row.deviceId, desk.devices ?? []),
             }))}
           />
+
+          {/*
+            THE TWO GROUPS THAT CLOSE THE DAY, AND THEY ONLY EXIST ONCE THE
+            REGISTER HAS BEEN READ — they are made of its rows, so without it
+            there is nothing honest to put in them.
+
+            "NEEDS A LOOK" COMES FIRST AND "FINISHED" LAST (Carl, 12 September
+            2026). Finished is the one rail nobody has to act on, so it goes to
+            the bottom of the arrived groups; the anomaly sits directly under
+            the work, where somebody scanning the column reaches it before they
+            reach the people they have nothing left to do for.
+
+            NEITHER IS SELECTABLE, and that is deliberate rather than
+            unfinished. There is no queue row behind either, so there is
+            nothing for the panel to be about and no control that could be
+            offered; a button that fills the panel with nothing is a dead end
+            a first-day starter cannot get out of. The rail is a place to LOOK
+            (§12.2), and these two are the part of the day it was not looking
+            at. What reception DOES about "needs a look" is the sentence under
+            the group, not a control this build invented.
+          */}
+          {rails.arrivedToday !== null && (
+            <>
+              <RailGroup
+                kind="patient"
+                testId="needs-a-look"
+                tone="warn"
+                title={strings.frontdesk.rail.needsALook}
+                empty={strings.frontdesk.rail.needsALookNoneYet}
+                why={rails.needsALook.length > 0 ? strings.frontdesk.rail.needsALookWhy : undefined}
+                chosen={chosen}
+                nextKey={null}
+                onChoose={choosePerson}
+                items={rails.needsALook.map((row) => ({
+                  key: row.key,
+                  selectKey: row.patientId,
+                  name: row.name,
+                  time: timeLabel(row.time ? arrivedAtLabel(row.time) : null),
+                  ticket: row.queueTicket,
+                  device: null,
+                }))}
+              />
+
+              {/*
+                SIGNED, AND STILL WAITING FOR THE PRACTITIONER
+                (D-2026-09-12-20). Between the anomaly and the finished,
+                because that is where they are in the morning: nothing is wrong
+                with anybody here, and there is nothing for the desk to do.
+              */}
+              <RailGroup
+                kind="patient"
+                testId="waiting-to-be-seen"
+                tone="quiet"
+                title={strings.frontdesk.rail.waitingToBeSeen}
+                empty={strings.frontdesk.rail.waitingToBeSeenNoneYet}
+                chosen={chosen}
+                nextKey={null}
+                onChoose={choosePerson}
+                items={rails.waitingToBeSeen.map((row) => ({
+                  key: row.key,
+                  selectKey: row.patientId,
+                  name: row.name,
+                  time: timeLabel(row.time ? arrivedAtLabel(row.time) : null),
+                  ticket: row.queueTicket,
+                  device: null,
+                }))}
+              />
+
+              <RailGroup
+                kind="patient"
+                testId="finished"
+                tone="info"
+                title={strings.frontdesk.rail.finished}
+                empty={strings.frontdesk.rail.finishedNoneYet}
+                chosen={chosen}
+                nextKey={null}
+                onChoose={choosePerson}
+                items={rails.finished.map((row) => ({
+                  key: row.key,
+                  selectKey: row.patientId,
+                  name: row.name,
+                  time: timeLabel(row.time ? arrivedAtLabel(row.time) : null),
+                  ticket: row.queueTicket,
+                  device: null,
+                }))}
+              />
+            </>
+          )}
+
+          {/*
+            PAPERWORK OPEN WITH NOBODY RECORDED AS COMING IN FOR IT TODAY —
+            shown ONLY when it has somebody in it, which is the difference
+            between it and "Expected" below. Expected is empty in every
+            practice today for a reason worth explaining on screen; this one is
+            empty because the day is behaving, and a permanently empty box
+            saying so would be noise on a first shift.
+
+            OUTSIDE THE TOTAL, and it says so, because these are not rows of
+            the day the number is counting — which is also why it is quiet
+            rather than coloured like the four that are.
+          */}
+          {rails.notArrived.length > 0 && (
+            <RailGroup
+              kind="patient"
+              testId="not-arrived"
+              tone="quiet"
+              title={strings.frontdesk.rail.notArrived}
+              empty={strings.frontdesk.rail.hereNoneYet}
+              why={strings.frontdesk.rail.notArrivedWhy}
+              chosen={chosen}
+              nextKey={null}
+              onChoose={choosePerson}
+              items={rails.notArrived.map((row) => ({
+                key: row.key,
+                selectKey: row.patientId,
+                name: row.name,
+                time: timeLabel(row.time),
+                ticket: row.queueTicket,
+                device: deviceLabelFor(row.deviceId, desk.devices ?? []),
+              }))}
+            />
+          )}
 
           {/*
             EXPECTED IS ALWAYS HERE, EVEN — ESPECIALLY — WHEN IT IS EMPTY
@@ -442,10 +708,14 @@ export function FrontDeskView({ practiceId }: { practiceId: string }) {
             D-01, so this list is empty in every practice today. Hiding it
             would make that a silent gap; showing it with the reason turns "why
             can't I see my bookings" into an answer from the screen.
+
+            THE QUIETEST OF THE FIVE, because nobody has arrived yet and it is
+            outside the day's total.
           */}
           <RailGroup
             kind="appointment"
             testId="expected"
+            tone="quiet"
             title={strings.frontdesk.rail.expected}
             empty={strings.frontdesk.rail.expectedNoneYet}
             why={waiting.length === 0 ? strings.frontdesk.rail.expectedWhy : undefined}
@@ -457,6 +727,9 @@ export function FrontDeskView({ practiceId }: { practiceId: string }) {
               selectKey: appointment.appointmentId,
               name: appointment.patientName,
               time: timeLabel(appointment.time),
+              /* A booking has no card: nobody has handed them one yet. */
+              ticket: null,
+              device: null,
             }))}
           />
 
@@ -704,11 +977,19 @@ function PatientPanel({
         name. Said even when absent, because a blank line under a name reads as
         a page that failed to load.
       */}
-      <p className={styles.panelRecordNumber} data-testid="frontdesk-chosen-record-number">
-        {row.patientRecordNumber
-          ? strings.frontdesk.panel.patientRecordNumber(row.patientRecordNumber)
-          : strings.frontdesk.panel.patientRecordNumberUnknown}
-      </p>
+      {/*
+        AND OUR OWN RECORD ID UNDER IT (Carl, 12 September 2026: *"ok. In that
+        case show both ids."*). The tablet desk used to print ours where this
+        printed the practice's, so the two screens named one person two ways;
+        `PatientIdentity` is the single component both now render, in one order
+        and one set of words, so they cannot disagree again.
+      */}
+      <PatientIdentity
+        className={styles.panelRecordNumber}
+        practiceNumber={row.patientRecordNumber}
+        recordId={row.patientId}
+        testId="frontdesk-chosen-record-number"
+      />
       <p className={styles.panelLead} data-testid="frontdesk-chosen-what">
         {sentence}
       </p>
@@ -867,17 +1148,26 @@ function PatientPanel({
   );
 }
 
-/** Done, still to do, or nothing to sign — the three words, from the table. */
-function stateWord(state: ChecklistRow['state']): string {
+/**
+ * DONE, STILL TO DO, DROPPED, OR NOTHING TO SIGN — the words, from the table.
+ *
+ * EXPORTED, AND THE SECOND COPY DELETED (wow.md §10 rule 3). The small front
+ * desk had an identical one, which meant every new state and every new detail
+ * key had to be learned twice and one of them would eventually be missed —
+ * `visitState` was, within an hour of being added. One renderer, two screens.
+ */
+export function stateWord(state: ChecklistRow['state']): string {
   return state === 'done'
     ? strings.frontdesk.checklist.state.done
     : state === 'outstanding'
       ? strings.frontdesk.checklist.state.outstanding
-      : strings.frontdesk.checklist.state.notNeeded;
+      : state === 'cancelled'
+        ? strings.frontdesk.checklist.state.cancelled
+        : strings.frontdesk.checklist.state.notNeeded;
 }
 
 /** The row's own sentence, resolved from the key the computation returned. */
-function detailSentence(item: ChecklistRow): string {
+export function detailSentence(item: ChecklistRow): string {
   const said = strings.frontdesk.checklist.detail;
   switch (item.detail) {
     case 'todaysVisit':
@@ -886,6 +1176,15 @@ function detailSentence(item: ChecklistRow): string {
       return said.ongoing(item.provider ?? null);
     case 'withThemNow':
       return said.withThemNow(item.device ?? null);
+    /*
+     * THE VISIT'S OWN STATE, IN THE VERSIONED LIST'S OWN WORDS
+     * (D-2026-09-12-20). `visitStateLabel` is the practitioner queue's, reused
+     * rather than copied: the front desk and the practitioner must read ONE
+     * word for one state, which is the entire point of the step. An unmapped
+     * key shows its key rather than a blank (CLAUDE.md §7).
+     */
+    case 'visitState':
+      return item.visitState ? visitStateLabel(item.visitState) : said.noVisitToSee;
     default:
       return said[item.detail];
   }
@@ -894,11 +1193,57 @@ function detailSentence(item: ChecklistRow): string {
 interface RailItem {
   /** The row's own id, which is what a test and a support ticket name. */
   readonly key: string;
-  /** What CHOOSING it selects — the person, or the booking. See `Chosen`. */
-  readonly selectKey: string;
+  /**
+   * WHAT CHOOSING IT SELECTS — the person, or the booking. See `Chosen`.
+   *
+   * NULL WHERE THERE IS NOTHING TO CHOOSE. A finished visit and an arrival
+   * with nothing open have no queue row behind them, so the panel would have
+   * nothing to be about; the row is drawn as text instead of as a control,
+   * because a button that leads nowhere is a dead end a first-day starter
+   * cannot get back out of.
+   */
+  readonly selectKey: string | null;
   readonly name: string;
   readonly time: string;
+  /**
+   * THE NUMBER ON THE CARD IN THEIR HAND, LEADING THE ROW
+   * (`QUEUE-TICKETS.md` §4.2: *"call number twelve" is the job*). Null at every
+   * practice that does not hand out cards, which is the default, and null on a
+   * booking nobody has handed one to yet.
+   */
+  readonly ticket: string | null;
+  /**
+   * WHICH TABLET THEY HAVE, as the practice named it (Carl, 12 September
+   * 2026). Small, quiet, and printed with nothing added around it — a sentence
+   * built around the label produces "has the Blue tablet tablet".
+   */
+  readonly device: string | null;
 }
+
+/**
+ * A COLOUR PER RAIL, SO THE EYE LANDS ON THE RIGHT ONE (Carl, 12 September
+ * 2026: *"Put colour on the list heading and the number. Reason: I want my eye
+ * to be drawn to each list."*).
+ *
+ * IT IS A PLACE, NOT A SEVERITY. Four colours read as a taxonomy if they are
+ * meant as one; these are meant as landmarks, so nothing anywhere ranks them
+ * and no key has to be learned. `plain` is "Here now" — uncoloured, which is
+ * the STRONGEST treatment on the column, because it is the work.
+ *
+ * COLOUR IS NEVER THE ONLY CARRIER (WCAG 2.2 AA 1.4.1). Every heading says in
+ * words what its rail is and the count is spoken as a whole sentence beside
+ * it; every value is an existing token and every one passes AA for small text
+ * on the panel (see `frontdesk.module.css`).
+ */
+type RailTone = 'plain' | 'ok' | 'warn' | 'info' | 'quiet';
+
+const TONE_CLASS: Record<RailTone, string | undefined> = {
+  plain: undefined,
+  ok: styles.toneOk,
+  warn: styles.toneWarn,
+  info: styles.toneInfo,
+  quiet: styles.toneQuiet,
+};
 
 /**
  * ONE GROUP OF THE RAIL.
@@ -920,9 +1265,11 @@ interface RailItem {
 function RailGroup({
   kind,
   testId,
+  tone,
   title,
   empty,
   why,
+  link,
   items,
   chosen,
   nextKey,
@@ -930,9 +1277,12 @@ function RailGroup({
 }: {
   kind: Kind;
   testId: string;
+  tone: RailTone;
   title: string;
   empty: string;
   why?: string;
+  /** One way out of this group, and it navigates rather than acting (§12.3). */
+  link?: { href: string; label: string; why: string; testId: string };
   items: readonly RailItem[];
   chosen: Chosen | null;
   nextKey: string | null;
@@ -940,11 +1290,22 @@ function RailGroup({
 }) {
   const count = strings.frontdesk.rail.count(items.length);
   return (
-    <div className={styles.group} data-testid={`frontdesk-group-${testId}`}>
+    <div
+      className={[styles.group, TONE_CLASS[tone]].filter(Boolean).join(' ')}
+      data-testid={`frontdesk-group-${testId}`}
+    >
       <div className={styles.groupHead}>
         <h2 className={styles.groupTitle}>{title}</h2>
+        {/*
+          THE NUMBER, PICKED OUT (Carl, 12 September 2026: *"Make the font bold
+          and a diff colour for the number - so it stands out"*). Drawn as two
+          pieces so the digit can carry the weight and the accent while the
+          word stays quiet; the whole thing is still one sentence to a screen
+          reader, next door, because "3" announced on its own says nothing.
+        */}
         <span className={styles.groupCount} aria-hidden="true" data-testid={`frontdesk-count-${testId}`}>
-          {count}
+          <span className={styles.countNumber}>{items.length}</span>
+          {` ${strings.frontdesk.rail.countUnit(items.length)}`}
         </span>
         <span className={styles.visuallyHidden} aria-live="polite">
           {`${title}: ${count}`}
@@ -957,15 +1318,24 @@ function RailGroup({
         </p>
       ) : (
         <ul className={styles.rows}>
-          {items.map((item) => (
-            <li key={item.key} className={styles.row}>
-              <button
-                type="button"
-                className={styles.pick}
-                aria-pressed={chosen?.kind === kind && chosen.key === item.selectKey}
-                onClick={() => onChoose({ kind, key: item.selectKey })}
-                data-testid={`frontdesk-row-${item.key}`}
-              >
+          {items.map((item) => {
+            const body = (
+              <>
+                {/*
+                  THE CARD NUMBER FIRST, because "call number twelve" is the
+                  job (QUEUE-TICKETS.md §4.2). Spoken with its word so a screen
+                  reader hears "Number 12" and not a stray digit; drawn as the
+                  number alone, because the card in their hand says nothing
+                  else either. Absent entirely at a practice with no card box.
+                */}
+                {item.ticket && (
+                  <span className={styles.ticket} data-testid={`frontdesk-ticket-${item.key}`}>
+                    <span aria-hidden="true">{item.ticket}</span>
+                    <span className={styles.visuallyHidden}>
+                      {strings.frontdesk.rail.ticket(item.ticket)}
+                    </span>
+                  </span>
+                )}
                 <span className={styles.name}>{item.name}</span>
                 {item.key === nextKey && (
                   <span className={styles.next} data-testid={`frontdesk-next-${item.key}`}>
@@ -973,15 +1343,59 @@ function RailGroup({
                   </span>
                 )}
                 <span className={styles.time}>{item.time}</span>
-              </button>
-            </li>
-          ))}
+                {/*
+                  AND WHICH TABLET, AS THE PRACTICE NAMED IT — nothing added
+                  around the label, because "has the Blue tablet tablet" is
+                  what a sentence built around it produces.
+                */}
+                {item.device && (
+                  <span className={styles.device} data-testid={`frontdesk-device-${item.key}`}>
+                    {item.device}
+                  </span>
+                )}
+              </>
+            );
+            return (
+              <li key={item.key} className={styles.row}>
+                {item.selectKey === null ? (
+                  /*
+                    A ROW WITH NOTHING BEHIND IT IS NOT A CONTROL. Same layout,
+                    no button: it can be read, it cannot be pressed, and there
+                    is no focus stop that leads to an empty panel.
+                  */
+                  <span className={styles.read} data-testid={`frontdesk-row-${item.key}`}>
+                    {body}
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className={styles.pick}
+                    aria-pressed={chosen?.kind === kind && chosen.key === item.selectKey}
+                    onClick={() => onChoose({ kind, key: item.selectKey as string })}
+                    data-testid={`frontdesk-row-${item.key}`}
+                  >
+                    {body}
+                  </button>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
 
       {why && (
         <p className={styles.why} data-testid={`frontdesk-why-${testId}`}>
           {why}
+        </p>
+      )}
+
+      {link && (
+        <p className={styles.groupLink}>
+          <Link href={link.href} className={ui.buttonLink} data-testid={link.testId}>
+            <Users size={15} aria-hidden="true" />
+            {link.label}
+          </Link>
+          <span className={styles.dayWhy}>{link.why}</span>
         </p>
       )}
     </div>
