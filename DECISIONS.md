@@ -764,7 +764,21 @@ across ~10,000 Australian practices the chance that some pair collides is about
 1.2% — a birthday problem, not a one-in-four-billion one. The code is instead
 allocated at practice registration from a readable slug, stored, enforced unique
 by the database, extended deterministically on collision, and never reused.
-`drjhuang.xlevelup`, not `drjhuang.821709fb`.
+
+**The username is the person's FULL email, then the code** — Carl, revising his
+own first suggestion: `jsmith@outlook.com.xlevelup`, not `jsmith.xlevelup`. The
+full email is already unique to the person and the code to the practice, so the
+username is unique BY CONSTRUCTION and no second collision rule is needed.
+
+**One consequence, measured on the running realm.** Three accounts for one
+doctor all carry the same email — their own — and the realm today has
+`loginWithEmailAllowed: true` with `duplicateEmailsAllowed: false`, which
+refuses the second. The two are mutually exclusive. So the realm must allow
+duplicate emails and stop offering email as a way to sign in. That is a
+correction rather than a concession: hard rule 15 is passkeys with no
+password-only path, nobody types an identifier at all, and email-as-login serves
+a flow this product does not have. The change belongs in the committed realm
+export and in the realm guard, or a rebuilt container restores it.
 
 Full design: `PRACTICE-SCOPED-LOGIN.md`.
 

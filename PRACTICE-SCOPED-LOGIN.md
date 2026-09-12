@@ -60,24 +60,61 @@ not preference:
 
 ## 3. The username
 
-**The shape Carl proposes, `drjhuang.821709fb`, is already the scheme in use** —
-`identity.service.ts` builds `slug + '.' + practiceId.slice(0, 8)`, and
-`admin.821709fb` exists today. So this formalises what is there rather than
-inventing it.
+**Carl, 12 September 2026: `jsmith@outlook.com.xlevelup` — the FULL email
+address, then a dot, then the practice code.** This supersedes the earlier
+`drjhuang.821709fb` form, and it is better for a reason worth stating: it
+removes the collision problem rather than managing it.
+
+The full email is already unique to the person. The practice code is unique to
+the practice. Their concatenation is therefore unique by construction, with no
+second uniqueness check on the person's half and no `jsmith2` ever needed. The
+whole class of problem in §5 disappears.
 
 **Three properties it must have**, in order of importance:
 
-1. **Unique.** It is an account key.
+1. **Unique.** It is an account key. Now satisfied by construction.
 2. **Stable.** It must never change under a person, or their passkey is orphaned.
 3. **Readable at the passkey picker.** A practitioner at three practices sees
-   three entries when they sign in and must be able to tell them apart at a
-   glance. This is the property a raw hex fragment serves worst.
+   three entries when they sign in and must tell them apart at a glance.
+   `jsmith@outlook.com.xlevelup` reads plainly; the practice is the last word.
 
-## 4. Carl's question: how do we guarantee the practice code is unique?
+## 4. What this requires of Keycloak, and why it is an improvement anyway
 
-**Not by hoping a truncated identifier is.** The current scheme takes the first
-8 hex characters of the practice's UUID. That is 32 bits, and collisions are a
-birthday problem rather than a one-in-four-billion one:
+**The constraint, measured on the running realm (12 September 2026).** The
+realm has `loginWithEmailAllowed: true` and `duplicateEmailsAllowed: false`.
+Three accounts for one doctor would all carry the SAME email — their own — and
+Keycloak refuses the second. The two settings are mutually exclusive: duplicates
+cannot be allowed while email is also a way to sign in, because "which account
+is jsmith@outlook.com" would have three answers.
+
+**So the realm needs `duplicateEmailsAllowed: true` and
+`loginWithEmailAllowed: false`.**
+
+**That is not a concession — it is a correction.** Hard rule 15 is passkeys, no
+password-only paths. A passkey is bound to an account, so nobody types an
+identifier at all: the browser offers the credentials it holds and the person
+picks one. Email-as-login exists to serve a username-and-password flow this
+product does not have, and switching it off removes a route that should never
+have been reachable. Two things follow:
+
+- **The email field stays the person's own, on every account.** It is what
+  invitations and notices are sent to, and it must not be mangled to satisfy a
+  uniqueness rule.
+- **The change belongs in `infra/keycloak/realm-export.json`**, not only on the
+  running realm, or a rebuilt container silently restores email login. The realm
+  guard (`npm run validate:realm`) should assert both settings, so this cannot
+  drift back — it already guards the passkey posture and this is the same rule
+  wearing a different hat.
+
+## 5. The practice code, and how uniqueness is guaranteed
+
+Carl's question: how can the practice half be guaranteed unique?
+
+**Not by hoping a truncated identifier is.** The scheme in use today takes the
+first 8 hex characters of the practice's UUID (`identity.service.ts`:
+`slug + '.' + practiceId.slice(0, 8)`, and `admin.821709fb` exists). That is 32
+bits, and collisions are a birthday problem rather than a one-in-four-billion
+one:
 
 | Practices | Chance that SOME pair collides |
 |---|---|
@@ -87,38 +124,18 @@ birthday problem rather than a one-in-four-billion one:
 
 Australia has on the order of ten thousand general practices. **A roughly one in
 eighty chance of a collision across the customer base is not acceptable for an
-account key**, and the failure is ugly: the second practice's account creation
-fails, or worse, silently attaches to the first.
+account key.** Today's dev database has 142 practices and 142 distinct prefixes,
+which proves nothing — that is exactly what a 1% risk looks like beforehand.
 
-Today's dev database has 142 practices and 142 distinct prefixes, which proves
-nothing — that is exactly what a 1% risk looks like before it happens.
+**So the code is allocated, not derived.** At practice registration:
 
-**The answer is to allocate the code, not derive it.** At practice registration:
-
-1. Propose a code from the practice's name — a short readable slug, `xlevelup`,
-   not hex.
+1. Propose a short readable slug from the practice's name — `xlevelup`, not hex.
 2. **Check it against every code ever issued**, in a table with a unique
-   constraint, so the database enforces it rather than the code path.
-3. On collision, extend deterministically: `xlevelup2`, `xlevelup3`. Predictable
-   beats random.
-4. **Store it.** Never re-derive it, so a rename of the practice cannot move it.
-5. **Never reuse it**, even after a practice leaves. A retired code stays retired
-   or old evidence starts pointing at a new organisation.
-
-This gives `drjhuang.xlevelup`, which satisfies all three properties in §3 and
-is legible in a passkey picker in a way `drjhuang.821709fb` is not.
-
-## 5. The other uniqueness nobody has asked about yet
-
-The whole username must be unique, not just the practice half. Two people can
-share a local part across different domains — `jsmith@gmail.com` and
-`jsmith@outlook.com` both slug to `jsmith` — and at the same practice they would
-collide. So:
-
-- Uniqueness is enforced on the **whole username**, at creation, by the database.
-- On collision, the person's half is extended, not the practice's:
-  `jsmith2.xlevelup`. The practice code is shared by everyone there and must
-  stay stable.
+   constraint, so the database enforces it rather than a code path.
+3. On collision, extend deterministically: `xlevelup2`. Predictable beats random.
+4. **Store it.** Never re-derive it, so renaming the practice cannot move it.
+5. **Never reuse it**, even after a practice leaves, or old evidence starts
+   pointing at a new organisation.
 
 ## 6. Rules
 
@@ -132,8 +149,12 @@ collide. So:
    across locations and would break).
 5. **The practice code is allocated once, stored, checked unique by the
    database, and never reused.**
-6. **The username is stable for the life of the account.** A passkey is bound to
-   it.
+6. **The username is the person's full email, a dot, then the practice code** —
+   `jsmith@outlook.com.xlevelup` — and is stable for the life of the account. A
+   passkey is bound to it.
+7. **The email field on every account is the person's own**, unchanged, on all
+   of their per-practice accounts. The realm allows duplicate emails and does
+   not offer email as a way to sign in (§4).
 7. **Nothing here blocks care** (hard rule 8).
 
 ## 7. Named tests
@@ -146,7 +167,9 @@ collide. So:
 - `every_agreement_carries_the_location_asserted_for_its_session`
 - `two_practices_can_never_be_issued_the_same_code` — enforced by the database.
 - `a_retired_practice_code_is_never_reissued`
-- `two_people_with_the_same_email_local_part_at_one_practice_both_get_an_account`
+- `two_people_with_the_same_email_local_part_at_one_practice_both_get_an_account` — different full emails, so no collision arises at all.
+- `three_accounts_for_one_person_all_carry_their_own_email` — duplicates allowed.
+- `the_realm_never_offers_email_as_a_way_to_sign_in` — guarded in validate:realm.
 - `an_unchosen_location_never_stops_a_consultation` — hard rule 8.
 
 ## 8. For Carl
@@ -155,10 +178,15 @@ collide. So:
   it?** Recommendation: sign-in, as Carl described — a question at the moment of
   arrival is answered honestly, whereas one interrupting the first push is
   answered to get rid of it.
-- **Existing accounts.** `admin.821709fb` and any practitioner accounts already
-  issued carry hex codes. They keep them: the username must never change under
-  a passkey (§3 property 2). The allocated-code scheme applies to new practices,
-  and the old ones are grandfathered. Worth confirming.
+- **Existing accounts.** `admin.821709fb`, `drjhuang@gmail.com` and the other
+  accounts already issued predate both the new form and the allocated code. They
+  keep their usernames: a username must never change under a passkey (§3
+  property 2). The new scheme applies to accounts created from here. Worth
+  confirming — the alternative is re-inviting everybody, which costs a passkey
+  re-enrolment each.
+- **Turning off email login is a realm change on a live realm.** Nobody signs in
+  by email today (passkeys only), so the expected impact is none — but it should
+  be made deliberately, with the realm guard extended in the same change.
 - **What a session is, exactly** — a browser session, or something longer? It
   decides how often a doctor at two sites is asked.
 
@@ -166,3 +194,4 @@ collide. So:
 | Date | Change |
 |---|---|
 | 12 Sep 2026 | v1.0. Written when Carl settled the fraud reasoning and asked how the practice code can be guaranteed unique. |
+| 12 Sep 2026 | §3 revised to Carl's form — the FULL email plus the practice code, which makes the username unique by construction. §4 added: it requires duplicate emails allowed and email login off, which hard rule 15 wanted anyway. |
