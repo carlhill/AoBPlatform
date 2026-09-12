@@ -602,7 +602,7 @@ telling us they want to land on setup (§7 asks one real practice this); or a
 sixth thing that is genuinely daily, which is a change to §2 and not a card
 somebody adds.
 
-## D-2026-09-12-06 — "Completed" records the visit; it raises a post-service agreement only where the invoice has already said what was done
+## D-2026-09-12-07 — "Completed" records the visit; it raises a post-service agreement only where the invoice has already said what was done
 
 **Status: an ASSUMPTION made mid-build, and Carl's to confirm or overturn**
 (wow.md §9). Recorded 12 September 2026 while building
@@ -692,4 +692,4 @@ case — the state lands, no agreement is drafted, nothing is invented), both in
 | 12 Sep | A substitution asks two questions: the doctor first, the benefit second | **D-2026-09-12-03 above** |
 | 12 Sep | A nurse's arrival waits for a billing provider named by RECEPTION, and the fix is a resend | **D-2026-09-12-04 above** |
 | 12 Sep | Two homes: `/practice/today` for the day's work, `/practice/setup` for configuration; nobody lands on the hub | **D-2026-09-12-05 above** |
-| 12 Sep | "Completed" records the visit and raises a post-service agreement only where the invoice already carries D6b — no item number is ever invented (ASSUMPTION) | **D-2026-09-12-06 above** |
+| 12 Sep | "Completed" records the visit and raises a post-service agreement only where the invoice already carries D6b — no item number is ever invented (ASSUMPTION) | **D-2026-09-12-07 above** |
