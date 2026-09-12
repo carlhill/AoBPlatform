@@ -279,6 +279,26 @@ requested it — the browser refuses to sign for the wrong domain. **That
 origin-binding is the property worth protecting, and adding a code does not
 strengthen it.**
 
+### "Or enter a number, or say yes it is me on their phone" — you already have that
+
+Carl, refining the question. That gesture — the phone lights up, the person
+confirms it is them — **is exactly what the passkey flow already does**. Scan the
+QR, the phone asks "Sign in to AoBPlatform?", confirm with Face ID. Same
+experience, same number of taps.
+
+The difference is what stands behind the tap:
+
+| | A push approval ("yes, it's me") | A passkey approval |
+|---|---|---|
+| What the phone knows | That *a* sign-in is happening somewhere. The server told it | The exact origin asking, checked by the browser, and that the computer is in the same room |
+| A phisher who triggers a real sign-in and rings your phone | Gets approved, because the prompt looks identical | Gets nothing: no proximity, and no signature for the wrong domain |
+| What crosses the wire | "The user said yes" | A signature over a challenge bound to the origin |
+
+A push says *somebody approved something*. A passkey says *this person, on this
+device, authorised THIS site, from here*. It is the same tap with a real
+guarantee behind it, and it is why the answer to "can we add an approval step" is
+that the approval step is already the whole mechanism.
+
 ### Where step-up IS worth having, it is another passkey touch
 
 For a genuinely high-stakes act — revoking every credential at a practice, say —
@@ -389,3 +409,4 @@ somebody through saving to Windows Hello, which is exactly what this stops.
 | 12 Sep 2026 | §3b added: what to do when the shared PC has no Bluetooth — a USB adapter per machine, a security key per person, or the practitioner working from their own device. |
 | 12 Sep 2026 | §3c added: Google/Microsoft auth pulled apart into TOTP codes (no), passkeys stored in their managers (yes, with the known Microsoft scar), and federation (a question about who guarantees identity). |
 | 12 Sep 2026 | §3d added: why a code is not added to a passkey — the passkey is already possession plus verification, the realm requires it, and the real need underneath is recovery. |
+| 12 Sep 2026 | §3d extended: "say yes it is me on the phone" is what the passkey flow already does — same tap, origin-bound and proximity-checked rather than a trust-me approval. |
