@@ -163,6 +163,77 @@ questions: do your shared computers have Bluetooth, and do they accept USB
 devices? Two questions, cheap to answer in advance and expensive to discover on
 the first morning.
 
+## 3c. "Can we use Google or Microsoft auth?" — three questions in one
+
+Carl, 12 September 2026. The phrase covers three different things and they get
+three different answers.
+
+### (a) Authenticator apps giving six-digit codes — NO
+
+Google Authenticator and Microsoft Authenticator in their TOTP form produce a
+rotating code. Two reasons that is a step backwards here:
+
+- **A code is a second factor, not a first.** It is designed to sit behind a
+  password, and hard rule 15 forbids a password-only path. Adopting TOTP means
+  reintroducing the password it was invented to protect.
+- **A code is phishable and a passkey is not.** Somebody can be talked into
+  reading six digits down a phone; nobody can be talked into producing a
+  signature bound to the wrong domain. For a system whose whole output is
+  evidence that a named practitioner consented, that difference is the product.
+
+The realm has `otpPolicyType: totp` sitting at its default, unused. It should
+stay unused.
+
+### (b) Storing the PASSKEY in Google or Microsoft's manager — YES, with one scar
+
+This is a different thing wearing the same name. Google Password Manager and
+Microsoft Authenticator both hold **passkeys**, sync them across a person's
+devices, and present them over the same cross-device flow as anything else. A
+passkey in Google Password Manager on a doctor's Android phone is exactly the
+roaming credential §3 asks for, and needs no decision from us — it is simply
+where their phone chose to keep it.
+
+**The scar**: `CRITICAL-ISSUES.md` §2 records that credentials created through
+**Microsoft Password Manager** on Windows came back with the user-verified flag
+unset, so enrolment succeeded and the next sign-in was refused — aaguid
+`d3452668-01fd-4c12-926c-83a4204853aa`. That is the Windows-resident manager
+rather than the phone app, but it is the same vendor and the same class of
+failure, and it is why the recommendation there is to check the AAGUID at
+enrolment and refuse a provider that will not verify the person. That check
+protects us whichever manager somebody uses.
+
+### (c) "Sign in with Google" / "Sign in with Microsoft" — NOT NOW, and not for personal accounts
+
+Keycloak can federate to an external identity provider; none is configured today.
+Two very different cases:
+
+**A personal Google account — no.** `drjhuang@gmail.com` is a personal mailbox.
+Federating means Google decides who that person is, Google owns the recovery
+path, and whoever controls that mailbox can become the practitioner on a
+consent record. The identity behind an agreement should not depend on a consumer
+account's password-reset flow.
+
+**A practice's Microsoft 365 tenant — a legitimate future option.** Many
+practices already run one, it is a real organisational identity, and the practice
+controls joiners and leavers, which is genuinely better than us tracking
+departures by hand. But it changes something fundamental: **we would no longer
+know how the person authenticated.** The tenant decides whether that was a
+passkey, a password, or a password with a text message, and hard rule 15 becomes
+something we assert rather than enforce.
+
+So it is a real option worth exploring for enterprise practices, and it needs a
+decision about assurance first: either require the tenant to assert a
+phishing-resistant method in the token and refuse the sign-in otherwise, or
+accept that federated practitioners carry a weaker guarantee and record which
+ones do. Not a switch to flick.
+
+### The short answer
+
+Passkeys stay the mechanism. If a doctor's phone keeps their passkey in Google's
+or Microsoft's manager, that is fine and already supported. Codes are a
+downgrade. Federation is a conversation about who guarantees identity, not a
+convenience feature.
+
 ## 4. The change that enforces it
 
 Set the realm's passwordless policy to
@@ -238,6 +309,9 @@ somebody through saving to Windows Hello, which is exactly what this stops.
 - **Add the two hardware questions to onboarding**: do the shared computers have
   Bluetooth, and do they accept USB devices? They decide which answer a practice
   gets, and they cost nothing to ask early.
+- **Federating to a practice's Microsoft 365 tenant** (§3c(c)) — worth exploring
+  for larger practices, but only after deciding whether we require the tenant to
+  assert a phishing-resistant method or accept a weaker guarantee and record it.
 
 ## Change log
 | Date | Change |
@@ -245,3 +319,4 @@ somebody through saving to Windows Hello, which is exactly what this stops.
 | 12 Sep 2026 | v1.0. Written when Carl pointed out that a doctor moving between shared consulting-room PCs cannot keep passkeys on them. Confirmed against the running realm: policy permits platform authenticators and real credentials are Windows Hello with internal transport. |
 | 12 Sep 2026 | §3a added: what the QR is, and the three ways it differs from WhatsApp — no password, no app, and physical proximity as the security property. |
 | 12 Sep 2026 | §3b added: what to do when the shared PC has no Bluetooth — a USB adapter per machine, a security key per person, or the practitioner working from their own device. |
+| 12 Sep 2026 | §3c added: Google/Microsoft auth pulled apart into TOTP codes (no), passkeys stored in their managers (yes, with the known Microsoft scar), and federation (a question about who guarantees identity). |
