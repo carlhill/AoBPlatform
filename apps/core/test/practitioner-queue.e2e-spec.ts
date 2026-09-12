@@ -29,6 +29,30 @@ import { createServicingProvider, deleteSeededAnchors } from './anchor';
  * FAKE IDENTITIES ONLY, and no Medicare-format number exists anywhere in it
  * because there is no column for one (hard rule 1).
  */
+/**
+ * A SERIALISED ROW WITH ITS IDS AND TIMESTAMPS TAKEN OUT, so "no ten-digit
+ * run" means what it says.
+ *
+ * A Medicare card number is ten digits, and the surest proof a vault event has
+ * none is that there is no room for one. But every id in one of these rows is
+ * a random UUID, and a UUID's last group is twelve hex characters that are
+ * sometimes all digits -- `keycloak-42f6d848-3f01-4b3c-a5d9-a0190353598b`,
+ * seen on 12 September 2026, carries `0190353598` and failed the assertion
+ * while nothing whatever was wrong. An ISO timestamp is the same hazard.
+ *
+ * STRIPPING THEM STRENGTHENS THE ASSERTION RATHER THAN WEAKENING IT. What is
+ * left is the payload's own words and numbers, which is the only place a card
+ * number could actually be; before the strip the line was a coin toss that
+ * passed on a re-run, which is worse than no assertion because it teaches
+ * people to re-run. wow.md §2 item 6 ("no substring assertions that random hex
+ * or UUIDs can hit") and item 12 (fix the assertion, never retry).
+ */
+function withoutIdsAndTimes(said: string): string {
+  return said
+    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '<id>')
+    .replace(/\d{4}-\d{2}-\d{2}T[\d:.]+Z/g, '<at>');
+}
+
 describe('the practitioner queue — who is waiting for me (e2e, real Postgres)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -418,9 +442,9 @@ describe('the practitioner queue — who is waiting for me (e2e, real Postgres)'
     expect(said).not.toMatch(/medicare|ihi|dateOfBirth|patientRecordNumber|amount|benefit/i);
     expect(said).not.toContain('1970-01-01');
     expect(said).not.toContain('Example Street');
-    // No ten-digit run anywhere: a Medicare card number is ten digits, and the
-    // surest way to prove there is not one is that there is no room for one.
-    expect(said).not.toMatch(/\d{10}/);
+    // No ten-digit run in the payload's own words -- a Medicare card number is
+    // ten digits. Ids and timestamps come out first; see `withoutIdsAndTimes`.
+    expect(withoutIdsAndTimes(said)).not.toMatch(/\d{10}/);
   });
 
   // ---------------------------------------------------------------------------
@@ -844,8 +868,11 @@ describe('the practitioner queue — who is waiting for me (e2e, real Postgres)'
     const said = JSON.stringify(event);
     expect(said).not.toMatch(/Alex|Nursevisit|1970-01-01|Example Street|amount|benefit|medicare|ihi/i);
     // No ten-digit run: a Medicare card number is ten digits, and the surest
-    // proof there is not one is that there is nowhere for one to be.
-    expect(said).not.toMatch(/\d{10}/);
+    // proof there is not one is that there is nowhere for one to be. Ids and
+    // timestamps come out first -- see `withoutIdsAndTimes`; this line failed
+    // on 12 Sep 2026 on the actor id `keycloak-42f6d848-...-a0190353598b`,
+    // whose last group carries the ten digits `0190353598`.
+    expect(withoutIdsAndTimes(said)).not.toMatch(/\d{10}/);
   });
 
   it('reception_sees_every_practitioners_list_grouped', async () => {
