@@ -131,6 +131,53 @@ The genuinely unbuilt part is unchanged — **one mechanism for a person to mark
 their part of the visit done**, and the practice's own list of what those parts
 are, which is versioned content and not code.
 
+### 3b. Where the list actually lives today — and it is not a table (12 September 2026)
+
+Carl asked the right question: *"did you create a table of services for the
+patient in this visit and are we tracking it in the database? If not how are you
+tracking the services the patient needs in this visit."*
+
+**Straight answer: there is no such table, and two of the three sources are not
+stored at all.**
+
+| Row on the list | Where its state lives today |
+|---|---|
+| Needs an agreement · Create it · Signed on a tablet · Signed after the visit | **Nowhere.** Computed on read from the agreement's own columns |
+| Seen by the provider | **`core.visit_states`** — append-only per arrival, carrying the state, `statesVersion`, who set it and when |
+| Nurse · bloods · anything the practice adds | **Nowhere. Not modelled.** |
+
+So "Finished means every service resolved" is written to generalise but ranges
+over a list whose membership is fixed in code. That is honest for today, because
+the only members ARE the computed rows and the consultation — but it does not
+survive the first practice that wants "bloods" on the list.
+
+**Note the name collision before anybody builds it.** `core.service_records`
+already exists and means something else entirely: the MBS items and service date
+from the practice's billing, which is what raises a post-agreement. And
+"service" in this domain is the statutory thing an agreement is ABOUT (D5, D6a).
+Carl's "patient service list" is a third meaning. **The user-facing words stay
+his; the table must not reuse the word** — `visit_items` or similar, decided
+before the migration rather than after.
+
+**The shape, following `visit_states` rather than inventing one:**
+
+- `practiceId`, `arrivalId` — it belongs to the visit, like the state does.
+- `itemType` plus the content version, because the list of possible items is
+  versioned content and never code (hard rule 14).
+- `affiliationId`, nullable — who it is with, where there is somebody.
+- `state`: `outstanding` · `done` · `not_needed` · `cancelled` (§3a).
+- `setByPrincipalId` / `Type` / `setAt`, **append-only, latest row wins** — the
+  same pattern `visit_states` uses, which gives the history for free.
+- No clinical content of any kind. No reason, no note, no duration, no finding.
+
+**The paperwork rows stay computed and never get stored**, because the agreement
+already holds that truth and a second copy would be a second answer.
+
+**Do not build the table on its own.** An empty table changes nothing: today's
+list would look identical, because nothing would ever create a row. The table,
+the versioned content file listing what items a practice may add, and the
+control that adds one have to land together or the first two are dead weight.
+
 ## 4. Payment, and why it is only a line of text
 
 Bulk billing means the patient pays nothing — that is the entire point of the
@@ -239,3 +286,4 @@ claim shows "nothing to sign" and the visit closes with nobody chasing anything.
 | 12 Sep 2026 | **The distinction that makes row 3 honest.** The queue holds only UNSIGNED agreements, so a signature takes the row off it and "Done" cannot be read from the queue at all. It is read from the covered line instead: `covered` means the item was covered by the agreement the patient signed on the way in, so they DID sign and row 3 is Done; `covered_by_enduring` means an ongoing agreement already stood and nobody signed anything today, so it reads "Nothing to sign" and never "Done". Test: `a_signature_today_reads_as_done_and_an_ongoing_agreement_does_not`. |
 | 12 Sep 2026 | **Row 4 says "Nothing to sign" until something is billed after the visit**, rather than being hidden. A row that appears out of nowhere at checkout is a surprise; a row that says why it is quiet is not. No amount appears on it and there is no field for one (hard rule 4). |
 | 12 Sep 2026 | §3a: Carl's name adopted — the PATIENT SERVICE LIST, on the car-service analogy — and the rule it settles: Finished means every service resolved, completed or cancelled. `cancelled` split from `not_needed`. The scope line restated, because the new name sounds more clinical than the old one and is not. |
+| 12 Sep 2026 | §3b: answered Carl's question about persistence. There is NO services table — the paperwork rows are computed, the consultation is in `visit_states`, and the practice's own items are not modelled. Shape proposed, plus the name collision with `service_records` flagged before anybody migrates. |
