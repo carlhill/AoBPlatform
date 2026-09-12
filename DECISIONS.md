@@ -1217,9 +1217,28 @@ had, at the exact moment the practice cannot get it back another way.
 `notLoaded` wording today. The words stay per-page; the behaviour must not, or
 a page opts out by accident and a fix reaches only one of them.
 
+**How stale is too stale: ONE HOUR** (Carl, same day, answering the question
+this entry left open).
+
+What expires is the CLAIM, not the list. Under an hour the screen says
+*"Showing the list from 9:42. Not live."* Over an hour it says *"This is the
+last list we had, from 9:42. It is more than an hour old and is no longer the
+waiting room"*, the rows go visibly quiet so nothing looks like a next action,
+and the screen names the platform's documented outage posture: keep seeing
+patients, the paperwork is caught up after the service (CLAUDE.md 7).
+
+**The rows never disappear**, because an hour into an outage a blank page is
+worse rather than better, and that list is the best record anybody has of who
+was in the room - it is what reception reconciles against afterwards. It simply
+stops looking like a work queue, because acting on an hour-old queue is how the
+wrong person gets called.
+
+**One hour is configuration, not a constant.** A threshold compiled into a
+component is what hard rule 14 exists to prevent.
+
 **What would reopen it.** Evidence that a stale list gets somebody called who
-should not have been - which would argue for expiring it rather than for going
-back to an empty page.
+should not have been, which would argue for a shorter hour rather than for
+going back to an empty page.
 
 
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)

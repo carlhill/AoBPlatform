@@ -47,6 +47,37 @@ The staleness must be a TIME, not a word. "Out of date" tells somebody nothing
 they can act on; "from 9:42" lets them decide for themselves whether it still
 describes the room.
 
+### 3a-i. One hour, and then it stops claiming to be the room (Carl, 12 September 2026)
+
+Carl, asked how stale is too stale: **"1 hour"**.
+
+**What expires is the CLAIM, not the list.** The list stays on screen, because
+an outage never empties the screen (section 2) and an hour into an outage a
+blank page is worse, not better. What changes at the hour is what the screen
+says the list IS:
+
+| Age | What the screen says | What the rows do |
+|---|---|---|
+| Under an hour | *"Showing the list from 9:42. Not live."* | Read normally. Writes refused on the control |
+| Over an hour | *"This is the last list we had, from 9:42. It is more than an hour old and is no longer the waiting room."* | Still readable, visibly quieter. Nothing suggests a next action |
+
+**Why the rows go quiet rather than away.** After an hour the list is a record
+of who WAS here, and it is still the best record anybody has — it is what
+reception will reconcile against afterwards. But it must stop looking like a
+work queue, because acting on an hour-old queue is how the wrong person gets
+called.
+
+**At the hour, say what to do instead**, because by then the practice has a
+morning to run: keep seeing patients, and the paperwork is caught up after the
+service. That is not improvised advice, it is the platform's documented outage
+posture (CLAUDE.md §7 — capture falls back to post-service), and the screen
+should name it rather than leave a receptionist to invent a plan.
+
+**One hour is a practice-visible number, so it is configuration, not a
+constant** — a threshold hardcoded in a component is the thing hard rule 14
+exists to prevent, even where the rule is about content rather than statute.
+Default one hour.
+
 ### 3b. Separate what can still be done from what cannot
 
 | | While the service is unreachable |
@@ -115,6 +146,9 @@ the product and the one Carl was looking at.
 
 - `an_outage_never_empties_the_waiting_list`
 - `a_stale_list_says_the_time_it_was_true`
+- `a_list_over_an_hour_old_stops_calling_itself_the_waiting_room`
+- `a_list_over_an_hour_old_is_still_on_screen`
+- `the_staleness_threshold_is_configuration_not_a_constant`
 - `a_write_control_is_refused_with_its_reason_on_the_control`
 - `a_read_control_still_works_while_the_service_is_unreachable`
 - `the_page_retries_by_itself_and_says_so`
@@ -124,10 +158,10 @@ the product and the one Carl was looking at.
 
 ## 7. For Carl to decide
 
-- **How stale is too stale?** A list from four hours ago is not the room. At
-  some point the honest thing is to stop showing it. My suggestion is that it
-  keeps showing with the time attached and never expires, because reception can
-  read a clock and the alternative is an empty screen — but it is a judgement.
+- ~~How stale is too stale?~~ **Answered: one hour** (Carl, 12 September 2026).
+  See §3a-i. My suggestion had been that it never expires; Carl's number is
+  better, because "reception can read a clock" assumes somebody looks at it,
+  and the whole failure mode is a screen that quietly stops being true.
 - **Does the tablet get the same treatment?** The kiosk currently says "see
   reception" on an outage, which is right for a patient holding it. This
   document is about staff screens.
@@ -136,3 +170,4 @@ the product and the one Carl was looking at.
 | Date | Change |
 |---|---|
 | 12 Sep 2026 | v1.0. Written when Carl saw the front desk reduced to two banners and said the messaging needs to be better. |
+| 12 Sep 2026 | §3a-i: Carl set the threshold at one hour. What expires is the CLAIM, not the list — the rows stay, quieter, and the screen names the post-service fallback. |
