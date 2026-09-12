@@ -4429,6 +4429,15 @@ export const strings = {
      */
     neverBlocks:
       'Nothing on this page holds anybody up. Patients are seen and billed as usual, whatever this screen says.',
+    /*
+     * AND WHEN THE PLATFORM ITSELF CANNOT BE REACHED (§6 rule 5, hard rule 8).
+     * An outage slows the evidence and never the service — said in as many
+     * words to the person most likely to think a broken screen means a patient
+     * has to wait.
+     */
+    seeThemAnyway:
+      'See the patient anyway — we will catch the paperwork up. An outage here never stops anybody being '
+      + 'seen or billed.',
 
     rail: {
       label: 'Today’s queue',
@@ -4464,6 +4473,92 @@ export const strings = {
         + 'still appears above.',
       /** Said out loud for a screen reader, never drawn as a chip. */
       chosen: 'Chosen',
+      /*
+       * EXACTLY ONE ROW IS MARKED "DO THIS NEXT" (§4). Not a priority scheme
+       * and not a status: the top of the list, said out loud, so there is no
+       * decision to make on a first shift.
+       */
+      next: 'Do this next',
+    },
+
+    /*
+     * TODAY'S PAPERWORK FOR THE CHOSEN PERSON — VISIT-CHECKLIST.md §2, the
+     * four rows that are OURS. The other four steps of Carl's list (seeing the
+     * provider, a blood test, seeing the nurse, paying) belong to the practice
+     * and are not directed from here.
+     *
+     * "NOTHING TO SIGN" IS THE FOURTH WORD, and it is deliberately the same
+     * one the practitioner's waiting list already uses, so a phlebotomist's
+     * visit reads identically wherever it is looked at.
+     *
+     * NEVER "APPROVED" ABOUT ONE OF OUR FORMS (hard rule 12). "Signed" is what
+     * happens and "Done" is what it becomes; nothing on this page is described
+     * as certified, checked off by anybody official, or blessed.
+     */
+    checklist: {
+      title: 'Today’s paperwork',
+      /*
+       * SAID ONCE, SO NOBODY LOOKS FOR A TICK BOX. Every row is worked out
+       * from the record; there is nothing here for a person to mark, and a
+       * first-day starter who thinks otherwise will spend the morning
+       * hunting for the control.
+       */
+      lead: 'Worked out from the record. There is nothing here to tick.',
+      state: {
+        done: 'Done',
+        outstanding: 'Still to do',
+        notNeeded: 'Nothing to sign',
+      },
+      rows: {
+        needed: 'Does today’s visit need an agreement?',
+        made: 'The agreement is ready to sign',
+        signed: 'Signed on a tablet',
+        after: 'Signed after the visit',
+      },
+      detail: {
+        todaysVisit: (provider: string | null) =>
+          provider
+            ? `Yes — an agreement for today’s visit with ${provider}.`
+            : 'Yes — an agreement for today’s visit.',
+        /*
+         * AN ONGOING AGREEMENT IS NAMED UNDER ITS PROVIDER, always (hard rule
+         * 6, REQ-END-01). There is no such thing as one that covers the whole
+         * practice, and a sentence that left the name out would imply there
+         * was.
+         */
+        ongoing: (provider: string | null) =>
+          provider
+            ? `Yes — an ongoing agreement with ${provider}.`
+            : 'Yes — an ongoing agreement with the provider they are seeing.',
+        afterService: 'Yes — an agreement for a service they have already had.',
+        nothingToSign: 'No. There is nothing for this person to sign for this visit.',
+        /*
+         * WHY "LOCKED" IS SAID OUT LOUD. Nobody may be asked to sign a
+         * half-finished form (REQ-REG-06), and the person sending it is
+         * entitled to know the platform will not let that happen.
+         */
+        ready: 'Filled in, checked and locked, so nobody can be asked to sign a half-finished form.',
+        beingPrepared: 'Not finished yet. What it is waiting for is written below.',
+        nothingToMake: 'Nothing to make.',
+        notSignedYet: 'Not yet. Ask them on a tablet beside you.',
+        withThemNow: (device: string | null) =>
+          device ? `They have the ${device} tablet now.` : 'They have one of your tablets now.',
+        signedAndStored: 'Signed and stored.',
+        nothingBilledYet:
+          'Nothing has been billed after this visit, so there is nothing to sign afterwards.',
+        afterOutstanding: 'Something was billed after the visit and still needs signing.',
+      },
+      /*
+       * THE VERSIONED POLICY'S OWN ANSWER, IN OUR WORDS — and the rule key
+       * itself where this screen has no wording for it yet. A generic sentence
+       * would hide the one string somebody could quote down the phone
+       * (CLAUDE.md §7), so an unmapped key shows itself.
+       */
+      why: {
+        covered_by_todays_agreement: 'They already signed for it on the way in.',
+        covered_by_an_ongoing_agreement: 'Their ongoing agreement with the provider covers it.',
+      } as Record<string, string>,
+      whyUnknown: (code: string) => `Decided by the rule “${code}”.`,
     },
 
     panel: {
@@ -4486,15 +4581,71 @@ export const strings = {
       expectedNext: 'There is nothing to do until they walk in. Nobody can sign before they are here.',
 
       /*
-       * SAY PLAINLY THAT THE BUTTONS ARE NOT HERE YET, AND WHERE THEY ARE.
-       * A page that shows a person and then stops, without saying so, reads as
-       * broken; and "see the practice queue" in prose is the generic fallback
-       * CLAUDE.md §7 calls a defect. So: what is missing, and a link that lands
-       * on the page where the work is done today.
+       * THE SITUATION, AS THE SENTENCE SOMEBODY WOULD SAY OUT LOUD (§4). One
+       * per person, never a list of possibilities, and never a code.
        */
-      notYet: 'The buttons for this are still being built.',
-      notYetWhere: 'Until they are here, do the work on the tablet page — it opens with the same list.',
-      toTablet: 'Open Send to the tablet',
+      whoIsSigning: (name: string) => `Who is signing for ${name}?`,
+      readyToSend: (name: string, provider: string | null) =>
+        provider
+          ? `${name} needs to agree to bulk billing for today’s visit with ${provider}.`
+          : `${name} needs to agree to bulk billing for today’s visit.`,
+      /*
+       * TYPES, NEVER VALUES (hard rule 9, REQ-VER-04). "their address" — never
+       * the address itself, on a screen at a counter that faces the room.
+       */
+      detailWrong: (name: string, what: string) =>
+        `${name} says their ${what} is wrong. Fix it, then send it again.`,
+      /*
+       * SOMETHING IS IN THE WAY. The sentence says so and points DOWN the
+       * page, where the reason and its own fix are — never sideways to
+       * another screen, and never a generic "see the queue" (CLAUDE.md §7).
+       */
+      waiting: (name: string) =>
+        `Something has to be sorted out before ${name} can be asked to sign. It is written just below, with the way to fix it.`,
+
+      /*
+       * THE ONE PRIMARY BUTTON, LABELLED AS THE THING A PERSON WOULD SAY.
+       * Every other control on the panel is behind the one disclosure below.
+       */
+      bringItBack: 'Bring it back',
+      fixTheirDetails: 'Fix their details',
+
+      /*
+       * NOTHING IRREVERSIBLE WITHOUT A PLAIN SENTENCE (§6 rule 1). Taking a
+       * tablet back from somebody who is mid-way through it is the one press
+       * on this page a first-day starter is most likely to regret, so it names
+       * what happens and to whom before it happens — and says, in the same
+       * breath, that nothing is lost, because the fear is what makes people
+       * fetch a supervisor.
+       */
+      bringItBackAsk: (name: string, device: string | null) =>
+        device
+          ? `Take the ${device} tablet back from ${name}?`
+          : `Take the tablet back from ${name}?`,
+      bringItBackWhat:
+        'The screen goes back to the start and nothing they have done is lost. You can hand it to them again '
+        + 'straight away, or ask them after they have been seen.',
+      bringItBackYes: 'Yes, bring it back',
+      bringItBackNo: 'No, leave it with them',
+
+      /*
+       * ONE CONTROL FOR EVERYTHING ELSE (§4: "Secondary actions live behind
+       * one More control, never beside the primary one"), and it is called
+       * "Get help" in the one situation §4's table calls "cannot proceed" —
+       * the same control, named for what the reader is actually after.
+       *
+       * IT REVEALS, IT DOES NOT NAVIGATE (§13, Carl 12 Sep 2026: "Everything
+       * to do with the patient must be on this page - no going to another
+       * page"). The expert controls are the same ones the tablet desk has, and
+       * they open here, under the same patient.
+       */
+      more: 'More',
+      moreClose: 'Close',
+      getHelp: 'Get help',
+      expertTitle: 'The full set of controls',
+      expertLead:
+        'These are the same controls the tablet desk has, for this person only. Nothing here takes you off '
+        + 'this page.',
     },
   },
 
@@ -4554,7 +4705,7 @@ export const strings = {
     },
 
     waiting: {
-      title: 'Who is waiting',
+      title: 'Patients waiting for consultation',
       lead: 'Today’s patients, in the order they arrived, and whether their paperwork is done.',
       /*
        * HARD RULE 8, IN AS MANY WORDS RATHER THAN LEFT TO BE INFERRED (§4.1).
@@ -4613,6 +4764,78 @@ export const strings = {
        * be honest and repeating a provider’s own name to them would be noise.
        */
       agreementUnder: (provider: string) => `${provider}’s agreement`,
+
+      /*
+       * THE STATUS CONTROL (§3a; Carl, 12 Sep 2026: *"Need buttons or drop down
+       * to say 1. With patient now 2. Pending (patient in queue) 3. Completed
+       * (consultation completed) 4. Reassign (to a different Doctor)"*).
+       *
+       * ONE LABELLED SELECT PER ROW, NOT FOUR BUTTONS (§3a rule 7): *"four
+       * buttons across fifteen rows is sixty targets on a screen a doctor
+       * glances at."* Every select is labelled with the patient it is about, so
+       * a screen reader reads "Status for Jamie Sampleton" rather than the
+       * fifteenth unnamed combo box on the page (WCAG 2.2 AA, 4.1.2).
+       */
+      columnStatus: 'Status',
+      /** The accessible name for one row's control. Never visible; never generic. */
+      statusFor: (patient: string) => `Status for ${patient}`,
+      /*
+       * THE FOUR WORDS, KEYED BY THE CONTENT FILE'S OWN KEYS
+       * (`packages/domain/content/visit-states.json`). The screen renders that
+       * file in FILE ORDER and never carries the list itself, so the list
+       * changes without a code change (CLAUDE.md §7). "Completed" means the
+       * consultation is over — never "approved", "certified" or "accredited",
+       * which are forbidden about anything of ours (hard rule 12).
+       */
+      visitState: {
+        pending: 'Pending',
+        with_patient_now: 'With patient now',
+        completed: 'Completed',
+        reassign: 'Reassign',
+      } as Record<string, string>,
+      /*
+       * WHAT THE FOUR WORDS MEAN, once, beneath the table. "Reassign never
+       * reassigns" is said in as many words because a control that sounds like
+       * it moves somebody and does not is worse than no control (§3a rule 4).
+       */
+      visitStateKey:
+        'Pending is where every visit starts and nobody sets it. Completed means the consultation is over. '
+        + 'Reassign asks the front desk to find somebody else — it moves nobody by itself, and the desk '
+        + 'checks the paperwork before anything changes.',
+      /* Hard rule 8 again, about the control rather than the list. */
+      visitStateNeverBlocks: 'Setting a status holds nobody up, and leaving one unset holds nobody up either.',
+      /** While the press is in flight. Rows stay readable; nothing is torn down. */
+      visitStateSaving: 'Saving…',
+      /*
+       * SHORTCUTS TO THE ANSWER, NOT DIRECTIONS TO A SCREEN (CLAUDE.md §7). A
+       * refusal says what happened and what to do, and an unmapped code SHOWS
+       * ITS CODE so it can be diagnosed rather than rendering as silence.
+       */
+      visitStateFailed: (why: string) => `That status was not saved: ${why}`,
+      /*
+       * WHAT "COMPLETED" CAME TO. Every one of these is a report, never a
+       * refusal: the status IS saved in all of them (hard rule 8).
+       */
+      renderedOutcome: {
+        raised: 'Completed. The after-visit agreement has been raised for the front desk.',
+        already_decided: 'Completed. This visit’s after-visit paperwork was already settled.',
+        /*
+         * THE ORDINARY CASE, AND IT SAYS WHY WITHOUT BLAMING ANYBODY. An
+         * after-visit agreement needs the item numbers from the practice’s own
+         * invoice, and this platform never invents them.
+         */
+        awaiting_item_numbers:
+          'Completed. The after-visit agreement is raised once your practice software sends the invoice — '
+          + 'it carries the item numbers, and we never guess them.',
+        provider_not_named:
+          'Completed. No claim is recorded against this visit yet, so there is nothing to sign.',
+        not_raised:
+          'Completed. The after-visit paperwork could not be worked out just now — the front desk can '
+          + 'still capture it after the visit.',
+      } as Record<string, string>,
+      /** Reassign, once it has landed. It says plainly that nobody moved. */
+      reassignRaised:
+        'The front desk has been asked to find somebody else for this patient. Nobody has been moved yet.',
 
       nobodyWaiting: 'Nobody is waiting for you at the moment.',
       nobodyWaitingPractice: 'Nobody is waiting at the moment.',

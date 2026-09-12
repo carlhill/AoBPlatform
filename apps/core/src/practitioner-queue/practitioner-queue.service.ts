@@ -1,6 +1,16 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ARRIVAL_SOURCE_TYPED_BY_A_PERSON } from '@aobplatform/contracts';
 import {
+  DEFAULT_VISIT_STATE,
+  REASSIGNMENT_TASK_KIND,
+  VISIT_STATES_VERSION,
+  VISIT_STATE_KEYS,
+  isTheServiceRenderedSignal,
+  latestVisitState,
+  maySetVisitState,
+  mayBeSetByHand,
   paperworkFor,
+  raisesAFrontDeskTask,
   servicesNeedABillingProvider,
   whoTheyCameToSee,
   type AgreementNeeded,
@@ -9,9 +19,58 @@ import {
   type WaitingRow,
   type WaitingScope,
 } from '@aobplatform/domain';
+import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AffiliationsService } from '../affiliations/affiliations.service';
+import { ArrivalsService } from '../arrivals/arrivals.service';
+import { ReviewTasksService } from '../review-tasks/review-tasks.service';
 import type { Actor } from '../auth/actor.decorator';
+
+/**
+ * WHAT THE SERVICE-RENDERED SIGNAL CAME TO — a reason code, never prose, and
+ * never a gate (hard rule 8). Every one of these leaves the state recorded and
+ * the patient seen and billable.
+ *
+ *  - `raised` — the post-service path ran and answered. WHAT it answered is the
+ *    versioned table's business and is on the service record, not here.
+ *  - `already_decided` — the practice's software had already told us about this
+ *    service and the post-service question was already settled. A second
+ *    press is a retry, not a second visit.
+ *  - `awaiting_item_numbers` — THE ORDINARY CASE TODAY, and the one Carl has to
+ *    decide about. A post-service agreement's particulars include D6b, the MBS
+ *    item number(s), and REQ-REG-01 sources them from the PMS invoice. A
+ *    practitioner pressing "Completed" does not know them and this platform
+ *    must never invent a statutory particular (CLAUDE.md §7). So the signal is
+ *    recorded, nothing is drafted, and the existing reconciliation and invoice
+ *    paths raise the agreement when the invoice arrives — which is exactly what
+ *    they do today. See TODO.md and PRACTITIONER-QUEUE-PAGE.md §3a.
+ *  - `provider_not_named` — the visit has no billing provider yet (a nurse's
+ *    patient whose supervising provider reception has not named). Recorded, not
+ *    refused: ARRIVAL-WHO-IS-SEEN.md §5 says one field is missing, not that the
+ *    visit did not happen.
+ *  - `not_raised` — the path was attempted and declined the service, with the
+ *    reason logged. The state still stands.
+ */
+export const SERVICE_RENDERED_OUTCOMES = [
+  'raised',
+  'already_decided',
+  'awaiting_item_numbers',
+  'provider_not_named',
+  'not_raised',
+] as const;
+export type ServiceRenderedOutcome = (typeof SERVICE_RENDERED_OUTCOMES)[number];
+
+/** What one press of the control comes back with. Ids, keys and times only. */
+export interface VisitStateReceipt {
+  readonly arrivalId: string;
+  readonly state: string;
+  readonly statesVersion: string;
+  readonly setAt: string;
+  /** Null for every state that is not the service-rendered signal. */
+  readonly renderedOutcome: ServiceRenderedOutcome | null;
+  /** The reception task this raised, where it raised one (§3a rule 4). */
+  readonly reviewTaskId: string | null;
+}
 
 /** Affiliation statuses that mean somebody is working here now. */
 const LIVE_AFFILIATION_STATUSES = ['active', 'ending'] as const;
@@ -53,9 +112,13 @@ const MAX_CHAIN_HOPS = 16;
  */
 @Injectable()
 export class PractitionerQueueService {
+  private readonly logger = new Logger(PractitionerQueueService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly affiliations: AffiliationsService,
+    private readonly arrivals: ArrivalsService,
+    private readonly reviewTasks: ReviewTasksService,
   ) {}
 
   /**
@@ -79,28 +142,395 @@ export class PractitionerQueueService {
    * anyway would still see none of its rows.
    */
   async waiting(actor: Actor | undefined, headerPracticeId: string | undefined): Promise<WaitingList> {
-    const practitionerId = actor?.practitionerId;
+    const { practiceId, scope, ownAffiliationIds } = await this.resolveScope(actor, headerPracticeId);
+    const own = new Set(ownAffiliationIds);
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      /*
+       * THE PRACTICE'S NAME, FOR THE SESSION BADGE (Carl, 12 Sep 2026). A
+       * practitioner's token carries no practice claim, so the page cannot name
+       * the practice itself. This service already had to resolve the practice
+       * to answer at all, so it says which one. Display only — it grants
+       * nothing and gates nothing.
+       */
+      const practice = await tx.practice.findFirst({ where: { id: practiceId }, select: { name: true } });
+      const list = await this.build(tx, scope, (affiliationId) =>
+        scope === 'practice' ? true : affiliationId !== null && own.has(affiliationId),
+      );
+      return { ...list, practiceName: practice?.name ?? null };
+    });
+  }
 
-    if (practitionerId) {
-      const practiceId = await this.practiceForPractitioner(practitionerId, headerPracticeId);
-      return this.prisma.withPractice(practiceId, async (tx) => {
-        /*
-         * THEIR AFFILIATIONS AT THIS PRACTICE, READ INSIDE THE SCOPE. A
-         * practitioner can hold more than one here — two locations, two
-         * departments — and every one of them is theirs. RLS makes anybody
-         * else's invisible to this query, so the filter cannot widen.
-         */
-        const mine = await tx.affiliation.findMany({
-          where: { practitionerId, status: { in: [...LIVE_AFFILIATION_STATUSES] } },
-          select: { id: true },
-        });
-        const ids = new Set(mine.map((row) => row.id));
-        return this.build(tx, 'mine', (affiliationId) => affiliationId !== null && ids.has(affiliationId));
-      });
+  /**
+   * WHOSE LIST, AND AT WHICH PRACTICE — the one answer both the read and the
+   * write are built on.
+   *
+   * IT IS SHARED DELIBERATELY (§3a rule 2). *"A practitioner may set a state
+   * only on their own patients."* If the write resolved "who am I and what is
+   * mine" by its own route, a practitioner could one day be able to SET a state
+   * on a row they cannot SEE, or the reverse. One function means the two
+   * questions have one answer and cannot drift.
+   *
+   * A PRACTITIONER CLAIM IS CHECKED FIRST, because it is the narrower answer
+   * and a person holding both claims must get the narrower one: widening by
+   * accident is the failure that matters, narrowing by accident is merely
+   * inconvenient.
+   *
+   * THE AFFILIATIONS ARE READ INSIDE THE PRACTICE SCOPE. A practitioner can
+   * hold more than one here — two locations, two departments — and every one of
+   * them is theirs. RLS makes anybody else's invisible to the query, so the set
+   * cannot widen.
+   */
+  private async resolveScope(
+    actor: Actor | undefined,
+    headerPracticeId: string | undefined,
+  ): Promise<{ practiceId: string; scope: WaitingScope; ownAffiliationIds: string[] }> {
+    const practitionerId = actor?.practitionerId;
+    if (!practitionerId) {
+      return { practiceId: requirePractice(headerPracticeId), scope: 'practice', ownAffiliationIds: [] };
     }
 
-    const practiceId = requirePractice(headerPracticeId);
-    return this.prisma.withPractice(practiceId, (tx) => this.build(tx, 'practice', () => true));
+    const practiceId = await this.practiceForPractitioner(practitionerId, headerPracticeId);
+    const mine = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.affiliation.findMany({
+        where: { practitionerId, status: { in: [...LIVE_AFFILIATION_STATUSES] } },
+        select: { id: true },
+      }),
+    );
+    return { practiceId, scope: 'mine', ownAffiliationIds: mine.map((row) => row.id) };
+  }
+
+  /**
+   * SET WHERE THIS VISIT HAS GOT TO (§3a; Carl, 12 September 2026).
+   *
+   * THE ONE WRITE THIS PAGE HAS, AND IT IS NARROW BY CONSTRUCTION. §3 forbids
+   * *"buttons that act on an agreement"* and that rule stands: this touches no
+   * agreement, sends no tablet, corrects no detail and moves no patient. It
+   * records attendance — who said where a visit had got to, and when
+   * (VISIT-CHECKLIST.md §5: *"the only control a practitioner ever gets is 'I
+   * have seen this patient'"*).
+   *
+   * WHO MAY, AND IT FAILS CLOSED (§3a rule 2). A practitioner may set a state
+   * only on patients who came to see THEM; practice staff may set any. The
+   * decision is `maySetVisitState` in the domain, given the affiliations the
+   * caller's own practice scope already returned — so the two ways this can be
+   * wrong are both impossible: a cross-practitioner write has no matching
+   * affiliation, and a cross-practice one cannot see the arrival at all, twice
+   * over (the practitioner's practice is checked against their live
+   * affiliations before any scope opens, and RLS then hides the row).
+   *
+   * NO FREE TEXT ANYWHERE (§3a rule 1). The only thing a caller may send is a
+   * state key, and a key not in the versioned list is refused rather than
+   * stored. There is no note parameter and there is nowhere for one to go.
+   *
+   * REVERSIBLE, AND THE CORRECTION IS KEPT BESIDE THE ORIGINAL (§3a rule 6).
+   * Every press is an INSERT. Nothing here updates and nothing deletes.
+   *
+   * THE ORDER OF THE WRITES IS DELIBERATE AND IT IS HARD RULE 8. The
+   * service-rendered attempt runs FIRST and outside the transaction, because
+   * `serviceRendered` opens its own (as `receive` does, and for the same
+   * reason). Whatever it comes to — including a failure — the state is then
+   * recorded WITH ITS OUTCOME in one transaction beside its vault event, so a
+   * state with no evidence of having been set is structurally impossible (hard
+   * rule 11). A platform that could not raise the post-agreement has slowed the
+   * evidence; it has not stopped the patient being seen or billed (REQ-REC-04).
+   */
+  async setState(
+    actor: Actor | undefined,
+    headerPracticeId: string | undefined,
+    arrivalId: string,
+    state: string,
+  ): Promise<VisitStateReceipt> {
+    /*
+     * THE KEY IS CHECKED AGAINST THE VERSIONED CONTENT, NOT AGAINST A LITERAL
+     * (hard rule 14). `pending` is refused here as well as by the database
+     * CHECK: it is the starting state and §3a's table gives it no setter, so
+     * storing one would be a person moving a patient backwards into "not yet
+     * seen" after the service-rendered signal had already gone.
+     */
+    if (!mayBeSetByHand(state)) {
+      throw new BadRequestException(
+        `"${state}" is not a state anybody can set here. Choose one of: ` +
+          `${VISIT_STATE_KEYS.filter((key) => mayBeSetByHand(key)).join(', ')}. ` +
+          `"${DEFAULT_VISIT_STATE}" is where every visit starts and is never set by hand.`,
+      );
+    }
+
+    const { practiceId, scope, ownAffiliationIds } = await this.resolveScope(actor, headerPracticeId);
+
+    /*
+     * THE ARRIVAL, INSIDE THE SCOPE. A row belonging to another practice is not
+     * refused — it is INVISIBLE, because RLS never returns it, so this reads as
+     * "no such visit" and gives away nothing about whose it was.
+     */
+    const arrival = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.arrival.findUnique({
+        where: { id: arrivalId },
+        select: {
+          id: true,
+          patientId: true,
+          affiliationId: true,
+          seeingAffiliationId: true,
+          pmsPatientRecordNumber: true,
+          outcome: true,
+        },
+      }),
+    );
+    if (!arrival || arrival.outcome !== 'received') {
+      throw new NotFoundException(
+        'There is no visit here to set a state on. Open the waiting list again — the person may have been ' +
+          'moved, or the arrival may have been sent again with a correction.',
+      );
+    }
+
+    if (!maySetVisitState({ scope, ownAffiliationIds, seeingAffiliationId: whoTheyCameToSee(arrival) })) {
+      /*
+       * IT NAMES NOBODY. The caller is being told their own scope is wrong, and
+       * a refusal that named the practitioner whose patient this is would be a
+       * roster leak to anybody with a practitioner account.
+       */
+      throw new ForbiddenException(
+        'This patient did not come to see you, so their visit is not yours to mark. The front desk can set ' +
+          'a state on anybody.',
+      );
+    }
+
+    /*
+     * COMPLETED IS THE SERVICE-RENDERED SIGNAL (§3a rule 3, VISIT-CHECKLIST.md
+     * §6) — attempted before the state is written, so its answer can be recorded
+     * on the same row. It is never allowed to throw: hard rule 8.
+     */
+    const rendered = isTheServiceRenderedSignal(state)
+      ? await this.raiseTheServiceRendered(practiceId, arrival, actor)
+      : null;
+
+    const principal = actorFor(actor);
+
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      /*
+       * REASSIGN NEVER REASSIGNS (§3a rule 4). It raises a task for RECEPTION
+       * and changes nothing about who the patient is here to see: no field on
+       * the arrival is touched, no agreement is superseded, nobody is moved.
+       * Who the patient DOES see is reception's decision on the front desk
+       * page, where the covering-provider check runs — an enduring agreement is
+       * per practitioner × patient (hard rule 6) — and the patient is asked
+       * first (D-2026-09-12-03).
+       *
+       * IT REUSES `review_tasks` RATHER THAN ADDING A TABLE. That queue already
+       * carries practice-scoped work with a subject, already surfaces on the
+       * patient's own work page through `openForPatients`, and already has the
+       * stakes rule that stops an automated check closing something a person
+       * must do. A second table would have been a second inbox.
+       *
+       * IN THE SAME TRANSACTION AS THE STATE, for the reason `raise`'s own
+       * docstring gives: a state saved without its task is a request nobody
+       * will see, and it would look exactly like a request nobody needed.
+       */
+      const task = raisesAFrontDeskTask(state)
+        ? await this.reviewTasks.raise(tx, {
+            practiceId,
+            kind: REASSIGNMENT_TASK_KIND,
+            /*
+             * THE SUBJECT IS THE PATIENT, not the arrival, because that is what
+             * puts it on the patient's own work page at the desk — the same
+             * join `portal_correction_requested` uses. The arrival travels in
+             * `detail` so the desk can land on today's visit.
+             */
+            subjectType: 'Patient',
+            subjectId: arrival.patientId ?? arrival.id,
+            /*
+             * NO FREE TEXT FROM THE CALLER (§3a rule 1). This sentence is OURS,
+             * fixed, and carries no reason because the control offers none —
+             * the practitioner said "not me" and that is the whole message.
+             */
+            summary:
+              'A practitioner asked for this patient to be seen by somebody else today. Nobody has been ' +
+              'moved: choose who sees them, and check whether their agreement still covers the visit.',
+            detail: { arrivalId: arrival.id, seeingAffiliationId: arrival.seeingAffiliationId ?? null },
+            raisedBy: principal.id,
+          })
+        : null;
+
+      const row = await tx.visitState.create({
+        data: {
+          practiceId,
+          arrivalId: arrival.id,
+          state,
+          /* Hard rule 14: which list this was chosen from, on the record. */
+          statesVersion: VISIT_STATES_VERSION,
+          setByPrincipalId: principal.id,
+          setByPrincipalType: principal.principalType,
+          serviceRecordId: rendered?.serviceRecordId ?? null,
+          renderedOutcome: rendered?.outcome ?? null,
+          reviewTaskId: task?.id ?? null,
+        },
+      });
+
+      /*
+       * THE EVENT, IN THIS TRANSACTION (hard rule 11, FR-11.2). IDS, THE STATE
+       * KEY AND THE CONTENT VERSION — no name, no identifier value of any kind
+       * (hard rules 1 and 9), no reason, no amount (hard rule 4). There is no
+       * free text on the control, so there is none here.
+       */
+      await enqueueVaultEvent(tx, {
+        type: 'visit.state_set',
+        actor: principal,
+        subject: { type: 'Arrival', id: arrival.id },
+        payload: {
+          practiceId,
+          arrivalId: arrival.id,
+          patientId: arrival.patientId ?? '',
+          seeingAffiliationId: arrival.seeingAffiliationId ?? '',
+          billingAffiliationId: arrival.affiliationId ?? '',
+          state,
+          statesVersion: VISIT_STATES_VERSION,
+          setByScope: scope,
+          serviceRenderedOutcome: rendered?.outcome ?? '',
+          serviceRecordId: rendered?.serviceRecordId ?? '',
+          reviewTaskId: task?.id ?? '',
+        },
+      });
+
+      return {
+        arrivalId: arrival.id,
+        state: row.state,
+        statesVersion: row.statesVersion,
+        setAt: row.setAt.toISOString(),
+        renderedOutcome: rendered?.outcome ?? null,
+        reviewTaskId: task?.id ?? null,
+      } satisfies VisitStateReceipt;
+    });
+  }
+
+  /**
+   * COMPLETED IS THE SERVICE-RENDERED SIGNAL — and what this page can and
+   * cannot supply (§3a rule 3, VISIT-CHECKLIST.md §6).
+   *
+   * IT REUSES `ArrivalsService.serviceRendered` AND REIMPLEMENTS NOTHING. That
+   * method owns the two coverage questions, the versioned post-service table
+   * that answers them, the draft, the lock and the capture request. A second
+   * copy of that decision here would be a second answer to "is another
+   * signature owed", and hard rule 14 exists precisely to stop that.
+   *
+   * WHAT IT CANNOT SUPPLY, AND WHY NOTHING IS INVENTED. A post-service
+   * agreement's particulars include D6b — the MBS item number(s) — and
+   * REQ-REG-01 sources them from the PMS invoice. `lockParticulars` requires
+   * them, and hard rule 2 forbids a signature over an incomplete payload. A
+   * practitioner pressing "Completed" does not know the item numbers, and this
+   * platform must never infer a statutory particular (CLAUDE.md §7: *"Never
+   * invent regulatory facts"*). So:
+   *
+   *   - WHERE THE PRACTICE'S OWN SOFTWARE HAS ALREADY SAID WHAT WAS DONE — an
+   *     undecided `service_records` row for this patient carrying its own item
+   *     numbers and its own service date, which is what `PmsSyncService` writes
+   *     from an invoice — the signal is passed straight through with the PMS's
+   *     OWN particulars. Nothing is invented; the numbers are theirs.
+   *   - OTHERWISE the state is recorded, `awaiting_item_numbers` is recorded
+   *     beside it, and NOTHING IS DRAFTED. The invoice path raises the
+   *     agreement when the invoice arrives, exactly as it does today.
+   *
+   * FLAGGED FOR CARL RATHER THAN DECIDED (wow.md §9). Whether "Completed"
+   * should be able to raise a post-service agreement BEFORE the invoice — and
+   * if so, where D5 and D6b would come from — is a regulatory question, not a
+   * build one.
+   *
+   * IT NEVER THROWS (hard rule 8, REQ-REC-04). Every failure below returns a
+   * reason code; the state is recorded either way, and the patient is seen and
+   * billable either way.
+   */
+  private async raiseTheServiceRendered(
+    practiceId: string,
+    arrival: {
+      id: string;
+      patientId: string | null;
+      affiliationId: string | null;
+      pmsPatientRecordNumber: string;
+    },
+    actor: Actor | undefined,
+  ): Promise<{ outcome: ServiceRenderedOutcome; serviceRecordId: string | null }> {
+    /*
+     * NO BILLING PROVIDER, NO POST-SERVICE QUESTION TO ASK. A nurse's patient
+     * whose supervising provider reception has not yet named, or a
+     * phlebotomist's patient with no claim at all — ARRIVAL-WHO-IS-SEEN.md §5
+     * says one field is missing, not that the visit did not happen. Recorded,
+     * never refused.
+     */
+    const patientId = arrival.patientId;
+    const billingAffiliationId = arrival.affiliationId;
+    if (!billingAffiliationId || !patientId) {
+      return { outcome: 'provider_not_named', serviceRecordId: null };
+    }
+
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    /*
+     * WHAT THE PRACTICE'S SOFTWARE HAS ALREADY TOLD US ABOUT TODAY'S SERVICE.
+     * `PmsSyncService.upsertServiceRecord` writes one of these per invoice,
+     * carrying D5 and D6b and no decision; `serviceRendered` is built to fall
+     * through on exactly that row (*"a row the invoice sync created without a
+     * decision ... falls through to be decided here, because the patient
+     * turning up at the desk is new information about a service the platform
+     * already knew about"*).
+     */
+    const record = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.serviceRecord.findFirst({
+        where: { practiceId, patientId, serviceDate: { gte: startOfDay } },
+        orderBy: { serviceDate: 'desc' },
+        select: { id: true, pmsInvoiceKey: true, serviceDate: true, mbsItemNumbers: true, visitDecision: true },
+      }),
+    );
+
+    // Already answered. A second press is a retry, not a second visit.
+    if (record?.visitDecision) return { outcome: 'already_decided', serviceRecordId: record.id };
+
+    if (!record || record.mbsItemNumbers.length === 0) {
+      /*
+       * THE ORDINARY CASE TODAY. Nothing is drafted and nothing is invented;
+       * the invoice path raises the agreement when the invoice arrives.
+       */
+      return { outcome: 'awaiting_item_numbers', serviceRecordId: record?.id ?? null };
+    }
+
+    try {
+      const receipt = await this.arrivals.serviceRendered(
+        practiceId,
+        {
+          pmsPatientRecordNumber: arrival.pmsPatientRecordNumber,
+          /* Whose number the claim goes under — the arrival's own billing anchor. */
+          affiliationId: billingAffiliationId,
+          /* D5 AND D6b ARE THE PMS'S OWN, off the row it wrote. Neither is ours. */
+          serviceDate: record.serviceDate.toISOString().slice(0, 10),
+          mbsItemNumbers: [...record.mbsItemNumbers],
+          /*
+           * A PERSON AT THE PRACTICE SAID SO, which is what `reception` means
+           * here — the source distinguishes a human's word from a connector's
+           * message, and a practitioner pressing a control is a human's word.
+           */
+          source: ARRIVAL_SOURCE_TYPED_BY_A_PERSON,
+          /* The invoice's own key, so a second press is a retry, not a second service. */
+          idempotencyKey: record.pmsInvoiceKey,
+        },
+        /*
+         * THE FIELD NAMES WE ACTUALLY SENT, for `assertNoMedicareOrAmount`.
+         * There is no Medicare number and no amount among them, and there is no
+         * route by which this page could add one.
+         */
+        ['pmsPatientRecordNumber', 'affiliationId', 'serviceDate', 'mbsItemNumbers', 'source', 'idempotencyKey'],
+        actor,
+      );
+      return { outcome: 'raised', serviceRecordId: receipt.serviceRecordId ?? record.id };
+    } catch (err) {
+      /*
+       * SLOWER EVIDENCE, NEVER SLOWER CARE (hard rule 8, REQ-REC-04). The state
+       * still stands, the patient has still been seen, and reception can still
+       * capture after the fact. Logged without a patient value.
+       */
+      this.logger.warn(
+        `Arrival ${arrival.id}: "completed" could not raise the post-service question — the state is ` +
+          `recorded and the service is still billable. (${(err as Error).message})`,
+      );
+      return { outcome: 'not_raised', serviceRecordId: record.id };
+    }
   }
 
   /**
@@ -222,6 +652,25 @@ export class PractitionerQueueService {
     const agreementById = new Map(agreements.map((a) => [a.id, a]));
 
     /*
+     * WHERE EACH VISIT HAS GOT TO (§3a). Every saying, for the arrivals on
+     * screen, read in one query and flattened per arrival by the domain's own
+     * `latestVisitState` — the newest wins and the older ones survive, which IS
+     * §3a rule 6: *"a wrong state is corrected, and the correction is kept
+     * beside the original rather than over it."*
+     */
+    const stateRows = await tx.visitState.findMany({
+      where: { arrivalId: { in: arrivals.map((a) => a.id) } },
+      select: { arrivalId: true, state: true, statesVersion: true, setAt: true },
+      orderBy: { setAt: 'asc' },
+    });
+    const statesByArrival = new Map<string, { state: string; statesVersion: string; setAt: string }[]>();
+    for (const row of stateRows) {
+      const list = statesByArrival.get(row.arrivalId) ?? [];
+      list.push({ state: row.state, statesVersion: row.statesVersion, setAt: row.setAt.toISOString() });
+      statesByArrival.set(row.arrivalId, list);
+    }
+
+    /*
      * WHO HAS A TABLET IN THEIR HANDS RIGHT NOW. The same read the desk makes,
      * and the only thing on this page that changes minute to minute.
      */
@@ -309,6 +758,14 @@ export class PractitionerQueueService {
           agreement?.affiliationId && agreement.affiliationId !== seeing
             ? (affiliationById.get(agreement.affiliationId)?.name ?? null)
             : null,
+        /*
+         * WHERE THE VISIT HAS GOT TO (§3a). `pending` for an untouched row,
+         * which is honest and is not a warning: nothing about it gates a
+         * consultation or a bill (§3a rule 5, hard rule 8). The flattening is
+         * the domain's, not this file's, so the console and the server cannot
+         * disagree about which saying is the current one.
+         */
+        visitState: latestVisitState(statesByArrival.get(arrival.id) ?? []),
       };
 
       const key = seeing ?? '';
@@ -411,6 +868,22 @@ export class PractitionerQueueService {
 
     return newest;
   }
+}
+
+/**
+ * WHO SET IT, FROM THE TOKEN AND NEVER FROM A FORM (§3a rule 1;
+ * VISIT-CHECKLIST.md §7 rule 4: *"Marking is attributable — who marked it and
+ * when, from the token, never a typed name."*).
+ *
+ * THE SAME SHAPE `ArrivalsService` USES, and deliberately its own copy rather
+ * than an import across a module boundary: the subject of the token the realm
+ * signed, or the platform where no person is signed in. A name in a body is an
+ * assertion; an id in a token is a claim somebody signed.
+ */
+const SYSTEM_ACTOR = { principalType: 'system', id: 'practitioner-queue' } as const;
+
+function actorFor(actor: Actor | undefined): { principalType: string; id: string } {
+  return actor ? { principalType: actor.principalType, id: actor.id } : SYSTEM_ACTOR;
 }
 
 function idsOf(values: ReadonlyArray<string | null | undefined>): string[] {

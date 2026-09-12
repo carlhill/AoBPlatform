@@ -154,7 +154,7 @@ export function WaitingView() {
 
   return (
     <Shell
-      right={<SessionControl audience={strings.practitionerQueue.audience} />}
+      right={<SessionControl audience={strings.practitionerQueue.audience} practiceLabel={list?.practiceName ?? null} />}
       title={strings.practitionerQueue.waiting.title}
       lead={strings.practitionerQueue.waiting.lead}
     >

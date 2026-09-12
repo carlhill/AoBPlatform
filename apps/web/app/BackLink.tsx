@@ -122,14 +122,16 @@ const PARENTS: Readonly<Record<string, string>> = {
   '/practitioner/affiliations': '/practitioner',
   '/practitioner/messages': '/practitioner',
   /*
-   * THE CROSS-PRACTICE HUB GOES UP TO THE PRACTITIONER'S PAGE AT THE PRACTICE
-   * (Carl, 12 Sep 2026, signed in as Dr Huang). `/practitioner` is "about me,
-   * across practices"; `/practice/practitioner` is "my work at this practice
-   * today", and it is where a practitioner lands. Both are practitioner-
-   * audience, so `mayReach` shows this to exactly the people the page is for,
-   * and to nobody else.
+   * `/practitioner` HAS NO PARENT (Carl, 12 Sep 2026, reversing his own earlier
+   * request once he saw it): "there should be no link 'Back to Your page at
+   * this practice' when the practitioner lands on this first page".
+   *
+   * IT IS A LANDING PAGE IN ITS OWN RIGHT. A practitioner signing in with their
+   * person-level passkey arrives HERE, and a back link on the page you landed
+   * on points at somewhere you have not been. The link the other way — from the
+   * practice page to this one — is a button in the body, which is the honest
+   * direction: the practice page is the narrower view and this is the wider one.
    */
-  '/practitioner': '/practice/practitioner',
 };
 
 /** Pages with an id in the path. Longest match wins, so order matters. */

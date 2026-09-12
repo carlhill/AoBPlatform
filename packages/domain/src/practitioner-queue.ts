@@ -154,6 +154,25 @@ export interface WaitingRow {
    * ordinary GP visit — so a name here is always a difference worth saying.
    */
   readonly agreementProviderName: string | null;
+  /**
+   * WHERE THE VISIT HAS GOT TO — Pending, With patient now, Completed or
+   * Reassign (§3a; Carl, 12 Sep 2026).
+   *
+   * A KEY FROM `content/visit-states.json`, NEVER A WORD. The list is versioned
+   * content and the display labels live in the string table keyed by this
+   * (CLAUDE.md §7), so the list can change without a code change and a screen
+   * can never disagree with the record about what a state means.
+   *
+   * IT IS ATTENDANCE, NOT A CLINICAL FACT, and that is what lets it sit on a
+   * row §2 otherwise forbids everything from. It says a person was with a
+   * patient, or is no longer; it says nothing about why they were there or what
+   * was found. There is still no field here for a reason, a note, a triage
+   * category or a duration, and there never will be.
+   *
+   * `pending` FOR EVERY UNTOUCHED ROW, which is honest and is not a warning:
+   * nothing about it gates a consultation or a bill (§3a rule 5, hard rule 8).
+   */
+  readonly visitState: string;
 }
 
 /**
@@ -194,6 +213,14 @@ export type WaitingScope = (typeof WAITING_SCOPES)[number];
 
 export interface WaitingList {
   readonly scope: WaitingScope;
+  /**
+   * THE PRACTICE THIS LIST IS FOR, for the session badge (Carl, 12 Sep 2026:
+   * "AOBPLATFORM should actually say the PracticeName the Practitioner is
+   * working at"). A practitioner's token carries no practice claim, so the
+   * page cannot name the practice from the session — the server, which
+   * resolved the practice to answer at all, says it here. Display only.
+   */
+  readonly practiceName?: string | null;
   readonly groups: readonly WaitingGroup[];
 }
 
