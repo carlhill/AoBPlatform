@@ -68,6 +68,69 @@ own words, and one state: **outstanding**, **done**, or **not needed**.
 The paperwork rows sit in the same list so reception reads one thing, but they
 are computed, never marked by hand.
 
+### 3a. Carl's name for it, and the rule it settles (12 September 2026)
+
+Carl, re-reaching this model from the other end, after seeing a patient sent to
+"Finished" before the doctor had called them in:
+
+> *"What you call 'Paper work' per patient, I call the patient service list. We
+> need a patient service list, just like a car has service list when taken to
+> the service centre. Only when all services are completed or some are cancelled
+> does the client go to Finished."*
+
+**This is section 3 arrived at independently, which is the best evidence the
+model is right.** Two people reasoning from different ends — one from "what does
+this screen have to show", one from "what is a visit" — landed on the same
+shape. Adopt his name for it: it is the **patient service list**, and the car
+service analogy is the right one to explain it with, because everybody has seen
+one.
+
+**What his framing ADDS, and it is not small.** Section 3 said a visit is a set
+of services each with a state. It did not say what that makes "Finished". Carl
+does:
+
+> **A patient is Finished when every service on their list is resolved — each
+> one completed, or cancelled.**
+
+That is the general rule, and it supersedes the narrower one recorded the same
+day in D-2026-09-12-20 ("the paperwork is done AND the visit is complete").
+The narrow one is not wrong; it is what the general one REDUCES TO while the
+only services on the list are the computed paperwork rows and the consultation.
+Write the code as the general rule, so adding "bloods" to a practice's list
+changes what Finished means without changing a line.
+
+**"Cancelled" earns its place beside "not needed".** Section 3 has one state for
+both and they are different facts. *Not needed* was never required — the visit
+policy said no agreement was owed. *Cancelled* was on the list and was dropped —
+the patient declined the blood test, or ran out of time. A car service list
+distinguishes them and so should this, because "we never planned to" and "we
+planned to and did not" are different answers to an auditor and to the patient.
+
+| State | Meaning |
+|---|---|
+| `outstanding` | On the list, not done yet |
+| `done` | Completed |
+| `not_needed` | Never required in the first place |
+| `cancelled` | Was on the list, deliberately dropped |
+
+**The scope line does not move**, and it is worth restating under a name that
+sounds more clinical than the old one. A patient service list is **a record of
+what the practice said would happen and whether it happened** — nothing more. It
+carries no reason for the visit, no finding, no note, no triage category, no
+duration, and it never tells a clinician what to do next. It is not a care plan
+and it is not a task list. Clinical features of any kind are out of scope
+(CLAUDE.md §8), and the name changing does not change that.
+
+**Nor does it gate anything** (hard rule 8). A patient with three outstanding
+services is seen and billed exactly as they would be otherwise. The list reports;
+it never blocks.
+
+**Where the build actually is.** Sections 1 and 2 remain accurate: the paperwork
+rows are computed and exist today, and the consultation step is being added now.
+The genuinely unbuilt part is unchanged — **one mechanism for a person to mark
+their part of the visit done**, and the practice's own list of what those parts
+are, which is versioned content and not code.
+
 ## 4. Payment, and why it is only a line of text
 
 Bulk billing means the patient pays nothing — that is the entire point of the
@@ -175,3 +238,4 @@ claim shows "nothing to sign" and the visit closes with nobody chasing anything.
 | 12 Sep 2026 | **§9 phases 1 and 2 BUILT**, in the front desk panel (`apps/web/app/practice/frontdesk/`). Phase 1: the four paperwork rows, computed by `visitChecklist.ts` from the queue row and today's covered line — `GET /tablet-sessions/pushable` and `GET /tablet-sessions/covered`, both already read by the desk. No new endpoint. Phase 2: the existing numbered send card renders as row 3's own body. Phases 3 and 4 — services, marking, the automatic post-service row — are NOT built. |
 | 12 Sep 2026 | **The distinction that makes row 3 honest.** The queue holds only UNSIGNED agreements, so a signature takes the row off it and "Done" cannot be read from the queue at all. It is read from the covered line instead: `covered` means the item was covered by the agreement the patient signed on the way in, so they DID sign and row 3 is Done; `covered_by_enduring` means an ongoing agreement already stood and nobody signed anything today, so it reads "Nothing to sign" and never "Done". Test: `a_signature_today_reads_as_done_and_an_ongoing_agreement_does_not`. |
 | 12 Sep 2026 | **Row 4 says "Nothing to sign" until something is billed after the visit**, rather than being hidden. A row that appears out of nowhere at checkout is a surprise; a row that says why it is quiet is not. No amount appears on it and there is no field for one (hard rule 4). |
+| 12 Sep 2026 | §3a: Carl's name adopted — the PATIENT SERVICE LIST, on the car-service analogy — and the rule it settles: Finished means every service resolved, completed or cancelled. `cancelled` split from `not_needed`. The scope line restated, because the new name sounds more clinical than the old one and is not. |

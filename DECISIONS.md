@@ -1270,6 +1270,17 @@ while the practitioner had not yet called them in.
 2. **A patient reaches "Finished" only when the paperwork is done AND the visit
    is complete.** Either one alone leaves them on the desk.
 
+**AMENDED THE SAME DAY, and generalised.** Carl: *"What you call 'Paper work'
+per patient, I call the patient service list... Only when all services are
+completed or some are cancelled does the client go to Finished."* The rule is
+therefore: **a patient is Finished when every service on their list is
+resolved - each one completed, or cancelled.** Part 2 above is what that
+reduces to while the only services on the list are the computed paperwork rows
+and the consultation, so nothing built today changes - but the code is written
+as the general rule, so adding a practice's own item changes what Finished means
+without changing a line. See `VISIT-CHECKLIST.md` section 3a, which also splits
+`cancelled` (was on the list, dropped) from `not_needed` (never required).
+
 **Nothing new has to be invented for it.** The visit state already exists and is
 already set by the person who knows - `pending`, `with_patient_now`,
 `completed`, `reassign`, set from `/practice/practitioner/waiting`, and
