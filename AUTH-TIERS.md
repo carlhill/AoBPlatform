@@ -52,6 +52,39 @@ application registration in their tenant, a decision about minimum
 authentication strength, and a rule for guest accounts in someone else's tenant.
 It is a supported feature with a runbook.
 
+## 3a. "Is there an open-source or cheap tool for single sign-on?" — we already run it
+
+Carl, 12 September 2026. **Keycloak, which has been in the stack since the
+beginning and is already running on port 21024.** It is Apache-licensed, free,
+and it does all three tiers in one product:
+
+| Tier | What Keycloak does |
+|---|---|
+| 1 — Tenant SSO | Identity brokering. It federates to Microsoft Entra, Google Workspace or anything speaking OIDC or SAML. Confirmed on the running instance: the OIDC provider is available and no provider is configured yet |
+| 2 — Platform accounts | Its own user store, password policy and one-time codes |
+| 3 — Passkeys | WebAuthn, already configured and in use |
+
+**So there is nothing to buy and nothing to add.** The work is configuration and
+a per-practice onboarding runbook, not procurement. That was the point of
+choosing Keycloak rather than a hosted identity service, and the tiered model
+does not change the choice.
+
+**For contrast, what the alternatives would cost.** Hosted identity services
+(Auth0, Okta) price per monthly active user and commonly put enterprise SSO
+connections behind a premium tier — the industry calls it the SSO tax — which is
+precisely the feature we need for large practices. WorkOS is purpose-built for
+the per-tenant onboarding pain and would genuinely save effort, but it is paid
+per connection and adds a dependency in the authentication path. Other
+open-source options exist (Authentik, Zitadel, Ory) and none is a reason to move
+off something already deployed and working.
+
+**What a PRACTICE may need to pay, which is the cost worth checking.** Federating
+their tenant to us is generally available on a basic Microsoft or Google plan.
+Enforcing strong conditional access — the thing that makes tier 1 stronger than
+tier 2 — typically needs a paid tier of their own identity product. **Worth
+confirming against current licensing before promising a practice anything**, and
+it belongs in the onboarding questions beside the Bluetooth ones.
+
 ## 4. Tier 2, and Carl's questions about it
 
 *"Are we building userid + pwd + 2 phase via auth app each time? Is the auth-app
@@ -144,3 +177,4 @@ costs money.
 | Date | Change |
 |---|---|
 | 12 Sep 2026 | v1.0. Written when Carl established that shared clinical terminals make passkey-only unworkable, and asked for the tiered model. |
+| 12 Sep 2026 | §3a added: the SSO tool is Keycloak, already deployed, free, and doing all three tiers — the work is configuration, not procurement. |
