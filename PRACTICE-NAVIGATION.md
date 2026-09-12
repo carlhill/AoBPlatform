@@ -104,9 +104,9 @@ two shapes.
 
 ## 7. For Carl
 
-- **Is `today` the right word?** Alternatives: "Front of house", "The floor",
-  "Your shift". "Today" is short, honest and non-clinical, and it says the page
-  is about now rather than about records.
+- ~~Is `today` the right word?~~ ANSWERED (Carl, 12 Sep 2026): **yes**. Short,
+  honest, non-clinical, and it says the page is about now rather than about
+  records. The route is `/practice/today`.
 - **Should the tablet desk stay on `today`, or move to setup as the expert
   tool** once the front desk page has its actions? It is daily work, so it
   belongs on `today`; but two desks side by side needs one sentence saying which
@@ -119,3 +119,4 @@ two shapes.
 | Date | Change |
 |---|---|
 | 12 Sep 2026 | v1.0. Written when Carl rejected a thirteenth card on the setup hub and asked for a better starting point. |
+| 12 Sep 2026 | Carl confirmed the name: `/practice/today`. Build queued behind the two agents already in page-access and the landing rule. |
