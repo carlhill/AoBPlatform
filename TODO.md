@@ -3910,3 +3910,35 @@ three arriving on schedule.
 **Why this list is worth keeping.** It is the first evidence that the index
 pays for itself: none of these was discoverable before, and one of them
 (#1) touches a hard rule.
+
+## Two canonical-JSON implementations decide what gets hashed (found by the inventory, 12 Sep 2026)
+
+`canonicalJson` is declared twice, independently, in the two files that decide
+what an agreement's hash is computed over:
+
+- `apps/core/src/render/renderer.ts:47` — hashes `{ particulars, languages, renderer }`
+- `apps/core/src/render/agreement-document.ts:194` — hashes the letterhead
+
+Neither imports the other. They are character-for-character equivalent today and
+produce identical output, so **there is no live defect** — this is exposure, not
+a bug.
+
+**Why it matters anyway.** Hard rule 13: one deterministic render path, hashed at
+render, re-verified on every later display, and two renders of the same agreement
+must be byte-identical. A hash function that exists twice is a hash function that
+can diverge once, and the divergence would be silent — the artefact would still
+render, the hash would simply stop matching, and it would surface as a
+verification failure on an old agreement long after the change that caused it.
+
+One subtlety worth keeping when they are merged: both serialise `undefined`
+property values into the output (`{"n":null,"u":undefined}`), which is not valid
+JSON. It is consistent between them and therefore harmless for hashing today, but
+it is the kind of thing a well-meaning tidy-up would "fix" and thereby change
+every future hash.
+
+**The fix is small and should be done deliberately, not in passing:** extract one
+implementation to its own module, have both files import it, and add a named test
+that the render path has exactly one — otherwise a third appears the next time
+somebody needs to hash something. It touches the render path, which is close to a
+human-authored zone (CLAUDE.md §7), so it is worth Carl's eye rather than an
+agent's.
