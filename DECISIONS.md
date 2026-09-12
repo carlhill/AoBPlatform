@@ -728,6 +728,50 @@ other.
 **What would reopen it.** A change to the s 65C data set — the regulatory
 whipsaw the versioning defence exists for, not a modelling convenience.
 
+## D-2026-09-12-10 — The practice is bound to the login; the location is chosen once per session
+
+**Date:** 12 September 2026. **Decided by:** Carl, answering how a practitioner
+who works at several practices should sign in.
+
+**The reasoning, which is his and is the point:** *"If we let the Dr choose which
+practice they are working at, it is a way of committing fraud. A Dr could do
+tele-appointments for a practice A on practice B time. However, when a Dr logs
+in to a Practice, immediately after the login, if the Dr is working at two
+locations, then the Dr must pick which location he/she is at. If they choose the
+wrong location, they have to log out and log back in — same reason."*
+
+**Why it is right in this regime specifically.** The location is a PARTICULAR of
+the agreement: s 65C element D4 is met by the provider's name plus the address of
+the place of practice at the time of service, or the provider number for that
+place of practice (D-2026-09-12-09). A control that switches location mid-session
+rewrites which provider number the next agreement carries. The practice is not a
+particular, which is exactly why it must be bound harder — to the login itself,
+so "which practice was I working for" is never a per-click choice.
+
+**The decision.**
+
+1. The practice is bound to the login and cannot be switched without signing out.
+2. Where a practitioner works at more than one location, they choose which one
+   immediately after signing in. Nothing is preselected.
+3. The choice stands for the session. Changing it means signing out and back in.
+4. Both are recorded as evidence — who, which, when — and inherited by every
+   agreement made in that session.
+5. Nothing here blocks care (hard rule 8).
+
+**And the practice code is allocated, not derived.** Carl asked how uniqueness
+can be guaranteed. Not by truncating a UUID: 8 hex characters is 32 bits, and
+across ~10,000 Australian practices the chance that some pair collides is about
+1.2% — a birthday problem, not a one-in-four-billion one. The code is instead
+allocated at practice registration from a readable slug, stored, enforced unique
+by the database, extended deterministically on collision, and never reused.
+`drjhuang.xlevelup`, not `drjhuang.821709fb`.
+
+Full design: `PRACTICE-SCOPED-LOGIN.md`.
+
+**What would reopen it.** Evidence that asking for a location every session is
+answered carelessly — in which case the answer is a better moment to ask, never
+a remembered default.
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
@@ -754,3 +798,4 @@ whipsaw the versioning defence exists for, not a modelling convenience.
 | 12 Sep | "Completed" records the visit and raises a post-service agreement only where the invoice already carries D6b — no item number is ever invented (ASSUMPTION) | **D-2026-09-12-07 above** |
 | 12 Sep | A practitioner has one login per practice, but stays one person (re-recorded; was -05) | **D-2026-09-12-08 above** |
 | 12 Sep | Billing identity is practice × location × practitioner; enduring coverage is per practitioner across locations | **D-2026-09-12-09 above** |
+| 12 Sep | Practice bound to the login, location chosen once per session; practice codes allocated and unique | **D-2026-09-12-10 above** |
