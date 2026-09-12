@@ -402,6 +402,77 @@ of its own; a decision to front enrolment with our own page in `apps/web` and
 hand Keycloak only the ceremony; or Windows retiring the two-provider dialog,
 which would make the Windows note obsolete rather than merely unnecessary.
 
+## D-2026-09-12-02 — We offer the queue, not the calendar
+
+**Date:** 12 September 2026. **Decided by:** Carl. **Asked because:** many
+practices schedule manually or in hybrid systems, and offering scheduling free,
+or free for a year, looked like an easy way to sweeten adoption and to give the
+front desk everything in one place.
+
+**The decision.** AoBPlatform does not build scheduling. It builds the QUEUE —
+who is here, who is next, who is with whom — and reads the appointment book when
+a practice's own software offers one.
+
+**Why.**
+
+- **It would invert hard rule 8.** The platform never blocks care, and that is
+  keepable today because we are not on the critical path: an outage slows
+  evidence while the practice keeps working. Own the appointment book and an
+  outage stops the practice seeing anybody. Different availability bar,
+  different on-call duty, different insurance.
+- **It is a second product**, against HotDoc, AutoMed, HealthEngine and the
+  scheduler inside every PMS, competing for the months before an April 2027 GA
+  and a 30 June 2027 statutory deadline.
+- **It makes us a competitor to the vendors we need**, with D-01 still open and
+  Medtech the first customer's PMS.
+- **Free is the expensive part**: migration off an existing book, dual entry
+  through any hybrid period, and double-booking when two systems both think they
+  own a slot.
+
+**What we do instead.** The manual-card mode and the front desk page
+(`QUEUE-TICKETS.md`, `FRONT-DESK-PAGE.md`) already give a practice with no feed a
+working queue. That is the part a small practice feels, at a fraction of the
+cost.
+
+**What would reopen it.** Evidence from the first ten practices that they are
+refusing specifically because we cannot see their book, rather than on price or
+effort. Worth asking directly; cheap to find out.
+
+## D-2026-09-12-03 — A substitution asks two questions, and both are questions
+
+**Date:** 12 September 2026. **Decided by:** Carl. **Asked because:** when a
+practitioner is away and a patient will be seen by somebody else, it is tempting
+to send one message carrying the new agreement — which reads as "sign this" when
+the honest question is "is this all right?".
+
+**The decision.** Two separate questions, in this order, and each phrased as a
+question.
+
+1. **The substitution.** *"Do you agree to see Dr Okafor at the same time as your
+   current booking?"* Answerable yes, or no with a way to rebook.
+2. **The assignment.** Only after the first is answered yes. The pre-visit
+   agreement for the covering practitioner, sent the way any pre-visit agreement
+   is sent.
+
+**Why they cannot be one message.** They are different consents. Agreeing to see
+a different clinician is a decision about care; assigning a Medicare benefit is a
+decision about money. Bundling them means a patient who only wanted to say "yes,
+that's fine about the doctor" has also signed a financial instrument, and a
+patient who wanted to rebook has been asked to sign something irrelevant.
+
+**The nuance that must not be lost.** This governs the MESSAGES and the invitation
+flow. It does not touch the wording of the agreement artefact itself, which is
+regulated content — the assignment statement on the signed instrument stays
+exactly as it is, and nobody should "improve" it into a question. The questions
+lead up to the ceremony; the ceremony's own words are not ours.
+
+**And it never gates care** (hard rule 8). A patient who answers neither question
+is seen as normal and signs at the desk. Pre-check-in is a convenience.
+
+**What would reopen it.** A patient-experience finding that two messages are worse
+than one — in which case the answer is better sequencing inside one flow, never
+one bundled consent.
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
@@ -421,3 +492,5 @@ which would make the Windows note obsolete rather than merely unnecessary.
 | 11 Sep | Post-service second push; a signed pre-agreement for the day covers the service | **D-2026-09-11-02 above** |
 | 11 Sep | A contact address is never typed on the tablet; the offer goes to what is on file | **D-2026-09-11-03 above** |
 | 12 Sep | Passkey enrolment carries per-platform steps, in a Keycloak login theme | **D-2026-09-12-01 above** |
+| 12 Sep | We offer the queue, not the calendar — no scheduling product | **D-2026-09-12-02 above** |
+| 12 Sep | A substitution asks two questions: the doctor first, the benefit second | **D-2026-09-12-03 above** |
