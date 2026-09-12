@@ -3614,3 +3614,52 @@ point at practices that are not there.
 affiliated with any practice at the moment" is accurate rather than a bug. Jo
 needs an affiliation at a practice before the practitioner view shows anything,
 which is a test-data decision for Carl rather than a fix.
+
+## "Today" is UTC in one place and local in another, and the gap is the whole morning (found 12 Sep 2026)
+
+Found by the front-desk build, in existing code, not introduced by it.
+
+`today()` in `apps/core/src/tablet-sessions/tablet-sessions.service.ts` returns
+`new Date().toISOString().slice(0, 10)` — the **UTC** date. `readPushableRows`
+uses it to decide whether an appointment belongs to today. Three lines away, the
+same function computes `startOfDay` with `setHours(0, 0, 0, 0)`, which is the
+**local** midnight. Two definitions of "today" in one query.
+
+**The window is not small.** On a Sydney host the UTC date is yesterday's for
+every hour from midnight until 10am in standard time, and until 11am in daylight
+saving — measured, 12 Sep 2026. That is the whole morning surgery, which is
+exactly when a practice is busiest.
+
+**Why nobody has hit it.** The appointment branch is the only one that reads
+`today()`, and the dev database holds no appointments at all, so the branch has
+never run with data. The fallback branch — `agreement.createdAt >= startOfDay` —
+is local and catches arrivals, which is everything we currently create. And on a
+UTC host, which is what Fargate and CI give us, the two agree and nothing can
+fail.
+
+**So it will surface for the first time in a real Sydney practice with a real
+appointment feed**, which is the worst possible place to find it.
+
+**The fix, and the decision inside it.** One definition of the practice's day,
+and it must be the PRACTICE's local day rather than the server's — a practice in
+Perth and a practice in Sydney do not start their mornings together, and a
+platform hosted in UTC has no business deciding either. That argues for the
+day being derived from the practice's own timezone, which the practice record
+does not currently carry. Options, cheapest first:
+
+1. Use the server's local day in both places. Correct today because the
+   container runs in Sydney; wrong the moment anything is deployed in UTC, which
+   is already true of CI and Fargate. **Not recommended — it hides the bug.**
+2. Fix the server on `Australia/Sydney` for the day calculation. Honest while
+   every customer is in one state, and one line to change when that stops being
+   true.
+3. Put a timezone on the practice and read it. The right answer, and the only
+   one that survives a practice in Perth. Needs a column, a default, and a pass
+   over every other place a day boundary is computed.
+
+Recommend 3, with 2 as the stopgap if it needs to ship this week. Either way the
+two definitions must stop disagreeing inside one function.
+
+**Also worth doing while in there:** grep for other day boundaries. This one was
+found by accident, and `setHours(0,0,0,0)` appears three times in that file
+alone.
