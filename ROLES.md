@@ -36,7 +36,7 @@ without being given a practice role they should not keep.
 | practice-admin | — | — | `practice_admin` | Derived from `consoleRole === 'admin'`, a column on the staff row. There is ONE administrator account per practice, pointed at a shared mailbox on purpose so a departure does not lock the practice out |
 | practice-manager | `practice_manager` | `practice_manager` | `practice` | |
 | practice-frontdesk | `front_desk` | `front_desk` | `practice` | |
-| practice-practitioner | `provider` | — | `practitioner` | The audience comes from the `practitionerId` claim, not the role. A role with no claim is an account nothing has been scoped to |
+| practice-practitioner | `provider` | — | `practitioner` | The audience comes from the `practitionerId` claim, not the role. A role with no claim is an account nothing has been scoped to. Identity and per-practice sign-in: `PRACTITIONER-IDENTITY.md` |
 | — | `practice_principal` | `principal` | `practice` | The practice's owning practitioner. Exists in both lists under two spellings (§5) |
 
 **Manager and front desk reach the same pages.** They are different jobs and the
@@ -149,3 +149,4 @@ Worth knowing before anybody "fixes" one of these and breaks a token.
 | 12 Sep 2026 | Nurse and phlebotomist added as roles by Carl; the blocker is that an arrival naming one is currently refused. |
 | 12 Sep 2026 | Rule 5 given a home: `landingPath`. §7's open question closed. Two page-map entries added for `/practice/practitioner` and `/practice/practitioner/waiting`, the second open to `practice` as well as `practitioner`. |
 | 12 Sep 2026 | Rule 5 extended: practice staff — and an operator acting as a practice — land on `/practice/today`, not on the setup hub. Page-map entry added for it. D-2026-09-12-05. |
+| 12 Sep 2026 | Practitioner identity and per-practice sign-in split into PRACTITIONER-IDENTITY.md. |
