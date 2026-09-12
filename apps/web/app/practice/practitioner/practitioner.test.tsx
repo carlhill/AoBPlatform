@@ -408,7 +408,7 @@ describe('/practice/practitioner — the landing page', () => {
       givenNames: 'Sample',
       familyName: 'Chen',
       affiliations: [
-        { id: 'a1', practiceId: PRACTICE, practiceName: 'Sampletown Medical', status: 'active' },
+        { id: 'a1', practiceId: PRACTICE, practiceName: 'Sampletown Medical', locationAddress: '1 Sample St, Sampletown NSW 2000', status: 'active' },
         { id: 'a2', practiceId: 'gone', practiceName: 'Former Practice', status: 'ended' },
       ],
     });
@@ -475,6 +475,33 @@ describe('/practice/practitioner — the landing page', () => {
         { id: 'd', practiceId: 'p3', practiceName: 'Three', status: 'ended' },
         { id: 'e', practiceId: null, practiceName: 'Nowhere', status: 'active' },
       ]),
-    ).toEqual([{ id: 'p1', name: 'One' }]);
+    ).toEqual([{ id: 'p1', name: 'One', address: null }]);
+  });
+});
+
+/**
+ * THE TITLE NAMES THE PRACTICE AND ITS ADDRESS (Carl, 12 Sep 2026, signed in
+ * as Dr Huang: change "Your page at this practice" to "Your page at Practice:"
+ * plus the practice name and address).
+ */
+describe('landing_title_names_the_practice_and_its_address', () => {
+  it('builds the title from the name and the single-line address', async () => {
+    const { livePractices } = await import('./PractitionerLandingView');
+    const { strings } = await import('../../strings');
+    const practices = livePractices([
+      { id: 'a1', practiceId: 'p1', practiceName: 'XLEVELUP Medical', locationAddress: '80 Tambourine Bay Rd, Riverview NSW 2066', status: 'active' },
+      { id: 'a2', practiceId: 'p1', practiceName: 'XLEVELUP Medical', locationAddress: '50 Powell St, Yagoona NSW 2050', status: 'active' },
+      { id: 'a3', practiceId: 'gone', practiceName: 'Former Practice', locationAddress: 'x', status: 'ended' },
+    ]);
+    // Two live sites of ONE practice collapse to one row carrying the first address.
+    expect(practices).toHaveLength(1);
+    expect(strings.practitionerQueue.landing.titleAt(practices[0].name, practices[0].address)).toBe(
+      'Your page at Practice: XLEVELUP Medical, 80 Tambourine Bay Rd, Riverview NSW 2066',
+    );
+  });
+
+  it('stops at the name when no address is known, rather than showing a blank', async () => {
+    const { strings } = await import('../../strings');
+    expect(strings.practitionerQueue.landing.titleAt('XLEVELUP Medical', null)).toBe('Your page at Practice: XLEVELUP Medical');
   });
 });

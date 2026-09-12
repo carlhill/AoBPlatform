@@ -4517,6 +4517,13 @@ export const strings = {
 
     landing: {
       title: 'Your page at this practice',
+      /**
+       * WITH THE PRACTICE NAMED (Carl, 12 Sep 2026). The address is the
+       * location's own single line as the register holds it; when it is not
+       * known the title stops at the name rather than showing a blank.
+       */
+      titleAt: (practice: string, address: string | null) =>
+        address ? `Your page at Practice: ${practice}, ${address}` : `Your page at Practice: ${practice}`,
       /*
        * WHY THIS PAGE EXISTS, SAID ON IT. §1: the setup hub is the
        * administrator's page, and sending a provider there is how a person

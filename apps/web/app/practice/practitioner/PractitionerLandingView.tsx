@@ -49,6 +49,8 @@ interface Affiliation {
   id: string;
   practiceId?: string | null;
   practiceName?: string | null;
+  /** The location's single-line address, as `list_practitioner_affiliations` returns it. */
+  locationAddress?: string | null;
   status: string;
 }
 
@@ -59,16 +61,25 @@ interface Me {
   affiliations: Affiliation[];
 }
 
-/** One row per practice they currently work at, names de-duplicated by id. */
-export function livePractices(affiliations: readonly Affiliation[]): Array<{ id: string; name: string }> {
-  const out = new Map<string, string>();
+/**
+ * One row per practice they currently work at, de-duplicated by id. The
+ * address is the FIRST live location's — a practitioner at two sites of one
+ * practice is one practice here, and the title names one address rather than
+ * two (Carl, 12 Sep 2026).
+ */
+export function livePractices(
+  affiliations: readonly Affiliation[],
+): Array<{ id: string; name: string; address: string | null }> {
+  const out = new Map<string, { name: string; address: string | null }>();
   for (const affiliation of affiliations) {
     if (!LIVE.includes(affiliation.status)) continue;
     const id = affiliation.practiceId;
     if (!id) continue;
-    if (!out.has(id)) out.set(id, affiliation.practiceName ?? id);
+    if (!out.has(id)) {
+      out.set(id, { name: affiliation.practiceName ?? id, address: affiliation.locationAddress ?? null });
+    }
   }
-  return [...out].map(([id, name]) => ({ id, name }));
+  return [...out].map(([id, v]) => ({ id, ...v }));
 }
 
 export function PractitionerLandingView() {
@@ -109,7 +120,18 @@ export function PractitionerLandingView() {
   return (
     <Shell
       right={<SessionControl audience={strings.practitionerQueue.audience} />}
-      title={strings.practitionerQueue.landing.title}
+      /*
+       * THE TITLE NAMES THE PRACTICE AND ITS ADDRESS when there is exactly one
+       * (Carl, 12 Sep 2026: "Your page at Practice: <practice-name and
+       * address>"). A doctor at two clinics gets the plain title and the choice
+       * beneath it — naming one of two addresses in the heading would be a
+       * guess dressed as a fact.
+       */
+      title={
+        only
+          ? strings.practitionerQueue.landing.titleAt(only.name, only.address)
+          : strings.practitionerQueue.landing.title
+      }
       lead={strings.practitionerQueue.landing.lead}
     >
       {error && (
