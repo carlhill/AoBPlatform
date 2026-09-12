@@ -251,6 +251,53 @@ because a phlebotomy list looks so much like a work queue.
 - `a_nurses_page_names_whose_agreement_it_is`
 - `an_enduring_agreement_is_still_never_offered_for_a_non_gp` — hard rule 6, which this must not loosen
 
+## 3a. A status per patient, set from this page (Carl, 12 Sep 2026)
+
+Carl, annotating the grouped view: *"Need buttons or drop down to say 1. With
+patient now 2. Pending (patient in queue) 3. Completed (consultation completed)
+4. Reassign (to a different Doctor) — Reception will have a task on the
+frontdesk/patient page to reassign the patient to a different doctor and do the
+necessary checks and so on."*
+
+This supersedes §3's "no control that acts" for ONE narrowly defined write, and
+is the mechanism `VISIT-CHECKLIST.md` §5 describes.
+
+| State | Meaning | Who sets it |
+|---|---|---|
+| **Pending** | In the queue, not yet seen. The default on arrival | Nobody — it is the starting state |
+| **With patient now** | The consultation has begun | The practitioner it is with; reception may also |
+| **Completed** | The consultation is over | The practitioner it is with; reception may also |
+| **Reassign** | This patient should see somebody else | The practitioner. It creates a TASK for reception; it does not move the patient |
+
+**Rules.**
+
+1. **It is attendance, not clinical documentation.** Who, what state, when — from
+   the token. No free text anywhere. A note box here becomes a clinical record
+   within a week (`VISIT-CHECKLIST.md` §5).
+2. **A practitioner may set a state only on their own patients.** Reception may
+   set any. Cross-practitioner and cross-practice writes fail closed.
+3. **Completed is the service-rendered signal.** It is what raises the
+   post-service agreement automatically (`VISIT-CHECKLIST.md` §6). Nothing else
+   about the agreement is touched from here.
+4. **Reassign never reassigns.** A practitioner pressing it says "not me". Who
+   the patient DOES see is reception's decision on the front desk page, where the
+   covering-doctor check (an enduring agreement is per practitioner) runs before
+   anything is re-papered (D-2026-09-12-03: the patient is asked first).
+5. **Never blocks anything** (hard rule 8). An unset state changes nothing about
+   whether the patient is seen or billed.
+6. **Reversible and recorded.** A wrong state is corrected, and the correction
+   is kept beside the original rather than over it.
+7. **One control, not four buttons.** A single labelled select per row — four
+   buttons across fifteen rows is sixty targets on a screen a doctor glances at.
+
+**Named tests:** `a_practitioner_may_set_a_state_only_on_their_own_patients`,
+`completed_raises_the_post_service_agreement`,
+`reassign_creates_a_front_desk_task_and_moves_nobody`,
+`a_state_change_records_who_and_when_and_no_text`,
+`an_unset_state_never_gates_a_consultation_or_a_bill`,
+`a_state_can_be_corrected_and_the_correction_is_kept`,
+`state_changes_across_a_practice_boundary_fail_closed`.
+
 ## 7. Named tests
 
 - `the_waiting_list_shows_only_this_practitioners_patients` — fails closed across both practitioner and practice.
@@ -268,3 +315,4 @@ because a phlebotomy list looks so much like a work queue.
 | 12 Sep 2026 | §6a: nurses and phlebotomists get the same page, once an arrival can carry who the patient is here to see separately from who the claim goes under. |
 | 12 Sep 2026 | Built (§1, §3, §4, §5). Audience widened by Carl: reception, managers and administrators see every practitioner's list, grouped. No card-number column (`Arrival.queueTicket` does not exist). A fourth word, "Nothing to sign", recorded as an assumption in §5a. |
 | 12 Sep 2026 | The way back moved into the shell's header and is decided per audience: `/practice/today` for practice staff, `/practice/practitioner` for a practitioner (§5a). |
+| 12 Sep 2026 | §3a: a per-patient status set from this page — Pending, With patient now, Completed, Reassign. Completed is the service-rendered signal; Reassign creates a front-desk task. |

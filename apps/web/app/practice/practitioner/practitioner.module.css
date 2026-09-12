@@ -178,3 +178,13 @@
   white-space: nowrap;
   border: 0;
 }
+
+/*
+ * THE PRACTITIONER'S NAME LEADS EACH GROUP (Carl, 12 Sep 2026: "make the Dr
+ * name a bit bolder and a bigger font"). Scoped to the group header so the
+ * page-level "Everyone waiting" heading keeps its size.
+ */
+.groupHead .groupTitle {
+  font-size: var(--text-lg, 1.2rem);
+  font-weight: 700;
+}

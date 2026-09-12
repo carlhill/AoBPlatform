@@ -3823,3 +3823,12 @@ The only harm is a row carrying an anchor the specification says it should not
 have (`ARRIVAL-WHO-IS-SEEN.md` §3, third row), which will confuse whoever reads
 it next. Either ignore the field for a non-billing visit, or refuse it as a
 contradiction. Untested combination today; not worth blocking on.
+
+## Review later: one practitioner login per practice (Carl, 12 Sep 2026)
+
+Decided as D-2026-09-12-05. Carl asked for it to be reviewed later. The thing to
+check is the tension the decision records: the login must be scoped to a
+practice WITHOUT the practitioner becoming a second person — coverage of an
+enduring agreement is per practitioner across locations, and a duplicated
+practitioner row would silently break that. Review once a real practitioner
+works at more than one practice.
