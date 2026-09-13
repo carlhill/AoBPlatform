@@ -487,11 +487,11 @@ Two things in your note are correct and should change what gets built next:
 
 ## 10. What to decide, in order
 
-0. **Three rulings from §2a before anything renders:** may a benefit amount
-   appear on our signed artefact (hard rule 4); may our page carry "approved
-   form" wording or the "DB4" label (hard rule 12); and the pathology box stays
-   on paper. My recommendation is on the tablet screen, no, and yes
-   respectively.
+0. **Three rulings from §2a before anything renders.** ~~May a benefit amount
+   appear on our signed artefact~~ **Answered, D-2026-09-14-01: on the tablet
+   screen only, never on the artefact or the write-back copy.** Still open: may
+   our page carry "approved form" wording or the "DB4" label (hard rule 12);
+   and the pathology box stays on paper. My recommendation is no and yes.
 1. **Is PracSoft3 printing the post-1-July DB4E?** Ask the practice. §1d.
 2. **What do they mean by ticking both boxes?** §1c. Pathology is not ours.
 3. **Is the Chart number the document folder name?** §6a. One question, one
@@ -508,3 +508,4 @@ Two things in your note are correct and should change what gets built next:
 |---|---|
 | 14 Sep 2026 | v1.0. Written from the scanned PracSoft DB4 and Carl's nine questions, including whether AoB should become a signing-only tool. |
 | 14 Sep 2026 | §2 revised at Carl's direction: the amounts, privacy notice, both tick boxes and the four heading lines now travel in the JSON. §2a added: carried is not rendered — the amount meets hard rule 4, the "approved form" line meets hard rule 12, the pathology box is out of scope. Rulings requested, recommendations given. |
+| 14 Sep 2026 | §10 item 0: the amount ruling is answered (D-2026-09-14-01) — screen only. The artefact is defined there as the signed PDF/A that is written back, byte for byte. |

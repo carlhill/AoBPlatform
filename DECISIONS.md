@@ -1548,6 +1548,46 @@ for it.
   supersession (TODO.md item 6).
 
 
+
+## D-2026-09-14-01 - The benefit amount is shown on the tablet screen and never on the artefact
+
+**Date:** 14 September 2026. **Decided by:** Carl, ruling on `DB4-AND-AOBL.md`
+section 2a: *"Show the amount on the tablet screen only, not on the artefact."*
+Asked because the test practice says the patient must be informed of the cost,
+and hard rule 4 / REQ-REG-04 says no benefit or dollar amount on any agreement
+artefact - *"do not add"*.
+
+**The decision.** The benefit amount the PMS reports for each service is shown
+to the patient **on the tablet, before the ceremony, as information**. It does
+not appear on the rendered agreement, is not in the locked particulars, is not
+hashed, and is not in the document written back to the practice's system.
+
+**What "the artefact" is, so the line is unambiguous.** The artefact is the
+agreement document itself: rendered server-side to PDF/A by the one deterministic
+render path, hashed at render, signed by the patient, stored in the vault, and
+re-verified against its hash whenever it is shown or copied (hard rule 13,
+REQ-VAULT-02). **The file written back into the practice's patient folder is
+that document, byte for byte.** Screen and artefact are therefore different
+things: the screen is what the patient looked at; the artefact is what they
+signed and what the practice keeps.
+
+**Why this satisfies both parties.** The practice's concern is that the patient
+knows the cost. The regulation's concern is that the agreement carries no
+benefit figure. Showing it on screen and leaving it off the instrument does
+both. The PMS's own DB4, which does carry the amounts, stays in the record as
+supporting evidence beside ours, so the figure is not lost to the practice.
+
+**The consequence to know about.** Because the signed document does not carry
+the amount, it also does not prove the patient was told it. If that ever
+matters, the kiosk records **that the cost screen was shown** as a vault event
+carrying ids and the fact - never the figure (hard rule 4, and the same
+discipline as hard rule 9). Not built; recorded so the gap is deliberate.
+
+**What would reopen it.** The requirements being re-read to say a benefit figure
+belongs on the instrument, or a regulator saying so. Nothing the practice says
+about its own preference reopens a hard rule.
+
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
@@ -1587,3 +1627,4 @@ for it.
 | 12 Sep | "Finished" needs the consultation done, not just the signature; a step that needs its own agreement is a second visit | **D-2026-09-12-20 above** |
 | 12 Sep | Every practitioner has a queue; position is derived and always said with the practitioner's name; sending a patient on is one click and creates a SECOND visit | **D-2026-09-12-21 above** |
 | 12 Sep | A practitioner's list is moved to somebody else at the desk; the agreement is superseded whether or not it was signed, and a patient who had signed signs again at the desk | **D-2026-09-12-22 above** |
+| 14 Sep | The benefit amount is shown on the tablet screen only, never on the signed artefact or the write-back copy | **D-2026-09-14-01 above** |
