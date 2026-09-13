@@ -13,6 +13,18 @@ Carl, 14 September 2026, with a scanned DB4 from the test practice:
 > at what AOB has. Hence, not sure why we need to track patient, practitioner,
 > locations and so on... Your thoughts claude?"*
 
+**The names used in this document** (Carl, 14 September 2026: *"use proper
+names... do not use generic terms"*). Each is in `.claude/docs/glossary.md` §7.
+
+| Name | What it is |
+|---|---|
+| **PracSoft DB4** | The form PracSoft prints — the scanned page. The practice's document, not ours |
+| **DB4 Print Record** | The JSON AOBPRINTER emits from that page (`DB4-print.example.json`) |
+| **Assignment Agreement** | Our rendered agreement, built from validated particulars, shown to the patient on the tablet. Unsigned until they sign it |
+| **Signed Assignment Agreement** | The same document once signed: hashed, held in the Evidence Vault, and written back into the patient's folder byte for byte |
+| **Write-back Manifest** | The small JSON beside the Signed Assignment Agreement in the patient's folder — reference, chart number, hash, when signed |
+| **Evidence Vault** | The append-only store every event and every Signed Assignment Agreement goes into |
+
 **The short answer is at the end (§9), and it is: the thing you learned today is
 already the premise the product was built on, not a reason to abandon it.**
 Everything before §9 is the working.
@@ -54,7 +66,7 @@ storing it. That is the single strongest reason option 3 is not the answer.
 
 Hard rule 4 / REQ-REG-04: *"No benefit or dollar amount. The data set contains
 no fee or benefit figure. Do not add."* The rule is about what **we** put on an
-artefact. The DB4 is the government's form and it has a Benefit Assigned
+Assignment Agreement. The PracSoft DB4 is the government's form and it has a Benefit Assigned
 column. So: **our render never carries it; a PMS document we keep as evidence
 may.** Same consequence as 1a for option 3.
 
@@ -120,7 +132,7 @@ lines. We need to print this on the page."*
 
 So the amounts, the privacy notice, **both** tick boxes and the four heading
 lines are now **carried as data from the PMS**. That is a different question
-from whether any of them may be **rendered on our signed artefact**, and §2a
+from whether any of them may be **rendered on the Signed Assignment Agreement**, and §2a
 takes that up, because three of the four collide with a hard rule.
 
 The example is in **`DB4-print.example.json`** beside this file. Shape:
@@ -154,7 +166,7 @@ referral            requestingProviderNumber, dateOfRequest, periodOfReferral, a
 Two design points that are not cosmetic:
 
 - **`formReference` is the correlation key across every message about this
-  form**, and — your annotation — the **filename** when the signed artefact goes
+  form**, and — your annotation — the **filename** when the Signed Assignment Agreement goes
   back. `patientRecordNumber` (the Chart number) is the **folder**. §6.
 - **The driver never asserts the form's validity or version.** It says "DB4, as
   printed". The server decides whether that is the post-1-July form, because
@@ -173,7 +185,7 @@ and ask rather than silently fix. So:
 
 | What Carl wants on the page | The rule it meets | What I can see either way |
 |---|---|---|
-| **The benefit amounts** — *"the patient needs to be informed about the cost"* | **Hard rule 4 / REQ-REG-04:** *"No benefit or dollar amount. The data set contains no fee or benefit figure. **Do not add.**"* The requirement names 89AA notices as the one place a benefit amount appears | The practice's concern is real and legitimate. Two ways to meet it without a dollar figure on the signed instrument: (a) show the amount **on the tablet screen before the ceremony**, as information, and keep it off the hashed artefact; (b) the PMS's own DB4, which carries it, stays in the record as supporting evidence beside ours. **If Carl wants it ON the artefact, that is a change to a hard rule and needs a recorded decision with the requirement re-read** — not a JSON field |
+| **The benefit amounts** — *"the patient needs to be informed about the cost"* | **Hard rule 4 / REQ-REG-04:** *"No benefit or dollar amount. The data set contains no fee or benefit figure. **Do not add.**"* The requirement names 89AA notices as the one place a benefit amount appears | The practice's concern is real and legitimate. Two ways to meet it without a dollar figure on the Signed Assignment Agreement: (a) show the amount **on the tablet screen before the ceremony**, as information, and keep it off the Signed Assignment Agreement; (b) the PMS's own DB4, which carries it, stays in the record as supporting evidence beside ours. **If Carl wants it ON the Signed Assignment Agreement, that is a change to a hard rule and needs a recorded decision with the requirement re-read** — not a JSON field |
 | **Heading line 3** — *"This form is the approved form as prescribed under section 20A..."* | **Hard rule 12:** never generate "approved" or "government-approved" about **our** forms. Permitted: *"checked against the s 65C data set"*, *"self-assessment"* | The government may say its form is approved. **We may not say it of ours**, and our render is ours. Lines 1, 2 and 4 are fine to print. Line 3 on our page is the exact forbidden claim, and there is a lint rule planned to catch it (GA-PLAN C11). Suggest: print lines 1, 2 and 4; replace line 3 with the permitted wording |
 | **Heading line 2 / the word "DB4"** | Same rule, softer | Our render is not the approved DB4E; it is our rendering of the same data set. Titling it "Bulk Bill Assignment of Benefit Form" is fine — that is what it is. Labelling it "DB4" implies it is the prescribed form. Worth a ruling |
 | **Both tick boxes** | Pathology is out of scope (s 65C(4) items 1–4, CLAUDE.md §8) | Carry it: yes, done. **Render it on our page for the patient to tick: no**, because we would be capturing a pathology assignment we do not validate, store correctly, or write back as one. If the practice needs the pathology box signed, that stays on their paper DB4 |
@@ -280,7 +292,7 @@ practice-scoped, answers 202. The sending end does not.
 | **2. A desktop watcher** pushes new files | The driver writes JSON to a folder; a watcher posts it | Works, but it is **two processes to install, monitor and update** where one would do |
 | **3. The driver posts directly** | The print driver is already a program running at the moment the page is printed. It parses and **POSTs the envelope itself**, with a local outbox for when we are unreachable | **This.** One install, one thing to keep alive, and the outbox gives you the watcher's resilience without the watcher |
 
-Option 3 collapses your options 1 and 2 into one artefact: AOBPRINTER = driver +
+Option 3 collapses your options 1 and 2 into one installed program: AOBPRINTER = driver +
 parser + outbox. The outbox is a folder on disk, so if the practice ever wants
 to *see* what was sent, or drag one in by hand, it is there.
 
@@ -291,7 +303,7 @@ instead of an API.
 
 ---
 
-## 6. Getting the signed artefact back into the PMS
+## 6. Getting the Signed Assignment Agreement back into the PMS
 
 ### 6a. Which folder — your annotation is right, with one correction
 
@@ -319,7 +331,7 @@ setting.
 
 | | How | Verdict |
 |---|---|---|
-| **1. The desktop app pulls** | AOBPRINTER polls (or is pinged) for signed artefacts and drops them into the folder | **This.** It is GA-PLAN **B13**, "import-folder write-back in the desktop app", already scoped at a day, and it is the same installed thing as §5. Pull, not push: an outbound-only client needs no inbound port on a practice PC |
+| **1. The desktop app pulls** | AOBPRINTER polls (or is pinged) for Signed Assignment Agreements and drops them into the folder | **This.** It is GA-PLAN **B13**, "import-folder write-back in the desktop app", already scoped at a day, and it is the same installed thing as §5. Pull, not push: an outbound-only client needs no inbound port on a practice PC |
 | **2. Email to the practice, and an AI agent files it** | We email the PDF; an agent watches the inbox, reads sender and attachment, files it | **No**, and §6c says why at length |
 | **3. Other** | Write straight to the PMS's document table — only if PracSoft documents it. A network share we write to over VPN — a support nightmare. Neither beats 1 |
 
@@ -338,7 +350,7 @@ An inbox-watching agent that files attachments into patient folders is:
   it goes, from a process we control, with a hash on both ends.
 
 If a practice genuinely cannot install anything, email the practice a **link**
-to the signed artefact (the copy-link mechanism already exists, W6) and let a
+to the Signed Assignment Agreement (the copy-link mechanism already exists, W6) and let a
 person file it. Do not build the agent.
 
 ---
@@ -357,7 +369,7 @@ already works this way).
 | **1b** | TO PMS | Which were received | **The response to 1a**: `{ received: [...], refused: [{ key, reason }] }` per row | Pattern exists on `/arrivals` |
 | **2a / 2b** | FROM / TO | One booking | Same endpoint, one entry | Same |
 | **3a** | FROM PMS | One DB4 for approval | `POST /inbound/print-jobs` with `documentType: "db4_assignment"` and the §2 shape → creates the **arrival**, the **service record** (D5, D6b) and a **post-service agreement** through the existing pipeline | Envelope exists; the `db4_assignment` type and its handler do not |
-| **3b** | TO PMS | The signed form back | `GET /inbound/print-jobs/signed?since=` lists what is ready; `GET /agreements/:id/artefact` (hash-verified, hard rule 13) plus a **manifest** `{ formReference, patientRecordNumber, agreementId, signedAt, sha256, rendererVersion, formCode }`. The desktop app pulls both and writes `<chart>/<reference>.pdf` + `.json` | Artefact route exists for staff; the listing and the manifest do not |
+| **3b** | TO PMS | The Signed Assignment Agreement back | `GET /inbound/print-jobs/signed?since=` lists what is ready; `GET /agreements/:id/artefact` (hash-verified, hard rule 13) plus the **Write-back Manifest** `{ formReference, patientRecordNumber, agreementId, signedAt, sha256, rendererVersion, formCode }`. AOBPRINTER pulls both and writes `<chart>/<reference>.pdf` + `.json` | The agreement download route exists for staff; the listing and the Write-back Manifest do not |
 
 **Two rules that hold across all six:**
 
@@ -381,9 +393,9 @@ vendor. Worth recording as a decision when you are ready.
 | Your entity | What exists | What is missing |
 |---|---|---|
 | **Patient** — add the practice patient id | `patientRecordNumber` exists and renders on both desks (12 Sep) | Nothing. Confirm it IS the folder name (§6a) |
-| **Practitioner** — billing (paid) and other | `affiliations.billingRole` = servicing / works-under / not billable; `providerNumber` per practitioner-at-location | **Payee.** The form names who is *paid*, and that is a different person from who *rendered*. Add `payeeAffiliationId` on the **service record** (it is a property of the claim, not of the practitioner), defaulting to the servicing affiliation. Never on the agreement artefact — the agreement names who rendered (D4) |
+| **Practitioner** — billing (paid) and other | `affiliations.billingRole` = servicing / works-under / not billable; `providerNumber` per practitioner-at-location | **Payee.** The form names who is *paid*, and that is a different person from who *rendered*. Add `payeeAffiliationId` on the **service record** (it is a property of the claim, not of the practitioner), defaulting to the servicing affiliation. Never on the Assignment Agreement — it names who rendered (D4) |
 | **Invoice / claim** | `service_records` — `pmsInvoiceKey`, `serviceDate`, `mbsItemNumbers`. **This is the invoice table**; it is the thing a post-agreement is raised against | `formReference`, `claimStatus` ("STORED FOR LATER TRANSMISSION"), `payeeAffiliationId`, `locationId` (the `HSS06100`). **No amount column, ever** (hard rule 4) |
-| **Form** | Nothing | A `pms_documents` row per ingested DB4: `formReference`, `formCode`, decided version, `sourceSha256`, `parserTemplateVersion`, redacted artefact id, and which arrival/agreement it produced. It is the audit trail from "what PracSoft printed" to "what the patient signed" |
+| **Form** | Nothing | A `pms_documents` row per ingested DB4: `formReference`, `formCode`, decided version, `sourceSha256`, `parserTemplateVersion`, the redacted copy of the PracSoft DB4, and which arrival and Assignment Agreement it produced. It is the audit trail from "what PracSoft printed" to the Signed Assignment Agreement |
 
 ---
 
@@ -435,7 +447,7 @@ provider on the record, the identity check.
 | Practice, and its locations | D4 is name **and place of practice**. The location is on the form and the folder is at a site |
 | Practitioner, with servicing and payee numbers | On the form; the folder path and the claim depend on it |
 | Patient record number | The folder name |
-| The artefact, its hash, the signature event, the append-only vault | Or it is not evidence |
+| The Signed Assignment Agreement, its hash, the signature event, the Evidence Vault | Or it is not evidence |
 | Write-back to the PMS | The premise |
 
 That is most of the schema. **The things AOBL drops are the things that make the
@@ -459,7 +471,7 @@ we already designed, minus the step that gives the signature its value.
 So the honest recommendation:
 
 1. **Build the DB4 ingest path.** It is needed anyway (case 2, mode 2/3, this
-   practice). AOBPRINTER in, our render on the tablet, signed artefact back to
+   practice). DB4 Print Record in, Assignment Agreement on the tablet, Signed Assignment Agreement back to
    the folder. That IS the "sign a DB4 and file it" product the practice thinks
    it wants.
 2. **Do not switch the validator off.** Run it, show the result on the desk,
@@ -488,8 +500,8 @@ Two things in your note are correct and should change what gets built next:
 ## 10. What to decide, in order
 
 0. **Three rulings from §2a before anything renders.** ~~May a benefit amount
-   appear on our signed artefact~~ **Answered, D-2026-09-14-01: on the tablet
-   screen only, never on the artefact or the write-back copy.** Still open: may
+   appear on the Signed Assignment Agreement~~ **Answered, D-2026-09-14-01: on the
+   tablet screen only, never on the Signed Assignment Agreement.** Still open: may
    our page carry "approved form" wording or the "DB4" label (hard rule 12);
    and the pathology box stays on paper. My recommendation is no and yes.
 1. **Is PracSoft3 printing the post-1-July DB4E?** Ask the practice. §1d.
@@ -498,7 +510,7 @@ Two things in your note are correct and should change what gets built next:
    setting.
 4. **Option 1 for signing** — confirm, since it is the recommendation.
 5. **AOBPRINTER as driver + parser + outbox in one**, posting directly (§5a
-   option 3), pulling the signed artefact back (§6b option 1). This answers
+   option 3), pulling the Signed Assignment Agreement back (§6b option 1). This answers
    D-01 for this practice.
 6. **No email agent.** §6c.
 7. **AOBL as a tier, not a fork**, with the validator on and non-blocking. §9d.
@@ -508,4 +520,5 @@ Two things in your note are correct and should change what gets built next:
 |---|---|
 | 14 Sep 2026 | v1.0. Written from the scanned PracSoft DB4 and Carl's nine questions, including whether AoB should become a signing-only tool. |
 | 14 Sep 2026 | §2 revised at Carl's direction: the amounts, privacy notice, both tick boxes and the four heading lines now travel in the JSON. §2a added: carried is not rendered — the amount meets hard rule 4, the "approved form" line meets hard rule 12, the pathology box is out of scope. Rulings requested, recommendations given. |
-| 14 Sep 2026 | §10 item 0: the amount ruling is answered (D-2026-09-14-01) — screen only. The artefact is defined there as the signed PDF/A that is written back, byte for byte. |
+| 14 Sep 2026 | §10 item 0: the amount ruling is answered (D-2026-09-14-01) — screen only. The Signed Assignment Agreement is defined there as the signed PDF/A that is written back, byte for byte. |
+| 14 Sep 2026 | Proper names throughout (Carl): PracSoft DB4, DB4 Print Record, Assignment Agreement, Signed Assignment Agreement, Write-back Manifest, Evidence Vault. "Artefact" survives only inside quotations from the requirements and in code identifiers. |

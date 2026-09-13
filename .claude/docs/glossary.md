@@ -215,3 +215,23 @@ The certification body for translators. "NAATI-certified" is the quality bar for
 | **SMARTscreen** | RCT of GP-endorsed SMS lifting bowel-screening participation — Campaign F's template source |
 | **AusVaxSafety / SmartVax** | Government-funded SMS vaccine-safety surveillance through GP/pharmacy software |
 | **Robodebt** | The unlawful automated debt scheme whose legacy constrains all government ADM — detection is acceptable, automated adverse decisions are not |
+
+## 7. AoBPlatform's own documents and records
+
+Carl, 14 September 2026: *"Lets use proper names for artefacts and so on. Do not
+use generic terms."* These are the names. In prose and on screens use them;
+"artefact" survives only in code identifiers (`renderedArtefactHash`, the
+`/artefact` route) and inside quotations from the requirements.
+
+| Term | Meaning |
+|---|---|
+| **Assignment Agreement** | Our rendered agreement — built from validated s 65C particulars by the one deterministic render path, hashed at render, shown to the patient on the tablet. Unsigned until the patient signs it |
+| **Signed Assignment Agreement** | The Assignment Agreement once signed. Held in the Evidence Vault; re-verified against its hash whenever shown or copied; written back into the practice's patient folder **byte for byte**. This is what the auditor finds in the practice's record |
+| **PracSoft DB4** (generally: the **PMS DB4**) | The bulk-bill assignment form the practice's billing software prints. The practice's document, not ours. Carries the Medicare number and benefit amounts, which never enter AoB; kept redacted as supporting evidence beside the Signed Assignment Agreement |
+| **DB4 Print Record** | The JSON AOBPRINTER emits from a printed PracSoft DB4 — a `db4_assignment` document on the print-job envelope. Example: `DB4-print.example.json` |
+| **Write-back Manifest** | The small JSON placed beside the Signed Assignment Agreement in the patient's folder: form reference, chart number, agreement id, when signed, hash, renderer version |
+| **AOBPRINTER** | The virtual printer installed at the practice — driver, parser and outbox in one — that produces DB4 Print Records and pulls Signed Assignment Agreements back (GA-PLAN B12/B13, AoBPrinterApp) |
+| **Evidence Vault** | The append-only store (immudb, hash chain, RFC 3161 anchoring) every event and every Signed Assignment Agreement goes into. No update or delete endpoint exists |
+| **Conformance Statement** | The exportable, human-readable s 65C statement a practice manager hands to an auditor: rule-set version, rules applied, evidence held, retention position (REQ-65C-05) |
+| **Patient Service List** | Carl's name for the per-visit list of what the practice said would happen and whether it did — the computed paperwork rows, the consultation, and the practice's own items. Not a care plan; carries nothing clinical |
+

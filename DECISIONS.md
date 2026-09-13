@@ -1549,30 +1549,30 @@ for it.
 
 
 
-## D-2026-09-14-01 - The benefit amount is shown on the tablet screen and never on the artefact
+## D-2026-09-14-01 - The benefit amount is shown on the tablet screen and never on the Signed Assignment Agreement
 
 **Date:** 14 September 2026. **Decided by:** Carl, ruling on `DB4-AND-AOBL.md`
-section 2a: *"Show the amount on the tablet screen only, not on the artefact."*
+section 2a: *"Show the amount on the tablet screen only, not on the artefact."* (Carl's word; the proper name is the Signed Assignment Agreement, and it is used below)
 Asked because the test practice says the patient must be informed of the cost,
 and hard rule 4 / REQ-REG-04 says no benefit or dollar amount on any agreement
-artefact - *"do not add"*.
+document - *"do not add"*.
 
 **The decision.** The benefit amount the PMS reports for each service is shown
 to the patient **on the tablet, before the ceremony, as information**. It does
-not appear on the rendered agreement, is not in the locked particulars, is not
+not appear on the Assignment Agreement, is not in the locked particulars, is not
 hashed, and is not in the document written back to the practice's system.
 
-**What "the artefact" is, so the line is unambiguous.** The artefact is the
-agreement document itself: rendered server-side to PDF/A by the one deterministic
+**What the Signed Assignment Agreement is, so the line is unambiguous.** It is
+the agreement document itself: rendered server-side to PDF/A by the one deterministic
 render path, hashed at render, signed by the patient, stored in the vault, and
 re-verified against its hash whenever it is shown or copied (hard rule 13,
 REQ-VAULT-02). **The file written back into the practice's patient folder is
-that document, byte for byte.** Screen and artefact are therefore different
-things: the screen is what the patient looked at; the artefact is what they
+that document, byte for byte.** Screen and Signed Assignment Agreement are therefore
+different things: the screen is what the patient looked at; the Signed Assignment Agreement is what they
 signed and what the practice keeps.
 
 **Why this satisfies both parties.** The practice's concern is that the patient
-knows the cost. The regulation's concern is that the agreement carries no
+knows the cost. The regulation's concern is that the Signed Assignment Agreement carries no
 benefit figure. Showing it on screen and leaving it off the instrument does
 both. The PMS's own DB4, which does carry the amounts, stays in the record as
 supporting evidence beside ours, so the figure is not lost to the practice.
@@ -1627,4 +1627,4 @@ about its own preference reopens a hard rule.
 | 12 Sep | "Finished" needs the consultation done, not just the signature; a step that needs its own agreement is a second visit | **D-2026-09-12-20 above** |
 | 12 Sep | Every practitioner has a queue; position is derived and always said with the practitioner's name; sending a patient on is one click and creates a SECOND visit | **D-2026-09-12-21 above** |
 | 12 Sep | A practitioner's list is moved to somebody else at the desk; the agreement is superseded whether or not it was signed, and a patient who had signed signs again at the desk | **D-2026-09-12-22 above** |
-| 14 Sep | The benefit amount is shown on the tablet screen only, never on the signed artefact or the write-back copy | **D-2026-09-14-01 above** |
+| 14 Sep | The benefit amount is shown on the tablet screen only, never on the Signed Assignment Agreement | **D-2026-09-14-01 above** |
