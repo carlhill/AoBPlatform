@@ -111,9 +111,17 @@ places for it to exist beats redacting it later.
 | Read off the page, and discarded before the JSON is written | Why |
 |---|---|
 | Medicare card number, IRN | Hard rule 1. Never leaves the practice |
-| Benefit Assigned amounts | Hard rule 4. Not needed for anything we do |
-| Privacy notice text | Boilerplate |
-| The pathology tick box | Out of scope, §1c |
+
+**Carl, 14 September 2026, revised what travels:** *"add to the json the
+'Benefit Claim' amount — according to the practice the patient needs to be
+informed about the cost. Capture the privacy notice and the two tick boxes, in
+case we need to make these dynamic in the future. Also capture the 4 Heading
+lines. We need to print this on the page."*
+
+So the amounts, the privacy notice, **both** tick boxes and the four heading
+lines are now **carried as data from the PMS**. That is a different question
+from whether any of them may be **rendered on our signed artefact**, and §2a
+takes that up, because three of the four collide with a hard rule.
 
 The example is in **`DB4-print.example.json`** beside this file. Shape:
 
@@ -123,18 +131,23 @@ sourceSha256        hash of the print spool the driver saw — proof of what arr
 parserTemplateVersion "pracsoft3-db4-2026-09-1"   ← versioned content, hard rule 14
 pms                 "pracsoft3"
 capturedAt          ISO instant
+heading.lines[]     the four heading lines as printed, in order
 form
   formCode          "DB4"            ← as printed; version is DECIDED server-side (§1d), never asserted by the driver
   formReference     "HSS0610012092026120300"
   locationId        "HSS06100"
   claimStatus       "STORED FOR LATER TRANSMISSION"
-  assignmentTicked  true             ← the FIRST box only. Pathology box not carried
   signedOnPaper     false            ← true if the driver can see a signature already on it
   serviceDate       "2026-09-12"
+  currency          "AUD"
 servicingLocation   name, addressLines, suburb, state, postcode
 patient             pmsLinkageKey ("chart:00680"), patientRecordNumber "00680", names, DOB, address, mobile
 providers[]         role "servicing" | "payee" | "requesting"; name; providerNumber; pmsProviderKey
-services[]          serviceDate, time, mbsItemNumber, description     ← NO amount
+services[]          serviceDate, time, mbsItemNumber, description, benefitAssigned  ← amount carried, see §2a
+assignment
+  privacyNotice[]   the five paragraphs as printed
+  statementsJoinedBy "or"
+  statements[]      key, text, ticked, inScope   ← both boxes; the pathology one is inScope:false
 referral            requestingProviderNumber, dateOfRequest, periodOfReferral, acrf, lspn — all optional
 ```
 
@@ -149,6 +162,26 @@ Two design points that are not cosmetic:
   desktops cannot be re-shipped every time it does.
 
 ---
+
+### 2a. Carried is not rendered — three collisions that need a ruling
+
+Everything Carl asked for is now in the JSON. **Whether it may appear on the
+page the patient signs is a different question**, and for three of the four it
+runs into a hard rule. These are not mine to decide, and CLAUDE.md is explicit
+that the brief wins over my judgement on a regulatory point *and* that I stop
+and ask rather than silently fix. So:
+
+| What Carl wants on the page | The rule it meets | What I can see either way |
+|---|---|---|
+| **The benefit amounts** — *"the patient needs to be informed about the cost"* | **Hard rule 4 / REQ-REG-04:** *"No benefit or dollar amount. The data set contains no fee or benefit figure. **Do not add.**"* The requirement names 89AA notices as the one place a benefit amount appears | The practice's concern is real and legitimate. Two ways to meet it without a dollar figure on the signed instrument: (a) show the amount **on the tablet screen before the ceremony**, as information, and keep it off the hashed artefact; (b) the PMS's own DB4, which carries it, stays in the record as supporting evidence beside ours. **If Carl wants it ON the artefact, that is a change to a hard rule and needs a recorded decision with the requirement re-read** — not a JSON field |
+| **Heading line 3** — *"This form is the approved form as prescribed under section 20A..."* | **Hard rule 12:** never generate "approved" or "government-approved" about **our** forms. Permitted: *"checked against the s 65C data set"*, *"self-assessment"* | The government may say its form is approved. **We may not say it of ours**, and our render is ours. Lines 1, 2 and 4 are fine to print. Line 3 on our page is the exact forbidden claim, and there is a lint rule planned to catch it (GA-PLAN C11). Suggest: print lines 1, 2 and 4; replace line 3 with the permitted wording |
+| **Heading line 2 / the word "DB4"** | Same rule, softer | Our render is not the approved DB4E; it is our rendering of the same data set. Titling it "Bulk Bill Assignment of Benefit Form" is fine — that is what it is. Labelling it "DB4" implies it is the prescribed form. Worth a ruling |
+| **Both tick boxes** | Pathology is out of scope (s 65C(4) items 1–4, CLAUDE.md §8) | Carry it: yes, done. **Render it on our page for the patient to tick: no**, because we would be capturing a pathology assignment we do not validate, store correctly, or write back as one. If the practice needs the pathology box signed, that stays on their paper DB4 |
+
+**What is not in question:** the privacy notice, lines 1, 2 and 4, and the
+first statement may all be rendered, and all four blocks should become
+**versioned content** the day they are rendered (hard rule 14) — which is what
+Carl's "in case we need to make these dynamic" already anticipates.
 
 ## 3. Three ways to get the patient's signature — and the audit verdict
 
@@ -454,6 +487,11 @@ Two things in your note are correct and should change what gets built next:
 
 ## 10. What to decide, in order
 
+0. **Three rulings from §2a before anything renders:** may a benefit amount
+   appear on our signed artefact (hard rule 4); may our page carry "approved
+   form" wording or the "DB4" label (hard rule 12); and the pathology box stays
+   on paper. My recommendation is on the tablet screen, no, and yes
+   respectively.
 1. **Is PracSoft3 printing the post-1-July DB4E?** Ask the practice. §1d.
 2. **What do they mean by ticking both boxes?** §1c. Pathology is not ours.
 3. **Is the Chart number the document folder name?** §6a. One question, one
@@ -469,3 +507,4 @@ Two things in your note are correct and should change what gets built next:
 | Date | Change |
 |---|---|
 | 14 Sep 2026 | v1.0. Written from the scanned PracSoft DB4 and Carl's nine questions, including whether AoB should become a signing-only tool. |
+| 14 Sep 2026 | §2 revised at Carl's direction: the amounts, privacy notice, both tick boxes and the four heading lines now travel in the JSON. §2a added: carried is not rendered — the amount meets hard rule 4, the "approved form" line meets hard rule 12, the pathology box is out of scope. Rulings requested, recommendations given. |

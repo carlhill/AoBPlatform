@@ -1,5 +1,5 @@
 {
-  "$comment": "What AOBPRINTER emits for one DB4 printed from PracSoft3. Extends the existing PrintJobEnvelopeDto (POST /inbound/print-jobs) with a fifth documentType. Everything the driver READ but may not SEND is listed in DB4-AND-AOBL.md section 2: the Medicare card number and IRN (hard rule 1), the Benefit Assigned amounts (hard rule 4), the privacy boilerplate, and the pathology tick box (out of scope, s 65C(4) items 1-4). The driver never asserts the form's version; the server decides that from formCode and parserTemplateVersion, because it is regulated content that changes. Identities below are the scanned example's; in fixtures use obviously fake ones.",
+  "$comment": "What AOBPRINTER emits for one DB4 printed from PracSoft3. Extends the existing PrintJobEnvelopeDto (POST /inbound/print-jobs) with a fifth documentType. Carl, 14 Sep 2026: carry the benefit amounts (the practice says the patient must be informed of the cost), the privacy notice, BOTH tick boxes and the four heading lines, so they can become dynamic later. All four are carried as DATA FROM THE PMS. Whether any of them may be RENDERED on our signed artefact is a separate decision recorded in DB4-AND-AOBL.md section 2a — amounts collide with hard rule 4, the 'approved form' heading collides with hard rule 12, and the pathology box is out of scope. Still discarded at the practice and never sent: the Medicare card number and IRN (hard rule 1). The driver never asserts the form's version; the server decides that from formCode and parserTemplateVersion. Identities below are the scanned example's; in fixtures use obviously fake ones.",
 
   "documentType": "db4_assignment",
   "sourceSha256": "0000000000000000000000000000000000000000000000000000000000000000",
@@ -7,14 +7,24 @@
   "pms": "pracsoft3",
   "capturedAt": "2026-09-12T02:03:41.000Z",
 
+  "heading": {
+    "$comment": "The four heading lines as printed, in order. Carl: 'We need to print this on the page.' See section 2a of the plan before rendering line 3 on OUR artefact — it is the government saying its form is approved, and hard rule 12 forbids us saying it of ours.",
+    "lines": [
+      "MEDICARE - ONLINE CLAIMING",
+      "BULK BILL ASSIGNMENT OF BENEFIT FORM",
+      "This form is the approved form as prescribed under section 20A of the Health Insurance Act 1973",
+      "Bulk bill claim for assessment by Services Australia"
+    ]
+  },
+
   "form": {
     "formCode": "DB4",
     "formReference": "HSS0610012092026120300",
     "locationId": "HSS06100",
     "claimStatus": "STORED FOR LATER TRANSMISSION",
-    "assignmentTicked": true,
     "signedOnPaper": false,
-    "serviceDate": "2026-09-12"
+    "serviceDate": "2026-09-12",
+    "currency": "AUD"
   },
 
   "servicingLocation": {
@@ -55,15 +65,43 @@
       "serviceDate": "2026-09-12",
       "time": "12:03",
       "mbsItemNumber": "23",
-      "description": "Level B Surgery"
+      "description": "Level B Surgery",
+      "benefitAssigned": "45.05"
     },
     {
       "serviceDate": "2026-09-12",
       "time": "12:03",
       "mbsItemNumber": "75870",
-      "description": "Professional attendance (the attendance service) by a general practitioner, a medical practitioner or a prescribed medical practitioner, at which a general practice support service is provided"
+      "description": "Professional attendance (the attendance service) by a general practitioner, a medical practitioner or a prescribed medical practitioner, at which a general practice support service is provided",
+      "benefitAssigned": "22.40"
     }
   ],
+
+  "assignment": {
+    "$comment": "The privacy notice and the two statements as printed, so they can be versioned content later rather than hardcoded. 'ticked' is what the driver could see on the page. The statements are joined by 'or' on the form. The second statement is a pathology assignment and is out of this product's scope (s 65C(4) items 1-4): it is carried as data and never acted on.",
+    "privacyNotice": [
+      "Privacy Notice: Your personal information is protected by law, including the Privacy Act 1988, and is collected by Services Australia for the assessment and administration of payments and services. This information is required to process your application or claim.",
+      "Your information may be used by the agency or given to other parties for the purposes of research, investigation or where you have agreed or it is required or authorised by law.",
+      "You can get more information about the way in which the Services Australia will manage your personal information, including our privacy policy at servicesaustralia.gov.au/privacy or by requesting a copy from the agency.",
+      "Information about medical/dental expenses for people under the age of 18 may also be disclosed to adults on the same Medicare card, through taxation statements.",
+      "To be completed by the person assigning benefits for the services stated on this form."
+    ],
+    "statementsJoinedBy": "or",
+    "statements": [
+      {
+        "key": "assign_to_health_professional",
+        "text": "I assign my right to benefits to the health professional who rendered the services.",
+        "ticked": true,
+        "inScope": true
+      },
+      {
+        "key": "offer_to_assign_to_pathology_practitioner",
+        "text": "I offer to assign my right to benefits to the Approved Pathology Practitioner who will render the requested pathology services.",
+        "ticked": true,
+        "inScope": false
+      }
+    ]
+  },
 
   "referral": {
     "acrf": "102368",
