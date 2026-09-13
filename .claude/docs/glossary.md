@@ -226,7 +226,8 @@ use generic terms."* These are the names. In prose and on screens use them;
 | Term | Meaning |
 |---|---|
 | **Assignment Agreement** | Our rendered agreement — built from validated s 65C particulars by the one deterministic render path, hashed at render, shown to the patient on the tablet. Unsigned until the patient signs it |
-| **Signed Assignment Agreement** | The Assignment Agreement once signed. Held in the Evidence Vault; re-verified against its hash whenever shown or copied; written back into the practice's patient folder **byte for byte**. This is what the auditor finds in the practice's record |
+| **Signed-DB4** | Carl's name for the post-service document: **our deterministic reproduction of the PracSoft DB4's layout**, rendered from the DB4 Print Record with the cost printed verbatim and the patient's signature at the bottom. A kind of Signed Assignment Agreement. Not PracSoft's bytes — ours, hashed and re-renderable (D-2026-09-14-02) |
+| **Signed Assignment Agreement** | The general term. The Assignment Agreement once signed. Held in the Evidence Vault; re-verified against its hash whenever shown or copied; written back into the practice's patient folder **byte for byte**. This is what the auditor finds in the practice's record |
 | **PracSoft DB4** (generally: the **PMS DB4**) | The bulk-bill assignment form the practice's billing software prints. The practice's document, not ours. Carries the Medicare number and benefit amounts, which never enter AoB; kept redacted as supporting evidence beside the Signed Assignment Agreement |
 | **DB4 Print Record** | The JSON AOBPRINTER emits from a printed PracSoft DB4 — a `db4_assignment` document on the print-job envelope. Example: `DB4-print.example.json` |
 | **Write-back Manifest** | The small JSON placed beside the Signed Assignment Agreement in the patient's folder: form reference, chart number, agreement id, when signed, hash, renderer version |

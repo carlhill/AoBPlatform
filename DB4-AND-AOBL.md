@@ -21,7 +21,8 @@ names... do not use generic terms"*). Each is in `.claude/docs/glossary.md` §7.
 | **PracSoft DB4** | The form PracSoft prints — the scanned page. The practice's document, not ours |
 | **DB4 Print Record** | The JSON AOBPRINTER emits from that page (`DB4-print.example.json`) |
 | **Assignment Agreement** | Our rendered agreement, built from validated particulars, shown to the patient on the tablet. Unsigned until they sign it |
-| **Signed Assignment Agreement** | The same document once signed: hashed, held in the Evidence Vault, and written back into the patient's folder byte for byte |
+| **Signed Assignment Agreement** | The general term: any of our agreements once signed — hashed, held in the Evidence Vault, written back byte for byte |
+| **Signed-DB4** | Carl's name (14 Sep) for the post-service case: **our deterministic reproduction of the PracSoft DB4's layout**, rendered from the DB4 Print Record, with the patient's signature at the bottom. What the practice wants to see in the folder — one form, not two. See §12 for what that costs |
 | **Write-back Manifest** | The small JSON beside the Signed Assignment Agreement in the patient's folder — reference, chart number, hash, when signed |
 | **Evidence Vault** | The append-only store every event and every Signed Assignment Agreement goes into |
 
@@ -497,13 +498,150 @@ Two things in your note are correct and should change what gets built next:
 
 ---
 
+## 11. Telehealth
+
+Carl, 14 September 2026: *"what the Practice does after the doctor has completed
+a telehealth consultation is to print the DB4 and then put a manual stamp
+'TELEHEALTH'... As the patient is not in the Practice, we need to send the DB4
+form to the patient to sign digitally."*
+
+**This is the remote-link channel, which already exists, applied to a
+post-service agreement.** The requirements name telehealth as one of the three
+reasons the remote channel exists — *"for patients who left without signing,
+telehealth, and pre-appointment capture"* (`aob-requirements.md` §252) — and the
+capture channels are already `in_practice`, `sms_link`, `email_link`, `portal`
+and `paper`.
+
+**The flow, end to end:**
+
+1. The consultation happens by phone or video. PracSoft raises the invoice.
+2. Reception prints the DB4 to AOBPRINTER as they do today. The rubber stamp
+   becomes a field: the DB4 Print Record carries `deliveryMode: "telehealth"`.
+   (The MBS items themselves also say so, and the rules engine may cross-check
+   the two — but the stamp is what the practice does, so it is what we carry.)
+3. AoB drafts the post-service agreement and renders the **Signed-DB4 layout,
+   unsigned**, exactly as it would for a patient in the room.
+4. Instead of a tablet push, reception sends a **remote link** by SMS or email
+   — **to the contact already on the patient's record, never one typed at the
+   desk** (D-2026-09-11-03). The message is a link, never an attachment.
+5. The patient opens the link, **verifies with three approved identifiers**
+   (REQ-VER — the same floor as the kiosk, and the reason a link is not a
+   loophole), reads the form, ticks the assignment statement, signs.
+6. The Signed-DB4 is hashed, vaulted, and pulled back by AOBPRINTER into the
+   patient's folder, stamped TELEHEALTH because the form says so — no rubber
+   stamp.
+
+**What is different from the in-room case, and it is only three things:** the
+channel (link, not tablet), the identity check (typed identifiers, not
+staff-verified at the desk), and the chase (a link may not be opened — the
+reconciliation queue and the chase bands already handle that, and 15–20% not
+responding is the design assumption). Everything else is the same pipeline.
+
+**The one thing to decide:** whether a telehealth patient may ALSO be sent a
+**pre-agreement** before the consultation. It is legal (§11a) and it captures
+consent before the service, so there is nothing to chase afterwards. But the
+practice does not use pre-agreements (§11a), and a pre-agreement is not a DB4 —
+it is our own instrument. Offer it; do not assume it.
+
+### 11a. The pre-consult form — what the rules actually say
+
+Carl: *"please check the gov rules re the pre-consult form. According to Powell
+St Practice, they do not use the pre-consult form."*
+
+**From the requirements, not from memory:**
+
+- s 65C(4) defines **two** episodic agreement types for ordinary MBS services:
+  **item 5, the pre-agreement**, and **item 6, the post-agreement**
+  (`aob-requirements.md` §18, REQ-REG-01 D3). Both are valid. **Nothing in the
+  requirements makes the pre-agreement mandatory.** A practice may operate
+  post-only.
+- **The DB4E is valid for post-assignment only** (FAQ B2, REQ-TEST-03). So there
+  is no government-printed form for a pre-agreement at all. A practice that
+  lives on printed DB4s is, by construction, a post-only practice — which is
+  exactly what Powell Street describes.
+- A pre-agreement carries D6a, the Basic Service Description, and is tested by
+  **containment**: if the service actually rendered falls inside the
+  description the agreement stands; if it falls outside, a post-agreement is
+  needed anyway (§75). And if the rendering practitioner differs from the one
+  named, the same (REQ-SCOPE-03).
+
+**So Powell Street is not breaking a rule.** What post-only costs them is
+operational, not legal: **every consent is captured after the patient has
+gone**, which is the chase, and the chase is *"where the customer's pain
+actually lives"* (REQ-REC). The pre-agreement's whole value is that the patient
+signs in the waiting room while they are standing there. That is a sale to
+make, not a compliance finding.
+
+## 12. The Signed-DB4 requirement — one form, the cost on it, the signature on it
+
+Carl, 14 September 2026, from the practice:
+
+> *"The Practice wants to see the exact same DB4 form with the patient's
+> signature at the bottom. They do not want two forms in the document folder. So
+> we need to print the cost on the form and print it out in the Signed-DB4. The
+> patient's signature must be in the Signed-DB4."*
+
+**This reverses D-2026-09-14-01 within the hour, and that is fine — the
+register exists for exactly this.** It was made on my understanding of the
+practice's concern; the practice has now said what it actually wants. Recorded
+as D-2026-09-14-02.
+
+**It is also the requirement that decides how much of the model survives**, so
+it gets the careful treatment.
+
+### 12a. The design move that keeps most of the rules: reproduce, do not sign their bytes
+
+"The exact same DB4 form" can mean two things:
+
+| Reading | What it means for us |
+|---|---|
+| **PracSoft's PDF bytes, with a signature stamped on** | Option 3 from §3. We sign a document we did not render, cannot re-render, and cannot verify against a hash of our own. Hard rule 13 gone, and every word PracSoft prints — right or wrong version — is what we evidence |
+| **A form that looks identical, rendered by us from the DB4 Print Record** | Our deterministic render path draws the DB4's layout — same headings, same boxes, same rows, same amounts — from the data the driver captured, adds the signature block, hashes it. Hard rule 13 intact. The practice cannot tell the difference and does not need to |
+
+**The second reading is the design.** It is what §3 option 1 always was, with
+the template shaped to the DB4 pixel for pixel rather than "DB4-like". The
+Signed-DB4 is **ours**, which is the only reason we can stand behind it.
+
+It also removes something: **we no longer need to keep a redacted copy of the
+PracSoft DB4 at all.** The DB4 Print Record plus `sourceSha256` is the
+provenance. One form in the folder, one form in the Evidence Vault.
+
+### 12b. The four hard rules it touches, honestly
+
+| Rule | What the Signed-DB4 needs | What it costs, and my recommendation |
+|---|---|---|
+| **4 — no benefit or dollar amount** | The amounts printed on the form | **REQ-REG-04 says "not required — do not add", and names the risk as ours adding a figure.** It is not a statutory prohibition: the government's own approved form prints the amount. So **narrow the rule rather than delete it: AoB never originates or computes an amount; it may reproduce, verbatim, the amount the practice's billing software printed on its own DB4.** The figure is PracSoft's claim, carried in the DB4 Print Record, and any dispute about it is a dispute with the claim, not with us |
+| **1 — the Medicare number is not an identifier, and we hold none** | The exact DB4 prints the Medicare card number and IRN | **This is the hard one.** Reproducing it means the Evidence Vault holds Medicare numbers inside every Signed-DB4, which is a security-posture change, not a display choice. Two ways: **(a) mask it on our reproduction** — the form is otherwise identical, and the practice's own copy of the claim has the full number anyway; **(b) print it in full and record the decision**, with the threat model updated and the number treated as the high-value identifier it is. **Recommend (a), and ask the practice whether "exact same" survives a masked card number.** If it must be (b), that is a recorded decision, not a template change |
+| **12 — never say "approved" of our forms** | Heading line 3 reproduced verbatim | The line is the government's statement about the government's form, reproduced on a reproduction of that form. **Keep it verbatim** — altering the DB4's own words would be the stranger act — and add one provenance line in the footer: *"Rendered by AoBPlatform from the practice's billing record, [date]."* So no reader can take the heading as a claim about us |
+| **13 — one deterministic render path** | Untouched, by §12a | **Intact.** This is the rule that makes the Signed-DB4 evidence rather than a photocopy |
+
+**And §1d does not go away.** If PracSoft prints the pre-1-July DB4, our
+faithful reproduction is a faithful reproduction of an invalid form. The
+validator still runs on the **data** — patient, provider, place, service,
+items, dates — and still refuses to send an incomplete set. What it cannot fix
+is the form version the practice's software chose. That remains the first
+question for the practice.
+
+### 12c. What survives of the model — the AOBL question, revisited
+
+Nothing in §9 changes. The Signed-DB4 needs the patient (folder), the
+practitioner and payee (on the form), the location (on the form), the service
+record (the rows), the render path, the hash, the signature event, the Evidence
+Vault and the write-back. It drops nothing. It only changes what the template
+looks like.
+
 ## 10. What to decide, in order
 
-0. **Three rulings from §2a before anything renders.** ~~May a benefit amount
-   appear on the Signed Assignment Agreement~~ **Answered, D-2026-09-14-01: on the
-   tablet screen only, never on the Signed Assignment Agreement.** Still open: may
-   our page carry "approved form" wording or the "DB4" label (hard rule 12);
-   and the pathology box stays on paper. My recommendation is no and yes.
+0. **The Signed-DB4 rulings, §12b.** The amount: **D-2026-09-14-01 is
+   reversed by D-2026-09-14-02** — printed on the Signed-DB4, reproduced
+   verbatim from PracSoft, never computed by us. **Still needed from Carl and
+   the practice:** does "exact same" survive a **masked Medicare number** (hard
+   rule 1) — recommend yes; the "approved form" heading stays verbatim with a
+   provenance footer (hard rule 12) — recommend yes; the pathology box stays on
+   the practice's paper — recommend yes.
+0a. **Telehealth** (§11): confirm the remote link to the contact on record is
+   the flow, and whether a pre-agreement is to be offered before the
+   consultation at all, given the practice is post-only (§11a).
 1. **Is PracSoft3 printing the post-1-July DB4E?** Ask the practice. §1d.
 2. **What do they mean by ticking both boxes?** §1c. Pathology is not ours.
 3. **Is the Chart number the document folder name?** §6a. One question, one
@@ -522,3 +660,4 @@ Two things in your note are correct and should change what gets built next:
 | 14 Sep 2026 | §2 revised at Carl's direction: the amounts, privacy notice, both tick boxes and the four heading lines now travel in the JSON. §2a added: carried is not rendered — the amount meets hard rule 4, the "approved form" line meets hard rule 12, the pathology box is out of scope. Rulings requested, recommendations given. |
 | 14 Sep 2026 | §10 item 0: the amount ruling is answered (D-2026-09-14-01) — screen only. The Signed Assignment Agreement is defined there as the signed PDF/A that is written back, byte for byte. |
 | 14 Sep 2026 | Proper names throughout (Carl): PracSoft DB4, DB4 Print Record, Assignment Agreement, Signed Assignment Agreement, Write-back Manifest, Evidence Vault. "Artefact" survives only inside quotations from the requirements and in code identifiers. |
+| 14 Sep 2026 | §11 telehealth — the existing remote-link channel on a post-service agreement, the TELEHEALTH stamp becomes a field. §11a: the pre-agreement is not mandatory (s 65C(4) items 5 and 6 are both valid; DB4E is post-only), so Powell Street is post-only and legal; what it costs is the chase. §12: the practice wants the exact DB4 with the cost and the signature on it — D-2026-09-14-01 reversed; the design is to REPRODUCE the DB4 from the Print Record rather than sign PracSoft's bytes (rule 13 intact); rules 4, 1 and 12 addressed one by one, with the Medicare number the hard one. |

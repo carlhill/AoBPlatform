@@ -1549,7 +1549,14 @@ for it.
 
 
 
-## D-2026-09-14-01 - The benefit amount is shown on the tablet screen and never on the Signed Assignment Agreement
+## D-2026-09-14-01 - The benefit amount is shown on the tablet screen and never on the Signed Assignment Agreement — REVERSED the same day by D-2026-09-14-02
+
+**Reversed within the hour, and left here rather than deleted**, because the
+reasoning is still right about the rule and wrong about the practice. It was
+made on my reading of what the practice wanted (the patient to be *informed*).
+The practice then said what it actually wants: the exact DB4, with the cost and
+the signature on it, one form in the folder. See D-2026-09-14-02.
+
 
 **Date:** 14 September 2026. **Decided by:** Carl, ruling on `DB4-AND-AOBL.md`
 section 2a: *"Show the amount on the tablet screen only, not on the artefact."* (Carl's word; the proper name is the Signed Assignment Agreement, and it is used below)
@@ -1586,6 +1593,70 @@ discipline as hard rule 9). Not built; recorded so the gap is deliberate.
 **What would reopen it.** The requirements being re-read to say a benefit figure
 belongs on the instrument, or a regulator saying so. Nothing the practice says
 about its own preference reopens a hard rule.
+
+
+
+## D-2026-09-14-02 - The Signed-DB4: the practice's exact form, reproduced by us, with the cost and the signature on it
+
+**Date:** 14 September 2026. **Decided by:** Carl, relaying the test practice:
+*"The Practice wants to see the exact same DB4 form with the patient's signature
+at the bottom. They do not want two forms in the document folder. So we need to
+print the cost on the form and print it out in the Signed-DB4. The patient's
+signature must be in the Signed-DB4."* And: *"Lets call the artefact the
+Signed-DB4."*
+
+**This reverses D-2026-09-14-01**, made an hour earlier on a narrower reading
+of the practice's concern.
+
+**The decision, in three parts:**
+
+1. **The name.** The post-service document is the **Signed-DB4**. It is a kind
+   of Signed Assignment Agreement, which stays the general term for the other
+   agreement types, none of which are DB4s.
+2. **What it is.** **Our deterministic reproduction of the PracSoft DB4's
+   layout, rendered from the DB4 Print Record, with the patient's signature at
+   the bottom** — NOT PracSoft's PDF bytes with a signature stamped on. The
+   practice sees a form identical to the one it prints today; we render it,
+   hash it, and can re-render it byte-identically (hard rule 13 intact). One
+   form goes into the folder. We no longer keep a copy of the PracSoft DB4
+   at all: the DB4 Print Record and its source hash are the provenance.
+3. **The cost is printed on it.** The benefit amounts, **reproduced verbatim
+   from what PracSoft printed**, carried in the DB4 Print Record.
+
+**Hard rule 4 is NARROWED, not removed.** REQ-REG-04 says the data set has no
+fee and *"do not add"*, naming the risk as ours introducing a figure. It is not
+a statutory prohibition — the government's own approved form prints the
+amount. The rule becomes: **AoB never originates or computes an amount; it may
+reproduce the amount the practice's billing software printed on its own form.**
+A dispute about the figure is a dispute with the claim, not with the consent.
+
+**Hard rule 12 is kept with a footer.** The DB4's own heading — *"the approved
+form as prescribed under section 20A"* — is the government's statement about
+the government's form and is reproduced verbatim; altering the DB4's words would
+be the stranger act. A provenance line in the footer says the page was rendered
+by AoBPlatform from the practice's billing record, so nobody reads the heading
+as a claim about us.
+
+**Hard rule 1 is NOT decided here, and it is the hard one.** The exact DB4
+prints the Medicare card number and IRN. Reproducing them means the Evidence
+Vault holds Medicare numbers inside every Signed-DB4 — a security-posture change
+that the threat model was written to avoid. **Recommendation: mask the card
+number on our reproduction** (the practice's own claim record has it in full)
+**and ask whether "exact same" survives that.** If the practice insists on the
+full number, that is a further recorded decision with the threat model updated,
+not a template edit.
+
+**What does not change.** The validator still runs on every element of the data
+and still refuses to send an incomplete set (hard rule 2). The form VERSION is
+still PracSoft's choice and still the first question to the practice. The
+pathology tick box stays on the practice's paper (out of scope). Nothing in the
+model is dropped: the Signed-DB4 needs the patient, both practitioners, the
+location, the service rows, the render path, the hash, the signature event, the
+Evidence Vault and the write-back.
+
+**What would reopen it.** The practice accepting two documents in the folder,
+which would let the PracSoft DB4 carry the amount and ours carry none; or a
+regulator's position on amounts on the signed form.
 
 
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
@@ -1628,3 +1699,4 @@ about its own preference reopens a hard rule.
 | 12 Sep | Every practitioner has a queue; position is derived and always said with the practitioner's name; sending a patient on is one click and creates a SECOND visit | **D-2026-09-12-21 above** |
 | 12 Sep | A practitioner's list is moved to somebody else at the desk; the agreement is superseded whether or not it was signed, and a patient who had signed signs again at the desk | **D-2026-09-12-22 above** |
 | 14 Sep | The benefit amount is shown on the tablet screen only, never on the Signed Assignment Agreement | **D-2026-09-14-01 above** |
+| 14 Sep | The Signed-DB4: our deterministic reproduction of the PracSoft DB4 with the cost printed verbatim and the signature on it; reverses -01; hard rule 4 narrowed, 12 kept with a footer, 1 still to decide (mask recommended) | **D-2026-09-14-02 above** |
