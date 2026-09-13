@@ -656,6 +656,59 @@ looks like.
 6. **No email agent.** §6c.
 7. **AOBL as a tier, not a fork**, with the validator on and non-blocking. §9d.
 
+## 13. The build - first slice of AoB, feature-flagged, not started
+
+Carl, 14 September 2026 (D-2026-09-14-04): *"build it as the first slice of
+AoB, feature flagged... lets keep calling it AoB... leave everything in place -
+do not change anything."* And: *"Let me know before starting any build."*
+
+**Not started.** This section is the order and the shape, so that when it
+starts it starts from a decision.
+
+### 13a. The pieces, in the order that shows something soonest
+
+| # | Piece | Why this position | What exists | New |
+|---|---|---|---|---|
+| 1 | **`db4_assignment` on `POST /inbound/print-jobs`** - the handler that turns a DB4 Print Record into an arrival, a service record and a post-service agreement | It is the visible thing, and it can be demonstrated **without AOBPRINTER** by posting `DB4-print.example.json` by hand | The envelope, the arrival pipeline, `service-rendered`, the visit policy | The document type and its handler |
+| 2 | **The Signed-DB4 template** - the DB4's layout as a versioned template, rendered from the particulars, with the cost, the Medicare number, the first statement and the signature block | With 1, a patient can sign on the tablet the practice already has | The template set, the renderer, the kiosk ceremony | One template, one render fixture |
+| 3 | **Telehealth** - the remote link on a post-service agreement, the `deliveryMode` field, TELEHEALTH printed on the form | Mostly exists; small | `sms_link` / `email_link`, `openLink`, `verifyLink`, contact-on-record | The field and the printed word |
+| 4 | **The write-back pull** - the signed-list endpoint, the Write-back Manifest, and the folder drop | The practice sees the file appear in the chart folder | The hash-verified download route | The listing, the manifest, and the desktop half (GA-PLAN B13) |
+| 5 | **AOBPRINTER** - driver, parser, outbox, posting directly | Last, because 1-4 work without it and it is a separate codebase (GA-PLAN B12) | The receiving endpoint | The whole desktop app |
+| 6 | **The practice flag** - which surfaces a practice sees | Small, and it is what makes this a slice rather than a fork | `practices.channelsEnabled` is the precedent | One setting, read by navigation |
+
+**What the practice sees when the flag is on and nothing else is:** setup,
+tablets, the DB4 desk (the tablet desk filtered to DB4 agreements), and the day
+register. No kiosk walk-up, no rails, no ongoing agreements, no portal, no
+practitioner pages.
+
+### 13b. Which model builds which piece - and the honest answer on Sonnet
+
+Carl asked whether building on Sonnet is a lower-quality build, with 35% of the
+week's allowance left and other work pending.
+
+**It is lower quality on exactly two things, and neither is most of this
+list.** Judgement calls where the brief is ambiguous, and regulatory reasoning
+where a rule has to be held in mind across many files. It is not lower quality
+on implementing a clearly specified endpoint, a template from a fixture, or
+tests from a named list - and pieces 1, 2, 3 and 6 are all of those.
+
+| Piece | Model | Why |
+|---|---|---|
+| 1, 2, 3, 6 | **Sonnet** | Tightly specified, reuse-heavy, named tests already listed |
+| 4 | Sonnet | The server half is small; the desktop half waits for 5 |
+| 5 AOBPRINTER | **Opus** | A new codebase, a parser that must be deterministic, an outbox that must never lose or duplicate a form - judgement, not transcription |
+| **Every review that touches a hard rule** | **Opus** | Reviews are far cheaper than builds, and this is where rules 1, 2, 4, 12 and 13 get checked. Today's pattern (Opus build, Sonnet review) inverts to Sonnet build, Opus review |
+
+**The mitigation that matters more than the model choice is the brief:** the
+reuse inventory named, the hard rules restated, the named tests listed, and the
+reviewer pass mandatory. A good brief on Sonnet beats a vague one on Opus.
+
+**On the budget.** This is roughly two weeks of agent time across the six
+pieces. It does not fit inside 35% of a week alongside other work. Pieces 1 and
+2 together are the smallest demonstrable slice - a DB4 Print Record posted by
+hand, a Signed-DB4 on the tablet - and are the right thing to start with when
+the allowance allows. Nothing starts until Carl says so.
+
 ## Change log
 | Date | Change |
 |---|---|
@@ -665,3 +718,4 @@ looks like.
 | 14 Sep 2026 | Proper names throughout (Carl): PracSoft DB4, DB4 Print Record, Assignment Agreement, Signed Assignment Agreement, Write-back Manifest, Evidence Vault. "Artefact" survives only inside quotations from the requirements and in code identifiers. |
 | 14 Sep 2026 | §11 telehealth — the existing remote-link channel on a post-service agreement, the TELEHEALTH stamp becomes a field. §11a: the pre-agreement is not mandatory (s 65C(4) items 5 and 6 are both valid; DB4E is post-only), so Powell Street is post-only and legal; what it costs is the chase. §12: the practice wants the exact DB4 with the cost and the signature on it — D-2026-09-14-01 reversed; the design is to REPRODUCE the DB4 from the Print Record rather than sign PracSoft's bytes (rule 13 intact); rules 4, 1 and 12 addressed one by one, with the Medicare number the hard one. |
 | 14 Sep 2026 | Carl: no masking. The Medicare number and IRN are printed in full on the Signed-DB4 and travel in the DB4 Print Record (D-2026-09-14-03). §1a, §2 and §12b updated; hard rule 1's identity meaning unchanged. |
+| 14 Sep 2026 | Section 13: the build as the first feature-flagged slice of AoB (D-2026-09-14-04), six pieces in the order that shows something soonest, model per piece with the honest answer on Sonnet, and the budget note. Not started. |

@@ -1706,6 +1706,58 @@ appear on the signed form - which would be surprising, given it is on the
 government's own.
 
 
+
+## D-2026-09-14-04 - The signing product is the first slice of AoB, feature-flagged, and it keeps the name
+
+**Date:** 14 September 2026. **Decided by:** Carl: *"Put in the plan to build it
+as the first slice of AoB, feature flagged. However, lets keep calling it AoB. I
+realise that we do need the customer data at a minimum. Not so sure on the
+entire practitioner functionality we built. However, leave everything in place -
+do not change anything."*
+
+**The decision.**
+
+1. **One product, one name.** There is no AOBL. The DocuSign-like experience the
+   test practice wants - print the DB4 to AOBPRINTER, sign on a tablet or by
+   remote link, Signed-DB4 back in the folder - is **the first customer-visible
+   slice of AoB**, built on the codebase that exists.
+2. **Feature-flagged, per practice.** The first customer sees the DB4 path and
+   nothing else: no waiting-room kiosk walk-up, no ongoing agreements, no queue
+   rails, no reconciliation screens, no portal, no practitioner pages. Those
+   stay built and stay off. Turning one on for a practice is a flag, never a
+   rebuild.
+3. **Nothing is removed and nothing is changed.** Carl is unsure the
+   practitioner functionality earns its place; the ruling is to leave it in
+   place and decide later, with a customer in front of it, rather than delete
+   work on a hunch.
+4. **The validator's two jobs are split.** Completeness of the data - patient,
+   provider at that place, items, dates - still gates the signature, because
+   that is hard rule 2 and is not softened. The form-version check (is this the
+   post-1-July DB4E?) **warns** rather than gates, because it cannot be
+   determined from a print and would otherwise block every signature at a
+   practice whose software is behind. The form version is not one of the
+   particulars, so this touches no hard rule.
+
+**Why the first slice and not a fork.** Filing a signed PDF in the right folder
+with the right name already needs the chart number, the form reference, the
+provider, the location, a render, a hash, a signature event and the write-back.
+That is not the compliance product; it is the plumbing of a signing product,
+and it exists. A separate thin codebase would rebuild it and then become the
+product forever, because it is the one customers are on.
+
+**What this settles for the build order** (`DB4-AND-AOBL.md` section 13): the
+DB4 document type and the DB4-shaped template first, because they are the
+visible thing and can be demonstrated by posting a DB4 Print Record by hand to
+the endpoint that already exists; AOBPRINTER second, because it is a separate
+codebase and the slice works without it; the write-back pull and the telehealth
+link after.
+
+**What would reopen it.** A second customer whose practice management system
+has a documented interface, which would make the print driver the fallback
+rather than the door; or evidence that the flagged-off surfaces cost more to
+carry than to delete.
+
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
@@ -1748,3 +1800,4 @@ government's own.
 | 14 Sep | The benefit amount is shown on the tablet screen only, never on the Signed Assignment Agreement | **D-2026-09-14-01 above** |
 | 14 Sep | The Signed-DB4: our deterministic reproduction of the PracSoft DB4 with the cost printed verbatim and the signature on it; reverses -01; hard rule 4 narrowed, 12 kept with a footer, 1 still to decide (mask recommended) | **D-2026-09-14-02 above** |
 | 14 Sep | The Medicare card number and IRN are printed in full on the Signed-DB4; hard rule 1's identity meaning is unchanged; the threat model needs a section for holding it | **D-2026-09-14-03 above** |
+| 14 Sep | The signing product is the first feature-flagged slice of AoB, same name, nothing removed; data completeness gates, form version warns | **D-2026-09-14-04 above** |
