@@ -1,12 +1,10 @@
 {
-  "$comment": "What AOBPRINTER emits for one DB4 printed from PracSoft3. Extends the existing PrintJobEnvelopeDto (POST /inbound/print-jobs) with a fifth documentType. Carl, 14 Sep 2026: carry the benefit amounts (the practice says the patient must be informed of the cost), the privacy notice, BOTH tick boxes and the four heading lines, so they can become dynamic later. All four are carried as DATA FROM THE PMS. Whether any of them may be RENDERED on our signed artefact is a separate decision recorded in DB4-AND-AOBL.md section 2a — amounts collide with hard rule 4, the 'approved form' heading collides with hard rule 12, and the pathology box is out of scope. Still discarded at the practice and never sent: the Medicare card number and IRN (hard rule 1). The driver never asserts the form's version; the server decides that from formCode and parserTemplateVersion. Identities below are the scanned example's; in fixtures use obviously fake ones.",
-
+  "$comment": "What AOBPRINTER emits for one DB4 printed from PracSoft3. Extends the existing PrintJobEnvelopeDto (POST /inbound/print-jobs) with a fifth documentType. Carl, 14 Sep 2026 (D-2026-09-14-02 and -03): the Signed-DB4 is our deterministic reproduction of this form with the cost and the patient's signature on it, so EVERYTHING printed on the form travels, including the Medicare card number and IRN, which the patient recognises and which the auditor uses to link the form to a valid Medicare number. Hard rule 1 is unchanged in what it actually says: the Medicare number is never an IDENTITY identifier — never used to verify who the patient is, never used to find or match a patient, never in a log or an event, never sent to the rules service. It is content on the form, like the patient's name. The pathology tick box is carried as data and never acted on (s 65C(4) items 1-4 out of scope). The driver never asserts the form's version; the server decides that from formCode and parserTemplateVersion. Identities below are the scanned example's; in fixtures use obviously fake ones with an INVALID Medicare checksum.",
   "documentType": "db4_assignment",
   "sourceSha256": "0000000000000000000000000000000000000000000000000000000000000000",
   "parserTemplateVersion": "pracsoft3-db4-2026-09-1",
   "pms": "pracsoft3",
   "capturedAt": "2026-09-12T02:03:41.000Z",
-
   "heading": {
     "$comment": "The four heading lines as printed, in order. Carl: 'We need to print this on the page.' See section 2a of the plan before rendering line 3 on OUR artefact — it is the government saying its form is approved, and hard rule 12 forbids us saying it of ours.",
     "lines": [
@@ -16,7 +14,6 @@
       "Bulk bill claim for assessment by Services Australia"
     ]
   },
-
   "form": {
     "formCode": "DB4",
     "formReference": "HSS0610012092026120300",
@@ -26,25 +23,27 @@
     "serviceDate": "2026-09-12",
     "currency": "AUD"
   },
-
   "servicingLocation": {
     "name": "Powell Street Family Medical Practice",
-    "addressLines": ["78 POWELL STREET"],
+    "addressLines": [
+      "78 POWELL STREET"
+    ],
     "suburb": "Yagoona",
     "state": "NSW",
     "postcode": "2199"
   },
-
   "patient": {
     "pmsLinkageKey": "chart:00680",
     "patientRecordNumber": "00680",
+    "medicareCardNumber": "2454 23237 1",
+    "irn": "1",
+    "$comment_medicare": "Printed on the Signed-DB4 in full (D-2026-09-14-03). Not an identifier: never verification, never lookup, never logs, never the rules service.",
     "givenNames": "Jamal",
     "familyName": "Doorbinnia",
     "dateOfBirth": "1965-10-10",
     "address": "18 Glassop St, Yagoona NSW 2199",
     "mobile": "0413284418"
   },
-
   "providers": [
     {
       "role": "servicing",
@@ -59,7 +58,6 @@
       "providerNumber": "0636678W"
     }
   ],
-
   "services": [
     {
       "serviceDate": "2026-09-12",
@@ -76,7 +74,6 @@
       "benefitAssigned": "22.40"
     }
   ],
-
   "assignment": {
     "$comment": "The privacy notice and the two statements as printed, so they can be versioned content later rather than hardcoded. 'ticked' is what the driver could see on the page. The statements are joined by 'or' on the form. The second statement is a pathology assignment and is out of this product's scope (s 65C(4) items 1-4): it is carried as data and never acted on.",
     "privacyNotice": [
@@ -102,7 +99,6 @@
       }
     ]
   },
-
   "referral": {
     "acrf": "102368",
     "lspn": null,

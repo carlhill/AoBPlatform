@@ -56,12 +56,14 @@ before any of §3 to §7 is buildable.**
 
 ### 1a. It carries the Medicare card number — and the printed form always will
 
-Hard rule 1: not an identifier, and **there is no column for one anywhere in
-this system**. `PMS_to_AoB_Workflow.md` W3 already rules that an extractor never
-captures it and any PDF we keep is redacted. That stands — but note the
-consequence for your option 3 (§3): **if the PMS's own PDF is the signed
-instrument, the Medicare number is inside the signed evidence** and we would be
-storing it. That is the single strongest reason option 3 is not the answer.
+Hard rule 1 says the Medicare number is not an **identity** identifier — never
+used to verify who the patient is. Until 14 September the derived rule was that
+we hold none at all. **Carl has since ruled that it is printed in full on the
+Signed-DB4** (D-2026-09-14-03, §12b): the patient recognises it, and the
+auditor uses it to link the form to a valid Medicare number. So it travels in
+the DB4 Print Record and appears on the reproduction. What does NOT change: it
+is never used to verify, find or match a patient, never in a log or an event,
+and never sent to the rules service.
 
 ### 1b. It carries dollar amounts — and the prescribed form is allowed to
 
@@ -121,9 +123,11 @@ a second envelope.
 the whole page and **discards at the practice** what we may never store. Fewer
 places for it to exist beats redacting it later.
 
-| Read off the page, and discarded before the JSON is written | Why |
-|---|---|
-| Medicare card number, IRN | Hard rule 1. Never leaves the practice |
+**Nothing printed on the form is discarded any more** (D-2026-09-14-03). The
+Signed-DB4 reproduces the whole form, so the whole form travels — the Medicare
+card number and IRN included. What is discarded is a different thing: the
+number is never used for verification, lookup, matching, logging or events,
+and never reaches the rules service.
 
 **Carl, 14 September 2026, revised what travels:** *"add to the json the
 'Benefit Claim' amount — according to the practice the patient needs to be
@@ -154,7 +158,7 @@ form
   serviceDate       "2026-09-12"
   currency          "AUD"
 servicingLocation   name, addressLines, suburb, state, postcode
-patient             pmsLinkageKey ("chart:00680"), patientRecordNumber "00680", names, DOB, address, mobile
+patient             pmsLinkageKey ("chart:00680"), patientRecordNumber "00680", medicareCardNumber, irn, names, DOB, address, mobile
 providers[]         role "servicing" | "payee" | "requesting"; name; providerNumber; pmsProviderKey
 services[]          serviceDate, time, mbsItemNumber, description, benefitAssigned  ← amount carried, see §2a
 assignment
@@ -611,7 +615,7 @@ provenance. One form in the folder, one form in the Evidence Vault.
 | Rule | What the Signed-DB4 needs | What it costs, and my recommendation |
 |---|---|---|
 | **4 — no benefit or dollar amount** | The amounts printed on the form | **REQ-REG-04 says "not required — do not add", and names the risk as ours adding a figure.** It is not a statutory prohibition: the government's own approved form prints the amount. So **narrow the rule rather than delete it: AoB never originates or computes an amount; it may reproduce, verbatim, the amount the practice's billing software printed on its own DB4.** The figure is PracSoft's claim, carried in the DB4 Print Record, and any dispute about it is a dispute with the claim, not with us |
-| **1 — the Medicare number is not an identifier, and we hold none** | The exact DB4 prints the Medicare card number and IRN | **This is the hard one.** Reproducing it means the Evidence Vault holds Medicare numbers inside every Signed-DB4, which is a security-posture change, not a display choice. Two ways: **(a) mask it on our reproduction** — the form is otherwise identical, and the practice's own copy of the claim has the full number anyway; **(b) print it in full and record the decision**, with the threat model updated and the number treated as the high-value identifier it is. **Recommend (a), and ask the practice whether "exact same" survives a masked card number.** If it must be (b), that is a recorded decision, not a template change |
+| **1 — the Medicare number is not an identifier** | The exact DB4 prints the Medicare card number and IRN | **Decided: printed in full** (D-2026-09-14-03). Carl: the patient recognises and validates it, and the auditor needs it to link the form to a valid Medicare number. **The rule itself does not move** — it was always about *identity*: the number is never used to verify who the patient is, never to find or match a patient, never in a log or an event, never sent to the rules service. What moves is the derived posture "we hold none": the Evidence Vault now holds Medicare numbers inside every Signed-DB4, so the threat model gets a section for it (TODO) and the number is treated as the high-value identifier it is — encrypted at rest as everything in the vault already is, mTLS in transit from AOBPRINTER, and never in a column that can be searched |
 | **12 — never say "approved" of our forms** | Heading line 3 reproduced verbatim | The line is the government's statement about the government's form, reproduced on a reproduction of that form. **Keep it verbatim** — altering the DB4's own words would be the stranger act — and add one provenance line in the footer: *"Rendered by AoBPlatform from the practice's billing record, [date]."* So no reader can take the heading as a claim about us |
 | **13 — one deterministic render path** | Untouched, by §12a | **Intact.** This is the rule that makes the Signed-DB4 evidence rather than a photocopy |
 
@@ -634,11 +638,10 @@ looks like.
 
 0. **The Signed-DB4 rulings, §12b.** The amount: **D-2026-09-14-01 is
    reversed by D-2026-09-14-02** — printed on the Signed-DB4, reproduced
-   verbatim from PracSoft, never computed by us. **Still needed from Carl and
-   the practice:** does "exact same" survive a **masked Medicare number** (hard
-   rule 1) — recommend yes; the "approved form" heading stays verbatim with a
-   provenance footer (hard rule 12) — recommend yes; the pathology box stays on
-   the practice's paper — recommend yes.
+   verbatim from PracSoft, never computed by us. **The Medicare number: printed
+   in full, D-2026-09-14-03.** Still recommended and not yet ruled: the
+   "approved form" heading stays verbatim with a provenance footer (hard rule
+   12); the pathology box stays on the practice's paper.
 0a. **Telehealth** (§11): confirm the remote link to the contact on record is
    the flow, and whether a pre-agreement is to be offered before the
    consultation at all, given the practice is post-only (§11a).
@@ -661,3 +664,4 @@ looks like.
 | 14 Sep 2026 | §10 item 0: the amount ruling is answered (D-2026-09-14-01) — screen only. The Signed Assignment Agreement is defined there as the signed PDF/A that is written back, byte for byte. |
 | 14 Sep 2026 | Proper names throughout (Carl): PracSoft DB4, DB4 Print Record, Assignment Agreement, Signed Assignment Agreement, Write-back Manifest, Evidence Vault. "Artefact" survives only inside quotations from the requirements and in code identifiers. |
 | 14 Sep 2026 | §11 telehealth — the existing remote-link channel on a post-service agreement, the TELEHEALTH stamp becomes a field. §11a: the pre-agreement is not mandatory (s 65C(4) items 5 and 6 are both valid; DB4E is post-only), so Powell Street is post-only and legal; what it costs is the chase. §12: the practice wants the exact DB4 with the cost and the signature on it — D-2026-09-14-01 reversed; the design is to REPRODUCE the DB4 from the Print Record rather than sign PracSoft's bytes (rule 13 intact); rules 4, 1 and 12 addressed one by one, with the Medicare number the hard one. |
+| 14 Sep 2026 | Carl: no masking. The Medicare number and IRN are printed in full on the Signed-DB4 and travel in the DB4 Print Record (D-2026-09-14-03). §1a, §2 and §12b updated; hard rule 1's identity meaning unchanged. |

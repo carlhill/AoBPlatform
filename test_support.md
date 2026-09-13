@@ -6,9 +6,10 @@ can test it?** Carl asked for it by name so the commands are findable instead
 of being re-derived every time.
 
 Everything here talks to the local sandbox and uses obviously fake identities.
-No script here sends a real email or a real text, and none of them contains a
-Medicare-format number, because there is no column for one anywhere in this
-system (hard rule 1).
+No script here sends a real email or a real text. Where a fixture needs a
+Medicare number (the DB4 Print Record carries one since D-2026-09-14-03), it
+uses an **invalid checksum** so it can never be a real card — and the number is
+never used to verify, find or match anybody (hard rule 1).
 
 ---
 

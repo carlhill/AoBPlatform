@@ -1637,14 +1637,8 @@ be the stranger act. A provenance line in the footer says the page was rendered
 by AoBPlatform from the practice's billing record, so nobody reads the heading
 as a claim about us.
 
-**Hard rule 1 is NOT decided here, and it is the hard one.** The exact DB4
-prints the Medicare card number and IRN. Reproducing them means the Evidence
-Vault holds Medicare numbers inside every Signed-DB4 — a security-posture change
-that the threat model was written to avoid. **Recommendation: mask the card
-number on our reproduction** (the practice's own claim record has it in full)
-**and ask whether "exact same" survives that.** If the practice insists on the
-full number, that is a further recorded decision with the threat model updated,
-not a template edit.
+**Hard rule 1 was left open here and is decided in D-2026-09-14-03**: the
+Medicare card number and IRN are printed in full.
 
 **What does not change.** The validator still runs on every element of the data
 and still refuses to send an incomplete set (hard rule 2). The form VERSION is
@@ -1657,6 +1651,59 @@ Evidence Vault and the write-back.
 **What would reopen it.** The practice accepting two documents in the folder,
 which would let the PracSoft DB4 carry the amount and ours carry none; or a
 regulator's position on amounts on the signed form.
+
+
+
+## D-2026-09-14-03 - The Medicare card number and IRN are printed in full on the Signed-DB4
+
+**Date:** 14 September 2026. **Decided by:** Carl: *"No need to mask the
+medicare number as the medicare number is what the patient can recognise and
+validate. Also when audited, the gov will need the medicare number / IRN to
+easily link a form to a valid medicare number."*
+
+**The decision.** The Signed-DB4 reproduces the Medicare card number and IRN
+exactly as the PracSoft DB4 prints them. They travel in the DB4 Print Record.
+No masking.
+
+**Why.** Two reasons, both the practice's and both about the form doing its
+job. The patient reads their own card number on the page and knows the form is
+theirs, the way they know their own name. And the form is the document an
+auditor links to a claim, and the claim is keyed by that number - the
+government's own approved form prints it for exactly that reason.
+
+**What hard rule 1 says, and why it does not move.** *"The Medicare card number
+is NOT an identity identifier."* That was always a rule about **verification**:
+the approved set for proving who somebody is is name, date of birth, gender,
+address, patient record number and IHI, and the Medicare number is excluded
+from it, non-configurably (REQ-VER-02). Printing the number on a form is not
+using it to verify anybody. So the rule stands unchanged, and it is worth
+saying plainly what it still forbids:
+
+- **Never used to verify** a patient's identity, on the kiosk, the remote link
+  or anywhere else. The three-identifier floor is unchanged.
+- **Never used to find or match** a patient. The practice's record number is
+  the join key; the Medicare number is content on a form.
+- **Never in a log, an error message or a vault event** (hard rule 9). Events
+  carry ids and types; the number lives inside the Signed-DB4 and the locked
+  particulars of that one agreement, nowhere else.
+- **Never sent to the rules service**, which is zero-PII by design and has no
+  rule that needs it - it is not in the s 65C data set.
+- **Never a searchable column.** It is not added to the patient record.
+
+**What does move: the security posture.** The derived rule "we hold none" is
+gone. The Evidence Vault now holds Medicare numbers inside every Signed-DB4, and
+they cross the wire from AOBPRINTER. Both are already covered by what exists -
+encryption at rest, mutual TLS outbound-only from the practice, append-only
+storage - but **`aob-threat-model.md` was written on the assumption that no
+Medicare number is held anywhere and needs a section that says it now is**,
+treated as the high-value fraud identifier it is. Recorded in `TODO.md`.
+
+**Fixtures still never carry a real one.** Sample data uses an invalid checksum
+(CLAUDE.md 7), as before.
+
+**What would reopen it.** A regulator's position that the number must not
+appear on the signed form - which would be surprising, given it is on the
+government's own.
 
 
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
@@ -1700,3 +1747,4 @@ regulator's position on amounts on the signed form.
 | 12 Sep | A practitioner's list is moved to somebody else at the desk; the agreement is superseded whether or not it was signed, and a patient who had signed signs again at the desk | **D-2026-09-12-22 above** |
 | 14 Sep | The benefit amount is shown on the tablet screen only, never on the Signed Assignment Agreement | **D-2026-09-14-01 above** |
 | 14 Sep | The Signed-DB4: our deterministic reproduction of the PracSoft DB4 with the cost printed verbatim and the signature on it; reverses -01; hard rule 4 narrowed, 12 kept with a footer, 1 still to decide (mask recommended) | **D-2026-09-14-02 above** |
+| 14 Sep | The Medicare card number and IRN are printed in full on the Signed-DB4; hard rule 1's identity meaning is unchanged; the threat model needs a section for holding it | **D-2026-09-14-03 above** |

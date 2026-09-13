@@ -37,6 +37,31 @@ of the practitioner's queue (`FRONT-DESK-PAGE.md` §6).
 
 ---
 
+## The threat model assumes no Medicare number is held; that is no longer true (14 Sep 2026)
+
+D-2026-09-14-03: the Medicare card number and IRN are printed in full on the
+Signed-DB4 and travel in the DB4 Print Record, at Carl's direction and for the
+practice's reasons (the patient recognises it; the auditor links the form to
+the claim by it).
+
+`aob-threat-model.md` was written on the assumption that no Medicare number is
+held anywhere in the system. It now is — inside every Signed-DB4 in the Evidence
+Vault and in the locked particulars of each post-service agreement, and on the
+wire from AOBPRINTER.
+
+**What the update has to say:** the number is a high-value fraud identifier;
+where it is at rest (the vault, encrypted, append-only) and in transit (mutual
+TLS, outbound-only from the practice); that it is never in a searchable column,
+a log, an event or the rules service; what a breach of the vault now exposes
+that it did not before; and whether any additional control is warranted for
+that specific field (for example, whether the copy-link and portal views of a
+Signed-DB4 should render it masked while the write-back copy carries it in
+full — a display question the practice's reasons do not settle).
+
+**Why deferred:** the threat model is a substantial document and this is a
+posture change, not a line edit. It wants a considered pass, not a footnote,
+and before the first Signed-DB4 is rendered rather than after.
+
 ## Moving a practitioner's whole list — what the first cut does NOT do (12 Sep 2026)
 
 Carl: *"the assigned practioner has called in sick or all patients have to be
