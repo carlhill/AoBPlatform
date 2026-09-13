@@ -1,0 +1,76 @@
+{
+  "$comment": "What AOBPRINTER emits for one DB4 printed from PracSoft3. Extends the existing PrintJobEnvelopeDto (POST /inbound/print-jobs) with a fifth documentType. Everything the driver READ but may not SEND is listed in DB4-AND-AOBL.md section 2: the Medicare card number and IRN (hard rule 1), the Benefit Assigned amounts (hard rule 4), the privacy boilerplate, and the pathology tick box (out of scope, s 65C(4) items 1-4). The driver never asserts the form's version; the server decides that from formCode and parserTemplateVersion, because it is regulated content that changes. Identities below are the scanned example's; in fixtures use obviously fake ones.",
+
+  "documentType": "db4_assignment",
+  "sourceSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "parserTemplateVersion": "pracsoft3-db4-2026-09-1",
+  "pms": "pracsoft3",
+  "capturedAt": "2026-09-12T02:03:41.000Z",
+
+  "form": {
+    "formCode": "DB4",
+    "formReference": "HSS0610012092026120300",
+    "locationId": "HSS06100",
+    "claimStatus": "STORED FOR LATER TRANSMISSION",
+    "assignmentTicked": true,
+    "signedOnPaper": false,
+    "serviceDate": "2026-09-12"
+  },
+
+  "servicingLocation": {
+    "name": "Powell Street Family Medical Practice",
+    "addressLines": ["78 POWELL STREET"],
+    "suburb": "Yagoona",
+    "state": "NSW",
+    "postcode": "2199"
+  },
+
+  "patient": {
+    "pmsLinkageKey": "chart:00680",
+    "patientRecordNumber": "00680",
+    "givenNames": "Jamal",
+    "familyName": "Doorbinnia",
+    "dateOfBirth": "1965-10-10",
+    "address": "18 Glassop St, Yagoona NSW 2199",
+    "mobile": "0413284418"
+  },
+
+  "providers": [
+    {
+      "role": "servicing",
+      "pmsProviderKey": "provider:5745385T",
+      "name": "Dr Seng Phy",
+      "providerNumber": "5745385T"
+    },
+    {
+      "role": "payee",
+      "pmsProviderKey": "provider:0636678W",
+      "name": "Dr O. Alofivae-Doorbinnia",
+      "providerNumber": "0636678W"
+    }
+  ],
+
+  "services": [
+    {
+      "serviceDate": "2026-09-12",
+      "time": "12:03",
+      "mbsItemNumber": "23",
+      "description": "Level B Surgery"
+    },
+    {
+      "serviceDate": "2026-09-12",
+      "time": "12:03",
+      "mbsItemNumber": "75870",
+      "description": "Professional attendance (the attendance service) by a general practitioner, a medical practitioner or a prescribed medical practitioner, at which a general practice support service is provided"
+    }
+  ],
+
+  "referral": {
+    "acrf": "102368",
+    "lspn": null,
+    "requestingProviderName": null,
+    "requestingProviderNumber": null,
+    "dateOfRequest": null,
+    "periodOfReferral": null
+  }
+}

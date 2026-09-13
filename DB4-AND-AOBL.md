@@ -1,0 +1,471 @@
+# DB4-AND-AOBL.md — the DB4 form, the PMS interfaces, and whether AoB should just be a signing tool
+### v1.0 · 14 September 2026 · Owner: Carl. Nothing in here is built. Companion to `PMS_to_AoB_Workflow.md` (input cases), `INTEGRATION-MODES.md` (who supplies what), `GA-PLAN.md` B12/B13 (AoBPrinterApp).
+
+Carl, 14 September 2026, with a scanned DB4 from the test practice:
+
+> *"Read the attached photo for a db4 form and create a json file format of its
+> contents... Give me a plan for each [signing option]. What is the best option
+> from an audit perspective?... we need to create a print driver called
+> AOBPRINTER... we need api designs and plan and approach... An alternative to
+> the solution we have been building this far is to create AOBLight or AOBL...
+> I learned today that when the government does the audit they come to the
+> practice and audit the practice clinical system. The government will not look
+> at what AOB has. Hence, not sure why we need to track patient, practitioner,
+> locations and so on... Your thoughts claude?"*
+
+**The short answer is at the end (§9), and it is: the thing you learned today is
+already the premise the product was built on, not a reason to abandon it.**
+Everything before §9 is the working.
+
+---
+
+## 1. What the scanned form actually is, and four things on it that matter
+
+The scan is a **DB4, "Printed From PracSoft3"**, citing *"the approved form as
+prescribed under section 20A of the Health Insurance Act 1973"*. The test
+practice runs **Medical Director for clinical and PracSoft for billing** — two
+systems, not one, and your annotation *"single view of clinical + billing"* is
+the integration problem in five words.
+
+What it carries:
+
+| Block | Fields |
+|---|---|
+| Header | Location ID `HSS06100`; Reference `HSS0610012092026120300`; Servicing Location name and address |
+| Patient | **Medicare card number and IRN**; name; **`[Chart: 00680]`**; DOB; phone; address |
+| Claim state | "This Bulk Bill claim has been: STORED FOR LATER TRANSMISSION" |
+| Providers | **Servicing** Provider name + number (Dr Seng Phy, `5745385T`); **Payee** Provider name + number (Dr O. Alofivae-Doorbinnia, `0636678W`); ACRF; LSPN; Requesting/Referring provider, date, period |
+| Services | Two rows: date/time, item number, description, **"Benefit Assigned" in dollars** |
+| Assignment | Privacy notice; **two tick boxes joined by "or"**; patient signature; date |
+
+**Four things on it collide with what we have built, and each needs a ruling
+before any of §3 to §7 is buildable.**
+
+### 1a. It carries the Medicare card number — and the printed form always will
+
+Hard rule 1: not an identifier, and **there is no column for one anywhere in
+this system**. `PMS_to_AoB_Workflow.md` W3 already rules that an extractor never
+captures it and any PDF we keep is redacted. That stands — but note the
+consequence for your option 3 (§3): **if the PMS's own PDF is the signed
+instrument, the Medicare number is inside the signed evidence** and we would be
+storing it. That is the single strongest reason option 3 is not the answer.
+
+### 1b. It carries dollar amounts — and the prescribed form is allowed to
+
+Hard rule 4 / REQ-REG-04: *"No benefit or dollar amount. The data set contains
+no fee or benefit figure. Do not add."* The rule is about what **we** put on an
+artefact. The DB4 is the government's form and it has a Benefit Assigned
+column. So: **our render never carries it; a PMS document we keep as evidence
+may.** Same consequence as 1a for option 3.
+
+### 1c. Two tick boxes, "or" between them — and both are ticked
+
+The first box assigns the benefit to the health professional who rendered the
+service. The second **offers** to assign to an **Approved Pathology
+Practitioner**. On the scan both are ticked.
+
+**Pathology is out of scope for this product** — s 65C(4) items 1 to 4,
+CLAUDE.md §8. Whatever we build for the DB4, **AoB does not capture, validate
+or evidence the pathology assignment.** If a practice's workflow ticks both, the
+second box is theirs and stays theirs. Your brief said "the patient must tick
+both the boxes" — on the form as printed that is not what "or" means, and it is
+worth asking the practice what they actually intend before we encode it.
+
+### 1d. Is this the right VERSION of the form? Nobody can tell by eye
+
+REQ-TEST-03 and the Departmental FAQ (B2): **DB4E and DB020 were updated and
+are valid from 1 July 2026 — for post-assignment only — and "prior versions of
+approved forms will no longer meet the requirements."**
+
+The scan is titled "DB4", not "DB4E". It has no practitioner signature block
+(good — abolished 1 July). Whether PracSoft3 is printing the updated form or the
+old one **I cannot determine from the scan, and I must not guess** (CLAUDE.md:
+never invent regulatory facts). The FAQ reconciliation says exactly why this
+matters: *"the check a practice can't do by eye, and therefore exactly the check
+worth offering."*
+
+**This is the first question to put to the practice**, and it is also the first
+argument against AOBL (§9): a signing tool signs whichever version it is given.
+
+### 1e. Two providers, and we model one
+
+Servicing provider (who rendered) and **payee provider (who is paid)** are
+different people on this form. Our billing roles are `servicing_provider`,
+`works_under_provider` and `not_billable` — nothing says "paid". Your entity
+note is right and §8 takes it up.
+
+---
+
+## 2. The JSON — what AOBPRINTER emits
+
+**Extend what exists rather than invent.** `POST /inbound/print-jobs` already
+accepts a `PrintJobEnvelopeDto` with `documentType`, `sourceSha256`,
+`parserTemplateVersion`, `pms`, `capturedAt` and arrays of patients, providers,
+appointments and invoices. A DB4 is a fifth document type on that envelope, not
+a second envelope.
+
+**What the driver emits is what AoB may hold — nothing else.** The driver reads
+the whole page and **discards at the practice** what we may never store. Fewer
+places for it to exist beats redacting it later.
+
+| Read off the page, and discarded before the JSON is written | Why |
+|---|---|
+| Medicare card number, IRN | Hard rule 1. Never leaves the practice |
+| Benefit Assigned amounts | Hard rule 4. Not needed for anything we do |
+| Privacy notice text | Boilerplate |
+| The pathology tick box | Out of scope, §1c |
+
+The example is in **`DB4-print.example.json`** beside this file. Shape:
+
+```
+documentType        "db4_assignment"
+sourceSha256        hash of the print spool the driver saw — proof of what arrived
+parserTemplateVersion "pracsoft3-db4-2026-09-1"   ← versioned content, hard rule 14
+pms                 "pracsoft3"
+capturedAt          ISO instant
+form
+  formCode          "DB4"            ← as printed; version is DECIDED server-side (§1d), never asserted by the driver
+  formReference     "HSS0610012092026120300"
+  locationId        "HSS06100"
+  claimStatus       "STORED FOR LATER TRANSMISSION"
+  assignmentTicked  true             ← the FIRST box only. Pathology box not carried
+  signedOnPaper     false            ← true if the driver can see a signature already on it
+  serviceDate       "2026-09-12"
+servicingLocation   name, addressLines, suburb, state, postcode
+patient             pmsLinkageKey ("chart:00680"), patientRecordNumber "00680", names, DOB, address, mobile
+providers[]         role "servicing" | "payee" | "requesting"; name; providerNumber; pmsProviderKey
+services[]          serviceDate, time, mbsItemNumber, description     ← NO amount
+referral            requestingProviderNumber, dateOfRequest, periodOfReferral, acrf, lspn — all optional
+```
+
+Two design points that are not cosmetic:
+
+- **`formReference` is the correlation key across every message about this
+  form**, and — your annotation — the **filename** when the signed artefact goes
+  back. `patientRecordNumber` (the Chart number) is the **folder**. §6.
+- **The driver never asserts the form's validity or version.** It says "DB4, as
+  printed". The server decides whether that is the post-1-July form, because
+  that is regulated content that changes (§1d) and a driver installed on 200
+  desktops cannot be re-shipped every time it does.
+
+---
+
+## 3. Three ways to get the patient's signature — and the audit verdict
+
+| | 1. Our page, matching the PDF | 2. A PDF the patient ticks and signs on | 3. The PMS's own PDF, signed as-is |
+|---|---|---|---|
+| What is signed | **Our render**, from validated particulars | A PDF we generate | **PracSoft's document** |
+| Hard rule 13 (one deterministic render, hashed, re-verified) | ✅ Already how it works | ⚠️ A second render path | ❌ We did not render it and cannot re-render it byte-identically |
+| Hard rule 2 (locked and validated before signature) | ✅ The validator runs on the extracted set | ✅ If we generate from validated data | ❌ We sign whatever was printed. If PracSoft printed the old form, we have evidenced a defective agreement |
+| Medicare number / amounts in the signed evidence | ✅ Never | ✅ Never, if we omit them | ❌ Both, permanently, in the vault |
+| Form version risk (§1d) | ✅ We render the current content | ✅ Same | ❌ Whatever the PMS has |
+| Familiarity for the practice | Looks like the DB4 they know | Looks like DocuSign | **Exactly** what they have today |
+| Build | **Small**: a DB4-shaped template in the existing versioned template set, plus the tick controls | Medium: a PDF form-field flow the kiosk does not have | Small to build, **large to defend** |
+
+**Verdict from an audit perspective: option 1, and it is not close.**
+
+The auditor looks at the practice's record (§9). What they find there must be a
+valid agreement: complete data set, correct form version, locked before it was
+signed, no practitioner signature, no old wording. Options 1 and 2 guarantee
+that because the signed thing was built from validated data. Option 3
+guarantees only that a signature exists. **Option 3 is a fax machine with a
+hash.**
+
+Option 2 versus 1: 2 buys "looks like DocuSign", costs a second render path and
+a PDF-form toolchain the kiosk does not have, and the patient experience on a
+tablet is worse (pinch-zooming a PDF to find a tick box). Not worth it.
+
+**What "matching the PDF" means in option 1.** A template in
+`packages/domain/content/agreement-templates.json` whose sections mirror the
+DB4's — parties, servicing location, services, the assignment statement, the
+tick — so a receptionist and a patient who know the paper form recognise it.
+The tick boxes become **statements the assignor affirms** (the mechanism the
+kiosk already has: every statement ticked or the signature is refused). Only
+the first box exists on our page; §1c.
+
+**One more thing option 1 gives you that the others cannot: a decision.** The
+extracted DB4 goes through the rules engine. If PracSoft printed the old form,
+or a field is missing, or the servicing provider cannot be found at that
+location, the desk sees it *before* the patient signs — and hard rule 8 means
+the patient is still seen and billed. That is the whole product, in one screen.
+
+---
+
+## 4. A local LLM to read the form in real time
+
+**Not first, and not alone.**
+
+A DB4 printed from PracSoft3 has a **fixed layout**. Every field is at a known
+place and labelled. That is a **template parser** problem — positional and
+regex extraction against a versioned template (`parserTemplateVersion`, already
+in the envelope) — and a template parser is:
+
+- deterministic (the same page always yields the same JSON, which an audit needs),
+- testable with fixtures,
+- fast enough to run inside the print spool,
+- and it cannot hallucinate a field.
+
+A local LLM is the right tool for the case the template does NOT cover: a scan
+from a PMS we have no template for, or a photographed paper form. Use it
+**second**, with three guards that are already the platform's rules:
+
+1. **Every extracted field is confirmed by a person before anything is locked**
+   (W3, `extracted_elements_are_never_locked_without_staff_confirmation`). An
+   LLM proposes; reception confirms.
+2. **Confidence below a threshold shows as blank, never as a guess.**
+3. **The field list is closed**: the six approved identifiers plus the
+   agreement particulars. The model is never asked for, and never given a slot
+   for, a Medicare number or an amount (`extractor_never_captures_a_medicare_number`).
+
+*"If we do not have all the data, we do not proceed with the approval"* — that
+is hard rule 2 and it is already how the lock works. Nothing new is needed for
+it; the rules engine refuses an incomplete set and the tablet cannot be sent.
+
+Running a model **inside the practice** (on the reception PC) is a real cost:
+memory, a runtime to install and update, and a support surface on 200 desktops.
+Running it **in our cloud** means the page image leaves the practice, which is
+fine for our render but means the Medicare number on a PMS page transits our
+infrastructure before redaction. The template parser at the practice avoids
+both. Decide the LLM when a second PMS forces it, not before.
+
+---
+
+## 5. AOBPRINTER, and how the JSON reaches AoB
+
+**AOBPRINTER is GA-PLAN B12, AoBPrinterApp**, already scoped at 3–4 days in a
+separate codebase, waiting on "which write-back path" (A1). Your description
+matches it exactly: a virtual printer, local parse to JSON, and a lane to us.
+
+The receiving end exists: `POST /inbound/print-jobs` accepts the envelope,
+practice-scoped, answers 202. The sending end does not.
+
+### 5a. Three ways the JSON gets to us
+
+| | How | Verdict |
+|---|---|---|
+| **1. Reception drags and drops** | The file lands in a folder; reception uploads it on `/practice/...`. `PMS_to_AoB_Workflow.md` W5 | **The fallback**, not the path. It is what you do when the connector is down (hard rule 8) or when a practice will not install anything. Build it, because every mode needs it (`INTEGRATION-MODES.md` §1a) |
+| **2. A desktop watcher** pushes new files | The driver writes JSON to a folder; a watcher posts it | Works, but it is **two processes to install, monitor and update** where one would do |
+| **3. The driver posts directly** | The print driver is already a program running at the moment the page is printed. It parses and **POSTs the envelope itself**, with a local outbox for when we are unreachable | **This.** One install, one thing to keep alive, and the outbox gives you the watcher's resilience without the watcher |
+
+Option 3 collapses your options 1 and 2 into one artefact: AOBPRINTER = driver +
+parser + outbox. The outbox is a folder on disk, so if the practice ever wants
+to *see* what was sent, or drag one in by hand, it is there.
+
+**Mutual TLS, outbound only, per-practice credential, revocable from the
+console** — the same posture `aob-tech-stack.md` already gives the Medtech
+connector. The driver is a connector; it just gets its data from a print spool
+instead of an API.
+
+---
+
+## 6. Getting the signed artefact back into the PMS
+
+### 6a. Which folder — your annotation is right, with one correction
+
+The PMS keeps a document folder per patient, outside the database (*"DB 12GB,
+doc outside DB"*). Your annotation on the scan: *"use this [reference] for
+filename for folder structure"*.
+
+- **Folder = `patientRecordNumber`** — the Chart number, `00680`. It is the
+  practice's own key, it is on every form, and it is what the PMS's folder is
+  named for.
+- **Filename = `formReference`** — `HSS0610012092026120300`. One per form, so
+  a patient with three assignments in a year has three files that never
+  collide, and the reference ties the file back to the PracSoft claim.
+
+So: `<documents>/00680/HSS0610012092026120300.pdf` and beside it
+`HSS0610012092026120300.json` — the manifest (§7, 3b).
+
+**The correction:** the Chart number must be *confirmed* to be the folder name
+at this practice, not assumed. PMS installations differ, and the day the folder
+turns out to be named for something else is the day fifty signed consents land
+in the wrong place. One question to the practice, recorded as a per-practice
+setting.
+
+### 6b. Three ways the file gets there
+
+| | How | Verdict |
+|---|---|---|
+| **1. The desktop app pulls** | AOBPRINTER polls (or is pinged) for signed artefacts and drops them into the folder | **This.** It is GA-PLAN **B13**, "import-folder write-back in the desktop app", already scoped at a day, and it is the same installed thing as §5. Pull, not push: an outbound-only client needs no inbound port on a practice PC |
+| **2. Email to the practice, and an AI agent files it** | We email the PDF; an agent watches the inbox, reads sender and attachment, files it | **No**, and §6c says why at length |
+| **3. Other** | Write straight to the PMS's document table — only if PracSoft documents it. A network share we write to over VPN — a support nightmare. Neither beats 1 |
+
+### 6c. "Is this AI agent something we can sell?" — honestly, no
+
+An inbox-watching agent that files attachments into patient folders is:
+
+- **a generic robotic-process-automation product** with many incumbents, none
+  of them ours to beat;
+- **PHI over email**, the weakest channel we have, for a document whose whole
+  value is evidential integrity;
+- **a misfiling risk with no undo**: a signed consent filed into the wrong
+  patient's folder is a privacy breach, and an "AI agent" that does it at scale
+  does it at scale;
+- and **unnecessary**, because 6b option 1 already puts the file exactly where
+  it goes, from a process we control, with a hash on both ends.
+
+If a practice genuinely cannot install anything, email the practice a **link**
+to the signed artefact (the copy-link mechanism already exists, W6) and let a
+person file it. Do not build the agent.
+
+---
+
+## 7. The six transactions, and the APIs
+
+Your list, mapped onto what exists. Everything below is **practice-scoped,
+idempotent, and answers synchronously** — the "b" of each pair is the HTTP
+response, not a separate callback, because a connector's author needs to see
+the platform disagree with them in the same breath (the arrival contract
+already works this way).
+
+| # | Direction | Transaction | Endpoint | State |
+|---|---|---|---|---|
+| **1a** | FROM PMS | All bookings for a day | `POST /inbound/print-jobs` with `documentType: "appointment_list"` and `appointments[]`; or `POST /pms/sync-appointments` | Envelope exists; `sync-appointments` exists against the mock |
+| **1b** | TO PMS | Which were received | **The response to 1a**: `{ received: [...], refused: [{ key, reason }] }` per row | Pattern exists on `/arrivals` |
+| **2a / 2b** | FROM / TO | One booking | Same endpoint, one entry | Same |
+| **3a** | FROM PMS | One DB4 for approval | `POST /inbound/print-jobs` with `documentType: "db4_assignment"` and the §2 shape → creates the **arrival**, the **service record** (D5, D6b) and a **post-service agreement** through the existing pipeline | Envelope exists; the `db4_assignment` type and its handler do not |
+| **3b** | TO PMS | The signed form back | `GET /inbound/print-jobs/signed?since=` lists what is ready; `GET /agreements/:id/artefact` (hash-verified, hard rule 13) plus a **manifest** `{ formReference, patientRecordNumber, agreementId, signedAt, sha256, rendererVersion, formCode }`. The desktop app pulls both and writes `<chart>/<reference>.pdf` + `.json` | Artefact route exists for staff; the listing and the manifest do not |
+
+**Two rules that hold across all six:**
+
+- **A resend of corrected data is not a retry** (D-2026-09-12-15). Same
+  idempotency key means "you may not have heard me"; a new key naming the prior
+  message means "what I told you was wrong". 3a inherits this from `/arrivals`.
+- **Reception never chooses the agreement type and neither does the PMS.** The
+  versioned visit policy does (hard rules 6 and 14). A DB4 arriving after the
+  service decides `episodic_post` because a service record exists, not because
+  the form says DB4.
+
+**On "full automation": mode 3 in `INTEGRATION-MODES.md`.** 1a + 3a inbound,
+3b outbound, and the connector is AOBPRINTER rather than an API — which means
+**the D-01 blocker is answered for this practice by the print driver**, not by a
+vendor. Worth recording as a decision when you are ready.
+
+---
+
+## 8. Entities
+
+| Your entity | What exists | What is missing |
+|---|---|---|
+| **Patient** — add the practice patient id | `patientRecordNumber` exists and renders on both desks (12 Sep) | Nothing. Confirm it IS the folder name (§6a) |
+| **Practitioner** — billing (paid) and other | `affiliations.billingRole` = servicing / works-under / not billable; `providerNumber` per practitioner-at-location | **Payee.** The form names who is *paid*, and that is a different person from who *rendered*. Add `payeeAffiliationId` on the **service record** (it is a property of the claim, not of the practitioner), defaulting to the servicing affiliation. Never on the agreement artefact — the agreement names who rendered (D4) |
+| **Invoice / claim** | `service_records` — `pmsInvoiceKey`, `serviceDate`, `mbsItemNumbers`. **This is the invoice table**; it is the thing a post-agreement is raised against | `formReference`, `claimStatus` ("STORED FOR LATER TRANSMISSION"), `payeeAffiliationId`, `locationId` (the `HSS06100`). **No amount column, ever** (hard rule 4) |
+| **Form** | Nothing | A `pms_documents` row per ingested DB4: `formReference`, `formCode`, decided version, `sourceSha256`, `parserTemplateVersion`, redacted artefact id, and which arrival/agreement it produced. It is the audit trail from "what PracSoft printed" to "what the patient signed" |
+
+---
+
+## 9. AOBL — should AoB just be DocuSign for DB4s?
+
+Your reasoning: *the auditor looks at the practice's clinical system, not at
+AoB, so why track patients, practitioners and locations at all?*
+
+### 9a. The premise is already the product's premise
+
+I cannot verify the audit claim from anything I hold and will not pretend to
+(CLAUDE.md: never invent regulatory facts). But it does not need verifying to
+answer the question, because **the requirements were written on exactly that
+assumption**:
+
+> *"Write the signed agreement artefact **into the patient record**, so the
+> compliance evidence lives **where an auditor looks**."* — `aob-requirements.md`
+> line 306
+>
+> *"**Write-back is the product.** If the artefact cannot land in the PMS
+> patient record, this is a form, not a compliance product."* — REQ-INT-02
+
+So "the government looks at the practice's system" is not news to the design.
+It is *why* write-back exists, why D-01 is the top blocker, and why AOBPRINTER
+matters. **It does not distinguish AoB from AOBL — both have to get the
+document into the PMS.** The question is only what the document is.
+
+### 9b. What the auditor looks *at* versus what they look *for*
+
+They look at the practice's record. What they look **for** is a **valid**
+agreement: the complete s 65C data set, the post-1-July form, particulars fixed
+before the signature (signing a draft is the criminal offence in this regime —
+hard rule 2), no practitioner signature, a verifiable assignor. The practice is
+the party that loses the benefit when the record fails.
+
+**A signing tool signs whatever it is given.** If PracSoft is still printing the
+pre-1-July DB4 (§1d), AOBL evidences a defective agreement beautifully, with a
+hash, and files it in the right folder. The auditor finds a perfectly preserved
+invalid form. Every element of the complexity you are questioning exists to
+stop that: the versioned rule set, the locked particulars, the location and
+provider on the record, the identity check.
+
+### 9c. What AOBL would keep, and what it would lose
+
+**What you would still need**, even for "just sign it":
+
+| Kept | Why AOBL cannot drop it |
+|---|---|
+| Practice, and its locations | D4 is name **and place of practice**. The location is on the form and the folder is at a site |
+| Practitioner, with servicing and payee numbers | On the form; the folder path and the claim depend on it |
+| Patient record number | The folder name |
+| The artefact, its hash, the signature event, the append-only vault | Or it is not evidence |
+| Write-back to the PMS | The premise |
+
+That is most of the schema. **The things AOBL drops are the things that make the
+signature mean something:**
+
+| Dropped | What you lose | Impact |
+|---|---|---|
+| **Identity verification** (REQ-VER) | Proof of *who* tapped the screen | A tap on an iPad proves a tap. The evidential weakness is exactly where an audit bites: "who signed this?" |
+| **The rules engine and versioned rule sets** | Knowing the form is valid *before* it is signed | Regulatory whipsaw is the top project risk — the rules changed twice and reversed once, eight days before go-live, and cost a competitor about a million dollars. Versioning is the defence. AOBL has nothing to version; it is on the wrong form until PracSoft ships an update |
+| **Pre-agreements and ongoing agreements** | Half the regime | DB4E is valid for **post**-assignment only (FAQ B2). A DB4 signing tool cannot do a pre-visit agreement or an ongoing one. It is the post-service half — the half where the patient has already left and 15–20% do not respond |
+| **Reconciliation** (REQ-REC) | The outstanding list, the chase, the status per agreement | *"Not an afterthought — it is where the customer's pain actually lives"* (`aob-requirements.md` §REQ-REC). AOBL has no queue, so the practice keeps its spreadsheet |
+| **The Conformance Statement** (REQ-65C-05) | *"The artefact a practice manager hands to an auditor"* | Cannot exist if we do not know what we validated |
+| **The kiosk's own rules** | No staff entry on the patient surface; assignor rules; the 14+ self-assign; staff hard-blocked as assignors | AOBL is a tablet that shows a PDF |
+
+### 9d. What AOBL actually is
+
+**AOBL is case 2 of `PMS_to_AoB_Workflow.md` — PDF ingest — with the validator
+switched off.** It is not a different product. It is a subset of the pipeline
+we already designed, minus the step that gives the signature its value.
+
+So the honest recommendation:
+
+1. **Build the DB4 ingest path.** It is needed anyway (case 2, mode 2/3, this
+   practice). AOBPRINTER in, our render on the tablet, signed artefact back to
+   the folder. That IS the "sign a DB4 and file it" product the practice thinks
+   it wants.
+2. **Do not switch the validator off.** Run it, show the result on the desk,
+   and — hard rule 8 — never block the signature or the billing on it. The
+   practice signs anyway if they choose; they just *see* that the form is the
+   old version, or that a field is missing. That is one screen of difference
+   between AOBL and AoB, and it is the screen that keeps the practice out of
+   trouble.
+3. **If you want a cheaper tier to sell, sell the same pipeline with fewer
+   features on** — no portal, no reconciliation, no pre-agreements. Never fork
+   the product to remove validation. A tier is a price; a fork is two codebases.
+
+### 9e. Where you are right
+
+Two things in your note are correct and should change what gets built next:
+
+- **The practice thinks in forms, folders and printing.** The DB4 path meets
+  them where they are, and it should ship before the abstract "arrival" story
+  is sold to anyone on PracSoft. AOBPRINTER is the connector for this practice.
+- **The data model has grown faster than the customer-visible product.** That is
+  a sequencing problem, not a reason to shrink the model. §7 and §8 are small
+  additions; the rest exists.
+
+---
+
+## 10. What to decide, in order
+
+1. **Is PracSoft3 printing the post-1-July DB4E?** Ask the practice. §1d.
+2. **What do they mean by ticking both boxes?** §1c. Pathology is not ours.
+3. **Is the Chart number the document folder name?** §6a. One question, one
+   setting.
+4. **Option 1 for signing** — confirm, since it is the recommendation.
+5. **AOBPRINTER as driver + parser + outbox in one**, posting directly (§5a
+   option 3), pulling the signed artefact back (§6b option 1). This answers
+   D-01 for this practice.
+6. **No email agent.** §6c.
+7. **AOBL as a tier, not a fork**, with the validator on and non-blocking. §9d.
+
+## Change log
+| Date | Change |
+|---|---|
+| 14 Sep 2026 | v1.0. Written from the scanned PracSoft DB4 and Carl's nine questions, including whether AoB should become a signing-only tool. |
