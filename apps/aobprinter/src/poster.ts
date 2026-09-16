@@ -47,8 +47,8 @@ export function makeHttpPoster(config: AobPrinterConfig, logger: Logger): Poster
       if (response.ok) {
         // 202 with the accepted job. `duplicate` is the server telling us it
         // already had this exact document — which is the answer we want.
-        const body = (await response.json().catch(() => ({}))) as { duplicate?: boolean; lane?: string };
-        return { ok: true, status: response.status, duplicate: body.duplicate === true };
+        const body = (await response.json().catch(() => ({}))) as { duplicate?: boolean; lane?: string; id?: string };
+        return { ok: true, status: response.status, duplicate: body.duplicate === true, jobId: body.id };
       }
 
       const retryable = response.status >= 500 || response.status === 408 || response.status === 429;
@@ -58,10 +58,11 @@ export function makeHttpPoster(config: AobPrinterConfig, logger: Logger): Poster
           note: 'the server will not take this job as it stands; it stays queued and needs a human',
         });
       }
-      return { ok: false, status: response.status, error: `HTTP ${response.status}` };
+      return { ok: false, status: response.status, error: `HTTP ${response.status}`, retryable };
     } catch (err) {
-      // Unreachable, DNS, TLS, timeout. Ordinary, and the queue is what it is for.
-      return { ok: false, status: 0, error: redactError(err) };
+      // Unreachable, DNS, TLS, timeout. Ordinary, always retryable, and the
+      // queue is what it is for.
+      return { ok: false, status: 0, error: redactError(err), retryable: true };
     } finally {
       clearTimeout(timer);
     }

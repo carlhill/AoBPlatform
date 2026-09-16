@@ -17,11 +17,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2101 |
-| Files scanned for exports | 517 |
-| Files scanned for imports | 559 |
-| Exports with no comment of their own | 912 |
-| Exports imported nowhere else | 872 |
+| Exported symbols indexed | 2123 |
+| Files scanned for exports | 520 |
+| Files scanned for imports | 562 |
+| Exports with no comment of their own | 923 |
+| Exports imported nowhere else | 881 |
 
 ## Sections
 
@@ -36,7 +36,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 - [Contracts functions and constants](#contracts-functions-and-constants) — 21
 - [Core services, controllers and modules](#core-services-controllers-and-modules) — 270
 - [Core helpers, constants and types](#core-helpers-constants-and-types) — 172
-- [AOBPRINTER (the desktop print channel)](#aobprinter-the-desktop-print-channel-) — 60
+- [AOBPRINTER (the desktop print channel)](#aobprinter-the-desktop-print-channel-) — 82
 
 ## Web components
 
@@ -2158,27 +2158,40 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## AOBPRINTER (the desktop print channel)
 
-60 exports.
+82 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
-| `Db4PrintRecord` | aobprinter:db4-record.ts | The envelope's five fields are always present; everything below them is what the parser found on the page. | **4** · aobprinter:outbox.ts, aobprinter:parser.ts, aobprinter:poster.ts, +1 more |
-| `Logger` | aobprinter:log.ts |  | **4** · aobprinter:main.ts, aobprinter:outbox.ts, aobprinter:poster.ts, +1 more |
+| `Logger` | aobprinter:log.ts |  | **6** · aobprinter:keystore.ts, aobprinter:main.ts, aobprinter:outbox.ts, +3 more |
+| `Db4PrintRecord` | aobprinter:db4-record.ts | The envelope's five fields are always present; everything below them is what the parser found on the page. | **5** · aobprinter:outbox.ts, aobprinter:parser.ts, aobprinter:poster.ts, +2 more |
 | `redactError` | aobprinter:log.ts | An error, with its message redacted and its stack dropped. | **4** · aobprinter:main.ts, aobprinter:outbox.ts, aobprinter:poster.ts, +1 more |
 | `AobPrinterConfig` | aobprinter:config.ts |  | **2** · aobprinter:main.ts, aobprinter:poster.ts |
+| `EncryptedPayload` | aobprinter:keystore.ts |  | **2** · aobprinter:outbox.ts, aobprinter:retention.ts |
+| `KeyWrapper` | aobprinter:keystore.ts | Wraps and unwraps the retention key. | **2** · aobprinter:main.ts, aobprinter:retention.ts |
 | `Outbox` | aobprinter:outbox.ts | (file) The outbox: a folder that must never lose a form and never send one twice. | **2** · aobprinter:main.ts, aobprinter:watcher.ts |
 | `ParserTemplate` | aobprinter:template.ts |  | **2** · aobprinter:parser.ts, aobprinter:watcher.ts |
 | `DB4_DOCUMENT_TYPE` | aobprinter:db4-record.ts | `db4_assignment` — declared in the domain's lane table, not here. | **1** · aobprinter:parser.ts |
+| `DEFAULT_RETENTION_CONFIG` | aobprinter:config.ts |  | **1** · aobprinter:outbox.ts |
 | `DEFAULT_TEMPLATE_VERSION` | aobprinter:template.ts | The template a fresh install parses with, until configuration says otherwise. | **1** · aobprinter:config.ts |
 | `Extractor` | aobprinter:template.ts |  | **1** · aobprinter:parser.ts |
 | `PostResult` | aobprinter:outbox.ts |  | **1** · aobprinter:poster.ts |
 | `Poster` | aobprinter:outbox.ts | What actually talks to AoB. | **1** · aobprinter:poster.ts |
+| `ReceiptsWriter` | aobprinter:receipts.ts | Where the outbox sends a finished job's receipt. | **1** · aobprinter:retention.ts |
+| `RetentionConfig` | aobprinter:config.ts | How long a form's OWN copy is kept on this desktop after it is no longer needed to prove delivery. | **1** · aobprinter:retention.ts |
+| `RetentionDeps` | aobprinter:retention.ts |  | **1** · aobprinter:outbox.ts |
 | `RowExtractor` | aobprinter:template.ts |  | **1** · aobprinter:parser.ts |
 | `SpoolClaimer` | aobprinter:watcher.ts | Watches the one spool path and claims what lands there. | **1** · aobprinter:main.ts |
 | `TransformName` | aobprinter:template.ts |  | **1** · aobprinter:parser.ts |
+| `buildReceipt` | aobprinter:receipts.ts | Build a receipt from a record and its outcome. | **1** · aobprinter:outbox.ts |
+| `buildRetentionDeps` | aobprinter:retention.ts | Build what `Outbox` needs. | **1** · aobprinter:main.ts |
 | `claimedJobs` | aobprinter:watcher.ts | Everything already claimed and not yet parsed — what a restart finds. | **1** · aobprinter:main.ts |
 | `consoleLogger` | aobprinter:log.ts |  | **1** · aobprinter:main.ts |
+| `decryptPayload` | aobprinter:keystore.ts |  | **1** · aobprinter:retention.ts |
+| `dpapiKeyWrapper` | aobprinter:keystore.ts | The real wrapper: Windows DPAPI at `LocalMachine` scope, via PowerShell. | **1** · aobprinter:retention.ts |
+| `encryptPayload` | aobprinter:keystore.ts | AES-256-GCM over a raw key already in memory. | **1** · aobprinter:retention.ts |
 | `loadConfig` | aobprinter:config.ts |  | **1** · aobprinter:main.ts |
+| `loadOrCreateKey` | aobprinter:keystore.ts | Load the wrapped key from disk, or generate and wrap a fresh one. | **1** · aobprinter:retention.ts |
+| `makeFileReceiptsWriter` | aobprinter:receipts.ts |  | **1** · aobprinter:retention.ts |
 | `makeHttpPoster` | aobprinter:poster.ts |  | **1** · aobprinter:main.ts |
 | `parseDb4` | aobprinter:parser.ts | The record, or null when the page is not the document this template reads. | **1** · aobprinter:watcher.ts |
 | `processClaimedJob` | aobprinter:watcher.ts | One claimed file → one record in the outbox. | **1** · aobprinter:main.ts |
@@ -2186,6 +2199,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `sha256Hex` | aobprinter:outbox.ts |  | **1** · aobprinter:watcher.ts |
 | `templateFor` | aobprinter:template.ts |  | **1** · aobprinter:main.ts |
 | `watcherDirs` | aobprinter:watcher.ts |  | **1** · aobprinter:main.ts |
+| `Cipher` | aobprinter:retention.ts | What the outbox needs to encrypt and decrypt a payload, without knowing how the key is held. | 0 |
 | `DEFAULT_CONFIG_PATH` | aobprinter:config.ts |  | 0 |
 | `DEFAULT_DATA_DIR` | aobprinter:config.ts |  | 0 |
 | `DEFAULT_SPOOL_FILE` | aobprinter:config.ts |  | 0 |
@@ -2211,17 +2225,25 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ParseInput` | aobprinter:parser.ts |  | 0 |
 | `PdfText` | aobprinter:pdf-text.ts |  | 0 |
 | `ProcessOutcome` | aobprinter:watcher.ts |  | 0 |
+| `RETENTION_HARD_CAP_MS` | aobprinter:config.ts | Once `retention.enabled` is true, nothing this feature can actually delete may take longer than this to go. | 0 |
+| `Receipt` | aobprinter:receipts.ts |  | 0 |
+| `ReceiptOutcome` | aobprinter:receipts.ts |  | 0 |
+| `ReceiptState` | aobprinter:receipts.ts |  | 0 |
 | `RunHandles` | aobprinter:main.ts |  | 0 |
+| `StartDeps` | aobprinter:main.ts |  | 0 |
 | `TRANSFORMS` | aobprinter:template.ts | The named transforms. | 0 |
 | `WatcherDirs` | aobprinter:watcher.ts |  | 0 |
+| `appendReceipt` | aobprinter:receipts.ts |  | 0 |
 | `claimedJobName` | aobprinter:watcher.ts | A claimed job's filename. | 0 |
 | `isCompletePdf` | aobprinter:watcher.ts | Is this a complete PDF? | 0 |
+| `keystorePaths` | aobprinter:keystore.ts |  | 0 |
 | `makeLogger` | aobprinter:log.ts |  | 0 |
 | `outboxPaths` | aobprinter:outbox.ts |  | 0 |
 | `parseConfig` | aobprinter:config.ts |  | 0 |
 | `parseTemplate` | aobprinter:template.ts |  | 0 |
+| `receiptsPath` | aobprinter:receipts.ts |  | 0 |
 | `redact` | aobprinter:log.ts | Replace every long digit run with a marker. | 0 |
-| `start` | aobprinter:main.ts |  | 0 |
+| `start` | aobprinter:main.ts | Start the program. | 0 |
 
 ---
 

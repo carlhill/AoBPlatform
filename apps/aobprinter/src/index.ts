@@ -10,14 +10,24 @@
  * Write-back Manifest and dropping the Signed-DB4 into the patient folder — is
  * piece 4 and is not here.
  */
-export { loadConfig, parseConfig, DEFAULT_CONFIG_PATH, DEFAULT_DATA_DIR, DEFAULT_SPOOL_FILE } from './config';
-export type { AobPrinterConfig } from './config';
+export {
+  loadConfig,
+  parseConfig,
+  DEFAULT_CONFIG_PATH,
+  DEFAULT_DATA_DIR,
+  DEFAULT_RETENTION_CONFIG,
+  DEFAULT_SPOOL_FILE,
+  RETENTION_HARD_CAP_MS,
+} from './config';
+export type { AobPrinterConfig, RetentionConfig } from './config';
 export { DB4_DOCUMENT_TYPE } from './db4-record';
 export type { Db4PrintRecord } from './db4-record';
+export { decryptPayload, dpapiKeyWrapper, encryptPayload, keystorePaths, loadOrCreateKey } from './keystore';
+export type { EncryptedPayload, KeyWrapper } from './keystore';
 export { makeLogger, consoleLogger, redact, redactError } from './log';
 export type { Logger, LogSink } from './log';
 export { start } from './main';
-export type { RunHandles } from './main';
+export type { RunHandles, StartDeps } from './main';
 export { Outbox, outboxPaths, sha256Hex } from './outbox';
 export type { PostResult, Poster } from './outbox';
 export { parseDb4 } from './parser';
@@ -25,6 +35,10 @@ export type { ParseInput } from './parser';
 export { readPdfText } from './pdf-text';
 export type { PdfText } from './pdf-text';
 export { makeHttpPoster } from './poster';
+export { buildReceipt, appendReceipt, makeFileReceiptsWriter, receiptsPath } from './receipts';
+export type { Receipt, ReceiptOutcome, ReceiptsWriter, ReceiptState } from './receipts';
+export { buildRetentionDeps } from './retention';
+export type { Cipher, RetentionDeps } from './retention';
 export { parseTemplate, templateFor, DEFAULT_TEMPLATE_VERSION } from './template';
 export type { ParserTemplate } from './template';
 export { SpoolClaimer, claimedJobs, claimedJobName, isCompletePdf, processClaimedJob, watcherDirs } from './watcher';

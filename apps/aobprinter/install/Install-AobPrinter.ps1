@@ -200,6 +200,30 @@ else {
 }
 
 $printer = Get-Printer -Name $PrinterName
+
+<#
+    THE SPOOLER MUST NOT KEEP ITS OWN COPY.
+
+    AOBPRINTER's outbox (`src/outbox.ts`, `src/retention.ts`) encrypts a form
+    while it waits and deletes it the moment it is no longer needed -- that is
+    the whole point of the local-retention feature. None of that matters if
+    Windows' own print spooler is quietly holding a second, plaintext copy of
+    every job under "Keep printed documents": a setting meant for reprinting
+    from the queue, which on a queue that exists only to feed AOBPRINTER is a
+    silent, unmanaged duplicate of exactly the PII this feature exists to stop
+    accumulating. Asserted on every install, not just a fresh one, because a
+    practice's local IT policy or a prior manual change could have turned it
+    back on.
+#>
+if ($printer.KeepPrintedJobs) {
+    Invoke-PrinterStep 'Disabling "keep printed documents"' { Set-Printer -Name $PrinterName -KeepPrintedJobs $false }
+    Write-Step 'Disabled "keep printed documents" on the queue -- the spooler holds no copy of a form.'
+    $printer = Get-Printer -Name $PrinterName
+}
+else {
+    Write-Step '"Keep printed documents" is already off.'
+}
+
 Write-Host "Done."
 Write-Host "  Name   : $($printer.Name)"
 Write-Host "  Driver : $($printer.DriverName)"

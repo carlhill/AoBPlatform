@@ -36,7 +36,71 @@ export interface AobPrinterConfig {
   /** Reserved for the mutual-TLS credential; unread until that decision lands. */
   readonly clientCertPath?: string;
   readonly clientKeyPath?: string;
+  /** Local retention of the outbox's own payloads. See `RetentionConfig`. */
+  readonly retention: RetentionConfig;
 }
+
+/**
+ * How long a form's OWN copy is kept on this desktop after it is no longer
+ * needed to prove delivery.
+ *
+ * `enabled` DEFAULTS TO FALSE, ON PURPOSE, AND THE REASON IS RECORDED HERE
+ * RATHER THAN LEFT TO BE REDISCOVERED. Measured 17 September 2026: the
+ * server's `ValidationPipe` whitelist strips a DB4 Print Record's body at the
+ * door and the lane worker discards it, so `outbox/sent/<sha>.json` on this
+ * desktop is today THE ONLY COMPLETE COPY of a posted form anywhere in the
+ * platform (TODO.md, "AOBPRINTER landed", item 3; see the comment on
+ * `sentPath` in `outbox.ts`). Deleting it on ack before that server-side piece
+ * lands would acknowledge a form and then lose it — worse than the PII-on-disk
+ * problem this feature exists to fix. Once the platform side lands, this flips
+ * on and `sent/` starts emptying itself.
+ *
+ * WITH IT OFF: `pending/` and `sent/` behave exactly as before this feature —
+ * unencrypted, `sent/` never swept. Receipts are still written (they carry no
+ * PII, so there is no reason to wait) and a stale `pending/` job still alarms
+ * (an unacknowledged form is worth knowing about whether or not retention is
+ * on).
+ *
+ * WITH IT ON: `pending/` and any new `poison/` payload are encrypted at rest;
+ * `sent/` is deleted immediately on acknowledgement rather than kept; a
+ * non-retryable rejection moves to `poison/` and is destroyed after
+ * `poisonTtlMs`, logged loudly.
+ */
+export interface RetentionConfig {
+  readonly enabled: boolean;
+  /**
+   * How long an unacknowledged `pending/` job may go without being logged at
+   * error level. NOT A TTL — nothing in `pending/` is ever deleted by age, at
+   * any value of this number, whether or not retention is enabled. A form
+   * nobody can post is an alarm, not a candidate for deletion (rule 1 of this
+   * feature).
+   */
+  readonly pendingAlarmMs: number;
+  /** How long a job the server has rejected outright sits in `poison/` before it is destroyed. Only enforced when `enabled`. */
+  readonly poisonTtlMs: number;
+  /** How often the sweep (the alarm check, and the poison TTL) runs, besides the one run at startup. */
+  readonly sweepIntervalMs: number;
+}
+
+/**
+ * Once `retention.enabled` is true, nothing this feature can actually delete
+ * may take longer than this to go. `pending/` IS NOT COVERED — it has no TTL
+ * at any value, by design (rule 1 of this feature; `pendingAlarmMs` above is
+ * capped to this number too, but only as a sanity bound on an alarm
+ * threshold, not as a claim that pending jobs are ever removed by age.
+ * `poisonTtlMs` is checked once per sweep, so the true worst case before a
+ * poisoned payload is gone is `poisonTtlMs + sweepIntervalMs` — validation
+ * below caps that SUM, not `poisonTtlMs` alone, so a large `sweepIntervalMs`
+ * cannot quietly stretch the real retention window past 24 hours.
+ */
+export const RETENTION_HARD_CAP_MS = 24 * 60 * 60 * 1000;
+
+export const DEFAULT_RETENTION_CONFIG: RetentionConfig = {
+  enabled: false,
+  pendingAlarmMs: 60 * 60 * 1000,
+  poisonTtlMs: 60 * 60 * 1000,
+  sweepIntervalMs: 5 * 60 * 1000,
+};
 
 export const DEFAULT_DATA_DIR = 'C:\\ProgramData\\AoBPlatform';
 export const DEFAULT_SPOOL_FILE = 'C:\\ProgramData\\AoBPlatform\\spool\\aobprinter-out.pdf';
@@ -62,6 +126,60 @@ function optionalNumber(raw: Record<string, unknown>, key: string, fallback: num
   return value;
 }
 
+/**
+ * `retention`, validated the same way as everything above it: present or not,
+ * but never half-shaped.
+ */
+function parseRetention(raw: unknown, path: string): RetentionConfig {
+  if (raw === undefined) return DEFAULT_RETENTION_CONFIG;
+  if (typeof raw !== 'object' || raw === null) {
+    throw new Error(`${path}: "retention" must be a JSON object when present.`);
+  }
+  const doc = raw as Record<string, unknown>;
+
+  const enabled = doc.enabled === undefined ? false : doc.enabled;
+  if (typeof enabled !== 'boolean') {
+    throw new Error(`${path}: "retention.enabled" must be a boolean.`);
+  }
+
+  const pendingAlarmMs = optionalNumber(doc, 'pendingAlarmMs', DEFAULT_RETENTION_CONFIG.pendingAlarmMs);
+  const poisonTtlMs = optionalNumber(doc, 'poisonTtlMs', DEFAULT_RETENTION_CONFIG.poisonTtlMs);
+  const sweepIntervalMs = optionalNumber(doc, 'sweepIntervalMs', DEFAULT_RETENTION_CONFIG.sweepIntervalMs);
+
+  /*
+   * THE HARD CAP APPLIES ONLY ONCE RETENTION IS SWITCHED ON. Disabled, these
+   * numbers govern nothing but a log threshold and a sweep's pace and cannot
+   * cause anything to be kept, so there is nothing to cap. Enabled:
+   *
+   * - `pendingAlarmMs` is capped on its own — not because `pending/` is ever
+   *   deleted by age (it never is, at any value: rule 1 of this feature), but
+   *   as a sanity bound on the alarm threshold itself.
+   * - `poisonTtlMs` IS a real deletion timer, but it is only CHECKED once per
+   *   sweep — a poisoned job that ages past `poisonTtlMs` one second after a
+   *   sweep just ran waits out the rest of `sweepIntervalMs` before the next
+   *   one catches it. So the cap is on `poisonTtlMs + sweepIntervalMs`, the
+   *   true worst case, not on `poisonTtlMs` alone — an uncapped sweep interval
+   *   would otherwise let a large one quietly stretch real retention past 24
+   *   hours without either individual number looking wrong.
+   */
+  if (enabled) {
+    if (pendingAlarmMs > RETENTION_HARD_CAP_MS) {
+      throw new Error(
+        `${path}: "retention.pendingAlarmMs" may not exceed 24 hours (${RETENTION_HARD_CAP_MS}ms) once retention is enabled.`,
+      );
+    }
+    if (poisonTtlMs + sweepIntervalMs > RETENTION_HARD_CAP_MS) {
+      throw new Error(
+        `${path}: "retention.poisonTtlMs" plus "retention.sweepIntervalMs" may not together exceed 24 hours ` +
+          `(${RETENTION_HARD_CAP_MS}ms) once retention is enabled — a poisoned job is only actually swept once per ` +
+          'interval, so the sum is the real worst-case time before it is destroyed.',
+      );
+    }
+  }
+
+  return { enabled, pendingAlarmMs, poisonTtlMs, sweepIntervalMs };
+}
+
 export function parseConfig(raw: unknown, path: string): AobPrinterConfig {
   if (typeof raw !== 'object' || raw === null) throw new Error(`${path} is not a JSON object.`);
   const doc = raw as Record<string, unknown>;
@@ -76,6 +194,7 @@ export function parseConfig(raw: unknown, path: string): AobPrinterConfig {
     templateVersion: typeof doc.templateVersion === 'string' ? doc.templateVersion : DEFAULT_TEMPLATE_VERSION,
     clientCertPath: typeof doc.clientCertPath === 'string' ? doc.clientCertPath : undefined,
     clientKeyPath: typeof doc.clientKeyPath === 'string' ? doc.clientKeyPath : undefined,
+    retention: parseRetention(doc.retention, path),
   };
 }
 

@@ -133,7 +133,7 @@ export class SpoolClaimer {
   }
 }
 
-export type ProcessOutcome = 'queued' | 'already_queued' | 'already_sent' | 'parked' | 'incomplete';
+export type ProcessOutcome = 'queued' | 'already_queued' | 'already_sent' | 'already_poisoned' | 'parked' | 'incomplete';
 
 /**
  * One claimed file → one record in the outbox.

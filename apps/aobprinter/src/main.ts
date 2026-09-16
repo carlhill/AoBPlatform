@@ -18,9 +18,11 @@
  * server just means the queue grows (hard rule 8).
  */
 import { loadConfig, type AobPrinterConfig } from './config';
+import type { KeyWrapper } from './keystore';
 import { consoleLogger, redactError, type Logger } from './log';
 import { Outbox } from './outbox';
 import { makeHttpPoster } from './poster';
+import { buildRetentionDeps } from './retention';
 import { templateFor } from './template';
 import { SpoolClaimer, claimedJobs, processClaimedJob, watcherDirs } from './watcher';
 
@@ -30,7 +32,23 @@ export interface RunHandles {
   stop(): void;
 }
 
-export function start(config: AobPrinterConfig, logger: Logger = consoleLogger): RunHandles {
+export interface StartDeps {
+  /**
+   * Overrides the real DPAPI wrapper. Tests use this to prove the refuse-to-
+   * start path and the encrypt/decrypt path without touching Windows DPAPI or
+   * shelling to PowerShell — which is also what keeps this suite runnable on
+   * the Linux CI runner.
+   */
+  readonly keyWrapper?: KeyWrapper;
+}
+
+/**
+ * Start the program. THROWS SYNCHRONOUSLY, refusing to start, in two cases:
+ * an unbuilt parser template, or — new — a retention key that is enabled in
+ * configuration but cannot be unwrapped (`keystore.ts`). Both are preferable
+ * to running in a state this program cannot honestly describe.
+ */
+export function start(config: AobPrinterConfig, logger: Logger = consoleLogger, deps: StartDeps = {}): RunHandles {
   const template = templateFor(config.templateVersion);
   if (!template) {
     throw new Error(
@@ -40,7 +58,8 @@ export function start(config: AobPrinterConfig, logger: Logger = consoleLogger):
   }
 
   const dirs = watcherDirs(config.dataDir);
-  const outbox = new Outbox(config.dataDir, makeHttpPoster(config, logger), logger);
+  const retention = buildRetentionDeps(config.dataDir, config.retention, logger, deps.keyWrapper);
+  const outbox = new Outbox(config.dataDir, makeHttpPoster(config, logger), logger, () => new Date(), retention);
   const claimer = new SpoolClaimer(config.spoolFile, dirs, config.settleMs, logger);
 
   if (!/^https:/i.test(config.endpoint) && !/^http:\/\/(localhost|127\.0\.0\.1)/i.test(config.endpoint)) {
@@ -54,11 +73,39 @@ export function start(config: AobPrinterConfig, logger: Logger = consoleLogger):
     });
   }
 
+  /*
+   * A FILESYSTEM ERROR HERE MUST NOT BE THE REASON THIS PROGRAM WON'T START
+   * OR WON'T KEEP RUNNING (hard rule 8, the same posture `tick()`'s catch-all
+   * takes). The sweep is a safety net on top of the outbox's own guarantees,
+   * not a precondition for them — a locked file or a permissions hiccup
+   * reading `pending/` or `poison/` is worth logging loudly, never worth
+   * refusing to capture the next print over.
+   */
+  function safeSweep(): { alarmed: number; expired: number } {
+    try {
+      return outbox.sweep();
+    } catch (err) {
+      logger.error('sweep.failed', { error: redactError(err) });
+      return { alarmed: 0, expired: 0 };
+    }
+  }
+
+  /*
+   * ONCE HERE, AND AGAIN ON AN INTERVAL BELOW. The machine is off overnight;
+   * a pending job or a poisoned form that aged past its threshold at 2am must
+   * not sit unremarked until somebody prints again at nine. Run before the
+   * banner so a stale form already on disk from a previous run is reflected
+   * in it, not just in the next scheduled sweep.
+   */
+  const startupSweep = safeSweep();
+
   logger.info('aobprinter.started', {
     template: template.version,
     pms: template.pms,
     spool: config.spoolFile,
     waiting: outbox.depth(),
+    retention: config.retention.enabled,
+    pendingAlarms: startupSweep.alarmed,
   });
 
   let running = false;
@@ -97,11 +144,15 @@ export function start(config: AobPrinterConfig, logger: Logger = consoleLogger):
   // A poll timer must not be the reason a service refuses to shut down.
   timer.unref?.();
 
+  const sweepTimer = setInterval(safeSweep, config.retention.sweepIntervalMs);
+  sweepTimer.unref?.();
+
   return {
     tick,
     stop: () => {
       stopped = true;
       clearInterval(timer);
+      clearInterval(sweepTimer);
       logger.info('aobprinter.stopped', {});
     },
   };

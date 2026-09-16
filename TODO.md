@@ -4247,13 +4247,20 @@ form". **`formReference` is that key** (`DB4-AND-AOBL.md` §2 already calls it
 handler has to dedup on it, or a receptionist pressing print twice becomes two
 agreements for one service.
 
-### 3. `sent/` GROWS FOREVER, AND HOLDS MEDICARE NUMBERS.
+### 3. `sent/` GROWS FOREVER, AND HOLDS MEDICARE NUMBERS. DONE (17 Sep 2026).
 
-No retention sweep, by design for now (see 1). Once the server keeps what it is
-sent, the marker should shrink to the hash and the timestamps, and old markers
-should age out. Carl's call on how long — it is PII at rest on a practice
-desktop, and `aob-threat-model.md` already owes a section on holding Medicare
-numbers (D-2026-09-14-03).
+Built: three tiers (`pending/` never expires, `sent/` deletes on ack, a new
+`poison/` for a server's outright rejection, TTL'd), an append-only,
+PII-free `receipts.jsonl` in place of the full record, and encryption at
+rest (AES-256-GCM, key DPAPI-wrapped at LocalMachine scope) for anything
+that waits. Shipped OFF by default (`retention.enabled: false` in
+`aobprinter.config.json`) because piece 1 (below) has not landed — with it
+off, `sent/` still behaves exactly as this note originally described, and
+`aob-threat-model.md` still owes the section D-2026-09-14-03 asked for. See
+`apps/aobprinter/src/config.ts`'s `RetentionConfig`, `outbox.ts`'s three
+tiers, `keystore.ts` and `retention.ts`. Carl: this touches key management,
+which CLAUDE.md §7's working rules call human-authored — flagged for the
+review pass before `enabled` is ever set to `true` against a real practice.
 
 ### 4. A FILE-PATH PRINTER PORT CANNOT BE REMOVED BY THE PRINT CMDLETS.
 
