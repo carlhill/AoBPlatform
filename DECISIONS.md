@@ -1758,6 +1758,70 @@ rather than the door; or evidence that the flagged-off surfaces cost more to
 carry than to delete.
 
 
+
+## D-2026-09-17-01 - No patient data rests on a practice PC: keep receipts, not records
+
+**Date:** 17 September 2026. **Decided by:** Carl: *"only keep for the day or
+maybe even for 1 hour... we cannot keep PII on user's PC."*
+
+**The decision.** AOBPRINTER's local outbox keeps a DB4 Print Record only until
+the server acknowledges it. Retention is an **event, not a clock**: on a 2xx the
+payload is deleted immediately, and what remains is a **receipt** - sha,
+formReference, server job id, timestamps, template version, byte count, attempt
+count, final state - which holds no patient data and answers "did this form get
+through, and when" for as long as anybody needs to ask.
+
+**The three tiers, and the distinction is the whole point.**
+
+| Folder | Holds | Retention |
+|---|---|---|
+| `pending/` | not yet acknowledged | **until ack. No TTL, ever.** Older than an hour alarms on every sweep and in the startup banner |
+| `sent/` | acknowledged | **deleted on ack, immediately** - not an hour |
+| `poison/` | rejected and unpostable | 1 hour default, configurable, hard cap 24 hours, then deleted with a loud record that a form was destroyed |
+
+**Why `pending/` has no expiry.** A form nobody can post is an alarm, not a
+candidate for deletion. Deleting unsent work to satisfy a retention rule would
+destroy the only copy of a patient's signed intent to satisfy a tidiness policy,
+and hard rule 8's spirit runs the other way: an outage slows evidence, it never
+destroys it.
+
+**Why encryption and not shredding.** Overwriting a file does not reliably erase
+it on an SSD - wear levelling and TRIM mean the old blocks survive the
+overwrite. So every payload that waits is encrypted at rest (AES-256-GCM under a
+key wrapped by Windows DPAPI at machine scope), and deletion is therefore
+crypto-shredding: the same control the Evidence Vault uses under hard rule 11,
+applied at the other end of the wire. The key is wrapped, never the payload, so
+no patient data is ever passed on a command line. If the key cannot be
+unwrapped, the program refuses to start rather than quietly writing plaintext.
+
+**What industry practice this follows.** A store-and-forward client keeps a
+payload until acknowledged and no longer: PCI-DSS forbids retaining sensitive
+authentication data once an authorisation completes and keeps a truncated
+reference instead; secure print release purges on release; site connectors for
+clinical systems are pipes, not filing cabinets. The general privacy frame is
+destroy-or-de-identify once the purpose is served - to be stated properly in
+`aob-threat-model.md` alongside the Medicare-number section D-2026-09-14-03
+already requires, not asserted from here.
+
+**Sequencing, which matters more than the policy.** This ships **disabled**. The
+server currently discards the DB4 record - `ValidationPipe({ whitelist: true })`
+strips every field the envelope DTO does not declare - so `sent/` is at present
+the **only complete copy of a DB4 Print Record anywhere**. Turning deletion on
+before piece 1 keeps the record would acknowledge a form and then lose it. With
+the flag off, receipts are still written and stale `pending/` still alarms; the
+flag goes on when piece 1 lands.
+
+**Also settled here:** the spooler must not retain printed documents
+(`Set-Printer -KeepPrintedJobs $false`), because a Windows-held copy of the page
+would defeat all of the above; and the claimed spool PDF is deleted the moment
+it is parsed, so the full form image never waits on disk at all.
+
+**What would reopen it.** A practice whose network is unreliable enough that
+`pending/` routinely holds forms for days, which would make the alarm the normal
+state and need a different answer (probably a local encrypted store with an
+explicit, visible queue depth rather than a silent folder).
+
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
@@ -1801,3 +1865,4 @@ carry than to delete.
 | 14 Sep | The Signed-DB4: our deterministic reproduction of the PracSoft DB4 with the cost printed verbatim and the signature on it; reverses -01; hard rule 4 narrowed, 12 kept with a footer, 1 still to decide (mask recommended) | **D-2026-09-14-02 above** |
 | 14 Sep | The Medicare card number and IRN are printed in full on the Signed-DB4; hard rule 1's identity meaning is unchanged; the threat model needs a section for holding it | **D-2026-09-14-03 above** |
 | 14 Sep | The signing product is the first feature-flagged slice of AoB, same name, nothing removed; data completeness gates, form version warns | **D-2026-09-14-04 above** |
+| 17 Sep | No patient data rests on a practice PC: the outbox keeps a payload only until it is acknowledged, then a receipt with no PII; `pending/` never expires; encrypt-then-delete because overwriting an SSD does not erase; ships disabled until piece 1 keeps the record | **D-2026-09-17-01 above** |
