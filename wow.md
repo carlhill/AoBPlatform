@@ -225,6 +225,92 @@ before the edit, not after the regression. Above about five importers, add the
 new behaviour behind an optional prop that defaults to today's behaviour rather
 than changing what the existing callers get.
 
+## 11. The working method, and why each rule is there (17 September 2026)
+
+Carl gave nine working rules, nine git rules and a testing rule on 17 September.
+They are stated in `CLAUDE.md` §7 as imperatives with no reasoning, deliberately:
+Anthropic's own guidance is that a long `CLAUDE.md` makes Claude ignore
+instructions, because the rules that matter get lost among the rules that do not.
+On the morning of 17 September §7 was 1,785 words against §2's 425 — the working
+preferences written that day outweighed the statutory invariants four to one.
+This section holds what was cut out of it.
+
+### 11a. Why the test rules are shaped the way they are
+
+**"Never weaken a test to make a run pass" has a precedent, and it cuts both
+ways.** On 12 September the `acting-as` e2e test "allows a different operator"
+started failing. The test was genuinely wrong: it used hardcoded operator
+subjects, `acting_as_sessions` is append-only, and after eleven runs the
+"different" operator had in fact acted before. The rule the test asserted was
+right and the test was wrong — and the fix was still to say that out loud, give
+each run a fresh `randomUUID()` subject, and record why. The banned move is not
+"changing a test", it is changing one *until it passes* without an account of
+why the old assertion was wrong.
+
+**Why the full suite is not the default.** A full e2e run needs the database up
+and takes minutes; a full web run is Vitest across every screen. Both are minutes
+of wall clock inside a 5-hour window, and CI runs everything on push anyway. The
+exception list is the shared modules — `packages/domain`, `packages/contracts`,
+the Prisma schema, the string table — because a change there can break a file
+that `--findRelatedTests` will never name.
+
+**Why the hard-rule test survives the narrowing.** `--findRelatedTests` follows
+imports. A named test like `medicare_number_rejected_as_identifier` may not
+import the file you changed and still be the one thing standing between a hard
+rule and a regression. §6's definition of done is unchanged by §7's default.
+
+### 11b. Why the dependency rule is broader than it looks
+
+`CLAUDE.md` §7c says ask before adding a dependency to **any** `package.json`,
+dev dependencies included. The older rule covered only runtime-network
+dependencies. Carl widened it on 17 September. A dev dependency is still supply
+chain, still an npm advisory to answer at three in the morning, and still a thing
+somebody has to understand in two years. The root `package.json` already carries
+a paragraph explaining why `jsdom` lives there — that is the cost of one
+dependency arriving by accident.
+
+### 11c. The stack, as at 17 September 2026
+
+Moved out of `CLAUDE.md` because it is derivable from the manifests and will be
+wrong after the next upgrade. Read `package.json` rather than this list; it is
+here for orientation, not authority.
+
+TypeScript 5.6 on Node 20+ (Node 24 on Carl's machine); NestJS 11 (`apps/core`);
+Next.js 16 with React 19 (`apps/web`); Prisma 6.19 against PostgreSQL 16; Redis 7;
+Keycloak 26. Tests: Jest 29 (core, domain, e2e), Vitest 3 (web), Playwright.
+
+### 11d. Two corrections and restart
+
+Anthropic's guidance, and it matches §7a rule 4: after correcting the same issue
+twice, a fresh session with a better prompt beats a long one carrying the failed
+approaches. The same reasoning applies to an agent — resume it by id when its
+files are half written (§4), but restart the *conversation* when the context is
+mostly wrong turns.
+
+## 12. The git guard, and what it does not catch (17 September 2026)
+
+`CLAUDE.md` §7b rules 1, 4 and 6 are enforced by
+`.claude/hooks/git-commit-guard.mjs`, a `PreToolUse` hook that runs before every
+`git commit` and blocks it if the branch is `main` or `master`, or if the commit
+would carry a `.env` file, a private key, a log, a `node_modules` path or a file
+over 2 MB. It prints `git diff --stat` and the staged file count either way, so
+rule 4 happens whether or not anybody remembered it.
+
+**The deny list in `.claude/settings.json` is a tripwire, not a sandbox.** Its
+patterns match from the start of the command, so `git push --force origin main`
+is caught and `git push origin main --force` is not, and `git -C <path> reset
+--hard` is not. The rule in `CLAUDE.md` is the control; the deny list stops the
+ordinary spelling and an unthinking agent. An agent that meets a denial and
+reaches for a different spelling of the same command has misunderstood what
+happened.
+
+**What the guard deliberately does not do:** scan the diff content for
+credential-shaped strings. The repository legitimately contains dev passwords in
+`docker-compose.yml` and realm exports, so a content scan would either block
+ordinary commits or be tuned so loosely it proves nothing. It checks paths and
+sizes, which it can do without false positives, and the high-confidence content
+patterns only (a private key block, an AWS key id).
+
 ## Change log
 | Date | Change |
 |---|---|
@@ -235,3 +321,5 @@ than changing what the existing callers get.
 | 12 Sep 2026 | §9: every settled rule is written to the right md in the same turn, with its reason, its enforcement and what would reopen it. |
 | 12 Sep 2026 | §10: reuse is proved, not promised — generated `INVENTORY.md` as required reading, imported-versus-written in every report, the rule of three, and a test where it matters. Written after the front desk panel shipped a second copy of the tablet page's session controls. §2 gains item 13. |
 | 12 Sep 2026 | 5a added: `git add <paths> && git commit` commits the whole index, not those paths. A concurrent agent's staged work rode into a commit that named six files and carried thirty-one. Use `git commit -o <paths>`, or read `git diff --cached --name-only` first. |
+| 17 Sep 2026 | §11: the working method rules moved here from `CLAUDE.md` §7 with their reasoning — the `acting-as` precedent behind "never weaken a test", why the full suite is not the default, why the dependency rule covers dev dependencies, and the stack snapshot. §7 went from 1,785 words to 887. |
+| 17 Sep 2026 | §12: the `git commit` guard hook, and the honest limits of the `settings.json` deny list — prefix matching, and no content scan. |
