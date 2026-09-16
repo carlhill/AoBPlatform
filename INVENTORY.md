@@ -17,11 +17,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2041 |
-| Files scanned for exports | 506 |
-| Files scanned for imports | 548 |
-| Exports with no comment of their own | 868 |
-| Exports imported nowhere else | 837 |
+| Exported symbols indexed | 2101 |
+| Files scanned for exports | 517 |
+| Files scanned for imports | 559 |
+| Exports with no comment of their own | 912 |
+| Exports imported nowhere else | 872 |
 
 ## Sections
 
@@ -36,6 +36,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 - [Contracts functions and constants](#contracts-functions-and-constants) — 21
 - [Core services, controllers and modules](#core-services-controllers-and-modules) — 270
 - [Core helpers, constants and types](#core-helpers-constants-and-types) — 172
+- [AOBPRINTER (the desktop print channel)](#aobprinter-the-desktop-print-channel-) — 60
 
 ## Web components
 
@@ -829,6 +830,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `assessPractitionerDeparture` | domain:practitioner-departure.ts | Whether this affiliation can be departed at all, and when it ends. | **1** · core:affiliations/affiliations.service.ts |
 | `assignorRepointDisposition` | domain:assignor.ts |  | **1** · core:agreements/agreements.service.ts |
 | `autoAssignorDecision` | domain:auto-capture.ts | May the patient be made their own assignor with nobody asking? | **1** · core:auto-capture/auto-capture.service.ts |
+| `backoffFor` | domain:outbound-queue.ts |  | **1** · aobprinter:outbox.ts |
 | `blockingFlags` | domain:review.ts | Whether any flag refuses the approval outright. | **1** · web:review/[id]/DossierView.tsx |
 | `bucketKey` | domain:reporting.ts | `2026-Q3`, `2026-08`, `2026-W34`, `2026-08-22`, or `all`. | **1** · core:outbound/outbound.service.ts |
 | `canAnswerInvitation` | domain:invitation.ts |  | **1** · core:affiliations/invitation.service.ts |
@@ -970,7 +972,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `assertPermittedWhileActingAs` | domain:acting-as.ts | May this act be performed inside an acting-as session? | 0 |
 | `assignorContactChannels` | domain:assignor.ts | The well-formed channels present, mobile first. | 0 |
 | `assignorRelationshipOption` | domain:assignor-relationships.ts |  | 0 |
-| `backoffFor` | domain:outbound-queue.ts |  | 0 |
 | `billingRoleOption` | domain:billing-roles.ts |  | 0 |
 | `businessDaysBetween` | domain:departure-notice.ts | Business days from notice to departure. | 0 |
 | `canAffiliationTransition` | domain:affiliation.ts |  | 0 |
@@ -1357,6 +1358,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PatientTimelineEntry` | domain:patient-work.ts |  | **2** · core:patients/patients.service.ts, web:practice/patients/PatientWorkView.tsx |
 | `PerformedCheck` | domain:checks.ts | A recorded check, as the console holds it — richer than `CheckRecord`, because this is the one place the FIELDS and the AUTHOR matter. | **2** · core:organisations/organisations.service.ts, web:review/[id]/DossierView.tsx |
 | `PracticeId` | domain:ids.ts |  | **2** · domain:agreement.ts, domain:parties.ts |
+| `PrintDocumentType` | domain:inbound-lanes.ts |  | **2** · aobprinter:db4-record.ts, contracts:print-capture.ts |
 | `ProviderId` | domain:ids.ts |  | **2** · domain:agreement.ts, domain:parties.ts |
 | `WaitingList` | domain:practitioner-queue.ts |  | **2** · core:practitioner-queue/practitioner-queue.service.ts, web:practice/practitioner/waiting/WaitingView.tsx |
 | `AbrLookup` | domain:abn.ts | What the ABR gives back, reduced to the fields the gate actually uses. | **1** · core:organisations/abr.ts |
@@ -1393,7 +1395,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PlaceFilter` | domain:packed-reports.ts | Narrowing to one place, which is not the same as breaking down BY place. | **1** · web:practice/reports/ReportsView.tsx |
 | `PracticeDayWindow` | domain:practice-day.ts | ONE DAY IN THE PRACTICE'S ZONE, AS A HALF-OPEN INTERVAL OF INSTANTS. | **1** · core:arrivals/arrivals.service.ts |
 | `PracticeFilter` | domain:search.ts | The status a row is filtered by. | **1** · web:practice/PracticeList.tsx |
-| `PrintDocumentType` | domain:inbound-lanes.ts |  | **1** · contracts:print-capture.ts |
 | `QueueTicketSource` | domain:queue-ticket.ts |  | **1** · core:arrivals/arrivals.service.ts |
 | `ReconciliationDecision` | domain:reconciliation-decision.ts |  | **1** · core:reconciliation/reconciliation.service.ts |
 | `ReportScope` | domain:reporting.ts |  | **1** · core:outbound/outbound.service.ts |
@@ -2154,6 +2155,73 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `renderedStringsOf` | core:render/agreement-document.ts | Every string that will be drawn on the page, in one list — including the particulars' own values, because a service description or a provider name is as much a line on the contract as a template paragraph is. | 0 |
 | `templateValuesFor` | core:agreements/agreements.service.ts | THE PARTICULARS, TURNED INTO THE VALUES THE WORDS NEED. | 0 |
 | `unwrapJsonp` | core:organisations/abr.ts | Strip the `callback( … )` padding the JSON endpoints answer with. | 0 |
+
+## AOBPRINTER (the desktop print channel)
+
+60 exports.
+
+| Symbol | File | What it is | Used by |
+|---|---|---|---|
+| `Db4PrintRecord` | aobprinter:db4-record.ts | The envelope's five fields are always present; everything below them is what the parser found on the page. | **4** · aobprinter:outbox.ts, aobprinter:parser.ts, aobprinter:poster.ts, +1 more |
+| `Logger` | aobprinter:log.ts |  | **4** · aobprinter:main.ts, aobprinter:outbox.ts, aobprinter:poster.ts, +1 more |
+| `redactError` | aobprinter:log.ts | An error, with its message redacted and its stack dropped. | **4** · aobprinter:main.ts, aobprinter:outbox.ts, aobprinter:poster.ts, +1 more |
+| `AobPrinterConfig` | aobprinter:config.ts |  | **2** · aobprinter:main.ts, aobprinter:poster.ts |
+| `Outbox` | aobprinter:outbox.ts | (file) The outbox: a folder that must never lose a form and never send one twice. | **2** · aobprinter:main.ts, aobprinter:watcher.ts |
+| `ParserTemplate` | aobprinter:template.ts |  | **2** · aobprinter:parser.ts, aobprinter:watcher.ts |
+| `DB4_DOCUMENT_TYPE` | aobprinter:db4-record.ts | `db4_assignment` — declared in the domain's lane table, not here. | **1** · aobprinter:parser.ts |
+| `DEFAULT_TEMPLATE_VERSION` | aobprinter:template.ts | The template a fresh install parses with, until configuration says otherwise. | **1** · aobprinter:config.ts |
+| `Extractor` | aobprinter:template.ts |  | **1** · aobprinter:parser.ts |
+| `PostResult` | aobprinter:outbox.ts |  | **1** · aobprinter:poster.ts |
+| `Poster` | aobprinter:outbox.ts | What actually talks to AoB. | **1** · aobprinter:poster.ts |
+| `RowExtractor` | aobprinter:template.ts |  | **1** · aobprinter:parser.ts |
+| `SpoolClaimer` | aobprinter:watcher.ts | Watches the one spool path and claims what lands there. | **1** · aobprinter:main.ts |
+| `TransformName` | aobprinter:template.ts |  | **1** · aobprinter:parser.ts |
+| `claimedJobs` | aobprinter:watcher.ts | Everything already claimed and not yet parsed — what a restart finds. | **1** · aobprinter:main.ts |
+| `consoleLogger` | aobprinter:log.ts |  | **1** · aobprinter:main.ts |
+| `loadConfig` | aobprinter:config.ts |  | **1** · aobprinter:main.ts |
+| `makeHttpPoster` | aobprinter:poster.ts |  | **1** · aobprinter:main.ts |
+| `parseDb4` | aobprinter:parser.ts | The record, or null when the page is not the document this template reads. | **1** · aobprinter:watcher.ts |
+| `processClaimedJob` | aobprinter:watcher.ts | One claimed file → one record in the outbox. | **1** · aobprinter:main.ts |
+| `readPdfText` | aobprinter:pdf-text.ts | The spool bytes in, the printed lines out. | **1** · aobprinter:watcher.ts |
+| `sha256Hex` | aobprinter:outbox.ts |  | **1** · aobprinter:watcher.ts |
+| `templateFor` | aobprinter:template.ts |  | **1** · aobprinter:main.ts |
+| `watcherDirs` | aobprinter:watcher.ts |  | **1** · aobprinter:main.ts |
+| `DEFAULT_CONFIG_PATH` | aobprinter:config.ts |  | 0 |
+| `DEFAULT_DATA_DIR` | aobprinter:config.ts |  | 0 |
+| `DEFAULT_SPOOL_FILE` | aobprinter:config.ts |  | 0 |
+| `Db4Assignment` | aobprinter:db4-record.ts |  | 0 |
+| `Db4Form` | aobprinter:db4-record.ts |  | 0 |
+| `Db4Heading` | aobprinter:db4-record.ts |  | 0 |
+| `Db4Patient` | aobprinter:db4-record.ts |  | 0 |
+| `Db4Provider` | aobprinter:db4-record.ts |  | 0 |
+| `Db4Referral` | aobprinter:db4-record.ts |  | 0 |
+| `Db4Service` | aobprinter:db4-record.ts |  | 0 |
+| `Db4ServicingLocation` | aobprinter:db4-record.ts |  | 0 |
+| `Db4Statement` | aobprinter:db4-record.ts |  | 0 |
+| `DeriveExtractor` | aobprinter:template.ts |  | 0 |
+| `EXTRACTOR_KINDS` | aobprinter:template.ts |  | 0 |
+| `ExtractorKind` | aobprinter:template.ts |  | 0 |
+| `FlagExtractor` | aobprinter:template.ts |  | 0 |
+| `LineExtractor` | aobprinter:template.ts |  | 0 |
+| `LinesExtractor` | aobprinter:template.ts |  | 0 |
+| `LogFields` | aobprinter:log.ts |  | 0 |
+| `LogSink` | aobprinter:log.ts | A sink so tests can read what was written. | 0 |
+| `OutboxPaths` | aobprinter:outbox.ts |  | 0 |
+| `ParagraphsExtractor` | aobprinter:template.ts |  | 0 |
+| `ParseInput` | aobprinter:parser.ts |  | 0 |
+| `PdfText` | aobprinter:pdf-text.ts |  | 0 |
+| `ProcessOutcome` | aobprinter:watcher.ts |  | 0 |
+| `RunHandles` | aobprinter:main.ts |  | 0 |
+| `TRANSFORMS` | aobprinter:template.ts | The named transforms. | 0 |
+| `WatcherDirs` | aobprinter:watcher.ts |  | 0 |
+| `claimedJobName` | aobprinter:watcher.ts | A claimed job's filename. | 0 |
+| `isCompletePdf` | aobprinter:watcher.ts | Is this a complete PDF? | 0 |
+| `makeLogger` | aobprinter:log.ts |  | 0 |
+| `outboxPaths` | aobprinter:outbox.ts |  | 0 |
+| `parseConfig` | aobprinter:config.ts |  | 0 |
+| `parseTemplate` | aobprinter:template.ts |  | 0 |
+| `redact` | aobprinter:log.ts | Replace every long digit run with a marker. | 0 |
+| `start` | aobprinter:main.ts |  | 0 |
 
 ---
 

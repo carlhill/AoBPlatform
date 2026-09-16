@@ -1,0 +1,39 @@
+MEDICARE - ONLINE CLAIMING
+BULK BILL ASSIGNMENT OF BENEFIT FORM
+This form is the approved form as prescribed under section 20A of the Health Insurance Act 1973
+Bulk bill claim for assessment by Services Australia
+
+Form Reference: HSS0610012092026120300          Location ID: HSS06100
+Claim Status: STORED FOR LATER TRANSMISSION
+
+Servicing Location: Fakevale Family Medical Practice
+14 NOWHERE STREET
+Fakevale NSW 2999
+
+Patient Details
+Chart Number: 09911
+Medicare Card Number: 2999 88887 1    IRN: 4
+Name: Testalina Fakesurname
+Date of Birth: 02/02/1972
+Address: 3 Imaginary Ave, Fakevale NSW 2999
+Phone: 0400 000 001
+
+Servicing Provider: Dr Ficticia Nonperson          Provider Number: 9999999X
+Payee Provider: Dr Madeup Notreal                  Provider Number: 8888888Y
+
+Date       Time    Item    Description                      Benefit Assigned
+12/09/2026 12:03   23      Level B Surgery                  $45.05
+12/09/2026 12:03   75870   Professional attendance          $22.40
+
+Privacy Notice: Your personal information is protected by law, including the
+Privacy Act 1988, and is collected by Services Australia for the assessment and
+administration of payments and services.
+To be completed by the person assigning benefits for the services stated on this form.
+
+[X] I assign my right to benefits to the health professional who rendered the services.
+or
+[X] I offer to assign my right to benefits to the Approved Pathology Practitioner.
+
+ACRF: 102368
+
+Signature: ______________________   Date: ____/____/________

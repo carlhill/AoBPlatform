@@ -4195,3 +4195,93 @@ Carl asked for a day with a filter, and a range changes what the page is. Worth
 asking whether it is wanted before it is added, because an export of this table
 is an export of patient names and record numbers leaving the platform, which is
 a decision rather than a feature.
+
+## AOBPRINTER landed, and four things it turned up (17 Sep 2026)
+
+`apps/aobprinter` is built: the printer, the watcher, the versioned parser, the
+outbox, and `db4_assignment` on the lane table (`DB4-AND-AOBL.md` §13 piece 5).
+It was run end to end on Carl's machine — printed a DB4, watched it become a DB4
+Print Record, posted it, and found the row. Four things came out of that run
+that are not the build's to decide.
+
+### 1. THE SERVER ACCEPTS A DB4 AND THROWS ITS CONTENTS AWAY. Blocking for piece 1.
+
+`POST /inbound/print-jobs` answers 202 and stores the envelope — and nothing
+else. The global `ValidationPipe({ whitelist: true })` strips every field
+`PrintJobEnvelopeDto` does not declare, and it declares five envelope fields
+plus `patients`, `providers`, `appointments` and `invoices`. So the heading, the
+form block, the servicing location, the patient, the services, the assignment
+statements and the referral are all discarded at the door.
+
+Two consequences, both measured:
+
+- **The job does NOT park.** It is picked up by the existing
+  `InboundPrintJobsProcessor` and marked `done` with an empty outcome. Nothing
+  errors, nothing is retried, and the record is gone. The brief expected it to
+  park; it does not, because a DB4 with everything stripped looks to the
+  processor like an envelope with nothing in it.
+- **It mirrors providers as a side effect.** The two providers survive the
+  whitelist (they happen to match `ProviderDto`) minus their `role`, and the
+  cascade wrote them into the practice. A DB4 arriving should not quietly
+  create provider rows before its own handler exists.
+
+**What piece 1 must do, and probably before anything else:** add the DB4 Print
+Record to the envelope DTO so the body survives the door, and make the lane
+worker route `db4_assignment` to its own handler rather than the generic
+cascade. Until then, **the only complete copy of a DB4 Print Record is the
+desktop's `outbox/sent/<sha>.json`** — which is why that file still holds the
+whole record (see the comment on `sentPath` in `outbox.ts`).
+
+### 2. A REPRINT IS NOT A DUPLICATE, AND `sourceSha256` CANNOT MAKE IT ONE.
+
+The same page printed twice produces different spool bytes — "Microsoft Print To
+PDF" stamps a creation time and document id — so it hashes differently and
+arrives as a second job. Verified: two prints, two shas, one
+`formReference: HSS0610012092026120300`.
+
+That is correct for `sourceSha256`, which is provenance: it says "this record
+came from exactly those bytes", and it is what makes the outbox's
+never-post-twice guarantee work. It is the wrong key for "is this the same
+form". **`formReference` is that key** (`DB4-AND-AOBL.md` §2 already calls it
+"the correlation key across every message about this form"), and piece 1's
+handler has to dedup on it, or a receptionist pressing print twice becomes two
+agreements for one service.
+
+### 3. `sent/` GROWS FOREVER, AND HOLDS MEDICARE NUMBERS.
+
+No retention sweep, by design for now (see 1). Once the server keeps what it is
+sent, the marker should shrink to the hash and the timestamps, and old markers
+should age out. Carl's call on how long — it is PII at rest on a practice
+desktop, and `aob-threat-model.md` already owes a section on holding Medicare
+numbers (D-2026-09-14-03).
+
+### 4. A FILE-PATH PRINTER PORT CANNOT BE REMOVED BY THE PRINT CMDLETS.
+
+`Remove-PrinterPort -Name 'C:\...\aobprinter-out.pdf'` and the `-InputObject`
+form both refuse: *"Names may not contain ',' or '\' characters."* Measured on
+Windows 11 Home build 26200. The uninstaller removes the queue, says plainly
+what it could not remove, and leaves the port — which is inert with no queue
+pointing at it, and is reused by the next install. Removing it properly needs
+either the Win32 `DeletePort` API or a registry edit under
+`Print\Monitors\Local Port\Ports` plus a spooler restart, and a registry edit on
+a practice's desktop is a decision, not a script's initiative.
+
+### And one that is not a question: `extractText` reads font binaries.
+
+`apps/core/src/artefacts/extract-text.ts` returned ~90KB of embedded TrueType
+tables ahead of the real text for a page printed through this driver. Its filter
+rejects a stream whose dict says `/Subtype /TrueType`, but an embedded font
+PROGRAM is a `FontFile2` stream whose dict says `/Length1` and carries no
+`/Subtype`. A `/Length1` test fixes it. Not done — `apps/core` was out of scope
+for this build — and `apps/aobprinter/src/pdf-text.ts` has the test in it, which
+is where the two should converge when a third caller appears (wow.md §10).
+
+### 5. AOBPRINTER IS NOT BEHIND THE PRACTICE FLAG YET (found in review, 17 Sep 2026)
+
+D-2026-09-14-04 says the DB4 path is feature-flagged per practice. Nothing in
+code stops AOBPRINTER being installed on a desktop and posting into a live
+practice today, and because of item 1 above that would mirror providers and
+throw the form away. Whichever lands first — the flag, or piece 1's handler —
+the other must not be installable before it. The cheapest gate while both are
+pending is server-side: reject or park `db4_assignment` in the lane worker
+rather than letting the generic cascade have it.

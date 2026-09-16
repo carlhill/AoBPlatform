@@ -42,7 +42,7 @@ export const LANE_POLICIES: Record<InboundLane, { readonly sloSeconds: number; r
  * lane. Adding a document type without a lane is a compile error, which is
  * the point.
  */
-export const PRINT_DOCUMENT_TYPES = ['arrival_slip', 'invoice', 'appointment_list'] as const;
+export const PRINT_DOCUMENT_TYPES = ['arrival_slip', 'invoice', 'appointment_list', 'db4_assignment'] as const;
 export type PrintDocumentType = (typeof PRINT_DOCUMENT_TYPES)[number];
 
 export const PRINT_DOCUMENT_LANES: Record<PrintDocumentType, InboundLane> = {
@@ -52,6 +52,14 @@ export const PRINT_DOCUMENT_LANES: Record<PrintDocumentType, InboundLane> = {
   invoice: 'critical',
   /** The whole day, hours before anybody arrives. */
   appointment_list: 'standard',
+  /**
+   * A DB4 printed to AOBPRINTER — the DB4 Print Record (DB4-AND-AOBL.md §2,
+   * D-2026-09-14-02/-03/-04). One patient, at the desk, now: the practice has
+   * just printed the form and the patient is expected to sign it on the tablet
+   * before they leave, so it sits in the same lane as an arrival slip rather
+   * than behind a morning appointment list.
+   */
+  db4_assignment: 'critical',
 };
 
 export function laneFor(documentType: PrintDocumentType): InboundLane {

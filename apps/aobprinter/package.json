@@ -1,0 +1,27 @@
+{
+  "name": "@aobplatform/aobprinter",
+  "version": "0.1.0",
+  "description": "AOBPRINTER — the desktop half of the DB4 print channel (DB4-AND-AOBL.md §5, §13 piece 5). A virtual printer the practice prints its PracSoft DB4 to; the spooled PDF is claimed, parsed into a DB4 Print Record by a versioned template, and posted to POST /inbound/print-jobs through a durable on-disk outbox. Nothing it does may slow or block printing (hard rule 8).",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src --max-warnings=0",
+    "test": "jest",
+    "start": "node dist/src/main.js",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@aobplatform/domain": "*"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "^20.16.11",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.4.12",
+    "typescript": "^5.6.3"
+  }
+}

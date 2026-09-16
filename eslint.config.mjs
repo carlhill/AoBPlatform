@@ -155,4 +155,32 @@ export default tseslint.config(
     ],
     rules: { 'no-restricted-syntax': 'off', 'no-restricted-globals': 'off' },
   },
+  {
+    /*
+     * THE ONE FIELD ON THE DB4 PRINT RECORD — D-2026-09-14-03, 14 September
+     * 2026. Carl: the Medicare card number and IRN are printed in full on the
+     * Signed-DB4, because the patient recognises their own number and the
+     * auditor links the form to the claim by it. So the number travels on the
+     * record AOBPRINTER emits, and the record's type has to name the field the
+     * form prints.
+     *
+     * THE RULE IS NOT RELAXED, IT IS SCOPED TO ONE FILE. `db4-record.ts` is the
+     * type declaration and nothing else — no lookup, no verification, no log
+     * line, no query. Everywhere else in this program, including the parser
+     * (which writes by dotted path from the versioned template) and the tests
+     * (which read by bracket access), the identifier still cannot be written.
+     * What hard rule 1 forbids is unchanged: the number is never an IDENTITY
+     * identifier, never used to find or match a patient, never in a log, an
+     * error message, a filename or an event, and never sent to the rules
+     * service. `the_medicare_number_never_appears_in_a_log_or_a_filename` in
+     * `apps/aobprinter/src/log.test.ts` is the test that holds that line, and
+     * it is the one this exception is safe behind.
+     *
+     * WHAT WOULD REOPEN IT: the file growing anything but type declarations, or
+     * the field being needed in a second file — either is the signal that the
+     * scope is wrong, not that the rule is.
+     */
+    files: ['apps/aobprinter/src/db4-record.ts'],
+    rules: { 'no-restricted-syntax': 'off' },
+  },
 );

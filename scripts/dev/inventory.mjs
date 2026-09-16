@@ -55,6 +55,13 @@ const EXPORT_ROOTS = [
   { key: 'domain', dir: 'packages/domain/src', short: 'domain' },
   { key: 'contracts', dir: 'packages/contracts/src', short: 'contracts' },
   { key: 'core', dir: 'apps/core/src', short: 'core' },
+  // AOBPRINTER is a standalone desktop program that nothing imports, so its
+  // reuse counts will read zero. It is indexed anyway, because the failure
+  // §10 was written about is an agent writing a helper that already exists
+  // somewhere it could not see — and a whole workspace missing from the index
+  // is the largest version of that blind spot. Added 17 Sep 2026 with the
+  // workspace itself.
+  { key: 'aobprinter', dir: 'apps/aobprinter/src', short: 'aobprinter' },
 ];
 
 /** Everything under here is scanned for imports, so reuse counts are repo-wide. */
@@ -71,6 +78,7 @@ const SHORTEN = [
   ['apps/rules/src/', 'rules:'],
   ['apps/vault/src/', 'vault:'],
   ['apps/connector/src/', 'connector:'],
+  ['apps/aobprinter/src/', 'aobprinter:'],
 ];
 
 /** Workspace package names that resolve back into this repo. */
@@ -394,6 +402,11 @@ const SECTIONS = [
     title: 'Core helpers, constants and types',
     root: 'core',
     kinds: ['function', 'constant', 'type', 'hook', 'component'],
+  },
+  {
+    title: 'AOBPRINTER (the desktop print channel)',
+    root: 'aobprinter',
+    kinds: ['function', 'constant', 'type', 'class', 'hook', 'component'],
   },
 ];
 

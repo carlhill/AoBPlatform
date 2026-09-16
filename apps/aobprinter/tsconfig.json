@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "baseUrl": ".",
+    "composite": false,
+    "rootDir": ".",
+    /*
+     * RESOLVE @aobplatform/* THROUGH THE BUILT PACKAGE, not through the root
+     * tsconfig's source aliases. This program imports a VALUE from the domain
+     * (`backoffFor`), not just a type, so an alias to `packages/domain/src`
+     * pulls the whole package into this program and every emitted file lands
+     * outside `rootDir`. Reading `dist` is also what actually runs — the node
+     * resolution the installed program uses — so the typecheck and the runtime
+     * agree. `npm run build -w packages/domain` first; see DEV-LOOP.md on what
+     * a stale dist looks like.
+     */
+    "paths": {}
+  },
+  "include": ["src/**/*.ts", "content/**/*.json"]
+}
