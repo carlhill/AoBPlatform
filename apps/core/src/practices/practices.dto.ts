@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   KIOSK_IDLE_TIMEOUT_MAX_SECONDS,
   KIOSK_IDLE_TIMEOUT_MIN_SECONDS,
+  SURFACE_PROFILE_KEYS,
 } from '@aobplatform/domain';
 import {
   ArrayMinSize,
@@ -97,6 +98,24 @@ export class UpdateConfigDto {
   @IsOptional()
   @IsBoolean()
   enduringByDefault?: boolean;
+
+  /**
+   * WHICH PARTS OF AoB THIS PRACTICE USES (D-2026-09-14-04).
+   *
+   * A PERMISSION, NOT A DEFAULT — the opposite of `enduringByDefault` just
+   * above. That one decides what is offered first; this decides what the
+   * practice's staff can reach at all and what the server will answer for
+   * them. `full` is every surface and is what every practice has until
+   * somebody sets this.
+   *
+   * THE LIST COMES FROM THE CONTENT FILE, never from a literal here
+   * (hard rule 14). `SURFACE_PROFILE_KEYS` is the `profiles` keys of
+   * `packages/domain/content/practice-surfaces.json`, and the CHECK on the
+   * column derives from the same list.
+   */
+  @IsOptional()
+  @IsIn(SURFACE_PROFILE_KEYS as string[])
+  surfaceProfile?: string;
 
   @IsOptional()
   @IsBoolean()

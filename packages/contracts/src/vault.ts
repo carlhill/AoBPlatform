@@ -549,6 +549,28 @@ export const VAULT_EVENT_TYPES = [
    */
   'practice.enduring_by_default_set',
   /**
+   * WHICH PARTS OF AoB THIS PRACTICE USES (D-2026-09-14-04).
+   *
+   * UNLIKE THE TWO SETTINGS ABOVE IT, THIS ONE IS A PERMISSION. The idle
+   * timeout and the enduring default change what is offered; this changes what
+   * a practice's staff can reach at all and what the server will answer for
+   * them — the waiting-room walk-up, ongoing agreements, the front desk's
+   * rails, the patient portal and the practitioner pages are switched on and
+   * off by it. Turning one on is a commercial and operational decision about a
+   * practice, so who made it, when, and from which version of the surface list
+   * is evidence rather than a preference.
+   *
+   * THE VERSION OF THE CONTENT FILE TRAVELS WITH IT (hard rule 14). The
+   * surfaces a profile name meant in September are not necessarily the ones it
+   * means a year later, and a record saying "set to db4" without saying which
+   * list db4 came from cannot be read back.
+   *
+   * A PROFILE NAME IS NOT PII (REQ-LOG-08), so the value travels in the
+   * payload; "somebody changed a setting" without saying which way is not
+   * evidence of anything.
+   */
+  'practice.surface_profile_set',
+  /**
    * THE PATIENT WOULD RATHER AGREE EACH VISIT (Carl, 4 Sep 2026).
    *
    * Its own event, and not a flavour of the walk-away, because it is a

@@ -47,12 +47,13 @@ import {
   UserRound,
   Send,
  FileText,} from 'lucide-react';
-import { audiencesOf, mayReach, type Audience, type CardState, type DeviceRow } from '@aobplatform/domain';
+import { audiencesOf, mayReach, profileAllows, type Audience, type CardState, type DeviceRow } from '@aobplatform/domain';
 import { Chip, Notice, Shell, ui, type Tone } from '../../ui';
 import { useRefreshable } from '../../refresh';
 import { toViewPath } from '../../viewPath';
 import { strings } from '../../strings';
 import { apiHeaders, currentSession } from '../../auth';
+import { useSurfaceProfile } from '../../surfaceProfile';
 import styles from './setup.module.css';
 import { SessionControl } from '../../SessionControl';
 
@@ -191,7 +192,15 @@ export function SetupHub({
     practitionerId: session?.practitionerId,
     consoleRole: session?.consoleRole,
   });
-  const canOpen = (path: string) => viewOnly || mayReach(path, audiences);
+  /*
+   * AND WHAT THIS PRACTICE USES (D-2026-09-14-04) — a second question with a
+   * different subject, asked of the domain for the same reason as the first:
+   * a card and the page it opens must not be able to drift apart. View-only
+   * is exempt from both, as above.
+   */
+  const { profile } = useSurfaceProfile(practiceId);
+  const canOpen = (path: string) =>
+    viewOnly || (mayReach(path, audiences) && profileAllows(profile, path));
 
   // Hoisted so the top-bar refresh can re-run it. The hub is the page most
   // worth re-reading: it is a summary of work other people are doing.

@@ -102,6 +102,36 @@ model Practice {
    * whether the platform bothers with one at all.
    */
   usesQueueTickets          Boolean  @default(false)
+  /**
+   * WHICH PARTS OF AoB THIS PRACTICE USES (D-2026-09-14-04). One of the
+   * profile keys in `packages/domain/content/practice-surfaces.json` —
+   * `full` today, or `db4` for a practice that has bought only the DB4 path.
+   *
+   * IT IS A PERMISSION, AND IT GATES. That is the difference from the two
+   * settings above it, which say in their own comments that they gate nothing:
+   * `usesQueueTickets` decides whether the platform bothers with a number, and
+   * `enduringByDefault` decides what is OFFERED first. This decides what a
+   * practice's staff can reach and what the server will answer for them — the
+   * waiting-room walk-up, ongoing agreements, the front desk's rails, the
+   * patient portal and the practitioner pages are hidden in the console AND
+   * refused at the endpoint when the profile does not include them. Never read
+   * it as a default; a surface that is off is off.
+   *
+   * IT IS NOT A POSTURE. D-2026-09-12-14 already uses "practice posture" for
+   * integration modes, and the two are unrelated.
+   *
+   * DEFAULT `full`, WHICH IS EVERY SURFACE. This must be a no-op for every
+   * practice that exists until somebody sets it, and the content loader
+   * refuses a file in which `full` does not hold every declared surface — so a
+   * surface added later cannot silently switch itself off for the whole
+   * platform.
+   *
+   * NOTHING IS DELETED WHEN A SURFACE IS OFF. The pages, the endpoints and the
+   * data stay exactly where they are; turning one back on is this column, not
+   * a rebuild. And nothing here can block care (hard rule 8): an unclassified
+   * route is ALLOWED at runtime and caught by a build-time test instead.
+   */
+  surfaceProfile            String   @default("full")
   // Go-live gates (FR-1.7). Both flip via real integrations later; explicit
   // booleans so the checklist is honest, never inferred.
   writeBackProven           Boolean  @default(false)

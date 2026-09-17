@@ -41,12 +41,13 @@
 
 import Link from 'next/link';
 import { ArrowRight, ConciergeBell, CalendarClock, Mail, Send, UserRound } from 'lucide-react';
-import { audiencesOf, mayReach, type Audience } from '@aobplatform/domain';
+import { audiencesOf, mayReach, profileAllows, type Audience } from '@aobplatform/domain';
 import { Notice, Shell, ui } from '../../ui';
 import { SessionControl } from '../../SessionControl';
 import { strings } from '../../strings';
 import { toViewPath } from '../../viewPath';
 import { currentSession } from '../../auth';
+import { useSurfaceProfile } from '../../surfaceProfile';
 import styles from './today.module.css';
 
 interface Destination {
@@ -129,7 +130,21 @@ export function TodayView({
     practitionerId: session?.practitionerId,
     consoleRole: session?.consoleRole,
   });
-  const canOpen = (path: string) => viewOnly || mayReach(path, audiences);
+  /*
+   * AND WHAT THIS PRACTICE USES (D-2026-09-14-04). The same reasoning as
+   * `mayReach` above it: asked here rather than judged again, so a card and
+   * the page it opens cannot drift apart. A practice on the DB4 path loses the
+   * front desk card and keeps the tablet desk, the patients and the day.
+   *
+   * VIEW-ONLY IS EXEMPT FROM NEITHER CHECK AND BOTH. A read-only operator
+   * already bypasses `mayReach` here because the twin routes are theirs, and
+   * the same holds for this: they are looking at a practice's console, not
+   * working in it, and hiding half of it would misrepresent what the practice
+   * has.
+   */
+  const { profile } = useSurfaceProfile(practiceId);
+  const canOpen = (path: string) =>
+    viewOnly || (mayReach(path, audiences) && profileAllows(profile, path));
 
   const open = DESTINATIONS.filter((destination) => canOpen(destination.path));
 

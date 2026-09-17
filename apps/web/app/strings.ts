@@ -1614,6 +1614,25 @@ export const strings = {
       + 'which is recorded, told to them, and is what makes anything done here attributable. Start from All '
       + 'organisations. Work that is OURS rather than theirs, like checking a practitioner against the '
       + 'register, has its own door on the same list and needs no session.',
+    /*
+     * A PRACTICE THAT DOES NOT USE THIS PART OF AoB (D-2026-09-14-04). Its own
+     * refusal, and it has to be: "that page is not for this account" would be
+     * a lie about the account, which is perfectly entitled to the page — the
+     * practice simply has not got that part of the product. Somebody told the
+     * wrong one of those two sentences goes and checks their sign-in, which
+     * cannot help them.
+     *
+     * IT SAYS WHERE IT IS TURNED ON (CLAUDE.md §7, "Shortcuts to the answer"),
+     * and it says that nothing has been lost — the commonest fear on reading
+     * this is that a feature was removed and took its records with it.
+     */
+    surfaceOffTitle: 'This practice does not use that part of AoB',
+    surfaceOffBody:
+      'Your sign-in is fine and the page is still here — this practice has not got this part of AoB switched on, '
+      + 'so nothing behind it would answer. Nothing has been deleted, and anything recorded while it was on is '
+      + 'still there. An administrator can turn it on under Channels.',
+    surfaceOffWhich: 'The part in question is “{surface}”.',
+    surfaceOffGoToChannels: 'Go to Channels',
     refusedTitle: 'That page is not for this account',
     refusedBody:
       'You are signed in, and this page belongs to a different kind of account — a practice’s own screens are '
@@ -3341,6 +3360,50 @@ export const strings = {
       'whether a request is trusted, read, and answered.',
     backToSetup: 'Back to set up',
     notLoaded: 'The channel settings could not be loaded',
+
+    /*
+     * WHICH PARTS OF AoB THIS PRACTICE USES (D-2026-09-14-04).
+     *
+     * ON THIS PAGE RATHER THAN A NEW ONE. The idle timeout and the enduring
+     * default already live here, this page already saves through
+     * `PATCH /practices/:id/config`, and a practice-wide switch on its own
+     * screen is a screen nobody ever finds.
+     *
+     * IT SAYS "SWITCHED OFF", NEVER "REMOVED". The whole decision is that
+     * these stay built: turning one on is this control, not a rebuild, and
+     * everything recorded while a part was on is still there afterwards. A
+     * person reading a list of things their practice does not have needs to
+     * know which of those two it is.
+     */
+    surfacesTitle: 'Which parts of AoB this practice uses',
+    surfacesLead:
+      'Not every practice uses every part of AoB. What is switched off is hidden from your staff and refused '
+      + 'by the server, so nothing half-works — and nothing is removed: switching a part back on brings it and '
+      + 'everything it recorded straight back.',
+    surfacesLabel: 'Parts in use',
+    surfacesHint: 'Changing this changes what your staff can open. It is recorded, with who changed it.',
+    surfacesOn: 'Switched on',
+    surfacesOff: 'Switched off',
+    /** Keyed by profile key, so the words never decide what a profile means. */
+    surfaceProfileNames: {
+      full: 'Everything',
+      db4: 'The DB4 path only',
+    } as Record<string, string>,
+    /**
+     * KEYED BY SURFACE KEY (REQ-LANG-01/-02), never in the content file. The
+     * JSON decides what a surface COVERS; these decide what it is called, and
+     * a translated word must never be able to change what a practice may
+     * reach. An unmapped key falls back to the key itself so a new surface is
+     * diagnosable rather than invisible.
+     */
+    surfaceNames: {
+      db4: 'The DB4 path',
+      kiosk_walk_up: 'Walk-up at the waiting-room tablet',
+      enduring_agreements: 'Ongoing agreements and 89AA notices',
+      queue_rails: 'The front desk’s queue rails',
+      portal: 'The patient portal',
+      practitioner_pages: 'The practitioners’ own pages',
+    } as Record<string, string>,
     loading: 'Loading…',
     saved: 'Saved',
     saveFailed: 'That could not be saved',

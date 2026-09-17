@@ -6,9 +6,12 @@ import {
   DEFAULT_BILLING_ROLE,
   IdentifierSetError,
   isBillingRole,
+  PRACTICE_SURFACES_VERSION,
+  profileSurfaces,
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PracticeSurfacesService } from './practice-surfaces.service';
 import { allocatePracticeCodeIfPossible } from './practice-code';
 import type { Actor } from '../auth/actor.decorator';
 import type {
@@ -29,7 +32,14 @@ function collapse(value: string): string {
 export class PracticesService {
   private readonly logger = new Logger(PracticesService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    /*
+     * ONLY TO DROP ITS CACHE WHEN THE PROFILE MOVES. The lookup itself belongs
+     * to the guard, not here; this service never asks it a question.
+     */
+    private readonly surfaces: PracticeSurfacesService,
+  ) {}
 
   /** FR-1.1 — practice record with locations. */
   async create(dto: CreatePracticeDto) {
@@ -94,6 +104,7 @@ export class PracticesService {
           linkExpiryHours: dto.linkExpiryHours,
           kioskIdleTimeoutSeconds: dto.kioskIdleTimeoutSeconds,
           enduringByDefault: dto.enduringByDefault,
+          surfaceProfile: dto.surfaceProfile,
           writeBackProven: dto.writeBackProven,
           senderIdRegistered: dto.senderIdRegistered,
         },
@@ -173,6 +184,57 @@ export class PracticesService {
           },
         });
       }
+
+      /*
+       * WHICH PARTS OF AoB THIS PRACTICE USES (D-2026-09-14-04) — evidenced
+       * when it moves, like the two above it, and for a stronger reason than
+       * either.
+       *
+       * THE TWO ABOVE ARE NOT PERMISSIONS AND THIS ONE IS. The idle timeout
+       * and the enduring default change what a tablet does and what the desk
+       * offers; this changes what the practice's staff can reach and what this
+       * server will answer for them. Switching the front desk's rails, the
+       * patient portal or ongoing agreements off for a practice is a decision
+       * somebody should have to own by name, and switching one back ON is the
+       * one somebody will be asked about afterwards.
+       *
+       * THE CONTENT VERSION TRAVELS WITH IT (hard rule 14). "Set to db4" means
+       * nothing a year later without saying which list `db4` came from, and
+       * the surfaces a profile names are versioned content that will move.
+       *
+       * ONLY WHEN IT ACTUALLY CHANGES, because this endpoint is a whole-form
+       * save and the console posts every field on every press. Written through
+       * the outbox in the same transaction as the row it evidences, so one
+       * without the other is structurally impossible (hard rule 11).
+       */
+      if (dto.surfaceProfile !== undefined && dto.surfaceProfile !== practice.surfaceProfile) {
+        await enqueueVaultEvent(tx, {
+          type: 'practice.surface_profile_set',
+          actor: actor ? { principalType: actor.principalType, id: actor.id } : SYSTEM_ACTOR,
+          subject: { type: 'Practice', id: practiceId },
+          payload: {
+            surfaceProfile: dto.surfaceProfile,
+            previous: practice.surfaceProfile,
+            /*
+             * A STRING, BECAUSE A VAULT PAYLOAD HOLDS SCALARS. Joined rather
+             * than left out: the profile key alone is a label, and what the
+             * label MEANT on the day is the thing somebody reads back.
+             */
+            surfaces: profileSurfaces(dto.surfaceProfile).join(', '),
+            surfacesVersion: PRACTICE_SURFACES_VERSION,
+            ...(actor ? { setBy: actor.name } : {}),
+          },
+        });
+      }
+
+      /*
+       * THE CACHE THE GUARD READS IS DROPPED IN THE SAME BREATH. It is short
+       * lived anyway, but a practice that has just been switched off a surface
+       * and can still call it for the next few seconds is a confusing thing to
+       * watch, and somebody testing the change would reasonably conclude it
+       * had not worked.
+       */
+      if (dto.surfaceProfile !== undefined) this.surfaces.forget(practiceId);
 
       return updated;
     });

@@ -27,7 +27,7 @@
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { ShieldAlert } from 'lucide-react';
-import { audiencesOf, landingPath, mayReach, ruleFor } from '@aobplatform/domain';
+import { audiencesOf, landingPath, mayReach, profileAllows, ruleFor, surfaceOf } from '@aobplatform/domain';
 import { Notice, Shell, ui } from './ui';
 import { SessionControl } from './SessionControl';
 import {
@@ -45,6 +45,7 @@ import {
   silentRestoreInFlight,
 } from './auth';
 import { useEffectivePractice } from './effectivePractice';
+import { useSurfaceProfile } from './surfaceProfile';
 import { strings } from './strings';
 
 /** Long enough to read the sentence, short enough not to feel stuck. */
@@ -88,8 +89,12 @@ function invitationClient(): SilentRestoreClient | null {
 export function AccessGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? '/';
   const router = useRouter();
-  const [refused, setRefused] = useState<'unknown-page' | 'wrong-audience' | 'signed-out' | 'needs-acting-as' | null>(null);
+  const [refused, setRefused] = useState<
+    'unknown-page' | 'wrong-audience' | 'signed-out' | 'needs-acting-as' | 'surface-off' | null
+  >(null);
   const [goingTo, setGoingTo] = useState('/');
+  /** Which part of AoB the practice has not got, for the sentence that says so. */
+  const [surfaceOff, setSurfaceOff] = useState<string | null>(null);
   /** A restore this guard asked for, and how it went. See the effects below. */
   const [restoring, setRestoring] = useState(false);
   const [restoreRefused, setRestoreRefused] = useState(false);
@@ -106,6 +111,20 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
    */
   const { practiceId, settled } = useEffectivePractice();
 
+  /*
+   * AND WHAT THAT PRACTICE HAS BOUGHT (D-2026-09-14-04). A SECOND question
+   * beside the audience one, deliberately kept separate: `mayReach` answers
+   * "may this kind of account open this page" and has never seen a practice,
+   * while this answers "does this practice use this part of the product".
+   * Both must pass, and folding them together would make one check whose
+   * answer depends on two unrelated facts.
+   *
+   * IT FAILS OPEN — no practice, or a settings read that did not work, means
+   * everything. See `surfaceProfile.ts`; the endpoints behind every page
+   * refuse for themselves with their own reason code.
+   */
+  const { profile, settled: profileSettled } = useSurfaceProfile(practiceId);
+
   useEffect(() => {
     const session = currentSession();
 
@@ -115,7 +134,7 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
      * know is safe here: this guard is a courtesy, and the endpoints and the
      * database refuse for themselves regardless.
      */
-    if (!settled) {
+    if (!settled || !profileSettled) {
       setRefused(null);
       return;
     }
@@ -199,10 +218,24 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
       } else {
         setRefused('wrong-audience');
       }
+    } else if (practiceId && !profileAllows(profile, pathname)) {
+      /*
+       * THE AUDIENCE IS RIGHT AND THE PRACTICE HAS NOT GOT IT
+       * (D-2026-09-14-04). Its own refusal, because the generic one — "that
+       * page is not for this account" — would be a lie: the account is
+       * perfectly entitled to the page, and somebody told that goes off to
+       * check their sign-in, which cannot help them.
+       *
+       * ONLY WHEN THERE IS A PRACTICE TO ASK ABOUT. A signed-in person with no
+       * practice claim has no profile that could answer, and refusing them
+       * here would take the platform's own pages away from an operator.
+       */
+      setSurfaceOff(surfaceOf(pathname));
+      setRefused('surface-off');
     } else {
       setRefused(null);
     }
-  }, [pathname, practiceId, settled]);
+  }, [pathname, practiceId, settled, profile, profileSettled]);
 
   /*
    * THE ONE PLACE THE SILENT RESTORE IS ASKED FOR (Carl, 7 Sep 2026, second
@@ -329,7 +362,13 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
      * find their way back. The sign-in control in the header is the way
      * forward, and `returnPath` already brings them back here afterwards.
      */
-    if (!refused || refused === 'signed-out') return;
+    /*
+     * NOR WHEN A SURFACE IS OFF. That screen's whole value is the link to the
+     * place it is switched on; a redirect four seconds later takes the answer
+     * away while somebody is still reading the question. Both links on it go
+     * somewhere useful, so nobody is stranded.
+     */
+    if (!refused || refused === 'signed-out' || refused === 'surface-off') return;
     const timer = setTimeout(() => router.replace(goingTo), REDIRECT_AFTER_MS);
     return () => clearTimeout(timer);
   }, [refused, goingTo, router]);
@@ -374,6 +413,46 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
             <Notice tone="warn" title={strings.access.signInNoticeTitle}>{strings.access.signInBody}</Notice>
           </>
         )}
+      </Shell>
+    );
+  }
+
+  /*
+   * A SURFACE THAT IS OFF GETS ITS OWN SCREEN, not a third branch inside the
+   * generic one. It is the only refusal here whose answer is a setting rather
+   * than an account, so it is the only one that can name the thing and the
+   * place it is turned on (CLAUDE.md §7, "Shortcuts to the answer"). An
+   * unmapped surface key shows the key, so a new surface is diagnosable rather
+   * than a blank.
+   */
+  if (refused === 'surface-off') {
+    return (
+      <Shell right={<SessionControl audience={strings.access.audience} />}>
+        <h1 className={ui.pageTitle} data-testid="access-surface-off">
+          <ShieldAlert size={20} aria-hidden="true" /> {strings.access.surfaceOffTitle}
+        </h1>
+        <Notice tone="warn" title={strings.access.takingYouBack}>
+          {strings.access.surfaceOffBody}
+          {surfaceOff && (
+            <>
+              {' '}
+              <span data-testid="access-surface-name">
+                {strings.access.surfaceOffWhich.replace(
+                  '{surface}',
+                  strings.channels.surfaceNames[surfaceOff] ?? surfaceOff,
+                )}
+              </span>
+            </>
+          )}
+        </Notice>
+        <p className={ui.hint}>
+          <a href="/practice/channels" data-testid="access-surface-off-channels">
+            {strings.access.surfaceOffGoToChannels}
+          </a>
+        </p>
+        <p className={ui.hint}>
+          <a href={goingTo}>{strings.access.goNow}</a>
+        </p>
       </Shell>
     );
   }

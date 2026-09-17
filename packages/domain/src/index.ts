@@ -35,6 +35,9 @@ export * from './account-naming';
 export * from './external-links';
 export * from './pending-email-change';
 export * from './page-access';
+// The second check beside `mayReach`: which parts of AoB this PRACTICE uses
+// (D-2026-09-14-04). Audience answers who; this answers which product.
+export * from './practice-surfaces';
 export * from './practitioner-departure';
 export * from './reporting';
 export * from './practice-day';

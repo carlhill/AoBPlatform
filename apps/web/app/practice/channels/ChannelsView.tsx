@@ -24,14 +24,18 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, CheckCircle2, FileText, MessageSquare, Monitor, ShieldQuestion, Timer } from 'lucide-react';
+import { ArrowRight, CheckCircle2, FileText, Layers, MessageSquare, Monitor, ShieldQuestion, Timer } from 'lucide-react';
 import {
   APPROVED_IDENTIFIER_TYPES,
+  DEFAULT_SURFACE_PROFILE,
   IDENTIFIER_COUNT_FLOOR,
   KIOSK_IDLE_TIMEOUT_DEFAULT_SECONDS,
+  PRACTICE_SURFACE_KEYS,
+  SURFACE_PROFILE_KEYS,
   audiencesOf,
   kioskIdleTimeoutOrDefault,
   mayReach,
+  profileSurfaces,
   type Audience,
   type DeviceRow,
 } from '@aobplatform/domain';
@@ -42,6 +46,7 @@ import styles from '../manage.module.css';
 import { SessionControl } from '../../SessionControl';
 import { apiHeaders, currentSession } from '../../auth';
 import { toViewPath } from '../../viewPath';
+import { forgetSurfaceProfile } from '../../surfaceProfile';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -63,6 +68,13 @@ interface Practice {
    * practitioner x patient whatever this says (hard rule 6, REQ-END-01/-01a).
    */
   enduringByDefault?: boolean;
+  /**
+   * WHICH PARTS OF AoB THIS PRACTICE USES (D-2026-09-14-04). A PERMISSION,
+   * unlike everything else on this page: what is off is hidden from staff and
+   * refused by the server. Absent from an older core means `full`, which is
+   * every surface and is what every practice has until somebody sets it.
+   */
+  surfaceProfile?: string;
 }
 
 /**
@@ -140,6 +152,12 @@ export function ChannelsView({
   const [identifiers, setIdentifiers] = useState<string[]>([]);
   const [idleMinutes, setIdleMinutes] = useState(String(KIOSK_IDLE_TIMEOUT_DEFAULT_SECONDS / 60));
   const [enduringDefault, setEnduringDefault] = useState(true);
+  /*
+   * WHICH PARTS OF AoB THIS PRACTICE USES (D-2026-09-14-04). Defaulted to
+   * `full` rather than to nothing: an empty control here would read as "this
+   * practice uses none of AoB", which is the one thing it may never mean.
+   */
+  const [surfaceProfile, setSurfaceProfile] = useState(DEFAULT_SURFACE_PROFILE);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -219,6 +237,9 @@ export function ChannelsView({
        * a decision nobody made.
        */
       setEnduringDefault(data.enduringByDefault ?? true);
+      // AN OLDER CORE THAT DOES NOT SEND IT MEANS EVERYTHING, which is the
+      // column's default and today's behaviour for every practice.
+      setSurfaceProfile(data.surfaceProfile ?? DEFAULT_SURFACE_PROFILE);
     } catch (e) {
       setLoadError(e instanceof TypeError ? strings.review.unreachableBody : (e as Error).message);
     }
@@ -330,10 +351,18 @@ export function ChannelsView({
           // place, so the server never sees two units for one setting.
           kioskIdleTimeoutSeconds: minutes * 60,
           enduringByDefault: enduringDefault,
+          surfaceProfile,
         }),
       });
       if (!res.ok) throw new Error(await refusalMessage(res));
       setSaved(true);
+      /*
+       * THE MENUS READ A CACHED COPY OF THIS. Dropping it here is what makes
+       * the change visible on the next render rather than five minutes later
+       * — somebody who has just switched a part of AoB on and cannot see it
+       * anywhere reasonably concludes the save did not work.
+       */
+      forgetSurfaceProfile();
       await load();
     } catch (e) {
       setError((e as Error).message);
@@ -419,6 +448,84 @@ export function ChannelsView({
                 label={strings.channels.smsMark}
                 hint={strings.channels.smsMarkHint}
               />
+            </div>
+          </div>
+
+          {/*
+            --- WHICH PARTS OF AoB THIS PRACTICE USES (D-2026-09-14-04) ---
+
+            SECOND, AFTER THE SENDER ID AND BEFORE EVERYTHING ELSE. The sender
+            ID leads because it has a lead time measured in weeks; this comes
+            next because it decides which of the settings below a practice
+            even has. Reading "how long a link lives" matters less when you do
+            not yet know whether this practice sends links at all.
+
+            HERE RATHER THAN ON A NEW PAGE. The idle timeout and the enduring
+            default already live on this screen, it already saves through
+            `PATCH /practices/:id/config`, and a practice-wide switch on its
+            own page is a page nobody finds.
+
+            IT IS A PERMISSION AND SAYS SO. Everything else here is a default
+            or an assertion; this one decides what staff can open and what the
+            server will answer. And nothing is removed by it — the copy is
+            explicit, because the first fear on reading a list of things your
+            practice has not got is that a feature was deleted and took its
+            records with it.
+
+            THE WORDS FOR EACH PART COME FROM THE STRING TABLE, KEYED BY THE
+            SURFACE KEY (REQ-LANG-01/-02), and the LIST comes from the domain's
+            content file. This file knows neither which surfaces exist nor what
+            a profile contains, so adding one is a content change.
+          */}
+          <div className={styles.card} style={{ marginTop: 'var(--s3)' }} data-testid="channels-surfaces">
+            <div className={styles.cardHead}>
+              <Layers size={18} aria-hidden="true" className={styles.cardIcon} />
+              <div className={styles.cardMain}>
+                <p className={styles.cardTitle}>{strings.channels.surfacesTitle}</p>
+                <p className={styles.cardNote}>{strings.channels.surfacesLead}</p>
+              </div>
+            </div>
+            <div className={styles.cardBody}>
+              <div className={styles.inlineForm}>
+                <Field label={strings.channels.surfacesLabel} hint={strings.channels.surfacesHint}>
+                  {(props) => (
+                    <SelectInput
+                      {...props}
+                      value={surfaceProfile}
+                      onChange={(e) => {
+                        setSurfaceProfile(e.target.value);
+                        setSaved(false);
+                      }}
+                      data-testid="channels-surface-profile"
+                    >
+                      {SURFACE_PROFILE_KEYS.map((key) => (
+                        <option key={key} value={key}>
+                          {strings.channels.surfaceProfileNames[key] ?? key}
+                        </option>
+                      ))}
+                    </SelectInput>
+                  )}
+                </Field>
+              </div>
+              {/*
+                WHAT THAT ACTUALLY MEANS, SPELLED OUT. A profile name is a
+                label; the list below is the decision. Shown for the CHOSEN
+                value before it is saved, so somebody can see what they are
+                about to do rather than what they already did.
+              */}
+              <ul className={styles.cardNote} data-testid="channels-surface-list">
+                {PRACTICE_SURFACE_KEYS.map((key) => {
+                  const on = profileSurfaces(surfaceProfile).includes(key);
+                  return (
+                    <li key={key} data-testid={`channels-surface-${key}`}>
+                      <Chip tone={on ? 'ok' : 'neutral'}>
+                        {on ? strings.channels.surfacesOn : strings.channels.surfacesOff}
+                      </Chip>{' '}
+                      {strings.channels.surfaceNames[key] ?? key}
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
           </div>
 

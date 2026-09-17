@@ -528,20 +528,36 @@ export function audiencesOf(principal: {
   return [...out];
 }
 
-/** The rule for a path, matching `/status/abc123` to `/status`. */
-export function ruleFor(path: string): PageRule | null {
+/**
+ * WHICH ENTRY IN THIS TABLE ANSWERS FOR A PATH — the key, not the rule.
+ *
+ * Split out of `ruleFor` so a second question about the same page can be asked
+ * of the same answer. `practice-surfaces.ts` asks which surface a page belongs
+ * to and must resolve `/status/abc123` to `/status` exactly as this table
+ * does; resolving it with its own prefix rule would be a second copy that
+ * drifts, and the first thing it would get wrong is `matchesChildren` — which
+ * is opt-in precisely so that `/practice` does not answer for a brand new
+ * `/practice/anything`.
+ */
+export function pageKeyFor(path: string): string | null {
   const clean = (path.split('?')[0] || '/').replace(/\/+$/, '') || '/';
-  if (PAGES[clean]) return PAGES[clean];
+  if (PAGES[clean]) return clean;
 
   /*
    * Only pages that ASKED to match their children do. Longest first, so a
    * child with its own entry still wins over a matching parent.
    */
-  const match = Object.keys(PAGES)
-    .filter((p) => PAGES[p].matchesChildren && p !== '/' && clean.startsWith(p + '/'))
-    .sort((a, b) => b.length - a.length)[0];
+  return (
+    Object.keys(PAGES)
+      .filter((p) => PAGES[p].matchesChildren && p !== '/' && clean.startsWith(p + '/'))
+      .sort((a, b) => b.length - a.length)[0] ?? null
+  );
+}
 
-  return match ? PAGES[match] : null;
+/** The rule for a path, matching `/status/abc123` to `/status`. */
+export function ruleFor(path: string): PageRule | null {
+  const key = pageKeyFor(path);
+  return key ? PAGES[key] : null;
 }
 
 /**

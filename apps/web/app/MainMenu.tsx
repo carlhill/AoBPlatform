@@ -29,9 +29,10 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import * as RadixDialog from '@radix-ui/react-dialog';
 import { Menu, X } from 'lucide-react';
-import { audiencesOf, landingPath, mayReach, type Audience } from '@aobplatform/domain';
+import { audiencesOf, landingPath, mayReach, profileAllows, type Audience } from '@aobplatform/domain';
 import { currentSession } from './auth';
 import { useEffectivePractice } from './effectivePractice';
+import { useSurfaceProfile } from './surfaceProfile';
 import { strings } from './strings';
 import styles from './ui/ui.module.css';
 
@@ -57,6 +58,15 @@ export function MainMenu() {
    * were.
    */
   const { practiceId, practiceName: actingPracticeName } = useEffectivePractice();
+
+  /*
+   * AND WHAT THAT PRACTICE USES (D-2026-09-14-04). The same reason this menu
+   * is built from the access table rather than a hand-written list: a menu
+   * that offers a door the practice has not bought is a promise broken in
+   * front of somebody, and the server behind that door refuses with its own
+   * reason code. Two checks, both applied, neither folded into the other.
+   */
+  const { profile } = useSurfaceProfile(practiceId);
 
   const audiences: Audience[] = audiencesOf({
     roles: session?.roles ?? [],
@@ -182,7 +192,16 @@ export function MainMenu() {
   ];
 
   const visible = groups
-    .map((g) => ({ ...g, items: g.items.filter((i) => mayReach(i.path, audiences)) }))
+    .map((g) => ({
+      ...g,
+      // BOTH CHECKS. `mayReach` answers who this account is; `profileAllows`
+      // answers what this practice uses. A page needs both, and only the
+      // second one needs a practice to ask about — with no practice claim
+      // there is nothing to filter by and the audience check stands alone.
+      items: g.items.filter(
+        (i) => mayReach(i.path, audiences) && (!practiceId || profileAllows(profile, i.path)),
+      ),
+    }))
     // A heading with nothing under it says a section exists and is empty, which
     // is a different and untrue statement from "you have no such section".
     .filter((g) => g.items.length > 0);

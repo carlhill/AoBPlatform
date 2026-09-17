@@ -1,0 +1,147 @@
+{
+  "$comment": "WHICH PARTS OF AoB A PRACTICE ACTUALLY USES (D-2026-09-14-04; hard rule 14). The first customer sees the DB4 path and nothing else — no waiting-room walk-up, no ongoing agreements, no front-desk queue rails, no patient portal, no practitioner pages. Those stay BUILT and stay OFF, and turning one on is a setting on the practice row, never a rebuild. THIS FILE IS THE ONE CLASSIFICATION, READ BY TWO CONSUMERS: the console (which pages a practice's staff are offered and may open) and the core API (which endpoints answer for that practice). A rule written twice is a rule that disagrees with itself within a month. DISPLAY WORDS ARE NOT HERE. Every surface's name and explanation live in the string table keyed by `key` (REQ-LANG-01/-02), because they will be translated and a translated word must never be able to change what a practice may reach. `pages` ARE THE `PAGES` KEYS OF page-access.ts, EXACTLY — every one of them, each appearing once, checked by `every_route_in_the_access_table_belongs_to_a_surface`. Matching at runtime is by prefix so `/status/abc123` resolves like its parent, but the declaration is exact so that adding a screen and forgetting to classify it fails the build rather than quietly inheriting a neighbour's answer. `endpoints` ARE PREFIX PATTERNS on core's route paths, optionally qualified by method, with `*` standing for one path parameter. The longest match wins, so `/kiosk` can be `always` while `POST /kiosk/claim` is the walk-up. A controller base classifies the routes beneath it, so a new route on an existing controller inherits its surface; a NEW controller base is unclassified and fails the build. AN UNCLASSIFIED ROUTE IS ALLOWED AT RUNTIME AND FAILS THE BUILD — see `profileAllowsEndpoint` for why that is deliberate rather than a bug. `full` MUST LIST EVERY SURFACE and the loader refuses a file where it does not: it is the default for every practice that exists, so a surface added here must be ON for all of them until somebody decides otherwise. Bump `version` on every edit; it is recorded on the vault event that changes a practice's profile, so the record says which list the decision was made from.",
+  "version": "practice-surfaces-2026-09-1",
+
+  "always": {
+    "$comment": "Signing in, setting the practice up, the day hub, the platform's own pages, and the shared machinery every practice has whatever else it uses. NOT a surface: nothing here can be turned off, because a practice with none of the optional surfaces still has to be able to sign in, be configured, and record what happened. THE TABLET DESK, THE DAY REGISTER AND THE PATIENT WORK LIST ARE HERE rather than in `db4`, and the difference matters: the first customer keeps all three, but so does a practice that uses the waiting-room kiosk and has never printed a DB4. A surface is something a practice may not have bought; shared machinery is not. `/kiosk` is here for the same reason — the tablet serves a PUSHED agreement as well as a walk-up, and only the walk-up is optional.",
+    "pages": [
+      "/",
+      "/apply",
+      "/help",
+      "/callback",
+      "/invitation",
+      "/status",
+      "/verify",
+      "/kiosk",
+      "/practice/confirm-email",
+      "/practice/stop-email-change",
+      "/practice/confirm-backup",
+      "/review",
+      "/practice/reviews",
+      "/practice/queue",
+      "/practice/queuebyOrg",
+      "/practice/queuebyOrgLocDepartment",
+      "/platform/acting-as",
+      "/platform/acting-as/history",
+      "/platform/practices",
+      "/platform/templates",
+      "/practice",
+      "/practice/today",
+      "/practice/setup",
+      "/practice/entity",
+      "/practice/application",
+      "/practice/locations",
+      "/practice/channels",
+      "/practice/templates",
+      "/practice/pms",
+      "/practice/practitioners",
+      "/practice/affiliations",
+      "/practice/reconciliation",
+      "/practice/correspondence",
+      "/practice/reports",
+      "/practice/users",
+      "/practice/devices",
+      "/practice/tablet",
+      "/practice/day",
+      "/practice/patients"
+    ],
+    "endpoints": [
+      "/acting-as",
+      "/affiliations",
+      "/agree",
+      "/agreement-copy",
+      "/agreement-templates",
+      "/agreements",
+      "/applications",
+      "/arrivals",
+      "/artefacts",
+      "/capture",
+      "/chase-attempts",
+      "/correspondence",
+      "/dev",
+      "/devices",
+      "/health",
+      "/identity",
+      "/invitations",
+      "/kiosk",
+      "/organisations",
+      "/outbound",
+      "/patients",
+      "/pending-email-change",
+      "/platform",
+      "/pms",
+      "/practice-users",
+      "/practices",
+      "/practitioners",
+      "/reconciliation",
+      "/review-tasks",
+      "/service-descriptions",
+      "/tablet-sessions",
+      "/verification"
+    ]
+  },
+
+  "surfaces": [
+    {
+      "key": "db4",
+      "$comment": "THE DB4 PATH: the practice prints an assignment form to AOBPRINTER, it becomes a post-service agreement, and a Signed-DB4 goes back in the chart folder (DB4-AND-AOBL.md §13). The endpoint is the gate on AOBPRINTER being installable at a practice that has not bought it (TODO.md, AOBPRINTER item 5) — until this existed, nothing in code stopped the print channel being pointed at a live practice. The tablet desk and the day register are `always` and not here, because a practice that has never printed a DB4 uses both.",
+      "pages": [],
+      "endpoints": ["/inbound/print-jobs"]
+    },
+    {
+      "key": "kiosk_walk_up",
+      "$comment": "THE PATIENT WHO WALKS UP TO THE TABLET and types three details to find their own waiting row. NOT the tablet itself: a pushed agreement uses the same device, the same ceremony and the same `/kiosk` routes, so `GET /kiosk/me`, the heartbeat and the waiting-list poll stay `always`. What is optional is the front door — `POST /kiosk/claim` — and the console switch that lets a device accept one at all.",
+      "pages": [],
+      "endpoints": ["POST /kiosk/claim", "PATCH /devices/*/walk-ups"]
+    },
+    {
+      "key": "enduring_agreements",
+      "$comment": "ONGOING AGREEMENTS and the 89AA notices that belong to them (REQ-END-01, REQ-END-05). Per practitioner × patient and GP-only however this is set — turning the surface on does not make an enduring agreement legal that was not (hard rule 6), and a notice is never chased whatever is on (hard rule 7). `offer-episodic` is here because it is the DECLINE step of an enduring offer: with the surface off there is no offer to decline.",
+      "pages": [],
+      "endpoints": [
+        "/enduring",
+        "/notices",
+        "POST /agreements/*/offer-episodic",
+        "POST /tablet-sessions/*/offer-episodic"
+      ]
+    },
+    {
+      "key": "queue_rails",
+      "$comment": "THE FRONT DESK'S RAILS: who is here, who is on a tablet, who is expected, on a wide screen and on a small one. A practice working only the DB4 path does not run its morning off these — it works from the day register and the patient list, which are `always`.",
+      "pages": ["/practice/frontdesk", "/practice/frontdesksmall"],
+      "endpoints": ["GET /arrivals/expected"]
+    },
+    {
+      "key": "portal",
+      "$comment": "THE PATIENT'S OWN PAGES (M8, REQ-PORT-*): their agreements, their people, their messages, and the passkey that opens them. A practice that has not turned this on never invites a patient into it.",
+      "pages": ["/patient"],
+      "endpoints": ["/portal", "POST /agreements/*/portal-invitation", "POST /dev/portal-session"]
+    },
+    {
+      "key": "practitioner_pages",
+      "$comment": "WHAT A PRACTITIONER SIGNS IN TO SEE: their own details and affiliations, and who is waiting for them today. Recording WHO WORKS HERE is not this — `/practice/practitioners`, `/practice/affiliations` and `/practitioners/*` are `always`, because every agreement names a provider at a place and a practice has to be able to say who that is without giving anybody a login.",
+      "pages": ["/practice/practitioner", "/practice/practitioner/waiting", "/practitioner"],
+      "endpoints": ["/practitioner/me", "/practitioner/departure-reasons", "/practitioner-queue"]
+    }
+  ],
+
+  "profiles": [
+    {
+      "key": "full",
+      "$comment": "EVERYTHING, AND THE DEFAULT FOR EVERY PRACTICE THAT EXISTS. Adding a surface to this file without adding it here would switch that surface OFF for every practice on the platform, which is why the loader refuses such a file.",
+      "surfaces": [
+        "db4",
+        "kiosk_walk_up",
+        "enduring_agreements",
+        "queue_rails",
+        "portal",
+        "practitioner_pages"
+      ]
+    },
+    {
+      "key": "db4",
+      "$comment": "THE FIRST CUSTOMER (D-2026-09-14-04): the DB4 path and nothing else. They keep the tablet desk, the day register, the patient list and every setup page, because those are `always`; they do not see the waiting-room walk-up, ongoing agreements, the front desk's rails, the patient portal or the practitioner pages.",
+      "surfaces": ["db4"]
+    }
+  ]
+}
