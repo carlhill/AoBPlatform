@@ -4360,3 +4360,85 @@ which is a change to a shared safety mechanism and wants its own think.
 The version now travels on every post, and nothing reads it. An admin cannot
 see the health, version or queue list of the print channels in their practice.
 That is console work and belongs with piece 1, not here.
+
+---
+
+## The DB4 slice: pieces 2, 3, 4 and 6 (17 Sep 2026)
+
+`DB4-AND-AOBL.md` section 13 has the order and why. Piece 1 (the
+`db4_assignment` handler) is being built; piece 5 (AOBPRINTER) is done. These
+four are what remains before a practice can print a DB4 and get a Signed-DB4
+back in the chart folder, which is the whole point of the slice.
+
+### Piece 2 — the Signed-DB4 template. The next one to build.
+
+The DB4's layout as a versioned template, rendered from the locked particulars,
+so the practice gets **the exact same form** with the cost printed and the
+patient's signature at the bottom — one document in the folder, not two
+(D-2026-09-14-02).
+
+**What it needs, and the two things that are not obvious:**
+
+- The **cost is printed** on it (D-2026-09-14-02 narrowed hard rule 4) and the
+  **Medicare card number and IRN in full** (D-2026-09-14-03). Both are refused
+  everywhere else in this system, so the template is the one place they are
+  deliberate. Piece 1 deliberately does NOT carry either into the agreement
+  particulars, so **this piece has to decide where the renderer reads them
+  from** — the stored DB4 Print Record on the job row is the obvious answer and
+  needs stating rather than assuming.
+- **Heading line 3 is the government saying its own form is approved.** Hard
+  rule 12 forbids us saying that of ours. `DB4-AND-AOBL.md` section 2a
+  recommends a footer distinguishing our reproduction from the approved form;
+  that wording is one of the two open rulings in section 10 item 0 and is still
+  unruled.
+
+Reuse: the template set, the deterministic renderer, the hash-at-render, the
+kiosk ceremony. Hard rule 13 — two renders byte-identical — applies, and there
+is an existing named test for it.
+
+### Piece 3 — telehealth. Small, and mostly exists.
+
+The patient is not in the building, so the Signed-DB4 goes out as a remote link
+on a post-service agreement, and the practice's printed copy carries the word
+TELEHEALTH where their rubber stamp goes (Carl, 14 Sep).
+
+Reuse: `sms_link` / `email_link`, `openLink`, `verifyLink`, contact-on-record.
+New: a `deliveryMode` field on the agreement, and the printed word.
+
+**Checked and worth remembering:** Powell Street does not use the pre-consult
+form, and the pre-agreement is not required for this path — §11a of the plan.
+Do not build a pre-consult flow for telehealth on the assumption it is needed.
+
+### Piece 4 — the write-back pull. Blocked on nothing; do after 2.
+
+The practice sees the Signed-DB4 appear in the patient's chart folder. Server
+half: a signed-list endpoint and a Write-back Manifest. Desktop half: the folder
+drop, which belongs in `apps/aobprinter` and inherits its outbox, its version
+guard and its retention posture.
+
+Reuse: the hash-verified download route. **Note the direction** — it is a PULL
+by the desktop, not a push by the server, because the practice's network is
+outbound-only (ADR, mutual TLS).
+
+### Piece 6 — the practice flag. Small, and it is what makes this a slice.
+
+`D-2026-09-14-04`: the first customer sees the DB4 path and nothing else. No
+kiosk walk-up, no ongoing agreements, no queue rails, no portal, no practitioner
+pages. Those stay built and stay off.
+
+Precedent to follow: `practices.channelsEnabled`. One setting, read by
+navigation.
+
+**This is also the gate on AOBPRINTER being installable** — see the AOBPRINTER
+section above, item 5. Until the flag exists, nothing in code stops the print
+channel being pointed at a live practice.
+
+### The two rulings still open, which piece 2 will run into
+
+`DB4-AND-AOBL.md` section 10 item 0, both recommended and neither ruled:
+1. The wording of the footer that distinguishes our reproduction from the
+   government's approved form (hard rule 12).
+2. Whether the pathology tick box stays on paper. It is carried as data and
+   never acted on — s 65C(4) items 1-4 are out of scope (CLAUDE.md section 8) —
+   but the box is ON the form we reproduce, so the template has to render
+   something.
