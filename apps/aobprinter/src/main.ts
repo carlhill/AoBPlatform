@@ -157,9 +157,16 @@ function startLocked(
    * once; this is the belt to that braces, so that no shape of failure in an
    * ALARM can stop the loop that captures forms.
    */
-  function safeReconcile(): void {
+  /*
+   * AWAITED, AND THE REJECTION HANDLED, because `reconcile` is now
+   * asynchronous: it shells out to PowerShell, and doing that synchronously
+   * stopped the event loop that claims spool files (hard rule 8). An
+   * unhandled rejection from a timer callback would take the process down,
+   * which is the same failure wearing a different coat.
+   */
+  async function safeReconcile(): Promise<void> {
     try {
-      reconciler.reconcile(queueNames);
+      await reconciler.reconcile(queueNames);
     } catch (err) {
       logger.error('reconcile.failed', { error: redactError(err) });
     }
@@ -235,7 +242,7 @@ function startLocked(
   const sweepTimer = setInterval(safeSweep, config.retention.sweepIntervalMs);
   sweepTimer.unref?.();
 
-  const reconcileTimer = setInterval(safeReconcile, DEFAULT_RECONCILE_INTERVAL_MS);
+  const reconcileTimer = setInterval(() => void safeReconcile(), DEFAULT_RECONCILE_INTERVAL_MS);
   reconcileTimer.unref?.();
 
   return {

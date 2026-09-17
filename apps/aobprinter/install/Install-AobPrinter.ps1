@@ -140,9 +140,15 @@ function Resolve-QueueList {
     $index = 0
     foreach ($entry in $Queues) {
         $index++
-        $name = $entry['Name']
-        $path = $entry['SpoolFile']
-        $label = $entry['Label']
+        # Index access works for a hashtable and silently yields $null for a
+        # PSCustomObject -- which is what queues read back from JSON are -- and
+        # the caller then sees the untrue "Queue 1 has no Name".
+        if ($entry -is [System.Collections.IDictionary]) {
+            $name = $entry['Name']; $path = $entry['SpoolFile']; $label = $entry['Label']
+        }
+        else {
+            $name = $entry.Name; $path = $entry.SpoolFile; $label = $entry.Label
+        }
         if ([string]::IsNullOrWhiteSpace($name)) { throw "Queue $index has no Name." }
         if ([string]::IsNullOrWhiteSpace($path)) {
             throw "Queue '$name' has no SpoolFile. Every queue watches its own file-path port; there is no shared default."
@@ -195,18 +201,35 @@ function Get-InstallCliPath {
 function Invoke-NodeCli {
     param([Parameter(Mandatory)][string[]] $NodeArgs)
 
-    $ErrorActionPreference = 'Continue'
-    $errFile = [System.IO.Path]::GetTempFileName()
-    try {
-        $out = & node @NodeArgs 2>$errFile
-        return [pscustomobject]@{
-            ExitCode = $LASTEXITCODE
-            StdOut   = ($out | Out-String).Trim()
-            StdErr   = ((Get-Content -LiteralPath $errFile -Raw -ErrorAction SilentlyContinue) -replace '(?m)^node(\.exe)? : ', '')
-        }
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = 'node'
+    if ($psi.PSObject.Properties.Name -contains 'ArgumentList') {
+        foreach ($a in $NodeArgs) { $psi.ArgumentList.Add($a) }
     }
-    finally {
-        Remove-Item -LiteralPath $errFile -Force -ErrorAction SilentlyContinue
+    else {
+        # Windows PowerShell 5.1: no ArgumentList. Quote each argument; the
+        # only values passed here are a script path, a version, a data
+        # directory, a mode and an @tempfile path, none of which contain a
+        # double quote, and all of which can contain spaces.
+        $psi.Arguments = (($NodeArgs | ForEach-Object { '"' + $_ + '"' }) -join ' ')
+    }
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    # Read BEFORE WaitForExit. A child that fills a redirected pipe blocks
+    # writing to it while the parent blocks waiting for the child: the classic
+    # deadlock, and it would hang the installer rather than fail it.
+    $out = $proc.StandardOutput.ReadToEnd()
+    $err = $proc.StandardError.ReadToEnd()
+    $proc.WaitForExit()
+
+    return [pscustomobject]@{
+        ExitCode = $proc.ExitCode
+        StdOut   = ([string]$out).Trim()
+        StdErr   = ([string]$err).Trim()
     }
 }
 
@@ -256,6 +279,47 @@ function Assert-VersionAllowed {
     }
 }
 
+function Get-InstalledMarker {
+    $markerPath = Join-Path $DataDir 'install.json'
+    if (-not (Test-Path -LiteralPath $markerPath)) { return $null }
+    try { return (Get-Content -LiteralPath $markerPath -Raw | ConvertFrom-Json) } catch { return $null }
+}
+
+<#
+    ASK BEFORE CREATING ANYTHING.
+
+    A queue name or label shaped like a patient identifier is refused, because
+    it is written to the install marker, to every log line and to every receipt
+    that queue produces (hard rule 9). The refusal used to happen when the
+    marker was written -- at the END, after the ports and printers existed --
+    so a queue named after a Medicare number became a real Windows printer and
+    then the install stopped. The printer stayed.
+
+    The rule itself lives in `log.ts` and is shared with the redactor; this
+    asks the program rather than reimplementing it in PowerShell, where it
+    would drift.
+#>
+function Assert-QueueNamesAllowed {
+    param([Parameter(Mandatory)][object[]] $QueueList)
+
+    $cli = Get-InstallCliPath
+    if (-not $cli) { return }   # Assert-VersionAllowed has already stopped for this.
+
+    $payload = @($QueueList | ForEach-Object { @{ name = $_.Name; label = $_.Label } })
+    $json = ConvertTo-Json -InputObject $payload -Compress -Depth 4
+    if (-not $json.StartsWith('[')) { $json = "[$json]" }
+
+    $temp = Join-Path ([System.IO.Path]::GetTempPath()) ("aobprinter-validate-" + [guid]::NewGuid().ToString('N') + ".json")
+    try {
+        Set-Content -LiteralPath $temp -Value $json -Encoding utf8
+        $result = Invoke-NodeCli -NodeArgs @($cli, 'validate-queues', "@$temp")
+        if ($result.ExitCode -ne 0) { throw ($result.StdErr).Trim() }
+    }
+    finally {
+        Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Write-InstallMarker {
     param([string] $Version, [object[]] $QueueList)
 
@@ -266,6 +330,26 @@ function Write-InstallMarker {
     # arguments with its own legacy rules and JSON is nothing but embedded
     # quotes -- inline, they are eaten on one desktop and survive on another,
     # and the damage shows up as a mangled label in a receipt weeks later.
+    <#
+        A MARKER THAT FORGETS A QUEUE ORPHANS A PRINTER.
+
+        The marker is overwritten wholesale and -Uninstall trusts it. So a
+        technician who re-runs this on a six-queue LAN host with defaults gets
+        one queue recorded and five printers left behind, still spooling PDFs
+        to files nothing watches, which -Uninstall will then never remove. Say
+        so loudly; do not silently rewrite history.
+    #>
+    $previous = Get-InstalledMarker
+    if ($previous) {
+        $dropped = @($previous.queues | Where-Object { $QueueList.Name -notcontains $_.name })
+        if ($dropped.Count -gt 0) {
+            Write-Warning "This install records $($QueueList.Count) queue(s); the previous one recorded $($previous.queues.Count)."
+            Write-Warning "These queues are no longer recorded and will NOT be removed by -Uninstall:"
+            foreach ($d in $dropped) { Write-Warning "    $($d.name)" }
+            Write-Warning "If they are still installed they will keep writing PDFs that nothing reads. Remove them by name, or re-run naming every queue."
+        }
+    }
+
     $payload = @($QueueList | ForEach-Object { @{ name = $_.Name; label = $_.Label } })
     $json = ConvertTo-Json -InputObject $payload -Compress -Depth 4
     if (-not $json.StartsWith('[')) { $json = "[$json]" }   # PS 5.1 unwraps a one-element array
@@ -430,6 +514,7 @@ $version = Get-PackageVersion
 Write-Host "Installing AOBPRINTER $version ($Mode mode, $($queueList.Count) queue(s))"
 
 Assert-VersionAllowed -Version $version
+Assert-QueueNamesAllowed -QueueList $queueList
 
 $driver = Get-PrinterDriver -Name $DriverName -ErrorAction SilentlyContinue
 if (-not $driver) {

@@ -5,9 +5,13 @@
  * understand the outbox it inherits.
  */
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+
+/** Built, not written as an escape: a literal U+FEFF in source trips the lint rule. */
+const BOM = String.fromCharCode(0xfeff);
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { parseQueuesArgument } from './install-cli';
 import { compareVersions, decideInstallAction, readInstallMarker, writeInstallMarker } from './install-marker';
 
 describe('an_older_version_refuses_to_install_over_a_newer_one', () => {
@@ -58,24 +62,68 @@ describe('an_older_version_refuses_to_install_over_a_newer_one', () => {
 
 describe('a_queues_file_written_by_powershell_is_read', () => {
   /*
-   * Regression, 17 September 2026, found by running the real installer rather
-   * than by reading it. `Set-Content -Encoding utf8` on Windows PowerShell 5.1
-   * writes UTF-8 WITH a byte order mark; JSON.parse rejects the leading
-   * U+FEFF. The installer had already created both printers by the time the
-   * marker write failed, so the machine was left with queues and no record of
-   * what version had installed them - the exact state the marker exists to
-   * prevent.
+   * Regression, 17 September 2026, found by running the real installer.
+   * `Set-Content -Encoding utf8` on Windows PowerShell 5.1 writes UTF-8 WITH a
+   * byte order mark; JSON.parse rejects the leading U+FEFF. The installer had
+   * already created both printers by the time the marker write failed, so the
+   * machine was left with queues and no record of what version installed them
+   * - the exact state the marker exists to prevent.
+   *
+   * This calls `parseQueuesArgument`, the function the installer actually runs.
+   * A first version of this test stripped the BOM with its own inline copy of
+   * the expression and parsed that, so it pinned the test's logic rather than
+   * the installer's and could not have failed if the real path regressed
+   * (found in review the same day).
    */
-  it('parses a UTF-8 file that starts with a byte order mark', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'aobprinter-bom-'));
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'aobprinter-bom-'));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('parses a queues file that PowerShell wrote with a byte order mark', () => {
+    const file = join(dir, 'queues.json');
+    writeFileSync(file, BOM + JSON.stringify([{ name: 'AOBPRINTER-Room3', label: 'Room 3' }]), 'utf8');
+    assert.deepEqual(parseQueuesArgument('@' + file), [{ name: 'AOBPRINTER-Room3', label: 'Room 3' }]);
+  });
+
+  it('reads inline JSON too, which is what a human types', () => {
+    assert.deepEqual(parseQueuesArgument('[{"name":"AOBPRINTER","label":"Front desk"}]'), [
+      { name: 'AOBPRINTER', label: 'Front desk' },
+    ]);
+  });
+
+  it('refuses a queue name shaped like a patient identifier, on the installer path too', () => {
+    // config.ts refuses it at runtime; by then the installer has already made a
+    // Windows printer of that name and written it into the marker (hard rule 9).
+    //
+    // The CLI refuses by writing to stderr and calling process.exit, which is
+    // the right thing for a program whose interface IS its exit code — so the
+    // test intercepts both rather than asking the code to be less blunt.
+    const file = join(dir, 'queues.json');
+    writeFileSync(file, JSON.stringify([{ name: '2454232371', label: 'Room 3' }]), 'utf8');
+
+    const realExit = process.exit;
+    const realWrite = process.stderr.write.bind(process.stderr);
+    let exitCode: number | undefined;
+    let said = '';
+    (process as any).exit = (code?: number) => {
+      exitCode = code;
+      throw new Error('exited');
+    };
+    (process.stderr as any).write = (chunk: string) => {
+      said += chunk;
+      return true;
+    };
     try {
-      const file = join(dir, 'queues.json');
-      writeFileSync(file, '\uFEFF' + JSON.stringify([{ name: 'AOBPRINTER-Room3', label: 'Room 3' }]), 'utf8');
-      const text = readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
-      assert.deepEqual(JSON.parse(text), [{ name: 'AOBPRINTER-Room3', label: 'Room 3' }]);
+      assert.throws(() => parseQueuesArgument('@' + file), /exited/);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      process.exit = realExit;
+      process.stderr.write = realWrite;
     }
+
+    assert.equal(exitCode, 2);
+    assert.match(said, /looks like a patient identifier/);
   });
 });
 

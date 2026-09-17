@@ -181,8 +181,25 @@ export function acquireInstanceLock(
         staleVersion: holder?.version,
         note: 'the process that held this lock is gone — the last shutdown was not clean; reclaiming it',
       });
+      /*
+       * RE-READ BEFORE UNLINKING, because two processes can reach this line on
+       * the same stale lock. A and B both read pid 100, both decide it is
+       * dead; A unlinks and creates its own lock; B's unlink then deletes A's
+       * LIVE lock and B creates its own -- two watchers on one spool file,
+       * which is the exact outcome this whole file exists to prevent.
+       *
+       * Re-reading narrows the window to the microseconds between the read and
+       * the unlink rather than the milliseconds of the whole stale check, and
+       * the loser's next attempt sees the winner's live lock and refuses. This
+       * is a narrowing, not an elimination: the filesystem gives us no
+       * compare-and-delete. The elimination is that `openSync(path, 'wx')`
+       * below is atomic, so only one of them can create.
+       */
       try {
-        unlinkSync(path);
+        const stillStale = readHolder(path, logger);
+        const unreadableBoth = !holder && !stillStale;
+        const sameDeadHolder = holder !== null && stillStale !== null && stillStale.pid === holder.pid;
+        if (unreadableBoth || sameDeadHolder) unlinkSync(path);
       } catch {
         /* another starter got there first; the next attempt's EEXIST will say so */
       }
@@ -198,6 +215,14 @@ export function acquireInstanceLock(
     return {
       release: () => {
         try {
+          /*
+           * ONLY RELEASE A LOCK WE STILL HOLD. A process that lost a reclaim
+           * race, or one whose lock an operator replaced, would otherwise
+           * delete the live owner's file on its way out and leave the data
+           * directory unlocked with a watcher still running on it.
+           */
+          const holder = readHolder(path, logger);
+          if (holder && holder.pid !== pid) return;
           unlinkSync(path);
         } catch {
           /*

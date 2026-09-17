@@ -81,6 +81,9 @@ describe('a_stale_lock_from_a_dead_process_is_reclaimed', () => {
       JSON.stringify({ pid: 4242, version: '1.0.0', startedAt: '2001-01-01T00:00:00.000Z' }),
       'utf8',
     );
-    assert.throws(() => acquireInstanceLock(dir, '1.2.3', quiet, { pid: 7777, isAlive: () => true }));
+    assert.throws(
+      () => acquireInstanceLock(dir, '1.2.3', quiet, { pid: 7777, isAlive: () => true }),
+      /already running.*4242/s,
+    );
   });
 });

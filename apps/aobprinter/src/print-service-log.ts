@@ -42,7 +42,7 @@
  * of record is the outbox and its receipts, and this exists to catch what
  * never reached them.
  */
-import { spawnSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { redactError, type Logger } from './log';
 
 export const PRINT_SERVICE_LOG = 'Microsoft-Windows-PrintService/Operational';
@@ -62,7 +62,7 @@ export type EventCountReader = (
   queueNames: readonly string[],
   sinceIso: string,
   untilIso: string,
-) => Map<string, number> | null;
+) => Promise<Map<string, number> | null>;
 
 /** ISO instants are the only thing interpolated into the script; validated anyway, because a script built from a string is a script built from a string. */
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -90,8 +90,18 @@ const QUERY_TIMEOUT_MS = 15_000;
  * is thrown deliberately so the caller degrades loudly instead of quietly
  * reporting that nothing was ever printed.
  */
+/**
+ * ASYNCHRONOUS, AND THAT IS NOT A STYLE CHOICE.
+ *
+ * This was `spawnSync` and it ran on the same single-threaded event loop that
+ * claims spool files. Node stops dead for the whole call -- one to three
+ * seconds of PowerShell start-up, up to the fifteen-second timeout on a busy
+ * log -- and the port is ONE FILE. A form printed inside that stall has nothing
+ * running to claim it, and the next job overwrites it. A reporting feature
+ * would have destroyed the evidence it exists to account for (hard rule 8).
+ */
 export function powershellEventCountReader(): EventCountReader {
-  return (queueNames, sinceIso, untilIso) => {
+  return async (queueNames, sinceIso, untilIso) => {
     if (process.platform !== 'win32') return null;
     if (!ISO_INSTANT.test(sinceIso) || !ISO_INSTANT.test(untilIso)) return null;
 
@@ -110,15 +120,16 @@ export function powershellEventCountReader(): EventCountReader {
       '@($counts.GetEnumerator() | ForEach-Object { [pscustomobject]@{ Name = $_.Key; Count = $_.Value } }) | ConvertTo-Json -Compress -Depth 2',
     ].join('; ');
 
-    const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
-      encoding: 'utf8',
-      windowsHide: true,
-      timeout: QUERY_TIMEOUT_MS,
+    const out = await new Promise<string | null>((resolve) => {
+      execFile(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-Command', script],
+        { encoding: 'utf8', windowsHide: true, timeout: QUERY_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024 },
+        (err, stdout) => resolve(err ? null : (stdout ?? '').trim()),
+      );
     });
 
-    if (result.error || result.status !== 0) return null;
-
-    const out = (result.stdout ?? '').trim();
+    if (out === null) return null;
     if (out.length === 0) return new Map();
 
     let parsed: unknown;
@@ -163,6 +174,8 @@ export interface ReconcileSummary {
   readonly checked: boolean;
   /** Queues whose spooler count exceeded ours. */
   readonly gaps: number;
+  /** Configured queues the spooler has no jobs for although we claimed from them — a name that matches no printer. */
+  readonly unknownQueues: number;
 }
 
 /** A claim, with when it happened, so it is counted against the window it belongs to and not the next one. */
@@ -208,32 +221,64 @@ export class Reconciler {
    * read, the window stays open and the next successful check covers the
    * whole period — a gap during an outage of the event log is late, not lost.
    */
-  reconcile(queueNames: readonly string[]): ReconcileSummary {
+  async reconcile(queueNames: readonly string[]): Promise<ReconcileSummary> {
     const windowEnd = this.now().getTime() - this.graceMs;
-    if (windowEnd <= this.windowStartedAt) return { checked: false, gaps: 0 };
+    if (windowEnd <= this.windowStartedAt) return { checked: false, gaps: 0, unknownQueues: 0 };
 
     let counts: Map<string, number> | null;
     try {
-      counts = this.read(queueNames, new Date(this.windowStartedAt).toISOString(), new Date(windowEnd).toISOString());
+      counts = await this.read(queueNames, new Date(this.windowStartedAt).toISOString(), new Date(windowEnd).toISOString());
     } catch (err) {
       this.warnOnce('reconcile.unavailable', {
         error: redactError(err),
         note: 'the print service log could not be read; reconciliation is degraded and capture is unaffected',
       });
-      return { checked: false, gaps: 0 };
+      return { checked: false, gaps: 0, unknownQueues: 0 };
     }
 
     if (counts === null) {
       this.warnOnce('reconcile.unavailable', {
         note: 'the print service log is disabled, absent or unreadable on this desktop; reconciliation is degraded and capture is unaffected',
       });
-      return { checked: false, gaps: 0 };
+      return { checked: false, gaps: 0, unknownQueues: 0 };
     }
     this.warnedUnavailable = false;
 
     let gaps = 0;
+    let unknownQueues = 0;
     for (const queueName of queueNames) {
-      const printed = counts.get(queueName) ?? 0;
+      /*
+       * A QUEUE THE SPOOLER HAS NEVER HEARD OF IS AN UNKNOWN, NOT A ZERO.
+       *
+       * `counts.get(name) ?? 0` made a misconfigured queue permanently silent:
+       * printed 0 can never exceed claimed, so the alarm reported "checked, no
+       * gaps" forever. Every config written before today synthesises the queue
+       * name 'default' (config.ts LEGACY_QUEUE_NAME) and no Windows printer is
+       * called that, so on every already-installed desktop this guard rail was
+       * off while saying it was on. A typo in a LAN queue name did the same.
+       *
+       * Distinguishing the two needs a claim to compare against: if this
+       * program has claimed forms from a queue and the spooler reports no
+       * events for it at all, the name does not match a real printer. A queue
+       * that is genuinely quiet has no claims either, and says nothing.
+       */
+      const printed = counts.get(queueName);
+      const claimedAll = this.claims.filter((c) => c.queueName === queueName).length;
+      if (printed === undefined) {
+        if (claimedAll > 0) {
+          unknownQueues += 1;
+          this.logger.error('reconcile.queue_unknown_to_spooler', {
+            queue: queueName,
+            claimed: claimedAll,
+            note:
+              'forms were claimed from this queue but the print service log reports no jobs for that printer name; ' +
+              'the configured queue name does not match an installed printer, so a printed form that was never ' +
+              'captured cannot be detected here. Check the queue name in aobprinter.config.json.',
+          });
+        }
+        continue;
+      }
+
       const claimed = this.claims.filter((c) => c.queueName === queueName && c.at < windowEnd).length;
       if (printed <= claimed) continue;
 
@@ -264,7 +309,7 @@ export class Reconciler {
     this.claims.length = kept;
     this.windowStartedAt = windowEnd;
 
-    return { checked: true, gaps };
+    return { checked: true, gaps, unknownQueues };
   }
 
   private warnOnce(event: string, fields: Record<string, string | number | boolean | undefined>): void {

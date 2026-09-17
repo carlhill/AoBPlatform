@@ -33,6 +33,7 @@
  * a secret or a patient's.
  */
 import { readFileSync } from 'node:fs';
+import { looksLikeAnIdentifier } from './log';
 import {
   INSTALL_MODES,
   decideInstallAction,
@@ -46,6 +47,7 @@ const USAGE = [
   'Usage:',
   '  node dist/src/install-cli.js check <version> <dataDir>',
   '  node dist/src/install-cli.js write <version> <dataDir> <Single|Lan> <queuesJson>',
+  '  node dist/src/install-cli.js validate-queues <queuesJson>',
   '',
   'queuesJson is a single argument holding a JSON array of {"name":"...","label":"..."},',
   'or @<path> to read that JSON from a file (what the installer does — see readQueuesArgument).',
@@ -68,7 +70,7 @@ function fail(message: string, code: number): never {
  *
  * Inline JSON still works: it is what a human types by hand.
  */
-function readQueuesArgument(raw: string): string {
+export function readQueuesArgument(raw: string): string {
   if (!raw.startsWith('@')) return raw;
   const path = raw.slice(1);
   try {
@@ -85,7 +87,7 @@ function readQueuesArgument(raw: string): string {
   }
 }
 
-function parseQueuesArgument(rawOrPath: string): InstallQueue[] {
+export function parseQueuesArgument(rawOrPath: string): InstallQueue[] {
   const raw = readQueuesArgument(rawOrPath);
   let parsed: unknown;
   try {
@@ -103,6 +105,28 @@ function parseQueuesArgument(rawOrPath: string): InstallQueue[] {
     }
     const name = doc.name.trim();
     const label = typeof doc.label === 'string' && doc.label.trim().length > 0 ? doc.label.trim() : name;
+
+    /*
+     * THE SAME REFUSAL `config.ts` MAKES, MADE HERE TOO.
+     *
+     * This file's header says argv is safe because a queue name or label
+     * shaped like a patient identifier is refused -- and it was only refused
+     * by the runtime config loader, long after the installer had created a
+     * Windows printer called '2454232371' and written it into install.json and
+     * the console. Defence in depth for hard rule 9: the marker and the
+     * installer's own output are places an identifier must not reach either.
+     */
+    for (const [field, value] of [['name', name], ['label', label]] as const) {
+      if (looksLikeAnIdentifier(value)) {
+        fail(
+          `Queue ${index + 1}: "${field}" looks like a patient identifier. A queue name or label is ` +
+            "practice-chosen attribution text (e.g. 'Room 3'), never a patient identifier - it is written to " +
+            'the install marker, to logs and to every receipt that queue produces.',
+          2,
+        );
+      }
+    }
+
     return { name, label };
   });
 }
@@ -156,11 +180,30 @@ function runWrite(version: string, dataDir: string, mode: string, queuesJson: st
   process.exit(0);
 }
 
+/**
+ * ASKED BEFORE ANYTHING IS CREATED, WHICH IS THE ENTIRE POINT.
+ *
+ * `runWrite` already refuses an identifier-shaped queue name -- but it runs at
+ * the END of the installer, after the ports and printers exist. Measured here
+ * on 17 September 2026: a queue named '2454232371' became a real Windows
+ * printer, and only then did the install stop. The printer stayed.
+ *
+ * So the installer calls this first and creates nothing until it exits 0.
+ */
+function runValidateQueues(queuesArgument: string): never {
+  const queues = parseQueuesArgument(queuesArgument); // fails with exit 2 on an identifier
+  process.stdout.write(`${JSON.stringify({ valid: true, queues: queues.length })}\n`);
+  process.exit(0);
+}
+
 /* istanbul ignore next -- the entry point, exercised by the installer; the decision it calls is unit-tested. */
 if (require.main === module) {
   const [, , subcommand, ...rest] = process.argv;
 
-  if (subcommand === 'check') {
+  if (subcommand === 'validate-queues') {
+    if (rest.length !== 1) fail(`"validate-queues" takes <queuesJson>.\n\n${USAGE}`, 2);
+    runValidateQueues(rest[0]);
+  } else if (subcommand === 'check') {
     if (rest.length !== 2) fail(`"check" takes <version> <dataDir>.\n\n${USAGE}`, 2);
     runCheck(rest[0], rest[1]);
   } else if (subcommand === 'write') {
