@@ -1822,6 +1822,91 @@ state and need a different answer (probably a local encrypted store with an
 explicit, visible queue depth rather than a silent folder).
 
 
+
+## D-2026-09-17-02 - One version per machine, and a LAN practice shares the host rather than the queue
+
+**Date:** 17 September 2026. **Decided by:** Carl: *"you are building an app for
+the medical industry. Hence, include all guard rails. Add guard rail to only
+allow a single version of the AOBPrinter to be install locally on a machine. If
+a large Practice can the Printer be setup as a LAN printer - we need this option
+to allow easy maintenance and central Queue for admin to maintain."*
+
+### One version, enforced at four layers
+
+| Layer | What it stops |
+|---|---|
+| An exclusive lock file per data directory | Two PROCESSES. A second instance refuses to start and names the pid and build holding the lock |
+| An install marker, compared numerically | A DOWNGRADE. Same version is idempotent, newer upgrades in place, older is refused |
+| A format version in the outbox | A downgrade READING a folder a later build wrote, and half-understanding payloads it may not be able to decrypt |
+| The version in the banner, every receipt and every post | Not knowing what is actually in the field, as against what was deployed |
+
+**Why four and not one.** One layer is a wish. The layer that prevents harm
+today is the lock: the port is a single file path and claiming is a rename, so
+two watchers either claim the same bytes twice - one form, two records, two
+arrivals in front of a receptionist - or one reads while the other renames and a
+complete form parks as incomplete. A practice acquires a second copy of this
+program by the most ordinary means imaginable: a service already installed, plus
+a technician running it in a console to see what it does.
+
+### A LAN practice shares the HOST, not the QUEUE
+
+One AOBPRINTER host - an always-on PC or server - carries **one queue per
+workstation**, each with its own port and its own spool file, all watched by one
+service. Workstations install nothing; they connect to a shared queue.
+
+**Why not one shared queue, which is the obvious design.** The port is a single
+fixed file path and the spooler OVERWRITES it. Two jobs seconds apart destroy
+the first before the watcher claims it - a consent form lost, silently, at
+exactly the busy moment that produced it. One queue per workstation reduces the
+collision to the same workstation printing twice within the claim window, which
+is the single-workstation case that is already handled.
+
+A single-workstation install is the same code path with a list of one. There is
+deliberately no second "single" path to drift out of step.
+
+**What it buys the practice**, which is what Carl asked for: one install, one
+outbox, one certificate, one version, one place to maintain - and, as a
+by-product, attribution. A record now carries the queue and label it came from,
+so the desk can see that a form came from Room 3.
+
+### The reconciliation alarm, which is the guard rail that matters most
+
+If the spooler completed ten jobs on a queue and AOBPRINTER claimed nine, a
+patient's form was printed and never became a record. Nobody would otherwise
+find out. So the installer enables the Windows Print Service operational log
+(off by default) and the program compares counts per queue, alarming on a gap.
+It reads **counts and job ids only, never document titles**, because a print
+job's name can carry a patient's name (hard rule 9). It never blocks printing
+and warns once rather than every cycle.
+
+### What the review then found, and the rule it produced
+
+Both blocking findings were the same mistake in different clothes: **a guard
+rail that fails open is worse than no guard rail, because it reports success.**
+Reconciliation scored a queue the spooler had never heard of as "zero printed",
+which can never exceed claimed, so it said "checked, no gaps" forever - and
+every config written before that day names a queue `default` that no printer
+matches. The marker reader returned `null` for a file it could not parse, and
+`null` means "nothing installed", so a corrupt marker silently disabled the
+version guard. **Absent is a fact; unreadable is an unknown; an unknown fails
+closed.** That sentence is the rule, and it applies to every check in this
+product, not only these two.
+
+### For the threat model
+
+**In LAN mode the spool stream crosses the practice network.** A DB4 as a PDF
+travels from each workstation to the host over SMB. That is new: a
+single-workstation install never put a form on a wire inside the practice. SMB
+encryption or an equivalent control is the practice's requirement and belongs in
+`aob-threat-model.md` alongside the two sections `TODO.md` already asks for
+(holding Medicare numbers, D-2026-09-14-03; and the practice-PC retention
+surface, D-2026-09-17-01). Recorded in `TODO.md`.
+
+**What would reopen it.** A Windows port monitor we control, which would give
+per-job output paths and make a single shared queue safe - and would mean a
+signed driver package, which is the cost this whole design was chosen to avoid.
+
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
@@ -1866,3 +1951,4 @@ explicit, visible queue depth rather than a silent folder).
 | 14 Sep | The Medicare card number and IRN are printed in full on the Signed-DB4; hard rule 1's identity meaning is unchanged; the threat model needs a section for holding it | **D-2026-09-14-03 above** |
 | 14 Sep | The signing product is the first feature-flagged slice of AoB, same name, nothing removed; data completeness gates, form version warns | **D-2026-09-14-04 above** |
 | 17 Sep | No patient data rests on a practice PC: the outbox keeps a payload only until it is acknowledged, then a receipt with no PII; `pending/` never expires; encrypt-then-delete because overwriting an SSD does not erase; ships disabled until piece 1 keeps the record | **D-2026-09-17-01 above** |
+| 17 Sep | One version per machine at four layers; a LAN practice shares the host and not the queue, because one fixed-path port overwrites; reconciliation alarms on a printed form that never became a record; a guard rail that fails open is worse than none | **D-2026-09-17-02 above** |

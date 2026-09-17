@@ -62,6 +62,21 @@ full — a display question the practice's reasons do not settle).
 posture change, not a line edit. It wants a considered pass, not a footnote,
 and before the first Signed-DB4 is rendered rather than after.
 
+**Two more surfaces since, both from 17 September, and all three want one pass
+rather than three:**
+
+- **PII at rest on a practice PC** (D-2026-09-17-01). The outbox holds a DB4
+  Print Record - name, date of birth, address, mobile, Medicare number -
+  encrypted under a DPAPI-wrapped key, until the server acknowledges it. What a
+  stolen or shared desktop exposes, and what DPAPI at LocalMachine scope does
+  and does not protect against (it stops the file being read on another
+  machine; it does not stop another local account on a compromised one).
+- **The spool stream crosses the practice LAN in LAN mode** (D-2026-09-17-02).
+  A workstation prints a DB4 to a shared queue on the host, so the form travels
+  over SMB inside the practice. A single-workstation install never put a form
+  on a wire at all. Whether SMB encryption is a requirement we state or a
+  recommendation we make is the question to answer.
+
 ## Moving a practitioner's whole list — what the first cut does NOT do (12 Sep 2026)
 
 Carl: *"the assigned practioner has called in sick or all patients have to be
@@ -4292,3 +4307,56 @@ throw the form away. Whichever lands first — the flag, or piece 1's handler �
 the other must not be installable before it. The cheapest gate while both are
 pending is server-side: reject or park `db4_assignment` in the lane worker
 rather than letting the generic cascade have it.
+
+---
+
+## AOBPRINTER guard rails: what the build and the review left open (17 Sep 2026)
+
+D-2026-09-17-02 landed single-version enforcement, LAN multi-queue and the
+reconciliation alarm; `cc2fd56` fixed eight review findings. Six things are
+deliberately not done.
+
+### 1. `keystore.ts` is human-authored-zone code that an agent wrote. Before `retention.enabled` is ever true.
+
+CLAUDE.md §7 reserves "anything touching key management" to human authorship.
+`apps/aobprinter/src/keystore.ts` - the DPAPI wrap/unwrap and the AES-256-GCM
+primitives - was written by a build agent and reviewed by another. That is not
+the same thing. It is safe where it stands because retention ships disabled and
+nothing calls DPAPI while the flag is off (there is a test for exactly that),
+but a human reads it before that flag goes true against a practice.
+
+### 2. The PowerShell installer has no test runner behind it.
+
+500 lines that create and delete printers and ports, verified by running it on
+one machine on one Windows build. Every defect in it so far was found by
+running it, not by reading it - including one that deleted a real printer it had
+never installed. Pester is the obvious answer and is a new dev dependency, which
+is Carl's call.
+
+### 3. Sharing and the event log both need elevation, and neither fails the install.
+
+A LAN install from an unelevated prompt creates the queues, does not share them,
+and cannot enable the Print Service log. It says so loudly and the summary names
+every unshared queue - but "it said so in the output" is not an operational
+control. The install runbook has to say: LAN mode is run elevated.
+
+### 4. `receipts.jsonl` is unbounded, untamperable-with-detection, and not in the vault.
+
+It grows forever (slowly - one line per form, no PII). Nothing detects an edit,
+and it is not mirrored to the Evidence Vault, so it is a local record rather
+than evidence. Fine while it answers "did this form get through" for a
+technician; not fine if it is ever cited as proof. Decide which it is.
+
+### 5. A numeric `formReference` would be redacted out of its own log line.
+
+`log.ts`'s redactor catches unbroken digit runs of six or more, and a form
+reference that happens to be all digits is one. Pre-existing and left alone
+deliberately in `cc2fd56` rather than loosening a redaction rule under an
+unrelated change. The fix is probably an allow-list for known-safe field names,
+which is a change to a shared safety mechanism and wants its own think.
+
+### 6. Nothing server-side rejects an unknown or outdated client.
+
+The version now travels on every post, and nothing reads it. An admin cannot
+see the health, version or queue list of the print channels in their practice.
+That is console work and belongs with piece 1, not here.
