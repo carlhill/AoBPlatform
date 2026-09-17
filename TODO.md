@@ -4420,7 +4420,7 @@ Reuse: the hash-verified download route. **Note the direction** — it is a PULL
 by the desktop, not a push by the server, because the practice's network is
 outbound-only (ADR, mutual TLS).
 
-### Piece 6 — the practice flag. Small, and it is what makes this a slice.
+### Piece 6 — the practice flag. BUILT 17 Sep 2026 (`26ac33b`). See `PRACTICE-SURFACES.md`.
 
 `D-2026-09-14-04`: the first customer sees the DB4 path and nothing else. No
 kiosk walk-up, no ongoing agreements, no queue rails, no portal, no practitioner
@@ -4429,9 +4429,19 @@ pages. Those stay built and stay off.
 Precedent to follow: `practices.channelsEnabled`. One setting, read by
 navigation.
 
-**This is also the gate on AOBPRINTER being installable** — see the AOBPRINTER
-section above, item 5. Until the flag exists, nothing in code stops the print
-channel being pointed at a live practice.
+**It does not yet close the AOBPRINTER gate, and that is the one thing left.**
+Both shipped profiles (`full`, `db4`) include the `db4` surface, so no setting
+refuses a DB4 print job: the machinery is correct and unreachable. It needs a
+third profile — something like `standard`, everything except db4 — which is a
+decision about what we sell rather than a code change.
+`PRACTICE-SURFACES.md` section 6b, and the test named for that refusal does not
+demonstrate it (section 6c).
+
+**Two other gaps, both written up in `PRACTICE-SURFACES.md` section 6:** the
+`portal` and `practitioner_pages` surfaces are console-only, because their
+requests carry no practice to resolve; and `/practice/reconciliation` is always
+on although D-2026-09-14-04 says the first customer sees no reconciliation
+screens — that one needs a ruling.
 
 ### The two rulings still open, which piece 2 will run into
 
