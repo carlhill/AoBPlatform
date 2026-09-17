@@ -66,6 +66,40 @@ fix it, and the second is better:
 The failure is silent in the direction that matters: the commit succeeds, the
 tests pass, and the mistake is only visible in `git show --stat` afterwards.
 
+### 5b. Check `ListAgents` before contradicting an agent about what exists (17 September 2026)
+
+A build agent reported that it was "waiting for the build agent" and stopped. It
+looked like confusion, and `git log` was unchanged and `git status` was clean, so
+Claude told it: *there is no other agent, nothing has been written, you are the
+builder, start now.* Both claims were false. The agent had spawned a real build
+agent that had not yet reached its first write. Seven minutes later there were
+five new files on disk.
+
+The agent then did the right thing and Claude did not. Handed an instruction
+that contradicted the filesystem, it stopped, listed the evidence — the untracked
+files, a `find -newer` sweep, its own `version.ts` overwritten seconds after it
+wrote it — and asked which way to go, rather than obeying and racing a live
+writer on nine shared files. Only `version.ts` was written twice and nothing was
+corrupted.
+
+**The rule.** Before telling an agent that something does not exist, run
+`ListAgents`. `git log` says what has been COMMITTED; `git status` says what has
+been WRITTEN SO FAR. Neither says what is about to be written, and with agents
+running "the tree is clean" has a shelf life of seconds. Asserting a negative
+about concurrent work needs the tool that actually knows.
+
+**And the brief that caused it.** The instruction "before committing, a fresh
+reviewer subagent reads your diff" sat in a list of build steps, and the agent
+read the whole task as orchestration. **Put the review clause last, under its own
+heading, and say that everything above it is written by the agent reading it.**
+Twice in one day an agent has taken an instruction about REVIEWING as an
+instruction about DELEGATING.
+
+**When two writers do overlap:** the one already holding the files keeps them.
+Tell the other to stand down and to name exactly what it touched, so the survivor
+can adopt or replace it — a stray test that tests something nobody built is worse
+than no test.
+
 ## 6. Tell Carl what to test, not what was built
 
 Every landing report ends with the URL to open and the steps to try, in the order to try them, plus the decisions the build left for Carl. A report without a test path is not finished.
@@ -323,3 +357,4 @@ patterns only (a private key block, an AWS key id).
 | 12 Sep 2026 | 5a added: `git add <paths> && git commit` commits the whole index, not those paths. A concurrent agent's staged work rode into a commit that named six files and carried thirty-one. Use `git commit -o <paths>`, or read `git diff --cached --name-only` first. |
 | 17 Sep 2026 | §11: the working method rules moved here from `CLAUDE.md` §7 with their reasoning — the `acting-as` precedent behind "never weaken a test", why the full suite is not the default, why the dependency rule covers dev dependencies, and the stack snapshot. §7 went from 1,785 words to 887. |
 | 17 Sep 2026 | §12: the `git commit` guard hook, and the honest limits of the `settings.json` deny list — prefix matching, and no content scan. |
+| 17 Sep 2026 | §5b: check `ListAgents` before telling an agent that no other agent exists — `git log` and `git status` cannot see a write that has not happened yet. Also: the reviewer clause goes last, under its own heading, because twice in one day an agent read "a fresh reviewer reads your diff" as "you are orchestrating". |
