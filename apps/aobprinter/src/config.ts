@@ -17,15 +17,39 @@
  * are unread until the decision is made, and the program says so at startup.
  */
 import { readFileSync } from 'node:fs';
+import { looksLikeAnIdentifier } from './log';
 import { DEFAULT_TEMPLATE_VERSION } from './template';
+
+/**
+ * One print queue: one Windows printer, one file-path port, one spool file.
+ *
+ * WHY THERE IS A LIST OF THESE AND NOT ONE SPOOL PATH. A file-path port is a
+ * SLOT, not a queue: every job overwrites the last (`watcher.ts`). One
+ * AOBPRINTER host serving several workstations over the LAN through a single
+ * shared spool file would therefore destroy a form whenever two people print
+ * within the settle window — the second write lands on top of the first
+ * before the watcher has claimed it. So each workstation gets its own queue,
+ * its own port and its own file. A single-workstation practice is this same
+ * list with exactly one entry: ONE code path, never two, because the
+ * single-queue path is the one that gets tested and the LAN path is the one
+ * that would quietly rot.
+ */
+export interface QueueConfig {
+  /** The Windows printer name. Also what the spooler's own event log calls it, which is how reconciliation matches. */
+  readonly name: string;
+  /** The file-path port this queue writes to. Never shared with another queue — that IS the bug this shape prevents. */
+  readonly spoolFile: string;
+  /** Practice-chosen attribution shown against a form: "Room 3", "Front desk". Never a patient identifier. */
+  readonly label: string;
+}
 
 export interface AobPrinterConfig {
   /** The practice this install belongs to. Sent as `x-practice-id`. */
   readonly practiceId: string;
   /** Full URL of `POST /inbound/print-jobs`. */
   readonly endpoint: string;
-  /** The single file path the AOBPRINTER port writes to. Every job overwrites it. */
-  readonly spoolFile: string;
+  /** Every queue this host watches. Never empty; a single-queue install is a one-entry list. */
+  readonly queues: readonly QueueConfig[];
   /** Where claimed jobs, the outbox and the log live. */
   readonly dataDir: string;
   /** How often the spool file is looked at. */
@@ -106,13 +130,20 @@ export const DEFAULT_DATA_DIR = 'C:\\ProgramData\\AoBPlatform';
 export const DEFAULT_SPOOL_FILE = 'C:\\ProgramData\\AoBPlatform\\spool\\aobprinter-out.pdf';
 export const DEFAULT_CONFIG_PATH = 'C:\\ProgramData\\AoBPlatform\\aobprinter.config.json';
 
-function requireString(raw: Record<string, unknown>, key: string, path: string): string {
+/**
+ * `why` exists so a queue's missing field does not explain itself by talking
+ * about the practice id. The default is the original sentence, unchanged, for
+ * the two fields it was written about.
+ */
+function requireString(
+  raw: Record<string, unknown>,
+  key: string,
+  path: string,
+  why = 'AOBPRINTER will not start without it: a practice id and an endpoint are per-install configuration and are never defaulted.',
+): string {
   const value = raw[key];
   if (typeof value !== 'string' || value.trim().length === 0) {
-    throw new Error(
-      `${path} is missing "${key}". AOBPRINTER will not start without it: a practice id and an endpoint ` +
-        'are per-install configuration and are never defaulted.',
-    );
+    throw new Error(`${path} is missing "${key}". ${why}`);
   }
   return value.trim();
 }
@@ -180,6 +211,93 @@ function parseRetention(raw: unknown, path: string): RetentionConfig {
   return { enabled, pendingAlarmMs, poisonTtlMs, sweepIntervalMs };
 }
 
+/** The one-entry list a config written before LAN mode existed describes. */
+const LEGACY_QUEUE_NAME = 'default';
+const LEGACY_QUEUE_LABEL = 'AOBPRINTER';
+
+/**
+ * The queue list, or the single-queue install expressed as one.
+ *
+ * BACKWARD COMPATIBILITY IS NOT OPTIONAL HERE. Every config file written
+ * before this feature says `spoolFile` and nothing about queues, and a
+ * practice's config is not ours to rewrite on their disk. Such a file
+ * synthesises a one-entry list and behaves exactly as it did — the same code
+ * path the LAN install uses, just with one entry in it.
+ *
+ * TWO QUEUES MAY NEVER SHARE A SPOOL FILE, and that is checked rather than
+ * documented: two `SpoolClaimer`s racing for one slot is the precise failure
+ * this whole feature exists to prevent, and a copy-pasted config entry is how
+ * it would arrive in real life.
+ */
+function parseQueues(doc: Record<string, unknown>, path: string): readonly QueueConfig[] {
+  if (doc.queues === undefined) {
+    return [
+      {
+        name: LEGACY_QUEUE_NAME,
+        spoolFile: typeof doc.spoolFile === 'string' && doc.spoolFile.trim().length > 0 ? doc.spoolFile.trim() : DEFAULT_SPOOL_FILE,
+        label: LEGACY_QUEUE_LABEL,
+      },
+    ];
+  }
+
+  if (!Array.isArray(doc.queues) || doc.queues.length === 0) {
+    throw new Error(
+      `${path}: "queues" must be a non-empty JSON array of { "name", "spoolFile", "label" }. A host with no ` +
+        'queue watches nothing; remove the key entirely to keep the single-queue default.',
+    );
+  }
+
+  const queues: QueueConfig[] = [];
+  const names = new Set<string>();
+  const spoolFiles = new Set<string>();
+
+  doc.queues.forEach((entry, index) => {
+    const where = `${path}: queue ${index + 1}`;
+    if (typeof entry !== 'object' || entry === null) throw new Error(`${where} is not a JSON object.`);
+    const q = entry as Record<string, unknown>;
+
+    const name = requireString(q, 'name', where, 'Every queue is named after the Windows printer that feeds it.');
+    const spoolFile = requireString(
+      q,
+      'spoolFile',
+      where,
+      'Every queue watches its own file-path port; there is no default path for a named queue.',
+    );
+    const label = typeof q.label === 'string' && q.label.trim().length > 0 ? q.label.trim() : name;
+
+    if (names.has(name)) throw new Error(`${where}: two queues are both named "${name}". A queue name is how a form says where it came from.`);
+    if (spoolFiles.has(spoolFile)) {
+      throw new Error(
+        `${where}: "${spoolFile}" is already another queue's spool file. Two queues sharing one file-path port ` +
+          'is how a printed form is destroyed before it is claimed — every queue gets its own path.',
+      );
+    }
+
+    /*
+     * A QUEUE LABEL IS ATTRIBUTION, NEVER A PATIENT. It travels on the record,
+     * into receipts, and into log lines about which queue produced a form, so
+     * a practice that typed a card number into it would have put a patient
+     * identifier in all three (hard rule 9). Refused at load, loudly, rather
+     * than redacted quietly — `log.ts`'s `looksLikeAnIdentifier` is the same
+     * test the redactor applies, asked as a question.
+     */
+    for (const [field, value] of [['name', name], ['label', label]] as const) {
+      if (looksLikeAnIdentifier(value)) {
+        throw new Error(
+          `${where}: "${field}" looks like a patient identifier. A queue label is practice-chosen attribution ` +
+            "text (e.g. 'Room 3'), never a patient identifier — it is written to logs and receipts.",
+        );
+      }
+    }
+
+    names.add(name);
+    spoolFiles.add(spoolFile);
+    queues.push({ name, spoolFile, label });
+  });
+
+  return queues;
+}
+
 export function parseConfig(raw: unknown, path: string): AobPrinterConfig {
   if (typeof raw !== 'object' || raw === null) throw new Error(`${path} is not a JSON object.`);
   const doc = raw as Record<string, unknown>;
@@ -187,7 +305,7 @@ export function parseConfig(raw: unknown, path: string): AobPrinterConfig {
   return {
     practiceId: requireString(doc, 'practiceId', path),
     endpoint: requireString(doc, 'endpoint', path),
-    spoolFile: typeof doc.spoolFile === 'string' ? doc.spoolFile : DEFAULT_SPOOL_FILE,
+    queues: parseQueues(doc, path),
     dataDir: typeof doc.dataDir === 'string' ? doc.dataDir : DEFAULT_DATA_DIR,
     pollMs: optionalNumber(doc, 'pollMs', 500),
     settleMs: optionalNumber(doc, 'settleMs', 750),

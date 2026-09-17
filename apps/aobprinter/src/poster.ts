@@ -24,11 +24,21 @@ import type { AobPrinterConfig } from './config';
 import type { Db4PrintRecord } from './db4-record';
 import { redactError, type Logger } from './log';
 import type { PostResult, Poster } from './outbox';
+import { readPackageVersion } from './version';
 
 /** Long enough for a slow link, short enough that a retry is not an hour away. */
 const TIMEOUT_MS = 20_000;
 
 export function makeHttpPoster(config: AobPrinterConfig, logger: Logger): Poster {
+  /*
+   * READ ONCE, SENT ON EVERY POST. `x-aobprinter-version` is how the server
+   * learns which desktops are on which build without anyone visiting one —
+   * which matters the day a parser template turns out to read a field wrongly
+   * and the question is "how many practices posted through it". It carries no
+   * practice or patient information; it is the build number of this program.
+   */
+  const printerVersion = readPackageVersion();
+
   return async function post(record: Db4PrintRecord): Promise<PostResult> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -39,6 +49,7 @@ export function makeHttpPoster(config: AobPrinterConfig, logger: Logger): Poster
         headers: {
           'content-type': 'application/json',
           'x-practice-id': config.practiceId,
+          'x-aobprinter-version': printerVersion,
         },
         body: JSON.stringify(record),
         signal: controller.signal,

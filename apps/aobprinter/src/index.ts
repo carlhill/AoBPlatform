@@ -19,17 +19,36 @@ export {
   DEFAULT_SPOOL_FILE,
   RETENTION_HARD_CAP_MS,
 } from './config';
-export type { AobPrinterConfig, RetentionConfig } from './config';
+export type { AobPrinterConfig, QueueConfig, RetentionConfig } from './config';
 export { DB4_DOCUMENT_TYPE } from './db4-record';
 export type { Db4PrintRecord } from './db4-record';
+export { acquireInstanceLock, instanceLockPath } from './instance-lock';
+export type { InstanceLock, InstanceLockDeps } from './instance-lock';
+export {
+  INSTALL_MODES,
+  compareVersions,
+  decideInstallAction,
+  installMarkerPath,
+  readInstallMarker,
+  writeInstallMarker,
+} from './install-marker';
+export type { InstallAction, InstallMarker, InstallMode, InstallQueue } from './install-marker';
 export { decryptPayload, dpapiKeyWrapper, encryptPayload, keystorePaths, loadOrCreateKey } from './keystore';
 export type { EncryptedPayload, KeyWrapper } from './keystore';
-export { makeLogger, consoleLogger, redact, redactError } from './log';
+export { makeLogger, consoleLogger, looksLikeAnIdentifier, redact, redactError } from './log';
 export type { Logger, LogSink } from './log';
 export { start } from './main';
 export type { RunHandles, StartDeps } from './main';
-export { Outbox, outboxPaths, sha256Hex } from './outbox';
+export { OUTBOX_FORMAT_VERSION, Outbox, outboxPaths, sha256Hex } from './outbox';
 export type { PostResult, Poster } from './outbox';
+export {
+  DEFAULT_RECONCILE_INTERVAL_MS,
+  PRINTED_EVENT_ID,
+  PRINT_SERVICE_LOG,
+  Reconciler,
+  powershellEventCountReader,
+} from './print-service-log';
+export type { EventCountReader, ReconcileSummary } from './print-service-log';
 export { parseDb4 } from './parser';
 export type { ParseInput } from './parser';
 export { readPdfText } from './pdf-text';
@@ -41,5 +60,6 @@ export { buildRetentionDeps } from './retention';
 export type { Cipher, RetentionDeps } from './retention';
 export { parseTemplate, templateFor, DEFAULT_TEMPLATE_VERSION } from './template';
 export type { ParserTemplate } from './template';
-export { SpoolClaimer, claimedJobs, claimedJobName, isCompletePdf, processClaimedJob, watcherDirs } from './watcher';
-export type { ProcessOutcome, WatcherDirs } from './watcher';
+export { readPackageVersion } from './version';
+export { QueueWatcher, SpoolClaimer, claimedJobs, claimedJobName, isCompletePdf, processClaimedJob, watcherDirs } from './watcher';
+export type { ProcessOutcome, WatchedQueue, WatcherDirs } from './watcher';

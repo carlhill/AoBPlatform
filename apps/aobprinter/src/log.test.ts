@@ -10,10 +10,13 @@
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { makeLogger, redact, redactError } from './log';
+import { looksLikeAnIdentifier, makeLogger, redact, redactError } from './log';
 import { Outbox } from './outbox';
 import { DEFAULT_TEMPLATE_VERSION, templateFor } from './template';
 import { processClaimedJob, watcherDirs } from './watcher';
+
+/** One queue, named the way a single-workstation install names it. */
+const QUEUE = { name: 'AOBPRINTER', spoolFile: 'unused-in-this-test', label: 'Front desk' };
 
 const FIXTURE = join(__dirname, '..', 'test-fixtures', 'pracsoft3-db4-probe.pdf');
 
@@ -33,7 +36,7 @@ describe('the_medicare_number_never_appears_in_a_log_or_a_filename', () => {
     const lines: string[] = [];
     const logger = makeLogger((line) => lines.push(line));
 
-    const dirs = watcherDirs(dir);
+    const dirs = watcherDirs(dir, QUEUE.name);
     mkdirSync(dirs.jobs, { recursive: true });
     const claimed = join(dirs.jobs, '2026-09-17T03-00-00-000Z-0123456789ab.pdf');
     copyFileSync(FIXTURE, claimed);
@@ -41,7 +44,7 @@ describe('the_medicare_number_never_appears_in_a_log_or_a_filename', () => {
     // The unhappy path as well as the happy one: a server that refuses the job
     // is where an unredacted body most plausibly reaches a log.
     const outbox = new Outbox(dir, async () => ({ ok: false, status: 422, error: `rejected: ${CARD}` }), logger);
-    const { record } = processClaimedJob(claimed, template(), outbox, dirs, logger);
+    const { record } = processClaimedJob(claimed, template(), outbox, dirs, QUEUE, logger);
     await outbox.flush();
     await outbox.flush();
 
@@ -64,13 +67,13 @@ describe('the_medicare_number_never_appears_in_a_log_or_a_filename', () => {
   it('never writes it into a filename, anywhere under the data directory', () => {
     const lines: string[] = [];
     const logger = makeLogger((line) => lines.push(line));
-    const dirs = watcherDirs(dir);
+    const dirs = watcherDirs(dir, QUEUE.name);
     mkdirSync(dirs.jobs, { recursive: true });
     const claimed = join(dirs.jobs, '2026-09-17T04-00-00-000Z-ba9876543210.pdf');
     copyFileSync(FIXTURE, claimed);
 
     const outbox = new Outbox(dir, async () => ({ ok: false, status: 0, error: 'unreachable' }), logger);
-    processClaimedJob(claimed, template(), outbox, dirs, logger);
+    processClaimedJob(claimed, template(), outbox, dirs, QUEUE, logger);
 
     for (const path of walk(dir)) {
       expect(path).not.toContain(CARD_UNSPACED);
@@ -135,5 +138,26 @@ describe('the log carries no page text by construction', () => {
     const source = readFileSync(join(__dirname, 'watcher.ts'), 'utf8');
     expect(source).not.toMatch(/logger\.(info|warn|error)\([^)]*\btext\b/);
     expect(source).not.toMatch(/logger\.(info|warn|error)\([^)]*\brecord\b(?!\.)/);
+  });
+});
+
+describe('a_digits_only_string_is_never_mistaken_for_a_hash', () => {
+  /*
+   * Regression, 17 September 2026. `HASH` was `^[0-9a-f]{8,64}$`, and digits
+   * are hex characters — so every purely numeric string of eight to sixty-four
+   * digits was exempted from the identifier check. A mobile number, a Medicare
+   * number typed without spaces and a record number were all waved through by
+   * the guard that exists to catch them, and a queue label carrying one would
+   * have reached logs and receipts (hard rule 9).
+   */
+  it('treats numeric strings as identifiers and real hashes as hashes', () => {
+    expect(looksLikeAnIdentifier('0413284418')).toBe(true);
+    expect(looksLikeAnIdentifier('2454232371')).toBe(true);
+    expect(looksLikeAnIdentifier('09911001')).toBe(true);
+
+    // Our own identifiers still pass through unrefused.
+    expect(looksLikeAnIdentifier('a'.repeat(64))).toBe(false);
+    expect(looksLikeAnIdentifier('3f9a1b2c')).toBe(false);
+    expect(looksLikeAnIdentifier('Room 3')).toBe(false);
   });
 });

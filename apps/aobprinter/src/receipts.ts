@@ -25,6 +25,17 @@ export interface Receipt {
   /** When this outcome (delivered, or rejected outright) became final. */
   readonly postedAt: string;
   readonly parserTemplateVersion: string;
+  /**
+   * WHICH BUILD OF AOBPRINTER POSTED IT. The receipt outlives the form, so a
+   * question asked in 2028 about a form captured today — was this the build
+   * with the parser bug, was this before or after the template changed — can
+   * only be answered if the build is written down here at the time. There is
+   * nowhere else left to look once the payload is gone.
+   */
+  readonly printerVersion: string;
+  /** Which print queue produced the form, when the record carried one. Attribution, never PII — see `db4-record.ts`. */
+  readonly queueName?: string;
+  readonly queueLabel?: string;
   /** Size of the JSON record actually posted. The original spool PDF is already gone by the time this is written (it is deleted the moment its record is durable — see `watcher.ts`). */
   readonly byteCount: number;
   readonly attempts: number;
@@ -37,6 +48,8 @@ export interface ReceiptOutcome {
   readonly byteCount: number;
   readonly state: ReceiptState;
   readonly jobId?: string;
+  /** Required, not optional: a receipt that cannot say which build wrote it is the gap this field exists to close. */
+  readonly printerVersion: string;
 }
 
 /**
@@ -58,6 +71,9 @@ export function buildReceipt(record: Db4PrintRecord, outcome: ReceiptOutcome): R
     capturedAt: record.capturedAt,
     postedAt: outcome.postedAt,
     parserTemplateVersion: record.parserTemplateVersion,
+    printerVersion: outcome.printerVersion,
+    queueName: record.queueName,
+    queueLabel: record.queueLabel,
     byteCount: outcome.byteCount,
     attempts: outcome.attempts,
     state: outcome.state,

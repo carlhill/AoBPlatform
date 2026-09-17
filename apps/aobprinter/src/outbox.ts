@@ -43,6 +43,27 @@ import type { EncryptedPayload } from './keystore';
 import { redactError, type Logger } from './log';
 import { buildReceipt } from './receipts';
 import type { RetentionDeps } from './retention';
+import { readPackageVersion } from './version';
+
+/**
+ * The on-disk shape of everything under `outbox/`.
+ *
+ * WHAT THIS NUMBER IS FOR, AND IT IS NOT UPGRADES. Going forward is easy: a
+ * later build reading an earlier file knows what it is looking at. The danger
+ * is going BACKWARD — an older binary put back on a desktop (a technician
+ * with last visit's USB stick, a rolled-back service) opening a `pending/`
+ * job that a newer one wrote. JSON is forgiving, which is the problem: the
+ * old code would read the fields it recognises, ignore the ones it does not,
+ * and post a form with a piece missing rather than fail. A record that is
+ * quietly three-quarters of a form is the worst outcome this program has, so
+ * a file from the future is a refusal to start, not a best effort.
+ *
+ * BUMP IT when the meaning of what is written changes in a way an earlier
+ * build would misread — a field moved, a field's units changed, a payload
+ * encoded differently. Not for a purely additive field an older build would
+ * correctly ignore.
+ */
+export const OUTBOX_FORMAT_VERSION = 1;
 
 /**
  * What a queued job looks like on disk.
@@ -54,6 +75,14 @@ import type { RetentionDeps } from './retention';
  * `record` set while retention is enabled — see `encode` below.
  */
 interface QueuedJob {
+  /**
+   * OPTIONAL IN THE TYPE BECAUSE IT IS OPTIONAL ON DISK. Every file this
+   * build writes carries it (`writeAtomic` stamps it), but files written
+   * before this field existed do not, and typing it as required would be a
+   * claim about the folder that is false on every desktop already installed.
+   * Absent reads as version 1 — see `assertReadableFormat`.
+   */
+  readonly formatVersion?: number;
   readonly record?: Db4PrintRecord;
   readonly encrypted?: EncryptedPayload;
   readonly enqueuedAt: string;
@@ -126,11 +155,61 @@ export class Outbox {
     // required constructor argument so every existing caller and test still
     // compiles and still gets that behaviour without being told to.
     private readonly retention: RetentionDeps = { config: DEFAULT_RETENTION_CONFIG, receipts: { record: () => undefined } },
+    /**
+     * Stamped onto every receipt. Defaulted rather than required so every
+     * existing caller and test still compiles, and read from `package.json`
+     * rather than passed around as a string nobody can trace back.
+     */
+    private readonly printerVersion: string = readPackageVersion(),
   ) {
     this.paths = outboxPaths(dataDir);
     for (const dir of [this.paths.pending, this.paths.sent, this.paths.tmp, this.paths.poison]) mkdirSync(dir, { recursive: true });
+    /*
+     * BEFORE ANYTHING ELSE TOUCHES THE FOLDER. `recoverTmp` deletes, the
+     * migration rewrites, and `flush` posts — none of those may run against a
+     * folder this build does not fully understand.
+     */
+    this.assertReadableFormat();
     this.recoverTmp();
     if (this.retention.config.enabled) this.migrateLegacyPayloads();
+  }
+
+  /**
+   * Refuse to start on a file written by a later build.
+   *
+   * ONLY THE `formatVersion` FIELD IS READ, and it sits beside `record` /
+   * `encrypted` in the same JSON object precisely so this check costs one
+   * parse and no decryption — the guard must not need the key to decide
+   * whether it is allowed to read the payload.
+   *
+   * AN UNPARSEABLE FILE IS NOT A REASON TO REFUSE. It is already handled
+   * where it matters (`readFrom` logs it and leaves it for a human); treating
+   * it as "from the future" would let one corrupt byte stop a practice's
+   * capture entirely, which is the opposite of hard rule 8.
+   */
+  private assertReadableFormat(): void {
+    for (const dir of [this.paths.pending, this.paths.sent, this.paths.poison]) {
+      for (const name of readdirSync(dir).filter((n) => n.endsWith('.json'))) {
+        const file = join(dir, name);
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(readFileSync(file, 'utf8'));
+        } catch {
+          continue;
+        }
+        if (typeof parsed !== 'object' || parsed === null) continue;
+        const onDisk = (parsed as { formatVersion?: unknown }).formatVersion;
+        // Absent means "written before this field existed", which is version 1.
+        if (typeof onDisk !== 'number' || onDisk <= OUTBOX_FORMAT_VERSION) continue;
+
+        throw new Error(
+          `AOBPRINTER refuses to start: ${file} is outbox format version ${onDisk} but this build only ` +
+            `understands format version ${OUTBOX_FORMAT_VERSION}. A newer build wrote this folder. A downgrade ` +
+            'must never half-read a payload written by a later version — install that build again, or move this ' +
+            'folder aside once somebody has decided what to do with the forms in it.',
+        );
+      }
+    }
   }
 
   /**
@@ -151,10 +230,19 @@ export class Outbox {
     }
   }
 
-  /** Write a file by writing it somewhere else first. A reader never sees a partial job. */
+  /**
+   * Write a file by writing it somewhere else first. A reader never sees a
+   * partial job.
+   *
+   * THE FORMAT VERSION IS STAMPED HERE, IN ONE PLACE, and last so it wins
+   * over whatever a job read off disk was carrying: every write is this
+   * build's write, whoever wrote the file before. Stamping it at each call
+   * site instead would mean one forgotten spread is a file that looks older
+   * than it is — the single failure the guard exists to catch.
+   */
   private writeAtomic(target: string, job: QueuedJob): void {
     const staging = join(this.paths.tmp, `${createHash('sha256').update(target).digest('hex').slice(0, 16)}.json`);
-    writeFileSync(staging, JSON.stringify(job, null, 2), 'utf8');
+    writeFileSync(staging, JSON.stringify({ ...job, formatVersion: OUTBOX_FORMAT_VERSION }, null, 2), 'utf8');
     renameSync(staging, target);
   }
 
@@ -346,6 +434,7 @@ export class Outbox {
               byteCount: Buffer.byteLength(JSON.stringify(record), 'utf8'),
               state: 'sent',
               jobId: result.jobId,
+              printerVersion: this.printerVersion,
             }),
           );
 
@@ -390,6 +479,7 @@ export class Outbox {
                 attempts,
                 byteCount: Buffer.byteLength(JSON.stringify(record), 'utf8'),
                 state: 'poisoned',
+                printerVersion: this.printerVersion,
               }),
             );
             this.writeAtomic(this.poisonPath(sha), {
@@ -527,6 +617,10 @@ export class Outbox {
               attempts: job.attempts,
               byteCount: Buffer.byteLength(JSON.stringify(job.record), 'utf8'),
               state: 'sent',
+              // The build doing the migration, which is the only one that can
+              // be stated truthfully: the build that originally posted this
+              // form left no version behind to quote.
+              printerVersion: this.printerVersion,
             }),
           );
         }

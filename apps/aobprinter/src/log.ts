@@ -26,7 +26,54 @@
  */
 
 /** A hex-ish hash is 64 characters of [0-9a-f] and must survive redaction. */
-const HASH = /^[0-9a-f]{8,64}$/;
+/*
+ * A sha256 we print, so `looksLikeAnIdentifier` does not refuse our own
+ * identifiers. IT MUST CONTAIN A HEX LETTER, and that is not a detail: digits
+ * are hex characters, so `^[0-9a-f]{8,64}$` alone matches every purely numeric
+ * string of eight to sixty-four digits — a mobile number, a Medicare number
+ * typed without spaces, a record number — and exempted from the check exactly
+ * the values the check exists to catch (17 Sep 2026). A real sha256 of nothing
+ * but digits has probability around 1e-13 and would cost one rename.
+ */
+const HASH = /^(?=[0-9a-f]{8,64}$)[0-9a-f]*[a-f][0-9a-f]*$/;
+
+/*
+ * THE THREE SHAPES, WRITTEN ONCE.
+ *
+ * `redact` replaces them and `looksLikeAnIdentifier` detects them, and those
+ * two must never drift apart: a shape one of them knows about and the other
+ * does not is either a value redacted from the log but accepted into a config
+ * file, or the reverse. Holding the patterns as source strings and building
+ * both from them makes that impossible to get wrong by editing one line.
+ */
+const MEDICARE_SHAPE = String.raw`\b\d{4}[ -]?\d{5}[ -]?\d\b(?:\s*(?:IRN:?\s*)?\d\b)?`;
+const SPACED_DIGIT_RUN = String.raw`\b\d[\d ]{6,}\d\b`;
+const UNBROKEN_DIGIT_RUN = String.raw`\b\d{6,}\b`;
+
+/** In order: the Medicare shape first, for the reason given on `redact`. */
+const REDACTIONS = [MEDICARE_SHAPE, SPACED_DIGIT_RUN, UNBROKEN_DIGIT_RUN].map((source) => new RegExp(source, 'g'));
+
+const SENSITIVE_SHAPE = new RegExp(`${MEDICARE_SHAPE}|${SPACED_DIGIT_RUN}|${UNBROKEN_DIGIT_RUN}`);
+
+/**
+ * Does this string look like a patient identifier?
+ *
+ * THE SAME TEST `redact` APPLIES, ASKED AS A QUESTION INSTEAD OF PERFORMED AS
+ * A REPLACEMENT. Redaction is the last line of defence for text that is
+ * already on its way to a log; this is for text arriving from somewhere a
+ * human typed it, where the right answer is to refuse it rather than to
+ * accept it and scrub it later. `config.ts` uses it on queue names and
+ * labels: those are practice-chosen attribution text ("Room 3"), they end up
+ * in log lines, receipts and event-log comparisons, and a practice that typed
+ * a patient's card number into one has to be told, not quietly redacted.
+ *
+ * Deliberately greedy, for the same reason `redact` is: refusing a queue
+ * label that is nothing but a long number costs a practice one rename.
+ */
+export function looksLikeAnIdentifier(value: string): boolean {
+  if (HASH.test(value)) return false;
+  return SENSITIVE_SHAPE.test(value);
+}
 
 /**
  * Replace every long digit run with a marker.
@@ -51,10 +98,7 @@ const HASH = /^[0-9a-f]{8,64}$/;
  */
 export function redact(value: string): string {
   if (HASH.test(value)) return value;
-  return value
-    .replace(/\b\d{4}[ -]?\d{5}[ -]?\d\b(?:\s*(?:IRN:?\s*)?\d\b)?/g, '[redacted]')
-    .replace(/\b\d[\d ]{6,}\d\b/g, '[redacted]')
-    .replace(/\b\d{6,}\b/g, '[redacted]');
+  return REDACTIONS.reduce((text, pattern) => text.replace(pattern, '[redacted]'), value);
 }
 
 /** An error, with its message redacted and its stack dropped. */

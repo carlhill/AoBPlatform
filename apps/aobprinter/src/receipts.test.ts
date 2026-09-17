@@ -68,6 +68,7 @@ describe('a_receipt_holds_no_patient_data', () => {
       byteCount: 512,
       state: 'sent',
       jobId: 'job-1',
+      printerVersion: '9.9.9',
     });
 
     const serialised = JSON.stringify(receipt);
@@ -83,6 +84,7 @@ describe('a_receipt_holds_no_patient_data', () => {
       capturedAt: '2026-09-17T00:00:00.000Z',
       postedAt: '2026-09-17T00:00:05.000Z',
       parserTemplateVersion: 'pracsoft3-db4-2026-09-1',
+      printerVersion: '9.9.9',
       byteCount: 512,
       attempts: 1,
       state: 'sent',
@@ -91,7 +93,7 @@ describe('a_receipt_holds_no_patient_data', () => {
 
   it('holds no PII for a poisoned outcome either, which has no jobId', () => {
     const record = aRecordFullOfPii();
-    const receipt = buildReceipt(record, { postedAt: '2026-09-17T01:00:00.000Z', attempts: 3, byteCount: 400, state: 'poisoned' });
+    const receipt = buildReceipt(record, { postedAt: '2026-09-17T01:00:00.000Z', attempts: 3, byteCount: 400, state: 'poisoned', printerVersion: '9.9.9' });
     const serialised = JSON.stringify(receipt);
     for (const forbidden of FORBIDDEN) {
       expect(serialised).not.toContain(forbidden);
@@ -111,9 +113,9 @@ describe('the receipts ledger', () => {
 
   it('appends one JSON line per receipt, never overwriting the last', () => {
     const writer = makeFileReceiptsWriter(dir);
-    writer.record(buildReceipt(aRecordFullOfPii(), { postedAt: 't1', attempts: 1, byteCount: 1, state: 'sent' }));
+    writer.record(buildReceipt(aRecordFullOfPii(), { postedAt: 't1', attempts: 1, byteCount: 1, state: 'sent', printerVersion: '9.9.9' }));
     writer.record(
-      buildReceipt({ ...aRecordFullOfPii(), sourceSha256: 'c'.repeat(64) }, { postedAt: 't2', attempts: 1, byteCount: 2, state: 'sent' }),
+      buildReceipt({ ...aRecordFullOfPii(), sourceSha256: 'c'.repeat(64) }, { postedAt: 't2', attempts: 1, byteCount: 2, state: 'sent', printerVersion: '9.9.9' }),
     );
 
     expect(existsSync(receiptsPath(dir))).toBe(true);
@@ -130,7 +132,7 @@ describe('the receipts ledger', () => {
   });
 
   it('creates the outbox directory on first use', () => {
-    appendReceipt(dir, buildReceipt(aRecordFullOfPii(), { postedAt: 't1', attempts: 1, byteCount: 1, state: 'sent' }));
+    appendReceipt(dir, buildReceipt(aRecordFullOfPii(), { postedAt: 't1', attempts: 1, byteCount: 1, state: 'sent', printerVersion: '9.9.9' }));
     expect(existsSync(join(dir, 'outbox', 'receipts.jsonl'))).toBe(true);
   });
 });

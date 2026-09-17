@@ -11,6 +11,14 @@
  * sounds — but "less fraught" is not "cannot happen", and losing a form is the
  * one failure this program may not have.
  *
+ * WHICH IS WHY EACH WORKSTATION GETS ITS OWN SLOT. On a LAN host serving
+ * several workstations, "less fraught" stops being true: two receptionists
+ * printing within the settle window are two writes to one path, and the first
+ * form is gone. `QueueWatcher` below holds one `SpoolClaimer` per configured
+ * queue, each with its own port, its own file and its own folders
+ * (`config.ts`'s `QueueConfig`). A single-workstation practice is that same
+ * list with one entry — one code path, not two.
+ *
  * A HALF-WRITTEN PDF IS NEVER PARSED, and three independent things say so:
  *
  *   1. THE FILE MUST STOP GROWING. Its size is compared across polls and it is
@@ -31,6 +39,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
+import type { QueueConfig } from './config';
 import type { Db4PrintRecord } from './db4-record';
 import { redactError, type Logger } from './log';
 import { parseDb4 } from './parser';
@@ -59,8 +68,19 @@ export interface WatcherDirs {
   readonly unparsed: string;
 }
 
-export function watcherDirs(dataDir: string): WatcherDirs {
-  return { jobs: join(dataDir, 'jobs'), unparsed: join(dataDir, 'unparsed') };
+/**
+ * Where one queue's claimed and parked files live.
+ *
+ * ONE SUBDIRECTORY PER QUEUE, AND THE QUEUE NAME IS REQUIRED RATHER THAN
+ * DEFAULTED. Two queues sharing `jobs/` would work right up until a restart:
+ * the recovery scan (`claimedJobs`) would hand every queue's leftovers to
+ * whichever queue asked first, and the record would then be stamped with the
+ * wrong room. Attribution that is wrong is worse than attribution that is
+ * missing, so the separation is structural — there is no path through this
+ * file that can put two queues' files in one folder.
+ */
+export function watcherDirs(dataDir: string, queueName: string): WatcherDirs {
+  return { jobs: join(dataDir, 'jobs', queueName), unparsed: join(dataDir, 'unparsed', queueName) };
 }
 
 /**
@@ -78,10 +98,13 @@ export function claimedJobName(now: Date): string {
 }
 
 /**
- * Watches the one spool path and claims what lands there.
+ * Watches ONE spool path and claims what lands there.
  *
  * Stateful across polls only in the one way it has to be: the size the spool
- * file was last seen at, and when.
+ * file was last seen at, and when. That state is per instance, which is what
+ * makes several of them — one per configured queue, built by `QueueWatcher` —
+ * correct without changing anything here: one queue's file growing says
+ * nothing about another's.
  */
 export class SpoolClaimer {
   private lastSize: number | null = null;
@@ -133,6 +156,115 @@ export class SpoolClaimer {
   }
 }
 
+/** One queue, its own folders, its own claimer. What `QueueWatcher` holds one of per configured queue. */
+export interface WatchedQueue {
+  readonly queue: QueueConfig;
+  readonly dirs: WatcherDirs;
+}
+
+/**
+ * Every configured queue, watched independently, on one loop.
+ *
+ * WHY ONE PROCESS AND SEVERAL CLAIMERS RATHER THAN SEVERAL PROCESSES. Each
+ * `SpoolClaimer` already carries all the state a queue needs (the size it
+ * last saw and when), so "one per queue" needs nothing new from it. What one
+ * process buys is a single outbox, a single instance lock and a single
+ * version — the alternative is N processes racing over one `pending/` folder,
+ * which is the problem this whole design is avoiding, not solving.
+ *
+ * ONE QUEUE CANNOT STARVE ANOTHER. `claimAll` asks every claimer on every
+ * tick and collects what each returns; a queue whose spool file is still
+ * growing returns null and holds nobody up, and a claimer that throws would
+ * be caught by the loop's own catch-all (`main.ts`) rather than stopping the
+ * others. There is no shared state between claimers to contend over.
+ */
+export class QueueWatcher {
+  private readonly claimers: { readonly watched: WatchedQueue; readonly claimer: SpoolClaimer }[];
+
+  constructor(
+    queues: readonly QueueConfig[],
+    dataDir: string,
+    settleMs: number,
+    private readonly logger: Logger,
+    now: () => Date = () => new Date(),
+  ) {
+    if (queues.length === 0) {
+      throw new Error('AOBPRINTER was started with no print queues to watch. A host with no queue captures nothing.');
+    }
+    this.claimers = queues.map((queue) => {
+      const dirs = watcherDirs(dataDir, queue.name);
+      return { watched: { queue, dirs }, claimer: new SpoolClaimer(queue.spoolFile, dirs, settleMs, logger, now) };
+    });
+    this.recoverPreQueueJobs(dataDir);
+  }
+
+  /** Every queue and its folders, for the recovery scan a restart does. */
+  get watched(): readonly WatchedQueue[] {
+    return this.claimers.map((c) => c.watched);
+  }
+
+  /** One look at every slot. Returns each queue that had something in it. */
+  claimAll(): { queue: QueueConfig; path: string }[] {
+    const claimed: { queue: QueueConfig; path: string }[] = [];
+    for (const { watched, claimer } of this.claimers) {
+      const path = claimer.claim();
+      if (path !== null) claimed.push({ queue: watched.queue, path });
+    }
+    return claimed;
+  }
+
+  /**
+   * A form claimed by a build from before queues existed.
+   *
+   * Claimed jobs used to sit directly in `<dataDir>/jobs`; they now sit in
+   * `<dataDir>/jobs/<queue>`. An upgrade that happened while a PDF was
+   * claimed-but-not-yet-parsed would otherwise leave that form in a folder
+   * nothing scans — a form lost to a version number, which is precisely what
+   * this program may not do.
+   *
+   * MOVED ONLY WHEN THERE IS ONE QUEUE, because only then is the answer
+   * knowable: a single-queue install upgrading is the only way these files
+   * can exist. With several queues configured, guessing which room a form
+   * came from would be inventing attribution, so it is left where it is and
+   * said out loud. Nothing here deletes anything.
+   */
+  private recoverPreQueueJobs(dataDir: string): void {
+    const legacy = join(dataDir, 'jobs');
+    let names: string[];
+    try {
+      names = readdirSync(legacy, { withFileTypes: true })
+        .filter((e) => e.isFile() && e.name.toLowerCase().endsWith('.pdf'))
+        .map((e) => e.name);
+    } catch {
+      return; // No jobs folder yet: a fresh install.
+    }
+    if (names.length === 0) return;
+
+    if (this.claimers.length > 1) {
+      this.logger.error('jobs.pre_queue_files_left', {
+        count: names.length,
+        path: legacy,
+        note: 'claimed forms from a build before per-queue folders, and this host has several queues; move them into the right jobs/<queue> folder by hand — nothing has been deleted',
+      });
+      return;
+    }
+
+    const target = this.claimers[0].watched.dirs.jobs;
+    for (const name of names) {
+      try {
+        renameSync(join(legacy, name), join(target, name));
+      } catch (err) {
+        this.logger.error('jobs.pre_queue_move_failed', { job: name, error: redactError(err) });
+      }
+    }
+    this.logger.warn('jobs.pre_queue_recovered', {
+      count: names.length,
+      queue: this.claimers[0].watched.queue.name,
+      note: 'claimed forms from a build before per-queue folders, moved into this queue so they are still parsed',
+    });
+  }
+}
+
 export type ProcessOutcome = 'queued' | 'already_queued' | 'already_sent' | 'already_poisoned' | 'parked' | 'incomplete';
 
 /**
@@ -149,6 +281,7 @@ export function processClaimedJob(
   template: ParserTemplate,
   outbox: Outbox,
   dirs: WatcherDirs,
+  queue: QueueConfig,
   logger: Logger,
   now: () => Date = () => new Date(),
 ): { outcome: ProcessOutcome; record?: Db4PrintRecord } {
@@ -172,19 +305,29 @@ export function processClaimedJob(
     return { outcome: 'incomplete' };
   }
 
-  const record = parseDb4(template, { lines: text.lines, sourceSha256, capturedAt: now().toISOString() });
-  if (!record) {
+  const parsed = parseDb4(template, { lines: text.lines, sourceSha256, capturedAt: now().toISOString() });
+  if (!parsed) {
     // Somebody printed something else to this queue. It happens, and it is not
     // an error — but nothing is posted for it.
     park(path, dirs, logger, 'not_a_db4');
     return { outcome: 'parked' };
   }
 
+  /*
+   * THE QUEUE IS STAMPED HERE, NOT IN THE PARSER. The parser's whole rule is
+   * that it reports what is on the page and never adds to it (`parser.ts`);
+   * which printer the page arrived through is not on the page, it is
+   * something only this layer knows. Kept as attribution, never as an
+   * identifier — see `db4-record.ts`.
+   */
+  const record: Db4PrintRecord = { ...parsed, queueName: queue.name, queueLabel: queue.label };
+
   const outcome = outbox.enqueue(record);
   logger.info('job.parsed', {
     job: name,
     sha: sourceSha256,
     template: record.parserTemplateVersion,
+    queue: queue.name,
     services: record.services?.length ?? 0,
     providers: record.providers?.length ?? 0,
     outcome,

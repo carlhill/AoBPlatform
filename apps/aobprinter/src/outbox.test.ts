@@ -6,12 +6,13 @@
  * loses a form is a practice that billed for a service and has no consent
  * record, and nobody notices until an audit.
  */
+import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Db4PrintRecord } from './db4-record';
 import { makeLogger } from './log';
-import { Outbox, outboxPaths, type PostResult } from './outbox';
+import { OUTBOX_FORMAT_VERSION, Outbox, outboxPaths, type PostResult } from './outbox';
 
 function tempDir(): string {
   return mkdtempSync(join(tmpdir(), 'aobprinter-outbox-'));
@@ -178,5 +179,50 @@ describe('the outbox', () => {
     // never happened, so nothing was promised about it.
     new Outbox(dir, async () => ACCEPTED, logger);
     expect(readdirSync(outboxPaths(dir).tmp)).toEqual([]);
+  });
+});
+
+describe('a_newer_on_disk_format_refuses_to_start', () => {
+  it('refuses to open an outbox written by a later build, rather than half-reading it', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'aobprinter-format-'));
+    try {
+      // A downgrade that quietly skipped what it could not parse would drop a
+      // patient's form on the floor, and the payloads are encrypted by a
+      // scheme this build may not know about (D-2026-09-17-01).
+      const pending = join(dir, 'outbox', 'pending');
+      mkdirSync(pending, { recursive: true });
+      writeFileSync(
+        join(pending, `${'a'.repeat(64)}.json`),
+        JSON.stringify({ formatVersion: OUTBOX_FORMAT_VERSION + 1, record: {}, attempts: 0 }),
+        'utf8',
+      );
+
+      let thrown: Error | undefined;
+      try {
+        new Outbox(dir, async () => ACCEPTED, makeLogger(() => undefined));
+      } catch (err) {
+        thrown = err as Error;
+      }
+
+      assert.ok(thrown, 'a newer on-disk format must stop the program starting');
+      assert.match(thrown.message, /refuses to start/i);
+      assert.match(thrown.message, new RegExp(String(OUTBOX_FORMAT_VERSION + 1)));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('opens normally when the format is the one this build writes, or older', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'aobprinter-format-'));
+    try {
+      const pending = join(dir, 'outbox', 'pending');
+      mkdirSync(pending, { recursive: true });
+      // No formatVersion at all means "written before the field existed",
+      // which is version 1 and must still open.
+      writeFileSync(join(pending, `${'b'.repeat(64)}.json`), JSON.stringify({ record: {}, attempts: 0 }), 'utf8');
+      assert.doesNotThrow(() => new Outbox(dir, async () => ACCEPTED, makeLogger(() => undefined)));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

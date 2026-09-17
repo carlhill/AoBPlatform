@@ -128,6 +128,23 @@ export interface Db4PrintRecord {
   readonly pms: string;
   readonly capturedAt: string;
 
+  /*
+   * WHICH PRINT QUEUE PRODUCED THIS FORM. Attribution, never PII: the name is
+   * the Windows printer ("Room3") and the label is the practice's own words
+   * for where it stands ("Room 3"). `config.ts` refuses a queue whose name or
+   * label is shaped like a patient identifier, so these two are safe in a log
+   * line and in a receipt — which is the point of carrying them, because on a
+   * LAN host serving several workstations "which room printed this" is the
+   * first question anybody asks about a form that needs chasing.
+   *
+   * OPTIONAL, like everything below the envelope, and for a narrower reason
+   * as well as the general one: a record built by hand in a test, or parsed
+   * before this field existed, has no queue and must not be made to invent
+   * one.
+   */
+  readonly queueName?: string;
+  readonly queueLabel?: string;
+
   readonly heading?: Db4Heading;
   readonly form?: Db4Form;
   readonly servicingLocation?: Db4ServicingLocation;

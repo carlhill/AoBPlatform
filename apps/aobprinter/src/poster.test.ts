@@ -37,7 +37,8 @@ function aConfig(dataDir: string): AobPrinterConfig {
   return {
     practiceId: 'a2629964-c984-4a07-8db6-c42f40243654',
     endpoint: 'http://localhost:3001/inbound/print-jobs',
-    spoolFile: join(dataDir, 'spool', 'aobprinter-out.pdf'),
+    // A single-workstation install is the general case with one entry in it.
+    queues: [{ name: 'AOBPRINTER', spoolFile: join(dataDir, 'spool', 'aobprinter-out.pdf'), label: 'AOBPRINTER' }],
     dataDir,
     pollMs: 500,
     settleMs: 750,
