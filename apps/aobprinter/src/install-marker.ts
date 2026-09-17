@@ -74,16 +74,45 @@ export function readInstallMarker(dataDir: string): InstallMarker | null {
   const path = installMarkerPath(dataDir);
   if (!existsSync(path)) return null;
 
+  /*
+   * A MARKER THAT EXISTS BUT CANNOT BE READ THROWS. IT MUST NOT RETURN null.
+   *
+   * `null` means "nothing is installed here", and `decideInstallAction` turns
+   * that into `fresh` and installs. So every version of this function that
+   * swallowed a parse error silently DISABLED the guard rail it exists to
+   * serve: a corrupt marker, a half-written one, or one a technician opened in
+   * an editor would let an older build install over a newer one, which is the
+   * single thing this file is for.
+   *
+   * Absent is a fact. Unreadable is an unknown, and an unknown fails closed.
+   *
+   * The BOM is stripped first, because that unknown was reached in practice:
+   * Windows PowerShell's `Set-Content -Encoding utf8` writes UTF-8 WITH a byte
+   * order mark and `JSON.parse` rejects the leading U+FEFF (17 Sep 2026).
+   */
   let parsed: unknown;
   try {
-    parsed = JSON.parse(readFileSync(path, 'utf8'));
-  } catch {
-    return null;
+    parsed = JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/, ''));
+  } catch (err) {
+    throw new Error(
+      `The AOBPRINTER install marker at ${path} exists but could not be read (${err instanceof Error ? err.message : String(err)}). ` +
+        'Refusing to continue: an installer that cannot establish which version is already here must not proceed as ' +
+        'if nothing were. Repair or remove the file once somebody has decided what is installed on this machine.',
+      { cause: err },
+    );
   }
-  if (typeof parsed !== 'object' || parsed === null) return null;
+
+  const invalid: (why: string) => never = (why) => {
+    throw new Error(
+      `The AOBPRINTER install marker at ${path} is not usable: ${why}. Refusing to continue rather than assuming ` +
+        'this machine has no AOBPRINTER on it.',
+    );
+  };
+
+  if (typeof parsed !== 'object' || parsed === null) invalid('it is not a JSON object');
 
   const doc = parsed as Record<string, unknown>;
-  if (typeof doc.version !== 'string' || doc.version.trim().length === 0) return null;
+  if (typeof doc.version !== 'string' || doc.version.trim().length === 0) invalid('it records no version');
 
   const installMode = doc.installMode === 'Lan' ? 'Lan' : 'Single';
   const queues = Array.isArray(doc.queues)

@@ -32,6 +32,7 @@
  * `keystore.ts` had to go over stdin: nothing passed on this command line is
  * a secret or a patient's.
  */
+import { readFileSync } from 'node:fs';
 import {
   INSTALL_MODES,
   decideInstallAction,
@@ -46,7 +47,8 @@ const USAGE = [
   '  node dist/src/install-cli.js check <version> <dataDir>',
   '  node dist/src/install-cli.js write <version> <dataDir> <Single|Lan> <queuesJson>',
   '',
-  'queuesJson is a single argument holding a JSON array of {"name":"...","label":"..."}.',
+  'queuesJson is a single argument holding a JSON array of {"name":"...","label":"..."},',
+  'or @<path> to read that JSON from a file (what the installer does — see readQueuesArgument).',
 ].join('\n');
 
 function fail(message: string, code: number): never {
@@ -54,7 +56,37 @@ function fail(message: string, code: number): never {
   process.exit(code);
 }
 
-function parseQueuesArgument(raw: string): InstallQueue[] {
+/**
+ * `@<path>` READS THE JSON FROM A FILE, and the caller is why.
+ *
+ * Windows PowerShell 5.1 re-parses a native command's arguments with its own
+ * legacy rules, and JSON is nothing but embedded double quotes. Passing the
+ * queue list inline is the classic way to have quotes silently eaten on one
+ * desktop and survive on another — a difference that would show up as a
+ * mangled queue label in a receipt weeks later, not as an error at install
+ * time. The installer writes a temp file and passes its path instead.
+ *
+ * Inline JSON still works: it is what a human types by hand.
+ */
+function readQueuesArgument(raw: string): string {
+  if (!raw.startsWith('@')) return raw;
+  const path = raw.slice(1);
+  try {
+    /*
+     * The BOM is stripped because Windows PowerShell 5.1 puts one there:
+     * `Set-Content -Encoding utf8` is UTF-8 WITH a byte order mark, and
+     * `JSON.parse` rejects a leading U+FEFF with a bare "Unexpected token".
+     * Measured against the real installer on 17 September 2026, where it
+     * failed the marker write after the printers had already been created.
+     */
+    return readFileSync(path, 'utf8').replace(/^\uFEFF/, '');
+  } catch (err) {
+    fail(`The queues file ${path} could not be read: ${err instanceof Error ? err.message : String(err)}`, 2);
+  }
+}
+
+function parseQueuesArgument(rawOrPath: string): InstallQueue[] {
+  const raw = readQueuesArgument(rawOrPath);
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
