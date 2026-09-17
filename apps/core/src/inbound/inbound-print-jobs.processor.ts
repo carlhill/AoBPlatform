@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import type { PrintJobEnvelope } from '@aobplatform/contracts';
+import type { Db4JobOutcome, PrintJobEnvelope } from '@aobplatform/contracts';
 import type { AutoCaptureSuppressionReason } from '@aobplatform/domain';
 import { PrismaService } from '../prisma/prisma.service';
 import { PmsSyncService } from '../pms/pms-sync.service';
 import { AutoCaptureService } from '../auto-capture/auto-capture.service';
+import { Db4AssignmentHandler } from './db4-assignment.handler';
 
 /** What a print job did, written onto the row so it is answerable later. */
 export interface PrintJobOutcome {
@@ -11,6 +12,23 @@ export interface PrintJobOutcome {
   providersMirrored: number;
   appointments: { total: number; captured: number; alreadyKnown: number; suppressedByReason: Partial<Record<AutoCaptureSuppressionReason, number>> };
   invoices: { total: number; captured: number; alreadyLinked: number; suppressedByReason: Partial<Record<AutoCaptureSuppressionReason, number>> };
+  /**
+   * A `db4_assignment` JOB, AND ITS FOUR COUNTERS ABOVE ARE ALL ZERO. That is
+   * not an omission: a DB4 never mirrors a person or a provider into the
+   * practice, and the zeroes are the evidence
+   * (`a_db4_never_mirrors_a_provider_into_the_practice`).
+   */
+  db4?: Db4JobOutcome;
+}
+
+/** A job that took the DB4 path, with its four generic counters honestly at nought. */
+function nothingMirrored(): Omit<PrintJobOutcome, 'db4'> {
+  return {
+    patientsMirrored: 0,
+    providersMirrored: 0,
+    appointments: { total: 0, captured: 0, alreadyKnown: 0, suppressedByReason: {} },
+    invoices: { total: 0, captured: 0, alreadyLinked: 0, suppressedByReason: {} },
+  };
 }
 
 /**
@@ -30,9 +48,25 @@ export class InboundPrintJobsProcessor {
     private readonly prisma: PrismaService,
     private readonly pmsSync: PmsSyncService,
     private readonly autoCapture: AutoCaptureService,
+    private readonly db4: Db4AssignmentHandler,
   ) {}
 
+  /**
+   * ROUTED ON THE DOCUMENT TYPE FIRST, AND THAT SWITCH IS LOAD-BEARING.
+   *
+   * Everything below it dispatches on CONTENT SHAPE — it mirrors whatever
+   * `patients` and `providers` hold and iterates whatever `appointments` and
+   * `invoices` hold — which is right for the three generic document types and
+   * catastrophic for a DB4: the form names a servicing provider and a payee, so
+   * the generic cascade would create TWO provider rows in the practice out of a
+   * printed form and then throw the form away. A DB4 goes to its own handler
+   * and nowhere near that path.
+   */
   async process(practiceId: string, envelope: PrintJobEnvelope): Promise<PrintJobOutcome> {
+    if (envelope.documentType === 'db4_assignment') {
+      return { ...nothingMirrored(), db4: await this.db4.handle(practiceId, envelope) };
+    }
+
     const knownPatients = new Map((envelope.patients ?? []).map((p) => [p.pmsLinkageKey, p]));
     const knownProviders = new Map((envelope.providers ?? []).map((p) => [p.pmsProviderKey, p]));
 
