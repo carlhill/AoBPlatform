@@ -87,6 +87,35 @@ describe('ceremony_sequence — the steps a route will actually run', () => {
       ceremonySequence({ pushed: true, particularsLockedAtVerification: true }),
     );
   });
+
+  it('a_push_whose_details_were_confirmed_earlier_today_runs_two_steps_and_starts_at_one', () => {
+    /*
+     * ROUTE 4 — AND IT WAS ALREADY THERE WHEN THIS FILE WAS WRITTEN (Carl,
+     * 27 September 2026, from a live tablet: "never goes to step 1").
+     *
+     * THE SERVER SKIPS K-P1 FOR A PATIENT WHO ALREADY TICKED TODAY — its own
+     * ruling of 11 September, matched on the PATIENT rather than the agreement
+     * because the case it exists for is a second agreement for the same visit
+     * (`tablet-sessions.service.ts`, `detailsCheck: 'confirmed_today'`). So the
+     * ceremony is two screens: the particulars, then the pen.
+     *
+     * COUNTING IT AS THE THREE-STEP PUSH IS THE ORIGINAL DEFECT WEARING A
+     * DIFFERENT NUMBER. The patient opens on "Step 2 of 3" and there is no step
+     * one, which is precisely what Carl reported and precisely what this
+     * module's own doc comment warned would happen to a route it had not been
+     * told about.
+     */
+    const sequence = ceremonySequence({
+      pushed: true,
+      particularsLockedAtVerification: true,
+      detailsAlreadyConfirmed: true,
+    });
+    expect(sequence).toEqual(['particulars', 'signature']);
+    expect(stepNumber('particulars', sequence)).toEqual({ position: 1, total: 2 });
+    expect(stepNumber('signature', sequence)).toEqual({ position: 2, total: 2 });
+    // The screen the route does not run is not a step of it.
+    expect(stepNumber('check-details', sequence)).toBeNull();
+  });
 });
 
 describe('step_number — where the patient is, and where there is no such thing', () => {

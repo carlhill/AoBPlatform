@@ -6903,6 +6903,19 @@ export const strings = {
        * screens show nothing here.
        */
       patientIdentity: (id: string) => `patient ${id}`,
+      /*
+       * WHICH PRINT RUN THIS FORM CAME OFF (Carl, 27 Sep 2026 — "the print job
+       * id, that hash ... show this in the footer with the other audit ids").
+       *
+       * TEST DEVICES ONLY, behind the same flag as the parser template version
+       * and the "ready to sign" panel: on a patient's screen an internal id is
+       * a developer's note. Both are identifiers rather than content (hard rule
+       * 9) — they name a queue row and a set of printed bytes, never a person
+       * — and neither is a link. The record they name stays on a workstation,
+       * because it carries the unmasked card number (`db4-form-view.ts`).
+       */
+      printJobIdentity: (shortId: string) => `print job ${shortId}`,
+      printSourceIdentity: (shortHash: string) => `form ${shortHash}`,
     },
 
     /*
@@ -7504,7 +7517,41 @@ export const strings = {
          * they wonder whether we hold the wrong one — and told that the form in
          * the chart folder is unaffected.
          */
-        maskedCardNote: 'Part of your number is hidden on this screen. Your form carries it in full.',
+        /**
+         * AND WHAT TO DO ABOUT IT (Carl, 27 September 2026, from a live
+         * tablet): *"Validate you are the right number on the medicare card -
+         * or something to this effect."*
+         *
+         * THE INTENT IS REAL AND WORTH THE LINE. A family Medicare card
+         * carries ONE card number and several people, told apart only by the
+         * IRN beside each name. Reception picking the wrong IRN puts the claim
+         * against the wrong family member, and the patient holding the card is
+         * the only person in the building who can see that at a glance.
+         *
+         * THE WORDING IS DELIBERATELY NOT HIS, AND THIS IS WHY. "Validate you
+         * are the right number" asks the patient to establish WHO THEY ARE
+         * from the Medicare number, and hard rule 1 (REQ-VER-02) is that the
+         * Medicare card number IS NOT AN IDENTITY IDENTIFIER — the one design
+         * mistake CLAUDE.md names as most likely in this product. Copy is
+         * where that rule gets broken first: a screen that tells a patient to
+         * prove themselves with their card number has taught the practice to
+         * do it, whatever the validators say.
+         *
+         * SO IT ASKS ABOUT THE FORM, NOT ABOUT THE PERSON. "Check what is
+         * shown here against the card" is a DATA-ACCURACY check on a printed
+         * particular, which is exactly what the DB4 affirmation already asks
+         * for ("I confirm the details above are correct"). Nobody is
+         * identified by it, nothing is verified by it, and no outcome turns on
+         * it beyond telling staff the form is wrong.
+         *
+         * "BESIDE YOUR NAME" BECAUSE "IRN" MEANS NOTHING TO A PATIENT. The
+         * field above is labelled IRN because the form labels it IRN; the
+         * sentence says where to look for it on the card.
+         */
+        maskedCardNote:
+          'Part of your Medicare number is hidden on this screen — your form carries it in full. '
+          + 'Please check what is shown here against the card you have with you, including the IRN '
+          + 'beside your name, and tell our staff if anything does not match.',
         irn: 'IRN',
         providers: 'Providers',
         servicingProvider: 'Servicing provider',
@@ -7525,6 +7572,83 @@ export const strings = {
          * 2026). On a patient's screen it is noise.
          */
         parserTemplate: (version: string) => `Form template ${version}`,
+        /**
+         * ONE DB4 READ AS THREE PAGES (Carl, 27 Sep 2026, from a live tablet:
+         * *"I think we need to break this down into maybe four pages from step
+         * 2"*). A whole form on one tablet page is more than anybody reads at
+         * once, and a patient who scrolls past the service rows to reach the
+         * tick boxes has not read the service rows.
+         *
+         * WHERE THE NUMBERS COME FROM. `rules/db4-pages.ts` owns the order and
+         * this owns the sentence, exactly as `rules/ceremony-steps.ts` and
+         * `chrome.stepOf` already divide that work (REQ-LANG-01).
+         *
+         * IT IS NOT THE STEP CHIP AND MUST NEVER READ LIKE ONE. The chip says
+         * which STEP of the ceremony the patient is on and keeps saying the same
+         * number across all three pages, because pages within a step are not
+         * steps (`rules/ceremony-steps.ts`). This line says which page of one
+         * document is on screen, and it sits by the screen's own heading rather
+         * than in the chip.
+         */
+        pageOf: (page: number, total: number) => `Page ${page} of ${total}`,
+        /**
+         * THE HEADING THAT NAMES EACH PAGE, and the element focus moves to when
+         * the page turns (WCAG 2.2 AA — a page change nobody is told about is a
+         * page change a screen-reader user misses).
+         *
+         * 2A IS NOT HERE, because 2A's heading is the FORM's own title line,
+         * reproduced — the right name for that page is the one the practice
+         * printed. `header` below is the fallback for a print record whose
+         * heading lines the parser could not read; without it that page would
+         * have no heading at all and nothing to move focus to.
+         *
+         * 2B AND 2C ARE THIS FILE'S WORDS, and they are chrome in exactly the
+         * sense the column headings and section names above are: they name a
+         * part of the form, they are not operative wording, and they say
+         * nothing about what is being agreed. They reuse the section labels
+         * already on those pages so the patient reads one vocabulary.
+         */
+        pageHeading: {
+          header: 'Your details on this form',
+          services: 'Providers and services',
+          legal: 'Privacy and assignment',
+        } as Record<'header' | 'services' | 'legal', string>,
+        /**
+         * ON TO THE NEXT PAGE OF THE FORM, and deliberately not "Continue to
+         * sign". Only the last page offers signing; a Continue on 2A that read
+         * like the one on 2C would tell a patient they were about to sign a
+         * document they had read a third of.
+         */
+        continueToNextPage: 'Continue',
+        /**
+         * THE SHORTCUT TO THE BOX THAT IS STILL OUTSTANDING (CLAUDE.md §7 —
+         * shortcuts to the answer, not directions to a screen).
+         *
+         * WHY IT IS A SEPARATE CONTROL. `GuardedButton`'s blocked branch is a
+         * real `button[disabled]` with no handler at all, and that is
+         * load-bearing — it must stay unpressable (hard rule 2: the signature
+         * path may not open early). So the blocked primary still states HOW
+         * MANY are left, and this sits beside it and TAKES the patient to the
+         * page holding the first one, rather than leaving them to find it.
+         *
+         * DRAWN ONLY WHEN THE BOX IS SOMEWHERE ELSE. An outstanding tick on the
+         * page the patient is already looking at needs no travel, and a control
+         * that went nowhere would be the "direction to a screen" this exists to
+         * replace.
+         */
+        goToOutstanding: 'Take me to the box still to tick',
+        /**
+         * THE PAYLOAD PANEL, TEST DEVICES ONLY (Carl, 27 Sep 2026). He asked for
+         * the DB4 Print Record itself on the tablet; the raw record carries the
+         * UNMASKED card number, so it stays on a workstation and this is what
+         * the tablet may show instead — the masked block exactly as this device
+         * received it, so somebody checking a rendering can see whether the
+         * screen drew what it was given.
+         */
+        payloadHeading: 'As this tablet received it',
+        payloadBody:
+          'The form block this device was sent, unchanged. The print record behind it is not reachable from '
+          + 'a tablet — open it from a workstation.',
       },
       validating: 'Checking the details…',
       validatedHeading: 'Ready to sign',

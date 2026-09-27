@@ -31,7 +31,7 @@
  *    looked at yet" and nobody at the desk could tell which. An explicit cross
  *    is what makes a dispute a thing the platform can carry.
  *  - TO THE RIGHT, so the label and the value keep the left edge and the
- *    thumb reaches the controls — and BELOW THE VALUE under ~600px, because a
+ *    thumb reaches the controls — and BELOW THE VALUE under ~767px, because a
  *    small tablet in portrait cannot give a 56px pair and a long address the
  *    same line without shrinking one of them.
  *  - NEVER COLOUR ALONE (WCAG 1.4.1). Each control carries a glyph, a text
@@ -298,7 +298,7 @@ export function CheckDetailsScreen({
                 </div>
                 {/*
                   THE BUTTONS SIT TO ITS RIGHT, and drop underneath below
-                  ~600px (`kiosk.module.css`) — a small tablet in portrait
+                  ~767px (`kiosk.module.css`) — a small tablet in portrait
                   cannot hold a long address and a 56px pair on one line
                   without shrinking one of them, and the one that must not
                   shrink is the touch target.
@@ -424,7 +424,7 @@ export function CheckDetailsScreen({
         {/*
           THE RIGHT COLUMN, WHICH NOW HAS SOMETHING IN IT (Carl, 7 Sep 2026 —
           "the right column holds only the small See reception card and is
-          otherwise empty. Use it."). Below 900px the columns stack and
+          otherwise empty. Use it."). Below 1024px the columns stack and
           `.railLeading` puts this first, so the explanation is read before the
           rows on a portrait tablet rather than after them.
         */}

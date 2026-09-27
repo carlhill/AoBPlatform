@@ -17,25 +17,25 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2232 |
-| Files scanned for exports | 539 |
-| Files scanned for imports | 581 |
-| Exports with no comment of their own | 960 |
-| Exports imported nowhere else | 930 |
+| Exported symbols indexed | 2245 |
+| Files scanned for exports | 541 |
+| Files scanned for imports | 583 |
+| Exports with no comment of their own | 961 |
+| Exports imported nowhere else | 934 |
 
 ## Sections
 
 - [Web components](#web-components) — 228
 - [Web hooks](#web-hooks) — 15
-- [Web helpers and constants](#web-helpers-and-constants) — 281
-- [Web types](#web-types) — 107
+- [Web helpers and constants](#web-helpers-and-constants) — 288
+- [Web types](#web-types) — 108
 - [Domain functions](#domain-functions) — 388
 - [Domain constants and content](#domain-constants-and-content) — 244
 - [Domain types](#domain-types) — 284
-- [Contracts types](#contracts-types) — 90
-- [Contracts functions and constants](#contracts-functions-and-constants) — 22
+- [Contracts types](#contracts-types) — 91
+- [Contracts functions and constants](#contracts-functions-and-constants) — 25
 - [Core services, controllers and modules](#core-services-controllers-and-modules) — 278
-- [Core helpers, constants and types](#core-helpers-constants-and-types) — 184
+- [Core helpers, constants and types](#core-helpers-constants-and-types) — 185
 - [AOBPRINTER (the desktop print channel)](#aobprinter-the-desktop-print-channel-) — 111
 
 ## Web components
@@ -63,8 +63,8 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PracticeOverride` | web:practice/usePractice.tsx |  | **7** · web:platform/practices/[practiceId]/application/page.tsx, web:platform/practices/[practiceId]/correspondence/page.tsx, web:platform/practices/[practiceId]/queue/page.tsx, +4 more |
 | `GuardedButton` | web:kiosk/components/Buttons.tsx |  | **6** · web:kiosk/components/SignatureControl.tsx, web:kiosk/screens/AssignorScreen.tsx, web:kiosk/screens/CheckDetailsScreen.tsx, +3 more |
 | `PortalButton` | web:patient/portal/portal-ui.tsx | A BUTTON WITH A 44px TARGET, which is why this is not `Button` from `app/ui`. | **6** · web:patient/portal/PortalView.tsx, web:patient/portal/activate/[token]/ActivateView.tsx, web:patient/portal/cards/DetailsCard.tsx, +3 more |
+| `PrimaryButton` | web:kiosk/components/Buttons.tsx |  | **6** · web:kiosk/screens/CompleteScreen.tsx, web:kiosk/screens/HandoverScreen.tsx, web:kiosk/screens/IdleScreen.tsx, +3 more |
 | `SecondaryButton` | web:kiosk/components/Buttons.tsx |  | **6** · web:kiosk/screens/AssignorScreen.tsx, web:kiosk/screens/CompleteScreen.tsx, web:kiosk/screens/IdleScreen.tsx, +3 more |
-| `PrimaryButton` | web:kiosk/components/Buttons.tsx |  | **5** · web:kiosk/screens/CompleteScreen.tsx, web:kiosk/screens/HandoverScreen.tsx, web:kiosk/screens/IdleScreen.tsx, +2 more |
 | `RecordId` | web:ui/index.tsx |  | **5** · web:practice/patients/NewAgreementPanel.tsx, web:practice/patients/PatientWorkView.tsx, web:practice/patients/PatientsQueueView.tsx, +2 more |
 | `CeremonyHeading` | web:kiosk/components/Chrome.tsx | THE TWO LINES ON TOP OF EVERY PAGE OF THE CEREMONY (Carl, 7 Sep 2026, from testing the pushed flow: "on top of each page of this workflow it should say 'Agree to bulk billing'; on the next line it should say by who — Name of Person"). | **4** · web:kiosk/screens/CheckDetailsScreen.tsx, web:kiosk/screens/HandoverScreen.tsx, web:kiosk/screens/ParticularsScreen.tsx, +1 more |
 | `ConfirmDialog` | web:patient/portal/portal-ui.tsx | ARE YOU SURE — for the three acts on this page that reach the server and change something: asking for a correction, ending an enduring agreement, and withdrawing somebody's authority. | **4** · web:patient/portal/cards/DetailsCard.tsx, web:patient/portal/cards/EnduringCard.tsx, web:patient/portal/cards/PasskeysCard.tsx, +1 more |
@@ -297,7 +297,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web helpers and constants
 
-281 exports.
+288 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -348,6 +348,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `EMPTY_CHOICE` | web:kiosk/rules/assignor.ts |  | **1** · web:kiosk/Ceremony.tsx |
 | `EMPTY_PARTS` | web:kiosk/rules/verify-fields.ts |  | **1** · web:kiosk/screens/VerifyScreen.tsx |
 | `EMPTY_WHO` | web:practice/tablet/pushDesk.tsx |  | **1** · web:practice/patients/NewAgreementPanel.tsx |
+| `FIRST_DB4_PAGE` | web:kiosk/rules/db4-pages.ts | Where a patient arriving at the step starts, and where Back out of it resets to. | **1** · web:kiosk/Ceremony.tsx |
 | `KIOSK_MAX_ATTEMPTS` | web:kiosk/rules/verification.ts | Attempts allowed at the tablet before it hands over to the desk. | **1** · web:kiosk/screens/VerifyScreen.tsx |
 | `POLL_MS` | web:practice/tablet/pushDesk.tsx | THREE SECONDS. | **1** · web:practice/patients/PatientsQueueView.tsx |
 | `PORTAL_FIXTURES` | web:patient/portal/api.ts | TRUE WHILE THE SERVER SIDE IS BEING BUILT. | **1** · web:patient/portal/activate/[token]/ActivateView.tsx |
@@ -378,6 +379,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `composeSignRequest` | web:kiosk/rules/signature-payload.ts | Returns null when a drawn signature has nothing to send — no ink, or a canvas that could not rasterise itself. | **1** · web:kiosk/Ceremony.tsx |
 | `confirmSessionDetails` | web:kiosk/api.ts | THE TICKS AND THE CROSSES — TYPES ONLY, NEVER VALUES (REQ-VER-04, hard rule 9). | **1** · web:kiosk/Ceremony.tsx |
 | `coreBaseUrl` | web:kiosk/session.ts |  | **1** · web:kiosk/api.ts |
+| `db4PagePosition` | web:kiosk/rules/db4-pages.ts | Which of the three a page is, for the screen's own "Page 1 of 3" line. | **1** · web:kiosk/screens/ParticularsScreen.tsx |
 | `decideAssignor` | web:kiosk/rules/assignor.ts |  | **1** · web:kiosk/Ceremony.tsx |
 | `deskCounts` | web:practice/frontdesksmall/deskLines.ts | HOW MANY LINES ARE IN EACH STATE — the chips, and the whole reconciliation on one line. | **1** · web:practice/frontdesksmall/SmallDeskView.tsx |
 | `deskLines` | web:practice/frontdesksmall/deskLines.ts | EVERYBODY HERE TODAY, IN ONE LIST. | **1** · web:practice/frontdesksmall/SmallDeskView.tsx |
@@ -423,9 +425,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `mismatchMessage` | web:kiosk/rules/verification.ts | The ONLY failure message. | **1** · web:kiosk/screens/VerifyScreen.tsx |
 | `moveOutcomeWords` | web:practice/practitioner/waiting/MovePanel.tsx | WHAT ONE ROW'S MOVE CAME TO, IN WORDS — beside the patient it was about. | **1** · web:practice/practitioner/waiting/WaitingView.tsx |
 | `nextAnswers` | web:kiosk/rules/pushed-details.ts | THE ONLY WAY AN ANSWER EVER CHANGES (extracted from `Ceremony.tsx` on 7 Sep 2026, in review of the Continue lock). | **1** · web:kiosk/Ceremony.tsx |
+| `nextDb4Page` | web:kiosk/rules/db4-pages.ts | The next page, or `null` on the last one — where Continue goes to sign-off. | **1** · web:kiosk/screens/ParticularsScreen.tsx |
 | `nextVersionName` | web:practice/templates/templateEditing.ts | THE NEXT VERSION NAME FOR THIS PRACTICE AND AGREEMENT TYPE: `<practice-slug>-<agreementType>-<n>`, where `<n>` is one more than the highest number already used by one of THIS practice's own templates of THIS type (Carl, 7 Sep 2026). | **1** · web:practice/templates/TemplateForm.tsx |
 | `openDevPortalSession` | web:patient/portal/api.ts | DEV ONLY — mint a portal session for named patients without a passkey. | **1** · web:patient/portal/PortalView.tsx |
 | `pairDevice` | web:kiosk/api.ts | THE ONE CALL MADE WITHOUT A CREDENTIAL, because it is the call that earns one. | **1** · web:kiosk/Ceremony.tsx |
+| `previousDb4Page` | web:kiosk/rules/db4-pages.ts | The previous page, or `null` on the first one — where Back stops being the screen's own navigation and becomes the ceremony's, whatever `onBack` does. | **1** · web:kiosk/screens/ParticularsScreen.tsx |
 | `readyToSubmit` | web:kiosk/rules/verify-fields.ts | True when every challenged identifier has everything it needs to be sent. | **1** · web:kiosk/screens/VerifyScreen.tsx |
 | `refreshAll` | web:refresh.ts | Run every registered loader. | **1** · web:RefreshButton.tsx |
 | `refreshFailureReason` | web:auth.ts | The reason the most recent refresh attempt failed, if the last thing that happened to this session was a failure. | **1** · web:SessionControl.tsx |
@@ -449,6 +453,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `stableByFirstSeen` | web:practice/frontdesk/FrontDeskView.tsx | HOLD THE ORDER SOMEBODY IS LOOKING AT (§12.3). | **1** · web:practice/frontdesksmall/SmallDeskView.tsx |
 | `startChallenge` | web:kiosk/api.ts |  | **1** · web:kiosk/Ceremony.tsx |
 | `stateWord` | web:practice/frontdesk/FrontDeskView.tsx | DONE, STILL TO DO, DROPPED, OR NOTHING TO SIGN — the words, from the table. | **1** · web:practice/frontdesksmall/SmallDeskView.tsx |
+| `statementPage` | web:kiosk/rules/db4-pages.ts | The page a statement is read on. | **1** · web:kiosk/screens/ParticularsScreen.tsx |
 | `stepNumber` | web:kiosk/rules/ceremony-steps.ts | Where a step sits in a sequence, or `null` if it is not one of its steps. | **1** · web:kiosk/Ceremony.tsx |
 | `terminateEnduring` | web:patient/portal/api.ts | ENDING AN ENDURING AGREEMENT — the patient's own right under 65CA(7)(b), held even where somebody else entered the agreement for them (REQ-END-06). | **1** · web:patient/portal/PortalView.tsx |
 | `timeLabel` | web:practice/frontdesk/FrontDeskView.tsx | The time on a row, or the honest statement that the booking carried none. | **1** · web:practice/frontdesksmall/SmallDeskView.tsx |
@@ -459,10 +464,12 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `wrapSelection` | web:practice/templates/templateEditing.ts | WRAP THE SELECTION IN A CONDITION — "only when…". | **1** · web:practice/templates/TemplateForm.tsx |
 | `writePairingCredential` | web:kiosk/pairing.ts | Remember the credential this tablet was just given. | **1** · web:kiosk/Ceremony.tsx |
 | `ARRIVED_STATES` | web:practice/frontdesksmall/deskLines.ts | The four states that partition the register — the sum the chips must make. | 0 |
+| `DB4_PAGES` | web:kiosk/rules/db4-pages.ts | The three pages of the DB4, in the order they are read. | 0 |
 | `FIELDS_FOR_DISPUTED_TYPE` | web:practice/tablet/pushDesk.tsx | WHICH COLUMNS ANSWER A CROSSED ROW. | 0 |
 | `FIXTURE_ACTIVATION_ANSWERS` | web:patient/portal/fixtures.ts | WHAT THE ACTIVATION PAGE ANSWERS FROM WHEN CORE IS NOT RUNNING. | 0 |
 | `GATE_REASONS` | web:kiosk/rules/signature-gate.ts | Reasons are engineering-legible, not patient-legible: they are shown to whoever is standing at the tablet so a staff member can act on them, and they never name a patient detail value. | 0 |
 | `GET` | web:api/kiosk-build/route.ts |  | 0 |
+| `LAST_DB4_PAGE` | web:kiosk/rules/db4-pages.ts | The page the sign-off is on, and the home of any statement not placed below. | 0 |
 | `LIVE_REFRESH_MS` | web:useLiveRefresh.tsx | Long enough to be unnoticeable, short enough that nobody reaches for F5. | 0 |
 | `OFFER_RETURN_SECONDS` | web:kiosk/screens/CompleteScreen.tsx | LONGER WHILE A QUESTION IS ON SCREEN (W6). | 0 |
 | `PAIRING_CREDENTIAL_KEY` | web:kiosk/pairing.ts | The only key the kiosk may ever persist. | 0 |
@@ -585,7 +592,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web types
 
-107 exports.
+108 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -609,6 +616,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `AssignorChoice` | web:kiosk/rules/assignor.ts |  | **2** · web:kiosk/Ceremony.tsx, web:kiosk/screens/AssignorScreen.tsx |
 | `AssignorGate` | web:kiosk/rules/assignor.ts | THE LIVE GATE FOR THE "SOMEONE ELSE" BRANCH — the single source of truth behind both the `GuardedButton` on K-5 (which must be disabled, with a reason, before anybody presses Continue — CLAUDE.md §6: blocked states are unreachable, not merely inert) and `decideAssignor`'s final allow/refuse call below, so the two can never drift apart on what counts as blocked. | **2** · web:kiosk/Ceremony.tsx, web:kiosk/screens/AssignorScreen.tsx |
 | `DateOfBirthParts` | web:kiosk/rules/verify-fields.ts |  | **2** · web:patient/portal/activate/[token]/ActivateView.tsx, web:practice/patients/NewAgreementPanel.tsx |
+| `Db4Page` | web:kiosk/rules/db4-pages.ts |  | **2** · web:kiosk/Ceremony.tsx, web:kiosk/screens/ParticularsScreen.tsx |
 | `DetailAnswer` | web:kiosk/rules/pushed-details.ts | A TICK OR A CROSS, AND THERE IS NO THIRD ANSWER (Carl, 4 Sep 2026). | **2** · web:kiosk/Ceremony.tsx, web:kiosk/screens/CheckDetailsScreen.tsx |
 | `DetailAnswers` | web:kiosk/rules/pushed-details.ts |  | **2** · web:kiosk/Ceremony.tsx, web:kiosk/screens/CheckDetailsScreen.tsx |
 | `PatientDetails` | web:practice/tablet/pushDesk.tsx | The six correctable details, as the server hands them back. | **2** · web:practice/patients/NewAgreementPanel.tsx, web:practice/patients/PatientWorkView.tsx |
@@ -1636,7 +1644,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Contracts types
 
-90 exports.
+91 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1652,6 +1660,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ExpectedAppointment` | contracts:arrivals.ts | SOMEBODY BOOKED FOR TODAY WHO HAS NOT WALKED IN YET (Carl, 12 Sep 2026; FRONT-DESK-PAGE.md §12.4). | **4** · core:arrivals/arrivals.service.ts, web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/deskLines.ts, +1 more |
 | `PmsPatientRecord` | contracts:pms-adapter.ts |  | **4** · connector:mock-adapter.ts, core:auto-capture/auto-capture.service.ts, core:pms/pms-sync.service.ts, +1 more |
 | `PmsProvider` | contracts:pms-adapter.ts |  | **4** · connector:mock-adapter.ts, core:auto-capture/auto-capture.service.ts, core:pms/pms-sync.service.ts, +1 more |
+| `Db4PrintRecordCheck` | contracts:db4-print-record-check.ts | One failed check. | **3** · core:agreements/agreements.service.ts, core:agreements/db4-form-view.ts, core:tablet-sessions/push-refusal.ts |
 | `PmsInvoice` | contracts:pms-adapter.ts |  | **3** · connector:mock-adapter.ts, core:pms/pms-sync.service.ts, contracts:print-capture.ts |
 | `RulesEngineClient` | contracts:rules-engine.ts |  | **3** · core:agreements/agreements.service.ts, core:rules-client/rules-client.module.ts, core:service-descriptions/service-descriptions.service.ts |
 | `ValidationResponse` | contracts:rules-engine.ts |  | **3** · core:rules-client/rules-client.module.ts, rules:rules/rules.controller.ts, rules:rules/rules.service.ts |
@@ -1660,6 +1669,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ArrivalMoveResult` | contracts:arrivals.ts | ONE PRESS OF "MOVE THESE PATIENTS", ANSWERED IN FULL. | **2** · core:arrivals/arrivals.service.ts, web:practice/practitioner/waiting/WaitingView.tsx |
 | `ArrivalPreview` | contracts:arrivals.ts | WHAT THE VISIT WOULD NEED, ASKED BEFORE ANYTHING IS WRITTEN (W2, Carl 7 Sep 2026). | **2** · core:arrivals/arrivals.service.ts, web:practice/patients/NewAgreementPanel.tsx |
 | `Db4JobOutcome` | contracts:print-capture.ts | WHAT A `db4_assignment` JOB DID, written onto the job row. | **2** · core:inbound/db4-assignment.handler.ts, core:inbound/inbound-print-jobs.processor.ts |
+| `Db4PlacementReason` | contracts:print-capture.ts |  | **2** · core:inbound/db4-assignment.handler.ts, contracts:db4-print-record-check.ts |
 | `PatientSearchResult` | contracts:arrivals.ts | ONE PATIENT THIS PRACTICE ALREADY HOLDS, FOUND BY TYPING A NAME (W2). | **2** · core:patients/patients.service.ts, web:practice/patients/NewAgreementPanel.tsx |
 | `PmsAppointment` | contracts:pms-adapter.ts |  | **2** · connector:mock-adapter.ts, contracts:print-capture.ts |
 | `PortalLink` | contracts:portal.ts | One practice the patient linked for themselves. | **2** · core:portal/portal-reads.service.ts, core:portal/portal.service.ts |
@@ -1675,7 +1685,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `Db4FormViewStatement` | contracts:db4-form-view.ts |  | **1** · core:agreements/db4-form-view.ts |
 | `Db4Heading` | contracts:print-capture.ts |  | **1** · core:render/signed-db4-document.ts |
 | `Db4Patient` | contracts:print-capture.ts |  | **1** · core:render/signed-db4-document.ts |
-| `Db4PlacementReason` | contracts:print-capture.ts |  | **1** · core:inbound/db4-assignment.handler.ts |
 | `Db4Referral` | contracts:print-capture.ts |  | **1** · core:render/signed-db4-document.ts |
 | `Db4Service` | contracts:print-capture.ts |  | **1** · core:render/signed-db4-document.ts |
 | `Db4ServicingLocation` | contracts:print-capture.ts |  | **1** · core:render/signed-db4-document.ts |
@@ -1733,7 +1742,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Contracts functions and constants
 
-22 exports.
+25 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1741,6 +1750,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ARRIVAL_SOURCE_TYPED_BY_A_PERSON` | contracts:arrivals.ts | THE ONLY SOURCE THAT MAY CARRY THE THREE RECEPTION-ONLY FIELDS BELOW. | **2** · core:arrivals/arrivals.service.ts, core:practitioner-queue/practitioner-queue.service.ts |
 | `PORTAL_SESSION_MINUTES` | contracts:portal.ts | FR-8.2 — sessions are short-lived. | **2** · core:portal/portal-cookie.ts, core:portal/portal.service.ts |
 | `ARRIVAL_SOURCES` | contracts:arrivals.ts | WHERE AN ARRIVAL CAME FROM. | **1** · core:arrivals/arrivals.dto.ts |
+| `DB4_PRINT_RECORD_REFUSED_CODE` | contracts:db4-print-record-check.ts | THE REFUSAL ITSELF, NAMED ONCE AND READ BY BOTH SIDES. | **1** · core:tablet-sessions/push-refusal.ts |
 | `PORTAL_ACTIVATION_MAX_ATTEMPTS` | contracts:portal.ts | REQ-PORT-08's teeth on the activation path: three wrong answers and the token is finished. | **1** · core:portal/portal.service.ts |
 | `PORTAL_PASSKEY_ATTEMPT_LIMIT` | contracts:portal.ts | The sign-in attempts one address gets per window, before it is asked to wait. | **1** · core:portal/portal-passkey-rate-limit.ts |
 | `PORTAL_PASSKEY_ATTEMPT_WINDOW_MINUTES` | contracts:portal.ts |  | **1** · core:portal/portal-passkey-rate-limit.ts |
@@ -1754,6 +1764,8 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ARRIVAL_MOVE_REFUSALS` | contracts:arrivals.ts | WHY A ROW COULD NOT BE MOVED — a CODE the console maps to words and a destination, never prose (CLAUDE.md §7, "shortcuts to the answer"). | 0 |
 | `ARRIVAL_REFUSAL_REASONS` | contracts:arrivals.ts | WHY AN ARRIVAL WAS REFUSED — a reason CODE, never prose (Carl, 4 Sep 2026: "shortcuts to the answer, not directions to a screen"; 5–7 Sep 2026: the billing role). | 0 |
 | `DB4_PLACEMENT_REASONS` | contracts:print-capture.ts | WHY A DB4 PRODUCED NO AGREEMENT — a code, mapped to copy and a destination by whoever shows it (CLAUDE.md §7, "shortcuts to the answer, not directions to a screen"). | 0 |
+| `DB4_PRINT_RECORD_CHECKS` | contracts:db4-print-record-check.ts | EVERY CHECK, IN THE ORDER THEY ARE REPORTED. | 0 |
+| `DB4_PRINT_RECORD_CHECK_GATED_AT_INGEST` | contracts:db4-print-record-check.ts | WHICH INGEST REFUSAL ALREADY COVERS WHICH CHECK — the backstop declaration, written down rather than remembered. | 0 |
 | `ENDURING_RULE_IDS` | contracts:rules-engine.ts | THE ENDURING BRANCH'S RULE FAMILY — the boundary between what an agent may build and what a human must author (Carl, 4 Sep 2026; GA-PLAN B5). | 0 |
 | `PORTAL_RECORD_ID_PREFIX` | contracts:portal.ts | THE RECORD ID A PATIENT CAN RECOGNISE (Carl, 4 Sep 2026). | 0 |
 | `SIGNATURE_CHANNELS` | contracts:signature.ts |  | 0 |
@@ -2047,7 +2059,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Core helpers, constants and types
 
-184 exports.
+185 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -2129,6 +2141,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `assertRenderable` | core:render/agreement-document.ts |  | **1** · core:render/agreement-pdf-renderer.ts |
 | `assertSignedDb4Renderable` | core:render/signed-db4-document.ts | THE RENDER-TIME GUARD FOR THIS ARTEFACT KIND. | **1** · core:render/signed-db4-renderer.ts |
 | `buildDb4FormView` | core:agreements/db4-form-view.ts | THE BLOCK THE LOCK RESPONSE CARRIES for a session that came from a DB4 Print Record — and nothing at all for every other session, which is where D-2026-09-27-02 lives: a practice with no PMS has no print record, so the caller builds no block and the tablet draws exactly what it drew before this feature existed. | **1** · core:agreements/agreements.service.ts |
+| `checkDb4PrintRecord` | core:agreements/db4-form-view.ts | THE CHECKS THIS PRINT RECORD FAILS, ALL OF THEM, IN THE DECLARED ORDER. | **1** · core:agreements/agreements.service.ts |
 | `clearPortalCookie` | core:portal/portal-cookie.ts |  | **1** · core:portal/portal.controller.ts |
 | `correctionBody` | core:notices/notice-template.ts | Correction notices supersede rather than replace (REQ-DEL-06). | **1** · core:notices/notices.service.ts |
 | `createAddressValidator` | core:organisations/address-validator.ts |  | **1** · core:organisations/organisations.module.ts |

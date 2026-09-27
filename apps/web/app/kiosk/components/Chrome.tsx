@@ -219,6 +219,8 @@ export function Screen({
   context,
   sessionId,
   patientId,
+  printJobId,
+  sourceSha256,
   onLeave,
   children,
 }: {
@@ -257,6 +259,28 @@ export function Screen({
    * identity identifier if there were (hard rule 1, REQ-VER-02).
    */
   patientId?: string | null;
+  /**
+   * WHICH PRINT RUN THE FORM ON SCREEN CAME OFF (Carl, 27 September 2026 —
+   * "the print job id, that hash, and the Print Record itself ... show this in
+   * the footer with the other audit ids").
+   *
+   * TEST DEVICES ONLY, AND THE CALLER IS THE GATE. K-3 passes these only when
+   * `blueprintPanels` is set, the same flag the parser template version and
+   * the "ready to sign" panel sit behind — this component draws what it is
+   * given, exactly as it already does for the session and patient ids.
+   *
+   * IDENTIFIERS, NEVER CONTENT (hard rule 9). One names a queue row, the other
+   * is the SHA-256 of the printed bytes; neither carries a value of any kind
+   * and neither is a link. The record they point at is not reachable from a
+   * tablet and must not become so — it carries the unmasked Medicare card
+   * number the tablet's copy is masked from (hard rule 1, and the reasoning in
+   * `packages/contracts/src/db4-form-view.ts`).
+   *
+   * SHORTENED, LIKE THE SESSION ID ABOVE. They are read across a desk to match
+   * a screen to a print run, not typed into a support ticket.
+   */
+  printJobId?: string | null;
+  sourceSha256?: string | null;
   /**
    * THE WAY OUT (Carl, 3 Sep 2026; REQ-REC-04, hard rule 8).
    *
@@ -368,6 +392,23 @@ export function Screen({
                 data-testid="kiosk-patient-identity"
               >
                 {strings.chrome.patientIdentity(patientId)}
+              </p>
+            ) : null,
+            /*
+              AND WHICH PRINT RUN THE FORM ON SCREEN CAME OFF (Carl, 27 Sep
+              2026). Last in the row because they are the newest and the most
+              specialised: a support call asks "which tablet" before it asks
+              "which print job". Both are `null` unless K-3 is drawing a DB4 on
+              a TEST device, so an ordinary tablet's footer is unchanged.
+            */
+            printJobId ? (
+              <p key="print-job" className={styles.buildMark} data-testid="kiosk-print-job-identity">
+                {strings.chrome.printJobIdentity(printJobId.slice(0, 8))}
+              </p>
+            ) : null,
+            sourceSha256 ? (
+              <p key="print-source" className={styles.buildMark} data-testid="kiosk-print-source-identity">
+                {strings.chrome.printSourceIdentity(sourceSha256.slice(0, 8))}
               </p>
             ) : null,
           ])}

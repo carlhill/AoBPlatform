@@ -4466,3 +4466,126 @@ screens — that one needs a ruling.
    never acted on — s 65C(4) items 1-4 are out of scope (CLAUDE.md section 8) —
    but the box is ON the form we reproduce, so the template has to render
    something.
+
+## Mask the date of birth and the home address on the tablet too (27 Sep 2026)
+
+**Carl, 27 September 2026, from a live tablet, looking at page 1 of 3:** *"mask
+the dob and address as well - add to the todo list to review later."* A REVIEW
+ITEM, NOT A BUILD ITEM — he deferred it explicitly, and nothing below is
+authorised yet.
+
+**What is on a waiting-room screen today.** Page 2A reproduces the form's header
+block, and that block carries the patient's **date of birth** and their **full
+home address**, both in the clear:
+
+```
+Date of birth   1972-02-02
+Address         3 Imaginary Ave, Fakevale NSW 2999
+```
+
+The Medicare card number beside them is masked to `••• ••••• 1` under
+D-2026-09-27-01 part 3. Nothing else on that page is.
+
+**Why the same argument reaches them.** The masking ruling does not turn on the
+Medicare number being special — hard rule 1 is about identity *verification*,
+and `db4-form-view.ts` says so. It turns on WHERE THE DEVICE LIVES: a tablet on
+a counter, handed to strangers all day, angled at a room full of people. A date
+of birth and a residential address are the two fields that make a name
+identifying, and they are worth more to somebody reading over a shoulder than a
+card number is.
+
+**What the patient needs them for is recognition, not recall** — the same test
+the card number passed. `2 Feb 1972` and `3 Imaginary Ave …` are enough for the
+patient to say "that's me"; the full string is not needed on the glass. The form
+in the chart folder carries both in full, and that is where they belong.
+
+**Against, and it is not nothing.** The DB4 is the document the patient is being
+asked to affirm as correct — `episodic_details_correct_v1` is literally *"I
+confirm the details above are correct"*. A patient cannot confirm an address
+they cannot read. Masking the card number is safe precisely because no
+affirmation turns on it; masking the address may make the affirmation dishonest.
+That tension is the ruling, and it is why this is deferred rather than obvious.
+
+**Options when it is picked up,** none of them chosen:
+1. Mask both the way the card number is masked, and accept that the address
+   affirmation weakens.
+2. Mask neither, and rely on the device being handed over rather than displayed.
+3. Partial: year of birth only, and street-number-plus-suburb — enough to
+   recognise and to spot a wrong address, not enough to copy down.
+4. Tap-to-reveal, on the patient's own action, with nothing revealed by default.
+
+Option 3 is the one that keeps the affirmation honest, and option 4 is the only
+one that shows the whole value without leaving it on screen. Both are more work
+than the card number was, because the card number needed no affirmation.
+
+**If it is built:** the masking goes SERVER-SIDE in
+`apps/core/src/agreements/db4-form-view.ts` beside `maskMedicareCardNumber`, and
+the masked value is the only one the tablet is sent — the control is that the
+device cannot leak a value it was never given (`packages/contracts/src/db4-form-view.ts`).
+Masking in the markup is not masking. The Signed-DB4 and the chart-folder form
+are untouched either way: **mask on the tablet, full on the form**
+(D-2026-09-27-01).
+
+## Piece 7 — a refused print record must reach reception (27 Sep 2026)
+
+**Carl, 27 September 2026: "yes add that as its own piece."** Found while
+seeding test agreements, not by reading code: ten DB4 print records were posted
+to the running dev core and **three never became agreements, silently.**
+
+### The evidence
+
+| Sent | `inbound_print_jobs.outcome -> 'db4' -> 'reason'` | State |
+|---|---|---|
+| Servicing provider with no provider number | `no_servicing_provider` | `done` |
+| No service date on the row or the form | `no_service_date` | `done` |
+| No service rows at all | `no_service_items` | `done` |
+
+The ingest is RIGHT to refuse all three — a form with no provider, no date or no
+services is not a claim. The defect is what happens next: **nothing.** The job
+goes to `done`, the reason is written where only a developer with psql will ever
+read it, and no agreement appears on the tablet desk.
+
+### Why this is a defect and not a gap in reporting
+
+`grep` over `apps/web/app/practice/` finds **no page that mentions print jobs at
+all**, and `apps/core/src/inbound` exposes only `@Post()` and `@Get('metrics')`
+— there is no listing endpoint to build a page on. So a practice experiences a
+refused DB4 as an ABSENCE. The receptionist printed the form, the tablet desk
+stayed empty, and there is nowhere to look. They will conclude the tablet is
+broken, or push a paper form and move on, which is the outcome the whole product
+exists to replace.
+
+This is the failure CLAUDE.md section 7 names by rule: *"every blocked, wrong or
+waiting message names its specific reason and links to the exact item where it
+is fixed; an unmapped reason code shows its code."* A silent `done` names
+nothing and links nowhere.
+
+**Hard rule 8 is the reason this matters rather than merely annoys.** The
+platform never blocks care. A refusal nobody can see does not slow evidence, it
+STOPS it, and the practice has no signal to fall back on paper with.
+
+### What it needs
+
+1. **A read side.** `GET /inbound/print-jobs` scoped by RLS, listing recent jobs
+   with state, reason code and received-at. Identifier TYPES and reason codes
+   only — **no patient name, chart number, card number or address in the list
+   payload** (hard rule 9). The whole point is that staff can act without the
+   list itself becoming a second copy of the patient index.
+2. **A practice surface** showing refused jobs with the reason in plain English
+   from the string table (REQ-LANG-01), and a link to the exact fix — reprint
+   from the PMS, or correct the provider record. An unmapped code shows its code
+   rather than a blank.
+3. **One vocabulary.** The push-time validator being built now (Carl's ruling the
+   same day: *"Check all details when the reception pushes to the tablet"*) will
+   add refusals of its own. It must REUSE these reason codes and this surface,
+   not invent a parallel one — two differently-shaped refusals for the same
+   class of problem is worse than the silence it replaces.
+4. **Decide whether refusal is push or pull.** A list staff have to remember to
+   check is a list nobody checks. Whether this belongs on the tablet desk as a
+   banner, on the practice queue, or both, is a design ruling Carl has not made.
+
+### Not in scope here
+
+Retrying or repairing a refused job from the console. The PMS is the source of
+truth and the fix is a reprint; an edit surface would be AoB originating a
+particular, which is the thing D-2026-09-14-02 and hard rule 4 refuse.

@@ -132,6 +132,7 @@ import { IdleScreen } from './screens/IdleScreen';
 import { CheckDetailsScreen } from './screens/CheckDetailsScreen';
 import { VerifyScreen } from './screens/VerifyScreen';
 import { AssignorScreen } from './screens/AssignorScreen';
+import { FIRST_DB4_PAGE, type Db4Page } from './rules/db4-pages';
 import { ParticularsScreen, type ParticularsView } from './screens/ParticularsScreen';
 import { SignatureScreen } from './screens/SignatureScreen';
 import { CompleteScreen } from './screens/CompleteScreen';
@@ -195,6 +196,26 @@ export function Ceremony(): ReactNode {
    * about it is written to the device (zero footprint).
    */
   const [affirmed, setAffirmed] = useState<readonly string[]>([]);
+  /**
+   * WHICH PAGE OF THE DB4 K-3 IS SHOWING (Carl, 27 September 2026, from a live
+   * tablet: *"I think we need to break this down into maybe four pages from
+   * step 2"*).
+   *
+   * HELD HERE AND NOT IN K-3, for exactly the reason the ticks above are: K-4's
+   * Back returns to K-3 and must land on 2C — the page the patient left — and a
+   * component that unmounts on the way to the pen cannot remember anything.
+   * Named test: `back_from_the_signature_lands_on_the_page_the_patient_left`.
+   *
+   * IT IS NOT A STEP AND CHANGES NO STEP. `rules/ceremony-steps.ts` counts the
+   * ceremony and is untouched: the chip says the same number on all three
+   * pages, because pages within a step are not steps. This is state for one
+   * screen's own pagination and for nothing else.
+   *
+   * INERT WHERE THERE IS NO FORM TO PAGE. A session with no DB4 Print Record
+   * gives K-3 one page, so this is carried and never read (D-2026-09-27-02).
+   * Memory only, dropped on reset with everything else (zero footprint).
+   */
+  const [db4Page, setDb4Page] = useState<Db4Page>(FIRST_DB4_PAGE);
   const [practiceName, setPracticeName] = useState('');
   const [locationLine, setLocationLine] = useState<string | null>(null);
   /**
@@ -252,6 +273,11 @@ export function Ceremony(): ReactNode {
    * somebody who had not moved. The route is chosen once and does not change.
    */
   const [lockedBeforeVerification, setLockedBeforeVerification] = useState(false);
+  /**
+   * WILL THIS PUSHED CEREMONY RUN K-P1 AT ALL — latched when the push is
+   * taken, never recomputed (Carl, 27 Sep 2026). See the note where it is set.
+   */
+  const [kp1Skipped, setKp1Skipped] = useState(false);
 
   /**
    * THE PUSHED SESSION, IN MEMORY AND NOWHERE ELSE (CLAUDE.md §7).
@@ -754,6 +780,7 @@ export function Ceremony(): ReactNode {
     setAgreement(null);
     // The next person's ceremony chooses its own route.
     setLockedBeforeVerification(false);
+    setKp1Skipped(false);
     /*
      * THE PUSHED SESSION GOES WITH EVERYTHING ELSE. It is the only patient
      * data this device ever holds, and this is the moment the tablet is
@@ -775,6 +802,9 @@ export function Ceremony(): ReactNode {
     setChoice(EMPTY_CHOICE);
     // The ticks belong to the person who made them and to nobody after.
     setAffirmed([]);
+    // And the next patient starts at the front of the form, not where the
+    // last one stopped reading.
+    setDb4Page(FIRST_DB4_PAGE);
     setAssignorBusy(false);
     setAssignorError(false);
     autoLockedRef.current = null;
@@ -1264,6 +1294,22 @@ export function Ceremony(): ReactNode {
     resetConfirmLock();
     setPushed(session);
     pushedIdRef.current = session.id;
+    /*
+     * LATCHED HERE, ONCE, AS THE CEREMONY BEGINS (Carl, 27 Sep 2026: *"why is
+     * the signing screen step 2 of 2"*).
+     *
+     * `detailsCheck` IS A LIVE VALUE AND MUST NOT BE READ LIVE. The server
+     * now answers it from THIS session's own `detailsConfirmedAt`, so the
+     * moment the patient finishes K-P1 it flips from `required` to
+     * `confirmed_today` — and a chip computed from it then decided, halfway
+     * through, that K-P1 had never been part of the route. The patient
+     * answered "Step 1 of 3", pressed Continue, and landed on "Step 1 of 2".
+     *
+     * It is the same mistake as reading `particularsLockedAt` live, one screen
+     * to the left, and the same answer: the route is a fact about how this
+     * ceremony STARTED, so it is captured when it starts and never again.
+     */
+    setKp1Skipped(session.detailsCheck === 'confirmed_today');
     setStep('check-details');
     if (session.state === 'pushed') {
       void setTabletSessionState(session.id, 'reading').catch(() => undefined);
@@ -2245,8 +2291,15 @@ export function Ceremony(): ReactNode {
       ceremonySequence({
         pushed: pushed !== null,
         particularsLockedAtVerification: lockedBeforeVerification,
+        /*
+         * ONLY ONCE K-P1 IS BEHIND THE PATIENT. While they are standing on it
+         * the skip has not happened and may not: the fetch can fail and the
+         * ceremony stays here with all three steps to run. `step` is the fact,
+         * not the intention.
+         */
+        detailsAlreadyConfirmed: kp1Skipped,
       }),
-    [pushed, lockedBeforeVerification],
+    [pushed, lockedBeforeVerification, kp1Skipped],
   );
   /**
    * `undefined` ON EVERY SCREEN THAT IS NOT A STEP — booting, pairing, the
@@ -2478,6 +2531,13 @@ export function Ceremony(): ReactNode {
               re-tick five rows to look at their address again. One `setStep`,
               no fetch, and `confirm-details` is not re-posted on the way back.
             */
+            /*
+              LEAVING K-3 BACKWARDS RESETS THE FORM TO ITS FIRST PAGE. Back out
+              of the step and into it again is a fresh read of the document, so
+              it starts where a document starts; coming back from the PEN is
+              the other direction and keeps 2C, which is why that reset is here
+              and not in the `signature` case below.
+            */
             onBack={
               pushed
                 ? () => {
@@ -2491,11 +2551,15 @@ export function Ceremony(): ReactNode {
                       changed one posts once.
                     */
                     resetConfirmLock();
+                    setDb4Page(FIRST_DB4_PAGE);
                     setStep('check-details');
                   }
                 : particularsLocked
                   ? undefined
-                  : () => setStep('assignor')
+                  : () => {
+                      setDb4Page(FIRST_DB4_PAGE);
+                      setStep('assignor');
+                    }
             }
             /*
               THE SECOND OPTION EXISTS ONLY ON A PUSHED ONGOING AGREEMENT. The
@@ -2507,6 +2571,14 @@ export function Ceremony(): ReactNode {
             onDeclineEnduring={pushed ? declineEnduring : undefined}
             blueprintPanels={testDevice}
             step={stepPosition}
+            /*
+              THE THREE PAGES OF THE DB4 (Carl, 27 Sep 2026). The state is the
+              ceremony's because K-4's Back has to land on the page the patient
+              left; K-3 ignores both props when the session carries no print
+              record, and draws the one page it always did.
+            */
+            page={db4Page}
+            onPage={setDb4Page}
             sessionId={pushed?.id ?? null}
             patientId={pushed?.patientId ?? null}
             onSeeReception={leave}

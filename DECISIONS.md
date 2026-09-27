@@ -2019,6 +2019,89 @@ different device class, or a different tenant -- that would be a different
 product, and would deserve its own app.
 
 
+## D-2026-09-27-03 - The kiosk is designed against a 10-11 inch tablet in landscape, in large print
+
+**Date:** 27 September 2026. **Decided by:** Carl, from a live tablet: *"we
+need to make the content legible for an old person to see. So lets see how we
+can format the page to make the font bigger and easier to read."* Two further
+rulings the same afternoon, on the first cut: *"on Step 2 page 1 or 3 can we
+put the Practice details on the left and the Patients on the right"* and *"can
+you format it little better space between the header text and the details
+below."*
+
+**The decision.** Three things that had never been written down anywhere -- not
+in this file, not in `TODO.md`, not in the kiosk README -- are now settled.
+
+1. **The device.** The kiosk is designed against a **10-11 inch tablet in
+   landscape**, design target **~1180x820 CSS px**. It must remain usable at
+   **820x1180 portrait** -- the same tablet turned over -- and must not affect
+   the portal's or the console's rendering at any width.
+2. **The type scale.** Large print. Body text **20px** (1.25rem), rising to
+   **22px** where the words are the operative words of the agreement. **Nothing
+   on a patient-facing screen below 18px** (1.125rem) -- a hard floor, not a
+   guideline. Headings **28-32px**. Touch targets **at least 44x44 CSS px**
+   (WCAG 2.2 **AAA** 2.5.5, chosen over the AA minimum of 24px because of who
+   is standing at this device).
+3. **2A reads across, not down.** On page 1 of 3 of the DB4 the practice's
+   details are the left column and the patient's are the right. The form's
+   heading lines stay full width above both, separated from them by space and
+   a rule. The date of this agreement and who is signing are neither, so they
+   are a full-width band below both columns. In portrait the two columns stack,
+   practice first.
+
+**Why the floor is a variable and not a convention.** `app/tokens.css` already
+carries a scale (`--text-xs` .. `--text-2xl`); it is the CONSOLE's, it bottoms
+out at 12px and its base is 14px, and raising it would have restyled every
+staff surface in the product. `kiosk.module.css` never used it -- it wrote rem
+literals, and forty of them had drifted to 11px and 13px. The kiosk now
+declares its own five (`--kiosk-text-note` 18 / `-body` 20 / `-lead` 22 /
+`-h3` 24 / `-h2` 28) at the shell, and every rule in the file takes one. A
+floor written in a comment is a floor the fortieth rule forgets; a floor that
+is the smallest token in the scale is one a reviewer can see missing from a
+diff.
+
+**Why these numbers.** 20px body at arm's length on a tablet held or propped on
+a counter is roughly what 14px is at a desk. 18px is the point below which a
+reader with presbyopia and no glasses to hand starts guessing rather than
+reading, and a bulk-billing consent ceremony is the wrong place to guess. 44px
+is the AAA target size; the AA minimum of 24px is written for pointing devices
+and not for an unwell person's thumb.
+
+**What this cost, and where.** The footer's audit identifiers (build, device,
+session, patient and print-job ids) were 11 and 13px and are now 18px, so the
+row is taller and wraps sooner on a pushed session. That was the alternative to
+a floor with an exception in it on its first day. The 560px query that dropped
+the services table to 14px is gone: the screen with least room is not the
+screen to make hardest to read, so the table's fixed columns give a character
+back to the description and the type does not move.
+
+**The one exemption, and it is not a patient surface.** `.db4Payload`, the
+masked JSON block in the K-3 rail, stays at 11px. It renders only behind
+`showsWaitingList`, on a test device, under a permanent "TEST DEVICE" banner,
+and no patient can reach it. Setting a JSON dump at 18px in a 320px rail would
+make it useless to the only person who ever sees it and legible to nobody.
+
+**The breakpoints are the device's.** 900px, 600px and 560px came over from the
+portal and were nobody's device. There are now two, and both sit in the gap
+between 820 and 1180 so the same tablet crosses exactly one of them when it is
+rotated: **1023px**, below which the 320px rail no longer fits beside a 620px
+column and the columns stack; and **767px**, below which we are no longer on
+the device we design for and controls that sit beside their text go under it
+at full width.
+
+**What would reopen it.** A different device class -- the 7-inch tablets some
+practices already own, or a wall-mounted screen read from two metres -- would
+need its own target and its own scale, and the tokens are where that would be
+expressed. A read-aloud or a patient-controlled text-size control (both still
+outstanding from C2, REQ-NFR-05/REQ-VUL-08) would change what the floor is FOR,
+though not that there is one. Nothing in the regime moves it: this is an
+accessibility decision, not a statutory one.
+
+**Where it is enforced:** `apps/web/app/kiosk/kiosk.module.css` (the
+`--kiosk-text-*` block on `.screen, .inactivity`, and every rule below it),
+`apps/web/app/kiosk/README.md` section "The device and the type scale".
+
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
@@ -2066,3 +2149,4 @@ product, and would deserve its own app.
 | 17 Sep | One version per machine at four layers; a LAN practice shares the host and not the queue, because one fixed-path port overwrites; reconciliation alarms on a printed form that never became a record; a guard rail that fails open is worse than none | **D-2026-09-17-02 above** |
 | 27 Sep | The patient reads their own DB4 on the tablet with the cost on it; the Medicare number is masked there and printed in full on the form (amends -14-03 for the screen only); DocuSign-style PDF signing considered and refused | **D-2026-09-27-01 above** |
 | 27 Sep | A no-PMS practice gets the `standard` profile (every surface except db4), closing PRACTICE-SURFACES section 6b; no second kiosk URL, because the discriminator is the session and not the practice | **D-2026-09-27-02 above** |
+| 27 Sep | The kiosk is designed for a 10-11in tablet in landscape (~1180x820), large print: 20px body, 22px for the operative words, an 18px floor on every patient surface, 28-32px headings, 44x44 targets; 2A reads practice-left/patient-right | **D-2026-09-27-03 above** |

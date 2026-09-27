@@ -195,6 +195,167 @@ Tests: `a_pushed_ceremony_counts_its_own_three_steps_and_never_announces_four`,
 `the_thank_you_screen_is_still_a_word_rather_than_a_number`
 (`rules/ceremony-steps.test.tsx`).
 
+## The DB4 is read as three pages (Carl, 27 September 2026)
+
+> "I think we need to break this down into maybe four pages from step 2. 2A:
+> Date / time and header info to identify the patient. 2B: Dr seen and items in
+> the table. 2C: legal blurb and tick-boxes for approval. Then continue with
+> sign-off."
+
+One DB4 on a tablet is more than anybody reads at once, and a patient who
+scrolls past the service rows to reach the tick boxes has not read the service
+rows. So where the lock returns a `Db4FormView`, K-3 draws it a third at a time.
+
+| Page | What is on it | Which affirmation |
+|---|---|---|
+| 2A | The form's heading lines, reference, date of service, servicing location, the patient block, the date of this agreement, who is signing | none |
+| 2B | The provider(s) and the services table, with the amounts as printed | `episodic_details_correct_v1` |
+| 2C | The privacy notice, the assignment statements, the remaining ticks, the tags, and Continue to sign | everything else |
+
+**They are PAGES WITHIN A STEP, not steps.** Carl's own naming is the ruling:
+the chip keeps saying "Step 2 of 3" / "Step 3 of 4" across all three, because
+`rules/ceremony-steps.ts` counts the *ceremony*. The page line is the screen's
+own and sits by the heading, never in the chip.
+
+- **2A is the FORM's header reproduced, not a second identity check.** The
+  patient may already have done K-2 or K-P1, and there is no control on 2A at
+  all.
+- **Where each affirmation is read is `rules/db4-pages.ts`** — presentation,
+  never the instrument. `agreement-templates.json` is not edited: those are the
+  operative words of a contract. An **unknown key defaults to 2C** rather than
+  disappearing, because a dropped affirmation is a Continue that will not open
+  with nothing on screen to explain it.
+- **Hard rule 2 did not move.** `outstanding` still spans all three pages, and
+  a box waiting on a page the patient is not on gets a control that *takes*
+  them to it — the blocked primary stays a real `button[disabled]` with no
+  handler.
+- **The page is the ceremony's state**, so K-4's Back lands on 2C rather than
+  at the top of the form. Back *out of* K-3 resets it to 2A.
+- **A session with no print record is not paginated at all** — the path does
+  not run (D-2026-09-27-02), and neither does it for a caller that hands K-3 no
+  page state.
+- **Test device only:** the print job id and the source SHA-256 in the footer
+  beside the session and patient ids, and a rail panel with the masked
+  `db4Form` exactly as the tablet received it. The DB4 Print Record itself
+  stays unreachable from a tablet — it carries the unmasked card number.
+
+Tests: `db4-pages.test.tsx` — `a_session_with_no_print_record_is_never_paginated`,
+`every_real_statement_key_lands_on_exactly_one_page`,
+`the_pages_are_not_steps_and_the_chip_does_not_move`,
+`continue_to_sign_stays_shut_while_a_box_on_another_page_is_unticked`,
+`back_from_the_signature_lands_on_the_page_the_patient_left`.
+
+## The device and the type scale (Carl, 27 September 2026)
+
+> "we need to make the content legible for an old person to see. So lets see
+> how we can format the page to make the font bigger and easier to read."
+
+Until this afternoon no device and no type scale were written down anywhere.
+The breakpoints in `kiosk.module.css` were the portal's -- 900, 600 and 560 --
+and the sizes were rem literals that had drifted to 11px and 13px. Both are now
+decided (D-2026-09-27-03).
+
+**The device.** A **10-11 inch tablet in landscape**, design target
+**~1180x820 CSS px**. It stays usable at **820x1180 portrait**, which is the
+same tablet turned over.
+
+**The scale.** Declared once, as custom properties on the shell, and used by
+every rule in the file. The smallest of them IS the floor, which is what makes
+the floor enforceable rather than a convention -- a literal `rem` anywhere
+below that block is now a thing a reviewer can see in a diff.
+
+| Token | px | What wears it |
+|---|---|---|
+| `--kiosk-text-note` | 18 | labels, hints, captions, tags, the step chip, the footer. **The floor** -- nothing a patient can see goes below it |
+| `--kiosk-text-body` | 20 | everything a patient reads as content: values, copy, buttons, inputs, table cells |
+| `--kiosk-text-lead` | 22 | the **operative words** -- the assignment statements, the affirmations they tick, the consent sentence, K-4's who-is-signing line |
+| `--kiosk-text-h3` | 24 | a block's own heading inside a page |
+| `--kiosk-text-h2` | 28 | the screen's heading |
+
+40px and 32px (`.h1`, `.h1Small`, the pairing code) stay literals: single
+display lines on one screen each, with nothing to agree with.
+
+**Touch targets are 44x44 or more** -- WCAG 2.2 **AAA** 2.5.5, not the AA
+minimum of 24px, because of who is standing at this device. The affirmation
+checkbox went from 28x28 to 44x44 with it; the ceremony's own actions are 56
+and 72px, and `leave` is the smallest thing on the device at exactly 44.
+
+**The two breakpoints, and what each is for.** Both sit in the gap between 820
+and 1180, so the tablet crosses exactly one of them when somebody rotates it.
+
+| Breakpoint | Why |
+|---|---|
+| `max-width: 1023px` | Two columns need 620 + 320 + 40 + 80 of gutter. Below 1024 they do not fit, so the rail goes under the column and 2A's two columns stack. Landscape is above it, portrait below |
+| `max-width: 767px` | Smaller than the device we design for -- a 7-inch tablet or a phone. Controls that sit beside their text go under it at full width, so the target gets BIGGER on the smallest screen. Nothing shrinks |
+
+**The one rule still below the floor** is `.db4Payload`, the masked JSON block
+in K-3's rail. It renders only behind `showsWaitingList`, on a test device,
+under a permanent banner; it is not a patient surface, and 18px in a 320px rail
+would make it useless to the only person who sees it.
+
+**What it cost.** The footer's audit identifiers are 18px now rather than 11 and
+13, so the row is taller and wraps sooner on a pushed session carrying a full
+patient uuid. It wraps into the grid's last row, which takes the height off the
+scroller above it -- it never overlaps anything.
+
+### 2A reads across, not down
+
+> "on Step 2 page 1 or 3 can we put the Practice details on the left and the
+> Patients on the right." / "can you format it little better space between the
+> header text and the details below."
+
+At 20px the form's header block ran well past a landscape screen of stacked
+rows on a page with half its width empty. So on 2A:
+
+- **The masthead is full width** -- the form's heading lines and the
+  provenance line -- with a rule and `--s6` of space under it, so a centred
+  block of statutory text does not run into a left-aligned "Form reference".
+- **Left: the practice.** The form reference, the date of service, and the
+  servicing location with its address.
+- **Right: the patient.** Name, date of birth, address, record number, the
+  masked card number and its note, IRN.
+- **Below both, full width: the agreement's own facts** -- the date of THIS
+  agreement and who is signing. They are neither practice nor patient, they are
+  not on the practice's paper, and while they sat under the left column they
+  inherited whatever gap the taller right column left behind them, which reads
+  as a rendering fault rather than as a layout.
+- **A hairline between the columns**, so the shorter of the two plainly ENDS
+  rather than having a hole in it. Gone when they stack.
+- **DOM order is practice then patient and there is no `order` property.**
+  Below 1024px the grid becomes one track and they stack in that same order, so
+  the reading order, the tab order and what a screen reader says are the same
+  sentence at both widths.
+
+Measured on the real stylesheet at both targets: 1180x820 gives two 502px
+columns; 820x1180 stacks them; `document.documentElement.scrollWidth -
+clientWidth` is **0** at both, and so is `main`'s.
+
+### The services table at 20px
+
+Four columns of 20px type in 723px of portrait tablet is the hardest case on
+the device. The three short columns are now sized in `ch` from what actually
+goes in them -- 14ch date, 9ch item, 12ch benefit -- and the description takes
+everything left over; percentages did the opposite as the type grew, handing
+the date column 200px it had no use for and squeezing the only cell that wraps.
+`table-layout: fixed` and `overflow-wrap: anywhere` are still what makes "no
+horizontal scroll" structural rather than a hope.
+
+Measured with the worst row we have (the 180-character twelve-lead ECG
+description, print job `AOBTESTLONGDESCRIPTION`): 1180x820 gives the
+description 694px and no overflow; 820x1180 gives it 374px, a five-line cell,
+and no overflow.
+
+### The shortcut to an outstanding tick could come apart from its message
+
+"Continue to sign -- 1 box still to tick" with no way to reach the box is
+CLAUDE.md section 7's "directions to a screen". The control that fixes it
+(`go-to-outstanding-tick`) was rendering all along, but it was the third item
+in `.actions`, which wraps: on an ordinary tablet's 1085px row all three sat
+side by side, and in the 320px rail a TEST device draws the actions in they
+stacked under two blueprint panels and the third landed below the fold. It is
+now a child of the same box as the blocked control, directly under it, and
+cannot wrap away from it at any width.
+
 ## Return to the start when nobody is there (Carl, 4 September 2026)
 
 > "Return to the start when untouched for N minutes -- a per-practice setting,

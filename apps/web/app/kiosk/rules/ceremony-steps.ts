@@ -86,11 +86,45 @@ export interface CeremonyRoute {
    * `a_walk_up_with_locked_particulars_forecasts_four_at_k2_then_narrows_to_three`.
    */
   particularsLockedAtVerification: boolean;
+  /**
+   * K-P1 HAS ALREADY BEEN ANSWERED TODAY, so this push will not run it (Carl,
+   * 27 September 2026, from a live tablet: *"never goes to step 1"*).
+   *
+   * THE SERVER DECIDES IT, NOT THE TABLET. `tablet-sessions.service.ts` sends
+   * `detailsCheck: 'confirmed_today'` when this PATIENT — not this agreement —
+   * already ticked their details at this practice today and disputed nothing.
+   * Its ruling of 11 September: the case it exists for is a second agreement
+   * for the same visit, and asking twice in one visit is the thing it removes.
+   *
+   * IT MAKES THE PUSH A TWO-STEP CEREMONY: the particulars, then the pen. Left
+   * out of this file, such a push numbers itself as the ordinary three-step
+   * push and opens the patient on "Step 2 of 3" with no step one ever shown —
+   * the original defect, one number to the left. IGNORED ON A WALK-UP, which
+   * has no K-P1 to skip.
+   *
+   * ONLY ONCE K-P1 IS ACTUALLY BEHIND THE PATIENT. The skip is not certain
+   * when the push lands: the agreement is fetched first, and A FAILED FETCH
+   * FALLS BACK TO ASKING, leaving the ceremony on K-P1 with all three steps to
+   * run (see the skip effect in `Ceremony.tsx`). So the caller passes this as
+   * false while the patient is still standing on K-P1, and the chip reads
+   * "Step 1 of 3" on the honest fallback path rather than refusing to number a
+   * screen the patient can see. Named test:
+   * `a_push_whose_details_were_confirmed_earlier_today_runs_two_steps_and_starts_at_one`.
+   */
+  detailsAlreadyConfirmed?: boolean;
 }
 
 const WALK_UP: CeremonySequence = ['verify', 'assignor', 'particulars', 'signature'];
 const WALK_UP_LOCKED: CeremonySequence = ['verify', 'particulars', 'signature'];
 const PUSHED: CeremonySequence = ['check-details', 'particulars', 'signature'];
+/**
+ * A PUSH THAT WILL NOT RUN K-P1. Rare from 27 September 2026 — Carl's ruling
+ * that the details are confirmed once PER AGREEMENT means a fresh push always
+ * asks — but a resumed session whose details are already answered still lands
+ * past it, and a route this file has not been told about is the defect
+ * returning.
+ */
+const PUSHED_DETAILS_DONE: CeremonySequence = ['particulars', 'signature'];
 
 /**
  * The steps this route will run.
@@ -102,7 +136,7 @@ const PUSHED: CeremonySequence = ['check-details', 'particulars', 'signature'];
  * a fourth route with a chip of its own.
  */
 export function ceremonySequence(route: CeremonyRoute): CeremonySequence {
-  if (route.pushed) return PUSHED;
+  if (route.pushed) return route.detailsAlreadyConfirmed ? PUSHED_DETAILS_DONE : PUSHED;
   return route.particularsLockedAtVerification ? WALK_UP_LOCKED : WALK_UP;
 }
 

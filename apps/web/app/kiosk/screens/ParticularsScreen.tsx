@@ -135,17 +135,55 @@
  * 2026 and this screen draws none — `Db4FormView` carries no signature region
  * at all, which is the contract agreeing with the rule rather than this file
  * filtering for it. The assignor's own mark is taken on K-4, where it belongs.
+ *
+ * AND THE FORM IS READ AS THREE PAGES, NOT ONE (Carl, 27 September 2026, from a
+ * live tablet: *"I think we need to break this down into maybe four pages from
+ * step 2. 2A: Date / time and header info to identify the patient. 2B: Dr seen
+ * and items in the table. 2C: legal blurb and tick-boxes for approval. Then
+ * continue with sign-off."*). A whole DB4 on one tablet page is more than
+ * anybody reads at once, and a patient who scrolls past the service rows to
+ * reach the tick boxes has not read the service rows.
+ *
+ * THEY ARE PAGES WITHIN A STEP AND THE CHIP DOES NOT MOVE. Carl's own naming —
+ * 2A, 2B, 2C — is the ruling: `rules/ceremony-steps.ts` counts the CEREMONY and
+ * keeps saying "Step 2 of 3" or "Step 3 of 4" across all three, because a page
+ * of a document is not a step of a ceremony. The page line under the heading is
+ * this screen's own and says so in its own words.
+ *
+ * THE SPLIT RUNS ONLY WHERE THERE IS A FORM TO SPLIT, and "only" means the path
+ * does not run — the same rule the DB4 block itself follows (D-2026-09-27-02).
+ * A session with no print record has one page of rows and no pagination at all,
+ * exactly as before; so does a caller that hands this screen no page state,
+ * because the pages have to be remembered somewhere the screen outlives.
+ * `Ceremony.tsx` holds them, which is what lets K-4's Back land the patient
+ * back on 2C rather than at the top of the form. Named tests:
+ * `a_session_with_no_print_record_is_never_paginated` and
+ * `the_pages_are_not_steps_and_the_chip_does_not_move`.
+ *
+ * WHAT THE PAGES DO NOT CHANGE IS THE GATE (hard rule 2, REQ-REG-06). The
+ * outstanding count still spans all three pages, Continue-to-sign is still shut
+ * until every affirmation anywhere is ticked, and a box waiting on a page the
+ * patient is not on gets a control that TAKES them to it rather than a sentence
+ * telling them to go looking (CLAUDE.md §7). Which affirmation is read on which
+ * page is `rules/db4-pages.ts` — presentation, never the instrument.
  */
 
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode, type Ref } from 'react';
 import type { AgreementType } from '@aobplatform/domain';
 import type { Db4FormView } from '@aobplatform/contracts';
 import { Blueprint, Kicker, Screen, Tag, CeremonyHeading } from '../components/Chrome';
-import { GuardedButton, SecondaryButton } from '../components/Buttons';
+import { GuardedButton, PrimaryButton, SecondaryButton } from '../components/Buttons';
 import { Checkbox } from '../components/Field';
 import { shortHash } from '../components/SignatureControl';
 import type { SignatureValidation } from '../rules/signature-gate';
 import type { StepNumber } from '../rules/ceremony-steps';
+import {
+  db4PagePosition,
+  nextDb4Page,
+  previousDb4Page,
+  statementPage,
+  type Db4Page,
+} from '../rules/db4-pages';
 import { strings } from '../strings';
 import styles from '../kiosk.module.css';
 
@@ -221,6 +259,8 @@ export function ParticularsScreen({
   onDeclineEnduring,
   blueprintPanels = false,
   step,
+  page,
+  onPage,
   sessionId,
   patientId,
   onSeeReception,
@@ -287,6 +327,24 @@ export function ParticularsScreen({
    * is why it cannot number itself (Carl, 27 Sep 2026).
    */
   step?: StepNumber;
+  /**
+   * WHICH PAGE OF THE DB4 IS ON SCREEN, AND HOW TO TURN IT (Carl, 27 Sep 2026).
+   *
+   * THE STATE IS THE CEREMONY'S, NOT THIS SCREEN'S, and that is structural
+   * rather than stylistic. K-4's Back returns to K-3 and must land on 2C — the
+   * page the patient left — so the page has to be remembered by something that
+   * outlives this component, and `Ceremony.tsx` is the only thing that does.
+   * Named test: `back_from_the_signature_lands_on_the_page_the_patient_left`.
+   *
+   * BOTH ABSENT IS THE OLD SCREEN, on the reasoning this file already applies
+   * to Back, the enduring decline and the affirmations: a screen draws a
+   * control when it is handed a handler. Without them the whole form is one
+   * page, which is also what a session with no print record gets — a caller
+   * that forgets them loses pagination and nothing else, because every
+   * affirmation is then on the one page and the gate is unchanged.
+   */
+  page?: Db4Page;
+  onPage?: (next: Db4Page) => void;
   /** The pushed session's own id — an audit/testing aid in the footer. See `Chrome.tsx`'s `Screen`. */
   sessionId?: string | null;
   /**
@@ -339,35 +397,202 @@ export function ParticularsScreen({
     (service) => (service.benefitAssigned ?? '').trim().length > 0,
   );
 
+  /**
+   * IS THIS SCREEN PAGINATED AT ALL — asked once, as ONE object, so nothing
+   * below can be half-paginated (Carl, 27 Sep 2026).
+   *
+   * THREE FACTS HAVE TO HOLD AND ALL THREE ARE REAL. There must be a form to
+   * split (D-2026-09-27-02 — a practice with no PMS prints none), and there
+   * must be somewhere to keep the page, which is the ceremony rather than this
+   * component because K-4's Back has to land on the page the patient left. A
+   * null here is the screen exactly as it was before 27 September 2026: one
+   * page, every block, every tick box, no page line and no page turns.
+   */
+  const paged = db4 && page && onPage ? { page, onPage } : null;
+
+  /**
+   * WHICH BLOCKS THIS RENDER DRAWS. `true` for everything when the screen is
+   * not paginated, which is what keeps the unpaginated markup byte-for-byte
+   * what it was — the branch is not taken rather than taken and agreeing.
+   */
+  const on = (target: Db4Page): boolean => paged === null || paged.page === target;
+
+  /**
+   * THE AFFIRMATIONS THIS PAGE CARRIES, and every one of them still counts
+   * towards `outstanding` above (hard rule 2, REQ-REG-06).
+   *
+   * `rules/db4-pages.ts` DECIDES, NOT THIS FILE, and an unknown key lands on
+   * the legal page rather than disappearing — a dropped tick is a Continue
+   * that will not open with nothing on screen to explain it. 2A carries none
+   * by construction: no statement maps to it.
+   */
+  const pageStatements = paged
+    ? statements.filter((statement) => statementPage(statement.key) === paged.page)
+    : statements;
+
+  /**
+   * AN OUTSTANDING TICK THE PATIENT CANNOT SEE FROM HERE (CLAUDE.md §7 —
+   * shortcuts to the answer, not directions to a screen).
+   *
+   * The blocked Continue already says HOW MANY are left and must stay
+   * genuinely unpressable — `GuardedButton`'s blocked branch has no handler at
+   * all, which is the whole of hard rule 2 on this screen. So the count stays
+   * where it is and this is the separate control beside it that TAKES the
+   * patient to the first box still waiting. Null when there is nothing
+   * outstanding anywhere else, in which case no control is drawn.
+   */
+  const strandedTick = paged
+    ? (statements.find(
+        (statement) =>
+          !affirmed.includes(statement.key) && statementPage(statement.key) !== paged.page,
+      ) ?? null)
+    : null;
+
+  /**
+   * SIGN-OFF IS ON THE LAST PAGE AND NOWHERE ELSE. On 2A and 2B Continue turns
+   * the page; a control there that read "Continue to sign" would tell somebody
+   * they were about to sign a document they had read a third of.
+   */
+  const nextPage = paged ? nextDb4Page(paged.page) : null;
+  const previousPage = paged ? previousDb4Page(paged.page) : null;
+
+  /**
+   * FOCUS FOLLOWS THE PAGE (WCAG 2.2 AA, and CLAUDE.md §6 — this is a patient
+   * surface). A page turn that swaps the content under a stationary cursor is
+   * a page turn a screen-reader user is never told about, so focus moves to
+   * the new page's heading, which is the one element every page has exactly
+   * one of (`Db4Document`'s `pageHeadingRef`).
+   *
+   * NOT ON ARRIVAL, ONLY ON A TURN. Stealing focus the moment K-3 draws would
+   * skip the ceremony's own heading and the by-line above it, which are the
+   * two lines a patient reads first. The ref below remembers what was last
+   * drawn so the first render is left alone; it is memory inside one React
+   * component, not a write to any storage surface (CLAUDE.md §7).
+   */
+  const pageHeadingRef = useRef<HTMLHeadingElement>(null);
+  const drawnPage = useRef<Db4Page | null>(null);
+  const currentPage = paged?.page ?? null;
+  useEffect(() => {
+    const previous = drawnPage.current;
+    drawnPage.current = currentPage;
+    if (currentPage === null || previous === null || previous === currentPage) return;
+    pageHeadingRef.current?.focus();
+  }, [currentPage]);
+
+  /**
+   * WHO SIGNS, AND THE ONE LINE UNDER IT. Composed once because it is drawn in
+   * two places that are not the same place: on a DB4 screen it joins the date
+   * of this agreement in the full-width band under 2A's two columns, and on
+   * the unpaginated walk-up screen it follows the six particulars rows exactly
+   * as it always has. Writing it twice would be two copies of a sentence about
+   * who is party to a contract, and the copy is the one that rots.
+   *
+   * K-5 IS SKIPPED ON A LOCKED AGREEMENT, so this is where the fact lands —
+   * and it points at a person rather than at a control, because there is
+   * nothing here for the patient to do (Carl, 4 Sep 2026).
+   */
+  const assignorFacts = (
+    <>
+      <Row
+        label={strings.particulars.assignor}
+        value={
+          view.assignorIsPatient
+            ? strings.particulars.assignorIsPatient
+            : strings.particulars.assignorIsOther(
+                view.assignorName ?? '',
+                view.assignorRelationship ?? '',
+              )
+        }
+      />
+      {view.particularsLocked ? (
+        <p className={styles.fieldHint} data-testid="assignor-locked-note">
+          {strings.particulars.assignorLockedNote}
+        </p>
+      ) : null}
+    </>
+  );
+
   const actions = (
     <div className={styles.actions}>
-      {onBack ? (
+      {/*
+        BACK IS THE PAGE'S FIRST AND THE CEREMONY'S SECOND. On 2B and 2C there
+        is a page behind this one, so Back turns back to it — one call to the
+        ceremony's page setter, no fetch, nothing on the agreement moves, which
+        is the same thing Back has always been on this device. On 2A, and on
+        every unpaginated screen, it is the ceremony's own Back and is not
+        drawn at all when there is nothing behind the step (a locked walk-up
+        skipped K-5).
+      */}
+      {previousPage && paged ? (
+        <SecondaryButton
+          label={strings.chrome.backAction}
+          onPress={() => paged.onPage(previousPage)}
+          testId="db4-page-back"
+        />
+      ) : onBack ? (
         <SecondaryButton label={strings.chrome.backAction} onPress={onBack} testId="particulars-back" />
       ) : null}
-      <div className={styles.grow}>
-        <GuardedButton
-          label={strings.particulars.continueToSign}
-          state={
-            readyToSign
-              ? { disabled: false }
-              : {
-                  disabled: true,
-                  disabledLabel:
-                    validation.state === 'valid'
-                      ? strings.particulars.continueNotAffirmed(outstanding)
-                      : strings.particulars.continueNotReady,
-                }
-          }
-          onPress={onContinue}
-          testId="continue-to-sign"
-        />
+      <div className={`${styles.grow} ${styles.primaryStack}`}>
+        {nextPage && paged ? (
+          <PrimaryButton
+            label={strings.particulars.db4.continueToNextPage}
+            onPress={() => paged.onPage(nextPage)}
+            testId="db4-page-continue"
+          />
+        ) : (
+          <GuardedButton
+            label={strings.particulars.continueToSign}
+            state={
+              readyToSign
+                ? { disabled: false }
+                : {
+                    disabled: true,
+                    disabledLabel:
+                      validation.state === 'valid'
+                        ? strings.particulars.continueNotAffirmed(outstanding)
+                        : strings.particulars.continueNotReady,
+                  }
+            }
+            onPress={onContinue}
+            testId="continue-to-sign"
+          />
+        )}
+        {/*
+          AND WHERE THE OUTSTANDING BOX IS ON ANOTHER PAGE, THE WAY TO IT.
+          Only beside the blocked sign-off control, and only while the lock
+          itself is not what is blocking — a patient whose particulars are
+          still validating has nothing to tick and nowhere useful to be sent.
+
+          UNDER THE MESSAGE, NOT NEXT TO IT IN THE ROW (Carl, 27 Sep 2026:
+          "there is NO visible control beside it"). It WAS rendering; it was
+          the third item in a wrapping flex row, and in the 320px rail a TEST
+          device draws the actions in, the three controls stack under two
+          blueprint panels and the third one lands below the fold. On an
+          ordinary tablet the same row is 1085px wide and all three sit side
+          by side — which is why it looked fine in one place and absent in
+          another. A shortcut that can be separated from the message naming
+          its reason is CLAUDE.md §7's "directions to a screen", so it is now
+          a child of the same box as the control it explains and cannot wrap
+          away from it at any width.
+        */}
+        {!nextPage && strandedTick && validation.state === 'valid' ? (
+          <SecondaryButton
+            label={strings.particulars.db4.goToOutstanding}
+            onPress={() => paged?.onPage(statementPage(strandedTick.key))}
+            testId="go-to-outstanding-tick"
+          />
+        ) : null}
       </div>
       {/*
         AFTER THE PRIMARY, NEVER BEFORE IT. Signing is what this screen is for;
         the alternative is real and is offered, and it does not compete for the
         eye of somebody who already knows what they want.
+
+        ON THE SIGN-OFF PAGE ONLY, for the same reason Continue changes there:
+        declining is an answer to the whole agreement, and it belongs beside
+        the control that accepts it rather than on a page of the form.
       */}
-      {isEnduring && onDeclineEnduring ? (
+      {!nextPage && isEnduring && onDeclineEnduring ? (
         <SecondaryButton
           label={strings.particulars.enduringDeclineAction}
           onPress={onDeclineEnduring}
@@ -384,6 +609,20 @@ export function ParticularsScreen({
       context={strings.particulars.footer}
       sessionId={sessionId}
       patientId={patientId}
+      /*
+        THE PRINT RUN'S OWN IDS, BESIDE THE OTHER AUDIT IDS (Carl, 27 Sep 2026
+        — "show this in the footer with the other audit ids").
+
+        TEST DEVICES ONLY, and the gate is here rather than in `Screen`: it is
+        the same `blueprintPanels` flag the parser template version and the
+        "ready to sign" panel already sit behind, and on a patient's tablet an
+        internal id is a developer's note. Identifiers, never content (hard
+        rule 9), and neither is a link — the DB4 Print Record itself carries
+        the unmasked card number and stays on a workstation (hard rule 1,
+        `packages/contracts/src/db4-form-view.ts`).
+      */
+      printJobId={blueprintPanels ? (db4?.printJobId ?? null) : null}
+      sourceSha256={blueprintPanels ? (db4?.sourceSha256 ?? null) : null}
       onLeave={onSeeReception}
     >
       <div className={blueprintPanels ? styles.twoColumn : styles.oneColumn}>
@@ -414,6 +653,22 @@ export function ParticularsScreen({
                 {view.templateVersion ? strings.particulars.wordingVersion(view.templateVersion) : ''}
               </p>
             ) : null}
+            {/*
+              WHICH PAGE OF THE FORM THIS IS, AND IT IS NOT THE STEP CHIP
+              (Carl, 27 Sep 2026). The chip in the header counts the CEREMONY
+              and says the same number on all three pages, because pages within
+              a step are not steps — that is `rules/ceremony-steps.ts` and
+              nothing here touches it. This line counts the DOCUMENT, and it
+              sits by the screen's own heading where the document is.
+            */}
+            {paged ? (
+              <p className={styles.versions} data-testid="db4-page-of">
+                {strings.particulars.db4.pageOf(
+                  db4PagePosition(paged.page).position,
+                  db4PagePosition(paged.page).total,
+                )}
+              </p>
+            ) : null}
           </div>
           <div className={styles.grid}>
             {/*
@@ -434,8 +689,35 @@ export function ParticularsScreen({
             */}
             {db4 ? (
               <>
-                <Db4Document form={db4} showParserTemplate={blueprintPanels} />
-                <Row label={strings.particulars.agreementDate} value={view.agreementDate} />
+                <Db4Document
+                  form={db4}
+                  showParserTemplate={blueprintPanels}
+                  page={paged?.page}
+                  pageHeadingRef={pageHeadingRef}
+                />
+                {/*
+                  THE AGREEMENT'S OWN FACTS, FULL WIDTH UNDER BOTH COLUMNS
+                  (Carl, 27 Sep 2026, on the first cut of the two-column 2A).
+
+                  THEY ARE NEITHER PRACTICE NOR PATIENT. The date of THIS
+                  agreement is not on the practice's paper at all — it is this
+                  agreement's own particular — and who is signing is a fact
+                  about the party, not about the person's record. Sitting at
+                  the foot of the left column they read as the practice's, and
+                  they inherited whatever gap the taller right column left
+                  behind them, which looked like a rendering fault. A band of
+                  their own across the page is also where they sit on the
+                  paper form.
+
+                  STILL 2A's, and still before 2B's `episodic_details_correct_v1`
+                  asks the patient to confirm "the details above".
+                */}
+                {on('header') ? (
+                  <div className={styles.db4Agreement} data-testid="db4-agreement-facts">
+                    <Row label={strings.particulars.agreementDate} value={view.agreementDate} />
+                    {assignorFacts}
+                  </div>
+                ) : null}
               </>
             ) : (
               <>
@@ -460,30 +742,15 @@ export function ParticularsScreen({
                     value={view.mbsItemNumbers.join(', ')}
                   />
                 )}
+                {/*
+                  WHO SIGNS, IN THE PLACE IT HAS ALWAYS BEEN on the screen
+                  with no DB4 — last of the particulars rows, same order, same
+                  markup. A session with no print record is not paginated at
+                  all (D-2026-09-27-02), so there is no page to gate it on.
+                */}
+                {assignorFacts}
               </>
             )}
-            <Row
-              label={strings.particulars.assignor}
-              value={
-                view.assignorIsPatient
-                  ? strings.particulars.assignorIsPatient
-                  : strings.particulars.assignorIsOther(
-                      view.assignorName ?? '',
-                      view.assignorRelationship ?? '',
-                    )
-              }
-            />
-            {/*
-              ONE LINE, UNDER A STATEMENT THAT IS ALREADY BEING MADE. K-5 is
-              skipped on a locked agreement, so this is where the fact lands —
-              and it points at a person rather than at a control, because there
-              is nothing here for the patient to do (Carl, 4 Sep 2026).
-            */}
-            {view.particularsLocked ? (
-              <p className={styles.fieldHint} data-testid="assignor-locked-note">
-                {strings.particulars.assignorLockedNote}
-              </p>
-            ) : null}
             {/*
               WHAT AN ONGOING AGREEMENT ACTUALLY COVERS (Carl, 4 Sep 2026;
               REQ-PORT-03's plain-language explanation, at the moment it is
@@ -498,7 +765,7 @@ export function ParticularsScreen({
               NO AMOUNT ANYWHERE IN IT (hard rule 4). There is no field here
               for one and no sentence that implies one.
             */}
-            {isEnduring ? (
+            {isEnduring && on('legal') ? (
               <div className={styles.grid} data-testid="enduring-coverage">
                 <span className={styles.docRowLabel}>{strings.particulars.enduringCoverageHeading}</span>
                 {strings.particulars.enduringCoverage.map((line) => (
@@ -519,11 +786,18 @@ export function ParticularsScreen({
               templates existed. It is not a control and cannot be ticked,
               because there is nothing on that agreement's record to record a
               tick against.
+
+              AND ON A PAGINATED FORM EACH ONE IS READ WHERE IT APPLIES (Carl,
+              27 Sep 2026), which `rules/db4-pages.ts` decides and this file
+              only renders. `pageStatements` is the subset for THIS page;
+              `outstanding` above is still every statement on every page, so
+              the gate did not move (hard rule 2, REQ-REG-06). 2A shows no
+              block because no statement maps to it.
             */}
-            {statements.length > 0 && onToggleAffirmation ? (
+            {pageStatements.length > 0 && onToggleAffirmation ? (
               <div className={styles.grid} data-testid="affirmations">
                 <span className={styles.docRowLabel}>{strings.particulars.statementsHeading}</span>
-                {statements.map((statement) => (
+                {pageStatements.map((statement) => (
                   <Checkbox
                     key={statement.key}
                     label={statement.text}
@@ -533,28 +807,37 @@ export function ParticularsScreen({
                   />
                 ))}
               </div>
-            ) : (
+            ) : statements.length === 0 && on('legal') ? (
               <p className={styles.consent}>{strings.particulars.consentText}</p>
-            )}
+            ) : null}
           </div>
-          <div className={styles.tags}>
-            {/*
-              THE TAG SAYS WHAT IS TRUE OF THIS SCREEN (D-2026-09-27-01). With
-              the practice's amounts on it, "No amount shown" would be false —
-              and a tag a reviewer can catch out is worse than no tag, because
-              it teaches them the other two are decoration. Hard rule 4 as
-              narrowed by D-2026-09-14-02 is what the replacement states.
-            */}
-            <Tag
-              label={
-                showsAnAmount
-                  ? strings.particulars.tagAmountIsThePractices
-                  : strings.particulars.tagNoAmount
-              }
-            />
-            <Tag label={strings.particulars.tagNoProviderSignature} />
-            <Tag label={strings.particulars.tagHashBeforeSigning} />
-          </div>
+          {/*
+            THE TAGS CLOSE THE DOCUMENT, so on a paginated form they close the
+            LAST page. Repeating them on every page would put "Amount as the
+            practice printed it" under 2A, which shows no amount — and a tag a
+            reviewer can catch out is exactly what D-2026-09-27-01 changed the
+            third tag to stop being.
+          */}
+          {on('legal') ? (
+            <div className={styles.tags}>
+              {/*
+                THE TAG SAYS WHAT IS TRUE OF THIS SCREEN (D-2026-09-27-01). With
+                the practice's amounts on it, "No amount shown" would be false —
+                and a tag a reviewer can catch out is worse than no tag, because
+                it teaches them the other two are decoration. Hard rule 4 as
+                narrowed by D-2026-09-14-02 is what the replacement states.
+              */}
+              <Tag
+                label={
+                  showsAnAmount
+                    ? strings.particulars.tagAmountIsThePractices
+                    : strings.particulars.tagNoAmount
+                }
+              />
+              <Tag label={strings.particulars.tagNoProviderSignature} />
+              <Tag label={strings.particulars.tagHashBeforeSigning} />
+            </div>
+          ) : null}
         </Blueprint>
 
         {blueprintPanels ? (
@@ -579,6 +862,32 @@ export function ParticularsScreen({
                 <p className={styles.railText}>{strings.particulars.needsReceptionBody}</p>
               </Blueprint>
             )}
+
+            {/*
+              WHAT THE TABLET WAS ACTUALLY SENT (Carl, 27 Sep 2026). He asked
+              for the DB4 Print Record itself on this screen; the raw record
+              carries the UNMASKED Medicare card number, so it stays reachable
+              from a workstation only and this is the agreed substitute — the
+              MASKED block exactly as it arrived, so somebody checking a
+              rendering can see whether the screen drew what it was given
+              rather than inferring it from the screen.
+
+              NOTHING IS RE-MASKED HERE AND NOTHING COULD BE. `Db4FormView` has
+              no unmasked Medicare field to print (hard rule 1, and the
+              reasoning in `packages/contracts/src/db4-form-view.ts`), so this
+              renders whatever arrived and there is no second masking rule to
+              drift from the server's. It is a test-device panel, on the same
+              flag as the parser template version, and it is never logged.
+            */}
+            {db4 ? (
+              <Blueprint>
+                <Kicker label={strings.particulars.db4.payloadHeading} />
+                <p className={styles.railText}>{strings.particulars.db4.payloadBody}</p>
+                <pre className={styles.db4Payload} data-testid="db4-payload">
+                  {JSON.stringify(db4, null, 2)}
+                </pre>
+              </Blueprint>
+            ) : null}
 
             {/*
               ONE PRIMARY. Back sits to its left and is a secondary —
@@ -629,14 +938,34 @@ function Row({ label, value }: { label: string; value: string | null }): ReactNo
  *
  * AND NOTHING THAT IS NOT THERE IS DRAWN, which is this screen's oldest rule.
  * Every block below is conditional on the server having sent it.
+ *
+ * AND SINCE 27 SEPTEMBER 2026 IT CAN BE READ A PAGE AT A TIME. `page` names
+ * which third is on screen; `undefined` draws all of it, which is what a
+ * caller holding no page state gets and is byte-for-byte the markup this
+ * function produced before. The partition is Carl's: the form's header and the
+ * patient block, then the providers and the services, then the privacy notice
+ * and the assignment.
  */
 function Db4Document({
   form,
   showParserTemplate,
+  page,
+  pageHeadingRef,
 }: {
   form: Db4FormView;
   /** The TEST-device flag. A parser version is a developer's note (Carl, 4 Sep 2026). */
   showParserTemplate: boolean;
+  /**
+   * WHICH PAGE OF THE FORM TO DRAW, or `undefined` for all of it. The screen
+   * decides — see `paged` there — and this function only renders.
+   */
+  page?: Db4Page;
+  /**
+   * THE PAGE'S OWN HEADING, WHICH IS WHERE FOCUS LANDS ON A PAGE TURN (WCAG
+   * 2.2 AA). Exactly one heading carries it per page, so the caller's effect
+   * has one element to move to whichever third is on screen.
+   */
+  pageHeadingRef?: Ref<HTMLHeadingElement>;
 }): ReactNode {
   const copy = strings.particulars.db4;
   const headingLines = form.headingLines ?? [];
@@ -682,20 +1011,65 @@ function Db4Document({
   // eslint-disable-next-line no-restricted-syntax
   const maskedCard = patient?.medicareCardNumberMasked ?? null;
 
+  /**
+   * WHETHER A BLOCK BELONGS TO THIS RENDER. `undefined` is the whole form on
+   * one page, so every block is drawn and the branch is not taken rather than
+   * taken and agreeing — the same shape the DB4 feature itself uses
+   * (D-2026-09-27-02).
+   */
+  const on = (target: Db4Page): boolean => page === undefined || page === target;
+
+  /**
+   * ONE h2 PER PAGE, AND IT IS WHAT FOCUS MOVES TO.
+   *
+   * ON 2A IT IS THE FORM'S OWN TITLE LINE, already an h2 and already the right
+   * name for that page — the words the practice printed beat any label this
+   * file could invent. 2B and 2C are parts of one form with no printed title
+   * of their own, so they take a page heading from the string table: chrome,
+   * exactly like the column headings and section names around them, and
+   * operative of nothing.
+   *
+   * `header` IN THE TABLE IS A FALLBACK, for a print record whose heading
+   * lines the parser could not read. Without it that page would have no
+   * heading and nothing for focus to land on — and a parser that partly
+   * defeats a template is the exact case `parserTemplateVersion` exists for.
+   */
+  const ownTitle = on('header') && headingLines.length > 0;
+  const pageHeading =
+    page === undefined || ownTitle ? null : copy.pageHeading[page];
+
   return (
     <section className={styles.db4} aria-label={copy.regionLabel} data-testid="db4-form">
       <div className={styles.db4Heading}>
-        {headingLines.map((line, index) =>
-          index === titleIndex ? (
-            <h2 key={`db4-heading-${index}`} className={styles.db4Title}>
-              {line}
-            </h2>
-          ) : (
-            <p key={`db4-heading-${index}`} className={styles.db4HeadingLine}>
-              {line}
-            </p>
-          ),
-        )}
+        {pageHeading ? (
+          <h2
+            className={styles.db4Title}
+            ref={pageHeadingRef}
+            tabIndex={-1}
+            data-testid="db4-page-heading"
+          >
+            {pageHeading}
+          </h2>
+        ) : null}
+        {on('header')
+          ? headingLines.map((line, index) =>
+              index === titleIndex ? (
+                <h2
+                  key={`db4-heading-${index}`}
+                  className={styles.db4Title}
+                  ref={page === undefined ? undefined : pageHeadingRef}
+                  tabIndex={page === undefined ? undefined : -1}
+                  data-testid={page === undefined ? undefined : 'db4-page-heading'}
+                >
+                  {line}
+                </h2>
+              ) : (
+                <p key={`db4-heading-${index}`} className={styles.db4HeadingLine}>
+                  {line}
+                </p>
+              ),
+            )
+          : null}
         {/*
           WHOSE PAGE THIS IS (hard rule 12), and it is not optional. The heading
           lines above are the government's words about the government's form,
@@ -709,50 +1083,86 @@ function Db4Document({
         </p>
       </div>
 
-      <Row label={copy.formReference} value={form.formReference ?? null} />
-      <Row label={copy.serviceDate} value={form.serviceDate ?? null} />
+      {/*
+        2A — THE FORM'S HEADER AND THE PATIENT (Carl, 27 Sep 2026: "Date / time
+        and header info to identify the patient"). It is the FORM'S header
+        reproduced, never a second identity check: the patient may already have
+        proved who they are on K-2 or ticked their details on K-P1, and asking
+        twice is exactly what Carl did not want.
+      */}
+      {/*
+        2A's TWO COLUMNS — THE PRACTICE ON THE LEFT, THE PATIENT ON THE RIGHT
+        (Carl, 27 Sep 2026: "on Step 2 page 1 or 3 can we put the Practice
+        details on the left and the Patients on the right").
 
-      {form.servicingLocationName || addressLines.length > 0 ? (
-        <div className={styles.db4Section}>
-          <h3 className={styles.db4SectionHeading}>{copy.servicingLocation}</h3>
-          {form.servicingLocationName ? (
-            <p className={styles.docRowValue}>{form.servicingLocationName}</p>
+        THE DOM ORDER IS THE READING ORDER AND IS NOT REVERSED ANYWHERE.
+        Practice first, patient second, in the markup — so when
+        `.db4Columns` collapses to one track on a portrait tablet they stack
+        in that same order, and the tab order and a screen reader say the
+        same thing at both widths. The grid does the placing; no `order`
+        property is involved (`kiosk.module.css`).
+
+        THE FORM'S REFERENCE AND ITS DATE OF SERVICE GO LEFT, with the place
+        that printed them. They are facts about the form and the visit, not
+        about the person, and a lone pair of rows above two columns would be a
+        third block on a page Carl asked to have two.
+      */}
+      {on('header') ? (
+        <div className={styles.db4Columns} data-testid="db4-header-columns">
+          <div className={styles.db4Column}>
+            <Row label={copy.formReference} value={form.formReference ?? null} />
+            <Row label={copy.serviceDate} value={form.serviceDate ?? null} />
+            {form.servicingLocationName || addressLines.length > 0 ? (
+              <div className={styles.db4Section}>
+                <h3 className={styles.db4SectionHeading}>{copy.servicingLocation}</h3>
+                {form.servicingLocationName ? (
+                  <p className={styles.docRowValue}>{form.servicingLocationName}</p>
+                ) : null}
+                {addressLines.map((line, index) => (
+                  <p key={`db4-location-${index}`} className={styles.docRowValue}>
+                    {line}
+                  </p>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          {patient ? (
+            <div className={styles.db4Column}>
+              <div className={styles.db4Section} data-testid="db4-patient">
+                <h3 className={styles.db4SectionHeading}>{copy.patient}</h3>
+                {/* The name sits straight under its own heading, as the location's
+                    does — a "Patient" label under a "Patient" heading says it twice. */}
+                {patientName ? <p className={styles.docRowValue}>{patientName}</p> : null}
+                <Row label={copy.dateOfBirth} value={patient.dateOfBirth ?? null} />
+                <Row label={copy.address} value={patient.address ?? null} />
+                <Row label={copy.patientRecordNumber} value={patient.patientRecordNumber ?? null} />
+                {/*
+                  THE NUMBER ARRIVED MASKED AND IS DRAWN AS IT ARRIVED (hard rule 1;
+                  D-2026-09-27-01 part 3). There is no unmasked value on the type, so
+                  there is nothing here to reconstruct and nothing to leak — and the
+                  note says why the card in the patient's wallet looks different,
+                  before they wonder whether we hold the wrong number.
+                */}
+                {maskedCard ? (
+                  <>
+                    <Row label={copy.maskedCardNumber} value={maskedCard} />
+                    <p className={styles.db4Note}>{copy.maskedCardNote}</p>
+                  </>
+                ) : null}
+                <Row label={copy.irn} value={patient.irn ?? null} />
+              </div>
+            </div>
           ) : null}
-          {addressLines.map((line, index) => (
-            <p key={`db4-location-${index}`} className={styles.docRowValue}>
-              {line}
-            </p>
-          ))}
         </div>
       ) : null}
 
-      {patient ? (
-        <div className={styles.db4Section} data-testid="db4-patient">
-          <h3 className={styles.db4SectionHeading}>{copy.patient}</h3>
-          {/* The name sits straight under its own heading, as the location's
-              does — a "Patient" label under a "Patient" heading says it twice. */}
-          {patientName ? <p className={styles.docRowValue}>{patientName}</p> : null}
-          <Row label={copy.dateOfBirth} value={patient.dateOfBirth ?? null} />
-          <Row label={copy.address} value={patient.address ?? null} />
-          <Row label={copy.patientRecordNumber} value={patient.patientRecordNumber ?? null} />
-          {/*
-            THE NUMBER ARRIVED MASKED AND IS DRAWN AS IT ARRIVED (hard rule 1;
-            D-2026-09-27-01 part 3). There is no unmasked value on the type, so
-            there is nothing here to reconstruct and nothing to leak — and the
-            note says why the card in the patient's wallet looks different,
-            before they wonder whether we hold the wrong number.
-          */}
-          {maskedCard ? (
-            <>
-              <Row label={copy.maskedCardNumber} value={maskedCard} />
-              <p className={styles.db4Note}>{copy.maskedCardNote}</p>
-            </>
-          ) : null}
-          <Row label={copy.irn} value={patient.irn ?? null} />
-        </div>
-      ) : null}
-
-      {providers.length > 0 ? (
+      {/*
+        2B — WHO WAS SEEN AND WHAT WAS DONE (Carl: "Dr seen and items in the
+        table"). The amounts are unchanged: the string PracSoft printed, in the
+        same table, never parsed (hard rule 4).
+      */}
+      {on('services') && providers.length > 0 ? (
         <div className={styles.db4Section} data-testid="db4-providers">
           <h3 className={styles.db4SectionHeading}>{copy.providers}</h3>
           {providers.map((provider, index) => (
@@ -764,7 +1174,7 @@ function Db4Document({
         </div>
       ) : null}
 
-      {services.length > 0 ? (
+      {on('services') && services.length > 0 ? (
         <div className={styles.db4Section}>
           <h3 className={styles.db4SectionHeading}>{copy.services}</h3>
           {/*
@@ -814,7 +1224,14 @@ function Db4Document({
         </div>
       ) : null}
 
-      {privacyNotice.length > 0 ? (
+      {/*
+        2C — THE PRIVACY NOTICE AND THE ASSIGNMENT (Carl: "legal blurb and
+        tick-boxes for approval. Then continue with sign-off"). The tick boxes
+        themselves are the AGREEMENT's affirmations rather than the form's
+        words, so they are drawn by the screen above this function; which of
+        them lands here is `rules/db4-pages.ts`.
+      */}
+      {on('legal') && privacyNotice.length > 0 ? (
         <div className={styles.db4Section} data-testid="db4-privacy-notice">
           <h3 className={styles.db4SectionHeading}>{copy.privacyNotice}</h3>
           {privacyNotice.map((line, index) => (
@@ -834,18 +1251,26 @@ function Db4Document({
         simply never receives it. Nothing here filters, because a second filter
         is a second rule to drift.
       */}
-      {statements.length > 0 ? (
+      {on('legal') && statements.length > 0 ? (
         <div className={styles.db4Section} data-testid="db4-assignment">
           <h3 className={styles.db4SectionHeading}>{copy.assignment}</h3>
+          {/*
+            22px, NOT THE 20 A PARTICULAR'S VALUE GETS (Carl, 27 Sep 2026 —
+            "rising to 22px where it is the operative words of the
+            agreement"). These sentences ARE the instrument; a date of birth
+            is a fact about the patient. They shared `.docRowValue` until the
+            scale gave the distinction a size. The words are untouched —
+            still `Db4FormView`'s, still reproduced exactly.
+          */}
           {statements.map((statement, index) => (
-            <p key={statement.key ?? `db4-statement-${index}`} className={styles.docRowValue}>
+            <p key={statement.key ?? `db4-statement-${index}`} className={styles.db4Statement}>
               {statement.text}
             </p>
           ))}
         </div>
       ) : null}
 
-      {showParserTemplate && form.parserTemplateVersion ? (
+      {on('legal') && showParserTemplate && form.parserTemplateVersion ? (
         <p className={styles.db4Note} data-testid="db4-parser-template">
           {copy.parserTemplate(form.parserTemplateVersion)}
         </p>
