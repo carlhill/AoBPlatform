@@ -65,7 +65,19 @@ export interface Db4FormViewPatient {
    * MASKED FOR THE WAITING ROOM, e.g. `••• ••••• 1`. Enough for the patient to
    * recognise the card as theirs; not enough for anyone else to use.
    * The full number is on the Signed-DB4 and nowhere near this payload.
+   *
+   * THE LINT RULE BELOW FIRES HERE, AND THE NAME IS KEPT ANYWAY. Renaming this
+   * to something the rule does not match — `cardMasked`, say — would silence
+   * the guard against the single most likely design mistake in this product
+   * and make the field invisible to everyone who greps for it later. The
+   * exception is declared instead, which is the same thing `print-capture.ts`
+   * does for the unmasked field and for the same reason: hard rule 1's actual
+   * prohibitions are intact. This value is never used to verify a patient,
+   * never to find or match one, never written to a log, an error message or a
+   * vault event, and never sent to the rules service. It is content on a form,
+   * redacted, on its way to a screen.
    */
+  // eslint-disable-next-line no-restricted-syntax
   readonly medicareCardNumberMasked?: string;
   /** The IRN is one digit and identifies nobody on its own; it is shown as printed. */
   readonly irn?: string;
