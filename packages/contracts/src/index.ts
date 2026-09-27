@@ -6,3 +6,4 @@ export * from './print-capture';
 export * from './signature';
 export * from './portal';
 export * from './auth';
+export * from './db4-form-view';

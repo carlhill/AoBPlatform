@@ -1,0 +1,113 @@
+/* ---------------------------------------------------------------------------
+ * THE DB4 AS THE PATIENT READS IT ON THE TABLET.
+ *
+ * D-2026-09-27-01: *"patient sees the db4 with the cost on it"*, and
+ * *"mask on the tablet, full on the form"*.
+ *
+ * A PROJECTION OF THE DB4 PRINT RECORD, NOT A SECOND COPY OF IT. This is built
+ * on the server from the same `PrintJobEnvelope` that `SignedDb4Renderer` draws
+ * the chart-folder form from, by the same service, in the same request that
+ * locks the particulars. Three renderings of one source — the tablet, the
+ * Assignment Agreement and the Signed-DB4 — and the reason there are three
+ * renderings rather than three sources is `ParticularsScreen`'s own rule: a
+ * sentence written on the client would be a second copy of the operative words
+ * of a contract, free to drift from the one that was signed.
+ *
+ * ── WHY THE MASKING HAPPENS HERE AND NOT ON THE CLIENT ──
+ *
+ * `medicareCardNumberMasked` is the ONLY Medicare field on this type, and that
+ * is the whole control. A full number sent to the tablet and masked in the
+ * markup is not masked: it sits in the JSON payload, in the network tab, in the
+ * React tree and in any memory dump of the browser, on a device that lives in a
+ * waiting room and is handed to strangers all day. The tablet cannot leak a
+ * value it was never given.
+ *
+ * So: the server masks, and the type makes the unmasked value unrepresentable.
+ * Anyone adding `medicareCardNumber` here should read D-2026-09-27-01 part 3
+ * first — it amends D-2026-09-14-03 for the screen and only for the screen.
+ *
+ * ── WHAT IS DELIBERATELY ABSENT ──
+ *
+ * The out-of-scope pathology statement (s 65C(4) items 1–4, CLAUDE.md §8). It
+ * is filtered here exactly as `SignedDb4Renderer.drawAssignment` filters it, so
+ * the screen and the form agree: one statement where the practice's paper has
+ * two. See D-2026-09-14-02.
+ * ------------------------------------------------------------------------- */
+
+/** One service row, reproduced from the form. */
+export interface Db4FormViewService {
+  readonly serviceDate?: string;
+  readonly mbsItemNumber?: string;
+  readonly description?: string;
+  /**
+   * THE AMOUNT AS PRACSOFT PRINTED IT, carried as the string on the page and
+   * never as a number. Parsing it to a number and formatting it again would be
+   * AoB originating a figure, which hard rule 4 forbids even where the figure
+   * happens to agree (D-2026-09-14-02: *"AoB never originates or computes an
+   * amount; it may reproduce the amount the practice's billing software
+   * printed"*).
+   *
+   * It is display only. It is not in the locked particulars, not hashed into
+   * the Assignment Agreement, and not written back.
+   */
+  readonly benefitAssigned?: string;
+}
+
+/** The patient block, as the form prints it — with the one redaction. */
+export interface Db4FormViewPatient {
+  readonly givenNames?: string;
+  readonly familyName?: string;
+  readonly dateOfBirth?: string;
+  readonly address?: string;
+  /** The practice's chart number — the only key a DB4 is matched on (hard rule 1). */
+  readonly patientRecordNumber?: string;
+  /**
+   * MASKED FOR THE WAITING ROOM, e.g. `••• ••••• 1`. Enough for the patient to
+   * recognise the card as theirs; not enough for anyone else to use.
+   * The full number is on the Signed-DB4 and nowhere near this payload.
+   */
+  readonly medicareCardNumberMasked?: string;
+  /** The IRN is one digit and identifies nobody on its own; it is shown as printed. */
+  readonly irn?: string;
+}
+
+export interface Db4FormViewProvider {
+  readonly name?: string;
+  readonly providerNumber?: string;
+  readonly role?: string;
+}
+
+export interface Db4FormViewStatement {
+  readonly key?: string;
+  readonly text?: string;
+}
+
+/**
+ * The block the lock response carries for a session that came from a DB4 Print
+ * Record. **Absent for every other session**, and that absence is the whole of
+ * D-2026-09-27-02: a walk-up at a practice with no PMS has no print record, so
+ * no block is built, so `ParticularsScreen` draws exactly what it drew before
+ * this feature existed. The new path does not run rather than running and
+ * producing the same answer.
+ */
+export interface Db4FormView {
+  /** The form's own heading lines, reproduced verbatim (hard rule 12, with the footer). */
+  readonly headingLines?: readonly string[];
+  readonly formCode?: string;
+  readonly formReference?: string;
+  readonly serviceDate?: string;
+  readonly servicingLocationName?: string;
+  readonly servicingLocationAddressLines?: readonly string[];
+  readonly patient?: Db4FormViewPatient;
+  readonly providers?: readonly Db4FormViewProvider[];
+  readonly services?: readonly Db4FormViewService[];
+  readonly privacyNotice?: readonly string[];
+  /** In-scope statements only; the pathology offer is filtered out. */
+  readonly statements?: readonly Db4FormViewStatement[];
+  /**
+   * The parser template that read the form. Shown on a TEST device only — on a
+   * patient's screen it is a developer's note, which is the same objection that
+   * moved the "ready to sign" panel behind the test flag.
+   */
+  readonly parserTemplateVersion?: string;
+}

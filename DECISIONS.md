@@ -1907,6 +1907,118 @@ per-job output paths and make a single shared queue safe - and would mean a
 signed driver package, which is the cost this whole design was chosen to avoid.
 
 
+## D-2026-09-27-01 - The patient reads their own DB4 on the tablet, with the cost, and the Medicare number masked there
+
+**Date:** 27 September 2026. **Decided by:** Carl: *"patient sees the db4 with
+the cost on it"*, and, on the waiting-room question, *"mask on the tablet, full
+on the form"*.
+
+**What prompted it.** Carl looked at the kiosk mid-ceremony and said it *"does
+not look like what is on the sample DB4 form I shared last week"*. It did not,
+and it was not meant to: the tablet was drawing the Assignment Agreement's own
+ceremony while the Signed-DB4 -- the reproduction of the practice's form -- was
+rendered only after signing and had no screen anywhere. The patient was signing
+one presentation and the chart folder was receiving another.
+
+**The decision, in four parts.**
+
+1. **The tablet shows the DB4's own particulars, laid out as the form**, for any
+   session that came from a DB4 Print Record. Same heading, same patient block,
+   same service rows, same assignment statement. A patient who has seen the
+   practice's paper form recognises the screen.
+2. **The benefit amount is shown**, reproduced verbatim from what PracSoft
+   printed. This restores the intent of D-2026-09-14-01 -- the patient must be
+   informed of the cost -- which -02 reversed as to the *artefact* and never
+   ruled on as to the *screen*, leaving the requirement in a gap between two
+   records. It is display only; it does not enter the agreement's particulars,
+   is not hashed into the Assignment Agreement, and is not computed by us.
+   Hard rule 4 as narrowed by D-2026-09-14-02: **AoB never originates an
+   amount; it may reproduce the one the practice's billing software printed.**
+3. **The Medicare card number is MASKED on the tablet and printed in full on the
+   Signed-DB4.** This is the one place the screen deliberately differs from the
+   form, and D-2026-09-14-03 is amended only here. That decision's reasoning --
+   the patient recognises their own number, and the auditor needs it to link a
+   form to a claim -- holds for a sheet of paper handed to one person. A tablet
+   is held up in a waiting room with other patients three seats away, and a
+   Medicare number is a high-value fraud identifier. Masked is enough to
+   recognise, not enough to harvest. The form in the chart folder is unchanged.
+4. **We do not adopt DocuSign-style signing on a rendered PDF.** Considered and
+   refused, for four reasons that are each independently sufficient:
+   - **Hard rule 13.** A stamped PDF is a blob whose only evidence is its bytes.
+     Our path re-renders byte-identically from locked data forever, and
+     `signed-db4.service.ts` renders twice and compares before it stores
+     anything. That is a stronger chain than a signed blob, not a weaker one.
+   - **Hard rule 2.** The signature control is gated on the server's lock. A PDF
+     viewer has no such gate, so it would have to be rebuilt around one.
+   - **WCAG 2.2 AA on patient surfaces is release-blocking** (CLAUDE.md section
+     6). A page image does not reflow, carries no screen-reader semantics, and
+     needs pinch-zoom to read 9pt type on a 10-inch tablet. The same ceremony
+     serves the portal on a phone.
+   - **Zero-footprint kiosk.** A viewer means either a new dependency or the
+     browser's native one, which writes the file to the tablet -- the one thing
+     that surface may not do.
+
+   What DocuSign is *right* about is that the signer should see the document
+   rather than an abstraction of it, and that is what part 1 adopts. The
+   mechanism already existed: `ParticularsScreen` states that the words on the
+   screen *"come back from the lock as part of the rendered document, which is
+   the same object the PDF is drawn from and hashed against. One source of
+   truth, rendered twice."* This decision adds a third rendering of the same
+   source, not a second source.
+
+**What would reopen it.** A regulator requiring a signature affixed inside the
+document object; or a practice reporting that patients do not recognise the
+masked number as their own.
+
+
+## D-2026-09-27-02 - A practice with no PMS gets the `standard` surface profile, and there is no second kiosk URL
+
+**Date:** 27 September 2026. **Decided by:** Carl: *"We may still want a version
+that we have for a small practice that does not have a PMS system. So keep the
+current build. Can we make these new features a separate url like kioskdb4 or
+something."*
+
+**The decision.** No second URL. The small no-PMS practice is served by a third
+surface profile, **`standard` -- every surface except `db4`** -- and the DB4 form
+view on the tablet is **additive**: the screen draws it only when the lock
+response carries a `db4Form` block, and a session with no DB4 Print Record
+renders exactly what it renders today.
+
+**Why a profile and not a route.** `PRACTICE-SURFACES.md` section 6b, written
+when piece 6 landed on 17 September, already named this as the missing piece:
+*"Both shipped profiles include the `db4` surface, so there is no setting you
+can give a practice that refuses a DB4 print job... Closing it needs one more
+profile -- something like `standard`, everything except db4 -- which is a
+product decision about what we sell, not a code change."* This is that product
+decision. It also retires the mis-named test in section 6c, which is named for a
+refusal it never demonstrates because no shipped profile could refuse.
+
+**And why a route would have been the wrong axis.** Four reasons:
+
+1. **The discriminator is the session, not the practice.** `Agreement.sourcePrintJobId`
+   is nullable, and a practice that prints DB4s still has walk-ups. A tablet
+   parked on `/kioskdb4` could not serve them.
+2. **Reception pushes sessions to tablets.** A tablet on the wrong URL for the
+   session being pushed is a support call, and the front desk would have to know
+   which URL each tablet sits on.
+3. **The hard rules live in the ceremony.** Rules 2, 3 and 13 are enforced
+   inside `Ceremony.tsx`, along with pairing, heartbeat, outage, inactivity and
+   the way out. A second route either duplicates all of that -- two places for a
+   rule to drift, and the copy is the one that rots -- or shares it, in which
+   case it is the same app at a different path.
+4. **A URL is not a guarantee.** What the decision actually protects is *"the
+   current build keeps working, untouched, for a practice with no PMS"*, and
+   what protects that is the additive draw plus a named test, not a path.
+
+**The one exception.** A preview of the DB4 screen without a print job, for
+demonstrations, rides on the existing TEST-device branch as a query parameter.
+It is not a production route.
+
+**What would reopen it.** A DB4 flow needing a different pairing model, a
+different device class, or a different tenant -- that would be a different
+product, and would deserve its own app.
+
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
@@ -1952,3 +2064,5 @@ signed driver package, which is the cost this whole design was chosen to avoid.
 | 14 Sep | The signing product is the first feature-flagged slice of AoB, same name, nothing removed; data completeness gates, form version warns | **D-2026-09-14-04 above** |
 | 17 Sep | No patient data rests on a practice PC: the outbox keeps a payload only until it is acknowledged, then a receipt with no PII; `pending/` never expires; encrypt-then-delete because overwriting an SSD does not erase; ships disabled until piece 1 keeps the record | **D-2026-09-17-01 above** |
 | 17 Sep | One version per machine at four layers; a LAN practice shares the host and not the queue, because one fixed-path port overwrites; reconciliation alarms on a printed form that never became a record; a guard rail that fails open is worse than none | **D-2026-09-17-02 above** |
+| 27 Sep | The patient reads their own DB4 on the tablet with the cost on it; the Medicare number is masked there and printed in full on the form (amends -14-03 for the screen only); DocuSign-style PDF signing considered and refused | **D-2026-09-27-01 above** |
+| 27 Sep | A no-PMS practice gets the `standard` profile (every surface except db4), closing PRACTICE-SURFACES section 6b; no second kiosk URL, because the discriminator is the session and not the practice | **D-2026-09-27-02 above** |
