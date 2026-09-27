@@ -372,6 +372,9 @@ describe('the three pages Carl asked for', () => {
 
     fireEvent.click(view.getByTestId('db4-page-continue'));
     expect(view.page()).toBe('services');
+    // 2B CARRIES A TICK, AND SINCE 27 SEPTEMBER 2026 ITS CONTINUE WAITS FOR IT
+    // (Carl: "Continue button should be enabled after the box is ticked").
+    fireEvent.click(view.getByTestId('affirm-episodic_details_correct_v1'));
     fireEvent.click(view.getByTestId('db4-page-continue'));
     expect(view.page()).toBe('legal');
 
@@ -379,6 +382,63 @@ describe('the three pages Carl asked for', () => {
     expect(view.page()).toBe('services');
     fireEvent.click(view.getByTestId('db4-page-back'));
     expect(view.page()).toBe('header');
+  });
+
+  it('a_pages_continue_waits_for_that_pages_own_tick', () => {
+    /*
+     * CARL, 27 SEPTEMBER 2026, FROM A LIVE TABLET: *"on page 1 or 3 Continue
+     * button should be enabled after the box is ticked. Same rule on the next
+     * page"*. He was looking at 2B: a live Continue sitting under an unticked
+     * box reading "I confirm the details above are correct", which invites
+     * somebody to page straight past an affirmation.
+     *
+     * A SECOND GATE, EARLIER — NEVER A REPLACEMENT FOR THE SIGNATURE GATE.
+     * `readyToSign` still spans every page and is what hard rule 2
+     * (REQ-REG-06) rests on; this only stops a patient reaching the last page
+     * with work behind them.
+     *
+     * AND THE BLOCKED CONTROL IS GENUINELY UNPRESSABLE, not merely styled so:
+     * `GuardedButton`'s blocked branch renders a real `button[disabled]` with
+     * no handler, so the assertion below is that the page did not turn rather
+     * than that something looked grey.
+     */
+    const view = renderPaged();
+
+    // 2A carries no statement, so its Continue is open by construction.
+    fireEvent.click(view.getByTestId('db4-page-continue'));
+    expect(view.page()).toBe('services');
+
+    const blocked = view.getByTestId('db4-page-continue');
+    expect(blocked.hasAttribute('disabled')).toBe(true);
+    expect(blocked.textContent).toContain(strings.particulars.db4.continueNotTicked(1));
+    fireEvent.click(blocked);
+    expect(view.page()).toBe('services');
+
+    fireEvent.click(view.getByTestId('affirm-episodic_details_correct_v1'));
+    const open = view.getByTestId('db4-page-continue');
+    expect(open.hasAttribute('disabled')).toBe(false);
+    expect(open.textContent).toContain(strings.particulars.db4.continueToNextPage);
+    fireEvent.click(open);
+    expect(view.page()).toBe('legal');
+
+    // AND UNTICKING SHUTS IT AGAIN. The gate reads the affirmations rather
+    // than remembering that somebody once passed it.
+    fireEvent.click(view.getByTestId('db4-page-back'));
+    expect(view.page()).toBe('services');
+    fireEvent.click(view.getByTestId('affirm-episodic_details_correct_v1'));
+    expect(view.getByTestId('db4-page-continue').hasAttribute('disabled')).toBe(true);
+  });
+
+  it('a_page_with_no_statements_is_not_gated_at_all', () => {
+    /*
+     * 2A HAS NO AFFIRMATION, and its Continue must not acquire one. The rule
+     * is "this page's own ticks", so a page with none is open — by the filter
+     * returning nothing rather than by a special case naming the page.
+     */
+    const view = renderPaged();
+    const first = view.getByTestId('db4-page-continue');
+    expect(first.hasAttribute('disabled')).toBe(false);
+    expect(view.queryByTestId('affirmations')).toBeNull();
   });
 
   it('a_page_turn_moves_focus_to_the_new_pages_heading', () => {
@@ -697,6 +757,10 @@ describe('the pages are pages within a step, not steps', () => {
     expect(screen.getByText(chip)).toBeTruthy();
     expect(screen.getByTestId('db4-page-of').textContent).toBe(strings.particulars.db4.pageOf(2, 3));
 
+    // THE PAGE'S OWN TICK FIRST (Carl, 27 September 2026). The CHIP is what
+    // this test is about and it must not move for any of this.
+    fireEvent.click(screen.getByTestId('affirm-episodic_details_correct_v1'));
+    expect(screen.getByText(chip)).toBeTruthy();
     fireEvent.click(screen.getByTestId('db4-page-continue'));
     expect(screen.getByText(chip)).toBeTruthy();
     expect(screen.getByTestId('db4-page-of').textContent).toBe(strings.particulars.db4.pageOf(3, 3));

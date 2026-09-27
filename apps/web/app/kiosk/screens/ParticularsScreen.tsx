@@ -172,7 +172,7 @@ import { useEffect, useRef, type ReactNode, type Ref } from 'react';
 import type { AgreementType } from '@aobplatform/domain';
 import type { Db4FormView } from '@aobplatform/contracts';
 import { Blueprint, Kicker, Screen, Tag, CeremonyHeading } from '../components/Chrome';
-import { GuardedButton, PrimaryButton, SecondaryButton } from '../components/Buttons';
+import { GuardedButton, SecondaryButton } from '../components/Buttons';
 import { Checkbox } from '../components/Field';
 import { shortHash } from '../components/SignatureControl';
 import type { SignatureValidation } from '../rules/signature-gate';
@@ -449,6 +449,38 @@ export function ParticularsScreen({
     : null;
 
   /**
+   * THIS PAGE'S OWN TICKS, STILL OUTSTANDING (Carl, 27 September 2026, from a
+   * live tablet: *"on page 1 or 3 Continue button should be enabled after the
+   * box is ticked. Same rule on the next page"*).
+   *
+   * THE GATE MOVED FROM THE END OF THE DOCUMENT TO THE END OF EACH PAGE. It
+   * used to be one gate on the sign-off control: pages turned freely and
+   * every box anywhere had to be ticked before signing. That is sound and it
+   * reads wrong — Carl watched a live tablet offer a live Continue under an
+   * unticked box that says *"I confirm the details above are correct"*, which
+   * invites somebody to page past an affirmation and meet it again later as a
+   * blocked button on a page they have left behind.
+   *
+   * THE WHOLE-DOCUMENT GATE IS UNCHANGED AND STILL THE ONE THAT MATTERS.
+   * `readyToSign` and `outstanding` below still span every page, so this is a
+   * second, earlier gate and never a replacement: no arithmetic here can open
+   * the signature path, which is hard rule 2 (REQ-REG-06) and is enforced by
+   * `GuardedButton`'s blocked branch having no handler at all. What this does
+   * is stop somebody reaching the last page with work behind them.
+   *
+   * 2A HAS NO STATEMENTS, so its Continue is ungated by construction rather
+   * than by a special case — the filter simply returns nothing.
+   *
+   * IT NEVER BLOCKS CARE (hard rule 8). Back still turns the page, "See
+   * reception" is in the chrome on every page, and a patient who will not
+   * tick is a patient reception handles — which is the same answer this
+   * screen has always given, one page earlier.
+   */
+  const pageOutstanding = pageStatements.filter(
+    (statement) => !affirmed.includes(statement.key),
+  ).length;
+
+  /**
    * SIGN-OFF IS ON THE LAST PAGE AND NOWHERE ELSE. On 2A and 2B Continue turns
    * the page; a control there that read "Continue to sign" would tell somebody
    * they were about to sign a document they had read a third of.
@@ -534,8 +566,20 @@ export function ParticularsScreen({
       ) : null}
       <div className={`${styles.grow} ${styles.primaryStack}`}>
         {nextPage && paged ? (
-          <PrimaryButton
+          /*
+            GATED ON THIS PAGE'S OWN TICKS (Carl, 27 September 2026). A
+            `GuardedButton` rather than a `PrimaryButton` so the blocked state
+            is a real `button[disabled]` with no handler, exactly as the
+            sign-off control is, and so the reason is on the control rather
+            than left for somebody to work out from an unticked box.
+          */
+          <GuardedButton
             label={strings.particulars.db4.continueToNextPage}
+            state={
+              pageOutstanding === 0
+                ? { disabled: false }
+                : { disabled: true, disabledLabel: strings.particulars.db4.continueNotTicked(pageOutstanding) }
+            }
             onPress={() => paged.onPage(nextPage)}
             testId="db4-page-continue"
           />

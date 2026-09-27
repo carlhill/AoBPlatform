@@ -1220,18 +1220,39 @@
   width: 9ch;
 }
 
+/*
+ * RIGHT-ALIGNED, AS THE FORM PRINTS IT (Carl, 27 September 2026, from a live
+ * tablet: "right justify the $ in the table"). THIS REVERSES THE RULE THAT
+ * WAS HERE, which read "NOT RIGHT-ALIGNED, AND NOT TABULAR-FIGURED INTO A
+ * COLUMN OF SUMS" on the reasoning that styling an amount as arithmetic
+ * invites the eye to add it up.
+ *
+ * THAT REASONING WAS OURS AND IT WAS WRONG ABOUT THE READER. The patient is
+ * not auditing a ledger; they are checking two numbers against a piece of
+ * paper that prints them right-aligned. Left-ragged decimals make "0.00" and
+ * "1,234.55" hard to compare at a glance, and this screen exists to be
+ * compared against. A column of amounts with no total on it is a column of
+ * amounts, not an invitation to sum.
+ *
+ * NOTHING THAT HARD RULE 4 ACTUALLY FORBIDS HAS MOVED. The string is still
+ * the one PracSoft printed, reproduced and never originated (D-2026-09-14-02):
+ * not parsed, not reformatted, not given a currency symbol we chose, and --
+ * the part the old comment was really protecting -- NOT SUMMED AND NOT
+ * TOTALLED. There is no total row here and there must never be one; that is
+ * the safeguard, and alignment was never it.
+ *
+ * `tabular-nums` IS WHAT MAKES THE ALIGNMENT REAL. Proportional digits right-
+ * aligned still stagger, because a 1 is narrower than a 0 -- so the column
+ * would look right-aligned and not read as one.
+ */
 .db4ColBenefit {
   width: 12ch;
+  text-align: right;
 }
 
-/*
- * NOT RIGHT-ALIGNED, AND NOT TABULAR-FIGURED INTO A COLUMN OF SUMS. The amount
- * is a string the practice printed, reproduced (hard rule 4 as narrowed by
- * D-2026-09-14-02); styling it as arithmetic invites the eye to add it up, and
- * nothing on this screen totals anything.
- */
 .db4Benefit {
-  font-variant-numeric: normal;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 /*

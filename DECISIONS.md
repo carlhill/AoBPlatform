@@ -2102,6 +2102,207 @@ accessibility decision, not a statutory one.
 `apps/web/app/kiosk/README.md` section "The device and the type scale".
 
 
+---
+
+## D-2026-09-27-04 - The details check is asked once per SESSION, and the step chip is latched at arrival
+
+**Decided:** The tablet asks the patient to check their details **once per
+tablet session** - not once per patient per day, and not once per agreement. A
+re-push makes a new session, so it asks again. And the step chip's arithmetic
+is **captured when the ceremony starts** and never re-read afterwards. - Carl
+Hill, 27 September 2026, from a live tablet, across four reports: *"still go
+to step 3 when I push to tablet"*, *"never goes to step 1"*, *"force the
+patient to step1 for each agreement - this is a better rule"*, *"Still jumps
+to step 2 somtimes"*.
+
+**Why:**
+- The boundary was originally the PATIENT and the DAY: any confirmation that
+  day suppressed the question. A patient with five agreements in a morning was
+  asked once and then pushed straight into the form four times, which is the
+  "never goes to step 1" Carl saw.
+- Narrowing it to the AGREEMENT was still too wide, because a re-push of the
+  same agreement creates a NEW session and the earlier session's answer still
+  suppressed the question. That is the "still jumps to step 2 sometimes".
+- The session is the right boundary because the session is the ceremony. The
+  patient is holding the tablet for this one; what they answered on a previous
+  handover is not an answer they have given on this one.
+
+**And the latching is a separate rule with its own reason:**
+- `detailsCheck` flips to `confirmed_today` the instant the patient answers,
+  and `particularsLockedAt` is written mid-ceremony by the lock. Both are
+  inputs to how many steps the ceremony has.
+- Read live, the chip renumbers **under the patient's hand**: "Step 1 of 3"
+  becomes "Step 1 of 2" and then "Step 2 of 2" without the patient doing
+  anything the chip is describing. A progress indicator that moves backwards is
+  one nobody believes.
+- So the route facts are latched once, at arrival, in `Ceremony.tsx`
+  (`kp1Skipped`), and `ceremonySequence` is a pure function of them. This same
+  mistake was made twice in one evening - first with `particularsLockedAt`,
+  then with `detailsCheck` an hour after guarding against it - which is why it
+  is written down as a rule rather than left as a fix.
+
+**What changes it:** A ruling that a same-day confirmation should carry across
+sessions (it should not; the patient is being handed a device). Or a fifth
+route, which is one more entry in `ceremonySequence` and nothing else.
+
+**Where:** `apps/web/app/kiosk/rules/ceremony-steps.ts` (the four routes),
+`apps/web/app/kiosk/Ceremony.tsx` (the latch),
+`apps/core/src/tablet-sessions/tablet-sessions.service.ts` (the boundary).
+Named test:
+`a_reload_mid_ceremony_does_not_ask_the_patient_the_same_questions_again`.
+
+---
+
+## D-2026-09-27-05 - Four digits of the Medicare number on the tablet, not one
+
+**Decided:** The masked Medicare number on the tablet shows the **last four
+digits** - `2454 23237 1` renders as the mask plus `237 1` - and the note
+beside it asks the patient to check what is shown against the card in their
+hand, including the IRN. - Carl Hill, 27 September 2026: *"In that case show
+the last 4 digits of the medicare number. Showing just a single digit does not
+help"*.
+
+**Why:**
+- The screen exists so a patient can compare what we hold against the card they
+  are carrying. One digit is not a comparison; it is a formality that looks
+  like one, which is worse than showing nothing.
+- Masking is still server-side and the tablet is never sent the full value
+  (D-2026-09-27-01). The device cannot leak what it was never given.
+- Four digits of a card number that is **not an identity identifier** (hard
+  rule 1, REQ-VER-02) and is never a sole authenticator anywhere in this
+  product is a disclosure to the person the number belongs to, on a paired
+  device, at the moment they were asked to check it.
+
+**One thing Carl asked for was NOT built as asked.** His wording was *"Validate
+you are the right number on the medicare card"*. That frames the screen as
+identity verification against the Medicare card, which hard rule 1 forbids
+outright. The intent - check the IRN beside your name - was delivered as a
+**data-accuracy check on the form**, never an identity check.
+
+**What changes it:** A privacy assessment that four digits plus a name on a
+waiting-room-adjacent screen is too much. The count is one constant
+(`DIGITS_SHOWN`).
+
+**Where:** `apps/core/src/agreements/db4-form-view.ts`,
+`strings.particulars.db4.maskedCardNote`.
+
+---
+
+## D-2026-09-27-06 - The push refuses a DB4 Print Record we cannot reproduce, at the desk, naming what and which
+
+**Decided:** When reception presses **Send to tablet**, the platform checks the
+DB4 Print Record behind the agreement and refuses the push if it cannot
+reproduce it. The refusal carries **every** failed check and **which print
+record** it is about. Six checks: no patient identified, **a Medicare card
+number with no IRN**, no services, no servicing provider name or number, no
+date of service, and **no benefit against any service row**. - Carl Hill, 27
+September 2026, from a live tablet: *"If no $ do not allow the approval to
+progress. Check all details when the reception pushes to the tablet."*, then
+*"if a medicare# is provided then the IRN must also be provided. Check this on
+button 'Send to tablet' at reception"*, then *"message needs to say what data
+is missing on the print and also some unique id to identify the print"*.
+
+**Why it is not a statutory validation, and why that distinction is the whole
+design:**
+- **No dollar amount is in the s 65C data set** (hard rule 4, REQ-REG-04). An
+  agreement with no amount anywhere near it is statutorily **complete**. None
+  of these codes means the agreement is invalid, and an agreement that never
+  came off a printed DB4 is never asked any of them.
+- What they measure is **confidence in our own reproduction**. A real PracSoft
+  DB4 for a bulk-bill claim prints a benefit against its rows, so a record
+  carrying none most likely means the parser template did not read the form -
+  the ordinary cause being a PracSoft layout change. The patient is about to be
+  shown that reproduction and asked to check it against what they know, so a
+  reproduction we do not believe should not reach them.
+- **Nothing originates, parses or computes an amount.** `benefitAssigned` is
+  tested for PRESENCE, as a non-empty string. `0.00` passes - deciding that a
+  zero means "no amount" would be AoB forming an opinion about a figure, which
+  is exactly what hard rule 4 forbids (D-2026-09-14-02).
+
+**Why the IRN check is conditional:** card number present means IRN required;
+neither present means nothing required. Carl found the case that makes it
+matter. `ParticularsScreen` draws the IRN row only when there is a value, while
+the note beside it tells the patient to check *"the IRN beside your name"*. A
+half-read card therefore produces a screen asking somebody to check a field it
+has not shown them. It is a **presence** check on a parsed field and **not** an
+identity check - the card identifies nobody (hard rule 1, REQ-VER-02).
+
+**Why at the desk and never on the tablet.** The tablet-side block was put to
+Carl and he rejected it. Hard rule 8 (REQ-REC-04) is the reason: a refusal at
+the desk is a redirect a staff member acts on in seconds - reprint, or paper,
+or after the service - and the patient is seen and billed either way. A dead
+Continue button in front of somebody who has already sat down is the failure
+that rule exists to prevent, and they are the one person in the building who
+cannot fix a print record.
+
+**Which record, and the file that does not exist.** The refusal names the form
+reference (printed on the page), the print queue it came off, when it was
+captured and received, the parser template version, and `sourceSha256` -
+**AOBPRINTER's own ref, and the row's audit key**
+(`@@unique([practiceId, documentType, sourceSha256])`). There is **no file path
+and there never was one**: the driver parses at the practice and sends the
+parsed record plus a hash of the source bytes - *provenance without possession*
+(8.2) - so no path, spool id or filename is captured by the envelope, accepted
+by the DTO or stored on the row. The band says so in a line rather than showing
+a blank field. Timestamps are trimmed to the second, because milliseconds
+(`...54.953Z`) read as a dollar amount to the named hard-rule-4 guard, and the
+data loses a precision nobody wanted rather than that guard learning
+exceptions.
+
+**Three of the six are a backstop, not protection.** `db4-assignment.handler.ts`
+is the only writer of `Agreement.sourcePrintJobId` and gates on chart number,
+service items and service date first, so those three cannot fire on any
+agreement that exists today. That is a fact about today's code and not a
+structural invariant, so `DB4_PRINT_RECORD_CHECK_GATED_AT_INGEST` states the
+correspondence field by field and a named test pins it. **Live today:** the
+benefit check, the IRN check, and the provider-NAME half of the provider check.
+
+**What changes it:** An ingest gate that starts requiring an amount (the
+benefit check then becomes a backstop too). A PracSoft form that legitimately
+prints no benefit anywhere - which would make the benefit check wrong rather
+than merely strict.
+
+**Where:** `packages/contracts/src/db4-print-record-check.ts` (the codes and the
+identity), `apps/core/src/agreements/db4-form-view.ts` (`checkDb4PrintRecord`),
+`apps/core/src/tablet-sessions/push-refusal.ts`,
+`apps/web/app/practice/tablet/pushDesk.tsx` (the band).
+
+---
+
+## D-2026-09-27-07 - Continue waits for the tick on its own page
+
+**Decided:** On a paginated DB4, each page's **Continue** is blocked until the
+affirmations **on that page** are ticked. A page carrying no affirmation is
+open. - Carl Hill, 27 September 2026, from a live tablet: *"on page 1 or 3
+Continue button should be enabled after the box is ticked. Same rule on the
+next page"*.
+
+**Why:** The gate used to be one gate at the end of the document: pages turned
+freely and every box anywhere had to be ticked before signing. That is sound
+and it reads wrong. Carl watched a live Continue sitting under an unticked box
+reading *"I confirm the details above are correct"*, which invites somebody to
+page straight past an affirmation and meet it again later as a blocked button
+on a page they have left behind.
+
+**It is a second gate, never a replacement.** `readyToSign` still spans every
+page and is what hard rule 2 (REQ-REG-06) rests on - no arithmetic on a page
+can open the signature path, and `GuardedButton`'s blocked branch has no
+handler at all. This only stops a patient reaching the last page with work
+behind them.
+
+**It never blocks care** (hard rule 8): Back turns the page, "See reception" is
+in the chrome on every page, and a patient who will not tick is a patient
+reception handles - the same answer this screen always gave, one page earlier.
+
+**What changes it:** A ruling that a patient should be able to read the whole
+form before affirming any part of it. Which affirmation sits on which page is
+`apps/web/app/kiosk/rules/db4-pages.ts` - presentation, never the instrument.
+
+**Where:** `apps/web/app/kiosk/screens/ParticularsScreen.tsx`. Named tests:
+`a_pages_continue_waits_for_that_pages_own_tick`,
+`a_page_with_no_statements_is_not_gated_at_all`.
+
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
@@ -2150,3 +2351,7 @@ accessibility decision, not a statutory one.
 | 27 Sep | The patient reads their own DB4 on the tablet with the cost on it; the Medicare number is masked there and printed in full on the form (amends -14-03 for the screen only); DocuSign-style PDF signing considered and refused | **D-2026-09-27-01 above** |
 | 27 Sep | A no-PMS practice gets the `standard` profile (every surface except db4), closing PRACTICE-SURFACES section 6b; no second kiosk URL, because the discriminator is the session and not the practice | **D-2026-09-27-02 above** |
 | 27 Sep | The kiosk is designed for a 10-11in tablet in landscape (~1180x820), large print: 20px body, 22px for the operative words, an 18px floor on every patient surface, 28-32px headings, 44x44 targets; 2A reads practice-left/patient-right | **D-2026-09-27-03 above** |
+| 27 Sep | The details check is asked once per SESSION, not per patient-day or per agreement; and the step chip is LATCHED at arrival, because `detailsCheck` and `particularsLockedAt` both move mid-ceremony and the chip renumbered under the patient's hand | **D-2026-09-27-04 above** |
+| 27 Sep | The tablet shows the LAST FOUR digits of the Medicare number, not one; "validate you are the right number" was declined as identity verification (hard rule 1) and delivered as a data-accuracy check on the form | **D-2026-09-27-05 above** |
+| 27 Sep | Send to tablet refuses a DB4 Print Record we cannot reproduce - six checks, every failure reported at once, naming the form reference, the queue and AOBPRINTER's `sourceSha256`; a card number with no IRN is refused; there is no file path and never was | **D-2026-09-27-06 above** |
+| 27 Sep | Each DB4 page's Continue waits for the affirmations on THAT page; a second gate, never a replacement for the signature gate that spans the document | **D-2026-09-27-07 above** |
