@@ -237,6 +237,22 @@ run_preflight() {
 # brief) is enforced structurally: nothing here ever kills a PID it did not
 # itself read from this file.
 
+# Does the patient exist right now? The same question the pre-check asks,
+# asked again AFTER the arrival, because the arrival can be refused at the
+# agreement lock long after the patient row is committed.
+patient_exists() {
+  local hit
+  hit="$(curl -sS -H "x-practice-id: ${CFG_PRACTICE_ID}" -H 'content-type: application/json'     "${CORE}/patients/search?q=${CHART_NUMBER}" 2>/dev/null |     python -c '
+import json, sys
+try:
+    rows = json.load(sys.stdin)
+except ValueError:
+    rows = []
+print("yes" if any(r.get("patientRecordNumber") == sys.argv[1] for r in rows) else "no")
+' "$CHART_NUMBER" 2>/dev/null || echo no)"
+  [ "$hit" = yes ]
+}
+
 pid_alive() {
   # `kill -0` on a Windows PID works under MSYS's process emulation for a
   # process this same shell tree can see; that is exactly the node child we
@@ -440,13 +456,36 @@ print(json.dumps({
   # arrival event for the same "visit".
   arrival_resp="$(curl -sS "${hdr[@]}" -X POST "${CORE}/arrivals" -d "$arrival_body" 2>/dev/null || true)"
   arrival_id="$(json_field "$arrival_resp" arrivalId)"
-  if [ -z "$arrival_id" ]; then
-    fail "POST /arrivals did not return an arrivalId while seeding the patient" "$arrival_resp"
-  fi
-  if [ "$search_hit" = yes ]; then
-    say "patient ${CHART_NUMBER} (${PATIENT_GIVEN} ${PATIENT_FAMILY}): already present"
+
+  #
+  # THE TEST IS "DOES THE PATIENT EXIST", NOT "DID THE ARRIVAL SUCCEED".
+  #
+  # `POST /arrivals` does several things: it mirrors the patient, ensures an
+  # assignor, decides what the visit needs, drafts an agreement and opens a
+  # capture request. This step wants only the FIRST of those. At a practice
+  # with a default service description the arrival goes on to lock the draft
+  # and can be REFUSED there -- D5, the service date against the agreement
+  # date, because `arrivedAt` here is a fixed instant in the past -- long
+  # after the patient row has been committed.
+  #
+  # Measured at XLEVELUP Medical on 27 September 2026: the arrival was refused,
+  # the patient existed, and this script stopped anyway and reported a failure
+  # that was not one. So: ask the database. A refused arrival whose patient
+  # landed is a success for this step, and it is said out loud rather than
+  # hidden, because the refusal is still worth seeing.
+  #
+  if patient_exists; then
+    if [ "$search_hit" = yes ]; then
+      say "patient ${CHART_NUMBER} (${PATIENT_GIVEN} ${PATIENT_FAMILY}): already present"
+    else
+      say "patient ${CHART_NUMBER} (${PATIENT_GIVEN} ${PATIENT_FAMILY}): created"
+    fi
+    if [ -z "$arrival_id" ]; then
+      say "  (the arrival itself was refused; only the patient was needed here)"
+      say "  ${arrival_resp}"
+    fi
   else
-    say "patient ${CHART_NUMBER} (${PATIENT_GIVEN} ${PATIENT_FAMILY}): created"
+    fail "the patient ${CHART_NUMBER} does not exist after POST /arrivals" "$arrival_resp"
   fi
 }
 
