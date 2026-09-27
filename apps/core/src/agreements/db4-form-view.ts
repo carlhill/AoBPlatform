@@ -474,6 +474,29 @@ export function checkDb4PrintRecord(envelope: PrintJobEnvelope): readonly Db4Pri
     !!(read(patient.givenNames) ?? read(patient.familyName)) || !!read(patient.patientRecordNumber);
   if (!identified) failed.push('print_record_patient_unidentified');
 
+  /*
+   * A CARD NUMBER WITH NO IRN BESIDE IT (Carl, 27 September 2026: *"if a
+   * medicare# is provided then the IRN must also be provided. Check this on
+   * button 'Send to tablet' at reception"*).
+   *
+   * CONDITIONAL ON THE CARD NUMBER, exactly as Carl put it. A record carrying
+   * neither is the `no-card-number` case and passes here: the tablet draws
+   * neither field and the masking note is not drawn either, so nothing on the
+   * screen refers to anything that is missing. What is refused is the
+   * HALF-READ card — the state where `ParticularsScreen` shows a masked card
+   * number and a note telling the patient to check *"the IRN beside your
+   * name"*, with no IRN row on the page to check.
+   *
+   * PRESENCE, NEVER VALUE, AND NOT AN IDENTITY CHECK (hard rules 1 and 9).
+   * `read()` is the whole test. Nothing here parses the digit, range-checks
+   * it, or treats the card as identifying anybody: the Medicare card number is
+   * NOT an identity identifier (REQ-VER-02).
+   */
+  // eslint-disable-next-line no-restricted-syntax -- PRESENCE only, never read as an identifier (hard rule 1).
+  if (read(patient.medicareCardNumber) && !read(patient.irn)) {
+    failed.push('print_record_irn_missing');
+  }
+
   /* BACKSTOP (ingest: `no_service_items`). A DB4 exists to list services. */
   if (services.length === 0) failed.push('print_record_services_missing');
 

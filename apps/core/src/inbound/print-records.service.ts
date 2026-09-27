@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { PrintJobEnvelope } from '@aobplatform/contracts';
+import type { Db4PrintRecordIdentity, PrintJobEnvelope } from '@aobplatform/contracts';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -27,6 +27,37 @@ import { PrismaService } from '../prisma/prisma.service';
  * IT IS READ-ONLY, AND IT STAYS THAT WAY. Nothing outside the inbound module
  * writes to that table.
  */
+/**
+ * A TIMESTAMP TO THE SECOND, for a refusal a person reads.
+ *
+ * TWO REASONS, AND THE SECOND IS THE SERIOUS ONE.
+ *
+ * IT READS BETTER: nobody at a front desk matching a form against a print run
+ * needs three decimal places of a second, and the block this feeds is read
+ * aloud down a phone to support.
+ *
+ * AND MILLISECONDS LOOK EXACTLY LIKE MONEY. `...T13:20:54.953Z` contains
+ * "54.953", which the named hard-rule-4 assertion in
+ * `post-service-push.e2e-spec.ts` reads as a dollar amount in a refusal body
+ * — and it is right to: a test that guards *"no amount anywhere near this"*
+ * (REQ-REG-04) must not be taught to tell the difference between a real
+ * amount and something shaped like one, because the version of it that can be
+ * argued with is the version that eventually lets one through. So the data
+ * loses a precision nobody wanted rather than the guard losing its teeth.
+ *
+ * THE STORED RECORD IS UNTOUCHED. This trims the copy that goes in a refusal;
+ * the row and the payload keep whatever precision they arrived with, which is
+ * what an audit reads.
+ *
+ * ANYTHING THAT IS NOT AN ISO INSTANT COMES BACK UNCHANGED. `capturedAt` is a
+ * desktop's own clock reading and may be malformed; a refusal is not the
+ * place to start correcting it, and dropping the field would lose a fact.
+ */
+function toTheSecond(iso: string | undefined): string | undefined {
+  if (!iso) return undefined;
+  return iso.replace(/\.\d{1,6}(?=(Z|[+-]\d{2}:?\d{2})$)/, '');
+}
+
 @Injectable()
 export class PrintRecordsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -40,10 +71,45 @@ export class PrintRecordsService {
    * belt and braces, and the braces are the ones that hold.
    */
   async envelopeFor(practiceId: string, printJobId: string): Promise<PrintJobEnvelope | null> {
+    return (await this.recordFor(practiceId, printJobId))?.envelope ?? null;
+  }
+
+  /**
+   * THE SAME READ, PLUS WHICH RECORD IT WAS (Carl, 27 September 2026: *"some
+   * unique id to identify the print ... we must have some unique ref from
+   * AOBPrinter which we must be storing for audit"*).
+   *
+   * ONE QUERY, NOT TWO. The push-time check needs the contents AND the
+   * identity in the same breath — the contents to decide, the identity to put
+   * in the refusal — and a second round trip to name a record we have just
+   * read would be a read per refusal for no new fact. `envelopeFor` is kept
+   * and now delegates here, so its callers are untouched and there is one
+   * place where a print job is fetched.
+   *
+   * `sourceSha256` IS AOBPRINTER'S OWN REF and the row's audit key
+   * (`@@unique([practiceId, documentType, sourceSha256])`). The queue pair and
+   * `capturedAt` come off the payload because that is where AOBPRINTER puts
+   * them; everything else is the row's.
+   *
+   * NOTHING PATIENT-IDENTIFYING CROSSES THIS BOUNDARY (hard rule 9,
+   * REQ-LOG-08). The identity describes the document and the machinery that
+   * read it — no name, no chart number, no card number, no amount.
+   */
+  async recordFor(
+    practiceId: string,
+    printJobId: string,
+  ): Promise<{ envelope: PrintJobEnvelope; identity: Db4PrintRecordIdentity } | null> {
     const job = await this.prisma.withPractice(practiceId, (tx) =>
       tx.inboundPrintJob.findFirst({
         where: { id: printJobId, practiceId },
-        select: { payload: true, documentType: true },
+        select: {
+          id: true,
+          payload: true,
+          documentType: true,
+          sourceSha256: true,
+          parserTemplateVersion: true,
+          receivedAt: true,
+        },
       }),
     );
     if (!job) return null;
@@ -57,6 +123,19 @@ export class PrintRecordsService {
      * honest answer: there is no DB4 here.
      */
     if (job.documentType !== 'db4_assignment') return null;
-    return job.payload as unknown as PrintJobEnvelope;
+    const envelope = job.payload as unknown as PrintJobEnvelope;
+    return {
+      envelope,
+      identity: {
+        printJobId: job.id,
+        sourceSha256: job.sourceSha256,
+        formReference: envelope.form?.formReference,
+        queueName: envelope.queueName,
+        queueLabel: envelope.queueLabel,
+        capturedAt: toTheSecond(envelope.capturedAt),
+        receivedAt: toTheSecond(job.receivedAt.toISOString()) ?? job.receivedAt.toISOString(),
+        parserTemplateVersion: job.parserTemplateVersion,
+      },
+    };
   }
 }

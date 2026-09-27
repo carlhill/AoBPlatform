@@ -399,6 +399,55 @@ describe('the DB4 form view', () => {
      * patient would be shown a form that does not say who they are assigning
      * to.
      * ------------------------------------------------------------------ */
+    /* ---------------------------------------------------------------------
+     * THE SECOND GENUINELY NEW CHECK, AND THE SECOND LIVE ONE (Carl, 27
+     * September 2026, from a live tablet: *"if a medicare# is provided then
+     * the IRN must also be provided. Check this on button 'Send to tablet' at
+     * reception"*).
+     *
+     * WHAT HE WAS LOOKING AT WAS A SCREEN CONTRADICTING ITSELF. The tablet
+     * drew a masked Medicare number and, beneath it, the note telling the
+     * patient to check *"the IRN beside your name"* — with no IRN row on the
+     * page, because `ParticularsScreen` draws that row only when there is a
+     * value. The patient was being asked to check a field that was not there.
+     *
+     * NOT AN IDENTITY CHECK (hard rule 1, REQ-VER-02). Presence of a parsed
+     * field, never a value, and the card is not treated as identifying
+     * anybody.
+     * ------------------------------------------------------------------ */
+    it('a_print_record_with_a_card_number_and_no_irn_is_refused', () => {
+      const halfRead = checks({
+        patient: {
+          patientRecordNumber: '00001',
+          givenNames: 'Testy',
+          familyName: 'Fakename',
+          // eslint-disable-next-line no-restricted-syntax -- the fixture's own field, invalid by construction.
+          medicareCardNumber: FAKE_MEDICARE,
+        },
+      });
+      expect(halfRead).toEqual(['print_record_irn_missing']);
+    });
+
+    it('a_print_record_with_no_card_number_at_all_is_not_asked_for_an_irn', () => {
+      /*
+       * CONDITIONAL, EXACTLY AS CARL PUT IT: *"IF a medicare# is provided"*.
+       * A record carrying neither is the `no-card-number` case he tested
+       * minutes earlier and reported working — the tablet draws neither field
+       * and no note refers to either, so nothing on that screen contradicts
+       * anything. Refusing it would block a push over a form that reads
+       * correctly, which is the opposite of what this check is for.
+       */
+      const neither = checks({
+        patient: { patientRecordNumber: '00001', givenNames: 'Testy', familyName: 'Fakename' },
+      });
+      expect(neither).toEqual([]);
+      // AND AN EMPTY STRING IS NOT A CARD NUMBER. `read()` treats blank as
+      // absent, so a template that emitted the field without finding a value
+      // is the same case as one that did not emit it.
+      // eslint-disable-next-line no-restricted-syntax -- the fixture's own field, and blank by design.
+      expect(checks({ patient: { patientRecordNumber: '00001', medicareCardNumber: '   ' } })).toEqual([]);
+    });
+
     it('a_print_record_whose_servicing_provider_has_no_name_is_refused', () => {
       const unnamed = checks({
         providers: [
@@ -487,10 +536,43 @@ describe('the DB4 form view', () => {
         providers: [],
         services: [],
       } as unknown as PrintJobEnvelope);
-      expect(ruined).toEqual([...DB4_PRINT_RECORD_CHECKS]);
+      /*
+       * EVERY CHECK BUT THE CONDITIONAL ONE (Carl, 27 September 2026). This
+       * used to assert the whole list, and it cannot any more: an empty
+       * record has no Medicare card number, and `print_record_irn_missing`
+       * only asks for an IRN when a card number was read. So the most ruined
+       * record possible fails five of the six, and the sixth is absent
+       * because its precondition is absent rather than because it passed.
+       *
+       * IT IS SPELLED OUT RATHER THAN FILTERED OUT. Deriving the expectation
+       * from the code under test would make this test agree with whatever the
+       * validator does; naming the five means a check that stops firing shows
+       * up here.
+       */
+      expect(ruined).toEqual([
+        'print_record_patient_unidentified',
+        'print_record_services_missing',
+        'print_record_servicing_provider_missing',
+        'print_record_service_date_missing',
+        'print_record_benefit_missing',
+      ]);
+      // AND WITH A CARD NUMBER READ, ALL SIX — the conditional one joins the
+      // list in its declared position rather than being appended to the end.
+      const alsoHalfRead = checkDb4PrintRecord({
+        form: {},
+        // eslint-disable-next-line no-restricted-syntax -- the fixture's own field, invalid by construction.
+        patient: { medicareCardNumber: FAKE_MEDICARE },
+        providers: [],
+        services: [],
+      } as unknown as PrintJobEnvelope);
+      expect(alsoHalfRead).toEqual([...DB4_PRINT_RECORD_CHECKS]);
       // AND IN THE DECLARED ORDER, always. A list that reshuffles itself
       // between two presses of Send is a list nobody trusts.
-      expect(ruined).toEqual(ruined.slice().sort((a, b) => DB4_PRINT_RECORD_CHECKS.indexOf(a) - DB4_PRINT_RECORD_CHECKS.indexOf(b)));
+      for (const list of [ruined, alsoHalfRead]) {
+        expect(list).toEqual(
+          list.slice().sort((a, b) => DB4_PRINT_RECORD_CHECKS.indexOf(a) - DB4_PRINT_RECORD_CHECKS.indexOf(b)),
+        );
+      }
     });
 
     it('the_print_record_check_never_throws', () => {
@@ -551,7 +633,7 @@ describe('the DB4 form view', () => {
 
     it('every_backstop_check_names_the_ingest_reason_that_covers_it', () => {
       /*
-       * THE BACKSTOP DECLARATION, PINNED. Three of these five cannot fire on
+       * THE BACKSTOP DECLARATION, PINNED. Three of these six cannot fire on
        * any agreement that exists, because `db4-assignment.handler.ts` is the
        * only writer of `sourcePrintJobId` and refuses the same envelope at
        * ingest first. That is a fact about today's code, not a structural
@@ -568,6 +650,10 @@ describe('the DB4 form view', () => {
         if (covered !== null) expect(DB4_PLACEMENT_REASONS).toContain(covered);
       }
       expect(DB4_PRINT_RECORD_CHECK_GATED_AT_INGEST.print_record_benefit_missing).toBeNull();
+      // AND SO IS THE IRN. `irn` is `@IsOptional()` at ingest and nothing
+      // downstream requires it, so this check is the only thing standing
+      // there (Carl, 27 September 2026).
+      expect(DB4_PRINT_RECORD_CHECK_GATED_AT_INGEST.print_record_irn_missing).toBeNull();
       // The map is exhaustive: a check added without a decision about whether
       // ingest already covers it is a check nobody classified.
       expect(Object.keys(DB4_PRINT_RECORD_CHECK_GATED_AT_INGEST).sort()).toEqual(

@@ -13,6 +13,7 @@ import {
   answersEnduringRules,
   type Db4FormView,
   type Db4PrintRecordCheck,
+  type Db4PrintRecordIdentity,
   type RulesEngineClient,
 } from '@aobplatform/contracts';
 import { RendererRegistry, renderInputOf } from '../render/renderer-registry';
@@ -281,6 +282,15 @@ export interface PreparedLock {
   /** The statements the assignor must tick, in order. Keys travel to the signature. */
   readonly statements: readonly { readonly key: string; readonly text: string }[];
 }
+
+/**
+ * NOTHING TO REPORT — no print record behind the agreement, none readable, or
+ * the read itself failed. One frozen value for all three, because they are
+ * the same answer to the push ("send it") and three literals would be three
+ * chances for one of them to start refusing.
+ */
+const NO_PRINT_RECORD_CHECKS: { checks: readonly Db4PrintRecordCheck[]; identity: Db4PrintRecordIdentity | null } =
+  Object.freeze({ checks: Object.freeze([]), identity: null });
 
 @Injectable()
 export class AgreementsService {
@@ -2941,14 +2951,21 @@ export class AgreementsService {
   async db4PrintRecordChecks(
     practiceId: string,
     agreement: { id: string; sourcePrintJobId: string | null },
-  ): Promise<readonly Db4PrintRecordCheck[]> {
-    if (!agreement.sourcePrintJobId) return [];
+  ): Promise<{ checks: readonly Db4PrintRecordCheck[]; identity: Db4PrintRecordIdentity | null }> {
+    if (!agreement.sourcePrintJobId) return NO_PRINT_RECORD_CHECKS;
     try {
       // Practice-scoped through `withPractice` inside the service, so a
       // cross-practice read returns null and fails closed.
-      const envelope = await this.printRecords.envelopeFor(practiceId, agreement.sourcePrintJobId);
-      if (!envelope) return [];
-      return checkDb4PrintRecord(envelope);
+      const record = await this.printRecords.recordFor(practiceId, agreement.sourcePrintJobId);
+      if (!record) return NO_PRINT_RECORD_CHECKS;
+      /*
+       * THE IDENTITY RIDES WITH THE VERDICT (Carl, 27 September 2026: *"some
+       * unique id to identify the print"*). The refusal has to name WHICH
+       * form, or "reprint it" is an instruction nobody can follow at a
+       * practice that prints all morning — and the only place that is known
+       * is here, where the record was just read.
+       */
+      return { checks: checkDb4PrintRecord(record.envelope), identity: record.identity };
     } catch (err) {
       /*
        * THE CLASS AND THE AGREEMENT ID, NEVER THE RECORD. Every line of a DB4
@@ -2959,7 +2976,7 @@ export class AgreementsService {
         `The DB4 print record could not be checked for agreement ${agreement.id} — ${(err as Error).name}. ` +
           'The push is allowed to proceed: an unreadable record is our fault, not the form’s.',
       );
-      return [];
+      return NO_PRINT_RECORD_CHECKS;
     }
   }
 

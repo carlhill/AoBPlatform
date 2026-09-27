@@ -6227,11 +6227,137 @@ export const strings = {
       enduring_not_per_provider:
         'An ongoing agreement is between one provider and one patient, and this one names no single '
         + 'provider. Send an agreement for this visit instead.',
+      /**
+       * THE PRINTED FORM BEHIND THIS AGREEMENT IS NOT ONE WE CAN REPRODUCE
+       * (Carl, 27 September 2026, from a live tablet: “If no $ do not allow the
+       * approval to progress. Check all details when the reception pushes to
+       * the tablet.”).
+       *
+       * IT MUST NOT READ AS A STATUTORY FAULT, AND THAT IS THE WHOLE
+       * DIFFICULTY OF THIS COPY. No dollar amount is in the s 65C data set
+       * (hard rule 4, REQ-REG-04), so an agreement with no amount anywhere
+       * near it is COMPLETE and there is nothing wrong with it. What is in
+       * doubt is OUR OWN READING of the practice’s printed form. So the
+       * subject of every sentence here is our reading — never the agreement,
+       * never the practice, and never the patient — and the words
+       * “invalid”, “rejected” and “failed” appear nowhere, along with
+       * everything hard rule 12 forbids.
+       *
+       * AND IT SAYS WHAT TO DO IN THE SAME BREATH (hard rule 8, REQ-REC-04).
+       * The person reading this has somebody standing in front of them, so it
+       * names all three ways forward and says plainly that the appointment is
+       * unaffected. The first — reprint it — is the one that ends the problem,
+       * and it happens in the practice’s own software rather than on any
+       * screen of ours, which is why this reason carries no link: there is
+       * nowhere in this console to send anybody (CLAUDE.md §7 — a link that
+       * goes nowhere useful is worse than the sentence alone).
+       */
+      print_record_incomplete:
+        'We could not read enough of the printed form to show the patient a copy of it, so this one has '
+        + 'not gone to the tablet. The agreement itself is fine — this is about our reading of the form. '
+        + 'Reprint it from your practice software and it will come through again, or take this one on '
+        + 'paper or after the service. The patient is seen and billed either way.',
       /** A code this build has not met yet. Shown, never swallowed (Carl, 4 Sep 2026). */
       other: (code: string) => `Could not send (${code}). Please tell support this code.`,
       /** The rarer case of a refusal that carries no code at all — the server's own sentence, as it came. */
       otherNoCode: 'Could not send. Please tell support what you were doing.',
     },
+
+    /**
+     * WHICH PARTS OF THE FORM WE COULD NOT READ — one short line each, under
+     * the sentence above, in the order the server reported them.
+     *
+     * WHY A LIST AND NOT ONE SENTENCE. Reception fixes the form once rather
+     * than pressing Send five times to be told five things (CLAUDE.md §7),
+     * so the refusal carries every failed check and the band shows every one.
+     *
+     * EACH LINE NAMES A FIELD AND CARRIES NO VALUE (hard rule 9, REQ-VER-04).
+     * “No amount against any service”, never which service and never what
+     * the amount was — the codes on the wire cannot carry a value and neither
+     * can the words rendered from them.
+     *
+     * “WE”, NOT “THE FORM”. Every line is a statement about our reading,
+     * because a line reading “the form has no date of service” would be this
+     * platform telling a practice their paperwork is wrong on the strength of
+     * a parse we have just said we do not trust.
+     */
+    printRecordChecks: {
+      print_record_patient_unidentified: 'We could not read a name or a patient ID',
+      /**
+       * CARL’S SECOND CASE (27 September 2026), AND THE COPY HAS TO SAY WHICH
+       * HALF IS MISSING. “The IRN” alone would send a receptionist looking at
+       * a card number that is plainly there; the line names the pair, because
+       * the fault is a card number read WITHOUT its IRN and the reprint is
+       * what fixes both.
+       *
+       * “BESIDE THE NAME”, because IRN means nothing to most people — the
+       * same reason the patient’s own note on the tablet says it that way.
+       */
+      print_record_irn_missing:
+        'We read a Medicare number but no IRN — the digit beside the name on the card',
+      print_record_services_missing: 'We could not read any services',
+      print_record_servicing_provider_missing: 'We could not read the provider’s name or provider number',
+      print_record_service_date_missing: 'We could not read a date of service',
+      /** Carl’s own case, and the only one of the five that reaches a real agreement today. */
+      print_record_benefit_missing: 'We could not read an amount against any service',
+    } as Record<string, string>,
+    /** The line that introduces the list. Plain, because the sentence above has done the explaining. */
+    printRecordChecksLead: 'What we could not read:',
+    /**
+     * WHICH FORM TO REPRINT (Carl, 27 September 2026: *“message needs to say
+     * what data is missing on the print and also some unique id to identify
+     * the print and the location of the file”*, then *“we must have some
+     * unique ref from AOBPrinter which we must be storing for audit”*).
+     *
+     * “REPRINT IT” IS NOT AN INSTRUCTION UNTIL SOMEBODY KNOWS WHICH ONE. A
+     * practice prints all morning. The list above says what could not be
+     * read; this says which page it was, so the band is a shortcut to the
+     * answer rather than a longer way of saying no (CLAUDE.md §7).
+     *
+     * THE FORM REFERENCE FIRST, BECAUSE IT IS PRINTED ON THE PAGE. It matches
+     * the paper in somebody’s hand and the record in PracSoft; the hash and
+     * the job id are for support, and are last for that reason.
+     *
+     * NOTHING HERE IS A PATIENT’S (hard rule 9) — a reference, a queue, two
+     * clocks, a template version and a hash describe the document and the
+     * machinery that read it.
+     */
+    printRecordId: {
+      lead: 'Which form this was:',
+      formReference: 'Form reference',
+      /** `queueName`/`queueLabel` — attribution, never PII. The nearest thing to a location that exists. */
+      queue: 'Printed from',
+      captured: 'Captured',
+      received: 'Received',
+      parserTemplateVersion: 'Parser template',
+      /**
+       * AOBPRINTER’S OWN REF, AND THE AUDIT KEY. `sourceSha256` is what makes
+       * the same document printed twice the same job; it is the ref to quote.
+       * Labelled for the person reading rather than by its field name —
+       * “sourceSha256” means nothing at a front desk.
+       */
+      sourceSha256: 'Print reference (AOBPRINTER)',
+      printJobId: 'Record ID',
+      /**
+       * WHY THERE IS NO FILE PATH, SAID ONCE RATHER THAN LEFT AS A GAP. Carl
+       * asked for “the location of the file” and there is none to give: the
+       * driver parses at the practice and sends the record plus a hash of the
+       * source bytes — *provenance without possession* — so no file, path or
+       * spool id is ever captured or stored. Saying so beats a blank field,
+       * and beats a plausible-looking path much more.
+       */
+      noFileNote:
+        'We hold the reading of the form and a reference to it, never the file itself — so reprint from '
+        + 'your practice software rather than looking for a document.',
+    },
+    /**
+     * A CHECK THIS BUILD HAS NOT MET YET — shown with its code, never
+     * swallowed and never rendered as a blank bullet (Carl, 4 Sep 2026; the
+     * same construction as `blocked.other`). A newer server may report a check
+     * this console has no words for, and the code is what makes that
+     * diagnosable rather than a shrug.
+     */
+    printRecordCheckOther: (code: string) => `Another detail we could not read (${code}) — please tell support this code.`,
 
     /** Enduring's own extra line where the provider is not a GP (hard rule 6, REQ-END-01a). */
     enduringOfferOther: 'Offer an episodic agreement or a Treatment Plan Assignment instead.',
@@ -7620,6 +7746,22 @@ export const strings = {
          * document they had read a third of.
          */
         continueToNextPage: 'Continue',
+        /**
+         * THE PAGE'S OWN GATE (Carl, 27 September 2026: *“on page 1 or 3
+         * Continue button should be enabled after the box is ticked. Same
+         * rule on the next page”*).
+         *
+         * IT SAYS WHAT TO DO, NOT WHAT WENT WRONG. The box is on the screen
+         * directly above the control, so there is nowhere to send anybody and
+         * nothing to explain — the shortest true sentence is the right one
+         * (CLAUDE.md §7).
+         *
+         * SINGULAR AND PLURAL, because a page may carry more than one
+         * statement and “1 boxes” on a patient-facing screen is the kind of
+         * detail that makes somebody trust the rest of it less.
+         */
+        continueNotTicked: (outstanding: number) =>
+          outstanding === 1 ? 'Tick the box above to continue' : `Tick the ${outstanding} boxes above to continue`,
         /**
          * THE SHORTCUT TO THE BOX THAT IS STILL OUTSTANDING (CLAUDE.md §7 —
          * shortcuts to the answer, not directions to a screen).

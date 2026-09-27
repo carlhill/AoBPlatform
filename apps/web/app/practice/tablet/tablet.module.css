@@ -395,3 +395,80 @@
   gap: 0.5rem;
   margin-top: 0.35rem;
 }
+
+/*
+ * WHAT WE COULD NOT READ OFF THE PRINTED FORM (Carl, 27 September 2026) — the
+ * list under a `print_record_incomplete` refusal.
+ *
+ * A LIST AND NOT A PARAGRAPH, because it is read as a checklist: somebody
+ * takes it to the practice's own software, reprints, and looks at the lines
+ * it named. Runs of prose are scanned; bullets are worked through.
+ *
+ * IT KEEPS THE BAND'S OWN COLOUR and adds no tone of its own. The Notice
+ * around it has already said this is a refusal, and a second red inside a red
+ * band reads as two problems rather than one problem and its detail.
+ */
+.checks {
+  margin: var(--s2) 0;
+}
+
+.checksLead {
+  margin: 0 0 var(--s1);
+  font-weight: 600;
+}
+
+.checks ul {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.checks li {
+  margin: 0.15rem 0;
+}
+
+/*
+ * WHICH FORM TO REPRINT (Carl, 27 September 2026) — the identification block
+ * under the checks list.
+ *
+ * A DEFINITION LIST AND NOT A SENTENCE, because it is read by somebody
+ * matching values: the form reference against the paper, the print reference
+ * against a support ticket. Labels and values in two columns is what makes
+ * that a glance rather than a parse.
+ *
+ * THE REFERENCES ARE MONOSPACE, for the same reason the session id is: a hash
+ * and a UUID are compared character by character, and a proportional face
+ * makes that harder at exactly the moment somebody is reading one down a
+ * phone.
+ */
+.printId {
+  margin: var(--s2) 0;
+}
+
+.printId dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.15rem var(--s3);
+  margin: 0;
+}
+
+.printId dl > div {
+  display: contents;
+}
+
+.printId dt {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.printId dd {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+
+.printIdNote {
+  margin: var(--s2) 0 0;
+  font-size: 0.9em;
+  opacity: 0.85;
+}

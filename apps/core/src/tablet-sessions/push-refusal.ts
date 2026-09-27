@@ -1,6 +1,10 @@
 import { ConflictException, ForbiddenException, HttpException, NotFoundException } from '@nestjs/common';
 import type { PushBlockedReason } from '@aobplatform/domain';
-import { DB4_PRINT_RECORD_REFUSED_CODE, type Db4PrintRecordCheck } from '@aobplatform/contracts';
+import {
+  DB4_PRINT_RECORD_REFUSED_CODE,
+  type Db4PrintRecordCheck,
+  type Db4PrintRecordIdentity,
+} from '@aobplatform/contracts';
 
 /**
  * WHY A PUSH WAS REFUSED — one named refusal per reason, carrying a CODE the
@@ -271,7 +275,24 @@ export const pushRefusals = {
    * lets them sit in an HTTP body at all. The sentence below states a RULE and
    * says nothing about what was on the page.
    */
-  printRecordIncomplete: (checks: readonly Db4PrintRecordCheck[]) =>
+  /**
+   * AND IT NAMES WHICH FORM (Carl, 27 September 2026, at the desk: *"message
+   * needs to say what data is missing on the print and also some unique id to
+   * identify the print and the location of the file"*).
+   *
+   * “REPRINT IT” IS NOT AN INSTRUCTION UNTIL SOMEBODY KNOWS WHICH. A practice
+   * prints all morning. The `checks` say what could not be read; `print` says
+   * what to reprint — the reference on the page, the queue it came off, when
+   * it arrived, and AOBPRINTER's own hash of the source for the audit trail.
+   *
+   * THE IDENTITY IS OPTIONAL AND THE SENTENCE STANDS WITHOUT IT. A refusal
+   * that could not name the record is still a true refusal with a real list,
+   * and losing it would be losing the whole answer to save the footnote.
+   *
+   * NOTHING IN EITHER FIELD IS A PATIENT'S (hard rule 9, REQ-LOG-08) — codes
+   * name fields, the identity names the document and the machinery.
+   */
+  printRecordIncomplete: (checks: readonly Db4PrintRecordCheck[], print?: Db4PrintRecordIdentity) =>
     new PushRefusal(
       DB4_PRINT_RECORD_REFUSED_CODE,
       'The printed form this agreement was read from is missing details the tablet would have to show, so ' +
@@ -279,7 +300,7 @@ export const pushRefusals = {
         'and it will come through again, or capture this one on paper or after the service. The patient is ' +
         'seen and billed either way.',
       new ConflictException().getStatus(),
-      { checks },
+      print ? { checks, print } : { checks },
     ),
 
   /**

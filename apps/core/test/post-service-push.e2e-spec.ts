@@ -1,5 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import type { ValidationResponse } from '@aobplatform/contracts';
@@ -474,7 +475,29 @@ describe('the post-service second push (e2e, real Postgres)', () => {
    * ---------------------------------------------------------------------- */
 
   /** A DB4 Print Record on the queue table, exactly as the driver leaves one. */
-  async function seedPrintRecord(services: unknown[]): Promise<string> {
+  async function seedPrintRecord(services: Prisma.InputJsonValue[]): Promise<string> {
+    return seedPrintRecordWithPatient(services, {
+      patientRecordNumber: 'POST-PRINTED',
+      givenNames: 'Jo',
+      familyName: 'Postvisit',
+      // FAKE AND INVALID BY CONSTRUCTION — 2 999 99999 9 weights to 353, so
+      // the printed check digit is wrong (CLAUDE.md §7).
+      // eslint-disable-next-line no-restricted-syntax -- the fixture's own field.
+      medicareCardNumber: '2999 99999 9',
+      irn: '1',
+    });
+  }
+
+  /**
+   * THE SAME RECORD WITH THE PATIENT BLOCK SPELLED OUT — for the checks that
+   * are ABOUT that block (Carl, 27 September 2026: the card number read
+   * without its IRN). The default above delegates here, so there is one
+   * fixture and the card-and-IRN case is a parameter rather than a copy.
+   */
+  async function seedPrintRecordWithPatient(
+    services: Prisma.InputJsonValue[],
+    patient: Prisma.InputJsonValue,
+  ): Promise<string> {
     return prisma.withPractice(practiceId, async (tx) => {
       const job = await tx.inboundPrintJob.create({
         data: {
@@ -487,16 +510,7 @@ describe('the post-service second push (e2e, real Postgres)', () => {
           payload: {
             documentType: 'db4_assignment',
             form: { formCode: 'DB4', formReference: `PSP-${randomUUID().slice(0, 8)}`, serviceDate: today() },
-            patient: {
-              patientRecordNumber: 'POST-PRINTED',
-              givenNames: 'Jo',
-              familyName: 'Postvisit',
-              // FAKE AND INVALID BY CONSTRUCTION — 2 999 99999 9 weights to
-              // 353, so the printed check digit is wrong (CLAUDE.md §7).
-              // eslint-disable-next-line no-restricted-syntax -- the fixture's own field.
-              medicareCardNumber: '2999 99999 9',
-              irn: '1',
-            },
+            patient,
             providers: [
               { role: 'servicing', name: 'Dr Sample GP', providerNumber: gpProviderNumber },
               { role: 'payee', name: 'Dr Sample GP', providerNumber: gpProviderNumber },
@@ -588,6 +602,29 @@ describe('the post-service second push (e2e, real Postgres)', () => {
     expect(refused.body.checks).toEqual(['print_record_benefit_missing']);
 
     /*
+     * AND IT NAMES WHICH FORM (Carl, 27 September 2026: *"some unique id to
+     * identify the print ... we must have some unique ref from AOBPrinter
+     * which we must be storing for audit"*). "Reprint it" is not an
+     * instruction a practice that prints all morning can act on until the
+     * refusal says which page — so the identity is part of the answer, not a
+     * decoration on it.
+     */
+    expect(refused.body.print.printJobId).toBe(jobId);
+    // AOBPRINTER'S OWN REF, and the row's audit key
+    // (`@@unique([practiceId, documentType, sourceSha256])`).
+    expect(refused.body.print.sourceSha256).toHaveLength(64);
+    // The reference PRINTED ON THE PAGE — what reception matches the paper on.
+    expect(refused.body.print.formReference).toMatch(/^PSP-/);
+    expect(refused.body.print.parserTemplateVersion).toBe('pracsoft3-db4-2026-09-1');
+    /*
+     * TIMESTAMPS TO THE SECOND, and this is load-bearing rather than tidy:
+     * `...T13:20:54.953Z` contains "54.953", which the hard-rule-4 assertion
+     * below reads as a dollar amount. The data loses a precision nobody
+     * wanted rather than that guard being taught to make exceptions.
+     */
+    expect(refused.body.print.receivedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+
+    /*
      * HARD RULE 9 — the refusal names a FIELD and never a value. Asserted on
      * the serialised body, because that is what crossed the wire.
      */
@@ -610,6 +647,79 @@ describe('the post-service second push (e2e, real Postgres)', () => {
       // exactly what they were. A refused push is a screen that never opened.
       expect(after).toEqual(before);
     });
+  });
+
+  it('a_push_from_a_print_record_with_a_card_number_and_no_irn_is_refused_at_the_desk', async () => {
+    /*
+     * CARL, 27 SEPTEMBER 2026, FROM A LIVE TABLET: *"if a medicare# is
+     * provided then the IRN must also be provided. Check this on button 'Send
+     * to tablet' at reception"*.
+     *
+     * WHAT HE WAS LOOKING AT. The tablet drew a masked Medicare number with
+     * the note underneath telling the patient to check *"the IRN beside your
+     * name"* — and no IRN row, because `ParticularsScreen` draws that row only
+     * when there is a value. The screen asked somebody to check a field it had
+     * not shown them.
+     *
+     * NOT AN IDENTITY CHECK (hard rule 1, REQ-VER-02). Presence of a parsed
+     * field. Nothing reads the digit, and the card identifies nobody.
+     */
+    const agreementId = await draftReadyToPush('POST-NOIRN');
+    const jobId = await seedPrintRecordWithPatient(
+      [{ serviceDate: today(), mbsItemNumber: '23', description: 'Level B', benefitAssigned: '45.05' }],
+      // A card number read, its IRN not. FAKE AND INVALID BY CONSTRUCTION.
+      {
+        patientRecordNumber: 'POST-PRINTED',
+        givenNames: 'Jo',
+        familyName: 'Postvisit',
+        // eslint-disable-next-line no-restricted-syntax -- the fixture's own field, invalid by construction.
+        medicareCardNumber: '2999 99999 9',
+      },
+    );
+    await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.updateMany({ where: { id: agreementId }, data: { sourcePrintJobId: jobId } }),
+    );
+
+    const refused = await request(app.getHttpServer())
+      .post(`/devices/${deviceId}/push`)
+      .set('x-practice-id', practiceId)
+      .send({ agreementId })
+      .expect(409);
+
+    expect(refused.body.reason).toBe('print_record_incomplete');
+    expect(refused.body.checks).toEqual(['print_record_irn_missing']);
+    // HARD RULE 9 — a field is named, never a value. The card number that WAS
+    // read must not travel in the refusal that says its IRN did not.
+    expect(refused.text).not.toContain('2999');
+    expect(refused.text).not.toContain('Postvisit');
+
+    // HARD RULE 8 — a screen was stopped, not a patient. Nothing moved.
+    await prisma.withPractice(practiceId, async (tx) => {
+      expect(await tx.tabletSession.count({ where: { agreementId } })).toBe(0);
+    });
+  });
+
+  it('a_push_from_a_print_record_with_no_card_number_at_all_is_not_asked_for_an_irn', async () => {
+    /*
+     * CONDITIONAL, EXACTLY AS CARL PUT IT: *"IF a medicare# is provided"*. He
+     * tested the no-card-number record minutes earlier and reported it
+     * working — the tablet draws neither field and no note refers to either,
+     * so nothing contradicts anything and there is nothing to refuse.
+     */
+    const agreementId = await draftReadyToPush('POST-NOCARD');
+    const jobId = await seedPrintRecordWithPatient(
+      [{ serviceDate: today(), mbsItemNumber: '23', description: 'Level B', benefitAssigned: '45.05' }],
+      { patientRecordNumber: 'POST-PRINTED', givenNames: 'Jo', familyName: 'Postvisit' },
+    );
+    await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.updateMany({ where: { id: agreementId }, data: { sourcePrintJobId: jobId } }),
+    );
+
+    await request(app.getHttpServer())
+      .post(`/devices/${deviceId}/push`)
+      .set('x-practice-id', practiceId)
+      .send({ agreementId })
+      .expect(201);
   });
 
   it('a_push_from_a_complete_print_record_goes_through', async () => {

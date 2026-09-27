@@ -369,8 +369,17 @@ export class TabletSessionsService {
      * not run rather than running and producing the same answer). Named test:
      * `a_push_with_no_print_record_is_unaffected`.
      */
-    const printRecordChecks = await this.agreements.db4PrintRecordChecks(practiceId, context.agreement);
-    if (printRecordChecks.length > 0) throw pushRefusals.printRecordIncomplete(printRecordChecks);
+    const printRecord = await this.agreements.db4PrintRecordChecks(practiceId, context.agreement);
+    if (printRecord.checks.length > 0) {
+      /*
+       * AND THE REFUSAL NAMES WHICH FORM (Carl, 27 September 2026). The
+       * identity is non-null whenever there are checks — both come from the
+       * one read — but the type allows null and the refusal takes it as
+       * optional, so a future path that has checks without a record still
+       * refuses with the sentence and the list rather than throwing here.
+       */
+      throw pushRefusals.printRecordIncomplete(printRecord.checks, printRecord.identity ?? undefined);
+    }
 
     /*
      * ALREADY LOCKED IS THE RE-PUSH CASE, and it must not lock again. A

@@ -40,6 +40,7 @@ import {
   signingFact,
   whoIsBlocked,
 } from './TabletView';
+import { RefusalOutcomeBody, describePrintRecordCheck, describeRefusal } from './pushDesk';
 import { strings } from '../../strings';
 
 const PRACTICE = 'practice-1';
@@ -2379,6 +2380,166 @@ describe('the refusal words', () => {
     expect(blockedMessage(null)).not.toMatch(/practice queue/i);
   });
 
+  /* -------------------------------------------------------------------------
+   * THE PRINT RECORD REFUSAL AT THE DESK (Carl, 27 September 2026, live:
+   * "Could not send (print_record_incomplete). Please tell support this
+   * code." was all reception got — the server's codes arrived and the console
+   * had no words for them, so the unmapped fallback printed the reason and
+   * threw the list away).
+   * ---------------------------------------------------------------------- */
+  it('a_refused_print_record_says_what_could_not_be_read_not_just_a_code', () => {
+    const info = describeRefusal('print_record_incomplete', {
+      checks: ['print_record_benefit_missing', 'print_record_irn_missing'],
+    });
+    expect(info.text).toBe(strings.tablet.blocked.print_record_incomplete);
+    // THE CODE IS GONE FROM THE SENTENCE. It is mapped now, so it must not
+    // fall through to `blocked.other`.
+    expect(info.text).not.toContain('print_record_incomplete');
+    expect(info.code).toBeUndefined();
+    // AND EVERY CHECK IS RENDERED, in the order the server sent them.
+    expect(info.checks?.map((c) => c.code)).toEqual([
+      'print_record_benefit_missing',
+      'print_record_irn_missing',
+    ]);
+    expect(info.checks?.map((c) => c.text)).toEqual([
+      strings.tablet.printRecordChecks.print_record_benefit_missing,
+      strings.tablet.printRecordChecks.print_record_irn_missing,
+    ]);
+    /*
+     * IT MUST NOT READ AS A STATUTORY FAULT. No dollar amount is in the s 65C
+     * data set (hard rule 4), so the agreement is complete and only OUR
+     * reading is in doubt — the copy says so, and avoids the words that would
+     * suggest otherwise.
+     */
+    expect(info.text).toMatch(/our reading of the form/i);
+    expect(info.text).not.toMatch(/invalid|rejected|failed|not valid/i);
+    // AND IT NAMES A WAY FORWARD, because nothing here blocks care (hard
+    // rule 8, REQ-REC-04).
+    expect(info.text).toMatch(/paper|after the service/i);
+    // NO LINK: the fix is a reprint in the practice's own software, and there
+    // is no screen of ours to send anybody to (CLAUDE.md §7).
+    expect(info.link).toBeUndefined();
+  });
+
+  it('a_print_record_check_this_build_does_not_know_still_shows_its_code', () => {
+    // The same construction as `blocked.other`, one level down: a newer
+    // server's check is diagnosable rather than a blank bullet.
+    const unknown = describePrintRecordCheck('print_record_from_a_newer_server');
+    expect(unknown.text).toContain('print_record_from_a_newer_server');
+    expect(unknown.code).toBe('print_record_from_a_newer_server');
+    // And a refusal carrying no checks at all still renders its sentence.
+    const bare = describeRefusal('print_record_incomplete');
+    expect(bare.text).toBe(strings.tablet.blocked.print_record_incomplete);
+    expect(bare.checks).toEqual([]);
+  });
+
+  it('a_refused_print_record_names_which_form_to_reprint', () => {
+    /*
+     * CARL, 27 SEPTEMBER 2026: "message needs to say what data is missing on
+     * the print and also some unique id to identify the print", then "we must
+     * have some unique ref from AOBPrinter which we must be storing for
+     * audit" — which is `sourceSha256`, the row's own audit key.
+     */
+    const info = describeRefusal('print_record_incomplete', {
+      checks: ['print_record_irn_missing'],
+      print: {
+        printJobId: '11111111-2222-3333-4444-555555555555',
+        sourceSha256: 'a'.repeat(64),
+        formReference: 'AOB3NOIRN',
+        queueLabel: 'Front desk printer',
+        receivedAt: '2026-09-27T11:04:00.000Z',
+        parserTemplateVersion: 'pracsoft3-db4-2026-09-1',
+      },
+    });
+    expect(info.print?.formReference).toBe('AOB3NOIRN');
+    expect(info.print?.sourceSha256).toBe('a'.repeat(64));
+    /*
+     * AND NOT ONE FIELD OF IT IS A PATIENT'S (hard rule 9, REQ-VER-04;
+     * REQ-LOG-08). That is what lets the block ride in an HTTP body and be
+     * read down a phone to support.
+     */
+    const serialised = JSON.stringify(info.print).toLowerCase();
+    for (const forbidden of ['familyname', 'givennames', 'dateofbirth', 'address', 'medicare', 'chart']) {
+      expect(serialised).not.toContain(forbidden);
+    }
+  });
+
+  it('the_refusal_band_draws_every_check_and_names_the_form', () => {
+    /*
+     * THE RENDERING, NOT THE MAPPING. `describeRefusal` is tested above and
+     * proves the WORDS are chosen; this proves they reach the screen — which
+     * is a different failure and the one Carl actually met twice this
+     * evening, first as a bare code and then as a list with no form named.
+     *
+     * A BAND WITH THE SENTENCE BUT NOT THE DETAIL IS THE DEAD END CLAUDE.md
+     * §7 FORBIDS, and it passes every assertion about copy.
+     */
+    const info = describeRefusal('print_record_incomplete', {
+      checks: ['print_record_benefit_missing', 'print_record_irn_missing'],
+      print: {
+        printJobId: '11111111-2222-3333-4444-555555555555',
+        sourceSha256: 'b'.repeat(64),
+        formReference: 'AOB3NOIRN',
+        queueLabel: 'Front desk printer',
+        receivedAt: '2026-09-27T11:04:00Z',
+        parserTemplateVersion: 'pracsoft3-db4-2026-09-1',
+      },
+    });
+    render(
+      <RefusalOutcomeBody
+        info={info}
+        canSend
+        busy={false}
+        onRecall={() => {}}
+        linkTestId="t-link"
+        recallTestId="t-recall"
+        checksTestId="t-checks"
+      />,
+    );
+
+    // EVERY failed check is on screen, not just the first.
+    const list = screen.getByTestId('t-checks');
+    expect(within(list).getAllByRole('listitem')).toHaveLength(2);
+    expect(list.textContent).toContain(strings.tablet.printRecordChecks.print_record_benefit_missing);
+    expect(list.textContent).toContain(strings.tablet.printRecordChecks.print_record_irn_missing);
+
+    // AND THE BAND NAMES WHICH FORM TO REPRINT (Carl, 27 September 2026).
+    const identity = screen.getByTestId('print-record-identity');
+    expect(identity.textContent).toContain('AOB3NOIRN');
+    expect(identity.textContent).toContain('Front desk printer');
+    expect(identity.textContent).toContain('b'.repeat(64));
+    expect(identity.textContent).toContain('11111111-2222-3333-4444-555555555555');
+    // The note that says why there is no file to go and find.
+    expect(identity.textContent).toContain(strings.tablet.printRecordId.noFileNote);
+    // NO MILLISECONDS — they read as a dollar amount (hard rule 4).
+    expect(identity.textContent).not.toMatch(/\d+\.\d{2}/);
+  });
+
+  it('a_refusal_with_no_identity_still_draws_its_sentence_and_its_checks', () => {
+    /*
+     * THE BLOCK IS OPTIONAL AND THE BAND MUST NOT DEPEND ON IT. A refusal
+     * that could not name the record is still a true refusal with a real
+     * list, and losing the whole answer to save the footnote would be the
+     * worse failure of the two.
+     */
+    render(
+      <RefusalOutcomeBody
+        info={describeRefusal('print_record_incomplete', { checks: ['print_record_benefit_missing'] })}
+        canSend
+        busy={false}
+        onRecall={() => {}}
+        linkTestId="u-link"
+        recallTestId="u-recall"
+        checksTestId="u-checks"
+      />,
+    );
+    expect(screen.getByTestId('u-checks').textContent).toContain(
+      strings.tablet.printRecordChecks.print_record_benefit_missing,
+    );
+    expect(screen.queryByTestId('print-record-identity')).toBeNull();
+    expect(screen.getByText(strings.tablet.blocked.print_record_incomplete)).toBeTruthy();
+  });
+
   it('never_claims_certification_or_approval', () => {
     const words = [
       strings.tablet.blocked.device_unknown,
@@ -2394,6 +2555,12 @@ describe('the refusal words', () => {
       strings.tablet.blocked.enduring_rules_not_authored,
       strings.tablet.blocked.enduring_not_gp,
       strings.tablet.blocked.enduring_not_per_provider,
+      strings.tablet.blocked.print_record_incomplete,
+      strings.tablet.printRecordChecksLead,
+      strings.tablet.printRecordCheckOther('some_code'),
+      strings.tablet.printRecordId.lead,
+      strings.tablet.printRecordId.noFileNote,
+      ...Object.values(strings.tablet.printRecordChecks),
       strings.tablet.offerEpisodicAction,
       strings.tablet.offerEpisodicLead,
       strings.tablet.offerEpisodicDone,

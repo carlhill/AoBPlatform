@@ -89,6 +89,10 @@ import type { Db4PlacementReason } from './print-capture';
  * WHAT IS ACTUALLY LIVE, on the agreements a practice has right now:
  *  - `print_record_benefit_missing` — nothing at ingest looks at an amount.
  *    This is the gap Carl's ruling names.
+ *  - `print_record_irn_missing` — `irn` is `@IsOptional()` at ingest and
+ *    nothing downstream requires it (Carl, 27 September 2026, from the same
+ *    live tablet: a card number read without its IRN, on a screen whose own
+ *    note tells the patient to check the IRN).
  *  - `print_record_servicing_provider_missing`, through its NAME half — ingest
  *    requires the servicing provider's provider NUMBER and never looks at
  *    their name, so a record naming nobody still places.
@@ -118,6 +122,37 @@ export const DB4_PRINT_RECORD_CHECKS = [
    * form and costs the practice nothing.
    */
   'print_record_patient_unidentified',
+  /**
+   * A MEDICARE CARD NUMBER WITH NO IRN BESIDE IT (Carl, 27 September 2026,
+   * from a live tablet: *"if a medicare# is provided then the IRN must also be
+   * provided. Check this on button 'Send to tablet' at reception"*).
+   *
+   * LIVE, AND THE SECOND OF THE TWO THAT ARE. `inbound-print-jobs.controller.ts`
+   * declares `irn` `@IsOptional()` and nothing downstream requires it, so a
+   * card number the template read without its IRN places an agreement and
+   * reaches a tablet today.
+   *
+   * WHAT CARL SAW IS WHY IT IS HERE, AND IT IS A SCREEN THAT CONTRADICTS
+   * ITSELF. `ParticularsScreen` draws the IRN row only when there is an IRN,
+   * while the masking note beside it tells the patient in so many words to
+   * check *"the IRN beside your name"*. With the card number read and the IRN
+   * not, the patient is asked to check a field that is not on the page — and
+   * the one thing that screen exists to do is let somebody compare what we
+   * show against the card in their hand.
+   *
+   * CONDITIONAL, EXACTLY AS CARL PUT IT. No card number, no requirement: a
+   * print record carrying neither is the `no-card-number` case, the screen
+   * shows neither field, the note about the card is not drawn, and nothing
+   * contradicts anything. It is the HALF-READ card that is refused.
+   *
+   * PRESENCE, NEVER VALUE, AND NOT AN IDENTITY CHECK (hard rules 1 and 9).
+   * This asks whether the digit survived the parse. It does not read it, does
+   * not range-check it, does not compare it to anything, and above all does
+   * not treat the card as identifying anybody — the Medicare card number is
+   * NOT an identity identifier (REQ-VER-02), and neither is the IRN beside it.
+   * The code names two fields and can carry neither value.
+   */
+  'print_record_irn_missing',
   /**
    * NO SERVICE ROWS AT ALL. A DB4 exists to list services; a print record with
    * an empty list is a page the template could not find the table on.
@@ -202,6 +237,9 @@ export const DB4_PRINT_RECORD_CHECK_GATED_AT_INGEST: Readonly<
   Record<Db4PrintRecordCheck, Db4PlacementReason | null>
 > = {
   print_record_patient_unidentified: 'no_chart_number',
+  // THE SECOND GAP. `irn` is `@IsOptional()` at ingest and nothing downstream
+  // asks for it, so this check is the only thing standing there.
+  print_record_irn_missing: null,
   // No rows means no item numbers, which is the gate ingest actually applies.
   print_record_services_missing: 'no_service_items',
   // The NUMBER half only. Ingest never looks at the provider's name, which is
@@ -225,3 +263,85 @@ export const DB4_PRINT_RECORD_CHECK_GATED_AT_INGEST: Readonly<
  * Print Record behind them that we cannot vouch for.
  */
 export const DB4_PRINT_RECORD_REFUSED_CODE = 'print_record_incomplete';
+
+
+/**
+ * WHICH PRINT RECORD THE REFUSAL IS ABOUT (Carl, 27 September 2026, at the
+ * desk: *"message needs to say what data is missing on the print and also
+ * some unique id to identify the print and the location of the file"*, and
+ * then — correctly — *"we must have some unique ref from AOBPrinter which we
+ * must be storing for audit"*).
+ *
+ * THE CHECKS SAY WHAT IS MISSING; THIS SAYS WHICH PAGE. A practice prints all
+ * morning, and “reprint the form” is not an instruction anybody can follow
+ * until they know WHICH form — so the refusal names it. Without this the band
+ * is CLAUDE.md §7's dead end wearing a longer sentence.
+ *
+ * ── AOBPRINTER'S OWN REF IS `sourceSha256`, AND IT IS THE AUDIT KEY ──
+ *
+ * It is not merely stored, it is the IDENTITY of a print job:
+ * `@@unique([practiceId, documentType, sourceSha256])` on `InboundPrintJob` is
+ * what makes the same document printed twice the same job rather than two.
+ * Everything else here is a convenience for a human; this is the ref that ties
+ * a record to the bytes AOBPRINTER hashed at the practice.
+ *
+ * ── THERE IS STILL NO FILE PATH, AND THE QUEUE IS THE HONEST SUBSTITUTE ──
+ *
+ * NOTHING IN THIS PLATFORM EVER HELD THE FILE. AOBPRINTER parses the print job
+ * at the practice and sends the PARSED RECORD plus the hash of the source
+ * bytes — `sourceSha256` is commented *"provenance without possession (8.2)"*
+ * and that is the design. No path, spool id or file name is captured by the
+ * envelope (`print-capture.ts`), accepted by the DTO
+ * (`inbound-print-jobs.controller.ts`) or stored on the row, so there is
+ * nothing of that kind to report and a plausible-looking path would be worse
+ * than saying so.
+ *
+ * WHAT DOES ANSWER “WHERE DID THIS COME FROM” is the pair the envelope
+ * already carries: `queueName`/`queueLabel`, the print queue the form came
+ * off, described in `print-capture.ts` as *"attribution, never PII"*. At a
+ * practice with a printer at the front desk and another in the treatment room
+ * that is the location somebody can actually walk to, which a spool path on a
+ * clinical workstation is not.
+ *
+ * ── AND NOT ONE FIELD HERE IS A PATIENT'S ──
+ *
+ * Hard rule 9 (REQ-VER-04) and REQ-LOG-08. A form reference, a job id, a
+ * queue name, two timestamps, a template version and a hash of the source
+ * describe the DOCUMENT AND THE MACHINERY. There is no name, no chart number,
+ * no card number, no address and no amount, which is what lets this ride in
+ * an HTTP body, sit in a support ticket and be read aloud over a phone.
+ */
+export interface Db4PrintRecordIdentity {
+  /** The `InboundPrintJob` row — our id for it. */
+  readonly printJobId: string;
+  /**
+   * AOBPRINTER'S UNIQUE REF, and the audit key (see above). SHA-256 hex of the
+   * source print job: provenance without possession (8.2). This is what exists
+   * INSTEAD of a file.
+   */
+  readonly sourceSha256: string;
+  /**
+   * WHAT IS PRINTED ON THE PAGE — the reference reception matches against the
+   * paper in their hand and the record in PracSoft. Absent when the template
+   * could not read it, which is a real state and why the band falls back to
+   * the job id.
+   */
+  readonly formReference?: string;
+  /**
+   * WHICH PRINT QUEUE PRODUCED IT. Attribution, never PII
+   * (`print-capture.ts`). The nearest honest answer to *"where did this come
+   * from"*, and at a practice with more than one printer it is the useful one.
+   */
+  readonly queueName?: string;
+  readonly queueLabel?: string;
+  /** When AOBPRINTER captured it, BY THE DESKTOP'S CLOCK. ISO 8601. */
+  readonly capturedAt?: string;
+  /** When this platform received it, by the server's. ISO 8601. */
+  readonly receivedAt: string;
+  /**
+   * WHICH PARSER TEMPLATE READ THE FORM (8.2). The first thing worth knowing
+   * when a field is missing: a PracSoft layout change against an older
+   * template is the ordinary cause of everything these checks detect.
+   */
+  readonly parserTemplateVersion?: string;
+}

@@ -30,6 +30,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { ArrowRight, Check, CheckCheck, PencilLine, RotateCcw, Send, UserRound } from 'lucide-react';
+import { DB4_PRINT_RECORD_REFUSED_CODE, type Db4PrintRecordIdentity } from '@aobplatform/contracts';
 import {
   ASSIGNOR_RELATIONSHIPS_VERSION,
   ASSIGNOR_RELATIONSHIP_OPTIONS,
@@ -381,6 +382,27 @@ export interface RefusalDescription {
   /** Present only for the unmapped fallback, so a caller can assert the code was not swallowed. */
   code?: string;
   /**
+   * EVERY PART OF THE PRINTED FORM WE COULD NOT READ, in the order the server
+   * reported them. Present only for `print_record_incomplete`.
+   *
+   * A LIST, BECAUSE THE REFUSAL IS A LIST. That reason is the one refusal
+   * whose answer is not a single fact: the push reports EVERY failed check so
+   * reception fixes the form once rather than pressing Send five times to be
+   * told five things (CLAUDE.md §7), and a band that rendered only the
+   * sentence would throw away the only part that says what to look at.
+   *
+   * THE CODE RIDES WITH THE WORDS so a check this build has no copy for can
+   * still be diagnosed — `describePrintRecordCheck` renders the code itself
+   * rather than dropping the bullet.
+   */
+  checks?: readonly { code: string; text: string }[];
+  /**
+   * WHICH PRINT RECORD IT WAS — so “reprint it” names a form (Carl, 27
+   * September 2026). Present only for `print_record_incomplete`, and only
+   * when the server could name the record.
+   */
+  print?: Db4PrintRecordIdentity;
+  /**
    * THE REASON, CARRIED THROUGH, so a band can offer the FIX and not only the
    * sentence. `service_description_missing` is the one that has an inline
    * control today (Carl, 4 Sep 2026): the description is chosen on the blocked
@@ -408,6 +430,17 @@ export interface RefusalContext {
   audiences?: readonly Audience[];
   /** The practice the page is about, for the read-only twin's path. */
   practiceId?: string;
+  /**
+   * THE `checks[]` A `print_record_incomplete` REFUSAL CARRIES — raw codes,
+   * straight off the wire, mapped to words here rather than in core.
+   *
+   * IT IS CONTEXT RATHER THAN A PARAMETER OF THE REASON because that is what
+   * it is: something only the CALLER knows, read from the response body at
+   * the moment of the refusal, exactly like `sessionId` on `device_busy`.
+   */
+  checks?: readonly string[];
+  /** The `print` block a `print_record_incomplete` refusal carries. */
+  print?: Db4PrintRecordIdentity;
 }
 
 /**
@@ -455,6 +488,24 @@ function destination(
  * on screen (`other`), never a sentence that sends reception looking for "the
  * practice queue".
  */
+/**
+ * ONE FAILED CHECK, IN OUR WORDS — and its own code where we have none.
+ *
+ * THE FALLBACK IS THE POINT, not a formality. A newer server may report a
+ * check this console has never heard of, and the choice then is between a
+ * bullet that says nothing and a bullet that says the code. It says the code
+ * (CLAUDE.md §7, “an unmapped reason code shows its code”) — the same
+ * construction `blocked.other` uses one level up, for the same reason.
+ *
+ * NOTHING IS LOOKED UP FROM THE AGREEMENT HERE. A code names a field and
+ * carries no value (hard rule 9), and rendering one must not become the place
+ * somebody folds in which service or whose name — the words are a fixed
+ * string-table entry per code, with no interpolation but the code itself.
+ */
+export function describePrintRecordCheck(code: string): { code: string; text: string } {
+  return { code, text: strings.tablet.printRecordChecks[code] ?? strings.tablet.printRecordCheckOther(code) };
+}
+
 export function describeRefusal(
   reason: string | null | undefined,
   ctx: RefusalContext = {},
@@ -593,6 +644,28 @@ export function describeRefusal(
         link: ctx.patientId
           ? destination(`/practice/patients/${ctx.patientId}`, strings.tablet.toPatient, ctx)
           : undefined,
+      };
+    /*
+     * THE PRINTED FORM WE COULD NOT READ (Carl, 27 September 2026).
+     *
+     * NO LINK, AND THAT IS DELIBERATE. Every other linked refusal points at
+     * the screen where it is fixed; this one is fixed in the PRACTICE’S OWN
+     * SOFTWARE, by reprinting the form, and there is no screen of ours that
+     * would help. The DB4 Print Record has no read surface in this console at
+     * all yet (TODO.md, Piece 7), so a link here could only be a direction to
+     * a screen that answers nothing — worse than the sentence alone
+     * (CLAUDE.md §7). The sentence names all three ways forward in words.
+     *
+     * THE LIST IS THE ANSWER, and it is rendered whether or not the server
+     * sent one: an empty `checks` array renders no list and leaves the
+     * sentence, which is still true and still actionable.
+     */
+    case DB4_PRINT_RECORD_REFUSED_CODE:
+      return {
+        reason,
+        text: strings.tablet.blocked.print_record_incomplete,
+        checks: (ctx.checks ?? []).map(describePrintRecordCheck),
+        print: ctx.print,
       };
     case 'device_unknown':
       return { reason, text: strings.tablet.blocked.device_unknown };
@@ -982,7 +1055,14 @@ export function whoIsBlocked(draft: WhoDraft, staffNames: readonly string[]): st
  */
 async function refusal(
   res: Response,
-): Promise<{ message: string; reason?: string; sessionId?: string; failures?: string[] }> {
+): Promise<{
+  message: string;
+  reason?: string;
+  sessionId?: string;
+  failures?: string[];
+  checks?: string[];
+  print?: Db4PrintRecordIdentity;
+}> {
   const body = (await res.json().catch(() => ({}))) as {
     message?: string | string[];
     reason?: string;
@@ -999,6 +1079,24 @@ async function refusal(
      * thing on the wire that answers it.
      */
     failures?: string[];
+    /**
+     * EVERY PART OF THE DB4 PRINT RECORD THE PUSH COULD NOT READ — arrives
+     * only on `print_record_incomplete` (`pushRefusals.printRecordIncomplete`).
+     *
+     * AN ARRAY, WHERE EVERY OTHER REFUSAL CARRIES A SCALAR OR NOTHING. That
+     * is the whole reason this needed reading rather than being covered by
+     * the existing fields: the refusal reports ALL the failed checks on
+     * purpose, so reception fixes the form once (CLAUDE.md §7), and keeping
+     * only the summary sentence would drop the part that says what to look
+     * at. Codes only — they name fields and can carry no value (hard rule 9).
+     */
+    checks?: string[];
+    /**
+     * WHICH RECORD THE CHECKS ARE ABOUT — the form reference, the queue it
+     * came off, AOBPRINTER's own hash and our job id. Rides with `checks` and
+     * never without them.
+     */
+    print?: Db4PrintRecordIdentity;
   };
   const message = Array.isArray(body.message) ? body.message.join(' ') : (body.message ?? String(res.status));
   return {
@@ -1006,11 +1104,65 @@ async function refusal(
     reason: body.reason,
     sessionId: body.sessionId,
     failures: Array.isArray(body.failures) && body.failures.length > 0 ? body.failures : undefined,
+    checks: Array.isArray(body.checks) && body.checks.length > 0 ? body.checks : undefined,
+    print: body.print,
   };
 }
 
 export function when(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
+}
+
+/**
+ * WHICH FORM TO REPRINT (Carl, 27 September 2026: *"some unique id to identify
+ * the print and the location of the file"*, then *"we must have some unique
+ * ref from AOBPrinter which we must be storing for audit"*).
+ *
+ * THE REFERENCE PRINTED ON THE PAGE COMES FIRST, because that is the one a
+ * receptionist can match against the paper in their hand and the record in
+ * PracSoft without opening anything. AOBPRINTER's hash and our record id are
+ * last: they are for a support ticket, not for finding a form.
+ *
+ * A ROW IS DRAWN ONLY WHERE THERE IS A VALUE. A template that could not read
+ * the form reference is exactly the case this band exists for, so the block
+ * has to read correctly with any of its fields missing — an empty "Form
+ * reference" line would be one more unreadable field presented as a fact.
+ *
+ * AND IT SAYS THERE IS NO FILE. Carl asked for a location; there is none to
+ * give, because the driver parses at the practice and sends the record plus a
+ * hash of the source bytes rather than the document. The note says so in one
+ * line, which beats a blank field and beats a plausible-looking path by much
+ * more.
+ *
+ * NOTHING HERE IS A PATIENT'S (hard rule 9, REQ-LOG-08).
+ */
+function PrintRecordIdentityBlock({ print }: { print: Db4PrintRecordIdentity }) {
+  const copy = strings.tablet.printRecordId;
+  const rows: readonly (readonly [string, string | undefined])[] = [
+    [copy.formReference, print.formReference],
+    [copy.queue, print.queueLabel ?? print.queueName],
+    [copy.captured, print.capturedAt],
+    [copy.received, print.receivedAt],
+    [copy.parserTemplateVersion, print.parserTemplateVersion],
+    [copy.sourceSha256, print.sourceSha256],
+    [copy.printJobId, print.printJobId],
+  ];
+  const shown = rows.filter(([, value]) => !!value);
+  if (shown.length === 0) return null;
+  return (
+    <div className={styles.printId} data-testid="print-record-identity">
+      <p className={styles.checksLead}>{copy.lead}</p>
+      <dl>
+        {shown.map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className={styles.printIdNote}>{copy.noFileNote}</p>
+    </div>
+  );
 }
 
 /**
@@ -1029,6 +1181,7 @@ export function RefusalOutcomeBody({
   linkTestId,
   recallTestId,
   fix,
+  checksTestId,
 }: {
   info: RefusalDescription;
   canSend: boolean;
@@ -1043,10 +1196,31 @@ export function RefusalOutcomeBody({
    * instead.
    */
   fix?: ReactNode;
+  /**
+   * THE LIST'S OWN TEST ID, where a caller has one. Only the bands that can
+   * actually meet `print_record_incomplete` pass it — a row's STATIC blocked
+   * band cannot, because that reason is not a `PushBlockedReason` and never
+   * appears in `blockingReason`: it needs a read of another module's table
+   * and can only be answered at the moment of the push.
+   */
+  checksTestId?: string;
 }) {
   return (
     <>
       <p>{info.text}</p>
+      {info.checks && info.checks.length > 0 && (
+        <div className={styles.checks}>
+          <p className={styles.checksLead}>{strings.tablet.printRecordChecksLead}</p>
+          <ul data-testid={checksTestId}>
+            {info.checks.map((check) => (
+              <li key={check.code} data-check={check.code}>
+                {check.text}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {info.print && <PrintRecordIdentityBlock print={info.print} />}
       {fix}
       {info.link && (
         <Link href={info.link.href} data-testid={linkTestId}>
@@ -1682,7 +1856,7 @@ export function usePushDesk(practiceId: string): PushDesk {
          * sessions this page already polls — the session id first, the device
          * id as a fallback if the id it named is not one we hold.
          */
-        const { reason, sessionId } = await refusal(res);
+        const { reason, sessionId, checks, print } = await refusal(res);
         // A FRESH READ, because a `device_busy` session is almost never in
         // what this closure already holds (see the doc comment on `load`).
         const fresh = await load();
@@ -1706,6 +1880,8 @@ export function usePushDesk(practiceId: string): PushDesk {
             sessionId: sessionId ?? busySession?.id,
             providerType: row.providerType,
             patientId: row.patientId,
+            checks,
+            print,
             audiences,
             practiceId,
           }),
@@ -1990,7 +2166,7 @@ export function usePushDesk(practiceId: string): PushDesk {
         body: JSON.stringify({ agreementId: ended.agreementId }),
       });
       if (!res.ok) {
-        const { reason, message, sessionId } = await refusal(res);
+        const { reason, message, sessionId, checks, print } = await refusal(res);
         const fresh = await load();
         const live = liveOnly(fresh?.sessions ?? sessions);
         const busySession = sessionId
@@ -2005,6 +2181,8 @@ export function usePushDesk(practiceId: string): PushDesk {
             sessionId: sessionId ?? busySession?.id,
             rawMessage: message,
             patientId: ended.patientId,
+            checks,
+            print,
             audiences,
             practiceId,
           }),
@@ -2046,7 +2224,7 @@ export function usePushDesk(practiceId: string): PushDesk {
       if (!res.ok) {
         // RESEND REFUSES THE SAME WAY THE PUSH DOES — same codes, same
         // treatment, and the same tablet is already known (it is this row's).
-        const { reason, message, sessionId } = await refusal(res);
+        const { reason, message, sessionId, checks, print } = await refusal(res);
         const fresh = await load();
         const live = liveOnly(fresh?.sessions ?? sessions);
         const busySession = sessionId
@@ -2061,6 +2239,8 @@ export function usePushDesk(practiceId: string): PushDesk {
             sessionId: sessionId ?? busySession?.id,
             rawMessage: message,
             patientId: session.patientId,
+            checks,
+            print,
             audiences,
             practiceId,
           }),
@@ -2109,6 +2289,8 @@ export function usePushDesk(practiceId: string): PushDesk {
         const info = await refusal(res);
         setPushOutcome({ id: sessionId, ok: false, text: info.message, info: describeRefusal(info.reason, {
           rawMessage: info.message,
+          checks: info.checks,
+          print: info.print,
           audiences,
           practiceId,
         }) });
@@ -2152,7 +2334,7 @@ export function usePushDesk(practiceId: string): PushDesk {
         body: JSON.stringify({}),
       });
       if (!res.ok) {
-        const { reason, message } = await refusal(res);
+        const { reason, message, checks, print } = await refusal(res);
         setPushOutcome({
           id: row.agreementId,
           ok: false,
@@ -2160,6 +2342,8 @@ export function usePushDesk(practiceId: string): PushDesk {
             providerType: row.providerType,
             patientId: row.patientId,
             rawMessage: message,
+            checks,
+            print,
             audiences,
             practiceId,
           }),
@@ -3057,6 +3241,7 @@ export function AgreementBands({
                 onRecall={(sessionId) => void desk.recall(sessionId)}
                 linkTestId={`push-outcome-link-${row.agreementId}`}
                 recallTestId={`push-outcome-recall-${row.agreementId}`}
+                checksTestId={`push-outcome-checks-${row.agreementId}`}
                 fix={fixFor(desk, row, outcome.info.reason)}
               />
             ) : (
@@ -3789,6 +3974,7 @@ export function SessionOutcomeNotice({
           onRecall={(sessionId) => void desk.recall(sessionId)}
           linkTestId={linkTestId}
           recallTestId={recallTestId}
+          checksTestId={`${linkTestId}-checks`}
         />
       ) : (
         outcome.text
