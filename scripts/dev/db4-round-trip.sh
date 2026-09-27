@@ -14,10 +14,12 @@
 #   bash scripts/dev/db4-round-trip.sh --status    # report prerequisites, touch nothing
 #   bash scripts/dev/db4-round-trip.sh --stop      # stop a watcher THIS SCRIPT started
 #
-# WHAT IT STOPS AFTER. The signature. The Signed-DB4 template (piece 2) and
-# the write-back into the chart folder (piece 4) are not built yet
-# (DB4-AND-AOBL.md), so nothing lands in a folder — the agreement exists,
-# signed, in the Evidence Vault, and that is as far as this goes.
+# WHAT IT STOPS AFTER. The signature, which now produces the Signed-DB4
+# (piece 2, 27 Sep 2026): the practice's own form with the cost, the Medicare
+# number in full and the patient's signature on it, hashed and evidenced.
+# The write-back into the chart folder (piece 4) is NOT built, and no screen
+# shows the document — so nothing lands in a folder, and the artefact row is
+# the only place the Signed-DB4 exists.
 #
 # THE FIXTURE'S REAL VALUES, NOT WHAT YOU MIGHT EXPECT. The DB4 e2e spec
 # (apps/core/test/db4-assignment.e2e-spec.ts) uses chart 00680 / provider
@@ -525,9 +527,13 @@ report_next_steps() {
   say "tablet desk: ${WEB}/practice/tablet"
   say "Reception pushes it to a tablet from there; the patient signs on the tablet."
   say ""
-  say "Reminder: this harness stops at the signature. The Signed-DB4 template"
-  say "(piece 2) and the write-back into the chart folder (piece 4) are not"
-  say "built yet — nothing lands in a folder."
+  say "On signing, the Signed-DB4 is produced: the practice's own form with the"
+  say "cost, the Medicare number in full and the patient's signature on it,"
+  say "stored as an artefact with its own hash and vault event (piece 2)."
+  say ""
+  say "Reminder: NOTHING LANDS IN A CHART FOLDER YET. The write-back (piece 4)"
+  say "is not built, and there is no screen for the Signed-DB4 — the artefact"
+  say "row is the only place it exists."
 }
 
 # --- entry points ---------------------------------------------------------------
