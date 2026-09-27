@@ -131,6 +131,13 @@ describe('which parts of AoB a practice uses (e2e, real Postgres)', () => {
      * bought it (TODO.md, AOBPRINTER item 5). Until this existed, nothing in
      * code stopped the print channel being pointed at a live practice.
      *
+     * IT TAKES THE `standard` PROFILE TO ASK THE QUESTION AT ALL
+     * (D-2026-09-27-02). Both profiles that shipped before it held `db4`, so
+     * this test was named for a refusal no setting could produce and it
+     * asserted two acceptances instead — PRACTICE-SURFACES.md §6b and §6c.
+     * `standard` is the small practice with no PMS: it has no print channel,
+     * and this is the setting that turns one away.
+     *
      * Proved by MOVING the practice rather than by a second fixture, because
      * the cache the guard reads is the thing most likely to make a change look
      * like it did not work: `PATCH /practices/:id/config` drops it in the same
@@ -145,14 +152,35 @@ describe('which parts of AoB a practice uses (e2e, real Postgres)', () => {
     await request(app.getHttpServer())
       .patch(`/practices/${onDb4}/config`)
       .set('x-practice-id', onDb4)
-      .send({ surfaceProfile: 'full' })
+      .send({ surfaceProfile: 'standard' })
       .expect(200);
 
-    // Still accepted on `full`, which holds every surface including this one.
-    await request(app.getHttpServer())
+    const refused = await request(app.getHttpServer())
       .post('/inbound/print-jobs')
       .set('x-practice-id', onDb4)
       .send(printJob('surfaces-db4-2'))
+      .expect(403);
+
+    // The refusal names the part and carries its code, so the print channel
+    // can say WHY rather than showing a bare 403 (CLAUDE.md §7).
+    expect(refused.body.code).toBe(SURFACE_REFUSED_CODE);
+    expect(refused.body.surface).toBe('db4');
+    expect(refused.body.message).toContain('does not use');
+    // NO IDENTIFIER IN THE REFUSAL (REQ-LOG-08, hard rule 9).
+    expect(JSON.stringify(refused.body)).not.toContain(onDb4);
+
+    // And back on again is a setting, not a deploy: `full` holds every
+    // surface, including this one.
+    await request(app.getHttpServer())
+      .patch(`/practices/${onDb4}/config`)
+      .set('x-practice-id', onDb4)
+      .send({ surfaceProfile: 'full' })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .post('/inbound/print-jobs')
+      .set('x-practice-id', onDb4)
+      .send(printJob('surfaces-db4-2-reopened'))
       .expect(202);
   });
 

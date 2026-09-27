@@ -1,0 +1,33 @@
+-- THE SMALL PRACTICE WITH NO PMS GETS A PROFILE (D-2026-09-27-02, Carl: "We
+-- may still want a version that we have for a small practice that does not
+-- have a PMS system."). `standard` is every surface except `db4`.
+--
+-- WHY THE DATABASE HAS TO BE TOLD AT ALL. 20260917020000 said it in its own
+-- comment: "A third profile is a content change AND a migration, deliberately
+-- — the database is the last place that can stop a value nobody wrote code
+-- for". This is that third profile, so this is that migration. The list below
+-- is still not a second opinion: it is the `profiles` keys of
+-- `packages/domain/content/practice-surfaces.json` at version
+-- practice-surfaces-2026-09-2, read in code through `SURFACE_PROFILE_KEYS`.
+--
+-- NOTHING MOVES. No practice is put on `standard` here; this only makes the
+-- value settable. All 142 practices stay on the `full` default, which still
+-- holds every surface, so this is a no-op for every row in the table.
+--
+-- WHAT IT UNLOCKS: until now both shipped profiles held `db4`, so the gate on
+-- `POST /inbound/print-jobs` could not refuse anybody and AOBPRINTER could be
+-- pointed at any practice on the platform (PRACTICE-SURFACES.md §6b, TODO.md
+-- AOBPRINTER item 5). `standard` is the setting that turns a print job away.
+--
+-- Idempotent (DEV-LOOP.md): the constraint is dropped and re-added, so a
+-- second run lands on the same definition rather than failing.
+-- Reversible by re-running 20260917020000's final statement --
+--   ALTER TABLE "practices" DROP CONSTRAINT IF EXISTS "practices_surface_profile_check";
+--   ALTER TABLE "practices" ADD CONSTRAINT "practices_surface_profile_check"
+--     CHECK ("surfaceProfile" IN ('full', 'db4'));
+-- -- which is safe only while no row holds 'standard'; move those rows back to
+-- a profile the narrower CHECK allows first, and note that doing so gives a
+-- no-PMS practice the DB4 surface again.
+ALTER TABLE "practices" DROP CONSTRAINT IF EXISTS "practices_surface_profile_check";
+ALTER TABLE "practices" ADD CONSTRAINT "practices_surface_profile_check"
+  CHECK ("surfaceProfile" IN ('full', 'db4', 'standard'));

@@ -23,7 +23,7 @@ describe('the surface list is content, not code', () => {
     expect(PRACTICE_SURFACE_KEYS).toEqual(
       expect.arrayContaining(['db4', 'kiosk_walk_up', 'enduring_agreements', 'queue_rails', 'portal', 'practitioner_pages']),
     );
-    expect(SURFACE_PROFILE_KEYS).toEqual(expect.arrayContaining(['full', 'db4']));
+    expect(SURFACE_PROFILE_KEYS).toEqual(expect.arrayContaining(['full', 'db4', 'standard']));
     expect(isSurfaceProfile('full')).toBe(true);
     expect(isSurfaceProfile('posture')).toBe(false);
   });
@@ -159,7 +159,20 @@ describe('what a profile allows', () => {
      * does_not_use_db4` (apps/core, `surface.guard.spec.ts`) is actually
      * decided — the gate on AOBPRINTER being installable at a practice that
      * has not bought it (TODO.md, AOBPRINTER item 5).
+     *
+     * THE SHIPPED ANSWER FIRST. `standard` is the small practice with no PMS
+     * (D-2026-09-27-02), and it is what makes this gate reachable by a
+     * setting rather than only by an edited copy of the file: until it
+     * existed, every profile that shipped held `db4` (PRACTICE-SURFACES.md
+     * §6b). The constructed profile below stays because it proves the same
+     * decision is made from the CONTENT and not from the profile's name.
      */
+    expect(profileAllowsEndpoint('standard', 'POST', '/inbound/print-jobs')).toBe(false);
+    expect(profileAllowsEndpoint('standard', 'GET', '/inbound/print-jobs/metrics')).toBe(false);
+    // And the practice that has no PMS still has everything else.
+    expect(profileAllows('standard', '/practice/frontdesk')).toBe(true);
+    expect(profileAllowsEndpoint('standard', 'POST', '/kiosk/claim')).toBe(true);
+
     const kioskOnly = parsePracticeSurfaceContent({
       ...PRACTICE_SURFACE_CONTENT,
       profiles: [

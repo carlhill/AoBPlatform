@@ -4308,6 +4308,12 @@ the other must not be installable before it. The cheapest gate while both are
 pending is server-side: reject or park `db4_assignment` in the lane worker
 rather than letting the generic cascade have it.
 
+**The gate exists and is now reachable (D-2026-09-27-02):** a practice on the
+`standard` profile is refused `POST /inbound/print-jobs`. It is not yet
+APPLIED — `full` is still the default and still holds `db4`, so every practice
+that nobody has moved accepts a print job. Deciding which practices belong on
+`standard` is the remaining half of this item.
+
 ---
 
 ## AOBPRINTER guard rails: what the build and the review left open (17 Sep 2026)
@@ -4429,13 +4435,21 @@ pages. Those stay built and stay off.
 Precedent to follow: `practices.channelsEnabled`. One setting, read by
 navigation.
 
-**It does not yet close the AOBPRINTER gate, and that is the one thing left.**
-Both shipped profiles (`full`, `db4`) include the `db4` surface, so no setting
-refuses a DB4 print job: the machinery is correct and unreachable. It needs a
+**It did not close the AOBPRINTER gate, and that was the one thing left.**
+Both shipped profiles (`full`, `db4`) included the `db4` surface, so no setting
+refused a DB4 print job: the machinery was correct and unreachable. It needed a
 third profile — something like `standard`, everything except db4 — which is a
 decision about what we sell rather than a code change.
-`PRACTICE-SURFACES.md` section 6b, and the test named for that refusal does not
+`PRACTICE-SURFACES.md` section 6b, and the test named for that refusal did not
 demonstrate it (section 6c).
+
+**CLOSED, 27 September 2026 (D-2026-09-27-02).** `standard` — every surface
+except `db4` — ships in `packages/domain/content/practice-surfaces.json`
+(`practice-surfaces-2026-09-2`), with the CHECK widened by
+`20260927020000_practice_surface_profile_standard`. A practice on it is refused
+`POST /inbound/print-jobs` with `403 practice_surface_not_in_use`, which is what
+item 5 above asked for, and the e2e now demonstrates the refusal it is named
+for.
 
 **Two other gaps, both written up in `PRACTICE-SURFACES.md` section 6:** the
 `portal` and `practitioner_pages` surfaces are console-only, because their

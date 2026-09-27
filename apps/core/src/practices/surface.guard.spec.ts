@@ -83,11 +83,14 @@ describe('does this practice use this part of AoB', () => {
      * bought it (TODO.md, AOBPRINTER item 5). Until this existed, nothing in
      * code stopped the print channel being pointed at a live practice.
      *
-     * `kiosk_only` is not a shipped profile: an unrecognised profile grants
-     * the always set and nothing else, which is exactly the posture wanted
-     * here — a practice nobody has licensed for the DB4 path.
+     * `standard` is the small practice with no PMS (D-2026-09-27-02): every
+     * surface except this one. It replaces `kiosk_only`, which this test used
+     * while no shipped profile could refuse a print job — a profile that
+     * existed nowhere but here, and so proved the unrecognised-profile
+     * fallback rather than a setting anybody could give a practice
+     * (PRACTICE-SURFACES.md §6b, §6c).
      */
-    const guard = guardFor('kiosk_only');
+    const guard = guardFor('standard');
     const attempt = guard.canActivate(contextFor('POST', '/inbound/print-jobs', asPractice));
     await expect(attempt).rejects.toBeInstanceOf(ForbiddenException);
     const body = (await attempt.catch((err: ForbiddenException) => err.getResponse())) as { surface: string };

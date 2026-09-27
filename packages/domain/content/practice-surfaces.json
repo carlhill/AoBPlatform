@@ -1,6 +1,6 @@
 {
   "$comment": "WHICH PARTS OF AoB A PRACTICE ACTUALLY USES (D-2026-09-14-04; hard rule 14). The first customer sees the DB4 path and nothing else — no waiting-room walk-up, no ongoing agreements, no front-desk queue rails, no patient portal, no practitioner pages. Those stay BUILT and stay OFF, and turning one on is a setting on the practice row, never a rebuild. THIS FILE IS THE ONE CLASSIFICATION, READ BY TWO CONSUMERS: the console (which pages a practice's staff are offered and may open) and the core API (which endpoints answer for that practice). A rule written twice is a rule that disagrees with itself within a month. DISPLAY WORDS ARE NOT HERE. Every surface's name and explanation live in the string table keyed by `key` (REQ-LANG-01/-02), because they will be translated and a translated word must never be able to change what a practice may reach. `pages` ARE THE `PAGES` KEYS OF page-access.ts, EXACTLY — every one of them, each appearing once, checked by `every_route_in_the_access_table_belongs_to_a_surface`. Matching at runtime is by prefix so `/status/abc123` resolves like its parent, but the declaration is exact so that adding a screen and forgetting to classify it fails the build rather than quietly inheriting a neighbour's answer. `endpoints` ARE PREFIX PATTERNS on core's route paths, optionally qualified by method, with `*` standing for one path parameter. The longest match wins, so `/kiosk` can be `always` while `POST /kiosk/claim` is the walk-up. A controller base classifies the routes beneath it, so a new route on an existing controller inherits its surface; a NEW controller base is unclassified and fails the build. AN UNCLASSIFIED ROUTE IS ALLOWED AT RUNTIME AND FAILS THE BUILD — see `profileAllowsEndpoint` for why that is deliberate rather than a bug. `full` MUST LIST EVERY SURFACE and the loader refuses a file where it does not: it is the default for every practice that exists, so a surface added here must be ON for all of them until somebody decides otherwise. Bump `version` on every edit; it is recorded on the vault event that changes a practice's profile, so the record says which list the decision was made from.",
-  "version": "practice-surfaces-2026-09-1",
+  "version": "practice-surfaces-2026-09-2",
 
   "always": {
     "$comment": "Signing in, setting the practice up, the day hub, the platform's own pages, and the shared machinery every practice has whatever else it uses. NOT a surface: nothing here can be turned off, because a practice with none of the optional surfaces still has to be able to sign in, be configured, and record what happened. THE TABLET DESK, THE DAY REGISTER AND THE PATIENT WORK LIST ARE HERE rather than in `db4`, and the difference matters: the first customer keeps all three, but so does a practice that uses the waiting-room kiosk and has never printed a DB4. A surface is something a practice may not have bought; shared machinery is not. `/kiosk` is here for the same reason — the tablet serves a PUSHED agreement as well as a walk-up, and only the walk-up is optional.",
@@ -142,6 +142,17 @@
       "key": "db4",
       "$comment": "THE FIRST CUSTOMER (D-2026-09-14-04): the DB4 path and nothing else. They keep the tablet desk, the day register, the patient list and every setup page, because those are `always`; they do not see the waiting-room walk-up, ongoing agreements, the front desk's rails, the patient portal or the practitioner pages.",
       "surfaces": ["db4"]
+    },
+    {
+      "key": "standard",
+      "$comment": "THE SMALL PRACTICE WITH NO PMS (D-2026-09-27-02, Carl: \"We may still want a version that we have for a small practice that does not have a PMS system\"): everything except `db4`. There is no PracSoft and no Medtech to print from, so AOBPRINTER is never installed, no printed assignment form ever arrives and no Signed-DB4 ever goes back in a chart folder — the practice works the waiting-room walk-up and the reception push instead. THIS IS THE PROFILE THAT FINALLY MAKES THE `db4` GATE ABLE TO REFUSE. Until it existed both shipped profiles held `db4`, so `POST /inbound/print-jobs` was gated by machinery no setting could ever trigger (PRACTICE-SURFACES.md §6b); this is the setting that turns the print channel away, which was the whole point of TODO.md's AOBPRINTER item 5. Every surface other than `db4` is listed here rather than inherited, so adding a new surface makes a deliberate choice about this profile instead of quietly joining it.",
+      "surfaces": [
+        "kiosk_walk_up",
+        "enduring_agreements",
+        "queue_rails",
+        "portal",
+        "practitioner_pages"
+      ]
     }
   ]
 }

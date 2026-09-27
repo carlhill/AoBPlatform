@@ -1,5 +1,5 @@
 # PRACTICE-SURFACES.md — which parts of AoB a practice uses
-### v1.0 · 17 September 2026 · Owner: Carl. The decision is `DECISIONS.md` D-2026-09-14-04; the list itself is `packages/domain/content/practice-surfaces.json`, which is the authority. This file is the readable copy and the reasoning.
+### v1.1 · 27 September 2026 · Owner: Carl. The decisions are `DECISIONS.md` D-2026-09-14-04 and D-2026-09-27-02; the list itself is `packages/domain/content/practice-surfaces.json`, which is the authority. This file is the readable copy and the reasoning.
 
 Everything in AoB stays built. A practice sees a subset of it, chosen by one
 setting, and turning a part on is a setting change rather than a deploy.
@@ -34,6 +34,17 @@ This one gates. The change is recorded as a vault event,
 |---|---|
 | **`full`** (default) | db4, kiosk_walk_up, enduring_agreements, queue_rails, portal, practitioner_pages |
 | **`db4`** | db4 |
+| **`standard`** | kiosk_walk_up, enduring_agreements, queue_rails, portal, practitioner_pages |
+
+**`standard` is the small practice with no PMS** (D-2026-09-27-02, 27 September
+2026): everything except the DB4 path. There is no PracSoft and no Medtech to
+print from, so no printed assignment form ever arrives — the practice works the
+waiting-room walk-up and the reception push instead. It is also the profile that
+makes the `db4` gate reachable at all; see section 6b.
+
+A third profile is a content change **and** a migration, deliberately: the
+`practices_surface_profile_check` CHECK is the last place that can stop a value
+nobody wrote code for (`20260927020000_practice_surface_profile_standard`).
 
 An **unrecognised** profile grants the always set and nothing else. That is the
 safe direction, and it is also how a future profile behaves before it is added
@@ -115,25 +126,34 @@ header, and **allows the request when neither is present**. These carry neither:
 So `portal` and `practitioner_pages` are effectively console-only settings today.
 `/practitioner-queue/*` **is** enforced, because the console sends the header.
 
-### 6b. The db4 gate currently refuses nobody
+### 6b. The db4 gate refused nobody until 27 September 2026 — CLOSED
 
-**Both shipped profiles include the `db4` surface**, so there is no setting you
-can give a practice that refuses a DB4 print job. The machinery is correct and
-unreachable. Closing it needs one more profile — something like `standard`,
-everything except db4 — which is a product decision about what we sell, not a
-code change.
+**Both shipped profiles included the `db4` surface**, so there was no setting
+you could give a practice that refused a DB4 print job. The machinery was
+correct and unreachable. Closing it needed one more profile — *"something like
+`standard`, everything except db4 — which is a product decision about what we
+sell, not a code change"*.
 
-Until then, `surfaceProfile` can restrict a DB4-only customer but cannot keep the
-print channel out of anybody else, which was the original point of
-`TODO.md`'s AOBPRINTER item 5.
+Carl made that product decision on 27 September 2026 (D-2026-09-27-02), and
+`standard` ships. `surfaceProfile` now keeps the print channel out of a practice
+that has not bought it, which was the original point of `TODO.md`'s AOBPRINTER
+item 5.
 
-### 6c. One test is named for a behaviour it does not demonstrate
+### 6c. One test was named for a behaviour it did not demonstrate — CLOSED
 
 `a_db4_print_job_is_refused_when_the_practice_does_not_use_db4` in
-`apps/core/test/practice-surfaces.e2e-spec.ts` posts under `db4` (accepted),
-switches to `full`, and posts again (accepted). It never refuses. The only real
-refusal is in `surface.guard.spec.ts`, using `kiosk_only` — a profile that does
-not ship. Both are consequences of 6b and should be fixed with it.
+`apps/core/test/practice-surfaces.e2e-spec.ts` posted under `db4` (accepted),
+switched to `full`, and posted again (accepted). It never refused. It now moves
+the practice to `standard`, asserts the refusal shape the `SurfaceGuard`
+produces — `403 { code, surface, message }`, never a bare 403 — and then moves
+it back to `full` to show that turning the part on again is a setting.
+
+`surface.guard.spec.ts` asked the same question through `kiosk_only`, a profile
+that shipped nowhere and so exercised the unrecognised-profile fallback rather
+than a setting anybody could give a practice; it is now on `standard`. Nothing
+was lost with it: the fallback is proved on its own in
+`packages/domain/src/practice-surfaces.test.ts`, *"gives an unknown profile
+nothing beyond what is always on"*.
 
 ## 7. Two routes nobody could classify confidently
 
@@ -163,3 +183,4 @@ Both left in the always set, which is the safe direction, and both are Carl's.
 | Date | Change |
 |---|---|
 | 17 Sep 2026 | v1.0. Written when piece 6 landed (`26ac33b`), with the classification as built and the three gaps in section 6 stated rather than left to be discovered. |
+| 27 Sep 2026 | The `standard` profile ships (D-2026-09-27-02), closing 6b and 6c. Content at `practice-surfaces-2026-09-2`. Section 6a is still open. |
