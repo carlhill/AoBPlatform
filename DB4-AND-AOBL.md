@@ -639,7 +639,8 @@ looks like.
 0. **The Signed-DB4 rulings, §12b.** The amount: **D-2026-09-14-01 is
    reversed by D-2026-09-14-02** — printed on the Signed-DB4, reproduced
    verbatim from PracSoft, never computed by us. **The Medicare number: printed
-   in full, D-2026-09-14-03.** **The pathology box: RULED by D-2026-09-14-02 —
+   in full on the FORM, D-2026-09-14-03; MASKED on the TABLET,
+   D-2026-09-27-01 part 3.** **The pathology box: RULED by D-2026-09-14-02 —
    it stays on the practice's paper, is carried as data and is NOT drawn on the
    page the patient signs.** (This entry said "not yet ruled" until 27 Sep 2026
    and a build brief believed it over `DECISIONS.md`, which produced a renderer
@@ -651,6 +652,23 @@ looks like.
 0a. **Telehealth** (§11): confirm the remote link to the contact on record is
    the flow, and whether a pre-agreement is to be offered before the
    consultation at all, given the practice is post-only (§11a).
+0b. **The tablet rulings, 27 September 2026 — RULED, D-2026-09-27-01.** The
+   patient reads their own DB4 on the tablet, laid out as the form, **with the
+   cost on it**, reproduced verbatim from PracSoft. This restores the intent of
+   D-2026-09-14-01 (the patient must be informed of the cost), which -02
+   reversed as to the *artefact* and never ruled on as to the *screen* — so the
+   requirement sat in the gap between two records for thirteen days and was
+   never built. **The Medicare card number is masked there and printed in full
+   on the form**: a sheet of paper goes to one person, a tablet is held up in a
+   waiting room. **DocuSign-style signing on a rendered PDF was considered and
+   refused** — hard rule 13, hard rule 2, WCAG 2.2 AA and the zero-footprint
+   kiosk, each sufficient on its own; the reasoning is in the decision.
+0c. **No second kiosk URL — RULED, D-2026-09-27-02.** A practice with no PMS
+   gets the **`standard`** surface profile (every surface except `db4`), which
+   is the gap `PRACTICE-SURFACES.md` §6b named on 17 September. The DB4 form
+   view is additive: the discriminator is the SESSION, not the practice, because
+   `Agreement.sourcePrintJobId` is nullable and a DB4 practice still has
+   walk-ups.
 1. **Is PracSoft3 printing the post-1-July DB4E?** Ask the practice. §1d.
 2. **What do they mean by ticking both boxes?** §1c. Pathology is not ours.
 3. **Is the Chart number the document folder name?** §6a. One question, one
@@ -725,4 +743,5 @@ the allowance allows. Nothing starts until Carl says so.
 | 14 Sep 2026 | §11 telehealth — the existing remote-link channel on a post-service agreement, the TELEHEALTH stamp becomes a field. §11a: the pre-agreement is not mandatory (s 65C(4) items 5 and 6 are both valid; DB4E is post-only), so Powell Street is post-only and legal; what it costs is the chase. §12: the practice wants the exact DB4 with the cost and the signature on it — D-2026-09-14-01 reversed; the design is to REPRODUCE the DB4 from the Print Record rather than sign PracSoft's bytes (rule 13 intact); rules 4, 1 and 12 addressed one by one, with the Medicare number the hard one. |
 | 14 Sep 2026 | Carl: no masking. The Medicare number and IRN are printed in full on the Signed-DB4 and travel in the DB4 Print Record (D-2026-09-14-03). §1a, §2 and §12b updated; hard rule 1's identity meaning unchanged. |
 | 14 Sep 2026 | Section 13: the build as the first feature-flagged slice of AoB (D-2026-09-14-04), six pieces in the order that shows something soonest, model per piece with the honest answer on Sonnet, and the budget note. Not started. |
+| 27 Sep 2026 | §10 items 0b and 0c added: the patient reads the DB4 on the tablet with the cost on it, the Medicare number masked there and full on the form (D-2026-09-27-01); the no-PMS practice gets the `standard` profile and there is no second kiosk URL (D-2026-09-27-02). |
 | 27 Sep 2026 | §10 item 0: the pathology box is recorded as RULED (D-2026-09-14-02), not open. It had said "not yet ruled" and a build brief believed it over DECISIONS.md. Only the footer wording remains open, and it now has a shipped default in versioned content. |
