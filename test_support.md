@@ -140,6 +140,70 @@ Dr Omar Notional (`MED9000000903`), invites them to a location and accepts on
 their behalf — three ordinary endpoints, not SQL and not a revived `ended` row.
 Idempotent on the AHPRA number.
 
+## The one that starts from a physical printer
+
+```bash
+bash scripts/dev/db4-round-trip.sh            # print a DB4 to AOBPRINTER, watch it become an agreement
+bash scripts/dev/db4-round-trip.sh --status   # report every prerequisite, touch nothing
+bash scripts/dev/db4-round-trip.sh --stop     # stop a watcher this script started
+```
+
+**What Carl actually wants to do with this one:** print a PracSoft DB4 to the
+`AOBPRINTER` printer on his machine and watch it turn into a post-service
+agreement on the tablet desk (DB4-AND-AOBL.md §13a piece 1) — without first
+working out which of six things is not running yet.
+
+**Every stage is checked and named separately, in order, and the run stops at
+the first one that fails**: the Postgres container, core on :3001, web on
+:3100, `apps/aobprinter/dist/src/main.js`, the `AOBPRINTER` printer itself, and
+`aobprinter.config.json` — each with the exact command that fixes it. Then it
+clears any stale spool file (so the first job it claims is the one this run
+printed), seeds the patient and servicing provider the fixture needs, starts
+the watcher, prints the fixture, and polls the pipeline stage by stage: the
+spool file appears, is claimed (disappears), an `InboundPrintJob` row appears,
+its state becomes `done`, and the agreement exists.
+
+**The fixture it prints is
+`apps/aobprinter/test-fixtures/pracsoft3-db4-probe.source.txt`, and its values
+are not what the DB4 e2e spec uses.** `apps/core/test/db4-assignment.e2e-spec.ts`
+uses chart `00680` / provider `5745385T` on its own throwaway practice; the
+printed fixture — the one this script actually prints — carries chart `09911`,
+patient Testalina Fakesurname, servicing provider `9999999X` (Dr Ficticia
+Nonperson). Both are obviously fake and the Medicare number's checksum is
+invalid by construction. Re-check with
+`grep -i "chart\|servicing" apps/aobprinter/test-fixtures/pracsoft3-db4-probe.source.txt`
+if the fixture ever changes — this script matches the fixture, not the spec.
+
+**Seeding is ordinary endpoints, never SQL:** `POST /practices/:id/providers`
+for the servicing affiliation, `POST /arrivals` for the patient — the same
+door `arrive.sh` uses, matched on `patientRecordNumber` so the DB4 handler can
+find it (`db4-assignment.handler.ts`: "the chart number is the join key, and
+the only one"). Idempotent: re-running says `already present` instead of
+duplicating.
+
+**It can fail here in a way that names a real gap, not a flaky check.**
+`POST /practices/:id/providers` needs a location, and there is no ordinary
+endpoint that can add one to a practice that already exists but was never
+onboarded (`assertValidated` refuses it, and full onboarding mints its own
+practice id rather than adopting an existing one). If AOBPRINTER's config
+points at such a practice, the script says so by name and gives two ways out —
+point the config at a practice `POST /dev/seed` mints (which comes with a
+location, a servicing provider and a patient already in place), or have Carl
+add one `practice_locations` row for it by hand. It will not do that write
+itself.
+
+**It manages its own watcher and nobody else's.** A pidfile at
+`<dataDir>/dev-watcher.pid` is the only thing this script will ever kill: if
+one is already running there, it is reused and left alone on exit; if this run
+starts one, it stops it on exit (including Ctrl-C). `--stop` stops whatever
+that pidfile names, independent of a run.
+
+**It stops after the signature, and that is not this script's gap to close.**
+The Signed-DB4 template (piece 2) and the write-back into the chart folder
+(piece 4) are not built yet (DB4-AND-AOBL.md) — nothing lands in a folder. The
+agreement exists, signed, in the Evidence Vault, and that is as far as the
+round trip goes today.
+
 ## The other two
 
 ```bash
@@ -200,3 +264,4 @@ bash scripts/dev/test-db.sh
 |---|---|
 | 12 Sep 2026 | v1.0. Written when Carl asked for the staging command to live somewhere findable. |
 | 12 Sep 2026 | `seed-busy-day.ts` — ninety arrivals across three queues, for judging a screen at volume rather than at seven. |
+| 27 Sep 2026 | `db4-round-trip.sh` — one command from a physical print to an agreement, naming whichever of six prerequisites is missing rather than leaving Carl to guess. |
