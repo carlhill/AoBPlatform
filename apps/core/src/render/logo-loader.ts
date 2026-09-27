@@ -24,6 +24,14 @@ import { ArtefactsService } from '../artefacts/artefacts.service';
  * differ from the bytes that were hashed at lock — which is exactly the
  * tamper signal rule 13 exists to raise. Returning null lets the renderer say
  * so in its own words.
+ *
+ * AND IT IS NOW THE PORT FOR THE SIGNATURE MARK TOO (27 September 2026). The
+ * Signed-DB4 renderer composites the patient's signature PNG onto the page and
+ * needs exactly this contract — artefact bytes by content hash, scoped to the
+ * practice, re-hashed on the way out, no read event. The name is narrower than
+ * the job it now does; renaming it would touch the registry, both renderers,
+ * the module and the inventory for no change in behaviour, so the second use
+ * is recorded here rather than left to be discovered.
  */
 export interface LogoLoader {
   load(practiceId: string, sha256: string): Promise<Buffer | null>;

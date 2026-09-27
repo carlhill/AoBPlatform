@@ -17,11 +17,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2195 |
-| Files scanned for exports | 530 |
-| Files scanned for imports | 572 |
-| Exports with no comment of their own | 947 |
-| Exports imported nowhere else | 920 |
+| Exported symbols indexed | 2219 |
+| Files scanned for exports | 536 |
+| Files scanned for imports | 578 |
+| Exports with no comment of their own | 957 |
+| Exports imported nowhere else | 925 |
 
 ## Sections
 
@@ -29,13 +29,13 @@ This is required reading before you write a component, a hook or a helper (wow.m
 - [Web hooks](#web-hooks) — 15
 - [Web helpers and constants](#web-helpers-and-constants) — 279
 - [Web types](#web-types) — 103
-- [Domain functions](#domain-functions) — 387
-- [Domain constants and content](#domain-constants-and-content) — 241
-- [Domain types](#domain-types) — 279
+- [Domain functions](#domain-functions) — 388
+- [Domain constants and content](#domain-constants-and-content) — 244
+- [Domain types](#domain-types) — 284
 - [Contracts types](#contracts-types) — 85
 - [Contracts functions and constants](#contracts-functions-and-constants) — 22
-- [Core services, controllers and modules](#core-services-controllers-and-modules) — 273
-- [Core helpers, constants and types](#core-helpers-constants-and-types) — 172
+- [Core services, controllers and modules](#core-services-controllers-and-modules) — 278
+- [Core helpers, constants and types](#core-helpers-constants-and-types) — 182
 - [AOBPRINTER (the desktop print channel)](#aobprinter-the-desktop-print-channel-) — 111
 
 ## Web components
@@ -693,7 +693,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Domain functions
 
-387 exports.
+388 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1059,6 +1059,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `parsePostServiceRules` | domain:visit-policy.ts | The post-service half of the same content file, validated the same way and with the same posture: it throws rather than repairing, because the file is editable precisely because somebody will edit it. | 0 |
 | `parsePracticeSurfaceContent` | domain:practice-surfaces.ts | Exhaustive, and it throws rather than repairing — the same posture as every other content loader here. | 0 |
 | `parseServiceDescriptionContent` | domain:service-descriptions.ts |  | 0 |
+| `parseSignedDb4Content` | domain:signed-db4-content.ts | Exhaustive, and it throws rather than repairing — the same contract as `parseAssignorRelationshipContent`, and for the same reason: the whole point of an editable file is that somebody will edit it. | 0 |
 | `parseVisitPolicyContent` | domain:visit-policy.ts | Exhaustive, and it throws rather than repairing — the same posture `parseAssignorRelationshipContent` takes and for the same reason: the file is editable precisely because somebody will edit it, and a default quietly applied to a bad edit is a decision nobody made. | 0 |
 | `parseVisitStateContent` | domain:visit-states.ts | Exhaustive, and it throws rather than repairing. | 0 |
 | `patientMessageTemplate` | domain:patient-message-templates.ts |  | 0 |
@@ -1087,7 +1088,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Domain constants and content
 
-241 exports.
+244 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1205,6 +1206,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `REVIEW_TASK_KINDS` | domain:review-tasks.ts |  | **1** · core:review-tasks/review-tasks.controller.ts |
 | `SIGNATURE_RASTER_PURPOSE` | domain:signature.ts | The two artefact purposes a drawn signature produces. | **1** · core:agreements/agreements.service.ts |
 | `SIGNATURE_VECTOR_PURPOSE` | domain:signature.ts |  | **1** · core:agreements/agreements.service.ts |
+| `SIGNED_DB4_CONTENT` | domain:signed-db4-content.ts | The words and geometry in force now. | **1** · core:agreements/signed-db4.service.ts |
 | `SURFACE_REFUSED_CODE` | domain:practice-surfaces.ts | THE REASON CODE FOR "this practice does not use that part of AoB", named once and read by both sides. | **1** · core:practices/surface.guard.ts |
 | `TABLET_SESSION_IDLE_MS` | domain:tablet-session.ts | THIRTY MINUTES OF NOTHING AND THE SESSION IS OVER. | **1** · core:tablet-sessions/tablet-sessions.service.ts |
 | `TERMINATION_BUSINESS_DAYS` | domain:enduring.ts |  | **1** · domain:departure-notice.ts |
@@ -1319,6 +1321,8 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SIGHTING_FULL_WEIGHT_DAYS` | domain:practitioner-strength.ts | How long a sighting keeps FULL weight, and how long before it is worth zero. | 0 |
 | `SIGHTING_WORTHLESS_DAYS` | domain:practitioner-strength.ts |  | 0 |
 | `SIGNATURE_REFUSAL_REASONS` | domain:tablet-session.ts | WHY A SIGNATURE WAS REFUSED — a CODE, never the server's own sentence, and never anything about the patient (Carl, 7 Sep 2026). | 0 |
+| `SIGNED_DB4_CONTENT_VERSION` | domain:signed-db4-content.ts | Recorded on the agreement, so "which wording produced this page" is a query. | 0 |
+| `SIGNED_DB4_LABEL_KEYS` | domain:signed-db4-content.ts | THE FIXED LABELS, and the list is closed. | 0 |
 | `STATE_POSTCODE_RANGES` | domain:address.ts | ⚠ UNVERIFIED DATASET, on the same footing as the public-holiday calendar: real, widely published, and not yet checked against an authoritative source. | 0 |
 | `STATUS_TRANSITIONS` | domain:lifecycle.ts | Allowed forward transitions. | 0 |
 | `SUPPRESSIONS_SHOWN_ON_LOG` | domain:correspondence-log.ts | A send that never happened, and why. | 0 |
@@ -1335,7 +1339,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Domain types
 
-279 exports.
+284 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1428,6 +1432,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SignatureEventId` | domain:ids.ts |  | **1** · domain:agreement.ts |
 | `SignaturePoint` | domain:signature.ts | A captured point, in the pad's own logical coordinate space. | **1** · web:kiosk/components/SignaturePad.tsx |
 | `SignatureStroke` | domain:signature.ts | One continuous contact with the glass. | **1** · web:kiosk/components/SignaturePad.tsx |
+| `SignedDb4Content` | domain:signed-db4-content.ts |  | **1** · core:render/signed-db4-document.ts |
 | `StructuredAddress` | domain:address.ts |  | **1** · core:organisations/organisations.service.ts |
 | `SuppressedSend` | domain:correspondence-log.ts |  | **1** · web:practice/correspondence/CorrespondenceView.tsx |
 | `TabletSessionPatient` | domain:tablet-session.ts |  | **1** · web:kiosk/rules/pushed-details.ts |
@@ -1597,6 +1602,10 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ServiceDescriptionContent` | domain:service-descriptions.ts |  | 0 |
 | `SignatureGateState` | domain:guards.ts |  | 0 |
 | `SignatureRefusalReason` | domain:tablet-session.ts |  | 0 |
+| `SignedDb4Footer` | domain:signed-db4-content.ts |  | 0 |
+| `SignedDb4LabelKey` | domain:signed-db4-content.ts |  | 0 |
+| `SignedDb4Labels` | domain:signed-db4-content.ts |  | 0 |
+| `SignedDb4Layout` | domain:signed-db4-content.ts |  | 0 |
 | `SignerContact` | domain:agreement-copy.ts | A contact pair, from whichever record the signer's contact lives on. | 0 |
 | `Stakes` | domain:review-tasks.ts | How much rides on getting this one wrong. | 0 |
 | `StepUpDecision` | domain:auth-method.ts | The answer to "may this session do the irreversible thing", and why not. | 0 |
@@ -1626,11 +1635,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
 | `VaultEventInput` | contracts:vault.ts |  | **8** · core:artefacts/artefacts.service.ts, vault:chain/chain-store.contract.ts, vault:chain/chain-store.ts, +5 more |
+| `PrintJobEnvelope` | contracts:print-capture.ts |  | **7** · core:agreements/signed-db4.service.ts, core:inbound/db4-assignment.handler.ts, core:inbound/inbound-lane.worker.ts, +4 more |
 | `VaultEventRecord` | contracts:vault.ts |  | **7** · vault:chain/chain-store.ts, vault:chain/immudb-chain-store.ts, vault:chain/in-memory-chain-store.ts, +4 more |
 | `ArrivalProviderChoice` | contracts:arrivals.ts | A SERVICING PRACTITIONER, AT A LOCATION, reception may choose instead. | **5** · core:arrivals/arrivals.service.ts, web:practice/patients/NewAgreementPanel.tsx, web:practice/patients/PatientsQueueView.tsx, +2 more |
 | `DayRegisterRow` | contracts:arrivals.ts | WHO CAME IN, WHEN, TO SEE WHOM, AND WHAT HAPPENED ABOUT THEIR AGREEMENT (Carl, 12 September 2026, on `/practice/frontdesk`: *"Add a button here with a link to show all Patients seen at this practice today. | **5** · core:arrivals/arrivals.service.ts, web:practice/day/DayView.tsx, web:practice/frontdesk/FrontDeskView.tsx, +2 more |
 | `PmsAdapter` | contracts:pms-adapter.ts | The adapter contract. | **5** · connector:mock-adapter.ts, core:auto-capture/auto-capture.service.ts, core:pms/pms-sync.service.ts, +2 more |
-| `PrintJobEnvelope` | contracts:print-capture.ts |  | **5** · core:inbound/db4-assignment.handler.ts, core:inbound/inbound-lane.worker.ts, core:inbound/inbound-print-jobs.controller.ts, +2 more |
 | `RuleResult` | contracts:rules-engine.ts |  | **5** · core:service-descriptions/service-descriptions.service.ts, rules:rules/rule-set-2026-08.draft.ts, rules:rules/rule-set.contract.ts, +2 more |
 | `DayRegister` | contracts:arrivals.ts | ONE PRACTICE'S DAY. | **4** · core:arrivals/arrivals.service.ts, web:practice/day/DayView.tsx, web:practice/frontdesk/FrontDeskView.tsx, +1 more |
 | `ExpectedAppointment` | contracts:arrivals.ts | SOMEBODY BOOKED FOR TODAY WHO HAS NOT WALKED IN YET (Carl, 12 Sep 2026; FRONT-DESK-PAGE.md §12.4). | **4** · core:arrivals/arrivals.service.ts, web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/deskLines.ts, +1 more |
@@ -1652,7 +1661,15 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ArrivalMoveOutcome` | contracts:arrivals.ts | WHAT HAPPENED TO ONE PATIENT. | **1** · core:arrivals/arrivals.service.ts |
 | `ArrivalMoveRefusal` | contracts:arrivals.ts |  | **1** · core:arrivals/arrivals.service.ts |
 | `ArrivalReceipt` | contracts:arrivals.ts | What the platform did about it. | **1** · core:arrivals/arrivals.service.ts |
+| `Db4Assignment` | contracts:print-capture.ts |  | **1** · core:render/signed-db4-document.ts |
+| `Db4Form` | contracts:print-capture.ts |  | **1** · core:render/signed-db4-document.ts |
+| `Db4Heading` | contracts:print-capture.ts |  | **1** · core:render/signed-db4-document.ts |
+| `Db4Patient` | contracts:print-capture.ts |  | **1** · core:render/signed-db4-document.ts |
 | `Db4PlacementReason` | contracts:print-capture.ts |  | **1** · core:inbound/db4-assignment.handler.ts |
+| `Db4Referral` | contracts:print-capture.ts |  | **1** · core:render/signed-db4-document.ts |
+| `Db4Service` | contracts:print-capture.ts |  | **1** · core:render/signed-db4-document.ts |
+| `Db4ServicingLocation` | contracts:print-capture.ts |  | **1** · core:render/signed-db4-document.ts |
+| `Db4Statement` | contracts:print-capture.ts |  | **1** · core:render/signed-db4-renderer.ts |
 | `PmsAdapterCapabilities` | contracts:pms-adapter.ts | Declared per adapter; the core adjusts behaviour to what is absent. | **1** · connector:mock-adapter.ts |
 | `PortalAccessLogEntry` | contracts:portal.ts | FR-8.2 — "who has looked", as the patient sees it. | **1** · core:portal/portal-reads.service.ts |
 | `PortalActivationChallenge` | contracts:portal.ts | WHY THE ACTIVATION PAGE ASKS THE SERVER ANYTHING AT ALL (FR-1.14, REQ-PORT-08). | **1** · core:portal/portal.service.ts |
@@ -1676,6 +1693,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PortalTerminationResult` | contracts:portal.ts | The result of REQ-PORT-05 / 65CA(7)(b) — the patient ends it, whether or not they were the assignor. | **1** · core:portal/portal-reads.service.ts |
 | `PortalVisit` | contracts:portal.ts | "Where I have been" — derived from agreement service dates ONLY. | **1** · core:portal/portal-reads.service.ts |
 | `PrintJobAccepted` | contracts:print-capture.ts | What the platform says back — at once, before any of it is processed. | **1** · core:inbound/inbound-print-jobs.service.ts |
+| `PrintJobProvider` | contracts:print-capture.ts | A provider named on a printed document. | **1** · core:render/signed-db4-document.ts |
 | `ServiceRenderedReceipt` | contracts:arrivals.ts | THE SERVICE HAS BEEN RENDERED — what the platform did about it (Carl, 11 Sep 2026; TODO.md "Two front doors" decision (b), "Still to build: Post-service push"). | **1** · core:arrivals/arrivals.service.ts |
 | `SilentRestoreClient` | contracts:auth.ts |  | **1** · web:AccessGuard.tsx |
 | `ValidationRequest` | contracts:rules-engine.ts |  | **1** · core:rules-client/rules-client.module.ts |
@@ -1684,14 +1702,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ArrivalEvent` | contracts:arrivals.ts |  | 0 |
 | `ArrivalRefusalReason` | contracts:arrivals.ts |  | 0 |
 | `ArrivalSource` | contracts:arrivals.ts |  | 0 |
-| `Db4Assignment` | contracts:print-capture.ts |  | 0 |
-| `Db4Form` | contracts:print-capture.ts |  | 0 |
-| `Db4Heading` | contracts:print-capture.ts |  | 0 |
-| `Db4Patient` | contracts:print-capture.ts |  | 0 |
-| `Db4Referral` | contracts:print-capture.ts |  | 0 |
-| `Db4Service` | contracts:print-capture.ts |  | 0 |
-| `Db4ServicingLocation` | contracts:print-capture.ts |  | 0 |
-| `Db4Statement` | contracts:print-capture.ts |  | 0 |
 | `EnduringRuleId` | contracts:rules-engine.ts |  | 0 |
 | `PmsClaimEvent` | contracts:pms-adapter.ts |  | 0 |
 | `PortalActivationRequest` | contracts:portal.ts | What `POST /portal/activate` is given. | 0 |
@@ -1702,7 +1712,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PortalPasskeyRegistrationVerification` | contracts:portal.ts | What the browser posts back. | 0 |
 | `PortalPatientIActFor` | contracts:portal.ts | A patient this account's person acts for. | 0 |
 | `PortalTimestamp` | contracts:portal.ts | ISO-8601 instant, server-authoritative. | 0 |
-| `PrintJobProvider` | contracts:print-capture.ts | A provider named on a printed document. | 0 |
 | `RetentionClockSource` | contracts:pms-adapter.ts | Marker for records whose retention clock had to be defaulted conservatively (REQ-INT-04). | 0 |
 | `RuleId` | contracts:rules-engine.ts | Rule identifiers C1–C14 per REQ-65C-01, plus room for versioned additions. | 0 |
 | `RuleOutcome` | contracts:rules-engine.ts |  | 0 |
@@ -1742,22 +1751,22 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Core services, controllers and modules
 
-273 exports.
+278 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
-| `PrismaService` | core:prisma/prisma.service.ts | Every practice-scoped read or write goes through withPractice() — RLS policies (FORCE, fail closed) filter on the transaction-local app.practice_id setting, so a query outside withPractice() sees no practice-scoped rows at all. | **61** · core:acting-as/acting-as.service.ts, core:affiliations/affiliations.service.ts, core:affiliations/invitation.service.ts, +58 more |
+| `PrismaService` | core:prisma/prisma.service.ts | Every practice-scoped read or write goes through withPractice() — RLS policies (FORCE, fail closed) filter on the transaction-local app.practice_id setting, so a query outside withPractice() sees no practice-scoped rows at all. | **63** · core:acting-as/acting-as.service.ts, core:affiliations/affiliations.service.ts, core:affiliations/invitation.service.ts, +60 more |
 | `ReviewTasksService` | core:review-tasks/review-tasks.service.ts | Work arriving into the platform that needs a second look. | **12** · core:affiliations/affiliations.service.ts, core:affiliations/practitioner-self.controller.ts, core:identity/practice-admin.service.ts, +9 more |
 | `OutboundService` | core:outbound/outbound.service.ts | The outbound queue. | **9** · core:acting-as/acting-as.service.ts, core:affiliations/affiliations.service.ts, core:agreement-copy/agreement-copy.service.ts, +6 more |
 | `CaptureService` | core:capture/capture.service.ts |  | **8** · core:agreements/agreements.service.ts, core:arrivals/arrivals.service.ts, core:arrivals/post-service-chase.sweep.ts, +5 more |
 | `EmailComposer` | core:messaging/composer.service.ts | One place that knows what an outbound message from us looks like. | **8** · core:acting-as/acting-as.service.ts, core:affiliations/affiliations.service.ts, core:affiliations/invitation.service.ts, +5 more |
 | `AgreementsService` | core:agreements/agreements.service.ts |  | **7** · core:agree/agree.service.ts, core:agreements/agreements.controller.ts, core:agreements/agreements.module.ts, +4 more |
+| `ArtefactsService` | core:artefacts/artefacts.service.ts | Evidence artefacts. | **7** · core:agreements/agreements.service.ts, core:agreements/signed-db4.service.ts, core:artefacts/artefacts.controller.ts, +4 more |
 | `CorrespondenceService` | core:correspondence/correspondence.service.ts | The evidence twin of every send — CONSULTATION-CAPTURE-PLAN.md Part 4. | **7** · core:agree/agree.service.ts, core:correspondence/correspondence.controller.ts, core:correspondence/correspondence.module.ts, +4 more |
 | `PortalService` | core:portal/portal.service.ts | WHO THE PATIENT IS, AND WHAT THEY MAY SEE — the identity half of C8. | **7** · core:portal/portal-dev.controller.ts, core:portal/portal-invitation.controller.ts, core:portal/portal-passkey.controller.ts, +4 more |
-| `ArtefactsService` | core:artefacts/artefacts.service.ts | Evidence artefacts. | **6** · core:agreements/agreements.service.ts, core:artefacts/artefacts.controller.ts, core:artefacts/artefacts.module.ts, +3 more |
+| `RendererRegistry` | core:render/renderer-registry.ts | Resolves renderers by version. | **7** · core:agreement-copy/agreement-copy.service.ts, core:agreements/agreements.service.ts, core:agreements/signed-db4.service.ts, +4 more |
 | `CaptureModule` | core:capture/capture.module.ts |  | **6** · core:agreements/agreements.module.ts, core:app.module.ts, core:arrivals/arrivals.module.ts, +3 more |
 | `DevicesService` | core:devices/devices.service.ts | DEVICE PAIRING — the one credential the zero-footprint rule allows on a tablet (CLAUDE.md §7; TODO.md "Zero-footprint kiosk", "Push-to-device capture"). | **6** · core:dev-seed/dev-seed.controller.ts, core:devices/device.guard.ts, core:devices/devices.controller.ts, +3 more |
-| `RendererRegistry` | core:render/renderer-registry.ts | Resolves renderers by version. | **6** · core:agreement-copy/agreement-copy.service.ts, core:agreements/agreements.service.ts, core:pms/write-back.service.ts, +3 more |
 | `VerificationService` | core:verification/verification.service.ts |  | **6** · core:capture/capture.service.ts, core:kiosk/kiosk.service.ts, core:portal/portal.service.ts, +3 more |
 | `AffiliationsService` | core:affiliations/affiliations.service.ts | Practitioners and their affiliations (ORG-MODEL-PROPOSAL.md §5, §6). | **5** · core:affiliations/affiliation-sweep.service.ts, core:affiliations/affiliations.controller.ts, core:affiliations/affiliations.module.ts, +2 more |
 | `AgreementsModule` | core:agreements/agreements.module.ts |  | **5** · core:agree/agree.module.ts, core:app.module.ts, core:arrivals/arrivals.module.ts, +2 more |
@@ -1829,6 +1838,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PracticesService` | core:practices/practices.service.ts |  | **2** · core:practices/practices.controller.ts, core:practices/practices.module.ts |
 | `PractitionerAccessService` | core:identity/practitioner-access.service.ts | Giving a practitioner a way to sign in. | **2** · core:affiliations/affiliations.service.ts, core:identity/identity.module.ts |
 | `PractitionerQueueService` | core:practitioner-queue/practitioner-queue.service.ts | WHO IS WAITING, AND IS THEIR PAPERWORK DONE (PRACTITIONER-QUEUE-PAGE.md §3, §5; Carl 12 September 2026). | **2** · core:practitioner-queue/practitioner-queue.controller.ts, core:practitioner-queue/practitioner-queue.module.ts |
+| `PrintRecordsService` | core:inbound/print-records.service.ts | READ ONE PRINT RECORD BACK — the inbound module's own door onto its own table, opened for the one caller outside it that legitimately needs the contents of a form after the fact. | **2** · core:agreements/signed-db4.service.ts, core:inbound/print-records.module.ts |
 | `ReconciliationService` | core:reconciliation/reconciliation.service.ts | M7 — the core operational screen (REQ-REC-01): every service without a stored agreement, ranked by days remaining on the twelve-month lodgement window, banded per REQ-CHASE-05. | **2** · core:reconciliation/reconciliation.controller.ts, core:reconciliation/reconciliation.module.ts |
 | `RenderRefusal` | core:render/agreement-document.ts | THE RENDER-TIME GUARD. | **2** · core:agreements/agreements.service.ts, core:render/agreement-pdf-renderer.ts |
 | `RulesClientError` | core:rules-client/rules-client.module.ts |  | **2** · core:agreements/agreements.service.ts, core:service-descriptions/service-descriptions.service.ts |
@@ -1836,6 +1846,8 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SandboxGateway` | core:messaging/gateway.ts | Records what would have been sent. | **2** · core:messaging/messaging.module.ts, core:notices/notices.module.ts |
 | `ServiceDescriptionsModule` | core:service-descriptions/service-descriptions.module.ts |  | **2** · core:app.module.ts, core:tablet-sessions/tablet-sessions.module.ts |
 | `SetupService` | core:organisations/setup.service.ts | The practice setup hub. | **2** · core:organisations/organisations.controller.ts, core:organisations/organisations.module.ts |
+| `SignedDb4Renderer` | core:render/signed-db4-renderer.ts | `signed-db4-1` — THE PRACTICE'S OWN FORM, BACK IN THE CHART FOLDER, WITH THE COST ON IT AND THE PATIENT'S SIGNATURE AT THE BOTTOM (D-2026-09-14-02/-03). | **2** · core:agreements/signed-db4.service.ts, core:render/renderer-registry.ts |
+| `SignedDb4Service` | core:agreements/signed-db4.service.ts | PRODUCE THE SIGNED-DB4 — the practice's own form, reproduced by us, with the cost printed, the Medicare card number in full and the patient's signature at the bottom (D-2026-09-14-02/-03; DB4-AND-AOBL.md §12). | **2** · core:agreements/agreements.module.ts, core:agreements/agreements.service.ts |
 | `TabletSessionsModule` | core:tablet-sessions/tablet-sessions.module.ts |  | **2** · core:app.module.ts, core:patients/patients.module.ts |
 | `TemplatesModule` | core:templates/templates.module.ts |  | **2** · core:agreements/agreements.module.ts, core:app.module.ts |
 | `UpdateConfigDto` | core:practices/practices.dto.ts |  | **2** · core:practices/practices.controller.ts, core:practices/practices.service.ts |
@@ -1923,6 +1935,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PractitionerQueueController` | core:practitioner-queue/practitioner-queue.controller.ts | WHO IS WAITING FOR ME TODAY (PRACTITIONER-QUEUE-PAGE.md §3; Carl, 12 September 2026). | **1** · core:practitioner-queue/practitioner-queue.module.ts |
 | `PractitionerQueueModule` | core:practitioner-queue/practitioner-queue.module.ts |  | **1** · core:app.module.ts |
 | `PractitionerSelfController` | core:affiliations/practitioner-self.controller.ts | What a practitioner sees and does about themselves. | **1** · core:affiliations/affiliations.module.ts |
+| `PrintRecordsModule` | core:inbound/print-records.module.ts |  | **1** · core:agreements/agreements.module.ts |
 | `PrismaModule` | core:prisma/prisma.module.ts |  | **1** · core:app.module.ts |
 | `PushToDeviceDto` | core:tablet-sessions/tablet-sessions.dto.ts | `POST /devices/:deviceId/push` — send one locked agreement to one tablet. | **1** · core:tablet-sessions/tablet-sessions.controller.ts |
 | `ReconciliationController` | core:reconciliation/reconciliation.controller.ts |  | **1** · core:reconciliation/reconciliation.module.ts |
@@ -1936,6 +1949,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ServiceDescriptionsController` | core:service-descriptions/service-descriptions.controller.ts | D6a on a staff surface (CONSULTATION-CAPTURE-PLAN §2.4). | **1** · core:service-descriptions/service-descriptions.module.ts |
 | `SetSessionStateDto` | core:tablet-sessions/tablet-sessions.dto.ts | `POST /kiosk/session/:id/state` — the tablet says what it is showing. | **1** · core:tablet-sessions/kiosk-session.controller.ts |
 | `SignDto` | core:agreements/agreements.dto.ts |  | **1** · core:agreements/agreements.controller.ts |
+| `SignedDb4RenderRefusal` | core:render/signed-db4-document.ts |  | **1** · core:render/signed-db4-renderer.ts |
 | `SimpleWebAuthnAdapter` | core:portal/portal-webauthn.ts | The real one. | **1** · core:portal/portal.module.ts |
 | `SurfaceGuard` | core:practices/surface.guard.ts | DOES THIS PRACTICE USE THIS PART OF AoB? | **1** · core:practices/practices.module.ts |
 | `TabletSessionsController` | core:tablet-sessions/tablet-sessions.controller.ts | RECEPTION'S SIDE OF THE PUSH — `/practice/tablet` talks to this (TODO.md "Two front doors", Carl 4 Sep 2026). | **1** · core:tablet-sessions/tablet-sessions.module.ts |
@@ -2022,7 +2036,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Core helpers, constants and types
 
-172 exports.
+182 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -2040,9 +2054,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `KEYCLOAK_ADMIN` | core:identity/identity.tokens.ts |  | **5** · core:identity/identity.module.ts, core:identity/identity.service.ts, core:identity/practice-admin.service.ts, +2 more |
 | `PMS_ADAPTER` | core:pms/pms.tokens.ts |  | **5** · core:auto-capture/auto-capture.service.ts, core:pms/pms-sync.service.ts, core:pms/pms.module.ts, +2 more |
 | `anchorsForAgreements` | core:affiliations/agreement-anchor.ts | The same answer for a list, which is what every queue screen wants: two queries for the anchored rows and one legacy lookup each for the rest, rather than a join per line. | **5** · core:arrivals/arrivals.service.ts, core:kiosk/kiosk.service.ts, core:portal/portal-reads.service.ts, +2 more |
-| `canonicalJson` | core:render/canonical-json.ts | THE ONE CANONICAL SERIALISATION IN THE RENDER PATH — the function that decides what an agreement's hash is computed over. | **4** · core:render/agreement-document.ts, core:render/agreement-pdf-renderer.ts, core:render/pdf-renderer.ts, +1 more |
-| `AgreementRenderer` | core:render/renderer.ts |  | **3** · core:render/agreement-pdf-renderer.ts, core:render/pdf-renderer.ts, core:render/renderer-registry.ts |
+| `canonicalJson` | core:render/canonical-json.ts | THE ONE CANONICAL SERIALISATION IN THE RENDER PATH — the function that decides what an agreement's hash is computed over. | **5** · core:render/agreement-document.ts, core:render/agreement-pdf-renderer.ts, core:render/pdf-renderer.ts, +2 more |
+| `AgreementRenderer` | core:render/renderer.ts |  | **4** · core:render/agreement-pdf-renderer.ts, core:render/pdf-renderer.ts, core:render/renderer-registry.ts, +1 more |
 | `CallingDevice` | core:devices/device.decorator.ts | The resolved device, or undefined where none was offered. | **3** · core:agreement-copy/agreement-copy-kiosk.controller.ts, core:kiosk/kiosk.controller.ts, core:tablet-sessions/kiosk-session.controller.ts |
+| `LogoLoader` | core:render/logo-loader.ts | THE ONE WAY THE RENDERER GETS THE PRACTICE'S LOGO BYTES. | **3** · core:render/agreement-pdf-renderer.ts, core:render/renderer-registry.ts, core:render/signed-db4-renderer.ts |
+| `RenderedArtefact` | core:render/renderer.ts | Rule 13 — ONE deterministic render path. | **3** · core:render/agreement-pdf-renderer.ts, core:render/pdf-renderer.ts, core:render/signed-db4-renderer.ts |
 | `RequiresDevice` | core:devices/device.decorator.ts | This endpoint answers only a PAIRED TABLET. | **3** · core:agreement-copy/agreement-copy-kiosk.controller.ts, core:kiosk/kiosk.controller.ts, core:tablet-sessions/kiosk-session.controller.ts |
 | `anchorForLegacyProvider` | core:affiliations/agreement-anchor.ts | THE ANCHOR FOR A LEGACY `providers` ROW. | **3** · core:arrivals/arrivals.service.ts, core:auto-capture/auto-capture.service.ts, core:pms/pms-sync.service.ts |
 | `renderInputOf` | core:render/renderer-registry.ts | WHAT TO HAND A RENDERER WHEN RE-VERIFYING A STORED AGREEMENT. | **3** · core:agreements/agreements.service.ts, core:pms/write-back.service.ts, core:render/verified-artefact.ts |
@@ -2053,12 +2069,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `AgreementDocument` | core:render/agreement-document.ts |  | **2** · core:agreements/agreements.service.ts, core:render/agreement-pdf-renderer.ts |
 | `EmailFooter` | core:messaging/template.ts |  | **2** · core:identity/practice-admin.service.ts, core:messaging/composer.service.ts |
 | `LOGO_LOADER` | core:render/logo-loader.ts |  | **2** · core:render/render.module.ts, core:render/renderer-registry.ts |
-| `LogoLoader` | core:render/logo-loader.ts | THE ONE WAY THE RENDERER GETS THE PRACTICE'S LOGO BYTES. | **2** · core:render/agreement-pdf-renderer.ts, core:render/renderer-registry.ts |
 | `PORTAL_AUTHENTICATOR` | core:portal/portal-authenticator.ts | WHERE THE PASSKEY GOES — a named seam, and deliberately nothing more. | **2** · core:portal/portal.module.ts, core:portal/portal.service.ts |
 | `PORTAL_WEBAUTHN` | core:portal/portal-webauthn.ts |  | **2** · core:portal/portal-passkey.service.ts, core:portal/portal.module.ts |
 | `PatientIdentityRecord` | core:verification/identifier-matching.ts |  | **2** · core:kiosk/kiosk.service.ts, core:verification/verification.service.ts |
 | `RULES_CLIENT` | core:rules-client/rules-client.module.ts |  | **2** · core:agreements/agreements.service.ts, core:service-descriptions/service-descriptions.service.ts |
-| `RenderedArtefact` | core:render/renderer.ts | Rule 13 — ONE deterministic render path. | **2** · core:render/agreement-pdf-renderer.ts, core:render/pdf-renderer.ts |
+| `SignedDb4Document` | core:render/signed-db4-document.ts |  | **2** · core:agreements/signed-db4.service.ts, core:render/signed-db4-renderer.ts |
 | `VAULT_CLIENT` | core:vault/vault.tokens.ts |  | **2** · core:vault/vault-relay.service.ts, core:vault/vault.module.ts |
 | `allocatePracticeCodeIfPossible` | core:practices/practice-code.ts | ALLOCATE, BUT NEVER FAIL THE THING THAT ASKED. | **2** · core:organisations/organisations.service.ts, core:practices/practices.service.ts |
 | `clientKey` | core:portal/portal-client-key.ts | WHAT A RATE LIMITER ON A PUBLIC PORTAL ROUTE COUNTS AGAINST. | **2** · core:portal/portal-passkey.controller.ts, core:portal/portal.controller.ts |
@@ -2101,6 +2116,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `anchorForAffiliation` | core:affiliations/agreement-anchor.ts | THE AFFILIATION, AS A PERSON AND A PLACE. | **1** · core:arrivals/arrivals.service.ts |
 | `anchorsForAffiliations` | core:affiliations/agreement-anchor.ts | The batch form. | **1** · core:arrivals/arrivals.service.ts |
 | `assertRenderable` | core:render/agreement-document.ts |  | **1** · core:render/agreement-pdf-renderer.ts |
+| `assertSignedDb4Renderable` | core:render/signed-db4-document.ts | THE RENDER-TIME GUARD FOR THIS ARTEFACT KIND. | **1** · core:render/signed-db4-renderer.ts |
 | `clearPortalCookie` | core:portal/portal-cookie.ts |  | **1** · core:portal/portal.controller.ts |
 | `correctionBody` | core:notices/notice-template.ts | Correction notices supersede rather than replace (REQ-DEL-06). | **1** · core:notices/notices.service.ts |
 | `createAddressValidator` | core:organisations/address-validator.ts |  | **1** · core:organisations/organisations.module.ts |
@@ -2108,6 +2124,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `formatAbn` | core:render/agreement-document.ts | Group an ABN the way the register prints it. | **1** · core:practices/letterhead.service.ts |
 | `hashSecret` | core:devices/device-credential.ts |  | **1** · core:devices/devices.service.ts |
 | `isAgreementDocument` | core:render/agreement-document.ts | True for a stored payload that is a whole document rather than bare particulars. | **1** · core:render/agreement-pdf-renderer.ts |
+| `isSignedDb4Document` | core:render/signed-db4-document.ts | True for a stored payload that is a Signed-DB4 rather than an agreement document. | **1** · core:render/signed-db4-renderer.ts |
 | `letterheadHashOf` | core:render/agreement-document.ts | A stable identity for the letterhead, so an agreement can say which one it was made under without storing a second copy of it. | **1** · core:practices/letterhead.service.ts |
 | `mintAgreementCopyToken` | core:agreement-copy/copy-token.ts |  | **1** · core:agreement-copy/agreement-copy.service.ts |
 | `mintCaptureToken` | core:capture/capture-token.ts |  | **1** · core:capture/capture.service.ts |
@@ -2167,9 +2184,14 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ResolvedUsername` | core:identity/account-names.ts | What the caller needs to know, and why it is what it is. | 0 |
 | `RetentionSweepResult` | core:retention/retention-sweep.service.ts |  | 0 |
 | `SERVICE_RENDERED_OUTCOMES` | core:practitioner-queue/practitioner-queue.service.ts | WHAT THE SERVICE-RENDERED SIGNAL CAME TO — a reason code, never prose, and never a gate (hard rule 8). | 0 |
+| `SIGNED_DB4_NOT_PRODUCED_REASONS` | core:agreements/signed-db4.service.ts | WHY A SIGNED-DB4 WAS NOT PRODUCED — a code, never a shrug. | 0 |
 | `ScopedTx` | core:arrivals/arrival-day.ts | The practice-scoped client `withPractice` hands its callback. | 0 |
 | `ServiceRenderedOutcome` | core:practitioner-queue/practitioner-queue.service.ts |  | 0 |
 | `SetServiceDescriptionResult` | core:service-descriptions/service-descriptions.service.ts |  | 0 |
+| `SignedDb4NotProducedReason` | core:agreements/signed-db4.service.ts |  | 0 |
+| `SignedDb4Outcome` | core:agreements/signed-db4.service.ts |  | 0 |
+| `SignedDb4PrintRecord` | core:render/signed-db4-document.ts | The DB4 Print Record as it is reproduced — the driver's capture, narrowed to what is drawn. | 0 |
+| `SignedDb4Signature` | core:render/signed-db4-document.ts | THE MARK, AS A REFERENCE. | 0 |
 | `StagedArtefact` | core:artefacts/artefacts.service.ts | Bytes already written and hashed; the metadata row has not been made yet. | 0 |
 | `UNPAIRED_MESSAGE` | core:devices/device.guard.ts | ONE SENTENCE FOR "this tablet is not paired", and the kiosk shows its own copy regardless. | 0 |
 | `UploadInput` | core:artefacts/artefacts.service.ts |  | 0 |
@@ -2195,7 +2217,9 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `nameMatches` | core:verification/identifier-matching.ts | The name rule (Carl, 3 Sep 2026): the stated name must contain the held FAMILY name and the FIRST given name. | 0 |
 | `normaliseStatedValue` | core:verification/identifier-matching.ts |  | 0 |
 | `normalisedHeldValue` | core:verification/identifier-matching.ts | Normalises a held or stated value for one identifier type. | 0 |
+| `ourStringsOf` | core:render/signed-db4-document.ts | THE STRINGS THIS CODEBASE AUTHORED — the ones hard rule 12 is about. | 0 |
 | `renderedStringsOf` | core:render/agreement-document.ts | Every string that will be drawn on the page, in one list — including the particulars' own values, because a service description or a provider name is as much a line on the contract as a template paragraph is. | 0 |
+| `reproducedStringsOf` | core:render/signed-db4-document.ts | THE STRINGS REPRODUCED FROM THE FORM. | 0 |
 | `templateValuesFor` | core:agreements/agreements.service.ts | THE PARTICULARS, TURNED INTO THE VALUES THE WORDS NEED. | 0 |
 | `unwrapJsonp` | core:organisations/abr.ts | Strip the `callback( … )` padding the JSON endpoints answer with. | 0 |
 

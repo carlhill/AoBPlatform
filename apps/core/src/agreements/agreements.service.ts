@@ -52,6 +52,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RULES_CLIENT, RulesClientError } from '../rules-client/rules-client.module';
 import { assertCanBeProviderOnAgreement, assertEnduringAllowed } from '@aobplatform/domain';
 import type { ChangeAssignorDto, CreateAgreementDto, LockParticularsDto } from './agreements.dto';
+import { SignedDb4Service } from './signed-db4.service';
 import type { Actor } from '../auth/actor.decorator';
 
 const SYSTEM_ACTOR = { principalType: 'system', id: 'core' } as const;
@@ -287,6 +288,7 @@ export class AgreementsService {
     private readonly artefacts: ArtefactsService,
     private readonly letterheads: LetterheadService,
     private readonly templates: TemplatesService,
+    private readonly signedDb4: SignedDb4Service,
   ) {}
 
   /** See `enduringRulesAuthored`. In-process and per-instance, which is all a hint needs to be. */
@@ -2707,6 +2709,20 @@ export class AgreementsService {
     if (dto.captureRequestId) {
       await this.capture.complete(practiceId, dto.captureRequestId);
     }
+    /*
+     * THE SIGNED-DB4, AND ONLY FOR AN AGREEMENT THAT CAME FROM A PRINTED DB4
+     * (D-2026-09-14-02). It is produced HERE, after the signature transaction
+     * has committed, because the signature has to be ON it — the agreement's
+     * own artefact was hashed at the lock and nothing may composite anything
+     * onto it afterwards (rule 13).
+     *
+     * NOTHING ABOVE THIS LINE DEPENDS ON IT. `produceAfterSignature` cannot
+     * throw: a failed render leaves the agreement signed, validated, stored
+     * and written back, leaves the six `signedDb4*` columns null, and logs.
+     * That is the retry state, and it is hard rule 8 — the platform never
+     * blocks care, and this is the least important thing on the page.
+     */
+    await this.signedDb4.produceAfterSignature(practiceId, agreementId);
     // Write-back is the product (REQ-INT-02) — attempted immediately; the
     // sweep retries on failure, so a PMS outage slows evidence, never care.
     await this.writeBack.attempt(practiceId, agreementId);

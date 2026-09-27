@@ -69,3 +69,4 @@ export * from './patient-message-templates';
 export * from './visit-policy';
 export * from './billing-roles';
 export * from './auth-method';
+export * from './signed-db4-content';

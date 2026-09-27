@@ -62,9 +62,16 @@ export class InboundPrintJobsProcessor {
    * printed form and then throw the form away. A DB4 goes to its own handler
    * and nowhere near that path.
    */
-  async process(practiceId: string, envelope: PrintJobEnvelope): Promise<PrintJobOutcome> {
+  async process(practiceId: string, envelope: PrintJobEnvelope, printJobId: string): Promise<PrintJobOutcome> {
     if (envelope.documentType === 'db4_assignment') {
-      return { ...nothingMirrored(), db4: await this.db4.handle(practiceId, envelope) };
+      /*
+       * THE JOB ID TRAVELS, and only the DB4 path uses it. The agreement a
+       * form becomes records the row it arrived on, so the Signed-DB4 can
+       * later be rendered from that very record (D-2026-09-14-02). The three
+       * generic document types make no single artefact and have nothing to
+       * point at.
+       */
+      return { ...nothingMirrored(), db4: await this.db4.handle(practiceId, envelope, printJobId) };
     }
 
     const knownPatients = new Map((envelope.patients ?? []).map((p) => [p.pmsLinkageKey, p]));

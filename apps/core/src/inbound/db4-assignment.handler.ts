@@ -57,7 +57,13 @@ export class Db4AssignmentHandler {
     private readonly arrivals: ArrivalsService,
   ) {}
 
-  async handle(practiceId: string, envelope: PrintJobEnvelope): Promise<Db4JobOutcome> {
+  /**
+   * @param printJobId the row this form arrived on. Recorded on the agreement
+   * it becomes, so the Signed-DB4 can be rendered from the very record that
+   * produced it rather than from a JSON scan of the queue — see
+   * `linkToPrintJob` below.
+   */
+  async handle(practiceId: string, envelope: PrintJobEnvelope, printJobId: string): Promise<Db4JobOutcome> {
     const servicing = (envelope.providers ?? []).find((p) => p.role === 'servicing');
     const payee = (envelope.providers ?? []).find((p) => p.role === 'payee');
     const base = {
@@ -149,6 +155,16 @@ export class Db4AssignmentHandler {
     try {
       const receipt = await this.arrivals.serviceRendered(practiceId, dto, Object.keys(dto));
       const placed = receipt.decision.outcome === 'episodic_post';
+      /*
+       * ONLY THE AGREEMENT THIS FORM MADE. `already_covered` also comes back
+       * with an agreement id — today's signed pre-agreement, or a live ongoing
+       * one — and that agreement did not come from this form. Linking it would
+       * put a Signed-DB4 of THIS page onto a contract made for something else,
+       * which is the one way this feature could produce a wrong document.
+       */
+      if (placed && receipt.agreementId) {
+        await this.linkToPrintJob(practiceId, receipt.agreementId, printJobId);
+      }
       return {
         ...base,
         idempotencyKey,
@@ -215,6 +231,44 @@ export class Db4AssignmentHandler {
         refusedStatus: err.getStatus(),
       };
     }
+  }
+
+  /**
+   * THE LINK FROM THE AGREEMENT BACK TO THE FORM THAT MADE IT.
+   *
+   * WHY IT IS A COLUMN AND NOT A QUERY. The Signed-DB4 is rendered from the
+   * DB4 Print Record — the headings, the patient block, the service rows with
+   * their amounts, the privacy notice, the statements — and none of that is in
+   * the agreement's particulars, because piece 1 deliberately kept the
+   * Medicare card number and the amounts out of them. So the producer has to
+   * find the print job, and before this the only routes were
+   * `inbound_print_jobs.outcome->'db4'->>'agreementId'`, which is unindexed
+   * JSON pointing the wrong way, and a join through the service record's
+   * `pmsInvoiceKey` string convention. Neither is a thing to hang a rendered
+   * artefact on.
+   *
+   * FIRST FORM WINS, AND THE DATABASE ENFORCES IT. The `sourcePrintJobId IS
+   * NULL` in the filter makes a reprint a no-op rather than a re-point: the
+   * same form printed twice is one agreement (`the_same_form_printed_twice_
+   * creates_one_agreement`), and the record that made it is the first one.
+   * `updateMany` rather than `update` because a filter that matches nothing
+   * must be silence, not a thrown `P2025`.
+   *
+   * NO VAULT EVENT HERE, AND THE REASON IS NOT "IT IS ONLY A COLUMN". The
+   * link becomes EVIDENCE at the moment it is relied upon, and that is when
+   * the Signed-DB4 is produced — `SignedDb4Service` writes `sourcePrintJobId`
+   * into the `agreement.rendered` event that records the reproduction, in the
+   * same transaction as the artefact row. An event here as well would say
+   * twice, in two places, a fact that only ever matters once, and would put a
+   * second entry in the chain for a form that may never be signed at all.
+   */
+  private async linkToPrintJob(practiceId: string, agreementId: string, printJobId: string): Promise<void> {
+    await this.prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.updateMany({
+        where: { id: agreementId, practiceId, sourcePrintJobId: null },
+        data: { sourcePrintJobId: printJobId },
+      }),
+    );
   }
 
   /**

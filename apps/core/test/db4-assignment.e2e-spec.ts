@@ -10,6 +10,8 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { MESSAGING_GATEWAY, type MessagingGateway } from '../src/messaging/gateway';
 import { RULES_CLIENT } from '../src/rules-client/rules-client.module';
 import { InboundLaneWorkerService } from '../src/inbound/inbound-lane.worker';
+import { SIGNED_DB4_CONTENT_VERSION } from '@aobplatform/domain';
+import { SignedDb4Service } from '../src/agreements/signed-db4.service';
 import { createServicingProvider, deleteSeededAnchors } from './anchor';
 
 /**
@@ -45,6 +47,15 @@ const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 const today = () => new Date().toISOString().slice(0, 10);
 
 /** 2 999 99999 9 — weighted sum 353, so the printed check digit 9 is wrong. Invalid by construction. */
+/**
+ * A ONE-PIXEL PNG, base64 — the smallest thing the signature pad could
+ * plausibly have produced, and enough for the renderer to composite and for
+ * the artefact store to detect as `image/png`. The MARK is not the subject of
+ * these tests; that it reaches the page is.
+ */
+const TINY_PNG =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
 const FAKE_MEDICARE = '2999 99999 9';
 const CHART_NUMBER = '00680';
 const SERVICING_NUMBER = '5745385T';
@@ -210,6 +221,15 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
         await tx.captureRequest.deleteMany({});
         await tx.verificationChallenge.deleteMany({});
         await tx.serviceRecord.deleteMany({});
+        /*
+         * THE SIGNED-DB4 AND THE DRAWN MARK ARE DELIBERATELY NOT CLEANED UP,
+         * the same call `signature.e2e-spec.ts` makes and for the same reason:
+         * `artefacts` is append-only and the database says so — a DELETE
+         * raises "Artefacts are not deleted. Tombstone the row." Evidence
+         * outliving its subject is the design (hard rule 11), and a test that
+         * could delete it would be a test proving the opposite of what the
+         * table promises.
+         */
         await tx.agreement.deleteMany({});
         await tx.assignor.deleteMany({});
         await tx.patient.deleteMany({});
@@ -320,6 +340,17 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
       );
       expect(agreement?.type).toBe('episodic_post');
       expect(agreement?.affiliationId).toBe(servicingAffiliationId);
+      /*
+       * THE LINK BACK TO THE FORM, AND IT IS A COLUMN (D-2026-09-14-02). The
+       * Signed-DB4 is rendered from the DB4 Print Record — the headings, the
+       * patient block, the service rows with their amounts — none of which is
+       * in the particulars, so the producer has to find the print job. Before
+       * this the only routes were unindexed JSON on the queue row pointing the
+       * wrong way, and a `pmsInvoiceKey` string convention.
+       */
+      expect(agreement?.sourcePrintJobId).toBe(job.id);
+      // And nothing has been produced from it yet: the agreement is not signed.
+      expect(agreement?.signedDb4Sha256).toBeNull();
 
       const capture = await prisma.withPractice(practiceId, (tx) =>
         tx.captureRequest.findFirst({ where: { agreementId: outcome.db4.agreementId! } }),
@@ -383,6 +414,19 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
         tx.agreement.count({ where: { type: 'episodic_post', patientId } }),
       );
       expect(agreements).toBe(1);
+
+      /*
+       * AND THE ONE AGREEMENT STILL POINTS AT THE FIRST PRINT. A reprint must
+       * not re-point the link: the record the Signed-DB4 is rendered from is
+       * the one that made the agreement, and swapping it silently would change
+       * the provenance of a document already in the folder.
+       */
+      const first = await jobRow(FIRST_SHA);
+      const agreement = await prisma.withPractice(practiceId, (tx) =>
+        tx.agreement.findFirst({ where: { type: 'episodic_post', patientId } }),
+      );
+      expect(agreement?.sourcePrintJobId).toBe(first?.id);
+      expect(agreement?.sourcePrintJobId).not.toBe(job.id);
     });
 
     it('a_db4_for_an_unknown_chart_number_is_recorded_not_thrown', async () => {
@@ -552,6 +596,145 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
       } finally {
         rulesDecline = false;
       }
+    });
+  });
+
+  /*
+   * THE SIGNED-DB4 — THE WHOLE PATH, AGAINST REAL POSTGRES (D-2026-09-14-02/-03).
+   *
+   * LAST, AND DELIBERATELY SO: this block signs the agreement the earlier
+   * tests examine, which moves it out of `awaiting_signature`. Nothing below
+   * it depends on that state.
+   *
+   * WHY IT HAS TO BE AN E2E AND NOT ANOTHER UNIT TEST. The unit specs mock
+   * Prisma, so they prove the service's logic and nothing about whether the
+   * database will accept what it writes. The first version of this build
+   * added `signed_db4` to the domain's `ARTEFACT_PURPOSES` and not to the
+   * `artefacts_purpose_known` CHECK — and because a failed Signed-DB4 render
+   * is swallowed on purpose (hard rule 8: nothing may block care), every
+   * practice would have signed DB4s, seen no form in the folder, and read one
+   * log line. `artefact-purposes.spec.ts` now catches that class at the
+   * bench; this catches everything else the database has an opinion about.
+   */
+  describe('the Signed-DB4', () => {
+    /*
+     * CARRIED BETWEEN THE THREE TESTS RATHER THAN RE-FOUND. By the time this
+     * block runs the patient has TWO `episodic_post` agreements — the rules
+     * refusal above made a second one — so a `findFirst` on the type would
+     * pick whichever the planner returned and pass or fail by accident.
+     */
+    let signedAgreementId: string;
+
+    it('a_signed_db4_is_produced_and_stored_when_the_patient_signs', async () => {
+      const first = await jobRow(FIRST_SHA);
+      const before = await prisma.withPractice(practiceId, (tx) =>
+        tx.agreement.findFirst({ where: { sourcePrintJobId: first!.id } }),
+      );
+      expect(before).not.toBeNull();
+      signedAgreementId = before!.id;
+      expect(before?.status).toBe('awaiting_signature');
+      expect(before?.sourcePrintJobId).not.toBeNull();
+      expect(before?.signedDb4Sha256).toBeNull();
+
+      /*
+       * THE STATEMENT KEYS COME OFF THE STORED DOCUMENT, never a literal here
+       * (hard rule 14): the words are versioned content and a test that
+       * hard-coded them would go green against wording nobody ships.
+       */
+      const document = before?.renderPayload as unknown as {
+        template: { statements: { key: string }[] };
+      };
+      const affirmations = document.template.statements.map((s) => s.key);
+
+      const capture = await prisma.withPractice(practiceId, (tx) =>
+        tx.captureRequest.findFirst({ where: { agreementId: before!.id, status: 'open' } }),
+      );
+
+      const signed = await request(app.getHttpServer())
+        .post(`/agreements/${before!.id}/sign`)
+        .set('x-practice-id', practiceId)
+        .send({
+          method: 'drawn',
+          channel: 'in_practice',
+          captureRequestId: capture?.id,
+          affirmations,
+          signature: {
+            vector: [{ points: [{ x: 10, y: 40, t: 0 }, { x: 60, y: 80, t: 22, p: 0.35 }] }],
+            rasterPngBase64: TINY_PNG,
+            padWidth: 600,
+            padHeight: 200,
+          },
+        })
+        .expect(201);
+      expect(signed.body.status).toBe('stored');
+
+      const after = await prisma.withPractice(practiceId, (tx) =>
+        tx.agreement.findFirst({ where: { id: before!.id } }),
+      );
+      // The form exists, is hashed, and says what made it (hard rules 13/14).
+      expect(after?.signedDb4Sha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(after?.signedDb4RendererVersion).toBe('signed-db4-1');
+      expect(after?.signedDb4ContentVersion).toBe(SIGNED_DB4_CONTENT_VERSION);
+      expect(after?.signedDb4ArtefactId).not.toBeNull();
+      expect(after?.signedDb4RenderedAt).not.toBeNull();
+      // And the signed agreement itself is untouched by it.
+      expect(after?.renderedArtefactHash).toBe(before?.renderedArtefactHash);
+      expect(after?.signatureEventId).toBe(signed.body.signatureEventId);
+
+      /*
+       * THE BYTES ARE REALLY STORED, UNDER A PURPOSE THE DATABASE ACCEPTS.
+       * This assertion is the one that would have failed on the missing CHECK.
+       */
+      const artefact = await prisma.withPractice(practiceId, (tx) =>
+        tx.artefact.findFirst({ where: { id: after!.signedDb4ArtefactId! } }),
+      );
+      expect(artefact?.purpose).toBe('signed_db4');
+      expect(artefact?.detectedContentType).toBe('application/pdf');
+      expect(artefact?.sha256).toBe(after?.signedDb4Sha256);
+      expect(artefact?.subjectId).toBe(before!.id);
+      // No name, no chart number, no card number in a filename.
+      expect(artefact?.filename).toBe(`signed-db4-${before!.id}.pdf`);
+    });
+
+    it('the_signed_db4_is_recorded_in_the_vault_with_no_pii', async () => {
+      const agreement = await prisma.withPractice(practiceId, (tx) =>
+        tx.agreement.findFirst({ where: { id: signedAgreementId } }),
+      );
+      const events = await prisma.vaultOutbox.findMany({
+        where: { subjectType: 'Agreement', subjectId: agreement!.id, type: 'agreement.rendered' },
+      });
+      const reproduction = events
+        .map((e) => e.payload as Record<string, unknown>)
+        .filter((p) => p.kind === 'signed_db4');
+      expect(reproduction).toHaveLength(1);
+      expect(reproduction[0].artefactSha256).toBe(agreement!.signedDb4Sha256);
+      expect(reproduction[0].sourcePrintJobId).toBe(agreement!.sourcePrintJobId);
+
+      /*
+       * HARD RULES 1 AND 9. The card number and the amounts are ON the page
+       * and in NOTHING that describes it — not this event, not any other.
+       * The same assertion `the_medicare_number_never_reaches_the_agreement_
+       * or_an_event` makes, re-made now that a page carrying the number
+       * exists.
+       */
+      const everything = JSON.stringify(
+        await prisma.vaultOutbox.findMany({ where: { subjectId: agreement!.id } }),
+      );
+      expect(everything).not.toContain(FAKE_MEDICARE);
+      expect(everything).not.toContain('45.05');
+    });
+
+    it('asking again produces no second document', async () => {
+      const agreement = await prisma.withPractice(practiceId, (tx) =>
+        tx.agreement.findFirst({ where: { id: signedAgreementId } }),
+      );
+      const outcome = await app.get(SignedDb4Service).produce(practiceId, agreement!.id);
+      expect(outcome).toEqual({ produced: false, reason: 'already_produced' });
+
+      const artefacts = await prisma.withPractice(practiceId, (tx) =>
+        tx.artefact.count({ where: { purpose: 'signed_db4', subjectId: agreement!.id } }),
+      );
+      expect(artefacts).toBe(1);
     });
   });
 });

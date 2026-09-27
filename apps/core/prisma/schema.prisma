@@ -1431,6 +1431,54 @@ model Agreement {
   // alerted when stale.
   pmsDocumentKey          String?
   writtenBackAt           DateTime?
+  /**
+   * THE DB4 THIS AGREEMENT CAME FROM — a real link, set by the DB4 handler at
+   * creation, and the precondition for a Signed-DB4 ever being produced.
+   * WHY A COLUMN. Until now the only way back from an agreement to the form
+   * that made it was `inbound_print_jobs.outcome->'db4'->>'agreementId'`, which
+   * is unindexed JSON pointing the wrong way, or a join through
+   * `service_records.pmsInvoiceKey = 'db4:<formReference>'`, which is a string
+   * convention. Neither is a thing to hang a rendered artefact on.
+   * NULL ON EVERY AGREEMENT THAT DID NOT COME FROM A PRINTED DB4, which is
+   * most of them, and that is exactly how
+   * `a_signed_db4_is_only_produced_for_an_agreement_that_came_from_a_db4`
+   * holds: no source print job, no Signed-DB4, no exception.
+   * NO FOREIGN KEY, for the same reason `artefacts.practiceId` has none and
+   * for one more: the print queue is another module's table (CLAUDE.md §4) and
+   * a declared relation here would be this module reaching into it. The id is
+   * scoping and provenance; the read goes through the row, practice-scoped by
+   * RLS like everything else.
+   */
+  sourcePrintJobId         String?     @db.Uuid
+  /**
+   * THE SIGNED-DB4 — AoB's reproduction of that printed form, with the cost on
+   * it, the Medicare card number on it and the patient's signature at the
+   * bottom (D-2026-09-14-02/-03). Produced AFTER the signature commits,
+   * because the signature has to be ON it, and therefore NOT part of the
+   * agreement's own render (`renderedArtefactHash` above is the agreement, and
+   * the HARD-02 trigger keeps it immutable once signed — these five columns are
+   * outside that trigger on purpose, because they are a different artefact
+   * being recorded, not a signed one being rewritten).
+   * ALL NULL UNTIL IT IS PRODUCED, AND THAT IS THE RETRY STATE. A render that
+   * fails leaves the agreement signed and these five null, and producing one is
+   * idempotent — hard rule 8: a failure here slows evidence and never care.
+   */
+  signedDb4ArtefactId      String?     @db.Uuid
+  /// SHA-256 at render (REQ-VAULT-02), re-verified on every later display.
+  signedDb4Sha256          String?
+  /// Which renderer drew it. Re-render with THIS version, never the newest (rules 13/14).
+  signedDb4RendererVersion String?
+  /// Which version of `content/signed-db4.json` the words and geometry came from (rule 14).
+  signedDb4ContentVersion  String?
+  /**
+   * THE WHOLE RENDER INPUT — the reproduced print record, the resolved content
+   * and the signature reference — stored rather than reassembled, for the same
+   * reason `renderPayload` is: rebuilding it later from the current content
+   * file would make every stored hash stop verifying the day somebody edits a
+   * label.
+   */
+  signedDb4RenderPayload   Json?
+  signedDb4RenderedAt      DateTime?   @db.Timestamptz(3)
   createdAt               DateTime     @default(now())
   updatedAt               DateTime     @updatedAt
 
@@ -1438,6 +1486,9 @@ model Agreement {
   @@index([patientId])
   @@index([status])
   @@index([affiliationId])
+  /// "Which agreement did this printed form become" answered by an index
+  /// rather than by scanning JSON on the queue table.
+  @@index([sourcePrintJobId])
   @@map("agreements")
 }
 

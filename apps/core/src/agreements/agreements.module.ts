@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 import { AgreementsController } from './agreements.controller';
 import { AgreementsService } from './agreements.service';
+import { SignedDb4Service } from './signed-db4.service';
 import { RulesClientModule } from '../rules-client/rules-client.module';
+import { PrintRecordsModule } from '../inbound/print-records.module';
 import { CaptureModule } from '../capture/capture.module';
 import { RenderModule } from '../render/render.module';
 import { PmsModule } from '../pms/pms.module';
@@ -27,9 +29,17 @@ import { TemplatesModule } from '../templates/templates.module';
     ArtefactsModule,
     PracticesModule,
     TemplatesModule,
+    /*
+     * The Signed-DB4 is rendered from the DB4 Print Record, which belongs to
+     * the inbound module. Through its SERVICE, never its table (CLAUDE.md §4)
+     * — and through the LEAF half of it, because `InboundModule` reaches this
+     * module back through `ArrivalsModule` and importing it would close a
+     * cycle.
+     */
+    PrintRecordsModule,
   ],
   controllers: [AgreementsController],
-  providers: [AgreementsService],
-  exports: [AgreementsService],
+  providers: [AgreementsService, SignedDb4Service],
+  exports: [AgreementsService, SignedDb4Service],
 })
 export class AgreementsModule {}

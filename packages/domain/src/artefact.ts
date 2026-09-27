@@ -55,6 +55,15 @@ export const ARTEFACT_PURPOSES = [
    * deleted while an agreement embeds it (hard rules 11 and 13).
    */
   'practice_logo',
+  /**
+   * THE SIGNED-DB4 (D-2026-09-14-02) — AoB's deterministic reproduction of the
+   * DB4 the practice printed, with the cost on it, the Medicare card number on
+   * it and the patient's signature at the bottom. Its own purpose rather than
+   * `other`, because it is the one artefact kind that deliberately carries
+   * both, and a retention or export question about it must be answerable
+   * without reading the bytes.
+   */
+  'signed_db4',
   'other',
 ] as const;
 export type ArtefactPurpose = (typeof ARTEFACT_PURPOSES)[number];

@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CanonicalJsonRenderer, type AgreementRenderer } from './renderer';
 import { DeterministicPdfRenderer } from './pdf-renderer';
 import { AgreementPdfRenderer } from './agreement-pdf-renderer';
+import { SignedDb4Renderer } from './signed-db4-renderer';
 import { LOGO_LOADER, type LogoLoader } from './logo-loader';
 
 /**
@@ -15,6 +16,15 @@ import { LOGO_LOADER, type LogoLoader } from './logo-loader';
  * an unregistered version is an artefact nobody can re-verify (the portal
  * answers 409 rather than serving it, which is the right answer and a bad
  * outcome).
+ *
+ * `signed-db4-1` IS A DIFFERENT ARTEFACT KIND, NOT A CANDIDATE FOR `current`.
+ * It renders the Signed-DB4 — AoB's reproduction of the practice's own printed
+ * DB4, with the cost and the patient's signature on it (D-2026-09-14-02) — and
+ * is resolved by name by the service that produces one, never by
+ * `current()`, which is and remains the renderer every ORDINARY agreement
+ * locks under. It is in this map for the one reason everything else is: a
+ * Signed-DB4 records the version that produced it and must be re-renderable
+ * under that version for as long as it is retained.
  */
 @Injectable()
 export class RendererRegistry {
@@ -27,6 +37,7 @@ export class RendererRegistry {
       [CanonicalJsonRenderer.VERSION, new CanonicalJsonRenderer()],
       [DeterministicPdfRenderer.VERSION, new DeterministicPdfRenderer()],
       [AgreementPdfRenderer.VERSION, new AgreementPdfRenderer(logos)],
+      [SignedDb4Renderer.VERSION, new SignedDb4Renderer(logos)],
     ]);
   }
 

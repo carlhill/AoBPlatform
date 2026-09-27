@@ -66,7 +66,11 @@ export class InboundLaneWorkerService {
         const batch = await this.jobs.claim(practiceId, lane, this.workerId, LANE_POLICIES[lane].batch);
         for (const job of batch) {
           try {
-            const outcome = await this.processor.process(practiceId, job.payload as unknown as PrintJobEnvelope);
+            const outcome = await this.processor.process(
+              practiceId,
+              job.payload as unknown as PrintJobEnvelope,
+              job.id,
+            );
             await this.jobs.markDone(practiceId, job.id, outcome as unknown as Record<string, unknown>);
             processed += 1;
           } catch (err) {
