@@ -145,6 +145,7 @@ import { InactivityWarning } from './components/InactivityWarning';
 import { strings } from './strings';
 import { isRetryAborted, withTransientRetry } from './rules/retry';
 import type { SigningParties } from './rules/who-is-signing';
+import { ceremonySequence, stepNumber } from './rules/ceremony-steps';
 
 /**
  * `booting` IS A REAL STATE, not a loading spinner nobody thought about. On
@@ -238,6 +239,19 @@ export function Ceremony(): ReactNode {
   const [staffNames, setStaffNames] = useState<readonly string[]>([]);
   const [row, setRow] = useState<KioskWaitingRow | null>(null);
   const [agreement, setAgreement] = useState<AgreementResponse | null>(null);
+  /**
+   * WAS THE AGREEMENT ALREADY LOCKED WHEN VERIFICATION PASSED — the walk-up's
+   * route, latched at the moment `afterVerified` chooses between K-5 and K-3
+   * (Carl, 27 Sep 2026). It decides nothing; it is only how the step chip knows
+   * whether this ceremony has four steps or three (`rules/ceremony-steps.ts`).
+   *
+   * WHY IT IS LATCHED RATHER THAN READ LIVE. On the four-step route the
+   * particulars are locked BY K-3, while the patient stands reading them, so
+   * `agreement.particularsLockedAt` is a value that CHANGES mid-ceremony.
+   * Numbering from it would rewrite "Step 3 of 4" to "Step 2 of 3" under
+   * somebody who had not moved. The route is chosen once and does not change.
+   */
+  const [lockedBeforeVerification, setLockedBeforeVerification] = useState(false);
 
   /**
    * THE PUSHED SESSION, IN MEMORY AND NOWHERE ELSE (CLAUDE.md §7).
@@ -738,6 +752,8 @@ export function Ceremony(): ReactNode {
     setStep('idle');
     setRow(null);
     setAgreement(null);
+    // The next person's ceremony chooses its own route.
+    setLockedBeforeVerification(false);
     /*
      * THE PUSHED SESSION GOES WITH EVERYTHING ELSE. It is the only patient
      * data this device ever holds, and this is the moment the tablet is
@@ -1589,6 +1605,10 @@ export function Ceremony(): ReactNode {
           ? current
           : await transitionAgreement(verifiedRow.agreementId, 'awaiting_signature');
       setAgreement(moved);
+      // THE ROUTE IS DECIDED HERE, on this one fact, and the chip is told so it
+      // can count the steps this ceremony will actually run rather than the
+      // four a walk-up runs when K-5 is not skipped (`rules/ceremony-steps.ts`).
+      setLockedBeforeVerification(moved.particularsLockedAt != null);
       setStep(moved.particularsLockedAt != null ? 'particulars' : 'assignor');
     },
     [],
@@ -2206,6 +2226,37 @@ export function Ceremony(): ReactNode {
   );
 
   /**
+   * HOW MANY STEPS THIS CEREMONY HAS, AND WHICH ONE THE PATIENT IS ON (Carl,
+   * 27 Sep 2026, from a live tablet: "the kiosk starts at step3 and not step1
+   * ... There is no step2").
+   *
+   * COMPUTED HERE BECAUSE ONLY HERE KNOWS. Three routes run through the same
+   * five screens — four steps on a walk-up with K-5, three without it, three
+   * on a push — and each screen used to hardcode the numbers for whichever
+   * route the person writing it had in mind. The route is the ceremony's fact,
+   * so the ceremony works it out once and every screen is TOLD its position.
+   *
+   * IT CHANGES NO BEHAVIOUR. `ceremonySequence` routes nothing and skips
+   * nothing: the step order, every Back and the K-5 skip are exactly where
+   * they were, above. This is arithmetic for a chip.
+   */
+  const sequence = useMemo(
+    () =>
+      ceremonySequence({
+        pushed: pushed !== null,
+        particularsLockedAtVerification: lockedBeforeVerification,
+      }),
+    [pushed, lockedBeforeVerification],
+  );
+  /**
+   * `undefined` ON EVERY SCREEN THAT IS NOT A STEP — booting, pairing, the
+   * list, the thank-you, the hand-over — and those screens draw no chip, which
+   * is what they did before and what K-6's own word-not-a-number heading
+   * depends on.
+   */
+  const stepPosition = stepNumber(step, sequence) ?? undefined;
+
+  /**
    * THE OUTAGE SCREEN REPLACES EVERYTHING BELOW IT (TODO.md "Outage screen on
    * the tablet"). Every hook above this line has already run unconditionally,
    * so returning here is safe; nothing after it is a hook. Whatever step the
@@ -2330,6 +2381,7 @@ export function Ceremony(): ReactNode {
             saveError={confirmError}
             sessionId={pushed?.id ?? null}
             patientId={pushed?.patientId ?? null}
+            step={stepPosition}
             onAnswer={answerDetail}
             onContinue={() => void confirmDetails()}
             onSeeReception={leave}
@@ -2368,6 +2420,7 @@ export function Ceremony(): ReactNode {
             */
             onBack={backFromVerify}
             blueprintPanels={testDevice}
+            step={stepPosition}
             onSeeReception={leave}
           />
         );
@@ -2397,6 +2450,7 @@ export function Ceremony(): ReactNode {
             }}
             onContinue={continueAssignor}
             blueprintPanels={testDevice}
+            step={stepPosition}
             onSeeReception={leave}
           />
         );
@@ -2452,6 +2506,7 @@ export function Ceremony(): ReactNode {
             */
             onDeclineEnduring={pushed ? declineEnduring : undefined}
             blueprintPanels={testDevice}
+            step={stepPosition}
             sessionId={pushed?.id ?? null}
             patientId={pushed?.patientId ?? null}
             onSeeReception={leave}
@@ -2486,6 +2541,7 @@ export function Ceremony(): ReactNode {
             // NAVIGATION, NOT AN EXIT — and offered only while nothing has been
             // signed; the screen hides it once a signature is in flight.
             onBack={() => setStep('particulars')}
+            step={stepPosition}
             sessionId={pushed?.id ?? null}
             patientId={pushed?.patientId ?? null}
             onSeeReception={leave}

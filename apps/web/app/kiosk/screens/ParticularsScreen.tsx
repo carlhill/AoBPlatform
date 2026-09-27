@@ -145,6 +145,7 @@ import { GuardedButton, SecondaryButton } from '../components/Buttons';
 import { Checkbox } from '../components/Field';
 import { shortHash } from '../components/SignatureControl';
 import type { SignatureValidation } from '../rules/signature-gate';
+import type { StepNumber } from '../rules/ceremony-steps';
 import { strings } from '../strings';
 import styles from '../kiosk.module.css';
 
@@ -219,6 +220,7 @@ export function ParticularsScreen({
   onBack,
   onDeclineEnduring,
   blueprintPanels = false,
+  step,
   sessionId,
   patientId,
   onSeeReception,
@@ -277,6 +279,14 @@ export function ParticularsScreen({
    * under it.
    */
   blueprintPanels?: boolean;
+  /**
+   * WHERE K-3 SITS IN THE CEREMONY THE PATIENT IS ACTUALLY ON, worked out once
+   * by `Ceremony.tsx` from `rules/ceremony-steps.ts`. This screen is on all
+   * three routes and is a different number on two of them — the third of four
+   * on a walk-up with K-5, the second of three without it and on a push — which
+   * is why it cannot number itself (Carl, 27 Sep 2026).
+   */
+  step?: StepNumber;
   /** The pushed session's own id — an audit/testing aid in the footer. See `Chrome.tsx`'s `Screen`. */
   sessionId?: string | null;
   /**
@@ -370,7 +380,7 @@ export function ParticularsScreen({
     <Screen
       practiceName={practiceName}
       locationLine={locationLine}
-      stepTag={strings.chrome.stepOf(3, 4)}
+      stepTag={step ? strings.chrome.stepOf(step.position, step.total) : undefined}
       context={strings.particulars.footer}
       sessionId={sessionId}
       patientId={patientId}

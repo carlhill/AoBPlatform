@@ -67,6 +67,7 @@ import { Blueprint, CeremonyHeading, Kicker, Screen } from '../components/Chrome
 import type { SigningParties } from '../rules/who-is-signing';
 import { GuardedButton } from '../components/Buttons';
 import type { DetailAnswer, DetailAnswers, DetailRow } from '../rules/pushed-details';
+import type { StepNumber } from '../rules/ceremony-steps';
 import { strings } from '../strings';
 import styles from '../kiosk.module.css';
 
@@ -139,6 +140,7 @@ export function CheckDetailsScreen({
   retrying,
   saving,
   saveError,
+  step,
   sessionId,
   patientId,
   onAnswer,
@@ -198,6 +200,14 @@ export function CheckDetailsScreen({
   retrying: boolean;
   saving: boolean;
   saveError: boolean;
+  /**
+   * WHERE K-P1 SITS, worked out once by `Ceremony.tsx` from
+   * `rules/ceremony-steps.ts`. It is the pushed route's own first screen and
+   * the only step that route adds — and the route has THREE steps, which is
+   * the count this screen used to assert on its own while the two after it
+   * asserted four (Carl, 27 Sep 2026).
+   */
+  step?: StepNumber;
   /** The pushed session's own id — an audit/testing aid in the footer. See `Chrome.tsx`'s `Screen`. */
   sessionId?: string | null;
   /**
@@ -224,7 +234,7 @@ export function CheckDetailsScreen({
     <Screen
       practiceName={practiceName}
       locationLine={locationLine}
-      stepTag={strings.chrome.stepOf(1, 3)}
+      stepTag={step ? strings.chrome.stepOf(step.position, step.total) : undefined}
       /*
        * NO FOOTER CONTEXT ON THIS SCREEN (Carl, 7 Sep 2026). The tagline moved
        * to the right column, where it is read at reading size beside the rows

@@ -149,6 +149,52 @@ This is also the shape the reception-push flow wants: a pushed agreement is
 always locked before it reaches a device, so the tablet will never show K-5 for
 one.
 
+## The step chip counts the route the patient is on (Carl, 27 September 2026)
+
+> "Currently the kiosk starts at step3 and not step1. The back button on step3
+> takes me to step1. Completing step1 and takes me to step3. There is no step2"
+
+Nothing was being skipped. Every screen **hardcoded** its own numbers, written
+for the one route that has four steps, and Carl was on the pushed route, which
+has three. K-P1 said "Step 1 of 3", K-3 said "Step 3 of 4" and K-4 said "Step 4
+of 4" -- a total that changed under the patient and a number that was never
+shown.
+
+The sequence is now derived in one place, `rules/ceremony-steps.ts`, from the
+two facts that decide it: whether the session was pushed, and whether the
+particulars were already locked when verification passed. `Ceremony.tsx`
+computes it once and **tells** each screen its position; no screen numbers
+itself.
+
+| Route | Steps | Chip on each |
+|---|---|---|
+| Walk-up, particulars open | K-2 → K-5 → K-3 → K-4 | 1 of 4, 2 of 4, 3 of 4, 4 of 4 |
+| Walk-up, particulars locked (K-5 skipped) | K-2 → K-3 → K-4 | **1 of 4**, 2 of 3, 3 of 3 |
+| Pushed session | K-P1 → K-3 → K-4 | 1 of 3, 2 of 3, 3 of 3 |
+
+**K-2 is the one place the total is a forecast**, hence the bold entry. Standing
+on K-2 the tablet has not read the agreement and cannot know whether K-5 will
+run -- the waiting row does not carry the lock, and on the claim path there is
+no row yet at all -- so it counts the ordinary walk-up and narrows to three the
+moment it learns K-5 is skipped. The positions still run 1, 2, 3: no number is
+skipped and none repeats, which is the defect. The alternative was no chip at
+all on the first screen of the ceremony.
+
+**The route is latched, not read live.** On the four-step route the particulars
+are locked *by* K-3 while the patient stands reading them, so numbering from
+`agreement.particularsLockedAt` would rewrite "Step 3 of 4" to "Step 2 of 3"
+under somebody who had not moved.
+
+K-6 is not a step and is not numbered: it heads itself with
+`strings.chrome.complete`, a word. Nothing about the flow changed -- no step
+order, no skip, no Back. Only the arithmetic behind the chip.
+
+Tests: `a_pushed_ceremony_counts_its_own_three_steps_and_never_announces_four`,
+`a_walk_up_with_locked_particulars_forecasts_four_at_k2_then_narrows_to_three`,
+`a_walk_up_with_open_particulars_counts_four_and_the_total_does_not_change_when_k3_locks`,
+`the_thank_you_screen_is_still_a_word_rather_than_a_number`
+(`rules/ceremony-steps.test.tsx`).
+
 ## Return to the start when nobody is there (Carl, 4 September 2026)
 
 > "Return to the start when untouched for N minutes -- a per-practice setting,
@@ -393,6 +439,7 @@ skips without `E2E_PRACTICE_USER` / `E2E_PRACTICE_PASSWORD`.
 | A public route is not a public waiting list | `apps/core/src/devices/device.guard.ts` deletes any client `x-practice-id` on `/kiosk/*` and requires a device; K-0 gates the browser | `kiosk_routes_require_device_credential`, `revoked_device_gets_401_and_no_data`, `kiosk_requires_a_paired_device` |
 | A walk-up tablet shows no other patient | `apps/core/src/kiosk/kiosk.service.ts` (`claim`, and the list's `hidden` gate); `screens/IdleScreen.tsx` | `claim_matches_exactly_one_waiting_row_of_this_practice`, `claim_failure_is_generic_for_none_and_for_many`, `claim_never_returns_other_rows`, `claim_records_types_not_values`, `claim_locks_out_after_three_per_device`, `waiting_list_hidden_unless_device_is_a_test_device`, `begin_goes_to_verify_not_the_list`, `idle_shows_no_count`, `list_only_on_a_test_device_and_bannered` |
 | No option-shaped box that is not an option | `Ceremony.tsx` skips K-5 when `particularsLockedAt` is set; `screens/ParticularsScreen.tsx` carries the one-line note | `k5_is_skipped_when_particulars_are_locked`, `k5_shows_both_options_when_unlocked` |
+| The step chip counts the route, not a screen's guess | `rules/ceremony-steps.ts`; `Ceremony.tsx` computes it once and passes `step` to all five screens | `a_pushed_ceremony_counts_its_own_three_steps_and_never_announces_four`, `a_walk_up_with_locked_particulars_forecasts_four_at_k2_then_narrows_to_three`, `a_walk_up_with_open_particulars_counts_four_and_the_total_does_not_change_when_k3_locks` |
 | K-3 asks the patient for nothing | `screens/ParticularsScreen.tsx` — no input, select or textarea in any state | `k3_never_offers_a_field_to_the_patient` |
 | Back is navigation, not an exit | `Ceremony.tsx` (one `setStep`, no fetch) | `back_is_navigation_and_changes_no_agreement_state`, `back_is_withdrawn_once_a_signature_is_in_flight`, `k2_back_returns_to_idle_and_clears_fields`, `back_makes_no_mutating_calls_on_pushed_path` |
 | Nothing developer-facing on a patient's screen | `blueprintPanels` on K-2/K-5/K-3, from `showsWaitingList` | `blueprint_panels_only_on_test_devices` |

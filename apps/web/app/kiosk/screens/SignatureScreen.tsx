@@ -50,6 +50,7 @@ import { SignaturePad, type SignaturePadHandle } from '../components/SignaturePa
 import { SignatureControl } from '../components/SignatureControl';
 import type { SignatureValidation } from '../rules/signature-gate';
 import { signingStatement, type SigningParties } from '../rules/who-is-signing';
+import type { StepNumber } from '../rules/ceremony-steps';
 import { strings } from '../strings';
 import styles from '../kiosk.module.css';
 
@@ -68,6 +69,7 @@ export function SignatureScreen({
   onSignDrawn,
   onSignTap,
   onBack,
+  step,
   sessionId,
   patientId,
   onSeeReception,
@@ -114,6 +116,12 @@ export function SignatureScreen({
   onSignTap: () => void;
   /** K-3. Offered only while nothing has been signed; navigation, never a mutation. */
   onBack: () => void;
+  /**
+   * WHERE THE PEN SITS, worked out once by `Ceremony.tsx` from
+   * `rules/ceremony-steps.ts`. K-4 is the LAST step of every route, and the
+   * last step of a three-step route is not "Step 4 of 4" (Carl, 27 Sep 2026).
+   */
+  step?: StepNumber;
   /** The pushed session's own id — an audit/testing aid in the footer. See `Chrome.tsx`'s `Screen`. */
   sessionId?: string | null;
   /**
@@ -127,7 +135,7 @@ export function SignatureScreen({
     <Screen
       practiceName={practiceName}
       locationLine={locationLine}
-      stepTag={strings.chrome.stepOf(4, 4)}
+      stepTag={step ? strings.chrome.stepOf(step.position, step.total) : undefined}
       context={strings.signature.footer}
       sessionId={sessionId}
       patientId={patientId}

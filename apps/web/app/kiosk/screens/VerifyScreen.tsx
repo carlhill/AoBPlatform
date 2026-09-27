@@ -70,6 +70,7 @@ import { Blueprint, Kicker, Screen } from '../components/Chrome';
 import { GuardedButton, SecondaryButton } from '../components/Buttons';
 import { Field, SelectField } from '../components/Field';
 import type { IdentifierField } from '../rules/identifiers';
+import type { StepNumber } from '../rules/ceremony-steps';
 import {
   composeIdentifier,
   dayOptions,
@@ -109,6 +110,7 @@ export function VerifyScreen({
   onContinue,
   onBack,
   blueprintPanels = false,
+  step,
   onSeeReception,
 }: {
   practiceName: string;
@@ -137,16 +139,30 @@ export function VerifyScreen({
    * form takes the full width instead.
    */
   blueprintPanels?: boolean;
+  /**
+   * WHERE THIS SCREEN SITS IN THE CEREMONY THE PATIENT IS ACTUALLY ON, worked
+   * out once by `Ceremony.tsx` from `rules/ceremony-steps.ts`. K-2 is the first
+   * step of a walk-up whether or not K-5 follows it, but the TOTAL is not the
+   * same on both routes, and a screen that numbered itself got that wrong for
+   * two of the three routes (Carl, 27 Sep 2026). Absent — a screen rendered
+   * outside the ceremony, as the unit tests do — draws no chip rather than
+   * inventing a position.
+   */
+  step?: StepNumber;
   onSeeReception: () => void;
 }): ReactNode {
-  const stepTag = `${strings.chrome.stepOf(1, 4)} — ${strings.chrome.stepDetails}`;
+  const numbered = step ? strings.chrome.stepOf(step.position, step.total) : undefined;
+  // THE SUFFIX IS THIS SCREEN'S OWN and survives the change: the chip names the
+  // step as well as counting it. The lockout branch below takes the bare count,
+  // as it always has — there is nothing to fill in there any more.
+  const stepTag = numbered ? `${numbered} — ${strings.chrome.stepDetails}` : undefined;
 
   if (state.kind === 'locked') {
     return (
       <Screen
         practiceName={practiceName}
         locationLine={locationLine}
-        stepTag={strings.chrome.stepOf(1, 4)}
+        stepTag={numbered}
         context={strings.verify.lockedFooter}
         onLeave={onSeeReception}
       >

@@ -80,6 +80,7 @@ import {
   type AssignorChoice,
   type AssignorGate,
 } from '../rules/assignor';
+import type { StepNumber } from '../rules/ceremony-steps';
 import { strings } from '../strings';
 import styles from '../kiosk.module.css';
 
@@ -109,6 +110,7 @@ export function AssignorScreen({
   onChangeOther,
   onContinue,
   blueprintPanels = false,
+  step,
   onSeeReception,
 }: {
   practiceName: string;
@@ -132,8 +134,21 @@ export function AssignorScreen({
    * earn their place when the rule is being demonstrated.
    */
   blueprintPanels?: boolean;
+  /**
+   * WHERE K-5 SITS, worked out once by `Ceremony.tsx` from
+   * `rules/ceremony-steps.ts`. It only ever runs on the walk-up route with the
+   * particulars still open, so its number happens to be constant — but it is
+   * still not this screen's to assert, because the moment it were, the next
+   * route would inherit it wrong (Carl, 27 Sep 2026).
+   */
+  step?: StepNumber;
   onSeeReception: () => void;
 }): ReactNode {
+  // The suffix is this screen's own and survives the change: the chip names the
+  // step as well as counting it.
+  const stepTag = step
+    ? `${strings.chrome.stepOf(step.position, step.total)} — ${strings.chrome.stepSigning}`
+    : undefined;
   const rail = !blueprintPanels ? null : (
     <div className={styles.rail}>
       <Blueprint>
@@ -153,7 +168,7 @@ export function AssignorScreen({
     <Screen
       practiceName={practiceName}
       locationLine={locationLine}
-      stepTag={`${strings.chrome.stepOf(2, 4)} — ${strings.chrome.stepSigning}`}
+      stepTag={stepTag}
       context={strings.chrome.staffHelp}
       onLeave={onSeeReception}
     >

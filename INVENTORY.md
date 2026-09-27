@@ -17,18 +17,18 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2226 |
-| Files scanned for exports | 538 |
-| Files scanned for imports | 580 |
-| Exports with no comment of their own | 959 |
-| Exports imported nowhere else | 927 |
+| Exported symbols indexed | 2232 |
+| Files scanned for exports | 539 |
+| Files scanned for imports | 581 |
+| Exports with no comment of their own | 960 |
+| Exports imported nowhere else | 930 |
 
 ## Sections
 
 - [Web components](#web-components) — 228
 - [Web hooks](#web-hooks) — 15
-- [Web helpers and constants](#web-helpers-and-constants) — 279
-- [Web types](#web-types) — 103
+- [Web helpers and constants](#web-helpers-and-constants) — 281
+- [Web types](#web-types) — 107
 - [Domain functions](#domain-functions) — 388
 - [Domain constants and content](#domain-constants-and-content) — 244
 - [Domain types](#domain-types) — 284
@@ -297,7 +297,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web helpers and constants
 
-279 exports.
+281 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -365,6 +365,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `blockingCount` | web:kiosk/rules/signature-gate.ts | How many things are outstanding — the number the disabled label carries. | **1** · web:kiosk/components/SignatureControl.tsx |
 | `bodyFromForm` | web:practice/templates/templateEditing.ts | THE FORM BACK INTO EXACTLY THE JSON THE ENDPOINT ACCEPTS TODAY. | **1** · web:practice/templates/TemplateForm.tsx |
 | `candidateTemplate` | web:practice/templates/templateEditing.ts | THE CANDIDATE THE CHECKS RUN AGAINST, assembled exactly as `TemplatesService.validateBody` assembles it on the server — same fallback id, same forced `draft_pending_review` status, same note. | **1** · web:practice/templates/TemplateForm.tsx |
+| `ceremonySequence` | web:kiosk/rules/ceremony-steps.ts | The steps this route will run. | **1** · web:kiosk/Ceremony.tsx |
 | `challengeIsComplete` | web:kiosk/rules/identifiers.ts | True when every field the challenge asked for has been given something. | **1** · web:kiosk/Ceremony.tsx |
 | `changeAssignor` | web:kiosk/api.ts |  | **1** · web:kiosk/Ceremony.tsx |
 | `checkTemplateForm` | web:practice/templates/templateEditing.ts |  | **1** · web:practice/templates/TemplateForm.tsx |
@@ -448,6 +449,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `stableByFirstSeen` | web:practice/frontdesk/FrontDeskView.tsx | HOLD THE ORDER SOMEBODY IS LOOKING AT (§12.3). | **1** · web:practice/frontdesksmall/SmallDeskView.tsx |
 | `startChallenge` | web:kiosk/api.ts |  | **1** · web:kiosk/Ceremony.tsx |
 | `stateWord` | web:practice/frontdesk/FrontDeskView.tsx | DONE, STILL TO DO, DROPPED, OR NOTHING TO SIGN — the words, from the table. | **1** · web:practice/frontdesksmall/SmallDeskView.tsx |
+| `stepNumber` | web:kiosk/rules/ceremony-steps.ts | Where a step sits in a sequence, or `null` if it is not one of its steps. | **1** · web:kiosk/Ceremony.tsx |
 | `terminateEnduring` | web:patient/portal/api.ts | ENDING AN ENDURING AGREEMENT — the patient's own right under 65CA(7)(b), held even where somebody else entered the agreement for them (REQ-END-06). | **1** · web:patient/portal/PortalView.tsx |
 | `timeLabel` | web:practice/frontdesk/FrontDeskView.tsx | The time on a row, or the honest statement that the booking carried none. | **1** · web:practice/frontdesksmall/SmallDeskView.tsx |
 | `transitionAgreement` | web:kiosk/api.ts | Moves a verified draft to the signing step. | **1** · web:kiosk/Ceremony.tsx |
@@ -583,13 +585,14 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web types
 
-103 exports.
+107 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
 | `Loadable` | web:patient/portal/portal-ui.tsx | What a card has been handed. | **10** · web:patient/portal/PortalView.tsx, web:patient/portal/cards/AgreementsCard.tsx, web:patient/portal/cards/DataCard.tsx, +7 more |
 | `Tone` | web:ui/index.tsx |  | **9** · web:apply/GateLedger.tsx, web:correspondence/MessageLog.tsx, web:practice/affiliations/AffiliationsView.tsx, +6 more |
 | `PushableRow` | web:practice/tablet/pushDesk.tsx |  | **6** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesk/dayRails.ts, web:practice/frontdesk/visitChecklist.ts, +3 more |
+| `StepNumber` | web:kiosk/rules/ceremony-steps.ts | A position in a sequence, for `strings.chrome.stepOf`. | **5** · web:kiosk/screens/AssignorScreen.tsx, web:kiosk/screens/CheckDetailsScreen.tsx, web:kiosk/screens/ParticularsScreen.tsx, +2 more |
 | `Session` | web:auth.ts |  | **4** · web:AuthGate.tsx, web:ConsoleDashboard.tsx, web:SessionControl.tsx, +1 more |
 | `SignatureValidation` | web:kiosk/rules/signature-gate.ts |  | **4** · web:kiosk/Ceremony.tsx, web:kiosk/components/SignatureControl.tsx, web:kiosk/screens/ParticularsScreen.tsx, +1 more |
 | `SigningParties` | web:kiosk/rules/who-is-signing.ts | The four facts a screen needs to say who is signing. | **4** · web:kiosk/Ceremony.tsx, web:kiosk/components/Chrome.tsx, web:kiosk/screens/CheckDetailsScreen.tsx, +1 more |
@@ -645,6 +648,8 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `AssignorDecision` | web:kiosk/rules/assignor.ts |  | 0 |
 | `AttemptOutcome` | web:kiosk/rules/verification.ts |  | 0 |
 | `AttemptResponse` | web:kiosk/api.ts |  | 0 |
+| `CeremonyRoute` | web:kiosk/rules/ceremony-steps.ts |  | 0 |
+| `CeremonySequence` | web:kiosk/rules/ceremony-steps.ts | The steps one route will run, in the order it will run them. | 0 |
 | `ChallengeResponse` | web:kiosk/api.ts |  | 0 |
 | `ChangeAssignorRequest` | web:kiosk/api.ts | SOMEBODY OTHER THAN THE PATIENT IS SIGNING — or the patient is after all. | 0 |
 | `ChecklistDetail` | web:practice/frontdesk/visitChecklist.ts | WHICH SENTENCE THE ROW SAYS. | 0 |
@@ -667,6 +672,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `LoginOptions` | web:auth.ts | ASK KEYCLOAK TO AUTHENTICATE THE PERSON AGAIN, EVEN IF IT ALREADY HAS (AUTH-TIERS.md §5.2, D-2026-09-12-11). | 0 |
 | `MessageBody` | web:correspondence/MessageLog.tsx | What a row said, fetched or held by whoever owns the query. | 0 |
 | `NameParts` | web:kiosk/rules/verify-fields.ts |  | 0 |
+| `NumberedStep` | web:kiosk/rules/ceremony-steps.ts | The steps that carry a number. | 0 |
 | `Option` | web:kiosk/components/Field.tsx |  | 0 |
 | `Option` | web:kiosk/rules/verify-fields.ts |  | 0 |
 | `PairingResponse` | web:kiosk/api.ts | `POST /devices/pair` — the one call made with no credential, because it earns one. | 0 |
