@@ -93,9 +93,17 @@ import type { Db4PlacementReason } from './print-capture';
  *    nothing downstream requires it (Carl, 27 September 2026, from the same
  *    live tablet: a card number read without its IRN, on a screen whose own
  *    note tells the patient to check the IRN).
- *  - `print_record_servicing_provider_missing`, through its NAME half — ingest
- *    requires the servicing provider's provider NUMBER and never looks at
- *    their name, so a record naming nobody still places.
+ *  - `print_record_servicing_provider_missing`, through its NAME half — but
+ *    ONLY FOR AN EMPTY NAME, NOT AN ABSENT ONE, and that distinction was
+ *    found by trying it (28 September 2026, seeding test records).
+ *    `ProviderDto.name` in `inbound-print-jobs.controller.ts` is a REQUIRED
+ *    `@IsString()`, so an envelope that OMITS the name is refused at the
+ *    boundary with a 400 and never becomes a print record at all. An empty
+ *    string passes the DTO, reaches the table, and is what `read()` treats as
+ *    nothing — so the reachable fault is a parser that emitted the field
+ *    without finding a value, which is the ordinary shape of a half-read
+ *    line. An earlier version of this comment claimed the whole name half was
+ *    live; it was wrong, and only half of it is.
  * ------------------------------------------------------------------------- */
 
 /**
@@ -164,11 +172,15 @@ export const DB4_PRINT_RECORD_CHECKS = [
   /**
    * THE SERVICING PROVIDER'S NAME OR PROVIDER NUMBER IS MISSING.
    *
-   * LIVE, THROUGH THE NAME. Ingest requires the provider NUMBER and refuses
-   * `no_servicing_provider` without one; it never looks at the name. So a
-   * print record whose provider line the template half-read places an
-   * agreement, and the patient would be shown a form that does not say who
-   * they are assigning to.
+   * LIVE, THROUGH AN EMPTY NAME — and only an empty one. Ingest requires the
+   * provider NUMBER and refuses `no_servicing_provider` without one; it never
+   * looks at the name. But `ProviderDto.name` is a REQUIRED `@IsString()`, so
+   * an envelope that omits the name is refused at the boundary with a 400 and
+   * never becomes a print record. An EMPTY STRING passes that DTO and is what
+   * `read()` treats as absent, so the reachable fault is a template that
+   * emitted the provider line without finding a value in it — which is the
+   * ordinary shape of a half-read line, and leaves the patient looking at a
+   * form that does not say who they are assigning to.
    *
    * BOTH HALVES ARE REQUIRED BECAUSE THE FORM PRINTS BOTH and the two readers
    * differ: the patient checks the name, the practice checks the number. The
@@ -322,9 +334,18 @@ export interface Db4PrintRecordIdentity {
   readonly sourceSha256: string;
   /**
    * WHAT IS PRINTED ON THE PAGE — the reference reception matches against the
-   * paper in their hand and the record in PracSoft. Absent when the template
-   * could not read it, which is a real state and why the band falls back to
-   * the job id.
+   * paper in their hand and the record in PracSoft.
+   *
+   * OPTIONAL IN THE TYPE, PRESENT ON EVERY AGREEMENT THAT EXISTS. An earlier
+   * version of this comment said it was *"absent when the template could not
+   * read it, which is a real state"*; it is not one, and seeding a record
+   * without it to see what happened is how that was found (28 September
+   * 2026). `db4-assignment.handler.ts` refuses such an envelope at ingest as
+   * `no_form_reference`, so it never becomes an agreement and never reaches a
+   * push. The field stays optional because the TYPE describes an envelope,
+   * which may legitimately lack one; the BAND still renders without it,
+   * because a band that throws on a field the type allows to be missing is a
+   * worse failure than a missing row.
    */
   readonly formReference?: string;
   /**

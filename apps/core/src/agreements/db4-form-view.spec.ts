@@ -7,6 +7,8 @@ import {
 // The alias is one disable instead of one per line, and it leaves the guard
 // against the single most likely design mistake in this product live for the
 // rest of the file.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 // eslint-disable-next-line no-restricted-syntax
 import { buildDb4FormView, checkDb4PrintRecord, maskMedicareCardNumber as mask } from './db4-form-view';
 
@@ -446,6 +448,37 @@ describe('the DB4 form view', () => {
       // is the same case as one that did not emit it.
       // eslint-disable-next-line no-restricted-syntax -- the fixture's own field, and blank by design.
       expect(checks({ patient: { patientRecordNumber: '00001', medicareCardNumber: '   ' } })).toEqual([]);
+    });
+
+    it('an_absent_provider_name_never_reaches_this_check_because_the_dto_requires_it', () => {
+      /*
+       * THE REACHABILITY CLAIM, PINNED (28 September 2026, found by seeding
+       * test records rather than by reading the code).
+       *
+       * `packages/contracts` says this check is live "through an EMPTY name,
+       * and only an empty one". That rests on a fact in a different file --
+       * `ProviderDto.name` in `inbound-print-jobs.controller.ts` is a
+       * REQUIRED `@IsString()` -- so an envelope omitting the name is refused
+       * with a 400 and never becomes a print record, while an empty string
+       * passes and does. An earlier comment claimed the whole name half was
+       * live; it was wrong.
+       *
+       * THE DTO IS READ, NOT RESTATED. Asserting the decorator from the
+       * source is the only way this test fails when somebody makes the field
+       * optional -- at which point the contract's "empty only" wording has to
+       * change too, and this is where they will find out.
+       */
+      const dto = readFileSync(
+        join(__dirname, '..', 'inbound', 'inbound-print-jobs.controller.ts'),
+        'utf8',
+      );
+      expect(dto).toContain('@IsString() @MaxLength(200) name!: string;');
+      // And the empty string IS the reachable case, which is what the check
+      // has to catch.
+      expect(checks({ providers: [
+        { role: 'servicing', pmsProviderKey: 'provider:1111111T', name: '', providerNumber: '1111111T' },
+        { role: 'payee', pmsProviderKey: 'provider:2222222W', name: 'Dr Fake Payee', providerNumber: '2222222W' },
+      ] })).toEqual(['print_record_servicing_provider_missing']);
     });
 
     it('a_print_record_whose_servicing_provider_has_no_name_is_refused', () => {

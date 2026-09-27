@@ -501,9 +501,12 @@ export function checkDb4PrintRecord(envelope: PrintJobEnvelope): readonly Db4Pri
   if (services.length === 0) failed.push('print_record_services_missing');
 
   /*
-   * LIVE, THROUGH THE NAME. Ingest requires the provider NUMBER and never
-   * looks at the name, so a half-read provider line places an agreement and
-   * the patient is shown a form that does not say who they are assigning to.
+   * LIVE, THROUGH AN EMPTY NAME. Ingest requires the provider NUMBER and
+   * never looks at the name — but `ProviderDto.name` is a required
+   * `@IsString()`, so an ABSENT name is refused at the boundary and an EMPTY
+   * one is not. A template that emitted the provider line without finding a
+   * value in it therefore places an agreement, and the patient is shown a
+   * form that does not say who they are assigning to.
    * Both halves are required because the form prints both and the two readers
    * differ: the patient checks the name, the practice checks the number.
    */
