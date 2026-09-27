@@ -223,6 +223,8 @@ describe('the post-service second push (e2e, real Postgres)', () => {
       // outcomes, so they are left exactly as every other suite leaves them.
       await tx.serviceRecord.deleteMany({});
       await tx.agreement.deleteMany({});
+      // The DB4 Print Records this suite seeded for the push-time check.
+      await tx.inboundPrintJob.deleteMany({});
       await tx.assignor.deleteMany({});
       await tx.patient.deleteMany({});
       await tx.provider.deleteMany({});
@@ -460,6 +462,198 @@ describe('the post-service second push (e2e, real Postgres)', () => {
     });
   });
 
+  /* -------------------------------------------------------------------------
+   * THE PRINT-RECORD CHECK AT THE DESK (Carl, 27 September 2026, from a live
+   * tablet: *"If no $ do not allow the approval to progress. Check all details
+   * when the reception pushes to the tablet."*).
+   *
+   * WHY THESE ARE E2E. `db4-form-view.spec.ts` proves the check over an
+   * envelope. Only a real push proves the two things that matter here: that an
+   * agreement with NO print record is not asked the question at all, and that
+   * a refusal ends a screen and changes nothing on the agreement (hard rule 8).
+   * ---------------------------------------------------------------------- */
+
+  /** A DB4 Print Record on the queue table, exactly as the driver leaves one. */
+  async function seedPrintRecord(services: unknown[]): Promise<string> {
+    return prisma.withPractice(practiceId, async (tx) => {
+      const job = await tx.inboundPrintJob.create({
+        data: {
+          practiceId,
+          documentType: 'db4_assignment',
+          lane: 'critical',
+          pms: 'pracsoft3',
+          parserTemplateVersion: 'pracsoft3-db4-2026-09-1',
+          sourceSha256: randomUUID().replace(/-/g, '').padEnd(64, '0'),
+          payload: {
+            documentType: 'db4_assignment',
+            form: { formCode: 'DB4', formReference: `PSP-${randomUUID().slice(0, 8)}`, serviceDate: today() },
+            patient: {
+              patientRecordNumber: 'POST-PRINTED',
+              givenNames: 'Jo',
+              familyName: 'Postvisit',
+              // FAKE AND INVALID BY CONSTRUCTION — 2 999 99999 9 weights to
+              // 353, so the printed check digit is wrong (CLAUDE.md §7).
+              // eslint-disable-next-line no-restricted-syntax -- the fixture's own field.
+              medicareCardNumber: '2999 99999 9',
+              irn: '1',
+            },
+            providers: [
+              { role: 'servicing', name: 'Dr Sample GP', providerNumber: gpProviderNumber },
+              { role: 'payee', name: 'Dr Sample GP', providerNumber: gpProviderNumber },
+            ],
+            services,
+          },
+        },
+      });
+      return job.id;
+    });
+  }
+
+  /** A post-service agreement with who-is-signing answered, ready to push. */
+  async function draftReadyToPush(recordNumber: string): Promise<string> {
+    await seedPatient(recordNumber);
+    const res = await postService(service({ pmsPatientRecordNumber: recordNumber })).expect(201);
+    currentPrincipal = { ...RECEPTIONIST, practiceId };
+    await request(app.getHttpServer())
+      .post(`/agreements/${res.body.agreementId}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({ assignorIsPatient: true })
+      .expect(201);
+    return res.body.agreementId as string;
+  }
+
+  it('a_push_with_no_print_record_is_unaffected', async () => {
+    /*
+     * D-2026-09-27-02 — THE NEW PATH DOES NOT RUN, rather than running and
+     * producing the same answer. A walk-up at a practice with no PMS has no
+     * printed form to have read wrongly, so there is nothing to check and no
+     * read is made. Every other push in this suite is this case; this one says
+     * so out loud, so that a future change tightening the check cannot quietly
+     * start refusing practices that have no DB4 at all.
+     */
+    const agreementId = await draftReadyToPush('POST-NOPRINT');
+
+    const agreement = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findFirst({ where: { id: agreementId } }),
+    );
+    expect(agreement?.sourcePrintJobId).toBeNull();
+
+    await request(app.getHttpServer())
+      .post(`/devices/${deviceId}/push`)
+      .set('x-practice-id', practiceId)
+      .send({ agreementId })
+      .expect(201);
+  });
+
+  it('a_push_from_a_print_record_with_no_amount_is_refused_at_the_desk', async () => {
+    /*
+     * CARL'S RULING. A real PracSoft DB4 for a bulk-bill claim prints a
+     * benefit against its rows, so a print record carrying none most likely
+     * means AOBPRINTER's template did not read the form. This is a CONFIDENCE
+     * check on our own reproduction and NOT a statutory one — no dollar amount
+     * is in the s 65C data set (hard rule 4), and the agreement itself is
+     * complete and stays exactly as it was.
+     *
+     * NOTHING UPSTREAM CATCHES THIS. Ingest gates the chart number, the
+     * servicing provider's number, the service date and the item numbers; it
+     * never looks at an amount, and nothing else may compute one.
+     */
+    const agreementId = await draftReadyToPush('POST-NOAMOUNT');
+    const jobId = await seedPrintRecord([
+      { serviceDate: today(), mbsItemNumber: '23', description: 'Level B' },
+    ]);
+    await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.updateMany({ where: { id: agreementId }, data: { sourcePrintJobId: jobId } }),
+    );
+
+    /*
+     * THE AGREEMENT AS IT STANDS BEFORE THE REFUSAL, read rather than assumed.
+     * A post-service draft is LOCKED AT DRAFT TIME, so it already sits at
+     * `awaiting_signature` with its particulars sealed — the state this test
+     * is about is "unchanged", not any particular word.
+     */
+    const before = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findFirst({ where: { id: agreementId } }),
+    );
+
+    const refused = await request(app.getHttpServer())
+      .post(`/devices/${deviceId}/push`)
+      .set('x-practice-id', practiceId)
+      .send({ agreementId })
+      .expect(409);
+
+    // THE CODE IS THE CONTRACT, and every failed check rides with it so
+    // reception fixes the form once (CLAUDE.md §7).
+    expect(refused.body.reason).toBe('print_record_incomplete');
+    expect(refused.body.checks).toEqual(['print_record_benefit_missing']);
+
+    /*
+     * HARD RULE 9 — the refusal names a FIELD and never a value. Asserted on
+     * the serialised body, because that is what crossed the wire.
+     */
+    expect(refused.text).not.toContain('Postvisit');
+    expect(refused.text).not.toContain('POST-PRINTED');
+    expect(refused.text).not.toContain('2999');
+    expect(refused.text).not.toContain(gpProviderNumber);
+    // HARD RULE 4 — no amount in the refusal either, in any direction.
+    expect(refused.text).not.toMatch(/\d+\.\d{2}/);
+
+    /*
+     * HARD RULE 8 — THE REFUSAL ENDS A SCREEN, NOT AN AGREEMENT. No session
+     * was opened, the agreement did not move, and reception carries on to
+     * paper or to a later capture. The patient is seen and billed either way.
+     */
+    await prisma.withPractice(practiceId, async (tx) => {
+      expect(await tx.tabletSession.count({ where: { agreementId } })).toBe(0);
+      const after = await tx.agreement.findFirst({ where: { id: agreementId } });
+      // Not one field moved — the status, the lock and the particulars are
+      // exactly what they were. A refused push is a screen that never opened.
+      expect(after).toEqual(before);
+    });
+  });
+
+  it('a_push_from_a_complete_print_record_goes_through', async () => {
+    // The other side of the same gate: a record with everything on it is not
+    // refused, so the check cannot be passing by refusing everything.
+    const agreementId = await draftReadyToPush('POST-PRINTOK');
+    const jobId = await seedPrintRecord([
+      // `0.00` IS AN AMOUNT THE PRACTICE PRINTED. Treating a zero as "no
+      // amount" would be AoB forming an opinion about a figure (hard rule 4).
+      { serviceDate: today(), mbsItemNumber: '23', description: 'Level B', benefitAssigned: '0.00' },
+    ]);
+    await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.updateMany({ where: { id: agreementId }, data: { sourcePrintJobId: jobId } }),
+    );
+
+    await request(app.getHttpServer())
+      .post(`/devices/${deviceId}/push`)
+      .set('x-practice-id', practiceId)
+      .send({ agreementId })
+      .expect(201);
+  });
+
+  it('a_print_record_that_cannot_be_read_refuses_nothing', async () => {
+    /*
+     * HARD RULE 8, THE OTHER WAY ROUND. An agreement pointing at a print job
+     * row that is not there — deleted, or a link written before the row
+     * committed — is OUR fault, not the form's, and a platform fault must
+     * never stop a push. The cost of being wrong is the right way round: a
+     * form we could not check reaches a tablet, where the patient reads it and
+     * can say it is wrong; failing closed would stop a working practice over
+     * an infrastructure problem they cannot see.
+     */
+    const agreementId = await draftReadyToPush('POST-NOJOBROW');
+    await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.updateMany({ where: { id: agreementId }, data: { sourcePrintJobId: randomUUID() } }),
+    );
+
+    await request(app.getHttpServer())
+      .post(`/devices/${deviceId}/push`)
+      .set('x-practice-id', practiceId)
+      .send({ agreementId })
+      .expect(201);
+  });
+
   it('tablet_runs_the_details_check_when_nothing_was_verified_today', async () => {
     const patientId = await seedPatient('POST-CHECKRUN');
     const res = await postService(service({ pmsPatientRecordNumber: 'POST-CHECKRUN' })).expect(201);
@@ -485,7 +679,31 @@ describe('the post-service second push (e2e, real Postgres)', () => {
     expect(payload.session?.patientId).toBe(patientId);
   });
 
-  it('tablet_skips_the_details_check_after_a_same_day_verified_session', async () => {
+  it('tablet_runs_the_details_check_for_every_agreement_even_after_a_same_day_session', async () => {
+    /*
+     * CARL'S RULING, 27 SEPTEMBER 2026, FROM A LIVE TABLET: *"force the patient
+     * to step1 for each agreement - this is a better rule"*. It SUPERSEDES the
+     * ruling of 11 September that this test was written for, and the assertion
+     * at the foot of it is inverted rather than the test deleted, so the
+     * reversal is on the record where the original behaviour was.
+     *
+     * WHAT THE OLD RULE DID. The skip matched on the PATIENT: any session for
+     * any agreement of theirs, confirmed today at this practice and disputing
+     * nothing, meant the next push went straight past K-P1. The intent was
+     * kindness — a second agreement for the same visit should not ask a patient
+     * the same five questions twice.
+     *
+     * WHY IT LOSES. Each agreement is its own consent ceremony and its own
+     * signature, and the details check is part of that ceremony rather than a
+     * fact about the person's day. Carrying an answer across from a DIFFERENT
+     * agreement records a confirmation the patient never gave for THIS one.
+     * It also opened the ceremony on "Step 2", with no step one, which is what
+     * put Carl onto it.
+     *
+     * WHAT IS KEPT. The scope is now the AGREEMENT, so a resumed or re-pushed
+     * session for an agreement whose details are already answered still skips —
+     * the patient is resuming their own ceremony, not starting a new one.
+     */
     const patientId = await seedPatient('POST-CHECKSKIP');
     /*
      * THE FIRST SESSION OF THE DAY — the pre-service push, where the patient
@@ -531,8 +749,73 @@ describe('the post-service second push (e2e, real Postgres)', () => {
       .expect(201);
 
     const payload = await app.get(TabletSessionsService).currentFor(asResolvedDevice());
-    expect(payload.session?.detailsCheck).toBe('confirmed_today');
+    /*
+     * WAS `'confirmed_today'` UNTIL 27 SEPTEMBER 2026. A DIFFERENT agreement of
+     * the same patient's, confirmed earlier today, no longer answers for this
+     * one: this ceremony runs its own step one.
+     */
+    expect(payload.session?.detailsCheck).toBe('required');
     expect(payload.session?.patientId).toBe(patientId);
+  });
+
+  it('a_reload_mid_ceremony_does_not_ask_the_patient_the_same_questions_again', async () => {
+    /*
+     * THE HALF OF THE OLD RULE THAT SURVIVES, AND ITS BOUNDARY IS THE SESSION.
+     *
+     * THIS TEST ASSERTED THE AGREEMENT UNTIL 27 SEPTEMBER 2026, and it was
+     * wrong within the hour. Scoped to the agreement, an EARLIER session's
+     * answer suppressed K-P1 on every later push of the same agreement, so
+     * Carl watched a fresh push open on "Step 2" with no step one:
+     * *"Still jumps to step 2 sometimes."* A re-push is a new ceremony and
+     * must run its own step one.
+     *
+     * WHAT IS LEFT IS THE CASE THE SKIP IS ACTUALLY FOR: the tablet reloads
+     * mid-ceremony — dev rebuild, dropped wifi, a patient who idled out and
+     * came back — and polls for the session it is already in. The answer is
+     * this session's, given minutes ago by the person still standing there,
+     * and asking again would be the device forgetting what it was just told.
+     */
+    await seedPatient('POST-CHECKSAME');
+    const only = await postService(service({ pmsPatientRecordNumber: 'POST-CHECKSAME' })).expect(201);
+
+    currentPrincipal = { ...RECEPTIONIST, practiceId };
+    await request(app.getHttpServer())
+      .post(`/agreements/${only.body.agreementId}/assignor`)
+      .set('x-practice-id', practiceId)
+      .send({ assignorIsPatient: true })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/devices/${deviceId}/push`)
+      .set('x-practice-id', practiceId)
+      .send({ agreementId: only.body.agreementId })
+      .expect(201);
+
+    // THE FRESH PUSH ASKS. Nothing has been answered in this session yet.
+    const sessions = app.get(TabletSessionsService);
+    const first = await sessions.currentFor(asResolvedDevice());
+    expect(first.session?.detailsCheck).toBe('required');
+
+    /*
+     * THE PATIENT ANSWERS, ON THIS SESSION — written straight onto the row the
+     * push created, because what the skip turns on is the FACT that they were
+     * answered here, not how the ceremony drove it.
+     */
+    const sessionId = first.session?.id;
+    expect(sessionId).toBeTruthy();
+    await prisma.withPractice(practiceId, async (tx) => {
+      await tx.tabletSession.update({
+        where: { id: sessionId },
+        data: {
+          detailsConfirmedTypes: ['name', 'date_of_birth', 'address'],
+          detailsConfirmedAt: new Date(),
+        },
+      });
+    });
+
+    // THE RELOAD. Same session, same device, and it is not asked again.
+    const afterReload = await sessions.currentFor(asResolvedDevice());
+    expect(afterReload.session?.id).toBe(sessionId);
+    expect(afterReload.session?.detailsCheck).toBe('confirmed_today');
   });
 
   // -------------------------------------------------------------------------

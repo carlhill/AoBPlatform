@@ -648,7 +648,7 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
       // theirs, not enough for the person three seats away to use.
       const form = response.body.db4Form;
       // eslint-disable-next-line no-restricted-syntax -- the MASKED field, which is the only one the tablet is given.
-      expect(form.patient.medicareCardNumberMasked).toBe('••• ••••• 9');
+      expect(form.patient.medicareCardNumberMasked).toBe('•••• ••999 9');
       expect(form.patient.irn).toBe('1');
       expect(form.patient.patientRecordNumber).toBe(CHART_NUMBER);
 
@@ -771,7 +771,7 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
         expect(locked.body.particularsLockedAt).not.toBeNull();
         expect(locked.body.renderedArtefactHash).toMatch(/^[0-9a-f]{64}$/);
         // eslint-disable-next-line no-restricted-syntax -- the MASKED field, which is the only one the tablet is given.
-        expect(locked.body.db4Form.patient.medicareCardNumberMasked).toBe('••• ••••• 9');
+        expect(locked.body.db4Form.patient.medicareCardNumberMasked).toBe('•••• ••999 9');
         expect(locked.text).not.toContain(FAKE_MEDICARE);
         // And none of it entered the particulars that were validated, hashed
         // and stored (hard rules 4 and 13).

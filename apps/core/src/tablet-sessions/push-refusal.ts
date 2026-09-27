@@ -1,5 +1,6 @@
 import { ConflictException, ForbiddenException, HttpException, NotFoundException } from '@nestjs/common';
 import type { PushBlockedReason } from '@aobplatform/domain';
+import { DB4_PRINT_RECORD_REFUSED_CODE, type Db4PrintRecordCheck } from '@aobplatform/contracts';
 
 /**
  * WHY A PUSH WAS REFUSED — one named refusal per reason, carrying a CODE the
@@ -27,7 +28,21 @@ import type { PushBlockedReason } from '@aobplatform/domain';
  */
 export class PushRefusal extends HttpException {
   constructor(
-    readonly reason: PushBlockedReason,
+    /**
+     * A `PushBlockedReason` FOR EVERY REFUSAL THE CONSOLE'S LIST CAN PREDICT,
+     * and `DB4_PRINT_RECORD_REFUSED_CODE` for the one it cannot.
+     *
+     * `PUSH_BLOCKED_REASONS` is the domain's list of the preconditions
+     * `blockingReason` evaluates SYNCHRONOUSLY, from facts already on the
+     * agreement, so the console can grey out Send before anybody presses it.
+     * The print-record check is not one of those: it needs a read of another
+     * module's table, so it can only be answered at the moment of the push.
+     * Adding it to that union would put a reason in a list whose whole purpose
+     * is "what the desk can know in advance" — so the code lives beside the
+     * checks it reports, in `packages/contracts`, where the console reads both
+     * halves of the answer from one place.
+     */
+    readonly reason: PushBlockedReason | typeof DB4_PRINT_RECORD_REFUSED_CODE,
     message: string,
     status: number,
     extra: Record<string, unknown> = {},
@@ -227,6 +242,44 @@ export const pushRefusals = {
         'content set (reg 65CB), so the particulars cannot be validated or locked. Offer an agreement for ' +
         'this visit instead.',
       new ConflictException().getStatus(),
+    ),
+
+  /**
+   * THE DB4 PRINT RECORD BEHIND THIS AGREEMENT IS NOT ONE WE BELIEVE (Carl,
+   * 27 September 2026, from a live tablet: *"If no $ do not allow the approval
+   * to progress. Check all details when the reception pushes to the tablet."*).
+   *
+   * AT THE DESK, NEVER ON THE TABLET. Carl was offered the tablet-side block
+   * and rejected it, and hard rule 8 (REQ-REC-04) is why: this refusal is a
+   * redirect reception can act on in seconds — reprint the form, or capture on
+   * paper, or capture after the service — and the patient is seen and billed
+   * either way. A dead Continue button in front of somebody who has already
+   * sat down is the failure that rule exists to prevent, and they are the one
+   * person in the building who cannot fix a print record.
+   *
+   * IT IS NOT A STATUTORY FAULT, AND THE SENTENCE MUST NOT SUGGEST IT IS. No
+   * dollar amount is in the s 65C data set (hard rule 4), so an agreement with
+   * no amount is COMPLETE. What is in doubt is our own reproduction of the
+   * practice's form.
+   *
+   * EVERY FAILED CHECK, NOT THE FIRST. Reception fixes the form once rather
+   * than pressing Send five times to be told five things (CLAUDE.md §7). The
+   * codes ride on `checks`, the console maps each to its own copy and control
+   * (REQ-LANG-01), and an unmapped code shows its own code.
+   *
+   * THE CODES NAME FIELDS AND CARRY NO VALUES (hard rule 9) — which is what
+   * lets them sit in an HTTP body at all. The sentence below states a RULE and
+   * says nothing about what was on the page.
+   */
+  printRecordIncomplete: (checks: readonly Db4PrintRecordCheck[]) =>
+    new PushRefusal(
+      DB4_PRINT_RECORD_REFUSED_CODE,
+      'The printed form this agreement was read from is missing details the tablet would have to show, so ' +
+        'it has not been sent. This is about our reading of the form, not about the agreement — reprint it ' +
+        'and it will come through again, or capture this one on paper or after the service. The patient is ' +
+        'seen and billed either way.',
+      new ConflictException().getStatus(),
+      { checks },
     ),
 
   /**

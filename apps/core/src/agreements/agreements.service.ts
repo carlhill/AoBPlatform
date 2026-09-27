@@ -9,7 +9,12 @@ import {
   NotImplementedException,
 } from '@nestjs/common';
 import type { Agreement as DbAgreement, Prisma } from '@prisma/client';
-import { answersEnduringRules, type Db4FormView, type RulesEngineClient } from '@aobplatform/contracts';
+import {
+  answersEnduringRules,
+  type Db4FormView,
+  type Db4PrintRecordCheck,
+  type RulesEngineClient,
+} from '@aobplatform/contracts';
 import { RendererRegistry, renderInputOf } from '../render/renderer-registry';
 import { LetterheadService } from '../practices/letterhead.service';
 import { TemplatesService } from '../templates/templates.service';
@@ -52,7 +57,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RULES_CLIENT, RulesClientError } from '../rules-client/rules-client.module';
 import { assertCanBeProviderOnAgreement, assertEnduringAllowed } from '@aobplatform/domain';
 import type { ChangeAssignorDto, CreateAgreementDto, LockParticularsDto } from './agreements.dto';
-import { buildDb4FormView } from './db4-form-view';
+import { buildDb4FormView, checkDb4PrintRecord } from './db4-form-view';
 import { PrintRecordsService } from '../inbound/print-records.service';
 import { SignedDb4Service } from './signed-db4.service';
 import type { Actor } from '../auth/actor.decorator';
@@ -2866,7 +2871,27 @@ export class AgreementsService {
       // cross-practice read returns null and fails closed.
       const envelope = await this.printRecords.envelopeFor(practiceId, agreement.sourcePrintJobId);
       if (!envelope) return agreement;
-      return { ...agreement, db4Form: buildDb4FormView(envelope) };
+      const view = buildDb4FormView(envelope);
+      /*
+       * THE PRINT JOB'S ID IS ADDED HERE, NOT IN THE BUILDER, because here is
+       * where it is known: the builder reads an ENVELOPE and the id belongs to
+       * the AGREEMENT that pointed at it. Threading it through the builder
+       * would give that function a second argument and a second reason to
+       * change, and would put the emptiness guard — a name and at least one
+       * service row, or no view at all — behind a parameter it does not use.
+       *
+       * IT RIDES ON THE UNDEFINED CASE UNCHANGED. A record the parser could
+       * read nothing useful off still produces no block at all, so an id can
+       * never arrive attached to an empty frame (`a_view_with_nothing_on_it_
+       * is_not_returned`).
+       *
+       * AN IDENTIFIER, NOT CONTENT (hard rule 9), and a test device's footer
+       * is the only place it is drawn — see `Db4FormView.printJobId`.
+       */
+      return {
+        ...agreement,
+        db4Form: view ? { ...view, printJobId: agreement.sourcePrintJobId } : undefined,
+      };
     } catch (err) {
       /*
        * THE CLASS AND THE AGREEMENT ID, NEVER THE RECORD. Every line of a DB4
@@ -2878,6 +2903,63 @@ export class AgreementsService {
           'agreement is unaffected and the ceremony continues without it.',
       );
       return agreement;
+    }
+  }
+
+  /**
+   * DO WE BELIEVE THE PRINT RECORD BEHIND THIS AGREEMENT? — the facts, for a
+   * caller that has to decide whether to put it in front of a patient.
+   *
+   * Carl, 27 September 2026, from a live tablet: *"If no $ do not allow the
+   * approval to progress. Check all details when the reception pushes to the
+   * tablet."* The push turns this list into a refusal AT THE DESK; nothing
+   * here refuses anything, and nothing here reaches the tablet.
+   *
+   * ── ONLY FOR AN AGREEMENT THAT CAME FROM A PRINT RECORD ──
+   *
+   * `sourcePrintJobId` is null for most of them — a walk-up at a practice with
+   * no PMS has no form to have read wrongly — and for those THE NEW PATH DOES
+   * NOT RUN, rather than running and producing the same answer. That is the
+   * principle `Db4FormView` is already written around (D-2026-09-27-02), and
+   * it is the difference between a feature that is off for a practice and a
+   * feature that is on and happens to say nothing. No read happens at all.
+   *
+   * ── AND A RECORD WE CANNOT READ REFUSES NOTHING (hard rule 8, REQ-REC-04) ──
+   *
+   * A missing row, an unreadable payload, a database that is having a bad
+   * minute: the answer is NO CHECKS FAILED, never a refusal. Those are OUR
+   * faults, not the form's, and hard rule 8 is explicit that a platform outage
+   * slows evidence and never service — refusing a push because our own storage
+   * could not answer would be the platform blocking care over its own health.
+   * `withDb4FormView` degrades exactly the same way and for the same reason.
+   *
+   * THE COST OF BEING WRONG IS THE RIGHT WAY ROUND. Failing open here means a
+   * form we could not check reaches a tablet, where the patient reads it and
+   * can say it is wrong. Failing closed would mean a working practice stopped
+   * by an infrastructure fault they cannot see or fix.
+   */
+  async db4PrintRecordChecks(
+    practiceId: string,
+    agreement: { id: string; sourcePrintJobId: string | null },
+  ): Promise<readonly Db4PrintRecordCheck[]> {
+    if (!agreement.sourcePrintJobId) return [];
+    try {
+      // Practice-scoped through `withPractice` inside the service, so a
+      // cross-practice read returns null and fails closed.
+      const envelope = await this.printRecords.envelopeFor(practiceId, agreement.sourcePrintJobId);
+      if (!envelope) return [];
+      return checkDb4PrintRecord(envelope);
+    } catch (err) {
+      /*
+       * THE CLASS AND THE AGREEMENT ID, NEVER THE RECORD. Every line of a DB4
+       * is a patient's address, a provider's name or a card number, and none
+       * of it may reach a log (hard rules 1 and 9, REQ-LOG-08).
+       */
+      this.logger.error(
+        `The DB4 print record could not be checked for agreement ${agreement.id} — ${(err as Error).name}. ` +
+          'The push is allowed to proceed: an unreadable record is our fault, not the form’s.',
+      );
+      return [];
     }
   }
 

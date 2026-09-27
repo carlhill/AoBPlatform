@@ -1,0 +1,227 @@
+import type { Db4PlacementReason } from './print-capture';
+
+/* ---------------------------------------------------------------------------
+ * IS THE DB4 PRINT RECORD COMPLETE ENOUGH TO REPRODUCE? — the codes, named
+ * once, read by the push that refuses and by the console that explains.
+ *
+ * Carl, 27 September 2026, from a live tablet: *"If no $ do not allow the
+ * approval to progress. Check all details when the reception pushes to the
+ * tablet."*
+ *
+ * ── THIS IS NOT A STATUTORY VALIDATION, AND THAT DISTINCTION IS THE WHOLE
+ *    DESIGN ──
+ *
+ * NO DOLLAR AMOUNT IS IN THE s 65C DATA SET (hard rule 4, REQ-REG-04). An
+ * agreement with no amount anywhere near it is statutorily COMPLETE, and
+ * nothing here says otherwise — none of these codes means "this agreement is
+ * invalid", and an agreement that never came off a printed DB4 is never asked
+ * any of these questions at all.
+ *
+ * WHAT THEY MEASURE IS CONFIDENCE IN OUR OWN REPRODUCTION. A real PracSoft DB4
+ * for a bulk-bill claim prints a benefit against its service rows, so a DB4
+ * Print Record carrying none most likely means AOBPRINTER's template did not
+ * read the form properly — the same failure `parserTemplateVersion` exists to
+ * track, and a PracSoft layout change is the ordinary cause of it. The patient
+ * is about to be shown that reproduction on a tablet and asked to check it
+ * against what they know, so a reproduction we do not believe should not reach
+ * them.
+ *
+ * NOTHING HERE ORIGINATES, PARSES OR COMPUTES AN AMOUNT. `benefitAssigned` is
+ * tested for PRESENCE, as a non-empty string, and is never converted to a
+ * number, compared, summed, rounded or reformatted (D-2026-09-14-02: *"AoB
+ * never originates or computes an amount; it may reproduce the amount the
+ * practice's billing software printed"*). `"0.00"` is an amount the practice
+ * printed and it PASSES — deciding that a zero means "no amount" would be AoB
+ * forming an opinion about a figure, which is the thing hard rule 4 forbids.
+ *
+ * ── WHERE THE REFUSAL HAPPENS, AND WHY IT IS AT THE DESK ──
+ *
+ * AT THE PUSH, IN FRONT OF RECEPTION — never on the tablet in front of the
+ * patient. The tablet-side block was put to Carl on 27 September 2026 and he
+ * rejected it: *"Check all details when the reception pushes to the tablet."*
+ *
+ * HARD RULE 8 (REQ-REC-04) IS THE REASON. A refusal at the desk is a redirect
+ * a staff member can act on in a few seconds — reprint the form, or capture on
+ * paper, or capture after the service — and the patient is seen and billed
+ * either way, so evidence is slowed and service is not. A dead Continue button
+ * in front of somebody who has already sat down is the exact failure that rule
+ * exists to prevent, and it would be worse than useless: the person looking at
+ * it is the one person in the building who cannot fix a print record.
+ *
+ * ── A CODE NAMES A FIELD, NEVER A VALUE ──
+ *
+ * Hard rule 9 (REQ-VER-04). Every code below says WHICH part of the form could
+ * not be read, and not one of them can carry a name, a chart number, a card
+ * number, an address, an item number or an amount. That is what makes them
+ * safe in an HTTP body, a log line and a vault event, and it is why the codes
+ * — rather than a sentence assembled from the record — are the contract.
+ *
+ * ── AND THE WORDS ARE NOT HERE ──
+ *
+ * Never a bare 409 (CLAUDE.md §7, *"shortcuts to the answer, not directions to
+ * a screen"*), and never a sentence written in core either. The refusal
+ * carries these codes, the console maps each one to its own string-table entry
+ * with the control that fixes it (REQ-LANG-01), and a code the console has not
+ * mapped shows its own code so it can be diagnosed rather than becoming a
+ * shrug. That is the construction `practice_surface_not_in_use` already uses,
+ * for the same reasons.
+ *
+ * ── TWO OF THESE ARE THE GUARD; THREE ARE A BACKSTOP. READ THIS BEFORE YOU
+ *    TRUST ANY OF THEM ──
+ *
+ * `db4-assignment.handler.ts` is the ONLY writer of `Agreement.sourcePrintJobId`
+ * (`linkToPrintJob`), and it writes it only after its own ingest gates have
+ * passed on the very same envelope. So a print record missing a chart number,
+ * missing every service item, or missing a date of service NEVER BECOMES AN
+ * AGREEMENT AT ALL: the job row records `no_chart_number`, `no_service_items`
+ * or `no_service_date` and nothing is placed. Three of the five checks below
+ * therefore cannot fire on any agreement that exists today, and it would be
+ * dishonest to present them as protection.
+ *
+ * THEY ARE KEPT ANYWAY, DECLARED AS A BACKSTOP, because the invariant that
+ * makes them unreachable is a fact about today's code and not a structural
+ * one: it is "there happens to be exactly one writer of that column, and it
+ * happens to gate on these fields first". `DB4_PRINT_RECORD_CHECK_GATED_AT_INGEST`
+ * below states the correspondence field by field, and
+ * `every_backstop_check_names_the_ingest_reason_that_covers_it` pins it — so a
+ * relaxed ingest gate is a test to update rather than a hole to rediscover.
+ *
+ * WHAT IS ACTUALLY LIVE, on the agreements a practice has right now:
+ *  - `print_record_benefit_missing` — nothing at ingest looks at an amount.
+ *    This is the gap Carl's ruling names.
+ *  - `print_record_servicing_provider_missing`, through its NAME half — ingest
+ *    requires the servicing provider's provider NUMBER and never looks at
+ *    their name, so a record naming nobody still places.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * EVERY CHECK, IN THE ORDER THEY ARE REPORTED. The order is part of the
+ * contract: reception reads a list, and a list that reshuffles itself between
+ * two presses of Send is a list nobody trusts.
+ */
+export const DB4_PRINT_RECORD_CHECKS = [
+  /**
+   * NEITHER A NAME NOR A CHART NUMBER, so nothing on the reproduction says who
+   * it is about.
+   *
+   * BACKSTOP — see the header. A record with no chart number is refused at
+   * ingest as `no_chart_number` and never becomes an agreement, so this cannot
+   * fire today.
+   *
+   * EITHER ONE IS ENOUGH, which is why it is written as BOTH being absent. A
+   * DB4 prints both, and the chart number is the only key a DB4 is matched on
+   * (hard rule 1). A record with the chart number but no name is a real and
+   * reachable state, and it is deliberately NOT refused here: `buildDb4FormView`
+   * already returns no view at all in that case, so the tablet falls back to
+   * the original screen drawn from the locked particulars. That fallback is
+   * better than a refusal, because it costs the patient a picture of their
+   * form and costs the practice nothing.
+   */
+  'print_record_patient_unidentified',
+  /**
+   * NO SERVICE ROWS AT ALL. A DB4 exists to list services; a print record with
+   * an empty list is a page the template could not find the table on.
+   *
+   * BACKSTOP — no rows means no MBS item numbers, which ingest refuses as
+   * `no_service_items`.
+   */
+  'print_record_services_missing',
+  /**
+   * THE SERVICING PROVIDER'S NAME OR PROVIDER NUMBER IS MISSING.
+   *
+   * LIVE, THROUGH THE NAME. Ingest requires the provider NUMBER and refuses
+   * `no_servicing_provider` without one; it never looks at the name. So a
+   * print record whose provider line the template half-read places an
+   * agreement, and the patient would be shown a form that does not say who
+   * they are assigning to.
+   *
+   * BOTH HALVES ARE REQUIRED BECAUSE THE FORM PRINTS BOTH and the two readers
+   * differ: the patient checks the name, the practice checks the number. The
+   * servicing provider is also the one whose number goes on the claim
+   * (s 65C(5)(a)) and the one the assignment is WITH, so this is the line of
+   * the reproduction that matters most.
+   */
+  'print_record_servicing_provider_missing',
+  /**
+   * NO DATE OF SERVICE ANYWHERE ON THE RECORD — neither on the form nor on any
+   * of its service rows. Read exactly as `db4-assignment.handler.ts` reads it,
+   * form first and rows second, because a DB4 prints the same date in both
+   * places and disagreeing with the handler about where to look would produce
+   * two different answers about one page.
+   *
+   * BACKSTOP — that same handler refuses `no_service_date` when it finds none.
+   */
+  'print_record_service_date_missing',
+  /**
+   * NOT ONE SERVICE ROW CARRIES A BENEFIT — Carl's *"if no $ do not allow the
+   * approval to progress"*, and THE ONE GENUINELY NEW CHECK HERE. Nothing
+   * anywhere upstream looks at an amount: ingest does not, the rules engine
+   * does not and must not (hard rule 4), and the particulars have no field for
+   * one. A record whose amount column the template lost places an agreement
+   * and reaches a tablet today.
+   *
+   * PRESENCE, NEVER VALUE. This asks whether the string PracSoft printed
+   * survived the parse. It does not read the figure, does not check that it is
+   * a figure, and does not care what it says: `"0.00"` passes, `"1,234.55"`
+   * passes, and so does anything else non-empty. Deciding that a zero means
+   * "no amount" would be AoB interpreting a figure, which is precisely what
+   * hard rule 4 forbids.
+   *
+   * ONE ROW IS ENOUGH. A form may legitimately list a row the practice is not
+   * claiming a benefit on, and refusing a whole push over one blank cell would
+   * be a stricter rule than the one Carl gave.
+   *
+   * IT OVERLAPS `print_record_services_missing` ON PURPOSE. A record with no
+   * rows reports both, because both are true and each is separately worth
+   * knowing; neither is suppressed to make a tidier list.
+   */
+  'print_record_benefit_missing',
+] as const;
+
+/** One failed check. Never a value, never a sentence — see the header. */
+export type Db4PrintRecordCheck = (typeof DB4_PRINT_RECORD_CHECKS)[number];
+
+/**
+ * WHICH INGEST REFUSAL ALREADY COVERS WHICH CHECK — the backstop declaration,
+ * written down rather than remembered.
+ *
+ * `null` means no ingest gate looks at this at all, so the check is the only
+ * thing standing there. Anything else names the `Db4PlacementReason` that
+ * refuses the same envelope before an agreement is ever created, which makes
+ * that check a second line rather than the first.
+ *
+ * IT IS HERE SO THE TWO VOCABULARIES LINE UP WITHOUT BEING MERGED. They answer
+ * different questions for different audiences — "why did this form produce no
+ * agreement", asked of a job row, against "why will this agreement not go to a
+ * tablet", asked at a desk — and one union covering both would let a placement
+ * reason be thrown as a push refusal. The correspondence is the useful part,
+ * not the identity, and a console showing either can say they are the same
+ * fault seen from two ends.
+ */
+export const DB4_PRINT_RECORD_CHECK_GATED_AT_INGEST: Readonly<
+  Record<Db4PrintRecordCheck, Db4PlacementReason | null>
+> = {
+  print_record_patient_unidentified: 'no_chart_number',
+  // No rows means no item numbers, which is the gate ingest actually applies.
+  print_record_services_missing: 'no_service_items',
+  // The NUMBER half only. Ingest never looks at the provider's name, which is
+  // why this check is live despite having an ingest twin.
+  print_record_servicing_provider_missing: 'no_servicing_provider',
+  print_record_service_date_missing: 'no_service_date',
+  // THE GAP. Nothing upstream reads an amount, and nothing should compute one.
+  print_record_benefit_missing: null,
+};
+
+/**
+ * THE REFUSAL ITSELF, NAMED ONCE AND READ BY BOTH SIDES.
+ *
+ * The push answers with this code and the FULL list of failed checks, never
+ * just the first: reception fixes the form once rather than pressing Send five
+ * times to be told five things (CLAUDE.md §7). The console keys its copy off
+ * the individual checks; this code is what tells it which list it is reading.
+ *
+ * IT IS NOT `agreement_not_pushable`, which would be a lie. The agreement is
+ * fine — its particulars are locked, complete and validated. It is the DB4
+ * Print Record behind them that we cannot vouch for.
+ */
+export const DB4_PRINT_RECORD_REFUSED_CODE = 'print_record_incomplete';

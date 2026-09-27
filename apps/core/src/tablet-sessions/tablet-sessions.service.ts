@@ -338,6 +338,41 @@ export class TabletSessionsService {
     this.assertPushable(context);
 
     /*
+     * AND THE FORM WE ARE ABOUT TO REPRODUCE (Carl, 27 September 2026, from a
+     * live tablet: *"If no $ do not allow the approval to progress. Check all
+     * details when the reception pushes to the tablet."*).
+     *
+     * HERE, AT THE DESK, AND DELIBERATELY NOT ON THE TABLET. The tablet-side
+     * block was put to Carl and he rejected it. Hard rule 8 (REQ-REC-04) is
+     * the reason: reception is standing at a screen with the fix in reach, so
+     * a refusal here is a redirect; a patient who has already sat down in
+     * front of a dead Continue button is the thing that rule exists to
+     * prevent, and they can do nothing about a print record.
+     *
+     * IT IS NOT A STATUTORY VALIDATION. No dollar amount is in the s 65C data
+     * set (hard rule 4), so an agreement with no amount is COMPLETE and this
+     * check says nothing about it. What it doubts is OUR REPRODUCTION: a real
+     * PracSoft DB4 for a bulk-bill claim prints a benefit, so a print record
+     * carrying none most likely means the parser template did not read the
+     * form. Nothing in this path originates, parses or computes an amount.
+     *
+     * AFTER `assertPushable` AND BEFORE THE LOCK, which is the only place it
+     * can go. After, because a refusal about our reading of a form should not
+     * pre-empt a refusal about the agreement itself — an unconfirmed assignor
+     * is the more useful thing to be told first. Before, because the lock
+     * validates and renders, and there is no sense locking particulars for a
+     * push that is about to be refused.
+     *
+     * ONLY FOR AN AGREEMENT THAT CAME FROM A PRINT RECORD. `sourcePrintJobId`
+     * is null for every walk-up at a practice with no PMS, and for those this
+     * costs one branch and no read at all (D-2026-09-27-02: the new path does
+     * not run rather than running and producing the same answer). Named test:
+     * `a_push_with_no_print_record_is_unaffected`.
+     */
+    const printRecordChecks = await this.agreements.db4PrintRecordChecks(practiceId, context.agreement);
+    if (printRecordChecks.length > 0) throw pushRefusals.printRecordIncomplete(printRecordChecks);
+
+    /*
      * ALREADY LOCKED IS THE RE-PUSH CASE, and it must not lock again. A
      * session that was recalled, walked away from, or expired leaves the
      * agreement locked at `awaiting_signature` — handing the tablet back to
@@ -1799,21 +1834,32 @@ export class TabletSessionsService {
        * RLS scopes the read to this practice, so "at this practice" is enforced
        * at the database rather than remembered here.
        */
-      const startOfDay = new Date();
-      startOfDay.setHours(0, 0, 0, 0);
-      const samePatientToday = await tx.agreement.findMany({
-        where: { patientId: agreement.patientId },
-        select: { id: true },
-      });
-      const confirmedToday = await tx.tabletSession.findFirst({
-        where: {
-          agreementId: { in: samePatientToday.map((a) => a.id) },
-          detailsConfirmedAt: { gte: startOfDay },
-          detailsDisputedAt: null,
-        },
-        select: { id: true },
-      });
-      return { session, agreement, patient, assignor, detailsConfirmedToday: confirmedToday !== null };
+      /*
+       * THIS SESSION'S OWN ANSWER, AND NOBODY ELSE'S (Carl, 27 September 2026,
+       * from a live tablet: *"Still jumps to step 2 sometimes"*).
+       *
+       * THE BOUNDARY MOVED TWICE IN ONE EVENING, so here is where it landed
+       * and why. It began as the PATIENT: any session of theirs confirmed
+       * today skipped K-P1 on the next push, which is the ruling of 11
+       * September for the second agreement of one visit. Carl overturned that
+       * — *"force the patient to step1 for each agreement - this is a better
+       * rule"* — and it became the AGREEMENT. That was still too wide. A
+       * re-push creates a NEW session for the same agreement, so the earlier
+       * session's answer went on suppressing step one for the rest of the day;
+       * the patient opened on "Step 2" with no step one, intermittently, which
+       * is exactly the defect the ruling was meant to end.
+       *
+       * SO IT IS THE SESSION. A tablet that reloads mid-ceremony resumes and
+       * is not asked twice — the answer is genuinely this session's, given
+       * minutes ago. A fresh push is a fresh ceremony and always runs its own
+       * step one. Nothing else can answer for it.
+       *
+       * A DISPUTED ROW UNDOES IT, as it always did: a crossed detail is the
+       * one case where the particulars on screen are not the ones to sign.
+       */
+      const detailsConfirmedToday =
+        session.detailsConfirmedAt !== null && session.detailsDisputedAt === null;
+      return { session, agreement, patient, assignor, detailsConfirmedToday };
     });
 
     if (!found) return { session: null };

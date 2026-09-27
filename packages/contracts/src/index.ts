@@ -7,3 +7,4 @@ export * from './signature';
 export * from './portal';
 export * from './auth';
 export * from './db4-form-view';
+export * from './db4-print-record-check';

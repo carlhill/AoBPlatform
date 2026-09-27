@@ -62,9 +62,13 @@ export interface Db4FormViewPatient {
   /** The practice's chart number — the only key a DB4 is matched on (hard rule 1). */
   readonly patientRecordNumber?: string;
   /**
-   * MASKED FOR THE WAITING ROOM, e.g. `••• ••••• 1`. Enough for the patient to
-   * recognise the card as theirs; not enough for anyone else to use.
-   * The full number is on the Signed-DB4 and nowhere near this payload.
+   * MASKED FOR THE WAITING ROOM, e.g. `•••• ••237 1` — the last four, in the
+   * card's own 4-5-1 grouping. Enough for the patient to CHECK the screen
+   * against the card in their hand, which one digit was not (Carl, 27
+   * September 2026: *"showing just a single digit does not help"*); not enough
+   * for anyone else to use. The six that make the number usable never leave
+   * the server, and the full number is on the Signed-DB4 and nowhere near this
+   * payload.
    *
    * THE LINT RULE BELOW FIRES HERE, AND THE NAME IS KEPT ANYWAY. Renaming this
    * to something the rule does not match — `cardMasked`, say — would silence
@@ -136,6 +140,29 @@ export interface Db4FormView {
    * reachable from a workstation, where a full card number is already at home.
    */
   readonly sourceSha256?: string;
+  /**
+   * THE PRINT JOB THIS FORM CAME OFF — the agreement's own `sourcePrintJobId`,
+   * carried to the screen so the two ends of one print run can be matched by
+   * eye (Carl, 27 September 2026: *"the print job id, that hash, and the Print
+   * Record itself ... show this in the footer with the other audit ids"*).
+   *
+   * AN IDENTIFIER, NOT CONTENT (hard rule 9). It is a value this platform
+   * minted, it names a queue row rather than a person, and it carries no
+   * identifier VALUE of any kind — which is the same reasoning the session and
+   * patient ids in the kiosk footer already rest on. Nothing reads a patient
+   * out of it and nothing verifies anybody with it.
+   *
+   * SHOWN ON A TEST DEVICE ONLY, beside `sourceSha256`, behind the same flag
+   * the parser template version and the "ready to sign" panel sit behind. On a
+   * patient's screen an internal id is a developer's note.
+   *
+   * IT IS NOT A LINK, AND THE RECORD IT NAMES STAYS UNREACHABLE FROM THE
+   * TABLET — see `sourceSha256` above, which is the ruling this field does not
+   * amend. Two ids and a hash let somebody standing at the tablet find the
+   * print run from a workstation; they do not bring the unmasked card number
+   * into the waiting room.
+   */
+  readonly printJobId?: string;
   /**
    * The parser template that read the form. Shown on a TEST device only — on a
    * patient's screen it is a developer's note, which is the same objection that
