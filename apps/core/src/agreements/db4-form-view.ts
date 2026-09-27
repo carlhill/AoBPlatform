@@ -279,6 +279,13 @@ export function buildDb4FormView(envelope: PrintJobEnvelope): Db4FormView | unde
     services,
     privacyNotice: textLines(assignment.privacyNotice),
     statements: statementsOf(source),
+    /*
+     * PROVENANCE, FOR A TEST DEVICE'S FOOTER. An identifier, not content
+     * (hard rule 9), and the only trace of the printed bytes that still
+     * exists — D-2026-09-14-02 kept the record and the hash and dropped the
+     * PracSoft PDF entirely.
+     */
+    sourceSha256: text(source.sourceSha256),
     parserTemplateVersion: text(source.parserTemplateVersion),
   };
 }

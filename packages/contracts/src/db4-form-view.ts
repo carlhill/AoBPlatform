@@ -117,6 +117,26 @@ export interface Db4FormView {
   /** In-scope statements only; the pathology offer is filtered out. */
   readonly statements?: readonly Db4FormViewStatement[];
   /**
+   * THE HASH OF THE PRINTED BYTES AOBPRINTER READ — the provenance of the
+   * page, and an IDENTIFIER rather than content (hard rule 9).
+   *
+   * Shown in the kiosk footer beside the session and patient ids, on a TEST
+   * DEVICE ONLY, so somebody checking a rendering can tie what is on the
+   * screen to the exact print run it came from. D-2026-09-14-02 left this hash
+   * and the DB4 Print Record as the only provenance there is: *"We no longer
+   * keep a copy of the PracSoft DB4 at all."*
+   *
+   * THE RECORD IT HASHES IS NOT REACHABLE FROM THE TABLET, and that is
+   * deliberate (Carl, 27 September 2026). The raw record carries the UNMASKED
+   * Medicare card number — it is the thing `maskMedicareCardNumber` masks
+   * from — so a link to it from a waiting-room device would undo
+   * D-2026-09-27-01 part 3 one tap at a time. What a test device may show is
+   * the MASKED projection it was actually sent, which is also the more useful
+   * answer to "did the screen draw what it was given". The raw record stays
+   * reachable from a workstation, where a full card number is already at home.
+   */
+  readonly sourceSha256?: string;
+  /**
    * The parser template that read the form. Shown on a TEST device only — on a
    * patient's screen it is a developer's note, which is the same objection that
    * moved the "ready to sign" panel behind the test flag.
