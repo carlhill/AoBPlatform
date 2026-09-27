@@ -600,6 +600,261 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
   });
 
   /*
+   * THE DB4 THE PATIENT READS ON THE TABLET (D-2026-09-27-01: *"patient sees
+   * the db4 with the cost on it"*, *"mask on the tablet, full on the form"*).
+   *
+   * WHY THESE ARE E2E AND NOT UNIT TESTS. `db4-form-view.spec.ts` proves the
+   * projection and the mask; it cannot prove what reached the WIRE. The one
+   * assertion that does is against a serialised response body, and it is the
+   * assertion hard rule 1 actually needs: a full number masked in the markup
+   * is not masked, because it still sits in the payload, in the network tab
+   * and in the React tree of a tablet that is handed to strangers all day.
+   *
+   * BEFORE THE SIGNED-DB4 BLOCK, which signs this agreement and moves it out
+   * of `awaiting_signature` — the state the tablet reads it in.
+   */
+  describe('the DB4 the patient reads on the tablet', () => {
+    /** The agreement the handler made from the first print, as the tablet fetches it. */
+    async function tabletSees(scope = practiceId) {
+      const first = await jobRow(FIRST_SHA);
+      const agreement = await prisma.withPractice(practiceId, (tx) =>
+        tx.agreement.findFirst({ where: { sourcePrintJobId: first!.id } }),
+      );
+      return {
+        agreement: agreement!,
+        response: await request(app.getHttpServer())
+          .get(`/agreements/${agreement!.id}`)
+          .set('x-practice-id', scope),
+      };
+    }
+
+    it('the_tablet_never_receives_an_unmasked_medicare_number', async () => {
+      const { response } = await tabletSees();
+      expect(response.status).toBe(200);
+
+      /*
+       * THE SERIALISED BODY, NOT THE PARSED ONE. `res.text` is the bytes that
+       * crossed the wire, which is the only thing that proves the value did
+       * not travel — an assertion on an object could be satisfied by a field
+       * nobody looked at.
+       */
+      expect(response.text).not.toContain(FAKE_MEDICARE);
+      expect(response.text).not.toContain(FAKE_MEDICARE.replace(/ /g, ''));
+      // The key itself cannot be there either. Quoted so that the MASKED
+      // field, whose name contains it, does not satisfy the check.
+      expect(response.text).not.toContain('"medicareCardNumber"');
+
+      // And what the patient does see: enough to recognise the card as
+      // theirs, not enough for the person three seats away to use.
+      const form = response.body.db4Form;
+      // eslint-disable-next-line no-restricted-syntax -- the MASKED field, which is the only one the tablet is given.
+      expect(form.patient.medicareCardNumberMasked).toBe('••• ••••• 9');
+      expect(form.patient.irn).toBe('1');
+      expect(form.patient.patientRecordNumber).toBe(CHART_NUMBER);
+
+      // The number is still in full where it belongs — the practice's own
+      // form on the job row, which the Signed-DB4 is drawn from.
+      const job = await jobRow(FIRST_SHA);
+      expect(JSON.stringify(job!.payload)).toContain(FAKE_MEDICARE);
+    });
+
+    it('the_tablet_shows_the_amount_pracsoft_printed_and_never_one_we_computed', async () => {
+      const { response } = await tabletSees();
+      const services = response.body.db4Form.services as { benefitAssigned: unknown }[];
+      // VERBATIM STRINGS, in the order the form prints them (hard rule 4 as
+      // narrowed by D-2026-09-14-02: AoB never originates a figure).
+      expect(services.map((service) => service.benefitAssigned)).toEqual(PRINTED_AMOUNTS);
+      for (const service of services) expect(typeof service.benefitAssigned).toBe('string');
+      // NO TOTAL ANYWHERE. 45.05 + 22.40 is a figure we would have computed.
+      expect(response.text).not.toContain('67.45');
+      expect(response.text.toLowerCase()).not.toContain('"total"');
+    });
+
+    it('the_pathology_offer_is_filtered_from_the_tablet_as_it_is_from_the_form', async () => {
+      const { response } = await tabletSees();
+      const statements = response.body.db4Form.statements as { key: string }[];
+      /*
+       * ONE STATEMENT WHERE THE PRACTICE'S PAPER HAS TWO, and the same one
+       * `SignedDb4Renderer.drawAssignment` keeps — s 65C(4) items 1–4 are out
+       * of scope (CLAUDE.md §8), and the patient's mark must not sit under an
+       * assignment this product does not validate, store or write back.
+       */
+      expect(statements.map((statement) => statement.key)).toEqual(['assign_to_health_professional']);
+      expect(response.text).not.toContain('Approved Pathology Practitioner');
+      // The form's own heading and the servicing location, so the screen is
+      // recognisably the page the practice printed.
+      expect(response.body.db4Form.headingLines[1]).toBe('BULK BILL ASSIGNMENT OF BENEFIT FORM');
+      expect(response.body.db4Form.formReference).toBe(FORM_REFERENCE);
+    });
+
+    it('the_db4_form_view_is_display_data_and_moves_no_stored_byte', async () => {
+      // HARD RULE 13. The block rides on a response and dies with it: it is
+      // not a particular, it is not hashed, and it is not stored.
+      const { agreement, response } = await tabletSees();
+      expect(response.body.db4Form).toBeDefined();
+
+      const after = await prisma.withPractice(practiceId, (tx) =>
+        tx.agreement.findFirst({ where: { id: agreement.id } }),
+      );
+      expect(after!.renderedArtefactHash).toBe(agreement.renderedArtefactHash);
+      expect(after!.particularsLockedAt).toEqual(agreement.particularsLockedAt);
+      expect(JSON.stringify(after)).not.toContain('db4Form');
+      expect(JSON.stringify(after!.particulars)).not.toContain('45.05');
+    });
+
+    it('a_db4_form_view_never_crosses_a_practice_boundary', async () => {
+      // RLS fails closed: another practice cannot read the agreement at all,
+      // so there is no path to its form either.
+      const { response } = await tabletSees(otherPracticeId);
+      expect(response.status).toBe(404);
+      expect(response.text).not.toContain(FAKE_MEDICARE);
+    });
+
+    /*
+     * THE LOCK'S OWN RESPONSE — the seam D-2026-09-27-01 names, exercised on
+     * an agreement that is still a draft.
+     *
+     * A HAND-MADE PRINT JOB AND A HAND-MADE DRAFT, on purpose. The handler
+     * locks a real DB4 the moment it captures it, so the agreement it makes
+     * can never be locked twice; and a second draft pointed at the FIRST job
+     * would be found by the Signed-DB4 block's `findFirst` on
+     * `sourcePrintJobId` and signed instead of the real one.
+     */
+    describe('the lock response', () => {
+      let draftId: string;
+      const OWN_SHA = sha('db4-for-the-lock-response');
+
+      beforeAll(async () => {
+        await prisma.withPractice(practiceId, async (tx) => {
+          const job = await tx.inboundPrintJob.create({
+            data: {
+              practiceId,
+              documentType: 'db4_assignment',
+              lane: 'critical',
+              pms: 'pracsoft3',
+              parserTemplateVersion: 'pracsoft3-db4-2026-09-1',
+              sourceSha256: OWN_SHA,
+              payload: db4Record({ sourceSha256: OWN_SHA, formReference: 'HSS0610012092026999999' }) as never,
+              // `inbound_print_jobs_done_has_time`: a job that says it is done
+              // says when.
+              state: 'done',
+              processedAt: new Date(),
+            },
+          });
+          const assignor = await tx.assignor.findFirst({});
+          const draft = await tx.agreement.create({
+            data: {
+              practiceId,
+              type: 'episodic_post',
+              anchorKind: 'provider',
+              affiliationId: servicingAffiliationId,
+              patientId,
+              assignorId: assignor!.id,
+              assignorIsPatient: true,
+              status: 'draft',
+              sourcePrintJobId: job.id,
+            },
+          });
+          draftId = draft.id;
+        });
+      });
+
+      it('the_lock_response_carries_the_form_the_patient_is_about_to_sign', async () => {
+        const locked = await request(app.getHttpServer())
+          .post(`/agreements/${draftId}/particulars`)
+          .set('x-practice-id', practiceId)
+          .send({ serviceDate: today(), mbsItemNumbers: ['23'] })
+          .expect(201);
+
+        // The lock is unchanged — it still returns the agreement it always
+        // returned — and the form view rides beside it.
+        expect(locked.body.particularsLockedAt).not.toBeNull();
+        expect(locked.body.renderedArtefactHash).toMatch(/^[0-9a-f]{64}$/);
+        // eslint-disable-next-line no-restricted-syntax -- the MASKED field, which is the only one the tablet is given.
+        expect(locked.body.db4Form.patient.medicareCardNumberMasked).toBe('••• ••••• 9');
+        expect(locked.text).not.toContain(FAKE_MEDICARE);
+        // And none of it entered the particulars that were validated, hashed
+        // and stored (hard rules 4 and 13).
+        expect(JSON.stringify(locked.body.particulars)).not.toContain('45.05');
+      });
+
+      it('a_missing_print_record_never_blocks_the_ceremony', async () => {
+        /*
+         * HARD RULE 8, REQ-REC-04. A form view that cannot be built costs the
+         * patient a picture of their form and nothing else: the lock still
+         * succeeds, the agreement is still signable, and the block is simply
+         * absent. Nobody fails to sign because a page could not be drawn.
+         */
+        const orphanId = await prisma.withPractice(practiceId, async (tx) => {
+          const assignor = await tx.assignor.findFirst({});
+          const draft = await tx.agreement.create({
+            data: {
+              practiceId,
+              type: 'episodic_post',
+              anchorKind: 'provider',
+              affiliationId: servicingAffiliationId,
+              patientId,
+              assignorId: assignor!.id,
+              assignorIsPatient: true,
+              status: 'draft',
+              // A job id that resolves to nothing: deleted, never written, or
+              // another practice's row.
+              sourcePrintJobId: randomUUID(),
+            },
+          });
+          return draft.id;
+        });
+
+        const locked = await request(app.getHttpServer())
+          .post(`/agreements/${orphanId}/particulars`)
+          .set('x-practice-id', practiceId)
+          .send({ serviceDate: today(), mbsItemNumbers: ['23'] })
+          .expect(201);
+        expect(locked.body.particularsLockedAt).not.toBeNull();
+        expect(locked.body.db4Form).toBeUndefined();
+
+        const fetched = await request(app.getHttpServer())
+          .get(`/agreements/${orphanId}`)
+          .set('x-practice-id', practiceId)
+          .expect(200);
+        expect(fetched.body.db4Form).toBeUndefined();
+      });
+
+      it('an_agreement_that_never_came_from_a_db4_carries_no_block_at_all', async () => {
+        /*
+         * D-2026-09-27-02: the discriminator is the SESSION, not the practice.
+         * A walk-up at a practice with no PMS has no print record, so the new
+         * path does not run at all rather than running and producing the same
+         * answer — and the tablet draws exactly what it drew before.
+         */
+        const walkUpId = await prisma.withPractice(practiceId, async (tx) => {
+          const assignor = await tx.assignor.findFirst({});
+          const draft = await tx.agreement.create({
+            data: {
+              practiceId,
+              type: 'episodic_post',
+              anchorKind: 'provider',
+              affiliationId: servicingAffiliationId,
+              patientId,
+              assignorId: assignor!.id,
+              assignorIsPatient: true,
+              status: 'draft',
+            },
+          });
+          return draft.id;
+        });
+
+        const fetched = await request(app.getHttpServer())
+          .get(`/agreements/${walkUpId}`)
+          .set('x-practice-id', practiceId)
+          .expect(200);
+        expect(fetched.body.sourcePrintJobId).toBeNull();
+        expect(fetched.body.db4Form).toBeUndefined();
+      });
+    });
+  });
+
+  /*
    * THE SIGNED-DB4 — THE WHOLE PATH, AGAINST REAL POSTGRES (D-2026-09-14-02/-03).
    *
    * LAST, AND DELIBERATELY SO: this block signs the agreement the earlier

@@ -3388,6 +3388,7 @@ export const strings = {
     surfaceProfileNames: {
       full: 'Everything',
       db4: 'The DB4 path only',
+      standard: 'Everything except the DB4 path',
     } as Record<string, string>,
     /**
      * KEYED BY SURFACE KEY (REQ-LANG-01/-02), never in the content file. The
@@ -7415,8 +7416,116 @@ export const strings = {
       wordingVersion: (template: string) => ` · wording ${template}`,
       hashLine: (hash: string) => `SHA-256 ${hash}`,
       tagNoAmount: 'No amount shown',
+      /**
+       * THE TAG THAT REPLACES `tagNoAmount` WHERE THE PRACTICE'S OWN FORM IS
+       * ON THE SCREEN (D-2026-09-27-01; hard rule 4 as narrowed by
+       * D-2026-09-14-02).
+       *
+       * WHY IT HAD TO CHANGE. The three tags exist so a reviewer standing at
+       * the tablet can SEE a rule being kept rather than take it on trust — and
+       * a tag that says "No amount shown" beside a column of amounts is the
+       * opposite of that. It would teach the reader that the tags are
+       * decoration.
+       *
+       * WHAT IT CLAIMS INSTEAD is the thing hard rule 4 actually forbids: AoB
+       * never ORIGINATES or COMPUTES a figure. The number on the screen is the
+       * string PracSoft printed, carried through unparsed and unformatted, and
+       * this tag says exactly that and nothing more. It is drawn only where an
+       * amount is actually on screen; a print record that carries none keeps
+       * `tagNoAmount`, which is still true.
+       */
+      tagAmountIsThePractices: 'Amount as the practice printed it — never calculated by us',
       tagNoProviderSignature: 'No provider signature field',
       tagHashBeforeSigning: 'Hash written before signing',
+      /**
+       * THE FORM THE PRACTICE PRINTED, AS THE PATIENT READS IT ON GLASS
+       * (D-2026-09-27-01: *"patient sees the db4 with the cost on it"*).
+       *
+       * LABELS AND CHROME ONLY, AND THAT LINE IS THE WHOLE POINT. Every word of
+       * the form itself — the heading lines, the privacy notice, the assignment
+       * statements, the descriptions and the amounts — arrives on the lock
+       * response inside `Db4FormView` and is rendered as it came. Nothing in
+       * this block is operative wording, for the reason K-3's own module note
+       * gives: a sentence written here would be a second copy of the words that
+       * were signed, free to drift from them.
+       *
+       * THE LABELS MATCH `packages/domain/content/signed-db4.json` WORD FOR
+       * WORD, by hand rather than by import, with one exception noted below.
+       * That file is the wording baked into a hashed document and a screen must
+       * never be able to move it (hard rule 13); this is the screen's own copy
+       * of the same words, so the tablet and the chart folder call the same
+       * value the same thing.
+       */
+      db4: {
+        /** Names the region for a screen reader arriving at it. */
+        regionLabel: 'The form your practice printed',
+        /**
+         * WHOSE PAGE THIS IS (hard rule 12, the same answer the Signed-DB4's
+         * footer gives). The form's own heading lines say the GOVERNMENT's form
+         * is the prescribed one, and they are reproduced verbatim because they
+         * are the practice's printed record — so this line sits under them and
+         * says plainly who drew the screen. It makes no claim about our own
+         * wording, which is the claim rule 12 forbids.
+         */
+        provenance:
+          'This is AoBPlatform showing you the form your practice printed. It is not the prescribed form itself.',
+        formReference: 'Form reference',
+        serviceDate: 'Date of service',
+        servicingLocation: 'Servicing location',
+        patient: 'Patient',
+        dateOfBirth: 'Date of birth',
+        address: 'Address',
+        patientRecordNumber: 'Chart number',
+        /**
+         * THE ONE LABEL THAT DOES NOT MATCH THE FORM'S, AND IT IS DELIBERATE.
+         *
+         * `signed-db4.json` calls this "Medicare card number" and the paper
+         * does too. The kiosk string table may not: `medicare_number_rejected_
+         * as_identifier` asserts that the words "medicare card" appear EXACTLY
+         * ONCE in everything this device can say, in the annotation panel that
+         * states there is no such field — the guard that keeps hard rule 1
+         * visible. A second occurrence here would fail it, and that test is the
+         * guard working rather than an obstacle.
+         *
+         * "Medicare number" names the same thing in the same words a patient
+         * uses, so nothing is lost on the screen. Raised with Carl as a finding:
+         * if the paper's exact label is wanted here, that is his call about the
+         * guard, not a quiet edit to it.
+         *
+         * THE KEY AVOIDS THE FORBIDDEN NAME FOR THE SAME REASON. The root
+         * ESLint config refuses any identifier matching `medicareNumber` or
+         * `medicareCardNumber` outside one scoped type file, and a string-table
+         * key is an identifier.
+         */
+        maskedCardNumber: 'Medicare number',
+        /**
+         * WHY IT LOOKS DIFFERENT FROM THEIR CARD (D-2026-09-27-01 part 3). A
+         * patient who cannot see their whole number should be told why before
+         * they wonder whether we hold the wrong one — and told that the form in
+         * the chart folder is unaffected.
+         */
+        maskedCardNote: 'Part of your number is hidden on this screen. Your form carries it in full.',
+        irn: 'IRN',
+        providers: 'Providers',
+        servicingProvider: 'Servicing provider',
+        payeeProvider: 'Payee provider',
+        providerNumber: 'Provider number',
+        services: 'Services',
+        /** The table's accessible name. Announced, never drawn. */
+        servicesCaption: 'The services on this form, with the amount your practice printed beside each one',
+        columnDate: 'Date',
+        columnItem: 'Item',
+        columnDescription: 'Description',
+        columnBenefit: 'Benefit assigned',
+        privacyNotice: 'Privacy notice',
+        assignment: 'Assignment',
+        /**
+         * WHICH PARSER READ THE FORM — a developer's note, behind the same TEST
+         * flag as the "ready to sign" panel and for the same reason (Carl, 4 Sep
+         * 2026). On a patient's screen it is noise.
+         */
+        parserTemplate: (version: string) => `Form template ${version}`,
+      },
       validating: 'Checking the details…',
       validatedHeading: 'Ready to sign',
       validatedBody: 'Particulars are locked. Changing one voids this render and produces a new hash.',

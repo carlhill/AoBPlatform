@@ -315,23 +315,30 @@ export class SignedDb4Renderer implements AgreementRenderer {
   }
 
   /**
-   * BOTH STATEMENTS, WITH THE TICK STATE THE DRIVER READ, AND THE WORD THAT
-   * JOINS THEM.
+   * THE IN-SCOPE STATEMENTS ONLY, WITH THE TICK STATE THE DRIVER READ, AND THE
+   * WORD THAT JOINS THEM.
    *
-   * THE SECOND ONE IS THE PATHOLOGY OFFER, and it is drawn as data and never
-   * acted on. s 65C(4) items 1–4 are out of this product's scope (CLAUDE.md
-   * section 8): nothing branches on it, no agreement is made from it, nothing
-   * is validated or written back because of it. But it is ON the form the
-   * practice printed, and a reproduction that silently dropped a ticked box
-   * would be a different form from the one in the chart folder — which is the
-   * one thing the practice asked us not to produce.
+   * THE PATHOLOGY OFFER IS NOT DRAWN. s 65C(4) items 1–4 are out of this
+   * product's scope (CLAUDE.md §8) and D-2026-09-14-02 ruled that the tick box
+   * *"stays on the practice's paper"*. It is carried in the print record as
+   * data and read back for the write-back; it does not appear on the page the
+   * patient signs, because their mark must not sit under an assignment this
+   * product does not validate, does not store as one and does not write back
+   * as one. The filter is the first statement of the method body.
    *
-   * A BOX IS DRAWN EITHER WAY HERE, ticked or not, which is the opposite of
-   * the agreement renderer's rule and is right for the opposite reason. On an
-   * agreement an unticked box cannot exist, because the signature is refused
-   * until every statement is affirmed. On a reproduction, an unticked box on
-   * the practice's paper is a fact about the page, and hiding it would be us
-   * editing the form.
+   * A BOX IS DRAWN EITHER WAY FOR THE STATEMENTS THAT REMAIN, ticked or not,
+   * which is the opposite of the agreement renderer's rule and is right for
+   * the opposite reason. On an agreement an unticked box cannot exist, because
+   * the signature is refused until every statement is affirmed. On a
+   * reproduction, an unticked box on the practice's paper is a fact about the
+   * page, and hiding it would be us editing the form.
+   *
+   * (This comment said the opposite until 27 September 2026 — it described
+   * drawing both statements, directly above code that had filtered one out
+   * since `c06cc6d`. That is the same defect class as the one which produced
+   * the wrong renderer in the first place: two statements of the rule, in
+   * different places, disagreeing. The code is the survivor; the prose was
+   * wrong.)
    */
   private drawAssignment(doc: PDFKit.PDFDocument, document: SignedDb4Document): void {
     const { labels, layout } = document.content;

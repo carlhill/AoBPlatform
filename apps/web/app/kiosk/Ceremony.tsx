@@ -2167,6 +2167,17 @@ export function Ceremony(): ReactNode {
        */
       statements: agreement?.renderPayload?.template?.statements ?? [],
       templateVersion: agreement?.templateVersion ?? null,
+      /*
+       * THE PRACTICE'S OWN DB4, WHERE THE SESSION CAME FROM A PRINT RECORD
+       * (D-2026-09-27-01). Straight through from the lock response, unread and
+       * unreshaped: the server built it from the same envelope the Signed-DB4
+       * is drawn from, and a tablet that rearranged it would be a second source
+       * of the words on a contract.
+       *
+       * NULL FOR EVERY OTHER SESSION, and that is D-2026-09-27-02 — a practice
+       * with no PMS prints no DB4, so K-3 takes the branch it has always taken.
+       */
+      db4Form: agreement?.db4Form ?? null,
     };
   }, [agreement, row, pushed, pushedPatientName]);
 

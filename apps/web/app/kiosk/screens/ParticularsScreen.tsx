@@ -83,10 +83,63 @@
  * unchanged, because that is exactly what somebody demonstrating rule 13
  * wants; on every tablet a practice uses the document takes the width and the
  * same one primary sits under it.
+ *
+ * AND SINCE 27 SEPTEMBER 2026 THE DOCUMENT CAN BE THE PRACTICE'S OWN DB4
+ * (D-2026-09-27-01: *"patient sees the db4 with the cost on it"*). Carl looked
+ * at this screen mid-ceremony and said it did not look like the form he had
+ * shared — and it did not: the tablet drew the agreement's ceremony while the
+ * Signed-DB4, our reproduction of the practice's paper, was rendered only after
+ * signing and had no screen anywhere. The patient signed one presentation and
+ * the chart folder received another.
+ *
+ * SO WHERE THE LOCK RETURNS A `Db4FormView`, THIS SCREEN DRAWS THE FORM: the
+ * heading lines as printed, the servicing location, the patient block, the
+ * providers, the service rows WITH the amount PracSoft printed, the privacy
+ * notice and the in-scope assignment statements. Everything in it is the
+ * server's, exactly as the statements already were — this file supplies labels,
+ * column headings and nothing that is operative.
+ *
+ * IT IS ADDITIVE, AND "ADDITIVE" MEANS THE PATH DOES NOT RUN (D-2026-09-27-02;
+ * Carl: *"We may still want a version that we have for a small practice that
+ * does not have a PMS system. So keep the current build."*). A session with no
+ * DB4 Print Record carries no block, so the ternary below takes the branch it
+ * always took and the rows are the rows of this file before the feature
+ * existed. That is asserted by name in `db4-form.test.tsx`, and more usefully
+ * by the whole existing kiosk suite still passing untouched.
+ *
+ * THE FORM'S BLOCKS REPLACE THE ROWS THAT REPEAT THEM, and only those. Patient,
+ * provider, place of practice, date of service and the service description are
+ * all printed on the form, so drawing our own rows for them beside it would
+ * show the patient the same five facts twice and invite them to compare two
+ * renderings of one source. The agreement's own facts stay: the date of THIS
+ * agreement, who is signing, and the tick boxes, which are the ceremony rather
+ * than the form.
+ *
+ * THE AMOUNT IS DISPLAY ONLY, AND STRUCTURALLY SO. It is a string on a view
+ * model that `composeSignRequest` cannot reach: the sign body is composed from
+ * a method, a capture id, the drawing and the statement KEYS, and there is no
+ * field on `SignRequestBody` an amount could occupy. Hard rule 4 as narrowed by
+ * D-2026-09-14-02 — AoB never originates or computes an amount; it may
+ * reproduce the one the practice's billing software printed — so it is rendered
+ * as the string it arrived as and never parsed, reformatted, summed or totalled.
+ *
+ * AND THE THIRD TAG IS SWAPPED, BECAUSE IT WOULD OTHERWISE BE A LIE. "No amount
+ * shown" beside a column of amounts would teach a reviewer that the tags are
+ * decoration. Where an amount is on screen the tag states what is actually true
+ * — that the figure is the practice's own and is never calculated by us. The
+ * other two are unchanged and still true, and a print record carrying no
+ * amounts keeps "No amount shown", which is also still true.
+ *
+ * NO SIGNATURE REGION IS REPRODUCED, of either kind. The practice's paper has a
+ * practitioner signature box on it; hard rule 3 abolished that field on 1 July
+ * 2026 and this screen draws none — `Db4FormView` carries no signature region
+ * at all, which is the contract agreeing with the rule rather than this file
+ * filtering for it. The assignor's own mark is taken on K-4, where it belongs.
  */
 
 import type { ReactNode } from 'react';
 import type { AgreementType } from '@aobplatform/domain';
+import type { Db4FormView } from '@aobplatform/contracts';
 import { Blueprint, Kicker, Screen, Tag, CeremonyHeading } from '../components/Chrome';
 import { GuardedButton, SecondaryButton } from '../components/Buttons';
 import { Checkbox } from '../components/Field';
@@ -139,6 +192,20 @@ export interface ParticularsView {
   readonly statements?: readonly { readonly key: string; readonly text: string }[];
   /** Which wording produced them. Shown beside the rule-set version. */
   readonly templateVersion?: string | null;
+  /**
+   * THE PRACTICE'S OWN DB4, WHERE THERE IS ONE (D-2026-09-27-01).
+   *
+   * ABSENT ON EVERY SESSION THAT DID NOT COME FROM A DB4 PRINT RECORD, which is
+   * every session at a practice with no PMS — and the absence is the feature,
+   * not a fallback (D-2026-09-27-02). It is the same discriminator the rest of
+   * this file already uses: a field the server did not send is not drawn.
+   *
+   * MASKED BEFORE IT ARRIVED. There is no unmasked Medicare number on this
+   * type, so there is none in this component, none in the React tree and none
+   * in the payload that reached the tablet (hard rule 1, and the reasoning in
+   * `packages/contracts/src/db4-form-view.ts`). Nothing here logs any of it.
+   */
+  readonly db4Form?: Db4FormView | null;
 }
 
 export function ParticularsScreen({
@@ -246,6 +313,22 @@ export function ParticularsScreen({
   const outstanding = statements.filter((statement) => !affirmed.includes(statement.key)).length;
   const readyToSign = validation.state === 'valid' && outstanding === 0;
 
+  /**
+   * ONE READING OF "IS THERE A PRINT RECORD", USED TWICE — for the document and
+   * for the tag under it, which must agree with each other or the tag is the
+   * lie it was just changed to stop being (D-2026-09-27-01).
+   */
+  const db4 = view.db4Form ?? null;
+  /*
+   * WHETHER AN AMOUNT IS ACTUALLY ON THE SCREEN, rather than whether a print
+   * record exists. A DB4 whose rows carry no `benefitAssigned` shows no amount,
+   * and "No amount shown" is still the true tag for it. `.some` on a string
+   * that is present and non-empty — nothing here parses it (hard rule 4).
+   */
+  const showsAnAmount = (db4?.services ?? []).some(
+    (service) => (service.benefitAssigned ?? '').trim().length > 0,
+  );
+
   const actions = (
     <div className={styles.actions}>
       {onBack ? (
@@ -323,26 +406,51 @@ export function ParticularsScreen({
             ) : null}
           </div>
           <div className={styles.grid}>
-            <Row label={strings.particulars.patient} value={view.patientName} />
-            <Row label={strings.particulars.provider} value={view.providerName} />
-            <Row label={strings.particulars.placeOfPractice} value={view.providerAddress} />
-            <Row label={strings.particulars.serviceDate} value={view.serviceDate} />
-            <Row label={strings.particulars.agreementDate} value={view.agreementDate} />
-            <Row label={strings.particulars.service} value={view.basicServiceDescription} />
             {/*
-              D6b — WHAT WAS ACTUALLY DONE, on a post-agreement (REQ-REG-01).
-              Drawn only when the server sent item numbers, which is only on the
-              type that carries them. Never an amount beside them (hard rule 4).
+              THE FORM, OR THE ROWS — never both (D-2026-09-27-01/-02).
+
+              WITH A PRINT RECORD the practice's own DB4 is the document, and
+              our rows for the patient, the provider, the place of practice, the
+              date of service and the service description would be a second
+              rendering of five facts the form already prints. The date of THIS
+              agreement is not one of them: it is the agreement's own particular
+              and is not on the practice's paper, so it stays.
+
+              WITHOUT ONE this branch is not taken and what follows is exactly
+              the file as it was before 27 September 2026 — same rows, same
+              order, same components. That is the guarantee Carl asked for, and
+              `a_session_with_no_print_record_renders_the_walk_up_particulars`
+              is its name.
             */}
-            {view.mbsItemNumbers.length > 0 && (
-              <Row
-                label={
-                  view.mbsItemNumbers.length === 1
-                    ? strings.particulars.item
-                    : strings.particulars.items
-                }
-                value={view.mbsItemNumbers.join(', ')}
-              />
+            {db4 ? (
+              <>
+                <Db4Document form={db4} showParserTemplate={blueprintPanels} />
+                <Row label={strings.particulars.agreementDate} value={view.agreementDate} />
+              </>
+            ) : (
+              <>
+                <Row label={strings.particulars.patient} value={view.patientName} />
+                <Row label={strings.particulars.provider} value={view.providerName} />
+                <Row label={strings.particulars.placeOfPractice} value={view.providerAddress} />
+                <Row label={strings.particulars.serviceDate} value={view.serviceDate} />
+                <Row label={strings.particulars.agreementDate} value={view.agreementDate} />
+                <Row label={strings.particulars.service} value={view.basicServiceDescription} />
+                {/*
+                  D6b — WHAT WAS ACTUALLY DONE, on a post-agreement (REQ-REG-01).
+                  Drawn only when the server sent item numbers, which is only on the
+                  type that carries them. Never an amount beside them (hard rule 4).
+                */}
+                {view.mbsItemNumbers.length > 0 && (
+                  <Row
+                    label={
+                      view.mbsItemNumbers.length === 1
+                        ? strings.particulars.item
+                        : strings.particulars.items
+                    }
+                    value={view.mbsItemNumbers.join(', ')}
+                  />
+                )}
+              </>
             )}
             <Row
               label={strings.particulars.assignor}
@@ -420,7 +528,20 @@ export function ParticularsScreen({
             )}
           </div>
           <div className={styles.tags}>
-            <Tag label={strings.particulars.tagNoAmount} />
+            {/*
+              THE TAG SAYS WHAT IS TRUE OF THIS SCREEN (D-2026-09-27-01). With
+              the practice's amounts on it, "No amount shown" would be false —
+              and a tag a reviewer can catch out is worse than no tag, because
+              it teaches them the other two are decoration. Hard rule 4 as
+              narrowed by D-2026-09-14-02 is what the replacement states.
+            */}
+            <Tag
+              label={
+                showsAnAmount
+                  ? strings.particulars.tagAmountIsThePractices
+                  : strings.particulars.tagNoAmount
+              }
+            />
             <Tag label={strings.particulars.tagNoProviderSignature} />
             <Tag label={strings.particulars.tagHashBeforeSigning} />
           </div>
@@ -477,4 +598,260 @@ function Row({ label, value }: { label: string; value: string | null }): ReactNo
       <span className={styles.docRowValue}>{value}</span>
     </div>
   );
+}
+
+/**
+ * THE PRACTICE'S DB4, LAID OUT AS THE FORM (D-2026-09-27-01 part 1).
+ *
+ * A RENDERER AND NOTHING ELSE. Every word of substance is `form`'s: the heading
+ * lines, the location, the patient's details, the descriptions, the amounts,
+ * the privacy notice and the statements all arrive on the lock response, built
+ * on the server from the same `PrintJobEnvelope` the Signed-DB4 is drawn from.
+ * This function supplies labels, column headings and the order of the blocks.
+ * It composes no sentence, parses no value and computes nothing.
+ *
+ * SEMANTICS, NOT A PICTURE. The refusal of a rendered PDF (D-2026-09-27-01 part
+ * 4) was partly a WCAG refusal, so the replacement has to clear the bar it was
+ * refused for: one `h2` for the form's own title with `h3` sections under it, a
+ * real `<table>` with column headers for the service rows, a labelled region,
+ * and type that reflows on a 10-inch tablet in portrait without scrolling
+ * sideways. WCAG 2.2 AA on a patient surface is release-blocking (CLAUDE.md §6).
+ *
+ * AND NOTHING THAT IS NOT THERE IS DRAWN, which is this screen's oldest rule.
+ * Every block below is conditional on the server having sent it.
+ */
+function Db4Document({
+  form,
+  showParserTemplate,
+}: {
+  form: Db4FormView;
+  /** The TEST-device flag. A parser version is a developer's note (Carl, 4 Sep 2026). */
+  showParserTemplate: boolean;
+}): ReactNode {
+  const copy = strings.particulars.db4;
+  const headingLines = form.headingLines ?? [];
+  /*
+   * WHICH LINE IS THE TITLE, decided the same way `SignedDb4Renderer` decides
+   * it — the second line, which on the practice's paper is "BULK BILL
+   * ASSIGNMENT OF BENEFIT FORM". The rest are sentences about the form and are
+   * paragraphs, because marking four consecutive lines as headings would give a
+   * screen reader four headings and the patient none.
+   */
+  const titleIndex = headingLines.length > 1 ? 1 : 0;
+  const addressLines = form.servicingLocationAddressLines ?? [];
+  const patient = form.patient;
+  const providers = form.providers ?? [];
+  const services = form.services ?? [];
+  const privacyNotice = form.privacyNotice ?? [];
+  const statements = form.statements ?? [];
+  /*
+   * ONE NAME FROM TWO FIELDS. A join of two values the server sent, in the
+   * order the form prints them — the same thing `mbsItemNumbers.join` above has
+   * always done, and not a sentence this file composed.
+   */
+  const patientName = [patient?.givenNames, patient?.familyName].filter(Boolean).join(' ');
+  /*
+   * THE LINT RULE FIRES HERE, AND THE EXCEPTION IS DECLARED RATHER THAN
+   * SIDESTEPPED (hard rule 1 / HARD-03).
+   *
+   * The root ESLint config refuses any identifier matching
+   * `medicareCardNumber`, and a member expression's property is an identifier,
+   * so reading this field trips it. Bracket access — `patient?.['…']` — would
+   * also have silenced it, and that is exactly why it is not used: the rule's
+   * own comment says its purpose is to make the name "loud at review time",
+   * and a subscript is the quietest thing in the language. A declared
+   * exception is greppable, shows up in the diff, and has to carry a reason.
+   * The same choice, for the same reason, as `packages/contracts/src/
+   * print-capture.ts` and `db4-form-view.ts`.
+   *
+   * What the rule protects is intact. The value arrived MASKED — the server
+   * never sends an unmasked one, and `Db4FormView` has no field it could
+   * arrive in — and it is never used to verify anybody, never used to find or
+   * match a patient, and never logged.
+   */
+  // eslint-disable-next-line no-restricted-syntax
+  const maskedCard = patient?.medicareCardNumberMasked ?? null;
+
+  return (
+    <section className={styles.db4} aria-label={copy.regionLabel} data-testid="db4-form">
+      <div className={styles.db4Heading}>
+        {headingLines.map((line, index) =>
+          index === titleIndex ? (
+            <h2 key={`db4-heading-${index}`} className={styles.db4Title}>
+              {line}
+            </h2>
+          ) : (
+            <p key={`db4-heading-${index}`} className={styles.db4HeadingLine}>
+              {line}
+            </p>
+          ),
+        )}
+        {/*
+          WHOSE PAGE THIS IS (hard rule 12), and it is not optional. The heading
+          lines above are the government's words about the government's form,
+          reproduced because they are what the practice printed; this line under
+          them says who drew the screen, so nothing above can be read as our
+          claim. It is the screen's equivalent of the Signed-DB4's provenance
+          footer, and it makes no claim about our own wording at all.
+        */}
+        <p className={styles.db4Provenance} data-testid="db4-provenance">
+          {copy.provenance}
+        </p>
+      </div>
+
+      <Row label={copy.formReference} value={form.formReference ?? null} />
+      <Row label={copy.serviceDate} value={form.serviceDate ?? null} />
+
+      {form.servicingLocationName || addressLines.length > 0 ? (
+        <div className={styles.db4Section}>
+          <h3 className={styles.db4SectionHeading}>{copy.servicingLocation}</h3>
+          {form.servicingLocationName ? (
+            <p className={styles.docRowValue}>{form.servicingLocationName}</p>
+          ) : null}
+          {addressLines.map((line, index) => (
+            <p key={`db4-location-${index}`} className={styles.docRowValue}>
+              {line}
+            </p>
+          ))}
+        </div>
+      ) : null}
+
+      {patient ? (
+        <div className={styles.db4Section} data-testid="db4-patient">
+          <h3 className={styles.db4SectionHeading}>{copy.patient}</h3>
+          {/* The name sits straight under its own heading, as the location's
+              does — a "Patient" label under a "Patient" heading says it twice. */}
+          {patientName ? <p className={styles.docRowValue}>{patientName}</p> : null}
+          <Row label={copy.dateOfBirth} value={patient.dateOfBirth ?? null} />
+          <Row label={copy.address} value={patient.address ?? null} />
+          <Row label={copy.patientRecordNumber} value={patient.patientRecordNumber ?? null} />
+          {/*
+            THE NUMBER ARRIVED MASKED AND IS DRAWN AS IT ARRIVED (hard rule 1;
+            D-2026-09-27-01 part 3). There is no unmasked value on the type, so
+            there is nothing here to reconstruct and nothing to leak — and the
+            note says why the card in the patient's wallet looks different,
+            before they wonder whether we hold the wrong number.
+          */}
+          {maskedCard ? (
+            <>
+              <Row label={copy.maskedCardNumber} value={maskedCard} />
+              <p className={styles.db4Note}>{copy.maskedCardNote}</p>
+            </>
+          ) : null}
+          <Row label={copy.irn} value={patient.irn ?? null} />
+        </div>
+      ) : null}
+
+      {providers.length > 0 ? (
+        <div className={styles.db4Section} data-testid="db4-providers">
+          <h3 className={styles.db4SectionHeading}>{copy.providers}</h3>
+          {providers.map((provider, index) => (
+            <div key={`db4-provider-${index}`} className={styles.db4Section}>
+              <Row label={providerLabel(provider.role)} value={provider.name ?? null} />
+              <Row label={copy.providerNumber} value={provider.providerNumber ?? null} />
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {services.length > 0 ? (
+        <div className={styles.db4Section}>
+          <h3 className={styles.db4SectionHeading}>{copy.services}</h3>
+          {/*
+            A REAL TABLE, WITH REAL HEADERS. Four columns of related values are
+            a table to everybody who can see them, and they have to be one to
+            everybody who cannot: a `<th scope="col">` is what lets a screen
+            reader say "Benefit assigned, 45.05" instead of reading a wall of
+            strings. The caption is the table's accessible name and is announced
+            rather than drawn — the visible heading above already names it.
+          */}
+          <table className={styles.db4Table} data-testid="db4-services">
+            <caption className={styles.visuallyHidden}>{copy.servicesCaption}</caption>
+            <thead>
+              <tr>
+                <th scope="col" className={styles.db4ColDate}>
+                  {copy.columnDate}
+                </th>
+                <th scope="col" className={styles.db4ColItem}>
+                  {copy.columnItem}
+                </th>
+                <th scope="col">{copy.columnDescription}</th>
+                <th scope="col" className={styles.db4ColBenefit}>
+                  {copy.columnBenefit}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {services.map((service, index) => (
+                <tr key={`db4-service-${index}`} data-testid={`db4-service-${index}`}>
+                  <td>{service.serviceDate ?? ''}</td>
+                  <td>{service.mbsItemNumber ?? ''}</td>
+                  <td>{service.description ?? ''}</td>
+                  {/*
+                    THE STRING PRACSOFT PRINTED, PUT ON THE SCREEN (hard rule 4
+                    as narrowed by D-2026-09-14-02). Not parsed to a number, not
+                    reformatted, not given a currency symbol we chose, not
+                    summed and not totalled — every one of those would be AoB
+                    originating a figure, which the rule forbids even where the
+                    figure would happen to agree. Display only: it is on no
+                    payload this screen can send.
+                  */}
+                  <td className={styles.db4Benefit}>{service.benefitAssigned ?? ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+
+      {privacyNotice.length > 0 ? (
+        <div className={styles.db4Section} data-testid="db4-privacy-notice">
+          <h3 className={styles.db4SectionHeading}>{copy.privacyNotice}</h3>
+          {privacyNotice.map((line, index) => (
+            <p key={`db4-privacy-${index}`} className={styles.db4Note}>
+              {line}
+            </p>
+          ))}
+        </div>
+      ) : null}
+
+      {/*
+        THE IN-SCOPE STATEMENT(S), AND THE FILTERING HAPPENED ON THE SERVER.
+        The practice's paper carries two, the second of which offers to assign
+        pathology benefits — s 65C(4) items 1–4, out of scope (CLAUDE.md §8).
+        `Db4FormView` drops it exactly as `SignedDb4Renderer.drawAssignment`
+        does, so the screen and the chart folder agree, and this component
+        simply never receives it. Nothing here filters, because a second filter
+        is a second rule to drift.
+      */}
+      {statements.length > 0 ? (
+        <div className={styles.db4Section} data-testid="db4-assignment">
+          <h3 className={styles.db4SectionHeading}>{copy.assignment}</h3>
+          {statements.map((statement, index) => (
+            <p key={statement.key ?? `db4-statement-${index}`} className={styles.docRowValue}>
+              {statement.text}
+            </p>
+          ))}
+        </div>
+      ) : null}
+
+      {showParserTemplate && form.parserTemplateVersion ? (
+        <p className={styles.db4Note} data-testid="db4-parser-template">
+          {copy.parserTemplate(form.parserTemplateVersion)}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+/**
+ * The label beside a provider's name. An unrecognised role falls back to the
+ * plain "Provider" the rest of this screen uses rather than printing the role
+ * key at a patient — the key is ours, not a word anybody standing at the tablet
+ * can act on.
+ */
+function providerLabel(role: string | undefined): string {
+  if (role === 'servicing') return strings.particulars.db4.servicingProvider;
+  if (role === 'payee') return strings.particulars.db4.payeeProvider;
+  return strings.particulars.provider;
 }

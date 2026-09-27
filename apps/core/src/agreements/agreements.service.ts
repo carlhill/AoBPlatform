@@ -9,7 +9,7 @@ import {
   NotImplementedException,
 } from '@nestjs/common';
 import type { Agreement as DbAgreement, Prisma } from '@prisma/client';
-import { answersEnduringRules, type RulesEngineClient } from '@aobplatform/contracts';
+import { answersEnduringRules, type Db4FormView, type RulesEngineClient } from '@aobplatform/contracts';
 import { RendererRegistry, renderInputOf } from '../render/renderer-registry';
 import { LetterheadService } from '../practices/letterhead.service';
 import { TemplatesService } from '../templates/templates.service';
@@ -52,6 +52,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RULES_CLIENT, RulesClientError } from '../rules-client/rules-client.module';
 import { assertCanBeProviderOnAgreement, assertEnduringAllowed } from '@aobplatform/domain';
 import type { ChangeAssignorDto, CreateAgreementDto, LockParticularsDto } from './agreements.dto';
+import { buildDb4FormView } from './db4-form-view';
+import { PrintRecordsService } from '../inbound/print-records.service';
 import { SignedDb4Service } from './signed-db4.service';
 import type { Actor } from '../auth/actor.decorator';
 
@@ -289,6 +291,14 @@ export class AgreementsService {
     private readonly letterheads: LetterheadService,
     private readonly templates: TemplatesService,
     private readonly signedDb4: SignedDb4Service,
+    /*
+     * THE DB4 PRINT RECORD, READ THROUGH THE INBOUND MODULE'S OWN DOOR
+     * (CLAUDE.md §4) — and through the LEAF half of it, which exists so that
+     * an agreements-side caller can read a captured form without closing the
+     * `Inbound → Arrivals → Agreements` cycle. `SignedDb4Service` reads it the
+     * same way, for the same form, to draw the same page.
+     */
+    private readonly printRecords: PrintRecordsService,
   ) {}
 
   /** See `enduringRulesAuthored`. In-process and per-instance, which is all a hint needs to be. */
@@ -2818,6 +2828,57 @@ export class AgreementsService {
       });
       return updated;
     });
+  }
+
+  /**
+   * THE AGREEMENT, PLUS THE FORM THE PATIENT IS ABOUT TO RECOGNISE
+   * (D-2026-09-27-01: *"patient sees the db4 with the cost on it"*).
+   *
+   * DISPLAY DATA ON A RESPONSE, AND THAT IS WHY IT IS ASSEMBLED HERE rather
+   * than inside the lock. It is not a particular, it is not validated, it is
+   * not hashed and it is not stored: the locked payload and the bytes of the
+   * Assignment Agreement are exactly what they were before this method existed
+   * (hard rule 13). Building it at the boundary is what makes that structural
+   * rather than a promise — there is no path from here into `commitLock`.
+   *
+   * ABSENT FOR EVERY SESSION THAT DID NOT COME FROM A PRINTED DB4, which is
+   * most of them: `sourcePrintJobId` is null, no read happens at all, and the
+   * tablet draws exactly what it drew before this feature existed
+   * (D-2026-09-27-02 — the discriminator is the SESSION, never the practice).
+   *
+   * AND IT CANNOT BLOCK A SIGNATURE (hard rule 8, REQ-REC-04). A print record
+   * that is missing, unreadable or malformed costs the patient a picture of
+   * their form and nothing else: the answer is the agreement without the
+   * block, never an error. Nobody fails to sign because a form view could not
+   * be drawn.
+   *
+   * THE MASK IS APPLIED BEFORE THIS RETURNS, in `buildDb4FormView`. There is
+   * no field on `Db4FormView` an unmasked Medicare card number could sit in,
+   * so a tablet cannot leak a value it was never given (hard rule 1).
+   */
+  async withDb4FormView<T extends { id: string; sourcePrintJobId: string | null }>(
+    practiceId: string,
+    agreement: T,
+  ): Promise<T & { db4Form?: Db4FormView }> {
+    if (!agreement.sourcePrintJobId) return agreement;
+    try {
+      // Practice-scoped through `withPractice` inside the service, so a
+      // cross-practice read returns null and fails closed.
+      const envelope = await this.printRecords.envelopeFor(practiceId, agreement.sourcePrintJobId);
+      if (!envelope) return agreement;
+      return { ...agreement, db4Form: buildDb4FormView(envelope) };
+    } catch (err) {
+      /*
+       * THE CLASS AND THE AGREEMENT ID, NEVER THE RECORD. Every line of a DB4
+       * is a patient's address, a provider's name or a card number, and none
+       * of it may reach a log (hard rules 1 and 9, REQ-LOG-08).
+       */
+      this.logger.error(
+        `The DB4 form view could not be built for agreement ${agreement.id} — ${(err as Error).name}. The ` +
+          'agreement is unaffected and the ceremony continues without it.',
+      );
+      return agreement;
+    }
   }
 
   async get(practiceId: string, agreementId: string): Promise<DbAgreement> {

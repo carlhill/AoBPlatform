@@ -30,6 +30,7 @@ import type {
   TabletSessionPayload,
   TabletSessionState,
 } from '@aobplatform/domain';
+import type { Db4FormView } from '@aobplatform/contracts';
 import { coreBaseUrl, getSession, kioskBuildId } from './session';
 import { readPairingCredential } from './pairing';
 import type { SignRequestBody } from './rules/signature-payload';
@@ -102,6 +103,20 @@ export interface AgreementResponse {
       readonly statements?: readonly { readonly key: string; readonly text: string }[];
     };
   } | null;
+  /**
+   * THE PRACTICE'S OWN DB4, PROJECTED FOR THE TABLET (D-2026-09-27-01).
+   *
+   * ABSENT — not empty — FOR EVERY SESSION THAT DID NOT COME FROM A DB4 PRINT
+   * RECORD, and that absence is the whole of D-2026-09-27-02. A practice with
+   * no PMS never prints one, so no block is built, so K-3 draws exactly what it
+   * drew before this existed. The new path does not run rather than running and
+   * arriving at the same answer.
+   *
+   * MASKED BEFORE IT LEAVES THE SERVER. `Db4FormView` has no unmasked Medicare
+   * field on it at all, which is deliberate and is the control: a tablet cannot
+   * leak a value it was never given. Read that type's header before adding one.
+   */
+  readonly db4Form?: Db4FormView | null;
 }
 
 export interface ChallengeResponse {

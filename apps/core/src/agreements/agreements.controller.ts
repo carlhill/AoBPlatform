@@ -47,9 +47,22 @@ export class AgreementsController {
     return this.agreements.list(requirePractice(practiceId), status);
   }
 
+  /**
+   * THE AGREEMENT, AND — FOR A SESSION THAT CAME FROM A PRINTED DB4 — THE FORM
+   * THE PATIENT IS ABOUT TO SEE (D-2026-09-27-01).
+   *
+   * IT RIDES HERE AS WELL AS ON THE LOCK, AND ON A DB4 SESSION THIS IS THE ONE
+   * THAT MATTERS. A DB4 agreement is locked by the inbound handler the moment
+   * the form is captured — server-side, before any device sees anything
+   * (`the_particulars_are_locked_before_the_signature_is_possible`) — so the
+   * tablet never posts `/particulars` for one. It reads the agreement here and
+   * goes straight to K-3. A block that rode only on the lock response would be
+   * a feature the DB4 path could never reach.
+   */
   @Get(':id')
-  get(@Headers('x-practice-id') practiceId: string | undefined, @Param('id', ParseUUIDPipe) id: string) {
-    return this.agreements.get(requirePractice(practiceId), id);
+  async get(@Headers('x-practice-id') practiceId: string | undefined, @Param('id', ParseUUIDPipe) id: string) {
+    const practice = requirePractice(practiceId);
+    return this.agreements.withDb4FormView(practice, await this.agreements.get(practice, id));
   }
 
   /**
@@ -84,13 +97,24 @@ export class AgreementsController {
     return this.agreements.changeAssignor(requirePractice(practiceId), id, dto, actor);
   }
 
+  /**
+   * THE LOCK — and, for a session that came from a printed DB4, the patient's
+   * own form on the way back (D-2026-09-27-01).
+   *
+   * THE BLOCK IS ADDED HERE, OUTSIDE THE LOCK, ON PURPOSE. It is display data
+   * on a response: it does not enter the particulars, is not validated, is not
+   * hashed and cannot move a byte of the Assignment Agreement (hard rule 13).
+   * Composing it at the boundary is what makes that structural rather than a
+   * comment — `lockParticulars` returns exactly what it always returned.
+   */
   @Post(':id/particulars')
-  lockParticulars(
+  async lockParticulars(
     @Headers('x-practice-id') practiceId: string | undefined,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: LockParticularsDto,
   ) {
-    return this.agreements.lockParticulars(requirePractice(practiceId), id, dto);
+    const practice = requirePractice(practiceId);
+    return this.agreements.withDb4FormView(practice, await this.agreements.lockParticulars(practice, id, dto));
   }
 
   @Post(':id/sign')

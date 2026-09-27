@@ -17,11 +17,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2219 |
-| Files scanned for exports | 536 |
-| Files scanned for imports | 578 |
-| Exports with no comment of their own | 957 |
-| Exports imported nowhere else | 925 |
+| Exported symbols indexed | 2226 |
+| Files scanned for exports | 538 |
+| Files scanned for imports | 580 |
+| Exports with no comment of their own | 959 |
+| Exports imported nowhere else | 927 |
 
 ## Sections
 
@@ -32,10 +32,10 @@ This is required reading before you write a component, a hook or a helper (wow.m
 - [Domain functions](#domain-functions) — 388
 - [Domain constants and content](#domain-constants-and-content) — 244
 - [Domain types](#domain-types) — 284
-- [Contracts types](#contracts-types) — 85
+- [Contracts types](#contracts-types) — 90
 - [Contracts functions and constants](#contracts-functions-and-constants) — 22
 - [Core services, controllers and modules](#core-services-controllers-and-modules) — 278
-- [Core helpers, constants and types](#core-helpers-constants-and-types) — 182
+- [Core helpers, constants and types](#core-helpers-constants-and-types) — 184
 - [AOBPRINTER (the desktop print channel)](#aobprinter-the-desktop-print-channel-) — 111
 
 ## Web components
@@ -1630,18 +1630,19 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Contracts types
 
-85 exports.
+90 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
+| `PrintJobEnvelope` | contracts:print-capture.ts |  | **8** · core:agreements/db4-form-view.ts, core:agreements/signed-db4.service.ts, core:inbound/db4-assignment.handler.ts, +5 more |
 | `VaultEventInput` | contracts:vault.ts |  | **8** · core:artefacts/artefacts.service.ts, vault:chain/chain-store.contract.ts, vault:chain/chain-store.ts, +5 more |
-| `PrintJobEnvelope` | contracts:print-capture.ts |  | **7** · core:agreements/signed-db4.service.ts, core:inbound/db4-assignment.handler.ts, core:inbound/inbound-lane.worker.ts, +4 more |
 | `VaultEventRecord` | contracts:vault.ts |  | **7** · vault:chain/chain-store.ts, vault:chain/immudb-chain-store.ts, vault:chain/in-memory-chain-store.ts, +4 more |
 | `ArrivalProviderChoice` | contracts:arrivals.ts | A SERVICING PRACTITIONER, AT A LOCATION, reception may choose instead. | **5** · core:arrivals/arrivals.service.ts, web:practice/patients/NewAgreementPanel.tsx, web:practice/patients/PatientsQueueView.tsx, +2 more |
 | `DayRegisterRow` | contracts:arrivals.ts | WHO CAME IN, WHEN, TO SEE WHOM, AND WHAT HAPPENED ABOUT THEIR AGREEMENT (Carl, 12 September 2026, on `/practice/frontdesk`: *"Add a button here with a link to show all Patients seen at this practice today. | **5** · core:arrivals/arrivals.service.ts, web:practice/day/DayView.tsx, web:practice/frontdesk/FrontDeskView.tsx, +2 more |
 | `PmsAdapter` | contracts:pms-adapter.ts | The adapter contract. | **5** · connector:mock-adapter.ts, core:auto-capture/auto-capture.service.ts, core:pms/pms-sync.service.ts, +2 more |
 | `RuleResult` | contracts:rules-engine.ts |  | **5** · core:service-descriptions/service-descriptions.service.ts, rules:rules/rule-set-2026-08.draft.ts, rules:rules/rule-set.contract.ts, +2 more |
 | `DayRegister` | contracts:arrivals.ts | ONE PRACTICE'S DAY. | **4** · core:arrivals/arrivals.service.ts, web:practice/day/DayView.tsx, web:practice/frontdesk/FrontDeskView.tsx, +1 more |
+| `Db4FormView` | contracts:db4-form-view.ts | The block the lock response carries for a session that came from a DB4 Print Record. | **4** · core:agreements/agreements.service.ts, core:agreements/db4-form-view.ts, web:kiosk/api.ts, +1 more |
 | `ExpectedAppointment` | contracts:arrivals.ts | SOMEBODY BOOKED FOR TODAY WHO HAS NOT WALKED IN YET (Carl, 12 Sep 2026; FRONT-DESK-PAGE.md §12.4). | **4** · core:arrivals/arrivals.service.ts, web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/deskLines.ts, +1 more |
 | `PmsPatientRecord` | contracts:pms-adapter.ts |  | **4** · connector:mock-adapter.ts, core:auto-capture/auto-capture.service.ts, core:pms/pms-sync.service.ts, +1 more |
 | `PmsProvider` | contracts:pms-adapter.ts |  | **4** · connector:mock-adapter.ts, core:auto-capture/auto-capture.service.ts, core:pms/pms-sync.service.ts, +1 more |
@@ -1663,6 +1664,9 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ArrivalReceipt` | contracts:arrivals.ts | What the platform did about it. | **1** · core:arrivals/arrivals.service.ts |
 | `Db4Assignment` | contracts:print-capture.ts |  | **1** · core:render/signed-db4-document.ts |
 | `Db4Form` | contracts:print-capture.ts |  | **1** · core:render/signed-db4-document.ts |
+| `Db4FormViewProvider` | contracts:db4-form-view.ts |  | **1** · core:agreements/db4-form-view.ts |
+| `Db4FormViewService` | contracts:db4-form-view.ts | One service row, reproduced from the form. | **1** · core:agreements/db4-form-view.ts |
+| `Db4FormViewStatement` | contracts:db4-form-view.ts |  | **1** · core:agreements/db4-form-view.ts |
 | `Db4Heading` | contracts:print-capture.ts |  | **1** · core:render/signed-db4-document.ts |
 | `Db4Patient` | contracts:print-capture.ts |  | **1** · core:render/signed-db4-document.ts |
 | `Db4PlacementReason` | contracts:print-capture.ts |  | **1** · core:inbound/db4-assignment.handler.ts |
@@ -1702,6 +1706,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ArrivalEvent` | contracts:arrivals.ts |  | 0 |
 | `ArrivalRefusalReason` | contracts:arrivals.ts |  | 0 |
 | `ArrivalSource` | contracts:arrivals.ts |  | 0 |
+| `Db4FormViewPatient` | contracts:db4-form-view.ts | The patient block, as the form prints it — with the one redaction. | 0 |
 | `EnduringRuleId` | contracts:rules-engine.ts |  | 0 |
 | `PmsClaimEvent` | contracts:pms-adapter.ts |  | 0 |
 | `PortalActivationRequest` | contracts:portal.ts | What `POST /portal/activate` is given. | 0 |
@@ -1803,6 +1808,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PracticeAdminService` | core:identity/practice-admin.service.ts |  | **3** · core:identity/identity.module.ts, core:organisations/organisations.service.ts, core:organisations/pending-email.service.ts |
 | `PracticeSurfacesService` | core:practices/practice-surfaces.service.ts | WHICH PROFILE IS THIS PRACTICE ON — one question, asked by one guard. | **3** · core:practices/practices.module.ts, core:practices/practices.service.ts, core:practices/surface.guard.ts |
 | `PractitionerEmailService` | core:identity/practitioner-email.service.ts | Changing a practitioner's own email address, held until it is proved. | **3** · core:affiliations/practitioner-self.controller.ts, core:identity/identity.module.ts, core:organisations/pending-email.controller.ts |
+| `PrintRecordsService` | core:inbound/print-records.service.ts | READ ONE PRINT RECORD BACK — the inbound module's own door onto its own table, opened for the one caller outside it that legitimately needs the contents of a form after the fact. | **3** · core:agreements/agreements.service.ts, core:agreements/signed-db4.service.ts, core:inbound/print-records.module.ts |
 | `ServiceDescriptionsService` | core:service-descriptions/service-descriptions.service.ts | D6a — THE ONE PARTICULAR THE PLATFORM CANNOT DERIVE, SET ON A STAFF SURFACE. | **3** · core:service-descriptions/service-descriptions.controller.ts, core:service-descriptions/service-descriptions.module.ts, core:tablet-sessions/tablet-sessions.service.ts |
 | `ServiceRenderedDto` | core:arrivals/arrivals.dto.ts | THE SERVICE HAS BEEN RENDERED — the second front door, on the same desk (Carl, 11 Sep 2026; TODO.md "Two front doors" decision (b)). | **3** · core:arrivals/arrivals.controller.ts, core:arrivals/arrivals.service.ts, core:inbound/db4-assignment.handler.ts |
 | `TemplatesService` | core:templates/templates.service.ts | WHICH WORDS THIS PRACTICE'S AGREEMENTS ARE MADE FROM (Carl, 5 Sep 2026; PMS_to_AoB_Workflow.md W1). | **3** · core:agreements/agreements.service.ts, core:templates/templates.controller.ts, core:templates/templates.module.ts |
@@ -1838,7 +1844,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PracticesService` | core:practices/practices.service.ts |  | **2** · core:practices/practices.controller.ts, core:practices/practices.module.ts |
 | `PractitionerAccessService` | core:identity/practitioner-access.service.ts | Giving a practitioner a way to sign in. | **2** · core:affiliations/affiliations.service.ts, core:identity/identity.module.ts |
 | `PractitionerQueueService` | core:practitioner-queue/practitioner-queue.service.ts | WHO IS WAITING, AND IS THEIR PAPERWORK DONE (PRACTITIONER-QUEUE-PAGE.md §3, §5; Carl 12 September 2026). | **2** · core:practitioner-queue/practitioner-queue.controller.ts, core:practitioner-queue/practitioner-queue.module.ts |
-| `PrintRecordsService` | core:inbound/print-records.service.ts | READ ONE PRINT RECORD BACK — the inbound module's own door onto its own table, opened for the one caller outside it that legitimately needs the contents of a form after the fact. | **2** · core:agreements/signed-db4.service.ts, core:inbound/print-records.module.ts |
 | `ReconciliationService` | core:reconciliation/reconciliation.service.ts | M7 — the core operational screen (REQ-REC-01): every service without a stored agreement, ranked by days remaining on the twelve-month lodgement window, banded per REQ-CHASE-05. | **2** · core:reconciliation/reconciliation.controller.ts, core:reconciliation/reconciliation.module.ts |
 | `RenderRefusal` | core:render/agreement-document.ts | THE RENDER-TIME GUARD. | **2** · core:agreements/agreements.service.ts, core:render/agreement-pdf-renderer.ts |
 | `RulesClientError` | core:rules-client/rules-client.module.ts |  | **2** · core:agreements/agreements.service.ts, core:service-descriptions/service-descriptions.service.ts |
@@ -2036,7 +2041,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Core helpers, constants and types
 
-182 exports.
+184 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -2117,6 +2122,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `anchorsForAffiliations` | core:affiliations/agreement-anchor.ts | The batch form. | **1** · core:arrivals/arrivals.service.ts |
 | `assertRenderable` | core:render/agreement-document.ts |  | **1** · core:render/agreement-pdf-renderer.ts |
 | `assertSignedDb4Renderable` | core:render/signed-db4-document.ts | THE RENDER-TIME GUARD FOR THIS ARTEFACT KIND. | **1** · core:render/signed-db4-renderer.ts |
+| `buildDb4FormView` | core:agreements/db4-form-view.ts | THE BLOCK THE LOCK RESPONSE CARRIES for a session that came from a DB4 Print Record — and nothing at all for every other session, which is where D-2026-09-27-02 lives: a practice with no PMS has no print record, so the caller builds no block and the tablet draws exactly what it drew before this feature existed. | **1** · core:agreements/agreements.service.ts |
 | `clearPortalCookie` | core:portal/portal-cookie.ts |  | **1** · core:portal/portal.controller.ts |
 | `correctionBody` | core:notices/notice-template.ts | Correction notices supersede rather than replace (REQ-DEL-06). | **1** · core:notices/notices.service.ts |
 | `createAddressValidator` | core:organisations/address-validator.ts |  | **1** · core:organisations/organisations.module.ts |
@@ -2213,6 +2219,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `hashesMatch` | core:devices/device-credential.ts | Constant-time comparison of two hex hashes. | 0 |
 | `mapAbnDetails` | core:organisations/abr.ts | The register's answer, reduced to what we store. | 0 |
 | `mapEntityType` | core:organisations/abr.ts | Map the ABR's entity-type descriptions onto our vocabulary. | 0 |
+| `maskMedicareCardNumber` | core:agreements/db4-form-view.ts | eslint-disable-next-line no-restricted-syntax -- the name is the point: see D-2026-09-27-01 part 3 and the note above. | 0 |
 | `matchAffiliationsForProvider` | core:affiliations/agreement-anchor.ts | WHICH AFFILIATIONS COULD A LEGACY `providers` ROW BE, and it never guesses. | 0 |
 | `nameMatches` | core:verification/identifier-matching.ts | The name rule (Carl, 3 Sep 2026): the stated name must contain the held FAMILY name and the FIRST given name. | 0 |
 | `normaliseStatedValue` | core:verification/identifier-matching.ts |  | 0 |
