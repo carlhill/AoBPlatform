@@ -73,37 +73,29 @@ import type { SignedDb4Content } from '@aobplatform/domain';
  * anything: the rule it would enforce is a rule about the instrument AoB
  * originates, and this page originates nothing.
  *
- * ── AND THE PATHOLOGY BOX — AN OPEN CONFLICT, NOT A SETTLED ONE ──
+ * ── AND THE PATHOLOGY BOX, WHICH IS NOT DRAWN ──
  *
  * The DB4 prints two assignment statements joined by "or", and the second is
  * an offer to assign to an Approved Pathology Practitioner — s 65C(4) items
- * 1–4, out of this product's scope (CLAUDE.md section 8). It is ON the form we
- * reproduce, so it is DRAWN, with the tick state the driver read, as data. It
- * is never acted on: nothing branches on it, no agreement is created from it,
- * nothing is validated or written back because of it, and `inScope: false` on
- * the print record is carried through untouched.
+ * 1–4, out of this product's scope (CLAUDE.md section 8).
  *
- * **THIS CONTRADICTS THE WORDS OF A RECORDED DECISION AND CARL HAS TO RULE.**
- * D-2026-09-14-02, under "What does not change", says *"The pathology tick box
- * stays on the practice's paper (out of scope)"*; DB4-AND-AOBL.md section 2a
- * recommends *"Render it on our page for the patient to tick: no, because we
- * would be capturing a pathology assignment we do not validate, store
- * correctly, or write back as one"*; and section 13a piece 2 names *"the first
- * statement"*, singular. Section 10 item 0 still lists it as recommended and
- * UNRULED.
+ * It is carried in the print record as DATA, untouched, so the write-back and
+ * any later reader see the form exactly as it was printed. It is NOT DRAWN on
+ * the page the patient signs. D-2026-09-14-02: *"The pathology tick box stays
+ * on the practice's paper (out of scope)."*
  *
- * It is built this way because the 27 September build brief directs it
- * explicitly — *"it is ON the form we reproduce, so render it with its printed
- * tick state as data"* — and because reproducing a page and acting on a
- * statement are different things. But the counter-argument is real and is not
- * disposed of by that distinction: the patient signs OUR page, and a ticked
- * s 65C(4) assignment sits above their mark on it.
+ * The reason is not tidiness. Reproducing a page and acting on a statement are
+ * different things, and that distinction is what lets us print the government's
+ * own heading verbatim — but it does not stretch this far: the patient signs
+ * OUR page, and a ticked s 65C(4) assignment sitting above their mark is an
+ * assignment we do not validate, do not store as one, and do not write back as
+ * one. The filter is in `SignedDb4Renderer.drawAssignment`.
  *
- * Filtering to `statement.inScope !== false` in `SignedDb4Renderer.
- * drawAssignment` is the whole change if Carl rules the other way. Until he
- * does, this comment is the record that the conflict was seen rather than
- * missed. (DECISIONS.md is outside this build's scope, so the ruling is not
- * written there yet.)
+ * (Built the other way on 27 September because the build brief said to; the
+ * brief had read DB4-AND-AOBL.md section 10 item 0, which still listed this as
+ * unruled, instead of DECISIONS.md, which had ruled it thirteen days earlier.
+ * Two documents disagreeing is the defect that produced the wrong code;
+ * section 10 item 0 has been corrected to point at the decision.)
  */
 
 /**

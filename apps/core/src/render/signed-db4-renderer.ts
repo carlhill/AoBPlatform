@@ -336,7 +336,22 @@ export class SignedDb4Renderer implements AgreementRenderer {
   private drawAssignment(doc: PDFKit.PDFDocument, document: SignedDb4Document): void {
     const { labels, layout } = document.content;
     const assignment = document.printRecord.assignment;
-    const statements = assignment?.statements ?? [];
+    /*
+     * ONLY THE STATEMENTS THIS PRODUCT IS IN SCOPE FOR. D-2026-09-14-02: "The
+     * pathology tick box stays on the practice's paper (out of scope)."
+     *
+     * The second printed statement is an offer to assign to an Approved
+     * Pathology Practitioner — s 65C(4) items 1-4, which CLAUDE.md section 8
+     * puts out of scope. It is carried in the print record as data and read
+     * back for the write-back, but it is NOT drawn on the page the patient
+     * signs: their mark must not sit under an assignment this product does not
+     * validate, store correctly or write back as one.
+     *
+     * `inScope` comes from the parser, which reads it from the form's own
+     * statement list. Absent means in scope, so a form whose parser template
+     * predates the field still renders its assignment statement.
+     */
+    const statements = (assignment?.statements ?? []).filter((statement: Db4Statement) => statement.inScope !== false);
     if (statements.length === 0) return;
     this.heading(doc, document, labels.assignment);
     doc.font('Helvetica').fontSize(layout.bodySize);

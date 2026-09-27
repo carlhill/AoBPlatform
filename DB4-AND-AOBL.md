@@ -639,9 +639,15 @@ looks like.
 0. **The Signed-DB4 rulings, §12b.** The amount: **D-2026-09-14-01 is
    reversed by D-2026-09-14-02** — printed on the Signed-DB4, reproduced
    verbatim from PracSoft, never computed by us. **The Medicare number: printed
-   in full, D-2026-09-14-03.** Still recommended and not yet ruled: the
-   "approved form" heading stays verbatim with a provenance footer (hard rule
-   12); the pathology box stays on the practice's paper.
+   in full, D-2026-09-14-03.** **The pathology box: RULED by D-2026-09-14-02 —
+   it stays on the practice's paper, is carried as data and is NOT drawn on the
+   page the patient signs.** (This entry said "not yet ruled" until 27 Sep 2026
+   and a build brief believed it over `DECISIONS.md`, which produced a renderer
+   that drew the box. Two documents disagreeing is what caused it.) Still
+   recommended and not yet ruled: only the wording of the provenance footer
+   that keeps the "approved form" heading verbatim without our claiming it
+   (hard rule 12) — a default now ships in
+   `packages/domain/content/signed-db4.json`, so changing it is a content edit.
 0a. **Telehealth** (§11): confirm the remote link to the contact on record is
    the flow, and whether a pre-agreement is to be offered before the
    consultation at all, given the practice is post-only (§11a).
@@ -719,3 +725,4 @@ the allowance allows. Nothing starts until Carl says so.
 | 14 Sep 2026 | §11 telehealth — the existing remote-link channel on a post-service agreement, the TELEHEALTH stamp becomes a field. §11a: the pre-agreement is not mandatory (s 65C(4) items 5 and 6 are both valid; DB4E is post-only), so Powell Street is post-only and legal; what it costs is the chase. §12: the practice wants the exact DB4 with the cost and the signature on it — D-2026-09-14-01 reversed; the design is to REPRODUCE the DB4 from the Print Record rather than sign PracSoft's bytes (rule 13 intact); rules 4, 1 and 12 addressed one by one, with the Medicare number the hard one. |
 | 14 Sep 2026 | Carl: no masking. The Medicare number and IRN are printed in full on the Signed-DB4 and travel in the DB4 Print Record (D-2026-09-14-03). §1a, §2 and §12b updated; hard rule 1's identity meaning unchanged. |
 | 14 Sep 2026 | Section 13: the build as the first feature-flagged slice of AoB (D-2026-09-14-04), six pieces in the order that shows something soonest, model per piece with the honest answer on Sonnet, and the budget note. Not started. |
+| 27 Sep 2026 | §10 item 0: the pathology box is recorded as RULED (D-2026-09-14-02), not open. It had said "not yet ruled" and a build brief believed it over DECISIONS.md. Only the footer wording remains open, and it now has a shipped default in versioned content. |

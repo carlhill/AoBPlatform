@@ -395,22 +395,42 @@ describe('the_signed_db4_prints_the_medicare_number_and_the_cost', () => {
     expect(page).toContain('BULK BILL ASSIGNMENT OF BENEFIT FORM');
   });
 
-  /**
-   * THE PATHOLOGY BOX IS ON THE FORM, SO IT IS ON THE REPRODUCTION — drawn
-   * with the tick state the driver read, as DATA, and never acted on.
-   * s 65C(4) items 1–4 are out of scope (CLAUDE.md §8): nothing branches on
-   * it, no agreement is made from it, nothing is validated or written back
-   * because of it. Dropping a ticked box the practice printed would make this
-   * a different form from the one in the folder, which is the one thing the
-   * practice asked us not to produce.
+  /*
+   * THE PATHOLOGY STATEMENT IS CARRIED AS DATA AND NEVER DRAWN.
+   *
+   * D-2026-09-14-02: "The pathology tick box stays on the practice's paper
+   * (out of scope)." s 65C(4) items 1-4 are out of this product's scope
+   * (CLAUDE.md section 8).
+   *
+   * Reproducing a page and acting on a statement are different things, and
+   * that distinction is what lets this renderer print the government's own
+   * "approved form" heading verbatim. It does not stretch to this: the patient
+   * signs OUR page, and a ticked s 65C(4) assignment above their mark would be
+   * an assignment we do not validate, do not store as one and do not write
+   * back as one.
+   *
+   * This test asserted the opposite until 27 September 2026, because the build
+   * brief said to draw it - the brief had believed DB4-AND-AOBL.md section 10
+   * item 0, which still listed this as unruled, over DECISIONS.md, which had
+   * ruled it thirteen days earlier. The assertion is inverted here as a
+   * visible change with its reason, not quietly relaxed.
    */
-  it('reproduces the pathology statement and the word joining the two', async () => {
+  it('a_statement_out_of_scope_is_carried_as_data_and_never_drawn', async () => {
     const renderer = new SignedDb4Renderer(artefacts);
-    const { bytes } = await renderer.render(asPayload(documentFor()), ['en']);
+    const document = documentFor();
+    const { bytes } = await renderer.render(asPayload(document), ['en']);
     const page = pageTextOf(bytes);
-    expect(page).toContain('Approved Pathology Practitioner');
+
+    // The in-scope assignment is the one the patient signs under.
     expect(page).toContain('I assign my right to benefits to the health professional');
-    expect(page).toMatch(/health professional who rendered the services\. or I offer to assign/);
+
+    // The pathology offer is not on the page at all - nor the "or" that joined them.
+    expect(page).not.toContain('Approved Pathology Practitioner');
+    expect(page).not.toMatch(/services\. or I offer to assign/);
+
+    // But it is still in the record, untouched, for the write-back and any later reader.
+    const statements = document.printRecord.assignment?.statements ?? [];
+    expect(statements.some((s) => s.inScope === false)).toBe(true);
   });
 });
 
