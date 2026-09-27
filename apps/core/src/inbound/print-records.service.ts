@@ -58,6 +58,30 @@ function toTheSecond(iso: string | undefined): string | undefined {
   return iso.replace(/\.\d{1,6}(?=(Z|[+-]\d{2}:?\d{2})$)/, '');
 }
 
+/** One row, as the envelope plus the identity. Shared so the two reads cannot drift. */
+function describe(job: {
+  id: string;
+  payload: unknown;
+  sourceSha256: string;
+  parserTemplateVersion: string;
+  receivedAt: Date;
+}): { envelope: PrintJobEnvelope; identity: Db4PrintRecordIdentity } {
+  const envelope = job.payload as PrintJobEnvelope;
+  return {
+    envelope,
+    identity: {
+      printJobId: job.id,
+      sourceSha256: job.sourceSha256,
+      formReference: envelope.form?.formReference,
+      queueName: envelope.queueName,
+      queueLabel: envelope.queueLabel,
+      capturedAt: toTheSecond(envelope.capturedAt),
+      receivedAt: toTheSecond(job.receivedAt.toISOString()) ?? job.receivedAt.toISOString(),
+      parserTemplateVersion: job.parserTemplateVersion,
+    },
+  };
+}
+
 @Injectable()
 export class PrintRecordsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -95,6 +119,48 @@ export class PrintRecordsService {
    * REQ-LOG-08). The identity describes the document and the machinery that
    * read it — no name, no chart number, no card number, no amount.
    */
+  /**
+   * THE SAME READ FOR A WHOLE LIST, IN ONE QUERY (Carl, 27 September 2026:
+   * the refusal has to be ON THE ROW, before anybody presses Send).
+   *
+   * WHY IT IS BATCHED AND NOT A LOOP. `pushable()` runs on a three-second
+   * poll on two pages at once; a read per row would turn one desk into a
+   * query storm against a table the print driver is also writing to. One
+   * `IN` over the ids the list actually has is the same answer for one round
+   * trip.
+   *
+   * MISSING IDS ARE SIMPLY ABSENT FROM THE MAP, never an error. A print job
+   * that has been pruned, or belongs to another practice and was refused by
+   * RLS, means "we cannot check this one" -- and the caller reads that as
+   * "let it through", which is the direction that fails safe (a form we could
+   * not check reaches a tablet, where the patient can say it is wrong;
+   * failing closed would stop a working practice over an infrastructure
+   * fault they cannot see).
+   */
+  async recordsFor(
+    practiceId: string,
+    printJobIds: readonly string[],
+  ): Promise<Map<string, { envelope: PrintJobEnvelope; identity: Db4PrintRecordIdentity }>> {
+    const wanted = [...new Set(printJobIds)];
+    const found = new Map<string, { envelope: PrintJobEnvelope; identity: Db4PrintRecordIdentity }>();
+    if (wanted.length === 0) return found;
+    const jobs = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.inboundPrintJob.findMany({
+        where: { id: { in: wanted }, practiceId, documentType: 'db4_assignment' },
+        select: {
+          id: true,
+          payload: true,
+          documentType: true,
+          sourceSha256: true,
+          parserTemplateVersion: true,
+          receivedAt: true,
+        },
+      }),
+    );
+    for (const job of jobs) found.set(job.id, describe(job));
+    return found;
+  }
+
   async recordFor(
     practiceId: string,
     printJobId: string,
@@ -123,19 +189,6 @@ export class PrintRecordsService {
      * honest answer: there is no DB4 here.
      */
     if (job.documentType !== 'db4_assignment') return null;
-    const envelope = job.payload as unknown as PrintJobEnvelope;
-    return {
-      envelope,
-      identity: {
-        printJobId: job.id,
-        sourceSha256: job.sourceSha256,
-        formReference: envelope.form?.formReference,
-        queueName: envelope.queueName,
-        queueLabel: envelope.queueLabel,
-        capturedAt: toTheSecond(envelope.capturedAt),
-        receivedAt: toTheSecond(job.receivedAt.toISOString()) ?? job.receivedAt.toISOString(),
-        parserTemplateVersion: job.parserTemplateVersion,
-      },
-    };
+    return describe(job);
   }
 }

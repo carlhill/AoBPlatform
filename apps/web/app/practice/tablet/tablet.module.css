@@ -444,31 +444,67 @@
   margin: var(--s2) 0;
 }
 
-.printId dl {
+.printIdList {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
   gap: 0.15rem var(--s3);
   margin: 0;
 }
 
-.printId dl > div {
-  display: contents;
-}
-
-.printId dt {
+.printIdList dt {
   font-weight: 600;
   white-space: nowrap;
 }
 
-.printId dd {
+.printIdList dd {
   margin: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.9em;
   overflow-wrap: anywhere;
 }
 
+/*
+ * THE HASH AND THE UUID WRAP; THE REST DO NOT NEED TO. On a narrow desk the
+ * two columns would otherwise push the label column off, so below the tablet
+ * breakpoint the pairs stack -- label above value, which is how a phone reads
+ * a definition list anyway.
+ */
+@media (max-width: 640px) {
+  .printIdList {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .printIdList dd {
+    margin: 0 0 var(--s2);
+  }
+}
+
 .printIdNote {
   margin: var(--s2) 0 0;
   font-size: 0.9em;
   opacity: 0.85;
+}
+
+/*
+ * THE AUDIT REFERENCES, FOLDED AWAY (Carl, 27 September 2026). The summary is
+ * the only part on screen until somebody wants the hash; it is styled as a
+ * control rather than a heading so it reads as something to press.
+ */
+.printIdSummary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: var(--s1) 0;
+}
+
+/*
+ * `<summary>` IS NOT IN `tokens.css`'s `:where(a, button, input, select,
+ * textarea, [tabindex])` FOCUS RULE, so it needs its own -- and it uses
+ * `--accent`, which is the token that exists. (`--focus` is not defined
+ * anywhere; `review.module.css:518` uses it too and draws no focus ring
+ * either. Left alone here as an unrelated defect, but it is a real one.)
+ */
+.printIdSummary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

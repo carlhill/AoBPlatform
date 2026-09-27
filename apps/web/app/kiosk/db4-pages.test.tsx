@@ -31,6 +31,8 @@
  *      only, with the masked payload the tablet was actually sent — and the
  *      Print Record itself is still not reachable from here (hard rule 1).
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import {
@@ -382,6 +384,32 @@ describe('the three pages Carl asked for', () => {
     expect(view.page()).toBe('services');
     fireEvent.click(view.getByTestId('db4-page-back'));
     expect(view.page()).toBe('header');
+  });
+
+  it('the_benefit_column_is_right_aligned_and_the_selector_actually_wins', () => {
+    /*
+     * CARL, 27 SEPTEMBER 2026: *"right justify the $ in the table"* -- asked
+     * TWICE, because the first fix read correctly in the file and did nothing
+     * on the screen. `.db4Table th, .db4Table td { text-align: left }` is
+     * specificity (0,1,1) and a bare `.db4ColBenefit` is (0,1,0), so the
+     * cascade threw the rule away silently.
+     *
+     * WHY THIS TEST READS CSS RATHER THAN RENDERING. jsdom applies no
+     * stylesheet and computes no cascade, so no amount of rendering can catch
+     * a rule that loses -- `getComputedStyle` would report the same thing
+     * either way. Asserting the SELECTOR is the only guard available below a
+     * real browser, and the failure it guards against is one that already
+     * happened once. A Playwright assertion on the computed value is the
+     * honest version and is owed.
+     */
+    const css = readFileSync(join(__dirname, 'kiosk.module.css'), 'utf8');
+    for (const rule of ['.db4Table .db4ColBenefit', '.db4Table .db4Benefit']) {
+      expect(css).toContain(rule);
+    }
+    // AND THE UNQUALIFIED FORMS ARE GONE, so the losing rule cannot come back
+    // alongside the winning one and read as though it were doing the work.
+    expect(css).not.toMatch(/^\.db4ColBenefit\s*\{/m);
+    expect(css).not.toMatch(/^\.db4Benefit\s*\{/m);
   });
 
   it('a_pages_continue_waits_for_that_pages_own_tick', () => {

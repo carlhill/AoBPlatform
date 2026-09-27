@@ -6252,6 +6252,23 @@ export const strings = {
        * nowhere in this console to send anybody (CLAUDE.md §7 — a link that
        * goes nowhere useful is worse than the sentence alone).
        */
+      /**
+       * THE BAND'S OWN HEADING (Carl, 27 September 2026, choosing it: *"blocked
+       * state on the row - 'Form needs reprinting'"*).
+       *
+       * IT NAMES THE ACT, NOT THE STATE. Every other blocked band is headed
+       * "Cannot be sent yet", which is right for a row waiting on something at
+       * this desk. This one is waiting on a reprint in the practice's own
+       * software, and somebody scanning a list of rows should be able to see
+       * which one needs a walk to the printer without reading four sentences.
+       *
+       * NO FAULT IS ASSIGNED AND NONE IS IMPLIED (hard rule 12, and hard rule
+       * 4's reasoning): not "PMS data error", which would name the practice's
+       * software as the culprit when the likeliest cause is our own parser
+       * template against a changed PracSoft layout — and not "invalid", which
+       * would say something untrue about a complete agreement.
+       */
+      print_record_incompleteTitle: 'Form needs reprinting',
       print_record_incomplete:
         'We could not read enough of the printed form to show the patient a copy of it, so this one has '
         + 'not gone to the tablet. The agreement itself is fine — this is about our reading of the form. '
@@ -6323,7 +6340,8 @@ export const strings = {
      * machinery that read it.
      */
     printRecordId: {
-      lead: 'Which form this was:',
+      /** The disclosure's own label. No colon: it is a control, not a heading over a list. */
+      lead: 'Which form this was',
       formReference: 'Form reference',
       /** `queueName`/`queueLabel` — attribution, never PII. The nearest thing to a location that exists. */
       queue: 'Printed from',

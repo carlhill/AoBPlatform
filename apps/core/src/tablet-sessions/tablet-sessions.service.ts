@@ -21,6 +21,7 @@ import {
   type TabletSessionRow,
   type TabletSessionState,
 } from '@aobplatform/domain';
+import type { Db4PrintRecordCheck, Db4PrintRecordIdentity } from '@aobplatform/contracts';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { anchorForAgreement, anchorsForAgreements } from '../affiliations/agreement-anchor';
 import type { Actor } from '../auth/actor.decorator';
@@ -149,6 +150,22 @@ export interface PushableRow {
   assignorConfirmedAt: string | null;
   pushable: boolean;
   blockedReason: PushBlockedReason | null;
+  /**
+   * WHAT COULD NOT BE READ OFF THE PRINTED FORM, AND WHICH FORM (Carl, 27
+   * September 2026: *"blocked state on the row"*).
+   *
+   * Present only where `blockedReason` is `print_record_incomplete`, and null
+   * on every other row -- including the ones whose print record is perfectly
+   * readable, because there is then nothing to say about it.
+   *
+   * IT RIDES ON THE ROW SO THE BAND READS THE SAME BEFORE AND AFTER A PRESS.
+   * The push refusal carries exactly these two fields, so reception sees one
+   * answer whether they discovered it on the list or by pressing Send.
+   *
+   * NOTHING IN EITHER FIELD IS A PATIENT'S (hard rule 9) -- codes name
+   * fields, the identity names the document and the machinery that read it.
+   */
+  printRecord: { checks: readonly Db4PrintRecordCheck[]; print: Db4PrintRecordIdentity } | null;
   /**
    * THE NUMBER ON THE CARD IN THE PATIENT'S HAND (`QUEUE-TICKETS.md`; Carl,
    * 12 September 2026: *"Show the practice-queueid - the card with the number
@@ -1301,11 +1318,59 @@ export class TabletSessionsService {
      * for something that will not help them.
      */
     const undecided = rows.filter((row) => row.agreementType === 'enduring' && row.pushable);
-    if (undecided.length === 0) return rows;
-    if (await this.agreements.enduringRulesAuthored()) return rows;
-    for (const row of undecided) {
+    if (undecided.length > 0 && !(await this.agreements.enduringRulesAuthored())) {
+      for (const row of undecided) {
+        row.pushable = false;
+        row.blockedReason = 'enduring_rules_not_authored';
+      }
+    }
+
+    return this.markUnreadablePrintRecords(practiceId, rows);
+  }
+
+  /**
+   * AND THE SECOND QUESTION THE ROWS CANNOT ANSWER THEMSELVES: is the DB4
+   * Print Record behind this agreement one we can reproduce? (Carl, 27
+   * September 2026, at a live desk: *"the agreement needs to have a status of
+   * PMS Data Error or something"*, settled as *"blocked state on the row"*.)
+   *
+   * IT WAS ONLY ASKED AT THE PUSH UNTIL NOW, and that is the defect. A row
+   * that was going to be refused looked exactly like one that would go, so
+   * reception found out by pressing Send with a patient standing there —
+   * which is the opposite of "every blocked, wrong or waiting message names
+   * its specific reason" (CLAUDE.md §7).
+   *
+   * ONE BATCHED READ FOR THE WHOLE LIST, not one per row: this list is polled
+   * every three seconds by two pages.
+   *
+   * A ROW ALREADY BLOCKED KEEPS ITS REASON. The same judgement the enduring
+   * pass above makes — an agreement whose assignor has not been confirmed has
+   * a nearer, fixable problem, and telling somebody to reprint a form when
+   * the real next step is one tap on this row would be the wrong shortcut.
+   *
+   * IT DOES NOT CHANGE THE AGREEMENT. Nothing is written; this is a fact
+   * about a print record, computed for a screen. The agreement is complete
+   * and stays so (hard rule 4 — no amount is in the s 65C data set), and
+   * nothing here blocks care (hard rule 8): reprint, paper, or after the
+   * service.
+   */
+  private async markUnreadablePrintRecords(
+    practiceId: string,
+    rows: PushableRow[],
+  ): Promise<PushableRow[]> {
+    const sendable = rows.filter((row) => row.pushable);
+    if (sendable.length === 0) return rows;
+    const answers = await this.agreements.db4PrintRecordChecksForMany(
+      practiceId,
+      sendable.map((row) => row.agreementId),
+    );
+    if (answers.size === 0) return rows;
+    for (const row of sendable) {
+      const answer = answers.get(row.agreementId);
+      if (!answer || answer.checks.length === 0) continue;
       row.pushable = false;
-      row.blockedReason = 'enduring_rules_not_authored';
+      row.blockedReason = 'print_record_incomplete';
+      row.printRecord = { checks: answer.checks, print: answer.identity };
     }
     return rows;
   }
@@ -1766,6 +1831,9 @@ export class TabletSessionsService {
             : null,
           pushable: blocked === null,
           blockedReason: blocked,
+          /* Filled by `pushable()`'s own pass — see there; the rows themselves
+             cannot answer it, because it needs the inbound module's table. */
+          printRecord: null,
           /* Off the arrival that started the chain — see `ticketFor`. */
           queueTicket: ticketFor(agreement.id),
           /* And where the visit got to, off the same arrival (D-2026-09-12-20). */

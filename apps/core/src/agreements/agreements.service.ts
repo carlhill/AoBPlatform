@@ -2948,6 +2948,63 @@ export class AgreementsService {
    * can say it is wrong. Failing closed would mean a working practice stopped
    * by an infrastructure fault they cannot see or fix.
    */
+  /**
+   * THE SAME QUESTION FOR A WHOLE DESK LIST (Carl, 27 September 2026: the
+   * reason has to be ON THE ROW, so reception sees it without pressing Send
+   * with a patient in front of them).
+   *
+   * TWO QUERIES FOR ANY NUMBER OF ROWS -- the agreements' print-job ids, then
+   * the print jobs. A per-row call would be two round trips per row on a
+   * three-second poll, which is how a desk screen becomes a load problem.
+   *
+   * ROWS WITH NO PRINT RECORD ARE SIMPLY ABSENT FROM THE MAP, which is the
+   * same "nothing to report" the single read gives -- and it is the common
+   * case, because `sourcePrintJobId` is null for every walk-up at a practice
+   * with no PMS.
+   *
+   * IT FAILS OPEN, exactly as the single read does and for the same reason
+   * written out there: a form we could not check reaches a tablet where the
+   * patient can say it is wrong; failing closed would stop a working practice
+   * over an infrastructure fault nobody at the desk can see or fix.
+   */
+  async db4PrintRecordChecksForMany(
+    practiceId: string,
+    agreementIds: readonly string[],
+  ): Promise<Map<string, { checks: readonly Db4PrintRecordCheck[]; identity: Db4PrintRecordIdentity }>> {
+    const answers = new Map<string, { checks: readonly Db4PrintRecordCheck[]; identity: Db4PrintRecordIdentity }>();
+    if (agreementIds.length === 0) return answers;
+    try {
+      const sourced = await this.prisma.withPractice(practiceId, (tx) =>
+        tx.agreement.findMany({
+          where: { id: { in: [...agreementIds] }, sourcePrintJobId: { not: null } },
+          select: { id: true, sourcePrintJobId: true },
+        }),
+      );
+      if (sourced.length === 0) return answers;
+      const records = await this.printRecords.recordsFor(
+        practiceId,
+        sourced.map((row) => row.sourcePrintJobId as string),
+      );
+      for (const row of sourced) {
+        const record = records.get(row.sourcePrintJobId as string);
+        if (!record) continue;
+        answers.set(row.id, { checks: checkDb4PrintRecord(record.envelope), identity: record.identity });
+      }
+      return answers;
+    } catch (err) {
+      /*
+       * THE CLASS ONLY, NEVER THE RECORD OR A PATIENT (hard rules 1 and 9,
+       * REQ-LOG-08). And no agreement id either: this is a whole-list read,
+       * so there is no single row it is about.
+       */
+      this.logger.error(
+        `The DB4 print records could not be checked for a desk list — ${(err as Error).name}. ` +
+          'The rows are left sendable: an unreadable record is our fault, not the form’s.',
+      );
+      return new Map();
+    }
+  }
+
   async db4PrintRecordChecks(
     practiceId: string,
     agreement: { id: string; sourcePrintJobId: string | null },

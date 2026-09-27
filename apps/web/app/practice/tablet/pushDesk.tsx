@@ -27,7 +27,7 @@
  * the code they explain.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { ArrowRight, Check, CheckCheck, PencilLine, RotateCcw, Send, UserRound } from 'lucide-react';
 import { DB4_PRINT_RECORD_REFUSED_CODE, type Db4PrintRecordIdentity } from '@aobplatform/contracts';
@@ -153,6 +153,16 @@ export interface PushableRow {
    */
   assignorMobile: string | null;
   assignorEmail: string | null;
+  /**
+   * WHAT COULD NOT BE READ OFF THE PRINTED FORM, AND WHICH FORM (Carl, 27
+   * September 2026: *"blocked state on the row"*). Present only where
+   * `blockedReason` is `print_record_incomplete`.
+   *
+   * SO THE ROW'S BAND READS THE SAME AS THE REFUSAL'S. `pushable()` now runs
+   * the print-record check for the whole list, so reception meets the reason
+   * on the row instead of discovering it by pressing Send.
+   */
+  printRecord?: { checks: string[]; print?: Db4PrintRecordIdentity } | null;
   particularsLocked: boolean;
   /**
    * WHEN A PERSON SAID WHO IS SIGNING — `null` until somebody has (Carl, 7 Sep
@@ -376,6 +386,19 @@ export interface PatientDetails {
  */
 export interface RefusalDescription {
   text: string;
+  /**
+   * THE BAND'S OWN HEADING, where the reason deserves one of its own (Carl,
+   * 27 September 2026, choosing the wording: *"blocked state on the row -
+   * 'Form needs reprinting'"*).
+   *
+   * MOST REASONS DO NOT SET IT and fall back to "Cannot be sent yet", which
+   * is the right heading for a row waiting on something at the desk. This one
+   * is different in kind: the thing to do is not on this screen at all, it is
+   * a reprint in the practice's own software — so the heading says the act
+   * rather than the state, and somebody scanning a list of rows can see which
+   * one needs a walk to the printer without reading four sentences.
+   */
+  title?: string;
   link?: { href: string; label: string };
   /** Present only for `device_busy`, and only once a live session id is known. */
   recallSessionId?: string;
@@ -663,6 +686,7 @@ export function describeRefusal(
     case DB4_PRINT_RECORD_REFUSED_CODE:
       return {
         reason,
+        title: strings.tablet.blocked.print_record_incompleteTitle,
         text: strings.tablet.blocked.print_record_incomplete,
         checks: (ctx.checks ?? []).map(describePrintRecordCheck),
         print: ctx.print,
@@ -1150,18 +1174,41 @@ function PrintRecordIdentityBlock({ print }: { print: Db4PrintRecordIdentity }) 
   const shown = rows.filter(([, value]) => !!value);
   if (shown.length === 0) return null;
   return (
-    <div className={styles.printId} data-testid="print-record-identity">
-      <p className={styles.checksLead}>{copy.lead}</p>
-      <dl>
+    /*
+     * FOLDED AWAY BY DEFAULT (Carl, 27 September 2026: *"maybe put all the
+     * audit details in hidden/expansion block"*).
+     *
+     * THE TWO READERS WANT DIFFERENT AMOUNTS. The receptionist needs the
+     * sentence and the list -- what to do, and what is wrong -- and the band
+     * had grown to seven labelled references below them, which buries the
+     * part that is actually actionable. The person who needs a hash is
+     * raising a support ticket, and they can open it.
+     *
+     * A NATIVE `<details>`, NOT A SCRIPTED ONE. It is keyboard-operable,
+     * announced as a disclosure and openable before hydration without a line
+     * of JavaScript or a scrap of state -- and browser find-in-page opens it,
+     * which matters when somebody is searching a screen for a reference
+     * support has just read to them.
+     */
+    <details className={styles.printId} data-testid="print-record-identity">
+      <summary className={styles.printIdSummary}>{copy.lead}</summary>
+      {/*
+        NO WRAPPER ROUND EACH PAIR. It was a `<div>` with `display: contents`,
+        which is correct CSS and one more thing between the grid and its
+        children for nothing — the pairs are already in order, so `dt` and
+        `dd` can be the grid's own children and the two columns cannot fail to
+        apply.
+      */}
+      <dl className={styles.printIdList}>
         {shown.map(([label, value]) => (
-          <div key={label}>
+          <Fragment key={label}>
             <dt>{label}</dt>
             <dd>{value}</dd>
-          </div>
+          </Fragment>
         ))}
       </dl>
       <p className={styles.printIdNote}>{copy.noFileNote}</p>
-    </div>
+    </details>
   );
 }
 
@@ -3153,6 +3200,27 @@ export function AgreementBands({
   const outcome = desk.pushOutcome?.id === row.agreementId ? desk.pushOutcome : null;
   const whoSaid = desk.whoOutcome?.id === row.agreementId ? desk.whoOutcome : null;
   /*
+   * ONE DESCRIPTION FOR THE BLOCKED BAND, because the HEADING now comes from
+   * it too (Carl, 27 September 2026: "Form needs reprinting"). Computed once
+   * rather than twice so a band can never head itself with one reason and
+   * explain another.
+   */
+  const blockedInfo = describeRefusal(row.blockedReason, {
+    providerType: row.providerType,
+    patientId: offerPatientPage ? row.patientId : undefined,
+    /*
+     * THE ROW KNOWS THIS NOW. Until `pushable()` ran the print-record check
+     * for the whole list, `print_record_incomplete` could not reach this band
+     * at all and neither field was passed. It can, so they are — and the band
+     * reads identically whether reception met the reason on the list or by
+     * pressing Send.
+     */
+    checks: row.printRecord?.checks,
+    print: row.printRecord?.print,
+    audiences: desk.audiences,
+    practiceId: desk.practiceId,
+  });
+  /*
    * WHAT IS IN THE WAY OF SAVING WHO IS SIGNING, AND WHERE (Carl, 10 Sep
    * 2026). Recomputed on every render from the open draft, and SHOWN only once
    * a Save has actually been refused — so it marks the box somebody missed
@@ -3201,30 +3269,29 @@ export function AgreementBands({
       */}
       {!row.pushable && (
         <div className={rowStyles.band}>
-          <Notice tone="warn" title={strings.tablet.sendBlocked} data-testid={`blocked-${row.agreementId}`}>
+          <Notice
+            tone="warn"
+            title={blockedInfo.title ?? strings.tablet.sendBlocked}
+            data-testid={`blocked-${row.agreementId}`}
+          >
             <RefusalOutcomeBody
-              info={describeRefusal(row.blockedReason, {
-                providerType: row.providerType,
-                patientId: offerPatientPage ? row.patientId : undefined,
-                audiences: desk.audiences,
-                practiceId: desk.practiceId,
-              })}
+              info={blockedInfo}
               canSend={desk.canSend}
               busy={desk.busyId !== null}
               onRecall={(sessionId) => void desk.recall(sessionId)}
               linkTestId={`blocked-link-${row.agreementId}`}
               recallTestId={`blocked-recall-${row.agreementId}`}
+              checksTestId={`blocked-checks-${row.agreementId}`}
               fix={fixFor(desk, row, row.blockedReason)}
             />
           </Notice>
         </div>
       )}
-
       {outcome && (
         <div className={rowStyles.band}>
           <Notice
             tone={outcome.ok ? 'ok' : 'stop'}
-            title={strings.tablet.sendBlocked}
+            title={(!outcome.ok && outcome.info?.title) || strings.tablet.sendBlocked}
             data-testid={`push-outcome-${row.agreementId}`}
           >
             {/*

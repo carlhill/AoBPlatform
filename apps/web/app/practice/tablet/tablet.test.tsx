@@ -2503,8 +2503,16 @@ describe('the refusal words', () => {
     expect(list.textContent).toContain(strings.tablet.printRecordChecks.print_record_benefit_missing);
     expect(list.textContent).toContain(strings.tablet.printRecordChecks.print_record_irn_missing);
 
-    // AND THE BAND NAMES WHICH FORM TO REPRINT (Carl, 27 September 2026).
+    // AND THE BAND NAMES WHICH FORM TO REPRINT (Carl, 27 September 2026),
+    // folded away behind a disclosure so the sentence and the list stay the
+    // first things read (Carl, same evening: "put all the audit details in
+    // hidden/expansion block").
     const identity = screen.getByTestId('print-record-identity');
+    expect(identity.tagName).toBe('DETAILS');
+    // CLOSED BY DEFAULT — the receptionist's answer is above it; the hash is
+    // for whoever raises the ticket.
+    expect((identity as HTMLDetailsElement).open).toBe(false);
+    expect(within(identity).getByText(strings.tablet.printRecordId.lead).tagName).toBe('SUMMARY');
     expect(identity.textContent).toContain('AOB3NOIRN');
     expect(identity.textContent).toContain('Front desk printer');
     expect(identity.textContent).toContain('b'.repeat(64));

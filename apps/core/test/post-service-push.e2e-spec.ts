@@ -722,6 +722,94 @@ describe('the post-service second push (e2e, real Postgres)', () => {
       .expect(201);
   });
 
+  it('the_desk_row_says_the_form_needs_reprinting_before_anybody_presses_send', async () => {
+    /*
+     * CARL, 27 SEPTEMBER 2026, AT A LIVE DESK: *"the agreement needs to have a
+     * status of PMS Data Error or something"*, settled as *"blocked state on
+     * the row - 'Form needs reprinting'"*.
+     *
+     * THE DEFECT THIS CLOSES. The check ran only at the push, so a row that
+     * was about to be refused looked exactly like one that would go —
+     * reception found out by pressing Send with a patient in front of them.
+     * CLAUDE.md §7: every blocked, wrong or waiting message names its
+     * specific reason, and it has to do that BEFORE the press.
+     *
+     * IT IS A BLOCKED ROW, NOT A STATUS ON THE AGREEMENT. The agreement is
+     * complete and untouched — asserted below — because no dollar amount is
+     * in the s 65C data set (hard rule 4) and what we doubt is our own
+     * reading of the form.
+     */
+    const agreementId = await draftReadyToPush('POST-ROWBLOCK');
+    const jobId = await seedPrintRecord([
+      { serviceDate: today(), mbsItemNumber: '23', description: 'Level B' },
+    ]);
+    await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.updateMany({ where: { id: agreementId }, data: { sourcePrintJobId: jobId } }),
+    );
+    /*
+     * SNAPSHOT AFTER THE LINK, BECAUSE THE LINK IS THE TEST'S OWN SETUP. What
+     * this asserts is that READING THE LIST writes nothing — not that the
+     * fixture never touched the row.
+     */
+    const before = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findFirst({ where: { id: agreementId } }),
+    );
+
+    const list = await request(app.getHttpServer())
+      .get('/tablet-sessions/pushable')
+      .set('x-practice-id', practiceId)
+      .expect(200);
+
+    const row = (list.body as { agreementId: string }[]).find((r) => r.agreementId === agreementId);
+    expect(row).toBeDefined();
+    const blocked = row as unknown as {
+      pushable: boolean;
+      blockedReason: string;
+      printRecord: { checks: string[]; print: { printJobId: string; sourceSha256: string } } | null;
+    };
+    expect(blocked.pushable).toBe(false);
+    expect(blocked.blockedReason).toBe('print_record_incomplete');
+    // THE SAME TWO FIELDS THE REFUSAL CARRIES, so the band reads identically
+    // whether reception met it here or by pressing Send.
+    expect(blocked.printRecord?.checks).toEqual(['print_record_benefit_missing']);
+    expect(blocked.printRecord?.print.printJobId).toBe(jobId);
+    expect(blocked.printRecord?.print.sourceSha256).toHaveLength(64);
+
+    // HARD RULE 9 — the list names fields, never values off the form.
+    expect(list.text).not.toContain('2999');
+    // HARD RULE 4 — and no amount reaches the desk list in any direction.
+    expect(JSON.stringify(blocked.printRecord)).not.toMatch(/\d+\.\d{2}/);
+
+    // AND THE AGREEMENT DID NOT MOVE. This is a computed fact about a print
+    // record, not a status written on a valid instrument.
+    await prisma.withPractice(practiceId, async (tx) => {
+      expect(await tx.agreement.findFirst({ where: { id: agreementId } })).toEqual(before);
+    });
+  });
+
+  it('a_readable_print_record_leaves_the_row_sendable', async () => {
+    // The other side of the same gate, at the LIST rather than the push: the
+    // pass cannot be working by blocking everything with a print record.
+    const agreementId = await draftReadyToPush('POST-ROWOK');
+    const jobId = await seedPrintRecord([
+      { serviceDate: today(), mbsItemNumber: '23', description: 'Level B', benefitAssigned: '45.05' },
+    ]);
+    await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.updateMany({ where: { id: agreementId }, data: { sourcePrintJobId: jobId } }),
+    );
+
+    const list = await request(app.getHttpServer())
+      .get('/tablet-sessions/pushable')
+      .set('x-practice-id', practiceId)
+      .expect(200);
+    const row = (list.body as { agreementId: string; pushable: boolean; printRecord: unknown }[]).find(
+      (r) => r.agreementId === agreementId,
+    );
+    expect(row?.pushable).toBe(true);
+    // AND NOTHING IS SAID ABOUT A RECORD THAT READS CORRECTLY.
+    expect(row?.printRecord).toBeNull();
+  });
+
   it('a_push_from_a_complete_print_record_goes_through', async () => {
     // The other side of the same gate: a record with everything on it is not
     // refused, so the check cannot be passing by refusing everything.

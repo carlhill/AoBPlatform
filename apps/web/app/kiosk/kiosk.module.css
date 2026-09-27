@@ -1244,14 +1244,28 @@
  * `tabular-nums` IS WHAT MAKES THE ALIGNMENT REAL. Proportional digits right-
  * aligned still stagger, because a 1 is narrower than a 0 -- so the column
  * would look right-aligned and not read as one.
+ *
+ * BOTH SELECTORS ARE QUALIFIED BY `.db4Table`, AND THAT IS NOT DECORATION.
+ * `.db4Table th, .db4Table td` above sets `text-align: left` at specificity
+ * (0,1,1); a bare `.db4ColBenefit` is (0,1,0) and LOSES to it. The first
+ * version of this rule was written unqualified and did nothing at all on the
+ * screen while reading correctly in the file -- which is why the column is
+ * still left-ragged in a build that contains the fix.
+ *
+ * AND THE LAST COLUMN GIVES BACK ITS RIGHT PADDING, so the figures align
+ * flush with the edge of the table rather than 12px short of it. A
+ * right-aligned column that stops before the rule above it reads as neither
+ * aligned nor centred.
  */
-.db4ColBenefit {
+.db4Table .db4ColBenefit {
   width: 12ch;
   text-align: right;
+  padding-right: 0;
 }
 
-.db4Benefit {
+.db4Table .db4Benefit {
   text-align: right;
+  padding-right: 0;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1273,7 +1287,7 @@
     width: 8ch;
   }
 
-  .db4ColBenefit {
+  .db4Table .db4ColBenefit {
     width: 11ch;
   }
 }

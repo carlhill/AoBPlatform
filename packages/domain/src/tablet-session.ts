@@ -578,6 +578,36 @@ export const PUSH_BLOCKED_REASONS = [
    * refusal stops happening on its own.
    */
   'enduring_rules_not_authored',
+  /**
+   * THE DB4 PRINT RECORD BEHIND THIS AGREEMENT IS NOT ONE WE CAN REPRODUCE
+   * (Carl, 27 September 2026, from a live desk: *"the agreement needs to have
+   * a status of PMS Data Error or something"*, answered as *"blocked state on
+   * the row"*).
+   *
+   * IT WAS DELIBERATELY KEPT OUT OF THIS UNION UNTIL NOW, and the reason it
+   * is in it has changed rather than been overruled. `PUSH_BLOCKED_REASONS`
+   * is what the desk can know IN ADVANCE, from facts already to hand, so it
+   * can grey out Send before anybody presses it. The print-record check needs
+   * a read of another module's table, so it could only be answered at the
+   * moment of the push -- which made it a refusal code and not a blocked
+   * reason. `pushable()` now does that read for the whole list, once, so the
+   * answer IS known in advance and the exclusion no longer holds.
+   *
+   * WHY IT HAD TO MOVE. A row that will be refused looked identical to one
+   * that will go, so reception discovered the problem by pressing Send with a
+   * patient in front of them. The reason has to be on the row.
+   *
+   * IT IS NOT A STATUS ON THE AGREEMENT, and that was asked for. The
+   * agreement is complete -- particulars locked and validated -- and no
+   * dollar amount is in the s 65C data set (hard rule 4), so recording it as
+   * faulty would be this platform asserting something untrue about a valid
+   * instrument. What we doubt is OUR reading of the practice's printed form,
+   * which is a fact about a print record and belongs on the row.
+   *
+   * NOTHING HERE BLOCKS CARE (hard rule 8, REQ-REC-04). Reprint, paper, or
+   * after the service -- the patient is seen and billed either way.
+   */
+  'print_record_incomplete',
   'other',
 ] as const;
 
