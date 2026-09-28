@@ -313,6 +313,32 @@ describe('the three pages Carl asked for', () => {
     expect(view.getByText(strings.particulars.agreementDate)).toBeTruthy();
     expect(view.getByText(strings.particulars.assignor)).toBeTruthy();
 
+    /*
+     * AND THEY ARE IN THE LEFT COLUMN, UNDER THE DATE OF SERVICE (Carl, 28
+     * September 2026: *"move Date of this agreement and Signing below Date of
+     * service / Too much wasted white space"*).
+     *
+     * ASSERTED BY POSITION, BECAUSE PRESENCE IS WHAT THE TWO LINES ABOVE
+     * ALREADY ASSERT and they passed just as happily while the pair sat in a
+     * band across the foot of the page. A layout Carl asked for twice is worth
+     * a test that can tell the two layouts apart.
+     *
+     * AND HEADED, because inside the practice's own column that heading is the
+     * only thing saying these two facts are not on the practice's paper (hard
+     * rule 12). Losing it would be the regression that matters, so it is
+     * checked here and not only looked at.
+     */
+    const columns = view.getByTestId('db4-header-columns');
+    const left = columns.firstElementChild as HTMLElement;
+    const ours = view.getByTestId('db4-agreement-facts');
+    expect(left.contains(ours)).toBe(true);
+    expect(ours.textContent).toContain(strings.particulars.db4.thisAgreement);
+    /* Under the date of service, not above it. */
+    const order = Array.from(left.children);
+    const serviceDateRow = order.find((el) => el.textContent?.includes(strings.particulars.db4.serviceDate));
+    expect(serviceDateRow).toBeTruthy();
+    expect(order.indexOf(ours)).toBeGreaterThan(order.indexOf(serviceDateRow as Element));
+
     // 2B and 2C are not on it.
     expect(view.queryByTestId('db4-services')).toBeNull();
     expect(view.queryByTestId('db4-providers')).toBeNull();

@@ -733,35 +733,47 @@ export function ParticularsScreen({
             */}
             {db4 ? (
               <>
+                {/*
+                  THE AGREEMENT'S OWN FACTS GO INTO 2A's LEFT COLUMN, UNDER THE
+                  DATE OF SERVICE (Carl, 28 September 2026: *"move Date of this
+                  agreement and Signing below Date of service / Too much wasted
+                  white space"*).
+
+                  THIS REVERSES 27 SEPTEMBER, AND THE REASON IT GAVE WAS REAL.
+                  The two facts are neither practice nor patient — the date of
+                  THIS agreement is not on the practice's paper, and who is
+                  signing is a fact about the party rather than the record — so
+                  they were put in a band across the foot of the page, where
+                  the layout made that plain. The cost was a left column that
+                  ended half way down beside a much taller patient block, and
+                  the gap read as a rendering fault.
+
+                  WHAT MAKES THE MOVE SAFE IS THE HEADING, NOT THE POSITION.
+                  Inside the practice's column a distinction the layout used to
+                  carry has to be carried in words, so the two facts keep a
+                  section of their own headed "This agreement" — the same care
+                  `db4-provenance` takes two blocks above (hard rule 12).
+
+                  IT IS A SLOT, NOT A FACT `Db4Document` KNOWS. That component
+                  renders the practice's printed record and nothing else; it
+                  places this node and never composes it, so nothing of ours
+                  can leak into the reproduction.
+
+                  STILL 2A's, and still before 2B's `episodic_details_correct_v1`
+                  asks the patient to confirm "the details above".
+                */}
                 <Db4Document
                   form={db4}
                   showParserTemplate={blueprintPanels}
                   page={paged?.page}
                   pageHeadingRef={pageHeadingRef}
+                  agreementFacts={
+                    <>
+                      <Row label={strings.particulars.agreementDate} value={view.agreementDate} />
+                      {assignorFacts}
+                    </>
+                  }
                 />
-                {/*
-                  THE AGREEMENT'S OWN FACTS, FULL WIDTH UNDER BOTH COLUMNS
-                  (Carl, 27 Sep 2026, on the first cut of the two-column 2A).
-
-                  THEY ARE NEITHER PRACTICE NOR PATIENT. The date of THIS
-                  agreement is not on the practice's paper at all — it is this
-                  agreement's own particular — and who is signing is a fact
-                  about the party, not about the person's record. Sitting at
-                  the foot of the left column they read as the practice's, and
-                  they inherited whatever gap the taller right column left
-                  behind them, which looked like a rendering fault. A band of
-                  their own across the page is also where they sit on the
-                  paper form.
-
-                  STILL 2A's, and still before 2B's `episodic_details_correct_v1`
-                  asks the patient to confirm "the details above".
-                */}
-                {on('header') ? (
-                  <div className={styles.db4Agreement} data-testid="db4-agreement-facts">
-                    <Row label={strings.particulars.agreementDate} value={view.agreementDate} />
-                    {assignorFacts}
-                  </div>
-                ) : null}
               </>
             ) : (
               <>
@@ -995,6 +1007,7 @@ function Db4Document({
   showParserTemplate,
   page,
   pageHeadingRef,
+  agreementFacts,
 }: {
   form: Db4FormView;
   /** The TEST-device flag. A parser version is a developer's note (Carl, 4 Sep 2026). */
@@ -1010,6 +1023,17 @@ function Db4Document({
    * has one element to move to whichever third is on screen.
    */
   pageHeadingRef?: Ref<HTMLHeadingElement>;
+  /**
+   * THE AGREEMENT'S OWN FACTS, PLACED BUT NEVER COMPOSED HERE (Carl, 28
+   * September 2026).
+   *
+   * A SLOT, BECAUSE THIS FUNCTION REPRODUCES THE PRACTICE'S PRINTED RECORD
+   * AND NOTHING ELSE. The date of this agreement and who is signing are ours,
+   * not theirs, and the caller owns both; all that happens here is that they
+   * are drawn in 2A's left column under the date of service, behind their own
+   * heading, so the reproduction cannot acquire a fact the paper never had.
+   */
+  agreementFacts?: ReactNode;
 }): ReactNode {
   const copy = strings.particulars.db4;
   const headingLines = form.headingLines ?? [];
@@ -1156,6 +1180,18 @@ function Db4Document({
           <div className={styles.db4Column}>
             <Row label={copy.formReference} value={form.formReference ?? null} />
             <Row label={copy.serviceDate} value={form.serviceDate ?? null} />
+            {/*
+              OURS, UNDER THE DATE OF SERVICE AND SAYING SO. Directly where
+              Carl put it, and headed, because everything else in this column
+              is the practice's and two unlabelled rows among them would read
+              as theirs.
+            */}
+            {agreementFacts ? (
+              <div className={styles.db4Section} data-testid="db4-agreement-facts">
+                <h3 className={styles.db4SectionHeading}>{copy.thisAgreement}</h3>
+                {agreementFacts}
+              </div>
+            ) : null}
             {form.servicingLocationName || addressLines.length > 0 ? (
               <div className={styles.db4Section}>
                 <h3 className={styles.db4SectionHeading}>{copy.servicingLocation}</h3>

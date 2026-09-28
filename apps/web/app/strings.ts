@@ -7651,6 +7651,21 @@ export const strings = {
           'This is AoBPlatform showing you the form your practice printed. It is not the prescribed form itself.',
         formReference: 'Form reference',
         serviceDate: 'Date of service',
+        /**
+         * THE HEADING OVER THE TWO FACTS THAT ARE OURS (Carl, 28 September
+         * 2026: *"move Date of this agreement and Signing below Date of
+         * service"*).
+         *
+         * IT EXISTS BECAUSE THE FACTS MOVED INTO THE FORM. Everything else in
+         * this region is the practice's printed record reproduced; the date of
+         * THIS agreement and who is signing are not on their paper at all.
+         * While the two sat in a band of their own below both columns that
+         * distinction was made by the layout. Inside the practice's left
+         * column it has to be made in words, or the screen quietly attributes
+         * two of our facts to their form — the same care `provenance` above
+         * takes for the same reason (hard rule 12).
+         */
+        thisAgreement: 'This agreement',
         servicingLocation: 'Servicing location',
         patient: 'Patient',
         dateOfBirth: 'Date of birth',

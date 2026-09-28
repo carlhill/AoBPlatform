@@ -1078,32 +1078,22 @@
 }
 
 /*
- * THE AGREEMENT'S OWN FACTS, ACROSS THE FOOT OF 2A — the date of this
- * agreement and who is signing (Carl, 27 September 2026).
+ * THE AGREEMENT'S OWN FACTS HAVE NO RULE OF THEIR OWN ANY MORE, and the
+ * absence is deliberate rather than an omission.
  *
- * WHY IT IS A BAND AND NOT A THIRD COLUMN. They are neither practice details
- * nor patient details, and while they sat below the left column they took
- * whatever vertical gap the taller right column had left — a couple of
- * hundred pixels of nothing that reads as a rendering fault rather than as a
- * layout. Full width with a rule above it, they are plainly about the
- * agreement and belong to neither column, which is also where they sit on the
- * paper.
+ * UNTIL 28 SEPTEMBER 2026 they were a full-width band across the foot of 2A
+ * with a hairline above it, on the reasoning that facts belonging to neither
+ * column should sit under both. The cost was the thing Carl reported: the
+ * left column ended half way down beside a much taller patient block, and a
+ * couple of hundred pixels of nothing read as a rendering fault. *"Move Date
+ * of this agreement and Signing below Date of service / Too much wasted white
+ * space."*
  *
- * THE TWO COLUMNS ARE ALREADY INDEPENDENT. `.db4Columns` is one grid row of
- * two tracks with `align-items: start`, so each track is only as tall as its
- * own content and nothing in one column lines itself up against a row in the
- * other. A gap under the shorter of the two is the shorter column ending, not
- * a cell being stretched.
+ * THEY ARE NOW A `.db4Section` IN THE LEFT COLUMN like any other, headed
+ * "This agreement" — which is what keeps them from being read as the
+ * practice's, and does it in words rather than in whitespace. Nothing here
+ * needs to style them; adding a rule back would only reintroduce the gap.
  */
-.db4Agreement {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s3);
-  margin-top: var(--s5);
-  padding-top: var(--s5);
-  border-top: 1px solid var(--line);
-  min-width: 0;
-}
 
 /*
  * A BLOCK LABEL, NOT A HEADING OF THE PAGE. "Patient", "Services", "Privacy
