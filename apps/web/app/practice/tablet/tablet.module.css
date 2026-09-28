@@ -541,3 +541,20 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/*
+ * WHAT TO DO ABOUT A RULES VERDICT, UNDER IT (Carl, 28 September 2026: *"we
+ * need context in the error message and the steps to resolve it"*).
+ *
+ * TWO REGISTERS ON ONE BULLET, AND THEY MUST NOT READ AS ONE SENTENCE. The
+ * line above is the s 65C rule set speaking, verbatim and unrewritten (hard
+ * rule 14); this is our advice about it. A new line and the band's ordinary
+ * ink — rather than the red the verdict wears — is what keeps the reader
+ * from attributing our words to the instrument.
+ */
+.ruleFix {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--ink);
+  font-size: var(--text-sm);
+}

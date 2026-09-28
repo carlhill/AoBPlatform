@@ -430,6 +430,22 @@ export interface RefusalDescription {
    */
   checks?: readonly { code: string; text: string }[];
   /**
+   * THE s 65C RULES ENGINE'S OWN NAMED VERDICTS, each with what to do about
+   * it (Carl, 28 September 2026: *"why the 65c validation failed - we need
+   * context in the error message and the steps to resolve it"*).
+   *
+   * SEPARATE FROM `checks`, THOUGH BOTH ARE LISTS, because they are lists of
+   * different things and the reader acts on them in different places. A
+   * print-record check is about the PAGE and is fixed by reprinting it; a
+   * rules verdict is about the PARTICULARS and is fixed wherever that fact
+   * lives. Merging them would produce one list whose bullets need two
+   * different actions.
+   *
+   * `text` IS THE RULE SET SPEAKING AND IS NEVER REWRITTEN (hard rule 14);
+   * `fix` is ours, and is absent for a rule this build has no answer for.
+   */
+  rules?: readonly { code: string | null; text: string; fix: string }[];
+  /**
    * WHICH PRINT RECORD IT WAS — so “reprint it” names a form (Carl, 27
    * September 2026). Present only for `print_record_incomplete`, and only
    * when the server could name the record.
@@ -472,6 +488,13 @@ export interface RefusalContext {
    * the moment of the refusal, exactly like `sessionId` on `device_busy`.
    */
   checks?: readonly string[];
+  /**
+   * THE RULES ENGINE'S `failures` ARRAY, STRAIGHT OFF THE WIRE — each entry
+   * `"<rule>: <message>"`, e.g. `"C7: D6b: a post-agreement requires at
+   * least one valid MBS item number."`. A refused lock has always sent it
+   * and the push paths have always dropped it (Carl, 28 September 2026).
+   */
+  failures?: readonly string[];
   /** The `print` block a `print_record_incomplete` refusal carries. */
   print?: Db4PrintRecordIdentity;
 }
@@ -539,10 +562,52 @@ export function describePrintRecordCheck(code: string): { code: string; text: st
   return { code, text: strings.tablet.printRecordChecks[code] ?? strings.tablet.printRecordCheckOther(code) };
 }
 
+/**
+ * ONE RULES VERDICT, SPLIT INTO WHAT THE RULE SET SAID AND WHAT TO DO.
+ *
+ * The wire format is `"<code>: <message>"`, and the code is taken from
+ * before the FIRST colon only — the message has colons of its own ("C7: D6b:
+ * a post-agreement requires…"), and a greedy split would lose half the
+ * sentence. A line with no recognisable code keeps all of itself and takes
+ * the general advice, which is the honest degradation: a rule this build has
+ * never heard of still arrives in full.
+ */
+export function describeRuleFailure(line: string): { code: string | null; text: string; fix: string } {
+  const match = /^([A-Z]+\d+):\s*(.+)$/s.exec(line.trim());
+  const code = match ? match[1]! : null;
+  return {
+    code,
+    text: line.trim(),
+    fix: (code ? strings.tablet.ruleFix[code] : undefined) ?? strings.tablet.ruleFixOther,
+  };
+}
+
 export function describeRefusal(
   reason: string | null | undefined,
   ctx: RefusalContext = {},
 ): RefusalDescription {
+  /*
+   * A RULES VERDICT OUTRANKS WHATEVER CODE CAME WITH IT, and is read before
+   * the switch for that reason.
+   *
+   * The refused lock is a 400 carrying `{ message: 's 65C validation failed',
+   * failures }` and NO reason code at all, so it used to fall through every
+   * branch below to the last one and render its summary line alone — which
+   * is the screen Carl met: a refusal naming no rule, no field and no fix,
+   * while the array that names all three sat unread in the same response.
+   * Even where a code IS present, a named verdict says more than a mapped
+   * sentence about a code, so the array wins whenever it is there.
+   */
+  if (ctx.failures && ctx.failures.length > 0) {
+    return {
+      reason: reason ?? undefined,
+      code: reason ?? undefined,
+      title: strings.tablet.rulesRefusedTitle,
+      text: strings.tablet.rulesRefused,
+      rules: ctx.failures.map(describeRuleFailure),
+    };
+  }
+
   switch (reason) {
     case 'device_busy':
       return {
@@ -1270,6 +1335,7 @@ export function RefusalOutcomeBody({
   recallTestId,
   fix,
   checksTestId,
+  rulesTestId,
 }: {
   info: RefusalDescription;
   canSend: boolean;
@@ -1292,6 +1358,8 @@ export function RefusalOutcomeBody({
    * and can only be answered at the moment of the push.
    */
   checksTestId?: string;
+  /** The rules list's own test id, where a caller has one. */
+  rulesTestId?: string;
 }) {
   return (
     <>
@@ -1303,6 +1371,27 @@ export function RefusalOutcomeBody({
             {info.checks.map((check) => (
               <li key={check.code} data-check={check.code}>
                 {check.text}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {/*
+        THE RULES VERDICTS, IN THE SAME RED AS THE PRINT CHECKS and for the
+        same reason: this is the part a receptionist acts on, and it is not
+        the sentence above it. Each bullet is the rule set's own words,
+        unaltered, with what to do about it under them — two registers, kept
+        visibly apart, because one is a versioned instrument and one is our
+        advice about it.
+      */}
+      {info.rules && info.rules.length > 0 && (
+        <div className={rowStyles.checks}>
+          <p className={rowStyles.checksLead}>{strings.tablet.rulesRefusedLead}</p>
+          <ul data-testid={rulesTestId}>
+            {info.rules.map((rule, index) => (
+              <li key={rule.code ?? `rule-${index}`} data-rule={rule.code ?? undefined}>
+                {rule.text}
+                <span className={rowStyles.ruleFix}>{rule.fix}</span>
               </li>
             ))}
           </ul>
@@ -1944,7 +2033,7 @@ export function usePushDesk(practiceId: string): PushDesk {
          * sessions this page already polls — the session id first, the device
          * id as a fallback if the id it named is not one we hold.
          */
-        const { reason, message, sessionId, checks, print } = await refusal(res);
+        const { reason, message, sessionId, checks, print, failures } = await refusal(res);
         // A FRESH READ, because a `device_busy` session is almost never in
         // what this closure already holds (see the doc comment on `load`).
         const fresh = await load();
@@ -1976,6 +2065,7 @@ export function usePushDesk(practiceId: string): PushDesk {
              */
             rawMessage: message,
             checks,
+            failures,
             print,
             audiences,
             practiceId,
@@ -2261,7 +2351,7 @@ export function usePushDesk(practiceId: string): PushDesk {
         body: JSON.stringify({ agreementId: ended.agreementId }),
       });
       if (!res.ok) {
-        const { reason, message, sessionId, checks, print } = await refusal(res);
+        const { reason, message, sessionId, checks, print, failures } = await refusal(res);
         const fresh = await load();
         const live = liveOnly(fresh?.sessions ?? sessions);
         const busySession = sessionId
@@ -2277,6 +2367,7 @@ export function usePushDesk(practiceId: string): PushDesk {
             rawMessage: message,
             patientId: ended.patientId,
             checks,
+            failures,
             print,
             audiences,
             practiceId,
@@ -2319,7 +2410,7 @@ export function usePushDesk(practiceId: string): PushDesk {
       if (!res.ok) {
         // RESEND REFUSES THE SAME WAY THE PUSH DOES — same codes, same
         // treatment, and the same tablet is already known (it is this row's).
-        const { reason, message, sessionId, checks, print } = await refusal(res);
+        const { reason, message, sessionId, checks, print, failures } = await refusal(res);
         const fresh = await load();
         const live = liveOnly(fresh?.sessions ?? sessions);
         const busySession = sessionId
@@ -2335,6 +2426,7 @@ export function usePushDesk(practiceId: string): PushDesk {
             rawMessage: message,
             patientId: session.patientId,
             checks,
+            failures,
             print,
             audiences,
             practiceId,
@@ -2429,7 +2521,7 @@ export function usePushDesk(practiceId: string): PushDesk {
         body: JSON.stringify({}),
       });
       if (!res.ok) {
-        const { reason, message, checks, print } = await refusal(res);
+        const { reason, message, checks, print, failures } = await refusal(res);
         setPushOutcome({
           id: row.agreementId,
           ok: false,
@@ -2438,6 +2530,7 @@ export function usePushDesk(practiceId: string): PushDesk {
             patientId: row.patientId,
             rawMessage: message,
             checks,
+            failures,
             print,
             audiences,
             practiceId,
@@ -3362,6 +3455,7 @@ export function AgreementBands({
               linkTestId={`blocked-link-${row.agreementId}`}
               recallTestId={`blocked-recall-${row.agreementId}`}
               checksTestId={`blocked-checks-${row.agreementId}`}
+              rulesTestId={`blocked-rules-${row.agreementId}`}
               fix={fixFor(desk, row, row.blockedReason)}
             />
           </Notice>
@@ -3389,6 +3483,7 @@ export function AgreementBands({
                 linkTestId={`push-outcome-link-${row.agreementId}`}
                 recallTestId={`push-outcome-recall-${row.agreementId}`}
                 checksTestId={`push-outcome-checks-${row.agreementId}`}
+                rulesTestId={`push-outcome-rules-${row.agreementId}`}
                 fix={fixFor(desk, row, outcome.info.reason)}
               />
             ) : (
@@ -4122,6 +4217,7 @@ export function SessionOutcomeNotice({
           linkTestId={linkTestId}
           recallTestId={recallTestId}
           checksTestId={`${linkTestId}-checks`}
+          rulesTestId={`${linkTestId}-rules`}
         />
       ) : (
         outcome.text

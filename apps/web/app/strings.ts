@@ -6328,6 +6328,44 @@ export const strings = {
       /** Carl’s own case, and the only one of the five that reaches a real agreement today. */
       print_record_benefit_missing: 'We could not read an amount against any service',
     } as Record<string, string>,
+    /*
+     * WHY THE s 65C CHECK REFUSED, AND WHAT TO DO ABOUT IT (Carl, 28
+     * September 2026: *"why the 65c validation failed - we need context in
+     * the error message and the steps to resolve it"*).
+     *
+     * THE ANSWER WAS ALREADY ON THE WIRE AND WAS BEING DROPPED. A refused
+     * lock answers with a summary line AND a `failures` array of the rules
+     * engine's own named verdicts - "C7: D6b: a post-agreement requires at
+     * least one valid MBS item number." The who-is-signing path read it; the
+     * PUSH paths destructured everything except it, so reception met "s 65C
+     * validation failed", which names no rule, no field and no fix. That is
+     * the dead end CLAUDE.md section 7 forbids.
+     *
+     * THE VERDICT IS SHOWN VERBATIM, because it is the rule set speaking and
+     * paraphrasing a versioned instrument would be us restating it (hard rule
+     * 14). The FIX beside it is ours, and it is keyed on the rule code, so an
+     * unmapped rule still shows its own line and its code rather than a shrug.
+     */
+    rulesRefusedTitle: 'The particulars are not complete yet',
+    rulesRefused:
+      'Before the particulars are locked they are checked against the s 65C data set, and part of it is not there yet. Nothing has been sent and nothing has changed. What the check said, and what to do about it, is below. The patient is seen and billed either way.',
+    rulesRefusedLead: 'What the check said:',
+    /**
+     * WHAT TO DO, PER RULE. Only the rules whose fix is knowable from here
+     * carry one; the rest fall to `ruleFixOther`, which is honest about
+     * saying less rather than inventing a screen (CLAUDE.md section 7).
+     */
+    ruleFix: {
+      C1: "The patient's name is not on their record. Add it on the patient, then send again.",
+      C2: "The agreement's own date is missing or too far ahead. That date is ours and not the practice's, so please tell support what you were doing.",
+      C4: 'The provider has neither a provider number nor a place-of-practice address on their affiliation. Add one of the two and send again.',
+      C5: 'The date of service is missing, or it falls on the wrong side of the date of the agreement. Correct it in your practice software and it will come through again.',
+      C6: 'Choose the Basic Service Description on this row — the control is right here.',
+      C7: 'No item numbers have been recorded for this visit. They arrive with the invoice from your practice software: record what was billed and this row clears when it comes through. There is no screen here to type them in yet.',
+      C8: 'Step 1, who is signing, has not been answered in full. Somebody signing for another person needs a name and a relationship.',
+    } as Record<string, string>,
+    ruleFixOther:
+      'Fix this where the fact lives — in your practice software, or on the record the line names — and the row clears when it comes through.',
     /** The line that introduces the list. Plain, because the sentence above has done the explaining. */
     printRecordChecksLead: 'What we could not read:',
     /**

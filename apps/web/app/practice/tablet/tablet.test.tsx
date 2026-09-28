@@ -2428,6 +2428,60 @@ describe('the refusal words', () => {
    * had no words for them, so the unmapped fallback printed the reason and
    * threw the list away).
    * ---------------------------------------------------------------------- */
+  /* -----------------------------------------------------------------------
+   * THE s 65C REFUSAL AT THE DESK (Carl, 28 September 2026, live: the band
+   * read "Cannot be sent yet / s 65C validation failed" and nothing else,
+   * on a post-service row whose own summary already said "no item numbers
+   * recorded" — *"why the 65c validation failed - we need context in the
+   * error message and the steps to resolve it"*).
+   * -------------------------------------------------------------------- */
+  it('a_refused_lock_names_the_rule_and_says_what_to_do_about_it', () => {
+    /*
+     * THE REFUSAL CARRIES NO REASON CODE AT ALL — it is a 400 with
+     * `{ message: 's 65C validation failed', failures }` — so it used to fall
+     * through every mapped branch to the summary line. The array is read
+     * BEFORE the switch for exactly that reason.
+     */
+    const info = describeRefusal(undefined, {
+      rawMessage: 's 65C validation failed',
+      failures: ['C7: D6b: a post-agreement requires at least one valid MBS item number.'],
+    });
+
+    expect(info.title).toBe(strings.tablet.rulesRefusedTitle);
+    // THE SUMMARY LINE IS NO LONGER THE WHOLE ANSWER.
+    expect(info.text).not.toBe('s 65C validation failed');
+    expect(info.rules).toHaveLength(1);
+    expect(info.rules?.[0]?.code).toBe('C7');
+    // THE RULE SET'S OWN WORDS, UNALTERED (hard rule 14) — including the
+    // second colon, which a greedy split would have eaten.
+    expect(info.rules?.[0]?.text).toBe(
+      'C7: D6b: a post-agreement requires at least one valid MBS item number.',
+    );
+    // AND OURS, BESIDE THEM: what to actually do.
+    expect(info.rules?.[0]?.fix).toBe(strings.tablet.ruleFix.C7);
+  });
+
+  it('a_rule_this_build_has_never_heard_of_still_arrives_in_full', () => {
+    // CLAUDE.md §7c — an unmapped code shows itself rather than a shrug. The
+    // rule set is versioned content and may name a rule this build predates.
+    const info = describeRefusal(undefined, {
+      failures: ['C99: something nobody has written copy for yet.', 'no code at all here'],
+    });
+    expect(info.rules?.map((r) => r.code)).toEqual(['C99', null]);
+    expect(info.rules?.[0]?.text).toContain('C99');
+    expect(info.rules?.every((r) => r.fix === strings.tablet.ruleFixOther)).toBe(true);
+  });
+
+  it('a_rules_verdict_outranks_whatever_code_came_with_it', () => {
+    // A named verdict says more than a mapped sentence about a code, so the
+    // array wins wherever it is present.
+    const info = describeRefusal('provider_not_servicing', {
+      failures: ['C4: D4: provider identification requires either name AND place-of-practice address, or a provider number (a provider number is NOT mandatory).'],
+    });
+    expect(info.rules).toHaveLength(1);
+    expect(info.text).toBe(strings.tablet.rulesRefused);
+  });
+
   it('a_refused_print_record_says_what_could_not_be_read_not_just_a_code', () => {
     const info = describeRefusal('print_record_incomplete', {
       checks: ['print_record_benefit_missing', 'print_record_irn_missing'],
