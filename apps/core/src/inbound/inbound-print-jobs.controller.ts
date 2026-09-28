@@ -1,10 +1,11 @@
-import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import { IsArray, IsBoolean, IsIn, IsISO8601, IsOptional, IsString, Matches, MaxLength, ValidateNested } from 'class-validator';
-import type { PrintJobEnvelope } from '@aobplatform/contracts';
+import type { CollectedConfirmation, PrintJobEnvelope } from '@aobplatform/contracts';
 import { PRINT_DOCUMENT_TYPES } from '@aobplatform/domain';
 import { PracticeScoped } from '../auth/practice-scope.decorator';
 import { InboundPrintJobsService } from './inbound-print-jobs.service';
+import { WriteBackCollectionService } from './write-back-collection.service';
 
 /*
  * THE DOOR IS WHERE DATA MINIMISATION IS ENFORCED. These DTOs name exactly the
@@ -213,9 +214,27 @@ function requirePractice(practiceId: string | undefined): string {
  * device enrolment in item 8; until then the row records `credentialKind:
  * 'practice'` so nothing later mistakes it for a device-attested job.
  */
+/**
+ * WHAT THE DESKTOP SAYS AFTER IT HAS FILED ONE (GA-PLAN B13).
+ *
+ * BOTH FIELDS ARE REQUIRED AND NEITHER IS DECORATIVE. The hash is of the
+ * bytes actually written, and the service refuses the confirmation unless it
+ * matches what was published -- so `writtenBackAt` means the practice holds
+ * the document we rendered, rather than that a client said so. The key is
+ * where it landed, in the practice's own terms, so a support question can be
+ * answered without a second call.
+ */
+class CollectedDto implements CollectedConfirmation {
+  @IsString() @Matches(/^[0-9a-f]{64}$/) artefactSha256!: string;
+  @IsString() @MaxLength(400) pmsDocumentKey!: string;
+}
+
 @Controller('inbound/print-jobs')
 export class InboundPrintJobsController {
-  constructor(private readonly jobs: InboundPrintJobsService) {}
+  constructor(
+    private readonly jobs: InboundPrintJobsService,
+    private readonly collection: WriteBackCollectionService,
+  ) {}
 
   @Post()
   @HttpCode(202)
@@ -253,6 +272,49 @@ export class InboundPrintJobsController {
    * DEV ONLY: this carries the Medicare card number the practice's form
    * printed (D-2026-09-14-03).
    */
+  /**
+   * WHAT IS SIGNED AND WAITING TO BE FILED (DB4-AND-AOBL.md §7 row 3b; Carl,
+   * 28 September 2026: *"build the import-folder write-back"*).
+   *
+   * THE OTHER HALF OF THIS CONNECTOR'S API, AND IT LIVES BESIDE THE FIRST ON
+   * PURPOSE. AOBPRINTER already holds one practice credential and one base
+   * URL for `POST /inbound/print-jobs`; print-capture in and import-folder
+   * out are one installed thing, so they are one prefix.
+   *
+   * A PULL. The practice's network is outbound-only (ADR, mutual TLS), so the
+   * desktop comes and asks; nothing reaches into a receptionist's PC.
+   *
+   * BEFORE `:id` ON THE ROUTER, like `metrics` and `recent`, or the parameter
+   * swallows it and answers "no such job".
+   */
+  @Get('signed')
+  @PracticeScoped()
+  signed(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Query('since') since?: string,
+  ) {
+    return this.collection.pending(requirePractice(practiceId), since);
+  }
+
+  /**
+   * THE DESKTOP CONFIRMS ONE PAIR IS ON DISK. The hash is re-checked here
+   * before `writtenBackAt` moves -- see `WriteBackCollectionService`.
+   *
+   * 200, NOT 202, and not 204. Something is decided by the time this returns:
+   * either this call marked it written back or an earlier one did, and the
+   * body says which (`written`). A desktop retrying after a lost response
+   * needs to tell those apart without guessing.
+   */
+  @Post('signed/:agreementId/collected')
+  @PracticeScoped()
+  collected(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('agreementId', ParseUUIDPipe) agreementId: string,
+    @Body() dto: CollectedDto,
+  ) {
+    return this.collection.confirmCollected(requirePractice(practiceId), agreementId, dto);
+  }
+
   @Get(':id/envelope')
   @PracticeScoped()
   envelope(

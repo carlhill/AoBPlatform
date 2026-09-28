@@ -9,6 +9,7 @@ import { InboundPrintJobsProcessor } from './inbound-print-jobs.processor';
 import { Db4AssignmentHandler } from './db4-assignment.handler';
 import { InboundLaneWorkerService } from './inbound-lane.worker';
 import { InboundPrintJobsController } from './inbound-print-jobs.controller';
+import { WriteBackCollectionService } from './write-back-collection.service';
 
 /**
  * The print channel's landing point — CONSULTATION-CAPTURE-PLAN.md Part 8
@@ -36,7 +37,13 @@ import { InboundPrintJobsController } from './inbound-print-jobs.controller';
    */
   imports: [PmsModule, ArrivalsModule, AutoCaptureModule, AgreementsModule, CaptureModule],
   controllers: [InboundPrintJobsController],
-  providers: [InboundPrintJobsService, InboundPrintJobsProcessor, Db4AssignmentHandler, InboundLaneWorkerService],
+  providers: [
+    InboundPrintJobsService,
+    InboundPrintJobsProcessor,
+    Db4AssignmentHandler,
+    InboundLaneWorkerService,
+    WriteBackCollectionService,
+  ],
   exports: [InboundPrintJobsService],
 })
 export class InboundModule {}

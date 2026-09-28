@@ -53,8 +53,7 @@ const today = () => new Date().toISOString().slice(0, 10);
  * the artefact store to detect as `image/png`. The MARK is not the subject of
  * these tests; that it reaches the page is.
  */
-const TINY_PNG =
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+const TINY_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
 const FAKE_MEDICARE = '2999 99999 9';
 const CHART_NUMBER = '00680';
@@ -137,7 +136,13 @@ function db4Record(over: {
     sourceSha256: over.sourceSha256,
     capturedAt: new Date().toISOString(),
     form: { ...form, formReference: over.formReference ?? FORM_REFERENCE, serviceDate: today() },
-    servicingLocation: { ...location, name: 'Example Family Medical Practice', addressLines: ['1 EXAMPLE STREET'], suburb: 'Sampletown', postcode: '2000' },
+    servicingLocation: {
+      ...location,
+      name: 'Example Family Medical Practice',
+      addressLines: ['1 EXAMPLE STREET'],
+      suburb: 'Sampletown',
+      postcode: '2000',
+    },
     patient: {
       ...patient,
       pmsLinkageKey: `chart:${recordNumber}`,
@@ -185,7 +190,22 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
     worker = app.get(InboundLaneWorkerService);
 
     await prisma.withPractice(practiceId, async (tx) => {
-      await tx.practice.create({ data: { id: practiceId, name: 'DB4 Test Practice' } });
+      await tx.practice.create({
+        data: {
+          id: practiceId,
+          name: 'DB4 Test Practice',
+          /*
+           * THE FIRST CUSTOMER'S CONFIGURATION (DB4-AND-AOBL.md §6a). A
+           * practice on the print channel files its documents in a folder
+           * named for the chart number, and has SAID SO -- which is the gate
+           * the collection lane reads. Set here rather than in one test
+           * because it also changes what happens at signature: `WriteBackService`
+           * leaves such a practice alone, and AOBPRINTER earns `writtenBackAt`
+           * by collecting.
+           */
+          documentFolderKey: 'patient_record_number',
+        },
+      });
       const servicing = await createServicingProvider(tx, practiceId, {
         name: 'Dr Fake Servicing',
         providerType: 'general_practitioner',
@@ -420,7 +440,9 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
       // The content-shape cascade would have created one row per printed
       // provider, keyed on `pmsProviderKey`. Neither exists.
       const smuggled = await prisma.withPractice(practiceId, (tx) =>
-        tx.provider.count({ where: { pmsLinkageKey: { in: [`provider:${SERVICING_NUMBER}`, `provider:${PAYEE_NUMBER}`] } } }),
+        tx.provider.count({
+          where: { pmsLinkageKey: { in: [`provider:${SERVICING_NUMBER}`, `provider:${PAYEE_NUMBER}`] } },
+        }),
       );
       expect(smuggled).toBe(0);
       /*
@@ -627,7 +649,9 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
       // practice's scope, see nothing at all — job row, service record or
       // agreement.
       const seen = await prisma.withPractice(otherPracticeId, async (tx) => ({
-        jobs: await tx.inboundPrintJob.count({ where: { sourceSha256: { in: [FIRST_SHA, REPRINT_SHA, UNKNOWN_SHA] } } }),
+        jobs: await tx.inboundPrintJob.count({
+          where: { sourceSha256: { in: [FIRST_SHA, REPRINT_SHA, UNKNOWN_SHA] } },
+        }),
         records: await tx.serviceRecord.count({ where: { pmsInvoiceKey: IDEMPOTENCY_KEY } }),
         agreements: await tx.agreement.count({}),
         patients: await tx.patient.count({ where: { patientRecordNumber: CHART_NUMBER } }),
@@ -668,9 +692,7 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
       const refusedSha = sha('db4-rules-decline');
       rulesDecline = true;
       try {
-        await post(
-          db4Record({ sourceSha256: refusedSha, formReference: 'HSS0610012092026999999' }),
-        ).expect(202);
+        await post(db4Record({ sourceSha256: refusedSha, formReference: 'HSS0610012092026999999' })).expect(202);
         const [job] = await settle([refusedSha]);
         expect(job.state).toBe('done');
 
@@ -739,9 +761,7 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
       );
       return {
         agreement: agreement!,
-        response: await request(app.getHttpServer())
-          .get(`/agreements/${agreement!.id}`)
-          .set('x-practice-id', scope),
+        response: await request(app.getHttpServer()).get(`/agreements/${agreement!.id}`).set('x-practice-id', scope),
       };
     }
 
@@ -1098,7 +1118,14 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
           captureRequestId: capture?.id,
           affirmations,
           signature: {
-            vector: [{ points: [{ x: 10, y: 40, t: 0 }, { x: 60, y: 80, t: 22, p: 0.35 }] }],
+            vector: [
+              {
+                points: [
+                  { x: 10, y: 40, t: 0 },
+                  { x: 60, y: 80, t: 22, p: 0.35 },
+                ],
+              },
+            ],
             rasterPngBase64: TINY_PNG,
             padWidth: 600,
             padHeight: 200,
@@ -1156,9 +1183,7 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
        * or_an_event` makes, re-made now that a page carrying the number
        * exists.
        */
-      const everything = JSON.stringify(
-        await prisma.vaultOutbox.findMany({ where: { subjectId: agreement!.id } }),
-      );
+      const everything = JSON.stringify(await prisma.vaultOutbox.findMany({ where: { subjectId: agreement!.id } }));
       expect(everything).not.toContain(FAKE_MEDICARE);
       expect(everything).not.toContain('45.05');
     });
@@ -1174,6 +1199,200 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
         tx.artefact.count({ where: { purpose: 'signed_db4', subjectId: agreement!.id } }),
       );
       expect(artefacts).toBe(1);
+    });
+
+    /*
+     * WRITE-BACK BY COLLECTION — the other half of the print channel (GA-PLAN
+     * B13; CONSULTATION-CAPTURE-PLAN.md §8.6; DB4-AND-AOBL.md §6a/§6b, §7 row 3b).
+     *
+     * Carl, 28 September 2026: *"build the import-folder write-back"* — on being
+     * told that a completed approval reaches the practice's PMS nowhere at all.
+     * The mock adapter put the bytes in a Map in core's heap and marked the
+     * agreement written back, and that fiction is what this lane replaces.
+     *
+     * IT RUNS AFTER `the Signed-DB4` AND DEPENDS ON IT, which is why it is here
+     * rather than in a file of its own: the thing being collected IS the
+     * Signed-DB4 that block produced, and standing up a second signature
+     * ceremony to get one would be a second implementation of the part that
+     * matters.
+     */
+    describe('write-back by collection', () => {
+      let waiting: {
+        agreementId: string;
+        artefactId: string;
+        sha256: string;
+        patientRecordNumber: string;
+        formReference: string;
+      };
+
+      it('a_signed_db4_waits_to_be_collected_rather_than_being_written_back_here', async () => {
+        /*
+         * THE PLATFORM DOES NOT CLAIM IT REACHED THE PMS. Nothing prints INTO a
+         * PMS and the practice's network is outbound-only, so `WriteBackService`
+         * must leave this practice alone and `writtenBackAt` must stay null
+         * until a desktop has actually filed the document.
+         */
+        const agreement = await prisma.withPractice(practiceId, (tx) =>
+          tx.agreement.findFirst({ where: { id: signedAgreementId } }),
+        );
+        expect(agreement?.status).toBe('stored');
+        expect(agreement?.writtenBackAt).toBeNull();
+        expect(agreement?.pmsDocumentKey).toBeNull();
+
+        const list = await request(app.getHttpServer())
+          .get('/inbound/print-jobs/signed')
+          .set('x-practice-id', practiceId)
+          .expect(200);
+
+        const row = (list.body as Array<Record<string, string>>).find((r) => r.agreementId === signedAgreementId);
+        expect(row).toBeDefined();
+
+        /*
+         * THE FOLDER AND THE FILENAME ARE THE PRACTICE'S OWN KEYS (§6a): the
+         * chart number names the folder, the form reference names the file. A
+         * row carrying neither could not be filed, and one carrying a guess
+         * would file a consent in a stranger's record.
+         */
+        expect(row!.patientRecordNumber).toBe(CHART_NUMBER);
+        expect(row!.formReference).toBe(FORM_REFERENCE);
+        expect(row!.sha256).toBe(agreement!.signedDb4Sha256);
+        expect(row!.artefactId).toBe(agreement!.signedDb4ArtefactId);
+        expect(row!.formCode).toBe('DB4');
+        expect(row!.rendererVersion).toBe('signed-db4-1');
+        expect(Date.parse(row!.signedAt)).not.toBeNaN();
+
+        /*
+         * AND NOTHING ELSE ABOUT THE PERSON TRAVELS. The chart number is an
+         * approved identifier and is load-bearing here — it IS the folder. The
+         * name, the date of birth, the address and above all the Medicare card
+         * number printed on the page are not needed to file a document, so they
+         * are not published (hard rules 1 and 9).
+         */
+        const serialised = JSON.stringify(row);
+        expect(serialised).not.toContain(FAKE_MEDICARE);
+        expect(serialised).not.toContain('45.05');
+
+        waiting = {
+          agreementId: row!.agreementId,
+          artefactId: row!.artefactId,
+          sha256: row!.sha256,
+          patientRecordNumber: row!.patientRecordNumber,
+          formReference: row!.formReference,
+        };
+      });
+
+      it('the_published_artefact_downloads_as_the_bytes_that_were_hashed', async () => {
+        /*
+         * WHAT THE DESKTOP ACTUALLY FETCHES. A list naming an artefact the
+         * download route will not serve is a lane that fails at the practice
+         * and nowhere else, so the two are pinned together here.
+         */
+        const file = await request(app.getHttpServer())
+          .get(`/artefacts/${waiting.artefactId}/content`)
+          .set('x-practice-id', practiceId)
+          .set('x-read-by', 'aobprinter-e2e')
+          .expect(200);
+        expect(createHash('sha256').update(file.body).digest('hex')).toBe(waiting.sha256);
+      });
+
+      it('a_confirmation_whose_hash_disagrees_is_refused_and_the_row_stays_on_the_list', async () => {
+        /*
+         * HARD RULE 13, APPLIED TO A COPY. A later display re-verifies the hash;
+         * filing a page into a patient's permanent record is the same question
+         * with more at stake. A truncated write must not be able to talk the
+         * platform into saying the practice holds what we rendered.
+         */
+        await request(app.getHttpServer())
+          .post(`/inbound/print-jobs/signed/${waiting.agreementId}/collected`)
+          .set('x-practice-id', practiceId)
+          .send({ artefactSha256: 'b'.repeat(64), pmsDocumentKey: 'wrong/place.pdf' })
+          .expect(400);
+
+        const agreement = await prisma.withPractice(practiceId, (tx) =>
+          tx.agreement.findFirst({ where: { id: waiting.agreementId } }),
+        );
+        expect(agreement?.writtenBackAt).toBeNull();
+        expect(agreement?.pmsDocumentKey).toBeNull();
+
+        const list = await request(app.getHttpServer())
+          .get('/inbound/print-jobs/signed')
+          .set('x-practice-id', practiceId)
+          .expect(200);
+        expect((list.body as Array<{ agreementId: string }>).map((r) => r.agreementId)).toContain(waiting.agreementId);
+      });
+
+      it('collecting_it_marks_it_written_back_once_and_only_once', async () => {
+        const key = `${waiting.patientRecordNumber}/${waiting.formReference}.pdf`;
+        const first = await request(app.getHttpServer())
+          .post(`/inbound/print-jobs/signed/${waiting.agreementId}/collected`)
+          .set('x-practice-id', practiceId)
+          .send({ artefactSha256: waiting.sha256, pmsDocumentKey: key })
+          .expect(201);
+        expect(first.body).toEqual({ written: true, pmsDocumentKey: key });
+
+        const agreement = await prisma.withPractice(practiceId, (tx) =>
+          tx.agreement.findFirst({ where: { id: waiting.agreementId } }),
+        );
+        expect(agreement?.writtenBackAt).not.toBeNull();
+        expect(agreement?.pmsDocumentKey).toBe(key);
+
+        // GONE FROM THE LIST. A desktop that keeps asking must not keep filing.
+        const list = await request(app.getHttpServer())
+          .get('/inbound/print-jobs/signed')
+          .set('x-practice-id', practiceId)
+          .expect(200);
+        expect((list.body as Array<{ agreementId: string }>).map((r) => r.agreementId)).not.toContain(
+          waiting.agreementId,
+        );
+
+        /*
+         * CONFIRMING TWICE IS A RETRY, NOT A SECOND FILING. At-least-once is
+         * what a desktop can offer — the same posture the outbox keeps at the
+         * other end of this connector — so a lost response must be safe to
+         * repeat and must not write a second vault event.
+         */
+        const again = await request(app.getHttpServer())
+          .post(`/inbound/print-jobs/signed/${waiting.agreementId}/collected`)
+          .set('x-practice-id', practiceId)
+          .send({ artefactSha256: waiting.sha256, pmsDocumentKey: key })
+          .expect(201);
+        expect(again.body).toEqual({ written: false, pmsDocumentKey: key });
+
+        const events = await prisma.vaultOutbox.findMany({
+          where: { subjectId: waiting.agreementId, type: 'agreement.written_back' },
+        });
+        expect(events).toHaveLength(1);
+        expect((events[0].payload as Record<string, unknown>).pms).toBe('import_folder');
+        // The event says WHICH document by hash, and nothing about the person.
+        expect(JSON.stringify(events[0].payload)).not.toContain(CHART_NUMBER);
+      });
+
+      it('a_practice_that_has_not_said_which_key_names_its_folder_is_published_nothing', async () => {
+        /*
+         * §6a's CORRECTION, MADE STRUCTURAL. The chart number is almost
+         * certainly the folder name everywhere, and "almost certainly" files
+         * fifty signed consents in the wrong place on the day it is not.
+         * Forgetting to ask must mean write-back does not start — never that it
+         * starts and is wrong.
+         */
+        await prisma.withPractice(practiceId, (tx) =>
+          tx.practice.update({ where: { id: practiceId }, data: { documentFolderKey: null } }),
+        );
+        try {
+          const list = await request(app.getHttpServer())
+            .get('/inbound/print-jobs/signed')
+            .set('x-practice-id', practiceId)
+            .expect(200);
+          expect(list.body).toEqual([]);
+        } finally {
+          await prisma.withPractice(practiceId, (tx) =>
+            tx.practice.update({
+              where: { id: practiceId },
+              data: { documentFolderKey: 'patient_record_number' },
+            }),
+          );
+        }
+      });
     });
   });
 
@@ -1204,9 +1423,7 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
           sourceSha256: FIRST_REPRINT_SHA,
           formReference: REPRINT_FORM_REFERENCE,
           patientRecordNumber: REPRINT_CHART_NUMBER,
-          services: [
-            { time: '09:00', mbsItemNumber: '23', description: 'Level B Surgery', benefitAssigned: '45.05' },
-          ],
+          services: [{ time: '09:00', mbsItemNumber: '23', description: 'Level B Surgery', benefitAssigned: '45.05' }],
         }),
       ).expect(202);
       await settle([FIRST_REPRINT_SHA]);
@@ -1303,6 +1520,5 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
       );
       expect(successors).toBe(1);
     });
-
   });
 });

@@ -343,3 +343,108 @@ export interface Db4JobOutcome {
     readonly supersededBy: string | null;
   } | null;
 }
+
+/* ---------------------------------------------------------------------------
+ * WRITE-BACK BY COLLECTION — the other half of the print channel.
+ *
+ * Carl, 28 September 2026: *"build the import-folder write-back"*, after
+ * being told that a completed approval today reaches the practice's PMS
+ * nowhere at all.
+ *
+ * ── WHY A COLLECTION AND NOT A WRITE ──
+ *
+ * PRINTING CANNOT WRITE BACK (CONSULTATION-CAPTURE-PLAN.md §8.6). Nothing
+ * prints *into* a PMS, and REQ-INT-02 says write-back is the product. The
+ * answer is the same installed desktop closing the loop from the other side:
+ * it drops the signed PDF/A into the PMS's document-import folder, where a
+ * person in the practice files it. Semi-automatic, outside any PMS API, and
+ * legally clean.
+ *
+ * IT IS A PULL, AND THE DIRECTION IS THE WHOLE POINT (DB4-AND-AOBL.md §6b).
+ * A practice's network is outbound-only with mutual TLS (ADR); a server that
+ * pushed would need an inbound port on a receptionist's PC. So the platform
+ * publishes what is ready and AOBPRINTER comes and gets it.
+ *
+ * ── THE FOLDER AND THE FILENAME ARE THE PRACTICE'S OWN KEYS ──
+ *
+ * `<chart number>/<form reference>.pdf`, with the manifest beside it as
+ * `<form reference>.json` (DB4-AND-AOBL.md §6a). The chart number is the
+ * folder because that is what the PMS's own document folder is named for; the
+ * form reference is the filename because it is one per form, so a patient
+ * with three assignments in a year has three files that never collide.
+ *
+ * AND THE CHART NUMBER BEING THE FOLDER IS CONFIRMED, NEVER ASSUMED (§6a's
+ * correction). The day it turns out to be named for something else is the day
+ * fifty signed consents land in the wrong place, so the desktop will not
+ * collect until an administrator has said so for that practice.
+ * ------------------------------------------------------------------------ */
+
+/**
+ * ONE SIGNED FORM WAITING TO BE COLLECTED.
+ *
+ * WHAT IT CARRIES AND WHY EACH FIELD IS HERE. The folder and the filename,
+ * because the desktop cannot ask anyone; the artefact id and its hash,
+ * because the desktop verifies what it downloaded before it writes it into a
+ * patient's record (rule 13 — a display re-verifies, and so does a copy); and
+ * the versions, because the manifest has to say which renderer and which
+ * content produced the page.
+ *
+ * NO NAME, NO DATE OF BIRTH, NO ADDRESS, NO MEDICARE NUMBER. The chart number
+ * is an approved identifier (hard rule 1) and is load-bearing here — it IS
+ * the folder. Nothing else about the person travels, because nothing else is
+ * needed to file a document.
+ */
+export interface SignedFormForCollection {
+  readonly agreementId: string;
+  /** The FOLDER. The practice's own chart number for the patient. */
+  readonly patientRecordNumber: string;
+  /** The FILENAME, without an extension. The reference PracSoft printed on the form. */
+  readonly formReference: string;
+  /** What to download: `GET /artefacts/:artefactId/content`. */
+  readonly artefactId: string;
+  /** SHA-256 of those bytes. The desktop verifies before writing, and confirms with it. */
+  readonly sha256: string;
+  readonly signedAt: string;
+  readonly rendererVersion: string;
+  readonly contentVersion: string;
+  /** `DB4` today — the only form this channel reproduces. */
+  readonly formCode: string;
+}
+
+/**
+ * THE WRITE-BACK MANIFEST — the small JSON beside the PDF in the patient's
+ * folder (DB4-AND-AOBL.md §7, row 3b).
+ *
+ * IT EXISTS SO THE FILE CAN BE CHECKED WITHOUT US. A practice, an auditor or
+ * a support engineer holding the folder can tie the page to the agreement, to
+ * the form PracSoft printed, and to the hash the platform holds — with no
+ * call to anybody and no access to the vault. That is the whole job, and it
+ * is why the manifest is a sibling file rather than metadata inside the PDF.
+ *
+ * EVERY FIELD IS NAMED HERE, NEVER SPREAD FROM A ROW. The same discipline
+ * AOBPRINTER's receipts keep (`receipts.ts`): a field added to the collection
+ * row must not ride into every manifest ever written, silently, until
+ * somebody happens to look at one.
+ */
+export interface WriteBackManifest {
+  readonly formReference: string;
+  readonly patientRecordNumber: string;
+  readonly agreementId: string;
+  readonly signedAt: string;
+  readonly sha256: string;
+  readonly rendererVersion: string;
+  readonly contentVersion: string;
+  readonly formCode: string;
+  /** When this desktop wrote the pair into the folder. Its own clock, and said to be. */
+  readonly collectedAt: string;
+  /** Which build of AOBPRINTER wrote it — the receipts rule, applied here. */
+  readonly printerVersion: string;
+}
+
+/** What the desktop tells the platform once the pair is on disk. */
+export interface CollectedConfirmation {
+  /** Of the bytes actually written. Refused unless it matches what was published. */
+  readonly artefactSha256: string;
+  /** Where it landed, as the practice would find it: `<chart>/<reference>.pdf`. */
+  readonly pmsDocumentKey: string;
+}

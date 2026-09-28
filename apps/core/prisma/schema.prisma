@@ -136,6 +136,24 @@ model Practice {
   // booleans so the checklist is honest, never inferred.
   writeBackProven           Boolean  @default(false)
   senderIdRegistered        Boolean  @default(false)
+
+  /// WHICH KEY NAMES THE PATIENT'S DOCUMENT FOLDER AT THIS PRACTICE, and null
+  /// until somebody has been asked (DB4-AND-AOBL.md §6a's correction).
+  ///
+  /// THE WHOLE COLUMN IS A REFUSAL TO GUESS. A PMS keeps its documents in a
+  /// folder per patient, outside the database, and at the test practice that
+  /// folder is named for the CHART NUMBER — `00680`. That is almost certainly
+  /// true elsewhere and "almost certainly" is not good enough: the day a
+  /// practice turns out to name it for something else is the day fifty signed
+  /// consents land in another patient's record. So the collection lane
+  /// (`write-back-collection.service.ts`) publishes nothing for a practice
+  /// whose answer is null, and AOBPRINTER writes nothing.
+  ///
+  /// `patient_record_number` IS THE ONLY VALUE THE CODE UNDERSTANDS today, and
+  /// the CHECK below is what stops a second one arriving by typo rather than
+  /// by decision. A practice that answers something else is a conversation,
+  /// not a string.
+  documentFolderKey         String?
   createdAt                 DateTime @default(now())
 
   /// THE PRACTICE HALF OF EVERY ACCOUNT NAME (PRACTICE-SCOPED-LOGIN.md §3b/§5;
