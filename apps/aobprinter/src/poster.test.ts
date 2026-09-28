@@ -13,7 +13,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DEFAULT_RETENTION_CONFIG, type AobPrinterConfig } from './config';
+import { DEFAULT_COLLECTION_CONFIG, DEFAULT_RETENTION_CONFIG, type AobPrinterConfig } from './config';
 import type { Db4PrintRecord } from './db4-record';
 import { keystorePaths, type KeyWrapper } from './keystore';
 import { makeLogger, redactError } from './log';
@@ -44,6 +44,7 @@ function aConfig(dataDir: string): AobPrinterConfig {
     settleMs: 750,
     templateVersion: 'pracsoft3-db4-2026-09-1',
     retention: DEFAULT_RETENTION_CONFIG,
+    collection: DEFAULT_COLLECTION_CONFIG,
   };
 }
 

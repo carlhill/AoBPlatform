@@ -19,6 +19,45 @@ function minimalDoc(extra: Record<string, unknown> = {}): Record<string, unknown
   };
 }
 
+describe('collection_is_off_until_somebody_says_where', () => {
+  /*
+   * THE REASON IT IS OFF BY DEFAULT IS NOT TIDINESS. This half writes into a
+   * folder a PMS is WATCHING -- whatever lands there is filed into a
+   * patient's record by the practice's own software -- so an install pointed
+   * at the wrong folder does not fail, it files. An existing install
+   * upgrading to this build must do nothing new until somebody has said
+   * where (GA-PLAN B13; DB4-AND-AOBL.md 6a).
+   */
+  it('is disabled when the config file says nothing about it at all', () => {
+    const config = parseConfig(minimalDoc(), PATH);
+    expect(config.collection.enabled).toBe(false);
+    expect(config.collection.importFolder).toBe('');
+  });
+
+  it('refuses to start when it is switched on with nowhere to file', () => {
+    /*
+     * NOT A QUIET NO-OP. An administrator who switched this on and left the
+     * path blank believes signed forms are being filed; a program that
+     * agreed by doing nothing would let them believe it for months.
+     */
+    expect(() => parseConfig(minimalDoc({ collection: { enabled: true } }), PATH)).toThrow(
+      /importFolder/,
+    );
+  });
+
+  it('takes a folder and a pace when it is switched on properly', () => {
+    const config = parseConfig(
+      minimalDoc({ collection: { enabled: true, importFolder: 'D:\\PMS\\Incoming', pollMs: 60_000 } }),
+      PATH,
+    );
+    expect(config.collection).toEqual({
+      enabled: true,
+      importFolder: 'D:\\PMS\\Incoming',
+      pollMs: 60_000,
+    });
+  });
+});
+
 describe('retention_is_off_by_default', () => {
   it('is disabled when the config file says nothing about it at all', () => {
     const config = parseConfig(minimalDoc(), PATH);

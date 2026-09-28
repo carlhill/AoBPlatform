@@ -25,6 +25,8 @@
  * and given back on stop; two copies watching one set of spool files is a
  * form posted twice or a form lost (`instance-lock.ts`).
  */
+import { Collector, type CollectionClient } from './collector';
+import { collectionEndpointsOf, makeHttpCollectionClient } from './collection-client';
 import { loadConfig, type AobPrinterConfig } from './config';
 import { acquireInstanceLock, type InstanceLock } from './instance-lock';
 import type { KeyWrapper } from './keystore';
@@ -40,6 +42,13 @@ import { readPackageVersion } from './version';
 export interface RunHandles {
   /** One full cycle. Exposed so a test drives the loop rather than waiting on it. */
   tick(): Promise<void>;
+  /**
+   * One collection sweep: ask what is signed, file it. SEPARATE FROM `tick`
+   * on purpose -- it runs on its own much slower timer, and a test of filing
+   * should not have to drive the spool watcher to get there. Resolves to what
+   * it did; a no-op when collection is switched off.
+   */
+  collect(): Promise<void>;
   stop(): void;
 }
 
@@ -65,6 +74,12 @@ export interface StartDeps {
    * disagree.
    */
   readonly eventCounts?: EventCountReader;
+  /**
+   * Overrides the collection client. A test that wants to prove what happens
+   * when a signed form comes back should not have to stand up a platform --
+   * and the HTTP half is proved on its own, the way the poster's is.
+   */
+  readonly collectionClient?: CollectionClient;
 }
 
 /**
@@ -121,6 +136,22 @@ function startLocked(
   const reconciler = new Reconciler(deps.eventCounts ?? powershellEventCountReader(), logger);
   const queueNames = config.queues.map((q) => q.name);
 
+  /*
+   * THE OTHER DIRECTION, AND IT IS OPTIONAL (GA-PLAN B13). Print-capture in,
+   * import-folder out -- one installed program, one credential -- but an
+   * install that has not been told where to file does not file, and says so
+   * in the banner rather than looking identical to one that does.
+   */
+  const collector =
+    config.collection.enabled || deps.collectionClient
+      ? new Collector(
+          deps.collectionClient ?? makeHttpCollectionClient(config, logger),
+          config.collection.importFolder,
+          logger,
+          version,
+        )
+      : null;
+
   if (!/^https:/i.test(config.endpoint) && !/^http:\/\/(localhost|127\.0\.0\.1)/i.test(config.endpoint)) {
     logger.warn('config.insecure_endpoint', {
       note: 'this endpoint is neither HTTPS nor local; mutual TLS is the recorded posture and is not built yet',
@@ -164,6 +195,24 @@ function startLocked(
    * unhandled rejection from a timer callback would take the process down,
    * which is the same failure wearing a different coat.
    */
+  /*
+   * THE SAME POSTURE AS THE OTHER TWO WATCHERS, AND IT MATTERS MOST HERE.
+   * Collection touches a network AND a folder that may be a mapped drive on
+   * a server that is down -- the two least reliable things this program can
+   * reach. `Collector.sweep` already returns rather than throwing; this is
+   * the belt to that braces, because no shape of failure in FILING may stop
+   * the loop that CAPTURES (hard rule 8). A consent filed tomorrow is a
+   * nuisance; a consent never captured is the practice's problem.
+   */
+  async function safeCollect(): Promise<void> {
+    if (!collector) return;
+    try {
+      await collector.sweep();
+    } catch (err) {
+      logger.error('collect.sweep_failed', { error: redactError(err) });
+    }
+  }
+
   async function safeReconcile(): Promise<void> {
     try {
       await reconciler.reconcile(queueNames);
@@ -189,6 +238,15 @@ function startLocked(
     waiting: outbox.depth(),
     retention: config.retention.enabled,
     pendingAlarms: startupSweep.alarmed,
+    /*
+     * WHERE SIGNED FORMS GO, OR THAT THEY DO NOT. A technician reading one
+     * line at startup should be able to tell a two-way install from a
+     * capture-only one, and the list endpoint says which platform it asks.
+     * The FOLDER is not logged: it is a local path, and paths have turned
+     * out to carry a practice's name more than once.
+     */
+    collecting: collector !== null,
+    collectFrom: collector ? collectionEndpointsOf(config).list : undefined,
   });
 
   let running = false;
@@ -245,13 +303,24 @@ function startLocked(
   const reconcileTimer = setInterval(() => void safeReconcile(), DEFAULT_RECONCILE_INTERVAL_MS);
   reconcileTimer.unref?.();
 
+  /*
+   * MINUTES, NOT THE POLL INTERVAL. The spool is watched twice a second
+   * because a patient is standing at a desk; nobody is waiting on a document
+   * being filed, and a practice's PMS folder does not want a request every
+   * half-second all day.
+   */
+  const collectTimer = collector ? setInterval(() => void safeCollect(), config.collection.pollMs) : null;
+  collectTimer?.unref?.();
+
   return {
     tick,
+    collect: safeCollect,
     stop: () => {
       stopped = true;
       clearInterval(timer);
       clearInterval(sweepTimer);
       clearInterval(reconcileTimer);
+      if (collectTimer) clearInterval(collectTimer);
       // Last, so nothing is still running when the next instance is allowed in.
       lock.release();
       logger.info('aobprinter.stopped', {});

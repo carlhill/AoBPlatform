@@ -62,6 +62,40 @@ export interface AobPrinterConfig {
   readonly clientKeyPath?: string;
   /** Local retention of the outbox's own payloads. See `RetentionConfig`. */
   readonly retention: RetentionConfig;
+  /** Filing signed forms back into the PMS. See `CollectionConfig`. */
+  readonly collection: CollectionConfig;
+}
+
+/**
+ * WRITE-BACK BY COLLECTION -- where signed forms are filed, and whether this
+ * install files them at all (GA-PLAN B13; Carl, 28 September 2026: *"build
+ * the import-folder write-back"*).
+ *
+ * `enabled` DEFAULTS TO FALSE, and the reason has the same shape as
+ * retention's. This half writes into a folder a PMS is WATCHING: whatever
+ * lands there is filed into a patient's record by the practice's own
+ * software, so an install pointed at the wrong folder does not fail -- it
+ * files. An existing install upgrading to this build must therefore do
+ * nothing new until somebody has said where, and confirmed that the chart
+ * number is what those folders are named for (DB4-AND-AOBL.md 6a).
+ *
+ * THE PLATFORM HOLDS THE OTHER HALF OF THAT GATE. `documentFolderKey` on the
+ * practice is null until the same question is answered there, and the waiting
+ * list is empty until it is set -- so a desktop switched on early collects
+ * nothing rather than filing into a guess. Two gates for one question,
+ * deliberately: the answer has to be true at both ends.
+ */
+export interface CollectionConfig {
+  readonly enabled: boolean;
+  /**
+   * The PMS's document-import root. Patient folders are created UNDER it and
+   * never beside it, and nothing outside it is ever written -- the folder and
+   * the filename come off the wire, so `collector.ts` refuses any value that
+   * is not a plain name.
+   */
+  readonly importFolder: string;
+  /** How often the platform is asked what is waiting. Minutes, not seconds. */
+  readonly pollMs: number;
 }
 
 /**
@@ -124,6 +158,17 @@ export const DEFAULT_RETENTION_CONFIG: RetentionConfig = {
   pendingAlarmMs: 60 * 60 * 1000,
   poisonTtlMs: 60 * 60 * 1000,
   sweepIntervalMs: 5 * 60 * 1000,
+};
+
+/**
+ * OFF, AND POINTED NOWHERE. An install that has not been told where to file
+ * must not guess at a path, and a default that happened to exist on one
+ * desktop would be the worst possible kind of working.
+ */
+export const DEFAULT_COLLECTION_CONFIG: CollectionConfig = {
+  enabled: false,
+  importFolder: '',
+  pollMs: 5 * 60 * 1000,
 };
 
 export const DEFAULT_DATA_DIR = 'C:\\ProgramData\\AoBPlatform';
@@ -313,7 +358,38 @@ export function parseConfig(raw: unknown, path: string): AobPrinterConfig {
     clientCertPath: typeof doc.clientCertPath === 'string' ? doc.clientCertPath : undefined,
     clientKeyPath: typeof doc.clientKeyPath === 'string' ? doc.clientKeyPath : undefined,
     retention: parseRetention(doc.retention, path),
+    collection: parseCollection(doc.collection, path),
   };
+}
+
+/**
+ * `collection`, validated like everything else: present or absent, never
+ * half-shaped -- and ENABLED WITHOUT A FOLDER IS A REFUSAL TO START rather
+ * than a quiet no-op. An administrator who switched this on and left the path
+ * blank believes signed forms are being filed; a program that agreed by doing
+ * nothing would let them believe it for months.
+ */
+function parseCollection(raw: unknown, path: string): CollectionConfig {
+  if (raw === undefined) return DEFAULT_COLLECTION_CONFIG;
+  if (typeof raw !== 'object' || raw === null) {
+    throw new Error(`${path}: "collection" must be a JSON object when present.`);
+  }
+  const doc = raw as Record<string, unknown>;
+
+  const enabled = doc.enabled === undefined ? false : doc.enabled;
+  if (typeof enabled !== 'boolean') {
+    throw new Error(`${path}: "collection.enabled" must be a boolean.`);
+  }
+  const importFolder = typeof doc.importFolder === 'string' ? doc.importFolder.trim() : '';
+  if (enabled && importFolder.length === 0) {
+    throw new Error(
+      `${path}: "collection.enabled" is true but "collection.importFolder" is empty. ` +
+        'Signed forms are filed into the PMS document-import folder and there is no default for it.',
+    );
+  }
+  const pollMs = optionalNumber(doc, 'pollMs', DEFAULT_COLLECTION_CONFIG.pollMs);
+
+  return { enabled, importFolder, pollMs };
 }
 
 export function loadConfig(path = process.env.AOBPRINTER_CONFIG ?? DEFAULT_CONFIG_PATH): AobPrinterConfig {
