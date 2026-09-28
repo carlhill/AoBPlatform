@@ -105,3 +105,189 @@ explicitly; a PMS vendor bundling consent capture; or the TGA moving the
 medical-device line in a way that touches evidence capture rather than
 clinical decision support. The first two are commercial, the third is the one
 to watch in `aob-requirements.md`'s regulatory review.
+
+### 1e. How the Heidi pipeline is actually built (28 September 2026)
+
+A second note from Carl, and it is more useful than the article because it is
+about mechanism rather than positioning. **Unattributed** — treat it as a
+briefing to be checked, not as sourced fact.
+
+**The scribe pipeline, in four stages:** ambient voice-to-text and speaker
+diarisation across 110+ languages on ordinary hardware; context-aware
+processing that turns the transcript into clinical entities against a medical
+vocabulary; template selection that formats to SOAP notes, specialty progress
+notes or discharge summaries in the clinician's own style; and a feedback loop
+where clinician edits refine accuracy.
+
+**On the models — and this contradicts the AFR.** The article quotes Kelly on
+*"its own in-house specialised models"*. This note says Heidi did **not** train
+a foundation model from scratch: a hybrid multi-model approach over open-weights
+and partner models (fine-tuned Llama-architecture), with the engineering spend
+going on domain fine-tuning and a proprietary clinical layer — context
+management, prompt orchestration, feedback loops, and safety and compliance
+validation.
+
+**Both can be true** ("our own specialised model" is a fair description of a
+fine-tune), but the difference matters when judging the moat. A fine-tune plus
+an orchestration layer is a real asset and a reproducible one; a trained
+foundation model is not. If the cost argument in §1a is the pitch — *a PMS
+cannot afford agents, we can* — then the thing making it cheap is the fine-tune
+and the routing, and **that is buyable by anybody, including a PMS, including
+us.** Worth resolving before anyone here treats their cost position as durable.
+
+**The admin work it claims, and the one line that has moved:**
+
+| What it does | How close it is to us |
+|---|---|
+| Referral letters, handover notes, discharge summaries, test requests, patient handouts | Not close. Clinical documents; out of scope for us (`CLAUDE.md` §8) |
+| Task and follow-up management from what was said in the consult | Not close |
+| EHR integration — writing structured notes and codes back without copy-paste | **Adjacent.** This is write-back, the thing we have just built one route for (D-2026-09-28-02). Different payload, same problem, and they will hit the same wall: nothing writes into a PMS that does not want to be written into |
+| **Automated medical coding and billing — extracting clinical detail to suggest ICD/CPT codes** | **Closest, and closer than §1b judged from the article alone** |
+
+**Why the coding line matters.** Suggesting billing codes from a consultation
+is one step from suggesting **MBS item numbers**, and item numbers are **D6b** —
+a post-agreement's own particulars, the thing C7 refuses a lock without, and
+the field whose change supersedes an agreement rather than repointing it. An
+agent that proposes item numbers is proposing a particular.
+
+**It does not change the position in §1b; it sharpens it.** Proposing a
+particular is still input. What the regime cares about is that the particulars
+were **complete and locked before the signature** (hard rule 2), rendered
+deterministically, and assented to — and that nothing edited them afterwards
+(hard rule 11). If anything, an upstream agent makes our lock *more* valuable,
+because now there is a machine in the chain and somebody will eventually ask
+what it changed and when. **We can answer that. A scribe cannot.**
+
+**One thing to steal, honestly.** The feedback loop — clinician edits refining
+the model — has an exact analogue here that costs no AI at all: every time
+reception corrects a field on a reprint, we learn that the parser template
+misread that field. `parserTemplateVersion` is already on every job and every
+receipt, and `db4ParticularsChanged` already names which kind of particular
+moved. **A count of corrections per template version per field is a parser
+quality signal we are already holding all the data for and not looking at.**
+That is a small, unglamorous piece of work with a real payoff, and it is
+nobody's idea of AI.
+
+---
+
+## 2. Claude's own suggestions (28 September 2026)
+
+Carl asked for these. They are ideas, not recommendations, and each one says
+what would have to be true. They come from having read this codebase rather
+than from a list of things products generally have — which also means they are
+biased towards what I happened to look at.
+
+### 2a. Replay a refusal against a different rule set — the whipsaw tool
+
+`CLAUDE.md` calls regulatory whipsaw the **top project risk**: the rules
+changed twice and reversed once, eight days before go-live, costing a
+competitor about a million dollars. Versioning is named as the defence, and
+rule 14 makes every stored agreement record its `ruleSetVersion` and
+`mappingVersion`.
+
+**But versioning is currently a record, not a tool.** We can say which rules an
+agreement was judged under. We cannot answer *"if the rules that land in March
+had been in force in January, which of our stored agreements would have failed,
+and which of our refusals would have passed?"* — which is the question a
+practice, an insurer and our own roadmap all ask the week a change is
+announced.
+
+**What it is:** a dry run in the rules service — feed stored particulars
+against a *named* rule set version, get a verdict, change nothing. The service
+already holds zero PII and already hosts the public tester, so it is the right
+home and the blast radius is nil.
+
+**What we would have to believe:** that rule sets will change again before GA
+(they will), and that "which of our existing agreements does this break" is
+worth knowing before a customer asks rather than after.
+
+### 2b. An evidence pack an auditor can check without us
+
+The product's whole claim is non-repudiation: the eight-link chain, the
+append-only vault, RFC 3161 anchoring. Today that is checkable **by us, on our
+infrastructure, by someone with an account.**
+
+**What it is:** a date range in, one archive out — the Signed Assignment
+Agreements, their hashes, the relevant chain segment, the anchor receipts, and
+a verification script the auditor can run offline. `GovAudit.md` is where this
+belongs.
+
+**Why it might be the most commercially useful thing on this list:** it is the
+difference between *"trust our dashboard"* and *"here, check it yourself"*, and
+it is the artefact that survives us being unavailable, acquired or switched
+off. It is also exactly what hard rule 12 leaves us able to say: not
+"certified", but "here is the evidence, verify it".
+
+**What we would have to believe:** that an auditor or a practice's insurer will
+actually ask. Worth one question to Powell Street.
+
+### 2c. A public verification page, zero PII
+
+`GET /verify` with a form reference and a hash: *"yes, this platform holds a
+signed agreement with that hash, signed on that date"* — and nothing else. No
+name, no chart number, no document.
+
+It belongs in the **Rules & Conformance** service, which already holds zero PII
+and is already public-facing. It is the smallest possible surface that makes a
+third party able to check a claim, and it is the kind of thing that ends an
+argument in one link.
+
+**The risk to think about first:** a hash oracle is an enumeration surface.
+Hashes are not guessable, so it is probably fine — but "probably fine" is how
+`aob-threat-model.md` earns its keep, and this goes nowhere until that file has
+an opinion.
+
+### 2d. Turn `documentFolderKey` into a per-PMS profile
+
+We shipped the collection lane today with exactly one allowed value,
+`patient_record_number`, and a database CHECK that refuses anything else
+(D-2026-09-28-03). That is right for one customer and does not survive the
+second: Best Practice, Medical Director and Zedmed each have their own incoming
+folder, naming convention and import quirks.
+
+**What it is:** a versioned profile per PMS — folder key, filename pattern,
+whether a manifest sibling is wanted or ignored, and what the PMS does with a
+file it does not recognise. Content under `packages/domain/content/`, schema
+validated at load, per the option-lists rule in `CLAUDE.md` §7c. **Not** a
+free-text field on the practice.
+
+**What we would have to believe:** that we sell to a second PMS. Which is the
+whole plan.
+
+### 2e. "What would an audit find" — the self-assessment, on a screen
+
+Hard rule 12 forbids "certified" and permits **"self-assessment"**. We have
+never built the self-assessment.
+
+The data is already there and already unread: services with no agreement (the
+reconciliation queue knows), agreements never written back (`writtenBackAt`,
+which today nothing renders — see the outbox item in `TODO.md`), verbal
+captures after 30 June 2027, agreements whose rule set is no longer current,
+print jobs refused and never reprinted. **One page that is honest about the
+gaps rather than reassuring about the total.**
+
+**Why it is the right shape for this product specifically:** a compliance
+product that only ever shows green is a product nobody believes. A page that
+says *"eleven things need your attention"* is one a practice manager opens on
+Monday.
+
+### 2f. A parser-quality signal from corrections we already collect
+
+Described in §1e above, and repeated here because it is the cheapest item on
+this list. Count corrections per `parserTemplateVersion` per particular kind.
+We hold every input already. No model, no agent, no token cost.
+
+### 2g. Two things I would NOT do
+
+- **An AI agent inside AoBPlatform, for now.** Kelly's unit-economics argument
+  applies to us with more force, not less: we sell a subscription to practices
+  and our volumes are per-service. And our differentiator is that the evidence
+  chain is deterministic — a hard rule 13 render is byte-identical twice, which
+  is a promise a model cannot make. Adding a probabilistic step to a
+  non-repudiation product needs a much better reason than the market having
+  one.
+- **Anything that reads a consultation.** The moment we ingest clinical
+  content we are in a different regulatory conversation (see §1c item 3, the
+  TGA medical-device line), and `CLAUDE.md` §8 puts clinical features out of
+  scope for reasons that have not changed.
+
