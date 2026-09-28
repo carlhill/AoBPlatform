@@ -12,6 +12,7 @@ import type { Agreement as DbAgreement, Prisma } from '@prisma/client';
 import {
   answersEnduringRules,
   type Db4FormView,
+  type Db4ParticularChange,
   type Db4PrintRecordCheck,
   type Db4PrintRecordIdentity,
   type RulesEngineClient,
@@ -563,6 +564,83 @@ export class AgreementsService {
     });
 
     return replacement;
+  }
+
+  /**
+   * A CORRECTED DB4 CAME OFF THE PRINTER AND IT SAYS SOMETHING DIFFERENT
+   * (Carl, 28 September 2026: *"supersede when a particular changed"*).
+   *
+   * THE THIRD REASON TO SUPERSEDE, and the first with NO PERSON BEHIND IT.
+   * `supersedeForCorrection` records a staff member who corrected a detail
+   * and asked for the agreement to go out again; `supersedeForAssignorChange`
+   * records whoever answered who-is-signing. This one is a print driver at
+   * the practice re-sending a form the PMS has changed, and there is nobody
+   * to name — so the event carries `SYSTEM_ACTOR` rather than a staff id
+   * borrowed from a session that does not exist. Inventing a witness is the
+   * thing `confirmationOf` refuses for the same reason.
+   *
+   * WHY NOT REUSE `supersedeForCorrection`. Its event says
+   * `patient_details_corrected` and names a person in `correctedBy`. Both
+   * would be false here, and a vault event that misdescribes why a contract
+   * was replaced is worse than a second method — the whole value of that row
+   * is that a reader six months from now can tell what happened.
+   *
+   * THE PARTICULARS THAT MOVED ARE NAMED AS TYPES, never values (hard rule 9)
+   * — `service_date`, `service_items`, `servicing_provider`, `patient`.
+   *
+   * THE CALLER CLOSES THE OLD CAPTURE REQUESTS, exactly as the other two
+   * paths do: nothing may still be signed against particulars we now know are
+   * stale. `createSupersedingDraft` copies no part of the lock, so the
+   * replacement is a draft that will be validated and locked afresh against
+   * the corrected record (REQ-DATA-11) — which is the point.
+   *
+   * ONE SUCCESSOR PER AGREEMENT (`agreements_one_successor`). A form
+   * corrected and reprinted twice supersedes once and then answers with the
+   * replacement it already made.
+   */
+  async supersedeForCorrectedPrintRecord(
+    tx: Prisma.TransactionClient,
+    practiceId: string,
+    agreement: DbAgreement,
+    changed: readonly Db4ParticularChange[],
+    printJobId: string,
+  ): Promise<DbAgreement> {
+    const existing = await tx.agreement.findFirst({
+      where: { supersedesAgreementId: agreement.id },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (existing) return existing;
+
+    const replacement = await this.createSupersedingDraft(tx, practiceId, agreement, {});
+
+    /*
+     * AND THE REPLACEMENT POINTS AT THE CORRECTED PAGE, not the stale one
+     * `createSupersedingDraft` carried forward. That copy is right for every
+     * other supersession — same form, restated agreement — and is exactly
+     * wrong here, because the corrected form is the whole reason this
+     * replacement exists.
+     */
+    await tx.agreement.update({
+      where: { id: replacement.id },
+      data: { sourcePrintJobId: printJobId },
+    });
+
+    await enqueueVaultEvent(tx, {
+      type: 'agreement.superseded',
+      // NOBODY'S HANDS. A PMS reprinted a form; no person asked for this.
+      actor: SYSTEM_ACTOR,
+      subject: { type: 'Agreement', id: agreement.id },
+      payload: {
+        supersededBy: replacement.id,
+        reason: 'print_record_corrected',
+        /* WHICH KINDS OF PARTICULAR, never the values (hard rule 9). */
+        changedParticulars: [...changed].sort().join(','),
+        printJobId,
+        agreementType: agreement.type,
+      },
+    });
+
+    return { ...replacement, sourcePrintJobId: printJobId };
   }
 
   /**

@@ -1,5 +1,8 @@
 import { HttpException, Injectable, Logger } from '@nestjs/common';
 import type { Db4JobOutcome, Db4PlacementReason, PrintJobEnvelope } from '@aobplatform/contracts';
+import { AgreementsService } from '../agreements/agreements.service';
+import { CaptureService } from '../capture/capture.service';
+import { decideDb4Reprint, type Db4Particulars } from './db4-reprint';
 import { PrismaService } from '../prisma/prisma.service';
 import { ArrivalsService, ArrivalRefusal } from '../arrivals/arrivals.service';
 import type { ServiceRenderedDto } from '../arrivals/arrivals.dto';
@@ -48,6 +51,41 @@ import type { ServiceRenderedDto } from '../arrivals/arrivals.dto';
  * retrying could fix — the database having a moment, the rules service down —
  * is allowed out of here.
  */
+/**
+ * THE FOUR DB4-DETERMINED PARTICULARS, READ OFF A LOCKED AGREEMENT.
+ *
+ * FROM `particulars`, WHICH IS THE LOCK ITSELF — not from the columns beside
+ * it. The locked JSON is what the rules engine validated, what the renderer
+ * printed and what the patient assented to; a column is the working copy. If
+ * the two ever disagree, the lock is the one a corrected form has to be
+ * compared against, because the lock is the contract.
+ *
+ * NULL WHEN NOTHING IS LOCKED YET, which `decideDb4Reprint` reads as "nothing
+ * to disagree with" rather than as "everything changed".
+ *
+ * THE PATIENT COMES FROM THE COLUMN and not from `particulars.patientName`,
+ * deliberately: a name is a rendering of a person and two people may share
+ * one. `patientId` is the identity the chart number resolved to, which is
+ * what "is this the same patient" actually asks.
+ */
+function lockedParticularsOf(agreement: {
+  patientId: string;
+  particularsLockedAt: Date | null;
+  particulars: unknown;
+}): Db4Particulars | null {
+  if (agreement.particularsLockedAt === null) return null;
+  const locked = (agreement.particulars ?? {}) as Record<string, unknown>;
+  const items = Array.isArray(locked.mbsItemNumbers)
+    ? locked.mbsItemNumbers.filter((n): n is string => typeof n === 'string')
+    : [];
+  return {
+    patientId: agreement.patientId,
+    servicingProviderNumber: typeof locked.providerNumber === 'string' ? locked.providerNumber : null,
+    serviceDate: typeof locked.serviceDate === 'string' ? locked.serviceDate : null,
+    mbsItemNumbers: items,
+  };
+}
+
 @Injectable()
 export class Db4AssignmentHandler {
   private readonly logger = new Logger(Db4AssignmentHandler.name);
@@ -55,6 +93,14 @@ export class Db4AssignmentHandler {
   constructor(
     private readonly prisma: PrismaService,
     private readonly arrivals: ArrivalsService,
+    /*
+     * FOR THE SUPERSESSION A CORRECTED FORM CAN CAUSE, and for nothing else.
+     * The handler still decides nothing about agreements: it asks
+     * `supersedeForCorrectedPrintRecord`, which owns that write for the same
+     * reason `serviceRendered` owns the placement.
+     */
+    private readonly agreements: AgreementsService,
+    private readonly capture: CaptureService,
   ) {}
 
   /**
@@ -162,9 +208,15 @@ export class Db4AssignmentHandler {
        * put a Signed-DB4 of THIS page onto a contract made for something else,
        * which is the one way this feature could produce a wrong document.
        */
-      if (placed && receipt.agreementId) {
-        await this.linkToPrintJob(practiceId, receipt.agreementId, printJobId);
-      }
+      const reprint =
+        placed && receipt.agreementId
+          ? await this.linkOrReprocess(practiceId, receipt.agreementId, printJobId, {
+              patientId: patient.id,
+              servicingProviderNumber: servicing.providerNumber ?? null,
+              serviceDate,
+              mbsItemNumbers,
+            })
+          : null;
       return {
         ...base,
         idempotencyKey,
@@ -175,6 +227,7 @@ export class Db4AssignmentHandler {
         policyVersion: receipt.policyVersion,
         agreementId: receipt.agreementId,
         placed,
+        reprint,
         /*
          * COVERED IS AN ANSWER, NOT A FAILURE. Today's signed pre-agreement or a
          * live ongoing agreement already assigns the benefit for this service,
@@ -247,28 +300,121 @@ export class Db4AssignmentHandler {
    * `pmsInvoiceKey` string convention. Neither is a thing to hang a rendered
    * artefact on.
    *
-   * FIRST FORM WINS, AND THE DATABASE ENFORCES IT. The `sourcePrintJobId IS
-   * NULL` in the filter makes a reprint a no-op rather than a re-point: the
-   * same form printed twice is one agreement (`the_same_form_printed_twice_
-   * creates_one_agreement`), and the record that made it is the first one.
-   * `updateMany` rather than `update` because a filter that matches nothing
-   * must be silence, not a thrown `P2025`.
+   * FIRST FORM WINS WAS THE RULE UNTIL 28 SEPTEMBER 2026 AND IS NOT ANY MORE.
+   * `sourcePrintJobId IS NULL` in the filter made a reprint a no-op — right
+   * for a re-spool of the same page, and wrong for a CORRECTION, which is the
+   * case Carl asked for: *"I should be able to correct the missing data (as
+   * though corrected from the PMS) and reprint to AOBPrinter and resend to AOB
+   * for reprocessing."* Under the old filter the agreement kept pointing at
+   * the record that could not be read, so the desk went on refusing a form the
+   * practice had already fixed.
    *
-   * NO VAULT EVENT HERE, AND THE REASON IS NOT "IT IS ONLY A COLUMN". The
-   * link becomes EVIDENCE at the moment it is relied upon, and that is when
-   * the Signed-DB4 is produced — `SignedDb4Service` writes `sourcePrintJobId`
-   * into the `agreement.rendered` event that records the reproduction, in the
-   * same transaction as the artefact row. An event here as well would say
-   * twice, in two places, a fact that only ever matters once, and would put a
-   * second entry in the chain for a form that may never be signed at all.
+   * A RE-SPOOL STILL COSTS NOTHING, and not because of this filter: identical
+   * bytes are the SAME JOB by `@@unique([practiceId, documentType,
+   * sourceSha256])`, so an unchanged reprint never reaches here at all. What
+   * reaches here has different content, which is exactly when a decision is
+   * worth making. `the_same_form_printed_twice_creates_one_agreement` still
+   * holds and is unchanged: one form reference is one service record and one
+   * agreement, however many times it is printed.
+   *
+   * THE RULE IS `decideDb4Reprint`, WHICH HAS NO DATABASE IN IT and carries
+   * the whole of the reasoning. This method is the part that touches rows.
+   *
+   * THE ROW IS LOCKED FIRST, for the reason both supersession paths in
+   * `AgreementsService` lock theirs: two corrected prints of one form arriving
+   * together must serialise, or one visit ends up with two contracts each
+   * claiming to replace the same one. `agreements_one_successor` is the
+   * backstop underneath.
+   *
+   * NO VAULT EVENT FOR A REPOINT, and the reasoning is the one this method
+   * always carried: the link becomes EVIDENCE when it is relied upon, which
+   * is when `SignedDb4Service` writes `sourcePrintJobId` into the
+   * `agreement.rendered` event in the same transaction as the artefact. A
+   * SUPERSESSION is different and does write one, because a replaced contract
+   * is a fact about the agreement rather than about a pointer —
+   * `supersedeForCorrectedPrintRecord` owns that write.
    */
-  private async linkToPrintJob(practiceId: string, agreementId: string, printJobId: string): Promise<void> {
-    await this.prisma.withPractice(practiceId, (tx) =>
-      tx.agreement.updateMany({
-        where: { id: agreementId, practiceId, sourcePrintJobId: null },
+  private async linkOrReprocess(
+    practiceId: string,
+    agreementId: string,
+    printJobId: string,
+    arriving: Db4Particulars,
+  ): Promise<NonNullable<Db4JobOutcome['reprint']>> {
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "agreements" WHERE "id" = ${agreementId}::uuid FOR UPDATE`;
+
+      const agreement = await tx.agreement.findFirst({ where: { id: agreementId, practiceId } });
+      /*
+       * RLS MAKES THIS REACHABLE AND SILENCE IS THE RIGHT ANSWER, the same
+       * posture `updateMany` took: a filter that matches nothing must not
+       * throw, because a form is not broken because an agreement moved.
+       */
+      if (!agreement) return { action: 'already_linked' as const, changed: [], supersededBy: null };
+
+      /*
+       * THE LIVE ONE, NOT THE REPLACED ONE. Naming a carer supersedes the
+       * agreement (`supersedeForAssignorChange`) while the SERVICE RECORD
+       * goes on naming the row it created, so the id that arrives here can be
+       * a superseded one. Repointing that would move the pointer on a
+       * contract nobody can sign and leave the live one still reproducing the
+       * broken page — the exact failure this method exists to fix, made
+       * invisible. One successor per agreement is a database constraint, so
+       * one hop is the whole walk.
+       */
+      const successor = await tx.agreement.findFirst({
+        where: { supersedesAgreementId: agreement.id },
+        orderBy: { createdAt: 'asc' },
+      });
+      const live = successor ?? agreement;
+
+      const decision = decideDb4Reprint({
+        linkedPrintJobId: live.sourcePrintJobId,
+        arrivingPrintJobId: printJobId,
+        signed: live.signatureEventId !== null,
+        locked: lockedParticularsOf(live),
+        arriving,
+      });
+
+      if (decision.action === 'already_linked' || decision.action === 'refused_signed') {
+        if (decision.action === 'refused_signed') {
+          // THE CODE, NEVER THE VALUE IT CAME FROM (hard rule 9).
+          this.logger.log(
+            `DB4 for practice ${practiceId}: a corrected form arrived for a SIGNED agreement — not repointed.`,
+          );
+        }
+        return { action: decision.action, changed: [], supersededBy: null };
+      }
+
+      if (decision.action === 'supersede') {
+        const replacement = await this.agreements.supersedeForCorrectedPrintRecord(
+          tx,
+          practiceId,
+          live,
+          decision.changed,
+          printJobId,
+        );
+        /*
+         * AND NOTHING MAY STILL BE SIGNED AGAINST THE OLD ONE — the same act
+         * both other supersession paths make, on every channel at once. Its
+         * own evidence is untouched (hard rule 13); what closes is every door
+         * that could still collect a signature on particulars we now know
+         * disagree with the practice's own form.
+         */
+        await this.capture.cancelOpenFor(tx, live.id, 'agreement_superseded');
+        await this.capture.openInPractice(tx, practiceId, replacement.id);
+        this.logger.log(
+          `DB4 for practice ${practiceId}: a corrected form changed ${decision.changed.join(',')} — superseded.`,
+        );
+        return { action: 'supersede' as const, changed: decision.changed, supersededBy: replacement.id };
+      }
+
+      /* `linked` and `repointed` are the same write and a different story. */
+      await tx.agreement.update({
+        where: { id: live.id },
         data: { sourcePrintJobId: printJobId },
-      }),
-    );
+      });
+      return { action: decision.action, changed: [], supersededBy: null };
+    });
   }
 
   /**

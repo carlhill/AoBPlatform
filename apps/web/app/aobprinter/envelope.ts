@@ -145,3 +145,84 @@ export async function envelopeWithHash(draft: Draft): Promise<Record<string, unk
   const sourceSha256 = await sha256Hex(JSON.stringify(canonical(envelope)));
   return { ...envelope, sourceSha256 };
 }
+
+/**
+ * A STORED RECORD, TURNED BACK INTO THE DRAFT ON THE SCREEN (Carl, 28
+ * September 2026: *"we need a drop down of the list of test cases we have
+ * already used. Saves typing"*).
+ *
+ * THE INVERSE OF `buildEnvelope`, AND IT HAS TO BE FAITHFUL. Correcting one
+ * field means every OTHER field goes back out exactly as it came in — a
+ * reprint that quietly dropped the rest would read as a CHANGED form rather
+ * than a corrected one, which under the reprocessing rule supersedes an
+ * agreement that only needed repointing. So everything the tool can hold, it
+ * loads.
+ *
+ * WHAT IT CANNOT HOLD, IT DROPS ON PURPOSE. `sourceSha256` is recomputed on
+ * send (a correction must move the hash, or it is the same job) and the
+ * fields the tool has no control for fall back to the blank draft's. Both are
+ * visible in "Show the envelope" before anything is sent.
+ */
+export function draftFromEnvelope(practiceId: string, stored: Record<string, unknown>, blank: Draft): Draft {
+  const get = (path: string[], fallback = ''): string => {
+    let node: unknown = stored;
+    for (const key of path) {
+      if (!node || typeof node !== 'object') return fallback;
+      node = (node as Record<string, unknown>)[key];
+    }
+    return typeof node === 'string' ? node : fallback;
+  };
+  const list = (key: string): Record<string, unknown>[] => {
+    const value = (stored as Record<string, unknown>)[key];
+    return Array.isArray(value) ? (value as Record<string, unknown>[]) : [];
+  };
+  const str = (row: Record<string, unknown>, key: string, fallback = ''): string => {
+    const v = row[key];
+    return typeof v === 'string' ? v : fallback;
+  };
+
+  const heading = ((stored.heading as Record<string, unknown> | undefined)?.lines ?? []) as unknown[];
+  const providers = list('providers');
+  const services = list('services');
+
+  return {
+    ...blank,
+    practiceId,
+    formReference: get(['form', 'formReference']),
+    serviceDate: get(['form', 'serviceDate'], blank.serviceDate),
+    locationId: get(['form', 'locationId'], blank.locationId),
+    claimStatus: get(['form', 'claimStatus'], blank.claimStatus),
+    headingLines: heading.filter((l): l is string => typeof l === 'string').join(String.fromCharCode(10)) || blank.headingLines,
+    patientRecordNumber: get(['patient', 'patientRecordNumber']),
+    givenNames: get(['patient', 'givenNames']),
+    familyName: get(['patient', 'familyName']),
+    dateOfBirth: get(['patient', 'dateOfBirth'], blank.dateOfBirth),
+    address: get(['patient', 'address']),
+    mobile: get(['patient', 'mobile']),
+    // eslint-disable-next-line no-restricted-syntax -- the DB4's decided exception (D-2026-09-14-03), loaded so a correction reprints the rest faithfully.
+    medicareCardNumber: get(['patient', 'medicareCardNumber']),
+    irn: get(['patient', 'irn']),
+    providers:
+      providers.length > 0
+        ? providers.map((p) => ({
+            role: str(p, 'role') === 'payee' ? ('payee' as const) : ('servicing' as const),
+            name: str(p, 'name'),
+            providerNumber: str(p, 'providerNumber'),
+          }))
+        : blank.providers,
+    services: services.map((s) => ({
+      serviceDate: str(s, 'serviceDate', get(['form', 'serviceDate'], blank.serviceDate)),
+      time: str(s, 'time', '09:00'),
+      mbsItemNumber: str(s, 'mbsItemNumber'),
+      description: str(s, 'description'),
+      // THE STRING THE PRACTICE PRINTED, or blank where the template read none.
+      benefitAssigned: str(s, 'benefitAssigned'),
+    })),
+    queueName: get(['queueName'], blank.queueName),
+    queueLabel: get(['queueLabel'], blank.queueLabel),
+    parserTemplateVersion: get(['parserTemplateVersion'], blank.parserTemplateVersion),
+    // BLANK MEANS NOW on send. Reprinting a form stamps a fresh capture time,
+    // which is what a driver would do.
+    capturedAt: '',
+  };
+}

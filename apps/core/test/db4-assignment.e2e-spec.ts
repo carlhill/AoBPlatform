@@ -58,6 +58,11 @@ const TINY_PNG =
 
 const FAKE_MEDICARE = '2999 99999 9';
 const CHART_NUMBER = '00680';
+/** The corrected-reprint tests get their own patient and form — see the seeding note. */
+const REPRINT_CHART_NUMBER = '00681';
+/** How many patients the suite itself creates. A DB4 must never add to it. */
+const SEEDED_PATIENTS = 2;
+const REPRINT_FORM_REFERENCE = 'HSS0610012092026120301';
 const SERVICING_NUMBER = '5745385T';
 const PAYEE_NUMBER = '0636678W';
 const FORM_REFERENCE = 'HSS0610012092026120300';
@@ -109,7 +114,13 @@ function withoutComments(value: unknown): unknown {
  * key set is the real one; every identity replaced so no scanned patient, no
  * real provider number and no valid Medicare number is ever posted by a test.
  */
-function db4Record(over: { sourceSha256: string; formReference?: string; patientRecordNumber?: string }): Json {
+function db4Record(over: {
+  sourceSha256: string;
+  formReference?: string;
+  patientRecordNumber?: string;
+  /** A corrected reprint whose SERVICE ROWS differ — the supersede case. */
+  services?: Json[];
+}): Json {
   const example = withoutComments(
     JSON.parse(readFileSync(join(__dirname, '..', '..', '..', 'DB4-print.example.json'), 'utf8')),
   ) as Json;
@@ -144,7 +155,7 @@ function db4Record(over: { sourceSha256: string; formReference?: string; patient
       { ...providers[0], name: 'Dr Fake Servicing' },
       { ...providers[1], name: 'Dr Fake Payee' },
     ],
-    services: services.map((s) => ({ ...s, serviceDate: today() })),
+    services: (over.services ?? services).map((s) => ({ ...s, serviceDate: today() })),
   };
 }
 
@@ -153,6 +164,7 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
   let prisma: PrismaService;
   let worker: InboundLaneWorkerService;
 
+  let reprintPatientId: string;
   const practiceId = randomUUID();
   const otherPracticeId = randomUUID();
   let servicingAffiliationId: string;
@@ -207,6 +219,27 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
         },
       });
       patientId = patient.id;
+
+      /*
+       * A SECOND PATIENT, FOR THE CORRECTED-REPRINT TESTS ALONE. A
+       * supersession makes a second `episodic_post` for its patient, and
+       * several tests here count agreements per patient — so the supersede
+       * case gets its own person rather than quietly changing what those
+       * counts mean.
+       */
+      const reprintPatient = await tx.patient.create({
+        data: {
+          practiceId,
+          patientRecordNumber: REPRINT_CHART_NUMBER,
+          familyName: 'Fakename',
+          givenNames: 'Reprint',
+          dateOfBirth: new Date('1970-02-02'),
+          address: '20 Example Street, Sampletown NSW 2000',
+          mobile: '+61400000681',
+          email: 'reprint.fakename@example.invalid',
+        },
+      });
+      reprintPatientId = reprintPatient.id;
     });
     await prisma.withPractice(otherPracticeId, (tx) =>
       tx.practice.create({ data: { id: otherPracticeId, name: 'A Different Practice' } }),
@@ -274,6 +307,12 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
     placed: boolean;
     reason: string | null;
     refusedStatus: number | null;
+    /** What a reprint did to the link — see `db4-reprint.ts`. */
+    reprint: {
+      action: string;
+      changed: readonly string[];
+      supersededBy: string | null;
+    } | null;
   };
   const db4Outcome = (row: { outcome: unknown }) =>
     (row.outcome as { db4: Db4Outcome; providersMirrored: number; patientsMirrored: number }) ?? null;
@@ -384,11 +423,18 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
         tx.provider.count({ where: { pmsLinkageKey: { in: [`provider:${SERVICING_NUMBER}`, `provider:${PAYEE_NUMBER}`] } } }),
       );
       expect(smuggled).toBe(0);
-      // Only the two the suite seeded, and only the one patient it seeded.
+      /*
+       * ONLY WHAT THE SUITE SEEDED — two providers and two patients. The
+       * SECOND PATIENT IS THE SUITE'S, not this form's: the corrected-reprint
+       * block at the foot of the file needs its own person so a supersession
+       * does not change what the per-patient counts above mean (28 September
+       * 2026). The subject of this test is unchanged and still holds — a DB4
+       * creates NEITHER, and mirroring one would make either count wrong.
+       */
       const providers = await prisma.withPractice(practiceId, (tx) => tx.provider.count({}));
       expect(providers).toBe(2);
       const patients = await prisma.withPractice(practiceId, (tx) => tx.patient.count({}));
-      expect(patients).toBe(1);
+      expect(patients).toBe(SEEDED_PATIENTS);
     });
 
     it('the_same_form_printed_twice_creates_one_agreement', async () => {
@@ -416,17 +462,81 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
       expect(agreements).toBe(1);
 
       /*
-       * AND THE ONE AGREEMENT STILL POINTS AT THE FIRST PRINT. A reprint must
-       * not re-point the link: the record the Signed-DB4 is rendered from is
-       * the one that made the agreement, and swapping it silently would change
-       * the provenance of a document already in the folder.
+       * AND THE ONE AGREEMENT NOW POINTS AT THE LATEST PRINT OF THAT FORM.
+       *
+       * THIS ASSERTION WAS THE OTHER WAY ROUND UNTIL 28 SEPTEMBER 2026, and
+       * the change is Carl's ruling, not a test bending to code: *"repoint
+       * when only the reproduction improved, supersede when a particular
+       * changed, refuse under a signature."* The old rule was FIRST FORM
+       * WINS, which is right for a re-spool and wrong for the case he asked
+       * for — a form corrected in the PMS and reprinted, where the agreement
+       * went on pointing at the record that could not be read and the desk
+       * went on refusing a form the practice had already fixed.
+       *
+       * THE SUBJECT OF THIS TEST IS UNCHANGED AND IS THE PART THAT MATTERS:
+       * one form reference is ONE service record and ONE agreement, however
+       * many times it is printed. Both counts above still assert exactly that.
+       *
+       * THIS REPRINT CHANGES NOTHING AT ALL — same content, different bytes,
+       * because the driver stamps a creation id. So the two records say the
+       * same thing and which one is pointed at is immaterial; what the new
+       * rule guarantees is that a correction is not IGNORED.
+       *
+       * THE PROVENANCE WORRY THE OLD COMMENT CARRIED IS REAL AND IS NOW
+       * ENFORCED WHERE IT BELONGS. "Swapping it silently would change the
+       * provenance of a document already in the folder" — a document is in
+       * the folder once somebody has SIGNED, and a signature refuses both
+       * repointing and superseding outright. The test below is that promise.
        */
-      const first = await jobRow(FIRST_SHA);
       const agreement = await prisma.withPractice(practiceId, (tx) =>
         tx.agreement.findFirst({ where: { type: 'episodic_post', patientId } }),
       );
-      expect(agreement?.sourcePrintJobId).toBe(first?.id);
-      expect(agreement?.sourcePrintJobId).not.toBe(job.id);
+      expect(agreement?.sourcePrintJobId).toBe(job.id);
+      expect(db4Outcome(job).db4.reprint?.action).toBe('repointed');
+    });
+
+    it('a_corrected_reprint_of_a_signed_agreement_is_refused_and_moves_nothing', async () => {
+      /*
+       * THE PROMISE THE TEST ABOVE USED TO MAKE, kept where it is actually
+       * needed. A signed agreement is EVIDENCE: its particulars were locked,
+       * rendered, hashed and assented to, and the Signed-DB4 reproduces the
+       * page that was in front of the person. Repointing it afterwards would
+       * make that evidence reproduce a page nobody saw; superseding it would
+       * replace something already agreed. Both are refused and a human
+       * decides.
+       */
+      const agreement = await prisma.withPractice(practiceId, (tx) =>
+        tx.agreement.findFirst({ where: { type: 'episodic_post', patientId } }),
+      );
+      const before = agreement!.sourcePrintJobId;
+
+      // Sign it, with nothing else changed about it.
+      await prisma.withPractice(practiceId, (tx) =>
+        tx.agreement.update({
+          where: { id: agreement!.id },
+          data: { signatureEventId: randomUUID() },
+        }),
+      );
+
+      const SIGNED_REPRINT_SHA = 'f'.repeat(64);
+      await post(db4Record({ sourceSha256: SIGNED_REPRINT_SHA })).expect(202);
+      const [job] = await settle([SIGNED_REPRINT_SHA]);
+      expect(db4Outcome(job).db4.reprint?.action).toBe('refused_signed');
+
+      const after = await prisma.withPractice(practiceId, (tx) =>
+        tx.agreement.findFirst({ where: { id: agreement!.id } }),
+      );
+      expect(after!.sourcePrintJobId).toBe(before);
+      // AND NOTHING WAS SUPERSEDED EITHER.
+      const successors = await prisma.withPractice(practiceId, (tx) =>
+        tx.agreement.count({ where: { supersedesAgreementId: agreement!.id } }),
+      );
+      expect(successors).toBe(0);
+
+      // Put it back, so the describes after this one see what they expect.
+      await prisma.withPractice(practiceId, (tx) =>
+        tx.agreement.update({ where: { id: agreement!.id }, data: { signatureEventId: null } }),
+      );
     });
 
     it('a_db4_for_an_unknown_chart_number_is_recorded_not_thrown', async () => {
@@ -616,9 +726,16 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
   describe('the DB4 the patient reads on the tablet', () => {
     /** The agreement the handler made from the first print, as the tablet fetches it. */
     async function tabletSees(scope = practiceId) {
-      const first = await jobRow(FIRST_SHA);
+      /*
+       * BY THE PATIENT AND THE TYPE, NOT BY THE FIRST PRINT JOB. This used to
+       * find the agreement through `sourcePrintJobId: first.id`, which stopped
+       * working the moment a reprint could REPOINT that column (28 September
+       * 2026) — and it was always the wrong question: what these tests mean is
+       * "the one agreement this form made", not "whatever is still pointing at
+       * the first spool of it".
+       */
       const agreement = await prisma.withPractice(practiceId, (tx) =>
-        tx.agreement.findFirst({ where: { sourcePrintJobId: first!.id } }),
+        tx.agreement.findFirst({ where: { type: 'episodic_post', patientId } }),
       );
       return {
         agreement: agreement!,
@@ -936,9 +1053,21 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
     let signedAgreementId: string;
 
     it('a_signed_db4_is_produced_and_stored_when_the_patient_signs', async () => {
-      const first = await jobRow(FIRST_SHA);
+      /*
+       * THROUGH THE SERVICE RECORD, which is the stable answer to "the
+       * agreement THIS form made". It used to be found by
+       * `sourcePrintJobId: first.id`, and that stopped identifying anything
+       * once a reprint could REPOINT the column (28 September 2026) — the
+       * agreement now points at the latest print of the form, and after the
+       * carer test above two agreements point at it. `pmsInvoiceKey` is the
+       * form's own idempotency key and neither a reprint nor a supersession
+       * moves it.
+       */
+      const record = await prisma.withPractice(practiceId, (tx) =>
+        tx.serviceRecord.findFirst({ where: { pmsInvoiceKey: IDEMPOTENCY_KEY } }),
+      );
       const before = await prisma.withPractice(practiceId, (tx) =>
-        tx.agreement.findFirst({ where: { sourcePrintJobId: first!.id } }),
+        tx.agreement.findFirst({ where: { id: record!.agreementId! } }),
       );
       expect(before).not.toBeNull();
       signedAgreementId = before!.id;
@@ -1046,5 +1175,107 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
       );
       expect(artefacts).toBe(1);
     });
+  });
+
+  /*
+   * LAST IN THE FILE, ON ITS OWN PATIENT AND ITS OWN FORM REFERENCE.
+   *
+   * A SUPERSESSION MAKES A SECOND AGREEMENT and a reprint makes extra print
+   * jobs, and several tests above count both per patient. Running this in the
+   * middle of them changed what those counts meant and broke two — so it sits
+   * where nothing follows it, rather than the counts being loosened to
+   * accommodate it.
+   */
+  describe('a corrected DB4, reprinted', () => {
+    it('a_corrected_reprint_that_changes_a_particular_supersedes_rather_than_repointing', async () => {
+      /*
+       * CARL'S THIRD BRANCH: *"supersede when a particular changed"*. A
+       * different set of item numbers is not a better picture of the same
+       * agreement — it is a different agreement. Hard rule 2 and HARD-02: a
+       * locked particular is never EDITED, and the regime's own correction
+       * for a wrong one is a new agreement. Repointing here would leave an
+       * agreement whose locked particulars disagree with the very form it
+       * claims to reproduce.
+       */
+      // ITS OWN PATIENT AND ITS OWN FORM. First the original print.
+      const FIRST_REPRINT_SHA = 'c'.repeat(64);
+      await post(
+        db4Record({
+          sourceSha256: FIRST_REPRINT_SHA,
+          formReference: REPRINT_FORM_REFERENCE,
+          patientRecordNumber: REPRINT_CHART_NUMBER,
+          services: [
+            { time: '09:00', mbsItemNumber: '23', description: 'Level B Surgery', benefitAssigned: '45.05' },
+          ],
+        }),
+      ).expect(202);
+      await settle([FIRST_REPRINT_SHA]);
+
+      const original = await prisma.withPractice(practiceId, (tx) =>
+        tx.agreement.findFirst({ where: { type: 'episodic_post', patientId: reprintPatientId } }),
+      );
+      expect(original).not.toBeNull();
+      expect(original!.particularsLockedAt).not.toBeNull();
+
+      const CHANGED_SHA = 'e'.repeat(64);
+      await post(
+        db4Record({
+          sourceSha256: CHANGED_SHA,
+          formReference: REPRINT_FORM_REFERENCE,
+          patientRecordNumber: REPRINT_CHART_NUMBER,
+          // The practice re-billed: one item became two.
+          services: [
+            { time: '09:00', mbsItemNumber: '23', description: 'Level B Surgery', benefitAssigned: '45.05' },
+            { time: '09:00', mbsItemNumber: '36', description: 'Level C Surgery', benefitAssigned: '88.40' },
+          ],
+        }),
+      ).expect(202);
+      const [job] = await settle([CHANGED_SHA]);
+
+      const reprint = db4Outcome(job).db4.reprint;
+      expect(reprint?.action).toBe('supersede');
+      // TYPES, NEVER VALUES (hard rule 9) — no item number in the answer.
+      expect(reprint?.changed).toEqual(['service_items']);
+      expect(JSON.stringify(reprint)).not.toContain('36');
+
+      // A REPLACEMENT, and it points at the CORRECTED page — not the stale
+      // one every other supersession carries forward.
+      const replacement = await prisma.withPractice(practiceId, (tx) =>
+        tx.agreement.findFirst({ where: { supersedesAgreementId: original!.id } }),
+      );
+      expect(replacement).not.toBeNull();
+      expect(replacement!.id).toBe(reprint?.supersededBy);
+      expect(replacement!.sourcePrintJobId).toBe(job.id);
+      // A DRAFT: no part of the old lock is copied, so it is validated and
+      // locked afresh against the corrected record (REQ-DATA-11).
+      expect(replacement!.particularsLockedAt).toBeNull();
+
+      // AND THE OLD ONE KEEPS ITS OWN TRUE RECORD (hard rule 13).
+      const after = await prisma.withPractice(practiceId, (tx) =>
+        tx.agreement.findFirst({ where: { id: original!.id } }),
+      );
+      expect(after!.sourcePrintJobId).toBe(original!.sourcePrintJobId);
+      expect(after!.particulars).toEqual(original!.particulars);
+
+      // ASKED AGAIN, ANSWERED ONCE — one successor per agreement.
+      const AGAIN_SHA = 'd'.repeat(64);
+      await post(
+        db4Record({
+          sourceSha256: AGAIN_SHA,
+          formReference: REPRINT_FORM_REFERENCE,
+          patientRecordNumber: REPRINT_CHART_NUMBER,
+          services: [
+            { time: '09:00', mbsItemNumber: '23', description: 'Level B Surgery', benefitAssigned: '45.05' },
+            { time: '09:00', mbsItemNumber: '36', description: 'Level C Surgery', benefitAssigned: '88.40' },
+          ],
+        }),
+      ).expect(202);
+      await settle([AGAIN_SHA]);
+      const successors = await prisma.withPractice(practiceId, (tx) =>
+        tx.agreement.count({ where: { supersedesAgreementId: original!.id } }),
+      );
+      expect(successors).toBe(1);
+    });
+
   });
 });

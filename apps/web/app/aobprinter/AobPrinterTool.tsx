@@ -46,13 +46,24 @@
  * and obviously fictional names (CLAUDE.md §7c). Nothing stops a tester
  * typing something real, and nothing should be typed that is.
  */
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BLANK, PRESETS, type Draft, type ProviderRow, type ServiceRow } from './presets';
-import { buildEnvelope, envelopeWithHash, sha256Hex } from './envelope';
+import { buildEnvelope, draftFromEnvelope, envelopeWithHash, sha256Hex } from './envelope';
 import styles from './aobprinter.module.css';
 
 function coreBaseUrl(): string {
   return (process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:3001').replace(/\/+$/, '');
+}
+
+/** A row of the picker. Dev-only on the server, which is why it may carry a name. */
+interface ExistingForm {
+  readonly id: string;
+  readonly formReference: string | null;
+  readonly patientRecordNumber: string | null;
+  readonly patientName: string | null;
+  readonly serviceDate: string | null;
+  readonly placed: boolean | null;
+  readonly reason: string | null;
 }
 
 interface Sent {
@@ -81,10 +92,57 @@ export function AobPrinterTool() {
   const [sent, setSent] = useState<Sent[]>([]);
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState(false);
+  /*
+   * THE FORMS ALREADY SENT (Carl, 28 September 2026: *"we need a drop down of
+   * the list of test cases we have already used. Saves typing"*). Loading one
+   * is also the honest way to CORRECT it: the stored record goes back on the
+   * screen whole, so fixing one field leaves the rest exactly as it arrived —
+   * and a partial reprint would read as a CHANGED form and supersede an
+   * agreement that only needed repointing.
+   */
+  const [existing, setExisting] = useState<ExistingForm[]>([]);
+  const [loadedFrom, setLoadedFrom] = useState<string>('');
 
   const set = useCallback(<K extends keyof Draft>(key: K, value: Draft[K]) => {
     setDraft((d) => ({ ...d, [key]: value }));
   }, []);
+
+  const loadList = useCallback(async (practiceId: string) => {
+    try {
+      const res = await fetch(`${coreBaseUrl()}/inbound/print-jobs/recent`, {
+        headers: { 'x-practice-id': practiceId },
+      });
+      if (!res.ok) return;
+      setExisting((await res.json()) as ExistingForm[]);
+    } catch {
+      /* A bench instrument with no list is still a bench instrument. */
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadList(draft.practiceId);
+    // The list is fetched per practice, not per keystroke on every field.
+  }, [loadList, draft.practiceId]);
+
+  /** Put a stored record back on the screen, whole. */
+  const loadForm = useCallback(
+    async (jobId: string) => {
+      setLoadedFrom(jobId);
+      if (!jobId) return;
+      try {
+        const res = await fetch(`${coreBaseUrl()}/inbound/print-jobs/${jobId}/envelope`, {
+          headers: { 'x-practice-id': draft.practiceId },
+        });
+        if (!res.ok) return;
+        const row = (await res.json()) as { payload?: Record<string, unknown> } | null;
+        if (!row?.payload) return;
+        setDraft((d) => draftFromEnvelope(d.practiceId, row.payload as Record<string, unknown>, BLANK));
+      } catch {
+        /* Nothing loaded, nothing changed — the form on screen is untouched. */
+      }
+    },
+    [draft.practiceId],
+  );
 
   const envelope = useMemo(() => buildEnvelope(draft), [draft]);
 
@@ -156,12 +214,15 @@ export function AobPrinterTool() {
        */
       if (record.jobId) {
         const id = record.jobId;
-        window.setTimeout(() => void refreshOutcome(id, draft.practiceId), 1200);
+        window.setTimeout(() => {
+          void refreshOutcome(id, draft.practiceId);
+          void loadList(draft.practiceId);
+        }, 1200);
       }
     } finally {
       setBusy(false);
     }
-  }, [draft, refreshOutcome]);
+  }, [draft, refreshOutcome, loadList]);
 
   /**
    * CORRECTED FROM THE PMS AND REPRINTED — Carl's second half, as one button.
@@ -205,6 +266,42 @@ export function AobPrinterTool() {
           use fake identities, and never a real Medicare number.
         </p>
       </header>
+
+      <section className={styles.panel} aria-labelledby="existing-h">
+        <h2 id="existing-h" className={styles.h2}>
+          Correct a form already sent
+        </h2>
+        <p className={styles.hint}>
+          Loads the stored record whole. Fix the field the practice fixed, then press{' '}
+          <strong>Print to AoB</strong> — the form reference stays the same, so it arrives as a
+          correction of that form rather than a new one.
+        </p>
+        <div className={styles.field}>
+          <label className={styles.label} htmlFor="existing-pick">
+            A form already sent
+          </label>
+          <select
+            id="existing-pick"
+            className={styles.input}
+            value={loadedFrom}
+            onChange={(e) => void loadForm(e.target.value)}
+          >
+            <option value="">Choose a form…</option>
+            {existing.map((row) => (
+              <option key={row.id} value={row.id}>
+                {[
+                  row.formReference ?? '(no reference)',
+                  row.patientName ?? row.patientRecordNumber ?? '(no patient)',
+                  row.serviceDate ?? '',
+                  row.placed === false ? `refused: ${row.reason ?? 'unknown'}` : '',
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </option>
+            ))}
+          </select>
+        </div>
+      </section>
 
       <section className={styles.panel} aria-labelledby="presets-h">
         <h2 id="presets-h" className={styles.h2}>

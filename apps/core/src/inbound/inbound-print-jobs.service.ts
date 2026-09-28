@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { PrintJobAccepted, PrintJobEnvelope } from '@aobplatform/contracts';
 import {
@@ -27,6 +27,20 @@ import { PrismaService } from '../prisma/prisma.service';
  * is kept rather than deleted — a print job we could not process is the
  * record that a practice told us something and we failed to act on it.
  */
+/**
+ * THE BENCH DOOR IS SHUT OUTSIDE DEVELOPMENT.
+ *
+ * `NODE_ENV` is the same signal the tool's own route uses, checked again here
+ * because a page guard protects a page. Anything reading a patient's name or
+ * a stored envelope goes through this; a 404 rather than a 403, because in
+ * production these endpoints genuinely do not exist.
+ */
+function assertDevOnly(): void {
+  if (process.env.NODE_ENV === 'production') {
+    throw new NotFoundException('No such endpoint.');
+  }
+}
+
 @Injectable()
 export class InboundPrintJobsService {
   private readonly logger = new Logger(InboundPrintJobsService.name);
@@ -227,6 +241,75 @@ export class InboundPrintJobsService {
    * PRACTICE-SCOPED THROUGH RLS like every other read here, so an id from
    * another practice returns null rather than a row.
    */
+  /**
+   * THE FORMS ALREADY SENT, FOR THE AOBPRINTER TEST TOOL'S PICKER (Carl, 28
+   * September 2026: *"we need a drop down of the list of test cases we have
+   * already used. Saves typing"*).
+   *
+   * DEV ONLY, AND THE GUARD IS IN THE SERVER AND NOT ONLY IN THE PAGE. The
+   * tool's route already renders nothing in a production build, but a route
+   * guard protects a page and not an endpoint. These two methods return a
+   * patient's NAME and, on `envelopeFor`, the whole stored record including
+   * the Medicare card number the form printed — so they refuse outright
+   * anywhere but development. A test fixture is the one legitimate reader.
+   *
+   * WHY A NAME AT ALL. The picker has to be readable: a list of form
+   * references is a list nobody can choose from. That is exactly why it is
+   * dev-gated rather than minimised into uselessness.
+   */
+  async recentForTestTool(practiceId: string, limit = 40) {
+    assertDevOnly();
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const rows = await tx.inboundPrintJob.findMany({
+        where: { documentType: 'db4_assignment' },
+        orderBy: { receivedAt: 'desc' },
+        take: Math.min(Math.max(limit, 1), 100),
+        select: { id: true, payload: true, receivedAt: true, outcome: true, state: true },
+      });
+      return rows.map((row) => {
+        const p = (row.payload ?? {}) as Record<string, any>;
+        const outcome = (row.outcome ?? {}) as Record<string, any>;
+        return {
+          id: row.id,
+          formReference: p.form?.formReference ?? null,
+          patientRecordNumber: p.patient?.patientRecordNumber ?? null,
+          patientName: [p.patient?.givenNames, p.patient?.familyName].filter(Boolean).join(' ') || null,
+          serviceDate: p.form?.serviceDate ?? null,
+          receivedAt: row.receivedAt,
+          state: row.state,
+          placed: outcome.db4?.placed ?? null,
+          reason: outcome.db4?.reason ?? null,
+          agreementId: outcome.db4?.agreementId ?? null,
+        };
+      });
+    });
+  }
+
+  /**
+   * ONE STORED RECORD, WHOLE, SO THE TOOL CAN CORRECT ONE FIELD AND REPRINT.
+   *
+   * IT HAS TO BE THE WHOLE ENVELOPE. A correction that carried only the
+   * fields the tool happened to redisplay would silently drop everything
+   * else, and the reprint would then look like a CHANGED FORM rather than a
+   * corrected one — which under the reprocessing rule supersedes an agreement
+   * instead of repointing it. Faithfulness here is what makes the rule
+   * testable at all.
+   *
+   * DEV ONLY — see `recentForTestTool`. This returns the Medicare card number
+   * the practice's form printed (D-2026-09-14-03), and no production caller
+   * has any business with it.
+   */
+  async envelopeForTestTool(practiceId: string, id: string) {
+    assertDevOnly();
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const row = await tx.inboundPrintJob.findFirst({
+        where: { id, documentType: 'db4_assignment' },
+        select: { id: true, payload: true },
+      });
+      return row ?? null;
+    });
+  }
+
   async status(practiceId: string, id: string) {
     return this.prisma.withPractice(practiceId, async (tx) => {
       const row = await tx.inboundPrintJob.findFirst({

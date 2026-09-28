@@ -245,6 +245,56 @@ export const DB4_PLACEMENT_REASONS = [
 ] as const;
 export type Db4PlacementReason = (typeof DB4_PLACEMENT_REASONS)[number];
 
+/* ---------------------------------------------------------------------------
+ * A DB4 THAT HAS BEEN PRINTED AGAIN — what was done about it.
+ *
+ * Carl, 28 September 2026: correct the missing data as though corrected from
+ * the PMS, reprint, and resend for reprocessing. The rule he approved is
+ * three-way — repoint when only the reproduction improved, supersede when a
+ * particular changed, refuse under a signature — and it lives as a pure
+ * function in `apps/core/src/inbound/db4-reprint.ts`, which carries the
+ * reasoning. These are the words it answers in.
+ * ------------------------------------------------------------------------ */
+
+/**
+ * WHICH KIND OF PARTICULAR MOVED between the agreement and the corrected form.
+ *
+ * TYPES, NEVER VALUES (hard rule 9, REQ-VER-04). Not one of these can carry a
+ * chart number, a provider number, a date or an item number — which is what
+ * lets the answer ride on a job row, in a log line and in a vault event.
+ */
+export const DB4_PARTICULAR_CHANGES = [
+  'patient',
+  'servicing_provider',
+  'service_date',
+  'service_items',
+] as const;
+
+export type Db4ParticularChange = (typeof DB4_PARTICULAR_CHANGES)[number];
+
+/**
+ * WHAT HAPPENED TO THE LINK between an agreement and the page it reproduces.
+ *
+ *  - `linked` — the ordinary first form. Nothing was pointing anywhere yet.
+ *  - `already_linked` — this very job is already the one. Asked twice.
+ *  - `repointed` — only the REPRODUCTION improved (an amount, an IRN, the
+ *    provider's printed name), so the agreement is untouched and now points
+ *    at the better page.
+ *  - `supersede` — a PARTICULAR changed, so this is a different agreement and
+ *    a replacement was drafted (hard rule 2, HARD-02: never an edit).
+ *  - `refused_signed` — somebody has signed. Evidence is not repointed and is
+ *    not superseded from a print queue; a human decides.
+ */
+export const DB4_REPRINT_ACTIONS = [
+  'linked',
+  'already_linked',
+  'repointed',
+  'supersede',
+  'refused_signed',
+] as const;
+
+export type Db4ReprintAction = (typeof DB4_REPRINT_ACTIONS)[number];
+
 /**
  * WHAT A `db4_assignment` JOB DID, written onto the job row.
  *
@@ -280,4 +330,16 @@ export interface Db4JobOutcome {
    * people who have no business reading one (hard rule 9).
    */
   readonly refusedStatus: number | null;
+  /**
+   * WHAT A REPRINT DID TO THE LINK. Present on every DB4 that reached the
+   * placement step, so `linked` on an original and `repointed` on a
+   * correction are distinguishable without reading two rows.
+   */
+  readonly reprint?: {
+    readonly action: Db4ReprintAction;
+    /** Types, never values. Empty unless the action is `supersede`. */
+    readonly changed: readonly Db4ParticularChange[];
+    /** The replacement a supersession drafted. Null for every other action. */
+    readonly supersededBy: string | null;
+  } | null;
 }

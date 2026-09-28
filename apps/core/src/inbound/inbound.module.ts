@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { PmsModule } from '../pms/pms.module';
 import { ArrivalsModule } from '../arrivals/arrivals.module';
+import { AgreementsModule } from '../agreements/agreements.module';
+import { CaptureModule } from '../capture/capture.module';
 import { AutoCaptureModule } from '../auto-capture/auto-capture.module';
 import { InboundPrintJobsService } from './inbound-print-jobs.service';
 import { InboundPrintJobsProcessor } from './inbound-print-jobs.processor';
@@ -25,7 +27,14 @@ import { InboundPrintJobsController } from './inbound-print-jobs.controller';
  * never at its tables (CLAUDE.md §4).
  */
 @Module({
-  imports: [PmsModule, ArrivalsModule, AutoCaptureModule],
+  /*
+   * `AgreementsModule` AND `CaptureModule` ARE HERE FOR THE CORRECTED-REPRINT
+   * PATH (28 September 2026). A DB4 whose particulars changed supersedes the
+   * agreement it made, and the handler asks the services that own those
+   * writes rather than doing them itself — the same posture it already takes
+   * with `ArrivalsService` for the placement.
+   */
+  imports: [PmsModule, ArrivalsModule, AutoCaptureModule, AgreementsModule, CaptureModule],
   controllers: [InboundPrintJobsController],
   providers: [InboundPrintJobsService, InboundPrintJobsProcessor, Db4AssignmentHandler, InboundLaneWorkerService],
   exports: [InboundPrintJobsService],

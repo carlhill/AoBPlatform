@@ -230,6 +230,39 @@ export class InboundPrintJobsController {
   }
 
   /**
+   * THE FORMS ALREADY SENT — the AOBPrinter test tool's picker (Carl, 28
+   * September 2026: *"we need a drop down of the list of test cases we have
+   * already used. Saves typing"*).
+   *
+   * DEV ONLY, refused with a 404 in production by the service itself: it
+   * returns patient names so the list can be chosen from.
+   *
+   * BEFORE `:id` ON THE ROUTER, like `metrics`, or the parameter swallows it.
+   */
+  @Get('recent')
+  @PracticeScoped()
+  recent(@Headers('x-practice-id') practiceId: string | undefined) {
+    return this.jobs.recentForTestTool(requirePractice(practiceId));
+  }
+
+  /**
+   * ONE STORED RECORD, WHOLE, so the tool can correct a field and reprint the
+   * rest faithfully — a partial reprint would read as a CHANGED form and
+   * supersede an agreement that only needed repointing.
+   *
+   * DEV ONLY: this carries the Medicare card number the practice's form
+   * printed (D-2026-09-14-03).
+   */
+  @Get(':id/envelope')
+  @PracticeScoped()
+  envelope(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.jobs.envelopeForTestTool(requirePractice(practiceId), id);
+  }
+
+  /**
    * WHAT BECAME OF ONE PRINT JOB. The AOBPrinter test tool posts a DB4, gets
    * a 202 with an id, and reads this to learn whether it PLACED or was
    * refused and why — see `InboundPrintJobsService.status`, which returns
