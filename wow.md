@@ -383,6 +383,41 @@ against the failure that produces it and asks whether the remedy is true in
 every case that reaches those words. Where it is not, the string splits — one
 per case — or drops the remedy.
 
+## 14. A test with no script has never run, and green typecheck is not green tests (28 Sep 2026)
+
+Two things turned up in one full-suite run that Carl had asked for.
+
+**`packages/contracts/src/auth.test.ts` had never run.** It was written on
+12 September to pin the silent-restore marker, which fails *silently* if the
+two packages that use it disagree. The package had no `test` script, so
+`npm test` skipped it with `--if-present`, and every "all green" since then
+has been true of the suites that ran and silent about the one that did not.
+Typecheck passed the whole time, because `tsc` compiles a test file without
+running it. When it finally ran, all six tests passed first time, which is
+luck, not evidence.
+
+**`'jest' is not recognized` was not a broken script.** Seven workspaces
+declare `"test": "jest"`, and `jest@29.7.0` was installed and hoisted, but its
+shim in `node_modules/.bin` was missing (`create-jest` and `ts-jest` were
+there). Every agent routed round it with
+`node ../../node_modules/jest/bin/jest.js`, which works and hides the cause.
+`npm rebuild jest` restored the shim; nothing in the repo changed. Why it
+went missing is not known.
+
+**The rules.**
+- **A test file in a workspace with no `test` script is a finding**, reported
+  the same way as a failing test. When adding a test to a package, check the
+  package has a runner; when reporting a suite green, say which workspaces
+  had no script.
+- **A runner that is "not recognized" is a missing bin shim until shown
+  otherwise.** Check `node_modules/.bin` and try `npm rebuild <pkg>` before
+  calling the runner broken or routing round it. Routing round it is fine for
+  one run; recording it as "the runner is broken" turns a local glitch into
+  folklore.
+
+**Enforced by:** nothing yet. A check in `validate:inventory` that fails when a
+workspace holds `*.test.ts` and has no `test` script would be cheap.
+
 ## Change log
 | Date | Change |
 |---|---|
@@ -397,3 +432,4 @@ per case — or drops the remedy.
 | 17 Sep 2026 | §12: the `git commit` guard hook, and the honest limits of the `settings.json` deny list — prefix matching, and no content scan. |
 | 17 Sep 2026 | §5b: check `ListAgents` before telling an agent that no other agent exists — `git log` and `git status` cannot see a write that has not happened yet. Also: the reviewer clause goes last, under its own heading, because twice in one day an agent read "a fresh reviewer reads your diff" as "you are orchestrating". |
 | 28 Sep 2026 | §13: a blocked or refused message never offers a remedy that is not true for that record. Written after a C7 refusal told Carl to record item numbers his form already carried, sending him to his data instead of to our own supersession defect. |
+| 28 Sep 2026 | §14: a test file in a workspace with no `test` script has never run — `packages/contracts` gained a vitest script and its six tests ran for the first time; and "not recognized" means a missing bin shim (`npm rebuild jest`), not a broken runner. |
