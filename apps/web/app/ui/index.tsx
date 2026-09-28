@@ -513,6 +513,7 @@ export function PatientIdentity({
   recordId,
   testId,
   className,
+  children,
 }: {
   /** The practice's own number for this person. Null where the record carries none. */
   practiceNumber: string | null;
@@ -520,23 +521,62 @@ export function PatientIdentity({
   recordId: string;
   testId?: string;
   className?: string;
+  /**
+   * FURTHER IDENTIFIERS FOR THE SAME ROW, folded away with ours — the push
+   * desk passes AOBPRINTER's reference for the page the row came off. Ids
+   * only: this is a disclosure of handles, not a place to add content.
+   */
+  children?: React.ReactNode;
 }) {
+  const visible = practiceNumber
+    ? strings.recordId.practiceNumber(practiceNumber)
+    : strings.recordId.practiceNumberUnknown;
+  /*
+   * A DISCLOSURE, WITH THE PRACTICE'S NUMBER AS ITS SUMMARY (Carl, 28
+   * September 2026: *"Can these ids be put in an expander so the screen looks
+   * less busy and less technical"*).
+   *
+   * WHAT FOLDS IS THE HEXADECIMAL, AND ONLY THAT. A row had grown to three
+   * stacked identifiers under the patient's name — the practice's number, our
+   * uuid, and a 64-character hash — which is three lines of machine text above
+   * the work. But the practice's number is the one thing here that is NOT
+   * technical: it is the handle reception reads out and types into their own
+   * software (12 Sep 2026), and hiding it would have taken the useful one and
+   * left the row naming nobody. So it stays on screen and is itself the
+   * control; the two that exist for support tickets open in one press.
+   *
+   * ONE PRESS TO A COPY CONTROL, which is the constraint this had to keep:
+   * somebody reading a value down a phone is already having a bad minute.
+   *
+   * IT IS ON EVERY SURFACE THAT SHOWS THE PAIR, because it is inside the
+   * shared component rather than at a call site. The tablet desk, the front
+   * desk and the small desk fold and unfold the same way — a receptionist
+   * moving between them in one minute meets one layout, which is the whole
+   * reason this component exists.
+   *
+   * A NATIVE `<details>`: keyboard-operable, announced as a disclosure, open
+   * before hydration, and opened by browser find-in-page — which matters when
+   * somebody is searching the screen for a reference support just read out.
+   */
   return (
-    <span className={`${styles.patientIdentity} ${className ?? ''}`} data-testid={testId}>
-      <span
-        className={styles.patientIdentityNumber}
+    <details className={`${styles.patientIdentity} ${className ?? ''}`} data-testid={testId}>
+      <summary
+        className={`${styles.patientIdentityNumber} ${styles.patientIdentitySummary}`}
+        /* The visible words are contained in the spoken ones (WCAG 2.2, 2.5.3). */
+        aria-label={strings.recordId.identifiersLabel(visible)}
         data-testid={testId ? `${testId}-practice` : undefined}
       >
-        {practiceNumber
-          ? strings.recordId.practiceNumber(practiceNumber)
-          : strings.recordId.practiceNumberUnknown}
+        {visible}
+      </summary>
+      <span className={styles.patientIdentityBody}>
+        <RecordId
+          label={strings.recordId.patient}
+          value={recordId}
+          testId={testId ? `${testId}-record` : undefined}
+        />
+        {children}
       </span>
-      <RecordId
-        label={strings.recordId.patient}
-        value={recordId}
-        testId={testId ? `${testId}-record` : undefined}
-      />
-    </span>
+    </details>
   );
 }
 

@@ -3194,12 +3194,11 @@ export function AgreementRow({
    * same row the vault events name.
    */
   const recordId = (
-    <>
-      <PatientIdentity
-        practiceNumber={row.patientRecordNumber}
-        recordId={row.patientId}
-        testId={`row-patient-id-${row.agreementId}`}
-      />
+    <PatientIdentity
+      practiceNumber={row.patientRecordNumber}
+      recordId={row.patientId}
+      testId={`row-patient-id-${row.agreementId}`}
+    >
       {/*
         AND WHICH PRINTED PAGE THIS CAME OFF (Carl, 28 September 2026: *"we
         need the AOBPrinter unique key probably after AoBPlatform record
@@ -3211,18 +3210,25 @@ export function AgreementRow({
         that never came off a printed form, which is an ordinary thing and
         not a gap.
 
+        FOLDED WITH OURS RATHER THAN BESIDE IT (Carl, same day: *"Can these
+        ids be put in an expander"*, and *"AOBPrinter Ref is wrapping"*).
+        Sixty-four hexadecimal characters under a patient's name is the line
+        that made the row unreadable; inside the disclosure it gets the whole
+        column (`.printRef`) instead of the tail of one.
+
         IT IS NOT A FILE PATH AND THERE IS NONE (8.2). The SHA-256 of the
         source print job is what both ends know the page by, which is what
         makes it the identifier a support ticket can use.
       */}
       {row.printRecord?.print ? (
         <RecordId
+          className={rowStyles.printRef}
           label={strings.recordId.printRecord}
           value={row.printRecord.print.sourceSha256}
           testId={`row-print-ref-${row.agreementId}`}
         />
       ) : null}
-    </>
+    </PatientIdentity>
   );
 
   return (
@@ -3261,7 +3267,6 @@ export function AgreementRow({
         */}
         {!onTablet && sessionChip}
         {!onTablet && faultLink}
-        {!onTablet && recordId}
       </div>
 
       {/*
@@ -3319,6 +3324,25 @@ export function AgreementRow({
             {strings.tablet.enduringGpOnly}
           </p>
         )}
+        {/*
+          AND THE IDENTIFIERS LAST, ON THIS SIDE (Carl, 28 September 2026:
+          *"Can we move all these ids to right side of the page in the card
+          and move Who is signing up"*).
+
+          THEY WERE UNDER THE NAME, WHICH IS WHERE THEY DID THE MOST HARM.
+          The left column answers "who is this" and the right answers "what
+          is the visit and who signs it" -- and three identifiers wedged into
+          the first pushed the name away from the work AND, once the row
+          stacks below 900px, pushed "Signing: ..." a screenful down. Moved
+          here they are last in the column on both layouts: the facts read
+          first, and the handles are beneath them where somebody goes looking
+          rather than where everybody has to scroll past.
+
+          ON A TABLET THEY ALREADY LIVE ON THIS SIDE -- `.actionsLive` is
+          column 2 (10 Sep 2026) -- so this is the one layout catching up with
+          the other, not a second arrangement.
+        */}
+        {!onTablet && recordId}
       </div>
 
       {/*

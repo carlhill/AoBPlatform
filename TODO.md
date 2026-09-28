@@ -4590,7 +4590,7 @@ Retrying or repairing a refused job from the console. The PMS is the source of
 truth and the fix is a reprint; an edit surface would be AoB originating a
 particular, which is the thing D-2026-09-14-02 and hard rule 4 refuse.
 
-## The three ids belong behind an expander (28 Sep 2026)
+## ~~The three ids belong behind an expander~~ — DONE 28 Sep 2026
 
 Carl, having just asked for AOBPrinter's reference to be added beside the
 other two: *"Later on we want to hide all these ids under a small expander as
@@ -4621,4 +4621,23 @@ first screen goes back to the name, the provider and the step strip.
 component and the natural home; `pushDesk.tsx` renders the AOBPrinter line
 beside it today and would move inside. `strings.recordId` already holds every
 label.
+
+**Done, the same evening** — Carl asked for it again with the row in front of
+him: *"Can these ids be put in an expander so the screen looks less busy and
+less techniucal"*, and *"Can we move all these ids to right side of the page
+in the card and move Who is signing up"*.
+
+Built in `PatientIdentity` as written above, so all four surfaces fold the
+same way. **One departure from the plan, and it is deliberate:** the practice's
+own number is not inside the disclosure, it IS the summary. Folding it away
+would have hidden the one identifier here that is not technical — the handle
+reception reads out (12 Sep 2026) — and left a row naming nobody. What folds
+is the hexadecimal: our record id and AOBPRINTER's reference, each keeping its
+Copy control, one press away.
+
+The push desk's copy also moved out of the identity column and under the facts
+(`pushDesk.tsx`), so the row's right-hand side carries them and "Signing: ..."
+reads before them on both layouts. `.printRef` gives the 64-character hash the
+whole line rather than the tail of one. Pinned by
+`row_identifiers_fold_away_and_sit_after_the_facts` in `tablet.test.tsx`.
 

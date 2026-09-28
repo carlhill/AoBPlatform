@@ -1044,11 +1044,14 @@
    one a person says out loud; ours keeps `.recordId`'s quiet monospace
    underneath.
 --------------------------------------------------------------------------- */
+/*
+ * A DISCLOSURE SINCE 28 SEP 2026 (Carl: *"Can these ids be put in an expander
+ * so the screen looks less busy and less technical"*). `display: block`, NOT
+ * flex: a `<details>` laid out as a flex container makes its own `<summary>`
+ * a flex item, which is where the disclosure marker goes missing in WebKit.
+ * The revealed ids get their own flex box (`.patientIdentityBody`) instead.
+ */
 .patientIdentity {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--s1);
   min-width: 0;
   max-width: 100%;
 }
@@ -1057,6 +1060,35 @@
   font-size: var(--text-sm);
   color: var(--ink);
   overflow-wrap: anywhere;
+}
+
+/*
+ * THE PRACTICE'S OWN NUMBER IS THE SUMMARY, so it has to stay readable as a
+ * value while reading as something to press. It keeps `.patientIdentityNumber`
+ * unchanged and adds only the cursor, a little room for the marker's line, and
+ * a focus ring -- `<summary>` is outside `tokens.css`'s
+ * `:where(a, button, input, select, textarea, [tabindex])` rule and gets none
+ * otherwise.
+ */
+.patientIdentitySummary {
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.patientIdentitySummary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The ids themselves, once opened -- stacked, each keeping its Copy control. */
+.patientIdentityBody {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s1);
+  min-width: 0;
+  max-width: 100%;
+  padding: var(--s1) 0 var(--s1) var(--s3);
 }
 
 .recordId {

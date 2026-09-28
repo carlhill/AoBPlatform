@@ -66,6 +66,24 @@
   min-width: 0;
 }
 
+/*
+ * AOBPRINTER'S REFERENCE GETS THE WHOLE LINE (Carl, 28 September 2026:
+ * *"AOBPrinter Ref is wrapping"*).
+ *
+ * `.recordId` is an `inline-flex` that shrink-wraps its label, its value and
+ * its Copy control, so a 64-character hash took whatever was left beside the
+ * label and broke mid-value -- twice, in the middle of a string somebody is
+ * about to read down a phone. `width: 100%` gives it the column instead of
+ * the remainder of a line. A uuid is 36 characters and never needed this; a
+ * sha-256 is 64 and does.
+ *
+ * IT IS STILL ALLOWED TO WRAP, because the alternative is truncation and
+ * this value exists to be matched EXACTLY (`ui/index.tsx`, `RecordId`).
+ */
+.printRef {
+  width: 100%;
+}
+
 /* Label and value are ONE string (see `serviceFact` / `signingFact` in
    TabletView.tsx) so there is nothing for a layout to split mid-fact. */
 .fact {

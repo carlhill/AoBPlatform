@@ -417,6 +417,72 @@ describe('/practice/tablet — send to the tablet', () => {
     expect(document.body.textContent).not.toMatch(/medicare/i);
   });
 
+  /**
+   * THE IDS ARE FOLDED AWAY, AND THEY ARE ON THE OTHER SIDE OF THE ROW (Carl,
+   * 28 September 2026, on a screenshot of three stacked identifiers: *"Can we
+   * move all these ids to right side of the page in the card and move Who is
+   * signing up"*, then *"Can these ids be put in an expander so the screen
+   * looks less busy and less techniucal"*).
+   *
+   * THREE THINGS, AND EACH ONE IS A DIFFERENT WAY IT COULD COME BACK. The
+   * disclosure could be left open; the practice's own number could get folded
+   * away with the hexadecimal, which would take the ONE identifier reception
+   * reads out loud (12 Sep 2026); or the block could be moved and quietly
+   * moved back by a later layout change, putting a 64-character hash between
+   * the patient's name and the work again.
+   */
+  it('row_identifiers_fold_away_and_sit_after_the_facts', async () => {
+    const WITH_A_PRINTED_FORM = {
+      ...READY,
+      patientRecordNumber: 'DESK-JAMIE-EXAMPLE',
+      printRecord: {
+        checks: [] as string[],
+        print: {
+          printJobId: '11111111-2222-3333-4444-555555555555',
+          // NOT A REAL HASH AND NOT A REAL ANYTHING (CLAUDE.md §7c) — 64
+          // characters is the length that made it wrap, which is the point.
+          sourceSha256: 'c'.repeat(64),
+          formReference: 'AOB4JAMIE',
+        },
+      },
+    };
+    stubFetch({ rows: [WITH_A_PRINTED_FORM] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    await waitFor(() => expect(screen.getByTestId(`pushable-${READY.agreementId}`)).toBeTruthy());
+    const identity = screen.getByTestId(`row-patient-id-${READY.agreementId}`) as HTMLDetailsElement;
+    const summary = screen.getByTestId(`row-patient-id-${READY.agreementId}-practice`);
+
+    // A NATIVE DISCLOSURE, CLOSED — not a scripted one, and not left open.
+    expect(identity.tagName).toBe('DETAILS');
+    expect(identity.open).toBe(false);
+
+    // THE PRACTICE'S OWN NUMBER IS THE SUMMARY, so the one non-technical
+    // identifier is still on screen with the row shut.
+    expect(summary.tagName).toBe('SUMMARY');
+    expect(summary.textContent).toContain('DESK-JAMIE-EXAMPLE');
+    // And it is spoken as what it is plus what pressing does (WCAG 2.5.3:
+    // the visible words are contained in the accessible name).
+    const spoken = summary.getAttribute('aria-label') ?? '';
+    expect(spoken).toContain(strings.recordId.practiceNumber('DESK-JAMIE-EXAMPLE'));
+
+    // BOTH MACHINE IDS ARE INSIDE IT, each keeping its own Copy control — the
+    // constraint the expander had to keep (TODO.md, 28 Sep 2026).
+    const ours = screen.getByTestId(`row-patient-id-${READY.agreementId}-record`);
+    const printed = screen.getByTestId(`row-print-ref-${READY.agreementId}`);
+    expect(identity.contains(ours)).toBe(true);
+    expect(identity.contains(printed)).toBe(true);
+    expect(printed.textContent).toContain(strings.recordId.printRecord);
+    expect(printed.textContent).toContain('c'.repeat(64));
+    expect(within(identity).getAllByTestId(/-copy$/)).toHaveLength(2);
+
+    // AFTER THE FACTS, IN THE SAME COLUMN AS THEM. "Who is signing" reads
+    // before the identifiers, not below them.
+    const who = screen.getByTestId(`who-fact-${READY.agreementId}`);
+    expect(identity.parentElement).toBe(who.parentElement);
+    expect(who.compareDocumentPosition(identity) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('row_renders_facts_in_one_line_each', async () => {
     stubFetch();
     render(<TabletView practiceId={PRACTICE} />);

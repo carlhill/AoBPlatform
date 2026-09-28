@@ -83,6 +83,22 @@ const recordIdWords = {
      * each one belongs to.
      */
     printRecord: 'AOBPrinter reference',
+    /*
+     * THE ACCESSIBLE NAME ON THE DISCLOSURE THAT HOLDS THEM (Carl, 28
+     * September 2026: *"Can these ids be put in an expander so the screen
+     * looks less busy and less technical"*).
+     *
+     * THE PRACTICE'S NUMBER STAYS ON SCREEN AND IS ITSELF THE SUMMARY. It is
+     * the one identifier that is not technical -- the handle reception reads
+     * out (12 Sep 2026) -- so folding it away would take the useful one and
+     * leave the row naming nobody. What folds is the hexadecimal: our record
+     * id and AOBPRINTER's reference.
+     *
+     * THE VISIBLE WORDS ARE CONTAINED IN THE SPOKEN ONES (WCAG 2.2, 2.5.3
+     * Label in Name), which is why this takes the visible text rather than
+     * replacing it.
+     */
+    identifiersLabel: (visible: string) => `${visible} — show the record identifiers`,
     copy: 'Copy',
     copied: 'Copied',
     /** The accessible name on the copy control, so it is not twelve buttons all called "Copy". */
