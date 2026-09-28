@@ -441,7 +441,15 @@
  * phone.
  */
 .printId {
-  margin: var(--s2) 0;
+  /*
+   * A CLEAR GAP ABOVE THE DISCLOSURE (Carl, 28 September 2026: *"add a space
+   * between the expander and the line before"*). The checks list above ends
+   * on an 8px margin and this began on one, and adjacent margins COLLAPSE --
+   * so two separate blocks read as one run, with the expander looking like a
+   * fourth bullet rather than the next thing down. 20px is the gap the band's
+   * own paragraphs sit on.
+   */
+  margin: var(--s5) 0 var(--s2);
 }
 
 .printIdList {
