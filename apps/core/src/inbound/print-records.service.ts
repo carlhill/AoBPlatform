@@ -180,10 +180,11 @@ export class PrintRecordsService {
     );
     if (!job) return null;
     /*
-     * THE DISCRIMINATOR IS CHECKED, NOT MERELY FETCHED. Nothing writes
-     * `sourcePrintJobId` today except the DB4 handler, so this cannot be wrong
-     * yet — and "cannot be wrong yet" is how a wrong id gets here in six
-     * months. The renderer's own defence is a shape check, and an arrival slip
+     * THE DISCRIMINATOR IS CHECKED, NOT MERELY FETCHED. Every
+     * `sourcePrintJobId` originates in the DB4 handler — `createSupersedingDraft`
+     * copies one onto a replacement, but only an id that handler already
+     * vetted — so this cannot be wrong yet, and "cannot be wrong yet" is how
+     * a wrong id gets here in six months. The renderer's own defence is a shape check, and an arrival slip
      * or an appointment list would pass it and draw a mostly-empty form rather
      * than refuse. A caller reads null as `print_record_missing`, which is the
      * honest answer: there is no DB4 here.

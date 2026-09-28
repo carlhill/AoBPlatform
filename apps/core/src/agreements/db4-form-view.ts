@@ -371,14 +371,22 @@ export function buildDb4FormView(envelope: PrintJobEnvelope): Db4FormView | unde
  * down is what that rule exists to prevent, and the person looking at it is
  * the one person in the building who cannot fix a print record.
  *
- * ── TWO OF THESE ARE THE GUARD; THREE ARE A BACKSTOP ──
+ * ── THREE OF THESE ARE THE GUARD; FOUR ARE A BACKSTOP ──
  *
- * `db4-assignment.handler.ts` is the ONLY writer of `Agreement.sourcePrintJobId`,
- * and it writes it only after its own gates have passed on this same envelope.
- * A record with no chart number, no MBS item numbers or no service date is
- * refused there as `no_chart_number` / `no_service_items` / `no_service_date`
- * and NEVER BECOMES AN AGREEMENT, so those three checks cannot fire on any
- * row that exists today.
+ * `db4-assignment.handler.ts` ORIGINATES every `Agreement.sourcePrintJobId`,
+ * and it writes one only after its own gates have passed on this same
+ * envelope. A record with no chart number, no MBS item numbers, no servicing
+ * provider number or no service date is refused there as `no_chart_number` /
+ * `no_service_items` / `no_servicing_provider` / `no_service_date` and NEVER
+ * BECOMES AN AGREEMENT, so those four checks cannot fire on any row that
+ * exists today.
+ *
+ * IT IS NO LONGER THE ONLY WRITER, AND THAT DOES NOT WEAKEN THE ABOVE.
+ * `createSupersedingDraft` copies the column onto a replacement (28 September
+ * 2026) — but it copies an id the handler already vetted, so every value in
+ * that column still came through those gates. The claim that matters is
+ * ORIGINATION, not exclusivity, and an earlier version of this comment said
+ * the wrong one of the two.
  *
  * They are kept because that invariant is a fact about today's code — one
  * writer, gating on those fields first — rather than a structural one, and

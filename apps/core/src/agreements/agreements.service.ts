@@ -682,6 +682,38 @@ export class AgreementsService {
         serviceDescription: basicServiceDescriptionOf(agreement) ?? overrides.serviceDescription ?? null,
         serviceDescriptionSetBy: agreement.serviceDescriptionSetBy,
         serviceDescriptionSetAt: agreement.serviceDescriptionSetAt,
+        /*
+         * WHICH PRINTED FORM THIS CAME OFF, CARRIED FORWARD (Carl, 28
+         * September 2026, from a live tablet: *"when I choose who is signing
+         * is not the patient I get the attached"* -- and the attached was the
+         * plain particulars screen, not the reproduction of his DB4).
+         *
+         * IT WAS DROPPED BEFORE THIS LINE EXISTED, and the visible symptom was
+         * the least of it. `withDb4FormView` returns no view without this
+         * column, so the tablet fell back to the particulars screen: the
+         * patient stopped being shown the form their practice printed the
+         * moment a carer was named. The real cost is underneath -- the
+         * replacement is the agreement that gets SIGNED, and it had no link to
+         * the DB4 it came from at all, so `SignedDb4Service` would refuse it
+         * `not_from_a_db4` and the Signed-DB4 would never be produced. A
+         * provenance chain that breaks whenever a carer signs is not one.
+         *
+         * THE SAME PAGE STILL DESCRIBES IT. A supersession for who-is-signing
+         * or for a corrected detail does not reprint anything: one form was
+         * printed at the practice, it produced this agreement, and the
+         * replacement is that same agreement restated. Two agreements sharing
+         * a print job is correct and the column is a plain index, not a
+         * unique one -- the superseded row keeps its own true record
+         * (HARD-02, hard rule 13) and both point at the page that made them.
+         *
+         * EXCEPT ON A MOVE, for the same reason `providerId` is dropped
+         * directly above. A DB4 names its servicing provider; once the
+         * agreement anchors to a different practitioner, that page no longer
+         * describes it, and showing the patient a reproduction naming the
+         * provider they have just been moved away from would be worse than
+         * showing them none. `overrides.affiliationId` is the move.
+         */
+        sourcePrintJobId: overrides.affiliationId ? null : agreement.sourcePrintJobId,
         status: 'draft',
         supersedesAgreementId: agreement.id,
         /*

@@ -687,6 +687,61 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
       expect(response.body.db4Form.formReference).toBe(FORM_REFERENCE);
     });
 
+    /*
+     * CARL, 28 SEPTEMBER 2026, FROM A LIVE TABLET: *"when I choose who is
+     * signing is not the patient I get the attached"* -- and the attached was
+     * the plain particulars screen instead of his DB4.
+     *
+     * `createSupersedingDraft` never copied `sourcePrintJobId`, so naming a
+     * carer produced a replacement with no link to the printed form. The
+     * tablet fallback was the visible half; the half that matters is that the
+     * replacement is the agreement that gets SIGNED, and without the column
+     * `SignedDb4Service` refuses it `not_from_a_db4` -- a provenance chain
+     * that breaks whenever somebody other than the patient signs.
+     */
+    it('a_carer_named_at_the_desk_keeps_the_agreement_pointed_at_the_printed_form', async () => {
+      const { agreement } = await tabletSees();
+      expect(agreement.sourcePrintJobId).toBeTruthy();
+
+      const changed = await request(app.getHttpServer())
+        .post(`/agreements/${agreement.id}/assignor`)
+        .set('x-practice-id', practiceId)
+        .send({
+          assignorIsPatient: false,
+          name: 'Sam Carer',
+          authorityBasis: 'parent',
+          declaresEighteenOrOver: true,
+          // REQ-REG-08 — somewhere to send the copy to, never proof of identity.
+          mobile: '0400 000 111',
+        })
+        .expect(201);
+
+      // A SUPERSESSION, not an edit (hard rule 2, HARD-02).
+      expect(changed.body.id).not.toBe(agreement.id);
+      expect(changed.body.supersedesAgreementId).toBe(agreement.id);
+
+      const replacement = await prisma.withPractice(practiceId, (tx) =>
+        tx.agreement.findFirst({ where: { id: changed.body.id as string } }),
+      );
+      // THE SAME PAGE STILL DESCRIBES IT -- one form was printed, and the
+      // replacement is that same agreement restated.
+      expect(replacement!.sourcePrintJobId).toBe(agreement.sourcePrintJobId);
+
+      // AND THE SUPERSEDED ROW KEEPS ITS OWN TRUE RECORD (hard rule 13).
+      const original = await prisma.withPractice(practiceId, (tx) =>
+        tx.agreement.findFirst({ where: { id: agreement.id } }),
+      );
+      expect(original!.sourcePrintJobId).toBe(agreement.sourcePrintJobId);
+
+      // SO THE PATIENT STILL SEES THE FORM THEIR PRACTICE PRINTED.
+      const onTablet = await request(app.getHttpServer())
+        .get(`/agreements/${changed.body.id}`)
+        .set('x-practice-id', practiceId)
+        .expect(200);
+      expect(onTablet.body.db4Form).toBeTruthy();
+      expect(onTablet.body.db4Form.printJobId).toBe(agreement.sourcePrintJobId);
+    });
+
     it('the_db4_form_view_is_display_data_and_moves_no_stored_byte', async () => {
       // HARD RULE 13. The block rides on a response and dies with it: it is
       // not a particular, it is not hashed, and it is not stored.
