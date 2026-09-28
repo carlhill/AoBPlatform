@@ -1250,6 +1250,33 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
       // locked afresh against the corrected record (REQ-DATA-11).
       expect(replacement!.particularsLockedAt).toBeNull();
 
+      /*
+       * AND THE SERVICE RECORD MOVES WITH IT, WHICH IS WHAT MAKES THE
+       * REPLACEMENT SENDABLE AT ALL (Carl, 28 September 2026, on a live row
+       * refusing with "C7: D6b: a post-agreement requires at least one valid
+       * MBS item number" for a visit whose items were sitting on the
+       * superseded agreement's service record).
+       *
+       * THE LOCK READS ITS ITEM NUMBERS OFF THE SERVICE RECORD, not off the
+       * draft: `tablet-sessions.service.ts` composes `mbsItemNumbers` as
+       * `service ? [...service.mbsItemNumbers] : []`. So a replacement with
+       * no service record has no items, fails C7 at the push, and can never
+       * be sent — the supersession produces an agreement that is dead on
+       * arrival, for a form that was perfectly good.
+       *
+       * IT IS A REPOINT, NOT A SECOND RECORD. The invoice has not changed;
+       * one form is one service record by `db4:<formReference>`. What changed
+       * is which agreement covers it, and after a supersession that is the
+       * replacement — the same reasoning that moves `sourcePrintJobId`.
+       */
+      const record = await prisma.withPractice(practiceId, (tx) =>
+        tx.serviceRecord.findFirst({ where: { pmsInvoiceKey: `db4:${REPRINT_FORM_REFERENCE}` } }),
+      );
+      expect(record).not.toBeNull();
+      expect(record!.agreementId).toBe(replacement!.id);
+      // Carrying the CORRECTED items, because the reprint is what re-billed.
+      expect([...record!.mbsItemNumbers].sort()).toEqual(['23', '36']);
+
       // AND THE OLD ONE KEEPS ITS OWN TRUE RECORD (hard rule 13).
       const after = await prisma.withPractice(practiceId, (tx) =>
         tx.agreement.findFirst({ where: { id: original!.id } }),

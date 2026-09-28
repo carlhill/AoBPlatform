@@ -402,6 +402,41 @@ export class Db4AssignmentHandler {
          */
         await this.capture.cancelOpenFor(tx, live.id, 'agreement_superseded');
         await this.capture.openInPractice(tx, practiceId, replacement.id);
+        /*
+         * AND WHERE THE ITEMS THEMSELVES MOVED, THE INVOICE ROW SAYS SO
+         * (Carl, 28 September 2026).
+         *
+         * `createSupersedingDraft` repoints the service record at the
+         * replacement, which is what makes the replacement sendable at all.
+         * It cannot update the CONTENT, because it knows nothing about the
+         * form that arrived — only this handler does.
+         *
+         * WHY IT HAS TO BE UPDATED HERE AND NOWHERE ELSE. `serviceRendered`
+         * short-circuits a decided record — *"a repeat is a RETRY, not a
+         * second visit"* — which is exactly right for a connector on a bad
+         * line resending the same page, and exactly wrong for a re-bill. The
+         * arriving form is the same invoice by `db4:<formReference>` with
+         * different items on it, and the supersession only happened BECAUSE
+         * they differ. Leaving the record alone would hand the replacement
+         * the OLD items at the lock, so the new agreement would be superseded
+         * into existence and then say precisely what the one it replaced said.
+         *
+         * ONLY WHEN `service_items` IS IN `changed`, so nothing is rewritten
+         * on a supersession about a date, a provider or a patient. Those move
+         * other columns and are not this method's business.
+         *
+         * THE SUPERSESSION EVENT IS THE RECORD OF IT. `supersedeForCorrected
+         * PrintRecord` writes `print_record_corrected` naming the changed
+         * particulars as TYPES (hard rule 9), in this same transaction, so
+         * the item change is accounted for without a second event carrying
+         * item numbers into the vault (REQ-LOG-08 keeps counts, not numbers).
+         */
+        if (decision.changed.includes('service_items')) {
+          await tx.serviceRecord.updateMany({
+            where: { practiceId, agreementId: replacement.id },
+            data: { mbsItemNumbers: [...arriving.mbsItemNumbers] },
+          });
+        }
         this.logger.log(
           `DB4 for practice ${practiceId}: a corrected form changed ${decision.changed.join(',')} — superseded.`,
         );

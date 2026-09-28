@@ -714,7 +714,7 @@ export class AgreementsService {
       affiliationId = anchor.affiliationId;
     }
 
-    return tx.agreement.create({
+    const replacement = await tx.agreement.create({
       data: {
         practiceId,
         type: overrides.type ?? agreement.type,
@@ -806,6 +806,52 @@ export class AgreementsService {
             : agreement.assignorConfirmedBy,
       },
     });
+
+    /*
+     * AND THE SERVICE RECORD COMES WITH IT — the thing that makes a
+     * post-agreement a post-agreement (Carl, 28 September 2026, on a live row
+     * refusing with *"C7: D6b: a post-agreement requires at least one valid
+     * MBS item number"* for a visit whose item numbers were sitting, intact,
+     * on the superseded agreement's service record).
+     *
+     * WHY IT IS FATAL AND NOT COSMETIC. The push composes the lock's
+     * particulars from the record, not from the draft —
+     * `tablet-sessions.service.ts` reads `service ? [...service.mbsItemNumbers]
+     * : []`. A replacement with no service record therefore has NO items, is
+     * refused by rule C7 at the lock, and can never be sent. Every
+     * supersession of a post-agreement produced an agreement that was dead on
+     * arrival, for an invoice that was perfectly good, and the desk could
+     * only say the item numbers were missing when they were not.
+     *
+     * IT IS A REPOINT, NOT A SECOND RECORD. `service_records` is the invoice
+     * table and one form is one record by `db4:<formReference>`; the invoice
+     * has not changed. What changed is WHICH AGREEMENT COVERS IT, and after a
+     * supersession that is the replacement. Writing a second record would
+     * invent an invoice the practice never raised — far worse than a stale
+     * pointer.
+     *
+     * THE SUPERSEDED AGREEMENT LOSES NOTHING IT OWNS (hard rule 13, HARD-02).
+     * Its particulars, its events and its own print job are untouched; the
+     * pointer it loses was never its own fact, it was the invoice's answer to
+     * "who covers me", and that answer has moved.
+     *
+     * IT MOVES ON EVERY KIND OF SUPERSESSION, including a move to another
+     * practitioner (`overrides.affiliationId`), which drops the print job
+     * directly above. The two are not the same question: the page no longer
+     * DESCRIBES a moved agreement, but the visit is still the visit that was
+     * billed, and leaving the invoice pointing at an agreement nobody will
+     * sign would be the same dead end by another road.
+     *
+     * `updateMany`, SO A SUPERSESSION WITH NO RECORD IS A NO-OP rather than a
+     * throw. A pre-agreement has none, and nothing here may block care
+     * (hard rule 8).
+     */
+    await tx.serviceRecord.updateMany({
+      where: { practiceId, agreementId: agreement.id },
+      data: { agreementId: replacement.id },
+    });
+
+    return replacement;
   }
 
   /**
