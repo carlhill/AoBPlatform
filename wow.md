@@ -345,6 +345,44 @@ ordinary commits or be tuned so loosely it proves nothing. It checks paths and
 sizes, which it can do without false positives, and the high-confidence content
 patterns only (a private key block, an AWS key id).
 
+## 13. Never tell somebody to do a thing they have already done (Carl, 28 Sep 2026)
+
+Carl, on a row that refused to send with a C7 message telling him to record an
+item number: *"still does not tell us how to resolve the issue."* The message
+was true of C7 in general and **false of that row**, which had two item
+numbers on its form. The advice was honest generic guidance and the wrong
+answer for that row — and because it read as authoritative, it sent Carl
+looking at his data instead of at our defect, which was the real cause
+(`createSupersedingDraft` never moved the service record, so the lock read no
+items from a record the replacement did not have).
+
+**The rule. A blocked, wrong or waiting message states the condition the
+system actually observed, and offers a remedy only where the remedy is true
+for THAT record.** Where it cannot tell, it says what it checked and what it
+found, and stops. A generic instruction printed under a specific failure is
+worse than no instruction: it is a confident wrong answer, it moves the
+suspicion onto the reader's data, and it hides the defect for as long as
+somebody believes it.
+
+**How to tell the difference when writing one.** Ask what the message would
+say if the system were broken in the way it is most likely to be broken. If
+the words are the same either way, they are not a diagnosis — they are a guess
+wearing a diagnosis's clothes. Name the observation (*"the record this form is
+attached to carries no item numbers"*) before the remedy (*"add them to the
+invoice"*), so a reader who knows the observation is impossible knows
+immediately that they are looking at a bug, not at their own mistake.
+
+**It does not mean saying less.** CLAUDE.md §7c still requires every blocked
+message to name its specific reason and link to the exact item where it is
+fixed. This narrows what may be asserted, not how much help is offered: the
+observation is always sayable, and where there is one true remedy it is still
+named.
+
+**Enforced by:** review. A reviewer reads every new blocked/refused string
+against the failure that produces it and asks whether the remedy is true in
+every case that reaches those words. Where it is not, the string splits — one
+per case — or drops the remedy.
+
 ## Change log
 | Date | Change |
 |---|---|
@@ -358,3 +396,4 @@ patterns only (a private key block, an AWS key id).
 | 17 Sep 2026 | §11: the working method rules moved here from `CLAUDE.md` §7 with their reasoning — the `acting-as` precedent behind "never weaken a test", why the full suite is not the default, why the dependency rule covers dev dependencies, and the stack snapshot. §7 went from 1,785 words to 887. |
 | 17 Sep 2026 | §12: the `git commit` guard hook, and the honest limits of the `settings.json` deny list — prefix matching, and no content scan. |
 | 17 Sep 2026 | §5b: check `ListAgents` before telling an agent that no other agent exists — `git log` and `git status` cannot see a write that has not happened yet. Also: the reviewer clause goes last, under its own heading, because twice in one day an agent read "a fresh reviewer reads your diff" as "you are orchestrating". |
+| 28 Sep 2026 | §13: a blocked or refused message never offers a remedy that is not true for that record. Written after a C7 refusal told Carl to record item numbers his form already carried, sending him to his data instead of to our own supersession defect. |
