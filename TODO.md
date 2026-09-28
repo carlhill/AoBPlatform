@@ -4449,9 +4449,33 @@ asks. See `GA-PLAN` B13.
   state is in `writtenBackAt`, the `agreement.written_back` events and
   AOBPRINTER's log. See the next item.
 
-### AOBPRINTER state moves to SQLite, with its own Node.js (28 Sep 2026) - D-2026-09-28-04
+### ~~AOBPRINTER state moves to SQLite, with its own Node.js (28 Sep 2026)~~ - STORAGE BUILT 29 Sep 2026 (D-2026-09-28-04, D-2026-09-29-01..03)
 
-Decided, not started. Carl: *"go with sqlite and ship our own node."*
+**Built on `feat/aobprinter-sqlite`:** `apps/aobprinter/src/store.ts` (prints,
+returns, receipts, append-only hash-chained `audit_events`), `archive.ts` (7-day
+encrypted PDF archive), the outbox, watcher, collector and reconciler writing
+every stage change with its event, the one-time folder-outbox import, and the
+network-path refusal. 179 tests. Reviewed by a fresh Opus reviewer; its nine
+findings are fixed and tested.
+
+**Still open from this item, in order:**
+1. **The heartbeat** (Carl, 29 Sep): a no-PII status every minute or so — waiting,
+   exceptions, version, and the AUDIT CHAIN HEAD, so a rewritten local log cannot
+   match what the platform holds. Its reply can carry "processed by AoB" per job.
+2. **The console page** on the platform: each practice's AOBPRINTER host,
+   last-seen, and the stages.
+3. **A return filed but never recorded as confirmed** (`collect.confirmed_not_recorded`)
+   has no automatic repair: the platform stops listing it once confirmed. The
+   heartbeat can carry per-agreement written-back status to reconcile it.
+4. **`unparsed/` still keeps an unreadable print as PLAINTEXT** with no expiry — a
+   pre-existing gap now named (D-2026-09-29-03). Close it when the support screen
+   can open an encrypted archive: park encrypted, like the archive.
+5. **Key-management review** (`CLAUDE.md` §7c): `retention.ts` now loads the key
+   on every start (D-2026-09-29-02). `keystore.ts` itself is unchanged. Carl to
+   review before any practice runs it.
+6. **The bundled Node.js runtime** in the installer (>= 22.5; 24.x measured).
+
+The original plan, as written on 28 Sep: Carl: *"go with sqlite and ship our own node."*
 
 - **Storage.** One `node:sqlite` database under the data folder replaces
   `outbox/pending|sent|poison/` and `receipts.jsonl`: a jobs table keyed on

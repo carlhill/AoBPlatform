@@ -138,7 +138,22 @@ export interface RetentionConfig {
   readonly poisonTtlMs: number;
   /** How often the sweep (the alarm check, and the poison TTL) runs, besides the one run at startup. */
   readonly sweepIntervalMs: number;
+  /**
+   * How many days a captured PDF is kept, encrypted, in `archive/`
+   * (D-2026-09-29-03). Applies whether or not `enabled` is true — the archive
+   * is always encrypted, so it does not wait on that flag.
+   */
+  readonly archiveDays: number;
 }
+
+/**
+ * THE ARCHIVE'S BOUNDS. Seven days is Carl's number. Thirty is the ceiling,
+ * and it is Claude's, recorded in D-2026-09-29-03: a typo should not keep
+ * patient PDFs for years. Below one day the archive would not survive a
+ * weekend, which is what it is for.
+ */
+export const ARCHIVE_DAYS_DEFAULT = 7;
+export const ARCHIVE_DAYS_MAX = 30;
 
 /**
  * Once `retention.enabled` is true, nothing this feature can actually delete
@@ -158,6 +173,7 @@ export const DEFAULT_RETENTION_CONFIG: RetentionConfig = {
   pendingAlarmMs: 60 * 60 * 1000,
   poisonTtlMs: 60 * 60 * 1000,
   sweepIntervalMs: 5 * 60 * 1000,
+  archiveDays: ARCHIVE_DAYS_DEFAULT,
 };
 
 /**
@@ -221,6 +237,11 @@ function parseRetention(raw: unknown, path: string): RetentionConfig {
   const pendingAlarmMs = optionalNumber(doc, 'pendingAlarmMs', DEFAULT_RETENTION_CONFIG.pendingAlarmMs);
   const poisonTtlMs = optionalNumber(doc, 'poisonTtlMs', DEFAULT_RETENTION_CONFIG.poisonTtlMs);
   const sweepIntervalMs = optionalNumber(doc, 'sweepIntervalMs', DEFAULT_RETENTION_CONFIG.sweepIntervalMs);
+  // Not `optionalNumber`: its message speaks of milliseconds, and this is days.
+  const archiveDays = doc.archiveDays === undefined ? DEFAULT_RETENTION_CONFIG.archiveDays : doc.archiveDays;
+  if (typeof archiveDays !== 'number' || !Number.isInteger(archiveDays) || archiveDays < 1 || archiveDays > ARCHIVE_DAYS_MAX) {
+    throw new Error(`${path}: "retention.archiveDays" must be a whole number of days from 1 to ${ARCHIVE_DAYS_MAX}.`);
+  }
 
   /*
    * THE HARD CAP APPLIES ONLY ONCE RETENTION IS SWITCHED ON. Disabled, these
@@ -253,7 +274,7 @@ function parseRetention(raw: unknown, path: string): RetentionConfig {
     }
   }
 
-  return { enabled, pendingAlarmMs, poisonTtlMs, sweepIntervalMs };
+  return { enabled, pendingAlarmMs, poisonTtlMs, sweepIntervalMs, archiveDays };
 }
 
 /** The one-entry list a config written before LAN mode existed describes. */

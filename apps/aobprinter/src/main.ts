@@ -34,8 +34,10 @@ import { consoleLogger, redactError, type Logger } from './log';
 import { Outbox } from './outbox';
 import { makeHttpPoster } from './poster';
 import { DEFAULT_RECONCILE_INTERVAL_MS, Reconciler, powershellEventCountReader, type EventCountReader } from './print-service-log';
-import { buildRetentionDeps } from './retention';
-import { templateFor } from './template';
+import { PrintArchive } from './archive';
+import { buildRetentionDeps, loadCipher, type Cipher } from './retention';
+import { assertLocalDataDir, openStore, type AobPrinterStore, type DriveType } from './store';
+import { templateFor, type ParserTemplate } from './template';
 import { QueueWatcher, claimedJobs, processClaimedJob } from './watcher';
 import { readPackageVersion } from './version';
 
@@ -80,14 +82,21 @@ export interface StartDeps {
    * and the HTTP half is proved on its own, the way the poster's is.
    */
   readonly collectionClient?: CollectionClient;
+  /**
+   * Overrides the Windows drive-type check behind `assertLocalDataDir`. The
+   * real one asks PowerShell once per drive letter; a test proving the
+   * network-drive refusal should not need a network drive.
+   */
+  readonly driveTypeOf?: (letter: string) => DriveType;
 }
 
 /**
- * Start the program. THROWS SYNCHRONOUSLY, refusing to start, in four cases:
- * another instance is already running, an unbuilt parser template, an outbox
- * folder written by a newer build, or a retention key that is enabled in
- * configuration but cannot be unwrapped (`keystore.ts`). All four are
- * preferable to running in a state this program cannot honestly describe.
+ * Start the program. THROWS SYNCHRONOUSLY, refusing to start, in six cases:
+ * a data folder on a network drive (`store.ts`), another instance is already
+ * running, a database or folder outbox written by a newer build, an unbuilt
+ * parser template, or a retention key that is enabled in configuration but
+ * cannot be unwrapped (`keystore.ts`). All six are preferable to running in a
+ * state this program cannot honestly describe.
  */
 export function start(config: AobPrinterConfig, logger: Logger = consoleLogger, deps: StartDeps = {}): RunHandles {
   const version = readPackageVersion();
@@ -98,6 +107,25 @@ export function start(config: AobPrinterConfig, logger: Logger = consoleLogger, 
    * folders, the outbox, the retention key. Taking the lock afterwards would
    * leave a window in which two processes had both already started work.
    */
+  /*
+   * A TEMPLATE THIS BUILD DOES NOT CARRY IS REFUSED BEFORE ANYTHING IS TOUCHED
+   * — before the lock, the database or the audit trail — so a refused start
+   * leaves no `program.started` behind to look like a crash next time.
+   */
+  const template = templateFor(config.templateVersion);
+  if (!template) {
+    throw new Error(
+      `No parser template "${config.templateVersion}" is built into this program. Templates are versioned ` +
+        'content and ship with the build; a configuration naming one that does not exist would parse nothing.',
+    );
+  }
+
+  /*
+   * BEFORE THE LOCK, because the lock is a file in the data folder: a data
+   * folder on a network drive is refused before anything is written to it.
+   */
+  assertLocalDataDir(config.dataDir, deps.driveTypeOf);
+
   const lock = deps.instanceLock ?? acquireInstanceLock(config.dataDir, version, logger);
 
   /*
@@ -108,7 +136,43 @@ export function start(config: AobPrinterConfig, logger: Logger = consoleLogger, 
    * guard rail being broken, and it would be.
    */
   try {
-    return startLocked(config, logger, deps, version, lock);
+    /*
+     * THE KEY BEFORE THE DATABASE (D-2026-09-29-02): the database encrypts
+     * every file location it records, so it cannot open without the key. A
+     * key on disk that will not unwrap refuses to start, here.
+     */
+    const cipher = loadCipher(config.dataDir, logger, deps.keyWrapper);
+    /*
+     * Opened under the lock: the database belongs to exactly one running
+     * program. `program.started` is recorded the moment the schema is ready —
+     * BEFORE the folder import, the retention migration and the start-up
+     * sweep — so everything this start does sits after the marker that
+     * explains it (an unclean restart, an upgrade).
+     */
+    const store = openStore(config.dataDir, {
+      logger,
+      cipher,
+      printerVersion: version,
+      beforeImport: (s) =>
+        s.programStarted({
+          queues: config.queues.length,
+          retention: config.retention.enabled,
+          collecting: config.collection.enabled || deps.collectionClient !== undefined,
+        }),
+      afterImportFailed: (s) => s.programStartFailed(),
+    });
+    try {
+      return startLocked(config, logger, deps, version, lock, store, cipher, template);
+    } catch (err) {
+      // It recorded a start and then refused: say so, so the next start is not read as a crash.
+      try {
+        store.programStartFailed();
+      } catch (auditErr) {
+        logger.error('audit.start_failure_not_recorded', { error: redactError(auditErr) });
+      }
+      store.close();
+      throw err;
+    }
   } catch (err) {
     lock.release();
     throw err;
@@ -121,19 +185,15 @@ function startLocked(
   deps: StartDeps,
   version: string,
   lock: InstanceLock,
+  store: AobPrinterStore,
+  cipher: Cipher,
+  template: ParserTemplate,
 ): RunHandles {
-  const template = templateFor(config.templateVersion);
-  if (!template) {
-    throw new Error(
-      `No parser template "${config.templateVersion}" is built into this program. Templates are versioned ` +
-        'content and ship with the build; a configuration naming one that does not exist would parse nothing.',
-    );
-  }
-
-  const retention = buildRetentionDeps(config.dataDir, config.retention, logger, deps.keyWrapper);
-  const outbox = new Outbox(config.dataDir, makeHttpPoster(config, logger), logger, () => new Date(), retention, version);
+  const retention = buildRetentionDeps(config.retention, store, cipher);
+  const archive = new PrintArchive(config.dataDir, store, cipher, logger, config.retention.archiveDays);
+  const outbox = new Outbox(store, makeHttpPoster(config, logger), logger, () => new Date(), retention, version);
   const queueWatcher = new QueueWatcher(config.queues, config.dataDir, config.settleMs, logger);
-  const reconciler = new Reconciler(deps.eventCounts ?? powershellEventCountReader(), logger);
+  const reconciler = new Reconciler(deps.eventCounts ?? powershellEventCountReader(), logger, undefined, undefined, (gap) => store.printGap(gap));
   const queueNames = config.queues.map((q) => q.name);
 
   /*
@@ -149,6 +209,8 @@ function startLocked(
           config.collection.importFolder,
           logger,
           version,
+          () => new Date(),
+          store,
         )
       : null;
 
@@ -168,12 +230,41 @@ function startLocked(
    * OR WON'T KEEP RUNNING (hard rule 8, the same posture `tick()`'s catch-all
    * takes). The sweep is a safety net on top of the outbox's own guarantees,
    * not a precondition for them — a locked file or a permissions hiccup
-   * reading `pending/` or `poison/` is worth logging loudly, never worth
+   * reading the outbox is worth logging loudly, never worth
    * refusing to capture the next print over.
    */
+  let running = false;
+  let collecting = false;
+  let stopped = false;
+  let finished = false;
+
+  /*
+   * THE DATABASE IS CLOSED ONLY WHEN NOTHING IS USING IT. A stop that closed
+   * it under a post the server had just accepted would fail to record the
+   * acknowledgement — and the form would be posted again on the next start.
+   * So `stop()` finishes at once when idle, and otherwise the running tick or
+   * collection finishes it on its way out.
+   */
+  function finishStopIfIdle(): void {
+    if (!stopped || finished || running || collecting) return;
+    finished = true;
+    try {
+      store.programStopped();
+    } catch (err) {
+      logger.error('audit.stop_not_recorded', { error: redactError(err) });
+    }
+    store.close();
+    // Last, so nothing is still running when the next instance is allowed in.
+    lock.release();
+    logger.info('aobprinter.stopped', {});
+  }
+
   function safeSweep(): { alarmed: number; expired: number } {
     try {
-      return outbox.sweep();
+      const swept = outbox.sweep();
+      // The archive's clock runs on the same sweep; it never throws.
+      archive.sweep();
+      return swept;
     } catch (err) {
       logger.error('sweep.failed', { error: redactError(err) });
       return { alarmed: 0, expired: 0 };
@@ -205,11 +296,15 @@ function startLocked(
    * nuisance; a consent never captured is the practice's problem.
    */
   async function safeCollect(): Promise<void> {
-    if (!collector) return;
+    if (!collector || stopped) return;
+    collecting = true;
     try {
       await collector.sweep();
     } catch (err) {
       logger.error('collect.sweep_failed', { error: redactError(err) });
+    } finally {
+      collecting = false;
+      finishStopIfIdle();
     }
   }
 
@@ -249,8 +344,6 @@ function startLocked(
     collectFrom: collector ? collectionEndpointsOf(config).list : undefined,
   });
 
-  let running = false;
-  let stopped = false;
 
   async function tick(): Promise<void> {
     // Overlapping ticks would claim the same file twice. One at a time.
@@ -270,7 +363,7 @@ function startLocked(
        */
       for (const { queue, dirs } of queueWatcher.watched) {
         for (const path of claimedJobs(dirs)) {
-          processClaimedJob(path, template!, outbox, dirs, queue, logger);
+          processClaimedJob(path, template, outbox, dirs, queue, logger, undefined, { prints: store, archive });
         }
       }
       await outbox.flush();
@@ -290,6 +383,7 @@ function startLocked(
       logger.error('tick.failed', { error: redactError(err) });
     } finally {
       running = false;
+      finishStopIfIdle();
     }
   }
 
@@ -321,9 +415,7 @@ function startLocked(
       clearInterval(sweepTimer);
       clearInterval(reconcileTimer);
       if (collectTimer) clearInterval(collectTimer);
-      // Last, so nothing is still running when the next instance is allowed in.
-      lock.release();
-      logger.info('aobprinter.stopped', {});
+      finishStopIfIdle();
     },
   };
 }

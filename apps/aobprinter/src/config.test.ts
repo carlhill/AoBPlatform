@@ -78,6 +78,21 @@ describe('retention_is_off_by_default', () => {
   });
 });
 
+describe('the_pdf_archive_keeps_seven_days_by_default_and_never_more_than_thirty', () => {
+  // D-2026-09-29-03: seven is Carl's number; thirty is the ceiling so a typo cannot keep patient PDFs for years.
+  it('keeps seven days when the config says nothing, with retention off', () => {
+    expect(parseConfig(minimalDoc(), PATH).retention.archiveDays).toBe(7);
+  });
+
+  it('takes a number of days in range', () => {
+    expect(parseConfig(minimalDoc({ retention: { archiveDays: 14 } }), PATH).retention.archiveDays).toBe(14);
+  });
+
+  it.each([0, 31, 1.5, '7'])('refuses %p, and says it wanted days', (archiveDays) => {
+    expect(() => parseConfig(minimalDoc({ retention: { archiveDays } }), PATH)).toThrow(/archiveDays.*days from 1 to 30/);
+  });
+});
+
 describe('the 24-hour hard cap, once retention is enabled', () => {
   it('rejects a poisonTtlMs beyond 24 hours on its own', () => {
     expect(() =>

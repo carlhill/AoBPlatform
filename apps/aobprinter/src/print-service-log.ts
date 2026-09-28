@@ -178,6 +178,15 @@ export interface ReconcileSummary {
   readonly unknownQueues: number;
 }
 
+/** One "printed but never received" finding, as the audit trail records it (D-2026-09-29-01). */
+export interface ReconcileGap {
+  readonly queue: string;
+  readonly printed: number;
+  readonly claimed: number;
+  readonly windowStart: string;
+  readonly windowEnd: string;
+}
+
 /** A claim, with when it happened, so it is counted against the window it belongs to and not the next one. */
 interface ClaimMark {
   readonly queueName: string;
@@ -201,6 +210,13 @@ export class Reconciler {
     private readonly logger: Logger,
     private readonly now: () => Date = () => new Date(),
     private readonly graceMs: number = DEFAULT_GRACE_MS,
+    /**
+     * Where a gap is written down beyond the log. THE ONE GAP THAT CAN HAPPEN
+     * BEFORE A PRINT HAS A ROW, so without this the audit trail could not
+     * claim to have none. Called inside a try: an alarm that cannot be
+     * recorded is still logged, and never stops the loop that captures.
+     */
+    private readonly onGap: (gap: ReconcileGap) => void = () => undefined,
   ) {
     this.windowStartedAt = this.now().getTime();
   }
@@ -298,6 +314,17 @@ export class Reconciler {
         windowEnd: new Date(windowEnd).toISOString(),
         note: 'the spooler printed more jobs on this queue than AOBPRINTER claimed; a printed form was not captured',
       });
+      try {
+        this.onGap({
+          queue: queueName,
+          printed,
+          claimed,
+          windowStart: new Date(this.windowStartedAt).toISOString(),
+          windowEnd: new Date(windowEnd).toISOString(),
+        });
+      } catch (err) {
+        this.logger.error('reconcile.gap_not_recorded', { queue: queueName, error: redactError(err) });
+      }
     }
 
     // Everything up to the window's end has now been accounted for; anything
