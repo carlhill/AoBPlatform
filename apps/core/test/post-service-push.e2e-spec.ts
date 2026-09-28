@@ -536,6 +536,18 @@ describe('the post-service second push (e2e, real Postgres)', () => {
     return res.body.agreementId as string;
   }
 
+  /**
+   * THE SAME DRAFT WITH NOBODY ASKED YET — so the row arrives blocked on
+   * `assignor_not_confirmed`, which is the reason the print-record fault has
+   * to outrank (Carl, 28 September 2026).
+   */
+  async function draftUnconfirmed(recordNumber: string): Promise<string> {
+    await seedPatient(recordNumber);
+    const res = await postService(service({ pmsPatientRecordNumber: recordNumber })).expect(201);
+    currentPrincipal = { ...RECEPTIONIST, practiceId };
+    return res.body.agreementId as string;
+  }
+
   it('a_push_with_no_print_record_is_unaffected', async () => {
     /*
      * D-2026-09-27-02 — THE NEW PATH DOES NOT RUN, rather than running and
@@ -785,6 +797,41 @@ describe('the post-service second push (e2e, real Postgres)', () => {
     await prisma.withPractice(practiceId, async (tx) => {
       expect(await tx.agreement.findFirst({ where: { id: agreementId } })).toEqual(before);
     });
+  });
+
+  it('an_unreadable_form_outranks_the_who_is_signing_prompt_on_the_row', async () => {
+    /*
+     * CARL, 28 SEPTEMBER 2026: *"Who is signing should not be enabled if we
+     * have print errors"*. The row was headed "confirm who is signing" with a
+     * live button, for an agreement that cannot be sent until the form is
+     * reprinted — and a reprint arrives as a NEW print record and a NEW
+     * agreement, so the answer would not carry over.
+     *
+     * THIS REVERSES YESTERDAY'S "a row already blocked keeps its reason",
+     * and only for the reasons a reprint supersedes. The console reads
+     * `blockedReason` to decide whether the control is live, so the
+     * precedence has to be settled here, on the server, rather than by the
+     * screen forming a second opinion.
+     */
+    const agreementId = await draftUnconfirmed('POST-WHOVPRINT');
+    const jobId = await seedPrintRecord([
+      { serviceDate: today(), mbsItemNumber: '23', description: 'Level B' },
+    ]);
+    await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.updateMany({ where: { id: agreementId }, data: { sourcePrintJobId: jobId } }),
+    );
+
+    const list = await request(app.getHttpServer())
+      .get('/tablet-sessions/pushable')
+      .set('x-practice-id', practiceId)
+      .expect(200);
+    const row = (list.body as { agreementId: string; blockedReason: string; printRecord: unknown }[]).find(
+      (r) => r.agreementId === agreementId,
+    );
+    // NOT `assignor_not_confirmed`, which is what it would have said
+    // yesterday and is the work a reprint throws away.
+    expect(row?.blockedReason).toBe('print_record_incomplete');
+    expect(row?.printRecord).not.toBeNull();
   });
 
   it('a_readable_print_record_leaves_the_row_sendable', async () => {

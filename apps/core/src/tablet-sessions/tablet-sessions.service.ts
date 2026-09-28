@@ -54,6 +54,26 @@ const PRE_AGREEMENT_TYPES = ['episodic_pre', 'treatment_plan'] as const;
  * A row on the console's left-hand list — a draft that could go to a tablet,
  * or the reason it could not.
  */
+/**
+ * THE BLOCKED REASONS A REPRINT MAKES POINTLESS (Carl, 28 September 2026).
+ *
+ * Each of these is UNFINISHED DESK WORK ON THIS AGREEMENT. If the DB4 Print
+ * Record behind it cannot be reproduced, that work cannot lead to a push and
+ * does not survive the reprint — which arrives as a new print record and a
+ * new agreement — so the row should say the thing that is actually in the
+ * way rather than invite somebody to do it.
+ *
+ * WHAT IS DELIBERATELY NOT HERE: `patient_confidential` (a rule about what
+ * may appear on a waiting-room screen), `provider_not_servicing` and the
+ * three enduring reasons (about whether this agreement could ever be signed).
+ * A reprint fixes none of those, so they keep their own reason.
+ */
+const SUPERSEDED_BY_A_REPRINT: ReadonlySet<PushBlockedReason> = new Set([
+  'assignor_not_confirmed',
+  'who_is_signing_unset',
+  'service_description_missing',
+]);
+
 export interface PushableRow {
   agreementId: string;
   agreementType: AgreementType;
@@ -1343,10 +1363,26 @@ export class TabletSessionsService {
    * ONE BATCHED READ FOR THE WHOLE LIST, not one per row: this list is polled
    * every three seconds by two pages.
    *
-   * A ROW ALREADY BLOCKED KEEPS ITS REASON. The same judgement the enduring
-   * pass above makes — an agreement whose assignor has not been confirmed has
-   * a nearer, fixable problem, and telling somebody to reprint a form when
-   * the real next step is one tap on this row would be the wrong shortcut.
+   * AND IT OVERRIDES THE REASONS A REPRINT WOULD MAKE POINTLESS (Carl, 28
+   * September 2026: *"Who is signing should not be enabled if we have print
+   * errors"*).
+   *
+   * THIS REVERSES WHAT THIS PASS DID YESTERDAY, which was to leave an
+   * already-blocked row alone on the reasoning that the nearer, fixable
+   * problem is the more useful thing to be told. That is right when the two
+   * problems are independent. It is wrong for `SUPERSEDED_BY_A_REPRINT`:
+   * confirming who is signing, or choosing a description, is work on an
+   * agreement that cannot be sent until the form is reprinted — and a
+   * reprint arrives as a NEW print record and a NEW agreement, so the answer
+   * somebody just typed is not carried over to the row that can actually go.
+   * Carl watched the desk invite exactly that.
+   *
+   * REASONS THAT ARE NOT ABOUT DESK WORK ON THIS AGREEMENT ARE LEFT ALONE.
+   * `patient_confidential` is a rule about what may appear on a
+   * waiting-room screen at all; `provider_not_servicing` and the enduring
+   * three are about whether this agreement could ever be signed. A reprint
+   * fixes none of them, so replacing their reason with “reprint the form”
+   * would send somebody to do something that will not help.
    *
    * IT DOES NOT CHANGE THE AGREEMENT. Nothing is written; this is a fact
    * about a print record, computed for a screen. The agreement is complete
@@ -1358,7 +1394,9 @@ export class TabletSessionsService {
     practiceId: string,
     rows: PushableRow[],
   ): Promise<PushableRow[]> {
-    const sendable = rows.filter((row) => row.pushable);
+    const sendable = rows.filter(
+      (row) => row.pushable || (row.blockedReason !== null && SUPERSEDED_BY_A_REPRINT.has(row.blockedReason)),
+    );
     if (sendable.length === 0) return rows;
     const answers = await this.agreements.db4PrintRecordChecksForMany(
       practiceId,

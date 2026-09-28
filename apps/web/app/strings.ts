@@ -6377,6 +6377,19 @@ export const strings = {
      */
     printRecordCheckOther: (code: string) => `Another detail we could not read (${code}) — please tell support this code.`,
 
+    /**
+     * WHY "WHO IS SIGNING?" IS DEAD ON THIS ROW (Carl, 28 September 2026:
+     * *"Who is signing should not be enabled if we have print errors"*).
+     *
+     * IT SAYS WHY, NOT JUST THAT. A control that is greyed with no
+     * explanation is the thing CLAUDE.md §7 forbids; the row's band already
+     * states the problem at length, so this is the one-line version attached
+     * to the control somebody just tried to press.
+     */
+    whoBlockedByPrintRecord:
+      'Reprint the form first — this agreement cannot be sent, and a reprint starts a new one, so an '
+      + 'answer saved here would not carry over.',
+
     /** Enduring's own extra line where the provider is not a GP (hard rule 6, REQ-END-01a). */
     enduringOfferOther: 'Offer an episodic agreement or a Treatment Plan Assignment instead.',
     /**

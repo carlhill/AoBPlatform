@@ -719,6 +719,27 @@ export function blockedMessage(
  * construction and an operator merely looking does not. The same pair, and the
  * same reasoning, as `mayActOnDescriptions` on the reconciliation screen.
  */
+/**
+ * IS THERE ANY POINT DOING DESK WORK ON THIS ROW? (Carl, 28 September 2026:
+ * *"Who is signing should not be enabled if we have print errors"*.)
+ *
+ * WHY THE CONTROL GOES DEAD RATHER THAN MERELY BEING IGNORED. Confirming who
+ * is signing is a real write against a real agreement, and it is a locked
+ * particular once the lock happens — but this agreement cannot be sent until
+ * the form is reprinted, and a reprint arrives as a NEW print record and a
+ * NEW agreement. So the answer somebody types here is work that does not
+ * reach the row that can actually go. The desk was inviting exactly that.
+ *
+ * THE SERVER AGREES RATHER THAN BEING TRUSTED TO. `pushable()` now lets the
+ * print-record fault override the reasons a reprint supersedes, so the row
+ * ARRIVES carrying this reason instead of "confirm who is signing" — this is
+ * the control matching the reason the row already states, not a second
+ * opinion formed on the client.
+ */
+export function blockedByAnUnreadableForm(row: Pick<PushableRow, 'blockedReason'>): boolean {
+  return row.blockedReason === DB4_PRINT_RECORD_REFUSED_CODE;
+}
+
 export function mayPush(audiences: readonly Audience[]): boolean {
   return mayReach('/practice/tablet', audiences) && audiences.includes('practice');
 }
@@ -2726,7 +2747,9 @@ export function SendSteps({ desk, row }: { desk: PushDesk; row: PushableRow }) {
     who: (
       <Button
         variant={row.assignorConfirmedAt ? 'subtle' : 'primary'}
-        disabled={!desk.canSend}
+        /* DEAD WHILE THE FORM CANNOT BE READ — see `blockedByAnUnreadableForm`. */
+        disabled={!desk.canSend || blockedByAnUnreadableForm(row)}
+        title={blockedByAnUnreadableForm(row) ? strings.tablet.whoBlockedByPrintRecord : undefined}
         onClick={() => (desk.whoFor === row.agreementId ? desk.closeWho() : desk.openWho(row))}
         data-testid={`who-open-${row.agreementId}`}
       >
@@ -3096,7 +3119,11 @@ export function AgreementRow({
         <button
           type="button"
           className={`${ui.hint} ${rowStyles.fact} ${rowStyles.factButton}`}
-          disabled={!desk.canSend}
+          /* THE SAME GATE AS THE STEP-1 BUTTON. This is the quiet second door
+             into the same panel, and a door left open beside a locked one is
+             just a slower way to do the work that will be discarded. */
+          disabled={!desk.canSend || blockedByAnUnreadableForm(row)}
+          title={blockedByAnUnreadableForm(row) ? strings.tablet.whoBlockedByPrintRecord : undefined}
           aria-label={`${signingFact(row)} — ${strings.tablet.signingChange}`}
           aria-expanded={desk.whoFor === row.agreementId}
           onClick={() => (desk.whoFor === row.agreementId ? desk.closeWho() : desk.openWho(row))}

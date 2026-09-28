@@ -40,7 +40,12 @@ import {
   signingFact,
   whoIsBlocked,
 } from './TabletView';
-import { RefusalOutcomeBody, describePrintRecordCheck, describeRefusal } from './pushDesk';
+import {
+  RefusalOutcomeBody,
+  blockedByAnUnreadableForm,
+  describePrintRecordCheck,
+  describeRefusal,
+} from './pushDesk';
 import { strings } from '../../strings';
 
 const PRACTICE = 'practice-1';
@@ -2548,6 +2553,29 @@ describe('the refusal words', () => {
     expect(screen.getByText(strings.tablet.blocked.print_record_incomplete)).toBeTruthy();
   });
 
+  it('who_is_signing_is_dead_while_the_form_cannot_be_read', () => {
+    /*
+     * CARL, 28 SEPTEMBER 2026: *"Who is signing should not be enabled if we
+     * have print errors"*. He was looking at a row headed "confirm who is
+     * signing" with a live primary button on it, for an agreement that could
+     * not be sent until the form was reprinted.
+     *
+     * THE WORK DOES NOT SURVIVE. A reprint arrives as a new print record and
+     * a new agreement, so an answer saved on this row never reaches the row
+     * that can actually go.
+     *
+     * BOTH DOORS INTO THE PANEL. The step-1 button and the quiet
+     * "Signing: ..." fact open the same panel; leaving one live would be a
+     * slower way to do the discarded work.
+     */
+    expect(blockedByAnUnreadableForm({ blockedReason: 'print_record_incomplete' })).toBe(true);
+    // AND NOT FOR THE REASONS A REPRINT DOES NOT FIX. Confirming who is
+    // signing is exactly the right next step on these.
+    for (const reason of ['assignor_not_confirmed', 'who_is_signing_unset', null] as const) {
+      expect(blockedByAnUnreadableForm({ blockedReason: reason })).toBe(false);
+    }
+  });
+
   it('never_claims_certification_or_approval', () => {
     const words = [
       strings.tablet.blocked.device_unknown,
@@ -2564,6 +2592,8 @@ describe('the refusal words', () => {
       strings.tablet.blocked.enduring_not_gp,
       strings.tablet.blocked.enduring_not_per_provider,
       strings.tablet.blocked.print_record_incomplete,
+      strings.tablet.blocked.print_record_incompleteTitle,
+      strings.tablet.whoBlockedByPrintRecord,
       strings.tablet.printRecordChecksLead,
       strings.tablet.printRecordCheckOther('some_code'),
       strings.tablet.printRecordId.lead,
