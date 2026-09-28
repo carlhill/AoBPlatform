@@ -6313,7 +6313,17 @@ export const strings = {
       print_record_irn_missing:
         'We read a Medicare number but no IRN — the digit beside the name on the card',
       print_record_services_missing: 'We could not read any services',
-      print_record_servicing_provider_missing: 'We could not read the provider’s name or provider number',
+      /**
+       * TWO LINES, NOT ONE (Carl, 28 September 2026: *“IRN, provider’s name
+       * or provider number (be specific - which one)”*). The old single line
+       * named both halves and joined them with “or”, which on a form where
+       * the number is printed and the name is blank sends a receptionist
+       * hunting for a fault that is not there.
+       */
+      print_record_servicing_provider_name_missing:
+        'We could not read the provider’s name',
+      print_record_servicing_provider_number_missing:
+        'We could not read the provider’s provider number',
       print_record_service_date_missing: 'We could not read a date of service',
       /** Carl’s own case, and the only one of the five that reaches a real agreement today. */
       print_record_benefit_missing: 'We could not read an amount against any service',

@@ -501,17 +501,26 @@ export function checkDb4PrintRecord(envelope: PrintJobEnvelope): readonly Db4Pri
   if (services.length === 0) failed.push('print_record_services_missing');
 
   /*
-   * LIVE, THROUGH AN EMPTY NAME. Ingest requires the provider NUMBER and
-   * never looks at the name — but `ProviderDto.name` is a required
-   * `@IsString()`, so an ABSENT name is refused at the boundary and an EMPTY
-   * one is not. A template that emitted the provider line without finding a
-   * value in it therefore places an agreement, and the patient is shown a
-   * form that does not say who they are assigning to.
-   * Both halves are required because the form prints both and the two readers
-   * differ: the patient checks the name, the practice checks the number.
+   * NAME AND NUMBER ARE TWO CHECKS, NOT ONE (Carl, 28 September 2026, at the
+   * desk: *"IRN, provider's name or provider number (be specific - which
+   * one)"*). The form prints both and the two readers differ — the patient
+   * checks the name, the practice checks the number — so a band that says
+   * "name or number" leaves reception looking at a line where one of the two
+   * is plainly there.
+   *
+   * NO SERVICING PROVIDER AT ALL FAILS BOTH, because both halves are then
+   * genuinely unreadable and each is separately true.
+   *
+   * THE NAME HALF IS LIVE, through an EMPTY name and only an empty one:
+   * `ProviderDto.name` is a required `@IsString()`, so an ABSENT name is
+   * refused at the boundary and an empty one is not. The NUMBER half is a
+   * backstop — ingest refuses `no_servicing_provider` without it.
    */
-  if (!servicing || !read(servicing.name) || !read(servicing.providerNumber)) {
-    failed.push('print_record_servicing_provider_missing');
+  if (!servicing || !read(servicing.name)) {
+    failed.push('print_record_servicing_provider_name_missing');
+  }
+  if (!servicing || !read(servicing.providerNumber)) {
+    failed.push('print_record_servicing_provider_number_missing');
   }
 
   /* BACKSTOP (ingest: `no_service_date`). */

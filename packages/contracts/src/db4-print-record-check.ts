@@ -66,15 +66,16 @@ import type { Db4PlacementReason } from './print-capture';
  * shrug. That is the construction `practice_surface_not_in_use` already uses,
  * for the same reasons.
  *
- * ── TWO OF THESE ARE THE GUARD; THREE ARE A BACKSTOP. READ THIS BEFORE YOU
+ * ── THREE OF THESE ARE THE GUARD; FOUR ARE A BACKSTOP. READ THIS BEFORE YOU
  *    TRUST ANY OF THEM ──
  *
  * `db4-assignment.handler.ts` is the ONLY writer of `Agreement.sourcePrintJobId`
  * (`linkToPrintJob`), and it writes it only after its own ingest gates have
  * passed on the very same envelope. So a print record missing a chart number,
- * missing every service item, or missing a date of service NEVER BECOMES AN
- * AGREEMENT AT ALL: the job row records `no_chart_number`, `no_service_items`
- * or `no_service_date` and nothing is placed. Three of the five checks below
+ * missing every service item, missing a servicing provider NUMBER or missing a
+ * date of service NEVER BECOMES AN AGREEMENT AT ALL: the job row records
+ * `no_chart_number`, `no_service_items`, `no_servicing_provider` or
+ * `no_service_date` and nothing is placed. Four of the seven checks below
  * therefore cannot fire on any agreement that exists today, and it would be
  * dishonest to present them as protection.
  *
@@ -90,20 +91,23 @@ import type { Db4PlacementReason } from './print-capture';
  *  - `print_record_benefit_missing` — nothing at ingest looks at an amount.
  *    This is the gap Carl's ruling names.
  *  - `print_record_irn_missing` — `irn` is `@IsOptional()` at ingest and
- *    nothing downstream requires it (Carl, 27 September 2026, from the same
- *    live tablet: a card number read without its IRN, on a screen whose own
- *    note tells the patient to check the IRN).
- *  - `print_record_servicing_provider_missing`, through its NAME half — but
- *    ONLY FOR AN EMPTY NAME, NOT AN ABSENT ONE, and that distinction was
- *    found by trying it (28 September 2026, seeding test records).
- *    `ProviderDto.name` in `inbound-print-jobs.controller.ts` is a REQUIRED
- *    `@IsString()`, so an envelope that OMITS the name is refused at the
- *    boundary with a 400 and never becomes a print record at all. An empty
- *    string passes the DTO, reaches the table, and is what `read()` treats as
- *    nothing — so the reachable fault is a parser that emitted the field
- *    without finding a value, which is the ordinary shape of a half-read
- *    line. An earlier version of this comment claimed the whole name half was
- *    live; it was wrong, and only half of it is.
+ *    nothing downstream requires it (Carl, 27 September 2026, from a live
+ *    tablet: a card number read without its IRN, on a screen whose own note
+ *    tells the patient to check the IRN).
+ *  - `print_record_servicing_provider_name_missing` — but ONLY FOR AN EMPTY
+ *    NAME, NOT AN ABSENT ONE, and that distinction was found by trying it
+ *    (28 September 2026, seeding test records). `ProviderDto.name` in
+ *    `inbound-print-jobs.controller.ts` is a REQUIRED `@IsString()`, so an
+ *    envelope that OMITS the name is refused at the boundary with a 400 and
+ *    never becomes a print record at all. An empty string passes the DTO,
+ *    reaches the table, and is what `read()` treats as nothing — so the
+ *    reachable fault is a parser that emitted the field without finding a
+ *    value, which is the ordinary shape of a half-read line.
+ *
+ * THE NAME/NUMBER SPLIT IS WHY THAT LIST IS HONEST NOW. Until 28 September
+ * these two were ONE code, which had to be declared gated at ingest (on the
+ * strength of its number half) while being live (through its name half) —
+ * two different answers to one question, in one row of the table below.
  * ------------------------------------------------------------------------- */
 
 /**
@@ -170,25 +174,46 @@ export const DB4_PRINT_RECORD_CHECKS = [
    */
   'print_record_services_missing',
   /**
-   * THE SERVICING PROVIDER'S NAME OR PROVIDER NUMBER IS MISSING.
+   * THE SERVICING PROVIDER'S NAME IS MISSING.
    *
-   * LIVE, THROUGH AN EMPTY NAME — and only an empty one. Ingest requires the
-   * provider NUMBER and refuses `no_servicing_provider` without one; it never
-   * looks at the name. But `ProviderDto.name` is a REQUIRED `@IsString()`, so
-   * an envelope that omits the name is refused at the boundary with a 400 and
+   * SPLIT FROM THE PROVIDER NUMBER ON 28 SEPTEMBER 2026 (Carl, at the desk:
+   * *"IRN, provider's name or provider number (be specific - which one)"*).
+   * One code covering both halves produced a line that named two fields and
+   * told reception which of them to look at only by saying "or" -- which, on
+   * a form where the number is plainly printed and the name is blank, sends
+   * somebody hunting for a fault that is not there. Two codes, two lines, and
+   * the band lists exactly the halves that failed.
+   *
+   * LIVE, THROUGH AN EMPTY NAME -- and only an empty one. Ingest requires the
+   * provider NUMBER and never looks at the name, so this half has no ingest
+   * twin at all. But `ProviderDto.name` is a REQUIRED `@IsString()`, so an
+   * envelope that OMITS the name is refused at the boundary with a 400 and
    * never becomes a print record. An EMPTY STRING passes that DTO and is what
    * `read()` treats as absent, so the reachable fault is a template that
-   * emitted the provider line without finding a value in it — which is the
-   * ordinary shape of a half-read line, and leaves the patient looking at a
-   * form that does not say who they are assigning to.
+   * emitted the provider line without finding a value in it -- the ordinary
+   * shape of a half-read line, and it leaves the patient looking at a form
+   * that does not say who they are assigning to.
    *
-   * BOTH HALVES ARE REQUIRED BECAUSE THE FORM PRINTS BOTH and the two readers
-   * differ: the patient checks the name, the practice checks the number. The
-   * servicing provider is also the one whose number goes on the claim
-   * (s 65C(5)(a)) and the one the assignment is WITH, so this is the line of
-   * the reproduction that matters most.
+   * THE NAME IS THE HALF THE PATIENT READS. A provider number means nothing
+   * to the person being asked to check the form; the name is the whole of
+   * what they can verify on that line.
    */
-  'print_record_servicing_provider_missing',
+  'print_record_servicing_provider_name_missing',
+  /**
+   * THE SERVICING PROVIDER'S PROVIDER NUMBER IS MISSING.
+   *
+   * BACKSTOP -- ingest refuses `no_servicing_provider` without a provider
+   * number, so this cannot fire on any agreement that exists today. It is the
+   * fourth backstop, and splitting the old joint code is what revealed that:
+   * the joint code was declared as gated at ingest on the strength of its
+   * NUMBER half while being live through its NAME half, which is two
+   * different answers to one question. Separated, each half states its own
+   * reachability truthfully.
+   *
+   * THE NUMBER IS THE HALF THE PRACTICE READS. It is the number that goes on
+   * the claim (s 65C(5)(a)) and the one the assignment is WITH.
+   */
+  'print_record_servicing_provider_number_missing',
   /**
    * NO DATE OF SERVICE ANYWHERE ON THE RECORD — neither on the form nor on any
    * of its service rows. Read exactly as `db4-assignment.handler.ts` reads it,
@@ -254,9 +279,11 @@ export const DB4_PRINT_RECORD_CHECK_GATED_AT_INGEST: Readonly<
   print_record_irn_missing: null,
   // No rows means no item numbers, which is the gate ingest actually applies.
   print_record_services_missing: 'no_service_items',
-  // The NUMBER half only. Ingest never looks at the provider's name, which is
-  // why this check is live despite having an ingest twin.
-  print_record_servicing_provider_missing: 'no_servicing_provider',
+  // THE THIRD GAP, and the reason the joint code had to be split. Ingest
+  // never looks at the provider's NAME at all.
+  print_record_servicing_provider_name_missing: null,
+  // The NUMBER half, which ingest does gate -- `no_servicing_provider`.
+  print_record_servicing_provider_number_missing: 'no_servicing_provider',
   print_record_service_date_missing: 'no_service_date',
   // THE GAP. Nothing upstream reads an amount, and nothing should compute one.
   print_record_benefit_missing: null,

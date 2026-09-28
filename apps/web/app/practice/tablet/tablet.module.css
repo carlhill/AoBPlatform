@@ -408,13 +408,37 @@
  * around it has already said this is a refusal, and a second red inside a red
  * band reads as two problems rather than one problem and its detail.
  */
+/*
+ * WHAT COULD NOT BE READ, IN THE HOUSE RED (Carl, 28 September 2026: *"can we
+ * print the actual error in a light red"*).
+ *
+ * THE LIST IS THE ERROR, SO THE LIST CARRIES THE COLOUR. The sentence above
+ * it explains and the disclosure below it identifies; the only part a
+ * receptionist acts on is these bullets, and until now they were set in the
+ * same ink as everything around them. A block somebody is meant to read
+ * FIRST should not be the least distinguished thing in the band.
+ *
+ * `--stop` ON `--stop-wash` IS THE PAIR THE TOKENS ALREADY DEFINE for exactly
+ * this, and they are built to hold at AA together — which a literally light
+ * red on white would not (WCAG 2.2, 1.4.3). So "light red" is delivered as a
+ * light red PANEL with legible red text on it, rather than as pale text
+ * nobody over forty can read across a front desk.
+ *
+ * COLOUR IS NEVER THE ONLY CARRIER (WCAG 2.2, 1.4.1). The lead line says what
+ * the list is, each bullet is a full sentence, and the band's own title says
+ * the form needs reprinting. Take the colour away and nothing is lost.
+ */
 .checks {
   margin: var(--s2) 0;
+  padding: var(--s2) var(--s3);
+  background: var(--stop-wash);
+  border-left: 3px solid var(--stop);
 }
 
 .checksLead {
   margin: 0 0 var(--s1);
   font-weight: 600;
+  color: var(--stop);
 }
 
 .checks ul {
@@ -424,6 +448,7 @@
 
 .checks li {
   margin: 0.15rem 0;
+  color: var(--stop);
 }
 
 /*

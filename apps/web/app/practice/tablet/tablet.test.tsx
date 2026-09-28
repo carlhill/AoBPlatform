@@ -495,6 +495,42 @@ describe('/practice/tablet — send to the tablet', () => {
     await waitFor(() => expect((screen.getByTestId(`send-${READY.agreementId}`) as HTMLButtonElement).disabled).toBe(false));
   });
 
+  /*
+   * CARL, 28 SEPTEMBER 2026, FROM THE DESK: *"I can choose a tablet and press
+   * send before I save/confirm who is signing - this should not happen"*.
+   *
+   * THE ROW HE HIT WAS ALREADY CONFIRMED, which is why the existing gate did
+   * not catch it: `!row.assignorConfirmedAt` describes the RECORD, and once
+   * anybody has ever answered, both controls are live for good. Opening the
+   * panel to change the answer left the select and Send fully usable beside
+   * an unsaved question.
+   */
+  it('a_reopened_who_is_signing_panel_shuts_the_tablet_and_send_controls', async () => {
+    signedInAtPractice();
+    stubFetch();
+    render(<TabletView practiceId={PRACTICE} />);
+
+    // A confirmed row: a tablet can be chosen and Send comes alive.
+    await waitFor(() => expect(screen.getByTestId(`target-${READY.agreementId}`)).toBeTruthy());
+    fireEvent.change(screen.getByTestId(`target-${READY.agreementId}`), { target: { value: TABLET.id } });
+    await waitFor(() =>
+      expect((screen.getByTestId(`send-${READY.agreementId}`) as HTMLButtonElement).disabled).toBe(false),
+    );
+
+    // Reopen step 1. Until it is saved or closed, steps 2 and 3 are shut.
+    fireEvent.click(screen.getByTestId(`who-open-${READY.agreementId}`));
+    await waitFor(() =>
+      expect((screen.getByTestId(`send-${READY.agreementId}`) as HTMLButtonElement).disabled).toBe(true),
+    );
+    expect((screen.getByTestId(`target-${READY.agreementId}`) as HTMLSelectElement).disabled).toBe(true);
+
+    // Closing it gives them back, with the chosen tablet still chosen.
+    fireEvent.click(screen.getByTestId(`who-open-${READY.agreementId}`));
+    await waitFor(() =>
+      expect((screen.getByTestId(`send-${READY.agreementId}`) as HTMLButtonElement).disabled).toBe(false),
+    );
+  });
+
   it('sends to the chosen tablet, and shows the server’s reason in our words when it refuses', async () => {
     signedInAtPractice();
     stubFetch({

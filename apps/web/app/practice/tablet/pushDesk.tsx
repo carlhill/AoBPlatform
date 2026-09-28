@@ -2733,6 +2733,30 @@ export function sendSteps(
  * moved inside the steps that number them.
  */
 export function SendSteps({ desk, row }: { desk: PushDesk; row: PushableRow }) {
+  /*
+   * STEP 1 IS OPEN AND UNSAVED, SO STEPS 2 AND 3 ARE SHUT (Carl, 28 September
+   * 2026, from the desk: *"I can choose a tablet and press send before I
+   * save/confirm who is signing - this should not happen"*).
+   *
+   * THE ROW-LEVEL GATE WAS ALREADY RIGHT AND WAS NOT ENOUGH.
+   * `!row.assignorConfirmedAt` dies both controls while nobody has EVER
+   * answered. But `assignorConfirmedAt` is a fact about the record, not about
+   * this sitting — so on a row confirmed earlier, opening the panel to change
+   * the answer left the select and Send fully live beside it. Reception could
+   * pick a tablet and send while an unsaved answer to "who is signing" sat on
+   * the screen above, and the push would carry the OLD answer with nothing
+   * saying so.
+   *
+   * IT IS THE PANEL BEING OPEN THAT SHUTS THEM, not the panel being dirty.
+   * Tracking dirtiness would mean the two controls flickered as somebody
+   * typed; and a panel opened and abandoned is a question reception has
+   * started and not finished, which is exactly the state Send should wait
+   * out. Closing it (or saving) opens them again immediately.
+   *
+   * IT NEVER BLOCKS CARE (hard rule 8). This delays a push by one press of
+   * Close or Save, on a screen the receptionist already has open.
+   */
+  const whoIsOpen = desk.whoFor === row.agreementId;
   const steps = sendSteps(row, desk.target[row.agreementId]);
   const blockedReason = row.pushable
     ? undefined
@@ -2790,6 +2814,7 @@ export function SendSteps({ desk, row }: { desk: PushDesk; row: PushableRow }) {
           !desk.canSend
           || !row.pushable
           || !row.assignorConfirmedAt
+          || whoIsOpen
           || desk.free.length === 0
           || desk.busyId !== null
         }
@@ -2817,6 +2842,7 @@ export function SendSteps({ desk, row }: { desk: PushDesk; row: PushableRow }) {
           !desk.canSend
           || !row.pushable
           || !row.assignorConfirmedAt
+          || whoIsOpen
           || !desk.target[row.agreementId]
           || desk.busyId !== null
         }

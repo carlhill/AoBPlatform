@@ -478,7 +478,7 @@ describe('the DB4 form view', () => {
       expect(checks({ providers: [
         { role: 'servicing', pmsProviderKey: 'provider:1111111T', name: '', providerNumber: '1111111T' },
         { role: 'payee', pmsProviderKey: 'provider:2222222W', name: 'Dr Fake Payee', providerNumber: '2222222W' },
-      ] })).toEqual(['print_record_servicing_provider_missing']);
+      ] })).toEqual(['print_record_servicing_provider_name_missing']);
     });
 
     it('a_print_record_whose_servicing_provider_has_no_name_is_refused', () => {
@@ -488,14 +488,16 @@ describe('the DB4 form view', () => {
           { role: 'payee', name: 'Dr Fake Payee', providerNumber: '2222222W' },
         ],
       });
-      expect(unnamed).toEqual(['print_record_servicing_provider_missing']);
+      // THE NAME ALONE, not a pair — Carl, 28 September 2026: *"be specific
+      // - which one"*. The number was read and must not be named as missing.
+      expect(unnamed).toEqual(['print_record_servicing_provider_name_missing']);
     });
 
     it('a_print_record_whose_servicing_provider_has_no_provider_number_is_refused', () => {
       const unnumbered = checks({
         providers: [{ role: 'servicing', name: 'Dr Fake Servicing' }],
       });
-      expect(unnumbered).toEqual(['print_record_servicing_provider_missing']);
+      expect(unnumbered).toEqual(['print_record_servicing_provider_number_missing']);
     });
 
     it('a_print_record_with_no_servicing_provider_row_at_all_is_refused', () => {
@@ -504,11 +506,16 @@ describe('the DB4 form view', () => {
       const payeeOnly = checks({
         providers: [{ role: 'payee', name: 'Dr Fake Payee', providerNumber: '2222222W' }],
       });
-      expect(payeeOnly).toEqual(['print_record_servicing_provider_missing']);
+      // BOTH HALVES, because with no servicing row at all both are genuinely
+      // unreadable and each is separately true.
+      expect(payeeOnly).toEqual([
+        'print_record_servicing_provider_name_missing',
+        'print_record_servicing_provider_number_missing',
+      ]);
     });
 
     /* ---------------------------------------------------------------------
-     * THE THREE BACKSTOPS. Each is refused at ingest before an agreement can
+     * THE FOUR BACKSTOPS. Each is refused at ingest before an agreement can
      * exist, so none can fire on a real row today — which is stated here so a
      * reader does not mistake them for the guard that is holding.
      * ------------------------------------------------------------------ */
@@ -574,22 +581,23 @@ describe('the DB4 form view', () => {
        * used to assert the whole list, and it cannot any more: an empty
        * record has no Medicare card number, and `print_record_irn_missing`
        * only asks for an IRN when a card number was read. So the most ruined
-       * record possible fails five of the six, and the sixth is absent
+       * record possible fails six of the seven, and the seventh is absent
        * because its precondition is absent rather than because it passed.
        *
        * IT IS SPELLED OUT RATHER THAN FILTERED OUT. Deriving the expectation
        * from the code under test would make this test agree with whatever the
-       * validator does; naming the five means a check that stops firing shows
+       * validator does; naming the six means a check that stops firing shows
        * up here.
        */
       expect(ruined).toEqual([
         'print_record_patient_unidentified',
         'print_record_services_missing',
-        'print_record_servicing_provider_missing',
+        'print_record_servicing_provider_name_missing',
+        'print_record_servicing_provider_number_missing',
         'print_record_service_date_missing',
         'print_record_benefit_missing',
       ]);
-      // AND WITH A CARD NUMBER READ, ALL SIX — the conditional one joins the
+      // AND WITH A CARD NUMBER READ, ALL SEVEN — the conditional one joins the
       // list in its declared position rather than being appended to the end.
       const alsoHalfRead = checkDb4PrintRecord({
         form: {},
