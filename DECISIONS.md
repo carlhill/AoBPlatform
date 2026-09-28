@@ -2303,6 +2303,70 @@ form before affirming any part of it. Which affirmation sits on which page is
 `a_page_with_no_statements_is_not_gated_at_all`.
 
 
+## D-2026-09-28-01 - We do not police the providers on a DB4; we only need one to anchor the agreement
+
+**Decided:** The platform does **not** verify the providers printed on a DB4
+Print Record. It does not check that a provider number is genuine, that it
+belongs to the person whose name is printed beside it, that it is current with
+Services Australia, or that the named practitioner actually rendered the
+service. - Carl Hill, 28 September 2026, looking at a form composed with the
+wrong doctor's name against a known provider number: *"we do not check the
+Providers - Servicing and Payee against our Dr's in the practice. Just for
+signing - I think we do not need to check the Dr (even though this may be a
+way for fraud) - however, it is not our job to police"*.
+
+**The fraud vector is acknowledged and accepted.** Somebody with access to a
+practice's printer could put any name on a form. This product captures and
+proves CONSENT; it is not a claims auditor, and claim lodgement is explicitly
+out of scope (CLAUDE.md section 8). A check we cannot perform properly is
+worse than no check, because it would imply an assurance we are not giving -
+the same reasoning hard rule 12 applies to the word "certified".
+
+**WHAT THE CODE ACTUALLY DOES, AND THE ONE PLACE IT IS NOT QUITE THIS.**
+Recorded because the decision as put is true of three of the four fields and
+not of the fourth, and a decision that quietly disagrees with the code is
+worse than no decision.
+
+| On the form | What we do with it |
+|---|---|
+| Servicing provider NUMBER | **Resolved** against this practice's affiliations. Must match exactly one |
+| Servicing provider NAME | Never checked against anything |
+| Payee provider NUMBER | Recorded verbatim. Never resolved, never checked |
+| Payee provider NAME | Never checked against anything |
+
+**Resolving the servicing number is not policing - it is the party.** An
+assignment of benefit is an agreement **with** a practitioner (s 65C(5)(a)),
+and the platform anchors the visit on that practitioner. A number that names
+nobody at this practice leaves the agreement with no counterparty, which is
+not an agreement. So `resolveAnchor` refuses a number no affiliation holds
+(`provider_not_found`) and refuses one held by two (`provider_number_ambiguous`,
+a records fault rather than a coin toss on a contract). That is the absence of
+a party, not a judgement about a doctor.
+
+**It never blocks care** (hard rule 8, REQ-REC-04). The refusal is a 404
+caught by the DB4 handler, written as a reason on the print-job row, and
+logged. Nobody is stopped from being seen or billed; the evidence is slower,
+the service is not.
+
+**The name is deliberately not substantive, and the reprint rule says so.**
+`db4ParticularsChanged` does not compare provider names at all: a form
+corrected only in a printed name REPOINTS rather than supersedes, because the
+agreement resolves its provider from the NUMBER through the affiliation.
+Carl's own test - "Dr Zachariah Hilll" against `9999999X` - is exactly that
+case, and it is intended behaviour rather than a gap.
+
+**What changes this.** A ruling that the platform should verify provider
+identity, which would need a source of truth we do not have and a decision
+about what to do when it disagrees - neither of which exists today. If the
+practice's own records are wrong, that is fixed on the affiliation, which is
+the screen the refusal already points at.
+
+**Where:** `apps/core/src/arrivals/arrivals.service.ts` (`resolveAnchor`),
+`apps/core/src/inbound/db4-assignment.handler.ts` (`reasonFor`,
+`no_servicing_provider`), `apps/core/src/inbound/db4-reprint.ts`
+(`db4ParticularsChanged` compares `servicingProviderNumber` and no name).
+
+
 ## Q-2026-09-28-01 - OPEN: may the same MBS item number appear twice on one DB4?
 
 **Status: OPEN.** Not a decision. Recorded so the answer has somewhere to land
