@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import { IsArray, IsBoolean, IsIn, IsISO8601, IsOptional, IsString, Matches, MaxLength, ValidateNested } from 'class-validator';
 import type { PrintJobEnvelope } from '@aobplatform/contracts';
@@ -227,5 +227,23 @@ export class InboundPrintJobsController {
   @Get('metrics')
   metrics(@Headers('x-practice-id') practiceId: string | undefined) {
     return this.jobs.metrics(requirePractice(practiceId));
+  }
+
+  /**
+   * WHAT BECAME OF ONE PRINT JOB. The AOBPrinter test tool posts a DB4, gets
+   * a 202 with an id, and reads this to learn whether it PLACED or was
+   * refused and why — see `InboundPrintJobsService.status`, which returns
+   * state, codes and timestamps and NEVER the stored envelope.
+   *
+   * AFTER `metrics` IN THE FILE AND AFTER IT ON THE ROUTER. A `:id` parameter
+   * would otherwise swallow `/metrics` and answer it with "no such job".
+   */
+  @Get(':id')
+  @PracticeScoped()
+  status(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.jobs.status(requirePractice(practiceId), id);
   }
 }

@@ -206,4 +206,46 @@ export class InboundPrintJobsService {
       return { byLane };
     });
   }
+
+  /**
+   * WHAT BECAME OF ONE PRINT JOB — state, and the outcome the handler wrote.
+   *
+   * FOR THE AOBPRINTER TEST TOOL, which stands in for the practice's desktop
+   * driver: it posts a DB4 and needs to know whether it PLACED, because a 202
+   * only says the row was written. Without this the tool can say "sent" and
+   * nothing more, and every seeding script this session has had to read the
+   * database directly to find out what happened.
+   *
+   * NO PAYLOAD, AND THAT IS THE WHOLE OF THE DESIGN. The stored envelope
+   * carries the patient's name, address and — on a DB4 alone (D-2026-09-14-03)
+   * — the Medicare card number the form printed. None of it is returned here.
+   * What comes back is the row's state, the placement outcome the handler
+   * already writes in CODES (`db4-assignment.handler.ts` logs the code and
+   * never the value it came from, hard rule 9), and two timestamps. So this
+   * endpoint cannot leak a particular it never reads.
+   *
+   * PRACTICE-SCOPED THROUGH RLS like every other read here, so an id from
+   * another practice returns null rather than a row.
+   */
+  async status(practiceId: string, id: string) {
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const row = await tx.inboundPrintJob.findFirst({
+        where: { id },
+        select: {
+          id: true,
+          lane: true,
+          state: true,
+          attempts: true,
+          documentType: true,
+          sourceSha256: true,
+          parserTemplateVersion: true,
+          receivedAt: true,
+          processedAt: true,
+          lastError: true,
+          outcome: true,
+        },
+      });
+      return row ?? null;
+    });
+  }
 }
