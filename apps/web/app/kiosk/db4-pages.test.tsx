@@ -42,7 +42,7 @@ import {
 } from '@aobplatform/domain';
 import type { Db4FormView } from '@aobplatform/contracts';
 import { Ceremony } from './Ceremony';
-import { ParticularsScreen, type ParticularsView } from './screens/ParticularsScreen';
+import { AmountAsPrinted, ParticularsScreen, type ParticularsView } from './screens/ParticularsScreen';
 import type { SignatureValidation } from './rules/signature-gate';
 import {
   DB4_PAGES,
@@ -410,6 +410,45 @@ describe('the three pages Carl asked for', () => {
     // alongside the winning one and read as though it were doing the work.
     expect(css).not.toMatch(/^\.db4ColBenefit\s*\{/m);
     expect(css).not.toMatch(/^\.db4Benefit\s*\{/m);
+  });
+
+  it('the_amount_is_split_for_alignment_and_not_one_character_changes', () => {
+    /*
+     * CARL, 28 SEPTEMBER 2026: *"we will need to put decimals or at least
+     * position the numbers to line up - you think"*. The answer was POSITION,
+     * never decimals — padding `45` to `45.00` would be AoB writing a figure
+     * the practice never printed, which is hard rule 4 as narrowed by
+     * D-2026-09-14-02.
+     *
+     * THIS IS THE TEST THAT MATTERS, and unlike the alignment guard above it
+     * needs no browser: the split is CONTENT, so jsdom can prove the round
+     * trip exactly. Whatever PracSoft printed comes back out character for
+     * character — symbol, grouping comma, however many decimals, or none.
+     */
+    for (const printed of ['45', '$45.05', '1234.5', '1,234.55', '0.00', '', '45.005']) {
+      const { container, unmount } = render(<AmountAsPrinted value={printed} />);
+      expect(container.textContent).toBe(printed);
+      unmount();
+    }
+
+    // AND THE POINT IS WHERE THE ALIGNMENT HANGS OFF: the last dot, because in
+    // en-AU the comma groups thousands and the dot separates the fraction.
+    const { container } = render(<AmountAsPrinted value="1,234.55" />);
+    const [whole, fraction] = Array.from(container.querySelectorAll('span > span'));
+    expect(whole.textContent).toBe('1,234');
+    expect(fraction.textContent).toBe('.55');
+
+    /*
+     * THE EMPTY FRACTION SLOT IS STILL DRAWN. It is what reserves the width
+     * that puts the points in a line; dropping it on a whole amount would pull
+     * that row right by its neighbours' fractions, which is the ragged column
+     * this exists to fix. The CSS gives it a `min-width` for the same reason.
+     */
+    const whole45 = render(<AmountAsPrinted value="45" />);
+    expect(whole45.container.querySelectorAll('span > span')).toHaveLength(2);
+    const css = readFileSync(join(__dirname, 'kiosk.module.css'), 'utf8');
+    expect(css).toContain('.db4Table .db4AmountFraction');
+    expect(css).toMatch(/\.db4Table \.db4AmountFraction \{[^}]*min-width/);
   });
 
   it('a_pages_continue_waits_for_that_pages_own_tick', () => {

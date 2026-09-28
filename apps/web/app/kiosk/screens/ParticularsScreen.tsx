@@ -1260,7 +1260,9 @@ function Db4Document({
                     figure would happen to agree. Display only: it is on no
                     payload this screen can send.
                   */}
-                  <td className={styles.db4Benefit}>{service.benefitAssigned ?? ''}</td>
+                  <td className={styles.db4Benefit}>
+                    <AmountAsPrinted value={service.benefitAssigned} />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1333,4 +1335,58 @@ function providerLabel(role: string | undefined): string {
   if (role === 'servicing') return strings.particulars.db4.servicingProvider;
   if (role === 'payee') return strings.particulars.db4.payeeProvider;
   return strings.particulars.provider;
+}
+
+/**
+ * THE AMOUNT THE PRACTICE PRINTED, SPLIT AT ITS DECIMAL POINT SO A COLUMN OF
+ * THEM LINES UP (Carl, 28 September 2026: *"we will need to put decimals or at
+ * least position the numbers to line up - you think"*).
+ *
+ * NOT ONE CHARACTER IS ADDED, CHANGED OR REMOVED, and that is the whole of the
+ * care here. Padding `45` to `45.00`, or `1234.5` to `1234.50`, would be AoB
+ * WRITING A FIGURE THE PRACTICE DID NOT PRINT — hard rule 4 as narrowed by
+ * D-2026-09-14-02 permits reproducing the amount the practice's billing
+ * software printed and nothing else. `join('')` of the two halves is always
+ * identical to the input; a test pins exactly that.
+ *
+ * SO THE FIX IS POSITION, NOT CONTENT. The whole part is right-aligned against
+ * the decimal point and the fraction hangs off it in a slot of its own, which
+ * puts the points in one vertical line however many digits follow them:
+ *
+ *        45
+ *       $45.05
+ *     1,234.55
+ *
+ * THE LAST DOT IS THE DECIMAL POINT. In en-AU the comma groups thousands and
+ * the dot separates the fraction, so `1,234.55` splits after `1,234`. Anything
+ * with no dot at all is whole and takes the empty fraction slot, which is what
+ * keeps `45` aligned with the rest.
+ *
+ * IT READS THE STRING'S SHAPE, NEVER ITS VALUE. Nothing here parses a number,
+ * compares one, sums one or decides whether a figure is plausible. `$`, the
+ * grouping comma and a one-decimal amount all survive exactly as printed,
+ * because the screen's job is to show the patient THEIR form.
+ *
+ * IN PRACTICE THE COLUMN IS ALREADY TIDY — a real PracSoft DB4 prints two
+ * decimals on every row, so this changes nothing on a normal form. It earns
+ * its place on the half-read ones, and by making the alignment structural so
+ * nobody reaches for padding later.
+ */
+export function AmountAsPrinted({ value }: { value?: string | null }) {
+  const printed = value ?? '';
+  const point = printed.lastIndexOf('.');
+  const whole = point === -1 ? printed : printed.slice(0, point);
+  const fraction = point === -1 ? '' : printed.slice(point);
+  return (
+    <span className={styles.db4Amount}>
+      <span className={styles.db4AmountWhole}>{whole}</span>
+      {/*
+        ALWAYS DRAWN, EVEN EMPTY. The slot is what reserves the width that puts
+        the decimal points in a line; dropping it on a whole amount would pull
+        that row right by the width of its neighbours' fractions, which is the
+        ragged column this exists to fix.
+      */}
+      <span className={styles.db4AmountFraction}>{fraction}</span>
+    </span>
+  );
 }

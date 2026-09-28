@@ -1270,6 +1270,42 @@
 }
 
 /*
+ * THE DECIMAL POINTS IN ONE VERTICAL LINE (Carl, 28 September 2026: *"we will
+ * need to put decimals or at least position the numbers to line up"*).
+ *
+ * RIGHT-ALIGNING THE CELL IS NOT ENOUGH when the rows disagree about how many
+ * decimals they carry — `45`, `$45.05` and `1234.5` each end flush and each
+ * puts its point somewhere different. `AmountAsPrinted` splits the string at
+ * its last dot WITHOUT CHANGING A CHARACTER (hard rule 4, D-2026-09-14-02:
+ * padding `45` to `45.00` would be AoB writing a figure the practice never
+ * printed), and these two slots are what turn that split into alignment.
+ *
+ * THE FRACTION SLOT HAS A FLOOR AND NO CEILING. `min-width` rather than
+ * `width`: every row reserves the same space after its point, so the points
+ * line up — and a form that prints three decimals grows its own slot instead
+ * of being clipped. `3ch` is a dot and two digits, which is every ordinary
+ * amount; the dot is narrower than a digit even under `tabular-nums`, so the
+ * slot runs a shade wide, consistently, on every row.
+ *
+ * `inline-grid` KEEPS IT ONE CELL. The pair sits inside the right-aligned
+ * `td`, so the whole assembly is still flush right and the column width and
+ * the wrapping rules above are untouched.
+ */
+.db4Table .db4Amount {
+  display: inline-grid;
+  grid-template-columns: auto auto;
+}
+
+.db4Table .db4AmountWhole {
+  text-align: right;
+}
+
+.db4Table .db4AmountFraction {
+  min-width: 3ch;
+  text-align: left;
+}
+
+/*
  * NARROWER THAN THE TABLET IN PORTRAIT — see "THE TWO BREAKPOINTS" at the foot
  * of the layout section. The three fixed columns give back a character each so
  * the description keeps a readable line; the TYPE DOES NOT SHRINK. This query
