@@ -58,6 +58,7 @@ import {
   Chip,
   Field,
   Notice,
+  RecordId,
   PatientIdentity,
   SelectInput,
   TextInput,
@@ -165,8 +166,11 @@ export interface PushableRow {
   assignorEmail: string | null;
   /**
    * WHAT COULD NOT BE READ OFF THE PRINTED FORM, AND WHICH FORM (Carl, 27
-   * September 2026: *"blocked state on the row"*). Present only where
-   * `blockedReason` is `print_record_incomplete`.
+   * September 2026: *"blocked state on the row"*).
+   *
+   * `print` NOW RIDES ON EVERY ROW THAT CAME OFF ONE (Carl, 28 September
+   * 2026), with `checks` empty when nothing failed — needing to know which
+   * page a row came from is not the same as the page being faulty.
    *
    * SO THE ROW'S BAND READS THE SAME AS THE REFUSAL'S. `pushable()` now runs
    * the print-record check for the whole list, so reception meets the reason
@@ -3190,11 +3194,35 @@ export function AgreementRow({
    * same row the vault events name.
    */
   const recordId = (
-    <PatientIdentity
-      practiceNumber={row.patientRecordNumber}
-      recordId={row.patientId}
-      testId={`row-patient-id-${row.agreementId}`}
-    />
+    <>
+      <PatientIdentity
+        practiceNumber={row.patientRecordNumber}
+        recordId={row.patientId}
+        testId={`row-patient-id-${row.agreementId}`}
+      />
+      {/*
+        AND WHICH PRINTED PAGE THIS CAME OFF (Carl, 28 September 2026: *"we
+        need the AOBPrinter unique key probably after AoBPlatform record
+        ID"*).
+
+        UNDER OURS, BECAUSE IT IS THE FAR END OF THE SAME THREAD: the
+        practice's number for the person, our id for the record, then
+        AOBPRINTER's reference for the page that made it. Absent on a row
+        that never came off a printed form, which is an ordinary thing and
+        not a gap.
+
+        IT IS NOT A FILE PATH AND THERE IS NONE (8.2). The SHA-256 of the
+        source print job is what both ends know the page by, which is what
+        makes it the identifier a support ticket can use.
+      */}
+      {row.printRecord?.print ? (
+        <RecordId
+          label={strings.recordId.printRecord}
+          value={row.printRecord.print.sourceSha256}
+          testId={`row-print-ref-${row.agreementId}`}
+        />
+      ) : null}
+    </>
   );
 
   return (

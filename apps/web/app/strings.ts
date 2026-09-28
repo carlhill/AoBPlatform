@@ -66,6 +66,23 @@ const recordIdWords = {
      * needs no twin: it always exists.
      */
     practiceNumberUnknown: 'No patient ID on this record',
+    /*
+     * AOBPRINTER'S OWN REFERENCE (Carl, 28 September 2026: *"we need the
+     * AOBPrinter unique key probably after AoBPlatform record ID"*).
+     *
+     * IT IS THE ONE IDENTIFIER THAT CROSSES THE WIRE BOTH WAYS. There is no
+     * file path and never was (8.2, provenance without possession): the
+     * SHA-256 of the source print job is what AOBPRINTER knows the page by,
+     * what our `@@unique([practiceId, documentType, sourceSha256])` knows it
+     * by, and therefore the only thing a support ticket can name that both
+     * ends can find. It rode on a refusal and nowhere else; a row does not
+     * have to be broken for somebody to need it.
+     *
+     * NAMED FOR THE THING THAT MADE IT rather than for the hash it is. A
+     * receptionist reading three ids in a column needs to know which end
+     * each one belongs to.
+     */
+    printRecord: 'AOBPrinter reference',
     copy: 'Copy',
     copied: 'Copied',
     /** The accessible name on the copy control, so it is not twelve buttons all called "Copy". */

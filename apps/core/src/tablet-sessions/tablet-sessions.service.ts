@@ -185,6 +185,14 @@ export interface PushableRow {
    * NOTHING IN EITHER FIELD IS A PATIENT'S (hard rule 9) -- codes name
    * fields, the identity names the document and the machinery that read it.
    */
+  /**
+   * WHICH PRINTED FORM THIS ROW CAME OFF, and what could not be read on it.
+   *
+   * PRESENT ON EVERY ROW THAT CAME FROM A DB4 (Carl, 28 September 2026), not
+   * only on a refusal: `checks` is empty when nothing failed, and `print`
+   * still names the form reference, the queue, our job id and AOBPRINTER's
+   * `sourceSha256`. Null on a row that never came off a printed form.
+   */
   printRecord: { checks: readonly Db4PrintRecordCheck[]; print: Db4PrintRecordIdentity } | null;
   /**
    * THE NUMBER ON THE CARD IN THE PATIENT'S HAND (`QUEUE-TICKETS.md`; Carl,
@@ -1394,18 +1402,38 @@ export class TabletSessionsService {
     practiceId: string,
     rows: PushableRow[],
   ): Promise<PushableRow[]> {
-    const sendable = rows.filter(
-      (row) => row.pushable || (row.blockedReason !== null && SUPERSEDED_BY_A_REPRINT.has(row.blockedReason)),
-    );
-    if (sendable.length === 0) return rows;
+    /*
+     * WHICH FORM A ROW CAME OFF IS ASKED FOR EVERY ROW; only a SENDABLE one
+     * can be stopped by the answer (Carl, 28 September 2026: *"we need the
+     * AOBPrinter unique key probably after AoBPlatform record ID"*).
+     *
+     * THE TWO USES OF THIS READ CAME APART. Until now the identity rode only
+     * on a refusal, so a row that was perfectly sendable — or blocked for
+     * some other reason entirely — showed no way of saying WHICH printed
+     * page it came off. That is the one identifier that crosses to
+     * AOBPRINTER and to a support ticket (8.2: provenance without
+     * possession), and needing it is not the same as failing a check.
+     *
+     * MARKING IS STILL NARROW. Only `sendable` rows have their reason
+     * replaced with "reprint the form", exactly as before, because a reprint
+     * fixes none of the reasons the filter excludes.
+     */
     const answers = await this.agreements.db4PrintRecordChecksForMany(
       practiceId,
-      sendable.map((row) => row.agreementId),
+      rows.map((row) => row.agreementId),
     );
     if (answers.size === 0) return rows;
-    for (const row of sendable) {
+    const canBeStopped = new Set(
+      rows
+        .filter((row) => row.pushable || (row.blockedReason !== null && SUPERSEDED_BY_A_REPRINT.has(row.blockedReason)))
+        .map((row) => row.agreementId),
+    );
+    for (const row of rows) {
       const answer = answers.get(row.agreementId);
-      if (!answer || answer.checks.length === 0) continue;
+      if (!answer) continue;
+      /* WHICH PAGE, ALWAYS — a fact about provenance, not about a fault. */
+      if (answer.identity) row.printRecord = { checks: answer.checks, print: answer.identity };
+      if (answer.checks.length === 0 || !canBeStopped.has(row.agreementId)) continue;
       row.pushable = false;
       row.blockedReason = 'print_record_incomplete';
       row.printRecord = { checks: answer.checks, print: answer.identity };
