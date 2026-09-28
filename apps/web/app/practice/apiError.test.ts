@@ -73,6 +73,43 @@ describe('expired_session_failure_says_sign_in_again', () => {
     expect(await explainFailure(res)).toBe(strings.status.sessionExpired);
   });
 
+  it('a_403_that_says_nobody_is_signed_in_is_the_expired_session_case', async () => {
+    /*
+     * CARL, 28 SEPTEMBER 2026, AT A LIVE DESK: *"could not send to tablet"*,
+     * twice, on two records whose print jobs were perfectly readable.
+     *
+     * `pushRefusals.noActor()` is a `ForbiddenException` — 403 — and the one
+     * refusal in the push path with no `reason` code, because it is not a
+     * push refusal at all: it is the request arriving with nobody attached.
+     * This helper only knew 401 and 400, so the console fell through to
+     * "Could not send. Please tell support what you were doing." while the
+     * server was explaining the actual problem in full sentences.
+     *
+     * THE SENTENCE IS CORE'S OWN, not retyped — matched by the substring the
+     * rule is defined by, exactly as the 400 case above is.
+     */
+    const noActor =
+      'Sending an agreement to a tablet records the staff-verified identity check that goes with it, so '
+      + 'it is recorded against the person who did it. This request carries no signed-in user, so it is '
+      + 'refused rather than recorded as nobody.';
+    expect(isExpiredSessionFailure(403, noActor)).toBe(true);
+    const res = response(403, { message: noActor });
+    expect(await explainFailure(res)).toBe(strings.status.sessionExpired);
+  });
+
+  it('an_ordinary_403_is_a_refusal_and_not_a_stale_session', async () => {
+    /*
+     * A BARE 403 USUALLY MEANS "YOU MAY NOT DO THIS", which is true and
+     * different, and telling somebody to sign in again would send them round
+     * a loop that cannot help them. Only a 403 that SAYS there is no
+     * signed-in user is reclassified.
+     */
+    expect(isExpiredSessionFailure(403, 'This practice is not yours to act on.')).toBe(false);
+    expect(isExpiredSessionFailure(403, undefined)).toBe(false);
+    const res = response(403, { message: 'This practice is not yours to act on.' });
+    expect(await explainFailure(res)).toBe('This practice is not yours to act on.');
+  });
+
   it('an ordinary 400 refusal is NOT reclassified as an expired session', async () => {
     expect(isExpiredSessionFailure(400, 'Change at least one detail first.')).toBe(false);
     const res = response(400, { message: 'Change at least one detail first.' });

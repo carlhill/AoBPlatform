@@ -66,7 +66,7 @@ import {
 } from '../../ui';
 import { strings } from '../../strings';
 import { apiHeaders, currentSession } from '../../auth';
-import { explainFailure } from '../../apiError';
+import { explainFailure, isExpiredSessionFailure } from '../../apiError';
 import { toViewPath } from '../../viewPath';
 import styles from '../manage.module.css';
 import rowStyles from './tablet.module.css';
@@ -1143,7 +1143,17 @@ async function refusal(
      */
     print?: Db4PrintRecordIdentity;
   };
-  const message = Array.isArray(body.message) ? body.message.join(' ') : (body.message ?? String(res.status));
+  const raw = Array.isArray(body.message) ? body.message.join(' ') : (body.message ?? String(res.status));
+  /*
+   * THE ONE FAILURE THAT IS NOT ABOUT THIS SCREEN (Carl, 28 September 2026).
+   * `pushRefusals.noActor()` is a 403 with no `reason`, so it fell through
+   * `describeRefusal`'s last branch to "Could not send. Please tell support
+   * what you were doing." — while the server was explaining, in full, that
+   * the request carried no signed-in user. `isExpiredSessionFailure` is the
+   * console's one shared recognition of that, and this is now one of its
+   * callers rather than a place that reinvented a worse answer.
+   */
+  const message = isExpiredSessionFailure(res.status, raw) ? strings.status.sessionExpired : raw;
   return {
     message,
     reason: body.reason,
@@ -1924,7 +1934,7 @@ export function usePushDesk(practiceId: string): PushDesk {
          * sessions this page already polls — the session id first, the device
          * id as a fallback if the id it named is not one we hold.
          */
-        const { reason, sessionId, checks, print } = await refusal(res);
+        const { reason, message, sessionId, checks, print } = await refusal(res);
         // A FRESH READ, because a `device_busy` session is almost never in
         // what this closure already holds (see the doc comment on `load`).
         const fresh = await load();
@@ -1948,6 +1958,13 @@ export function usePushDesk(practiceId: string): PushDesk {
             sessionId: sessionId ?? busySession?.id,
             providerType: row.providerType,
             patientId: row.patientId,
+            /*
+             * THE SERVER'S OWN SENTENCE, KEPT. A refusal with no `reason`
+             * code is not necessarily a refusal with nothing to say — the
+             * 403 for an expired session is the case that proved it — and
+             * `describeRefusal` prefers this over its generic fallback.
+             */
+            rawMessage: message,
             checks,
             print,
             audiences,

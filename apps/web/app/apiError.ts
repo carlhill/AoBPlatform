@@ -51,7 +51,27 @@ export async function explainFailure(res: Response): Promise<string> {
  * decide whether to offer a retry after sign-in without re-deriving it.
  */
 export function isExpiredSessionFailure(status: number, bodyMessage?: string): boolean {
-  return status === 401 || (status === 400 && Boolean(bodyMessage?.includes('signed-in user')));
+  /*
+   * 403 JOINS 400 HERE (Carl, 28 September 2026, at a live desk: *"could not
+   * send to tablet"*, twice, on two readable records).
+   *
+   * WHAT IT COST TO LEAVE OUT. `pushRefusals.noActor()` is a
+   * `ForbiddenException` — 403 — and it is the ONE refusal in the push path
+   * that carries no `reason` code, because it is not a push refusal at all;
+   * it is the request arriving with nobody attached. So a console whose
+   * session had quietly expired met "Could not send. Please tell support what
+   * you were doing." while the server was answering, in full sentences, that
+   * there was no signed-in user. Two people then spent a while looking at the
+   * print-record check, which was working perfectly.
+   *
+   * GATED ON THE MESSAGE, EXACTLY AS 400 IS, and for the same reason: a bare
+   * 403 usually means "you may not do this", which is a true and different
+   * thing, and telling somebody to sign in again would send them round a loop
+   * that cannot help. Only a 403 that SAYS there is no signed-in user is a
+   * stale session.
+   */
+  const saysNobodyIsSignedIn = Boolean(bodyMessage?.includes('signed-in user'));
+  return status === 401 || ((status === 400 || status === 403) && saysNobodyIsSignedIn);
 }
 
 /** True for the message `explainFailure` produces for an expired session. */
