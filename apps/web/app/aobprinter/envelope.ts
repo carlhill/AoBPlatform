@@ -74,6 +74,10 @@ export function buildEnvelope(draft: Draft): Record<string, unknown> {
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
+  const locationAddressLines = draft.locationAddressLines
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
 
   return {
     pms: 'pracsoft3',
@@ -102,6 +106,28 @@ export function buildEnvelope(draft: Draft): Record<string, unknown> {
       }),
     },
     ...(headingLines.length > 0 ? { heading: { lines: headingLines } } : {}),
+    /*
+     * THE PLACE THAT PRINTED IT. Absent rather than empty when the tester
+     * cleared it, because `buildDb4FormView` draws the block on truthiness
+     * and an empty name would be a heading over nothing.
+     */
+    ...(locationAddressLines.length > 0 ||
+    draft.locationName.trim() ||
+    draft.locationSuburb.trim() ||
+    draft.locationState.trim() ||
+    draft.locationPostcode.trim()
+      ? {
+          servicingLocation: {
+            ...present({
+              name: draft.locationName,
+              suburb: draft.locationSuburb,
+              state: draft.locationState,
+              postcode: draft.locationPostcode,
+            }),
+            ...(locationAddressLines.length > 0 ? { addressLines: locationAddressLines } : {}),
+          },
+        }
+      : {}),
     patient: {
       pmsLinkageKey: `chart:${draft.patientRecordNumber}`,
       familyName: draft.familyName,
@@ -182,6 +208,9 @@ export function draftFromEnvelope(practiceId: string, stored: Record<string, unk
   };
 
   const heading = ((stored.heading as Record<string, unknown> | undefined)?.lines ?? []) as unknown[];
+  const locationLines = (
+    ((stored.servicingLocation as Record<string, unknown> | undefined)?.addressLines ?? []) as unknown[]
+  ).filter((l): l is string => typeof l === 'string');
   const providers = list('providers');
   const services = list('services');
 
@@ -193,6 +222,17 @@ export function draftFromEnvelope(practiceId: string, stored: Record<string, unk
     locationId: get(['form', 'locationId'], blank.locationId),
     claimStatus: get(['form', 'claimStatus'], blank.claimStatus),
     headingLines: heading.filter((l): l is string => typeof l === 'string').join(String.fromCharCode(10)) || blank.headingLines,
+    /*
+     * LOADED BACK EMPTY WHEN THE STORED FORM HAD NONE, not from `blank`. A
+     * form sent without a place of practice must reprint without one, or
+     * correcting one field would silently add a block the practice's page
+     * never had.
+     */
+    locationName: get(['servicingLocation', 'name']),
+    locationAddressLines: locationLines.join(String.fromCharCode(10)),
+    locationSuburb: get(['servicingLocation', 'suburb']),
+    locationState: get(['servicingLocation', 'state']),
+    locationPostcode: get(['servicingLocation', 'postcode']),
     patientRecordNumber: get(['patient', 'patientRecordNumber']),
     givenNames: get(['patient', 'givenNames']),
     familyName: get(['patient', 'familyName']),

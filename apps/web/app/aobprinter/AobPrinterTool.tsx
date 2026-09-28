@@ -582,6 +582,35 @@ export function AobPrinterTool() {
           />
           <Field label="IRN" value={draft.irn} onChange={(v) => set('irn', v)} mono />
           <Field label="Service date" value={draft.serviceDate} onChange={(v) => set('serviceDate', v)} />
+          {/*
+            THE PLACE THAT PRINTED THE FORM — missing from this tool until 28
+            September 2026, which is why moving 2A's agreement facts to the
+            foot of the left column appeared to change nothing: there was no
+            location block for them to sit below. Clear all five and the block
+            disappears from the tablet, which the `no-location` preset does in
+            one press.
+          */}
+          <Field
+            label="Practice name"
+            value={draft.locationName}
+            onChange={(v) => set('locationName', v)}
+            hint="The servicing location, as 2A's left column prints it."
+          />
+          <Area
+            label="Practice address"
+            value={draft.locationAddressLines}
+            onChange={(v) => set('locationAddressLines', v)}
+            rows={2}
+            hint="One line per address line, as the form prints them. Blank means the template read none."
+          />
+          <Field label="Suburb" value={draft.locationSuburb} onChange={(v) => set('locationSuburb', v)} />
+          <Field label="State" value={draft.locationState} onChange={(v) => set('locationState', v)} />
+          <Field
+            label="Postcode"
+            value={draft.locationPostcode}
+            onChange={(v) => set('locationPostcode', v)}
+            mono
+          />
           <Field label="Print queue" value={draft.queueLabel} onChange={(v) => set('queueLabel', v)} />
           <Field
             label="Parser template"
@@ -771,6 +800,47 @@ function Field({
       <input
         id={id}
         className={mono ? `${styles.input} ${styles.mono}` : styles.input}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {hint ? <p className={styles.hint}>{hint}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * A FIELD THAT IS GENUINELY LINES, AND SO IS A TEXTAREA.
+ *
+ * AN ADDRESS ON A DB4 IS PRINTED AS LINES, and a single-line input cannot
+ * hold them: loading a two-line address back would join it with a newline the
+ * input renders as nothing, and resending would collapse two printed lines
+ * into one. `draftFromEnvelope` exists precisely so a correction reprints
+ * everything else exactly as it arrived, and quietly flattening the practice's
+ * address would break that for the one field most likely to have two lines.
+ */
+function Area({
+  label,
+  value,
+  onChange,
+  hint,
+  rows = 3,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  hint?: string;
+  rows?: number;
+}) {
+  const id = `f-${label.replace(/\W+/g, '-').toLowerCase()}`;
+  return (
+    <div className={styles.field}>
+      <label className={styles.label} htmlFor={id}>
+        {label}
+      </label>
+      <textarea
+        id={id}
+        className={styles.input}
+        rows={rows}
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />

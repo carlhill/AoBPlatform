@@ -54,6 +54,23 @@ export interface Draft {
   // eslint-disable-next-line no-restricted-syntax -- the DB4's own decided exception (D-2026-09-14-03): the practice's form prints it, so the envelope carries it. Composed and posted, never used to identify anybody (hard rule 1).
   medicareCardNumber: string;
   irn: string;
+  /**
+   * THE PLACE THAT PRINTED THE FORM — 2A's left column, between the date of
+   * service and the agreement's own facts.
+   *
+   * IT WAS MISSING FROM THIS TOOL UNTIL 28 SEPTEMBER 2026, and the absence
+   * was invisible until Carl moved the agreement facts to the foot of that
+   * column and the move appeared to do nothing: with no location there was
+   * nothing for them to sit below. Every DB4 off a real printer carries a
+   * place of practice, so a bench instrument that cannot compose one cannot
+   * reproduce the page it is imitating.
+   */
+  locationName: string;
+  /** One address line per line, as the form prints them. */
+  locationAddressLines: string;
+  locationSuburb: string;
+  locationState: string;
+  locationPostcode: string;
   providers: ProviderRow[];
   services: ServiceRow[];
   queueName: string;
@@ -104,6 +121,11 @@ export const BLANK: Draft = {
   // eslint-disable-next-line no-restricted-syntax -- the DB4's own decided exception (D-2026-09-14-03): the practice's form prints it, so the envelope carries it. Composed and posted, never used to identify anybody (hard rule 1).
   medicareCardNumber: '2999 88886 5',
   irn: '1',
+  locationName: 'Fakevale Family Medical Practice',
+  locationAddressLines: '14 NOWHERE STREET',
+  locationSuburb: 'Fakevale',
+  locationState: 'NSW',
+  locationPostcode: '2999',
   providers: [{ ...SERVICING }, { ...PAYEE }],
   services: [row('23', 'Level B Surgery', '45.05')],
   queueName: 'default',
@@ -186,6 +208,19 @@ export const PRESETS: readonly Preset[] = [
     why: 'NOT a fault — the IRN check is conditional on a card number. This should send cleanly.',
     // eslint-disable-next-line no-restricted-syntax -- clearing the field, which is the fault being seeded.
     apply: (d) => ({ ...d, medicareCardNumber: '', irn: '' }),
+  },
+  {
+    key: 'no-location',
+    label: 'A form with no place of practice',
+    why: 'NOT a check — 2A simply loses its servicing-location block. Shows what the left column looks like without it.',
+    apply: (d) => ({
+      ...d,
+      locationName: '',
+      locationAddressLines: '',
+      locationSuburb: '',
+      locationState: '',
+      locationPostcode: '',
+    }),
   },
   {
     key: 'refused-no-chart',
