@@ -734,10 +734,11 @@ export function ParticularsScreen({
             {db4 ? (
               <>
                 {/*
-                  THE AGREEMENT'S OWN FACTS GO INTO 2A's LEFT COLUMN, UNDER THE
-                  DATE OF SERVICE (Carl, 28 September 2026: *"move Date of this
-                  agreement and Signing below Date of service / Too much wasted
-                  white space"*).
+                  THE AGREEMENT'S OWN FACTS GO AT THE FOOT OF 2A's LEFT
+                  COLUMN (Carl, 28 September 2026: *"move Date of this
+                  agreement and Signing below Date of service / Too much
+                  wasted white space"*, then *"put at foot of the left
+                  column"* — below the practice's run rather than inside it).
 
                   THIS REVERSES 27 SEPTEMBER, AND THE REASON IT GAVE WAS REAL.
                   The two facts are neither practice nor patient — the date of
@@ -746,13 +747,18 @@ export function ParticularsScreen({
                   they were put in a band across the foot of the page, where
                   the layout made that plain. The cost was a left column that
                   ended half way down beside a much taller patient block, and
-                  the gap read as a rendering fault.
+                  the gap read as a rendering fault. They now end that column
+                  instead, which fills it by exactly as much and leaves the
+                  practice's own run of facts unbroken.
 
                   WHAT MAKES THE MOVE SAFE IS THE HEADING, NOT THE POSITION.
                   Inside the practice's column a distinction the layout used to
                   carry has to be carried in words, so the two facts keep a
                   section of their own headed "This agreement" — the same care
-                  `db4-provenance` takes two blocks above (hard rule 12).
+                  `db4-provenance` takes two blocks above (hard rule 12). That
+                  is also what the 27 September note worried about when it said
+                  the foot of this column reads as the practice's: true of two
+                  bare rows, and answered by heading them.
 
                   IT IS A SLOT, NOT A FACT `Db4Document` KNOWS. That component
                   renders the practice's printed record and nothing else; it
@@ -1180,18 +1186,6 @@ function Db4Document({
           <div className={styles.db4Column}>
             <Row label={copy.formReference} value={form.formReference ?? null} />
             <Row label={copy.serviceDate} value={form.serviceDate ?? null} />
-            {/*
-              OURS, UNDER THE DATE OF SERVICE AND SAYING SO. Directly where
-              Carl put it, and headed, because everything else in this column
-              is the practice's and two unlabelled rows among them would read
-              as theirs.
-            */}
-            {agreementFacts ? (
-              <div className={styles.db4Section} data-testid="db4-agreement-facts">
-                <h3 className={styles.db4SectionHeading}>{copy.thisAgreement}</h3>
-                {agreementFacts}
-              </div>
-            ) : null}
             {form.servicingLocationName || addressLines.length > 0 ? (
               <div className={styles.db4Section}>
                 <h3 className={styles.db4SectionHeading}>{copy.servicingLocation}</h3>
@@ -1203,6 +1197,28 @@ function Db4Document({
                     {line}
                   </p>
                 ))}
+              </div>
+            ) : null}
+            {/*
+              OURS, AT THE FOOT OF THE COLUMN AND SAYING SO (Carl, 28
+              September 2026: *"put at foot of the left column"*).
+
+              LAST, SO THE PRACTICE'S FACTS STAY CONTIGUOUS. The reference,
+              the date of service and the place that printed them are one
+              run of the practice's own record; slotting two of ours in the
+              middle of it broke that run for no gain, since a column fills
+              by the same amount wherever inside it a block is added.
+
+              AND HEADED, which is the part that is not about layout at all.
+              Everything above this in the column is the practice's; two
+              unlabelled rows under their address would read as theirs. The
+              heading is what says otherwise now that the whitespace no
+              longer does (hard rule 12).
+            */}
+            {agreementFacts ? (
+              <div className={styles.db4Section} data-testid="db4-agreement-facts">
+                <h3 className={styles.db4SectionHeading}>{copy.thisAgreement}</h3>
+                {agreementFacts}
               </div>
             ) : null}
           </div>

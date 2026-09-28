@@ -333,8 +333,13 @@ describe('the three pages Carl asked for', () => {
     const ours = view.getByTestId('db4-agreement-facts');
     expect(left.contains(ours)).toBe(true);
     expect(ours.textContent).toContain(strings.particulars.db4.thisAgreement);
-    /* Under the date of service, not above it. */
+    /*
+     * LAST IN THE COLUMN, which is both where Carl put them and what keeps
+     * the practice's own run of facts — reference, date of service, the place
+     * that printed them — unbroken above.
+     */
     const order = Array.from(left.children);
+    expect(order.indexOf(ours)).toBe(order.length - 1);
     const serviceDateRow = order.find((el) => el.textContent?.includes(strings.particulars.db4.serviceDate));
     expect(serviceDateRow).toBeTruthy();
     expect(order.indexOf(ours)).toBeGreaterThan(order.indexOf(serviceDateRow as Element));
