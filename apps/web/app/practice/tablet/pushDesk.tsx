@@ -68,6 +68,16 @@ import { strings } from '../../strings';
 import { apiHeaders, currentSession } from '../../auth';
 import { explainFailure, isExpiredSessionFailure } from '../../apiError';
 import { toViewPath } from '../../viewPath';
+/*
+ * TWO STYLESHEETS, AND WHICH ONE A CLASS LIVES IN MATTERS (Carl, 28 September
+ * 2026: *"failed flags still black"*). `styles` is the console's shared
+ * manage sheet; `rowStyles` is this desk's own. A name that is in one and
+ * read from the other is `undefined`, React renders no `class`, and the
+ * element silently keeps whatever it inherited — which is how the failed
+ * checks shipped in the house red and appeared in black ink. TypeScript types
+ * a css module as `Record<string, string>`, so nothing catches that but
+ * `pushDesk.classes.test.ts`, which now does.
+ */
 import styles from '../manage.module.css';
 import rowStyles from './tablet.module.css';
 
@@ -1221,8 +1231,8 @@ function PrintRecordIdentityBlock({ print }: { print: Db4PrintRecordIdentity }) 
      * which matters when somebody is searching a screen for a reference
      * support has just read to them.
      */
-    <details className={styles.printId} data-testid="print-record-identity">
-      <summary className={styles.printIdSummary}>{copy.lead}</summary>
+    <details className={rowStyles.printId} data-testid="print-record-identity">
+      <summary className={rowStyles.printIdSummary}>{copy.lead}</summary>
       {/*
         NO WRAPPER ROUND EACH PAIR. It was a `<div>` with `display: contents`,
         which is correct CSS and one more thing between the grid and its
@@ -1230,7 +1240,7 @@ function PrintRecordIdentityBlock({ print }: { print: Db4PrintRecordIdentity }) 
         `dd` can be the grid's own children and the two columns cannot fail to
         apply.
       */}
-      <dl className={styles.printIdList}>
+      <dl className={rowStyles.printIdList}>
         {shown.map(([label, value]) => (
           <Fragment key={label}>
             <dt>{label}</dt>
@@ -1238,7 +1248,7 @@ function PrintRecordIdentityBlock({ print }: { print: Db4PrintRecordIdentity }) 
           </Fragment>
         ))}
       </dl>
-      <p className={styles.printIdNote}>{copy.noFileNote}</p>
+      <p className={rowStyles.printIdNote}>{copy.noFileNote}</p>
     </details>
   );
 }
@@ -1287,8 +1297,8 @@ export function RefusalOutcomeBody({
     <>
       <p>{info.text}</p>
       {info.checks && info.checks.length > 0 && (
-        <div className={styles.checks}>
-          <p className={styles.checksLead}>{strings.tablet.printRecordChecksLead}</p>
+        <div className={rowStyles.checks}>
+          <p className={rowStyles.checksLead}>{strings.tablet.printRecordChecksLead}</p>
           <ul data-testid={checksTestId}>
             {info.checks.map((check) => (
               <li key={check.code} data-check={check.code}>
@@ -3824,7 +3834,7 @@ export function CorrectionPanel({ desk, subject }: { desk: PushDesk; subject: Co
   // expired) in a separate notice below it that nobody had scrolled to yet.
   const failure = desk.correctOutcome?.id === subject.key && !desk.correctOutcome.ok ? desk.correctOutcome : null;
   return (
-    <div ref={panelRef} className={styles.form} data-testid={`correct-panel-${subject.key}`}>
+    <div ref={panelRef} data-testid={`correct-panel-${subject.key}`}>
       <p className={ui.hint}>{strings.tablet.correctHeading}</p>
       <p className={ui.hint}>{strings.tablet.correctAllLead}</p>
       <Notice tone="warn" title={strings.tablet.correctAction} data-testid={`correct-caveat-${subject.key}`}>
