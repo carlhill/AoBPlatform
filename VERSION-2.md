@@ -109,8 +109,12 @@ to watch in `aob-requirements.md`'s regulatory review.
 ### 1e. How the Heidi pipeline is actually built (28 September 2026)
 
 A second note from Carl, and it is more useful than the article because it is
-about mechanism rather than positioning. **Unattributed** — treat it as a
-briefing to be checked, not as sourced fact.
+about mechanism rather than positioning. **Its source is Gemini** — Carl said
+so on 28 September 2026, correcting the "unattributed" note this paragraph
+carried when it was first written. So it is a model's account of how a
+competitor is built, not a sourced fact and not a leak: useful as a set of
+claims to check, worthless as a citation. Nothing below should be repeated
+outside this file as though we know it.
 
 **The scribe pipeline, in four stages:** ambient voice-to-text and speaker
 diarisation across 110+ languages on ordinary hardware; context-aware
@@ -167,6 +171,124 @@ moved. **A count of corrections per template version per field is a parser
 quality signal we are already holding all the data for and not looking at.**
 That is a small, unglamorous piece of work with a real payoff, and it is
 nobody's idea of AI.
+
+---
+
+### 1f. Where a scribe could go next — the whole encounter, before and after (28 September 2026)
+
+A third note from Carl, **also from Gemini** (see the attribution correction in
+§1e). It is not reporting; it is a model's answer to *"what could Heidi
+plausibly expand into to cover the full global health workflow"*. Treat it as
+a plausible map of the adjacent space, not as anybody's roadmap.
+
+**What it lists**, in its own three stages:
+
+- **Before the encounter** — autonomous pre-charting (years of fragmented
+  records across different EHRs summarised into a clinician executive summary
+  before the patient walks in); **conversational AI intake and triage agents
+  that screen the patient prior to arrival**, collecting the chief complaint
+  and preliminary history and routing urgent cases; and **prior-authorisation
+  automation**, drafting and submitting insurer forms from the clinical
+  indications captured live.
+- **At the point of care** — real-time guideline adherence, flagging missed
+  screenings, protocol deviations and medication interactions; care-gap
+  prompts during the visit (an overdue HbA1c, a mammogram, a blood-pressure
+  follow-up); and **real-time speech translation** for multicultural
+  practices.
+- **After the encounter** — plain-language discharge plans and patient
+  education pushed by SMS or portal; autonomous chronic-care and remote
+  patient monitoring follow-ups that flag non-compliance or adverse symptoms;
+  and referral routing with closed-loop communication back to primary care.
+
+**The shape of the list is the finding.** Every item extends *the
+consultation* — earlier, deeper, later. Not one of them produces evidence that
+a patient agreed to something. The gap §1b named does not narrow anywhere on
+this list; it just gets surrounded. That is worth saying plainly, because a
+list this long reads like encroachment and mostly is not.
+
+**Three lines on it that do touch us, in order of how much:**
+
+#### 1. Pre-arrival intake is the closest thing on either note to our own lane
+
+An agent that screens a patient before they arrive is sitting in **exactly the
+slot our pre-visit lane occupies**. Adding *"and do you agree to bulk
+billing?"* to a pre-arrival questionnaire is a product decision, not an
+engineering one, and somebody will make it.
+
+**And it cannot produce a valid per-service agreement, for a structural reason
+rather than a competitive one.** Before the service happens the particulars do
+not exist: the servicing provider may not be settled, the date of service has
+not occurred, and the **item numbers are not known — D6b**. Hard rule 2 says
+the particulars must be complete and locked before the signature, and signing
+a draft is the criminal offence in this regime. A pre-arrival consent to bulk
+billing is therefore either an **enduring agreement** — per practitioner ×
+patient, GP-only (hard rule 6) — or it is nothing, whatever the screen said.
+
+We already know this, which is why the pre-visit lane works the way it does.
+It is worth having written down, because it is the answer to *"couldn't the
+intake agent just ask them?"* and the answer is "yes, and what it collects is
+not an assignment of benefit."
+
+#### 2. "Prior authorisation" here means insurer forms — which sharpens §1b's caution
+
+§1b warned against over-reading the AFR's *"filling in authorisation forms"*.
+This list uses the phrase in its ordinary sense: **insurer prior
+authorisation**, a US-shaped workflow with no Medicare assignment-of-benefit
+analogue. That is evidence for the cautious reading, not against it.
+
+**The risk is the vocabulary, not the product.** A practice manager who hears
+"it fills in your authorisation forms" and thinks bulk-billing consent has
+been handled is a real hazard to us and to them, and it is the same hazard
+hard rule 12 protects against from our own side: never let a phrase imply a
+compliance outcome that was not actually reached. §1c item 1 (say plainly what
+a scribe cannot do about consent) is the mitigation and this makes it more
+worth doing, not less.
+
+#### 3. Real-time translation is adjacent, and the naive version breaks two hard rules
+
+This is the one item on the list with a direct counterpart in our own
+requirements: **REQ-LANG**. A patient signing a consent in a language they
+cannot read is a consent problem, not a convenience problem, and we already
+hold the prerequisite — every user-facing string in the string table
+(REQ-LANG-01), nothing inline.
+
+**But model translation at render time is not available to us.** Hard rule 13
+says one deterministic render path, hashed at render, byte-identical twice.
+Hard rule 14 says the content is versioned and every stored agreement records
+which version it used. A probabilistic translation produced at the moment of
+display satisfies neither: two renders could differ, and no version names what
+the assignor actually read.
+
+**So the shape is forced and it is worth recording now, before somebody
+proposes the easy version.** Translated consent content is **versioned
+content, human-reviewed, with its own version recorded on the agreement** —
+the same treatment as the Basic Service Description mappings. A model may
+*help produce* a translation in advance; it may never *be* the translation
+path at render. The interesting question that leaves open is what we show when
+a patient's language has no reviewed version: refusing to display is honest,
+displaying English is the status quo, and displaying an unreviewed machine
+translation is the one option that is not available.
+
+#### And the rest, briefly
+
+- **Pre-charting, guideline adherence, care gaps, RPM** — clinical, out of
+  scope (`CLAUDE.md` §8), and the middle two are the closest anything on
+  either note comes to the TGA medical-device line the article describes
+  Heidi's agents as staying behind. §1c item 3 stands.
+- **Post-encounter outreach by SMS or portal** — mechanically the same channel
+  as our chase bands, and a reminder that whatever we build there obeys hard
+  rule 7: an **89AA notice is never chased**, has no approval semantics, and
+  never gates payment. An outreach engine that treats every outbound message
+  as a nudge towards a response is the wrong engine for that one artefact.
+- **Referral routing with closed-loop communication** — not our workflow, but
+  the same shape as the collection lane built today: publish, let the far end
+  take it, and only believe it landed when the far end says what it holds
+  (D-2026-09-28-02). Worth noting only because everyone in this space is
+  discovering the same thing about PMS integration at once.
+
+**What would change this section:** any of these shipping with a *consent*
+step attached, rather than a clinical or administrative one. The trigger to
+watch is not "Heidi does intake" — it is "Heidi's intake asks about billing".
 
 ---
 
@@ -291,3 +413,198 @@ We hold every input already. No model, no agent, no token cost.
   TGA medical-device line), and `CLAUDE.md` §8 puts clinical features out of
   scope for reasons that have not changed.
 
+---
+
+## 3. The policy weather — where health funding is said to be going (28 September 2026)
+
+**Source:** a fourth note from Carl, a model-written summary of government
+health reform in Australia and abroad, ending in a table of what it means "for
+platforms like Heidi". Carl asked for **my own analysis**, not a transcript, so
+the note is summarised in one paragraph and the rest of this section is mine.
+
+**What it claims, in short:** Australian reform (the National Health Reform
+Agreement is named) is pushing to join state hospitals and federally funded
+primary care into one patient journey; money is moving from acute care
+towards prevention and chronic disease management; **outcome-based funding is
+gaining ground over fee-for-service**; nurses, pharmacists and allied health
+are being moved to "top of licence" practice to relieve GPs. Globally:
+interoperability mandates, hospital-at-home and remote monitoring,
+tighter medical-device regulation of clinical AI (TGA, FDA, EMA), and funding
+for rural and telehealth access. Its conclusion is that scribes must become
+"healthcare infrastructure" — population analytics, registry integration,
+closed-loop referral, value-based metrics.
+
+### 3a. How much weight to give it
+
+**Less than its confidence suggests.** It is a model's synthesis with no
+citations, and it has at least one tell: *"European NHS frameworks"* — the NHS
+is the United Kingdom's, not Europe's, which suggests the sentence was
+assembled rather than checked. None of its policy claims should be repeated
+outside this file until someone has read the primary document, and per
+`CLAUDE.md` §7c none of them becomes a requirement until
+`aob-requirements.md` says so.
+
+**And the honest headline for this product: none of it moves a single item in
+`GA-PLAN.md`.** What gates our April 2027 GA is s 65C, the 1 July 2026 changes
+and the 30 June 2027 verbal sunset — dated, legislated, already in the
+requirements. Funding reform in Australia moves in agreements that take years
+to negotiate and longer to change a claim. A note like this is exactly the
+kind of thing that justifies scope creep, and it should not.
+
+That said, four of its lines land on this product more specifically than the
+note itself realises, and one of them is uncomfortable.
+
+### 3b. The uncomfortable one: this product is built on fee-for-service
+
+**An assignment of benefit exists because Medicare pays per service.** The
+patient assigns *their benefit for a service* to the provider; that is the
+whole regime, and a per-service agreement is our unit of work. If funding
+really does shift towards outcome-based, blended or capitated payment, the
+number of per-service assignments falls. It does not fall to zero — Medicare
+will keep item-based billing alongside any blended model for a long time —
+but the direction is not our friend, and nobody here should pretend
+otherwise.
+
+**The half of this product that is shaped for where the note says things are
+going is the enduring agreement.** Look at what the schema already holds:
+`myMedicareRegistered` on the patient and the practice, `enduringPathway`
+with its three values (`mymedicare | residential_aged_care | accho_ams`), and
+89AA post-claim notices that exist **only** on the MyMedicare pathway
+(REQ-END-05). MyMedicare is enrolment — a patient attached to a practice and a
+provider over time — and enrolment is the chassis every blended-funding model
+in this country has been bolted onto. An enduring agreement is **one signature
+per practitioner × patient** (hard rule 6), which is the shape of a
+continuing relationship rather than a transaction.
+
+**And that half is the half we cannot finish.** Enduring registration is
+**D-11**: no portal and no API published by Services Australia, so the data is
+kept registrable-shaped behind a feature flag and nothing speculative is built
+(`CLAUDE.md` §5). That is correct for GA. The point for version 2 is narrower
+and I think important: **if the funding direction in this note is even half
+right, D-11 stops being a backlog blocker and becomes the roadmap.** The
+per-service desk is what gets us through 30 June 2027; the enduring lane is
+what we are still selling in 2030.
+
+**What we would have to believe:** that MyMedicare keeps growing as the
+attachment mechanism (the recall-campaign notes in
+`.claude/docs/aob-practice-recall-campaigns_1.md` already treat telehealth
+eligibility as tied to it). **What to do now, cheaply:** keep the enduring
+lane honest — every rule 6 and rule 7 test green, the 89AA lane one-way — so
+that when D-11 lands we are wiring a door, not redesigning a room.
+
+### 3c. Telehealth and rural access meet the verbal sunset
+
+This is the line with the sharpest consequence for us, and the note does not
+see it because it is not thinking about consent.
+
+**A telehealth service needs an assignment of benefit too, and it has no
+desk, no kiosk and no paper.** Every channel we have is built around a
+patient standing in a practice: the desk push, the kiosk tablet, the
+AOBPRINTER print lane. The remote lanes are the patient portal and — **until
+30 June 2027 — verbal capture**, which hard rule 5 disables automatically on
+that date.
+
+So a policy that funds more telehealth for rural and disadvantaged patients,
+landing in the same year that the verbal fallback ends, produces a specific
+problem: **a growing share of services where the only consent channel left is
+a link on a phone**, used by exactly the cohorts with the worst connectivity,
+the lowest digital literacy and the most languages other than English.
+
+**What would have to be true for this to be worth doing before it becomes
+urgent:** that telehealth is a material share of a first customer's bulk-billed
+services. We do not know that for Powell Street. **It is one question to ask
+them**, and the answer decides whether the portal lane is a fallback or a
+primary channel by mid-2027. It also makes §1f item 3 (reviewed, versioned
+translations, never machine translation at render) more than a nice-to-have:
+equity cohorts are where a consent the assignor could not read is most likely.
+
+### 3d. Top-of-licence practice widens the per-service lane, not the enduring one
+
+If nurse practitioners, pharmacists and allied health increasingly deliver and
+bill services, **the number of non-GP providers taking assignments goes up.**
+Hard rule 6 keeps enduring agreements GP-only and offers specialists, allied
+health and optometry Treatment Plan Assignment instead. So this shift grows
+our **per-service** lane and our Treatment Plan lane, at providers we
+currently think of as secondary.
+
+**Two consequences worth holding:**
+
+- **"Provider, not GP" (`CLAUDE.md` §3) was the right call** and this is the
+  reason it will keep paying. Anything in the UI or the copy that quietly
+  assumes the provider is a GP is a defect under this future, not a style
+  point. A sweep of the string table for "GP", "doctor" and "consult" is cheap.
+- **Pharmacy is a different PMS world** (dispensing systems, not clinical
+  PMSs), and the print lane plus the folder profile in §2d are the parts of
+  this product that travel there. The Medtech adapter does not.
+
+### 3e. Interoperability mandates: good for D-01, and no reason to build FHIR
+
+The note says governments are ending proprietary data silos. For us that is
+the most **directly useful** line in it, for a reason the note would not guess.
+
+**Our write-back problem is a silo problem.** D-01 is unresolved because
+Medtech has not published a write-back mechanism; the collection lane built
+today (D-2026-09-28-02) drops a PDF into a folder precisely because no PMS we
+serve documents a document API. An interoperability mandate with teeth is
+**the thing most likely to resolve D-01 for us** — and it tells us how to
+treat what we just built:
+
+- **The folder drop is a bridge, not the architecture.** Keep the FR-9.1
+  adapter interface as the primary shape; keep `WriteBackService` able to
+  write through an adapter for any practice without a `documentFolderKey`
+  (which it already does). The day a PMS documents an import API, that
+  practice moves lanes by clearing one column.
+- **Interoperability for us means verifiable evidence, not a FHIR server.**
+  FHIR is deferred and out of scope (`CLAUDE.md` §8) and this note is not a
+  reason to reopen it. What a mandate-minded buyer actually needs from a
+  consent product is to fetch the evidence and check it without trusting us —
+  which is §2b (the offline evidence pack) and §2c (the zero-PII verification
+  page). **Those are our interoperability story**, and they are much smaller.
+- **My Health Record integration stays out.** Consent-to-bill evidence in a
+  national clinical record is a privacy conversation we should not start, and
+  nothing in the regime asks for it.
+
+### 3f. Tighter AI regulation is a tailwind we have already earned
+
+The note says regulators are bringing any AI that predicts, diagnoses or
+assists clinical decisions under medical-device rules, while leaving
+administrative workflow lighter. That confirms §1c item 3 and §2g, and adds
+one thing: **the direction of travel is towards demanding evidence of what
+software did, and evidence of what happened is the only thing this product
+makes.** Hard rule 12 (never "certified"; say "checked against the s 65C data
+set" and "self-assessment") ages well in that world. A deterministic,
+hash-chained, append-only record is the kind of system a stricter regulator
+likes to see next to a probabilistic one — which is also why §2g's advice
+against adding an agent to this product gets *stronger* under this note, not
+weaker.
+
+### 3g. Where I disagree with the note's own conclusion
+
+The note ends: platforms must grow from productivity tools into "healthcare
+infrastructure" — population analytics, value-based metric tracking across
+networks. **For a scribe, maybe. For us, no.**
+
+Population analytics is clinical data, out of scope (`CLAUDE.md` §8) and a
+different privacy regime. Value-based metrics are outcomes, which we never
+see. The version of "infrastructure" this product can honestly become is
+narrower and, I think, more defensible: **the place a practice, an auditor or
+a regulator goes to prove what a patient agreed to, for any provider type,
+through any channel, under whichever rule set was in force at the time.** That
+is §2a (replay against a rule set), §2b (evidence without us), §2c (a public
+check), §2e (an honest self-assessment) and §3b (the enduring lane) — all of
+which are about proof, and none of which is about care.
+
+### 3h. What to do with this section
+
+| # | Item | Cost | What would have to be true |
+|---|---|---|---|
+| **1** | **Ask Powell Street what share of their bulk-billed services are telehealth**, and what they do today when the patient is not in the room | One question | That the answer is non-trivial — in which case the portal lane is a primary channel by 30 June 2027, not a fallback (§3c) |
+| **2** | **Sweep the string table and practice copy for "GP", "doctor" and "consult"** where "provider" and "service" are meant | An hour | Nothing — this is hard rule terminology (`CLAUDE.md` §3) and it pays off under §3d regardless |
+| **3** | **Write down, in `DECISIONS.md`, that the folder-drop lane is a bridge** and the adapter interface stays primary | A paragraph | That a PMS will eventually publish an import API — which is what every interoperability push is for (§3e) |
+| **4** | **Re-read D-11's reopen conditions against MyMedicare's trajectory** once a quarter, rather than only when Services Australia publishes | A calendar entry | That the enduring lane is where this product's long-term volume lives (§3b) |
+
+**What would change this section:** a funding change that is legislated
+rather than described — a blended-payment model that alters how MBS items are
+claimed, a MyMedicare expansion that changes the enduring pathway, or an
+interoperability requirement that names practice software. Any one of those
+belongs in `aob-requirements.md` first and here second.
