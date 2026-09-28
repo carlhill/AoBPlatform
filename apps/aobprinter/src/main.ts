@@ -51,6 +51,8 @@ export interface RunHandles {
    * it did; a no-op when collection is switched off.
    */
   collect(): Promise<void>;
+  /** One reconciliation against the Print Service log. Exposed for the same reason as `collect`. */
+  reconcile(): Promise<void>;
   stop(): void;
 }
 
@@ -235,6 +237,7 @@ function startLocked(
    */
   let running = false;
   let collecting = false;
+  let reconciling = false;
   let stopped = false;
   let finished = false;
 
@@ -242,11 +245,11 @@ function startLocked(
    * THE DATABASE IS CLOSED ONLY WHEN NOTHING IS USING IT. A stop that closed
    * it under a post the server had just accepted would fail to record the
    * acknowledgement — and the form would be posted again on the next start.
-   * So `stop()` finishes at once when idle, and otherwise the running tick or
-   * collection finishes it on its way out.
+   * So `stop()` finishes at once when idle, and otherwise the running tick,
+   * collection or reconciliation finishes it on its way out.
    */
   function finishStopIfIdle(): void {
-    if (!stopped || finished || running || collecting) return;
+    if (!stopped || finished || running || collecting || reconciling) return;
     finished = true;
     try {
       store.programStopped();
@@ -296,7 +299,8 @@ function startLocked(
    * nuisance; a consent never captured is the practice's problem.
    */
   async function safeCollect(): Promise<void> {
-    if (!collector || stopped) return;
+    // One at a time, like `tick`: two sweeps sharing one flag let a stop close the database under the slower.
+    if (!collector || stopped || collecting) return;
     collecting = true;
     try {
       await collector.sweep();
@@ -309,10 +313,16 @@ function startLocked(
   }
 
   async function safeReconcile(): Promise<void> {
+    // Tracked like a collection, so a gap found while stopping reaches the audit trail, not just the log.
+    if (stopped || reconciling) return;
+    reconciling = true;
     try {
       await reconciler.reconcile(queueNames);
     } catch (err) {
       logger.error('reconcile.failed', { error: redactError(err) });
+    } finally {
+      reconciling = false;
+      finishStopIfIdle();
     }
   }
 
@@ -409,6 +419,7 @@ function startLocked(
   return {
     tick,
     collect: safeCollect,
+    reconcile: safeReconcile,
     stop: () => {
       stopped = true;
       clearInterval(timer);

@@ -734,8 +734,18 @@ export class AobPrinterStore implements OutboxStore, ReceiptsWriter, PrintsTrail
 
   printReceived(print: PrintArrival): 'new' | 'duplicate' | 'reread' {
     return this.transaction(() => {
-      if (this.db.prepare('SELECT 1 AS seen FROM print_claims WHERE claim_file = ?').get(print.claimFile)) return 'reread';
-      this.run('INSERT INTO print_claims (claim_file, sha, claimed_at) VALUES (?, ?, ?)', print.claimFile, print.sha, this.now().toISOString());
+      /*
+       * THE NAME AND THE BYTES, NOT THE NAME ALONE. A claim taken while the
+       * writer was still writing is read again complete under the same name;
+       * those are new bytes, and they get their row and their event.
+       */
+      const claimed = text(this.db.prepare('SELECT sha FROM print_claims WHERE claim_file = ?').get(print.claimFile)?.sha);
+      if (claimed === print.sha) return 'reread';
+      if (claimed === undefined) {
+        this.run('INSERT INTO print_claims (claim_file, sha, claimed_at) VALUES (?, ?, ?)', print.claimFile, print.sha, this.now().toISOString());
+      } else {
+        this.run('UPDATE print_claims SET sha = ?, claimed_at = ? WHERE claim_file = ?', print.sha, this.now().toISOString(), print.claimFile);
+      }
       const existing = this.jobState(print.sha);
       if (existing !== undefined) {
         this.audit({
@@ -763,7 +773,13 @@ export class AobPrinterStore implements OutboxStore, ReceiptsWriter, PrintsTrail
 
   printArchived(sha: string, archiveFile: string, location: string): void {
     this.transaction(() => {
-      this.run('UPDATE prints SET archive_file = ?, archived_at = ? WHERE sha = ?', archiveFile, this.now().toISOString(), sha);
+      /*
+       * A ROW OR NOTHING. The sweep destroys only what a row lists, so an
+       * archive recorded against no row would be kept for ever. Throwing
+       * makes `PrintArchive.keep` remove the file and say so.
+       */
+      const updated = this.db.prepare('UPDATE prints SET archive_file = ?, archived_at = ? WHERE sha = ?').run(archiveFile, this.now().toISOString(), sha);
+      if (Number(updated.changes) === 0) throw new Error('Archiving a print that has no print row; refusing to record an archive nothing will destroy.');
       this.audit({ kind: 'print.archived', direction: 'out', subject: sha, stage: this.jobState(sha), location });
     });
   }
@@ -1369,7 +1385,12 @@ export function openStore(dataDir: string, options: StoreOptions = {}): AobPrint
     try {
       importFolderOutbox(dataDir, store, options.logger);
     } catch (err) {
-      options.afterImportFailed?.(store);
+      // The refusal is what the technician needs; a start failure that cannot be recorded must not replace it.
+      try {
+        options.afterImportFailed?.(store);
+      } catch (recordErr) {
+        options.logger?.error('audit.start_failure_not_recorded', { error: redactError(recordErr) });
+      }
       throw err;
     }
   } catch (err) {

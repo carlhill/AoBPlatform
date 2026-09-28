@@ -202,6 +202,29 @@ describe('the AOBPRINTER database', () => {
       expect(store.auditEvents().map((e) => e.kind)).toEqual(['print.received']);
     });
 
+    it('a_claim_name_read_again_with_different_bytes_is_a_print_not_a_reread', () => {
+      /*
+       * A claim taken while the writer was still writing, then read again
+       * complete. Matching on the name alone called it a re-read and gave the
+       * new bytes no row and no `print.received` event.
+       */
+      const store = storeAt();
+      const other = '7'.repeat(64);
+      store.printReceived({ sha: SHA, claimFile: 'claim-1.pdf', queueName: 'AOBPRINTER-Front', byteCount: 10 });
+      expect(store.printReceived({ sha: other, claimFile: 'claim-1.pdf', queueName: 'AOBPRINTER-Front', byteCount: 1234 })).toBe('new');
+      expect(store.jobState(other)).toBe('received');
+      expect(store.auditEvents({ subject: other }).map((e) => e.kind)).toEqual(['print.received']);
+      // And the complete bytes read a third time are a re-read again.
+      expect(store.printReceived({ sha: other, claimFile: 'claim-1.pdf', queueName: 'AOBPRINTER-Front', byteCount: 1234 })).toBe('reread');
+    });
+
+    it('an_archive_for_a_print_with_no_row_is_refused_not_recorded', () => {
+      // The sweep destroys only what a row lists: an event with no row is an archive nothing will ever destroy.
+      const store = storeAt();
+      expect(() => store.printArchived(SHA, `${SHA}.pdf.enc`, join(dir, 'archive', `${SHA}.pdf.enc`))).toThrow(/no print/);
+      expect(store.auditEvents().map((e) => e.kind)).not.toContain('print.archived');
+    });
+
     it('a_parse_exception_never_pulls_a_queued_print_backwards', () => {
       const store = storeAt();
       store.printReceived({ sha: SHA, claimFile: 'claim-1.pdf', queueName: 'AOBPRINTER-Front', byteCount: 1234 });
@@ -323,6 +346,25 @@ describe('the AOBPRINTER database', () => {
       );
       const store = storeAt();
       expect(store.receipts()).toEqual([expect.objectContaining({ sourceSha256: '4'.repeat(64), printerVersion: 'unknown' })]);
+    });
+
+    it('a_start_failure_that_cannot_be_recorded_still_shows_the_refusal', () => {
+      /*
+       * The technician needs the refusal, not the secondary failure: a start
+       * failure that cannot be written down must not replace the message
+       * saying WHY the program would not start.
+       */
+      mkdirSync(join(dir, 'outbox', 'pending'), { recursive: true });
+      writeFileSync(join(dir, 'outbox', 'pending', `${'6'.repeat(64)}.json`), JSON.stringify({ formatVersion: 999 }), 'utf8');
+      expect(() =>
+        storeAt({
+          cipher: CIPHER,
+          printerVersion: '1.0.0',
+          afterImportFailed: () => {
+            throw new Error('disk full');
+          },
+        }),
+      ).toThrow(/refuses to start: .*outbox format version 999/);
     });
 
     it('a_corrupt_sent_marker_still_means_sent_so_the_stale_pending_copy_is_not_posted_again', () => {

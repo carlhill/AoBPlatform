@@ -14,6 +14,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_COLLECTION_CONFIG, DEFAULT_RETENTION_CONFIG, type AobPrinterConfig } from './config';
+import type { CollectionClient } from './collector';
 import type { Db4PrintRecord } from './db4-record';
 import { keystorePaths, type KeyWrapper } from './keystore';
 import { makeLogger, redactError } from './log';
@@ -310,6 +311,80 @@ describe('the loop', () => {
       expect(store.jobState(sha)).toBe('sent');
       const kinds = store.auditEvents().map((e) => e.kind);
       expect(kinds.indexOf('print.sent')).toBeLessThan(kinds.indexOf('program.stopped'));
+    } finally {
+      store.close();
+    }
+  });
+
+  it('a_collect_already_running_is_not_started_again_so_stop_cannot_close_the_database_under_it', async () => {
+    /*
+     * One sweep slower than the poll interval used to overlap the next, and
+     * the two shared one flag: the first to finish cleared it, and a stop
+     * closed the database under the other.
+     */
+    let release: () => void = () => undefined;
+    let asked = 0;
+    const client: CollectionClient = {
+      pending: () => {
+        asked += 1;
+        return new Promise((resolve) => {
+          release = () => resolve([]);
+        });
+      },
+      download: async () => new Uint8Array(),
+      confirm: async () => undefined,
+    };
+    const handles = start(aConfig(dir), logger, { ...TEST_DEPS, collectionClient: client });
+    const first = handles.collect();
+    const overlapping = handles.collect();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(asked).toBe(1);
+    await overlapping;
+
+    handles.stop();
+    expect(lines.join('\n')).not.toContain('aobprinter.stopped');
+    release();
+    await first;
+    expect(lines.join('\n')).toContain('aobprinter.stopped');
+  });
+
+  it('stopping_during_a_reconcile_waits_for_it_so_a_gap_reaches_the_audit_trail', async () => {
+    /*
+     * A gap found by a reconcile still reading the event log when the program
+     * was told to stop was written to a closed database: in the log, missing
+     * from the audit trail that claims to have no gaps.
+     */
+    jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick', 'queueMicrotask'] });
+    let answer: (counts: Map<string, number>) => void = () => undefined;
+    try {
+      const handles = start(aConfig(dir), logger, {
+        ...TEST_DEPS,
+        eventCounts: () =>
+          new Promise((resolve) => {
+            answer = resolve;
+          }),
+      });
+      // Past the reconciler's grace period, so it asks the event log.
+      jest.setSystemTime(Date.now() + 5 * 60 * 1000);
+      const reconciling = handles.reconcile();
+      await new Promise((resolve) => setImmediate(resolve));
+
+      handles.stop(); // mid-read
+      expect(lines.join('\n')).not.toContain('aobprinter.stopped');
+      // The spooler printed one job on the queue; nothing was claimed.
+      answer(new Map([['AOBPRINTER', 1]]));
+      await reconciling;
+      expect(lines.join('\n')).toContain('aobprinter.stopped');
+      expect(lines.join('\n')).not.toContain('reconcile.gap_not_recorded');
+    } finally {
+      jest.useRealTimers();
+    }
+
+    const store = openStore(dir);
+    try {
+      const kinds = store.auditEvents().map((e) => e.kind);
+      expect(kinds).toContain('print.gap');
+      expect(kinds.indexOf('print.gap')).toBeLessThan(kinds.indexOf('program.stopped'));
     } finally {
       store.close();
     }
