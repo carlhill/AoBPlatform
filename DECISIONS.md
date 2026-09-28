@@ -2303,6 +2303,57 @@ form before affirming any part of it. Which affirmation sits on which page is
 `a_page_with_no_statements_is_not_gated_at_all`.
 
 
+## Q-2026-09-28-01 - OPEN: may the same MBS item number appear twice on one DB4?
+
+**Status: OPEN.** Not a decision. Recorded so the answer has somewhere to land
+and so the assumption the code is already running on is visible. - Carl Hill,
+28 September 2026, looking at two identical service rows in the AOBPrinter
+test tool: *"does the gov rule allow for two item ids to exist more than once
+on the same invoice"*.
+
+**The question.** A DB4 prints a table of services. May the same item number
+appear on more than one row of it - two units of one item, or two genuinely
+separate attendances in a day - and if so, under what constraint?
+
+**What the documents actually say: nothing.** The closest is **REQ-SCOPE-01**
+(`aob-requirements.md`, and the same-day table in
+`aob-faq-reconciliation.md` C5): *"An agreement is scoped to practitioner x
+patient x day. Multiple services by the same practitioner on the same day may
+share one agreement where the services correspond to those listed."* That
+settles MULTIPLE SERVICES. It says nothing about the same ITEM NUMBER
+repeating, and nothing in `packages/domain` or the rules engine treats a
+repeat specially. CLAUDE.md section 7c: priors on this regime are stale and
+section-level facts come from the documents, so the gap is flagged rather than
+filled.
+
+**Why it does not block anything today.** Claim lodgement is out of scope
+(CLAUDE.md section 8) and hard rule 8 forbids a flow that blocks care, so even
+a Medicare restriction on a pairing is not ours to enforce - refusing a form
+over it would be inventing a gate the regime never asked for. And the DB4 on
+the tablet is a REPRODUCTION of what the practice printed (D-2026-09-14-02):
+if PracSoft printed item 23 twice, two rows is the faithful reproduction and
+collapsing them would be editing their form.
+
+**The assumption the code already runs on, stated so it can be overturned.**
+`db4ParticularsChanged` compares the item list order-insensitively but KEEPS
+DUPLICATES, so two of an item is not one of it. A corrected reprint that drops
+one of two identical rows is therefore a CHANGED PARTICULAR and supersedes,
+rather than repointing. That is the conservative direction either way: a
+legitimate duplicate is never silently lost, and a printing artefact that gets
+corrected produces a new agreement rather than a quiet alteration of a locked
+one.
+
+**What would close this.** A citation - an MBS rule, a Services Australia
+claiming rule, or a line in the requirements - saying whether a repeat is
+permitted and on what terms. If repeats turn out to be FORBIDDEN, nothing here
+changes: we still reproduce what was printed, and the wrongness is the
+practice's claim to fix, not ours to block.
+
+**Where:** `apps/core/src/inbound/db4-reprint.ts` (`sameItems`), named test
+`the_same_item_twice_is_not_the_same_as_once` in `db4-reprint.spec.ts`.
+Seeded as `duplicate-items`, set 3.
+
+
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
 | Date | Decision | Where |
