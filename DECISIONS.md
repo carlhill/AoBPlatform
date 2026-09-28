@@ -2589,6 +2589,45 @@ that makes a bundled runtime impossible at a practice.
 collector's local trail, a one-time import of any existing folder outbox, and
 the bundled-runtime installer. `TODO.md` carries the item.
 
+### Amended 29 September 2026 - one database per practice, on the host's own disk
+
+Two questions were put and answered after this was first written.
+
+**Should the platform be the queue instead, with no database at the practice?**
+Considered and not chosen. The platform already is the per-practice queue
+(`inbound_print_jobs`, practice-scoped, with its own states) and the local
+buffer only has to cover the seconds between a print and an acknowledgement.
+Carl kept SQLite anyway: *"it will make screens / consoles over the db easier
+to write. Then in the future we can move this to full sql db if required."*
+So the storage sits behind an interface of its own, and nothing outside that
+module writes SQL - moving to SQL Server or Postgres later is a new
+implementation of one interface, not a rewrite.
+
+**One queue per practice, however many receptionists.** Carl: *"there must be
+only one AOBPrinterQueue talking to AoB."* That is LAN mode as already decided
+(D-2026-09-17-02): one AOBPRINTER service on one host - an always-on PC or the
+practice server - carrying one Windows print queue per workstation;
+workstations print to it and install nothing. **The database lives on that
+host's own disk**, beside the service that owns it.
+
+**Never on a shared drive that several machines open.** SQLite's own
+documentation: WAL mode *"does not work over a network filesystem"* because it
+needs shared memory on one host, and file locking on network filesystems *"has
+been known to operate incorrectly"*, which *"has led to database corruption"*.
+Its recommended pattern is the one LAN mode already has - every read and write
+from processes on the machine that stores the file, others relaying to it. The
+instance lock (`instance-lock.ts`) has the same boundary: it proves a holder is
+alive by pid, and a pid means nothing across machines. So a data folder on a
+network path is refused at start-up, not merely advised against.
+
+**`node:sqlite` status, checked:** Node.js 24's documentation marks it
+*Stability 1.2 - Release candidate*, not yet stable. Accepted for this use -
+a single-process database on local disk - with the storage interface as the
+exit if it misbehaves.
+
+**Build order (Carl, 29 Sep):** SQLite storage first, then the heartbeat, then
+the console page. Branch `feat/aobprinter-sqlite`.
+
 
 | Date | Decision | Where |
 |---|---|---|
@@ -2643,3 +2682,4 @@ the bundled-runtime installer. `TODO.md` carries the item.
 | 28 Sep | Write-back on the print channel is a COLLECTION: the platform publishes what is signed, AOBPRINTER files `<chart>/<reference>.pdf` plus its manifest into the PMS import folder, and the desktop's hash-checked confirmation is what sets `writtenBackAt`. One meaning, one vault event, `pms: 'import_folder'` | **D-2026-09-28-02 above** |
 | 28 Sep | Which key names a patient's document folder is a per-practice answer (`documentFolderKey`), null until somebody asks; null publishes nothing and files nothing, so forgetting to ask means write-back does not start rather than starting wrong | **D-2026-09-28-03 above** |
 | 28 Sep | AOBPRINTER keeps its state in SQLite (`node:sqlite`, built into Node.js) instead of the folder outbox, and ships its own pinned Node.js; D-2026-09-17-01's no-PII rule unchanged; the platform never reads the database | **D-2026-09-28-04 above** |
+| 29 Sep | D-2026-09-28-04 amended: SQLite kept over "the platform is the queue" for ease of building screens, behind a storage interface so a full SQL database can replace it; one AOBPRINTER per practice (LAN mode), database on the host's own disk, a network-path data folder refused at start-up | **D-2026-09-28-04 above** |
