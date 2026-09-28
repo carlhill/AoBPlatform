@@ -4589,3 +4589,36 @@ STOPS it, and the practice has no signal to fall back on paper with.
 Retrying or repairing a refused job from the console. The PMS is the source of
 truth and the fix is a reprint; an edit surface would be AoB originating a
 particular, which is the thing D-2026-09-14-02 and hard rule 4 refuse.
+
+## The three ids belong behind an expander (28 Sep 2026)
+
+Carl, having just asked for AOBPrinter's reference to be added beside the
+other two: *"Later on we want to hide all these ids under a small expander as
+99% of the time they will not be used."*
+
+**Not a contradiction, a sequence.** The ids had to exist on the row before
+they could be worth collapsing, and the expander is the right answer to
+exactly the problem adding a third one creates: a push row now opens with
+*Patient ID*, *AoBPlatform record ID* and *AOBPrinter reference* stacked
+under the patient's name, which is three lines of hexadecimal above the work.
+
+**What it is.** One disclosure — "Identifiers", closed by default — holding
+all three, each keeping its own label, monospace and Copy control. The row's
+first screen goes back to the name, the provider and the step strip.
+
+**What it must not lose.**
+- **Copy still works closed → open in one press.** Somebody reading a value
+  down a phone is already having a bad minute.
+- **Nothing that is currently findable by eye becomes unfindable.** The
+  expander is on every surface that shows the pair today, or a receptionist
+  meets two different layouts in one minute — which is the complaint that
+  produced `PatientIdentity` in the first place (12 Sep 2026).
+- **It is presentation only.** No id stops being sent, and nothing about
+  provenance changes: AOBPrinter's `sourceSha256` is still the audit key
+  (8.2), just not in the first line of sight.
+
+**Where.** `PatientIdentity` in `apps/web/app/ui/index.tsx` is the shared
+component and the natural home; `pushDesk.tsx` renders the AOBPrinter line
+beside it today and would move inside. `strings.recordId` already holds every
+label.
+
