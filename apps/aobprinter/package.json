@@ -15,6 +15,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@aobplatform/contracts": "*",
     "@aobplatform/domain": "*"
   },
   "devDependencies": {

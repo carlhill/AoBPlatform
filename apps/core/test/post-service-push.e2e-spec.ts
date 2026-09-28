@@ -849,12 +849,33 @@ describe('the post-service second push (e2e, real Postgres)', () => {
       .get('/tablet-sessions/pushable')
       .set('x-practice-id', practiceId)
       .expect(200);
-    const row = (list.body as { agreementId: string; pushable: boolean; printRecord: unknown }[]).find(
-      (r) => r.agreementId === agreementId,
-    );
+    const row = (
+      list.body as {
+        agreementId: string;
+        pushable: boolean;
+        printRecord: { checks: string[]; print?: { sourceSha256: string } } | null;
+      }[]
+    ).find((r) => r.agreementId === agreementId);
     expect(row?.pushable).toBe(true);
-    // AND NOTHING IS SAID ABOUT A RECORD THAT READS CORRECTLY.
-    expect(row?.printRecord).toBeNull();
+    /*
+     * NOTHING IS COMPLAINED ABOUT -- but the row still says WHICH PAGE IT
+     * CAME OFF, and this assertion changed on 28 September 2026 because the
+     * product did (`e93b001`; Carl: *"we need the ABOPrinter unique key
+     * probably after AoBPlatform record ID"*).
+     *
+     * IT USED TO READ `toBeNull()`, on the reasoning that a record which
+     * reads correctly has nothing to say. That was right while `printRecord`
+     * existed only to carry a REFUSAL. It is wrong now: needing to know which
+     * printed form a row came from is not the same as that form being faulty,
+     * and a reference that appeared only on broken rows was unavailable in
+     * every case where somebody merely wanted to trace one.
+     *
+     * SO THE TEST STILL PINS THE THING IT WAS WRITTEN FOR -- a readable
+     * record raises NO checks and leaves the row sendable -- and the empty
+     * `checks` array is where that now lives.
+     */
+    expect(row?.printRecord?.checks).toEqual([]);
+    expect(row?.printRecord?.print?.sourceSha256).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it('a_push_from_a_complete_print_record_goes_through', async () => {
