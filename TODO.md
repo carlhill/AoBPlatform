@@ -4415,7 +4415,7 @@ New: a `deliveryMode` field on the agreement, and the printed word.
 form, and the pre-agreement is not required for this path — §11a of the plan.
 Do not build a pre-consult flow for telehealth on the assumption it is needed.
 
-### Piece 4 — the write-back pull. Blocked on nothing; do after 2.
+### ~~Piece 4 — the write-back pull~~ BUILT 28 Sep 2026 (`e7b7b33`, `d826a6f`).
 
 The practice sees the Signed-DB4 appear in the patient's chart folder. Server
 half: a signed-list endpoint and a Write-back Manifest. Desktop half: the folder
@@ -4425,6 +4425,50 @@ guard and its retention posture.
 Reuse: the hash-verified download route. **Note the direction** — it is a PULL
 by the desktop, not a push by the server, because the practice's network is
 outbound-only (ADR, mutual TLS).
+
+**Built as specified**, both halves, on the day Carl asked (*"build the
+import-folder write-back"*). `D-2026-09-28-02` and `-03` record the two
+decisions inside it: the folder drop is what earns `writtenBackAt`, and which
+key names the folder is a per-practice answer that is null until somebody
+asks. See `GA-PLAN` B13.
+
+**Three things it does NOT do, each a real piece of work:**
+- **Nobody has asked Powell Street** which key their document folders are
+  named for. The column exists; the answer is not in it, and nothing is
+  filed until it is.
+- **Only agreements with a Signed-DB4 are published.** An agreement's own
+  artefact is re-rendered rather than stored, so publishing one would mean
+  rendering inside a polled read. Empty for the first customer
+  (D-2026-09-14-04), not empty forever.
+- **Nothing on a screen shows what is waiting or what has been filed.** The
+  state is in `writtenBackAt`, the `agreement.written_back` events and
+  AOBPRINTER's log. See the next item.
+
+### Nothing on a screen shows the AOBPRINTER outbox, either direction (28 Sep 2026)
+
+Carl, asking where the outbox is and whether there is a UI for it: there is
+not, in either direction, and the two gaps are different sizes.
+
+**Outbound.** The desktop's queue is folders on the practice's own PC —
+`<dataDir>/outbox/pending/<sha>.json`, `sent/`, `poison/` — and a stuck form
+is visible only in that program's log and its `pending.stale` alarm. The
+platform sees what ARRIVED (`GET /inbound/print-jobs/metrics` and `/recent`,
+and the `/aobprinter` page, which is a test tool and not a monitor). Nothing
+shows what has NOT arrived, which is precisely the case somebody needs to see:
+a desktop that has been off since Tuesday looks exactly like a practice that
+did not print.
+
+**Inbound.** Same shape. `writtenBackAt` is on the agreement and nothing
+renders it, so "has this patient's signed consent reached our records" has no
+answer on any screen.
+
+**What it probably is:** one practice-console page, both directions, reading
+the counts the desktop already computes (`outbox.depth()`, the sweep's
+`alarmed`) and the platform's own unwritten-agreement list — plus a
+last-seen-at per desktop, because the useful alarm is silence. FR-9.3 already
+logs the four-hour staleness alert server-side; this is that, on a screen,
+before somebody has to read a log.
+
 
 ### Piece 6 — the practice flag. BUILT 17 Sep 2026 (`26ac33b`). See `PRACTICE-SURFACES.md`.
 

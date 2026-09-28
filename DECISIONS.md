@@ -2420,6 +2420,106 @@ Seeded as `duplicate-items`, set 3.
 
 ## Index of decisions taken 3–4 September 2026 (recorded in TODO.md at the time)
 
+## D-2026-09-28-02 - Write-back on the print channel is a COLLECTION, and the folder drop is what earns `writtenBackAt`
+
+**Decided:** On the print channel, the platform does not write anything into
+the practice's PMS. It **publishes** what is signed and waiting; AOBPRINTER
+**collects** it and writes the pair into the PMS's document-import folder;
+and the desktop's confirmation - carrying the hash of the bytes it actually
+wrote - is what sets `writtenBackAt`. There is one meaning of "written back"
+and one vault event (`agreement.written_back`), with `pms: 'import_folder'`
+naming the route taken. - Carl Hill, 28 September 2026: *"build the
+import-folder write-back"*, and *"where do we write the signed copy to send
+back to [the PMS] (folder)"*.
+
+**Why:**
+- **Printing cannot write back.** Nothing prints *into* a PMS, and REQ-INT-02
+  says write-back is the product. `CONSULTATION-CAPTURE-PLAN.md` 8.6 named
+  this the honest limit and the import-folder drop the answer; `GA-PLAN` B13
+  scoped it at a day.
+- **It is a pull because a practice's network is outbound-only** (ADR, mutual
+  TLS). A server that pushed would need an inbound port on a receptionist's
+  PC (`DB4-AND-AOBL.md` 6b, which weighed and rejected email-plus-agent and
+  writing to the PMS's document table).
+- **What existed before was a fiction.** `MockPmsAdapter.writeArtefact` put
+  the PDF/A in an in-memory `Map`, returned `mock-doc-<sha8>`, and the
+  agreement was marked written back. Real hash, real row, real vault event,
+  document nowhere outside core's heap. D-01 stays unresolved and stops being
+  the blocker: the print channel answers it for this practice.
+- **The hash is re-checked at the door.** `writtenBackAt` is the platform's
+  claim that a practice HOLDS the signed agreement, and a claim taken on
+  trust from a client is a claim about nothing (hard rule 13, applied to a
+  copy rather than to a display).
+
+**What goes in the folder:** `<chart number>/<form reference>.pdf` with the
+Write-back Manifest beside it as `<form reference>.json`
+(`DB4-AND-AOBL.md` 6a, 7 row 3b). The **Signed-DB4** - our reproduction of
+the practice's own form with the signature on it - not the Signed Assignment
+Agreement: *"what the practice wants to see in the folder - one form, not
+two"* (12).
+
+**Scope, named rather than implied:** an agreement with no Signed-DB4 is not
+published. Its own artefact is re-rendered from `rendererVersion` rather than
+stored as bytes, so publishing one would mean rendering inside a polled read.
+For the first customer the set is empty (D-2026-09-14-04). Closing it is a
+stored-artefact change, not a change to this lane.
+
+**What changes it:** a PMS that documents a real document API (PracSoft, or
+Medtech if D-01 resolves) makes the adapter path the better route for that
+practice; both coexist, because `WriteBackService` skips a practice with a
+`documentFolderKey` and writes for one without. A practice that files
+documents somewhere other than a per-patient folder needs a second answer,
+which is D-2026-09-28-03 below.
+
+**Built:** `apps/core/src/inbound/write-back-collection.service.ts` and two
+routes on the connector's own prefix (`GET /inbound/print-jobs/signed`,
+`POST /inbound/print-jobs/signed/:id/collected`); `apps/aobprinter/src/collector.ts`
+and `collection-client.ts`. Tests: `write-back by collection` in
+`db4-assignment.e2e-spec.ts` (5), `collector.test.ts` (14), and the
+`collection_is_off_until_somebody_says_where` block in `config.test.ts` (3).
+
+---
+
+## D-2026-09-28-03 - Which key names the patient's document folder is a per-practice ANSWER, and nothing is filed until it is given
+
+**Decided:** `Practice.documentFolderKey` is null until somebody has asked the
+practice which key names its patient document folders. While it is null the
+platform publishes nothing for collection and AOBPRINTER files nothing. The
+only value the code understands is `patient_record_number`, enforced by a
+database CHECK. - 28 September 2026, implementing D-2026-09-28-02; the
+requirement is `DB4-AND-AOBL.md` 6a's own correction.
+
+**Why:** the scanned DB4 from the test practice carries the chart number and
+the practice's annotation says to use it *"for filename for folder
+structure"*, so `patient_record_number` is right **there**. 6a's correction is
+the whole reason this is a column: *"the Chart number must be confirmed to be
+the folder name at this practice, not assumed. PMS installations differ, and
+the day the folder turns out to be named for something else is the day fifty
+signed consents land in the wrong place."* That failure is **silent** - the
+files are written, nothing errors, and nobody finds out until an audit.
+
+**The shape of the gate matters more than the gate.** Forgetting to ask must
+mean write-back does not start, never that it starts and is wrong. So the
+default is null, null publishes nothing, and the desktop's own
+`collection.enabled` defaults to false with `enabled`-without-a-folder
+refusing to start. Two gates for one question, at both ends, deliberately.
+
+**What changes it:** a practice that names its folders for something else -
+an IHI, a PMS-internal id, a surname-and-DOB convention. That is a
+conversation and a new allowed value with code behind it, not a string
+somebody types into a settings page.
+
+**Built:** migration `20260928010000_document_folder_key`, read by
+`WriteBackCollectionService.pending` and by `WriteBackService.attempt` (which
+leaves a folder practice alone - per practice, not per process, because one
+deployment serves both routes and the adapter is a singleton). Pinned by
+`a_practice_that_has_not_said_which_key_names_its_folder_is_published_nothing`.
+
+**Still open, and it is the next question to the practice:** nobody has
+actually asked Powell Street yet. The column is the place to record the
+answer; the answer is not in it.
+
+
 | Date | Decision | Where |
 |---|---|---|
 | 3 Sep | Name rule: family name + first given name, any order | TODO "The practice flow" (a) |
@@ -2470,3 +2570,5 @@ Seeded as `duplicate-items`, set 3.
 | 27 Sep | The tablet shows the LAST FOUR digits of the Medicare number, not one; "validate you are the right number" was declined as identity verification (hard rule 1) and delivered as a data-accuracy check on the form | **D-2026-09-27-05 above** |
 | 27 Sep | Send to tablet refuses a DB4 Print Record we cannot reproduce - six checks, every failure reported at once, naming the form reference, the queue and AOBPRINTER's `sourceSha256`; a card number with no IRN is refused; there is no file path and never was | **D-2026-09-27-06 above** |
 | 27 Sep | Each DB4 page's Continue waits for the affirmations on THAT page; a second gate, never a replacement for the signature gate that spans the document | **D-2026-09-27-07 above** |
+| 28 Sep | Write-back on the print channel is a COLLECTION: the platform publishes what is signed, AOBPRINTER files `<chart>/<reference>.pdf` plus its manifest into the PMS import folder, and the desktop's hash-checked confirmation is what sets `writtenBackAt`. One meaning, one vault event, `pms: 'import_folder'` | **D-2026-09-28-02 above** |
+| 28 Sep | Which key names a patient's document folder is a per-practice answer (`documentFolderKey`), null until somebody asks; null publishes nothing and files nothing, so forgetting to ask means write-back does not start rather than starting wrong | **D-2026-09-28-03 above** |

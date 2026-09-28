@@ -101,7 +101,7 @@ ingested · sender ID in flight · interviews support the thesis.
 | B10 | Console control for the practice default D6a; appointment-type → description mapping per practice | — | 0.5 day | **Console half BUILT 5 Sep 2026** — select on `/practice/channels` from the versioned list, own save, pending count deep-linked to `/practice/tablet`; per-appointment-type mapping still to do |
 | B11 | Rules-engine D6a check stays exact; remove every remaining place a human types a description | B10 | 0.25 day | Ruling: no staff entry on the patient surface |
 | B12 | AoBPrinterApp v1 — virtual printer, local parse, lane-aware outbox, device enrolment | A1 decides whether this is the write-back path or just the ingest path | 3–4 days, **separate codebase** | Plan row 8 |
-| B13 | Import-folder write-back in the desktop app | A1, B12 | 1 day | Plan row 11 |
+| B13 | ~~Import-folder write-back in the desktop app~~ **BUILT 28 Sep 2026** (`e7b7b33`, `d826a6f`; D-2026-09-28-02/-03). Both halves and their tests exist and are green; what remains of B13 is not code — asking the practice which key names its document folders, and running it against a real PMS import folder | A1, B12 | 1 day | Plan row 11 |
 | B14 | Decision: does tablet-side "someone else" survive the push model, or become a hand-over with the endpoint serving the desk | B7 | Decision | TODO |
 | B15 | Instrumentation on from the first live agreement (REQ-MON-04) | — | 0.5 day | |
 
