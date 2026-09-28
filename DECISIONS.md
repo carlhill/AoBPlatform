@@ -2519,6 +2519,76 @@ deployment serves both routes and the adapter is a singleton). Pinned by
 actually asked Powell Street yet. The column is the place to record the
 answer; the answer is not in it.
 
+---
+
+## D-2026-09-28-04 - AOBPRINTER keeps its state in SQLite (`node:sqlite`), and ships its own Node.js
+
+**Date:** 28 September 2026. **Decided by:** Carl: *"go with sqlite and ship
+our own node."*
+
+**The decision.** AOBPRINTER's local state moves from the folder outbox
+(`outbox/pending|sent|poison/<sha>.json` plus `receipts.jsonl`) to one SQLite
+database under its data folder, using Node.js's built-in `node:sqlite` - no
+npm package, nothing native to compile. AOBPRINTER is installed with **its own
+pinned Node.js** rather than relying on whatever a practice PC has.
+
+**Why this reverses what was built.** The 3 September plan
+(`CONSULTATION-CAPTURE-PLAN.md` 8.4) said *"durable local outbox (SQLite)"*.
+The 14 September design (`DB4-AND-AOBL.md` 5a) switched to a folder in one
+sentence - *"so if the practice ever wants to see what was sent, or drag one
+in by hand, it is there"* - and the 17 September build followed it. That
+switch was never recorded here. The likely unwritten reason was that SQLite in
+Node then meant `better-sqlite3`, a native dependency; `node:sqlite` removes
+that cost. What a database gives that a folder does not:
+
+- **A record of every interaction, both directions.** Today the PC records
+  forms going out (`receipts.jsonl`) and nothing at all about signed forms it
+  files back into the PMS folder. It cannot say what it filed last Tuesday.
+- **Something a support screen can read.** A folder answers "what is waiting";
+  it does not answer "what happened this week".
+- **State changes as transactions.** Queued -> sent -> acknowledged becomes one
+  row updated atomically, instead of files renamed between folders.
+- **Easier code to write against it** (Carl): queries, not directory walks.
+
+**Why ship our own Node.js.** `node:sqlite` exists only from Node 22.5; the
+repo's floor is Node 20; most practice PCs have no Node.js at all. A pinned
+runtime makes the version ours, present on every PC, and immune to anything
+else installed on the machine. Cost: about 88 MB (`node.exe` 24.19, measured),
+against about 2 MB of AOBPRINTER code - an install made once per PC.
+
+**What does NOT change.**
+- **D-2026-09-17-01 holds in full.** No patient data rests on the PC: a form's
+  record is encrypted while it waits and deleted on acknowledgement; only the
+  no-PII receipt stays. Deleting a row does not reliably erase it from disk any
+  more than deleting a file does, which is why encryption-then-delete remains
+  the mechanism, not deletion alone.
+- **The platform cannot reach this database.** The practice network is
+  outbound-only (mutual TLS). AOBPRINTER may *report* no-PII facts from it,
+  the way it already posts forms and confirmations; the platform never reads
+  it directly.
+- **Idempotency stays keyed on `sourceSha256`**, now a primary key rather than
+  a filename.
+
+**SQLite has no user id or password.** It is a file, not a server. Access
+control is the file's Windows permissions: the data folder is restricted to
+the AOBPRINTER service account and Administrators. `node:sqlite` has no
+whole-file encryption; the protection for patient data is the per-record
+encryption above, not the database.
+
+**Still to decide before building (put to Carl 28 Sep):** where support sees
+and uses the database. The existing "AOBPrinter test tool" (`/aobprinter` in
+`apps/web`) is a dev-only page that fabricates print jobs and posts them to
+the platform; it never touches a practice PC and renders nothing in
+production, so it cannot open this file.
+
+**What would reopen it:** `node:sqlite` proving unfit on the pinned Node (a
+stability or corruption problem found in testing), or a packaging constraint
+that makes a bundled runtime impossible at a practice.
+
+**Not built yet.** Rework of `outbox.ts`, `receipts.ts`, `retention.ts` and the
+collector's local trail, a one-time import of any existing folder outbox, and
+the bundled-runtime installer. `TODO.md` carries the item.
+
 
 | Date | Decision | Where |
 |---|---|---|
@@ -2572,3 +2642,4 @@ answer; the answer is not in it.
 | 27 Sep | Each DB4 page's Continue waits for the affirmations on THAT page; a second gate, never a replacement for the signature gate that spans the document | **D-2026-09-27-07 above** |
 | 28 Sep | Write-back on the print channel is a COLLECTION: the platform publishes what is signed, AOBPRINTER files `<chart>/<reference>.pdf` plus its manifest into the PMS import folder, and the desktop's hash-checked confirmation is what sets `writtenBackAt`. One meaning, one vault event, `pms: 'import_folder'` | **D-2026-09-28-02 above** |
 | 28 Sep | Which key names a patient's document folder is a per-practice answer (`documentFolderKey`), null until somebody asks; null publishes nothing and files nothing, so forgetting to ask means write-back does not start rather than starting wrong | **D-2026-09-28-03 above** |
+| 28 Sep | AOBPRINTER keeps its state in SQLite (`node:sqlite`, built into Node.js) instead of the folder outbox, and ships its own pinned Node.js; D-2026-09-17-01's no-PII rule unchanged; the platform never reads the database | **D-2026-09-28-04 above** |

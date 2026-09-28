@@ -509,6 +509,11 @@ print jobs are independent and idempotent (keyed on `pmsInvoiceKey` /
 the cloud are already horizontally scaled with zero coordination. Egress
 restrictions are a proxy setting, not a queue.
 
+> **History (28 Sep 2026).** The 14 September design (`DB4-AND-AOBL.md` 5a)
+> built this as a folder instead, unrecorded; D-2026-09-28-04 returns it to
+> SQLite via `node:sqlite` with a bundled Node.js. The paragraph below is right
+> again once that lands.
+
 **Tier 1 — the desktop outbox.** Capture → local parse → durable local outbox
 (SQLite) → background sender with retry and backoff. Survives offline, survives
 reboot, tray icon shows "3 waiting." Store-and-forward: the same shape as

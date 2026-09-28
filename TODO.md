@@ -4449,6 +4449,30 @@ asks. See `GA-PLAN` B13.
   state is in `writtenBackAt`, the `agreement.written_back` events and
   AOBPRINTER's log. See the next item.
 
+### AOBPRINTER state moves to SQLite, with its own Node.js (28 Sep 2026) - D-2026-09-28-04
+
+Decided, not started. Carl: *"go with sqlite and ship our own node."*
+
+- **Storage.** One `node:sqlite` database under the data folder replaces
+  `outbox/pending|sent|poison/` and `receipts.jsonl`: a jobs table keyed on
+  `sourceSha256`, and an append-only event log covering BOTH directions -
+  queued, posted, acknowledged, refused, and every signed form collected and
+  filed into the PMS folder (today nothing on the PC records the inbound half).
+- **D-2026-09-17-01 unchanged.** Records encrypted while waiting, deleted on
+  acknowledgement; only no-PII receipts persist. Decide a receipt retention
+  period and whether the file auto-reclaims space.
+- **Migration.** A one-time import of an existing folder outbox on first
+  start, so a PC upgraded mid-queue loses nothing (`OUTBOX_FORMAT_VERSION`'s
+  downgrade refusal carries over as a schema version).
+- **Runtime.** Bundle a pinned Node.js (>= 22.5; 24.x measured at 88.5 MB)
+  with the installer; AOBPRINTER never uses a system Node.
+- **Open, put to Carl:** the support interface (the `/aobprinter` web test
+  tool cannot reach a practice PC), and whether the platform should receive a
+  no-PII summary from the database.
+- **Tests to keep green:** all 127 in `apps/aobprinter`, rewritten against the
+  database where they assert on folders - with the same named behaviours
+  (never loses a form, never posts twice, never retires a job, no PII logged).
+
 ### Nothing on a screen shows the AOBPRINTER outbox, either direction (28 Sep 2026)
 
 Carl, asking where the outbox is and whether there is a UI for it: there is
