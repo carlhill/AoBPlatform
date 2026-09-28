@@ -2628,6 +2628,107 @@ exit if it misbehaves.
 **Build order (Carl, 29 Sep):** SQLite storage first, then the heartbeat, then
 the console page. Branch `feat/aobprinter-sqlite`.
 
+---
+
+## D-2026-09-29-01 - AOBPRINTER keeps an end-to-end audit trail with no gaps: stages per form, and an append-only, hash-chained event log
+
+**Date:** 29 September 2026. **Decided by:** Carl: *"In the db we need to track
+which pdf and json was saved in what folder. We need and end-to-end audit
+trail. No gaps in the audit trail"*, *"an append only log"*, and *"yes to all
+three, build it"* to the stage model, the always-present key and the archive
+below.
+
+**The shape.** Not seven queues but one row per form with a **stage**, plus an
+**event log**. A form moving between tables is the folder model again - a
+moment when it is in neither, or both. A stage change is one update.
+
+| Direction | Keyed by | Stages |
+|---|---|---|
+| Out (`prints`) | hash of the print | `received` -> `queued` -> `sent`; `parse_exception`; `send_exception` |
+| Back (`returns`) | agreement + artefact hash | `received` -> `filed` -> `confirmed`; `received_exception`; `filing_exception` |
+
+"Waiting to send" is `queued` and is **not** an exception - the internet is down
+or AoB is busy - and alarms when old. "Filed, not yet confirmed" is a real state:
+the file exists and AoB does not yet know.
+
+**No gaps is structural, not promised.**
+- **Every stage change writes its audit event in the same transaction.** A
+  change without its event cannot exist.
+- **The log is append-only in the database.** Triggers abort any UPDATE or
+  DELETE on `audit_events`, from this program or any tool that opens the file.
+- **It is hash-chained.** Each event carries the hash of the one before; an
+  insert whose `prev_hash` is not the current head is refused by the database,
+  and a verifier walks the chain. An edited or removed row breaks it.
+- **Honest limit:** someone with administrator rights on the host could drop
+  the triggers and rewrite the whole chain consistently. The defence is the
+  heartbeat (to come) carrying the chain head to the platform, so a rewritten
+  local log cannot match what the platform already holds.
+- **Rows are no longer deleted.** When a payload is destroyed (acknowledged
+  with retention on, or refused and expired) its patient data is removed and
+  the row stays as the audit subject. The "reprint after purge is posted
+  again" gap in the outbox closes as a side effect.
+
+**Also recorded as events:** a duplicate print (same bytes again); the
+reconciler's "printed but never received" gap (the one gap before stage 1);
+the PDF archive and its destruction; exceptions resolved and by whom; the
+program starting, stopping, changing version and restarting after an unclean
+stop - a missing form at 10:15 is explained by the program not running.
+
+**Where files went, and rule §6.** Every file event records its location. The
+return folder is the chart number - a patient record number - and `CLAUDE.md`
+§6 says *"No identifier values anywhere outside the encrypted stores"*, so
+locations are **encrypted** in the database and decrypted on that host by the
+support screen. Print archives are named by hash and carry no identifier.
+
+**The form reference joins the two directions** into one story per form:
+printed, parsed, sent, signed, returned, filed, confirmed.
+
+**Deferred to the heartbeat:** "processed by AoB" (the platform already
+records each job's outcome; the heartbeat reply can carry it) and anchoring
+the chain head on the platform.
+
+---
+
+## D-2026-09-29-02 - The encryption key always exists on an AOBPRINTER host
+
+**Date:** 29 September 2026. **Decided by:** Carl, *"yes"*, to the question
+whether the key may be created even with retention off.
+
+**Why:** audit locations and archived PDFs are encrypted from day one
+(D-2026-09-29-01, D-2026-09-29-03), so the key cannot wait for
+`retention.enabled`. `buildRetentionDeps` now always loads or creates it and
+always returns a cipher. `retention.enabled` keeps its meaning for the outbox
+payload: plaintext and kept (off) or encrypted and destroyed on
+acknowledgement (on).
+
+**What this reverses:** the guarantee that, with retention off, nothing
+touches DPAPI or PowerShell. Tests that pinned that guarantee now pin the
+opposite, and inject a stand-in wrapper so the suite still runs on Linux CI.
+
+**Key management is a human-authored zone (`CLAUDE.md` §7c).** `keystore.ts`
+is unchanged; only the wiring in `retention.ts` moved. Flagged for Carl's
+review before any practice runs it.
+
+---
+
+## D-2026-09-29-03 - A captured PDF is archived, encrypted, for 7 days
+
+**Date:** 29 September 2026. **Decided by:** Carl: *"PDF should not be deleted
+once parsed but archived for say 7 days, just in case there are issues"*, and
+*"yes"* to doing it encrypted.
+
+**This overrides D-2026-09-17-01's 24-hour cap** for one thing: the captured
+spool PDF. It is written to `archive/<sha>.pdf.enc` under the same AES-256-GCM
+key, named by hash so the filename carries nothing, and destroyed by the sweep
+after `retention.archiveDays` (default 7, allowed 1-30; the upper bound is
+Claude's, to stop a typo keeping PDFs for years). Archiving and destruction
+are both audit events.
+
+**What does not change:** the outbox payload rules, and `unparsed/`, which
+still keeps an unreadable print as plaintext for a human to look at - a
+pre-existing gap now named in `TODO.md`, to close when the support screen can
+open an encrypted archive.
+
 
 | Date | Decision | Where |
 |---|---|---|
@@ -2683,3 +2784,6 @@ the console page. Branch `feat/aobprinter-sqlite`.
 | 28 Sep | Which key names a patient's document folder is a per-practice answer (`documentFolderKey`), null until somebody asks; null publishes nothing and files nothing, so forgetting to ask means write-back does not start rather than starting wrong | **D-2026-09-28-03 above** |
 | 28 Sep | AOBPRINTER keeps its state in SQLite (`node:sqlite`, built into Node.js) instead of the folder outbox, and ships its own pinned Node.js; D-2026-09-17-01's no-PII rule unchanged; the platform never reads the database | **D-2026-09-28-04 above** |
 | 29 Sep | D-2026-09-28-04 amended: SQLite kept over "the platform is the queue" for ease of building screens, behind a storage interface so a full SQL database can replace it; one AOBPRINTER per practice (LAN mode), database on the host's own disk, a network-path data folder refused at start-up | **D-2026-09-28-04 above** |
+| 29 Sep | AOBPRINTER audit trail: one row per form with a stage (out: received/queued/sent + two exceptions; back: received/filed/confirmed + two exceptions), every stage change writing its event in the same transaction, the event log append-only by database trigger and hash-chained; locations encrypted (rule §6); rows no longer deleted, only their payloads | **D-2026-09-29-01 above** |
+| 29 Sep | The AOBPRINTER encryption key always exists, not only with retention on; reverses the "retention off never touches DPAPI" guarantee; key-management wiring flagged for human review | **D-2026-09-29-02 above** |
+| 29 Sep | Captured PDFs archived encrypted for `retention.archiveDays` (default 7, 1-30), overriding D-2026-09-17-01's 24-hour cap for that one thing; archive and destruction are audit events | **D-2026-09-29-03 above** |
