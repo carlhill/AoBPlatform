@@ -24,9 +24,11 @@
  * again is exactly the *"corrected from the PMS and reprinted"* case — the
  * hash moves because the content moved, so it arrives as a NEW print job
  * against the SAME form reference. What core then does with it is the second
- * half, and today it does nothing (`linkToPrintJob` filters on
- * `sourcePrintJobId IS NULL`, so the agreement keeps pointing at the original
- * broken record). The tool makes that gap visible rather than papering it.
+ * half, and it now does the three-way rule Carl approved on 28 September
+ * 2026: REPOINT when only the reproduction improved, SUPERSEDE when a
+ * particular changed, REFUSE under a signature (`db4-reprint.ts`). Which of
+ * the three happened is the single most useful thing this tool can tell a
+ * tester, so the outcome panel says it in words.
  *
  * ── WHAT IT IS NOT ──
  *
@@ -79,6 +81,144 @@ interface Sent {
   error?: string;
 }
 
+/**
+ * THE TESTER'S WALL CLOCK, not UTC — and it says which, because a bench
+ * instrument whose times cannot be compared with a screenshot is worth less
+ * than one that prints an extra four characters.
+ */
+function localStamp(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const time = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  /* The zone abbreviation the browser itself would print, e.g. AEST. */
+  const zone =
+    new Intl.DateTimeFormat(undefined, { timeZoneName: 'short' })
+      .formatToParts(now)
+      .find((part) => part.type === 'timeZoneName')?.value ?? 'local';
+  return `${date} ${time} ${zone}`;
+}
+
+/* ---------------------------------------------------------------------------
+ * WHAT BECAME OF IT, IN WORDS (Carl, 28 September 2026, shown the raw job
+ * outcome: *"what is this showing me"*).
+ *
+ * THE JSON WAS NOT WRONG, IT WAS UNREADABLE. Everything a tester needs is in
+ * that object, and the part that matters — `reprint.action` — sits eleven
+ * keys in, between a null and an empty array. A tool exists to make an
+ * outcome legible; printing the wire format is the one thing that guarantees
+ * it is not.
+ *
+ * SO THE PANEL LEADS WITH THE ANSWER and keeps the object underneath, folded.
+ * The raw form still matters when something is wrong in a way these sentences
+ * do not cover, and dropping it would trade one blindness for another.
+ *
+ * TYPES, NEVER VALUES, exactly as the wire carries them (hard rule 9). A
+ * changed particular is named as `service date`, never as the date.
+ * ------------------------------------------------------------------------ */
+
+interface Db4Part {
+  placed?: boolean;
+  reason?: string | null;
+  repeat?: boolean;
+  agreementId?: string | null;
+  decision?: string | null;
+  serviceRecordId?: string | null;
+  patientMatched?: boolean;
+  reprint?: { action?: string; changed?: string[]; supersededBy?: string | null } | null;
+}
+
+/** The reprint rule's five answers, said as a sentence a tester can act on. */
+const REPRINT_IN_WORDS: Record<string, string> = {
+  linked:
+    'FIRST FORM. Nothing was pointing anywhere, so the agreement now reproduces this print record.',
+  already_linked:
+    'ALREADY THIS ONE. The agreement was already pointing at this very job, so nothing was done twice.',
+  repointed:
+    'REPOINTED. No particular changed — only the reproduction improved — so the agreement is untouched and now reproduces this better page.',
+  supersede:
+    'SUPERSEDED. A locked particular changed, which is a different agreement and not a better picture of the same one, so a replacement was drafted.',
+  refused_signed:
+    'REFUSED — SOMEBODY HAS SIGNED. A signed agreement reproduces the page that was in front of the person, so the pointer was not moved and nothing was superseded. Correcting this one needs a human.',
+};
+
+const CHANGED_IN_WORDS: Record<string, string> = {
+  patient: 'the patient',
+  servicing_provider: 'the servicing provider',
+  service_date: 'the date of service',
+  service_items: 'the service items',
+};
+
+/** An action this tool has not been taught yet SHOWS ITS CODE (CLAUDE.md §7c). */
+function unmappedReprint(action: string): string {
+  return `The reprint rule answered "${action}", which this tool has no sentence for yet.`;
+}
+
+function Db4OutcomeSummary({ outcome }: { outcome: unknown }) {
+  const db4 = ((outcome as Record<string, unknown> | null)?.db4 ?? null) as Db4Part | null;
+  if (!db4) {
+    // A job that carried no DB4 at all — an invoice or appointment mirror.
+    return <p className={styles.outcomeLead}>No DB4 on this job.</p>;
+  }
+
+  const action = db4.reprint?.action ?? null;
+  const changed = (db4.reprint?.changed ?? []).map((c) => CHANGED_IN_WORDS[c] ?? c);
+
+  return (
+    <div className={styles.outcome}>
+      <p className={db4.placed ? styles.outcomeLead : styles.outcomeLeadBad}>
+        {db4.placed
+          ? db4.repeat
+            ? 'This form had already been processed — a reprint, not a second visit.'
+            : 'An agreement was placed off this form.'
+          : `Nothing was placed${db4.reason ? ` — ${db4.reason}.` : '.'}`}
+      </p>
+
+      {action ? (
+        <p className={action === 'refused_signed' ? styles.outcomeLeadBad : styles.outcomeLead}>
+          {REPRINT_IN_WORDS[action] ?? unmappedReprint(action)}
+        </p>
+      ) : null}
+
+      {changed.length > 0 ? (
+        <p className={styles.outcomeNote}>What moved: {changed.join(', ')}.</p>
+      ) : null}
+
+      <dl className={styles.sentFacts}>
+        {db4.reprint?.supersededBy ? (
+          <>
+            <dt>Replacement</dt>
+            <dd>
+              <code>{db4.reprint.supersededBy}</code>
+            </dd>
+          </>
+        ) : null}
+        {db4.agreementId ? (
+          <>
+            <dt>Agreement</dt>
+            <dd>
+              <code>{db4.agreementId}</code>
+            </dd>
+          </>
+        ) : null}
+        {db4.decision ? (
+          <>
+            <dt>Decision</dt>
+            <dd>{db4.decision}</dd>
+          </>
+        ) : null}
+        <dt>Chart number matched a patient</dt>
+        <dd>{db4.patientMatched ? 'yes' : 'no'}</dd>
+      </dl>
+
+      <details className={styles.outcomeRaw}>
+        <summary>The outcome as it came off the wire</summary>
+        <code>{JSON.stringify(outcome)}</code>
+      </details>
+    </div>
+  );
+}
+
 const EMPTY_SERVICE: ServiceRow = {
   serviceDate: '2026-09-12',
   time: '09:00',
@@ -102,6 +242,14 @@ export function AobPrinterTool() {
    */
   const [existing, setExisting] = useState<ExistingForm[]>([]);
   const [loadedFrom, setLoadedFrom] = useState<string>('');
+  /*
+   * NARROWING THE PICKER (Carl, 28 September 2026: *"in choose a form, can we
+   * search by any part of the string e.g. Ada DummyField"*). A `select` can
+   * only be typed at by its option's FIRST characters, and every option here
+   * begins with a form reference — so the one thing a tester actually knows
+   * the form by, the patient's name, is the one thing they cannot type.
+   */
+  const [existingFilter, setExistingFilter] = useState('');
 
   const set = useCallback(<K extends keyof Draft>(key: K, value: Draft[K]) => {
     setDraft((d) => ({ ...d, [key]: value }));
@@ -181,13 +329,28 @@ export function AobPrinterTool() {
     [],
   );
 
-  const send = useCallback(async () => {
+  /**
+   * SEND, OPTIONALLY OVERRIDING A FIELD OF THE DRAFT.
+   *
+   * THE OVERRIDE IS WHY THIS PARAMETER EXISTS, and it is not a convenience.
+   * `reprint` has to force the previous row's FORM REFERENCE, and the first
+   * version did that with `setDraft` followed by a zero-delay `setTimeout`,
+   * hoping the state write landed first. It does not: the `send` that timer
+   * calls is the one captured on the render BEFORE the write, so the forced
+   * reference was silently dropped and the tool sent whatever reference
+   * happened to be in the field. Harmless while they matched, and wrong the
+   * moment a tester loaded a different preset in between — the correction
+   * would have arrived as a brand-new form rather than a reprint of that one.
+   * Passing the value beats racing the state.
+   */
+  const send = useCallback(async (override?: Partial<Draft>) => {
+    const outgoing: Draft = override ? { ...draft, ...override } : draft;
     setBusy(true);
     try {
-      const body = await envelopeWithHash(draft);
+      const body = await envelopeWithHash(outgoing);
       const res = await fetch(`${coreBaseUrl()}/inbound/print-jobs`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-practice-id': draft.practiceId },
+        headers: { 'content-type': 'application/json', 'x-practice-id': outgoing.practiceId },
         body: JSON.stringify(body),
       });
       const text = await res.text();
@@ -198,8 +361,16 @@ export function AobPrinterTool() {
         parsed = { message: text.slice(0, 400) };
       }
       const record: Sent = {
-        at: new Date().toISOString().replace('T', ' ').slice(0, 19),
-        formReference: draft.formReference,
+        /*
+         * THE TESTER'S OWN CLOCK (Carl, 28 September 2026: *"what date is on
+         * the top right. My PC says 6:25 PM AEST"*). `toISOString` is UTC, so
+         * a Sydney afternoon read back as a morning and every row looked ten
+         * hours stale. The instant was always right; only the zone was wrong.
+         * A bench instrument is read next to a wall clock, so it shows the
+         * wall clock's time.
+         */
+        at: localStamp(),
+        formReference: outgoing.formReference,
         jobId: parsed.id ?? null,
         sourceSha256: String(body.sourceSha256),
         httpStatus: res.status,
@@ -215,8 +386,8 @@ export function AobPrinterTool() {
       if (record.jobId) {
         const id = record.jobId;
         window.setTimeout(() => {
-          void refreshOutcome(id, draft.practiceId);
-          void loadList(draft.practiceId);
+          void refreshOutcome(id, outgoing.practiceId);
+          void loadList(outgoing.practiceId);
         }, 1200);
       }
     } finally {
@@ -236,13 +407,43 @@ export function AobPrinterTool() {
    */
   const reprint = useCallback(
     async (previous: Sent) => {
+      // The field on screen catches up for the tester's benefit; the SEND
+      // carries the reference itself, so it cannot depend on that landing.
       setDraft((d) => ({ ...d, formReference: previous.formReference }));
-      // The send below reads `draft`, so it is deferred a tick past the state
-      // write rather than racing it.
-      window.setTimeout(() => void send(), 0);
+      await send({ formReference: previous.formReference });
     },
     [send],
   );
+
+  /** One line per stored form — and the same text the filter matches on. */
+  const existingLabel = useCallback(
+    (row: ExistingForm) =>
+      [
+        row.formReference ?? '(no reference)',
+        row.patientName ?? row.patientRecordNumber ?? '(no patient)',
+        row.patientRecordNumber ?? '',
+        row.serviceDate ?? '',
+        row.placed === false ? `refused: ${row.reason ?? 'unknown'}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · '),
+    [],
+  );
+
+  /*
+   * EVERY WORD OF THE QUERY, ANYWHERE IN THE LINE, case-insensitively — so
+   * "ada dummy", "dummyfield ada" and "00681" all find the same row. AND and
+   * not OR: adding a word must narrow, or a two-word query returns more than
+   * a one-word one and the box stops feeling like a search.
+   */
+  const existingShown = useMemo(() => {
+    const words = existingFilter.toLowerCase().split(/\s+/).filter(Boolean);
+    if (words.length === 0) return existing;
+    return existing.filter((row) => {
+      const haystack = existingLabel(row).toLowerCase();
+      return words.every((word) => haystack.includes(word));
+    });
+  }, [existing, existingFilter, existingLabel]);
 
   const setService = (index: number, patch: Partial<ServiceRow>) =>
     setDraft((d) => ({
@@ -277,6 +478,24 @@ export function AobPrinterTool() {
           correction of that form rather than a new one.
         </p>
         <div className={styles.field}>
+          <label className={styles.label} htmlFor="existing-filter">
+            Search
+          </label>
+          <input
+            id="existing-filter"
+            type="search"
+            className={styles.input}
+            value={existingFilter}
+            onChange={(e) => setExistingFilter(e.target.value)}
+            placeholder="Any part of a name, a chart number, a form reference or a date"
+          />
+          <p className={styles.hint} aria-live="polite">
+            {existingFilter.trim()
+              ? `${existingShown.length} of ${existing.length} forms match.`
+              : `The ${existing.length} most recent forms.`}
+          </p>
+        </div>
+        <div className={styles.field}>
           <label className={styles.label} htmlFor="existing-pick">
             A form already sent
           </label>
@@ -286,19 +505,24 @@ export function AobPrinterTool() {
             value={loadedFrom}
             onChange={(e) => void loadForm(e.target.value)}
           >
-            <option value="">Choose a form…</option>
-            {existing.map((row) => (
-              <option key={row.id} value={row.id}>
-                {[
-                  row.formReference ?? '(no reference)',
-                  row.patientName ?? row.patientRecordNumber ?? '(no patient)',
-                  row.serviceDate ?? '',
-                  row.placed === false ? `refused: ${row.reason ?? 'unknown'}` : '',
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </option>
-            ))}
+            {/*
+              THE CHOSEN FORM STAYS IN THE LIST even when the filter no longer
+              matches it. A `select` whose `value` is not among its options
+              silently shows the first one instead, so narrowing the search
+              after loading would make the picker claim a form nobody chose.
+            */}
+            <option value="">
+              {existingShown.length === 0 && existingFilter.trim()
+                ? 'Nothing matches that search'
+                : 'Choose a form…'}
+            </option>
+            {existing
+              .filter((row) => row.id === loadedFrom || existingShown.includes(row))
+              .map((row) => (
+                <option key={row.id} value={row.id}>
+                  {existingLabel(row)}
+                </option>
+              ))}
           </select>
         </div>
       </section>
@@ -475,7 +699,7 @@ export function AobPrinterTool() {
                     <>
                       <dt>Outcome</dt>
                       <dd>
-                        <code>{JSON.stringify(s.outcome)}</code>
+                        <Db4OutcomeSummary outcome={s.outcome} />
                       </dd>
                     </>
                   ) : null}
@@ -493,13 +717,29 @@ export function AobPrinterTool() {
                       className={styles.secondary}
                       onClick={() => void refreshOutcome(s.jobId as string, draft.practiceId)}
                     >
-                      Read the outcome again
+                      Check again
                     </button>
                   ) : null}
                   <button type="button" className={styles.secondary} onClick={() => void reprint(s)}>
-                    Reprint this form reference with what is on screen
+                    Reprint as a correction
                   </button>
                 </div>
+                {/*
+                  WHAT THE TWO BUTTONS DO, BESIDE THEM (Carl, 28 September
+                  2026: *"what are these two buttons supposed to do"*). The
+                  handler runs after the 202, so the first row a send produces
+                  is often stamped before there is an outcome to stamp it
+                  with; and "reprint" is a word with two meanings here, only
+                  one of which this button has.
+                */}
+                <p className={styles.actionsNote}>
+                  <strong>Check again</strong> re-reads this job&rsquo;s outcome from core — the handler
+                  runs just after the send, so a row that showed nothing a moment ago will have an
+                  answer now. <strong>Reprint as a correction</strong> sends the form on screen again
+                  under <em>this row&rsquo;s</em> form reference: same form, new content, so it arrives
+                  as a new print job and core applies the reprint rule to it. Change a field first —
+                  sending it back unchanged is the same bytes and is deduplicated at the door.
+                </p>
               </li>
             ))}
           </ul>

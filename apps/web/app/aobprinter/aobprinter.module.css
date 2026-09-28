@@ -276,3 +276,63 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
+
+/*
+ * WHAT BECAME OF IT, IN WORDS (Carl, 28 September 2026: *"what is this
+ * showing me"*).
+ *
+ * THE ANSWER FIRST, THE OBJECT UNDER A FOLD. The lead line is the sentence a
+ * tester acts on; everything below it is corroboration. `--stop` marks the
+ * two answers that mean nothing moved — a refusal under a signature, and a
+ * form that placed nothing — and never carries the meaning alone: both
+ * sentences say so in words (WCAG 2.2, 1.4.1).
+ */
+.outcome {
+  display: grid;
+  gap: var(--s2);
+}
+
+.outcomeLead {
+  margin: 0;
+  font-weight: 600;
+}
+
+.outcomeLeadBad {
+  margin: 0;
+  font-weight: 600;
+  color: var(--stop);
+}
+
+.outcomeNote {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.outcome .sentFacts {
+  margin: 0;
+}
+
+.outcomeRaw {
+  font-size: var(--text-sm);
+}
+
+.outcomeRaw summary {
+  cursor: pointer;
+  color: var(--ink-faint);
+}
+
+.outcomeRaw code {
+  display: block;
+  margin-top: var(--s2);
+  padding: var(--s2);
+  background: var(--surface-sunken);
+  overflow-wrap: anywhere;
+}
+
+/* The two buttons above it, explained where they are pressed. */
+.actionsNote {
+  margin: var(--s2) 0 0;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  max-width: 78ch;
+}
