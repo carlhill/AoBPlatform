@@ -1214,9 +1214,18 @@ function Db4Document({
               unlabelled rows under their address would read as theirs. The
               heading is what says otherwise now that the whitespace no
               longer does (hard rule 12).
+
+              AND A HAIRLINE ABOVE IT (Carl, 28 September 2026: *"a little
+              lower and put draw a line separator"*) — the one part of the
+              old full-width band that was doing real work, kept now that the
+              band itself is gone. Second signal, never the only one: the
+              heading says the same thing in words (WCAG 2.2, 1.4.1).
             */}
             {agreementFacts ? (
-              <div className={styles.db4Section} data-testid="db4-agreement-facts">
+              <div
+                className={`${styles.db4Section} ${styles.db4Agreement}`}
+                data-testid="db4-agreement-facts"
+              >
                 <h3 className={styles.db4SectionHeading}>{copy.thisAgreement}</h3>
                 {agreementFacts}
               </div>

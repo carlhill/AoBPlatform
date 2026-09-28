@@ -417,6 +417,35 @@ describe('the three pages Carl asked for', () => {
     expect(view.page()).toBe('header');
   });
 
+  it('the_agreements_own_facts_are_separated_by_a_rule_and_the_class_is_applied', () => {
+    /*
+     * CARL, 28 SEPTEMBER 2026: *"a little lower and put draw a line
+     * separator"* — the hairline the old full-width band carried, kept now
+     * that the band is gone and the facts sit at the foot of 2A's left
+     * column.
+     *
+     * TWO ASSERTIONS, BECAUSE EITHER HALF CAN FAIL ON ITS OWN, and the
+     * expensive way to learn that was `pushDesk.tsx` on this same day: a rule
+     * written in one stylesheet and referenced through the wrong import is
+     * `undefined`, React renders no class, and every content test stays
+     * green while the element is unstyled. So the rule must EXIST and the
+     * element must NAME it.
+     *
+     * jsdom applies no cascade, so this cannot prove the line is painted —
+     * only that nothing has quietly removed it. A Playwright assertion on
+     * the computed border is the honest version and is owed, alongside the
+     * one the benefit column already owes.
+     */
+    const css = readFileSync(join(__dirname, 'kiosk.module.css'), 'utf8');
+    expect(css).toMatch(/\.db4Agreement\s*\{[^}]*border-top:\s*1px solid var\(--line\)/);
+    expect(css).toMatch(/\.db4Agreement\s*\{[^}]*margin-top:/);
+
+    const ours = renderPaged().getByTestId('db4-agreement-facts');
+    /* Composed with the ordinary section style, never instead of it. */
+    expect(ours.className).toContain('db4Agreement');
+    expect(ours.className).toContain('db4Section');
+  });
+
   it('the_benefit_column_is_right_aligned_and_the_selector_actually_wins', () => {
     /*
      * CARL, 27 SEPTEMBER 2026: *"right justify the $ in the table"* -- asked

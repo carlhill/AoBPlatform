@@ -1078,22 +1078,39 @@
 }
 
 /*
- * THE AGREEMENT'S OWN FACTS HAVE NO RULE OF THEIR OWN ANY MORE, and the
- * absence is deliberate rather than an omission.
+ * THE AGREEMENT'S OWN FACTS, AT THE FOOT OF 2A's LEFT COLUMN — the date of
+ * this agreement and who is signing.
  *
- * UNTIL 28 SEPTEMBER 2026 they were a full-width band across the foot of 2A
- * with a hairline above it, on the reasoning that facts belonging to neither
- * column should sit under both. The cost was the thing Carl reported: the
- * left column ended half way down beside a much taller patient block, and a
- * couple of hundred pixels of nothing read as a rendering fault. *"Move Date
- * of this agreement and Signing below Date of service / Too much wasted white
- * space."*
+ * THREE POSITIONS IN TWO DAYS, and the last one keeps what each of the first
+ * two was for. 27 September put them in a full-width band across the foot of
+ * the page, because facts belonging to neither column should sit under both;
+ * the cost was a left column ending half way down beside a much taller
+ * patient block, which read as a rendering fault. 28 September moved them
+ * into the left column — *"move Date of this agreement and Signing below Date
+ * of service / Too much wasted white space"*, then *"put at foot of the left
+ * column"* so the practice's own run of facts stays unbroken.
  *
- * THEY ARE NOW A `.db4Section` IN THE LEFT COLUMN like any other, headed
- * "This agreement" — which is what keeps them from being read as the
- * practice's, and does it in words rather than in whitespace. Nothing here
- * needs to style them; adding a rule back would only reintroduce the gap.
+ * SO THE RULE COMES BACK, ON THE BLOCK RATHER THAN ACROSS THE PAGE (Carl,
+ * 28 September 2026: *"a little lower and put draw a line separator"*). The
+ * hairline was the band's real job all along — it said *these are not the
+ * practice's* — and it does that job just as well above one column as above
+ * two, without the gap that came from spanning both.
+ *
+ * IT IS THE SECOND OF TWO SIGNALS, NEVER THE ONLY ONE. The heading says "This
+ * agreement" in words, so a patient who cannot see the hairline — low
+ * contrast, a glare on a tablet, forced colours — loses nothing (WCAG 2.2,
+ * 1.4.1). The rule is emphasis on a distinction already made.
+ *
+ * COMPOSED WITH `.db4Section`, not a replacement for it: the block is a
+ * section of the column like the servicing location above it, and this adds
+ * only the separation.
  */
+.db4Agreement {
+  margin-top: var(--s4);
+  padding-top: var(--s5);
+  border-top: 1px solid var(--line);
+}
+
 
 /*
  * A BLOCK LABEL, NOT A HEADING OF THE PAGE. "Patient", "Services", "Privacy
