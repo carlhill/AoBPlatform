@@ -7,6 +7,11 @@ Convention: each entry says what it is, WHY it was deferred rather than done,
 and what it depends on. An entry with no "why deferred" is just an unfinished
 task and belongs in the code as a TODO comment instead.
 
+**Ideas that are NOT agreed live in `VERSION-2.md`** (started 28 Sep 2026) —
+post-GA capabilities, market moves worth answering, questions worth asking
+again once the first customer is live. An item graduates from there to here by
+being decided.
+
 ---
 
 ## A patient on "Needs a look" has no control that restarts their paperwork
