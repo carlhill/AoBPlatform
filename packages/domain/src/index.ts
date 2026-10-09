@@ -52,6 +52,7 @@ export * from './reconciliation-decision';
 export * from './correspondence-log';
 export * from './kiosk';
 export * from './devices';
+export * from './aobprinter-host';
 export * from './tablet-session';
 export * from './patient-work';
 export * from './practitioner-queue';

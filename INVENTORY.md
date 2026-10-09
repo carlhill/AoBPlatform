@@ -17,11 +17,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2327 |
-| Files scanned for exports | 552 |
-| Files scanned for imports | 595 |
+| Exported symbols indexed | 2345 |
+| Files scanned for exports | 553 |
+| Files scanned for imports | 596 |
 | Exports with no comment of their own | 994 |
-| Exports imported nowhere else | 974 |
+| Exports imported nowhere else | 992 |
 
 ## Sections
 
@@ -29,9 +29,9 @@ This is required reading before you write a component, a hook or a helper (wow.m
 - [Web hooks](#web-hooks) — 15
 - [Web helpers and constants](#web-helpers-and-constants) — 303
 - [Web types](#web-types) — 114
-- [Domain functions](#domain-functions) — 388
-- [Domain constants and content](#domain-constants-and-content) — 244
-- [Domain types](#domain-types) — 284
+- [Domain functions](#domain-functions) — 390
+- [Domain constants and content](#domain-constants-and-content) — 251
+- [Domain types](#domain-types) — 293
 - [Contracts types](#contracts-types) — 97
 - [Contracts functions and constants](#contracts-functions-and-constants) — 27
 - [Core services, controllers and modules](#core-services-controllers-and-modules) — 279
@@ -732,7 +732,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Domain functions
 
-388 exports.
+390 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1012,6 +1012,8 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `addressRejectionReason` | domain:address-check.ts |  | 0 |
 | `ageYearsAt` | domain:auto-capture.ts | Whole years between a date of birth and a moment, calendar-accurate. | 0 |
 | `anniversaryDate` | domain:enduring.ts |  | 0 |
+| `aobPrinterChainVerdict` | domain:aobprinter-host.ts | THE SEVEN RULES, IN ORDER (PRINTER-HEARTBEAT.md §3). | 0 |
+| `aobPrinterHostLiveness` | domain:aobprinter-host.ts | Decided by the server, rendered by the console (decision 2). | 0 |
 | `applyChange` | domain:lifecycle.ts | The only sanctioned way to apply a field change to an agreement. | 0 |
 | `assertCanAnswer` | domain:invitation.ts |  | 0 |
 | `assertMayReach` | domain:page-access.ts |  | 0 |
@@ -1127,7 +1129,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Domain constants and content
 
-244 exports.
+251 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1265,6 +1267,13 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ALLOWED_LOGO_TYPES` | domain:practice-logo.ts | The two raster formats. | 0 |
 | `ANNIVERSARY_FUSE_CUTOFF_DATE` | domain:enduring.ts | Agreements entered on or before 30 June 2027 CEASE unless registered with Services Australia before their first anniversary. | 0 |
 | `ANNIVERSARY_WARNING_DAYS` | domain:enduring.ts |  | 0 |
+| `AOBPRINTER_CHAIN_REGRESSIONS` | domain:aobprinter-host.ts | WHY A CHAIN IS `regressed`. | 0 |
+| `AOBPRINTER_CHAIN_STATUSES` | domain:aobprinter-host.ts | The three states a host's chain can be in, as the platform has judged it. | 0 |
+| `AOBPRINTER_CLOCK_SKEW_WARN_MS` | domain:aobprinter-host.ts | The console warns when the host's clock is more than this far out (D-2026-10-10-02, decision 15). | 0 |
+| `AOBPRINTER_HOST_LIVENESS` | domain:aobprinter-host.ts | WHETHER THE HOST IS STILL THERE. | 0 |
+| `AOBPRINTER_OFFLINE_AFTER_MS` | domain:aobprinter-host.ts | OFFLINE AFTER FIFTEEN MINUTES whatever the interval (D-2026-10-10-02, decision 2). | 0 |
+| `AOBPRINTER_STALE_AFTER_BEATS` | domain:aobprinter-host.ts | STALE AFTER THREE MISSED BEATS, at the interval the host itself reported (D-2026-10-10-02, decision 2). | 0 |
+| `AOBPRINTER_VAULT_ANCHOR_MIN_INTERVAL_MS` | domain:aobprinter-host.ts | `aobprinter.chain_anchored` reaches the vault at most this often (D-2026-10-10-02, decision 5). | 0 |
 | `ASSIGNOR_RELATIONSHIP_KEYS` | domain:assignor-relationships.ts | Just the keys, in order — the shape a `<select>` wants. | 0 |
 | `AUDIENCES` | domain:page-access.ts | WHO somebody is, in the only terms this map cares about. | 0 |
 | `AUSTRALIAN_STATES` | domain:public-holidays.ts |  | 0 |
@@ -1378,7 +1387,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Domain types
 
-284 exports.
+293 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1507,6 +1516,15 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `AmendableField` | domain:amendment.ts |  | 0 |
 | `AmendmentChange` | domain:amendment.ts |  | 0 |
 | `AmendmentRequest` | domain:amendment.ts |  | 0 |
+| `AobPrinterBeatChain` | domain:aobprinter-host.ts | The chain part of a heartbeat. | 0 |
+| `AobPrinterChainPoint` | domain:aobprinter-host.ts | A position in a host's audit chain: a seq and the hash stored there (null where there is none). | 0 |
+| `AobPrinterChainRegression` | domain:aobprinter-host.ts | One of the four regression kinds. | 0 |
+| `AobPrinterChainRegressionFinding` | domain:aobprinter-host.ts | A regression found by THIS beat: what the platform expected, and what the host sent. | 0 |
+| `AobPrinterChainStatus` | domain:aobprinter-host.ts | `unverified`, `consistent` or `regressed`. | 0 |
+| `AobPrinterChainVerdict` | domain:aobprinter-host.ts | The platform's answer to one beat: status, head, anchor, and any regression this beat found. | 0 |
+| `AobPrinterHostChainRow` | domain:aobprinter-host.ts | What the platform already holds for one chain — the columns the verdict reads. | 0 |
+| `AobPrinterHostLiveness` | domain:aobprinter-host.ts | `live`, `stale`, `offline` or `never_reported`. | 0 |
+| `AobPrinterOtherChain` | domain:aobprinter-host.ts | Another chain the same practice has reported, for rule 1. | 0 |
 | `ApplicationContacts` | domain:contacts.ts |  | 0 |
 | `ArtefactContentType` | domain:artefact.ts |  | 0 |
 | `ArtefactPurpose` | domain:artefact.ts |  | 0 |
