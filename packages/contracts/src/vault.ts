@@ -886,6 +886,30 @@ export const VAULT_EVENT_TYPES = [
    */
   'practice.letterhead_logo_set',
   'practice.letterhead_logo_cleared',
+  /*
+   * THE AOBPRINTER HOST'S AUDIT CHAIN, AS THE PLATFORM HAS SEEN IT
+   * (PRINTER-HEARTBEAT.md, D-2026-10-10-02). Evidence about evidence: the
+   * host keeps a hash chain of what it printed and filed, and these put the
+   * platform's view of that chain somewhere a DBA cannot edit.
+   *
+   * `aobprinter.chain_anchored` — at most hourly, while the chain is
+   * consistent and has advanced (decision 5). Without it the "external
+   * anchor" would be a Postgres row.
+   *
+   * `aobprinter.chain_regressed` — once, on the transition into `regressed`
+   * (decision 4). The row stays flagged until somebody re-baselines; a second
+   * bad beat is not a second event.
+   *
+   * `aobprinter.chain_rebaselined` — the platform operator's act, with a
+   * reason code from a fixed list (decision 7). A practice may not verify its
+   * own evidence.
+   *
+   * SEQS, HASHES, CODES AND IDS ONLY. Never a form reference, a chart number,
+   * a path or a patient (hard rule 9, REQ-LOG-08).
+   */
+  'aobprinter.chain_anchored',
+  'aobprinter.chain_regressed',
+  'aobprinter.chain_rebaselined',
 ] as const;
 
 export type VaultEventType = (typeof VAULT_EVENT_TYPES)[number];

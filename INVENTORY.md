@@ -17,11 +17,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2345 |
-| Files scanned for exports | 553 |
-| Files scanned for imports | 596 |
+| Exported symbols indexed | 2369 |
+| Files scanned for exports | 554 |
+| Files scanned for imports | 597 |
 | Exports with no comment of their own | 994 |
-| Exports imported nowhere else | 992 |
+| Exports imported nowhere else | 1012 |
 
 ## Sections
 
@@ -32,8 +32,8 @@ This is required reading before you write a component, a hook or a helper (wow.m
 - [Domain functions](#domain-functions) — 390
 - [Domain constants and content](#domain-constants-and-content) — 251
 - [Domain types](#domain-types) — 293
-- [Contracts types](#contracts-types) — 97
-- [Contracts functions and constants](#contracts-functions-and-constants) — 27
+- [Contracts types](#contracts-types) — 116
+- [Contracts functions and constants](#contracts-functions-and-constants) — 32
 - [Core services, controllers and modules](#core-services-controllers-and-modules) — 279
 - [Core helpers, constants and types](#core-helpers-constants-and-types) — 195
 - [AOBPRINTER (the desktop print channel)](#aobprinter-the-desktop-print-channel-) — 149
@@ -1445,6 +1445,10 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `AgreementNeeded` | domain:practitioner-queue.ts | WHETHER THIS VISIT NEEDS AN AGREEMENT AT ALL — a fact, never a reason code. | **1** · core:practitioner-queue/practitioner-queue.service.ts |
 | `AgreementTemplateProblem` | domain:agreement-templates.ts |  | **1** · web:practice/templates/templateEditing.ts |
 | `AgreementTemplateValues` | domain:agreement-templates.ts | What a substitution is given: strings for values, booleans for branches. | **1** · web:practice/templates/templateEditing.ts |
+| `AobPrinterChainPoint` | domain:aobprinter-host.ts | A position in a host's audit chain: a seq and the hash stored there (null where there is none). | **1** · contracts:aobprinter-heartbeat.ts |
+| `AobPrinterChainRegression` | domain:aobprinter-host.ts | One of the four regression kinds. | **1** · contracts:aobprinter-heartbeat.ts |
+| `AobPrinterChainStatus` | domain:aobprinter-host.ts | `unverified`, `consistent` or `regressed`. | **1** · contracts:aobprinter-heartbeat.ts |
+| `AobPrinterHostLiveness` | domain:aobprinter-host.ts | `live`, `stale`, `offline` or `never_reported`. | **1** · contracts:aobprinter-heartbeat.ts |
 | `AssignorAuthorityBasis` | domain:parties.ts | Authority basis for an assignor acting for another person (REQ-VUL-01, self-declared per reg 65CB(5)). | **1** · domain:assignor.ts |
 | `AssignorChangeKind` | domain:assignor.ts |  | **1** · core:agreements/agreements.service.ts |
 | `AuditKind` | domain:audit.ts |  | **1** · web:review/AuditTrail.tsx |
@@ -1517,13 +1521,9 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `AmendmentChange` | domain:amendment.ts |  | 0 |
 | `AmendmentRequest` | domain:amendment.ts |  | 0 |
 | `AobPrinterBeatChain` | domain:aobprinter-host.ts | The chain part of a heartbeat. | 0 |
-| `AobPrinterChainPoint` | domain:aobprinter-host.ts | A position in a host's audit chain: a seq and the hash stored there (null where there is none). | 0 |
-| `AobPrinterChainRegression` | domain:aobprinter-host.ts | One of the four regression kinds. | 0 |
 | `AobPrinterChainRegressionFinding` | domain:aobprinter-host.ts | A regression found by THIS beat: what the platform expected, and what the host sent. | 0 |
-| `AobPrinterChainStatus` | domain:aobprinter-host.ts | `unverified`, `consistent` or `regressed`. | 0 |
 | `AobPrinterChainVerdict` | domain:aobprinter-host.ts | The platform's answer to one beat: status, head, anchor, and any regression this beat found. | 0 |
 | `AobPrinterHostChainRow` | domain:aobprinter-host.ts | What the platform already holds for one chain — the columns the verdict reads. | 0 |
-| `AobPrinterHostLiveness` | domain:aobprinter-host.ts | `live`, `stale`, `offline` or `never_reported`. | 0 |
 | `AobPrinterOtherChain` | domain:aobprinter-host.ts | Another chain the same practice has reported, for rule 1. | 0 |
 | `ApplicationContacts` | domain:contacts.ts |  | 0 |
 | `ArtefactContentType` | domain:artefact.ts |  | 0 |
@@ -1687,7 +1687,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Contracts types
 
-97 exports.
+116 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1706,6 +1706,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PmsPatientRecord` | contracts:pms-adapter.ts |  | **4** · connector:mock-adapter.ts, core:auto-capture/auto-capture.service.ts, core:pms/pms-sync.service.ts, +1 more |
 | `PmsProvider` | contracts:pms-adapter.ts |  | **4** · connector:mock-adapter.ts, core:auto-capture/auto-capture.service.ts, core:pms/pms-sync.service.ts, +1 more |
 | `CollectedConfirmation` | contracts:print-capture.ts | What the desktop tells the platform once the pair is on disk. | **3** · aobprinter:collection-client.ts, core:inbound/inbound-print-jobs.controller.ts, core:inbound/write-back-collection.service.ts |
+| `Db4PlacementReason` | contracts:print-capture.ts |  | **3** · core:inbound/db4-assignment.handler.ts, contracts:aobprinter-heartbeat.ts, contracts:db4-print-record-check.ts |
 | `PmsInvoice` | contracts:pms-adapter.ts |  | **3** · connector:mock-adapter.ts, core:pms/pms-sync.service.ts, contracts:print-capture.ts |
 | `RulesEngineClient` | contracts:rules-engine.ts |  | **3** · core:agreements/agreements.service.ts, core:rules-client/rules-client.module.ts, core:service-descriptions/service-descriptions.service.ts |
 | `SignedFormForCollection` | contracts:print-capture.ts | ONE SIGNED FORM WAITING TO BE COLLECTED. | **3** · aobprinter:collection-client.ts, aobprinter:collector.ts, core:inbound/write-back-collection.service.ts |
@@ -1716,7 +1717,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ArrivalPreview` | contracts:arrivals.ts | WHAT THE VISIT WOULD NEED, ASKED BEFORE ANYTHING IS WRITTEN (W2, Carl 7 Sep 2026). | **2** · core:arrivals/arrivals.service.ts, web:practice/patients/NewAgreementPanel.tsx |
 | `Db4JobOutcome` | contracts:print-capture.ts | WHAT A `db4_assignment` JOB DID, written onto the job row. | **2** · core:inbound/db4-assignment.handler.ts, core:inbound/inbound-print-jobs.processor.ts |
 | `Db4ParticularChange` | contracts:print-capture.ts |  | **2** · core:agreements/agreements.service.ts, core:inbound/db4-reprint.ts |
-| `Db4PlacementReason` | contracts:print-capture.ts |  | **2** · core:inbound/db4-assignment.handler.ts, contracts:db4-print-record-check.ts |
 | `PatientSearchResult` | contracts:arrivals.ts | ONE PATIENT THIS PRACTICE ALREADY HOLDS, FOUND BY TYPING A NAME (W2). | **2** · core:patients/patients.service.ts, web:practice/patients/NewAgreementPanel.tsx |
 | `PmsAppointment` | contracts:pms-adapter.ts |  | **2** · connector:mock-adapter.ts, contracts:print-capture.ts |
 | `PortalLink` | contracts:portal.ts | One practice the patient linked for themselves. | **2** · core:portal/portal-reads.service.ts, core:portal/portal.service.ts |
@@ -1767,6 +1767,25 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `WriteArtefactRequest` | contracts:pms-adapter.ts |  | **1** · connector:mock-adapter.ts |
 | `WriteBackManifest` | contracts:print-capture.ts | THE WRITE-BACK MANIFEST — the small JSON beside the PDF in the patient's folder (DB4-AND-AOBL.md §7, row 3b). | **1** · aobprinter:collector.ts |
 | `WriteResult` | contracts:pms-adapter.ts |  | **1** · connector:mock-adapter.ts |
+| `AobPrinterChainRegressionView` | contracts:aobprinter-heartbeat.ts | A regression as stored on the row: the finding, and when it was made. | 0 |
+| `AobPrinterExceptionStage` | contracts:aobprinter-heartbeat.ts | One of `AOBPRINTER_EXCEPTION_STAGES`. | 0 |
+| `AobPrinterFiledReturn` | contracts:aobprinter-heartbeat.ts | A return the host has filed and not yet seen confirmed (decision 9). | 0 |
+| `AobPrinterFiledUnconfirmedRow` | contracts:aobprinter-heartbeat.ts | A filed return with the platform's verdict and its patient. | 0 |
+| `AobPrinterFiledUnconfirmedVerdict` | contracts:aobprinter-heartbeat.ts | WHAT THE PLATFORM SAYS ABOUT A RETURN FILED BUT NOT RECORDED AS CONFIRMED (§4 state 6): - `written_back` — recorded; reconciles on the next report; - `offered` — not recorded, still offered for collection; - `not_offered` — not recorded and no longer offered. | 0 |
+| `AobPrinterHeartbeat` | contracts:aobprinter-heartbeat.ts | What the host posts every beat. | 0 |
+| `AobPrinterHeartbeatReply` | contracts:aobprinter-heartbeat.ts | What the platform answers every beat. | 0 |
+| `AobPrinterHostChainView` | contracts:aobprinter-heartbeat.ts | The chain as the console shows it. | 0 |
+| `AobPrinterHostException` | contracts:aobprinter-heartbeat.ts | An open exception as the console shows it. | 0 |
+| `AobPrinterHostRow` | contracts:aobprinter-heartbeat.ts | One host as the console shows it: the stored fields plus what the server computed. | 0 |
+| `AobPrinterHostsView` | contracts:aobprinter-heartbeat.ts | `GET /aobprinter-hosts`. | 0 |
+| `AobPrinterJobOutcome` | contracts:aobprinter-heartbeat.ts | The platform's answer for one print in `awaitingOutcome`. | 0 |
+| `AobPrinterJobState` | contracts:aobprinter-heartbeat.ts | What the platform knows of a print job the host asked about. | 0 |
+| `AobPrinterLocalCheck` | contracts:aobprinter-heartbeat.ts | THE HOST'S OWN CHECK OF ITS CHAIN (decision 14). | 0 |
+| `AobPrinterOpenException` | contracts:aobprinter-heartbeat.ts | Ids and codes only. | 0 |
+| `AobPrinterPrintStage` | contracts:aobprinter-heartbeat.ts | One of `AOBPRINTER_PRINT_STAGES`. | 0 |
+| `AobPrinterReturnOutcome` | contracts:aobprinter-heartbeat.ts | The platform's answer for one return in `filedUnconfirmed`. | 0 |
+| `AobPrinterReturnStage` | contracts:aobprinter-heartbeat.ts | One of `AOBPRINTER_RETURN_STAGES`. | 0 |
+| `AobPrinterStageCounts` | contracts:aobprinter-heartbeat.ts | How many prints and returns are at each stage on the host, and how old the oldest waiting ones are. | 0 |
 | `ArrivalEvent` | contracts:arrivals.ts |  | 0 |
 | `ArrivalRefusalReason` | contracts:arrivals.ts |  | 0 |
 | `ArrivalSource` | contracts:arrivals.ts |  | 0 |
@@ -1791,7 +1810,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Contracts functions and constants
 
-27 exports.
+32 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1810,6 +1829,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `answersEnduringRules` | contracts:rules-engine.ts | DID THE RULE SET ANSWER THE ENDURING QUESTIONS AT ALL? | **1** · core:agreements/agreements.service.ts |
 | `isSilentRestoreClient` | contracts:auth.ts |  | **1** · web:AccessGuard.tsx |
 | `withSilentRestore` | contracts:auth.ts | Add the marker to a URL an invitation will return to. | **1** · auth-client:keycloak-admin.ts |
+| `AOBPRINTER_EXCEPTION_STAGES` | contracts:aobprinter-heartbeat.ts | The four stages an open exception can be in — two per direction. | 0 |
+| `AOBPRINTER_HEARTBEAT_INTERVAL` | contracts:aobprinter-heartbeat.ts | HOW OFTEN THE HOST BEATS (D-2026-10-10-02, decision 1). | 0 |
+| `AOBPRINTER_HEARTBEAT_LIMITS` | contracts:aobprinter-heartbeat.ts | HOW MUCH ONE BEAT MAY CARRY (D-2026-10-10-02, decision 9; §1). | 0 |
+| `AOBPRINTER_PRINT_STAGES` | contracts:aobprinter-heartbeat.ts | The stages a print passes through on the host. | 0 |
+| `AOBPRINTER_RETURN_STAGES` | contracts:aobprinter-heartbeat.ts | The stages a Signed-DB4 return passes through on the host. | 0 |
 | `ARRIVAL_MOVE_REFUSALS` | contracts:arrivals.ts | WHY A ROW COULD NOT BE MOVED — a CODE the console maps to words and a destination, never prose (CLAUDE.md §7, "shortcuts to the answer"). | 0 |
 | `ARRIVAL_REFUSAL_REASONS` | contracts:arrivals.ts | WHY AN ARRIVAL WAS REFUSED — a reason CODE, never prose (Carl, 4 Sep 2026: "shortcuts to the answer, not directions to a screen"; 5–7 Sep 2026: the billing role). | 0 |
 | `DB4_PARTICULAR_CHANGES` | contracts:print-capture.ts | WHICH KIND OF PARTICULAR MOVED between the agreement and the corrected form. | 0 |
