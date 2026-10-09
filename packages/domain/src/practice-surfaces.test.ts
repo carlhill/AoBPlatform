@@ -186,6 +186,26 @@ describe('what a profile allows', () => {
     expect(profileAllowsEndpointIn(kioskOnly, 'kiosk_only', 'GET', '/inbound/print-jobs/metrics')).toBe(false);
   });
 
+  it('puts the AOBPRINTER host with the print door, and the platform overview with the platform', () => {
+    /*
+     * PRINTER-HEARTBEAT.md §3–§4, D-2026-10-10-02. A practice with no PMS has
+     * no AOBPRINTER, so neither its host page nor its host read is offered;
+     * the heartbeat itself inherits `db4` from `/inbound/print-jobs`. The
+     * overview of every host is the platform's and is always on.
+     */
+    expect(surfaceOf('/practice/aobprinter-host')).toBe('db4');
+    expect(surfaceOfEndpoint('GET', '/aobprinter-hosts')).toBe('db4');
+    expect(surfaceOfEndpoint('POST', '/aobprinter-hosts/7b1/rebaseline')).toBe('db4');
+    expect(surfaceOfEndpoint('POST', '/inbound/print-jobs/heartbeat')).toBe('db4');
+    expect(profileAllows('standard', '/practice/aobprinter-host')).toBe(false);
+    expect(profileAllowsEndpoint('standard', 'GET', '/aobprinter-hosts')).toBe(false);
+    expect(profileAllowsEndpoint('standard', 'POST', '/inbound/print-jobs/heartbeat')).toBe(false);
+    expect(profileAllows('db4', '/practice/aobprinter-host')).toBe(true);
+
+    expect(surfaceOf('/platform/aobprinter-hosts')).toBe(ALWAYS);
+    expect(surfaceOfEndpoint('GET', '/platform/aobprinter-hosts')).toBe(ALWAYS);
+  });
+
   it('turning_a_surface_on_is_a_setting_not_a_deploy', () => {
     /*
      * The claim the whole design rests on. The SAME compiled code answers
