@@ -16,6 +16,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { AOBPRINTER_PRINT_STAGES, AOBPRINTER_RETURN_STAGES } from '@aobplatform/contracts';
 import type { Db4PrintRecord } from './db4-record';
 import { decryptPayload, encryptPayload } from './keystore';
 import type { Cipher } from './retention';
@@ -419,6 +420,69 @@ describe('the AOBPRINTER database', () => {
       const again = storeAt();
       expect(again.auditEvents().filter((e) => e.kind === 'print.imported')).toHaveLength(3);
       expect(again.receipts()).toHaveLength(1);
+    });
+  });
+
+  describe('what the heartbeat reads (PRINTER-HEARTBEAT.md §2)', () => {
+    it('audit_hash_at_returns_the_stored_hash_or_null', () => {
+      const store = storeAt();
+      queueOne(store);
+      const events = store.auditEvents();
+      for (const event of events) expect(store.auditHashAt(event.seq)).toBe(event.hash);
+      // Before the first event and past the head there is no hash — not the genesis, not the head.
+      expect(store.auditHashAt(0)).toBeNull();
+      expect(store.auditHashAt(events.at(-1)!.seq + 1)).toBeNull();
+      expect(store.chainId()).toBe(events[0].hash);
+    });
+
+    it('verify_range_agrees_with_a_full_walk', () => {
+      const store = storeAt();
+      queueOne(store);
+      store.markSent(SHA, { attempts: 1, nextAttemptAt: '2026-09-29T00:00:01.000Z' });
+      queueOne(store, 'd'.repeat(64));
+      const events = store.auditEvents();
+      expect(events.length).toBeGreaterThanOrEqual(5);
+
+      // Walked two at a time, it reaches the same place the whole walk does.
+      let after = 0;
+      let prev = GENESIS_HASH;
+      let walked = 0;
+      for (;;) {
+        const step = store.verifyAuditRange(after, prev, 2);
+        if (!step.ok) throw new Error(`broken at ${step.brokenAtSeq}`);
+        if (step.events === 0) break;
+        expect(step.events).toBeLessThanOrEqual(2);
+        walked += step.events;
+        after = step.throughSeq;
+        prev = step.hash;
+      }
+      expect(walked).toBe(events.length);
+      expect({ seq: after, hash: prev }).toEqual(store.auditHead());
+      expect(store.verifyAuditChain()).toEqual({ ok: true, events: walked });
+
+      // An edit is found by the range that covers it, named as content; and by the full walk at the same seq.
+      const target = events[3].seq;
+      const attacker = raw();
+      attacker.exec('DROP TRIGGER audit_events_no_update');
+      attacker.exec(`UPDATE audit_events SET actor = 'somebody else' WHERE seq = ${target}`);
+      expect(store.verifyAuditRange(0, GENESIS_HASH, 2)).toMatchObject({ ok: true, events: 2 });
+      expect(store.verifyAuditRange(events[1].seq, events[1].hash, 2)).toEqual({ ok: false, brokenAtSeq: target, why: 'content' });
+      expect(store.verifyAuditChain()).toMatchObject({ ok: false, brokenAtSeq: target });
+
+      // A frontier handed the wrong previous hash is a broken link at the next event.
+      expect(store.verifyAuditRange(events[0].seq, 'e'.repeat(64), 2)).toEqual({ ok: false, brokenAtSeq: events[1].seq, why: 'link' });
+    });
+
+    it('the_stage_checks_match_the_contract_lists', () => {
+      storeAt();
+      const sqlOf = (table: string) => String(raw().prepare('SELECT sql FROM sqlite_master WHERE type = ? AND name = ?').get('table', table)?.sql);
+      const stagesIn = (sql: string) => {
+        const match = /stage\s+TEXT NOT NULL CHECK \(stage IN \(([^)]*)\)\)/.exec(sql);
+        if (!match) throw new Error('no stage CHECK found');
+        return match[1].split(',').map((s) => s.trim().replace(/^'|'$/g, ''));
+      };
+      expect(stagesIn(sqlOf('prints'))).toEqual([...AOBPRINTER_PRINT_STAGES]);
+      expect(stagesIn(sqlOf('returns'))).toEqual([...AOBPRINTER_RETURN_STAGES]);
     });
   });
 });

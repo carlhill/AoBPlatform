@@ -37,6 +37,15 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { DatabaseSync, type SQLInputValue, type SQLOutputValue } from 'node:sqlite';
+import type {
+  AobPrinterExceptionStage,
+  AobPrinterFiledReturn,
+  AobPrinterJobOutcome,
+  AobPrinterOpenException,
+  AobPrinterPrintStage,
+  AobPrinterReturnStage,
+  AobPrinterStageCounts,
+} from '@aobplatform/contracts';
 import type { Db4PrintRecord } from './db4-record';
 import type { EncryptedPayload } from './keystore';
 import { redactError, type Logger } from './log';
@@ -58,6 +67,31 @@ export const OUTBOX_FORMAT_VERSION = 1;
 
 /** The hash the first event in a chain points back to. */
 export const GENESIS_HASH = '0'.repeat(64);
+
+/** How many events the full walk reads at a time. Memory, not correctness: any chunk gives the same answer. */
+const VERIFY_CHAIN_CHUNK = 2_000;
+
+/** The kinds that record what the platform did with a sent print (decision 8). */
+const PLATFORM_OUTCOME_KINDS = ['print.processed', 'print.processing_failed', 'print.not_on_platform'] as const;
+const PLATFORM_OUTCOME_KINDS_SQL = PLATFORM_OUTCOME_KINDS.map((k) => `'${k}'`).join(', ');
+
+/**
+ * ONE CONSISTENT PICTURE FOR ONE HEARTBEAT. Counts, codes, hashes and ids
+ * only — never a form reference, a chart number, a location or a note.
+ */
+export interface HeartbeatSnapshot {
+  readonly counts: AobPrinterStageCounts;
+  readonly openExceptions: readonly AobPrinterOpenException[];
+  readonly awaitingOutcome: readonly string[];
+  readonly filedUnconfirmed: readonly AobPrinterFiledReturn[];
+}
+
+/** How much one snapshot may carry (`AOBPRINTER_HEARTBEAT_LIMITS`). */
+export interface HeartbeatSnapshotLimits {
+  readonly openExceptions: number;
+  readonly awaitingOutcome: number;
+  readonly filedUnconfirmed: number;
+}
 
 export type PrintStage = 'received' | 'parse_exception' | 'queued' | 'sent' | 'send_exception';
 export type ReturnStage = 'received' | 'received_exception' | 'filed' | 'filing_exception' | 'confirmed';
@@ -90,6 +124,14 @@ export type AuditKind =
   | 'print.imported'
   | 'print.gap'
   | 'print.resolved'
+  /*
+   * WHAT THE PLATFORM DID WITH A SENT PRINT, as the heartbeat's reply said
+   * (D-2026-10-10-02, decision 8). Events, not a stage or a column: the stage
+   * model of D-2026-09-29-01 stays as decided and the schema does not move.
+   */
+  | 'print.processed'
+  | 'print.processing_failed'
+  | 'print.not_on_platform'
   // Back: a signed form on its way into the PMS.
   | 'return.received'
   | 'return.received_exception'
@@ -473,6 +515,11 @@ function hashOf(prevHash: string, row: Hashed): string {
   return createHash('sha256').update(canonical, 'utf8').digest('hex');
 }
 
+/** Every stage at zero, so a heartbeat names each one even when nothing is in it. */
+function zeroed<S extends string>(stages: readonly S[]): Record<S, number> {
+  return Object.fromEntries(stages.map((stage) => [stage, 0])) as Record<S, number>;
+}
+
 /** One database, several roles, each role's methods named for what they do. */
 export class AobPrinterStore implements OutboxStore, ReceiptsWriter, PrintsTrail, ReturnsTrail {
   private readonly db: DatabaseSync;
@@ -640,19 +687,74 @@ export class AobPrinterStore implements OutboxStore, ReceiptsWriter, PrintsTrail
   }
 
   /**
+   * The hash stored at `seq`, or null where there is no such event. What the
+   * heartbeat answers when the platform names an anchor (PRINTER-HEARTBEAT.md §2).
+   */
+  auditHashAt(seq: number): string | null {
+    return text(this.db.prepare('SELECT hash FROM audit_events WHERE seq = ?').get(seq)?.hash) ?? null;
+  }
+
+  /**
+   * THIS CHAIN'S NAME: the hash of event seq 1, which `program.started`
+   * always is on a running host. A database rewritten from the start has a
+   * different one, which is how the platform tells a replaced chain from a
+   * new host (decision 6). Null only for a database with no events at all.
+   */
+  chainId(): string | null {
+    return this.auditHashAt(1);
+  }
+
+  /**
    * Walk the whole chain. `ok: false` names the first event that does not
    * follow from the one before it — edited, inserted out of order, or with a
    * predecessor removed.
    *
+   * A LOOP OVER `verifyAuditRange`, so the full walk and the heartbeat's
+   * incremental one are one implementation and can never disagree.
+   */
+  verifyAuditChain(): { readonly ok: true; readonly events: number } | { readonly ok: false; readonly brokenAtSeq: number; readonly why: string } {
+    let after = 0;
+    let prev = GENESIS_HASH;
+    let count = 0;
+    for (;;) {
+      const step = this.verifyAuditRange(after, prev, VERIFY_CHAIN_CHUNK);
+      if (!step.ok) {
+        const why = step.why === 'link' ? 'it does not point at the event before it' : 'its contents do not match its hash';
+        return { ok: false, brokenAtSeq: step.brokenAtSeq, why };
+      }
+      if (step.events === 0) return { ok: true, events: count };
+      count += step.events;
+      after = step.throughSeq;
+      prev = step.hash;
+    }
+  }
+
+  /**
+   * Verify at most `limit` events after `afterSeq`, the first of which must
+   * point at `prevHash`. Answers how far it got (`throughSeq`, and the hash
+   * there to carry on from), or the first event that breaks: `link` when it
+   * does not point at the one before it, `content` when its contents do not
+   * match its hash.
+   *
+   * BOUNDED, SO THE HEARTBEAT NEVER HOLDS THE LOOP THAT CLAIMS PRINTS (hard
+   * rule 8): a beat walks one chunk from a frontier it keeps in memory.
+   *
    * THE STORED JSON IS HASHED AS STORED, not re-serialised from the parsed
    * detail, so a verifier can never disagree with the writer over key order.
    */
-  verifyAuditChain(): { readonly ok: true; readonly events: number } | { readonly ok: false; readonly brokenAtSeq: number; readonly why: string } {
-    let prev = GENESIS_HASH;
+  verifyAuditRange(
+    afterSeq: number,
+    prevHash: string,
+    limit: number,
+  ):
+    | { readonly ok: true; readonly events: number; readonly throughSeq: number; readonly hash: string }
+    | { readonly ok: false; readonly brokenAtSeq: number; readonly why: 'link' | 'content' } {
+    let prev = prevHash;
+    let through = afterSeq;
     let count = 0;
-    for (const r of this.db.prepare('SELECT * FROM audit_events ORDER BY seq').all()) {
+    for (const r of this.db.prepare('SELECT * FROM audit_events WHERE seq > ? ORDER BY seq LIMIT ?').all(afterSeq, limit)) {
       const seq = int(r.seq);
-      if (String(r.prev_hash) !== prev) return { ok: false, brokenAtSeq: seq, why: 'it does not point at the event before it' };
+      if (String(r.prev_hash) !== prev) return { ok: false, brokenAtSeq: seq, why: 'link' };
       const recomputed = hashOf(String(r.prev_hash), {
         at: String(r.at),
         kind: String(r.kind),
@@ -667,11 +769,12 @@ export class AobPrinterStore implements OutboxStore, ReceiptsWriter, PrintsTrail
         actor: String(r.actor),
         printerVersion: String(r.printer_version),
       });
-      if (recomputed !== String(r.hash)) return { ok: false, brokenAtSeq: seq, why: 'its contents do not match its hash' };
+      if (recomputed !== String(r.hash)) return { ok: false, brokenAtSeq: seq, why: 'content' };
       prev = String(r.hash);
+      through = seq;
       count += 1;
     }
-    return { ok: true, events: count };
+    return { ok: true, events: count, throughSeq: through, hash: prev };
   }
 
   /** A stored location, back as a path. On this host, with this key, and nowhere else. */
@@ -1259,6 +1362,163 @@ export class AobPrinterStore implements OutboxStore, ReceiptsWriter, PrintsTrail
   /** A start that recorded `program.started` and then refused. Ends that session cleanly: it never ran. */
   programStartFailed(): void {
     this.audit({ kind: 'program.start_failed', direction: 'program' });
+  }
+
+  // ─── The heartbeat (PRINTER-HEARTBEAT.md §2) ──────────────────────────────
+
+  /**
+   * Everything one heartbeat reports about prints and returns, read in ONE
+   * transaction so the numbers agree with each other. Writes nothing.
+   *
+   * `awaitingOutcome`: prints in `sent`, sent within `sentWindowDays`, with
+   * no platform outcome recorded yet (decision 9). An open exception is one
+   * nobody has resolved.
+   */
+  heartbeatSnapshot(now: Date, sentWindowDays: number, limits: HeartbeatSnapshotLimits): HeartbeatSnapshot {
+    return this.transaction(() => {
+      const prints = zeroed<AobPrinterPrintStage>(['received', 'parse_exception', 'queued', 'sent', 'send_exception']);
+      for (const r of this.db.prepare('SELECT stage, count(*) AS n FROM prints GROUP BY stage').all()) {
+        prints[String(r.stage) as AobPrinterPrintStage] = int(r.n);
+      }
+      const returns = zeroed<AobPrinterReturnStage>(['received', 'received_exception', 'filed', 'filing_exception', 'confirmed']);
+      for (const r of this.db.prepare('SELECT stage, count(*) AS n FROM returns GROUP BY stage').all()) {
+        returns[String(r.stage) as AobPrinterReturnStage] = int(r.n);
+      }
+      const openPrints = (stage: string) =>
+        int(this.db.prepare('SELECT count(*) AS n FROM prints WHERE stage = ? AND resolved_at IS NULL').get(stage)?.n);
+      const openReturns = (stage: string) =>
+        int(this.db.prepare('SELECT count(*) AS n FROM returns WHERE stage = ? AND resolved_at IS NULL').get(stage)?.n);
+      const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+      const windowStart = new Date(now.getTime() - sentWindowDays * 24 * 60 * 60 * 1000).toISOString();
+
+      const counts: AobPrinterStageCounts = {
+        prints,
+        returns,
+        openExceptions: {
+          parse: openPrints('parse_exception'),
+          send: openPrints('send_exception'),
+          received: openReturns('received_exception'),
+          filing: openReturns('filing_exception'),
+        },
+        oldestQueuedAt: text(this.db.prepare("SELECT min(enqueued_at) AS t FROM prints WHERE stage = 'queued'").get()?.t) ?? null,
+        oldestFiledUnconfirmedAt: text(this.db.prepare("SELECT min(filed_at) AS t FROM returns WHERE stage = 'filed'").get()?.t) ?? null,
+        staleQueued: int(this.db.prepare("SELECT count(*) AS n FROM prints WHERE stage = 'queued' AND stale_alarmed_at IS NOT NULL").get()?.n),
+        gapsLast24h: int(this.db.prepare("SELECT count(*) AS n FROM audit_events WHERE kind = 'print.gap' AND at >= ?").get(dayAgo)?.n),
+      };
+
+      const awaitingOutcome = this.db
+        .prepare(
+          `SELECT sha FROM prints p WHERE stage = 'sent' AND sent_at >= ?
+             AND NOT EXISTS (SELECT 1 FROM audit_events a WHERE a.subject = p.sha AND a.kind IN (${PLATFORM_OUTCOME_KINDS_SQL}))
+           ORDER BY sent_at, sha LIMIT ?`,
+        )
+        .all(windowStart, limits.awaitingOutcome)
+        .map((r) => String(r.sha));
+
+      const filedUnconfirmed = this.db
+        .prepare("SELECT agreement_id, sha256 FROM returns WHERE stage = 'filed' ORDER BY filed_at, agreement_id LIMIT ?")
+        .all(limits.filedUnconfirmed)
+        .map((r) => ({ agreementId: String(r.agreement_id), sha256: String(r.sha256) }));
+
+      return { counts, openExceptions: this.openExceptions(limits.openExceptions), awaitingOutcome, filedUnconfirmed };
+    });
+  }
+
+  /**
+   * Unresolved exceptions, oldest first, at most `limit`. `since` and the
+   * reason come from the event that put each one there — a print's send
+   * exception has its reason only there (`markPoisoned`). Ids and codes only.
+   */
+  private openExceptions(limit: number): AobPrinterOpenException[] {
+    const prints = this.db
+      .prepare(
+        `SELECT p.sha, p.stage, p.parse_reason, p.received_at, p.poisoned_at,
+           (SELECT a.at FROM audit_events a WHERE a.subject = p.sha AND a.kind = 'print.' || p.stage ORDER BY a.seq DESC LIMIT 1) AS since,
+           (SELECT a.reason FROM audit_events a WHERE a.subject = p.sha AND a.kind = 'print.' || p.stage ORDER BY a.seq DESC LIMIT 1) AS why
+         FROM prints p WHERE p.stage IN ('parse_exception', 'send_exception') AND p.resolved_at IS NULL
+         ORDER BY coalesce(since, p.poisoned_at, p.received_at), p.sha LIMIT ?`,
+      )
+      .all(limit)
+      .map(
+        (r): AobPrinterOpenException => ({
+          direction: 'out',
+          stage: String(r.stage) as AobPrinterExceptionStage,
+          reason: text(r.parse_reason) ?? text(r.why) ?? 'unknown',
+          since: text(r.since) ?? text(r.poisoned_at) ?? String(r.received_at),
+          sourceSha256: String(r.sha),
+        }),
+      );
+    const returns = this.db
+      .prepare(
+        `SELECT r.agreement_id, r.stage, r.reason, r.first_seen_at,
+           (SELECT a.at FROM audit_events a WHERE a.subject = r.agreement_id || ':' || r.sha256 AND a.kind = 'return.' || r.stage
+              ORDER BY a.seq DESC LIMIT 1) AS since
+         FROM returns r WHERE r.stage IN ('received_exception', 'filing_exception') AND r.resolved_at IS NULL
+         ORDER BY coalesce(since, r.first_seen_at), r.agreement_id LIMIT ?`,
+      )
+      .all(limit)
+      .map(
+        (r): AobPrinterOpenException => ({
+          direction: 'in',
+          stage: String(r.stage) as AobPrinterExceptionStage,
+          reason: text(r.reason) ?? 'unknown',
+          since: text(r.since) ?? String(r.first_seen_at),
+          agreementId: String(r.agreement_id),
+        }),
+      );
+    return [...prints, ...returns].sort((a, b) => (a.since < b.since ? -1 : a.since > b.since ? 1 : 0)).slice(0, limit);
+  }
+
+  /**
+   * WHAT THE PLATFORM DID WITH A SENT PRINT, as one audit event and no stage
+   * change (decision 8). `waiting` writes nothing — the print is asked about
+   * again next beat. Once per print: a print that already has an outcome, or
+   * that is not in `sent` on this host, is left alone. Returns whether it wrote.
+   */
+  recordPlatformOutcome(sha: string, outcome: AobPrinterJobOutcome): boolean {
+    if (outcome.state === 'waiting') return false;
+    return this.transaction(() => {
+      if (this.jobState(sha) !== 'sent') return false;
+      const already = this.db.prepare(`SELECT 1 AS x FROM audit_events WHERE subject = ? AND kind IN (${PLATFORM_OUTCOME_KINDS_SQL}) LIMIT 1`).get(sha);
+      if (already) return false;
+      const kind: AuditKind =
+        outcome.state === 'done' ? 'print.processed' : outcome.state === 'dead' ? 'print.processing_failed' : 'print.not_on_platform';
+      this.audit({
+        kind,
+        direction: 'out',
+        subject: sha,
+        formReference: this.formReferenceOf(sha),
+        stage: 'sent',
+        reason: outcome.reason ?? undefined,
+        detail: { state: outcome.state, placed: outcome.placed, agreementId: outcome.agreementId },
+      });
+      return true;
+    });
+  }
+
+  /**
+   * FILED, AND THE PLATFORM SAYS IT HAS IT: the confirmation this host lost
+   * (TODO item 3). Moves `filed → confirmed` and nothing else, with the same
+   * `return.confirmed` the collector writes, marked `via: heartbeat`.
+   * Returns whether it moved.
+   */
+  returnConfirmedByPlatform(key: ReturnKey): boolean {
+    return this.transaction(() => {
+      const current = this.getReturn(key.agreementId, key.sha256);
+      if (current?.stage !== 'filed') return false;
+      const withReference: ReturnKey = { ...key, formReference: key.formReference ?? current.formReference };
+      this.moveReturn(withReference, 'confirmed');
+      this.run('UPDATE returns SET confirmed_at = ? WHERE agreement_id = ? AND sha256 = ?', this.now().toISOString(), key.agreementId, key.sha256);
+      this.audit({
+        kind: 'return.confirmed',
+        direction: 'in',
+        subject: this.returnSubject(key),
+        formReference: withReference.formReference,
+        stage: 'confirmed',
+        detail: { via: 'heartbeat' },
+      });
+      return true;
+    });
   }
 
   // ─── Receipts ─────────────────────────────────────────────────────────────
