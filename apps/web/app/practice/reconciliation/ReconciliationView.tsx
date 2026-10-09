@@ -22,7 +22,7 @@
  * one-way and never chased.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Clock, Mail, MessageSquare, RefreshCw, Send, X } from 'lucide-react';
 import { Button, Chip, Notice, Shell, ui } from '../../ui';
 import { SessionControl } from '../../SessionControl';
@@ -34,6 +34,12 @@ import { ServiceDescriptionsNeeded } from './ServiceDescriptionsNeeded';
 import styles from '../manage.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
+
+/**
+ * THE QUERY PARAMETER THAT OPENS ONE ITEM — `/practice/reconciliation?item=<serviceRecordId>`
+ * (D-2026-10-10-01). Exported so a link elsewhere is built on the same name.
+ */
+export const RECONCILIATION_ITEM_PARAM = 'item';
 
 type Band = 'standard' | 'compressed' | 'urgent' | 'last_chance' | 'expired';
 
@@ -158,6 +164,36 @@ export function ReconciliationView() {
     [practiceId],
   );
 
+  /*
+   * ONE ITEM, OPENED FROM A LINK (D-2026-10-10-01). `?item=<serviceRecordId>`
+   * — the tablet page's "Unsigned from earlier days" links here — opens that
+   * item's panel and moves the reading position to it, once, after the queue
+   * has loaded. Read from `window.location` in an effect rather than
+   * `useSearchParams`, so neither page that renders this view needs a
+   * Suspense boundary for it.
+   *
+   * AN ID THE QUEUE DOES NOT HOLD SAYS SO, with the id, rather than opening
+   * nothing in silence: it was decided or stored after the link was drawn.
+   */
+  const deepLinked = useRef(false);
+  const [notOnQueue, setNotOnQueue] = useState<string | null>(null);
+  useEffect(() => {
+    if (deepLinked.current || items === null) return;
+    deepLinked.current = true;
+    const wanted = new URLSearchParams(window.location.search).get(RECONCILIATION_ITEM_PARAM);
+    if (!wanted) return;
+    if (!items.some((item) => item.serviceRecordId === wanted)) {
+      setNotOnQueue(wanted);
+      return;
+    }
+    void openDetail(wanted);
+    requestAnimationFrame(() => {
+      const row = document.getElementById(`reconciliation-item-${wanted}`);
+      row?.scrollIntoView?.({ block: 'center' });
+      row?.focus();
+    });
+  }, [items, openDetail]);
+
   async function resend(item: Item): Promise<boolean> {
     const channel = channelFor(item);
     if (!practiceId || !channel) return false;
@@ -275,6 +311,12 @@ export function ReconciliationView() {
       */}
       <ServiceDescriptionsNeeded practiceId={practiceId} />
 
+      {notOnQueue && (
+        <Notice tone="warn" title={strings.reconciliation.itemNotOnQueueTitle} data-testid="reconciliation-item-not-on-queue">
+          {strings.reconciliation.itemNotOnQueue(notOnQueue)}
+        </Notice>
+      )}
+
       <div className={styles.queueSummary} data-testid="reconciliation-summary">
         <Chip tone={items.length ? 'warn' : 'ok'}>{strings.reconciliation.open.replace('{n}', String(items.length))}</Chip>
         {metrics &&
@@ -349,7 +391,12 @@ export function ReconciliationView() {
                     : null;
               const isOpen = openId === item.serviceRecordId;
               return (
-                <li key={item.serviceRecordId} className={styles.queueRow}>
+                <li
+                  key={item.serviceRecordId}
+                  id={`reconciliation-item-${item.serviceRecordId}`}
+                  tabIndex={-1}
+                  className={styles.queueRow}
+                >
                   <div
                     className={styles.queueRowMain}
                     role="button"

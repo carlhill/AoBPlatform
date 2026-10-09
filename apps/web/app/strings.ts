@@ -2332,6 +2332,10 @@ export const strings = {
       keep_chasing: 'Keep chasing',
     } as Record<string, string>,
     decideFailed: 'That decision could not be recorded',
+    /** A `?item=` link to a service record the queue does not hold (D-2026-10-10-01). */
+    itemNotOnQueueTitle: 'That item is not on this queue',
+    itemNotOnQueue: (id: string) =>
+      `The link asked for service record ${id}. The queue, as loaded just now, does not list it.`,
   },
 
   /*
@@ -5601,6 +5605,32 @@ export const strings = {
      */
     coveredReasonUnknown: (code: string) => `Covered (${code})`,
     coveredOpenAgreement: 'Open the agreement that covers it →',
+
+    /*
+     * UNSIGNED FROM EARLIER DAYS (D-2026-10-10-01, option 1). An agreement
+     * still unsigned at midnight used to drop off this page with no word.
+     *
+     * EACH LINE SAYS WHAT THE PLATFORM OBSERVED AND NOTHING MORE (wow.md §13):
+     * whether a service record names the agreement and, if so, whether it is on
+     * the Reconciliation queue. No "please follow up": what to do depends on the
+     * visit, and the link goes to the place where that is decided.
+     */
+    earlierSummary: (n: number) => `Unsigned from earlier days: ${n}`,
+    earlierLead: 'Not signed on the day they were for. Each line says what the platform found about its service.',
+    /** The day it was for, and the provider — "3 October 2026 · Dr Example Provider". */
+    earlierFor: (day: string, provider: string | null) => (provider ? `${day} · ${provider}` : day),
+    earlierReason: {
+      service_in_reconciliation: 'Service recorded, in Reconciliation',
+      no_service_recorded: 'No service recorded',
+    } as Record<string, string>,
+    /** A service record names it, and a Reconciliation decision took it off the queue. */
+    earlierDecided: (decision: string) => `Service recorded; Reconciliation decision: ${decision}`,
+    /** AN UNMAPPED CODE SHOWS ITSELF (CLAUDE.md §7c). */
+    earlierReasonUnknown: (code: string) => `Unsigned (${code})`,
+    earlierToReconciliation: 'Open it in Reconciliation →',
+    earlierCapped: (shown: number, total: number) => `Showing the oldest ${shown} of ${total}.`,
+    earlierUnreachable: 'the service could not be reached',
+    earlierNotLoaded: (status: string) => `Could not check for unsigned agreements from earlier days (${status}).`,
     /*
      * WHO IS SIGNING, SAID ON THE ROW (Carl, 7 Sep 2026, twice: "it does not
      * ask me who is approving", "no who is signing").

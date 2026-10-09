@@ -291,6 +291,8 @@ function stubFetch(
     staff?: string[];
     /** Today's visits that needed no second signature — the history lines. */
     covered?: unknown[];
+    /** `GET /tablet-sessions/unsigned-earlier` — `{ total, rows }`. */
+    earlier?: unknown;
     details?: unknown;
     content?: unknown;
     onPost?: (url: string) => { ok: boolean; status?: number; payload?: unknown };
@@ -316,6 +318,9 @@ function stubFetch(
           // have (wow.md section 1).
           : url.includes('/tablet-sessions/covered')
           ? (opts.covered ?? [])
+          // The same trap: `unsigned-earlier` is under `/tablet-sessions` too.
+          : url.includes('/tablet-sessions/unsigned-earlier')
+          ? (opts.earlier ?? { total: 0, rows: [] })
           : url.includes('/tablet-sessions')
             ? liveSessions
             : url.includes('/practice-users')
@@ -3027,5 +3032,138 @@ describe('a_live_fault_links_from_the_queue_row_to_the_card_that_fixes_it', () =
 
     await waitFor(() => expect(screen.getByTestId(`pushable-${READY.agreementId}`)).toBeTruthy());
     expect(screen.queryByTestId(`row-fault-${READY.agreementId}`)).toBeNull();
+  });
+});
+
+/**
+ * "UNSIGNED FROM EARLIER DAYS: N" (D-2026-10-10-01, option 1). What fell off
+ * today's list at midnight, counted, each line saying what the platform
+ * observed and linking to where it is dealt with — never generic advice
+ * (wow.md §13), and an unmapped reason shows its own code (CLAUDE.md §7c).
+ */
+describe('/practice/tablet — unsigned from earlier days', () => {
+  const IN_RECON = {
+    agreementId: 'agreement-earlier-1',
+    agreementType: 'episodic_pre',
+    status: 'draft',
+    patientId: 'patient-earlier-1',
+    patientName: 'Kim Specimen',
+    patientRecordNumber: 'PRN-0042',
+    providerName: 'Dr Example Provider',
+    forDate: '2026-10-07',
+    reason: 'service_in_reconciliation',
+    serviceRecordId: 'svc-earlier-1',
+    reconciliationDecision: null,
+  };
+  const NO_SERVICE = {
+    ...IN_RECON,
+    agreementId: 'agreement-earlier-2',
+    patientId: 'patient-earlier-2',
+    patientName: 'Alex Fictional',
+    patientRecordNumber: null,
+    forDate: '2026-10-08',
+    reason: 'no_service_recorded',
+    serviceRecordId: null,
+  };
+
+  beforeEach(() => {
+    calls.length = 0;
+    session = null;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('earlier_unsigned_line_counts_and_links_each_row_to_where_it_is_dealt_with', async () => {
+    signedInAtPractice();
+    stubFetch({ earlier: { total: 2, rows: [IN_RECON, NO_SERVICE] } });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    const summary = await screen.findByTestId('earlier-summary');
+    expect(summary.textContent).toBe(strings.tablet.earlierSummary(2));
+    expect(summary.textContent).toBe('Unsigned from earlier days: 2');
+
+    // Linked to a service on the queue: that Reconciliation item, by id.
+    const first = screen.getByTestId(`earlier-${IN_RECON.agreementId}`);
+    expect(first.textContent).toContain('Service recorded, in Reconciliation');
+    expect(first.textContent).toContain('Kim Specimen');
+    expect(first.textContent).toContain('Dr Example Provider');
+    expect(first.textContent).toContain('7 October 2026');
+    expect(screen.getByTestId(`earlier-link-${IN_RECON.agreementId}`).getAttribute('href')).toBe(
+      '/practice/reconciliation?item=svc-earlier-1',
+    );
+
+    // No service recorded: the patient's page, where the draft is in their history.
+    const second = screen.getByTestId(`earlier-${NO_SERVICE.agreementId}`);
+    expect(second.textContent).toContain('No service recorded');
+    expect(screen.getByTestId(`earlier-link-${NO_SERVICE.agreementId}`).getAttribute('href')).toBe(
+      '/practice/patients/patient-earlier-2',
+    );
+
+    // NEVER GENERIC ADVICE, and never a figure (hard rule 4) or a claim (hard rule 12).
+    const panel = screen.getByTestId('earlier-unsigned');
+    expect(panel.textContent).not.toMatch(/follow up|please/i);
+    expect(panel.textContent).not.toMatch(/\$|benefit amount|rebate/i);
+    expect(panel.textContent).not.toMatch(/certified|approved|accredited/i);
+    expect(screen.queryByTestId('earlier-capped')).toBeNull();
+  });
+
+  it('earlier_unsigned_decided_row_names_the_decision_and_unknown_codes_show_themselves', async () => {
+    signedInAtPractice();
+    stubFetch({
+      earlier: {
+        total: 2,
+        rows: [
+          { ...IN_RECON, reason: 'service_decided', reconciliationDecision: 'forgo_benefit' },
+          // A reason a newer server gives, which this bundle has never met.
+          { ...NO_SERVICE, reason: 'something_new' },
+        ],
+      },
+    });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    const decided = await screen.findByTestId(`earlier-reason-${IN_RECON.agreementId}`);
+    expect(decided.textContent).toBe(
+      strings.tablet.earlierDecided(strings.reconciliation.decisionNames.forgo_benefit),
+    );
+    // Not on the queue any more, so it does not link there.
+    expect(screen.getByTestId(`earlier-link-${IN_RECON.agreementId}`).getAttribute('href')).toBe(
+      `/practice/patients/${IN_RECON.patientId}`,
+    );
+    expect(screen.getByTestId(`earlier-reason-${NO_SERVICE.agreementId}`).textContent).toContain('something_new');
+  });
+
+  it('earlier_unsigned_says_when_the_list_is_capped', async () => {
+    signedInAtPractice();
+    stubFetch({ earlier: { total: 51, rows: [IN_RECON] } });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    expect((await screen.findByTestId('earlier-summary')).textContent).toBe(strings.tablet.earlierSummary(51));
+    expect(screen.getByTestId('earlier-capped').textContent).toBe(strings.tablet.earlierCapped(1, 51));
+  });
+
+  it('earlier_unsigned_is_hidden_when_there_are_none', async () => {
+    signedInAtPractice();
+    stubFetch({ earlier: { total: 0, rows: [] } });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    await waitFor(() => expect(screen.getByTestId(`pushable-${READY.agreementId}`)).toBeTruthy());
+    await waitFor(() =>
+      expect(calls.some((c) => c.url.includes('/tablet-sessions/unsigned-earlier'))).toBe(true),
+    );
+    expect(screen.queryByTestId('earlier-unsigned')).toBeNull();
+    expect(screen.queryByTestId('earlier-not-loaded')).toBeNull();
+  });
+
+  it('earlier_unsigned_reads_only', async () => {
+    signedInAtPractice();
+    stubFetch({ earlier: { total: 1, rows: [IN_RECON] } });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    await screen.findByTestId('earlier-summary');
+    const earlierCalls = calls.filter((c) => c.url.includes('/tablet-sessions/unsigned-earlier'));
+    expect(earlierCalls.length).toBeGreaterThan(0);
+    expect(earlierCalls.every((c) => c.method === 'GET')).toBe(true);
   });
 });

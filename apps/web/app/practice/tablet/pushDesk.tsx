@@ -515,7 +515,7 @@ export interface RefusalContext {
  * refuses them is worse than the band saying only the sentence — which is why
  * the sentence always states what to do in words as well.
  */
-function destination(
+export function destination(
   path: string,
   label: string,
   ctx: Pick<RefusalContext, 'audiences' | 'practiceId'>,
