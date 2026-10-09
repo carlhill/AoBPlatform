@@ -53,6 +53,8 @@ export * from './correspondence-log';
 export * from './kiosk';
 export * from './devices';
 export * from './aobprinter-host';
+// Why an operator re-baselined an AOBPRINTER chain: versioned content (D-2026-10-10-02 decision 7).
+export * from './aobprinter-rebaseline-reasons';
 export * from './tablet-session';
 export * from './patient-work';
 export * from './practitioner-queue';

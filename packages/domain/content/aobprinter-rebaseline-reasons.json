@@ -1,0 +1,9 @@
+{
+  "$comment": "VERSIONED CONTENT, NOT CODE (CLAUDE.md §7c, option lists are content; hard rule 14). The reasons a platform operator may give for re-baselining a practice's AOBPRINTER audit chain after a regression (D-2026-10-10-02 decision 7, PRINTER-HEARTBEAT.md). A re-baseline accepts a chain afresh, so it is the platform's act alone: PLATFORM_ADMIN, a fresh second factor, one of these codes, and an `aobprinter.chain_rebaselined` vault event that carries the code. A practice may never re-baseline its own host, because a practice may not verify its own evidence. THE LIST IS THE SCREEN: order here is the order the console offers them, and core refuses any code not listed here. Keys must match the core DTO's reason pattern ^[a-z0-9_]{1,40}$. THE WORDS ARE NOT HERE: the labels live in the string table keyed by `key` (REQ-LANG-01/-02). There is no free-text reason, deliberately; a vault event carries codes, never notes. Bump `version` on every edit.",
+  "version": "aobprinter-rebaseline-reasons-2026-10-1",
+  "reasons": [
+    { "key": "reinstalled" },
+    { "key": "database_restored" },
+    { "key": "investigated" }
+  ]
+}
