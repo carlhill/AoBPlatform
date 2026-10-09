@@ -4528,6 +4528,245 @@ export const strings = {
   },
 
   /*
+   * THE AOBPRINTER HOST PAGE (PRINTER-HEARTBEAT.md §4, D-2026-10-10-02).
+   *
+   * EVERY STATE SAYS WHAT THE PLATFORM OBSERVED, and offers a remedy only
+   * where it is true for that record (CLAUDE.md §7c, wow.md §13). Most of
+   * these states have no remedy a practice can apply, so most of them say
+   * none: a regression is cleared only by a platform operator, and saying
+   * "restart the host" under a failure it would not fix sends somebody to
+   * their computer instead of to our defect. Codes this page has no words for
+   * show the code. Hashes are shown as their first 8 characters, followed by
+   * an ellipsis, so a reader can match them against the host without the
+   * page pretending to show the whole thing.
+   */
+  aobprinterHost: {
+    title: 'AOBPRINTER host',
+    lead:
+      'The program on the practice’s computer that sends printed DB4s to AoB and files the signed ones back. '
+      + 'This page shows whether it is reporting, what it holds at each stage, and whether its audit log still '
+      + 'matches what the platform last saw.',
+    audience: 'Practice',
+    platformAudience: 'Platform',
+    loading: 'Loading…',
+    notLoaded: 'The AOBPRINTER host could not be loaded',
+
+    /* The card on the setup hub. */
+    hubOpen: 'Open the AOBPRINTER host',
+    hubBody: 'Whether this practice’s AOBPRINTER is reporting, and whether its audit log still matches what the platform last saw.',
+
+    /* One position in an audit log: an event number and the first 8 characters of its hash. */
+    point: (seq: number, hash8: string) => `event ${seq} (hash ${hash8}…)`,
+    pointNoHash: (seq: number) => `event ${seq} (no hash)`,
+    hostHeading: (chain8: string) => `Audit log ${chain8}…`,
+
+    liveness: {
+      live: 'Reporting',
+      stale: 'Late',
+      offline: 'Not reporting',
+      never_reported: 'Never reported',
+    },
+
+    /*
+     * 1. REGRESSED. One sentence per kind, each naming what the platform held
+     * and what the host sent. `regressedStays` is true of every regressed
+     * record (decision 4), which is why it may be said under all of them.
+     */
+    regressedTitle: 'The audit log no longer matches what the platform last saw',
+    regression: {
+      went_backwards: (expected: string, received: string, at: string) =>
+        `On ${at} the host reported its audit log ending at ${received}. The platform had already seen it reach ${expected}, so events it had reported are no longer there.`,
+      same_seq_different_hash: (expected: string, received: string, at: string) =>
+        `On ${at} the host reported ${received}. The platform had already seen ${expected}: the same event with a different hash, so an event already reported has changed.`,
+      anchor_mismatch: (expected: string, received: string, at: string) =>
+        `On ${at} the platform asked the host for the event it last verified, ${expected}, and the host answered ${received}. An event the platform had verified has changed or gone.`,
+      chain_replaced: (expected: string, received: string, at: string) =>
+        `On ${at} a host began reporting an audit log the platform has never seen, starting at ${received}. This practice already has an audit log starting at ${expected}, and it has not been re-baselined.`,
+    },
+    regressionUnmapped: (code: string, at: string) =>
+      `On ${at} the platform recorded a regression of a kind this page has no words for: ${code}.`,
+    regressedStays: 'This stays flagged until a platform operator re-baselines it. A practice cannot clear it from this page.',
+
+    /* 2. TWO HOSTS. */
+    secondHostTitle: 'Two hosts are reporting for this practice',
+    secondHostBody: (minutes: number) =>
+      `Two different audit logs have both reported in the last ${minutes} minutes. A practice runs one AOBPRINTER. Each host below says when it last reported.`,
+
+    /* 3. THE HOST'S OWN CHECK. */
+    localCheckTitle: 'The host’s own check of its audit log failed',
+    localCheck: {
+      link: (seq: number) => `The host checked its audit log and found that event ${seq} does not link to the event before it.`,
+      content: (seq: number) => `The host checked its audit log and found that event ${seq} no longer matches its own hash.`,
+    },
+    localCheckUnmapped: (seq: number, why: string) =>
+      `The host reported that its audit log check failed at event ${seq}, for a reason this page has no words for: ${why}.`,
+
+    /* 4. OFFLINE / STALE. The age comes from `deviceSeenAgo`; the server decides which state applies. */
+    offlineTitle: 'Not reporting',
+    offline: (at: string, ago: string) =>
+      `Not heard from since ${at} (${ago} ago). The last report it sent is kept below.`,
+    staleTitle: 'Reporting late',
+    stale: (at: string, ago: string) =>
+      `Not heard from since ${at} (${ago} ago), longer than three of its own reporting intervals. The last report it sent is kept below.`,
+
+    /* 5. OPEN EXCEPTIONS (decision 13). */
+    exceptionsTitle: (n: number) => (n === 1 ? 'One item is held as an exception on the host' : `${n} items are held as exceptions on the host`),
+    exceptionStage: {
+      parse_exception: 'A print could not be read',
+      send_exception: 'A print could not be sent',
+      received_exception: 'A signed return could not be read',
+      filing_exception: 'A signed return could not be filed',
+    },
+    exceptionReason: {
+      incomplete_pdf: 'the PDF was incomplete',
+      no_text_layer: 'the PDF has no text to read',
+      not_a_db4: 'it is not a DB4',
+      unsafe_name: 'its file name was not safe to use',
+      download_failed: 'the download from AoB failed',
+      hash_mismatch: 'the file did not match its hash',
+      write_failed: 'it could not be written to the folder',
+      write_verify_failed: 'it was written but did not read back the same',
+    },
+    exceptionSince: (at: string) => `Since ${at}.`,
+    printHeld: (hash8: string) =>
+      `Print ${hash8}… is held on the host. No platform page shows a print job, so it is named by the first 8 characters of its hash.`,
+    returnOpenPatient: 'Open the patient',
+    returnNoPatient: 'The platform found no patient for this agreement.',
+
+    /* 6. FILED BUT NOT RECORDED AS CONFIRMED — the platform's verdict, one sentence per case. */
+    filedTitle: (n: number) => (n === 1 ? 'One return is filed on the host but not recorded as confirmed' : `${n} returns are filed on the host but not recorded as confirmed`),
+    filed: {
+      written_back: 'The platform has recorded this return as written back. The host marks it confirmed on its next report.',
+      offered: 'The platform has not recorded this return as written back, and is still offering it for collection.',
+      not_offered: 'The platform has not recorded this return as written back, and is no longer offering it for collection.',
+    },
+    filedUnmapped: (code: string) => `The platform answered for this return with a verdict this page has no words for: ${code}.`,
+
+    /* 7. OLD QUEUE. `staleQueued` is the host's own count. */
+    oldQueueTitle: 'Prints have waited too long to be sent',
+    oldQueue: (n: number, ago: string) => `${n} queued on the host longer than it expects. The oldest has waited ${ago}.`,
+    oldQueueNoAge: (n: number) => `${n} queued on the host longer than it expects.`,
+
+    /* 8. CLOCK SKEW (decision 15). */
+    skewTitle: 'The host’s clock is out',
+    skewAhead: (minutes: number) => `At its last report the host’s clock was ${minutes} minutes ahead of the platform’s. Times the host records are out by the same amount.`,
+    skewBehind: (minutes: number) => `At its last report the host’s clock was ${minutes} minutes behind the platform’s. Times the host records are out by the same amount.`,
+
+    /* 9. HEALTHY. */
+    healthyTitle: 'Reporting normally',
+    healthy: (ago: string) => `Last reported ${ago} ago, with nothing held and nothing out of step.`,
+
+    /* 10. NEVER REPORTED — neutral, not an outage. */
+    neverTitle: 'No AOBPRINTER has reported for this practice',
+    never: 'Nothing has reported yet, so there is nothing to be offline. This page fills in after the first report.',
+
+    /* The last report, always kept on screen with its age. */
+    reportTitle: (ago: string) => `As last reported, ${ago} ago`,
+    versionsTitle: 'Versions',
+    printerVersion: 'AOBPRINTER',
+    templateVersion: 'Template',
+    schemaVersion: 'Database schema',
+    runtimeVersion: 'Runtime',
+    startedAt: 'Running since',
+    interval: (seconds: number) => `Reports every ${seconds} s`,
+    collecting: 'Collecting signed returns',
+    retention: 'Keeps copies after sending',
+    queueCount: 'Files waiting in the folder',
+    yes: 'Yes',
+    no: 'No',
+    stagesTitle: 'What the host holds at each stage',
+    stageColumn: 'Stage',
+    countColumn: 'Count',
+    printsHeading: 'Prints',
+    returnsHeading: 'Signed returns',
+    printStages: {
+      received: 'Received',
+      parse_exception: 'Could not be read',
+      queued: 'Queued',
+      sent: 'Sent',
+      send_exception: 'Could not be sent',
+    },
+    returnStages: {
+      received: 'Received',
+      received_exception: 'Could not be read',
+      filed: 'Filed',
+      filing_exception: 'Could not be filed',
+      confirmed: 'Confirmed',
+    },
+    chainTitle: 'Audit log',
+    chainHead: (point: string) => `Head: ${point}.`,
+    chainStatus: {
+      unverified: 'Not verified yet. The platform checks it against each report.',
+      consistent: 'Matches what the platform last saw.',
+      regressed: 'Flagged: no longer matches what the platform last saw.',
+    },
+    anchorVerified: (at: string, seq: number) => `Anchor verified ${at}, at event ${seq}.`,
+    anchorNotVerified: 'The anchor has not been verified yet.',
+
+    /*
+     * RE-BASELINE — the platform's act alone (decision 7), so it is never on
+     * the practice's page. The reason list is versioned content
+     * (`aobprinter-rebaseline-reasons.json`); these are its labels, keyed by
+     * the file's keys and rendered in the file's order.
+     */
+    rebaseline: {
+      title: (chain8: string) => `Re-baseline audit log ${chain8}…`,
+      lead: 'Accepts the host’s audit log as it now stands and clears the flag. Recorded in the vault with the reason chosen here and who chose it.',
+      reasonLabel: 'Reason',
+      reasonPlaceholder: 'Choose a reason',
+      reasons: {
+        reinstalled: 'AOBPRINTER was reinstalled',
+        database_restored: 'The host’s database was restored from a backup',
+        investigated: 'Investigated, and the change is explained',
+      },
+      action: 'Re-baseline',
+      blocked: 'Re-baseline — choose a reason first',
+      busy: 'Re-baselining…',
+      done: 'Re-baselined. The flag is cleared and the next report starts a fresh check.',
+      refused: 'The re-baseline was refused',
+      stepUpTitle: 'Confirm it is you',
+      stepUpReauthenticate:
+        'Re-baselining accepts a practice’s evidence afresh, so it needs a sign-in from the last few minutes. Confirm it is you '
+        + 'and this page comes straight back.',
+      stepUpAction: 'Confirm it is you',
+      stepUpSecondFactorMissing:
+        'This account signs in with a password and nothing else, so it cannot re-baseline. Add an authenticator app or a '
+        + 'passkey to the account, then try again.',
+      stepUpUnmapped: (code: string) =>
+        `The server refused this and gave a reason this screen does not recognise: ${code}. Nothing was changed.`,
+    },
+
+    /* `/platform/aobprinter-hosts` — every practice's host, worst first. */
+    overview: {
+      navLabel: 'AOBPRINTER hosts',
+      title: 'AOBPRINTER hosts',
+      lead: 'Every practice’s AOBPRINTER host, worst first. Counts, versions, times and status only; open a row for that practice’s page.',
+      audience: 'Platform',
+      notLoaded: 'The AOBPRINTER hosts could not be loaded',
+      none: 'No practice has an AOBPRINTER host yet.',
+      practiceColumn: 'Practice',
+      stateColumn: 'State',
+      lastSeenColumn: 'Last report',
+      versionColumn: 'Version',
+      lastSeen: (ago: string) => `${ago} ago`,
+      neverSeen: 'Never',
+      states: {
+        regressed: 'Audit log no longer matches',
+        second_host: 'Two hosts reporting',
+        local_check_failed: 'Host’s own check failed',
+        offline: 'Not reporting',
+        stale: 'Reporting late',
+        open_exceptions: 'Exceptions held',
+        filed_unconfirmed: 'Filed, not confirmed',
+        old_queue: 'Prints waiting too long',
+        clock_skew: 'Clock out',
+        healthy: 'Reporting normally',
+        never_reported: 'Never reported',
+      },
+    },
+  },
+
+  /*
    * SEND TO THE TABLET — reception's half of the push (`/practice/tablet`).
    *
    * WRITTEN FOR A RECEPTIONIST WITH A PATIENT IN FRONT OF THEM, which sets the

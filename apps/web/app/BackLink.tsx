@@ -57,6 +57,8 @@ const PARENTS: Readonly<Record<string, string>> = {
   '/practice/affiliations': '/practice/setup',
   '/practice/users': '/practice/setup',
   '/practice/devices': '/practice/setup',
+  // The practice's AOBPRINTER host, opened from its card on the setup hub (PRINTER-HEARTBEAT.md §4).
+  '/practice/aobprinter-host': '/practice/setup',
   /*
    * THE SHIFT'S PAGES GO UP TO THE SHIFT'S HOME (Carl, 12 Sep 2026;
    * PRACTICE-NAVIGATION.md §2). All three used to go up to `/practice/setup`,
@@ -133,6 +135,9 @@ const PARENTS: Readonly<Record<string, string>> = {
   // cross-practice screen for an operator.
 
   '/platform/acting-as': '/practice',
+  // Every practice's AOBPRINTER host, worst first (PRINTER-HEARTBEAT.md §4). Each row's twin goes up to its
+  // practice's hub through platformPracticeParent, like every twin.
+  '/platform/aobprinter-hosts': '/practice',
   '/practice/reports': '/practice',
 
   /*
