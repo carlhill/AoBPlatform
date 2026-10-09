@@ -13,7 +13,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DEFAULT_COLLECTION_CONFIG, DEFAULT_RETENTION_CONFIG, type AobPrinterConfig } from './config';
+import { DEFAULT_COLLECTION_CONFIG, DEFAULT_HEARTBEAT_CONFIG, DEFAULT_RETENTION_CONFIG, type AobPrinterConfig } from './config';
 import type { CollectionClient } from './collector';
 import type { Db4PrintRecord } from './db4-record';
 import { keystorePaths, type KeyWrapper } from './keystore';
@@ -57,6 +57,12 @@ function aConfig(dataDir: string): AobPrinterConfig {
     templateVersion: 'pracsoft3-db4-2026-09-1',
     retention: DEFAULT_RETENTION_CONFIG,
     collection: DEFAULT_COLLECTION_CONFIG,
+    /*
+     * OFF IN THIS FIXTURE, so no test here makes a real request to the bench
+     * endpoint five seconds in. A test of the heartbeat hands in a client,
+     * which switches it on the way `collectionClient` switches collection on.
+     */
+    heartbeat: { ...DEFAULT_HEARTBEAT_CONFIG, enabled: false },
   };
 }
 

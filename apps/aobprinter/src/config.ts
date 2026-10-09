@@ -17,6 +17,7 @@
  * are unread until the decision is made, and the program says so at startup.
  */
 import { readFileSync } from 'node:fs';
+import { AOBPRINTER_HEARTBEAT_INTERVAL } from '@aobplatform/contracts';
 import { looksLikeAnIdentifier } from './log';
 import { DEFAULT_TEMPLATE_VERSION } from './template';
 
@@ -64,6 +65,28 @@ export interface AobPrinterConfig {
   readonly retention: RetentionConfig;
   /** Filing signed forms back into the PMS. See `CollectionConfig`. */
   readonly collection: CollectionConfig;
+  /** Telling the platform this host is alive and what it holds. See `HeartbeatConfig`. */
+  readonly heartbeat: HeartbeatConfig;
+}
+
+/**
+ * THE HEARTBEAT (PRINTER-HEARTBEAT.md, D-2026-10-10-02).
+ *
+ * `enabled` DEFAULTS TO TRUE, the opposite of collection and retention, and
+ * for the reason those two are off: they write or delete things a practice
+ * cares about, and this writes nothing anywhere but a request to the platform
+ * (decision 11). An install upgrading to this build starts beating.
+ *
+ * THE INTERVAL IS BOUNDED BY THE CONTRACT, NOT BY A LITERAL HERE: 15 s to
+ * 10 min, every minute by default, and outside that the program refuses to
+ * start (decision 1). The platform judges staleness at the interval the host
+ * reports, so the two sides read one set of numbers.
+ */
+export interface HeartbeatConfig {
+  readonly enabled: boolean;
+  readonly intervalMs: number;
+  /** How long after start the first beat goes. */
+  readonly firstDelayMs: number;
 }
 
 /**
@@ -185,6 +208,13 @@ export const DEFAULT_COLLECTION_CONFIG: CollectionConfig = {
   enabled: false,
   importFolder: '',
   pollMs: 5 * 60 * 1000,
+};
+
+/** On, every minute, the first beat five seconds after start (decisions 1 and 11). */
+export const DEFAULT_HEARTBEAT_CONFIG: HeartbeatConfig = {
+  enabled: true,
+  intervalMs: AOBPRINTER_HEARTBEAT_INTERVAL.defaultMs,
+  firstDelayMs: AOBPRINTER_HEARTBEAT_INTERVAL.firstDelayMs,
 };
 
 export const DEFAULT_DATA_DIR = 'C:\\ProgramData\\AoBPlatform';
@@ -380,7 +410,37 @@ export function parseConfig(raw: unknown, path: string): AobPrinterConfig {
     clientKeyPath: typeof doc.clientKeyPath === 'string' ? doc.clientKeyPath : undefined,
     retention: parseRetention(doc.retention, path),
     collection: parseCollection(doc.collection, path),
+    heartbeat: parseHeartbeat(doc.heartbeat, path),
   };
+}
+
+/**
+ * `heartbeat`, present or absent, never half-shaped — and AN INTERVAL OUTSIDE
+ * THE AGREED RANGE IS A REFUSAL TO START (decision 1). Too fast and a
+ * practice's link notices; too slow and the console says "stale" about a host
+ * that is fine, which teaches people to ignore it.
+ */
+function parseHeartbeat(raw: unknown, path: string): HeartbeatConfig {
+  if (raw === undefined) return DEFAULT_HEARTBEAT_CONFIG;
+  if (typeof raw !== 'object' || raw === null) {
+    throw new Error(`${path}: "heartbeat" must be a JSON object when present.`);
+  }
+  const doc = raw as Record<string, unknown>;
+
+  const enabled = doc.enabled === undefined ? DEFAULT_HEARTBEAT_CONFIG.enabled : doc.enabled;
+  if (typeof enabled !== 'boolean') {
+    throw new Error(`${path}: "heartbeat.enabled" must be a boolean.`);
+  }
+  const { minMs, maxMs } = AOBPRINTER_HEARTBEAT_INTERVAL;
+  const intervalMs = doc.intervalMs === undefined ? DEFAULT_HEARTBEAT_CONFIG.intervalMs : doc.intervalMs;
+  if (typeof intervalMs !== 'number' || !Number.isInteger(intervalMs) || intervalMs < minMs || intervalMs > maxMs) {
+    throw new Error(
+      `${path}: "heartbeat.intervalMs" must be a whole number of milliseconds from ${minMs} to ${maxMs} (15 seconds to 10 minutes).`,
+    );
+  }
+  const firstDelayMs = optionalNumber(doc, 'firstDelayMs', DEFAULT_HEARTBEAT_CONFIG.firstDelayMs);
+
+  return { enabled, intervalMs, firstDelayMs };
 }
 
 /**
