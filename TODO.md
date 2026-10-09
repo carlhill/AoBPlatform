@@ -14,6 +14,34 @@ being decided.
 
 ---
 
+## Agreements left unsigned past their day (10 Oct 2026) - D-2026-10-10-01
+
+**Being built now:** option 1, the tablet's "Unsigned from earlier days: N"
+notice, and option 4, the post-service chase switched on in development (sandbox
+gateways only; production off until Carl says live).
+
+**Deferred, decided by Carl to be on this list:**
+
+2. **Link the unsigned draft to the service.** When an invoice arrives for the
+   same patient, provider and day, pms-sync should link the unsigned draft to the
+   service record, so the draft reaches Reconciliation instead of being orphaned.
+   Today `pms-sync.service.ts` links only an agreement with `status: 'stored'`.
+   - *Why deferred:* it changes which agreement a claim is reconciled against,
+     and auto-capture may already have opened a second draft for the same visit.
+     How often that happens has not been measured, and the two drafts must not
+     both end up linked.
+   - *Depends on:* that measurement, and a rule for which draft wins.
+3. **Close drafts with no service after N days.** Close them as "not needed: no
+   service recorded", with a vault event.
+   - N belongs in the versioned rule set (hard rule 14); it is never hardcoded.
+   - *Why deferred:* closing an agreement is a state change with evidence
+     consequences. N is a regulatory-adjacent threshold that is not in the
+     requirements docs, and §7c says never to invent one.
+   - *Depends on:* Carl choosing N. Option 2 should come first, so that nothing
+     a service could still claim gets closed.
+
+---
+
 ## A patient on "Needs a look" has no control that restarts their paperwork
 
 Built 12 September 2026: `/practice/frontdesk`'s rails now partition the day, so

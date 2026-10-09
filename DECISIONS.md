@@ -2787,3 +2787,52 @@ open an encrypted archive.
 | 29 Sep | AOBPRINTER audit trail: one row per form with a stage (out: received/queued/sent + two exceptions; back: received/filed/confirmed + two exceptions), every stage change writing its event in the same transaction, the event log append-only by database trigger and hash-chained; locations encrypted (rule §6); rows no longer deleted, only their payloads | **D-2026-09-29-01 above** |
 | 29 Sep | The AOBPRINTER encryption key always exists, not only with retention on; reverses the "retention off never touches DPAPI" guarantee; key-management wiring flagged for human review | **D-2026-09-29-02 above** |
 | 29 Sep | Captured PDFs archived encrypted for `retention.archiveDays` (default 7, 1-30), overriding D-2026-09-17-01's 24-hour cap for that one thing; archive and destruction are audit events | **D-2026-09-29-03 above** |
+
+---
+
+## D-2026-10-10-01 - An agreement left unsigned at midnight: the tablet says so, and the post-service chase is switched on
+
+**Date:** 10 October 2026. **Decided by:** Carl, choosing from four options
+Claude set out after Carl asked what happens to an agreement that is not signed
+by midnight, when it drops off the practice tablet's list. Carl picked options 1
+and 4 to build now, and 2 and 3 for the to-do list.
+
+**What was true before.** Nothing happens to the agreement at midnight. The
+tablet's list (`readPushableRows`) shows only today's rows, so an unsigned
+agreement simply stops being shown and stays unsigned indefinitely. What
+happens next depends on the case:
+
+- **Linked to a service record:** it is banded on `/practice/reconciliation`
+  (resend, convert to private, forgo the benefit, keep chasing).
+- **A desk draft whose invoice arrived later:** orphaned, because pms-sync links
+  only a `stored` agreement to a service record.
+- **A no-show:** orphaned for ever.
+
+The tablet gave no sign of any of this, which breaks `CLAUDE.md` §7c
+("shortcuts to the answer").
+
+**1. The tablet notice (build now).** The practice tablet shows "Unsigned from
+earlier days: N". Each entry links to the exact place it is fixed: its
+Reconciliation item when a service is linked, otherwise the draft itself. Each
+entry says what the system observed, and nothing more (§7c, wow.md §13). This
+changes no agreement's behaviour.
+
+**4. The post-service chase is ON (build now).** `POST_SERVICE_CHASE_ENABLED`
+is true in development, where SMS goes to the sandbox gateway
+(`SMS_GATEWAY_MODE=sandbox`) and email to Mailhog (`MAIL_SANDBOX_SMTP_HOST`), so
+nothing reaches a real patient. **Production stays off until Carl says it is
+live**, because it sends real messages, which costs money and needs a
+registered sender. The code default stays `false`, so a deployment that omits
+the variable sends nothing.
+
+**2 and 3 are deferred to `TODO.md`:**
+
+- **2:** link an unsigned draft to the service record for the same patient,
+  provider and day.
+- **3:** close a draft with no service after N days, with a vault event.
+
+Both change how agreements behave.
+
+**What would reopen it:** Carl declaring the chase live (this then becomes a
+production configuration change, with a registered sender); or option 2 or 3
+being built, which removes most of the orphans the tablet notice now lists.
