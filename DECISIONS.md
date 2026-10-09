@@ -2836,3 +2836,29 @@ Both change how agreements behave.
 **What would reopen it:** Carl declaring the chase live (this then becomes a
 production configuration change, with a registered sender); or option 2 or 3
 being built, which removes most of the orphans the tablet notice now lists.
+
+---
+
+## D-2026-10-10-02 - The AOBPRINTER heartbeat and its console: fifteen decisions
+
+**Date:** 10 October 2026. **Decided by:** Carl, *"All good"*, accepting all
+fifteen of the defaults that Claude's planner set out. Before that, he made
+three choices of his own:
+- re-baselining is a platform operator's act only (decision 7);
+- the `x-practice-id` transport is accepted until mTLS lands (decision 12);
+- one full-suite run at the end, not one per shared-module step.
+
+**The fifteen are in `PRINTER-HEARTBEAT.md`, with a reason for each.** That file
+also holds the plan they belong to. In brief:
+- a 60-second heartbeat carrying stage counts, versions and the audit chain head, with no PII;
+- stale after 3 missed beats, offline after 15 minutes, and an ALERT log on silence;
+- a regression is one vault event on the transition, plus a console flag that stays until a platform operator re-baselines;
+- the chain head is anchored in the vault at most hourly;
+- a new chain for a practice that already has one is the regression `chain_replaced`;
+- "processed by AoB" is recorded as host audit events, with no SQLite schema bump;
+- the heartbeat is on by default when a practice upgrades.
+
+**What would reopen it:** mTLS landing (decision 12 then closes); a practice
+running two hosts on purpose (decision 6); or the vault's anchoring cost making
+hourly too often (decision 5).
+

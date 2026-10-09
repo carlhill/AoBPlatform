@@ -4487,7 +4487,8 @@ network-path refusal. 179 tests. Reviewed by a fresh Opus reviewer; its nine
 findings are fixed and tested.
 
 **Still open from this item, in order:**
-1. **The heartbeat** (Carl, 29 Sep): a no-PII status every minute or so — waiting,
+1. **The heartbeat** — PLANNED 10 Oct 2026, items 1–3 together: `PRINTER-HEARTBEAT.md`,
+   D-2026-10-10-02. (Carl, 29 Sep): a no-PII status every minute or so — waiting,
    exceptions, version, and the AUDIT CHAIN HEAD, so a rewritten local log cannot
    match what the platform holds. Its reply can carry "processed by AoB" per job.
 2. **The console page** on the platform: each practice's AOBPRINTER host,
@@ -4502,6 +4503,11 @@ findings are fixed and tested.
    on every start (D-2026-09-29-02). `keystore.ts` itself is unchanged. Carl to
    review before any practice runs it.
 6. **The bundled Node.js runtime** in the installer (>= 22.5; 24.x measured).
+7. **The heartbeat inherits the transport gap** (D-2026-10-10-02 decision 12).
+   Like print ingest and collection, it is authenticated only by `x-practice-id`
+   until mutual TLS lands, so a forged heartbeat could raise a false chain
+   regression or hide a host that has gone silent. Accepted by Carl on 10 Oct.
+   Close it with the AOBPRINTER mTLS work, not separately.
 
 The original plan, as written on 28 Sep: Carl: *"go with sqlite and ship our own node."*
 
