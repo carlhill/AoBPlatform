@@ -36,6 +36,7 @@ import { CaptureService } from '../capture/capture.service';
 import { VerificationService } from '../verification/verification.service';
 import { DevicesService, type ResolvedDevice } from '../devices/devices.service';
 import { ServiceDescriptionsService } from '../service-descriptions/service-descriptions.service';
+import { ReconciliationService } from '../reconciliation/reconciliation.service';
 import { pushRefusals } from './push-refusal';
 import type { DisputeResolutionOutcome } from './dispute-resolution.dto';
 
@@ -269,6 +270,67 @@ export interface CoveredServiceRow {
 }
 
 /**
+ * WHAT THE PLATFORM FOUND ABOUT AN AGREEMENT STILL UNSIGNED FROM AN EARLIER
+ * DAY (D-2026-10-10-01, option 1). Observations, never advice (wow.md §13):
+ *
+ *  - `service_in_reconciliation` — a service record names this agreement and
+ *    that record is on the Reconciliation queue right now (the same reading
+ *    `ReconciliationService.outstanding` makes, through that module's API).
+ *  - `service_decided` — a service record names it, and it is NOT on the
+ *    queue because a Reconciliation decision closed it. The decision code
+ *    rides along so the console can say which one.
+ *  - `no_service_recorded` — no service record names this agreement.
+ */
+export const EARLIER_UNSIGNED_REASONS = [
+  'service_in_reconciliation',
+  'service_decided',
+  'no_service_recorded',
+] as const;
+export type EarlierUnsignedReason = (typeof EARLIER_UNSIGNED_REASONS)[number];
+
+/**
+ * HOW MANY ROWS THE TABLET PAGE IS SENT AT MOST. The count is always the
+ * whole count; only the list is cut, oldest kept (D-2026-10-10-01).
+ */
+export const EARLIER_UNSIGNED_CAP = 50;
+
+/**
+ * ONE AGREEMENT STILL UNSIGNED FROM BEFORE TODAY — a line under the tablet
+ * page's own list, never a Send (D-2026-10-10-01).
+ *
+ * NO MORE ABOUT THE PATIENT THAN TODAY'S `PushableRow` ALREADY CARRIES: the
+ * name and the two record ids `PatientIdentity` shows. No date of birth, no
+ * address, no contact detail, no identifier value, and no amount (hard rule 4).
+ */
+export interface EarlierUnsignedRow {
+  agreementId: string;
+  agreementType: AgreementType;
+  status: string;
+  patientId: string;
+  patientName: string;
+  patientRecordNumber: string | null;
+  providerName: string | null;
+  /**
+   * THE DAY IT WAS FOR, read the way `readPushableRows` reads "today": the
+   * appointment's date where there is a booking, otherwise the day the draft
+   * was created.
+   */
+  forDate: string;
+  reason: EarlierUnsignedReason;
+  /** The service record that names it, for the Reconciliation link. Null for `no_service_recorded`. */
+  serviceRecordId: string | null;
+  /** Only for `service_decided`: the latest decision's code, e.g. `forgo_benefit`. */
+  reconciliationDecision: string | null;
+}
+
+export interface EarlierUnsignedList {
+  /** Every agreement that qualifies, whether or not the list below was cut. */
+  total: number;
+  /** Oldest first, at most `EARLIER_UNSIGNED_CAP`. */
+  rows: EarlierUnsignedRow[];
+}
+
+/**
  * PUSH-TO-DEVICE CAPTURE — reception hands the patient a locked screen
  * (TODO.md "Push-to-device capture" and "Two front doors", Carl 4 Sep 2026).
  *
@@ -327,6 +389,12 @@ export class TabletSessionsService {
      * creates.
      */
     private readonly serviceDescriptions: ServiceDescriptionsService,
+    /**
+     * READ ONLY, for `unsignedEarlierDays` — whether a service is on the
+     * Reconciliation queue is that module's answer, asked through its API
+     * rather than by re-deriving it from its tables (D-2026-10-10-01).
+     */
+    private readonly reconciliation: ReconciliationService,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -1518,6 +1586,146 @@ export class TabletSessionsService {
   }
 
   /**
+   * UNSIGNED FROM EARLIER DAYS — what fell off `pushable` at midnight
+   * (D-2026-10-10-01, option 1).
+   *
+   * THE SAME CANDIDATES, THE SAME DAY, THE SAME EXCLUSIONS. Pushable statuses,
+   * no signature, `dayOf` saying `earlier` on the boundary `readPushableRows`
+   * uses, and `withoutDeadEnds` dropping the replaced and the closed-capture
+   * rows — so every line here is an agreement that would have been on
+   * yesterday's list (or an earlier one), and nothing that never was.
+   *
+   * EACH LINE SAYS WHAT WAS OBSERVED, NOT WHAT TO DO (wow.md §13): whether a
+   * service record names the agreement and, if one does, whether it is on the
+   * Reconciliation queue. Whether it is on the queue is the reconciliation
+   * module's own answer (`outstanding`, then `detail` for one that is not),
+   * asked through its API so the two screens cannot disagree.
+   *
+   * READ ONLY. It does not call `settle`, writes nothing, emits no vault event
+   * and changes no agreement — the agreement's behaviour is exactly what it
+   * was before this list existed (D-2026-10-10-01: options 2 and 3 are the
+   * ones that would change it, and they are deferred). Nothing here can block
+   * a push, a signature or a bill (hard rule 8).
+   */
+  async unsignedEarlierDays(practiceId: string): Promise<EarlierUnsignedList> {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const todayIso = today();
+
+    const read = await this.prisma.withPractice(practiceId, async (tx) => {
+      const candidates = await tx.agreement.findMany({
+        where: { status: { in: [...PUSHABLE_STATUSES] }, signatureEventId: null },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (candidates.length === 0) return null;
+
+      const appointments = await tx.appointment.findMany({
+        where: { agreementId: { in: candidates.map((a) => a.id) } },
+        select: { agreementId: true, date: true },
+      });
+      const appointmentByAgreement = new Map(
+        appointments.filter((a) => a.agreementId).map((a) => [a.agreementId as string, a]),
+      );
+      const earlier = candidates.filter(
+        (agreement) =>
+          dayOf(agreement, appointmentByAgreement.get(agreement.id), startOfDay, todayIso) === 'earlier',
+      );
+      const live = await this.withoutDeadEnds(tx, earlier);
+      if (live.length === 0) return null;
+
+      const forDateOf = (agreement: (typeof live)[number]): string => {
+        const appointment = appointmentByAgreement.get(agreement.id);
+        return appointment ? appointment.date.toISOString().slice(0, 10) : localIsoDate(agreement.createdAt);
+      };
+      /* OLDEST FIRST, with ties broken on fields nothing on this list can move. */
+      const sorted = [...live].sort(
+        (a, b) =>
+          forDateOf(a).localeCompare(forDateOf(b))
+          || a.createdAt.getTime() - b.createdAt.getTime()
+          || a.id.localeCompare(b.id),
+      );
+      const kept = sorted.slice(0, EARLIER_UNSIGNED_CAP);
+
+      const patients = await tx.patient.findMany({
+        where: { id: { in: kept.map((a) => a.patientId) } },
+        select: { id: true, givenNames: true, familyName: true, patientRecordNumber: true },
+      });
+      const anchors = await anchorsForAgreements(tx, kept);
+      const services = await tx.serviceRecord.findMany({
+        where: { agreementId: { in: kept.map((a) => a.id) } },
+        select: { id: true, agreementId: true },
+        orderBy: [{ serviceDate: 'asc' }, { id: 'asc' }],
+      });
+      return {
+        total: sorted.length,
+        kept,
+        forDateOf,
+        patientById: new Map(patients.map((p) => [p.id, p])),
+        anchors,
+        services,
+      };
+    });
+    if (!read) return { total: 0, rows: [] };
+
+    /*
+     * ON THE QUEUE OR NOT — asked of the reconciliation module, outside the
+     * transaction above, and only when a service record names one of these.
+     */
+    const servicesByAgreement = new Map<string, string[]>();
+    for (const service of read.services) {
+      if (!service.agreementId) continue;
+      servicesByAgreement.set(service.agreementId, [...(servicesByAgreement.get(service.agreementId) ?? []), service.id]);
+    }
+    const onQueue =
+      read.services.length > 0
+        ? new Set((await this.reconciliation.outstanding(practiceId)).map((item) => item.serviceRecordId))
+        : new Set<string>();
+
+    const rows: EarlierUnsignedRow[] = [];
+    for (const agreement of read.kept) {
+      const patient = read.patientById.get(agreement.patientId);
+      if (!patient) continue;
+      const linked = servicesByAgreement.get(agreement.id) ?? [];
+      let reason: EarlierUnsignedReason = 'no_service_recorded';
+      let serviceRecordId: string | null = null;
+      let reconciliationDecision: string | null = null;
+      if (linked.length > 0) {
+        const queued = linked.find((id) => onQueue.has(id));
+        serviceRecordId = queued ?? linked[0];
+        reason = 'service_in_reconciliation';
+        if (!queued) {
+          /*
+           * NAMED BY A SERVICE BUT NOT ON THE QUEUE. The queue drops an item
+           * for a stored agreement (impossible here) or a closing decision;
+           * `detail` says which decision. If it says the item is NOT closed,
+           * the queue's own rule puts it back on the queue, so that is what
+           * the line says.
+           */
+          const detail = await this.reconciliation.detail(practiceId, serviceRecordId);
+          if (detail.alreadyClosed) {
+            reason = 'service_decided';
+            reconciliationDecision = detail.decisions[0]?.decision ?? null;
+          }
+        }
+      }
+      rows.push({
+        agreementId: agreement.id,
+        agreementType: agreement.type as AgreementType,
+        status: agreement.status,
+        patientId: patient.id,
+        patientName: `${patient.givenNames} ${patient.familyName}`,
+        patientRecordNumber: patient.patientRecordNumber ?? null,
+        providerName: read.anchors.get(agreement.id)?.name ?? null,
+        forDate: read.forDateOf(agreement),
+        reason,
+        serviceRecordId,
+        reconciliationDecision,
+      });
+    }
+    return { total: read.total, rows };
+  }
+
+  /**
    * HAS THIS AGREEMENT MOVED PAST THE POINT A TABLET COULD MEAN ANYTHING?
    *
    * THE SAME TWO CONDITIONS `blockingReason` USES for
@@ -1549,6 +1757,61 @@ export class TabletSessionsService {
     return null;
   }
 
+  /**
+   * ONE ROW PER AGREEMENT WITH SOMEWHERE LEFT TO GO — the two exclusions
+   * `readPushableRows` applies to today, and `unsignedEarlierDays` applies to
+   * the days before it, from ONE copy so the two lists cannot come to
+   * disagree about which agreement is the live one for a visit.
+   */
+  private async withoutDeadEnds<T extends { id: string }>(
+    tx: Prisma.TransactionClient,
+    agreements: T[],
+  ): Promise<T[]> {
+    if (agreements.length === 0) return [];
+    /*
+     * ONE ROW PER AGREEMENT WITH SOMEWHERE LEFT TO GO. A retried draft can
+     * leave TWO agreement rows behind a single visit — the first attempt's
+     * in-practice capture request timed out or was cancelled, and a fresh
+     * one was opened for the same patient. Both would satisfy "today" and
+     * "unsigned", and the stale one has no path to a signature any more: its
+     * capture request is closed and nothing will ever open it again. So it
+     * is excluded here rather than merely outranked — an agreement stays a
+     * candidate only while it has an OPEN capture request, or has none yet
+     * (a draft nobody has tried to capture at all).
+     */
+    const captureRequests = await tx.captureRequest.findMany({
+      where: { agreementId: { in: agreements.map((a) => a.id) } },
+    });
+    const hasAnyCapture = new Set(captureRequests.map((r) => r.agreementId));
+    const hasOpenCapture = new Set(captureRequests.filter((r) => r.status === 'open').map((r) => r.agreementId));
+    /*
+     * AND NEVER THE ONE THAT HAS BEEN REPLACED (Carl's reproduction, 10 Sep
+     * 2026). A superseded agreement keeps its own status — there is no
+     * `superseded` state in the lifecycle, and `supersedeForCorrection`
+     * explains why — so the fact lives where it is true: another agreement
+     * pointing back at this one. Its capture requests are closed on
+     * supersession, which already removes it from this list in the ordinary
+     * case, but "no capture request at all" and "closed" are different rows
+     * here and only one of them was covered. Reading the successor makes the
+     * exclusion a property of the CHAIN rather than of a side-effect, so
+     * reception is always editing the newest agreement for the visit: a
+     * second "Who is signing" Save lands on a row that is still live and
+     * writes, instead of being refused as having moved on.
+     */
+    const successors = await tx.agreement.findMany({
+      where: { supersedesAgreementId: { in: agreements.map((a) => a.id) } },
+      select: { supersedesAgreementId: true },
+    });
+    const superseded = new Set(
+      successors.map((s) => s.supersedesAgreementId).filter((id): id is string => id !== null),
+    );
+    return agreements.filter(
+      (agreement) =>
+        !superseded.has(agreement.id)
+        && (!hasAnyCapture.has(agreement.id) || hasOpenCapture.has(agreement.id)),
+    );
+  }
+
   /** The rows themselves — one transaction, no network calls. See `pushable`. */
   private async readPushableRows(practiceId: string, startOfDay: Date): Promise<PushableRow[]> {
     return this.prisma.withPractice(practiceId, async (tx) => {
@@ -1566,55 +1829,13 @@ export class TabletSessionsService {
       );
 
       const todayIso = today();
-      const dueToday = candidates.filter((agreement) => {
-        const appointment = appointmentByAgreement.get(agreement.id);
-        if (appointment) return appointment.date.toISOString().slice(0, 10) === todayIso;
-        return agreement.createdAt >= startOfDay;
-      });
+      const dueToday = candidates.filter(
+        (agreement) =>
+          dayOf(agreement, appointmentByAgreement.get(agreement.id), startOfDay, todayIso) === 'today',
+      );
       if (dueToday.length === 0) return [];
 
-      /*
-       * ONE ROW PER AGREEMENT WITH SOMEWHERE LEFT TO GO. A retried draft can
-       * leave TWO agreement rows behind a single visit — the first attempt's
-       * in-practice capture request timed out or was cancelled, and a fresh
-       * one was opened for the same patient. Both would satisfy "today" and
-       * "unsigned", and the stale one has no path to a signature any more: its
-       * capture request is closed and nothing will ever open it again. So it
-       * is excluded here rather than merely outranked — an agreement stays a
-       * candidate only while it has an OPEN capture request, or has none yet
-       * (a draft nobody has tried to capture at all).
-       */
-      const captureRequests = await tx.captureRequest.findMany({
-        where: { agreementId: { in: dueToday.map((a) => a.id) } },
-      });
-      const hasAnyCapture = new Set(captureRequests.map((r) => r.agreementId));
-      const hasOpenCapture = new Set(captureRequests.filter((r) => r.status === 'open').map((r) => r.agreementId));
-      /*
-       * AND NEVER THE ONE THAT HAS BEEN REPLACED (Carl's reproduction, 10 Sep
-       * 2026). A superseded agreement keeps its own status — there is no
-       * `superseded` state in the lifecycle, and `supersedeForCorrection`
-       * explains why — so the fact lives where it is true: another agreement
-       * pointing back at this one. Its capture requests are closed on
-       * supersession, which already removes it from this list in the ordinary
-       * case, but "no capture request at all" and "closed" are different rows
-       * here and only one of them was covered. Reading the successor makes the
-       * exclusion a property of the CHAIN rather than of a side-effect, so
-       * reception is always editing the newest agreement for the visit: a
-       * second "Who is signing" Save lands on a row that is still live and
-       * writes, instead of being refused as having moved on.
-       */
-      const successors = await tx.agreement.findMany({
-        where: { supersedesAgreementId: { in: dueToday.map((a) => a.id) } },
-        select: { supersedesAgreementId: true },
-      });
-      const superseded = new Set(
-        successors.map((s) => s.supersedesAgreementId).filter((id): id is string => id !== null),
-      );
-      const forToday = dueToday.filter(
-        (agreement) =>
-          !superseded.has(agreement.id)
-          && (!hasAnyCapture.has(agreement.id) || hasOpenCapture.has(agreement.id)),
-      );
+      const forToday = await this.withoutDeadEnds(tx, dueToday);
       if (forToday.length === 0) return [];
 
       const patients = await tx.patient.findMany({
@@ -2922,6 +3143,33 @@ export class TabletSessionsService {
 /** Today, as the ISO date every particular in this system is written in. */
 function today(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * WHICH DAY AN UNSIGNED AGREEMENT IS FOR, RELATIVE TO TODAY — the one reading
+ * of "today" the desk uses (`readPushableRows`, `unsignedEarlierDays`): the
+ * appointment's date where the agreement has a booking, and the day the draft
+ * was created where it does not. Moved here unchanged from `readPushableRows`
+ * (D-2026-10-10-01) so the earlier-days list is exactly what fell off it.
+ */
+function dayOf(
+  agreement: { createdAt: Date },
+  appointment: { date: Date } | undefined,
+  startOfDay: Date,
+  todayIso: string,
+): 'earlier' | 'today' | 'later' {
+  if (appointment) {
+    const date = appointment.date.toISOString().slice(0, 10);
+    return date === todayIso ? 'today' : date < todayIso ? 'earlier' : 'later';
+  }
+  return agreement.createdAt >= startOfDay ? 'today' : 'earlier';
+}
+
+/** A timestamp's calendar day on this server's clock — the clock `startOfDay` is set on. */
+function localIsoDate(at: Date): string {
+  const month = String(at.getMonth() + 1).padStart(2, '0');
+  const day = String(at.getDate()).padStart(2, '0');
+  return `${at.getFullYear()}-${month}-${day}`;
 }
 
 /**
