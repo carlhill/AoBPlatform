@@ -28,6 +28,8 @@
 import { Collector, type CollectionClient } from './collector';
 import { collectionEndpointsOf, makeHttpCollectionClient } from './collection-client';
 import { loadConfig, type AobPrinterConfig } from './config';
+import { Heartbeat, type HeartbeatClient } from './heartbeat';
+import { heartbeatUrlOf, makeHttpHeartbeatClient } from './heartbeat-client';
 import { acquireInstanceLock, type InstanceLock } from './instance-lock';
 import type { KeyWrapper } from './keystore';
 import { consoleLogger, redactError, type Logger } from './log';
@@ -53,6 +55,11 @@ export interface RunHandles {
   collect(): Promise<void>;
   /** One reconciliation against the Print Service log. Exposed for the same reason as `collect`. */
   reconcile(): Promise<void>;
+  /**
+   * One heartbeat (PRINTER-HEARTBEAT.md §2). Exposed for the same reason;
+   * never rejects, and a no-op when the heartbeat is switched off.
+   */
+  heartbeat(): Promise<void>;
   stop(): void;
 }
 
@@ -84,6 +91,12 @@ export interface StartDeps {
    * and the HTTP half is proved on its own, the way the poster's is.
    */
   readonly collectionClient?: CollectionClient;
+  /**
+   * Overrides the heartbeat client, and switches the heartbeat on the way
+   * `collectionClient` switches collection on. The HTTP half is proved on its
+   * own in `heartbeat-client.test.ts`.
+   */
+  readonly heartbeatClient?: HeartbeatClient;
   /**
    * Overrides the Windows drive-type check behind `assertLocalDataDir`. The
    * real one asks PowerShell once per drive letter; a test proving the
@@ -216,6 +229,28 @@ function startLocked(
         )
       : null;
 
+  /*
+   * THE HEARTBEAT, ON BY DEFAULT (decision 11). It writes nothing anywhere
+   * but a request to the platform, and never an audit event for itself.
+   */
+  const heartbeater =
+    config.heartbeat.enabled || deps.heartbeatClient
+      ? new Heartbeat({
+          store,
+          client: deps.heartbeatClient ?? makeHttpHeartbeatClient(config),
+          logger,
+          facts: {
+            printerVersion: version,
+            templateVersion: template.version,
+            intervalMs: config.heartbeat.intervalMs,
+            queueCount: config.queues.length,
+            collecting: collector !== null,
+            retentionEnabled: config.retention.enabled,
+            startedAt: new Date().toISOString(),
+          },
+        })
+      : null;
+
   if (!/^https:/i.test(config.endpoint) && !/^http:\/\/(localhost|127\.0\.0\.1)/i.test(config.endpoint)) {
     logger.warn('config.insecure_endpoint', {
       note: 'this endpoint is neither HTTPS nor local; mutual TLS is the recorded posture and is not built yet',
@@ -238,7 +273,14 @@ function startLocked(
   let running = false;
   let collecting = false;
   let reconciling = false;
+  let heartbeating = false;
   let stopped = false;
+  /*
+   * ABORTED BY `stop()`. Nothing is written before a reply arrives, so an
+   * aborted beat loses nothing; one whose reply has already arrived is still
+   * applied, and the database waits for it like it waits for a tick.
+   */
+  const heartbeatAbort = new AbortController();
   let finished = false;
 
   /*
@@ -249,7 +291,7 @@ function startLocked(
    * collection or reconciliation finishes it on its way out.
    */
   function finishStopIfIdle(): void {
-    if (!stopped || finished || running || collecting || reconciling) return;
+    if (!stopped || finished || running || collecting || reconciling || heartbeating) return;
     finished = true;
     try {
       store.programStopped();
@@ -327,6 +369,25 @@ function startLocked(
   }
 
   /*
+   * THE SAME POSTURE AGAIN, FOR THE HEARTBEAT. `Heartbeat.beat` never throws
+   * and says a failure once; this is the belt to that braces. One at a time:
+   * a slow link must not stack beats, and a stop must not close the database
+   * under one whose reply is being applied.
+   */
+  async function safeHeartbeat(): Promise<void> {
+    if (!heartbeater || stopped || heartbeating) return;
+    heartbeating = true;
+    try {
+      await heartbeater.beat(heartbeatAbort.signal);
+    } catch (err) {
+      logger.error('heartbeat.failed', { error: redactError(err) });
+    } finally {
+      heartbeating = false;
+      finishStopIfIdle();
+    }
+  }
+
+  /*
    * ONCE HERE, AND AGAIN ON AN INTERVAL BELOW. The machine is off overnight;
    * a pending job or a poisoned form that aged past its threshold at 2am must
    * not sit unremarked until somebody prints again at nine. Run before the
@@ -352,6 +413,7 @@ function startLocked(
      */
     collecting: collector !== null,
     collectFrom: collector ? collectionEndpointsOf(config).list : undefined,
+    heartbeatTo: heartbeater ? heartbeatUrlOf(config) : undefined,
   });
 
 
@@ -416,12 +478,25 @@ function startLocked(
   const collectTimer = collector ? setInterval(() => void safeCollect(), config.collection.pollMs) : null;
   collectTimer?.unref?.();
 
+  /*
+   * THE FIRST BEAT SOON AFTER START, THEN EVERY INTERVAL (decision 1). Both
+   * unref'd: a heartbeat timer must not be the reason a service will not stop.
+   */
+  const firstBeatTimer = heartbeater ? setTimeout(() => void safeHeartbeat(), config.heartbeat.firstDelayMs) : null;
+  firstBeatTimer?.unref?.();
+  const heartbeatTimer = heartbeater ? setInterval(() => void safeHeartbeat(), config.heartbeat.intervalMs) : null;
+  heartbeatTimer?.unref?.();
+
   return {
     tick,
     collect: safeCollect,
     reconcile: safeReconcile,
+    heartbeat: safeHeartbeat,
     stop: () => {
       stopped = true;
+      if (firstBeatTimer) clearTimeout(firstBeatTimer);
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      heartbeatAbort.abort();
       clearInterval(timer);
       clearInterval(sweepTimer);
       clearInterval(reconcileTimer);

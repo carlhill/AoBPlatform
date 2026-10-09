@@ -14,7 +14,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_COLLECTION_CONFIG, DEFAULT_HEARTBEAT_CONFIG, DEFAULT_RETENTION_CONFIG, type AobPrinterConfig } from './config';
+import type { AobPrinterHeartbeat, AobPrinterHeartbeatReply } from '@aobplatform/contracts';
 import type { CollectionClient } from './collector';
+import type { HeartbeatClient } from './heartbeat';
 import type { Db4PrintRecord } from './db4-record';
 import { keystorePaths, type KeyWrapper } from './keystore';
 import { makeLogger, redactError } from './log';
@@ -394,6 +396,129 @@ describe('the loop', () => {
     } finally {
       store.close();
     }
+  });
+
+  describe('the heartbeat loop (PRINTER-HEARTBEAT.md §2)', () => {
+    const REPLY: AobPrinterHeartbeatReply = { receivedAt: '2026-10-10T00:00:00.000Z', chain: { status: 'unverified', anchorSeq: 1 }, jobs: [], returns: [] };
+
+    /** A platform that answers only when told to, and fails the moment the beat is aborted. */
+    function aHeldPlatform() {
+      const held = {
+        asked: 0,
+        bodies: [] as AobPrinterHeartbeat[],
+        signals: [] as AbortSignal[],
+        answer: (_reply: AobPrinterHeartbeatReply) => undefined as void,
+        failOnAbort: true,
+        settleAbort: () => undefined as void,
+      };
+      const client: HeartbeatClient = {
+        beat: (body, signal) =>
+          new Promise<AobPrinterHeartbeatReply>((resolve, reject) => {
+            held.asked += 1;
+            held.bodies.push(body);
+            held.signals.push(signal);
+            held.answer = resolve;
+            // Settles only when the test says, so "only after it settles" can be seen.
+            signal.addEventListener('abort', () => {
+              held.settleAbort = () => reject(new Error('aborted'));
+            });
+          }),
+      };
+      return { held, client };
+    }
+
+    it('a_heartbeat_already_running_is_not_started_again', async () => {
+      const { held, client } = aHeldPlatform();
+      const handles = start(aConfig(dir), logger, { ...TEST_DEPS, heartbeatClient: client });
+      const first = handles.heartbeat();
+      const overlapping = handles.heartbeat();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(held.asked).toBe(1);
+      await overlapping;
+
+      held.answer(REPLY);
+      await first;
+      // Once the first has settled, the next one runs.
+      const second = handles.heartbeat();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(held.asked).toBe(2);
+      held.answer(REPLY);
+      await second;
+      handles.stop();
+      expect(lines.join('\n')).toContain('aobprinter.stopped');
+    });
+
+    it('stopping_during_a_heartbeat_aborts_it_and_closes_the_database_only_after_it_settles', async () => {
+      const { held, client } = aHeldPlatform();
+      const handles = start(aConfig(dir), logger, { ...TEST_DEPS, heartbeatClient: client });
+      const beating = handles.heartbeat();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(held.signals[0].aborted).toBe(false);
+
+      handles.stop();
+      expect(held.signals[0].aborted).toBe(true);
+      expect(lines.join('\n')).not.toContain('aobprinter.stopped');
+
+      held.settleAbort();
+      await beating;
+      expect(lines.join('\n')).toContain('aobprinter.stopped');
+      // A stop is not an outage.
+      expect(lines.join('\n')).not.toContain('heartbeat.unreachable');
+      // And nothing starts a beat after the stop.
+      await handles.heartbeat();
+      expect(held.asked).toBe(1);
+    });
+
+    it('a_heartbeat_reply_applied_during_stop_still_reaches_the_audit_trail', async () => {
+      const sha = 'e'.repeat(64);
+      const before = openStore(dir);
+      before.queue({ sha, record: aRecord(), enqueuedAt: new Date().toISOString(), attempts: 0, nextAttemptAt: new Date().toISOString() });
+      before.markSent(sha, { attempts: 1, nextAttemptAt: new Date().toISOString() });
+      before.close();
+
+      const { held, client } = aHeldPlatform();
+      const handles = start(aConfig(dir), logger, { ...TEST_DEPS, heartbeatClient: client });
+      const beating = handles.heartbeat();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(held.bodies[0].awaitingOutcome).toEqual([sha]);
+      // No audit event for the beat itself, before or after.
+      const headBefore = held.bodies[0].head;
+
+      handles.stop();
+      // The answer was already on its way when the stop came.
+      held.answer({ ...REPLY, jobs: [{ sourceSha256: sha, state: 'done', placed: true, reason: null, agreementId: null }] });
+      await beating;
+      expect(lines.join('\n')).toContain('aobprinter.stopped');
+
+      const store = openStore(dir);
+      try {
+        const kinds = store.auditEvents().map((e) => e.kind);
+        expect(kinds).toContain('print.processed');
+        expect(kinds.indexOf('print.processed')).toBeLessThan(kinds.indexOf('program.stopped'));
+        // The processed event and the stop are the only things after the head the beat reported.
+        expect(store.auditEvents().filter((e) => e.seq > headBefore.seq).map((e) => e.kind)).toEqual(['print.processed', 'program.stopped']);
+      } finally {
+        store.close();
+      }
+    });
+
+    it('a_hanging_heartbeat_never_delays_a_tick', async () => {
+      const { held, client } = aHeldPlatform();
+      const handles = start(aConfig(dir), logger, { ...TEST_DEPS, heartbeatClient: client });
+      const beating = handles.heartbeat();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(held.asked).toBe(1);
+
+      // The beat is still hanging; ticks run regardless.
+      await expect(handles.tick()).resolves.toBeUndefined();
+      await expect(handles.tick()).resolves.toBeUndefined();
+      expect(lines.join('\n')).not.toContain('tick.failed');
+
+      handles.stop();
+      held.settleAbort();
+      await beating;
+      expect(lines.join('\n')).toContain('aobprinter.stopped');
+    });
   });
 
   it('the_program_refuses_to_start_if_the_key_cannot_be_unwrapped', () => {
