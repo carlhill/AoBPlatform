@@ -37,7 +37,6 @@ const BASE = process.env.KEYCLOAK_BASE_URL ?? 'http://127.0.0.1:21024';
 const REALM = process.env.KEYCLOAK_REALM ?? 'aobplatform';
 const ADMIN_USER = process.env.KEYCLOAK_ADMIN_USER ?? 'admin';
 const ADMIN_PASSWORD = process.env.KEYCLOAK_ADMIN_PASSWORD ?? 'admin';
-const FLOW = 'clinician-browser';
 const SUBFLOW = 'clinician-browser Credential';
 const CLIENTS = ['web', 'console'];
 
@@ -79,14 +78,21 @@ async function main() {
   let present = 0;
   let drifted = 0;
 
-  // The flattened list includes the subflows' executions, each with its providerId.
-  const executions = await json(await api(token, `/authentication/flows/${encodeURIComponent(FLOW)}/executions`), 'Could not read the flow');
+  /*
+   * The SUBFLOW by its own alias, not the top-level flow: the flattened list of
+   * the whole flow could hold the same providerId in another subflow on a realm
+   * that has drifted, and the config would land on the wrong step. Within the
+   * subflow a providerId must match exactly one step, or nothing is written.
+   */
+  const executions = await json(await api(token, `/authentication/flows/${encodeURIComponent(SUBFLOW)}/executions`), 'Could not read the credential subflow');
   for (const step of wanted) {
     if (!step.authenticatorConfig) continue;
     const config = configs.get(step.authenticatorConfig);
     if (!config) die(`realm-export.json names config ${step.authenticatorConfig} and does not define it.`);
-    const live = executions.find((e) => e.providerId === step.authenticator);
-    if (!live) die(`The live ${FLOW} flow has no ${step.authenticator} step; this script adds claims, it does not build flows.`);
+    const matches = executions.filter((e) => e.providerId === step.authenticator && e.level === 0);
+    if (matches.length === 0) die(`The live ${SUBFLOW} subflow has no ${step.authenticator} step; this script adds claims, it does not build flows.`);
+    if (matches.length > 1) die(`The live ${SUBFLOW} subflow has ${matches.length} ${step.authenticator} steps; nothing written. Fix the flow by hand first.`);
+    const [live] = matches;
     if (live.authenticationConfig) {
       const existing = await json(await api(token, `/authentication/config/${live.authenticationConfig}`), 'Could not read a step config');
       const value = existing.config?.['default.reference.value'];

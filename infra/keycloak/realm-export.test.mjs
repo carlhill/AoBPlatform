@@ -57,6 +57,16 @@ check(
   'the disabled password step would name pwd, so a re-enabled one is reported rather than hidden',
   !password || configs.get(password.authenticatorConfig)?.['default.reference.value'] === 'pwd',
 );
+/*
+ * The claim must outlive the session, or a long session loses amr and is
+ * refused as "unrecorded" while signing in again would fix it. Nothing else
+ * ties the two numbers together, so this does.
+ */
+const sessionMax = Math.max(realm.ssoSessionMaxLifespan ?? 0, realm.ssoSessionMaxLifespanRememberMe ?? 0);
+check(
+  'the amr reference lasts at least as long as the longest session',
+  Number(configs.get(passkey?.authenticatorConfig)?.['default.reference.maxAge']) >= sessionMax && sessionMax > 0,
+);
 for (const clientId of ['web', 'console']) {
   const client = (realm.clients ?? []).find((c) => c.clientId === clientId);
   check(
