@@ -3617,6 +3617,34 @@ export const strings = {
       + 'off and the tablet offers an agreement for the visit every time.',
 
     /**
+     * --- THE PRACTICE'S TIMEZONE (D-2026-10-10-03).
+     *
+     * WHAT IT DECIDES, IN THE PRACTICE'S WORDS: when "today" starts on the
+     * desk and the tablet, and so which unsigned agreements move to "earlier
+     * days". The zone list is content (`practice-timezones.json`); these are
+     * only its names, keyed by IANA zone, and an unmapped zone shows its key.
+     */
+    timezoneTitle: 'Your practice’s time zone',
+    timezoneLead:
+      'Today’s list on the desk and the tablet starts at midnight in this time zone. Unsigned agreements '
+      + 'from before that midnight move to “Unsigned from earlier days”.',
+    timezoneLabel: 'Time zone',
+    timezoneHint: 'Changing this moves where each day starts. It is recorded, with who changed it.',
+    timezoneNames: {
+      'Australia/Sydney': 'Sydney, Canberra (NSW, ACT)',
+      'Australia/Melbourne': 'Melbourne (VIC)',
+      'Australia/Brisbane': 'Brisbane (QLD)',
+      'Australia/Adelaide': 'Adelaide (SA)',
+      'Australia/Darwin': 'Darwin (NT)',
+      'Australia/Perth': 'Perth (WA)',
+      'Australia/Hobart': 'Hobart (TAS)',
+      'Australia/Broken_Hill': 'Broken Hill (NSW, on South Australian time)',
+      'Australia/Lindeman': 'Whitsunday Islands (QLD)',
+      'Australia/Eucla': 'Eucla (WA, central western time)',
+      'Australia/Lord_Howe': 'Lord Howe Island (NSW)',
+    } as Record<string, string>,
+
+    /**
      * --- D6a, THE PRACTICE DEFAULT (Carl, 5 Sep 2026; GA-PLAN B10).
      *
      * THE WORDS THEMSELVES ARE NOT IN HERE, and that is the point. The

@@ -78,9 +78,9 @@ export interface PracticeDayWindow {
  * a constant offset is wrong for roughly half the year and the error is a
  * silent one-hour shift rather than a crash.
  */
-function offsetMsAt(at: Date): number {
+function offsetMsAt(at: Date, timeZone: string = PRACTICE_TIMEZONE): number {
   const fmt = new Intl.DateTimeFormat('en-GB', {
-    timeZone: PRACTICE_TIMEZONE,
+    timeZone,
     hour12: false,
     year: 'numeric',
     month: '2-digit',
@@ -121,17 +121,70 @@ function dayOf(at: Date): string {
  * 2am, so midnight itself always exists; a zone that skipped midnight would
  * land on the first instant that does, which is the honest answer either way.)
  */
-function startOfDayInPracticeZone(day: string): Date {
+function startOfDayInPracticeZone(day: string, timeZone: string = PRACTICE_TIMEZONE): Date {
   const [year, month, date] = day.split('-').map(Number) as [number, number, number];
   const wallClock = Date.UTC(year, month - 1, date, 0, 0, 0, 0);
-  const firstPass = wallClock - offsetMsAt(new Date(wallClock));
-  const secondPass = wallClock - offsetMsAt(new Date(firstPass));
+  const firstPass = wallClock - offsetMsAt(new Date(wallClock), timeZone);
+  const secondPass = wallClock - offsetMsAt(new Date(firstPass), timeZone);
   return new Date(secondPass);
 }
 
 /** Today's calendar day in the practice's zone — never `toISOString().slice(0, 10)`. */
 export function practiceToday(now: Date = new Date()): string {
   return dayOf(now);
+}
+
+/**
+ * ONE DAY FORMATTER PER ZONE, built on first use and kept (Opus review,
+ * 10 October 2026). `practiceDayOf` runs once per row on the desk's lists, and
+ * constructing an `Intl.DateTimeFormat` costs far more than calling one. A
+ * formatter is immutable and holds no clock, so sharing it changes nothing it
+ * returns. The map is bounded by the zones that reach here — the content list
+ * and the column's CHECK — and an unknown zone throws in the constructor, so
+ * it is never stored.
+ */
+const dayFormatters = new Map<string, Intl.DateTimeFormat>();
+
+function dayFormatterFor(timeZone: string): Intl.DateTimeFormat {
+  let fmt = dayFormatters.get(timeZone);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-GB', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    dayFormatters.set(timeZone, fmt);
+  }
+  return fmt;
+}
+
+/**
+ * `YYYY-MM-DD` FOR AN INSTANT, IN THE ZONE THE PRACTICE CHOSE
+ * (D-2026-10-10-03). The per-practice form of `practiceToday`: a practice in
+ * Perth and one in Sydney are on different days for two (or three) hours of
+ * every night, and the desk of each must turn at its own midnight.
+ *
+ * AN UNKNOWN ZONE THROWS (`Intl`'s RangeError) rather than falling back to UTC
+ * or to Sydney — a silent fallback is exactly the defect this replaces. The
+ * column's CHECK and `isPracticeTimezone` keep an unknown zone from reaching
+ * here.
+ */
+export function practiceDayOf(instant: Date, timeZone: string): string {
+  const fmt = dayFormatterFor(timeZone);
+  const p = Object.fromEntries(fmt.formatToParts(instant).map((part) => [part.type, part.value]));
+  return `${p.year}-${p.month}-${p.day}`;
+}
+
+/**
+ * THE INSTANT OF LOCAL MIDNIGHT AT THE START OF `now`'s DAY, in the zone the
+ * practice chose (D-2026-10-10-03). What `new Date().setHours(0, 0, 0, 0)` was
+ * standing in for: that is the SERVER's midnight, which on Fargate and in CI is
+ * UTC's. Same two-pass solve as `practiceDayWindow`, so the two never disagree
+ * about where a day starts.
+ */
+export function startOfPracticeDay(now: Date, timeZone: string): Date {
+  return startOfDayInPracticeZone(practiceDayOf(now, timeZone), timeZone);
 }
 
 /**

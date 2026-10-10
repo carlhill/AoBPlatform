@@ -165,6 +165,17 @@ model Practice {
   /// by decision. A practice that answers something else is a conversation,
   /// not a string.
   documentFolderKey         String?
+  /// THE ZONE THIS PRACTICE'S DAY IS MEASURED IN (D-2026-10-10-03). An IANA
+  /// name, never an offset (D-2026-09-12-17). Every desk day boundary —
+  /// the tablet's waiting list, "Unsigned from earlier days", covered today —
+  /// turns at midnight in this zone, read through `practiceDayOf` /
+  /// `startOfPracticeDay` in the domain.
+  ///
+  /// NOT NULL, DEFAULT `Australia/Sydney`: "no zone" must never mean UTC, which
+  /// is the defect this column replaces. The CHECK copies
+  /// `packages/domain/content/practice-timezones.json`; the DTO reads the same
+  /// list through `PRACTICE_TIMEZONE_KEYS`.
+  timezone                  String   @default("Australia/Sydney")
   createdAt                 DateTime @default(now())
 
   /// THE PRACTICE HALF OF EVERY ACCOUNT NAME (PRACTICE-SCOPED-LOGIN.md §3b/§5;

@@ -236,6 +236,105 @@ first.
 
 ---
 
+## The rest of core still measures "today" on UTC or the server's clock (10 Oct 2026) - D-2026-10-10-03
+
+D-2026-10-10-03 moved every day boundary in `tablet-sessions.service.ts` onto
+`practices.timezone` (`practiceDayOf` / `startOfPracticeDay`). **Deferred, not
+done, because the brief was the desk only and each of these is a behaviour
+change for another screen.** The same two shapes remain in `apps/core/src`:
+
+- ~~`agreements/agreements.service.ts` ~2212: `lockParticulars` defaults D2 to
+  `new Date().toISOString().slice(0, 10)` when the caller passes none. A
+  statutory particular on the UTC date (D-2026-09-12-17 item 2).~~ **Fixed
+  10 Oct 2026 (`fix/d2-practice-date`)**: the practice's date, via
+  `readPracticeDay` (`apps/core/src/practices/practice-day.ts`).
+- ~~`agreements/agreements.service.ts` ~1872: a superseding draft's D5 falls back
+  to the UTC date.~~ **Fixed 10 Oct 2026**, same helper.
+- ~~`service-descriptions/service-descriptions.service.ts` ~343: D2 on the UTC
+  date.~~ **Fixed 10 Oct 2026**, D2 and its D5 fallback both.
+- ~~`auto-capture/auto-capture.service.ts` ~260: the default day is the UTC
+  date.~~ **Fixed 10 Oct 2026.** All four pinned in
+  `apps/core/test/practice-date-particulars.e2e-spec.ts`.
+- ~~`arrivals/arrivals.service.ts` ~847 (an arrival's D5 when the caller sends
+  no `serviceDate`) and ~1974 (D5 on the draft a practitioner move makes) both
+  write D5 as `arrivedAt`'s UTC date: a statutory date, not a day window.~~
+  **Fixed 10 Oct 2026**: both are `practiceDayOf(arrivedAt, zone)` with the zone
+  from `readPracticeTimeZone` in the same transaction; an explicit
+  `serviceDate` still wins. Pinned by the four arrival tests in
+  `practice-date-particulars.e2e-spec.ts`.
+- **Still open:** `arrivals/arrivals.service.ts` ~3005, the coverage prefill's
+  `agreement.createdAt` UTC-date fallback (used only for an agreement with no
+  D5), should move to the practice's day so it stays comparable with the D5
+  above. Not a statutory particular; left out of the D5 fix's brief.
+- ~~`practitioner-queue/practitioner-queue.service.ts` ~511-513 and ~565 (review
+  of `fix/d2-practice-date`, 10 Oct 2026). The "service rendered" window picked
+  its day with `getFullYear/getMonth/getDate` on `arrivedAt`, which is the UTC
+  day on a UTC server. The service record it selects supplies the agreement's
+  D5. Before 11am Sydney time, a patient with an undecided service record from
+  yesterday got today's "service rendered" press raised as a post-agreement
+  against YESTERDAY's service: a wrong statutory date.~~ **Fixed 10 Oct 2026**:
+  the window is `practiceDayOf(arrivedAt, zone)` with the zone from
+  `readPracticeTimeZone` in the same transaction. Pinned by
+  `service_rendered_before_11am_sydney_picks_todays_service_not_yesterdays`
+  (catches it on a UTC host: CI, or `TZ=UTC`) and
+  `a_perth_service_rendered_uses_the_perth_day` (catches it on any host) in
+  `practice-date-particulars.e2e-spec.ts`.
+- **Still open, ordering (pre-existing):** an arrival moves its draft to
+  `awaiting_signature` BEFORE `lockParticulars` runs. If the lock fails (e.g. a
+  rule such as C5, D5 on or after D2, for an arrival that straddles local midnight
+  or a connector backlog delivered next morning), `POST /arrivals` errors with
+  the draft already at `awaiting_signature` and unlocked. Signing stays blocked,
+  so hard rule 2 holds, but the state should not be reachable. Same shape as the
+  per-visit offer item on `fix/tablet-day-boundary`; Carl's call.
+- `arrivals/arrivals.service.ts` ~1409: the front desk's day starts at the
+  server's `setHours(0, 0, 0, 0)`.
+- `practitioner-queue/practitioner-queue.service.ts` ~686: the waiting list's
+  day starts at the server's `setHours(0, 0, 0, 0)`. **Display only, checked
+  10 Oct 2026**: it chooses which arrivals are LISTED, never which service
+  supplies D5 (a press on any listed arrival dates by that arrival's own
+  `arrivedAt` in the practice's zone). But on a UTC server it is visibly wrong:
+  before 11am Sydney the list still shows yesterday afternoon's patients, and
+  after 11am it drops everyone who arrived between local midnight and 11am.
+- `arrivals/arrivals.service.ts` ~623 and ~1512: `practiceDayWindow` is right
+  wherever it runs but uses the one `PRACTICE_TIMEZONE` constant, not the
+  practice's own zone.
+- `retention/retention-sweep.service.ts` ~59: `today` is the UTC date. Probably
+  harmless for retention arithmetic; check before changing.
+- D-2026-09-12-17's LOCATION zone is not built; when it is, it should win over
+  the practice zone for a desk at that location.
+
+**Depends on:** nothing; each is the same substitution, with an e2e that pins
+the clock the way `practice-day-boundary.e2e-spec.ts` does.
+
+## Per-practice timezone: follow-ups from the Opus review (10 Oct 2026) - D-2026-10-10-03
+
+Recorded from the review of `fix/tablet-day-boundary`; no code change on that
+branch for any of these.
+
+- **(a) Every existing practice was defaulted to `Australia/Sydney` and nobody
+  confirmed it.** The migration gave the column a default so the desk would
+  keep working, but D-2026-09-12-17 says the state proposes a zone and a person
+  confirms it. Two things follow: onboarding should propose a zone from the
+  practice's state and ask for it to be confirmed rather than taking the
+  default silently; and any existing practice outside NSW/VIC/ACT/TAS needs its
+  zone checked on `/practice/channels` before its desk's day boundary can be
+  trusted (a Perth practice on Sydney time turns its day two or three hours
+  early; Brisbane, Adelaide and Darwin by up to an hour and a half).
+- **(b) PRE-EXISTING, NOT INTRODUCED HERE - touches hard rule 2 (REQ-REG-06).**
+  `offerEpisodicInstead` in `apps/core/src/tablet-sessions/tablet-sessions.service.ts`
+  (~1104-1113, from 50373f8, 5 Sep 2026) moves the new agreement to
+  `awaiting_signature` and THEN calls `lockParticulars`, in separate
+  transactions. If the lock throws (rules service down, render failure), the
+  agreement is left at `awaiting_signature` with unlocked particulars. Nothing
+  can be signed in that state - the push re-locks before any signature
+  (`prepareLockOrRefuse` runs whenever `particularsLockedAt` is null) - but the
+  state itself should be unreachable. **For Carl to decide; deliberately not
+  fixed on the timezone branch.** The obvious shape is to lock first and
+  transition after, or both in one transaction the way the push does.
+- **(c) Rebuild the vault container before shipping.** The branch adds the
+  `practice.timezone_set` event type (`packages/contracts/src/vault.ts`); a
+  vault image built before it will not know the type.
+
 ## Agreements left unsigned past their day (10 Oct 2026) - D-2026-10-10-01
 
 **Being built now:** option 1, the tablet's "Unsigned from earlier days: N"

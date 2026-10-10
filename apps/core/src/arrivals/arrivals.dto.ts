@@ -202,11 +202,10 @@ export class ArrivalDto {
   /**
    * D5 — the day the service is for, when it is not the day this was typed.
    *
-   * A PLAIN DATE, NOT A TIMESTAMP, and that is not a style choice: the
-   * pipeline derives the service date from `arrivedAt` by taking its UTC
-   * calendar day, and 9 a.m. in Sydney is the previous day in UTC. A
+   * A PLAIN DATE, NOT A TIMESTAMP, and that is not a style choice: a
    * particular of a contract may not depend on which side of midnight
-   * Greenwich is.
+   * Greenwich is. Absent, the pipeline takes the practice's own calendar day
+   * of `arrivedAt` (D-2026-10-10-03); present, it always wins.
    */
   @IsOptional() @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) serviceDate?: string;
 

@@ -43,6 +43,7 @@ export * from './reporting';
 export * from './practice-day';
 export * from './pre-agreement-association';
 export * from './unsigned-draft-closure';
+export * from './practice-timezones';
 export * from './packed-reports';
 export * from './departure-notice';
 export * from './outbound-queue';

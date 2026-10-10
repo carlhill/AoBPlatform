@@ -65,6 +65,7 @@ import { buildDb4FormView, checkDb4PrintRecord } from './db4-form-view';
 import { PrintRecordsService } from '../inbound/print-records.service';
 import { SignedDb4Service } from './signed-db4.service';
 import type { Actor } from '../auth/actor.decorator';
+import { readPracticeDay } from '../practices/practice-day';
 
 const SYSTEM_ACTOR = { principalType: 'system', id: 'core' } as const;
 
@@ -330,6 +331,15 @@ export class AgreementsService {
      */
     private readonly printRecords: PrintRecordsService,
   ) {}
+
+  /**
+   * NOW, FOR THE STATUTORY DATES THIS SERVICE FILLS IN (D-2026-10-10-03) — the
+   * D2 default at lock and the superseding draft's D5 fallback, both read as
+   * the practice's own date through `readPracticeDay`. A field, not a
+   * provider: the same smallest seam as `TabletSessionsService.clock`
+   * (`practice-date-particulars.e2e-spec.ts` sets it).
+   */
+  clock: () => Date = () => new Date();
 
   /** See `enduringRulesAuthored`. In-process and per-instance, which is all a hint needs to be. */
   private enduringProbe: { at: number; authored: boolean } | null = null;
@@ -1658,7 +1668,7 @@ export class AgreementsService {
     actor?: Actor,
   ): Promise<DbAgreement> {
     let outcome:
-      | { kind: 'created'; id: string; superseded: DbAgreement }
+      | { kind: 'created'; id: string; superseded: DbAgreement; practiceToday: string }
       | { kind: 'settled'; agreement: DbAgreement };
     try {
       outcome = await this.prisma.withPractice(practiceId, async (tx) => {
@@ -1854,7 +1864,10 @@ export class AgreementsService {
         await this.capture.openInPractice(tx, practiceId, replacement.id);
 
         await this.assertAssignorPartyPasses(tx, replacement);
-        return { kind: 'created' as const, id: replacement.id, superseded: agreement };
+        // The practice's own date, read under this same practice scope, for
+        // the D5 fallback below (D-2026-10-10-03).
+        const { todayIso } = await readPracticeDay(tx, this.clock());
+        return { kind: 'created' as const, id: replacement.id, superseded: agreement, practiceToday: todayIso };
       });
     } catch (err) {
       if (err instanceof HardRuleViolation) throw new BadRequestException(err.message);
@@ -1881,9 +1894,11 @@ export class AgreementsService {
        * D5 OFF THE OLD SNAPSHOT. The visit did not move; only the party did.
        * The fallback is today and is unreachable in practice — only a LOCKED
        * agreement reaches here and a locked episodic one always stated D5 —
-       * but a particular is never left to a `!`.
+       * but a particular is never left to a `!`. "Today" is the PRACTICE's
+       * date, never the UTC one, which in Sydney is yesterday until 11am
+       * (D-2026-10-10-03).
        */
-      serviceDate: serviceDateOf(outcome.superseded) ?? new Date().toISOString().slice(0, 10),
+      serviceDate: serviceDateOf(outcome.superseded) ?? outcome.practiceToday,
       mbsItemNumbers: mbsItemNumbersOf(outcome.superseded),
     });
 
@@ -2217,13 +2232,21 @@ export class AgreementsService {
         agreement.type === 'enduring'
           ? await tx.enduringDetail.findFirst({ where: { agreementId } })
           : null;
+      /*
+       * D2 WHEN NOBODY NAMED ONE IS THE PRACTICE'S OWN DATE (D-2026-09-12-17
+       * item 2, D-2026-10-10-03), read in this transaction. It was the UTC
+       * date, which in Sydney is yesterday until 11am — an agreement locked at
+       * 8:30am stated yesterday as a statutory particular. An explicit date
+       * always wins, and only an unlocked agreement reaches here.
+       */
+      const agreementDate = dto.agreementDate ?? (await readPracticeDay(tx, this.clock())).todayIso;
 
       // undefined values are pruned: they vanish in the JSON round-trip
       // through Postgres, and rule 13 requires the stored snapshot to
       // re-render byte-identically to what was hashed at lock.
       return prune({
         patientName: `${patient.givenNames} ${patient.familyName}`,
-        agreementDate: dto.agreementDate ?? new Date().toISOString().slice(0, 10),
+        agreementDate,
         agreementType: agreement.type,
         providerName: anchor?.name,
         providerAddress: anchor?.placeOfPracticeAddress ?? undefined,
