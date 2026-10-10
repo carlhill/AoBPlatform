@@ -4296,15 +4296,16 @@ export const strings = {
     /*
      * THE CODE, SHOWN ONCE. The screen says so, because a code that cannot be
      * fetched again is a surprise unless it was announced — and the way out of
-     * having lost it is Rotate, which is named here rather than left to be
-     * discovered.
+     * having lost it is Re-Pair Tablet (the rotate act; renamed by Carl,
+     * 10 Oct 2026, because "Rotate" read as turning the screen), which is named
+     * here rather than left to be discovered.
      */
     codeHeading: 'Type this code into the tablet',
-    codeShownOnce: 'This code is shown once. If it is lost, rotate the tablet for a new one.',
+    codeShownOnce: 'This code is shown once. If it is lost, re-pair the tablet for a new one.',
     codeWhere: 'On the tablet, open /kiosk and enter the code.',
     codeExpires: (minutes: number) =>
       minutes <= 0
-        ? 'This code has expired. Rotate the tablet for a new one.'
+        ? 'This code has expired. Re-pair the tablet for a new one.'
         : minutes === 1
           ? 'Expires in 1 minute'
           : `Expires in ${minutes} minutes`,
@@ -4410,12 +4411,12 @@ export const strings = {
     cancelAction: 'Cancel',
     revoking: 'Revoking…',
 
-    rotateAction: 'Rotate',
+    rotateAction: 'Re-Pair Tablet',
     rotateConfirm: (label: string) =>
-      `Rotate ${label}? Its current credential stops working immediately and you will get a new code to type `
+      `Re-pair ${label}? Its current credential stops working immediately and you will get a new code to type `
       + 'into it.',
-    rotateConfirmAction: 'Rotate and show a new code',
-    rotating: 'Rotating…',
+    rotateConfirmAction: 'Re-pair and show a new code',
+    rotating: 'Re-pairing…',
 
     /*
      * THE BUILD FLOOR — staged rollout with instant rollback. Written for
@@ -6098,7 +6099,7 @@ export const strings = {
     tabletsNone: 'No tablet is paired to this practice yet.',
     tabletsNoneHint: 'Pair one under Tablets, then it will appear here.',
     tabletIdle: 'Ready',
-    tabletRevoked: 'Revoked — rotate it under Tablets to bring it back',
+    tabletRevoked: 'Revoked — re-pair it under Tablets to bring it back',
     /** Reception's own switch. One press on Tablets brings it back — no code, no walk. */
     tabletOutOfUse: 'Not in use — put it back in use under Tablets',
     tabletUnpaired: 'Waiting to be paired',
