@@ -17,11 +17,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2463 |
-| Files scanned for exports | 577 |
-| Files scanned for imports | 620 |
-| Exports with no comment of their own | 1013 |
-| Exports imported nowhere else | 1023 |
+| Exported symbols indexed | 2465 |
+| Files scanned for exports | 578 |
+| Files scanned for imports | 621 |
+| Exports with no comment of their own | 1015 |
+| Exports imported nowhere else | 1024 |
 
 ## Sections
 
@@ -35,7 +35,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 - [Contracts types](#contracts-types) — 118
 - [Contracts functions and constants](#contracts-functions-and-constants) — 32
 - [Core services, controllers and modules](#core-services-controllers-and-modules) — 290
-- [Core helpers, constants and types](#core-helpers-constants-and-types) — 217
+- [Core helpers, constants and types](#core-helpers-constants-and-types) — 219
 - [AOBPRINTER (the desktop print channel)](#aobprinter-the-desktop-print-channel-) — 163
 
 ## Web components
@@ -1900,7 +1900,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
-| `PrismaService` | core:prisma/prisma.service.ts | Every practice-scoped read or write goes through withPractice() — RLS policies (FORCE, fail closed) filter on the transaction-local app.practice_id setting, so a query outside withPractice() sees no practice-scoped rows at all. | **67** · core:acting-as/acting-as.service.ts, core:affiliations/affiliations.service.ts, core:affiliations/invitation.service.ts, +64 more |
+| `PrismaService` | core:prisma/prisma.service.ts | Every practice-scoped read or write goes through withPractice() — RLS policies (FORCE, fail closed) filter on the transaction-local app.practice_id setting, so a query outside withPractice() sees no practice-scoped rows at all. | **68** · core:acting-as/acting-as.service.ts, core:affiliations/affiliations.service.ts, core:affiliations/invitation.service.ts, +65 more |
 | `ReviewTasksService` | core:review-tasks/review-tasks.service.ts | Work arriving into the platform that needs a second look. | **12** · core:affiliations/affiliations.service.ts, core:affiliations/practitioner-self.controller.ts, core:identity/practice-admin.service.ts, +9 more |
 | `CaptureService` | core:capture/capture.service.ts |  | **9** · core:agreements/agreements.service.ts, core:arrivals/arrivals.service.ts, core:arrivals/post-service-chase.sweep.ts, +6 more |
 | `OutboundService` | core:outbound/outbound.service.ts | The outbound queue. | **9** · core:acting-as/acting-as.service.ts, core:affiliations/affiliations.service.ts, core:agreement-copy/agreement-copy.service.ts, +6 more |
@@ -2193,7 +2193,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Core helpers, constants and types
 
-217 exports.
+219 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -2234,7 +2234,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SignedDb4Document` | core:render/signed-db4-document.ts |  | **2** · core:agreements/signed-db4.service.ts, core:render/signed-db4-renderer.ts |
 | `VAULT_CLIENT` | core:vault/vault.tokens.ts |  | **2** · core:vault/vault-relay.service.ts, core:vault/vault.module.ts |
 | `allocatePracticeCodeIfPossible` | core:practices/practice-code.ts | ALLOCATE, BUT NEVER FAIL THE THING THAT ASKED. | **2** · core:organisations/organisations.service.ts, core:practices/practices.service.ts |
-| `associateOnServiceArrival` | core:agreements/pre-agreement-association.ts | WHEN A SERVICE RECORD ARRIVES. | **2** · core:arrivals/arrivals.service.ts, core:pms/pms-sync.service.ts |
+| `associateAfterCommit` | core:agreements/associate-after-commit.ts |  | **2** · core:arrivals/arrivals.service.ts, core:pms/pms-sync.service.ts |
 | `clientKey` | core:portal/portal-client-key.ts | WHAT A RATE LIMITER ON A PUBLIC PORTAL ROUTE COUNTS AGAINST. | **2** · core:portal/portal-passkey.controller.ts, core:portal/portal.controller.ts |
 | `evaluateChallenge` | core:verification/identifier-matching.ts | Evaluates ALL challenged identifiers (never short-circuits on first mismatch — uniform timing) and reports only the aggregate. | **2** · core:kiosk/kiosk.service.ts, core:verification/verification.service.ts |
 | `idsOf` | core:arrivals/arrival-day.ts | Distinct, non-empty ids from a list that may hold nulls. | **2** · core:arrivals/arrivals.service.ts, core:practitioner-queue/practitioner-queue.service.ts |
@@ -2277,6 +2277,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `anchorsForAffiliations` | core:affiliations/agreement-anchor.ts | The batch form. | **1** · core:arrivals/arrivals.service.ts |
 | `assertRenderable` | core:render/agreement-document.ts |  | **1** · core:render/agreement-pdf-renderer.ts |
 | `assertSignedDb4Renderable` | core:render/signed-db4-document.ts | THE RENDER-TIME GUARD FOR THIS ARTEFACT KIND. | **1** · core:render/signed-db4-renderer.ts |
+| `associateOnServiceArrival` | core:agreements/pre-agreement-association.ts | WHEN A SERVICE RECORD ARRIVES. | **1** · core:agreements/associate-after-commit.ts |
 | `associationChoices` | core:agreements/pre-agreement-association.ts | EVERY SERVICE RECORD A PERSON HAS TO CHOOSE FOR: no association yet, and at least one open pre-draft that matches it. | **1** · core:reconciliation/reconciliation.service.ts |
 | `buildDb4FormView` | core:agreements/db4-form-view.ts | THE BLOCK THE LOCK RESPONSE CARRIES for a session that came from a DB4 Print Record — and nothing at all for every other session, which is where D-2026-09-27-02 lives: a practice with no PMS has no print record, so the caller builds no block and the tablet draws exactly what it drew before this feature existed. | **1** · core:agreements/agreements.service.ts |
 | `calendarDayOf` | core:agreements/pre-agreement-association.ts | `YYYY-MM-DD` of a `@db.Date` value. | **1** · core:reconciliation/reconciliation.service.ts |
@@ -2320,6 +2321,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `AnchoredRow` | core:affiliations/agreement-anchor.ts | The shape every caller has: an agreement row, or anything carrying the two ids. | 0 |
 | `AobPrinterHostRecordInput` | core:aobprinter-hosts/aobprinter-hosts.service.ts | What the heartbeat service hands over: the beat, with patients resolved on the server where a return names one. | 0 |
 | `AobPrinterHostRecorded` | core:aobprinter-hosts/aobprinter-hosts.service.ts | The chain part of the reply: the status, and the seq the host answers at next time. | 0 |
+| `AssociationAfterCommit` | core:agreements/associate-after-commit.ts |  | 0 |
 | `AssociationChoice` | core:agreements/pre-agreement-association.ts | A service record with unsigned drafts that match it and none associated. | 0 |
 | `AssociationChoiceItem` | core:reconciliation/reconciliation.service.ts | A SERVICE WITH UNSIGNED PRE-AGREEMENTS THAT MATCH IT AND NONE ASSOCIATED (D-2026-10-10-09, option (b)). | 0 |
 | `AssociationChoiceReason` | core:reconciliation/reconciliation.service.ts |  | 0 |

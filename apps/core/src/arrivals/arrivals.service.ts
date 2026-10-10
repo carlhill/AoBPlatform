@@ -47,7 +47,7 @@ import {
   type VisitAgreementDecision,
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
-import { associateOnServiceArrival } from '../agreements/pre-agreement-association';
+import { associateAfterCommit } from '../agreements/associate-after-commit';
 import { PrismaService } from '../prisma/prisma.service';
 import { AgreementsService } from '../agreements/agreements.service';
 import { CaptureService } from '../capture/capture.service';
@@ -2754,13 +2754,6 @@ export class ArrivalsService {
         create: { practiceId, pmsInvoiceKey: dto.idempotencyKey, ...written },
       });
 
-      /*
-       * AN UNSIGNED PRE-AGREEMENT FOR THIS VISIT IS ASSOCIATED, NEVER LINKED
-       * (D-2026-10-10-09, option (b)). Nothing below changes: `agreementId`
-       * is what `written` says, and the post-service draft is still made and
-       * linked in phase 3. Idempotent on a record that already has one.
-       */
-      await associateOnServiceArrival(tx, practiceId, record);
 
       /*
        * THE EVENT, IN THIS TRANSACTION (FR-11.2, hard rule 11). Ids, the
@@ -2795,6 +2788,15 @@ export class ArrivalsService {
 
       return record;
     });
+
+    /*
+     * AN UNSIGNED PRE-AGREEMENT FOR THIS VISIT IS ASSOCIATED, NEVER LINKED
+     * (D-2026-10-10-09, option (b)), AFTER the service record and its
+     * `service.rendered` event have committed, in its own transaction. A
+     * failure is logged and swallowed (hard rule 8): the service is then on
+     * Reconciliation's choice list. Idempotent on a record that already has one.
+     */
+    await associateAfterCommit(this.prisma, practiceId, decided.id, this.logger);
 
     if (decision.outcome !== 'episodic_post') {
       /*

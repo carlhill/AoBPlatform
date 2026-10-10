@@ -10,6 +10,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { PMS_ADAPTER } from '../src/pms/pms.tokens';
 import { MESSAGING_GATEWAY, type MessagingGateway } from '../src/messaging/gateway';
 import { RULES_CLIENT } from '../src/rules-client/rules-client.module';
+import * as association from '../src/agreements/pre-agreement-association';
 import { createServicingProvider, deleteSeededAnchors, type SeededAnchor } from './anchor';
 
 /**
@@ -411,6 +412,69 @@ describe('pre-agreement association, option (b) (e2e, real Postgres + fixture ad
 
     expect(await associationOf(lateTheNightBefore)).toBeNull();
     expect(await associationOf(justAfterMidnight)).toMatchObject({ how: 'automatic', candidateCount: 1 });
+  });
+
+  /*
+   * HARD RULE 8: AN ASSOCIATION IS EVIDENCE ABOUT A DRAFT, AND IT MAY NEVER COST
+   * THE SERVICE. Two arrivals racing for one draft end in a unique violation;
+   * that must not roll back the service record, its event, or the invoices
+   * after it. The failure leaves the service on the choice list for a person.
+   */
+  it('a_failed_association_never_loses_the_service_record', async () => {
+    const p = await patient();
+    const later = await patient();
+    const day = dayAgo(14);
+    await draft({ patient: p, createdAt: middayOf(day) });
+    const first = invoice(p.key, day);
+    const second = invoice(later.key, day);
+    adapter.invoices = [first, second];
+    const race = Object.assign(new Error('Unique constraint failed on the fields: (`agreementId`)'), { code: 'P2002' });
+    const spy = jest.spyOn(association, 'associateOnServiceArrival').mockRejectedValueOnce(race);
+    try {
+      await sync();
+    } finally {
+      spy.mockRestore();
+    }
+
+    const record = await recordFor(first.pmsInvoiceKey);
+    // The service record survived, and the post-service agreement was still drafted and linked.
+    expect(record.agreementId).not.toBeNull();
+    // The invoice after it was not abandoned.
+    expect((await recordFor(second.pmsInvoiceKey)).id).toBeTruthy();
+    // Nothing was associated; the service is on the list for a person to choose.
+    const listed = (await choices()).body as { serviceRecordId: string }[];
+    expect(listed.some((c) => c.serviceRecordId === record.id)).toBe(true);
+  });
+
+  it('a_failed_association_never_loses_a_rendered_service_or_its_event', async () => {
+    const p = await patient();
+    const day = dayAgo(15);
+    await draft({ patient: p, createdAt: middayOf(day) });
+    const patientRecordNumber = (
+      await prisma.withPractice(practiceA, (tx) => tx.patient.findFirstOrThrow({ where: { id: p.id } }))
+    ).patientRecordNumber;
+    const spy = jest.spyOn(association, 'associateOnServiceArrival').mockRejectedValueOnce(new Error('simulated'));
+    let res: request.Response;
+    try {
+      res = await http()
+        .post('/arrivals/service-rendered')
+        .set('x-practice-id', practiceA)
+        .send({
+          pmsPatientRecordNumber: patientRecordNumber,
+          affiliationId: provA.id,
+          serviceDate: day,
+          mbsItemNumbers: ['23'],
+          source: 'dev',
+          idempotencyKey: `paa-svc-${randomUUID()}`,
+        })
+        .expect(201);
+    } finally {
+      spy.mockRestore();
+    }
+    const serviceRecordId = res.body.serviceRecordId as string;
+    expect(res.body.agreementId).toBeTruthy();
+    const events = await prisma.vaultOutbox.findMany({ where: { type: 'service.rendered', subjectId: serviceRecordId } });
+    expect(events).toHaveLength(1);
   });
 
   it('cross_practice_association_reads_and_choices_fail_closed', async () => {
