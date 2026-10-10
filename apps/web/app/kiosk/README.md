@@ -36,6 +36,48 @@ npm run e2e:kiosk -w apps/web  # Playwright: the ceremony, against both servers
 npm run lint -w apps/web       # string-table guard + the zero-footprint rule
 ```
 
+### Testing on a real tablet over home Wi-Fi (10 Oct 2026)
+
+Proved on a Galaxy Tab S10. The tablet cannot reach the PC's `localhost`, so it
+uses the PC's Wi-Fi address (`ipconfig`, the "Wireless LAN adapter Wi-Fi" IPv4
+address; written `<PC-IP>` below).
+
+**Repo side** (local files, none committed except `next.config.mjs`):
+- `apps/web/.env.local`: set `NEXT_PUBLIC_CORE_URL=http://<PC-IP>:3001` and
+  `DEV_LAN_HOSTS=<PC-IP>`. Without the second, Next serves the HTML but refuses
+  the scripts, and the page stays blank (`next.config.mjs` `allowedDevOrigins`).
+- `apps/core/.env`: set `CORS_ORIGINS=http://localhost:3100,http://<PC-IP>:3100`.
+- Restart core and web.
+
+**PC side.** Every one of these blocked the tablet at some point:
+1. **The VPN.** AVG Secure VPN captured local traffic until "Exclude private
+   networks" was turned on.
+2. **Windows network profile.** The Wi-Fi must be **Private** (Settings → Wi-Fi
+   → the network → Network profile type). Changing it from PowerShell needs an
+   elevated window.
+3. **Windows Firewall.** No rule covered `C:\Program Files
+odejs
+ode.exe`;
+   the only "Node.js" rules belonged to an Unreal Engine plugin. The fix, run in
+   an admin PowerShell:
+   `New-NetFirewallRule -DisplayName "AoB dev (core 3001, web 3100)" -Direction Inbound -Protocol TCP -LocalPort 3001,3100 -Profile Private -RemoteAddress LocalSubnet -Action Allow`
+4. **AVG's own firewall.** When AVG registers as the firewall, its rules decide
+   and the Windows rule does not. AVG treated the network as Public. The fix:
+   add a Network Rule with Allow, TCP, In, Public, address
+   `192.168.33.1-192.168.33.254` (AVG refuses the `/24` form), local ports
+   `3001,3100`.
+
+**Check, in order, from the tablet's Chrome:**
+1. `http://<PC-IP>:3001/health` answers. If it does not, the problem is network
+   or firewall, not the app.
+2. `http://<PC-IP>:3100/kiosk` shows the pairing screen.
+3. On the PC, use `http://localhost:3100/practice/devices` → Add tablet, and
+   type the code into the tablet. Signing in works only at `localhost`.
+
+Pairing belongs to one browser at one address. A code typed on the PC at
+`<PC-IP>` pairs the PC, not the tablet. Undo the firewall and AVG rules when
+testing is finished.
+
 ### Pairing a browser as a tablet
 
 `/kiosk` shows the pairing screen until this browser holds a credential. Two
