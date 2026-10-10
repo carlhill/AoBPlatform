@@ -96,8 +96,9 @@ const RELAXED_BELOW = { width: 1280, height: 800 };
  * line footer of audit ids (106px) and the two-line disabled Sign label are
  * what is left to give, and neither is this spec's to cut. Here step 3 stays
  * under the rule these sizes had at d0e4f94 — nothing inside it scrolls, every
- * control can be scrolled into view — and is reported for a decision; it is
- * strict everywhere else, 1478x700 and 1280x650 included.
+ * control can be scrolled into view. Carl accepted this below 1280x800 rather
+ * than shrink the footer ("go with (a) for the signature step", D-2026-10-10-10);
+ * it is strict everywhere else, 1478x700 and 1280x650 included.
  */
 const SIGNATURE_SHORTFALL = ['1024x600', '960x600'];
 const relaxed = (size: { width: number; height: number }): boolean =>
@@ -555,8 +556,8 @@ const MAX_SHEETS = 100;
 
 async function walkTheCeremony(page: Page, size: { width: number; height: number }, walk: Walk = {}): Promise<void> {
   const shots = !walk.testDevice && !walk.fontScale;
-  // DB4 sheets: page scroll allowed on a test device and below the pending
-  // minimum height. Everything else — step 1 where it fits, and step 3
+  // DB4 sheets: page scroll allowed on a test device and below Carl's
+  // 1280x800 minimum (D-2026-10-10-10). Everything else — step 1 where it fits, and step 3
   // everywhere — is held to "nothing scrolls".
   const reach = walk.testDevice || relaxed(size) ? expectReachableByPageScroll : expectReachableWithoutScrolling;
   const strict = !walk.fontScale;
