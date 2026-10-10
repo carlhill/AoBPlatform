@@ -23,7 +23,15 @@
  *   NEXT_PUBLIC_CORE_URL=http://kiosk-core.invalid npx next dev -p <port>
  *   KIOSK_WEB_URL=http://localhost:<port> npx playwright test kiosk-tablet-fit
  *
- * `KIOSK_FIT_SHOTS=<dir>` additionally saves step 2 and step 3 at 1280x800.
+ * `KIOSK_FIT_SHOTS=<dir>` additionally saves steps 1, 2 and 3 at 924x1478
+ * (portrait, full screen) and 1478x924 (landscape, full screen).
+ *
+ * PORTRAIT FIRST (Carl, 10 Oct 2026: "yes switch to portrait first"). The 14"
+ * tablet is used upright: 924x1478 full screen, 924x1370 with Edge's bars.
+ * Landscape must still work — orientation is never locked (WCAG 1.3.4) — and
+ * there the width is used rather than stacked ("there is so much white space
+ * can we not do a better layout - instead of scrolling"). Step 1's Continue
+ * is held to the same rule as steps 2 and 3.
  *
  * ZERO FOOTPRINT. The only thing put into the browser's storage is the fake
  * pairing credential, under the one key the kiosk may persist.
@@ -35,8 +43,12 @@ const WEB_ORIGIN = new URL(WEB).origin;
 const SHOTS = process.env.KIOSK_FIT_SHOTS ?? '';
 const SHOT_TAG = process.env.KIOSK_FIT_SHOT_TAG ?? 'run';
 
-/** The landscape sizes Carl's tablet can present, and one portrait size. */
+/** Portrait first — the 14" tablet upright — then the landscape sizes. */
 const VIEWPORTS = [
+  { width: 924, height: 1478 },
+  { width: 924, height: 1370 },
+  { width: 800, height: 1280 },
+  { width: 1478, height: 924 },
   { width: 960, height: 600 },
   { width: 1024, height: 600 },
   { width: 1280, height: 650 },
@@ -45,8 +57,18 @@ const VIEWPORTS = [
   { width: 1478, height: 700 },
   { width: 1478, height: 813 },
   { width: 1500, height: 900 },
-  { width: 800, height: 1280 },
 ] as const;
+
+/**
+ * WHERE STEP 1 IS HELD TO "NO SCROLLING" TOO: the tablet upright, and on its
+ * side from 1280x800 up. Five rows of two 56px answers, a heading and
+ * Continue are taller than a 600-720px landscape screen with the browser's
+ * bars; there step 1 scrolls, and steps 2 and 3 are still held to the rule.
+ */
+const STEP_1_FITS = ['924x1478', '924x1370', '800x1280', '1478x924', '1478x813', '1280x800', '1500x900'];
+
+/** Where the before/after screenshots are taken. */
+const SHOT_SIZES = ['924x1478', '1478x924'];
 
 /* --------------------------------------------------------------------------
  * Obviously fake data. No Medicare-format number anywhere: the DB4 view
@@ -140,7 +162,7 @@ const SESSION = {
   captureRequestId: '00000000-0000-4000-8000-0000000000e1',
 };
 
-const ME = {
+const ME: Record<string, unknown> = {
   deviceId: '00000000-0000-4000-8000-000000000011',
   deviceLabel: 'Test tablet',
   practiceId: '00000000-0000-4000-8000-000000000021',
@@ -152,8 +174,11 @@ const ME = {
   reload: false,
 };
 
-/** The fake core. Anything it does not recognise is refused, never forwarded. */
-async function answerCore(route: Route): Promise<void> {
+/**
+ * The fake core. Anything it does not recognise is refused, never forwarded.
+ * `testDevice` turns on the blueprint panels, as a practice's test tablet has.
+ */
+async function answerCore(route: Route, testDevice: boolean): Promise<void> {
   const request = route.request();
   const cors = {
     'access-control-allow-origin': WEB_ORIGIN,
@@ -174,7 +199,7 @@ async function answerCore(route: Route): Promise<void> {
     });
   const path = new URL(request.url()).pathname;
 
-  if (path === '/kiosk/me') return json(ME);
+  if (path === '/kiosk/me') return json({ ...ME, showsWaitingList: testDevice });
   if (path === '/kiosk/heartbeat') return json({ command: null, pollMs: 60_000, outOfUse: false, reload: false });
   if (path === '/kiosk/session') return json({ session: SESSION });
   if (path === `/kiosk/session/${SESSION_ID}/state`) return json({ id: SESSION_ID, state: 'reading' });
@@ -190,7 +215,7 @@ async function answerCore(route: Route): Promise<void> {
         pollMs: 60_000,
         identifierTypes: ME.identifierTypes,
         waiting: [],
-        hidden: true,
+        hidden: !testDevice,
         reload: false,
       },
       { etag: '"rev-1"' },
@@ -199,11 +224,26 @@ async function answerCore(route: Route): Promise<void> {
   await route.abort();
 }
 
-async function openPairedKiosk(page: Page): Promise<void> {
-  await page.addInitScript(() => {
+interface Walk {
+  /** A practice's test tablet: the blueprint panels and the rail. */
+  testDevice?: boolean;
+  /** Android's font-size setting, as a percentage of the root size. */
+  fontScale?: number;
+}
+
+async function openPairedKiosk(page: Page, walk: Walk): Promise<void> {
+  await page.addInitScript((fontScale) => {
     window.localStorage.setItem('aob.kiosk.pairing', 'fake-device-credential');
-  });
-  await page.route((url) => url.origin !== WEB_ORIGIN, answerCore);
+    if (fontScale) {
+      document.addEventListener('DOMContentLoaded', () => {
+        document.documentElement.style.fontSize = `${fontScale}%`;
+      });
+    }
+  }, walk.fontScale ?? 0);
+  await page.route(
+    (url) => url.origin !== WEB_ORIGIN,
+    (route) => answerCore(route, walk.testDevice === true),
+  );
   await page.goto(`${WEB}/kiosk`);
 }
 
@@ -231,9 +271,16 @@ async function expectReachableWithoutScrolling(page: Page, control: Locator, nam
     }
     for (let parent = element.parentElement; parent; parent = parent.parentElement) {
       const overflow = getComputedStyle(parent);
+      // A box with `display: contents` has no box, so it clips nothing.
+      if (overflow.display === 'contents') continue;
       if (overflow.overflowY === 'visible' && overflow.overflowX === 'visible') continue;
       const clip = parent.getBoundingClientRect();
-      if (box.top < clip.top - 0.5 || box.bottom > clip.bottom + 0.5) {
+      if (
+        box.top < clip.top - 0.5 ||
+        box.bottom > clip.bottom + 0.5 ||
+        box.left < clip.left - 0.5 ||
+        box.right > clip.right + 0.5
+      ) {
         problems.push(`clipped by a scroller ${describe(clip)} at ${describe(box)}`);
         break;
       }
@@ -300,21 +347,39 @@ function tickRow(page: Page, key: string): Locator {
 }
 
 async function shot(page: Page, size: { width: number; height: number }, label: string): Promise<void> {
-  if (!SHOTS || size.width !== 1280 || size.height !== 800) return;
+  const name = `${size.width}x${size.height}`;
+  if (!SHOTS || !SHOT_SIZES.includes(name)) return;
   await page.evaluate(() => {
     for (const node of Array.from(document.querySelectorAll<HTMLElement>('*'))) node.scrollTop = 0;
   });
-  await page.screenshot({ path: `${SHOTS}/kiosk-fit-${SHOT_TAG}-${label}-1280x800.png` });
+  await page.screenshot({ path: `${SHOTS}/kiosk-fit-${SHOT_TAG}-${label}-${name}.png` });
 }
 
-async function walkTheCeremony(page: Page, size: { width: number; height: number }): Promise<void> {
+async function walkTheCeremony(page: Page, size: { width: number; height: number }, walk: Walk = {}): Promise<void> {
+  const shots = !walk.testDevice && !walk.fontScale;
   await page.setViewportSize(size);
-  await openPairedKiosk(page);
+  await openPairedKiosk(page, walk);
 
-  // K-P1, step 1 — the pushed route's first screen. Not this spec's subject.
+  // K-P1, step 1 — every row's two answers and Continue, all on screen.
   await expect(page.getByTestId('check-details-heading')).toBeVisible();
   await expectNoHorizontalOverflow(page, 'K-P1');
-  for (const tick of await page.locator('[data-testid^="detail-tick-"]').all()) await tick.click();
+  if (shots) await shot(page, size, 'step1');
+  const ticks = await page.locator('[data-testid^="detail-tick-"]').all();
+  const step1Fits = STEP_1_FITS.includes(`${size.width}x${size.height}`);
+  for (const [index, tick] of step1Fits ? ticks.entries() : []) {
+    await expectReachableWithoutScrolling(page, tick, `K-P1 "that's right" ${index + 1}`);
+  }
+  const crosses = step1Fits ? await page.locator('[data-testid^="detail-cross-"]').all() : [];
+  for (const [index, cross] of crosses.entries()) {
+    await expectReachableWithoutScrolling(page, cross, `K-P1 "that's wrong" ${index + 1}`);
+  }
+  if (step1Fits) {
+    await expectReachableWithoutScrolling(page, page.getByTestId('check-details-continue'), 'K-P1 Continue');
+  }
+  for (const tick of ticks) await tick.click();
+  if (step1Fits) {
+    await expectReachableWithoutScrolling(page, page.getByTestId('check-details-continue'), 'K-P1 Continue, ticked');
+  }
   await page.getByTestId('check-details-continue').click();
 
   // 2A — no tick boxes by construction; its Continue must show.
@@ -335,7 +400,7 @@ async function walkTheCeremony(page: Page, size: { width: number; height: number
   // 2C — the legal page Carl photographed, its tick and Continue to sign.
   await expect(page.getByTestId('affirm-episodic_assign_v1')).toBeVisible();
   await expectNoHorizontalOverflow(page, '2C');
-  await shot(page, size, 'step2');
+  if (shots) await shot(page, size, 'step2');
   await expectReachableWithoutScrolling(page, tickRow(page, 'episodic_assign_v1'), '2C tick box');
   await expectReachableWithoutScrolling(page, page.getByTestId('continue-to-sign'), '2C Continue to sign');
   await page.getByTestId('affirm-episodic_assign_v1').check();
@@ -345,7 +410,7 @@ async function walkTheCeremony(page: Page, size: { width: number; height: number
   // Step 3 — the pad, Back, Clear and Sign.
   await expect(page.getByTestId('signature-pad')).toBeVisible();
   await expectNoHorizontalOverflow(page, 'Step 3');
-  await shot(page, size, 'step3');
+  if (shots) await shot(page, size, 'step3');
   await expectReachableWithoutScrolling(page, page.getByTestId('signature-pad'), 'signature pad');
   await expectReachableWithoutScrolling(page, page.getByTestId('signature-back'), 'Back');
   await expectReachableWithoutScrolling(page, page.getByTestId('signature-clear'), 'Clear');
@@ -375,4 +440,90 @@ test.describe('as an Android tablet', () => {
       await walkTheCeremony(page, size);
     });
   }
+});
+
+/*
+ * A PRACTICE'S TEST TABLET draws the blueprint panels and puts the actions in
+ * a rail. Side by side it must fit like any other; stacked (under 1024px) the
+ * document must not be squeezed into a few-line box of its own.
+ */
+test.describe('on a test device', () => {
+  for (const size of [
+    { width: 1478, height: 924 },
+    { width: 1280, height: 800 },
+  ]) {
+    test(`kiosk_test_device_controls_fit_at_${size.width}x${size.height}`, async ({ page }) => {
+      await walkTheCeremony(page, size, { testDevice: true });
+    });
+  }
+
+  test('kiosk_test_device_stacked_never_squeezes_the_document_text', async ({ page }) => {
+    await page.setViewportSize({ width: 960, height: 600 });
+    await openPairedKiosk(page, { testDevice: true });
+    await expect(page.getByTestId('check-details-heading')).toBeVisible();
+    for (const tick of await page.locator('[data-testid^="detail-tick-"]').all()) await tick.click();
+    await page.getByTestId('check-details-continue').click();
+    const region = page.getByTestId('particulars-scroll');
+    await expect(region).toBeVisible();
+    const trapped = await region.evaluate((el) => el.scrollHeight > el.clientHeight + 1);
+    expect(trapped, 'stacked, the document text scrolls with the step, not in a box of its own').toBe(false);
+    await expectNoHorizontalOverflow(page, '2A stacked');
+  });
+});
+
+/*
+ * ANDROID'S FONT-SIZE SETTING. The kiosk's type is in rem, so a patient's
+ * larger text setting enlarges everything. Upright and full screen the
+ * controls must still fit, and nothing may be pushed off the right edge.
+ */
+test('kiosk_fits_with_android_text_at_130_percent_at_924x1478', async ({ page }) => {
+  await walkTheCeremony(page, { width: 924, height: 1478 }, { fontScale: 130 });
+});
+
+/*
+ * REFLOW AT 400% (WCAG 2.2 SC 1.4.10): a 1280x800 screen zoomed to 400% is a
+ * 320x200 CSS viewport. One column, no sideways scrolling, and every control
+ * — the exit included — can be scrolled into view: nothing is trapped outside
+ * every scroller.
+ */
+test('kiosk_reflows_at_400_percent_zoom', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 200 });
+  await openPairedKiosk(page, {});
+  const reachable = async (control: Locator, name: string) => {
+    await control.scrollIntoViewIfNeeded();
+    const box = await control.boundingBox();
+    expect.soft(box, `${name} is laid out`).not.toBeNull();
+    if (!box) return;
+    const inView = box.y >= -0.5 && box.y + box.height <= 200.5 && box.x >= -0.5 && box.x + box.width <= 320.5;
+    expect.soft(inView, `${name} can be scrolled fully into view at 400%`).toBe(true);
+  };
+  const noSideways = async (step: string) => {
+    const wide = await page.evaluate(() => {
+      const root = document.scrollingElement ?? document.documentElement;
+      return root.scrollWidth > window.innerWidth;
+    });
+    expect.soft(wide, `${step}: no sideways scrolling at 400%`).toBe(false);
+  };
+  await expect(page.getByTestId('check-details-heading')).toBeAttached();
+  await noSideways('K-P1');
+  await reachable(page.getByTestId('leave-for-reception'), 'K-P1 See reception');
+  for (const tick of await page.locator('[data-testid^="detail-tick-"]').all()) await tick.click();
+  await reachable(page.getByTestId('check-details-continue'), 'K-P1 Continue');
+  await page.getByTestId('check-details-continue').click();
+  await expect(page.getByTestId('particulars-heading')).toBeAttached();
+  await noSideways('2A');
+  await reachable(page.getByTestId('db4-page-continue'), '2A Continue');
+  await page.getByTestId('db4-page-continue').click();
+  await page.getByTestId('affirm-episodic_details_correct_v1').check();
+  await page.getByTestId('db4-page-continue').click();
+  // The box itself: at 320px its sentence may be taller than the screen.
+  await reachable(page.getByTestId('affirm-episodic_assign_v1'), '2C tick box');
+  await page.getByTestId('affirm-episodic_assign_v1').check();
+  await reachable(page.getByTestId('continue-to-sign'), '2C Continue to sign');
+  await page.getByTestId('continue-to-sign').click();
+  await expect(page.getByTestId('signature-pad')).toBeAttached();
+  await noSideways('Step 3');
+  await reachable(page.getByTestId('signature-pad'), 'signature pad');
+  await reachable(page.getByTestId('sign-control'), 'Sign');
+  await reachable(page.getByTestId('leave-for-reception'), 'Step 3 See reception');
 });

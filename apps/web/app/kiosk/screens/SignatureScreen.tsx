@@ -148,15 +148,20 @@ export function SignatureScreen({
 
         Stacked, the heading, who is signing and the banner came to ~380px
         before the pad began, so on a landscape screen 600-800px tall the pad
-        and the buttons under it were always partly below the fold. From
-        900px wide the same blocks sit side by side — who is signing on the
-        left, the pad and its controls on the right, both starting at the top
-        — so the pad, Back, Clear and Sign are on screen without scrolling.
+        and the buttons under it were always partly below the fold. On a
+        landscape screen 900px or wider the same blocks sit side by side — who
+        is signing on the left, the pad and its controls on the right, both
+        starting at the top — so the pad, Back, Clear and Sign are on screen
+        without scrolling.
+
+        UPRIGHT IS ONE COLUMN (Carl, 10 Oct 2026: the 14" tablet is used in
+        portrait). Who is signing above, then the pad at the column's full
+        width, then Back, Clear and Sign — the height a portrait screen has.
 
         NOTHING MOVED IN THE DOM. The two wrappers only group what was already
         consecutive, so the reading order, the tab order and what a screen
-        reader says are the same sentence at every width; below 900px the
-        wrappers are plain blocks in one stack, exactly as before.
+        reader says are the same sentence at every width; in portrait the
+        wrappers are plain blocks in one stack.
       */}
       <div className={`${styles.stack} ${styles.signLayout}`}>
         <div className={`${styles.stack} ${styles.signIntro}`}>
