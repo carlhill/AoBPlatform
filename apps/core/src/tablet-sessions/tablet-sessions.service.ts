@@ -348,6 +348,13 @@ export interface EarlierUnsignedRow {
   serviceRecordId: string | null;
   /** Only for `service_decided`: the latest decision's code, e.g. `forgo_benefit`. */
   reconciliationDecision: string | null;
+  /**
+   * IS THE SERVICE STILL AN ITEM ON RECONCILIATION -- the queue or the choice
+   * list -- so that a `?item=` link to it lands on something (review of
+   * D-2026-10-10-09). False once a stored agreement covers it or a decision
+   * closed it; the console then links to the patient's page instead.
+   */
+  serviceOnReconciliation: boolean;
 }
 
 export interface EarlierUnsignedList {
@@ -1792,10 +1799,10 @@ export class TabletSessionsService {
       if (!service.agreementId) continue;
       servicesByAgreement.set(service.agreementId, [...(servicesByAgreement.get(service.agreementId) ?? []), service.id]);
     }
-    const onQueue =
-      read.services.length > 0
-        ? new Set((await this.reconciliation.outstanding(practiceId)).map((item) => item.serviceRecordId))
-        : new Set<string>();
+    const needsQueue = read.services.length > 0 || read.associatedWith.size > 0 || read.matchingByAgreement.size > 0;
+    const onQueue = needsQueue
+      ? new Set((await this.reconciliation.outstanding(practiceId)).map((item) => item.serviceRecordId))
+      : new Set<string>();
 
     const rows: EarlierUnsignedRow[] = [];
     for (const agreement of read.kept) {
@@ -1805,10 +1812,12 @@ export class TabletSessionsService {
       let reason: EarlierUnsignedReason = 'no_service_recorded';
       let serviceRecordId: string | null = null;
       let reconciliationDecision: string | null = null;
+      let serviceOnReconciliation = false;
       if (linked.length > 0) {
         const queued = linked.find((id) => onQueue.has(id));
         serviceRecordId = queued ?? linked[0];
         reason = 'service_in_reconciliation';
+        serviceOnReconciliation = Boolean(queued);
         if (!queued) {
           /*
            * NAMED BY A SERVICE BUT NOT ON THE QUEUE. The queue drops an item
@@ -1827,15 +1836,19 @@ export class TabletSessionsService {
         /* Associated, never linked: the line links to the service's Reconciliation item, not to the draft. */
         reason = 'service_associated';
         serviceRecordId = read.associatedWith.get(agreement.id) ?? null;
+        serviceOnReconciliation = serviceRecordId !== null && onQueue.has(serviceRecordId);
       } else {
         const matching = read.matchingByAgreement.get(agreement.id) ?? [];
         const open = matching.find((m) => m.associatedAgreementId === null);
         if (open) {
+          // Unassociated with a matching draft: on the choice list by construction (`associationChoices`).
           reason = 'service_choice_needed';
           serviceRecordId = open.id;
+          serviceOnReconciliation = true;
         } else if (matching.length > 0) {
           reason = 'service_associated_other';
           serviceRecordId = matching[0]!.id;
+          serviceOnReconciliation = onQueue.has(serviceRecordId);
         }
       }
       rows.push({
@@ -1850,6 +1863,7 @@ export class TabletSessionsService {
         reason,
         serviceRecordId,
         reconciliationDecision,
+        serviceOnReconciliation,
       });
     }
     return { total: read.total, rows };

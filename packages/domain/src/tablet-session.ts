@@ -167,6 +167,12 @@ export const SIGNATURE_REFUSAL_REASONS = [
   'already_signed',
   /** The agreement is not at the signing step at all: declined, expired, still a draft. */
   'not_awaiting_signature',
+  /**
+   * THE CLOSURE SWEEP CLOSED IT as not needed: no service was recorded for its
+   * visit within N days (D-2026-10-10-09 option 3). More exact than
+   * `not_awaiting_signature`, so it is said by name.
+   */
+  'agreement_closed_unsigned',
   /** A drawn signature arrived with no strokes, or a tap arrived carrying some. */
   'signature_capture_invalid',
   /** The storage-time s 65C pass failed (REQ-65C-01, "and again at storage"). */

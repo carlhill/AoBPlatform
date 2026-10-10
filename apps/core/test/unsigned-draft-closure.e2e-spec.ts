@@ -4,6 +4,8 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import {
   SERVICE_DESCRIPTIONS,
+  UNSIGNED_DRAFT_CLOSURE_MAX_DAYS,
+  UNSIGNED_DRAFT_CLOSURE_MIN_DAYS,
   UNSIGNED_DRAFT_CLOSURE_VERSION,
   addCalendarDays,
   practiceDayWindow,
@@ -280,18 +282,55 @@ describe('unsigned draft closure after N days (e2e, real Postgres)', () => {
 
     const result = await sweep.closeForPractice(f.practiceId, sweepAt);
     expect(result.closed).toBe(0);
-    expect(result.skipped).toMatchObject({
-      linked: 1,
-      associated: 1,
-      service_matches_visit: 1,
-      superseded: 1,
-      on_tablet: 1,
-      live_remote_link: 1,
-    });
+    /*
+     * Linked, associated and superseded drafts are filtered out of the read
+     * itself (they never become closable, so they are not re-examined every
+     * hour); the rest are examined under their row lock and skipped by name.
+     */
+    expect(result.skipped).toEqual({ service_matches_visit: 1, on_tablet: 1, live_remote_link: 1 });
     for (const id of [linked, associated, matched, replaced, onTablet, liveLink, held, young]) {
       expect((await agreement(f, id)).status).toBe('draft');
     }
     expect((await agreement(f, signed)).status).toBe('signed');
+  });
+
+  it('a_backlog_larger_than_a_page_is_closed_in_one_run_draft_by_draft', async () => {
+    const f = await practice();
+    const day = dayAgo(40);
+    const ids: string[] = [];
+    for (let i = 0; i < 130; i += 1) ids.push(await draft(f, new Date(at(day).getTime() + i * 60_000)));
+    const result = await sweep.closeForPractice(f.practiceId, at(addCalendarDays(day, 7)));
+    expect(result.closed).toBe(130);
+    expect(result.examined).toBe(130);
+    const left = await prisma.withPractice(f.practiceId, (tx) =>
+      tx.agreement.count({ where: { id: { in: ids }, status: { not: 'expired' } } }),
+    );
+    expect(left).toBe(0);
+  });
+
+  it('the_platform_run_pages_past_practices_with_nothing_due', async () => {
+    // A practice whose only drafts are today's is not listed by the discovery function at all.
+    const quiet = await practice();
+    await draft(quiet, new Date());
+    const rows = await prisma.$queryRaw<Array<{ practiceId: string }>>`
+      SELECT * FROM core.unsigned_draft_closure_practices(
+        ARRAY['draft']::text[], ARRAY['episodic_pre']::text[],
+        ${practiceDayWindow(practiceToday()).from}::timestamp, NULL::uuid, 500::int)`;
+    expect(rows.map((r) => r.practiceId)).not.toContain(quiet.practiceId);
+    // And it is ordered, so a cursor can page through every practice.
+    const ordered = [...rows.map((r) => r.practiceId)].sort();
+    expect(rows.map((r) => r.practiceId)).toEqual(ordered);
+  });
+
+  it('the_live_database_check_equals_the_content_bounds', async () => {
+    const [row] = await prisma.$queryRaw<Array<{ def: string }>>`
+      SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+      WHERE conname = 'practices_unsigned_draft_closure_days_range'`;
+    const numbers = [...row!.def.matchAll(/(\d+)/g)].map((m) => Number(m[1]));
+    expect([Math.min(...numbers), Math.max(...numbers)]).toEqual([
+      UNSIGNED_DRAFT_CLOSURE_MIN_DAYS,
+      UNSIGNED_DRAFT_CLOSURE_MAX_DAYS,
+    ]);
   });
 
   it('a_rerun_closes_nothing_twice', async () => {
@@ -334,6 +373,23 @@ describe('unsigned draft closure after N days (e2e, real Postgres)', () => {
     // 00:15 on 10 October in Sydney, though still 9 October in UTC, is day 7.
     expect((await sweep.closeForPractice(f.practiceId, new Date('2026-10-09T13:15:00Z'))).closed).toBe(1);
     expect((await closureEvents(id))[0]!.payload).toMatchObject({ forDay: '2026-10-03', closedOn: '2026-10-10' });
+  });
+
+  it('signing_a_closed_agreement_is_refused_by_name_not_by_a_database_check', async () => {
+    const f = await practice();
+    const day = dayAgo(30);
+    const id = await draft(f, at(day), { status: 'awaiting_signature' });
+    await sweep.closeForPractice(f.practiceId, at(addCalendarDays(day, 7)));
+    expect((await agreement(f, id)).status).toBe('expired');
+
+    const res = await request(app.getHttpServer())
+      .post(`/agreements/${id}/sign`)
+      .set('x-practice-id', f.practiceId)
+      .send({ method: 'tap_to_approve', channel: 'in_practice' })
+      .expect(400);
+    expect(res.body.reason).toBe('agreement_closed_unsigned');
+    expect(res.body.message).toContain(`closed on ${addCalendarDays(day, 7)}`);
+    expect(res.body.message).toContain('within 7 days');
   });
 
   it('a_closed_draft_drops_off_the_tablets_unsigned_from_earlier_days', async () => {

@@ -10,6 +10,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { PMS_ADAPTER } from '../src/pms/pms.tokens';
 import { MESSAGING_GATEWAY, type MessagingGateway } from '../src/messaging/gateway';
 import { RULES_CLIENT } from '../src/rules-client/rules-client.module';
+import * as association from '../src/agreements/pre-agreement-association';
 import { createServicingProvider, deleteSeededAnchors, type SeededAnchor } from './anchor';
 
 /**
@@ -340,8 +341,24 @@ describe('pre-agreement association, option (b) (e2e, real Postgres + fixture ad
     // THE TABLET'S EARLIER-DAYS LINES say what was found and name the Reconciliation item.
     const earlier = await http().get('/tablet-sessions/unsigned-earlier').set('x-practice-id', practiceA).expect(200);
     const rows = earlier.body.rows as { agreementId: string; reason: string; serviceRecordId: string | null }[];
-    expect(rows.find((r) => r.agreementId === second)).toMatchObject({ reason: 'service_associated', serviceRecordId: record.id });
-    expect(rows.find((r) => r.agreementId === first)).toMatchObject({ reason: 'service_associated_other', serviceRecordId: record.id });
+    // The post-service agreement is still open, so the service is on the queue: the line links to the item.
+    expect(rows.find((r) => r.agreementId === second)).toMatchObject({
+      reason: 'service_associated',
+      serviceRecordId: record.id,
+      serviceOnReconciliation: true,
+    });
+    expect(rows.find((r) => r.agreementId === first)).toMatchObject({
+      reason: 'service_associated_other',
+      serviceRecordId: record.id,
+      serviceOnReconciliation: true,
+    });
+
+    // Once a stored agreement covers the service it leaves the queue, and the line says so.
+    await prisma.withPractice(practiceA, (tx) => tx.agreement.update({ where: { id: record.agreementId! }, data: { status: 'stored' } }));
+    const after = await http().get('/tablet-sessions/unsigned-earlier').set('x-practice-id', practiceA).expect(200);
+    const rowsAfter = after.body.rows as { agreementId: string }[];
+    expect(rowsAfter.find((r) => r.agreementId === second)).toMatchObject({ reason: 'service_associated', serviceOnReconciliation: false });
+    expect(rowsAfter.find((r) => r.agreementId === first)).toMatchObject({ reason: 'service_associated_other', serviceOnReconciliation: false });
   });
 
   it('a_waiting_choice_shows_on_the_tablet_as_choice_needed_naming_the_service', async () => {
@@ -411,6 +428,85 @@ describe('pre-agreement association, option (b) (e2e, real Postgres + fixture ad
 
     expect(await associationOf(lateTheNightBefore)).toBeNull();
     expect(await associationOf(justAfterMidnight)).toMatchObject({ how: 'automatic', candidateCount: 1 });
+  });
+
+  /*
+   * HARD RULE 8: AN ASSOCIATION IS EVIDENCE ABOUT A DRAFT, AND IT MAY NEVER COST
+   * THE SERVICE. Two arrivals racing for one draft end in a unique violation;
+   * that must not roll back the service record, its event, or the invoices
+   * after it. The failure leaves the service on the choice list for a person.
+   */
+  it('a_failed_association_never_loses_the_service_record', async () => {
+    const p = await patient();
+    const later = await patient();
+    const day = dayAgo(14);
+    await draft({ patient: p, createdAt: middayOf(day) });
+    const first = invoice(p.key, day);
+    const second = invoice(later.key, day);
+    adapter.invoices = [first, second];
+    const race = Object.assign(new Error('Unique constraint failed on the fields: (`agreementId`)'), { code: 'P2002' });
+    const spy = jest.spyOn(association, 'associateOnServiceArrival').mockRejectedValueOnce(race);
+    try {
+      await sync();
+    } finally {
+      spy.mockRestore();
+    }
+
+    const record = await recordFor(first.pmsInvoiceKey);
+    // The service record survived, and the post-service agreement was still drafted and linked.
+    expect(record.agreementId).not.toBeNull();
+    // The invoice after it was not abandoned.
+    expect((await recordFor(second.pmsInvoiceKey)).id).toBeTruthy();
+    // Nothing was associated; the service is on the list for a person to choose.
+    const listed = (await choices()).body as { serviceRecordId: string }[];
+    expect(listed.some((c) => c.serviceRecordId === record.id)).toBe(true);
+  });
+
+  it('a_failed_association_never_loses_a_rendered_service_or_its_event', async () => {
+    const p = await patient();
+    const day = dayAgo(15);
+    await draft({ patient: p, createdAt: middayOf(day) });
+    const patientRecordNumber = (
+      await prisma.withPractice(practiceA, (tx) => tx.patient.findFirstOrThrow({ where: { id: p.id } }))
+    ).patientRecordNumber;
+    const spy = jest.spyOn(association, 'associateOnServiceArrival').mockRejectedValueOnce(new Error('simulated'));
+    let res: request.Response;
+    try {
+      res = await http()
+        .post('/arrivals/service-rendered')
+        .set('x-practice-id', practiceA)
+        .send({
+          pmsPatientRecordNumber: patientRecordNumber,
+          affiliationId: provA.id,
+          serviceDate: day,
+          mbsItemNumbers: ['23'],
+          source: 'dev',
+          idempotencyKey: `paa-svc-${randomUUID()}`,
+        })
+        .expect(201);
+    } finally {
+      spy.mockRestore();
+    }
+    const serviceRecordId = res.body.serviceRecordId as string;
+    expect(res.body.agreementId).toBeTruthy();
+    const events = await prisma.vaultOutbox.findMany({ where: { type: 'service.rendered', subjectId: serviceRecordId } });
+    expect(events).toHaveLength(1);
+  });
+
+  it('an_association_is_never_deleted_as_a_side_effect_of_deleting_its_draft_or_service', async () => {
+    const p = await patient();
+    const day = dayAgo(16);
+    const pre = await draft({ patient: p, createdAt: middayOf(day) });
+    const inv = invoice(p.key, day);
+    adapter.invoices = [inv];
+    await sync();
+    const record = await recordFor(inv.pmsInvoiceKey);
+    expect(await associationOf(pre)).not.toBeNull();
+
+    // RESTRICT, not CASCADE: the fact stays unless somebody removes it on purpose.
+    await expect(prisma.withPractice(practiceA, (tx) => tx.agreement.delete({ where: { id: pre } }))).rejects.toThrow();
+    await expect(prisma.withPractice(practiceA, (tx) => tx.serviceRecord.delete({ where: { id: record.id } }))).rejects.toThrow();
+    expect(await associationOf(pre)).not.toBeNull();
   });
 
   it('cross_practice_association_reads_and_choices_fail_closed', async () => {

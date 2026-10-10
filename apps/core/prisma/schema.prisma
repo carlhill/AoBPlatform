@@ -1982,9 +1982,9 @@ model PreAgreementAssociation {
   id                      String        @id @default(uuid()) @db.Uuid
   practiceId              String        @db.Uuid
   agreementId             String        @unique @db.Uuid
-  agreement               Agreement     @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  agreement               Agreement     @relation(fields: [agreementId], references: [id], onDelete: Restrict)
   serviceRecordId         String        @unique @db.Uuid
-  serviceRecord           ServiceRecord @relation(fields: [serviceRecordId], references: [id], onDelete: Cascade)
+  serviceRecord           ServiceRecord @relation(fields: [serviceRecordId], references: [id], onDelete: Restrict)
   /// `automatic` | `chosen` (PRE_AGREEMENT_ASSOCIATION_HOW in the domain).
   how                     String
   /// How many unsigned drafts matched when it was made. 1 for `automatic`.

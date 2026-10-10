@@ -56,6 +56,7 @@ import {
 } from '@aobplatform/domain';
 import { ArtefactsService } from '../artefacts/artefacts.service';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
+import { closedUnsignedRefusal, lockAndRefuseIfClosed } from './closed-unsigned-guard';
 import { anchorForAgreement } from '../affiliations/agreement-anchor';
 import { PrismaService } from '../prisma/prisma.service';
 import { RULES_CLIENT, RulesClientError } from '../rules-client/rules-client.module';
@@ -2484,6 +2485,8 @@ export class AgreementsService {
     prepared: PreparedLock,
     extra: Prisma.AgreementUncheckedUpdateInput = {},
   ): Promise<DbAgreement> {
+    // Locked and refused by name if the closure sweep closed it meanwhile (review of D-2026-10-10-09).
+    await lockAndRefuseIfClosed(tx, agreementId);
     const agreement = await tx.agreement.findFirst({ where: { id: agreementId } });
     if (!agreement) throw new NotFoundException('Agreement not found.');
     if (agreement.particularsLockedAt) {
@@ -2658,6 +2661,11 @@ export class AgreementsService {
   ): Promise<DbAgreement> {
     // Storage-time re-validation (REQ-65C-01: "and again at storage").
     const agreementBefore = await this.get(practiceId, agreementId);
+    /*
+     * CLOSED AS NOT NEEDED (D-2026-10-10-09 option 3): said by name, before the
+     * generic "not at the signing step", because it is the more exact answer.
+     */
+    if (agreementBefore.closedReason) throw closedUnsignedRefusal(agreementBefore);
     if (agreementBefore.status !== 'awaiting_signature') {
       /*
        * EVERY REFUSAL ON THIS PATH CARRIES A `reason` CODE (Carl, 7 Sep 2026).
@@ -2833,6 +2841,20 @@ export class AgreementsService {
       : null;
 
     await this.prisma.withPractice(practiceId, async (tx) => {
+      /*
+       * THE ROW LOCK FIRST, AND THE STEP RE-CHECKED UNDER IT (review of
+       * D-2026-10-10-09). The status above was read outside this transaction;
+       * the closure sweep may have closed the agreement since. Under the lock
+       * a closed agreement is refused by name and a moved one as not at the
+       * signing step, never by the database's CHECK.
+       */
+      const locked = await lockAndRefuseIfClosed(tx, agreementId);
+      if (!locked || locked.status !== 'awaiting_signature') {
+        throw new BadRequestException({
+          message: `Cannot sign an agreement in status ${locked?.status ?? 'unknown'}.`,
+          reason: locked && SIGNED_ALREADY_STATUSES.has(locked.status) ? 'already_signed' : 'not_awaiting_signature',
+        });
+      }
       /*
        * ONE TRANSACTION: the two artefact rows, their vault events, the
        * signature event that binds their hashes, and every agreement event

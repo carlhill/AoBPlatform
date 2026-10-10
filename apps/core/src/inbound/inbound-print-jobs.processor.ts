@@ -118,11 +118,14 @@ export class InboundPrintJobsProcessor {
 
     for (const invoice of envelope.invoices ?? []) {
       outcome.invoices.total += 1;
-      const recordId = await this.prisma.withPractice(practiceId, async (tx) => {
+      const record = await this.prisma.withPractice(practiceId, async (tx) => {
         const patient = await this.pmsSync.ensurePatient(tx, practiceId, invoice.patientLinkageKey, knownPatients.get(invoice.patientLinkageKey));
         const provider = await this.pmsSync.ensureProvider(tx, practiceId, invoice.providerLinkageKey, knownProviders.get(invoice.providerLinkageKey));
-        return (await this.pmsSync.upsertServiceRecord(tx, practiceId, invoice, patient, provider)).id;
+        return this.pmsSync.upsertServiceRecord(tx, practiceId, invoice, patient, provider);
       });
+      const recordId = record.id;
+      // D-2026-10-10-09 option (b): after the commit, and never at the service's expense.
+      if (record.created) await this.pmsSync.associateAfterCommit(practiceId, recordId);
       const result = await this.autoCapture.captureForServiceRecord(practiceId, recordId);
       if (result.captured) outcome.invoices.captured += 1;
       else if ('reason' in result) {

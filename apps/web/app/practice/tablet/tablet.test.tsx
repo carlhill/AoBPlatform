@@ -3115,9 +3115,15 @@ describe('/practice/tablet — unsigned from earlier days', () => {
       earlier: {
         total: 3,
         rows: [
-          { ...IN_RECON, reason: 'service_associated', serviceRecordId: 'svc-assoc-1' },
-          { ...NO_SERVICE, reason: 'service_choice_needed', serviceRecordId: 'svc-choice-1' },
-          { ...NO_SERVICE, agreementId: 'agreement-earlier-3', reason: 'service_associated_other', serviceRecordId: 'svc-assoc-2' },
+          { ...IN_RECON, reason: 'service_associated', serviceRecordId: 'svc-assoc-1', serviceOnReconciliation: true },
+          { ...NO_SERVICE, reason: 'service_choice_needed', serviceRecordId: 'svc-choice-1', serviceOnReconciliation: true },
+          {
+            ...NO_SERVICE,
+            agreementId: 'agreement-earlier-3',
+            reason: 'service_associated_other',
+            serviceRecordId: 'svc-assoc-2',
+            serviceOnReconciliation: true,
+          },
         ],
       },
     });
@@ -3141,6 +3147,34 @@ describe('/practice/tablet — unsigned from earlier days', () => {
     );
     expect(screen.getByTestId('earlier-link-agreement-earlier-3').getAttribute('href')).toBe(
       '/practice/reconciliation?item=svc-assoc-2',
+    );
+  });
+
+  it('earlier_unsigned_associated_row_whose_service_left_reconciliation_links_to_the_patient_not_a_missing_item', async () => {
+    signedInAtPractice();
+    stubFetch({
+      earlier: {
+        total: 2,
+        rows: [
+          { ...IN_RECON, reason: 'service_associated', serviceRecordId: 'svc-covered-1', serviceOnReconciliation: false },
+          {
+            ...NO_SERVICE,
+            reason: 'service_associated_other',
+            serviceRecordId: 'svc-covered-2',
+            serviceOnReconciliation: false,
+          },
+        ],
+      },
+    });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    await screen.findByTestId('earlier-summary');
+    // Not "That item is not on this queue": the line goes where the agreement is listed.
+    expect(screen.getByTestId(`earlier-link-${IN_RECON.agreementId}`).getAttribute('href')).toBe(
+      `/practice/patients/${IN_RECON.patientId}`,
+    );
+    expect(screen.getByTestId(`earlier-link-${NO_SERVICE.agreementId}`).getAttribute('href')).toBe(
+      `/practice/patients/${NO_SERVICE.patientId}`,
     );
   });
 

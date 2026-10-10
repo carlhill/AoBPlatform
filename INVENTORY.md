@@ -17,11 +17,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2498 |
-| Files scanned for exports | 581 |
-| Files scanned for imports | 624 |
-| Exports with no comment of their own | 1016 |
-| Exports imported nowhere else | 1035 |
+| Exported symbols indexed | 2507 |
+| Files scanned for exports | 583 |
+| Files scanned for imports | 626 |
+| Exports with no comment of their own | 1020 |
+| Exports imported nowhere else | 1040 |
 
 ## Sections
 
@@ -35,7 +35,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 - [Contracts types](#contracts-types) — 121
 - [Contracts functions and constants](#contracts-functions-and-constants) — 37
 - [Core services, controllers and modules](#core-services-controllers-and-modules) — 290
-- [Core helpers, constants and types](#core-helpers-constants-and-types) — 221
+- [Core helpers, constants and types](#core-helpers-constants-and-types) — 230
 - [AOBPRINTER (the desktop print channel)](#aobprinter-the-desktop-print-channel-) — 163
 
 ## Web components
@@ -801,6 +801,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `mayBeProviderOnAgreement` | domain:billing-roles.ts | MAY THIS PERSON BE THE PROVIDER ON AN AGREEMENT AT THIS LOCATION? | **3** · core:arrivals/arrivals.service.ts, core:tablet-sessions/tablet-sessions.service.ts, domain:guards.ts |
 | `normaliseEmail` | domain:contacts.ts | One mailbox, case-insensitively. | **3** · core:agreements/agreements.service.ts, domain:agreement-copy.ts, domain:assignor.ts |
 | `practiceDisplayLabel` | domain:account-naming.ts | The practice's half of that label. | **3** · core:identity/identity.service.ts, core:identity/practice-admin.service.ts, core:practices/practice-users.service.ts |
+| `practiceToday` | domain:practice-day.ts | Today's calendar day in the practice's zone — never `toISOString().slice(0, 10)`. | **3** · core:agreements/closed-unsigned-guard.ts, core:unsigned-drafts/unsigned-draft-closure.sweep.ts, domain:pre-agreement-association.ts |
 | `profileSurfaces` | domain:practice-surfaces.ts | The surfaces a named profile switches on. | **3** · core:practices/practices.service.ts, core:practices/surface.guard.ts, web:practice/channels/ChannelsView.tsx |
 | `visitDayOf` | domain:pre-agreement-association.ts | THE DAY A DRAFT IS FOR, IN THE PRACTICE'S ZONE: the appointment's date where the draft has a booking, otherwise the practice-local day it was created. | **3** · core:agreements/pre-agreement-association.ts, core:tablet-sessions/tablet-sessions.service.ts, core:unsigned-drafts/unsigned-draft-closure.sweep.ts |
 | `webAuthnDisplayName` | domain:account-naming.ts | WHAT A PERSON READS AT THE PASSKEY PICKER (section 3c) -- and it leads with the practice, because that is the part that distinguishes it. | **3** · core:identity/identity.service.ts, core:identity/practice-admin.service.ts, core:practices/practice-users.service.ts |
@@ -839,7 +840,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `matchesPracticeStaff` | domain:assignor.ts | REQ-VUL-04 / hard rule 10 — the practice-staff comparison. | **2** · web:kiosk/rules/assignor.ts, web:practice/tablet/pushDesk.tsx |
 | `mayChoosePractice` | domain:landing.ts | May this person choose which practice they are looking at? | **2** · web:practice/PracticeList.tsx, web:practice/usePractice.tsx |
 | `normaliseAbn` | domain:abn.ts | Strip the spaces the ABR itself prints ("51 824 753 556"). | **2** · core:organisations/organisations.service.ts, web:apply/ApplyForm.tsx |
-| `practiceToday` | domain:practice-day.ts | Today's calendar day in the practice's zone — never `toISOString().slice(0, 10)`. | **2** · core:unsigned-drafts/unsigned-draft-closure.sweep.ts, domain:pre-agreement-association.ts |
+| `practiceDayWindow` | domain:practice-day.ts | THE WINDOW FOR ONE DAY, OR FOR TODAY WHEN NOBODY NAMED ONE. | **2** · core:arrivals/arrivals.service.ts, core:unsigned-drafts/unsigned-draft-closure.sweep.ts |
 | `remoteChannelFor` | domain:auto-capture.ts | Which remote channel reaches this patient. | **2** · core:arrivals/post-service-chase.sweep.ts, core:auto-capture/auto-capture.service.ts |
 | `renderAgreementTemplate` | domain:agreement-templates.ts | Substitute the values in, resolving the branches first. | **2** · core:agreements/agreements.service.ts, web:practice/templates/TemplateForm.tsx |
 | `renderPatientMessage` | domain:patient-message-templates.ts | Substitute the values in. | **2** · core:agreement-copy/agreement-copy.service.ts, core:portal/portal-invitation.dispatcher.ts |
@@ -870,6 +871,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ReportingError` | domain:reporting.ts |  | **1** · core:outbound/outbound.service.ts |
 | `SignatureCaptureError` | domain:signature.ts |  | **1** · core:agreements/agreements.service.ts |
 | `actingAsReason` | domain:acting-as.ts |  | **1** · core:acting-as/acting-as.service.ts |
+| `addCalendarDays` | domain:unsigned-draft-closure.ts | `YYYY-MM-DD` plus whole calendar days. | **1** · core:unsigned-drafts/unsigned-draft-closure.sweep.ts |
 | `addressWarnings` | domain:address.ts | Non-blocking observations, for the same reason G-NAF gaps are non-blocking. | **1** · core:organisations/organisations.service.ts |
 | `adminUsername` | domain:account-naming.ts | THE PRACTICE'S OWN ACCOUNT. | **1** · core:identity/account-names.ts |
 | `afterStop` | domain:pending-email-change.ts | What a stop means for the account, which is more than discarding a row. | **1** · core:organisations/pending-email.service.ts |
@@ -1012,7 +1014,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `personUsername` | domain:account-naming.ts | A PERSON, AT ONE PRACTICE -- `audrey@hillsempire.com.xlevelup`. | **1** · core:identity/account-names.ts |
 | `placeOptionsQuery` | domain:packed-reports.ts |  | **1** · web:practice/reports/ReportsView.tsx |
 | `portalRecordIdLine` | domain:patient-message-templates.ts | The one sentence, ready to append (Carl, 4 Sep 2026). | **1** · core:messaging/portal-record-id.service.ts |
-| `practiceDayWindow` | domain:practice-day.ts | THE WINDOW FOR ONE DAY, OR FOR TODAY WHEN NOBODY NAMED ONE. | **1** · core:arrivals/arrivals.service.ts |
 | `practitionerStrength` | domain:practitioner-strength.ts |  | **1** · core:identity-dashboard/identity-dashboard.service.ts |
 | `projectKioskWaitingRow` | domain:kiosk.ts | Build a row by taking ONLY the permitted fields. | **1** · core:kiosk/kiosk.service.ts |
 | `projectTabletSessionPatient` | domain:tablet-session.ts | Build the patient block by taking ONLY the permitted fields. | **1** · core:tablet-sessions/tablet-sessions.service.ts |
@@ -1053,7 +1054,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `InvitationError` | domain:invitation.ts |  | 0 |
 | `PageAccessError` | domain:page-access.ts |  | 0 |
 | `ReviewTaskError` | domain:review-tasks.ts |  | 0 |
-| `addCalendarDays` | domain:unsigned-draft-closure.ts | `YYYY-MM-DD` plus whole calendar days. | 0 |
 | `addressCheckMethod` | domain:address-check.ts |  | 0 |
 | `addressRejectionReason` | domain:address-check.ts |  | 0 |
 | `ageYearsAt` | domain:auto-capture.ts | Whole years between a date of birth and a moment, calendar-accurate. | 0 |
@@ -1192,6 +1192,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `EXTERNAL_LINKS` | domain:external-links.ts |  | **3** · web:OrgConsole.tsx, web:practice/practitioners/PractitionersView.tsx, domain:checks.ts |
 | `MIN_AGE_SELF_ASSIGN` | domain:guards.ts |  | **3** · web:kiosk/rules/assignor.ts, web:practice/patients/NewAgreementPanel.tsx, domain:auto-capture.ts |
 | `SERVICE_DESCRIPTIONS_VERSION` | domain:service-descriptions.ts | Recorded with every description set, so the record says which list it came from. | **3** · core:arrivals/arrivals.service.ts, core:auto-capture/auto-capture.service.ts, core:service-descriptions/service-descriptions.service.ts |
+| `UNSIGNED_DRAFT_CLOSURE_MIN_DAYS` | domain:unsigned-draft-closure.ts |  | **3** · core:practices/practices.dto.ts, core:unsigned-drafts/unsigned-draft-closure.sweep.ts, web:practice/channels/ChannelsView.tsx |
 | `ACTING_AS_REASON_KEYS` | domain:acting-as.ts |  | **2** · core:acting-as/acting-as.controller.ts, core:acting-as/acting-as.service.ts |
 | `ADDRESS_CHECK_VERSION` | domain:address-check.ts | The catalogue version. | **2** · core:organisations/organisations.controller.ts, core:organisations/organisations.service.ts |
 | `AFFILIATION_VELOCITY_WINDOW_DAYS` | domain:affiliation.ts |  | **2** · core:affiliations/affiliations.service.ts, core:identity-dashboard/identity-dashboard.service.ts |
@@ -1215,7 +1216,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SURFACE_PROFILE_KEYS` | domain:practice-surfaces.ts | The profile keys a practice's column may hold. | **2** · core:practices/practices.dto.ts, web:practice/channels/ChannelsView.tsx |
 | `UNSIGNED_DRAFT_CLOSURE_DEFAULT_DAYS` | domain:unsigned-draft-closure.ts |  | **2** · core:practices/practices.service.ts, web:practice/channels/ChannelsView.tsx |
 | `UNSIGNED_DRAFT_CLOSURE_MAX_DAYS` | domain:unsigned-draft-closure.ts |  | **2** · core:practices/practices.dto.ts, web:practice/channels/ChannelsView.tsx |
-| `UNSIGNED_DRAFT_CLOSURE_MIN_DAYS` | domain:unsigned-draft-closure.ts |  | **2** · core:practices/practices.dto.ts, web:practice/channels/ChannelsView.tsx |
 | `UNSIGNED_DRAFT_CLOSURE_VERSION` | domain:unsigned-draft-closure.ts |  | **2** · core:practices/practices.service.ts, web:practice/channels/ChannelsView.tsx |
 | `VISIT_STATE_KEYS` | domain:visit-states.ts |  | **2** · core:practitioner-queue/practitioner-queue.controller.ts, core:practitioner-queue/practitioner-queue.service.ts |
 | `ACCEPTANCE_MEANS` | domain:invitation.ts | What each method actually establishes, in words fit to show a reviewer. | **1** · core:affiliations/affiliations.service.ts |
@@ -1931,7 +1931,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
-| `PrismaService` | core:prisma/prisma.service.ts | Every practice-scoped read or write goes through withPractice() — RLS policies (FORCE, fail closed) filter on the transaction-local app.practice_id setting, so a query outside withPractice() sees no practice-scoped rows at all. | **67** · core:acting-as/acting-as.service.ts, core:affiliations/affiliations.service.ts, core:affiliations/invitation.service.ts, +64 more |
+| `PrismaService` | core:prisma/prisma.service.ts | Every practice-scoped read or write goes through withPractice() — RLS policies (FORCE, fail closed) filter on the transaction-local app.practice_id setting, so a query outside withPractice() sees no practice-scoped rows at all. | **68** · core:acting-as/acting-as.service.ts, core:affiliations/affiliations.service.ts, core:affiliations/invitation.service.ts, +65 more |
 | `ReviewTasksService` | core:review-tasks/review-tasks.service.ts | Work arriving into the platform that needs a second look. | **12** · core:affiliations/affiliations.service.ts, core:affiliations/practitioner-self.controller.ts, core:identity/practice-admin.service.ts, +9 more |
 | `CaptureService` | core:capture/capture.service.ts |  | **9** · core:agreements/agreements.service.ts, core:arrivals/arrivals.service.ts, core:arrivals/post-service-chase.sweep.ts, +6 more |
 | `OutboundService` | core:outbound/outbound.service.ts | The outbound queue. | **9** · core:acting-as/acting-as.service.ts, core:affiliations/affiliations.service.ts, core:agreement-copy/agreement-copy.service.ts, +6 more |
@@ -2224,7 +2224,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Core helpers, constants and types
 
-221 exports.
+230 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -2266,7 +2266,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SignedDb4Document` | core:render/signed-db4-document.ts |  | **2** · core:agreements/signed-db4.service.ts, core:render/signed-db4-renderer.ts |
 | `VAULT_CLIENT` | core:vault/vault.tokens.ts |  | **2** · core:vault/vault-relay.service.ts, core:vault/vault.module.ts |
 | `allocatePracticeCodeIfPossible` | core:practices/practice-code.ts | ALLOCATE, BUT NEVER FAIL THE THING THAT ASKED. | **2** · core:organisations/organisations.service.ts, core:practices/practices.service.ts |
-| `associateOnServiceArrival` | core:agreements/pre-agreement-association.ts | WHEN A SERVICE RECORD ARRIVES. | **2** · core:arrivals/arrivals.service.ts, core:pms/pms-sync.service.ts |
+| `associateAfterCommit` | core:agreements/associate-after-commit.ts |  | **2** · core:arrivals/arrivals.service.ts, core:pms/pms-sync.service.ts |
 | `clientKey` | core:portal/portal-client-key.ts | WHAT A RATE LIMITER ON A PUBLIC PORTAL ROUTE COUNTS AGAINST. | **2** · core:portal/portal-passkey.controller.ts, core:portal/portal.controller.ts |
 | `evaluateChallenge` | core:verification/identifier-matching.ts | Evaluates ALL challenged identifiers (never short-circuits on first mismatch — uniform timing) and reports only the aggregate. | **2** · core:kiosk/kiosk.service.ts, core:verification/verification.service.ts |
 | `idsOf` | core:arrivals/arrival-day.ts | Distinct, non-empty ids from a list that may hold nulls. | **2** · core:arrivals/arrivals.service.ts, core:practitioner-queue/practitioner-queue.service.ts |
@@ -2311,11 +2311,13 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `anchorsForAffiliations` | core:affiliations/agreement-anchor.ts | The batch form. | **1** · core:arrivals/arrivals.service.ts |
 | `assertRenderable` | core:render/agreement-document.ts |  | **1** · core:render/agreement-pdf-renderer.ts |
 | `assertSignedDb4Renderable` | core:render/signed-db4-document.ts | THE RENDER-TIME GUARD FOR THIS ARTEFACT KIND. | **1** · core:render/signed-db4-renderer.ts |
+| `associateOnServiceArrival` | core:agreements/pre-agreement-association.ts | WHEN A SERVICE RECORD ARRIVES. | **1** · core:agreements/associate-after-commit.ts |
 | `associationChoices` | core:agreements/pre-agreement-association.ts | EVERY SERVICE RECORD A PERSON HAS TO CHOOSE FOR: no association yet, and at least one open pre-draft that matches it. | **1** · core:reconciliation/reconciliation.service.ts |
 | `buildDb4FormView` | core:agreements/db4-form-view.ts | THE BLOCK THE LOCK RESPONSE CARRIES for a session that came from a DB4 Print Record — and nothing at all for every other session, which is where D-2026-09-27-02 lives: a practice with no PMS has no print record, so the caller builds no block and the tablet draws exactly what it drew before this feature existed. | **1** · core:agreements/agreements.service.ts |
 | `calendarDayOf` | core:agreements/pre-agreement-association.ts | `YYYY-MM-DD` of a `@db.Date` value. | **1** · core:reconciliation/reconciliation.service.ts |
 | `checkDb4PrintRecord` | core:agreements/db4-form-view.ts | THE CHECKS THIS PRINT RECORD FAILS, ALL OF THEM, IN THE DECLARED ORDER. | **1** · core:agreements/agreements.service.ts |
 | `clearPortalCookie` | core:portal/portal-cookie.ts |  | **1** · core:portal/portal.controller.ts |
+| `closedUnsignedRefusal` | core:agreements/closed-unsigned-guard.ts |  | **1** · core:agreements/agreements.service.ts |
 | `correctionBody` | core:notices/notice-template.ts | Correction notices supersede rather than replace (REQ-DEL-06). | **1** · core:notices/notices.service.ts |
 | `createAddressValidator` | core:organisations/address-validator.ts |  | **1** · core:organisations/organisations.module.ts |
 | `decideDb4Reprint` | core:inbound/db4-reprint.ts |  | **1** · core:inbound/db4-assignment.handler.ts |
@@ -2326,6 +2328,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `isAgreementDocument` | core:render/agreement-document.ts | True for a stored payload that is a whole document rather than bare particulars. | **1** · core:render/agreement-pdf-renderer.ts |
 | `isSignedDb4Document` | core:render/signed-db4-document.ts | True for a stored payload that is a Signed-DB4 rather than an agreement document. | **1** · core:render/signed-db4-renderer.ts |
 | `letterheadHashOf` | core:render/agreement-document.ts | A stable identity for the letterhead, so an agreement can say which one it was made under without storing a second copy of it. | **1** · core:practices/letterhead.service.ts |
+| `lockAndRefuseIfClosed` | core:agreements/closed-unsigned-guard.ts | LOCK THE AGREEMENT ROW (`FOR UPDATE`) AND REFUSE IT IF IT WAS CLOSED. | **1** · core:agreements/agreements.service.ts |
 | `mintAgreementCopyToken` | core:agreement-copy/copy-token.ts |  | **1** · core:agreement-copy/agreement-copy.service.ts |
 | `mintCaptureToken` | core:capture/capture-token.ts |  | **1** · core:capture/capture.service.ts |
 | `mintDeviceCredential` | core:devices/device-credential.ts |  | **1** · core:devices/devices.service.ts |
@@ -2345,6 +2348,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `usernameForPracticeAdmin` | core:identity/account-names.ts | THE PRACTICE'S OWN ACCOUNT -- `admin.xlevelup`. | **1** · core:identity/practice-admin.service.ts |
 | `ABN_LOOKUP_LIMIT` | core:organisations/abn-lookup-rate-limit.ts | Twenty previews in ten minutes from one address. | 0 |
 | `ABN_LOOKUP_WINDOW_MS` | core:organisations/abn-lookup-rate-limit.ts |  | 0 |
+| `AGREEMENT_CLOSED_UNSIGNED` | core:agreements/closed-unsigned-guard.ts | The refusal code a tablet echoes and the console words (`SIGNATURE_REFUSAL_REASONS`). | 0 |
 | `AGREEMENT_RENDERER` | core:render/renderer.ts |  | 0 |
 | `ASSOCIATION_CHOICE_REASONS` | core:reconciliation/reconciliation.service.ts | WHY A SERVICE IS LISTED FOR A PERSON TO CHOOSE (D-2026-10-10-09). | 0 |
 | `AbrProbe` | core:organisations/abr.ts | WHY THERE ARE TWO ANSWERS AND NOT ONE. | 0 |
@@ -2354,12 +2358,15 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `AnchoredRow` | core:affiliations/agreement-anchor.ts | The shape every caller has: an agreement row, or anything carrying the two ids. | 0 |
 | `AobPrinterHostRecordInput` | core:aobprinter-hosts/aobprinter-hosts.service.ts | What the heartbeat service hands over: the beat, with patients resolved on the server where a return names one. | 0 |
 | `AobPrinterHostRecorded` | core:aobprinter-hosts/aobprinter-hosts.service.ts | The chain part of the reply: the status, and the seq the host answers at next time. | 0 |
+| `AssociationAfterCommit` | core:agreements/associate-after-commit.ts |  | 0 |
 | `AssociationChoice` | core:agreements/pre-agreement-association.ts | A service record with unsigned drafts that match it and none associated. | 0 |
 | `AssociationChoiceItem` | core:reconciliation/reconciliation.service.ts | A SERVICE WITH UNSIGNED PRE-AGREEMENTS THAT MATCH IT AND NONE ASSOCIATED (D-2026-10-10-09, option (b)). | 0 |
 | `AssociationChoiceReason` | core:reconciliation/reconciliation.service.ts |  | 0 |
 | `CLAIM_ATTEMPT_WINDOW_MS` | core:kiosk/claim-rate-limit.ts |  | 0 |
 | `CLAIM_LOCKED_MESSAGE` | core:kiosk/kiosk.service.ts | The one sentence a locked-out tablet shows, and it points at a person. | 0 |
 | `ClaimEventInput` | core:notices/notices.service.ts |  | 0 |
+| `ClosureColumns` | core:agreements/closed-unsigned-guard.ts |  | 0 |
+| `ClosureFacts` | core:unsigned-drafts/unsigned-draft-closure.sweep.ts | What was found about one draft, under its row lock. | 0 |
 | `ClosureResult` | core:unsigned-drafts/unsigned-draft-closure.sweep.ts |  | 0 |
 | `ClosureSkip` | core:unsigned-drafts/unsigned-draft-closure.sweep.ts | Why a due draft was left open. | 0 |
 | `CorrectionOutcome` | core:patients/patients.service.ts |  | 0 |
@@ -2423,7 +2430,9 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `addressMatches` | core:verification/identifier-matching.ts | The address rule (Carl, 3 Sep 2026), and it mirrors `nameMatches` on purpose. | 0 |
 | `affiliationOfService` | core:agreements/pre-agreement-association.ts | THE AFFILIATION A SERVICE RECORD NAMES: its own column where the sender named the practitioner, otherwise resolved from the legacy provider row the way the invoice mirror resolves it (`anchorForLegacyProvider`). | 0 |
 | `allocatePracticeCode` | core:practices/practice-code.ts |  | 0 |
+| `closureSkipFor` | core:unsigned-drafts/unsigned-draft-closure.sweep.ts | THE ONE RULE FOR "MAY THIS DRAFT BE CLOSED", pure so it is unit-tested on its own: the first reason it may not, or `null` when it may. | 0 |
 | `constantTimeMatch` | core:verification/identifier-matching.ts | Constant-time equality over the normalised values — no early exit an attacker can time. | 0 |
+| `creationCutoff` | core:unsigned-drafts/unsigned-draft-closure.sweep.ts | THE CREATION-TIME CUT-OFF THAT CAN HOLD A DUE DRAFT: anything created on or after the practice-local day `today - N + 1` is younger than N by its own creation day. | 0 |
 | `dateColumnOf` | core:agreements/pre-agreement-association.ts | A `YYYY-MM-DD` day as the `@db.Date` value Prisma compares with. | 0 |
 | `db4ParticularsChanged` | core:inbound/db4-reprint.ts | WHICH PARTICULARS MOVED between the locked agreement and the arriving form. | 0 |
 | `draftMatchesService` | core:agreements/pre-agreement-association.ts | Same patient, same practice-local day, same servicing provider. | 0 |
