@@ -2993,3 +2993,91 @@ symbol instead), which would need a new template version, not an edit; or
 Carl preferring one uniform presentation for amounts captured under both
 templates, which would mean a display rule and a decision about hard rule 4.
 
+
+## D-2026-10-11-01 - A service line AOBPRINTER could not read is counted, and Send-to-tablet refuses it
+
+**Date:** 11 October 2026. **Raised by:** an Opus review on 10 October 2026.
+**Built on:** branch `fix/aobprinter-unparsed-service-lines`, based on
+`fix/db4-amount-keeps-dollar`. **Status: an assumption for Carl to confirm**
+(wow.md §9) on two points marked below.
+
+**What was wrong.** `runRows` in `apps/aobprinter/src/parser.ts` skips any line
+its pattern does not match. Under both shipped templates
+(`pracsoft3-db4-2026-09-1` and `-10-1`), four service-line shapes do not match
+and simply vanished from `services`: a credit with a minus sign (`-$10.00`), a
+credit in brackets (`($10.00)`), a whole-dollar amount (`$45`), and a date-led
+service line with no amount. Core's Send-to-tablet check
+`print_record_benefit_missing` (D-2026-09-27-06) asks only whether ANY row has
+an amount, so one lost row among several passed it. The patient would read, and
+sign, a copy of their form missing a service row, and nobody would know.
+
+**What changed.**
+- **The parser counts.** After parsing, AOBPRINTER counts the lines that open
+  with a day-first date and that no `services` row extractor matched, and puts
+  the count on the record as `unparsedServiceLines` (0 when it read every line).
+  It keeps a count only, never the line: no description, item number or amount
+  is logged or sent. The `job.parsed` log line carries the count.
+- **The contract carries it.** `unparsedServiceLines?: number` is on
+  `Db4PrintRecord` (desktop), on `PrintJobEnvelope` (contracts) and on
+  `PrintJobEnvelopeDto` (`@IsInt() @Min(0) @Max(1000)`). Without the DTO line
+  the whitelist would strip the count at the door. `DB4-print.example.json`
+  carries `0`, so `a_db4_record_survives_the_validation_pipe` proves the count
+  reaches the stored record.
+- **Send-to-tablet refuses it.** A new check, `print_record_service_lines_unread`,
+  is added to the end of `DB4_PRINT_RECORD_CHECKS`. It fires when the count is a
+  number above zero. It is not covered by any ingest gate (`null` in
+  `DB4_PRINT_RECORD_CHECK_GATED_AT_INGEST`). The count also rides on
+  `Db4PrintRecordIdentity`, next to the form reference and template version.
+- **The band names the count, the form and the fix.** The check's line reads
+  *"We could not read 2 service lines on form AOB…, so the patient's copy would
+  be missing them. Send support the form reference and the parser template
+  (pracsoft3-db4-2026-10-1) so the reading can be fixed."* It links to `/help`,
+  where the support contact details are. When this check is present, the band's
+  title, its sentence, the identity block's note and the dead "Who is signing?"
+  control's tooltip all drop "reprint". A reprint prints the same lines the same
+  way, so that advice would be false for every record that reaches it (wow.md
+  §13). The link is a plain `/help` rather than `destination()`, because that
+  page is `public` in `page-access.ts` and `mayReach` would hide it from
+  practice staff.
+
+**Assumption 1 - the services block is every date-led line on the page.**
+Neither shipped template declares where the services block starts and stops,
+and declaring it is a template change (hard rule 14). On the probe DB4 the only
+date-led lines are service rows. If PracSoft's real output prints something else
+that opens with a date (a footer timestamp, for example), it would be counted
+too. That errs towards a refusal at the desk rather than a missing row in front
+of the patient. The first real print will show whether it happens.
+
+**Assumption 2 - a record with no count is not refused.** A record from an
+AOBPRINTER that predates the count carries no `unparsedServiceLines`. It passes
+this check, because nobody observed a lost row, and refusing every push from
+every desktop not yet upgraded would stop working practices over nothing (hard
+rule 8). The cost is that a lost row on a not-yet-upgraded desktop is still
+silent. It is closed by upgrading AOBPRINTER, not by this check.
+
+**Not done here - proposed to Carl.** Widening the row pattern so that
+whole-dollar amounts and credits are read as rows is a template change and needs
+a new version (`pracsoft3-db4-2026-10-2`), not an edit. Credit rows need a
+regulatory read first. Is a negative line on an assignment form something the
+patient assigns? Should it appear on the Signed-DB4? Is it ever on a real DB4 at
+all? Until that is answered, the count makes the gap visible and stops it at the
+desk. Hard rule 4 is unchanged: nothing parses, compares or computes an amount.
+The count is of lines, not of figures.
+
+**Tests.** `apps/aobprinter/src/parser.test.ts`
+(`unparsed_service_lines_are_counted_not_silently_dropped`: each of the four
+shapes under both templates is still absent from `services` and is now
+counted). `apps/core/src/agreements/db4-form-view.spec.ts`
+(`a_print_record_with_unparsed_service_lines_is_refused`,
+`zero_unparsed_service_lines_passes_and_an_absent_count_is_not_refused`).
+`apps/core/src/inbound/print-records.service.spec.ts`
+(`the_refusal_identity_carries_the_unparsed_service_line_count`).
+`apps/web/app/practice/tablet/tablet.test.tsx`
+(`unparsed_service_lines_refusal_names_the_count_and_the_form_and_links_the_fix`
+and three more).
+
+**What would reopen it:** a new template version that reads credits or
+whole-dollar amounts, which would lower the count for those shapes without
+changing this check; a template that declares the services block's edges, which
+would narrow the count to that block; or the first real PracSoft print showing
+date-led lines that are not services.
