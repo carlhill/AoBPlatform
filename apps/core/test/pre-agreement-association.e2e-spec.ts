@@ -341,8 +341,24 @@ describe('pre-agreement association, option (b) (e2e, real Postgres + fixture ad
     // THE TABLET'S EARLIER-DAYS LINES say what was found and name the Reconciliation item.
     const earlier = await http().get('/tablet-sessions/unsigned-earlier').set('x-practice-id', practiceA).expect(200);
     const rows = earlier.body.rows as { agreementId: string; reason: string; serviceRecordId: string | null }[];
-    expect(rows.find((r) => r.agreementId === second)).toMatchObject({ reason: 'service_associated', serviceRecordId: record.id });
-    expect(rows.find((r) => r.agreementId === first)).toMatchObject({ reason: 'service_associated_other', serviceRecordId: record.id });
+    // The post-service agreement is still open, so the service is on the queue: the line links to the item.
+    expect(rows.find((r) => r.agreementId === second)).toMatchObject({
+      reason: 'service_associated',
+      serviceRecordId: record.id,
+      serviceOnReconciliation: true,
+    });
+    expect(rows.find((r) => r.agreementId === first)).toMatchObject({
+      reason: 'service_associated_other',
+      serviceRecordId: record.id,
+      serviceOnReconciliation: true,
+    });
+
+    // Once a stored agreement covers the service it leaves the queue, and the line says so.
+    await prisma.withPractice(practiceA, (tx) => tx.agreement.update({ where: { id: record.agreementId! }, data: { status: 'stored' } }));
+    const after = await http().get('/tablet-sessions/unsigned-earlier').set('x-practice-id', practiceA).expect(200);
+    const rowsAfter = after.body.rows as { agreementId: string }[];
+    expect(rowsAfter.find((r) => r.agreementId === second)).toMatchObject({ reason: 'service_associated', serviceOnReconciliation: false });
+    expect(rowsAfter.find((r) => r.agreementId === first)).toMatchObject({ reason: 'service_associated_other', serviceOnReconciliation: false });
   });
 
   it('a_waiting_choice_shows_on_the_tablet_as_choice_needed_naming_the_service', async () => {
