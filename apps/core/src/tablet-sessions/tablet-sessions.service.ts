@@ -21,7 +21,7 @@ import {
   type TabletSessionRow,
   type TabletSessionState,
 } from '@aobplatform/domain';
-import type { Db4PrintRecordCheck, Db4PrintRecordIdentity } from '@aobplatform/contracts';
+import type { Db4PrintRecordCheck, Db4PrintRecordIdentity, Db4PrintedNameDifference } from '@aobplatform/contracts';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { anchorForAgreement, anchorsForAgreements } from '../affiliations/agreement-anchor';
 import type { Actor } from '../auth/actor.decorator';
@@ -195,6 +195,16 @@ export interface PushableRow {
    * `sourceSha256`. Null on a row that never came off a printed form.
    */
   printRecord: { checks: readonly Db4PrintRecordCheck[]; print: Db4PrintRecordIdentity } | null;
+  /**
+   * THE NAME PRINTED ON THE DB4 IS NOT THE PATIENT RECORD'S NAME
+   * (D-2026-10-10-11). A WARNING, NEVER A REASON: it never touches `pushable`
+   * or `blockedReason`, so Send to tablet stays live and signing is never
+   * blocked (hard rule 8). It carries both names because this is the
+   * practice's own staff list, behind RLS, where the name already appears; it
+   * is never on a tablet payload, in a log or in an event. `null` when the
+   * names match, the form printed none, or the row did not come off a DB4.
+   */
+  printedNameDiffers: Db4PrintedNameDifference | null;
   /**
    * THE NUMBER ON THE CARD IN THE PATIENT'S HAND (`QUEUE-TICKETS.md`; Carl,
    * 12 September 2026: *"Show the practice-queueid - the card with the number
@@ -1501,6 +1511,8 @@ export class TabletSessionsService {
       if (!answer) continue;
       /* WHICH PAGE, ALWAYS — a fact about provenance, not about a fault. */
       if (answer.identity) row.printRecord = { checks: answer.checks, print: answer.identity };
+      /* A WARNING ON ANY ROW, BLOCKED OR NOT, AND NEVER A STOP (D-2026-10-10-11). */
+      row.printedNameDiffers = answer.nameDiffers ?? null;
       if (answer.checks.length === 0 || !canBeStopped.has(row.agreementId)) continue;
       row.pushable = false;
       row.blockedReason = 'print_record_incomplete';
@@ -2121,6 +2133,7 @@ export class TabletSessionsService {
           /* Filled by `pushable()`'s own pass — see there; the rows themselves
              cannot answer it, because it needs the inbound module's table. */
           printRecord: null,
+          printedNameDiffers: null,
           /* Off the arrival that started the chain — see `ticketFor`. */
           queueTicket: ticketFor(agreement.id),
           /* And where the visit got to, off the same arrival (D-2026-09-12-20). */

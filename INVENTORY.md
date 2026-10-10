@@ -17,30 +17,30 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2418 |
-| Files scanned for exports | 571 |
-| Files scanned for imports | 614 |
-| Exports with no comment of their own | 1001 |
-| Exports imported nowhere else | 1004 |
+| Exported symbols indexed | 2429 |
+| Files scanned for exports | 572 |
+| Files scanned for imports | 615 |
+| Exports with no comment of their own | 1003 |
+| Exports imported nowhere else | 1012 |
 
 ## Sections
 
-- [Web components](#web-components) — 239
+- [Web components](#web-components) — 240
 - [Web hooks](#web-hooks) — 15
-- [Web helpers and constants](#web-helpers-and-constants) — 308
+- [Web helpers and constants](#web-helpers-and-constants) — 309
 - [Web types](#web-types) — 116
 - [Domain functions](#domain-functions) — 392
 - [Domain constants and content](#domain-constants-and-content) — 254
 - [Domain types](#domain-types) — 295
-- [Contracts types](#contracts-types) — 118
-- [Contracts functions and constants](#contracts-functions-and-constants) — 32
+- [Contracts types](#contracts-types) — 121
+- [Contracts functions and constants](#contracts-functions-and-constants) — 37
 - [Core services, controllers and modules](#core-services-controllers-and-modules) — 287
-- [Core helpers, constants and types](#core-helpers-constants-and-types) — 199
+- [Core helpers, constants and types](#core-helpers-constants-and-types) — 200
 - [AOBPRINTER (the desktop print channel)](#aobprinter-the-desktop-print-channel-) — 163
 
 ## Web components
 
-239 exports.
+240 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -246,6 +246,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PractitionerPracticePage` | web:practitioner/practices/[practiceId]/page.tsx |  | 0 |
 | `PractitionerWaitingPage` | web:practice/practitioner/waiting/page.tsx | `/practice/practitioner/waiting` — WHO IS WAITING, AND IS THEIR PAPERWORK DONE (Carl, 12 Sep 2026; PRACTITIONER-QUEUE-PAGE.md §3). | 0 |
 | `PractitionersPage` | web:practice/practitioners/page.tsx |  | 0 |
+| `PrintedNameBand` | web:practice/tablet/pushDesk.tsx | THE BAND ITSELF — a WARNING under the row, beside (never instead of) any reason it cannot go. | 0 |
 | `QueueByOrgPage` | web:practice/queuebyOrg/page.tsx |  | 0 |
 | `QueueBySitePage` | web:practice/queuebyOrgLocDepartment/page.tsx |  | 0 |
 | `QueuePage` | web:practice/queue/page.tsx |  | 0 |
@@ -308,7 +309,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web helpers and constants
 
-308 exports.
+309 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -518,7 +519,8 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `blockedByAnUnreadableForm` | web:practice/tablet/pushDesk.tsx | IS THERE ANY POINT DOING DESK WORK ON THIS ROW? | 0 |
 | `blockedMessage` | web:practice/tablet/pushDesk.tsx | The sentence alone, for the places that show only text (a dead button's tooltip). | 0 |
 | `closeFixtureSession` | web:patient/portal/fixtures.ts |  | 0 |
-| `describePrintRecordCheck` | web:practice/tablet/pushDesk.tsx | ONE FAILED CHECK, IN OUR WORDS — and its own code where we have none. | 0 |
+| `describePrintRecordCheck` | web:practice/tablet/pushDesk.tsx |  | 0 |
+| `describePrintedNameDifference` | web:practice/tablet/pushDesk.tsx | THE PRINTED-NAME WARNING, IN OUR WORDS (D-2026-10-10-11) — `null` when the row carries none. | 0 |
 | `describeRefusal` | web:practice/tablet/pushDesk.tsx |  | 0 |
 | `describeRuleFailure` | web:practice/tablet/pushDesk.tsx | ONE RULES VERDICT, SPLIT INTO WHAT THE RULE SET SAID AND WHAT TO DO. | 0 |
 | `detailInSentence` | web:practice/patients/PatientWorkView.tsx | The detail's own label, as it reads inside a sentence rather than above a field. | 0 |
@@ -1708,7 +1710,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Contracts types
 
-118 exports.
+121 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1734,6 +1736,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `AobPrinterHostRow` | contracts:aobprinter-heartbeat.ts | One host as the console shows it: the stored fields plus what the server computed. | **3** · core:aobprinter-hosts/aobprinter-hosts.service.ts, web:platform/practices/[practiceId]/aobprinter-host/RebaselinePanel.tsx, web:practice/aobprinter-host/AobPrinterHostView.tsx |
 | `AobPrinterHostsView` | contracts:aobprinter-heartbeat.ts | `GET /aobprinter-hosts`. | **3** · core:aobprinter-hosts/aobprinter-hosts.service.ts, web:platform/practices/[practiceId]/aobprinter-host/AobPrinterHostTwin.tsx, web:practice/aobprinter-host/AobPrinterHostView.tsx |
 | `CollectedConfirmation` | contracts:print-capture.ts | What the desktop tells the platform once the pair is on disk. | **3** · aobprinter:collection-client.ts, core:inbound/inbound-print-jobs.controller.ts, core:inbound/write-back-collection.service.ts |
+| `Db4PrintedNameDifference` | contracts:db4-printed-name.ts | THE WARNING ON A STAFF DESK ROW. | **3** · core:agreements/agreements.service.ts, core:tablet-sessions/tablet-sessions.service.ts, web:practice/tablet/pushDesk.tsx |
 | `PmsInvoice` | contracts:pms-adapter.ts |  | **3** · connector:mock-adapter.ts, core:pms/pms-sync.service.ts, contracts:print-capture.ts |
 | `RulesEngineClient` | contracts:rules-engine.ts |  | **3** · core:agreements/agreements.service.ts, core:rules-client/rules-client.module.ts, core:service-descriptions/service-descriptions.service.ts |
 | `SignedFormForCollection` | contracts:print-capture.ts | ONE SIGNED FORM WAITING TO BE COLLECTED. | **3** · aobprinter:collection-client.ts, aobprinter:collector.ts, core:inbound/write-back-collection.service.ts |
@@ -1813,6 +1816,8 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ArrivalRefusalReason` | contracts:arrivals.ts |  | 0 |
 | `ArrivalSource` | contracts:arrivals.ts |  | 0 |
 | `Db4FormViewPatient` | contracts:db4-form-view.ts | The patient block, as the form prints it — with the one redaction. | 0 |
+| `Db4NamePart` | contracts:db4-printed-name.ts |  | 0 |
+| `Db4PersonName` | contracts:db4-printed-name.ts | A name as two parts. | 0 |
 | `EnduringRuleId` | contracts:rules-engine.ts |  | 0 |
 | `PmsClaimEvent` | contracts:pms-adapter.ts |  | 0 |
 | `PortalActivationRequest` | contracts:portal.ts | What `POST /portal/activate` is given. | 0 |
@@ -1833,7 +1838,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Contracts functions and constants
 
-32 exports.
+37 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1847,6 +1852,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `AOBPRINTER_PRINT_STAGES` | contracts:aobprinter-heartbeat.ts | The stages a print passes through on the host. | **1** · web:practice/aobprinter-host/AobPrinterHostView.tsx |
 | `AOBPRINTER_RETURN_STAGES` | contracts:aobprinter-heartbeat.ts | The stages a Signed-DB4 return passes through on the host. | **1** · web:practice/aobprinter-host/AobPrinterHostView.tsx |
 | `ARRIVAL_SOURCES` | contracts:arrivals.ts | WHERE AN ARRIVAL CAME FROM. | **1** · core:arrivals/arrivals.dto.ts |
+| `DB4_PRINTED_NAME_DIFFERS_CODE` | contracts:db4-printed-name.ts | The reason code. | **1** · web:practice/tablet/pushDesk.tsx |
 | `PORTAL_ACTIVATION_MAX_ATTEMPTS` | contracts:portal.ts | REQ-PORT-08's teeth on the activation path: three wrong answers and the token is finished. | **1** · core:portal/portal.service.ts |
 | `PORTAL_PASSKEY_ATTEMPT_LIMIT` | contracts:portal.ts | The sign-in attempts one address gets per window, before it is asked to wait. | **1** · core:portal/portal-passkey-rate-limit.ts |
 | `PORTAL_PASSKEY_ATTEMPT_WINDOW_MINUTES` | contracts:portal.ts |  | **1** · core:portal/portal-passkey-rate-limit.ts |
@@ -1855,10 +1861,12 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SILENT_RESTORE_PARAM` | contracts:auth.ts | THE MARKER THAT SAYS "THIS BROWSER HAS JUST BEEN GIVEN A SESSION ELSEWHERE". | **1** · web:AccessGuard.tsx |
 | `VAULT_EVENT_TYPES` | contracts:vault.ts | Event type registry. | **1** · vault:events/create-event.dto.ts |
 | `answersEnduringRules` | contracts:rules-engine.ts | DID THE RULE SET ANSWER THE ENDURING QUESTIONS AT ALL? | **1** · core:agreements/agreements.service.ts |
+| `db4PrintedNameDifference` | contracts:db4-printed-name.ts | The staff-desk warning, or `null` when the printed name matches the record. | **1** · core:agreements/agreements.service.ts |
 | `isSilentRestoreClient` | contracts:auth.ts |  | **1** · web:AccessGuard.tsx |
 | `withSilentRestore` | contracts:auth.ts | Add the marker to a URL an invitation will return to. | **1** · auth-client:keycloak-admin.ts |
 | `ARRIVAL_MOVE_REFUSALS` | contracts:arrivals.ts | WHY A ROW COULD NOT BE MOVED — a CODE the console maps to words and a destination, never prose (CLAUDE.md §7, "shortcuts to the answer"). | 0 |
 | `ARRIVAL_REFUSAL_REASONS` | contracts:arrivals.ts | WHY AN ARRIVAL WAS REFUSED — a reason CODE, never prose (Carl, 4 Sep 2026: "shortcuts to the answer, not directions to a screen"; 5–7 Sep 2026: the billing role). | 0 |
+| `DB4_NAME_PARTS` | contracts:db4-printed-name.ts | WHICH part of a name differs — a type, never a value. | 0 |
 | `DB4_PARTICULAR_CHANGES` | contracts:print-capture.ts | WHICH KIND OF PARTICULAR MOVED between the agreement and the corrected form. | 0 |
 | `DB4_PLACEMENT_REASONS` | contracts:print-capture.ts | WHY A DB4 PRODUCED NO AGREEMENT — a code, mapped to copy and a destination by whoever shows it (CLAUDE.md §7, "shortcuts to the answer, not directions to a screen"). | 0 |
 | `DB4_PRINT_RECORD_CHECKS` | contracts:db4-print-record-check.ts | EVERY CHECK, IN THE ORDER THEY ARE REPORTED. | 0 |
@@ -1869,6 +1877,8 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SIGNATURE_CHANNELS` | contracts:signature.ts |  | 0 |
 | `SIGNATURE_METHODS` | contracts:signature.ts | REQ-SIG-01 — the five recognised marks. | 0 |
 | `SILENT_RESTORE_CLIENTS` | contracts:auth.ts | The Keycloak clients an invitation may name. | 0 |
+| `comparableNamePart` | contracts:db4-printed-name.ts | One name part reduced for comparison. | 0 |
+| `db4PrintedNamePartsDiffering` | contracts:db4-printed-name.ts | Which parts differ, in `DB4_NAME_PARTS` order. | 0 |
 
 ## Core services, controllers and modules
 
@@ -2166,7 +2176,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Core helpers, constants and types
 
-199 exports.
+200 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -2293,6 +2303,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `CoveredServiceRow` | core:tablet-sessions/tablet-sessions.service.ts | A SERVICE THAT NEEDED NO SECOND SIGNATURE — a history line on the desk, never a Send (Carl, 11 Sep 2026; TODO.md "One signature per episodic visit, not two"). | 0 |
 | `CreateEnduringInput` | core:enduring/enduring.service.ts |  | 0 |
 | `DEVICE_CREDENTIAL_HEADER` | core:devices/device.guard.ts |  | 0 |
+| `Db4PrintRecordDeskAnswer` | core:agreements/agreements.service.ts | ONE ROW'S ANSWER FOR THE DESK LIST: the refusal checks, which page, and the printed-name WARNING (D-2026-10-10-11) — `null` when the printed name matches the patient record or the form printed none. | 0 |
 | `Db4ReprintDecision` | core:inbound/db4-reprint.ts |  | 0 |
 | `Db4ReprintInput` | core:inbound/db4-reprint.ts |  | 0 |
 | `EARLIER_UNSIGNED_CAP` | core:tablet-sessions/tablet-sessions.service.ts | HOW MANY ROWS THE TABLET PAGE IS SENT AT MOST. | 0 |
