@@ -33,6 +33,25 @@
  * component. No data URL is written to storage, a form, or a log
  * (zero-footprint, CLAUDE.md §7).
  *
+ * THE PAD'S SIZE FREEZES FROM THE FIRST TOUCH (10 Oct 2026, from the review of
+ * the tablet-fit change). The points are CSS pixels of the pad AS IT WAS when
+ * they were drawn, and `padWidth`/`padHeight` say what that was. A resize used
+ * to re-measure regardless: the backing store took the NEW size, the old
+ * points were redrawn into it unscaled, and the capture then sent the new size
+ * beside the old points — a raster cropped or padded, and a vector that no
+ * longer agreed with either. A tablet turned on its side, Edge's toolbar
+ * sliding away, or the kiosk going full screen just after K-4 mounts are all
+ * resizes, and the last can land mid-stroke.
+ *
+ * So from the first pointerdown of a stroke until `clear()`, the pad keeps the
+ * size it had: the canvas element is pinned to it in pixels, the backing store
+ * is not touched and the logical size is not rewritten, so vector, raster and
+ * pad size are measured in one space. Its frame may clip it or leave room
+ * round it until the patient clears; the signature itself does not move.
+ * Clearing unpins it and re-measures. With no ink and no stroke in progress a
+ * resize re-measures freely, exactly as before. The points are never rescaled:
+ * what is stored is what the hand produced (REQ-SIG-02).
+ *
  * POINTER EVENTS, NOT MOUSE-PLUS-TOUCH. One code path for a finger, a stylus
  * and a mouse; `touch-action: none` on the canvas is what stops a drag
  * scrolling the page out from under the signature instead of drawing.
@@ -119,6 +138,18 @@ export function SignaturePad({
     const canvas = canvasRef.current;
     const ctx = context();
     if (!canvas || !ctx) return;
+    const held = strokesRef.current.length > 0 || drawingRef.current || currentRef.current.length > 0;
+    const frozen = padSizeRef.current;
+    if (held && frozen.width > 0 && frozen.height > 0) {
+      // INK, OR A STROKE IN PROGRESS: keep the size it was drawn at. See the
+      // module note — pinned in CSS pixels, backing store and logical size
+      // untouched, so nothing already captured is reinterpreted.
+      canvas.style.width = `${frozen.width}px`;
+      canvas.style.height = `${frozen.height}px`;
+      return;
+    }
+    canvas.style.width = '';
+    canvas.style.height = '';
     const ratio = typeof window === 'undefined' ? 1 : (window.devicePixelRatio ?? 1);
     const rect = canvas.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return;
@@ -143,7 +174,18 @@ export function SignaturePad({
     resize();
     if (typeof window === 'undefined') return;
     window.addEventListener('resize', resize);
-    return () => window.removeEventListener('resize', resize);
+    /*
+     * AND WHEN ITS OWN BOX CHANGES WITHOUT THE WINDOW DOING SO — a column
+     * reflowing, a font arriving. While the pad is pinned its box cannot
+     * change, so this cannot fire into a frozen pad.
+     */
+    const observer =
+      typeof ResizeObserver === 'undefined' || !canvasRef.current ? null : new ResizeObserver(() => resize());
+    if (observer && canvasRef.current) observer.observe(canvasRef.current);
+    return () => {
+      window.removeEventListener('resize', resize);
+      observer?.disconnect();
+    };
   }, [resize]);
 
   useEffect(() => {
@@ -169,6 +211,9 @@ export function SignaturePad({
         // The clock restarts with the ink. A second attempt that carried the
         // first one's origin would show a pause nobody made.
         timeOriginRef.current = null;
+        drawingRef.current = false;
+        // Nothing is held now, so the pad takes whatever size its frame has.
+        resize();
         redraw();
         onInkChange(false);
       },
@@ -198,7 +243,7 @@ export function SignaturePad({
     return () => {
       ref.current = null;
     };
-  }, [handleRef, onInkChange, redraw]);
+  }, [handleRef, onInkChange, redraw, resize]);
 
   function pointFrom(event: React.PointerEvent<HTMLCanvasElement>): Point {
     const rect = event.currentTarget.getBoundingClientRect();
