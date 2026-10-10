@@ -132,6 +132,36 @@ const amrMappers = (realm.clients ?? [])
   .map((c) => ({ clientId: c.clientId, has: (c.protocolMappers ?? []).some((m) => m.protocolMapper === 'oidc-amr-mapper') }));
 for (const { clientId, has } of amrMappers) check(`client ${clientId} maps amr into its tokens`, has);
 
+// ---- no password grant at the token endpoint (D-2026-10-11-01) -------------
+
+/*
+ * The browser flows above are where tier 2 asks for a password AND a code, and
+ * where operators are held to a passkey. An OAuth password grant skips all of
+ * it: it runs the realm's DIRECT GRANT flow, Keycloak's stock one by default,
+ * which takes a password and asks for a code only if the account happens to
+ * have one. Same hole as the main realm, same two halves of the fix: no client
+ * allows the grant, and the realm's direct grant flow - which Keycloak's own
+ * `admin-cli` still uses - denies before it reads a credential.
+ */
+for (const client of realm.clients ?? []) {
+  check(
+    `no_client_allows_a_password_direct_grant: ${client.clientId}`,
+    client.directAccessGrantsEnabled === false,
+  );
+  check(
+    `no client overrides the realm's direct grant flow: ${client.clientId}`,
+    !client.authenticationFlowBindingOverrides?.direct_grant,
+  );
+}
+const directGrant = flows.get(realm.directGrantFlow);
+check(
+  'the_realm_direct_grant_flow_always_denies',
+  directGrant?.topLevel === true &&
+    directGrant.authenticationExecutions?.length === 1 &&
+    directGrant.authenticationExecutions[0].authenticator === 'deny-access-authenticator' &&
+    directGrant.authenticationExecutions[0].requirement === 'REQUIRED',
+);
+
 // ---- a password policy, and length over complexity theatre (§5.5) ----------
 
 check('a password policy is set', typeof realm.passwordPolicy === 'string' && realm.passwordPolicy.length > 0);

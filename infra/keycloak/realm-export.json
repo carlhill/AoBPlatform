@@ -118,7 +118,7 @@
       "protocol": "openid-connect",
       "publicClient": true,
       "standardFlowEnabled": true,
-      "directAccessGrantsEnabled": true,
+      "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
       "redirectUris": [
         "http://localhost:3100/*",
@@ -540,6 +540,23 @@
           "userSetupAllowed": false,
           "autheticatorFlow": false,
           "authenticatorConfig": "clinician-amr-password"
+        }
+      ]
+    },
+    {
+      "id": "b6f10000-0000-4000-8000-0000000000d1",
+      "alias": "no-direct-grant",
+      "description": "The realm's direct grant flow: refuses every OAuth password grant before reading a credential, so no client - Keycloak's own admin-cli included - can mint a token from a password and skip the passkey in clinician-browser (rule 15, D-2026-10-11-01).",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "deny-access-authenticator",
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
         }
       ]
     }
@@ -1143,5 +1160,6 @@
     ]
   },
   "identityProviderMappers": [],
-  "browserFlow": "clinician-browser"
+  "browserFlow": "clinician-browser",
+  "directGrantFlow": "no-direct-grant"
 }

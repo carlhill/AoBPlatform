@@ -2964,3 +2964,55 @@ work on this realm for anybody.
 
 **What would reopen it:** a realm or identity provider that cannot emit
 `amr`, which would need a different way to prove the method.
+
+## D-2026-10-11-01 - No password grant at the token endpoint, on any client, in either realm
+
+**Date:** 11 October 2026. **Decided by:** Carl, *"go with a+c, include
+tier2, stack on fix/main-realm-amr"*, after an Opus review of
+`fix/main-realm-amr` on 10 Oct.
+
+**What was wrong.** Hard rule 15 says practitioner and admin auth is WebAuthn
+passkeys, with no password-only paths. The browser flow honoured it, but the
+`web` client had `directAccessGrantsEnabled: true`. An OAuth password grant
+runs the realm's direct grant flow, which was Keycloak's stock `direct grant`
+(a username and a password), so anybody holding a password credential could
+get a staff token without ever meeting the passkey step. Such a token carries
+no `amr`, so revoke and re-baseline refuse it (`sign_in_method_unrecorded`),
+but `assertOperatorAuthMethod` lets `unknown` through, so a platform operator
+could have reached the console. The tier 2 sandbox had the same hole, and
+there it skipped the REQUIRED one-time code as well. Keycloak's own
+`admin-cli`, which exists in every realm, also had direct grants on. Core
+already refused its tokens on audience, but the grant would still have checked
+a password outside the passkey flow.
+
+On 10 Oct no user in the main realm held a password credential, and one
+non-operator in the sandbox did. Nothing in the repository used a password
+grant against either realm: the web app uses the authorisation code with PKCE
+and refresh tokens, Playwright signs in through Keycloak's own login page, and
+every script mints its admin token in `master`.
+
+**Decision:**
+1. **No client allows a direct grant.** Every client in `realm-export.json`
+   and `tier2-realm.json` states `directAccessGrantsEnabled: false`.
+2. **The realm's direct grant flow refuses everything.** Each realm binds
+   `directGrantFlow` to `no-direct-grant`, one step, Deny access, REQUIRED,
+   which refuses before reading a credential. This covers clients the export
+   does not list (`admin-cli`) and any client whose setting is flipped back
+   later. No client may override it. A per-client override (option b) was
+   rejected because it covers only the client somebody remembers.
+3. **Asserted and applied.** `no_client_allows_a_password_direct_grant` and
+   `the_realm_direct_grant_flow_always_denies` are in `realm-export.test.mjs`
+   and `tier2-realm.test.mjs` (`npm run validate:realm`).
+   `infra/keycloak/apply-no-direct-grant.mjs` patches an existing realm and
+   then checks the token endpoint. It was applied to both realms on Carl's dev
+   Keycloak on 11 Oct, after a backup that restore-tested. Afterwards `web`
+   answers `unauthorized_client` and `admin-cli` answers with Deny access.
+   Service-account tokens and the browser sign-in page are unchanged.
+
+**Not decided here:** whether `assertOperatorAuthMethod` should now refuse
+`unknown` for `platform_admin`, since both realms now emit `amr`. That is a
+separate decision for Carl.
+
+**What would reopen it:** a genuine need for a non-browser staff sign-in, for
+example a CLI. That would use the device authorisation grant, which still runs
+a browser flow, not a password grant.
