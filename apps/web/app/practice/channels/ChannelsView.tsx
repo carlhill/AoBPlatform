@@ -32,7 +32,12 @@ import {
   KIOSK_IDLE_TIMEOUT_DEFAULT_SECONDS,
   PRACTICE_SURFACE_KEYS,
   SURFACE_PROFILE_KEYS,
+  UNSIGNED_DRAFT_CLOSURE_DEFAULT_DAYS,
+  UNSIGNED_DRAFT_CLOSURE_MAX_DAYS,
+  UNSIGNED_DRAFT_CLOSURE_MIN_DAYS,
+  UNSIGNED_DRAFT_CLOSURE_VERSION,
   audiencesOf,
+  isUnsignedDraftClosureDaysInRange,
   kioskIdleTimeoutOrDefault,
   mayReach,
   profileSurfaces,
@@ -62,6 +67,11 @@ interface Practice {
    * unit.
    */
   kioskIdleTimeoutSeconds?: number;
+  /**
+   * DAYS BEFORE AN UNSIGNED AGREEMENT WITH NO SERVICE IS CLOSED
+   * (D-2026-10-10-09, option 3). NULL or absent: the versioned default.
+   */
+  unsignedDraftClosureDays?: number | null;
   /**
    * WHICH AGREEMENT THE PRE-STEP OFFERS FIRST (Carl, 4 Sep 2026; GA-PLAN B6).
    * A default, never a permission — enduring stays GP-only and per
@@ -152,6 +162,8 @@ export function ChannelsView({
   const [identifiers, setIdentifiers] = useState<string[]>([]);
   const [idleMinutes, setIdleMinutes] = useState(String(KIOSK_IDLE_TIMEOUT_DEFAULT_SECONDS / 60));
   const [enduringDefault, setEnduringDefault] = useState(true);
+  /* EMPTY MEANS "THE VERSIONED DEFAULT", which is also what the server stores as NULL. */
+  const [closeDays, setCloseDays] = useState('');
   /*
    * WHICH PARTS OF AoB THIS PRACTICE USES (D-2026-09-14-04). Defaulted to
    * `full` rather than to nothing: an empty control here would read as "this
@@ -231,6 +243,7 @@ export function ChannelsView({
        * timeout", which is the one thing this setting may never mean.
        */
       setIdleMinutes(String(kioskIdleTimeoutOrDefault(data.kioskIdleTimeoutSeconds) / 60));
+      setCloseDays(data.unsignedDraftClosureDays == null ? '' : String(data.unsignedDraftClosureDays));
       /*
        * THE DEFAULT IS TRUE ON A SERVER THAT DID NOT SAY, matching the column.
        * An unticked box would read as "this practice chose episodic", which is
@@ -313,6 +326,7 @@ export function ChannelsView({
   const minutes = Number(idleMinutes);
   const idleValid =
     Number.isInteger(minutes) && minutes >= IDLE_MIN_MINUTES && minutes <= IDLE_MAX_MINUTES;
+  const closeValid = closeDays.trim() === '' || isUnsignedDraftClosureDaysInRange(Number(closeDays));
   // DEAD UNTIL VALID. The floor is REQ-VER-06 and the server enforces it too;
   // the button simply does not pretend a set of two could be saved.
   const valid =
@@ -320,7 +334,8 @@ export function ChannelsView({
     Number.isFinite(hours) &&
     hours >= 1 &&
     hours <= 168 &&
-    idleValid;
+    idleValid &&
+    closeValid;
 
   // DONE ONLY ON EVIDENCE. An operator viewing this read-only, who cannot
   // call the `@PracticeScoped` `/devices` list, gets NEEDS WORK rather than a
@@ -351,6 +366,8 @@ export function ChannelsView({
           // place, so the server never sees two units for one setting.
           kioskIdleTimeoutSeconds: minutes * 60,
           enduringByDefault: enduringDefault,
+          // EMPTY IS NULL ON THE WIRE: back to the versioned default, not "never".
+          unsignedDraftClosureDays: closeDays.trim() === '' ? null : Number(closeDays),
           surfaceProfile,
         }),
       });
@@ -661,6 +678,43 @@ export function ChannelsView({
                 </Field>
               </div>
               <p className={styles.cardNote}>{strings.channels.idleLead}</p>
+            </div>
+            {/*
+              CLOSE UNSIGNED AGREEMENTS NOBODY NEEDED (D-2026-10-10-09, option 3).
+              Beside the idle timeout because both decide what the tablet page
+              keeps showing. Empty means the versioned default, said in the hint
+              with its version, so "empty" never reads as "never".
+            */}
+            <div className={styles.cardBody}>
+              <p className={styles.cardTitle}>{strings.channels.closeTitle}</p>
+              <div className={styles.inlineForm}>
+                <Field
+                  label={strings.channels.closeLabel}
+                  hint={strings.channels.closeHint(
+                    UNSIGNED_DRAFT_CLOSURE_MIN_DAYS,
+                    UNSIGNED_DRAFT_CLOSURE_MAX_DAYS,
+                    UNSIGNED_DRAFT_CLOSURE_DEFAULT_DAYS,
+                    UNSIGNED_DRAFT_CLOSURE_VERSION,
+                  )}
+                >
+                  {(props) => (
+                    <TextInput
+                      {...props}
+                      type="number"
+                      min={UNSIGNED_DRAFT_CLOSURE_MIN_DAYS}
+                      max={UNSIGNED_DRAFT_CLOSURE_MAX_DAYS}
+                      placeholder={String(UNSIGNED_DRAFT_CLOSURE_DEFAULT_DAYS)}
+                      value={closeDays}
+                      onChange={(e) => {
+                        setCloseDays(e.target.value);
+                        setSaved(false);
+                      }}
+                      data-testid="channels-close-days"
+                    />
+                  )}
+                </Field>
+              </div>
+              <p className={styles.cardNote}>{strings.channels.closeLead}</p>
             </div>
             {/*
               WHICH AGREEMENT THE PRE-STEP OFFERS FIRST (Carl, 4 Sep 2026;

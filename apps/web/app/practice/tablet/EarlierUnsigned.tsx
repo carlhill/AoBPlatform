@@ -80,6 +80,18 @@ export function earlierReasonText(row: Pick<EarlierUnsignedRow, 'reason' | 'reco
 }
 
 /**
+ * THE REASONS WHOSE LINE GOES TO A RECONCILIATION ITEM rather than the
+ * patient's page. The three association reasons (D-2026-10-10-09, option (b))
+ * link to the SERVICE's item, never to the draft.
+ */
+const ITEM_LINKED_REASONS: readonly string[] = [
+  'service_in_reconciliation',
+  'service_associated',
+  'service_choice_needed',
+  'service_associated_other',
+];
+
+/**
  * WHERE THIS ROW IS DEALT WITH — the Reconciliation item while one is on the
  * queue, otherwise the patient's page. Routed through `destination`, so a
  * platform operator gets the read-only twin and a link the caller may not
@@ -89,7 +101,7 @@ export function earlierLink(
   row: Pick<EarlierUnsignedRow, 'reason' | 'serviceRecordId' | 'patientId'>,
   ctx: Pick<PushDesk, 'audiences' | 'practiceId'>,
 ) {
-  if (row.reason === 'service_in_reconciliation' && row.serviceRecordId) {
+  if (ITEM_LINKED_REASONS.includes(row.reason) && row.serviceRecordId) {
     return destination(
       '/practice/reconciliation',
       strings.tablet.earlierToReconciliation,

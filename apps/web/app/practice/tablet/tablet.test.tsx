@@ -3109,6 +3109,41 @@ describe('/practice/tablet — unsigned from earlier days', () => {
     expect(screen.queryByTestId('earlier-capped')).toBeNull();
   });
 
+  it('earlier_unsigned_associated_rows_say_what_was_found_and_link_to_the_service_item_not_the_draft', async () => {
+    signedInAtPractice();
+    stubFetch({
+      earlier: {
+        total: 3,
+        rows: [
+          { ...IN_RECON, reason: 'service_associated', serviceRecordId: 'svc-assoc-1' },
+          { ...NO_SERVICE, reason: 'service_choice_needed', serviceRecordId: 'svc-choice-1' },
+          { ...NO_SERVICE, agreementId: 'agreement-earlier-3', reason: 'service_associated_other', serviceRecordId: 'svc-assoc-2' },
+        ],
+      },
+    });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    await screen.findByTestId('earlier-summary');
+    expect(screen.getByTestId(`earlier-reason-${IN_RECON.agreementId}`).textContent).toBe(
+      strings.tablet.earlierReason.service_associated,
+    );
+    expect(screen.getByTestId(`earlier-link-${IN_RECON.agreementId}`).getAttribute('href')).toBe(
+      '/practice/reconciliation?item=svc-assoc-1',
+    );
+    expect(screen.getByTestId(`earlier-reason-${NO_SERVICE.agreementId}`).textContent).toBe(
+      strings.tablet.earlierReason.service_choice_needed,
+    );
+    expect(screen.getByTestId(`earlier-link-${NO_SERVICE.agreementId}`).getAttribute('href')).toBe(
+      '/practice/reconciliation?item=svc-choice-1',
+    );
+    expect(screen.getByTestId('earlier-reason-agreement-earlier-3').textContent).toBe(
+      strings.tablet.earlierReason.service_associated_other,
+    );
+    expect(screen.getByTestId('earlier-link-agreement-earlier-3').getAttribute('href')).toBe(
+      '/practice/reconciliation?item=svc-assoc-2',
+    );
+  });
+
   it('earlier_unsigned_decided_row_names_the_decision_and_unknown_codes_show_themselves', async () => {
     signedInAtPractice();
     stubFetch({

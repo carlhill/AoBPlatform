@@ -166,15 +166,58 @@ plain-English text. `tautala_ai.md` (the TAUTALA entry, further down) is the rel
 
 ---
 
+## Reconcile the PMS, AOBPRINTER and AoBPlatform against each other (Carl, 10 Oct 2026)
+
+**Carl:** *"we will need to come back to this so that we can reconcile between
+the PMS, AOBPrinter and AOBPlatform"*, when choosing option (b) for unsigned
+drafts (D-2026-10-10-09).
+
+**The problem.** Three systems each hold part of what happened at a visit, and
+nothing checks them against each other:
+- **the PMS (PracSoft):** appointments, arrivals, invoices and claims;
+- **AOBPRINTER:** every DB4 printed, captured and filed back (its own audit
+  chain, PRINTER-HEARTBEAT.md);
+- **AoBPlatform:** agreements (pre and post, signed or not), service records,
+  tablet sessions and vault events.
+
+Today an unsigned pre-agreement is only *associated* with its visit's service
+(option b). A DB4 printed but never captured, an invoice with no agreement, or a
+signed agreement with no claim are each visible in one system at most.
+
+**What the reconciliation should answer, per practice and per day:**
+- every PMS invoice has a signed agreement covering it, or a named reason it
+  does not (private, forgone, chased, and so on);
+- every DB4 AOBPRINTER captured became an agreement, or was refused with a
+  reason, and every signed one was filed back;
+- every agreement is either signed and matched to a claim, closed with a
+  reason, or still open on a named list;
+- associated pre-agreements (option b) are settled: superseded by the signed
+  post-service agreement, or closed.
+
+**Depends on:** D-01 (Medtech write-back) for Medtech practices; the AOBPRINTER
+heartbeat (PR #4) for capture completeness; a decision on when an associated
+pre-agreement can close.
+
+---
+
 ## Agreements left unsigned past their day (10 Oct 2026) - D-2026-10-10-01
 
 **Being built now:** option 1, the tablet's "Unsigned from earlier days: N"
 notice, and option 4, the post-service chase switched on in development (sandbox
 gateways only; production off until Carl says live).
 
-**Deferred, decided by Carl to be on this list:**
+**Options 2 and 3 are being built (Carl, 10 Oct 2026, D-2026-10-10-09):**
+*"do option 2 first, N is 7 days - make N a configurable setting"*. Strike
+each one through when it lands.
+- ~~**Paused at the measurement step, waiting on Carl.**~~ Carl chose option
+  (b), associate not link. **Built 11 Oct 2026** on branch
+  `feat/unsigned-drafts-link-and-close`; the build's own choices are listed
+  under D-2026-10-10-09 for Carl to confirm.
 
-2. **Link the unsigned draft to the service.** When an invoice arrives for the
+**Originally deferred, decided by Carl to be on this list:**
+
+2. ~~**Link the unsigned draft to the service.**~~ Built as an ASSOCIATION, not
+   a link (option (b), D-2026-10-10-09). When an invoice arrives for the
    same patient, provider and day, pms-sync should link the unsigned draft to the
    service record, so the draft reaches Reconciliation instead of being orphaned.
    Today `pms-sync.service.ts` links only an agreement with `status: 'stored'`.
@@ -183,14 +226,17 @@ gateways only; production off until Carl says live).
      How often that happens has not been measured, and the two drafts must not
      both end up linked.
    - *Depends on:* that measurement, and a rule for which draft wins.
-3. **Close drafts with no service after N days.** Close them as "not needed: no
+3. ~~**Close drafts with no service after N days.**~~ Built: N = 7 in
+   `content/unsigned-draft-closure.json`, settable per practice on
+   `/practice/channels` (D-2026-10-10-09). Close them as "not needed: no
    service recorded", with a vault event.
    - N belongs in the versioned rule set (hard rule 14); it is never hardcoded.
    - *Why deferred:* closing an agreement is a state change with evidence
      consequences. N is a regulatory-adjacent threshold that is not in the
      requirements docs, and §7c says never to invent one.
-   - *Depends on:* Carl choosing N. Option 2 should come first, so that nothing
-     a service could still claim gets closed.
+   - *Depends on:* ~~Carl choosing N~~ (chosen: 7 days by default, settable
+     per practice; D-2026-10-10-09). Option 2 should come first, so that
+     nothing a service could still claim gets closed.
 
 ---
 

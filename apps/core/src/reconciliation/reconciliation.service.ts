@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   assertDecisionAllowed,
   attemptAllowed,
@@ -16,6 +22,13 @@ import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import type { Actor } from '../auth/actor.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { CaptureService } from '../capture/capture.service';
+import { anchorsForAgreements } from '../affiliations/agreement-anchor';
+import {
+  associationChoices,
+  calendarDayOf,
+  preAgreementCandidates,
+  recordPreAgreementAssociation,
+} from '../agreements/pre-agreement-association';
 
 export interface OutstandingItem {
   serviceRecordId: string;
@@ -45,6 +58,37 @@ export interface OutstandingItem {
   outboundChaseSuppressed: boolean;
   /** Band expired — unbillable, permanently. Close and record, never contact (REQ-CHASE-08). */
   revenueForgone: boolean;
+}
+
+/**
+ * WHY A SERVICE IS LISTED FOR A PERSON TO CHOOSE (D-2026-10-10-09). One code
+ * today; the console maps it to words and shows any code it has no words for.
+ */
+export const ASSOCIATION_CHOICE_REASONS = ['unsigned_drafts_match_service'] as const;
+export type AssociationChoiceReason = (typeof ASSOCIATION_CHOICE_REASONS)[number];
+
+/**
+ * A SERVICE WITH UNSIGNED PRE-AGREEMENTS THAT MATCH IT AND NONE ASSOCIATED
+ * (D-2026-10-10-09, option (b)). Every candidate is named, so a person can
+ * choose. Nothing was associated automatically: more than one matched when
+ * the service arrived, or the draft appeared after the service did.
+ */
+export interface AssociationChoiceItem {
+  serviceRecordId: string;
+  serviceDate: string;
+  patientId: string | null;
+  patientName: string | null;
+  providerName: string | null;
+  reason: AssociationChoiceReason;
+  candidates: {
+    agreementId: string;
+    type: string;
+    status: string;
+    /** The day the draft was for, practice-local (`visitDayOf`). */
+    forDay: string;
+    createdAt: string;
+    providerName: string | null;
+  }[];
 }
 
 function shortName(patient: { givenNames: string; familyName: string } | undefined): string | null {
@@ -160,6 +204,102 @@ export class ReconciliationService {
       );
     }
     return this.capture.open(practiceId, { agreementId: record.agreementId, channel });
+  }
+
+  /**
+   * SERVICES WAITING FOR A PERSON TO SAY WHICH UNSIGNED PRE-AGREEMENT WAS FOR
+   * THEIR VISIT (D-2026-10-10-09, option (b)). Read only.
+   *
+   * SEPARATE FROM `outstanding`, deliberately. That list is "billed without a
+   * stored agreement" and feeds the capture rate; a choice is a different
+   * task and can be owed on a service that a signed agreement already covers.
+   */
+  async associationChoices(practiceId: string): Promise<AssociationChoiceItem[]> {
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const choices = await associationChoices(tx);
+      if (choices.length === 0) return [];
+      const patientIds = [...new Set(choices.map((c) => c.service.patientId).filter((id): id is string => id !== null))];
+      const providerIds = [...new Set(choices.map((c) => c.service.providerId).filter((id): id is string => id !== null))];
+      const [patients, providers, anchors] = await Promise.all([
+        tx.patient.findMany({ where: { id: { in: patientIds } } }),
+        providerIds.length ? tx.provider.findMany({ where: { id: { in: providerIds } } }) : Promise.resolve([]),
+        anchorsForAgreements(tx, choices.flatMap((c) => c.candidates)),
+      ]);
+      const patientById = new Map(patients.map((p) => [p.id, p]));
+      const providerById = new Map(providers.map((p) => [p.id, p]));
+      return choices.map(({ service, candidates }) => ({
+        serviceRecordId: service.id,
+        serviceDate: calendarDayOf(service.serviceDate),
+        patientId: service.patientId,
+        patientName: shortName(service.patientId ? patientById.get(service.patientId) : undefined),
+        providerName:
+          (service.providerId ? providerById.get(service.providerId)?.name : undefined)
+          ?? anchors.get(candidates[0]!.id)?.name
+          ?? null,
+        reason: 'unsigned_drafts_match_service' as const,
+        candidates: candidates.map((c) => ({
+          agreementId: c.id,
+          type: c.type,
+          status: c.status,
+          forDay: c.forDay,
+          createdAt: c.createdAt.toISOString(),
+          providerName: anchors.get(c.id)?.name ?? null,
+        })),
+      }));
+    });
+  }
+
+  /**
+   * A PERSON CHOSE WHICH UNSIGNED PRE-AGREEMENT WAS FOR THIS SERVICE'S VISIT
+   * (D-2026-10-10-09). Associated, never linked: the service record's
+   * `agreementId` is not touched. The chooser comes from the session, never
+   * the body, and the association and its vault event commit together.
+   *
+   * REFUSALS SAY WHAT WAS CHECKED (wow.md section 13): an existing association
+   * is named; an agreement that is not a current candidate is refused with the
+   * conditions it was checked against, because which one it failed is not
+   * something to guess at.
+   */
+  async associate(practiceId: string, serviceRecordId: string, agreementId: string, actor?: Actor) {
+    if (!actor) {
+      throw new ForbiddenException(
+        'Choosing the draft for a service is recorded against a signed-in person; no session was found.',
+      );
+    }
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const record = await tx.serviceRecord.findFirst({ where: { id: serviceRecordId } });
+      if (!record) throw new NotFoundException('Service record not found.');
+      const existing = await tx.preAgreementAssociation.findFirst({ where: { serviceRecordId } });
+      if (existing) {
+        throw new ConflictException(
+          `Service record ${serviceRecordId} is already associated with agreement ${existing.agreementId} ` +
+            `(${existing.how}). Nothing was changed.`,
+        );
+      }
+      const candidates = await preAgreementCandidates(tx, record);
+      if (!candidates.some((c) => c.id === agreementId)) {
+        throw new BadRequestException(
+          `Agreement ${agreementId} is not one of the unsigned drafts that match service record ${serviceRecordId}. ` +
+            'Checked: an episodic pre-agreement for the same patient, servicing provider and practice-local day, ' +
+            'unsigned and still open, not linked to a service, not replaced and not already associated. ' +
+            `${candidates.length} draft(s) match it now. Nothing was recorded.`,
+        );
+      }
+      const row = await recordPreAgreementAssociation(tx, practiceId, {
+        agreementId,
+        visit: record,
+        how: 'chosen',
+        candidateCount: candidates.length,
+        chosenBy: { principalType: actor.principalType, id: actor.id },
+      });
+      return {
+        serviceRecordId,
+        agreementId,
+        how: row.how,
+        candidateCount: row.candidateCount,
+        associatedAt: row.createdAt.toISOString(),
+      };
+    });
   }
 
   /** REQ-MON-01 subset — grows with the metric families as modules land. Exportable by shape (REQ-MON-02). */

@@ -53,6 +53,20 @@ const DETAIL = {
   attempts: [],
 };
 
+/** A service waiting for a person to choose its agreement (D-2026-10-10-09). */
+const CHOICE = {
+  serviceRecordId: 'svc-choice-1',
+  serviceDate: '2026-10-06',
+  patientId: 'patient-choice-1',
+  patientName: 'A. Fictional',
+  providerName: 'Dr Example Provider',
+  reason: 'unsigned_drafts_match_service',
+  candidates: [
+    { agreementId: 'agreement-choice-1', type: 'episodic_pre', status: 'draft', forDay: '2026-10-06', createdAt: '2026-10-05T22:10:00.000Z', providerName: 'Dr Example Provider' },
+    { agreementId: 'agreement-choice-2', type: 'episodic_pre', status: 'draft', forDay: '2026-10-06', createdAt: '2026-10-05T23:10:00.000Z', providerName: 'Dr Example Provider' },
+  ],
+};
+
 const calls: string[] = [];
 
 function stubFetch() {
@@ -62,6 +76,8 @@ function stubFetch() {
       calls.push(url);
       const body = url.endsWith('/reconciliation/outstanding')
         ? [ITEM]
+        : url.endsWith('/reconciliation/association-choices')
+          ? [CHOICE]
         : url.endsWith('/reconciliation/metrics')
           ? { outstanding: 1, byBand: { standard: 1, compressed: 0, urgent: 0, last_chance: 0, expired: 0 }, captureRate: null }
           : url.endsWith(`/reconciliation/${ITEM.serviceRecordId}`)
@@ -116,6 +132,21 @@ describe('/practice/reconciliation — one item from a link', () => {
     const notice = await screen.findByTestId('reconciliation-item-not-on-queue');
     expect(notice.textContent).toContain(strings.reconciliation.itemNotOnQueue('svc-gone'));
     expect(screen.queryByTestId('reconciliation-detail')).toBeNull();
+  });
+
+  it('reconciliation_item_link_to_a_service_waiting_for_a_choice_lands_on_that_choice', async () => {
+    at(`?${RECONCILIATION_ITEM_PARAM}=${CHOICE.serviceRecordId}`);
+    render(
+      <PracticeOverride practiceId={PRACTICE}>
+        <ReconciliationView />
+      </PracticeOverride>,
+    );
+
+    const choice = await screen.findByTestId(`association-choice-${CHOICE.serviceRecordId}`);
+    expect(choice.id).toBe(`reconciliation-choice-${CHOICE.serviceRecordId}`);
+    // Waiting for both lists before deciding, so it is not called "not on this queue".
+    await screen.findByTestId(`reconciliation-row-${ITEM.serviceRecordId}`);
+    expect(screen.queryByTestId('reconciliation-item-not-on-queue')).toBeNull();
   });
 
   it('no_item_parameter_opens_nothing', async () => {

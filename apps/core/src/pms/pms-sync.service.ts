@@ -5,6 +5,7 @@ import type { IsoDate } from '@aobplatform/domain';
 import { PrismaService } from '../prisma/prisma.service';
 import { anchorForLegacyProvider, type LegacyProviderRow } from '../affiliations/agreement-anchor';
 import { PMS_ADAPTER } from './pms.tokens';
+import { associateOnServiceArrival } from '../agreements/pre-agreement-association';
 
 /** How far back the invoice sync reaches — past the 12-month lodgement window with margin. */
 const SYNC_LOOKBACK_DAYS = 400;
@@ -181,6 +182,14 @@ export class PmsSyncService {
         retentionClockSource: this.adapter.capabilities.claimEvents ? 'observed_claim' : 'conservative_default',
       },
     });
+    /*
+     * AN UNSIGNED PRE-AGREEMENT FOR THIS VISIT IS ASSOCIATED, NEVER LINKED
+     * (D-2026-10-10-09, option (b)). `agreementId` above is untouched by it,
+     * so the post-service cascade still sees an orphan and still drafts,
+     * links and chases the post-service agreement. Same transaction as the
+     * row, so the association and its vault event commit with it.
+     */
+    await associateOnServiceArrival(tx, practiceId, row);
     return { id: row.id, created: true };
   }
 }

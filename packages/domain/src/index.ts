@@ -41,6 +41,8 @@ export * from './practice-surfaces';
 export * from './practitioner-departure';
 export * from './reporting';
 export * from './practice-day';
+export * from './pre-agreement-association';
+export * from './unsigned-draft-closure';
 export * from './packed-reports';
 export * from './departure-notice';
 export * from './outbound-queue';
