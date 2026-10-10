@@ -418,6 +418,26 @@ went missing is not known.
 **Enforced by:** nothing yet. A check in `validate:inventory` that fails when a
 workspace holds `*.test.ts` and has no `test` script would be cheap.
 
+## 15. A worktree inside the repo borrows the repo's `node_modules` (10 Oct 2026)
+
+**What happened.** Agents ran in git worktrees under `.claude/worktrees/`,
+which sit inside the main checkout. One worktree ran `prisma generate` before
+its own `npm ci` had installed anything. Node resolved `@prisma/client` upward,
+into the MAIN checkout's `node_modules`, and the generate overwrote the main
+checkout's client with a different branch's schema. The `AobPrinterHost` model
+disappeared from it. Another agent's 22 heartbeat tests then failed with
+`tx.aobPrinterHost` undefined, and Carl's running dev core read the same client.
+
+**The rule.**
+- A worktree runs `npm ci` at its own root before anything that writes into
+  `node_modules`: `prisma generate`, a package build, an install.
+- Before `prisma generate` in a worktree, run
+  `node -e "console.log(require.resolve('@prisma/client'))"` and check that the
+  path is inside the worktree. If it points at the main checkout, stop.
+- After any session in which a worktree may have written into the main
+  checkout, run `npx prisma generate` in the main checkout's `apps/core` and
+  restart dev core.
+
 ## Change log
 | Date | Change |
 |---|---|
@@ -433,3 +453,4 @@ workspace holds `*.test.ts` and has no `test` script would be cheap.
 | 17 Sep 2026 | §5b: check `ListAgents` before telling an agent that no other agent exists — `git log` and `git status` cannot see a write that has not happened yet. Also: the reviewer clause goes last, under its own heading, because twice in one day an agent read "a fresh reviewer reads your diff" as "you are orchestrating". |
 | 28 Sep 2026 | §13: a blocked or refused message never offers a remedy that is not true for that record. Written after a C7 refusal told Carl to record item numbers his form already carried, sending him to his data instead of to our own supersession defect. |
 | 28 Sep 2026 | §14: a test file in a workspace with no `test` script has never run — `packages/contracts` gained a vitest script and its six tests ran for the first time; and "not recognized" means a missing bin shim (`npm rebuild jest`), not a broken runner. |
+| 10 Oct 2026 | §15: a worktree inside the repo resolves the repo's `node_modules` until its own `npm ci` has run. Written after a worktree's `prisma generate` overwrote the main checkout's Prisma client with another branch's schema and failed 22 heartbeat tests. |
