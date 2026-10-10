@@ -2,7 +2,6 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import type { Agreement as DbAgreement, Prisma, TabletSession } from '@prisma/client';
 import {
 
-  DEFAULT_PRACTICE_TIMEZONE,
   TABLET_SESSION_IDLE_MS,
   canChangeTabletSessionState,
   computeSignability,
@@ -16,7 +15,6 @@ import {
   practiceDayOf,
   projectTabletSessionPatient,
   shownDetailTypesFor,
-  startOfPracticeDay,
   type AgreementType,
   type ConfirmableDetailType,
   type PushBlockedReason,
@@ -28,6 +26,7 @@ import type { Db4PrintRecordCheck, Db4PrintRecordIdentity } from '@aobplatform/c
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { anchorForAgreement, anchorsForAgreements } from '../affiliations/agreement-anchor';
 import type { Actor } from '../auth/actor.decorator';
+import { readPracticeDay, type PracticeDay } from '../practices/practice-day';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AgreementsService,
@@ -426,11 +425,8 @@ export class TabletSessionsService {
    * (it cannot be, inside a practice scope) falls back to the column default
    * rather than to UTC.
    */
-  private async practiceDay(tx: Prisma.TransactionClient): Promise<PracticeDay> {
-    const practice = await tx.practice.findFirst({ select: { timezone: true } });
-    const timeZone = practice?.timezone ?? DEFAULT_PRACTICE_TIMEZONE;
-    const now = this.clock();
-    return { timeZone, todayIso: practiceDayOf(now, timeZone), startOfDay: startOfPracticeDay(now, timeZone) };
+  private practiceDay(tx: Prisma.TransactionClient): Promise<PracticeDay> {
+    return readPracticeDay(tx, this.clock());
   }
 
   /** `practiceDay` for a caller that has no transaction open. */
@@ -3183,19 +3179,6 @@ export class TabletSessionsService {
     if (!session) throw new NotFoundException('That tablet session was not found.');
     return session;
   }
-}
-
-/**
- * ONE PRACTICE'S "TODAY" AT ONE INSTANT (D-2026-10-10-03) — see
- * `TabletSessionsService.practiceDay`, the only place one is made.
- */
-interface PracticeDay {
-  /** The IANA zone on `practices.timezone`. */
-  timeZone: string;
-  /** `YYYY-MM-DD` in that zone — the ISO date every particular is written in. */
-  todayIso: string;
-  /** The instant of local midnight at the start of `todayIso`. */
-  startOfDay: Date;
 }
 
 /**

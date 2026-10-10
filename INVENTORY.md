@@ -17,11 +17,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2335 |
-| Files scanned for exports | 553 |
-| Files scanned for imports | 596 |
+| Exported symbols indexed | 2338 |
+| Files scanned for exports | 554 |
+| Files scanned for imports | 597 |
 | Exports with no comment of their own | 995 |
-| Exports imported nowhere else | 977 |
+| Exports imported nowhere else | 978 |
 
 ## Sections
 
@@ -35,7 +35,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 - [Contracts types](#contracts-types) — 97
 - [Contracts functions and constants](#contracts-functions-and-constants) — 27
 - [Core services, controllers and modules](#core-services-controllers-and-modules) — 279
-- [Core helpers, constants and types](#core-helpers-constants-and-types) — 195
+- [Core helpers, constants and types](#core-helpers-constants-and-types) — 198
 - [AOBPRINTER (the desktop print channel)](#aobprinter-the-desktop-print-channel-) — 149
 
 ## Web components
@@ -802,6 +802,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `matchesPracticeStaff` | domain:assignor.ts | REQ-VUL-04 / hard rule 10 — the practice-staff comparison. | **2** · web:kiosk/rules/assignor.ts, web:practice/tablet/pushDesk.tsx |
 | `mayChoosePractice` | domain:landing.ts | May this person choose which practice they are looking at? | **2** · web:practice/PracticeList.tsx, web:practice/usePractice.tsx |
 | `normaliseAbn` | domain:abn.ts | Strip the spaces the ABR itself prints ("51 824 753 556"). | **2** · core:organisations/organisations.service.ts, web:apply/ApplyForm.tsx |
+| `practiceDayOf` | domain:practice-day.ts | `YYYY-MM-DD` FOR AN INSTANT, IN THE ZONE THE PRACTICE CHOSE (D-2026-10-10-03). | **2** · core:practices/practice-day.ts, core:tablet-sessions/tablet-sessions.service.ts |
 | `remoteChannelFor` | domain:auto-capture.ts | Which remote channel reaches this patient. | **2** · core:arrivals/post-service-chase.sweep.ts, core:auto-capture/auto-capture.service.ts |
 | `renderAgreementTemplate` | domain:agreement-templates.ts | Substitute the values in, resolving the branches first. | **2** · core:agreements/agreements.service.ts, web:practice/templates/TemplateForm.tsx |
 | `renderPatientMessage` | domain:patient-message-templates.ts | Substitute the values in. | **2** · core:agreement-copy/agreement-copy.service.ts, core:portal/portal-invitation.dispatcher.ts |
@@ -968,7 +969,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `personUsername` | domain:account-naming.ts | A PERSON, AT ONE PRACTICE -- `audrey@hillsempire.com.xlevelup`. | **1** · core:identity/account-names.ts |
 | `placeOptionsQuery` | domain:packed-reports.ts |  | **1** · web:practice/reports/ReportsView.tsx |
 | `portalRecordIdLine` | domain:patient-message-templates.ts | The one sentence, ready to append (Carl, 4 Sep 2026). | **1** · core:messaging/portal-record-id.service.ts |
-| `practiceDayOf` | domain:practice-day.ts | `YYYY-MM-DD` FOR AN INSTANT, IN THE ZONE THE PRACTICE CHOSE (D-2026-10-10-03). | **1** · core:tablet-sessions/tablet-sessions.service.ts |
 | `practiceDayWindow` | domain:practice-day.ts | THE WINDOW FOR ONE DAY, OR FOR TODAY WHEN NOBODY NAMED ONE. | **1** · core:arrivals/arrivals.service.ts |
 | `practitionerStrength` | domain:practitioner-strength.ts |  | **1** · core:identity-dashboard/identity-dashboard.service.ts |
 | `projectKioskWaitingRow` | domain:kiosk.ts | Build a row by taking ONLY the permitted fields. | **1** · core:kiosk/kiosk.service.ts |
@@ -992,7 +992,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `sessionExpiresAt` | domain:acting-as.ts | When it will lapse, so a screen can say so rather than surprising somebody. | **1** · core:acting-as/acting-as.service.ts |
 | `shownDetailTypesFor` | domain:tablet-session.ts | WHICH ROWS THE TABLET DREW, DECIDED BY THE SERVER RATHER THAN TAKEN FROM THE DEVICE. | **1** · core:tablet-sessions/tablet-sessions.service.ts |
 | `showsBodies` | domain:correspondence-log.ts | Bodies belong to the practice that sent and the person who received. | **1** · web:correspondence/MessageLog.tsx |
-| `startOfPracticeDay` | domain:practice-day.ts | THE INSTANT OF LOCAL MIDNIGHT AT THE START OF `now`'s DAY, in the zone the practice chose (D-2026-10-10-03). | **1** · core:tablet-sessions/tablet-sessions.service.ts |
+| `startOfPracticeDay` | domain:practice-day.ts | THE INSTANT OF LOCAL MIDNIGHT AT THE START OF `now`'s DAY, in the zone the practice chose (D-2026-10-10-03). | **1** · core:practices/practice-day.ts |
 | `summarise` | domain:reporting.ts | Totals per bucket, oldest first. | **1** · core:outbound/outbound.service.ts |
 | `summariseAudit` | domain:audit.ts | A short account of what the trail shows, for the top of the view. | **1** · core:organisations/audit.service.ts |
 | `surfaceOf` | domain:practice-surfaces.ts | Which surface owns a console page, or `always`, or null. | **1** · web:AccessGuard.tsx |
@@ -1153,7 +1153,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `BILLING_ROLE_KEYS` | domain:billing-roles.ts | Just the keys, in order — the shape a `<select>` and a CHECK constraint want. | **2** · core:affiliations/affiliations.controller.ts, core:affiliations/affiliations.service.ts |
 | `CORRECTABLE_PATIENT_FIELDS` | domain:tablet-session.ts | WHAT RECEPTION MAY CORRECT ON THE PLATFORM'S MIRROR, and the list is the whole of it (TODO.md "Check-your-details", Carl 4 Sep 2026). | **2** · core:patients/patients.service.ts, web:practice/tablet/pushDesk.tsx |
 | `DEFAULT_BILLING_ROLE` | domain:billing-roles.ts | The role every affiliation starts on, and the database column's default. | **2** · core:affiliations/agreement-anchor.ts, core:practices/practices.service.ts |
-| `DEFAULT_PRACTICE_TIMEZONE` | domain:practice-timezones.ts | The column default, `Australia/Sydney`. | **2** · core:tablet-sessions/tablet-sessions.service.ts, web:practice/channels/ChannelsView.tsx |
+| `DEFAULT_PRACTICE_TIMEZONE` | domain:practice-timezones.ts | The column default, `Australia/Sydney`. | **2** · core:practices/practice-day.ts, web:practice/channels/ChannelsView.tsx |
 | `DEVICE_LABEL_MAX_LENGTH` | domain:devices.ts | A label a human chose, for a list a human reads. | **2** · core:devices/devices.controller.ts, core:devices/devices.service.ts |
 | `KIOSK_IDLE_TIMEOUT_DEFAULT_SECONDS` | domain:kiosk.ts | RETURN TO THE START WHEN NOBODY IS THERE (Carl, 4 September 2026). | **2** · web:kiosk/Ceremony.tsx, web:practice/channels/ChannelsView.tsx |
 | `LOCKED_FIELDS` | domain:amendment.ts | Fields that are explicitly refused, with the reason the applicant sees. | **2** · core:organisations/organisations.controller.ts, core:organisations/organisations.service.ts |
@@ -2101,7 +2101,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Core helpers, constants and types
 
-195 exports.
+198 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -2121,6 +2121,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `anchorsForAgreements` | core:affiliations/agreement-anchor.ts | The same answer for a list, which is what every queue screen wants: two queries for the anchored rows and one legacy lookup each for the rest, rather than a join per line. | **5** · core:arrivals/arrivals.service.ts, core:kiosk/kiosk.service.ts, core:portal/portal-reads.service.ts, +2 more |
 | `canonicalJson` | core:render/canonical-json.ts | THE ONE CANONICAL SERIALISATION IN THE RENDER PATH — the function that decides what an agreement's hash is computed over. | **5** · core:render/agreement-document.ts, core:render/agreement-pdf-renderer.ts, core:render/pdf-renderer.ts, +2 more |
 | `AgreementRenderer` | core:render/renderer.ts |  | **4** · core:render/agreement-pdf-renderer.ts, core:render/pdf-renderer.ts, core:render/renderer-registry.ts, +1 more |
+| `readPracticeDay` | core:practices/practice-day.ts | `PracticeDay` for `now`, in the zone of the practice `tx` is scoped to. | **4** · core:agreements/agreements.service.ts, core:auto-capture/auto-capture.service.ts, core:service-descriptions/service-descriptions.service.ts, +1 more |
 | `CallingDevice` | core:devices/device.decorator.ts | The resolved device, or undefined where none was offered. | **3** · core:agreement-copy/agreement-copy-kiosk.controller.ts, core:kiosk/kiosk.controller.ts, core:tablet-sessions/kiosk-session.controller.ts |
 | `LogoLoader` | core:render/logo-loader.ts | THE ONE WAY THE RENDERER GETS THE PRACTICE'S LOGO BYTES. | **3** · core:render/agreement-pdf-renderer.ts, core:render/renderer-registry.ts, core:render/signed-db4-renderer.ts |
 | `RenderedArtefact` | core:render/renderer.ts | Rule 13 — ONE deterministic render path. | **3** · core:render/agreement-pdf-renderer.ts, core:render/pdf-renderer.ts, core:render/signed-db4-renderer.ts |
@@ -2175,6 +2176,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PortalAuthenticator` | core:portal/portal-authenticator.ts |  | **1** · core:portal/portal.service.ts |
 | `PortalRelyingParty` | core:portal/portal-passkey-config.ts |  | **1** · core:portal/portal-webauthn.ts |
 | `PortalWebAuthn` | core:portal/portal-webauthn.ts |  | **1** · core:portal/portal-passkey.service.ts |
+| `PracticeDay` | core:practices/practice-day.ts | ONE PRACTICE'S "TODAY" AT ONE INSTANT (D-2026-10-10-03). | **1** · core:tablet-sessions/tablet-sessions.service.ts |
 | `PreparedLock` | core:agreements/agreements.service.ts |  | **1** · core:tablet-sessions/tablet-sessions.service.ts |
 | `REQUIRED_ROLES` | core:auth/roles.decorator.ts |  | **1** · core:auth/auth.guard.ts |
 | `RequireFreshSecondFactor` | core:auth/fresh-second-factor.decorator.ts | A FRESH SECOND FACTOR BEFORE THIS ACT, not only at sign-in (AUTH-TIERS.md §5.2, D-2026-09-12-11). | **1** · core:devices/devices.controller.ts |
@@ -2296,6 +2298,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `normaliseStatedValue` | core:verification/identifier-matching.ts |  | 0 |
 | `normalisedHeldValue` | core:verification/identifier-matching.ts | Normalises a held or stated value for one identifier type. | 0 |
 | `ourStringsOf` | core:render/signed-db4-document.ts | THE STRINGS THIS CODEBASE AUTHORED — the ones hard rule 12 is about. | 0 |
+| `readPracticeTimeZone` | core:practices/practice-day.ts | THE PRACTICE'S ZONE, read INSIDE the caller's `withPractice` transaction so it is scoped by the same RLS as the rows it dates. | 0 |
 | `renderedStringsOf` | core:render/agreement-document.ts | Every string that will be drawn on the page, in one list — including the particulars' own values, because a service description or a provider name is as much a line on the contract as a template paragraph is. | 0 |
 | `reproducedStringsOf` | core:render/signed-db4-document.ts | THE STRINGS REPRODUCED FROM THE FORM. | 0 |
 | `templateValuesFor` | core:agreements/agreements.service.ts | THE PARTICULARS, TURNED INTO THE VALUES THE WORDS NEED. | 0 |
