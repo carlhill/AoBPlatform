@@ -9,7 +9,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { TokenVerifier, type AuthenticatedPrincipal } from '@aobplatform/auth-client';
-import { authMethodFromAmr, mayPerformHighStakesAct } from '@aobplatform/domain';
+import { authMethodFromAmr, mayPerformHighStakesAct, type StepUpRefusal } from '@aobplatform/domain';
 import { PUBLIC_ENDPOINT } from './public.decorator';
 import { REQUIRED_ROLES } from './roles.decorator';
 import { PRACTICE_SCOPED } from './practice-scope.decorator';
@@ -20,6 +20,25 @@ declare module 'express' {
     principal?: AuthenticatedPrincipal;
   }
 }
+
+/**
+ * The sentence for each step-up refusal. Each says what was observed about
+ * THIS session and offers a remedy only where it is true for it (CLAUDE.md §7).
+ * An unrecorded method is a sign-in service setting, so it offers no remedy:
+ * signing in again helps only once that setting is in place, and this service
+ * cannot tell whether it is.
+ */
+const STEP_UP_MESSAGES: Record<StepUpRefusal, string> = {
+  reauthentication_required:
+    'Confirm it is you before doing this. Sign in again — it takes a moment and this act cannot be undone.',
+  second_factor_required:
+    'This account signed in with a password and nothing else, and this act needs a second factor. ' +
+    'Register an authenticator app or a passkey, then try again.',
+  sign_in_method_unrecorded:
+    'This sign-in did not record how it was made, so the server cannot confirm a passkey or a one-time code ' +
+    'was used, and this act needs one. This is a setting on the sign-in service, not a problem with the account. ' +
+    'Nothing was changed.',
+};
 
 /**
  * Verifies Keycloak bearer tokens and, where present, uses the token's
@@ -169,11 +188,7 @@ export class AuthGuard implements CanActivate {
       statusCode: 403,
       error: 'Forbidden',
       reasonCode: decision.reason,
-      message:
-        decision.reason === 'second_factor_required'
-          ? 'This account signed in with a password and nothing else, and this act needs a second factor. ' +
-            'Register an authenticator app or a passkey, then try again.'
-          : 'Confirm it is you before doing this. Sign in again — it takes a moment and this act cannot be undone.',
+      message: STEP_UP_MESSAGES[decision.reason ?? 'reauthentication_required'],
     });
   }
 
@@ -193,9 +208,10 @@ export class AuthGuard implements CanActivate {
    *
    * IT REFUSES WHAT THE SESSION SAYS, NOT WHAT IT DOES NOT SAY, and the
    * distinction is load-bearing. `unknown` means the realm issued no `amr`
-   * claim, which is true of the MAIN realm today — it has no amr mapper — so
-   * refusing `unknown` would lock every platform operator out of the console
-   * the moment this shipped. A session that positively states a
+   * claim, which was true of the MAIN realm until D-2026-10-10-06 added its
+   * amr mapper — and is still true of any realm not yet brought up to date —
+   * so refusing `unknown` here would lock every platform operator out of the
+   * console. (A high-stakes act does refuse `unknown`, with its own code.) A session that positively states a
    * password-based method is a different thing: that is an operator who got
    * in through a path they should not have, and it is refused.
    */
