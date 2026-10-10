@@ -200,6 +200,23 @@ pre-agreement can close.
 
 ---
 
+## ~~The signature step on screens smaller than 1280×800 (10 Oct 2026)~~ - decided: (a), accepted below 1280×800 (D-2026-10-10-10)
+
+The kiosk's no-scroll rule holds from 1280×800 up (D-2026-10-10-10). The
+signature step (pad, Back, Clear, Sign) fits at every size from there,
+including the 14" tablet both ways. Below it, it falls short: **25px at
+1024×600 and 52px at 960×600**, with Edge's bars showing. There the page
+scrolls as a whole (never a box) and every control can be scrolled into view;
+the fit spec lists these two sizes in `SIGNATURE_SHORTFALL`.
+
+**Carl to choose:**
+- **(a)** accept it below 1280×800, and change the decision's wording from
+  "fits at every size" to "fits at 1280×800 and up"; or
+- **(b)** make it fit by shrinking the kiosk's three-line footer (build,
+  device and audit ids) to one line on short screens.
+
+---
+
 ## Tablet lockdown by an installed app: allow one install for automatic lockdown? (Carl, 10 Oct 2026)
 
 **Not decided; zero-footprint stays** (D-2026-10-10-10). Carl asked for this to
