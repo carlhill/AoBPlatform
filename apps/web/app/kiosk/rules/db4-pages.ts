@@ -248,6 +248,11 @@ export function resolveDb4Sheet(sheets: readonly Db4Sheet[], section: Db4Page, a
   if (anchor !== null) {
     const held = inSection.find(({ sheet }) => sheet.blocks.includes(anchor) || sheetAnchor(sheet) === anchor);
     if (held) return held.index;
+    // A sheet with no blocks is the section's ticks on their own, so it was
+    // the END of the section. If a re-flow has merged it away, the patient
+    // goes to the section's last sheet — where those ticks now are — not
+    // back to its first (review of d0e4f94).
+    if (anchor === `section:${section}`) return inSection[inSection.length - 1].index;
   }
   return section === LAST_DB4_PAGE ? inSection[inSection.length - 1].index : inSection[0].index;
 }

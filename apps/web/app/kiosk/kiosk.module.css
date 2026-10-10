@@ -1674,6 +1674,35 @@
   }
 }
 
+/*
+ * THE SIGNATURE STEP FITS AT EVERY SIZE (Carl, 10 Oct 2026; review of
+ * d0e4f94). Under 800px tall on its side — the 14" tablet with Edge's bars,
+ * a smaller landscape screen — the pad gives up height first and the step's
+ * own gaps tighten a step. Every type size and every target is unchanged.
+ */
+@media (orientation: landscape) and (max-height: 799px) {
+  .pad {
+    height: clamp(120px, 24svh, 420px);
+  }
+
+  .signLayout .stack {
+    gap: var(--s2);
+  }
+
+  .signLayout .whoIsSigning {
+    gap: var(--s2);
+    padding-top: var(--s3);
+    padding-bottom: var(--s3);
+  }
+}
+
+/* Under 680px tall the pad is at its floor: 120px, still the column's width. */
+@media (orientation: landscape) and (max-height: 680px) {
+  .pad {
+    height: 120px;
+  }
+}
+
 @media (orientation: landscape) and (min-width: 900px) {
   .signLayout {
     display: grid;
