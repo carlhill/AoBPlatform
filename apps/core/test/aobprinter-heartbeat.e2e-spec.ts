@@ -741,6 +741,25 @@ describe('the AOBPRINTER heartbeat, platform side (e2e, real Postgres)', () => {
     expect(rows.every((r) => r.secondHostReporting === true)).toBe(true);
   });
 
+  it('a_same_host_reinstall_raises_no_two_hosts_alert_and_two_chains_both_reporting_raise_one', async () => {
+    const alerts = jest.spyOn(Logger.prototype, 'error');
+    const twoHostAlerts = () =>
+      alerts.mock.calls.filter((c) => String(c[0]).includes('ALERT') && String(c[0]).includes('two audit chains'));
+
+    // A reinstall: the old chain stops, the new one reports minute after minute.
+    expect((await beat(practiceA)).status).toBe(200);
+    await beat(practiceA, { chainId: CHAIN_B, head: { seq: 3, hash: at(CHAIN_B, 3) } });
+    await beat(practiceA, { chainId: CHAIN_B, head: { seq: 4, hash: at(CHAIN_B, 4) } });
+    await beat(practiceA, { chainId: CHAIN_B, head: { seq: 5, hash: at(CHAIN_B, 5) } });
+    expect(twoHostAlerts()).toHaveLength(0);
+
+    // The old chain reports again: both are running at once. Said once for the episode.
+    await beat(practiceA);
+    await beat(practiceA, { chainId: CHAIN_B, head: { seq: 6, hash: at(CHAIN_B, 6) } });
+    await beat(practiceA);
+    expect(twoHostAlerts()).toHaveLength(1);
+  });
+
   it('two_concurrent_first_beats_serialise_on_the_practice', async () => {
     // Two chains the platform has never seen, at the same moment: the second to commit is chain_replaced.
     const [one, two] = await Promise.all([

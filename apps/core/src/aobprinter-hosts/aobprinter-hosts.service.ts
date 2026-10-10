@@ -88,6 +88,26 @@ const reportingAsAHost = (r: Pick<AobPrinterHost, 'lastSeenAt' | 'retiredAt'>, n
   seenWithinOfflineWindow(r.lastSeenAt, now) && (r.retiredAt === null || r.lastSeenAt.getTime() > r.retiredAt.getTime());
 
 /**
+ * BOTH LIVE AT ONCE, FOR THE TWO-HOSTS ALERT (decision 6). Both inside the
+ * offline window, the other one reporting as a host, and the OLDER chain
+ * (by first beat) has reported since the NEWER one first appeared. A new
+ * chain beside one whose last beat came before it appeared is a replacement
+ * still in the window, not a second host.
+ */
+function bothLiveAtOnce(
+  self: { lastSeenAt: Date; createdAt: Date },
+  other: Pick<AobPrinterHost, 'lastSeenAt' | 'createdAt' | 'retiredAt'>,
+  now: Date,
+): boolean {
+  if (!seenWithinOfflineWindow(self.lastSeenAt, now) || !reportingAsAHost(other, now)) return false;
+  const [olderLastSeen, newerAppeared] =
+    self.createdAt.getTime() <= other.createdAt.getTime()
+      ? [self.lastSeenAt, other.createdAt]
+      : [other.lastSeenAt, self.createdAt];
+  return olderLastSeen.getTime() > newerAppeared.getTime();
+}
+
+/**
  * THE AOBPRINTER HOSTS (PRINTER-HEARTBEAT.md §3, D-2026-10-10-02). Owns
  * `aobprinter_hosts` and nothing else; the inbound heartbeat resolves what it
  * needs from print jobs and agreements through the services that own those,
@@ -201,7 +221,8 @@ export class AobPrinterHostsService {
       };
       const row = existing
         ? await tx.aobPrinterHost.update({ where: { id: existing.id }, data })
-        : await tx.aobPrinterHost.create({ data: { practiceId, chainId: beat.chainId, ...data } });
+        : // `createdAt` by the same clock as `lastSeenAt`: the two-hosts test compares them.
+          await tx.aobPrinterHost.create({ data: { practiceId, chainId: beat.chainId, createdAt: now, ...data } });
 
       if (verdict.newRegression) {
         // Decision 4: once, on the transition. A row already regressed has no `newRegression`.
@@ -241,19 +262,25 @@ export class AobPrinterHostsService {
       }
 
       /*
-       * TWO HOSTS (decision 6). Said once, at the onset: when this chain starts
-       * (or resumes) reporting while another chain is still inside the offline
-       * window. Two chains reporting minute after minute is one finding, not
-       * one per beat; the console carries it for as long as it lasts.
+       * TWO HOSTS (decision 6) is two chains KEEPING reporting — both live at
+       * once — not a new chain appearing while the old one's last beat is
+       * still inside the window: a reinstall on the same PC (the old chain
+       * stops) is `chain_replaced`, and no second host. Said once per
+       * episode: on the beat that makes it true, not on every beat while it
+       * stays true. An episode ends when either chain leaves the window.
        */
-      const othersLive = rows.filter((r) => r.chainId !== beat.chainId && reportingAsAHost(r, now));
-      const thisWasSilent = !existing || !seenWithinOfflineWindow(existing.lastSeenAt, now);
-      if (othersLive.length > 0 && thisWasSilent) {
+      const thisCreatedAt = existing?.createdAt ?? now;
+      const othersNowLive = rows.filter(
+        (r) => r.chainId !== beat.chainId && bothLiveAtOnce({ lastSeenAt: now, createdAt: thisCreatedAt }, r, now),
+      );
+      const wasAlreadyTwo =
+        existing !== null &&
+        othersNowLive.some((r) => bothLiveAtOnce({ lastSeenAt: existing.lastSeenAt, createdAt: existing.createdAt }, r, now));
+      if (othersNowLive.length > 0 && !wasAlreadyTwo) {
         after.push(() =>
           this.logger.error(
-            `ALERT: AOBPRINTER practice ${practiceId} has two audit chains reporting within ` +
-              `${AOBPRINTER_OFFLINE_AFTER_MS / 60_000} minutes (host ${row.id} beside ${othersLive.map((r) => r.id).join(', ')}). ` +
-              'One AOBPRINTER per practice.',
+            `ALERT: AOBPRINTER practice ${practiceId} has two audit chains reporting at once ` +
+              `(host ${row.id} beside ${othersNowLive.map((r) => r.id).join(', ')}). One AOBPRINTER per practice.`,
           ),
         );
       }
