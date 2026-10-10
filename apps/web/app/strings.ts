@@ -6762,12 +6762,16 @@ export const strings = {
         family_name: 'family name',
       } as Record<string, string>,
       differs: (list: string) => `What differs: ${list}`,
-      stillSends:
-        'Send to tablet still works. The patient will see the printed name on their DB4 and the '
-        + 'patient-record name everywhere else.',
+      /** Only on a row that can be sent: on a blocked row it would contradict the blocked band. */
+      stillSends: 'Send to tablet still works.',
+      /** On a blocked row: this note is not the reason it cannot be sent. */
+      notTheBlock: 'This note on its own does not stop Send to tablet.',
+      patientSees:
+        'The patient will see the printed name on their DB4 and the patient-record name everywhere else.',
       fix:
-        'Correct the patient’s name in PracSoft, then print the DB4 again from PracSoft. AOBPrinter sends '
-        + 'the reprint, and this notice clears once the newly printed name matches the patient record.',
+        'If PracSoft shows the name printed here, correct it in PracSoft, then print the DB4 again from '
+        + 'PracSoft. AOBPrinter sends the reprint, and this notice clears once the newly printed name '
+        + 'matches the patient record.',
       limit:
         'Printing again changes only the name on the DB4 — the patient record here is not updated from a '
         + 'DB4. If PracSoft already shows the right name, printing again will not clear this notice.',
