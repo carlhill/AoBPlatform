@@ -3011,3 +3011,35 @@ users (see the physical-impairment entry in TODO.md).
 
 **What would reopen it:** practices choosing a 10-11in tablet, or real patients
 finding portrait harder to sign on.
+
+---
+
+## D-2026-10-10-10 - Ticking stays as it is, no box on a kiosk page scrolls, and the tablet stays zero-footprint
+
+**Date:** 10 October 2026. **Decided by:** Carl: *"keep ticking as is, stay
+zero-footprint"* and *"Ticking before reading: Do not have boxes that
+scroll."*
+
+**1. Ticking stays as it is.** A patient may tick a page's affirmations
+without scrolling through its text first. There is no scroll-to-end gating.
+Each DB4 page's Continue still waits for that page's ticks (D-2026-09-27-07).
+
+**2. No box on a kiosk page scrolls.** Every ceremony page fits whole on the
+tablet screen. The DB4 text does not sit in its own scrolling box beside or
+above the tick boxes. Where a page's text is too long to fit at the kiosk type
+scale, it splits onto more pages, each with its own Back, Continue and ticks,
+decided by `rules/db4-pages.ts` (presentation, never the instrument). The one
+exception is a genuinely tiny viewport or heavy zoom (under 480px tall), where
+the whole page scrolls like an ordinary web page, as WCAG 1.4.10 requires.
+That is the page scrolling, not a box.
+
+**3. The tablet stays zero-footprint** (Carl, 3 Sep 2026, confirmed). Full
+screen on the first tap is the default; Android screen pinning is optional
+(D-2026-10-10-05). Automatic lockdown by an installed app is recorded on the
+TODO, not built.
+
+**Built on:** `fix/kiosk-tablet-fit` (items 1 and 2).
+
+**What would reopen it:** evidence that patients tick without reading in a
+way that matters to a dispute (item 1); a practice whose tablets must lock
+without staff action (item 3, see the TODO).
