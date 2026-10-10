@@ -2930,3 +2930,61 @@ exposure, is a risk with nothing to show for it. Revisit after GA.
 **What would reopen it:** a Node 24 security end-of-life notice, or a
 dependency that needs 26.
 
+---
+
+## D-2026-10-10-08 - A DB4 amount keeps the $ exactly as PracSoft printed it
+
+**Date:** 10 October 2026. **Decided by:** Carl, *"yes 45.05 no $ - go ahead
+and keep the $"*, after seeing a tablet show `45.05` for a row the practice's
+DB4 prints as `$45.05`. **Built on:** branch `fix/db4-amount-keeps-dollar`,
+based on `feat/aobprinter-heartbeat`.
+
+**What was wrong.** A real PracSoft DB4 prints the benefit as `$45.05` (the
+probe page, `apps/aobprinter/test-fixtures/pracsoft3-db4-probe.source.txt`,
+lines 25-26). AOBPRINTER's parser template `pracsoft3-db4-2026-09-1` matched
+the `$` outside the captured group and applied the `money` transform, which
+strips `$`, commas and spaces, so the DB4 Print Record carried `45.05`. The
+kiosk shows the string exactly as received and never adds a currency symbol
+(`AmountAsPrinted`), so the patient saw `45.05`: not what their form says.
+
+**What changed.**
+- A new template version, `apps/aobprinter/content/pracsoft3-db4-2026-10-1.json`
+  (hard rule 14: the old file is not edited). It is identical to -09-1 except
+  the service-rows extractor: the `$` is inside the `benefitAssigned` group,
+  and the transform is `collapseSpaces`, which trims and folds runs of
+  whitespace and keeps every other character. `$45.05` stays `$45.05`;
+  `$1,045.05` stays `$1,045.05`. A test pins that the two templates differ in
+  nothing else.
+- `DEFAULT_TEMPLATE_VERSION` in `apps/aobprinter/src/template.ts` is now -10-1.
+  The template in use is chosen by `templateVersion` in AOBPRINTER's
+  `config.json`, falling back to that default; a host whose config names -09-1
+  explicitly keeps parsing with it until that line changes.
+- -09-1 stays built into the program, so a record stamped with it can still be
+  re-read against the template that made it. The `money` transform stays
+  because -09-1 uses it.
+- The AOBPrinter test tool's presets send `$45.05` / `$7.15`, and its default
+  `parserTemplateVersion` is -10-1, because the tool stands in for AOBPRINTER.
+
+**Records already stored keep their old string.** Nothing rewrites a stored
+DB4 Print Record or a rendered Signed-DB4. A record captured under -09-1 says
+`45.05` and its `parserTemplateVersion` says why; only forms printed after a
+host runs the new default carry the `$`. The Signed-DB4 draws the string
+verbatim, so two renders of the same record stay byte-identical (hard rule 13),
+and existing records render exactly as before.
+
+**Nothing in AoB originates or parses a figure.** Hard rule 4 as narrowed by
+D-2026-09-14-02 lets AoB reproduce the amount the practice's billing software
+printed and nothing else. This decision makes the reproduction more faithful;
+it adds no figure. No consumer parses `benefitAssigned`: the core DTO takes a
+string of up to 20 characters with no pattern, the Send-to-tablet check
+(`print_record_benefit_missing`, D-2026-09-27-06) asks only whether a row has
+an amount at all, the kiosk splits the string at its last `.` for alignment
+and joins it back unchanged, and the Signed-DB4 prints it as given. None adds a
+second `$`.
+
+**What would reopen it:** the first real PracSoft print showing the amount in
+a different shape (no `$`, a space after it, or a column header carrying the
+symbol instead), which would need a new template version, not an edit; or
+Carl preferring one uniform presentation for amounts captured under both
+templates, which would mean a display rule and a decision about hard rule 4.
+

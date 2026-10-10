@@ -145,7 +145,7 @@ The example is in **`DB4-print.example.json`** beside this file. Shape:
 ```
 documentType        "db4_assignment"
 sourceSha256        hash of the print spool the driver saw — proof of what arrived
-parserTemplateVersion "pracsoft3-db4-2026-09-1"   ← versioned content, hard rule 14
+parserTemplateVersion "pracsoft3-db4-2026-09-1"   ← versioned content, hard rule 14 (the default is -10-1 since 10 Oct 2026, see below)
 pms                 "pracsoft3"
 capturedAt          ISO instant
 heading.lines[]     the four heading lines as printed, in order
@@ -160,7 +160,7 @@ form
 servicingLocation   name, addressLines, suburb, state, postcode
 patient             pmsLinkageKey ("chart:00680"), patientRecordNumber "00680", medicareCardNumber, irn, names, DOB, address, mobile
 providers[]         role "servicing" | "payee" | "requesting"; name; providerNumber; pmsProviderKey
-services[]          serviceDate, time, mbsItemNumber, description, benefitAssigned  ← amount carried, see §2a
+services[]          serviceDate, time, mbsItemNumber, description, benefitAssigned  ← amount carried AS PRINTED, see §2a and the note below
 assignment
   privacyNotice[]   the five paragraphs as printed
   statementsJoinedBy "or"
@@ -177,6 +177,23 @@ Two design points that are not cosmetic:
   printed". The server decides whether that is the post-1-July form, because
   that is regulated content that changes (§1d) and a driver installed on 200
   desktops cannot be re-shipped every time it does.
+
+**The parser templates (D-2026-10-10-08).** AOBPRINTER turns the printed page
+into this record with a versioned template in `apps/aobprinter/content/`,
+chosen by `templateVersion` in its `config.json` and otherwise by
+`DEFAULT_TEMPLATE_VERSION` in `apps/aobprinter/src/template.ts`. Every version
+stays built in, so a stored record can always be re-read against the template
+that made it.
+
+| Version | `benefitAssigned` for a page printing `$45.05` | Status |
+|---|---|---|
+| `pracsoft3-db4-2026-09-1` | `45.05` (the `money` transform strips `$`, commas and spaces) | superseded; its records keep `45.05` |
+| `pracsoft3-db4-2026-10-1` | `$45.05` (as printed: trimmed, spaces folded, `$` and grouping commas kept) | default since 10 Oct 2026 |
+
+The two differ in nothing else. `DB4-print.example.json` is a -09-1 record and
+still shows `45.05`. Nothing downstream parses the string or adds a `$`: the
+kiosk and the Signed-DB4 reproduce it as received (hard rule 4 as narrowed by
+D-2026-09-14-02).
 
 ---
 
