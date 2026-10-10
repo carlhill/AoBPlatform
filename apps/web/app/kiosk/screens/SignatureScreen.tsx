@@ -141,24 +141,42 @@ export function SignatureScreen({
       patientId={patientId}
       onLeave={onSeeReception}
     >
-      <div className={styles.stack}>
-        {/*
+      {/*
+        TWO COLUMNS ON A LANDSCAPE TABLET, ONE STACK OTHERWISE (Carl, 10 Oct
+        2026, from a Galaxy Tab S10 Ultra in landscape in Edge: "the action
+        buttons are cut in half at the bottom").
+
+        Stacked, the heading, who is signing and the banner came to ~380px
+        before the pad began, so on a landscape screen 600-800px tall the pad
+        and the buttons under it were always partly below the fold. From
+        900px wide the same blocks sit side by side — who is signing on the
+        left, the pad and its controls on the right, both starting at the top
+        — so the pad, Back, Clear and Sign are on screen without scrolling.
+
+        NOTHING MOVED IN THE DOM. The two wrappers only group what was already
+        consecutive, so the reading order, the tab order and what a screen
+        reader says are the same sentence at every width; below 900px the
+        wrappers are plain blocks in one stack, exactly as before.
+      */}
+      <div className={`${styles.stack} ${styles.signLayout}`}>
+        <div className={`${styles.stack} ${styles.signIntro}`}>
+          {/*
           THE CEREMONY'S TWO LINES (Carl, 7 Sep 2026). `heading` still arrives
           from `Ceremony.tsx` and is still the type's own qualifier — it is
           simply the third and smallest line now, under a title and a party
           line that do not change shape between K-P1, K-3 and here.
         */}
-        <CeremonyHeading parties={parties} subHeading={heading} headingTestId="signature-heading" />
+          <CeremonyHeading parties={parties} subHeading={heading} headingTestId="signature-heading" />
 
-        {/*
+          {/*
           WHO IS SIGNING, ABOVE THE PAD AND BEFORE THE BANNER. It is the first
           thing on the screen after the heading because it is the thing the
           person holding the tablet has to agree with before they touch the
           glass — and because a statement placed under a signature pad is a
           statement read after the fact.
         */}
-        <div className={styles.whoIsSigning}>
-          {/*
+          <div className={styles.whoIsSigning}>
+            {/*
             THE SAME BRANCH THE HEADER'S BY-LINE GOES THROUGH — moved to
             `rules/who-is-signing.ts` on 7 Sep 2026 when the header started
             naming the party on every page. Two copies of "who is signing" is
@@ -166,70 +184,73 @@ export function SignatureScreen({
             this reads the fuller sentence, the header reads the shorter one,
             and both read the same D7.
           */}
-          <p className={styles.whoIsSigningLine} data-testid="signature-who">
-            {signingStatement(parties)}
-          </p>
-          <p className={styles.muted} data-testid="signature-who-wrong">
-            {strings.signature.whoNotRight}
-          </p>
-          <SecondaryButton
-            label={strings.errors.seeReception}
-            onPress={onSeeReception}
-            testId="signature-who-see-reception"
-          />
-        </div>
-        {validation.state === 'valid' ? (
-          <Blueprint accented className={styles.banner}>
-            <p className={styles.body} data-testid="validated-banner">
-              {strings.signature.validatedBanner}
+            <p className={styles.whoIsSigningLine} data-testid="signature-who">
+              {signingStatement(parties)}
             </p>
-          </Blueprint>
-        ) : null}
+            <p className={styles.muted} data-testid="signature-who-wrong">
+              {strings.signature.whoNotRight}
+            </p>
+            <SecondaryButton
+              label={strings.errors.seeReception}
+              onPress={onSeeReception}
+              testId="signature-who-see-reception"
+            />
+          </div>
+          {validation.state === 'valid' ? (
+            <Blueprint accented className={styles.banner}>
+              <p className={styles.body} data-testid="validated-banner">
+                {strings.signature.validatedBanner}
+              </p>
+            </Blueprint>
+          ) : null}
+        </div>
 
-        <SignaturePad handleRef={padRef} onInkChange={onInkChange} />
+        <div className={`${styles.stack} ${styles.signPadColumn}`}>
+          <SignaturePad handleRef={padRef} onInkChange={onInkChange} />
 
-        {error ? <p className={styles.error}>{strings.signature.failed}</p> : null}
+          {error ? <p className={styles.error}>{strings.signature.failed}</p> : null}
 
-        <div className={styles.signRow}>
-          {/*
+          <div className={styles.signRow}>
+            {/*
             BACK DISAPPEARS THE MOMENT A SIGNATURE IS IN FLIGHT. A control that
             looks like it could undo one would be a lie about what this
             platform does.
           */}
-          {submitting ? null : (
-            <SecondaryButton label={strings.chrome.backAction} onPress={onBack} testId="signature-back" />
-          )}
-          <SecondaryButton label={strings.signature.clear} onPress={onClear} testId="signature-clear" />
-          <div className={styles.grow}>
-            <SignatureControl
-              validation={validation}
-              inkPresent={inkPresent}
-              submitting={submitting}
-              onSign={onSignDrawn}
-            />
+            {submitting ? null : (
+              <SecondaryButton label={strings.chrome.backAction} onPress={onBack} testId="signature-back" />
+            )}
+            <SecondaryButton label={strings.signature.clear} onPress={onClear} testId="signature-clear" />
+            <div className={styles.grow}>
+              <SignatureControl
+                validation={validation}
+                inkPresent={inkPresent}
+                submitting={submitting}
+                onSign={onSignDrawn}
+              />
+            </div>
           </div>
-        </div>
 
-        <div className={styles.tapRow}>
-          <p className={styles.muted}>{strings.signature.tapToApprove}</p>
-          <div className={styles.grow}>
-            {/*
+          <div className={styles.tapRow}>
+            <p className={styles.muted}>{strings.signature.tapToApprove}</p>
+            <div className={styles.grow}>
+              {/*
               The same required-prop control, with ink treated as present
               because a tap IS the mark. It still cannot enable from an invalid
               payload — the gate is the same one.
             */}
-            <SignatureControl
-              validation={validation}
-              inkPresent
-              submitting={submitting}
-              onSign={onSignTap}
-              label={strings.signature.tapToApproveAction}
-              testId="sign-control-tap"
-            />
+              <SignatureControl
+                validation={validation}
+                inkPresent
+                submitting={submitting}
+                onSign={onSignTap}
+                label={strings.signature.tapToApproveAction}
+                testId="sign-control-tap"
+              />
+            </div>
           </div>
+          <p className={styles.muted}>{strings.signature.tapToApproveHint}</p>
+          <p className={styles.muted}>{strings.signature.binding}</p>
         </div>
-        <p className={styles.muted}>{strings.signature.tapToApproveHint}</p>
-        <p className={styles.muted}>{strings.signature.binding}</p>
       </div>
     </Screen>
   );

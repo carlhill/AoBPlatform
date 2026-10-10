@@ -455,6 +455,49 @@ stacked under two blueprint panels and the third landed below the fold. It is
 now a child of the same box as the blocked control, directly under it, and
 cannot wrap away from it at any width.
 
+### The controls never scroll off (Carl, 10 October 2026)
+
+> Step 2 of 3: the last visible line is "Please read and tick each of
+> these". Step 3 of 3: the action buttons are cut in half at the bottom.
+
+A Galaxy Tab S10 Ultra in landscape in Edge, whose address bar and bottom
+toolbar leave roughly 1024-1500 x 600-900 CSS px. The design target above
+(~1180x820) had no room to spare, and neither step was built to fit it.
+
+- **K-3 splits the document in two** (`fitColumns`, `documentScroll`). The
+  read-only part (the heading, the form's page, the ongoing agreement's
+  explanation) is a named, focusable region that scrolls inside the page,
+  with a shadow along whichever edge has more text behind it, because
+  Android's overlay scrollbars are invisible at rest. The tick boxes, the
+  tags and the actions follow it and stay on screen. Nothing is reordered and
+  nothing is sticky, so nothing can cover a focused control (WCAG 2.2 2.4.11).
+- **Grids, not flex, so it cannot overlap.** The text region is size-contained
+  with a 5rem floor; on a screen too short even for that, the step outgrows
+  the content row and `.content` scrolls it as before, rather than the ticks
+  spilling over the actions.
+- **Only from 560px tall.** Below that (a page zoomed to 150% or more, a phone
+  held sideways) the step scrolls as one column, so no text is trapped in a
+  few lines at 400% zoom (WCAG 2.2 1.4.10).
+- **K-4 goes to two columns from 900px wide**: who is signing on the left,
+  the pad and its controls on the right. The pad is `clamp(160px, 40dvh,
+  260px)` rather than 260px flat.
+- **At 640px tall and under, space shrinks, never type**: the header's two
+  lines sit on one and the padding tightens by a step.
+- **The shell is `height: 100dvh`**, not `min-height`, and the footer clears
+  `env(safe-area-inset-bottom)`.
+
+The patient can now reach the tick boxes without scrolling through the text
+above them. That is what was asked for; it is also the opposite of what 2B's
+pagination was for ("a patient who scrolls past the service rows to reach the
+tick boxes has not read the service rows"), so it is a decision worth
+confirming rather than a detail.
+
+Test: `e2e/kiosk-tablet-fit.spec.ts`, which needs no database. Every request
+to core is answered by `page.route`. It asserts that each control is inside
+the viewport and inside every clipping ancestor, with every scroller at the
+top and nothing drawn over it, at 1024x600, 1280x650, 1280x720, 1280x800,
+1478x700, 1478x813, 1500x900 and 800x1280.
+
 ## Return to the start when nobody is there (Carl, 4 September 2026)
 
 > "Return to the start when untouched for N minutes -- a per-practice setting,
