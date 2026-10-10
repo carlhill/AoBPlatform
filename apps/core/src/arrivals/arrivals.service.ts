@@ -47,6 +47,7 @@ import {
   type VisitAgreementDecision,
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
+import { associateOnServiceArrival } from '../agreements/pre-agreement-association';
 import { PrismaService } from '../prisma/prisma.service';
 import { AgreementsService } from '../agreements/agreements.service';
 import { CaptureService } from '../capture/capture.service';
@@ -2752,6 +2753,14 @@ export class ArrivalsService {
         update: written,
         create: { practiceId, pmsInvoiceKey: dto.idempotencyKey, ...written },
       });
+
+      /*
+       * AN UNSIGNED PRE-AGREEMENT FOR THIS VISIT IS ASSOCIATED, NEVER LINKED
+       * (D-2026-10-10-09, option (b)). Nothing below changes: `agreementId`
+       * is what `written` says, and the post-service draft is still made and
+       * linked in phase 3. Idempotent on a record that already has one.
+       */
+      await associateOnServiceArrival(tx, practiceId, record);
 
       /*
        * THE EVENT, IN THIS TRANSACTION (FR-11.2, hard rule 11). Ids, the

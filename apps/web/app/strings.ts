@@ -2336,6 +2336,44 @@ export const strings = {
     itemNotOnQueueTitle: 'That item is not on this queue',
     itemNotOnQueue: (id: string) =>
       `The link asked for service record ${id}. The queue, as loaded just now, does not list it.`,
+    /*
+     * WHICH UNSIGNED AGREEMENT WAS THIS VISIT'S? (D-2026-10-10-09, option (b)).
+     * A service was recorded and unsigned agreements made for the same visit
+     * were found. Each line says what was found and on what; never why there
+     * are two, which the platform does not know (wow.md §13).
+     */
+    associationChoice: {
+      title: 'Which unsigned agreement was for this visit?',
+      lead:
+        'A service was recorded, and unsigned agreements for the same patient, servicing provider and day were found. ' +
+        'None has been associated with the service yet. Choosing one records which agreement the visit had; ' +
+        'it is associated with the service, not linked to it.',
+      reasons: {
+        unsigned_drafts_match_service: (n: number) =>
+          `${n} unsigned agreement${n === 1 ? '' : 's'} match this service on patient, servicing provider and day. None is associated with it.`,
+      } as Record<string, (n: number) => string>,
+      /** AN UNMAPPED CODE SHOWS ITSELF (CLAUDE.md §7c). */
+      reasonUnknown: (code: string) => `Waiting for a choice (${code})`,
+      /** "Agreement before the service · Draft · for 3 October 2026 · made 3 Oct, 9:12 am". */
+      candidateLine: (type: string, status: string, forDay: string, madeAt: string) =>
+        `${type} · ${status} · for ${forDay} · made ${madeAt}`,
+      types: {
+        episodic_pre: 'Agreement before the service',
+      } as Record<string, string>,
+      statuses: {
+        draft: 'Draft',
+        verification_pending: 'Waiting for an identity check',
+        verification_failed: 'Identity check did not pass',
+        awaiting_signature: 'Ready to sign, not signed',
+      } as Record<string, string>,
+      choose: 'This one was for the visit',
+      choosing: 'Recording…',
+      chosen: 'Recorded. The agreement is associated with the service.',
+      chooseFailed: 'That choice could not be recorded',
+      viewOnly: 'Read only: choosing is done by the practice.',
+      postNotAffected: 'The after-service agreement for this visit is drafted and chased as usual, whichever is chosen.',
+      notLoaded: (status: string) => `Could not check for services waiting for a choice of agreement (${status}).`,
+    },
   },
 
   /*
@@ -5867,6 +5905,11 @@ export const strings = {
     earlierFor: (day: string, provider: string | null) => (provider ? `${day} · ${provider}` : day),
     earlierReason: {
       service_in_reconciliation: 'Service recorded, in Reconciliation',
+      /* D-2026-10-10-09, option (b): associated with the visit's service, never linked to it. */
+      service_associated:
+        'Service recorded for this visit; this agreement was not signed before it and is associated with that service',
+      service_choice_needed: 'Service recorded for this visit; waiting for someone to choose its agreement in Reconciliation',
+      service_associated_other: 'Service recorded for this visit; a different agreement is associated with it',
       no_service_recorded: 'No service recorded',
     } as Record<string, string>,
     /** A service record names it, and a Reconciliation decision took it off the queue. */

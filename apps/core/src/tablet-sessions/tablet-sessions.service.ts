@@ -14,6 +14,7 @@ import {
   mayBeProviderOnAgreement,
   projectTabletSessionPatient,
   shownDetailTypesFor,
+  visitDayOf,
   type AgreementType,
   type ConfirmableDetailType,
   type PushBlockedReason,
@@ -38,6 +39,7 @@ import { DevicesService, type ResolvedDevice } from '../devices/devices.service'
 import { ServiceDescriptionsService } from '../service-descriptions/service-descriptions.service';
 import { ReconciliationService } from '../reconciliation/reconciliation.service';
 import { pushRefusals } from './push-refusal';
+import { servicesMatchingDraft } from '../agreements/pre-agreement-association';
 import type { DisputeResolutionOutcome } from './dispute-resolution.dto';
 
 /**
@@ -279,11 +281,24 @@ export interface CoveredServiceRow {
  *  - `service_decided` — a service record names it, and it is NOT on the
  *    queue because a Reconciliation decision closed it. The decision code
  *    rides along so the console can say which one.
- *  - `no_service_recorded` — no service record names this agreement.
+ *  - `service_associated` — an unsigned pre-agreement ASSOCIATED with the
+ *    visit's service record (D-2026-10-10-09, option (b)): a service was
+ *    recorded, the pre-agreement was not signed before it, and the service is
+ *    the Reconciliation item `serviceRecordId` names. Associated, not linked.
+ *  - `service_choice_needed` — a service was recorded for this visit, no
+ *    draft is associated with it yet, and this draft is one of those that
+ *    match it; Reconciliation lists the service for a person to choose.
+ *  - `service_associated_other` — a service was recorded for this visit and
+ *    a different draft was associated with it.
+ *  - `no_service_recorded` — no service record names this agreement, and
+ *    none matches its visit (same patient, provider and day).
  */
 export const EARLIER_UNSIGNED_REASONS = [
   'service_in_reconciliation',
   'service_decided',
+  'service_associated',
+  'service_choice_needed',
+  'service_associated_other',
   'no_service_recorded',
 ] as const;
 export type EarlierUnsignedReason = (typeof EARLIER_UNSIGNED_REASONS)[number];
@@ -1656,6 +1671,40 @@ export class TabletSessionsService {
         select: { id: true, agreementId: true },
         orderBy: [{ serviceDate: 'asc' }, { id: 'asc' }],
       });
+      /*
+       * ASSOCIATED, OR MATCHING A SERVICE (D-2026-10-10-09, option (b)). For
+       * an unsigned pre-agreement no service record links: the service its
+       * visit was associated with, or else whether any service record matches
+       * the visit at all. Read only, like everything else here.
+       */
+      const linkedIds = new Set(services.map((s) => s.agreementId as string));
+      const associations = await tx.preAgreementAssociation.findMany({
+        where: { agreementId: { in: kept.map((a) => a.id) } },
+        select: { agreementId: true, serviceRecordId: true },
+      });
+      const associatedWith = new Map(associations.map((a) => [a.agreementId, a.serviceRecordId]));
+      const matchingByAgreement = new Map<string, { id: string; associatedAgreementId: string | null }[]>();
+      const anchorCache = new Map<string, string | null>();
+      for (const agreement of kept) {
+        if (agreement.type !== 'episodic_pre' || linkedIds.has(agreement.id) || associatedWith.has(agreement.id)) continue;
+        const appointment = appointmentByAgreement.get(agreement.id);
+        const matched = await servicesMatchingDraft(
+          tx,
+          {
+            patientId: agreement.patientId,
+            forDay: visitDayOf(agreement, appointment?.date ?? null),
+            affiliationId: agreement.affiliationId,
+            providerId: agreement.providerId,
+          },
+          anchorCache,
+        );
+        if (matched.length > 0) {
+          matchingByAgreement.set(
+            agreement.id,
+            matched.map((m) => ({ id: m.id, associatedAgreementId: m.preAgreementAssociation?.agreementId ?? null })),
+          );
+        }
+      }
       return {
         total: sorted.length,
         kept,
@@ -1663,6 +1712,8 @@ export class TabletSessionsService {
         patientById: new Map(patients.map((p) => [p.id, p])),
         anchors,
         services,
+        associatedWith,
+        matchingByAgreement,
       };
     });
     if (!read) return { total: 0, rows: [] };
@@ -1706,6 +1757,20 @@ export class TabletSessionsService {
             reason = 'service_decided';
             reconciliationDecision = detail.decisions[0]?.decision ?? null;
           }
+        }
+      } else if (read.associatedWith.has(agreement.id)) {
+        /* Associated, never linked: the line links to the service's Reconciliation item, not to the draft. */
+        reason = 'service_associated';
+        serviceRecordId = read.associatedWith.get(agreement.id) ?? null;
+      } else {
+        const matching = read.matchingByAgreement.get(agreement.id) ?? [];
+        const open = matching.find((m) => m.associatedAgreementId === null);
+        if (open) {
+          reason = 'service_choice_needed';
+          serviceRecordId = open.id;
+        } else if (matching.length > 0) {
+          reason = 'service_associated_other';
+          serviceRecordId = matching[0]!.id;
         }
       }
       rows.push({
