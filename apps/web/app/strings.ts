@@ -4581,7 +4581,7 @@ export const strings = {
       anchor_mismatch: (expected: string, received: string, at: string) =>
         `On ${at} the platform asked the host for the event it last verified, ${expected}, and the host answered ${received}. An event the platform had verified has changed or gone.`,
       chain_replaced: (expected: string, received: string, at: string) =>
-        `On ${at} a host began reporting an audit log the platform has never seen, starting at ${received}. This practice already has an audit log starting at ${expected}, and it has not been re-baselined.`,
+        `On ${at} a host began reporting an audit log the platform has never seen, starting at ${received}. This practice already has an audit log starting at ${expected} that has not been retired, so no replacement has been accepted.`,
     },
     regressionUnmapped: (code: string, at: string) =>
       `On ${at} the platform recorded a regression of a kind this page has no words for: ${code}.`,

@@ -234,6 +234,34 @@ describe('the AOBPRINTER host page', () => {
     expect(regressed.textContent).toContain(`never seen, starting at ${t.point(1, 'c0ffee00')}`);
   });
 
+  it('a_replaced_chain_beside_a_rebaselined_one_says_no_replacement_was_accepted', async () => {
+    // The previous chain WAS re-baselined (it accepted its own head) but was never retired.
+    const previous = host({ id: 'host-2', chainId: PREVIOUS_CHAIN, rebaselinedAt: '2026-10-09T22:00:00.000Z', rebaselinedBy: 'operator-1' });
+    const replacement = host({
+      chain: {
+        status: 'regressed',
+        regression: {
+          kind: 'chain_replaced',
+          at: '2026-10-10T01:02:03.000Z',
+          expected: { seq: 1, hash: PREVIOUS_CHAIN },
+          received: { seq: 1, hash: CHAIN },
+        },
+        anchorSeq: 1234,
+        anchorVerifiedAt: null,
+      },
+    });
+    stubHosts({ hosts: [replacement, previous], secondHostReporting: false });
+    render(<AobPrinterHostView practiceId={PRACTICE} />);
+
+    const regressed = await screen.findByTestId('aobprinter-state-regressed');
+    // What was observed: the other log has not been retired, i.e. no replacement has been accepted.
+    expect(regressed.textContent).toContain('has not been retired');
+    expect(regressed.textContent).toContain('no replacement has been accepted');
+    // Not a claim about re-baselining, which here would be false.
+    expect(regressed.textContent).not.toContain('re-baselined.');
+    expect(regressed.textContent).not.toContain('has not been re-baselined');
+  });
+
   it('two_hosts_reporting_is_its_own_state', async () => {
     const first = host();
     const second = host({ id: 'host-2', chainId: PREVIOUS_CHAIN });
