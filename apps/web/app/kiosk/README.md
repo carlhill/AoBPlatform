@@ -671,9 +671,8 @@ else on the device.
 to the kiosk page. A patient can still use the browser itself: open a new tab,
 type an address, or go back to an earlier page. The kiosk's own auto-reset
 ("Return to the start when nobody is there") only runs on the kiosk page, so it
-does not bring back a tab the patient has left. Full screen would hide the
-address bar, but it is not built (see "Not built here"), and a swipe brings the
-bar back anyway. If this proves to be a real problem, the next step is a
+does not bring back a tab the patient has left. Full screen on the first tap
+hides the address bar, but a swipe brings it back. If this proves to be a real problem, the next step is a
 managed kiosk mode (for example Samsung Knox), which is a device-management
 product and needs a new decision.
 
@@ -795,11 +794,12 @@ of things the patient is being asked to fix.
   and a capture request, not a payload. Changing that is a contract change in
   `apps/core`.
 - **Read-aloud, language switch, read-through gate, RACF batch mode,
-  bot-defence dwell time** — all still outstanding from C2. (The lockdown
-  launcher is answered by Android screen pinning, not code: see "Locking the
-  tablet to the kiosk".)
-- **Full screen.** Not built. Pinning keeps the patient in the browser; full
-  screen would only hide its address bar, and a swipe brings it back.
+  bot-defence dwell time** — all still outstanding from C2.
+- **Lockdown.** Full screen on the first tap is built (see "Full screen on the
+  first tap"), but it is not a lockdown: a patient can still leave the browser.
+  Android screen pinning, set up by hand on each tablet, is the optional
+  lockdown (see "Locking the tablet to the kiosk", D-2026-10-10-05). Automatic
+  lockdown by an installed app is on the TODO, not decided (D-2026-10-10-10).
 - **The offline queue** — withdrawn, not deferred. C2.2 was dropped with the
   zero-footprint decision (the push model needs the server anyway; an offline
   kiosk cannot receive a push). Outage posture is "see reception", the patient
