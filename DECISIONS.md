@@ -2977,3 +2977,37 @@ it.
 real use, or a practice that needs the tablet locked to one page. The next step
 would be a managed kiosk mode such as Samsung Knox, a device-management product
 that needs its own decision against the zero-footprint rule.
+
+---
+
+## D-2026-10-10-07 - The 14" kiosk tablet is designed portrait first; landscape still works
+
+**Date:** 10 October 2026. **Decided by:** Carl, *"yes switch to portrait
+first"*, after asking whether portrait or landscape is better for the patient
+on the 14" Galaxy Tab S10.
+
+**Decision.** For the 14" tablet, the kiosk is designed for **portrait first**:
+one readable column, the DB4 text at the top, the tick boxes and Back/Continue
+always in view below it, and a full-width signature pad. Landscape must still
+work well, with the two-column layout. The orientation is never locked (WCAG
+1.3.4): a patient with the tablet on their lap may turn it either way.
+
+**Why.** It is not more screen; the area is the same. But the content is a
+form, and the DB4 is an A4 portrait page: in portrait more of each page shows
+at once, and lines stay a readable length without columns. A 14" tablet handed
+to a patient is held like a clipboard. The signature pad is wider in portrait
+(about 850px) than it was in landscape, and the on-screen keyboard takes a
+smaller share of the screen.
+
+**What it supersedes.** The 27 Sep premise that the kiosk is designed for a
+10-11in tablet in landscape (~1180x820), for the 14" device only. The type
+scale, 44px targets and 18px floor from that decision are unchanged.
+
+**Practice setup to note:** a 14" tablet in portrait on a desk stand is about
+36 cm tall, so the stand's height and angle matter for seated and wheelchair
+users (see the physical-impairment entry in TODO.md).
+
+**Built on:** branch `fix/kiosk-tablet-fit`.
+
+**What would reopen it:** practices choosing a 10-11in tablet, or real patients
+finding portrait harder to sign on.
