@@ -3323,3 +3323,136 @@ choices the build made, each for Carl to confirm or overturn:
 - **Open in-practice capture requests on a closed agreement are left as they
   are** (they belong to the capture module). The tablet list already drops an
   expired agreement; whether to cancel them is a follow-up.
+
+---
+
+## D-2026-10-10-05 - The kiosk tablet is locked with Android screen pinning, not a lockdown launcher
+
+**Date:** 10 October 2026. **Decided by:** Carl, *"Pinning - do it"*, after
+asking whether screen pinning was the better option than an app-like full
+screen.
+
+**Decision.** The kiosk's "locked-down launcher, no OS escape" requirement is
+met by **Android screen pinning**, a setting built into Android. The setup and
+daily steps are in `apps/web/app/kiosk/README.md` ("Locking the tablet to the
+kiosk") and `PRACTICE-ONBOARDING.md` (§6). No code changes.
+
+**Why.** Pinning installs nothing, so the zero-footprint kiosk rule (Carl,
+3 Sep 2026) still holds. It stops a patient reaching the home screen,
+notifications or another app, and unpinning needs the tablet's PIN. An
+app-like full screen only hides the browser bars, and a swipe brings them back.
+An installed web app (PWA) would need HTTPS in the practice and puts something
+on the device, so it would reopen the zero-footprint decision.
+
+**Known limit, accepted.** Pinning locks the tablet to the browser app, not to
+the kiosk page. A patient can still open a tab or type an address, and the
+kiosk's auto-reset does not run on a page that is not the kiosk.
+
+**Amended the same day: full screen is built, and pinning is optional.**
+Carl, on learning that pinning is done by hand on each tablet: *"in that case
+write code to make the app full screen. We cannot have dependency on the
+tablet"*. The kiosk now asks for full screen on the patient's first tap
+(branch `feat/kiosk-fullscreen`). Recorded with it, so nobody reads more into
+it than it gives:
+- **A tap is needed to start.** Browsers refuse full screen without a user
+  gesture, so it cannot happen when the page loads.
+- **The patient can always leave it.** A system swipe brings back Android's
+  bars, and no web page can prevent that. The next tap goes full screen again.
+- **No web page can turn on pinning.** Android lets only an installed app or
+  device management start a lock. Automatic lockdown therefore needs something
+  installed on the tablet, which would reopen the zero-footprint decision
+  (Carl, 3 Sep 2026). Not decided; Carl was told the options.
+
+Pinning stays documented as optional extra lockdown for a practice that wants
+it.
+
+**What would reopen it:** patients leaving the kiosk page inside the browser in
+real use, or a practice that needs the tablet locked to one page. The next step
+would be a managed kiosk mode such as Samsung Knox, a device-management product
+that needs its own decision against the zero-footprint rule.
+
+---
+
+## D-2026-10-10-07 - The 14" kiosk tablet is designed portrait first; landscape still works
+
+**Date:** 10 October 2026. **Decided by:** Carl, *"yes switch to portrait
+first"*, after asking whether portrait or landscape is better for the patient
+on the 14" Galaxy Tab S10.
+
+**Decision.** For the 14" tablet, the kiosk is designed for **portrait first**:
+one readable column, the DB4 text at the top, the tick boxes and Back/Continue
+always in view below it, and a full-width signature pad. Landscape must still
+work well, with the two-column layout. The orientation is never locked (WCAG
+1.3.4): a patient with the tablet on their lap may turn it either way.
+
+**Why.** It is not more screen; the area is the same. But the content is a
+form, and the DB4 is an A4 portrait page: in portrait more of each page shows
+at once, and lines stay a readable length without columns. A 14" tablet handed
+to a patient is held like a clipboard. The signature pad is wider in portrait
+(about 850px) than it was in landscape, and the on-screen keyboard takes a
+smaller share of the screen.
+
+**What it supersedes.** The 27 Sep premise that the kiosk is designed for a
+10-11in tablet in landscape (~1180x820), for the 14" device only. The type
+scale, 44px targets and 18px floor from that decision are unchanged.
+
+**Practice setup to note:** a 14" tablet in portrait on a desk stand is about
+36 cm tall, so the stand's height and angle matter for seated and wheelchair
+users (see the physical-impairment entry in TODO.md).
+
+**Built on:** branch `fix/kiosk-tablet-fit`.
+
+**What would reopen it:** practices choosing a 10-11in tablet, or real patients
+finding portrait harder to sign on.
+
+---
+
+## D-2026-10-10-10 - Ticking stays as it is, no box on a kiosk page scrolls, and the tablet stays zero-footprint
+
+**Date:** 10 October 2026. **Decided by:** Carl: *"keep ticking as is, stay
+zero-footprint"* and *"Ticking before reading: Do not have boxes that
+scroll."*
+
+**1. Ticking stays as it is.** A patient may tick a page's affirmations
+without scrolling through its text first. There is no scroll-to-end gating.
+Each DB4 page's Continue still waits for that page's ticks (D-2026-09-27-07).
+
+**2. No box on a kiosk page scrolls.** Every ceremony page fits whole on the
+tablet screen. The DB4 text does not sit in its own scrolling box beside or
+above the tick boxes. Where a page's text is too long to fit at the kiosk type
+scale, it splits onto more pages, each with its own Back, Continue and ticks,
+decided by `rules/db4-pages.ts` (presentation, never the instrument). The one
+exception is a genuinely tiny viewport or heavy zoom (under 480px tall), where
+the whole page scrolls like an ordinary web page, as WCAG 1.4.10 requires.
+That is the page scrolling, not a box.
+
+**3. The tablet stays zero-footprint** (Carl, 3 Sep 2026, confirmed). Full
+screen on the first tap is the default; Android screen pinning is optional
+(D-2026-10-10-05). Automatic lockdown by an installed app is recorded on the
+TODO, not built.
+
+**Amended the same day: pages are sized to the screen** (Carl: *"go with
+option 1 for page sizing"*). With the scrolling box gone, even a normal
+three-page DB4 overflowed at every target size, because each page repeats its
+heading and form header. So the DB4 is split into blocks (heading lines,
+practice and patient details, each provider, each service row, each privacy
+paragraph, each statement), and the kiosk fills each page by measuring the
+space on the screen:
+- each section's ticks sit on that section's last page, and each page's
+  Continue waits for its own ticks;
+- page counts differ between portrait and landscape, and turning the tablet
+  re-flows the pages, keeping the patient's place and the ticks already given;
+- `rules/db4-pages.ts` still decides which blocks and ticks belong to which
+  section; measuring only decides where pages break;
+- where nothing can be measured, it falls back to the three fixed pages;
+- on a test device, whose developer panels cannot fit, the whole page may
+  scroll, never a box inside it.
+
+Declined: fixed splits sized for the smallest screen (option 2), and freeing
+height as a separate choice (option 3).
+
+**Built on:** `fix/kiosk-tablet-fit` (items 1 and 2).
+
+**What would reopen it:** evidence that patients tick without reading in a
+way that matters to a dispute (item 1); a practice whose tablets must lock
+without staff action (item 3, see the TODO).

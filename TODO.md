@@ -200,6 +200,42 @@ pre-agreement can close.
 
 ---
 
+## Tablet lockdown by an installed app: allow one install for automatic lockdown? (Carl, 10 Oct 2026)
+
+**Not decided; zero-footprint stays** (D-2026-10-10-10). Carl asked for this to
+be on the list.
+
+**The question.** No web page can lock a tablet: Android lets only an
+installed app or device management start a lock. Today the kiosk goes full
+screen on the first tap, and the patient can always swipe out of it. Android
+screen pinning, done by hand on each tablet, is optional (D-2026-10-10-05).
+Automatic lockdown needs something on the device, which reopens the
+zero-footprint decision (Carl, 3 Sep 2026).
+
+**The two routes, if Carl allows one install:**
+1. **A small Android app** that opens the kiosk page in a full-screen web view
+   and calls Android's lock-task mode at start-up. One install per tablet;
+   updates through the Play Store or a private channel. The kiosk page itself
+   stays cloud-served.
+2. **Device management** (Samsung Knox, or Android Enterprise "dedicated
+   device"). The tablet is enrolled once and boots straight into the locked
+   kiosk with no taps. Usually a per-device subscription; the practice or we
+   manage the enrolment.
+
+**What to weigh:**
+- What gets installed, and whether anything is persisted besides the one
+  pairing credential (the `kiosk_persists_nothing_but_pairing` rule must still
+  hold for patient data);
+- who installs and updates it, and the support cost per practice;
+- cost per tablet (device management);
+- whether practices actually see patients leaving the kiosk once full screen
+  is live.
+
+**Depends on:** Carl's decision, and ideally evidence from real practices
+first.
+
+---
+
 ## Agreements left unsigned past their day (10 Oct 2026) - D-2026-10-10-01
 
 **Being built now:** option 1, the tablet's "Unsigned from earlier days: N"
