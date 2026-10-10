@@ -14,6 +14,65 @@ being decided.
 
 ---
 
+## Translate the DB4 into Australia's main community languages, and Pacific languages (Carl, 10 Oct 2026)
+
+**What Carl asked for:** the DB4 in the main languages spoken in Australia,
+plus smaller communities, Pacific Island languages such as Samoan and Fijian
+among them.
+
+**The requirements already say how; this entry says what and when.**
+REQ-LANG-01..11 (`aob-addendum-v2.md`) and GA-PLAN C9 ("English + Arabic + 2
+languages") are the spec:
+- **Bilingual artefact, one hash.** English is the canonical text and the
+  target language sits beside it. Both are part of the signed artefact and both
+  are covered by the signature hash (REQ-LANG-02).
+- **Human translation only.** Every translation is a human, NAATI-credentialed
+  one. No machine translation ever appears in the legal artefact (REQ-LANG-03).
+  Hard rule 13 (one deterministic render) rules out translating at render time
+  in any case; `VERSION-2.md` §3 explains why.
+- **The assignor's language, not the patient's** (REQ-LANG-09).
+- **Translations are versioned with the rule set.** When the template changes,
+  every translation that has not caught up is marked stale (REQ-LANG-11, hard
+  rule 14).
+- **Plain English first.** The English is written at roughly a Year 6–8
+  reading level before any translation is commissioned (REQ-LANG-08).
+- **Scripts and sound.** Full RTL rendering (REQ-LANG-04). Correct Unicode for
+  Polynesian macrons and the ʻokina, U+02BB (REQ-LANG-05). Read-aloud in
+  language, which matters more than text for several Pacific communities
+  (REQ-LANG-06). The TIS National interpreter workflow (REQ-LANG-07).
+
+**Candidate languages (to be confirmed, not decided).**
+- **Largest home languages:** Mandarin, Arabic, Vietnamese, Cantonese, Punjabi,
+  Greek, Italian, Hindi, Filipino/Tagalog, Spanish, Nepali. Confirm the order
+  against the ABS 2021 Census before commissioning anything.
+- **Pacific:** Samoan, Tongan, Fijian (iTaukei), Fiji Hindi, Cook Islands
+  Māori, Tok Pisin.
+- **Torres Strait and Aboriginal:** Yumplatok (Torres Strait Creole) and
+  Kriol. These are candidates worth asking about; they are not in the
+  requirements.
+- **The practice decides the order, not national totals.** What decides it is
+  each practice's own preferred-language data from the PMS (REQ-LANG-01).
+  Powell Street's spread is the first real input.
+
+**Why deferred rather than done:**
+1. **It is the government's form.** Whether a bilingual reproduction of the
+   DB4 is acceptable to Services Australia is an open regulatory question. Do
+   not assume it; ask before commissioning a translation (CLAUDE.md §7c,
+   "never invent regulatory facts").
+2. **It needs a translator vendor and budget** (GA-PLAN C9).
+3. **The plain-English rewrite (REQ-LANG-08) comes first,** otherwise every
+   translation is paid for twice.
+
+**Language to watch.** Copy about our forms must never call them "certified",
+"approved", "accredited" or "government-approved" (hard rule 12). A
+translator's NAATI credential is something we may state; the form's status
+never is.
+
+**Depends on:** the Services Australia answer, the vendor, and the
+plain-English text. `tautala_ai.md` (above) is the related speech design.
+
+---
+
 ## Agreements left unsigned past their day (10 Oct 2026) - D-2026-10-10-01
 
 **Being built now:** option 1, the tablet's "Unsigned from earlier days: N"
