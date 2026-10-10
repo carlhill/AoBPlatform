@@ -2871,6 +2871,36 @@ second host started beside it.
 - **A restart keeps the previous chain status (rule 6).** It does not reset to
   `unverified`.
 
+**Third amendment, 10 October 2026 (Claude, implementing decision 6 after the
+build found a gap; Carl to confirm).** A review found that re-baselining could
+leave a practice with every chain retired, after which decision 6 stopped
+applying: accept one replacement (the old chain and the second replacement
+are retired), then re-baseline the second replacement, and the accepted chain
+was retired in turn. Four rules close it:
+- **Re-baselining a replacement retires the old chains.** Re-baselining a
+  `chain_replaced` row retires every other chain still counted, in the same
+  transaction, and the vault event carries `retiredChains` (as decision 7
+  already said). A retired chain that has reported since is stamped afresh.
+- **The accepted row is un-retired.** Re-baselining a row clears that row's
+  own `retiredAt` / `retiredBy`, so the chain the operator accepts is never
+  left retired.
+- **A retired row cannot be re-baselined.** `409` with the reason code
+  `aobprinter_chain_retired`. The web twin does not offer it.
+- **A retired chain that reports again counts.** It is a host still running.
+  "Retired" everywhere means the stamp *unless* the chain has reported after
+  it (`effectiveRetiredAt` in `aobprinter-hosts.service.ts`): rule 1, the
+  two-hosts notice, the silence sweep, the console row and re-baselining all
+  read that one predicate, and it matches `core.aobprinter_hosts_overview()`.
+
+Enforced by the e2e tests
+`accepting_one_replacement_then_rebaselining_another_cannot_retire_every_chain`,
+`a_retired_chain_that_reports_again_counts_for_rule_1`,
+`rebaselining_a_retired_chain_that_reports_again_clears_its_own_retirement`
+and `the_silence_sweep_says_nothing_of_a_retired_chain`.
+**What would reopen it:** Carl preferring that a retired chain stays retired
+even when it reports again (it would then need its own console state, since
+it would be neither the practice's chain nor a second host).
+
 ---
 
 ## D-2026-10-10-04 - The product builds, tests and runs on Node.js 24 LTS

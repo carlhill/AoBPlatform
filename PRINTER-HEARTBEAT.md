@@ -17,8 +17,8 @@ never recorded as confirmed).
 | 3 | Alert on silence | A **5-minute server sweep** logs `ALERT` once when a host goes offline, and once when it comes back. Log only, no vault event. | A console page only helps someone looking at it; silence is the alarm that matters. |
 | 4 | Audit log no longer matches | **One vault event on the transition** into `regressed` (`aobprinter.chain_regressed`), plus an `ALERT` log and a console flag. The flag stays until someone re-baselines. | Rare, and it is evidence about evidence. |
 | 5 | External anchor | `aobprinter.chain_anchored` written to the vault **at most hourly** while the chain is consistent and has advanced. | Otherwise the "external anchor" is a Postgres row a DBA can edit. |
-| 6 | New audit log for a practice that already has one | **Always** the regression **`chain_replaced`** (vault event per decision 4) until re-baselined, even if the old chain was reporting minutes earlier. If both chains keep reporting, the **two-hosts** ALERT and console notice appear *as well*. *(Clarified by Carl, 10 Oct: the platform cannot tell a log rewritten on the same host from a second host, so the safe reading wins.)* | A full rewrite changes the hash of event 1. Calling that "a new host" would defeat the anchor. Two hosts breaks the "one AOBPRINTER per practice" rule (D-2026-09-28-04 amendment). |
-| 7 | Who may re-baseline | **Platform operator only**: `PLATFORM_ADMIN`, the existing `@FreshSecondFactor`, a reason code from a fixed list (`reinstalled`, `database_restored`, `investigated`), and an `aobprinter.chain_rebaselined` vault event. Re-baselining accepts the chain's **current head**; it does not retire the chain. Re-baselining a **`chain_replaced`** row accepts the new chain as the practice's chain, so every other chain for the practice is **retired** (`retiredAt`, `retiredBy`) in the same transaction, and the event carries `retiredChains`. Re-baselining any other regression retires nothing. *(10 Oct, after the build found a rewrite after a re-baseline passed as `unverified`.)* | A practice may not verify its own evidence. Reuses existing guards; no auth-flow change. Only an accepted replacement ends the old chain; otherwise decision 6 would stop applying after the first re-baseline. |
+| 6 | New audit log for a practice that already has one | **Always** the regression **`chain_replaced`** (vault event per decision 4) until re-baselined, even if the old chain was reporting minutes earlier. If both chains keep reporting, the **two-hosts** ALERT and console notice appear *as well*. The ALERT fires when both are live at once (the older chain reports after the newer one first appeared), once per episode; a reinstall whose old chain stops raises none. *(Clarified by Carl, 10 Oct: the platform cannot tell a log rewritten on the same host from a second host, so the safe reading wins.)* | A full rewrite changes the hash of event 1. Calling that "a new host" would defeat the anchor. Two hosts breaks the "one AOBPRINTER per practice" rule (D-2026-09-28-04 amendment). |
+| 7 | Who may re-baseline | **Platform operator only**: `PLATFORM_ADMIN`, the existing `@FreshSecondFactor`, a reason code from a fixed list (`reinstalled`, `database_restored`, `investigated`), and an `aobprinter.chain_rebaselined` vault event. Re-baselining accepts the chain's **current head**; it does not retire the chain. Re-baselining a **`chain_replaced`** row accepts the new chain as the practice's chain, so every other chain for the practice is **retired** (`retiredAt`, `retiredBy`) in the same transaction, and the event carries `retiredChains`. Re-baselining any other regression retires nothing. Re-baselining a row clears that row's own retirement; a **retired** row (one that has not reported since its retirement) cannot be re-baselined: `409 aobprinter_chain_retired`. *(10 Oct, after the build found a rewrite after a re-baseline passed as `unverified`; third amendment, Claude, Carl to confirm.)* | A practice may not verify its own evidence. Reuses existing guards; no auth-flow change. Only an accepted replacement ends the old chain; otherwise decision 6 would stop applying after the first re-baseline. |
 | 8 | "Processed by AoB" on the host | Stored as **audit events** (`print.processed`, `print.processing_failed`, `print.not_on_platform`), not a new stage or column. **No SQLite schema bump.** | The stage model of D-2026-09-29-01 stays as decided, and rolling the host back to an earlier build still opens its database. |
 | 9 | Which prints the heartbeat asks about | Prints in `sent` with no recorded platform outcome, sent in the **last 14 days**, at most **100 per beat**. Returns in `filed`, at most 100. | Bounded payload; older ones are visible on the platform anyway. |
 | 10 | Console audience | **Practice admin** sees their own host at `/practice/aobprinter-host`. **Platform admin** sees the same page for any practice, plus an overview of every host at `/platform/aobprinter-hosts`, worst first. | "Each practice's host" reads as the overview. |
@@ -148,7 +148,7 @@ export interface AobPrinterHeartbeatReply {
 - `chainId()`: the hash of seq 1. `program.started` is always seq 1.
 - `auditHashAt(seq)`.
 - `verifyAuditRange(afterSeq, prevHash, limit)`. `verifyAuditChain()` becomes a loop over it; its existing tests stay unchanged.
-- `recordPlatformOutcome(sha, outcome)`: one audit event, no stage change.
+- `recordPlatformOutcome(sha, outcome)`: one audit event, no stage change. `done`, `dead` and `unknown` each name their event; `waiting`, or a state this build has never met, writes nothing, so the print is asked about again.
 - `returnConfirmedByPlatform(key)`: moves `filed → confirmed` and writes the existing `return.confirmed` with `detail: { via: 'heartbeat' }`. This repairs TODO item 3.
 
 **Checking the chain without blocking capture.** The frontier is kept in
@@ -170,7 +170,7 @@ loop.
 - JSON fields: `counts`, `openExceptions`, `filedUnconfirmed`, `localCheck`.
 - Chain: `headSeq`, `headHash`, `headAdvancedAt`, `anchorSeq`, `anchorHash`, `anchorVerifiedAt`, `vaultAnchoredAt`, `chainStatus`.
 - Regression and re-baseline: `regressionKind`, `regressionAt`, `regressionDetail`, `rebaselinedAt`, `rebaselinedBy`.
-- Retirement (migration `20261010020000_aobprinter_hosts_retired`): `retiredAt`, `retiredBy`, both or neither. A retired chain is left out of rule 1, of `secondHostReporting` and of the overview, unless it reports again after its retirement (then it is a host still running, and counts).
+- Retirement (migration `20261010020000_aobprinter_hosts_retired`): `retiredAt`, `retiredBy`, both or neither. A retired chain is left out of rule 1, of `secondHostReporting`, of the overview and of the silence sweep, unless it reports again after its retirement (then it is a host still running, and counts). One predicate, `effectiveRetiredAt`, decides this for every reader; the console row carries it as `retiredAt` (null for a chain that reported again).
 
 **Migration `20261010010000_aobprinter_hosts`.** Idempotent; follows the shape
 of `visit_states`. It contains:
@@ -196,7 +196,8 @@ The migration is applied by hand in dev (wow §2 item 7).
   - `WriteBackCollectionService.statusForHost`, which shares one extracted predicate with `pending()` so the two cannot drift.
 - **`InboundPrintJobsController`.** `@Post('heartbeat') @HttpCode(200) @PracticeScoped()` above `:id`, taking a whitelisted `AobPrinterHeartbeatDto`:
   - integer and minimum checks on counts;
-  - hash regexes;
+  - hash regexes; a chain point's `hash` is required (a hash or an explicit `null`);
+  - `localCheck` fields checked whenever present, whatever `ok` says, and stored rebuilt from only the fields its `ok` value declares;
   - `@IsUUID` on agreement ids;
   - array caps of 25 and 100;
   - versions `^[0-9A-Za-z.+_-]{1,40}$`;
@@ -208,7 +209,7 @@ The migration is applied by hand in dev (wow §2 item 7).
 **The chain verdict.** A pure function, `aobPrinterChainVerdict(existing, otherChains, beat)` in
 `packages/domain/src/aobprinter-host.ts`. Rules, in order:
 1. No row for this chain:
-   - if the practice has any other chain that is **not retired**, whether or not it was ever re-baselined → `chain_replaced`;
+   - if the practice has any other chain that is **not retired** (a retired chain that has reported since its retirement counts as not retired), whether or not it was ever re-baselined → `chain_replaced`;
    - otherwise `unverified`, with the anchor at the head.
 
    Re-baselining accepts a head; only re-baselining a `chain_replaced` row retires the other chains (decision 7).
@@ -220,7 +221,7 @@ The migration is applied by hand in dev (wow §2 item 7).
 7. Otherwise → `consistent`, and the anchor moves to the head.
 
 **The service transaction.** Everything runs in one `withPractice` transaction:
-- `SELECT … FOR UPDATE`, then the verdict, then the upsert;
+- a practice-keyed `pg_advisory_xact_lock`, then `SELECT … FOR UPDATE`, then the verdict, then the upsert. The advisory lock serialises two FIRST beats (no row yet to lock), so the second is `chain_replaced` and a duplicate first beat is not a unique-key 500. Re-baselining takes the same lock;
 - vault events through `enqueueVaultEvent`, in the same transaction (decisions 4 and 5).
 
 **Liveness.** `aobPrinterHostLiveness(lastSeenAt, intervalMs, now)` (decision 2).
@@ -247,14 +248,17 @@ where it is true for that record (§7c, wow §13).
 3. **Local check failed**, at seq N, as a link or content failure.
 4. **Offline / stale.** "Not heard from since …", with the last report kept on screen with its age.
 5. **Open exceptions.** Returns link to their patient. Prints show the code and the hash prefix (decision 13).
-6. **Filed but not recorded as confirmed**, in three cases:
+6. **Filed but not recorded as confirmed**, in four cases:
    - written back, reconciling on the next report;
+   - written back as a different file (the hashes differ), which the host keeps filed and never confirms;
    - not recorded, still offered for collection;
    - not recorded and no longer offered.
 7. **Old queue.**
 8. **Clock skew** over 5 min.
 9. **Healthy**: versions, runtime, stage table, chain head, "anchor verified …".
 10. **Never reported**: neutral; not an outage.
+
+A **retired** chain is not a card: it is one quiet line, "retired on …", under the cards, and never reads as "Not reporting".
 
 ## 5. Tests
 
