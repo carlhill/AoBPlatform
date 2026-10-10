@@ -21,7 +21,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | Files scanned for exports | 583 |
 | Files scanned for imports | 626 |
 | Exports with no comment of their own | 1020 |
-| Exports imported nowhere else | 1039 |
+| Exports imported nowhere else | 1038 |
 
 ## Sections
 
@@ -681,6 +681,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `CopyOfferResponse` | web:kiosk/api.ts |  | **1** · web:kiosk/screens/CompleteScreen.tsx |
 | `CoveredServiceRow` | web:practice/tablet/pushDesk.tsx | A VISIT THAT NEEDED NO SECOND SIGNATURE — a history line on the desk, never a Send (Carl, 11 Sep 2026, step 4). | **1** · web:practice/frontdesk/visitChecklist.ts |
 | `DayRailRow` | web:practice/frontdesk/dayRails.ts | ONE LINE ON THE RAIL. | **1** · web:practice/frontdesksmall/deskLines.ts |
+| `Db4Block` | web:kiosk/rules/db4-pages.ts | One block of the form, in reading order: its id and the section it is read in. | **1** · web:kiosk/screens/ParticularsScreen.tsx |
 | `Db4Sheet` | web:kiosk/rules/db4-pages.ts | One screenful: a section, the blocks drawn on it, and whether it closes the section. | **1** · web:kiosk/screens/ParticularsScreen.tsx |
 | `DeskLine` | web:practice/frontdesksmall/deskLines.ts | ONE LINE OF THE LIST. | **1** · web:practice/frontdesksmall/SmallDeskView.tsx |
 | `DeskState` | web:practice/frontdesksmall/deskLines.ts | THE SIX MARKERS A LINE CAN CARRY, and the first five are the chips. | **1** · web:practice/frontdesksmall/SmallDeskView.tsx |
@@ -719,7 +720,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `CorrectionSubject` | web:practice/tablet/pushDesk.tsx | WHAT ONE CORRECTION IS ABOUT. | 0 |
 | `DayRails` | web:practice/frontdesk/dayRails.ts | The groups a day's rows can be printed under. | 0 |
 | `DayReads` | web:practice/frontdesksmall/useDayReads.ts |  | 0 |
-| `Db4Block` | web:kiosk/rules/db4-pages.ts | One block of the form, in reading order: its id and the section it is read in. | 0 |
 | `Db4SheetFits` | web:kiosk/rules/db4-pages.ts | What the screen is asked: would THIS sheet fit, whole, with nothing scrolling? | 0 |
 | `EarlierUnsignedList` | web:practice/tablet/EarlierUnsigned.tsx |  | 0 |
 | `EarlierUnsignedRow` | web:practice/tablet/EarlierUnsigned.tsx | `GET /tablet-sessions/unsigned-earlier`, one row — `EarlierUnsignedRow` in core. | 0 |
