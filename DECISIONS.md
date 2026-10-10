@@ -3067,6 +3067,26 @@ reconcile between the PMS, AOBPrinter and AOBPlatform"*. So:
   practice). A draft associated with a service is not auto-closed; it waits for
   the three-way reconciliation on the TODO.
 
+**Confirmed by Carl after the build (10 Oct 2026):** *"confirm all three,
+rebuild the vault and include all decisions made"*.
+1. **Choosing between drafts.** A visit is listed for a person to choose
+   whenever any unassociated draft matches it, including a draft created after
+   the service arrived. Automatic association happens only at the moment the
+   service arrives.
+2. **The close is more cautious than "neither linked nor associated".** A
+   draft also stays open if any service record matches its visit, if it was
+   superseded, if a remote capture link is still live, or if it is on legal
+   hold.
+3. **Treatment plans are never closed automatically** (they span six months).
+   Unsigned ongoing (enduring) drafts close after N days like episodic ones.
+
+**The three new vault event types are approved** (Carl: "rebuild the vault"):
+`agreement.service_associated`, `agreement.closed_unsigned` and
+`practice.unsigned_draft_closure_days_set`. They were added only to
+`VAULT_EVENT_TYPES` in `packages/contracts/src/vault.ts`, which the vault's
+whitelist is built from; nothing inside `apps/vault` changed. The vault is a
+human-authored zone, so this approval is recorded here.
+
 **What would reopen it:** the PMS / AOBPRINTER / AoBPlatform reconciliation on
 the TODO; anything that lets a pre-agreement signed after the service cover
 it.
