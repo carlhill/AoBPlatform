@@ -17,7 +17,7 @@ never recorded as confirmed).
 | 3 | Alert on silence | A **5-minute server sweep** logs `ALERT` once when a host goes offline, and once when it comes back. Log only, no vault event. | A console page only helps someone looking at it; silence is the alarm that matters. |
 | 4 | Audit log no longer matches | **One vault event on the transition** into `regressed` (`aobprinter.chain_regressed`), plus an `ALERT` log and a console flag. The flag stays until someone re-baselines. | Rare, and it is evidence about evidence. |
 | 5 | External anchor | `aobprinter.chain_anchored` written to the vault **at most hourly** while the chain is consistent and has advanced. | Otherwise the "external anchor" is a Postgres row a DBA can edit. |
-| 6 | New audit log for a practice that already has one | Treated as the regression **`chain_replaced`** until re-baselined. **Two hosts reporting at once** is logged as an ALERT and shown on the console, with no vault event. | A full rewrite changes the hash of event 1. Calling that "a new host" would defeat the anchor. Two hosts breaks the "one AOBPRINTER per practice" rule (D-2026-09-28-04 amendment). |
+| 6 | New audit log for a practice that already has one | **Always** the regression **`chain_replaced`** (vault event per decision 4) until re-baselined, even if the old chain was reporting minutes earlier. If both chains keep reporting, the **two-hosts** ALERT and console notice appear *as well*. *(Clarified by Carl, 10 Oct: the platform cannot tell a log rewritten on the same host from a second host, so the safe reading wins.)* | A full rewrite changes the hash of event 1. Calling that "a new host" would defeat the anchor. Two hosts breaks the "one AOBPRINTER per practice" rule (D-2026-09-28-04 amendment). |
 | 7 | Who may re-baseline | **Platform operator only**: `PLATFORM_ADMIN`, the existing `@FreshSecondFactor`, a reason code from a fixed list (`reinstalled`, `database_restored`, `investigated`), and an `aobprinter.chain_rebaselined` vault event. | A practice may not verify its own evidence. Reuses existing guards; no auth-flow change. |
 | 8 | "Processed by AoB" on the host | Stored as **audit events** (`print.processed`, `print.processing_failed`, `print.not_on_platform`), not a new stage or column. **No SQLite schema bump.** | The stage model of D-2026-09-29-01 stays as decided, and rolling the host back to an earlier build still opens its database. |
 | 9 | Which prints the heartbeat asks about | Prints in `sent` with no recorded platform outcome, sent in the **last 14 days**, at most **100 per beat**. Returns in `filed`, at most 100. | Bounded payload; older ones are visible on the platform anyway. |
@@ -213,7 +213,7 @@ The migration is applied by hand in dev (wow §2 item 7).
 3. `head.seq < headSeq`, or `head.seq < anchorSeq` → `went_backwards`.
 4. The same seq with a different hash → `same_seq_different_hash`.
 5. The answer at the anchor has a different hash, or a null hash → `anchor_mismatch`.
-6. No answer at the anchor, or an answer for a different seq (the host restarted) → unchanged, or `unverified`.
+6. No answer at the anchor, or an answer for a different seq (the host restarted) → **the previous status is kept** (consistent stays consistent; never-verified stays `unverified`), and the next beat answers the new anchor. *(Carl, 10 Oct.)*
 7. Otherwise → `consistent`, and the anchor moves to the head.
 
 **The service transaction.** Everything runs in one `withPractice` transaction:

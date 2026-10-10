@@ -2862,3 +2862,11 @@ also holds the plan they belong to. In brief:
 running two hosts on purpose (decision 6); or the vault's anchoring cost making
 hourly too often (decision 5).
 
+**Amended the same day (Carl, two answers).** The build found that decisions 4
+and 6 clash: the platform cannot tell a log rewritten on the same host from a
+second host started beside it.
+- **A new chain beside an existing one is always `chain_replaced`**, with its
+  vault event. If both chains keep reporting, the two-hosts notice appears as
+  well. A rewrite must never pass as a second host.
+- **A restart keeps the previous chain status (rule 6).** It does not reset to
+  `unverified`.
