@@ -456,6 +456,85 @@ stacked under two blueprint panels and the third landed below the fold. It is
 now a child of the same box as the blocked control, directly under it, and
 cannot wrap away from it at any width.
 
+### The controls never scroll off (Carl, 10 October 2026)
+
+> Step 2 of 3: the last visible line is "Please read and tick each of
+> these". Step 3 of 3: the action buttons are cut in half at the bottom.
+
+A Galaxy Tab S10 Ultra in landscape in Edge, whose address bar and bottom
+toolbar leave roughly 1024-1500 x 600-900 CSS px. The design target above
+(~1180x820) had no room to spare, and neither step was built to fit it.
+
+**Portrait is primary for the 14-inch tablet** (Carl, 10 October 2026: "yes
+switch to portrait first"): about 924x1478 full screen, 924x1370 with Edge's
+bars. For that device this supersedes the 27 September premise above, a 10-11
+inch tablet designed for landscape at ~1180x820. Landscape must still work well,
+because orientation is never locked (WCAG 2.2 1.3.4). There the width is used
+rather than stacked: "there is so much white space can we not do a better
+layout - instead of scrolling".
+
+- **Portrait is one centred column at 70ch**, about 770px of 20px type, so
+  lines stay readable on a 924px screen. The services table and the
+  signature pad take the whole of that column.
+- **K-3 splits the document in two** (`fitColumns`, `documentScroll`). The
+  read-only part (the heading, the form's page, the ongoing agreement's
+  explanation) is a named, focusable region that scrolls inside the page,
+  with a shadow along whichever edge has more text behind it, because
+  Android's overlay scrollbars are invisible at rest. The region is as tall
+  as its text and no taller, so the tick boxes, the tags and the actions sit
+  directly under the last line and stay on screen. Nothing is reordered and
+  nothing is sticky, so nothing can cover a focused control (WCAG 2.2 2.4.11).
+- **Landscape from 1200px wide puts K-3 in two columns**: the form's text
+  on the left, and the ticks, tags, Back and Continue on the right, all in
+  view at once. The document's box uses `display: contents` so its children
+  can be placed; the DOM order, and so the reading order, is unchanged.
+- **Grids, not flex, so it cannot overlap.** The text row gives way first,
+  down to a 5rem floor. On a screen too short even for that, the document
+  scrolls as a whole inside its frame, rather than the ticks spilling over
+  the actions.
+- **Only from 560px tall.** Below that, the step scrolls as one column.
+- **Under 480px tall the shell is an ordinary page** and the window scrolls
+  it. At 400% zoom a 1280x800 screen is 320x200; a shell locked to that
+  height had left the content row with no height and the controls outside
+  every scroller (WCAG 2.2 1.4.10, found in review).
+- **K-1 in landscape** drops the task column's 620px measure, and each
+  answer's glyph sits beside its words: 56px tall, the floor already set.
+  Continue is on screen at 1280x800 and above. On a 600-720px landscape
+  screen with the browser's bars, K-1 still scrolls.
+- **K-4 goes to two columns only on a landscape screen 900px or wider**, with
+  who is signing on the left and the pad and its controls on the right.
+  Upright it is one column with a full-width pad up to 460px tall. The pad's
+  height is set in `svh` by orientation, never in `dvh`, because `dvh`
+  changes as Edge's toolbar slides.
+- **The pad keeps its size from the first touch until Clear**
+  (`SignaturePad.tsx`). A resize used to re-measure it under the ink, so the
+  capture paired points measured at the old size with the new pad size and a
+  raster cropped to the new box. Rotating, Edge's toolbar, or full screen
+  arriving just after K-4 opens are all resizes. Now the canvas is pinned in
+  pixels, and its frame may clip it or leave room around it until the patient
+  clears. The captured vector, raster and size always agree, and no point is
+  rescaled (REQ-SIG-02). Test: `components/SignaturePad.test.tsx`.
+- **At 640px tall and under, space shrinks, never type**: the header's two
+  lines sit on one and the padding tightens by a step.
+- **The shell is `height: 100dvh`**, not `min-height`, and the footer clears
+  `env(safe-area-inset-bottom)`.
+
+The patient can now reach the tick boxes without scrolling through the text
+above them. That is what was asked for; it is also the opposite of what 2B's
+pagination was for ("a patient who scrolls past the service rows to reach the
+tick boxes has not read the service rows"), so it is a decision worth
+confirming rather than a detail.
+
+Test: `e2e/kiosk-tablet-fit.spec.ts`, which needs no database. Every request
+to core is answered by `page.route`. It asserts that each control is inside
+the viewport and inside every clipping ancestor on all four sides, with every
+scroller at the top, nothing drawn over it, and nothing wider than the
+screen. Portrait first: 924x1478, 924x1370 and 800x1280. Then landscape:
+1478x924, 960x600, 1024x600, 1280x650, 1280x720, 1280x800, 1478x700, 1478x813
+and 1500x900, plus three sizes as an emulated Android tablet. It also covers a
+test device with its rail at 1478x924, 1280x800 and stacked at 960x600, Android
+text at 130%, and reflow at 400% (320x200).
+
 ## Return to the start when nobody is there (Carl, 4 September 2026)
 
 > "Return to the start when untouched for N minutes -- a per-practice setting,

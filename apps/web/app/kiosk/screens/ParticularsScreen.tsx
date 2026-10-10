@@ -502,6 +502,13 @@ export function ParticularsScreen({
    * component, not a write to any storage surface (CLAUDE.md §7).
    */
   const pageHeadingRef = useRef<HTMLHeadingElement>(null);
+  /**
+   * Names the document's scrolling region after the ceremony heading inside
+   * it. A FIXED id, like K-P1's `check-details-lede`, not `useId`: one K-3 is
+   * on screen at a time, and a per-render id would make two renders of the
+   * same agreement differ (`an_absent_print_record_and_an_explicit_null_render_the_same_markup`).
+   */
+  const headingId = 'particulars-document-heading';
   const drawnPage = useRef<Db4Page | null>(null);
   const currentPage = paged?.page ?? null;
   useEffect(() => {
@@ -669,210 +676,245 @@ export function ParticularsScreen({
       sourceSha256={blueprintPanels ? (db4?.sourceSha256 ?? null) : null}
       onLeave={onSeeReception}
     >
-      <div className={blueprintPanels ? styles.twoColumn : styles.oneColumn}>
-        <Blueprint className={styles.document}>
-          <div className={styles.documentHeader}>
-            {/*
-              THE CEREMONY'S OWN TWO LINES, HERE TOO (Carl, 7 Sep 2026). This
-              screen is a document, so the title sits inside the document
-              header where it always has — but it is now the SAME title, with
-              the same by-line under it, as the step before and the step after.
-              `view` already carries all four party facts, and passing them
-              rather than letting this screen compose a sentence is what keeps
-              K-3 and K-4 naming one person.
-            */}
-            <CeremonyHeading
-              parties={{
-                patientName: view.patientName,
-                assignorIsPatient: view.assignorIsPatient,
-                assignorName: view.assignorName,
-                assignorRelationship: view.assignorRelationship,
-              }}
-              subHeading={strings.chrome.ceremonySubHeading[view.agreementType]}
-              headingTestId="particulars-heading"
-            />
-            {view.ruleSetVersion && view.mappingVersion ? (
-              <p className={styles.versions} data-testid="versions">
-                {strings.particulars.versions(view.ruleSetVersion, view.mappingVersion)}
-                {view.templateVersion ? strings.particulars.wordingVersion(view.templateVersion) : ''}
-              </p>
-            ) : null}
-            {/*
-              WHICH PAGE OF THE FORM THIS IS, AND IT IS NOT THE STEP CHIP
-              (Carl, 27 Sep 2026). The chip in the header counts the CEREMONY
-              and says the same number on all three pages, because pages within
-              a step are not steps — that is `rules/ceremony-steps.ts` and
-              nothing here touches it. This line counts the DOCUMENT, and it
-              sits by the screen's own heading where the document is.
-            */}
-            {paged ? (
-              <p className={styles.versions} data-testid="db4-page-of">
-                {strings.particulars.db4.pageOf(
-                  db4PagePosition(paged.page).position,
-                  db4PagePosition(paged.page).total,
-                )}
-              </p>
-            ) : null}
-          </div>
-          <div className={styles.grid}>
-            {/*
-              THE FORM, OR THE ROWS — never both (D-2026-09-27-01/-02).
+      {/*
+        THE CONTROLS NEVER SCROLL OFF; THE TEXT MAY (Carl, 10 Oct 2026, from a
+        Galaxy Tab S10 Ultra in landscape in Edge: the tick boxes were below
+        the fold and the last thing on screen was "Please read and tick each
+        of these").
 
-              WITH A PRINT RECORD the practice's own DB4 is the document, and
-              our rows for the patient, the provider, the place of practice, the
-              date of service and the service description would be a second
-              rendering of five facts the form already prints. The date of THIS
-              agreement is not one of them: it is the agreement's own particular
-              and is not on the practice's paper, so it stays.
+        `fitColumns` makes this step exactly the height of the content row,
+        and the document splits in two: the READ-ONLY part (the heading, the
+        form's page, the ongoing agreement's explanation) is its own scrolling
+        region, and everything the patient ACTS on — the tick boxes, the tags
+        that close the document, and the actions — sits under it, always on
+        screen. Nothing is reordered: the DOM order, the tab order and what a
+        screen reader says are exactly what they were, and nothing overlaps
+        anything, so no control can sit over a focused one (WCAG 2.2 2.4.11).
 
-              WITHOUT ONE this branch is not taken and what follows is exactly
-              the file as it was before 27 September 2026 — same rows, same
-              order, same components. That is the guarantee Carl asked for, and
-              `a_session_with_no_print_record_renders_the_walk_up_particulars`
-              is its name.
-            */}
-            {db4 ? (
-              <>
-                {/*
-                  THE AGREEMENT'S OWN FACTS GO AT THE FOOT OF 2A's LEFT
-                  COLUMN (Carl, 28 September 2026: *"move Date of this
-                  agreement and Signing below Date of service / Too much
-                  wasted white space"*, then *"put at foot of the left
-                  column"* — below the practice's run rather than inside it).
+        ONLY WHERE THERE IS HEIGHT FOR IT. The split is inside a
+        `min-height` media query in `kiosk.module.css`; below it — a zoomed
+        page, a phone held sideways — the step is one column that scrolls as
+        a whole, exactly as before, so nothing is trapped in a small box at
+        400% zoom (WCAG 2.2 1.4.10).
+      */}
+      <div className={`${blueprintPanels ? styles.twoColumn : styles.oneColumn} ${styles.fitColumns}`}>
+        <Blueprint className={`${styles.document} ${styles.documentFit}`}>
+          {/*
+            A REGION WITH A NAME AND A TAB STOP, because it scrolls on its own
+            and a keyboard or switch user has to be able to reach and scroll
+            it (WCAG 2.1.1). Named by the ceremony heading at its top.
+          */}
+          <div
+            className={styles.documentScroll}
+            role="region"
+            aria-labelledby={headingId}
+            tabIndex={0}
+            data-testid="particulars-scroll"
+          >
+            <div className={styles.documentHeader}>
+              {/*
+                THE CEREMONY'S OWN TWO LINES, HERE TOO (Carl, 7 Sep 2026). This
+                screen is a document, so the title sits inside the document
+                header where it always has — but it is now the SAME title, with
+                the same by-line under it, as the step before and the step after.
+                `view` already carries all four party facts, and passing them
+                rather than letting this screen compose a sentence is what keeps
+                K-3 and K-4 naming one person.
+              */}
+              <CeremonyHeading
+                parties={{
+                  patientName: view.patientName,
+                  assignorIsPatient: view.assignorIsPatient,
+                  assignorName: view.assignorName,
+                  assignorRelationship: view.assignorRelationship,
+                }}
+                subHeading={strings.chrome.ceremonySubHeading[view.agreementType]}
+                headingTestId="particulars-heading"
+                headingId={headingId}
+              />
+              {view.ruleSetVersion && view.mappingVersion ? (
+                <p className={styles.versions} data-testid="versions">
+                  {strings.particulars.versions(view.ruleSetVersion, view.mappingVersion)}
+                  {view.templateVersion ? strings.particulars.wordingVersion(view.templateVersion) : ''}
+                </p>
+              ) : null}
+              {/*
+                WHICH PAGE OF THE FORM THIS IS, AND IT IS NOT THE STEP CHIP
+                (Carl, 27 Sep 2026). The chip in the header counts the CEREMONY
+                and says the same number on all three pages, because pages within
+                a step are not steps — that is `rules/ceremony-steps.ts` and
+                nothing here touches it. This line counts the DOCUMENT, and it
+                sits by the screen's own heading where the document is.
+              */}
+              {paged ? (
+                <p className={styles.versions} data-testid="db4-page-of">
+                  {strings.particulars.db4.pageOf(
+                    db4PagePosition(paged.page).position,
+                    db4PagePosition(paged.page).total,
+                  )}
+                </p>
+              ) : null}
+            </div>
+            <div className={styles.grid}>
+              {/*
+                THE FORM, OR THE ROWS — never both (D-2026-09-27-01/-02).
 
-                  THIS REVERSES 27 SEPTEMBER, AND THE REASON IT GAVE WAS REAL.
-                  The two facts are neither practice nor patient — the date of
-                  THIS agreement is not on the practice's paper, and who is
-                  signing is a fact about the party rather than the record — so
-                  they were put in a band across the foot of the page, where
-                  the layout made that plain. The cost was a left column that
-                  ended half way down beside a much taller patient block, and
-                  the gap read as a rendering fault. They now end that column
-                  instead, which fills it by exactly as much and leaves the
-                  practice's own run of facts unbroken.
+                WITH A PRINT RECORD the practice's own DB4 is the document, and
+                our rows for the patient, the provider, the place of practice, the
+                date of service and the service description would be a second
+                rendering of five facts the form already prints. The date of THIS
+                agreement is not one of them: it is the agreement's own particular
+                and is not on the practice's paper, so it stays.
 
-                  WHAT MAKES THE MOVE SAFE IS THE HEADING, NOT THE POSITION.
-                  Inside the practice's column a distinction the layout used to
-                  carry has to be carried in words, so the two facts keep a
-                  section of their own headed "This agreement" — the same care
-                  `db4-provenance` takes two blocks above (hard rule 12). That
-                  is also what the 27 September note worried about when it said
-                  the foot of this column reads as the practice's: true of two
-                  bare rows, and answered by heading them.
+                WITHOUT ONE this branch is not taken and what follows is exactly
+                the file as it was before 27 September 2026 — same rows, same
+                order, same components. That is the guarantee Carl asked for, and
+                `a_session_with_no_print_record_renders_the_walk_up_particulars`
+                is its name.
+              */}
+              {db4 ? (
+                <>
+                  {/*
+                    THE AGREEMENT'S OWN FACTS GO AT THE FOOT OF 2A's LEFT
+                    COLUMN (Carl, 28 September 2026: *"move Date of this
+                    agreement and Signing below Date of service / Too much
+                    wasted white space"*, then *"put at foot of the left
+                    column"* — below the practice's run rather than inside it).
 
-                  IT IS A SLOT, NOT A FACT `Db4Document` KNOWS. That component
-                  renders the practice's printed record and nothing else; it
-                  places this node and never composes it, so nothing of ours
-                  can leak into the reproduction.
+                    THIS REVERSES 27 SEPTEMBER, AND THE REASON IT GAVE WAS REAL.
+                    The two facts are neither practice nor patient — the date of
+                    THIS agreement is not on the practice's paper, and who is
+                    signing is a fact about the party rather than the record — so
+                    they were put in a band across the foot of the page, where
+                    the layout made that plain. The cost was a left column that
+                    ended half way down beside a much taller patient block, and
+                    the gap read as a rendering fault. They now end that column
+                    instead, which fills it by exactly as much and leaves the
+                    practice's own run of facts unbroken.
 
-                  STILL 2A's, and still before 2B's `episodic_details_correct_v1`
-                  asks the patient to confirm "the details above".
-                */}
-                <Db4Document
-                  form={db4}
-                  showParserTemplate={blueprintPanels}
-                  page={paged?.page}
-                  pageHeadingRef={pageHeadingRef}
-                  agreementFacts={
-                    <>
-                      <Row label={strings.particulars.agreementDate} value={view.agreementDate} />
-                      {assignorFacts}
-                    </>
-                  }
-                />
-              </>
-            ) : (
-              <>
-                <Row label={strings.particulars.patient} value={view.patientName} />
-                <Row label={strings.particulars.provider} value={view.providerName} />
-                <Row label={strings.particulars.placeOfPractice} value={view.providerAddress} />
-                <Row label={strings.particulars.serviceDate} value={view.serviceDate} />
-                <Row label={strings.particulars.agreementDate} value={view.agreementDate} />
-                <Row label={strings.particulars.service} value={view.basicServiceDescription} />
-                {/*
-                  D6b — WHAT WAS ACTUALLY DONE, on a post-agreement (REQ-REG-01).
-                  Drawn only when the server sent item numbers, which is only on the
-                  type that carries them. Never an amount beside them (hard rule 4).
-                */}
-                {view.mbsItemNumbers.length > 0 && (
-                  <Row
-                    label={
-                      view.mbsItemNumbers.length === 1
-                        ? strings.particulars.item
-                        : strings.particulars.items
+                    WHAT MAKES THE MOVE SAFE IS THE HEADING, NOT THE POSITION.
+                    Inside the practice's column a distinction the layout used to
+                    carry has to be carried in words, so the two facts keep a
+                    section of their own headed "This agreement" — the same care
+                    `db4-provenance` takes two blocks above (hard rule 12). That
+                    is also what the 27 September note worried about when it said
+                    the foot of this column reads as the practice's: true of two
+                    bare rows, and answered by heading them.
+
+                    IT IS A SLOT, NOT A FACT `Db4Document` KNOWS. That component
+                    renders the practice's printed record and nothing else; it
+                    places this node and never composes it, so nothing of ours
+                    can leak into the reproduction.
+
+                    STILL 2A's, and still before 2B's `episodic_details_correct_v1`
+                    asks the patient to confirm "the details above".
+                  */}
+                  <Db4Document
+                    form={db4}
+                    showParserTemplate={blueprintPanels}
+                    page={paged?.page}
+                    pageHeadingRef={pageHeadingRef}
+                    agreementFacts={
+                      <>
+                        <Row label={strings.particulars.agreementDate} value={view.agreementDate} />
+                        {assignorFacts}
+                      </>
                     }
-                    value={view.mbsItemNumbers.join(', ')}
                   />
-                )}
-                {/*
-                  WHO SIGNS, IN THE PLACE IT HAS ALWAYS BEEN on the screen
-                  with no DB4 — last of the particulars rows, same order, same
-                  markup. A session with no print record is not paginated at
-                  all (D-2026-09-27-02), so there is no page to gate it on.
-                */}
-                {assignorFacts}
-              </>
-            )}
-            {/*
-              WHAT AN ONGOING AGREEMENT ACTUALLY COVERS (Carl, 4 Sep 2026;
-              REQ-PORT-03's plain-language explanation, at the moment it is
-              being agreed rather than afterwards).
+                </>
+              ) : (
+                <>
+                  <Row label={strings.particulars.patient} value={view.patientName} />
+                  <Row label={strings.particulars.provider} value={view.providerName} />
+                  <Row label={strings.particulars.placeOfPractice} value={view.providerAddress} />
+                  <Row label={strings.particulars.serviceDate} value={view.serviceDate} />
+                  <Row label={strings.particulars.agreementDate} value={view.agreementDate} />
+                  <Row label={strings.particulars.service} value={view.basicServiceDescription} />
+                  {/*
+                    D6b — WHAT WAS ACTUALLY DONE, on a post-agreement (REQ-REG-01).
+                    Drawn only when the server sent item numbers, which is only on the
+                    type that carries them. Never an amount beside them (hard rule 4).
+                  */}
+                  {view.mbsItemNumbers.length > 0 && (
+                    <Row
+                      label={
+                        view.mbsItemNumbers.length === 1
+                          ? strings.particulars.item
+                          : strings.particulars.items
+                      }
+                      value={view.mbsItemNumbers.join(', ')}
+                    />
+                  )}
+                  {/*
+                    WHO SIGNS, IN THE PLACE IT HAS ALWAYS BEEN on the screen
+                    with no DB4 — last of the particulars rows, same order, same
+                    markup. A session with no print record is not paginated at
+                    all (D-2026-09-27-02), so there is no page to gate it on.
+                  */}
+                  {assignorFacts}
+                </>
+              )}
+              {/*
+                WHAT AN ONGOING AGREEMENT ACTUALLY COVERS (Carl, 4 Sep 2026;
+                REQ-PORT-03's plain-language explanation, at the moment it is
+                being agreed rather than afterwards).
 
-              ABOVE THE CONSENT SENTENCE, because it explains the thing the
-              sentence assigns. Every line is a documented fact -- the scope
-              and its open end (REQ-END-06a), how either party ends it and
-              when that takes effect (REQ-END-06), and that it is with ONE
-              provider and not the practice (REQ-END-01, hard rule 6).
+                ABOVE THE CONSENT SENTENCE, because it explains the thing the
+                sentence assigns. Every line is a documented fact -- the scope
+                and its open end (REQ-END-06a), how either party ends it and
+                when that takes effect (REQ-END-06), and that it is with ONE
+                provider and not the practice (REQ-END-01, hard rule 6).
 
-              NO AMOUNT ANYWHERE IN IT (hard rule 4). There is no field here
-              for one and no sentence that implies one.
-            */}
-            {isEnduring && on('legal') ? (
-              <div className={styles.grid} data-testid="enduring-coverage">
-                <span className={styles.docRowLabel}>{strings.particulars.enduringCoverageHeading}</span>
-                {strings.particulars.enduringCoverage.map((line) => (
-                  <p key={line} className={styles.docRowValue}>
-                    {line}
-                  </p>
-                ))}
-              </div>
-            ) : null}
-            {/*
-              THE OPERATIVE WORDS, FROM THE SERVER'S RENDERED DOCUMENT — the
-              same sentences the PDF prints, ticked one at a time. Nothing
-              here is written in this file or in the string table (see the
-              module note); the heading around them is, because a heading is
-              chrome and these are the instrument.
-
-              THE FALLBACK IS THE OLD SENTENCE, for an agreement locked before
-              templates existed. It is not a control and cannot be ticked,
-              because there is nothing on that agreement's record to record a
-              tick against.
-
-              AND ON A PAGINATED FORM EACH ONE IS READ WHERE IT APPLIES (Carl,
-              27 Sep 2026), which `rules/db4-pages.ts` decides and this file
-              only renders. `pageStatements` is the subset for THIS page;
-              `outstanding` above is still every statement on every page, so
-              the gate did not move (hard rule 2, REQ-REG-06). 2A shows no
-              block because no statement maps to it.
-            */}
-            {pageStatements.length > 0 && onToggleAffirmation ? (
-              <div className={styles.grid} data-testid="affirmations">
-                <span className={styles.docRowLabel}>{strings.particulars.statementsHeading}</span>
-                {pageStatements.map((statement) => (
-                  <Checkbox
-                    key={statement.key}
-                    label={statement.text}
-                    checked={affirmed.includes(statement.key)}
-                    onToggle={() => onToggleAffirmation(statement.key)}
-                    testId={`affirm-${statement.key}`}
-                  />
-                ))}
-              </div>
-            ) : statements.length === 0 && on('legal') ? (
-              <p className={styles.consent}>{strings.particulars.consentText}</p>
-            ) : null}
+                NO AMOUNT ANYWHERE IN IT (hard rule 4). There is no field here
+                for one and no sentence that implies one.
+              */}
+              {isEnduring && on('legal') ? (
+                <div className={styles.grid} data-testid="enduring-coverage">
+                  <span className={styles.docRowLabel}>{strings.particulars.enduringCoverageHeading}</span>
+                  {strings.particulars.enduringCoverage.map((line) => (
+                    <p key={line} className={styles.docRowValue}>
+                      {line}
+                    </p>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           </div>
+          {/*
+            THE OPERATIVE WORDS, FROM THE SERVER'S RENDERED DOCUMENT — the
+            same sentences the PDF prints, ticked one at a time. Nothing
+            here is written in this file or in the string table (see the
+            module note); the heading around them is, because a heading is
+            chrome and these are the instrument.
+
+            THE FALLBACK IS THE OLD SENTENCE, for an agreement locked before
+            templates existed. It is not a control and cannot be ticked,
+            because there is nothing on that agreement's record to record a
+            tick against.
+
+            AND ON A PAGINATED FORM EACH ONE IS READ WHERE IT APPLIES (Carl,
+            27 Sep 2026), which `rules/db4-pages.ts` decides and this file
+            only renders. `pageStatements` is the subset for THIS page;
+            `outstanding` above is still every statement on every page, so
+            the gate did not move (hard rule 2, REQ-REG-06). 2A shows no
+            block because no statement maps to it.
+          */}
+          {pageStatements.length > 0 && onToggleAffirmation ? (
+            <div className={styles.grid} data-testid="affirmations">
+              <span className={styles.docRowLabel}>{strings.particulars.statementsHeading}</span>
+              {pageStatements.map((statement) => (
+                <Checkbox
+                  key={statement.key}
+                  label={statement.text}
+                  checked={affirmed.includes(statement.key)}
+                  onToggle={() => onToggleAffirmation(statement.key)}
+                  testId={`affirm-${statement.key}`}
+                />
+              ))}
+            </div>
+          ) : statements.length === 0 && on('legal') ? (
+            <p className={styles.consent}>{strings.particulars.consentText}</p>
+          ) : null}
           {/*
             THE TAGS CLOSE THE DOCUMENT, so on a paginated form they close the
             LAST page. Repeating them on every page would put "Amount as the

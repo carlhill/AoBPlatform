@@ -88,13 +88,21 @@
  * browser's collapsing address bar; `100vh` on the same device is the TALLER
  * measurement and would put the footer just below the fold. `inset: 0` gives
  * the same answer on a tablet in kiosk mode and is the floor under it.
+ *
+ * `height`, NOT `min-height` (10 Oct 2026, Edge on a Galaxy Tab S10 Ultra).
+ * Edge keeps an address bar at the top AND a toolbar at the bottom, and a
+ * MINIMUM of 100dvh let the shell grow past whatever the fixed box measured.
+ * Exactly the dynamic viewport is what keeps the footer above Edge's toolbar.
+ * A browser without `dvh` drops the declaration and `inset: 0` decides.
  */
 .screen {
   position: fixed;
   inset: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  min-height: 100dvh;
+  /* Nothing inside may make the shell wider than the screen (review, 10 Oct). */
+  grid-template-columns: minmax(0, 1fr);
+  height: 100dvh;
   background: var(--page);
   color: var(--ink);
   /* The shell's own size, inherited by every `font: inherit` control under it
@@ -107,6 +115,8 @@
 
 .header {
   display: flex;
+  /* At 400% zoom the practice name and the two controls take a line each. */
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--s4);
@@ -126,9 +136,11 @@
 
 .headerActions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--s3);
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  margin-left: auto;
 }
 
 /* 26px, a literal and left alone: it is already well over the floor, and the
@@ -210,7 +222,34 @@
   justify-content: space-between;
   gap: var(--s1) var(--s5);
   padding: var(--s3) var(--s7);
+  /* Clear of a browser toolbar or a home indicator drawn over the page's foot
+     (0 everywhere that has none). */
+  padding-bottom: calc(var(--s3) + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--line);
+  min-width: 0;
+}
+
+/*
+ * WHERE THE SCREEN IS TOO SHORT TO HOLD THE SHELL, THE PAGE SCROLLS (review,
+ * 10 Oct 2026). A shell locked to the viewport with its overflow hidden is
+ * right on a tablet and wrong at 400% zoom: there a 1280x800 screen is 320x200,
+ * the header and footer alone are taller than that, and the content row
+ * between them is squeezed to nothing with the rest outside every scroller
+ * (WCAG 2.2 1.4.10). Under 480px tall the shell is an ordinary page instead:
+ * header, content and footer one after another, and the window scrolls them.
+ */
+@media (max-height: 479px) {
+  .screen {
+    position: static;
+    height: auto;
+    min-height: 100dvh;
+    grid-template-rows: auto auto auto;
+    overflow: visible;
+  }
+
+  .content {
+    overflow-y: visible;
+  }
 }
 
 .footerIdentity {
@@ -922,6 +961,236 @@
 }
 
 /* --------------------------------------------------------------------------
+ * K-3 FITS THE SCREEN: THE TEXT SCROLLS, THE CONTROLS DO NOT (Carl, 10 Oct
+ * 2026, a Galaxy Tab S10 Ultra in landscape in Edge — the tick boxes were
+ * below the fold).
+ *
+ * THE READ-ONLY PART IS ITS OWN REGION (`.documentScroll`): the ceremony
+ * heading, the form's page and the ongoing agreement's explanation. What the
+ * patient ACTS on — the tick boxes, the tags that close the document, and the
+ * actions under it — follows it in the DOM exactly as before and, with the
+ * split on, is never pushed off screen by it. Nothing is `position: sticky`
+ * or `fixed`, so nothing is ever drawn over a focused control (WCAG 2.2
+ * 2.4.11): the region simply gets the height that is left.
+ *
+ * THE SPLIT NEEDS HEIGHT, SO IT IS BEHIND `min-height: 560px`. Below that —
+ * a page zoomed to 200 or 400%, a phone held sideways — a scrolling box inside
+ * a scrolling page would trap the text in a few lines, which is what Reflow
+ * (WCAG 2.2 1.4.10) forbids. There the step is one column scrolled by
+ * `.content` as a whole, exactly as it was before 10 October 2026. 560 is
+ * under the smallest landscape tablet viewport we support (1024x600) and over
+ * a 1280x800 screen at 150% zoom (533).
+ *
+ * THE AFFORDANCE IS PAINTED, NOT A SCROLLBAR. Android draws overlay
+ * scrollbars that are invisible until the text moves, so the region carries a
+ * shadow along whichever edge has more text behind it: the two `local`
+ * layers travel with the text and cover the two `scroll` shadows when the
+ * region is at that end. Text that fits shows no shadow at all.
+ * ------------------------------------------------------------------------ */
+
+.documentScroll {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  min-width: 0;
+}
+
+@media (min-height: 560px) {
+  /*
+   * GRIDS, NOT FLEX, AND THE REASON IS WHAT HAPPENS WHEN IT DOES NOT FIT. A
+   * flex item allowed to shrink to zero lets the tick boxes spill out of the
+   * bottom of the document and over the actions under it.
+   *
+   * THE DOCUMENT IS AS TALL AS ITS TEXT, NO TALLER (10 Oct 2026, portrait
+   * first). Each row's limit is `max-content`, so the ticks and the actions
+   * sit directly under the last line of the form rather than at the foot of a
+   * tall empty box, and `align-content: start` leaves the spare height below
+   * the actions. Where the screen is shorter than that, the text row gives
+   * way first, down to its 5rem floor, and the text region scrolls. On a
+   * screen too short even for the floor plus the ticks, the DOCUMENT scrolls
+   * as a whole inside its frame (`overflow-y: auto`) — every tick still
+   * reachable, nothing drawn over the actions. It can run out of room; it
+   * cannot overlap.
+   *
+   * THE ORDINARY TABLET ONLY. A test device's rail is the two-column case,
+   * further down, and only where the columns sit side by side.
+   */
+  .oneColumn.fitColumns {
+    display: grid;
+    grid-template-rows: minmax(0, max-content) auto;
+    align-content: start;
+    height: 100%;
+  }
+
+  .oneColumn.fitColumns > .documentFit {
+    display: grid;
+    grid-template-rows: minmax(5rem, max-content);
+    grid-auto-rows: auto;
+    align-content: start;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  /* The ticks' own block keeps its gap, not the padding it had as a block
+     in the middle of the document. */
+  .fitColumns > .documentFit > .grid {
+    padding: 0;
+  }
+
+  .fitColumns .documentScroll {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background:
+      linear-gradient(var(--surface) 30%, transparent) top / 100% 2.5rem no-repeat local,
+      linear-gradient(transparent, var(--surface) 70%) bottom / 100% 2.5rem no-repeat local,
+      radial-gradient(farthest-side at 50% 0, color-mix(in srgb, var(--ink) 28%, transparent), transparent) top / 100%
+        1rem no-repeat scroll,
+      radial-gradient(farthest-side at 50% 100%, color-mix(in srgb, var(--ink) 28%, transparent), transparent) bottom /
+        100% 1rem no-repeat scroll;
+  }
+}
+
+/*
+ * A TEST DEVICE STACKED (under 1024px) HAS NO HEIGHT TO SPLIT. The rail goes
+ * under the document and the step scrolls whole, so the document text must
+ * not be a scroller of its own (review, 10 Oct 2026: it was being squeezed to
+ * its 5rem floor).
+ */
+@media (max-width: 1023px) {
+  .twoColumn.fitColumns .documentScroll {
+    overflow-y: visible;
+    background: none;
+  }
+}
+
+/*
+ * LANDSCAPE USES THE WIDTH (Carl, 10 Oct 2026: "there is so much white space
+ * can we not do a better layout - instead of scrolling"). From 1200px wide on
+ * a landscape screen with the height for it, step 2 is two columns: the
+ * form's text on the left, and everything the patient acts on — the tick
+ * boxes, the tags, Back and Continue — on the right, all in view at once.
+ *
+ * THE DOCUMENT'S BOX STEPS ASIDE SO ITS CHILDREN CAN BE PLACED (`display:
+ * contents`; it has no role, so nothing is lost to assistive technology). Its
+ * frame moves to the text region and its registration marks are not drawn.
+ * Nothing moves in the DOM: the text is first, the ticks next, the actions
+ * last — the same reading, tab and announcement order as the one-column
+ * layout. The text column scrolls only if the form's page is longer than the
+ * screen.
+ */
+@media (orientation: landscape) and (min-width: 1200px) and (min-height: 560px) {
+  .oneColumn.fitColumns {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    column-gap: var(--s7);
+    row-gap: var(--s4);
+  }
+
+  .oneColumn.fitColumns > .documentFit {
+    display: contents;
+    overflow: visible;
+  }
+
+  .oneColumn.fitColumns > .documentFit > .corner {
+    display: none;
+  }
+
+  .oneColumn.fitColumns > .documentFit > .documentScroll {
+    grid-column: 1;
+    grid-row: 1 / -1;
+    padding: var(--s5);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background-color: var(--surface);
+  }
+
+  .oneColumn.fitColumns > .documentFit > :not(.documentScroll),
+  .oneColumn.fitColumns > .railBelow {
+    grid-column: 2;
+  }
+}
+
+/*
+ * A SHORT LANDSCAPE SCREEN SPENDS LESS ON SPACE, NEVER ON TYPE (10 Oct 2026).
+ * At 1024x600, or a large tablet with Edge's two bars, the header and footer
+ * took a third of the height. Here the header's two lines sit on one, and the
+ * padding round the chrome, the content and the document tightens by a step.
+ * Every font size and every target size is untouched (D-2026-09-27-03).
+ */
+@media (max-height: 640px) {
+  .header {
+    padding-top: var(--s2);
+    padding-bottom: var(--s2);
+  }
+
+  .headerText {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: var(--s3);
+  }
+
+  .footer {
+    padding-top: var(--s2);
+    padding-bottom: calc(var(--s2) + env(safe-area-inset-bottom, 0px));
+  }
+
+  .content {
+    padding-top: var(--s3);
+    padding-bottom: var(--s3);
+  }
+
+  .documentFit {
+    padding: var(--s4);
+    gap: var(--s2);
+  }
+
+  .fitColumns {
+    gap: var(--s3);
+  }
+}
+
+/*
+ * A TEST DEVICE DRAWS THE ACTIONS IN THE RAIL, UNDER TWO PANELS. With the
+ * columns side by side (1024px and up) the panels give up height and scroll
+ * inside themselves, so the actions at the foot of the rail stay on screen
+ * too. Stacked, the rail goes under the document and the step scrolls whole.
+ */
+@media (min-height: 560px) and (min-width: 1024px) {
+  .twoColumn.fitColumns {
+    height: 100%;
+    min-height: 0;
+    align-items: stretch;
+  }
+
+  .twoColumn.fitColumns > .documentFit {
+    display: grid;
+    grid-template-rows: minmax(5rem, 1fr);
+    grid-auto-rows: auto;
+    min-height: 0;
+  }
+
+  .twoColumn.fitColumns .documentScroll {
+    contain: size;
+  }
+
+  .twoColumn.fitColumns > .rail {
+    min-height: 0;
+  }
+
+  .twoColumn.fitColumns > .rail > .blueprint {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .twoColumn.fitColumns > .rail > .actions {
+    flex: 0 0 auto;
+  }
+}
+
+/* --------------------------------------------------------------------------
  * THE PRACTICE'S OWN DB4, ON GLASS (K-3, D-2026-09-27-01).
  *
  * TYPE AND FLOW, NEVER A FACSIMILE. D-2026-09-27-01 part 4 refused a rendered
@@ -1110,7 +1379,6 @@
   padding-top: var(--s5);
   border-top: 1px solid var(--line);
 }
-
 
 /*
  * A BLOCK LABEL, NOT A HEADING OF THE PAGE. "Patient", "Services", "Privacy
@@ -1369,7 +1637,16 @@
 .pad {
   position: relative;
   width: 100%;
-  height: 260px;
+  /*
+   * A GENEROUS PAD, SIZED BY ORIENTATION AND NEVER BY THE DYNAMIC VIEWPORT
+   * (10 Oct 2026). `svh` is the viewport with the browser's bars showing, so
+   * it does not change as Edge's toolbar slides; `dvh` does, and that resized
+   * the pad under a signature. Upright the pad is the column's full width and
+   * up to 460px tall; on its side it shares the width, so it takes more of
+   * the height. Never under a usable 160. And if the box changes anyway once
+   * there is ink, the pad keeps its size (`SignaturePad.tsx`).
+   */
+  height: clamp(160px, 30svh, 460px);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   background: var(--surface);
@@ -1408,13 +1685,16 @@
 
 .signRow {
   display: flex;
+  /* Enlarged text wraps Sign under Back and Clear rather than off the edge. */
+  flex-wrap: wrap;
   gap: var(--s4);
   align-items: flex-start;
 }
 
 .grow {
   flex: 1 1 240px;
-  min-width: 240px;
+  /* 240px where there is 240px; never wider than the row it is in. */
+  min-width: min(240px, 100%);
 }
 
 /*
@@ -1436,6 +1716,38 @@
   flex-direction: column;
   align-items: stretch;
   gap: var(--s2);
+}
+
+/*
+ * K-4 ON A LANDSCAPE TABLET (Carl, 10 Oct 2026 — "the action buttons are cut
+ * in half at the bottom"). Who is signing on the left, the pad and its
+ * controls on the right, both from the top of the screen. In portrait, and
+ * below 900px, the two groups are blocks in one stack, the pad full width.
+ *
+ * 900, NOT THE 1024 STACK BREAKPOINT. Edge on Android can report a landscape
+ * tablet narrower than 1024, and stacked the pad starts ~380px down a screen
+ * 600px tall. At 900 the right column is still ~480px, which holds Back,
+ * Clear and Sign's 240px minimum on one row; a portrait tablet (820) stacks.
+ */
+/* A grid track's content may not widen the track (a long name, the pad). */
+.signIntro,
+.signPadColumn {
+  min-width: 0;
+}
+
+@media (orientation: landscape) {
+  .pad {
+    height: clamp(160px, 40svh, 420px);
+  }
+}
+
+@media (orientation: landscape) and (min-width: 900px) {
+  .signLayout {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    gap: var(--s7);
+    align-items: start;
+  }
 }
 
 .tapRow {
@@ -1476,6 +1788,19 @@
  * NEITHER OF THEM TOUCHES A STAFF SURFACE. This file is a CSS module imported
  * only by `app/kiosk/**`; the console's own breakpoints are its own.
  * ------------------------------------------------------------------------ */
+
+/*
+ * PORTRAIT IS ONE CENTRED COLUMN AT A READABLE MEASURE (Carl, 10 Oct 2026:
+ * the 14" tablet is used upright). 70ch of 20px type is about 770px, so a
+ * 924px-wide screen keeps its lines readable rather than stretching them; the
+ * services table and the signature pad take the whole of that column.
+ */
+@media (orientation: portrait) {
+  .content > * {
+    max-width: 70ch;
+    margin-inline: auto;
+  }
+}
 
 @media (max-width: 1023px) {
   .twoColumn {
@@ -1665,6 +1990,25 @@
  */
 .detailsMain {
   gap: var(--s3);
+}
+
+/*
+ * STEP 1 IN LANDSCAPE (10 Oct 2026). Five rows of two 76px answers were taller
+ * than a landscape tablet with the heading and Continue. With the width to
+ * spare, the task column drops its 620px measure so each value sits on one
+ * line, and each answer's glyph sits beside its words instead of above them:
+ * 56px tall, the floor this file already sets, so no target and no type size
+ * changed. Portrait keeps the column and the stacked glyph.
+ */
+@media (orientation: landscape) and (min-width: 1024px) {
+  .twoColumn > .detailsMain {
+    max-width: none;
+  }
+
+  .detailsMain .answerButton {
+    flex-direction: row;
+    gap: var(--s2);
+  }
 }
 
 /* --------------------------------------------------------------------------
