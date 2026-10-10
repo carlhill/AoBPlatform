@@ -312,6 +312,16 @@ export const VAULT_EVENT_TYPES = [
    */
   'agreement.service_associated',
   /**
+   * AN UNSIGNED AGREEMENT CLOSED AS NOT NEEDED (D-2026-10-10-09, option 3).
+   * The closure sweep moved it to `expired` because no service was recorded
+   * for its visit -- none linked, none associated, none matching -- after N
+   * practice-local days. Written beside `agreement.status_changed`, in the
+   * same transaction. Carries the reason code, the content version and the N
+   * applied, and whether N was the practice's own or the default. CODES, DAYS
+   * AND VERSIONS ONLY: no name, no identifier value, no amount.
+   */
+  'agreement.closed_unsigned',
+  /**
    * A PERSON at the practice chased the patient — rang them, texted them,
    * caught them at the desk, put a letter in the post — and said what came of
    * it. The platform's own attempts are already evidenced by
@@ -546,6 +556,13 @@ export const VAULT_EVENT_TYPES = [
    * (REQ-LOG-08).
    */
   'practice.kiosk_idle_timeout_set',
+  /**
+   * HOW MANY DAYS AN UNSIGNED AGREEMENT WAITS, WITH NO SERVICE RECORDED,
+   * BEFORE IT IS CLOSED (D-2026-10-10-09, option 3). The practice's own N, or
+   * a return to the versioned default. A number of days is not PII, so the
+   * new and previous values travel in the payload with the content version.
+   */
+  'practice.unsigned_draft_closure_days_set',
   /**
    * WHICH AGREEMENT THE PRE-STEP OFFERS BY DEFAULT (Carl, 4 Sep 2026;
    * GA-PLAN B6).

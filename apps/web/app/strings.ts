@@ -3576,6 +3576,19 @@ export const strings = {
       + 'a stranger. Any touch resets the clock, and a quiet warning appears thirty seconds before it happens.',
     idleLabel: 'Minutes of no activity',
     idleHint: 'Between 1 and 30. Five is the default — long enough to read an agreement standing up.',
+    /*
+     * CLOSE UNSIGNED AGREEMENTS NOBODY NEEDED (D-2026-10-10-09, option 3; Carl:
+     * "N is 7 days - make N a configurable setting"). What the sweep does is
+     * said exactly, including what it never closes.
+     */
+    closeTitle: 'Close unsigned agreements when no service was recorded',
+    closeLead:
+      'An agreement nobody signed, for a visit with no service recorded, is closed after this many days as '
+      + '"not needed: no service recorded". It is kept, not deleted, and the closure is recorded. An agreement '
+      + 'linked or associated with a service, matched by one, on a tablet, or with a live link is never closed this way.',
+    closeLabel: 'Days after the visit',
+    closeHint: (min: number, max: number, defaultDays: number, version: string) =>
+      `Between ${min} and ${max}. Leave empty to use the default, ${defaultDays} days (${version}).`,
 
     /**
      * WHICH AGREEMENT THE PRE-STEP OFFERS FIRST (Carl, 4 Sep 2026; GA-PLAN B6).

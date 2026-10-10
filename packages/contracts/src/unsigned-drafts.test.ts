@@ -11,4 +11,10 @@ describe('unsigned-draft vault events', () => {
     const types: readonly string[] = VAULT_EVENT_TYPES;
     expect(types).toContain('agreement.service_associated');
   });
+
+  it('declares the closure and setting events inside the vault event list', () => {
+    const types: readonly string[] = VAULT_EVENT_TYPES;
+    expect(types).toContain('agreement.closed_unsigned');
+    expect(types).toContain('practice.unsigned_draft_closure_days_set');
+  });
 });

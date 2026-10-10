@@ -3,6 +3,8 @@ import {
   KIOSK_IDLE_TIMEOUT_MAX_SECONDS,
   KIOSK_IDLE_TIMEOUT_MIN_SECONDS,
   SURFACE_PROFILE_KEYS,
+  UNSIGNED_DRAFT_CLOSURE_MAX_DAYS,
+  UNSIGNED_DRAFT_CLOSURE_MIN_DAYS,
 } from '@aobplatform/domain';
 import {
   ArrayMinSize,
@@ -116,6 +118,19 @@ export class UpdateConfigDto {
   @IsOptional()
   @IsIn(SURFACE_PROFILE_KEYS as string[])
   surfaceProfile?: string;
+
+  /**
+   * HOW MANY DAYS AN UNSIGNED AGREEMENT WAITS, WITH NO SERVICE RECORDED FOR
+   * ITS VISIT, BEFORE IT IS CLOSED (D-2026-10-10-09, option 3). Whole days,
+   * inside the versioned content's bounds (`UNSIGNED_DRAFT_CLOSURE_MIN_DAYS`
+   * .. `_MAX_DAYS`, 1..90 today). NULL returns the practice to the versioned
+   * default; absent leaves it as it is.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(UNSIGNED_DRAFT_CLOSURE_MIN_DAYS)
+  @Max(UNSIGNED_DRAFT_CLOSURE_MAX_DAYS)
+  unsignedDraftClosureDays?: number | null;
 
   @IsOptional()
   @IsBoolean()

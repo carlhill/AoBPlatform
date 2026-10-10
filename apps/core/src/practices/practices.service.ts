@@ -8,6 +8,8 @@ import {
   isBillingRole,
   PRACTICE_SURFACES_VERSION,
   profileSurfaces,
+  UNSIGNED_DRAFT_CLOSURE_DEFAULT_DAYS,
+  UNSIGNED_DRAFT_CLOSURE_VERSION,
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -103,6 +105,7 @@ export class PracticesService {
           identifierTypes: dto.identifierTypes,
           linkExpiryHours: dto.linkExpiryHours,
           kioskIdleTimeoutSeconds: dto.kioskIdleTimeoutSeconds,
+          unsignedDraftClosureDays: dto.unsignedDraftClosureDays,
           enduringByDefault: dto.enduringByDefault,
           surfaceProfile: dto.surfaceProfile,
           writeBackProven: dto.writeBackProven,
@@ -144,6 +147,31 @@ export class PracticesService {
           payload: {
             kioskIdleTimeoutSeconds: dto.kioskIdleTimeoutSeconds,
             previousSeconds: practice.kioskIdleTimeoutSeconds,
+            ...(actor ? { setBy: actor.name } : {}),
+          },
+        });
+      }
+
+      /*
+       * HOW LONG AN UNSIGNED AGREEMENT WAITS BEFORE IT IS CLOSED IS EVIDENCED
+       * WHEN IT MOVES (D-2026-10-10-09, option 3). It decides when agreements
+       * stop being open, so who changed it and to what is evidence. Only on a
+       * real change; NULL is "the versioned default" and is said so, with the
+       * content version and the default it stands for.
+       */
+      if (
+        dto.unsignedDraftClosureDays !== undefined &&
+        (dto.unsignedDraftClosureDays ?? null) !== practice.unsignedDraftClosureDays
+      ) {
+        await enqueueVaultEvent(tx, {
+          type: 'practice.unsigned_draft_closure_days_set',
+          actor: actor ? { principalType: actor.principalType, id: actor.id } : SYSTEM_ACTOR,
+          subject: { type: 'Practice', id: practiceId },
+          payload: {
+            unsignedDraftClosureDays: dto.unsignedDraftClosureDays ?? 'content_default',
+            previous: practice.unsignedDraftClosureDays ?? 'content_default',
+            contentVersion: UNSIGNED_DRAFT_CLOSURE_VERSION,
+            contentDefaultDays: UNSIGNED_DRAFT_CLOSURE_DEFAULT_DAYS,
             ...(actor ? { setBy: actor.name } : {}),
           },
         });

@@ -74,6 +74,17 @@ model Practice {
    */
   kioskIdleTimeoutSeconds   Int      @default(300)
   /**
+   * HOW MANY PRACTICE-LOCAL DAYS AN UNSIGNED AGREEMENT WAITS, WITH NO SERVICE
+   * RECORDED FOR ITS VISIT, BEFORE THE SWEEP CLOSES IT (D-2026-10-10-09,
+   * option 3; Carl: "N is 7 days - make N a configurable setting").
+   * NULL MEANS "THE VERSIONED DEFAULT" (`content/unsigned-draft-closure.json`),
+   * deliberately unlike `kioskIdleTimeoutSeconds`: a practice that never chose
+   * follows the content, so a change to the default reaches it, and every
+   * closure records which N it applied and where that came from. Bounded by
+   * the content's `minDays`..`maxDays` in the DTO and by a CHECK.
+   */
+  unsignedDraftClosureDays  Int?
+  /**
    * WHICH AGREEMENT THE PRE-STEP OFFERS FIRST (Carl, 4 Sep 2026; GA-PLAN B6).
    * For a GP practice the strongest answer at the desk is an ONGOING
    * agreement: sign once and there is nothing post-service ever, because the
@@ -1497,6 +1508,19 @@ model Agreement {
    */
   signedDb4RenderPayload   Json?
   signedDb4RenderedAt      DateTime?   @db.Timestamptz(3)
+  /**
+   * CLOSED AS NOT NEEDED (D-2026-10-10-09, option 3) -- set only by the
+   * closure sweep, together, in the transaction that moves the status to
+   * `expired`. The reason code (`UNSIGNED_DRAFT_CLOSURE_REASONS`), when, the
+   * content version and the N applied, and whether N was the practice's own
+   * (`practice`) or the default (`content_default`). All NULL on every
+   * agreement nobody closed, and the database insists on all-or-none.
+   */
+  closedReason             String?
+  closedAt                 DateTime?   @db.Timestamptz(3)
+  closureRuleVersion       String?
+  closureDays              Int?
+  closureDaysSource        String?
   createdAt               DateTime     @default(now())
   updatedAt               DateTime     @updatedAt
 

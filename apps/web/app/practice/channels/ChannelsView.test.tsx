@@ -10,6 +10,12 @@ import { describe, expect, it, vi, afterEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ChannelsView } from './ChannelsView';
 import { strings } from '../../strings';
+import {
+  UNSIGNED_DRAFT_CLOSURE_DEFAULT_DAYS,
+  UNSIGNED_DRAFT_CLOSURE_MAX_DAYS,
+  UNSIGNED_DRAFT_CLOSURE_MIN_DAYS,
+  UNSIGNED_DRAFT_CLOSURE_VERSION,
+} from '@aobplatform/domain';
 
 const PRACTICE = 'practice-1';
 
@@ -204,6 +210,51 @@ describe('the kiosk inactivity reset field', () => {
     }
     fireEvent.change(input, { target: { value: '30' } });
     expect((screen.getByTestId('channels-save') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('closure_days_empty_means_the_versioned_default_and_saves_as_null_a_number_saves_as_itself', async () => {
+    stubFetch([{ state: 'paired' }]);
+    render(<ChannelsView practiceId={PRACTICE} />);
+
+    const input = (await screen.findByTestId('channels-close-days')) as HTMLInputElement;
+    await waitFor(() => expect((screen.getByTestId('channels-idle-minutes') as HTMLInputElement).value).toBe('2'));
+    // The server sent no value: empty, with the default and its version said in the hint.
+    expect(input.value).toBe('');
+    expect(document.body.textContent).toContain(
+      strings.channels.closeHint(
+        UNSIGNED_DRAFT_CLOSURE_MIN_DAYS,
+        UNSIGNED_DRAFT_CLOSURE_MAX_DAYS,
+        UNSIGNED_DRAFT_CLOSURE_DEFAULT_DAYS,
+        UNSIGNED_DRAFT_CLOSURE_VERSION,
+      ),
+    );
+
+    for (const refused of ['0', '91', '2.5']) {
+      fireEvent.change(input, { target: { value: refused } });
+      expect((screen.getByTestId('channels-save') as HTMLButtonElement).disabled).toBe(true);
+    }
+    fireEvent.change(input, { target: { value: '14' } });
+    fireEvent.click(screen.getByTestId('channels-save'));
+    await waitFor(() => {
+      const patch = vi
+        .mocked(fetch)
+        .mock.calls.find(([, init]) => (init as RequestInit | undefined)?.method === 'PATCH');
+      expect(JSON.parse((patch![1] as RequestInit).body as string).unsignedDraftClosureDays).toBe(14);
+    });
+  });
+
+  it('closure_days_cleared_saves_null_back_to_the_default', async () => {
+    stubFetch([{ state: 'paired' }]);
+    render(<ChannelsView practiceId={PRACTICE} />);
+    await waitFor(() => expect((screen.getByTestId('channels-idle-minutes') as HTMLInputElement).value).toBe('2'));
+
+    fireEvent.click(screen.getByTestId('channels-save'));
+    await waitFor(() => {
+      const patch = vi
+        .mocked(fetch)
+        .mock.calls.find(([, init]) => (init as RequestInit | undefined)?.method === 'PATCH');
+      expect(JSON.parse((patch![1] as RequestInit).body as string).unsignedDraftClosureDays).toBeNull();
+    });
   });
 });
 
