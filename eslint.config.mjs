@@ -23,7 +23,19 @@ export default tseslint.config(
   {
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
-      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      // `ignoreRestSiblings` is for the omit-by-rest idiom, which this codebase
+      // uses to build a payload with one field deliberately missing:
+      //
+      //     const { adminEmail, ...withoutEmail } = application();
+      //
+      // The named binding is never read on purpose — removing it is the whole
+      // point. Without this the rule pushes you to rename it to `_adminEmail`,
+      // which says nothing about which field was dropped, or to disable the
+      // rule at the line, which disables it for everything else there too.
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', ignoreRestSiblings: true },
+      ],
       'no-console': ['warn', { allow: ['warn', 'error'] }],
       // CLAUDE.md hard rule 1 / HARD-03: the Medicare card number is never an
       // identifier and never stored. Any identifier with "medicare" in its name
