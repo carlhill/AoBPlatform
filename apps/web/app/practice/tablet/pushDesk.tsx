@@ -503,7 +503,7 @@ export interface RefusalContext {
   print?: Db4PrintRecordIdentity;
   /**
    * THE ROW'S PMS PATIENT ID AND THE NAME ON RECORD, so the printed-name
-   * question can name both (D-2026-10-11-02). Off the ROW, never off the
+   * question can name both (D-2026-10-11-06). Off the ROW, never off the
    * refusal: the wire carries codes, and the row already shows these two.
    * `patientName` above is somebody else — whoever is on a busy tablet.
    */
@@ -575,7 +575,7 @@ export function describePrintRecordCheck(
   ctx: Pick<RefusalContext, 'print' | 'pmsPatientId' | 'recordName' | 'patientId' | 'audiences' | 'practiceId'> = {},
 ): { code: string; text: string; link?: { href: string; label: string } } {
   /*
-   * THE NAME QUESTION (D-2026-10-11-02): which PMS patient ID, and whose name
+   * THE NAME QUESTION (D-2026-10-11-06): which PMS patient ID, and whose name
    * we hold for it, from the row. The link is the patient, because that is
    * where the name on record is corrected — routed like every other link, so
    * it is hidden rather than left to refuse.
@@ -822,7 +822,7 @@ export function describeRefusal(
        */
       const unread = (ctx.checks ?? []).includes('print_record_service_lines_unread');
       /*
-       * AND A DIFFERENT NAME OUTRANKS BOTH (D-2026-10-11-02): it is about WHO
+       * AND A DIFFERENT NAME OUTRANKS BOTH (D-2026-10-11-06): it is about WHO
        * the form is for, which matters before what it lists, and its own
        * sentence promises neither fix because either side may be the wrong one.
        */

@@ -375,7 +375,7 @@ describe('the DB4 form view', () => {
 
     /* ---------------------------------------------------------------------
      * THE PRINTED NAME AND THE PATIENT ON RECORD DISAGREE (Carl, 11 October
-     * 2026; D-2026-10-11-02). A DB4 is matched to a patient on the PMS
+     * 2026; D-2026-10-11-06). A DB4 is matched to a patient on the PMS
      * patient ID alone (hard rule 1), so a form printing "Fern2 Dummyfield"
      * against the ID of Emin Dummyfield placed an agreement for Emin — and
      * the tablet would have shown the patient a form in another name.
@@ -685,7 +685,7 @@ describe('the DB4 form view', () => {
       /*
        * EVERY CHECK BUT ONE, AND THAT ONE CANNOT JOIN. `print_record_patient_name_differs`
        * needs a PRINTED name to compare, and `print_record_patient_unidentified` fires only
-       * when there is none — the two exclude each other by construction (D-2026-10-11-02).
+       * when there is none — the two exclude each other by construction (D-2026-10-11-06).
        */
       expect(alsoHalfRead).toEqual(DB4_PRINT_RECORD_CHECKS.filter((c) => c !== 'print_record_patient_name_differs'));
       // AND IN THE DECLARED ORDER, always. A list that reshuffles itself

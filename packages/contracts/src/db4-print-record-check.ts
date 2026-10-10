@@ -274,7 +274,7 @@ export const DB4_PRINT_RECORD_CHECKS = [
   'print_record_service_lines_unread',
   /**
    * THE PRINTED NAME IS NOT THE NAME ON RECORD FOR THAT PMS PATIENT ID (Carl,
-   * 11 October 2026; D-2026-10-11-02): *"STOP and tell Reception that PMS is
+   * 11 October 2026; D-2026-10-11-06): *"STOP and tell Reception that PMS is
    * sending a diff name for PMSID xxx. Is this correct?"*
    *
    * LIVE. A DB4 is matched to a patient on the PMS patient ID and on nothing

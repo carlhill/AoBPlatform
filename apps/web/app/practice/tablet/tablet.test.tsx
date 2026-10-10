@@ -2755,7 +2755,7 @@ describe('the refusal words', () => {
   /*
    * THE PRINTED NAME IS NOT THE NAME ON RECORD (Carl, 11 October 2026:
    * "STOP and tell Reception that PMS is sending a diff name for PMSID xxx.
-   * Is this correct?"; D-2026-10-11-02).
+   * Is this correct?"; D-2026-10-11-06).
    */
   it('printed_name_differs_asks_reception_naming_the_pms_patient_id_and_the_record', () => {
     const info = describeRefusal('print_record_incomplete', {

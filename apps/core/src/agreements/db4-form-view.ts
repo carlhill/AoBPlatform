@@ -484,7 +484,7 @@ export function checkDb4PrintRecord(
   /*
    * THE PATIENT ON RECORD, when the caller has one. Optional because the
    * envelope alone cannot say who the agreement is for; a caller that does
-   * not pass it is not asked the name question (D-2026-10-11-02).
+   * not pass it is not asked the name question (D-2026-10-11-06).
    */
   onRecord?: PatientNameOnRecord | null,
 ): readonly Db4PrintRecordCheck[] {
@@ -600,7 +600,7 @@ export function checkDb4PrintRecord(
   /*
    * THE PRINTED NAME AGAINST THE PATIENT ON RECORD (Carl, 11 October 2026:
    * *"STOP and tell Reception that PMS is sending a diff name for PMSID xxx.
-   * Is this correct?"*; D-2026-10-11-02).
+   * Is this correct?"*; D-2026-10-11-06).
    *
    * Ingest matched this form to a patient on the PMS patient ID alone (hard
    * rule 1), so nothing upstream ever compared the names. Both sides must

@@ -5,7 +5,7 @@ import type { PrintRecordsService } from '../inbound/print-records.service';
 
 /**
  * THE SEND-TO-TABLET CHECK COMPARES THE PRINTED NAME WITH THE PATIENT ON
- * RECORD, ON BOTH PATHS (D-2026-10-11-02).
+ * RECORD, ON BOTH PATHS (D-2026-10-11-06).
  *
  * `checkDb4PrintRecord` is tested in `db4-form-view.spec.ts`; this proves the
  * two callers actually hand it the patient — the single push and the desk

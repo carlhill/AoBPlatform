@@ -60,7 +60,7 @@ const recordIdWords = {
      */
     /*
      * "PMS PATIENT ID" SINCE 11 OCTOBER 2026 (Carl: *"is this the PMSPatientID?
-     * If so lets call it that and not the ChartNumber"*; D-2026-10-11-02). It
+     * If so lets call it that and not the ChartNumber"*; D-2026-10-11-06). It
      * is the practice's own number for the patient in their PMS — PracSoft
      * prints it as "Chart Number" — and we store it as `patientRecordNumber`,
      * the s 65C approved identifier's own name, which is why the CODE keeps
@@ -6603,7 +6603,7 @@ export const strings = {
        */
       print_record_service_lines_unreadTitle: 'Some service lines could not be read',
       /**
-       * THE PRINTED NAME DIFFERS FROM THE PATIENT ON RECORD (D-2026-10-11-02)
+       * THE PRINTED NAME DIFFERS FROM THE PATIENT ON RECORD (D-2026-10-11-06)
        * — used in place of the sentences above whenever that check is in the
        * list, because "reprint it" is only one of its two possible fixes.
        */
@@ -6680,7 +6680,7 @@ export const strings = {
     /**
      * THE NAME QUESTION, PUT TO RECEPTION (Carl, 11 October 2026: *"STOP and
      * tell Reception that PMS is sending a diff name for PMSID xxx. Is this
-     * correct?"*; D-2026-10-11-02).
+     * correct?"*; D-2026-10-11-06).
      *
      * BOTH REMEDIES, BECAUSE EITHER SIDE CAN BE THE WRONG ONE (wow.md §13).
      * If our record's name is wrong, it is corrected on the patient; if the
@@ -6836,7 +6836,7 @@ export const strings = {
       'Reprint the form first — this agreement cannot be sent, and a reprint starts a new one, so an '
       + 'answer saved here would not carry over.',
     /** The same control, where a reprint would not help (D-2026-10-11-05). */
-    /** The same control, where the printed name and the record disagree (D-2026-10-11-02). */
+    /** The same control, where the printed name and the record disagree (D-2026-10-11-06). */
     whoBlockedByPatientNameDiffers:
       'Check the patient first — this agreement cannot be sent until the printed form and the patient on '
       + 'record have the same name.',

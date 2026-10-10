@@ -3133,7 +3133,7 @@ export class AgreementsService {
       const sourced = await this.prisma.withPractice(practiceId, (tx) =>
         tx.agreement.findMany({
           where: { id: { in: [...agreementIds] }, sourcePrintJobId: { not: null } },
-          // The patient's name on record, for the printed-name check (D-2026-10-11-02).
+          // The patient's name on record, for the printed-name check (D-2026-10-11-06).
           select: { id: true, sourcePrintJobId: true, patient: { select: { givenNames: true, familyName: true } } },
         }),
       );
@@ -3180,7 +3180,7 @@ export class AgreementsService {
        * is here, where the record was just read.
        */
       /*
-       * THE PATIENT ON RECORD, for the printed-name check (D-2026-10-11-02).
+       * THE PATIENT ON RECORD, for the printed-name check (D-2026-10-11-06).
        * Read here, beside the record, so the push and the desk list ask the
        * same question of the same two names.
        */

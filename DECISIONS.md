@@ -3129,7 +3129,7 @@ the band's copy may gain a line saying so.
 in brackets"). The open template work is in TODO.md, "Read credits and
 whole-dollar amounts as service rows?".
 
-## D-2026-10-11-02 - A printed name that differs from the patient on record stops Send-to-tablet; "PMS patient ID" replaces "Patient ID" and "Chart number"
+## D-2026-10-11-06 - A printed name that differs from the patient on record stops Send-to-tablet; "PMS patient ID" replaces "Patient ID" and "Chart number"
 
 **Date:** 11 October 2026. **Decided by:** Carl, after a test form printed
 given name "Fern2" against the PMS patient ID of Emin Dummyfield, and the desk
@@ -3138,6 +3138,16 @@ diff name for PMSID xxx. Is this correct?"*, and *"If AOB is storing the
 ChartNumber (is this the PMSPatientID?) If so lets call it that and not the
 ChartNumber"*. **Built on:** branch `feat/db4-printed-name-differs`, based on
 `fix/aobprinter-unparsed-service-lines`.
+
+**This overturns D-2026-10-10-11's "never block".** D-2026-10-10-11 (PR #16,
+`feat/db4-printed-name-mismatch`) flags the same mismatch on the desk row and
+leaves Send to tablet working. Asked on 11 October 2026 which of the two
+should stand, Carl chose to stop the send. PR #16 is superseded by this
+decision and should be closed or reworked; its stricter name comparison
+(punctuation, accents, lookalike letters) is worth reading against the one
+below before either merges. Hard rule 8 still holds: this refuses the tablet,
+never the visit. The patient is seen and billed either way, and the agreement
+can be taken on paper or after the service.
 
 **What was wrong.** A DB4 is matched to a patient on the PMS patient ID and on
 nothing else (hard rule 1; `db4-assignment.handler.ts` looks the patient up by
