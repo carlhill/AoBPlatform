@@ -2972,6 +2972,11 @@ host runs the new default carry the `$`. The Signed-DB4 draws the string
 verbatim, so two renders of the same record stay byte-identical (hard rule 13),
 and existing records render exactly as before.
 
+**One other change on the row, for one shape only.** Where PracSoft prints a
+space after the `$` (`$ 45.05`), -09-1 left the `$` on the end of the
+description; -10-1 takes it into the amount, so the description no longer ends
+in a stray `$`. Every other part of the row is captured as before.
+
 **Nothing in AoB originates or parses a figure.** Hard rule 4 as narrowed by
 D-2026-09-14-02 lets AoB reproduce the amount the practice's billing software
 printed and nothing else. This decision makes the reproduction more faithful;

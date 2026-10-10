@@ -202,7 +202,7 @@ export const PRESETS: readonly Preset[] = [
       ...d,
       services: [
         row('23', 'Level B, whole dollars', '$45'),
-        row('36', 'Level C, no symbol (a -09-1 record)', '45.05'),
+        row('36', 'Level C, printed without a symbol', '45.05'),
         row('75870', 'Attendance, one decimal', '$1234.5'),
         row('14206', 'Iron infusion, grouped', '$1,234.55'),
         row('10990', 'Incentive, nothing charged', '$0.00'),
