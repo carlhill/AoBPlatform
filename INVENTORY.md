@@ -17,7 +17,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2419 |
+| Exported symbols indexed | 2423 |
 | Files scanned for exports | 572 |
 | Files scanned for imports | 615 |
 | Exports with no comment of their own | 1001 |
@@ -27,8 +27,8 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 - [Web components](#web-components) — 239
 - [Web hooks](#web-hooks) — 16
-- [Web helpers and constants](#web-helpers-and-constants) — 308
-- [Web types](#web-types) — 116
+- [Web helpers and constants](#web-helpers-and-constants) — 310
+- [Web types](#web-types) — 118
 - [Domain functions](#domain-functions) — 392
 - [Domain constants and content](#domain-constants-and-content) — 254
 - [Domain types](#domain-types) — 295
@@ -309,7 +309,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web helpers and constants
 
-308 exports.
+310 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -477,6 +477,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `slugify` | web:practice/templates/templateEditing.ts | A PRACTICE NAME, MADE INTO THE SHAPE A VERSION NAME CAN START WITH (Carl, 7 Sep 2026). | **1** · web:practice/templates/TemplateForm.tsx |
 | `stableByFirstSeen` | web:practice/frontdesk/FrontDeskView.tsx | HOLD THE ORDER SOMEBODY IS LOOKING AT (§12.3). | **1** · web:practice/frontdesksmall/SmallDeskView.tsx |
 | `startChallenge` | web:kiosk/api.ts |  | **1** · web:kiosk/Ceremony.tsx |
+| `startFromPreset` | web:aobprinter/presets.ts | WHAT A PRESET STARTS FROM: the blank draft, plus the patient the tester is pointing at. | **1** · web:aobprinter/AobPrinterTool.tsx |
 | `stateWord` | web:practice/frontdesk/FrontDeskView.tsx | DONE, STILL TO DO, DROPPED, OR NOTHING TO SIGN — the words, from the table. | **1** · web:practice/frontdesksmall/SmallDeskView.tsx |
 | `statementPage` | web:kiosk/rules/db4-pages.ts | The page a statement is read on. | **1** · web:kiosk/screens/ParticularsScreen.tsx |
 | `stepNumber` | web:kiosk/rules/ceremony-steps.ts | Where a step sits in a sequence, or `null` if it is not one of its steps. | **1** · web:kiosk/Ceremony.tsx |
@@ -501,6 +502,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `OFFER_RETURN_SECONDS` | web:kiosk/screens/CompleteScreen.tsx | LONGER WHILE A QUESTION IS ON SCREEN (W6). | 0 |
 | `PAIRING_CREDENTIAL_KEY` | web:kiosk/pairing.ts | The only key the kiosk may ever persist. | 0 |
 | `PERSISTABLE_KEYS` | web:kiosk/pairing.ts | THE ALLOW-LIST. | 0 |
+| `PRINTED_ASSIGNMENT` | web:aobprinter/presets.ts | THE PRIVACY NOTICE AND STATEMENTS A PRACSOFT DB4 PRINTS, word for word as `DB4-print.example.json` records them off the scanned form. | 0 |
 | `RESOLVED_SERVICE_STATES` | web:practice/frontdesk/visitChecklist.ts | WHICH STATES MEAN AN ITEM NEEDS NOTHING MORE. | 0 |
 | `RETURN_SECONDS` | web:kiosk/screens/CompleteScreen.tsx | The Expo build's timeout, unchanged. | 0 |
 | `RETURN_TO_BEGIN_HOLD_MS` | web:kiosk/Ceremony.tsx | HOW LONG "Please see reception" STAYS UP before the tablet returns to Begin on its own (Carl, 4–5 Sep 2026). | 0 |
@@ -624,7 +626,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web types
 
-116 exports.
+118 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -663,6 +665,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `VerificationState` | web:kiosk/rules/verification.ts |  | **2** · web:kiosk/Ceremony.tsx, web:kiosk/screens/VerifyScreen.tsx |
 | `AgreementResponse` | web:kiosk/api.ts | `GET /agreements/:id` — only the fields the ceremony reads. | **1** · web:kiosk/Ceremony.tsx |
 | `AobPrinterHostSignal` | web:practice/aobprinter-host/hostStates.ts | What a state is decided from. | **1** · web:platform/aobprinter-hosts/AobPrinterHostsOverviewView.tsx |
+| `AssignmentStatement` | web:aobprinter/presets.ts | ONE STATEMENT PRINTED UNDER THE PRIVACY NOTICE, as AOBPRINTER reads it (`assignment.statements` in `pracsoft3-db4-2026-10-1`). | **1** · web:aobprinter/envelope.ts |
 | `ChecklistRow` | web:practice/frontdesk/visitChecklist.ts |  | **1** · web:practice/frontdesk/FrontDeskView.tsx |
 | `ChecklistState` | web:practice/frontdesk/visitChecklist.ts | WHERE ONE SERVICE ON THIS PATIENT'S LIST HAS GOT TO (`VISIT-CHECKLIST.md` §3a; Carl, 12 September 2026: *"What you call 'Paper work' per patient, I call the patient service list. | **1** · web:practice/frontdesk/dayRails.ts |
 | `CopyOfferResponse` | web:kiosk/api.ts |  | **1** · web:kiosk/screens/CompleteScreen.tsx |
@@ -679,6 +682,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PairingFailure` | web:kiosk/screens/PairingScreen.tsx | What happened to the last attempt. | **1** · web:kiosk/Ceremony.tsx |
 | `ParticularsView` | web:kiosk/screens/ParticularsScreen.tsx |  | **1** · web:kiosk/Ceremony.tsx |
 | `PortalSession` | web:patient/portal/api.ts | `GET /portal/session`. | **1** · web:patient/portal/fixtures.ts |
+| `PrintedAssignment` | web:aobprinter/presets.ts | THE PRIVACY NOTICE AND THE ASSIGNMENT STATEMENTS ARE PRINTED-FORM DATA, NOT VERSIONED CONTENT. | **1** · web:aobprinter/envelope.ts |
 | `ProviderRow` | web:aobprinter/presets.ts |  | **1** · web:aobprinter/AobPrinterTool.tsx |
 | `QueueRow` | web:review/QueueView.tsx | One row of the pending queue, as the API returns it. | **1** · web:review/[id]/DossierView.tsx |
 | `RecordCheckInput` | web:review/CheckRecorder.tsx |  | **1** · web:review/[id]/DossierView.tsx |
@@ -1505,6 +1509,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SignaturePoint` | domain:signature.ts | A captured point, in the pad's own logical coordinate space. | **1** · web:kiosk/components/SignaturePad.tsx |
 | `SignatureStroke` | domain:signature.ts | One continuous contact with the glass. | **1** · web:kiosk/components/SignaturePad.tsx |
 | `SignedDb4Content` | domain:signed-db4-content.ts |  | **1** · core:render/signed-db4-document.ts |
+| `StepUpRefusal` | domain:auth-method.ts | Why a high-stakes act was refused — the code, not the sentence. | **1** · core:auth/auth.guard.ts |
 | `StructuredAddress` | domain:address.ts |  | **1** · core:organisations/organisations.service.ts |
 | `SuppressedSend` | domain:correspondence-log.ts |  | **1** · web:practice/correspondence/CorrespondenceView.tsx |
 | `TabletSessionPatient` | domain:tablet-session.ts |  | **1** · web:kiosk/rules/pushed-details.ts |
@@ -1688,7 +1693,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SignerContact` | domain:agreement-copy.ts | A contact pair, from whichever record the signer's contact lives on. | 0 |
 | `Stakes` | domain:review-tasks.ts | How much rides on getting this one wrong. | 0 |
 | `StepUpDecision` | domain:auth-method.ts | The answer to "may this session do the irreversible thing", and why not. | 0 |
-| `StepUpRefusal` | domain:auth-method.ts | Why a high-stakes act was refused — the code, not the sentence. | 0 |
 | `StrengthLine` | domain:practitioner-strength.ts | One line of the §6 table, as it applies to one practitioner. | 0 |
 | `SurfaceOrAlways` | domain:practice-surfaces.ts | A surface key, or `always`. | 0 |
 | `SurfaceProfile` | domain:practice-surfaces.ts |  | 0 |
