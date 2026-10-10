@@ -1,5 +1,12 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import type { CollectedConfirmation, PrintJobEnvelope, SignedFormForCollection } from '@aobplatform/contracts';
+import type { Prisma } from '@prisma/client';
+import type {
+  AobPrinterFiledReturn,
+  AobPrinterReturnOutcome,
+  CollectedConfirmation,
+  PrintJobEnvelope,
+  SignedFormForCollection,
+} from '@aobplatform/contracts';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -82,85 +89,153 @@ export class WriteBackCollectionService {
     if (after && Number.isNaN(after.getTime())) {
       throw new BadRequestException('`since` must be an ISO 8601 instant.');
     }
+    return this.prisma.withPractice(practiceId, (tx) =>
+      this.collectable(tx, practiceId, after ? { signedDb4RenderedAt: { gt: after } } : {}, { warnSkipped: true }),
+    );
+  }
+
+  /**
+   * WHAT THE PLATFORM KNOWS OF RETURNS THE HOST HAS FILED AND NOT SEEN
+   * CONFIRMED (PRINTER-HEARTBEAT.md §3, D-2026-10-10-02 decision 9). For each:
+   * whether the platform recorded it written back, whether the hash the host
+   * holds is the one published, and whether it is still offered for
+   * collection — and the patient, for the console's link (never on the reply).
+   *
+   * "STILL OFFERED" IS `pending()`'S OWN ANSWER, asked through the same
+   * `collectable` predicate, so the heartbeat and the collection poll cannot
+   * disagree about what is on the list.
+   */
+  async statusForHost(
+    practiceId: string,
+    filed: readonly AobPrinterFiledReturn[],
+  ): Promise<Array<AobPrinterReturnOutcome & { patientId: string | null }>> {
+    if (filed.length === 0) return [];
+    const ids = [...new Set(filed.map((f) => f.agreementId))];
     return this.prisma.withPractice(practiceId, async (tx) => {
-      const practice = await tx.practice.findFirst({ where: { id: practiceId } });
-      /*
-       * GATE 1. Not an error — a practice nobody has asked yet is an ordinary
-       * state during onboarding, and an empty list is the honest answer to
-       * "what may I file". Logged so the gap is visible to us rather than only
-       * to the receptionist wondering where the documents are.
-       */
-      if (practice?.documentFolderKey !== 'patient_record_number') {
-        this.logger.log('Collection asked for by a practice with no confirmed document folder key.');
-        return [];
-      }
-
-      const rows = await tx.agreement.findMany({
-        where: {
-          status: 'stored',
-          writtenBackAt: null,
-          signedDb4ArtefactId: { not: null },
-          signedDb4Sha256: { not: null },
-          ...(after ? { signedDb4RenderedAt: { gt: after } } : {}),
-        },
-        orderBy: { signedDb4RenderedAt: 'asc' },
-        take: 200,
+      const agreements = await tx.agreement.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, patientId: true, writtenBackAt: true, signedDb4Sha256: true },
       });
-      if (rows.length === 0) return [];
-
-      const patients = await tx.patient.findMany({
-        where: { id: { in: [...new Set(rows.map((r) => r.patientId))] } },
-      });
-      const chartOf = new Map(patients.map((p) => [p.id, p.patientRecordNumber]));
-      const jobIds = rows.map((r) => r.sourcePrintJobId).filter((id): id is string => !!id);
-      const jobs = await tx.inboundPrintJob.findMany({ where: { id: { in: jobIds } } });
-      const referenceOf = new Map(
-        jobs.map((j) => [j.id, (j.payload as PrintJobEnvelope | null)?.form?.formReference]),
+      const byId = new Map(agreements.map((a) => [a.id, a]));
+      const listed = new Set(
+        (await this.collectable(tx, practiceId, { id: { in: ids } }, { warnSkipped: false })).map((r) => r.agreementId),
       );
-      const signatures = await tx.signatureEvent.findMany({
-        where: { agreementId: { in: rows.map((r) => r.id) } },
-        orderBy: { createdAt: 'asc' },
+      return filed.map((f) => {
+        const agreement = byId.get(f.agreementId);
+        return {
+          agreementId: f.agreementId,
+          writtenBack: !!agreement?.writtenBackAt,
+          sha256Matches: !!agreement?.signedDb4Sha256 && agreement.signedDb4Sha256 === f.sha256,
+          listed: listed.has(f.agreementId),
+          patientId: agreement?.patientId ?? null,
+        };
       });
-      const signedAtOf = new Map<string, Date>();
-      for (const s of signatures) {
-        if (!signedAtOf.has(s.agreementId)) signedAtOf.set(s.agreementId, s.createdAt);
-      }
-
-      const out: SignedFormForCollection[] = [];
-      for (const row of rows) {
-        const patientRecordNumber = chartOf.get(row.patientId);
-        const formReference = row.sourcePrintJobId ? referenceOf.get(row.sourcePrintJobId) : undefined;
-        const signedAt = signedAtOf.get(row.id);
-        /*
-         * A ROW MISSING ITS FOLDER OR ITS FILENAME IS SKIPPED, NOT GUESSED.
-         * There is no safe fallback: a made-up folder files a consent in the
-         * wrong record, and a made-up filename collides with a real one. It
-         * stays unwritten — which is exactly the state FR-9.3's staleness
-         * alert exists to surface — and a human finds out.
-         */
-        if (!patientRecordNumber || !formReference || !signedAt) {
-          const missing = !patientRecordNumber
-            ? 'no chart number'
-            : !formReference
-              ? 'no form reference'
-              : 'no signature event';
-          this.logger.warn(`Agreement ${row.id} is signed but cannot be filed: ${missing}.`);
-          continue;
-        }
-        out.push({
-          agreementId: row.id,
-          patientRecordNumber,
-          formReference,
-          artefactId: row.signedDb4ArtefactId as string,
-          sha256: row.signedDb4Sha256 as string,
-          signedAt: signedAt.toISOString(),
-          rendererVersion: row.signedDb4RendererVersion ?? '',
-          contentVersion: row.signedDb4ContentVersion ?? '',
-          formCode: 'DB4',
-        });
-      }
-      return out;
     });
+  }
+
+  /** The patient each agreement belongs to, for the console's links. Ids in, ids out. */
+  async patientsOfAgreements(practiceId: string, agreementIds: readonly string[]): Promise<Map<string, string>> {
+    if (agreementIds.length === 0) return new Map();
+    const rows = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findMany({
+        where: { id: { in: [...new Set(agreementIds)] } },
+        select: { id: true, patientId: true },
+      }),
+    );
+    return new Map(rows.map((r) => [r.id, r.patientId]));
+  }
+
+  /**
+   * THE ONE PREDICATE FOR "OFFERED FOR COLLECTION" — the three gates in the
+   * class comment, and the per-row checks that a document can actually be
+   * filed. `pending()` and `statusForHost()` both ask it, with their own
+   * narrowing `where`, so the two cannot drift.
+   */
+  private async collectable(
+    tx: Prisma.TransactionClient,
+    practiceId: string,
+    narrow: Prisma.AgreementWhereInput,
+    options: { warnSkipped: boolean },
+  ): Promise<SignedFormForCollection[]> {
+    const practice = await tx.practice.findFirst({ where: { id: practiceId } });
+    /*
+     * GATE 1. Not an error — a practice nobody has asked yet is an ordinary
+     * state during onboarding, and an empty list is the honest answer to
+     * "what may I file". Logged so the gap is visible to us rather than only
+     * to the receptionist wondering where the documents are.
+     */
+    if (practice?.documentFolderKey !== 'patient_record_number') {
+      if (options.warnSkipped) {
+        this.logger.log('Collection asked for by a practice with no confirmed document folder key.');
+      }
+      return [];
+    }
+
+    const rows = await tx.agreement.findMany({
+      where: {
+        status: 'stored',
+        writtenBackAt: null,
+        signedDb4ArtefactId: { not: null },
+        signedDb4Sha256: { not: null },
+        ...narrow,
+      },
+      orderBy: { signedDb4RenderedAt: 'asc' },
+      take: 200,
+    });
+    if (rows.length === 0) return [];
+
+    const patients = await tx.patient.findMany({
+      where: { id: { in: [...new Set(rows.map((r) => r.patientId))] } },
+    });
+    const chartOf = new Map(patients.map((p) => [p.id, p.patientRecordNumber]));
+    const jobIds = rows.map((r) => r.sourcePrintJobId).filter((id): id is string => !!id);
+    const jobs = await tx.inboundPrintJob.findMany({ where: { id: { in: jobIds } } });
+    const referenceOf = new Map(
+      jobs.map((j) => [j.id, (j.payload as PrintJobEnvelope | null)?.form?.formReference]),
+    );
+    const signatures = await tx.signatureEvent.findMany({
+      where: { agreementId: { in: rows.map((r) => r.id) } },
+      orderBy: { createdAt: 'asc' },
+    });
+    const signedAtOf = new Map<string, Date>();
+    for (const s of signatures) {
+      if (!signedAtOf.has(s.agreementId)) signedAtOf.set(s.agreementId, s.createdAt);
+    }
+
+    const out: SignedFormForCollection[] = [];
+    for (const row of rows) {
+      const patientRecordNumber = chartOf.get(row.patientId);
+      const formReference = row.sourcePrintJobId ? referenceOf.get(row.sourcePrintJobId) : undefined;
+      const signedAt = signedAtOf.get(row.id);
+      /*
+       * A ROW MISSING ITS FOLDER OR ITS FILENAME IS SKIPPED, NOT GUESSED.
+       * There is no safe fallback: a made-up folder files a consent in the
+       * wrong record, and a made-up filename collides with a real one. It
+       * stays unwritten — which is exactly the state FR-9.3's staleness
+       * alert exists to surface — and a human finds out.
+       */
+      if (!patientRecordNumber || !formReference || !signedAt) {
+        const missing = !patientRecordNumber
+          ? 'no chart number'
+          : !formReference
+            ? 'no form reference'
+            : 'no signature event';
+        if (options.warnSkipped) this.logger.warn(`Agreement ${row.id} is signed but cannot be filed: ${missing}.`);
+        continue;
+      }
+      out.push({
+        agreementId: row.id,
+        patientRecordNumber,
+        formReference,
+        artefactId: row.signedDb4ArtefactId as string,
+        sha256: row.signedDb4Sha256 as string,
+        signedAt: signedAt.toISOString(),
+        rendererVersion: row.signedDb4RendererVersion ?? '',
+        contentVersion: row.signedDb4ContentVersion ?? '',
+        formCode: 'DB4',
+      });
+    }
+    return out;
   }
 
   /**
