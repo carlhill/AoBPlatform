@@ -17,11 +17,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2327 |
-| Files scanned for exports | 552 |
-| Files scanned for imports | 595 |
-| Exports with no comment of their own | 994 |
-| Exports imported nowhere else | 974 |
+| Exported symbols indexed | 2335 |
+| Files scanned for exports | 553 |
+| Files scanned for imports | 596 |
+| Exports with no comment of their own | 995 |
+| Exports imported nowhere else | 982 |
 
 ## Sections
 
@@ -29,9 +29,9 @@ This is required reading before you write a component, a hook or a helper (wow.m
 - [Web hooks](#web-hooks) — 15
 - [Web helpers and constants](#web-helpers-and-constants) — 303
 - [Web types](#web-types) — 114
-- [Domain functions](#domain-functions) — 388
-- [Domain constants and content](#domain-constants-and-content) — 244
-- [Domain types](#domain-types) — 284
+- [Domain functions](#domain-functions) — 392
+- [Domain constants and content](#domain-constants-and-content) — 247
+- [Domain types](#domain-types) — 285
 - [Contracts types](#contracts-types) — 97
 - [Contracts functions and constants](#contracts-functions-and-constants) — 27
 - [Core services, controllers and modules](#core-services-controllers-and-modules) — 279
@@ -732,7 +732,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Domain functions
 
-388 exports.
+392 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1067,6 +1067,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `isLive` | domain:pending-email-change.ts | Live means "still awaiting an answer" — not merely "a row exists". | 0 |
 | `isParticularDetailType` | domain:tablet-session.ts |  | 0 |
 | `isPostServiceOutcome` | domain:visit-policy.ts |  | 0 |
+| `isPracticeTimezone` | domain:practice-timezones.ts | True only for a zone on the list — a real IANA zone that is not on it is still refused. | 0 |
 | `isPracticeUser` | domain:landing.ts | A practice user is defined by HOLDING A PRACTICE CLAIM, not by holding a particular role. | 0 |
 | `isPractitioner` | domain:landing.ts | A practitioner is defined by their own claim, for the same reason a practice user is defined by theirs: the `provider` ROLE says what kind of person they are, and the claim says which person. | 0 |
 | `isPrintDocumentType` | domain:inbound-lanes.ts |  | 0 |
@@ -1097,6 +1098,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `parsePatientMessageTemplates` | domain:patient-message-templates.ts |  | 0 |
 | `parsePostServiceRules` | domain:visit-policy.ts | The post-service half of the same content file, validated the same way and with the same posture: it throws rather than repairing, because the file is editable precisely because somebody will edit it. | 0 |
 | `parsePracticeSurfaceContent` | domain:practice-surfaces.ts | Exhaustive, and it throws rather than repairing — the same posture as every other content loader here. | 0 |
+| `parsePracticeTimezoneContent` | domain:practice-timezones.ts | Exhaustive, and it throws rather than repairing — see the file comment. | 0 |
 | `parseServiceDescriptionContent` | domain:service-descriptions.ts |  | 0 |
 | `parseSignedDb4Content` | domain:signed-db4-content.ts | Exhaustive, and it throws rather than repairing — the same contract as `parseAssignorRelationshipContent`, and for the same reason: the whole point of an editable file is that somebody will edit it. | 0 |
 | `parseVisitPolicyContent` | domain:visit-policy.ts | Exhaustive, and it throws rather than repairing — the same posture `parseAssignorRelationshipContent` takes and for the same reason: the file is editable precisely because somebody will edit it, and a default quietly applied to a bad edit is a decision nobody made. | 0 |
@@ -1104,6 +1106,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `patientMessageTemplate` | domain:patient-message-templates.ts |  | 0 |
 | `placeFilters` | domain:packed-reports.ts |  | 0 |
 | `postcodeMatchesState` | domain:address.ts |  | 0 |
+| `practiceDayOf` | domain:practice-day.ts | `YYYY-MM-DD` FOR AN INSTANT, IN THE ZONE THE PRACTICE CHOSE (D-2026-10-10-03). | 0 |
 | `practiceNameForCode` | domain:account-naming.ts | The trading name if there is one, else the practice name. | 0 |
 | `practiceToday` | domain:practice-day.ts | Today's calendar day in the practice's zone — never `toISOString().slice(0, 10)`. | 0 |
 | `preferredAssignorChannel` | domain:assignor.ts | The assignor's preferred channel (C7.2 — per ASSIGNOR, not per patient, because the signer is not always the patient). | 0 |
@@ -1116,6 +1119,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `sanitiseFilename` | domain:artefact.ts | Strip a filename down to something safe to store and echo back. | 0 |
 | `showsCost` | domain:correspondence-log.ts | Per-message cost is the practice's own business. | 0 |
 | `sightingFreshness` | domain:practitioner-strength.ts | How much a sighting is worth given its age. | 0 |
+| `startOfPracticeDay` | domain:practice-day.ts | THE INSTANT OF LOCAL MIDNIGHT AT THE START OF `now`'s DAY, in the zone the practice chose (D-2026-10-10-03). | 0 |
 | `startOfWeek` | domain:reporting.ts | The Monday of the week containing `at`, at 00:00 in the reporting timezone. | 0 |
 | `surfaceOfEndpointIn` | domain:practice-surfaces.ts | Which surface owns a core route, or `always`, or null when nobody has said. | 0 |
 | `surfaceOfPageIn` | domain:practice-surfaces.ts | Which surface owns a console page, or `always`, or null when nobody has said. | 0 |
@@ -1127,7 +1131,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Domain constants and content
 
-244 exports.
+247 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1285,6 +1289,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `CORRESPONDENCE_PURPOSES` | domain:correspondence-log.ts |  | 0 |
 | `DEFAULT_ATTEMPT_CAP` | domain:chase.ts | REQ-CHASE-09/-10 — the economics guard. | 0 |
 | `DEFAULT_INVITATION_CEILING` | domain:affiliation.ts |  | 0 |
+| `DEFAULT_PRACTICE_TIMEZONE` | domain:practice-timezones.ts | The column default, `Australia/Sydney`. | 0 |
 | `DEVICE_LEASE_SECONDS` | domain:outbound-queue.ts | A device's lease is longer, because a tablet on a counter may be picked up, carried to a patient, and put down again before it confirms. | 0 |
 | `DEVICE_STALE_AFTER_POLLS` | domain:devices.ts | TWO MISSED HEARTBEATS AND THE ROW SAYS SO. | 0 |
 | `DEVICE_STATES` | domain:devices.ts | `inactive` IS RECEPTION'S SWITCH; `revoked` IS THE ADMINISTRATOR'S (Carl, 4–5 Sep 2026, TODO.md "Tablets: make one inactive"). | 0 |
@@ -1340,6 +1345,8 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PRACTICE_SURFACES` | domain:practice-surfaces.ts | Every surface, in file order. | 0 |
 | `PRACTICE_SURFACE_CONTENT` | domain:practice-surfaces.ts | The whole parsed file, for the tests and for anything that wants to enumerate. | 0 |
 | `PRACTICE_TIMEZONE` | domain:practice-day.ts | THE ZONE A PRACTICE'S DAY IS MEASURED IN — the reporting zone, deliberately the same object rather than a copy. | 0 |
+| `PRACTICE_TIMEZONES_VERSION` | domain:practice-timezones.ts | Which list a stored zone was chosen from. | 0 |
+| `PRACTICE_TIMEZONE_KEYS` | domain:practice-timezones.ts | The zones, in file order, which is screen order. | 0 |
 | `PRINT_DOCUMENT_LANES` | domain:inbound-lanes.ts |  | 0 |
 | `PROVIDER_TYPE_PROFESSIONS` | domain:ahpra.ts | Does the AHPRA profession support the provider type a practice is asserting? | 0 |
 | `PURPOSE_FAMILIES` | domain:correspondence-log.ts | WHAT THE THING ACTUALLY IS, in three facts. | 0 |
@@ -1378,7 +1385,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Domain types
 
-284 exports.
+285 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1615,6 +1622,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PracticeNaming` | domain:account-naming.ts | THE NAME A CODE IS PROPOSED FROM: the trading name where there is one, else the practice name, NEVER the legal name (section 3b rule 1). | 0 |
 | `PracticeSurface` | domain:practice-surfaces.ts |  | 0 |
 | `PracticeSurfaceContent` | domain:practice-surfaces.ts |  | 0 |
+| `PracticeTimezoneContent` | domain:practice-timezones.ts |  | 0 |
 | `PractitionerRecord` | domain:directory.ts | Everything the platform holds about a practitioner. | 0 |
 | `PractitionerStrength` | domain:practitioner-strength.ts |  | 0 |
 | `PractitionerStrengthInput` | domain:practitioner-strength.ts |  | 0 |

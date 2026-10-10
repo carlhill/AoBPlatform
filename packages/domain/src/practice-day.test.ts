@@ -9,8 +9,10 @@
 import {
   NotACalendarDay,
   PRACTICE_TIMEZONE,
+  practiceDayOf,
   practiceDayWindow,
   practiceToday,
+  startOfPracticeDay,
 } from './practice-day';
 
 describe('one day, as the practice means it', () => {
@@ -92,5 +94,99 @@ describe('one day, as the practice means it', () => {
     ]) {
       expect(practiceDayWindow(first!).to.toISOString()).toBe(practiceDayWindow(second!).from.toISOString());
     }
+  });
+});
+
+/*
+ * THE SAME BOUNDARY, IN A ZONE THE CALLER NAMES (D-2026-10-10-03).
+ *
+ * A practice's day is its own local day, and Australia has zones that observe
+ * daylight saving and zones that do not. Every case names an instant and a
+ * zone, so these say the same thing on a Sydney laptop and on a UTC runner.
+ *
+ * Sydney's daylight saving starts on the first Sunday in October (4 October
+ * 2026, 2am AEST becomes 3am AEDT) and ends on the first Sunday in April
+ * (5 April 2026, 3am AEDT becomes 2am AEST).
+ */
+describe("one day, in the practice's own zone", () => {
+  it('practice_day_of_is_the_local_date_not_the_utc_date', () => {
+    // 8:30am AEDT on 13 October is 21:30 UTC on the 12th.
+    expect(practiceDayOf(new Date('2026-10-12T21:30:00Z'), 'Australia/Sydney')).toBe('2026-10-13');
+    // Perth is +8 all year: the same instant is 5:30am on the 13th there.
+    expect(practiceDayOf(new Date('2026-10-12T21:30:00Z'), 'Australia/Perth')).toBe('2026-10-13');
+    // One second before Perth's midnight is still the 12th in Perth...
+    expect(practiceDayOf(new Date('2026-10-12T15:59:59Z'), 'Australia/Perth')).toBe('2026-10-12');
+    // ...while Sydney is already on the 13th.
+    expect(practiceDayOf(new Date('2026-10-12T15:59:59Z'), 'Australia/Sydney')).toBe('2026-10-13');
+  });
+
+  it('practice_day_of_turns_at_local_midnight_when_daylight_saving_starts', () => {
+    // Midnight before the change is AEST (+10).
+    expect(practiceDayOf(new Date('2026-10-03T13:59:59Z'), 'Australia/Sydney')).toBe('2026-10-03');
+    expect(practiceDayOf(new Date('2026-10-03T14:00:00Z'), 'Australia/Sydney')).toBe('2026-10-04');
+    // The next midnight is AEDT (+11), an hour earlier in UTC.
+    expect(practiceDayOf(new Date('2026-10-04T12:59:59Z'), 'Australia/Sydney')).toBe('2026-10-04');
+    expect(practiceDayOf(new Date('2026-10-04T13:00:00Z'), 'Australia/Sydney')).toBe('2026-10-05');
+    // Brisbane keeps +10 throughout, so its midnight does not move.
+    expect(practiceDayOf(new Date('2026-10-04T13:00:00Z'), 'Australia/Brisbane')).toBe('2026-10-04');
+    expect(practiceDayOf(new Date('2026-10-04T14:00:00Z'), 'Australia/Brisbane')).toBe('2026-10-05');
+  });
+
+  it('practice_day_of_turns_at_local_midnight_when_daylight_saving_ends', () => {
+    // Midnight before the change is AEDT (+11).
+    expect(practiceDayOf(new Date('2026-04-04T12:59:59Z'), 'Australia/Sydney')).toBe('2026-04-04');
+    expect(practiceDayOf(new Date('2026-04-04T13:00:00Z'), 'Australia/Sydney')).toBe('2026-04-05');
+    // The 25-hour day ends at the next midnight, which is AEST (+10).
+    expect(practiceDayOf(new Date('2026-04-05T13:59:59Z'), 'Australia/Sydney')).toBe('2026-04-05');
+    expect(practiceDayOf(new Date('2026-04-05T14:00:00Z'), 'Australia/Sydney')).toBe('2026-04-06');
+  });
+
+  it('start_of_practice_day_follows_daylight_saving_starting', () => {
+    // 4pm AEDT on 4 October: that day began at midnight AEST.
+    expect(startOfPracticeDay(new Date('2026-10-04T05:00:00Z'), 'Australia/Sydney').toISOString()).toBe(
+      '2026-10-03T14:00:00.000Z',
+    );
+    // The next day began at midnight AEDT, an hour earlier in UTC.
+    expect(startOfPracticeDay(new Date('2026-10-05T01:00:00Z'), 'Australia/Sydney').toISOString()).toBe(
+      '2026-10-04T13:00:00.000Z',
+    );
+    // Adelaide changes on the same day, half an hour behind.
+    expect(startOfPracticeDay(new Date('2026-10-05T01:00:00Z'), 'Australia/Adelaide').toISOString()).toBe(
+      '2026-10-04T13:30:00.000Z',
+    );
+    // Brisbane does not change at all.
+    expect(startOfPracticeDay(new Date('2026-10-05T01:00:00Z'), 'Australia/Brisbane').toISOString()).toBe(
+      '2026-10-04T14:00:00.000Z',
+    );
+  });
+
+  it('start_of_practice_day_follows_daylight_saving_ending', () => {
+    // 8pm AEST on 5 April: that day began at midnight AEDT.
+    expect(startOfPracticeDay(new Date('2026-04-05T10:00:00Z'), 'Australia/Sydney').toISOString()).toBe(
+      '2026-04-04T13:00:00.000Z',
+    );
+    // The next day began at midnight AEST, an hour later in UTC.
+    expect(startOfPracticeDay(new Date('2026-04-06T01:00:00Z'), 'Australia/Sydney').toISOString()).toBe(
+      '2026-04-05T14:00:00.000Z',
+    );
+    // Hobart leaves daylight saving on the same day as Sydney.
+    expect(startOfPracticeDay(new Date('2026-04-06T01:00:00Z'), 'Australia/Hobart').toISOString()).toBe(
+      '2026-04-05T14:00:00.000Z',
+    );
+  });
+
+  it('start_of_practice_day_is_perth_midnight_for_perth', () => {
+    expect(startOfPracticeDay(new Date('2026-10-12T21:30:00Z'), 'Australia/Perth').toISOString()).toBe(
+      '2026-10-12T16:00:00.000Z',
+    );
+    // Midnight itself is the start of its own day, not the end of the last.
+    expect(startOfPracticeDay(new Date('2026-10-12T16:00:00Z'), 'Australia/Perth').toISOString()).toBe(
+      '2026-10-12T16:00:00.000Z',
+    );
+  });
+
+  it('an_unknown_zone_is_refused_rather_than_read_as_utc', () => {
+    expect(() => practiceDayOf(new Date('2026-10-12T21:30:00Z'), 'Mars/Olympus_Mons')).toThrow(RangeError);
+    expect(() => startOfPracticeDay(new Date('2026-10-12T21:30:00Z'), 'Mars/Olympus_Mons')).toThrow(RangeError);
   });
 });
