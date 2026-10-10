@@ -17,16 +17,16 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2418 |
-| Files scanned for exports | 571 |
-| Files scanned for imports | 614 |
+| Exported symbols indexed | 2419 |
+| Files scanned for exports | 572 |
+| Files scanned for imports | 615 |
 | Exports with no comment of their own | 1001 |
 | Exports imported nowhere else | 1004 |
 
 ## Sections
 
 - [Web components](#web-components) — 239
-- [Web hooks](#web-hooks) — 15
+- [Web hooks](#web-hooks) — 16
 - [Web helpers and constants](#web-helpers-and-constants) — 308
 - [Web types](#web-types) — 116
 - [Domain functions](#domain-functions) — 392
@@ -286,7 +286,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web hooks
 
-15 exports.
+16 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -302,6 +302,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `useDevBuildWatch` | web:kiosk/useDevBuildWatch.ts | (file) A DEV TAB NOTICES THAT THE SERVER IT LOADED FROM HAS GONE (Carl, 12 Sep 2026: "fix the dev kiosk build id so it reloads"). | **1** · web:kiosk/Ceremony.tsx |
 | `useHasRefresh` | web:refresh.ts | Whether anything on this page can be refreshed. | **1** · web:RefreshButton.tsx |
 | `useInactivityReset` | web:kiosk/useInactivityReset.ts | (file) RETURN TO THE START WHEN THE TABLET IS UNTOUCHED (Carl, 4 September 2026). | **1** · web:kiosk/Ceremony.tsx |
+| `useKioskFullScreen` | web:kiosk/useKioskFullScreen.ts | (file) FULL SCREEN ON THE FIRST TAP (Carl, 10 Oct 2026). | **1** · web:kiosk/Ceremony.tsx |
 | `useKioskHeartbeat` | web:kiosk/useKioskHeartbeat.ts | (file) THE HEARTBEAT — one poll, on every screen, carrying the tablet's own state out and reception's instructions back (Carl, 4–5 Sep 2026; TODO.md "Tablet heartbeat and Return to Begin"). | **1** · web:kiosk/Ceremony.tsx |
 | `useTabletSession` | web:kiosk/useTabletSession.ts | (file) THE PUSHED SESSION POLL — the tablet's half of "send to the tablet" (TODO.md "Two front doors", Carl 4 Sep 2026). | **1** · web:kiosk/Ceremony.tsx |
 | `useWaitingList` | web:kiosk/useWaitingList.ts | (file) The waiting-room poll (§9.4). | **1** · web:kiosk/Ceremony.tsx |
