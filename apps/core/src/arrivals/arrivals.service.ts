@@ -35,6 +35,7 @@ import {
   nextAllocatedTicket,
   normaliseQueueTicket,
   NotACalendarDay,
+  practiceDayOf,
   practiceDayWindow,
   providerIsGpFor,
   servicesNeedABillingProvider,
@@ -51,6 +52,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AgreementsService } from '../agreements/agreements.service';
 import { CaptureService } from '../capture/capture.service';
 import { EnduringService } from '../enduring/enduring.service';
+import { readPracticeTimeZone } from '../practices/practice-day';
 import {
   anchorForAffiliation,
   anchorForLegacyProvider,
@@ -839,12 +841,14 @@ export class ArrivalsService {
          * D5 — THE DAY THE SERVICE IS FOR.
          *
          * `serviceDate` when a person named one (they may be typing up
-         * yesterday's walk-in after the system came back), otherwise the
-         * calendar day of `arrivedAt` exactly as it always was. The explicit
-         * date is why the reception form sends one at all: this line takes the
-         * UTC calendar day, and 9 a.m. in Sydney is the previous day in UTC.
+         * yesterday's walk-in after the system came back) — it always wins —
+         * otherwise the PRACTICE'S calendar day of `arrivedAt`, in its own zone
+         * read inside this transaction (D-2026-10-10-03). Never the UTC day:
+         * 9 a.m. in Sydney is the previous day in UTC, and a statutory
+         * particular may not depend on which side of midnight Greenwich is
+         * (D-2026-09-12-17 item 2).
          */
-        serviceDate: dto.serviceDate ?? arrivedAt.toISOString().slice(0, 10),
+        serviceDate: dto.serviceDate ?? practiceDayOf(arrivedAt, await readPracticeTimeZone(tx)),
       } satisfies DecidedArrival;
     });
 
@@ -1894,6 +1898,8 @@ export class ArrivalsService {
             })
           : null,
         practice: await tx.practice.findFirst({}),
+        /* The practice's zone, for D5 below — read here, in this RLS scope (D-2026-10-10-03). */
+        timeZone: await readPracticeTimeZone(tx),
         /*
          * THE NEWEST AGREEMENT IN THE CHAIN, not the one the arrival named. The
          * arrival names the HEAD; a correction supersedes it with a row the
@@ -1912,7 +1918,7 @@ export class ArrivalsService {
     });
 
     if (!read) return refused('arrival_not_found');
-    const { arrival, from, patient, practice } = read;
+    const { arrival, from, patient, practice, timeZone } = read;
     if (arrival.outcome !== 'received') return refused('arrival_not_received');
     if (whoTheyCameToSee(arrival) === target.anchor.affiliationId) {
       return refused('already_with_that_practitioner');
@@ -1969,9 +1975,11 @@ export class ArrivalsService {
     /*
      * D5 — THE DAY THE SERVICE IS FOR. The visit has not moved in time, only in
      * whose it is, so it is the day they walked in, exactly as the arrival's
-     * own draft used.
+     * own draft used: the PRACTICE'S calendar day of `arrivedAt`, never the
+     * UTC one (D-2026-10-10-03). Only a fallback — a D5 the agreement being
+     * replaced already states is carried instead (`supersedeForProviderChange`).
      */
-    const serviceDate = arrival.arrivedAt.toISOString().slice(0, 10);
+    const serviceDate = practiceDayOf(arrival.arrivedAt, timeZone);
 
     let supersededAgreementId: string | null = null;
     let newAgreementId: string | null = null;

@@ -82,6 +82,12 @@ interface Seeded {
   assignorId: string;
 }
 
+/** A desk practice: the GP an arrival names, and a second GP at the same site to move it to. */
+interface Desk {
+  gp: SeededAnchor;
+  cover: SeededAnchor;
+}
+
 describe('statutory dates are the practice\'s own date (e2e, real Postgres)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -93,6 +99,15 @@ describe('statutory dates are the practice\'s own date (e2e, real Postgres)', ()
   const sydney = randomUUID();
   const perth = randomUUID();
   const seeded = new Map<string, Seeded>();
+  /*
+   * THE ARRIVAL PRACTICES, apart from the two above so a default D6a and the
+   * episodic path change nothing the other tests rely on. Not offering ongoing
+   * agreements by default puts a GP's arrival on the episodic path, the one the
+   * platform can lock (the reason `arrival-move.e2e-spec.ts` gives).
+   */
+  const deskSydney = randomUUID();
+  const deskPerth = randomUUID();
+  const desks = new Map<string, Desk>();
   const http = () => request(app.getHttpServer());
 
   const at = (instant: Date) => {
@@ -117,6 +132,42 @@ describe('statutory dates are the practice\'s own date (e2e, real Postgres)', ()
       .set('x-practice-id', practiceId)
       .send({ serviceDate: '2026-10-07', basicServiceDescription: SERVICE_DESCRIPTIONS[0], ...extra })
       .expect(201);
+  }
+
+  /** An arrival as a connector (or, with `source: 'reception'`, the desk) sends it, at a named instant. */
+  function arrival(practiceId: string, arrivedAt: Date, over: Record<string, unknown> = {}) {
+    return http()
+      .post('/arrivals')
+      .set('x-practice-id', practiceId)
+      .send({
+        pmsPatientRecordNumber: `PDP-${randomUUID().slice(0, 8)}`,
+        familyName: 'Arrivalton',
+        givenNames: 'Robin',
+        dateOfBirth: '1968-04-11',
+        address: '4 Example Street, Sampletown NSW 2000',
+        affiliationId: desks.get(practiceId)!.gp.affiliationId,
+        arrivedAt: arrivedAt.toISOString(),
+        source: 'dev',
+        idempotencyKey: `pdp-${randomUUID()}`,
+        ...over,
+      });
+  }
+
+  async function seedDesk(practiceId: string, name: string, timezone?: string): Promise<void> {
+    await prisma.withPractice(practiceId, async (tx) => {
+      await tx.practice.create({
+        data: {
+          id: practiceId,
+          name,
+          defaultServiceDescription: SERVICE_DESCRIPTIONS[0],
+          enduringByDefault: false,
+          ...(timezone ? { timezone } : {}),
+        },
+      });
+      const gp = await createServicingProvider(tx, practiceId, { name: 'Dr Sample Arrival', locationCode: 'Main' });
+      const cover = await createServicingProvider(tx, practiceId, { name: 'Dr Sample Cover', locationId: gp.locationId });
+      desks.set(practiceId, { gp, cover });
+    });
   }
 
   async function particularsOf(practiceId: string, agreementId: string): Promise<Record<string, unknown>> {
@@ -164,6 +215,8 @@ describe('statutory dates are the practice\'s own date (e2e, real Postgres)', ()
 
     await seed(sydney, 'Practice Date Practice (Sydney)');
     await seed(perth, 'Practice Date Practice (Perth)', 'Australia/Perth');
+    await seedDesk(deskSydney, 'Practice Date Desk (Sydney)');
+    await seedDesk(deskPerth, 'Practice Date Desk (Perth)', 'Australia/Perth');
   });
 
   afterEach(() => {
@@ -176,9 +229,14 @@ describe('statutory dates are the practice\'s own date (e2e, real Postgres)', ()
   });
 
   afterAll(async () => {
-    for (const practiceId of [sydney, perth]) {
+    for (const practiceId of [sydney, perth, deskSydney, deskPerth]) {
       await prisma.withPractice(practiceId, async (tx) => {
+        await tx.arrival.deleteMany({});
+        await tx.outboundItem.deleteMany({});
+        await tx.tabletSession.deleteMany({});
         await tx.captureRequest.deleteMany({});
+        await tx.verificationChallenge.deleteMany({});
+        await tx.enduringDetail.deleteMany({});
         await tx.agreement.deleteMany({});
         await tx.assignor.deleteMany({});
         await tx.patient.deleteMany({});
@@ -324,5 +382,90 @@ describe('statutory dates are the practice\'s own date (e2e, real Postgres)', ()
     at(SYDNEY_MORNING);
     await http().post('/pms/sync-appointments').set('x-practice-id', sydney).send({ date: '2026-10-01' }).expect(201);
     expect(appointmentDaysAsked).toEqual(['2026-10-01']);
+  });
+
+  // --- D5 on an arrival, and on the draft a practitioner move makes ---------
+
+  it('an_arrival_before_11am_sydney_gets_the_practice_date_as_d5', async () => {
+    at(SYDNEY_MORNING);
+    const res = await arrival(deskSydney, SYDNEY_MORNING).expect(201);
+    expect(res.body.agreementId).toBeTruthy();
+    expect((await particularsOf(deskSydney, res.body.agreementId as string)).serviceDate).toBe('2026-10-07');
+  });
+
+  it('a_perth_arrival_gets_the_perth_date_as_d5', async () => {
+    // Not the UTC date: 1am on the 8th in Perth is still the 7th in UTC.
+    at(PERTH_AFTER_MIDNIGHT);
+    const afterMidnight = await arrival(deskPerth, PERTH_AFTER_MIDNIGHT).expect(201);
+    expect((await particularsOf(deskPerth, afterMidnight.body.agreementId as string)).serviceDate).toBe('2026-10-08');
+
+    // Not Sydney's date: 10pm on the 7th in Perth is already the 8th in Sydney.
+    at(PERTH_LATE_EVENING);
+    const lateEvening = await arrival(deskPerth, PERTH_LATE_EVENING).expect(201);
+    expect((await particularsOf(deskPerth, lateEvening.body.agreementId as string)).serviceDate).toBe('2026-10-07');
+  });
+
+  it('an_explicit_service_date_on_an_arrival_is_never_replaced', async () => {
+    at(SYDNEY_MORNING);
+    currentPrincipal = { ...RECEPTIONIST, practiceId: deskSydney };
+    const res = await arrival(deskSydney, SYDNEY_MORNING, { source: 'reception', serviceDate: '2026-10-05' }).expect(201);
+    expect((await particularsOf(deskSydney, res.body.agreementId as string)).serviceDate).toBe('2026-10-05');
+  });
+
+  it('a_practitioner_move_draft_gets_the_practice_date_of_arrival_as_d5', async () => {
+    const { gp, cover } = desks.get(deskSydney)!;
+    // An 8:30am AEDT walk-in whose draft states no D5 yet, so the move's own D5
+    // is the only date the replacement can carry (a parent's D5 always wins).
+    const { arrivalId, agreementId } = await prisma.withPractice(deskSydney, async (tx) => {
+      const patient = await tx.patient.create({
+        data: { practiceId: deskSydney, familyName: 'Moveton', givenNames: 'Casey', dateOfBirth: new Date('1970-01-01') },
+      });
+      const assignor = await tx.assignor.create({
+        data: { practiceId: deskSydney, name: 'Casey Moveton', authorityBasis: 'self' },
+      });
+      const agreement = await tx.agreement.create({
+        data: {
+          practiceId: deskSydney,
+          type: 'episodic_pre',
+          anchorKind: 'provider',
+          affiliationId: gp.affiliationId,
+          patientId: patient.id,
+          assignorId: assignor.id,
+          assignorIsPatient: true,
+        },
+      });
+      const row = await tx.arrival.create({
+        data: {
+          practiceId: deskSydney,
+          pmsPatientRecordNumber: `PDP-MV-${randomUUID().slice(0, 8)}`,
+          source: 'dev',
+          idempotencyKey: `pdp-mv-${randomUUID()}`,
+          outcome: 'received',
+          arrivedAt: SYDNEY_MORNING,
+          patientId: patient.id,
+          assignorId: assignor.id,
+          affiliationId: gp.affiliationId,
+          seeingAffiliationId: gp.affiliationId,
+          visitDecision: 'episodic_pre',
+          decisionReason: 'episodic_for_this_visit',
+          policyVersion: 'visit-policy-3',
+          agreementId: agreement.id,
+        },
+      });
+      return { arrivalId: row.id, agreementId: agreement.id };
+    });
+
+    at(SYDNEY_MORNING);
+    await http()
+      .post('/arrivals/move')
+      .set('x-practice-id', deskSydney)
+      .send({ arrivalIds: [arrivalId], toAffiliationId: cover.affiliationId })
+      .expect(201);
+
+    const successor = await prisma.withPractice(deskSydney, (tx) =>
+      tx.agreement.findFirst({ where: { supersedesAgreementId: agreementId } }),
+    );
+    expect(successor).not.toBeNull();
+    expect((successor!.particulars as Record<string, unknown>).serviceDate).toBe('2026-10-07');
   });
 });
