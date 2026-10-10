@@ -761,6 +761,41 @@ describe('the AOBPRINTER heartbeat, platform side (e2e, real Postgres)', () => {
     expect(twoHostAlerts()).toHaveLength(1);
   });
 
+  /** The practice view's `secondHostReporting`, and every overview row's for practice A. */
+  async function twoHostsNotice(): Promise<{ practice: boolean; overview: unknown[] }> {
+    currentPrincipal = { ...STAFF, practiceId: practiceA };
+    const view = (await http().get('/aobprinter-hosts').set('x-practice-id', practiceA)).body as AobPrinterHostsView;
+    operator();
+    const overview = (await http().get('/platform/aobprinter-hosts')).body as { hosts: Record<string, unknown>[] };
+    currentPrincipal = null;
+    return {
+      practice: view.secondHostReporting,
+      overview: overview.hosts.filter((r) => r.practiceId === practiceA).map((r) => r.secondHostReporting),
+    };
+  }
+
+  it('a_same_host_reinstall_shows_no_two_hosts_notice_on_the_console', async () => {
+    // The old chain stops; the new one starts and keeps reporting. Both are inside the 15-minute window.
+    expect((await beat(practiceA)).status).toBe(200);
+    await beat(practiceA, { chainId: CHAIN_B, head: { seq: 3, hash: at(CHAIN_B, 3) } });
+    await beat(practiceA, { chainId: CHAIN_B, head: { seq: 4, hash: at(CHAIN_B, 4) } });
+
+    const notice = await twoHostsNotice();
+    expect(notice.practice).toBe(false);
+    expect(notice.overview).toEqual([false, false]);
+  });
+
+  it('two_chains_both_reporting_show_the_two_hosts_notice', async () => {
+    expect((await beat(practiceA)).status).toBe(200);
+    await beat(practiceA, { chainId: CHAIN_B, head: { seq: 3, hash: at(CHAIN_B, 3) } });
+    // The old chain reports again after the new one appeared: both are running at once.
+    await beat(practiceA);
+
+    const notice = await twoHostsNotice();
+    expect(notice.practice).toBe(true);
+    expect(notice.overview).toEqual([true, true]);
+  });
+
   it('two_concurrent_first_beats_serialise_on_the_practice', async () => {
     // Two chains the platform has never seen, at the same moment: the second to commit is chain_replaced.
     const [one, two] = await Promise.all([

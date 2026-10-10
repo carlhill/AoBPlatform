@@ -100,7 +100,7 @@ const reportingAsAHost = (r: Pick<AobPrinterHost, 'lastSeenAt' | 'retiredAt'>, n
   seenWithinOfflineWindow(r.lastSeenAt, now) && effectiveRetiredAt(r) === null;
 
 /**
- * BOTH LIVE AT ONCE, FOR THE TWO-HOSTS ALERT (decision 6). Both inside the
+ * BOTH LIVE AT ONCE, FOR THE TWO-HOSTS ALERT AND NOTICE (decision 6). Both inside the
  * offline window, the other one reporting as a host, and the OLDER chain
  * (by first beat) has reported since the NEWER one first appeared. A new
  * chain beside one whose last beat came before it appeared is a replacement
@@ -117,6 +117,22 @@ function bothLiveAtOnce(
       ? [self.lastSeenAt, other.createdAt]
       : [other.lastSeenAt, self.createdAt];
   return olderLastSeen.getTime() > newerAppeared.getTime();
+}
+
+/**
+ * TWO AUDIT LOGS REPORTING AT ONCE, FOR THE CONSOLE (decision 6). Some pair of
+ * one practice's chains, both reporting as a host, is `bothLiveAtOnce` — the
+ * ALERT's own predicate, so the notice and the ALERT cannot disagree. A
+ * reinstall (the old chain stops, the new one starts) is not two at once,
+ * however recently the old chain last reported.
+ */
+function twoChainsLiveAtOnce(
+  rows: readonly Pick<AobPrinterHost, 'lastSeenAt' | 'createdAt' | 'retiredAt'>[],
+  now: Date,
+): boolean {
+  return rows.some(
+    (a, i) => reportingAsAHost(a, now) && rows.some((b, j) => j > i && bothLiveAtOnce(a, b, now)),
+  );
 }
 
 /**
@@ -323,7 +339,7 @@ export class AobPrinterHostsService {
     );
     return {
       hosts: rows.map((r) => this.toView(r, now)),
-      secondHostReporting: rows.filter((r) => reportingAsAHost(r, now)).length >= 2,
+      secondHostReporting: twoChainsLiveAtOnce(rows, now),
     };
   }
 
@@ -333,7 +349,9 @@ export class AobPrinterHostsService {
    * counts, versions, times and status — and the practice, so a row opens its
    * twin. Ordered here roughly; the console orders exactly, by its own states.
    * The function leaves out a retired chain silent since its retirement, so
-   * every row here is reporting as a host (`reportingAsAHost`).
+   * every row here is reporting as a host (`reportingAsAHost`), and it carries
+   * each row's first beat (`createdAt`, migration 20261010040000) so the
+   * two-hosts notice is `twoChainsLiveAtOnce`, as on the practice page.
    */
   async overview(now: Date = new Date()): Promise<AobPrinterHostsOverview> {
     const rows = await this.prisma.$queryRaw<
@@ -350,13 +368,18 @@ export class AobPrinterHostsService {
         openExceptions: number;
         filedUnconfirmed: number;
         staleQueued: number;
+        createdAt: Date;
       }>
     >`SELECT * FROM core.aobprinter_hosts_overview()`;
 
-    const liveCount = new Map<string, number>();
+    // Every row is already not retired in effect (the function's WHERE), so `retiredAt: null` is exact.
+    const byPractice = new Map<string, Array<Pick<AobPrinterHost, 'lastSeenAt' | 'createdAt' | 'retiredAt'>>>();
     for (const r of rows) {
-      if (seenWithinOfflineWindow(r.lastSeenAt, now)) liveCount.set(r.practiceId, (liveCount.get(r.practiceId) ?? 0) + 1);
+      const chains = byPractice.get(r.practiceId) ?? [];
+      chains.push({ lastSeenAt: r.lastSeenAt, createdAt: r.createdAt, retiredAt: null });
+      byPractice.set(r.practiceId, chains);
     }
+    const twoAtOnce = new Set([...byPractice].filter(([, chains]) => twoChainsLiveAtOnce(chains, now)).map(([id]) => id));
     const hosts: AobPrinterHostOverviewRow[] = rows.map((r) => ({
       practiceId: r.practiceId,
       practiceName: r.practiceName,
@@ -364,7 +387,7 @@ export class AobPrinterHostsService {
       chainStatus: r.chainStatus,
       regressionKind: r.regressionKind,
       localCheckOk: r.localCheckOk,
-      secondHostReporting: (liveCount.get(r.practiceId) ?? 0) >= 2,
+      secondHostReporting: twoAtOnce.has(r.practiceId),
       lastSeenAt: r.lastSeenAt.toISOString(),
       printerVersion: r.printerVersion,
       openExceptions: Number(r.openExceptions),
