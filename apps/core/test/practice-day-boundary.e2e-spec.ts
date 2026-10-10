@@ -545,6 +545,23 @@ describe('a practice admin sets the practice timezone (e2e, real Postgres)', () 
     expect(row?.timezone).not.toBe('Pacific/Auckland');
   });
 
+  /*
+   * NULL IS NOT "LEFT OUT" (Opus review, 10 October 2026). `@IsOptional()`
+   * skips every validator for null as well as undefined, so `{ timezone: null }`
+   * reached the NOT NULL column and came back a 500. Omitting the field still
+   * leaves the zone alone; sending null is a 400 that names the field.
+   */
+  it('a_null_timezone_is_refused_by_the_dto_not_the_database', async () => {
+    const before = await prisma.withPractice(practiceId, (tx) => tx.practice.findFirst({ select: { timezone: true } }));
+    const res = await patch({ timezone: null }).expect(400);
+    expect(JSON.stringify(res.body.message)).toMatch(/timezone/);
+    const after = await prisma.withPractice(practiceId, (tx) => tx.practice.findFirst({ select: { timezone: true } }));
+    expect(after?.timezone).toBe(before?.timezone);
+
+    // Leaving it out is still the ordinary whole-form save that does not touch it.
+    await patch({}).expect(200);
+  });
+
   it('a_timezone_outside_the_list_is_refused_by_the_check', async () => {
     await expect(
       prisma.withPractice(practiceId, (tx) =>

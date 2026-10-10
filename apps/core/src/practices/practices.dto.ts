@@ -17,6 +17,7 @@ import {
   IsUUID,
   Max,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 
@@ -127,8 +128,14 @@ export class UpdateConfigDto {
    * and the CHECK on the column copies the same list — so a zone that is not
    * on it is refused here with a 400 and, if anything got past this, by the
    * database.
+   *
+   * NOT `@IsOptional()`, which skips the validators for null as well as for
+   * undefined: `{ timezone: null }` then reached the NOT NULL column and came
+   * back a 500 (Opus review, 10 October 2026). Left out, the field is skipped
+   * and the zone is untouched; sent as null, `@IsIn` refuses it with a 400.
+   * (`surfaceProfile` above has the same pre-existing shape; not changed here.)
    */
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsIn(PRACTICE_TIMEZONE_KEYS as string[])
   timezone?: string;
 
