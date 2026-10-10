@@ -17,11 +17,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2419 |
+| Exported symbols indexed | 2420 |
 | Files scanned for exports | 571 |
 | Files scanned for imports | 614 |
 | Exports with no comment of their own | 1001 |
-| Exports imported nowhere else | 1005 |
+| Exports imported nowhere else | 1006 |
 
 ## Sections
 
@@ -35,7 +35,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 - [Contracts types](#contracts-types) — 118
 - [Contracts functions and constants](#contracts-functions-and-constants) — 32
 - [Core services, controllers and modules](#core-services-controllers-and-modules) — 287
-- [Core helpers, constants and types](#core-helpers-constants-and-types) — 199
+- [Core helpers, constants and types](#core-helpers-constants-and-types) — 200
 - [AOBPRINTER (the desktop print channel)](#aobprinter-the-desktop-print-channel-) — 163
 
 ## Web components
@@ -2167,7 +2167,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Core helpers, constants and types
 
-199 exports.
+200 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -2316,6 +2316,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PAIRING_ATTEMPT_LIMIT` | core:devices/pairing-rate-limit.ts | Ten wrong codes in ten minutes from one address. | 0 |
 | `PAIRING_ATTEMPT_WINDOW_MS` | core:devices/pairing-rate-limit.ts |  | 0 |
 | `PORTAL_PASSKEY_ATTEMPT_WINDOW_MS` | core:portal/portal-passkey-rate-limit.ts |  | 0 |
+| `PatientNameOnRecord` | core:agreements/db4-form-view.ts | The name of the patient the agreement is FOR, as our record holds it. | 0 |
 | `PendingServiceDescriptionRow` | core:service-descriptions/service-descriptions.service.ts |  | 0 |
 | `PortalAuthenticationContext` | core:portal/portal-authenticator.ts |  | 0 |
 | `PortalAuthenticationOutcome` | core:portal/portal-authenticator.ts |  | 0 |

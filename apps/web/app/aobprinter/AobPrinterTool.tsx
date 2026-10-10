@@ -207,7 +207,7 @@ function Db4OutcomeSummary({ outcome }: { outcome: unknown }) {
             <dd>{db4.decision}</dd>
           </>
         ) : null}
-        <dt>Chart number matched a patient</dt>
+        <dt>PMS patient ID matched a patient</dt>
         <dd>{db4.patientMatched ? 'yes' : 'no'}</dd>
       </dl>
 
@@ -487,7 +487,7 @@ export function AobPrinterTool() {
             className={styles.input}
             value={existingFilter}
             onChange={(e) => setExistingFilter(e.target.value)}
-            placeholder="Any part of a name, a chart number, a form reference or a date"
+            placeholder="Any part of a name, a PMS patient ID, a form reference or a date"
           />
           <p className={styles.hint} aria-live="polite">
             {existingFilter.trim()
@@ -561,7 +561,7 @@ export function AobPrinterTool() {
             hint="What makes this the same form. Reuse it to reprint a correction."
           />
           <Field
-            label="Chart number"
+            label="PMS patient ID"
             value={draft.patientRecordNumber}
             onChange={(v) => set('patientRecordNumber', v)}
             mono

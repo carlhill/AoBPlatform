@@ -2752,6 +2752,58 @@ describe('the refusal words', () => {
     expect(identity.textContent).not.toContain(strings.tablet.printRecordId.noFileNote);
   });
 
+  /*
+   * THE PRINTED NAME IS NOT THE NAME ON RECORD (Carl, 11 October 2026:
+   * "STOP and tell Reception that PMS is sending a diff name for PMSID xxx.
+   * Is this correct?"; D-2026-10-11-02).
+   */
+  it('printed_name_differs_asks_reception_naming_the_pms_patient_id_and_the_record', () => {
+    const info = describeRefusal('print_record_incomplete', {
+      checks: ['print_record_patient_name_differs'],
+      pmsPatientId: 'DESK-EMIN-DUMMYFIELD',
+      recordName: 'Emin Dummyfield',
+      patientId: 'patient-1',
+    });
+    const [line] = info.checks ?? [];
+    expect(line?.text).toBe(
+      strings.tablet.printRecordPatientNameDiffers('DESK-EMIN-DUMMYFIELD', 'Emin Dummyfield'),
+    );
+    expect(line?.text).toContain('PMS patient ID DESK-EMIN-DUMMYFIELD');
+    expect(line?.text).toContain('(Emin Dummyfield)');
+    expect(line?.text).toContain('Is this the right patient?');
+    // The fix for "our record is wrong" is the patient, where the name is corrected.
+    expect(line?.link?.href).toBe('/practice/patients/patient-1');
+    // The sentence and title ask; neither promises a reprint fixes it.
+    expect(info.title).toBe(strings.tablet.blocked.print_record_patient_name_differsTitle);
+    expect(info.text).toBe(strings.tablet.blocked.print_record_patient_name_differs);
+    expect(`${info.title} ${info.text}`).not.toMatch(/reprint/i);
+    expect(info.text).toMatch(/seen and billed either way/);
+  });
+
+  it('printed_name_differs_outranks_unread_lines_for_the_sentence_and_keeps_both_lines', () => {
+    const info = describeRefusal('print_record_incomplete', {
+      checks: ['print_record_service_lines_unread', 'print_record_patient_name_differs'],
+      print: UNREAD_PRINT,
+    });
+    expect(info.title).toBe(strings.tablet.blocked.print_record_patient_name_differsTitle);
+    expect(info.checks?.map((c) => c.code)).toEqual([
+      'print_record_service_lines_unread',
+      'print_record_patient_name_differs',
+    ]);
+    // Without the row's facts the question still reads, and offers no dead link.
+    expect(info.checks?.[1]?.text).toBe(strings.tablet.printRecordPatientNameDiffers(undefined, undefined));
+    expect(info.checks?.[1]?.link).toBeUndefined();
+  });
+
+  it('who_is_signing_title_asks_to_check_the_patient_when_the_name_differs', () => {
+    expect(
+      whoBlockedTitle({
+        blockedReason: 'print_record_incomplete',
+        printRecord: { checks: ['print_record_patient_name_differs'] },
+      }),
+    ).toBe(strings.tablet.whoBlockedByPatientNameDiffers);
+  });
+
   it('unparsed_service_lines_without_a_count_falls_back_to_the_plain_line', () => {
     // A refusal that lost its identity block still says what is wrong.
     const info = describeRefusal('print_record_incomplete', { checks: ['print_record_service_lines_unread'] });

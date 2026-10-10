@@ -194,8 +194,8 @@ describe('the day register', () => {
 
     // The practice's own number under the name, labelled so it cannot be read
     // as anything else (hard rule 1).
-    expect(screen.getByTestId('day-record-arrival-1').textContent).toBe('Patient ID DEV-JAMIE-SAMPLETON');
-    expect(screen.getByTestId('day-record-arrival-4').textContent).toBe('Patient ID DEV-UNKNOWN-9');
+    expect(screen.getByTestId('day-record-arrival-1').textContent).toBe('PMS patient ID DEV-JAMIE-SAMPLETON');
+    expect(screen.getByTestId('day-record-arrival-4').textContent).toBe('PMS patient ID DEV-UNKNOWN-9');
 
     // Whose agreement it is, only where it is somebody else (§6a).
     expect(screen.getByTestId('day-under-arrival-2').textContent).toBe('Dr Example Provider’s agreement');

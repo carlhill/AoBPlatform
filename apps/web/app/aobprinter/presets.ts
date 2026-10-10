@@ -231,7 +231,7 @@ export const PRESETS: readonly Preset[] = [
   },
   {
     key: 'refused-no-chart',
-    label: 'Refused at the door: no chart number',
+    label: 'Refused at the door: no PMS patient ID',
     why: 'Never becomes an agreement. The job row records `no_chart_number` and nothing reaches the desk.',
     apply: (d) => ({ ...d, patientRecordNumber: '' }),
   },
