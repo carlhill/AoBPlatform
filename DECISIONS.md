@@ -3009,10 +3009,52 @@ every script mints its admin token in `master`.
    answers `unauthorized_client` and `admin-cli` answers with Deny access.
    Service-account tokens and the browser sign-in page are unchanged.
 
-**Not decided here:** whether `assertOperatorAuthMethod` should now refuse
+**Not decided here:** ~~whether `assertOperatorAuthMethod` should now refuse
 `unknown` for `platform_admin`, since both realms now emit `amr`. That is a
-separate decision for Carl.
+separate decision for Carl.~~ Decided: it does (D-2026-10-11-02).
 
 **What would reopen it:** a genuine need for a non-browser staff sign-in, for
 example a CLI. That would use the device authorisation grant, which still runs
 a browser flow, not a password grant.
+
+## D-2026-10-11-02 - A platform operator's session that does not say how it signed in is refused
+
+**Date:** 11 October 2026. **Decided by:** Carl, *"refuse unknown for
+platform_admin too"*, after D-2026-10-11-01 left it open.
+
+**What was wrong.** `assertOperatorAuthMethod` (core's own check that a
+platform operator signed in with a passkey, D-2026-09-12-11) refused a session
+whose token stated a password, but let through one that stated nothing
+(`unknown`). That was deliberate while the main realm emitted no `amr` claim:
+refusing `unknown` then would have locked every operator out of the console.
+It stopped being necessary when both realms began emitting `amr`
+(D-2026-10-10-06). It became a gap once D-2026-10-11-01 showed how such a
+token could be made: a password grant produces a token with no `amr`.
+
+**Decision:**
+1. **A `platform_admin` session whose token names no sign-in method this
+   product reads is refused on every request**, under its own code
+   `operator_sign_in_method_unrecorded`. That covers no `amr` claim at all,
+   and an `amr` claim naming only values `authMethodFromAmr` does not
+   recognise.
+2. **Its message states only what was observed.** The sign-in service did not
+   say how the session was signed in, so the server cannot confirm a passkey,
+   and nothing was changed. It does not call the session a password session,
+   because the server never saw one, and it offers no "sign in again", because
+   the server cannot tell whether that would help (wow.md §13, as in
+   D-2026-10-10-06). `operator_requires_passkey` is kept for a session that
+   positively states a password.
+3. **Unchanged:** practice sessions that state nothing still reach the
+   console. High-stakes acts refuse them separately
+   (`sign_in_method_unrecorded`). A `federated` session is still accepted for
+   an operator, as before; no flow produces one yet.
+
+Enforced in `apps/core/src/auth/auth.guard.ts`. Named test
+`a_platform_operator_session_that_never_said_how_is_refused` in
+`session-auth-method.spec.ts`; it fails without the guard change. The e2e
+fixtures that sign in a platform operator (`acting-as`, `agreement-templates`,
+`org-model`) now carry a passkey `amr`, as a real operator token does.
+
+**What would reopen it:** a realm or identity provider for operators that
+cannot emit `amr`. Refusing would then lock operators out, and the method
+would need proving another way.

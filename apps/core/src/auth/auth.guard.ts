@@ -191,8 +191,9 @@ export class AuthGuard implements CanActivate {
   }
 
   /**
-   * A PLATFORM OPERATOR'S SESSION MUST NOT SAY IT USED A PASSWORD
-   * (D-2026-09-12-11 — hard rule 15 still governs our own people).
+   * A PLATFORM OPERATOR'S SESSION MUST SAY HOW IT SIGNED IN, AND IT MUST NOT
+   * SAY A PASSWORD (D-2026-09-12-11, D-2026-10-11-02 — hard rule 15 still
+   * governs our own people).
    *
    * DEFENCE IN DEPTH, and it is here because the primary defence is somewhere
    * this service cannot see. The realm decides what an operator must present:
@@ -204,14 +205,16 @@ export class AuthGuard implements CanActivate {
    * session they signed in with — and a flow binding is one admin-console
    * click from being wrong. This is the check that notices either.
    *
-   * IT REFUSES WHAT THE SESSION SAYS, NOT WHAT IT DOES NOT SAY, and the
-   * distinction is load-bearing. `unknown` means the realm issued no `amr`
-   * claim, which was true of the MAIN realm until D-2026-10-10-06 added its
-   * amr mapper — and is still true of any realm not yet brought up to date —
-   * so refusing `unknown` here would lock every platform operator out of the
-   * console. (A high-stakes act does refuse `unknown`, with its own code.) A session that positively states a
-   * password-based method is a different thing: that is an operator who got
-   * in through a path they should not have, and it is refused.
+   * A SESSION THAT DOES NOT SAY IS REFUSED TOO (D-2026-10-11-02). `unknown`
+   * means the token named no method this product reads. It used to pass,
+   * because the main realm emitted no `amr` claim and refusing it would have
+   * locked every operator out; both realms emit it now (D-2026-10-10-06), and
+   * a password grant that would have produced such a token is closed
+   * (D-2026-10-11-01). So an operator token that says nothing is one the realm
+   * did not vouch for, and "we cannot tell" is never "yes". It is refused
+   * under its own code, because the two refusals observe different things:
+   * one session STATED a password; the other stated nothing, and its message
+   * must not claim a password the server never saw (wow.md §13).
    */
   private assertOperatorAuthMethod(
     request: { method: string; url: string },
@@ -219,6 +222,20 @@ export class AuthGuard implements CanActivate {
   ): void {
     if (!(principal.roles ?? []).includes('platform_admin')) return;
     const method = authMethodFromAmr(principal.amr);
+    if (method === 'unknown') {
+      this.logger.warn(
+        `Refused ${request.method} ${request.url} for ${principal.sub}: a platform operator's session names no ` +
+          'sign-in method, and rule 15 requires a passkey.',
+      );
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: 'Forbidden',
+        reasonCode: 'operator_sign_in_method_unrecorded',
+        message:
+          'The sign-in service did not say how this session was signed in, so the server cannot confirm a ' +
+          'passkey was used, and platform operator accounts need one. Nothing was changed.',
+      });
+    }
     if (method !== 'password+otp' && method !== 'password-only') return;
     this.logger.warn(
       `Refused ${request.method} ${request.url} for ${principal.sub}: a platform operator's session states a ` +
