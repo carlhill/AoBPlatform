@@ -3051,5 +3051,22 @@ Carl's choice of N (7 days, configurable per practice) does not depend on it.
 - The scheduler pattern is `@nestjs/schedule`, as in `RetentionSweepService`
   (`@Cron`) and `PostServiceChaseSweep` (`@Interval`).
 
-**What would reopen it:** Carl's answer to the finding above. Separately,
-anything that lets a pre-agreement signed after the service cover it.
+**Carl's answer (10 Oct 2026): option (b).** Verbatim: *"go with option b for
+unsigned drafts - add a todo we will need to come back to this so that we can
+reconcile between the PMS, AOBPrinter and AOBPlatform"*. So:
+- an unsigned pre-agreement is **associated** with the visit's service record,
+  never linked to it, so the post-service agreement is still drafted, linked
+  and chased;
+- exactly one candidate: the association is recorded and the tablet's
+  "Unsigned from earlier days" entry says what was found and links to the
+  Reconciliation item;
+- more than one candidate: every candidate is named on that item for a person
+  to choose; nothing is associated automatically;
+- option 3 closes (`expired`, with a closure reason) only a draft with **no**
+  matching service after N days (default 7, versioned content, overridable per
+  practice). A draft associated with a service is not auto-closed; it waits for
+  the three-way reconciliation on the TODO.
+
+**What would reopen it:** the PMS / AOBPRINTER / AoBPlatform reconciliation on
+the TODO; anything that lets a pre-agreement signed after the service cover
+it.

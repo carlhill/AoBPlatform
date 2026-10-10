@@ -166,6 +166,40 @@ plain-English text. `tautala_ai.md` (the TAUTALA entry, further down) is the rel
 
 ---
 
+## Reconcile the PMS, AOBPRINTER and AoBPlatform against each other (Carl, 10 Oct 2026)
+
+**Carl:** *"we will need to come back to this so that we can reconcile between
+the PMS, AOBPrinter and AOBPlatform"*, when choosing option (b) for unsigned
+drafts (D-2026-10-10-09).
+
+**The problem.** Three systems each hold part of what happened at a visit, and
+nothing checks them against each other:
+- **the PMS (PracSoft):** appointments, arrivals, invoices and claims;
+- **AOBPRINTER:** every DB4 printed, captured and filed back (its own audit
+  chain, PRINTER-HEARTBEAT.md);
+- **AoBPlatform:** agreements (pre and post, signed or not), service records,
+  tablet sessions and vault events.
+
+Today an unsigned pre-agreement is only *associated* with its visit's service
+(option b). A DB4 printed but never captured, an invoice with no agreement, or a
+signed agreement with no claim are each visible in one system at most.
+
+**What the reconciliation should answer, per practice and per day:**
+- every PMS invoice has a signed agreement covering it, or a named reason it
+  does not (private, forgone, chased, and so on);
+- every DB4 AOBPRINTER captured became an agreement, or was refused with a
+  reason, and every signed one was filed back;
+- every agreement is either signed and matched to a claim, closed with a
+  reason, or still open on a named list;
+- associated pre-agreements (option b) are settled: superseded by the signed
+  post-service agreement, or closed.
+
+**Depends on:** D-01 (Medtech write-back) for Medtech practices; the AOBPRINTER
+heartbeat (PR #4) for capture completeness; a decision on when an associated
+pre-agreement can close.
+
+---
+
 ## Agreements left unsigned past their day (10 Oct 2026) - D-2026-10-10-01
 
 **Being built now:** option 1, the tablet's "Unsigned from earlier days: N"
