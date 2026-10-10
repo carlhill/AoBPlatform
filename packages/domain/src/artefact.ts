@@ -160,6 +160,7 @@ export function sanitiseFilename(raw: string | null | undefined): string {
   // some consumers and is the classic way to smuggle an extension past a
   // check. Written as escapes rather than literal bytes, because raw control
   // characters in source survive neither a formatter nor a code review.
+  // eslint-disable-next-line no-control-regex -- deliberate: this strips them.
   const stripped = (raw ?? '').replace(/[\u0000-\u001f\u007f]/g, '');
   // Then strip any path, so a traversal attempt cannot survive as a name.
   const base = stripped.split(/[\\/]/).pop() ?? '';
