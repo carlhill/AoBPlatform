@@ -24,9 +24,8 @@ declare module 'express' {
 /**
  * The sentence for each step-up refusal. Each says what was observed about
  * THIS session and offers a remedy only where it is true for it (CLAUDE.md §7).
- * An unrecorded method is a sign-in service setting, so it offers no remedy:
- * signing in again helps only once that setting is in place, and this service
- * cannot tell whether it is.
+ * An unrecorded method offers no remedy: the server saw only that the token
+ * named no method, not why, so it cannot tell whether signing in again helps.
  */
 const STEP_UP_MESSAGES: Record<StepUpRefusal, string> = {
   reauthentication_required:
@@ -35,9 +34,8 @@ const STEP_UP_MESSAGES: Record<StepUpRefusal, string> = {
     'This account signed in with a password and nothing else, and this act needs a second factor. ' +
     'Register an authenticator app or a passkey, then try again.',
   sign_in_method_unrecorded:
-    'This sign-in did not record how it was made, so the server cannot confirm a passkey or a one-time code ' +
-    'was used, and this act needs one. This is a setting on the sign-in service, not a problem with the account. ' +
-    'Nothing was changed.',
+    'The sign-in service did not say how this sign-in was made, so the server cannot confirm a passkey or a ' +
+    'one-time code was used, and this act needs one. Nothing was changed.',
 };
 
 /**

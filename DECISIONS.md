@@ -2955,9 +2955,9 @@ work on this realm for anybody.
    requirement). Applied to Carl's dev Keycloak on 10 Oct after a backup.
 2. **A session that says nothing is refused under its own code,
    `sign_in_method_unrecorded`.** Still a refusal: "we cannot tell" is never
-   "yes". Its message says what was observed (the sign-in did not record how
-   it was made), that it is a sign-in service setting, and that nothing
-   changed. It offers no "sign in again" control, because this service cannot
+   "yes". Its message says only what was observed (the sign-in service did not
+   say how the sign-in was made) and that nothing changed; it names no cause,
+   because the server never saw one. It offers no "sign in again" control, because this service cannot
    tell whether signing in again would help (CLAUDE.md §7, wow.md §13).
    `second_factor_required` is kept for a session that positively says `pwd`
    alone.
