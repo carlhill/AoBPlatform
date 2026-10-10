@@ -173,7 +173,9 @@ export class SignedDb4Service {
 
   /**
    * THE CALL THE SIGNATURE PATH MAKES. It cannot throw, and it says so in its
-   * type. Everything it catches is logged loudly and left retryable.
+   * type. Everything it catches is logged loudly, saying whether a retry can
+   * help for THAT reason (CLAUDE.md §7c) — a refusal or a missing signature
+   * mark never succeeds on retry; a transient fault may.
    */
   async produceAfterSignature(practiceId: string, agreementId: string): Promise<SignedDb4Outcome> {
     try {
