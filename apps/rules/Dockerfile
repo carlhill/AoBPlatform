@@ -2,7 +2,7 @@
 # Build context is the MONOREPO ROOT. See CONVENTIONS.md §8.
 #   docker build -f apps/rules/Dockerfile -t aobplatform/rules .
 
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /workspace
 COPY package.json package-lock.json ./
 COPY packages/domain/package.json packages/domain/package.json
@@ -15,7 +15,7 @@ RUN npm install -g npm@11 && \
 COPY . .
 RUN npm run build -w packages/domain -w packages/contracts -w apps/rules
 
-FROM node:20-alpine AS runtime
+FROM node:24-alpine AS runtime
 ENV NODE_ENV=production
 WORKDIR /workspace
 COPY --from=builder /workspace /workspace

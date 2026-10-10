@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "AoBPlatform monorepo root. Read CLAUDE.md and CONVENTIONS.md before adding anything here.",
   "engines": {
-    "node": ">=20.0.0",
+    "node": ">=24.0.0",
     "npm": ">=10.0.0"
   },
   "workspaces": [
