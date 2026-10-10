@@ -3451,6 +3451,12 @@ space on the screen:
 Declined: fixed splits sized for the smallest screen (option 2), and freeing
 height as a separate choice (option 3).
 
+**The smallest screen the rule holds on: 1280×800** (Carl: *"1280×800 is
+fine"*). At 1280×800 and larger, including every size of the 14" tablet, every
+page fits whole and nothing scrolls. Below that (shorter than 800px, or
+narrower than 1280px in landscape), a DB4 page that cannot fit may scroll as a
+whole page, never a box inside it. The signature step must fit at every size.
+
 **Built on:** `fix/kiosk-tablet-fit` (items 1 and 2).
 
 **What would reopen it:** evidence that patients tick without reading in a

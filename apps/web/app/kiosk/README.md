@@ -904,9 +904,8 @@ else on the device.
 to the kiosk page. A patient can still use the browser itself: open a new tab,
 type an address, or go back to an earlier page. The kiosk's own auto-reset
 ("Return to the start when nobody is there") only runs on the kiosk page, so it
-does not bring back a tab the patient has left. Full screen would hide the
-address bar, but it is not built (see "Not built here"), and a swipe brings the
-bar back anyway. If this proves to be a real problem, the next step is a
+does not bring back a tab the patient has left. Full screen on the first tap
+hides the address bar, but a swipe brings it back. If this proves to be a real problem, the next step is a
 managed kiosk mode (for example Samsung Knox), which is a device-management
 product and needs a new decision.
 
