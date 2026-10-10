@@ -134,7 +134,7 @@ describe('the chain verdict', () => {
      * arrives as a chain the platform has never seen. Calling it a new host
      * would defeat the anchor (decision 6).
      */
-    const verdict = aobPrinterChainVerdict(null, [{ chainId: CHAIN_A, rebaselinedAt: null }], {
+    const verdict = aobPrinterChainVerdict(null, [{ chainId: CHAIN_A, rebaselinedAt: null, retiredAt: null }], {
       chainId: CHAIN_B,
       head: { seq: 3, hash: h('8') },
     });
@@ -146,14 +146,65 @@ describe('the chain verdict', () => {
     });
     expect(verdict.head).toEqual({ seq: 3, hash: h('8') });
 
-    // Once the earlier chain has been re-baselined, a new one starts unverified.
-    const afterRebaseline = aobPrinterChainVerdict(
+    // Once the earlier chain has been RETIRED (an operator accepted a replacement), a new one starts unverified.
+    const afterRetirement = aobPrinterChainVerdict(
       null,
-      [{ chainId: CHAIN_A, rebaselinedAt: new Date('2026-10-01T00:00:00Z') }],
+      [{ chainId: CHAIN_A, rebaselinedAt: null, retiredAt: new Date('2026-10-01T00:00:00Z') }],
       { chainId: CHAIN_B, head: { seq: 3, hash: h('8') } },
     );
-    expect(afterRebaseline.status).toBe('unverified');
-    expect(afterRebaseline.newRegression).toBeNull();
+    expect(afterRetirement.status).toBe('unverified');
+    expect(afterRetirement.newRegression).toBeNull();
+  });
+
+  it('a_new_chain_after_the_only_chain_was_rebaselined_is_still_chain_replaced', () => {
+    /*
+     * The practice's only chain regressed and an operator re-baselined it.
+     * That accepted its CURRENT HEAD; it did not retire it. A rewrite or a
+     * reinstall afterwards is still a new chain beside an existing one, and
+     * decision 6 says that is always `chain_replaced`.
+     */
+    const verdict = aobPrinterChainVerdict(
+      null,
+      [{ chainId: CHAIN_A, rebaselinedAt: new Date('2026-10-01T00:00:00Z'), retiredAt: null }],
+      { chainId: CHAIN_B, head: { seq: 3, hash: h('8') } },
+    );
+    expect(verdict.status).toBe('regressed');
+    expect(verdict.newRegression).toEqual({
+      kind: 'chain_replaced',
+      expected: { seq: 1, hash: CHAIN_A },
+      received: { seq: 1, hash: CHAIN_B },
+    });
+  });
+
+  it('a_retired_chain_does_not_make_a_new_chain_a_replacement', () => {
+    /*
+     * CHAIN_A was replaced by CHAIN_B and the operator accepted CHAIN_B, which
+     * retired CHAIN_A. A third chain is judged against CHAIN_B (not retired),
+     * never against CHAIN_A; with only retired chains beside it, it is a
+     * first beat.
+     */
+    const CHAIN_C = h('c');
+    const retiredA = { chainId: CHAIN_A, rebaselinedAt: null, retiredAt: new Date('2026-10-02T00:00:00Z') };
+    const acceptedB = { chainId: CHAIN_B, rebaselinedAt: new Date('2026-10-02T00:00:00Z'), retiredAt: null };
+
+    const besideB = aobPrinterChainVerdict(null, [retiredA, acceptedB], {
+      chainId: CHAIN_C,
+      head: { seq: 2, hash: h('7') },
+    });
+    expect(besideB.newRegression).toEqual({
+      kind: 'chain_replaced',
+      expected: { seq: 1, hash: CHAIN_B },
+      received: { seq: 1, hash: CHAIN_C },
+    });
+
+    const onlyRetired = aobPrinterChainVerdict(null, [retiredA], { chainId: CHAIN_C, head: { seq: 2, hash: h('7') } });
+    expect(onlyRetired).toEqual({
+      status: 'unverified',
+      head: { seq: 2, hash: h('7') },
+      anchor: { seq: 2, hash: h('7') },
+      anchorVerified: false,
+      newRegression: null,
+    });
   });
 
   it('a_regression_is_sticky_until_rebaselined', () => {

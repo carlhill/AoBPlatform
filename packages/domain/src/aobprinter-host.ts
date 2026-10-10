@@ -35,7 +35,7 @@ export type AobPrinterChainStatus = (typeof AOBPRINTER_CHAIN_STATUSES)[number];
  *  - `same_seq_different_hash` — the head seq is the one already seen, with another hash.
  *  - `anchor_mismatch` — the hash at the anchor is not the one recorded, or is gone.
  *  - `chain_replaced` — a chain the platform has never seen, at a practice that
- *    already has one not yet re-baselined (decision 6).
+ *    already has one that is not retired (decision 6).
  */
 export const AOBPRINTER_CHAIN_REGRESSIONS = [
   'went_backwards',
@@ -62,10 +62,24 @@ export interface AobPrinterHostChainRow {
   readonly chainStatus: AobPrinterChainStatus;
 }
 
-/** Another chain the same practice has reported, for rule 1. */
+/**
+ * Another chain the same practice has reported, for rule 1.
+ *
+ * `retiredAt` is what rule 1 reads. A chain is retired when a platform
+ * operator re-baselines a `chain_replaced` row: that accepts the NEW chain as
+ * the practice's chain, so every other chain stops being one a newcomer could
+ * be replacing.
+ *
+ * `rebaselinedAt` is carried so the distinction stays visible, and rule 1
+ * deliberately ignores it. Re-baselining accepts a chain's CURRENT HEAD; it
+ * does not retire the chain. A re-baselined chain that is still the
+ * practice's chain is exactly what a later rewrite would replace (decision 6,
+ * D-2026-10-10-02 amendment).
+ */
 export interface AobPrinterOtherChain {
   readonly chainId: string;
   readonly rebaselinedAt: Date | string | null;
+  readonly retiredAt: Date | string | null;
 }
 
 /** The chain part of a heartbeat. A full `AobPrinterHeartbeat` (contracts) satisfies it. */
@@ -105,8 +119,9 @@ export interface AobPrinterChainVerdict {
  * THE SEVEN RULES, IN ORDER (PRINTER-HEARTBEAT.md §3). The first that applies
  * answers.
  *
- * 1. No row for this chain: `chain_replaced` if another chain at the practice
- *    has not been re-baselined; otherwise `unverified`, anchor at the head.
+ * 1. No row for this chain: `chain_replaced` if the practice has any other
+ *    chain that is not retired (re-baselined or not); otherwise `unverified`,
+ *    anchor at the head.
  * 2. Already `regressed`: stays regressed. Head updated, anchor not moved.
  * 3. Head behind the stored head or the anchor: `went_backwards`.
  * 4. Same seq as the stored head, different hash: `same_seq_different_hash`.
@@ -126,7 +141,8 @@ export function aobPrinterChainVerdict(
 
   // Rule 1.
   if (!existing) {
-    const previous = otherChains.find((c) => c.chainId !== beat.chainId && !c.rebaselinedAt);
+    // Every other chain that is not RETIRED, re-baselined or not (see `AobPrinterOtherChain`).
+    const previous = otherChains.find((c) => c.chainId !== beat.chainId && !c.retiredAt);
     if (previous) {
       /*
        * The chain id IS the hash of seq 1, so a replaced chain is "seq 1 with
