@@ -8,7 +8,7 @@ import { ArtefactsService } from '../artefacts/artefacts.service';
 import { PrintRecordsService } from '../inbound/print-records.service';
 import { RendererRegistry } from '../render/renderer-registry';
 import { SignedDb4Renderer } from '../render/signed-db4-renderer';
-import type { SignedDb4Document } from '../render/signed-db4-document';
+import { SignedDb4RenderRefusal, type SignedDb4Document } from '../render/signed-db4-document';
 
 const SYSTEM_ACTOR = { principalType: 'system', id: 'core' } as const;
 
@@ -60,6 +60,39 @@ export const SIGNED_DB4_NOT_PRODUCED_REASONS = [
 ] as const;
 
 export type SignedDb4NotProducedReason = (typeof SIGNED_DB4_NOT_PRODUCED_REASONS)[number];
+
+/**
+ * WHAT TO SAY ABOUT RETRYING EACH REASON, AND NOTHING MORE THAN IS TRUE OF
+ * IT (wow.md §13). Only the four reasons `produceAfterSignature` warns on
+ * reach this map.
+ *
+ * `agreement_not_found` and `no_drawn_signature` are never retryable: an
+ * agreement id this practice does not have now will not exist later, and a
+ * tap-to-approve signature event is append-only and will never grow a
+ * raster to draw (REQ-SIG-01).
+ *
+ * `not_signed` and `print_record_missing` are NOT claimed retryable either,
+ * because this code cannot tell whether they are. `produce` reads
+ * `signatureEventId` but never `status`, so an agreement waiting to be
+ * signed and one that will never be signed again (voided, superseded) read
+ * identically here. `print-records.service.ts` returns the same null
+ * whether the print job row is gone for good or was read for the wrong
+ * practice. Saying "retryable" would be true for one cause and false for
+ * the other with no way to tell which from this call — exactly the
+ * confident wrong answer wow.md §13 rules out.
+ */
+const NOT_PRODUCED_LOG_DETAIL: Record<SignedDb4NotProducedReason, string> = {
+  agreement_not_found: 'no agreement with that id exists for this practice. Not retryable.',
+  not_from_a_db4: 'the agreement did not come from a printed DB4.',
+  not_signed: 'the agreement has no signature event yet. Whether that will change is not known from here.',
+  no_drawn_signature:
+    'the signature event has no raster to draw — a tap-to-approve signature never has one. Not retryable.',
+  print_record_missing:
+    'the source print job row was not found for this practice. Whether it is gone for good, or was read ' +
+    'for the wrong practice, cannot be told from here.',
+  already_produced: 'a Signed-DB4 already exists for this agreement.',
+  render_failed: 'the render itself failed.',
+};
 
 /**
  * THE ROW SAID SOMEBODY ELSE GOT THERE FIRST. Thrown to roll the transaction
@@ -147,8 +180,8 @@ export class SignedDb4Service {
       const outcome = await this.produce(practiceId, agreementId);
       if (!outcome.produced && outcome.reason !== 'not_from_a_db4' && outcome.reason !== 'already_produced') {
         this.logger.warn(
-          `Signed-DB4 not produced for agreement ${agreementId} — ${outcome.reason}. The agreement is ` +
-            'signed and stored; producing it is retryable.',
+          `Signed-DB4 not produced for agreement ${agreementId} — ${outcome.reason}: ` +
+            `${NOT_PRODUCED_LOG_DETAIL[outcome.reason]}`,
         );
       }
       return outcome;
@@ -159,11 +192,23 @@ export class SignedDb4Service {
        * provider's name. No PII in a log (hard rule 9, REQ-LOG-08) — and the
        * refusal's rule code is the thing anybody diagnosing this actually
        * needs, with the agreement id to look the rest up under.
+       *
+       * A REFUSAL IS NOT A TRANSIENT FAULT. HARD-03 and HARD-12 fire on the
+       * form's own content or this practice's configured content, and the
+       * same input produces the same refusal every time: retrying changes
+       * nothing until the form or the content does. Everything else here —
+       * the object store, the database, the determinism check — is treated
+       * as the transient fault it actually is, which is the one case where
+       * "retryable" is true.
        */
       const rule = (err as { rule?: string }).rule;
+      const retryNote =
+        err instanceof SignedDb4RenderRefusal
+          ? 'Not retryable — the same form and content refuse the same way until one of them changes.'
+          : 'The agreement remains signed and stored; the render is retryable.';
       this.logger.error(
         `Signed-DB4 render failed for agreement ${agreementId} — ${(err as Error).name}` +
-          `${rule ? ` (${rule})` : ''}. The agreement remains signed and stored; the render is retryable.`,
+          `${rule ? ` (${rule})` : ''}. ${retryNote}`,
       );
       return { produced: false, reason: 'render_failed' };
     }
