@@ -755,9 +755,25 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
        * 2026) — and it was always the wrong question: what these tests mean is
        * "the one agreement this form made", not "whatever is still pointing at
        * the first spool of it".
+       *
+       * AND NARROWED TO THAT ONE. By the end of this block the patient has
+       * THREE `episodic_post` agreements: the rules refusal above leaves an
+       * unlocked one with no print job, and the carer test below supersedes
+       * this one with a draft carrying the same print job. A bare `findFirst`
+       * returned whichever one Postgres's heap order put first (10 October 2026:
+       * five of these failed when it picked the refusal). Made from a print,
+       * and not a restatement of another agreement, is this form's own
+       * agreement and nothing else.
+       *
+       * NOT THROUGH THE SERVICE RECORD, as the Signed-DB4 block finds it: the
+       * record follows the carer's supersession, and the hard-rule-13 test
+       * below would then compare a draft's null hash and null lock with
+       * themselves instead of a real hash and a real lock.
        */
       const agreement = await prisma.withPractice(practiceId, (tx) =>
-        tx.agreement.findFirst({ where: { type: 'episodic_post', patientId } }),
+        tx.agreement.findFirst({
+          where: { type: 'episodic_post', patientId, sourcePrintJobId: { not: null }, supersedesAgreementId: null },
+        }),
       );
       return {
         agreement: agreement!,
@@ -1452,8 +1468,11 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
       const reprint = db4Outcome(job).db4.reprint;
       expect(reprint?.action).toBe('supersede');
       // TYPES, NEVER VALUES (hard rule 9) — no item number in the answer.
+      // `supersededBy` is left out of the scan: it is a random UUID, which
+      // contains "36" about one run in ten, and it is proved below to be the
+      // replacement's id and nothing else.
       expect(reprint?.changed).toEqual(['service_items']);
-      expect(JSON.stringify(reprint)).not.toContain('36');
+      expect(JSON.stringify({ ...reprint, supersededBy: undefined })).not.toContain('36');
 
       // A REPLACEMENT, and it points at the CORRECTED page — not the stale
       // one every other supersession carries forward.
