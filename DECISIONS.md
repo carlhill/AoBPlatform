@@ -2994,7 +2994,7 @@ Carl preferring one uniform presentation for amounts captured under both
 templates, which would mean a display rule and a decision about hard rule 4.
 
 
-## D-2026-10-11-01 - A service line AOBPRINTER could not read is counted, and Send-to-tablet refuses it
+## D-2026-10-11-05 - A service line AOBPRINTER could not read is counted, and Send-to-tablet refuses it
 
 **Date:** 11 October 2026. **Raised by:** an Opus review on 10 October 2026.
 **Built on:** branch `fix/aobprinter-unparsed-service-lines`, based on
@@ -3086,7 +3086,7 @@ date-led lines that are not services.
 
 **Status: OPEN.** This is a question, not a decision. It is recorded so the
 answer has somewhere to land, and so the behaviour the code already has is
-visible. Carl Hill, 11 October 2026, on D-2026-10-11-01: *"Not sure if
+visible. Carl Hill, 11 October 2026, on D-2026-10-11-05: *"Not sure if
 reversals are allowed. Leave Reversals in the decision register."*
 
 **The question.** May a printed DB4 list a reversal or credit against a
@@ -3103,7 +3103,7 @@ is flagged here and not filled from memory.
 NOT read as a service row under either shipped template
 (`pracsoft3-db4-2026-09-1`, `-10-1`). AOBPRINTER counts it in
 `unparsedServiceLines`, and Send-to-tablet refuses the form with
-`print_record_service_lines_unread` (D-2026-10-11-01). That is the
+`print_record_service_lines_unread` (D-2026-10-11-05). That is the
 conservative direction. The patient is never shown, and never signs, a copy
 missing a line the practice printed. The form is not sent to the tablet, and
 care is not blocked (hard rule 8): the agreement is taken on paper or after

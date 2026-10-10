@@ -567,7 +567,7 @@ export function describePrintRecordCheck(
   ctx: Pick<RefusalContext, 'print'> = {},
 ): { code: string; text: string; link?: { href: string; label: string } } {
   /*
-   * THE ONE CHECK WHOSE LINE CARRIES MORE THAN ITS CODE (D-2026-10-11-01):
+   * THE ONE CHECK WHOSE LINE CARRIES MORE THAN ITS CODE (D-2026-10-11-05):
    * how many service lines, on which form, read by which template — a count
    * and two references, none of them a patient's, all off the refusal's own
    * `print` block rather than the agreement. Without the count it falls
@@ -792,7 +792,7 @@ export function describeRefusal(
     case DB4_PRINT_RECORD_REFUSED_CODE: {
       /*
        * UNREAD SERVICE LINES CHANGE THE SENTENCE, NOT JUST THE LIST
-       * (D-2026-10-11-01; wow.md §13). The usual sentence says a reprint will
+       * (D-2026-10-11-05; wow.md §13). The usual sentence says a reprint will
        * bring the form through again, and for this fault it will not: the
        * same layout prints the same lines. So when that check is present the
        * title and sentence are the ones that do not promise a reprint.
@@ -862,7 +862,7 @@ export function blockedByAnUnreadableForm(row: Pick<PushableRow, 'blockedReason'
 /**
  * WHY "WHO IS SIGNING?" IS DEAD, IN WORDS THAT ARE TRUE FOR THIS ROW. The usual
  * line says "reprint the form first"; for unread service lines a reprint prints
- * the same lines and changes nothing (D-2026-10-11-01; wow.md §13), so that
+ * the same lines and changes nothing (D-2026-10-11-05; wow.md §13), so that
  * row gets the line that does not promise one.
  */
 export function whoBlockedTitle(row: Pick<PushableRow, 'blockedReason' | 'printRecord'>): string | undefined {
@@ -1370,7 +1370,7 @@ function PrintRecordIdentityBlock({ print }: { print: Db4PrintRecordIdentity }) 
           </Fragment>
         ))}
       </dl>
-      {/* No reprint advice where a reprint cannot help (D-2026-10-11-01). */}
+      {/* No reprint advice where a reprint cannot help (D-2026-10-11-05). */}
       <p className={rowStyles.printIdNote}>
         {(print.unparsedServiceLines ?? 0) > 0 ? copy.noFileNoteNoReprint : copy.noFileNote}
       </p>

@@ -146,7 +146,7 @@ export interface Db4PrintRecord {
   readonly queueLabel?: string;
 
   /*
-   * HOW MANY SERVICE LINES THE TEMPLATE DID NOT READ (D-2026-10-11-01). A
+   * HOW MANY SERVICE LINES THE TEMPLATE DID NOT READ (D-2026-10-11-05). A
    * date-led line the service-row pattern rejected — a credit, a whole-dollar
    * amount, a row with no amount — is missing from `services`, and this says
    * so. A COUNT, NEVER CONTENT: no description, item or amount rides on it, so

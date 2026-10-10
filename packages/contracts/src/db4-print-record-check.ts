@@ -250,7 +250,7 @@ export const DB4_PRINT_RECORD_CHECKS = [
   'print_record_benefit_missing',
   /**
    * AOBPRINTER SAW SERVICE LINES IT COULD NOT READ (Opus review, 10 October
-   * 2026; D-2026-10-11-01).
+   * 2026; D-2026-10-11-05).
    *
    * LIVE, AND IT CLOSES THE HOLE THE AMOUNT CHECK LEAVES. That check asks
    * whether ANY row carries an amount, so a form with one row lost among
@@ -419,7 +419,7 @@ export interface Db4PrintRecordIdentity {
    */
   readonly parserTemplateVersion?: string;
   /**
-   * HOW MANY SERVICE LINES THAT TEMPLATE COULD NOT READ (D-2026-10-11-01).
+   * HOW MANY SERVICE LINES THAT TEMPLATE COULD NOT READ (D-2026-10-11-05).
    * A count about the machinery, never a line's content, so it sits with the
    * rest of the identity: `print_record_service_lines_unread` names the fault
    * and this says how many, so the band can say "2 service lines on form …".

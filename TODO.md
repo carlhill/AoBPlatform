@@ -14,7 +14,7 @@ being decided.
 
 ---
 
-## Read credits and whole-dollar amounts as service rows? (11 Oct 2026) - D-2026-10-11-01
+## Read credits and whole-dollar amounts as service rows? (11 Oct 2026) - D-2026-10-11-05
 
 **Open, Carl to decide.** AOBPRINTER now COUNTS the service lines its template
 cannot read, and Send-to-tablet refuses a form with any

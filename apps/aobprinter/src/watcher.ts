@@ -359,7 +359,7 @@ export function processClaimedJob(
     template: record.parserTemplateVersion,
     queue: queue.name,
     services: record.services?.length ?? 0,
-    // A count, never the lines themselves (D-2026-10-11-01): non-zero is a
+    // A count, never the lines themselves (D-2026-10-11-05): non-zero is a
     // form core will refuse to send to a tablet.
     unparsedServiceLines: record.unparsedServiceLines ?? 0,
     providers: record.providers?.length ?? 0,

@@ -558,7 +558,7 @@ export function checkDb4PrintRecord(envelope: PrintJobEnvelope): readonly Db4Pri
   }
 
   /*
-   * A SERVICE LINE AOBPRINTER SAW AND COULD NOT READ (D-2026-10-11-01). The
+   * A SERVICE LINE AOBPRINTER SAW AND COULD NOT READ (D-2026-10-11-05). The
    * check above passes as soon as ONE row has an amount, so a form with a
    * credit, a whole-dollar amount or an amount-less row among good ones lost
    * that row silently. The desktop now counts them; any count above zero means

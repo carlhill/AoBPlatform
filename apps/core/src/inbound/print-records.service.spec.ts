@@ -2,7 +2,7 @@ import { PrintRecordsService } from './print-records.service';
 import type { PrismaService } from '../prisma/prisma.service';
 
 /**
- * THE REFUSAL'S IDENTITY BLOCK CARRIES THE UNREAD-LINE COUNT (D-2026-10-11-01).
+ * THE REFUSAL'S IDENTITY BLOCK CARRIES THE UNREAD-LINE COUNT (D-2026-10-11-05).
  *
  * `print_record_service_lines_unread` names the fault; the count and the form
  * reference ride on `Db4PrintRecordIdentity`, so the band can say how many

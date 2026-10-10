@@ -78,7 +78,7 @@ function describe(job: {
       capturedAt: toTheSecond(envelope.capturedAt),
       receivedAt: toTheSecond(job.receivedAt.toISOString()) ?? job.receivedAt.toISOString(),
       parserTemplateVersion: job.parserTemplateVersion,
-      // A count, never content (D-2026-10-11-01). Only a number is carried.
+      // A count, never content (D-2026-10-11-05). Only a number is carried.
       ...(typeof envelope.unparsedServiceLines === 'number'
         ? { unparsedServiceLines: envelope.unparsedServiceLines }
         : {}),

@@ -202,7 +202,7 @@ const DATE_LED = /^\s*\d{1,2}\/\d{1,2}\/\d{4}(?!\d)/;
 
 /**
  * HOW MANY SERVICE LINES THE TEMPLATE DID NOT READ (Opus review, 10 Oct 2026;
- * D-2026-10-11-01).
+ * D-2026-10-11-05).
  *
  * `runRows` skips a line its pattern does not match, which is right for the
  * page in general and wrong for a service row: a credit (`-$10.00`,

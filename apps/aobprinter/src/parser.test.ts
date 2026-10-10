@@ -243,7 +243,7 @@ describe('the DB4 parser, over a page actually printed to AOBPRINTER', () => {
 
 /*
  * A SERVICE LINE THE ROW PATTERN DOES NOT READ IS COUNTED, NEVER DROPPED
- * SILENTLY (Opus review, 10 Oct 2026; D-2026-10-11-01).
+ * SILENTLY (Opus review, 10 Oct 2026; D-2026-10-11-05).
  *
  * `runRows` skips a line its pattern does not match. For most of the page
  * that is right — a line that is not a service is not a service — but a line

@@ -44,7 +44,7 @@ export interface PrintJobEnvelope {
   readonly queueLabel?: string;
   /**
    * How many date-led service lines the template's row pattern did NOT read
-   * (D-2026-10-11-01). A count, never content. Absent from a desktop that
+   * (D-2026-10-11-05). A count, never content. Absent from a desktop that
    * predates it; non-zero is refused at Send-to-tablet.
    */
   readonly unparsedServiceLines?: number;

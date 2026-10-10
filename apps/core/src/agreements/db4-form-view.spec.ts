@@ -348,7 +348,7 @@ describe('the DB4 form view', () => {
 
     /* ---------------------------------------------------------------------
      * A SERVICE LINE AOBPRINTER COULD NOT READ (Opus review, 10 Oct 2026;
-     * D-2026-10-11-01). The amount check above asks whether ANY row has an
+     * D-2026-10-11-05). The amount check above asks whether ANY row has an
      * amount, so a form with one row lost among several passed it and the
      * patient was shown a copy missing a service. AOBPRINTER now counts the
      * date-led lines its row pattern rejected, and a non-zero count is
@@ -626,7 +626,7 @@ describe('the DB4 form view', () => {
       ]);
       // AND WITH A CARD NUMBER READ AND A SERVICE LINE UNREAD, ALL EIGHT — the
       // two conditional ones join the list in their declared positions. The
-      // unread-line count is conditional too (D-2026-10-11-01): an empty
+      // unread-line count is conditional too (D-2026-10-11-05): an empty
       // record carries no count, so it cannot fire on `ruined` above.
       const alsoHalfRead = checkDb4PrintRecord({
         form: {},
@@ -725,7 +725,7 @@ describe('the DB4 form view', () => {
       // downstream requires it, so this check is the only thing standing
       // there (Carl, 27 September 2026).
       expect(DB4_PRINT_RECORD_CHECK_GATED_AT_INGEST.print_record_irn_missing).toBeNull();
-      // AND THE UNREAD SERVICE LINE (D-2026-10-11-01): ingest places an
+      // AND THE UNREAD SERVICE LINE (D-2026-10-11-05): ingest places an
       // agreement from the rows it has and never looks at the count.
       expect(DB4_PRINT_RECORD_CHECK_GATED_AT_INGEST.print_record_service_lines_unread).toBeNull();
       // The map is exhaustive: a check added without a decision about whether

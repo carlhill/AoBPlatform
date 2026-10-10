@@ -6584,7 +6584,7 @@ export const strings = {
         + 'Reprint it from your practice software and it will come through again, or take this one on '
         + 'paper or after the service. The patient is seen and billed either way.',
       /**
-       * SERVICE LINES WE SAW AND COULD NOT READ (D-2026-10-11-01) — used IN
+       * SERVICE LINES WE SAW AND COULD NOT READ (D-2026-10-11-05) — used IN
        * PLACE OF the two above whenever that check is in the list.
        *
        * IT DOES NOT SAY "REPRINT" (wow.md §13). The same layout prints the
@@ -6660,7 +6660,7 @@ export const strings = {
       print_record_service_lines_unread: 'We saw service lines we could not read, so the copy would be missing a service',
     } as Record<string, string>,
     /**
-     * HOW MANY LINES, ON WHICH FORM, READ BY WHICH TEMPLATE (D-2026-10-11-01;
+     * HOW MANY LINES, ON WHICH FORM, READ BY WHICH TEMPLATE (D-2026-10-11-05;
      * CLAUDE.md §7c, shortcuts to the answer). A count, a form reference and a
      * template version — none of them a patient's (hard rule 9), and never the
      * line itself, which never left the practice.
@@ -6796,7 +6796,7 @@ export const strings = {
     whoBlockedByPrintRecord:
       'Reprint the form first — this agreement cannot be sent, and a reprint starts a new one, so an '
       + 'answer saved here would not carry over.',
-    /** The same control, where a reprint would not help (D-2026-10-11-01). */
+    /** The same control, where a reprint would not help (D-2026-10-11-05). */
     whoBlockedByUnreadServiceLines:
       'This agreement cannot be sent — the form has service lines we could not read — so an answer saved '
       + 'here would not reach a tablet.',

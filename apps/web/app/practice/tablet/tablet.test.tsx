@@ -2691,7 +2691,7 @@ describe('the refusal words', () => {
   });
 
   /*
-   * UNREAD SERVICE LINES (Opus review, 10 Oct 2026; D-2026-10-11-01). The
+   * UNREAD SERVICE LINES (Opus review, 10 Oct 2026; D-2026-10-11-05). The
    * line names how many and on which form, links to support, and nothing on
    * the band tells reception to reprint — the same layout prints the same
    * lines, so that advice would be false for every record that reaches it

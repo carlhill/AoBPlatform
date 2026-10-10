@@ -189,7 +189,7 @@ export class PrintJobEnvelopeDto {
   @IsOptional() @IsString() @MaxLength(100) queueName?: string;
   @IsOptional() @IsString() @MaxLength(100) queueLabel?: string;
   /**
-   * How many service lines AOBPRINTER's template did not read (D-2026-10-11-01).
+   * How many service lines AOBPRINTER's template did not read (D-2026-10-11-05).
    * A COUNT, never content — no PII and no amount can ride on it. Without this
    * line the whitelist would strip it at the door and the Send-to-tablet check
    * could never see it. Absent from a desktop that predates it. The ceiling is
