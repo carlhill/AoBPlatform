@@ -7,7 +7,8 @@
  * drives `document.fullscreenElement` by hand.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { act, fireEvent, render, renderHook } from '@testing-library/react';
+import { useState, type ReactNode } from 'react';
 import { useKioskFullScreen } from './useKioskFullScreen';
 
 let fullscreenElement: Element | null = null;
@@ -18,8 +19,33 @@ function installApi(impl: () => Promise<void> | void): ReturnType<typeof vi.fn> 
   return request;
 }
 
+/**
+ * A TAP AS THE BROWSER DELIVERS IT: pointerup, then click, then whatever the
+ * event loop runs next. The request is deliberately deferred past React's
+ * commit, so a tap is only finished once the pending timer has run.
+ */
 function tap(target: Element = document.body): void {
-  target.dispatchEvent(new Event('pointerup', { bubbles: true }));
+  act(() => {
+    target.dispatchEvent(new Event('pointerup', { bubbles: true }));
+    fireEvent.click(target);
+  });
+  act(() => {
+    vi.runOnlyPendingTimers();
+  });
+}
+
+/**
+ * K-3'S CONTINUE IN MINIATURE: a click handler that moves to the signature
+ * step, with the hook told what `Ceremony` tells it — off on that step.
+ */
+function StepThatLeadsToSigning(): ReactNode {
+  const [step, setStep] = useState<'particulars' | 'signature'>('particulars');
+  useKioskFullScreen(step !== 'signature');
+  return (
+    <button type="button" data-step={step} onClick={() => setStep('signature')}>
+      Continue
+    </button>
+  );
 }
 
 /** What the browser does when full screen starts or ends. */
@@ -35,6 +61,7 @@ async function settle(): Promise<void> {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers();
   fullscreenElement = null;
   Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => fullscreenElement });
 });
@@ -45,6 +72,7 @@ afterEach(() => {
   document.body.innerHTML = '';
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe('kiosk_enters_full_screen_on_the_first_tap', () => {
@@ -54,7 +82,7 @@ describe('kiosk_enters_full_screen_on_the_first_tap', () => {
     expect(request).not.toHaveBeenCalled();
   });
 
-  it('asks on the first pointerup, hiding the navigation UI', () => {
+  it('asks on the first tap, once its click has run, hiding the navigation UI', () => {
     const request = installApi(() => Promise.resolve());
     renderHook(() => useKioskFullScreen(true));
     tap();
@@ -111,6 +139,34 @@ describe('full_screen_never_starts_from_the_signature_pad', () => {
     document.body.appendChild(pad);
     renderHook(() => useKioskFullScreen(true));
     tap(pad);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  /**
+   * THE TAP THAT MATTERS MOST (review finding, 10 Oct 2026). K-3's Continue is
+   * a click handler, which runs AFTER pointerup: a decision taken on pointerup
+   * still sees K-3, asks, and the resize lands on a freshly mounted pad. The
+   * decision must be taken after the click has committed the new step.
+   */
+  it('does not ask from the tap whose click moves the ceremony to the signature step', () => {
+    const request = installApi(() => Promise.resolve());
+    const { getByRole } = render(<StepThatLeadsToSigning />);
+    const continueButton = getByRole('button');
+    tap(continueButton);
+    expect(continueButton.getAttribute('data-step')).toBe('signature');
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('nothing is asked if the hook unmounts before the deferred decision', () => {
+    const request = installApi(() => Promise.resolve());
+    const { unmount } = renderHook(() => useKioskFullScreen(true));
+    act(() => {
+      fireEvent.click(document.body);
+    });
+    unmount();
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
     expect(request).not.toHaveBeenCalled();
   });
 

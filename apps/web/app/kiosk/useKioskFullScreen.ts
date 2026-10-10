@@ -13,8 +13,8 @@
  *
  * ONE TAP TO START, BECAUSE BROWSERS INSIST. `requestFullscreen` is refused
  * without a user gesture, so it cannot happen on load. The first tap anywhere
- * — pairing, Begin, anything — asks for it, on `pointerup` rather than
- * `pointerdown` so the tap still lands on whatever it was meant for.
+ * — pairing, Begin, anything — asks for it, after the tap has done whatever it
+ * was meant for (see "DECIDED AFTER THE TAP HAS LANDED" below).
  *
  * THE PATIENT CAN ALWAYS LEAVE, AND THE NEXT TAP COMES BACK. A system swipe or
  * the back gesture exits full screen and no web page can prevent that. On
@@ -32,6 +32,25 @@
  * is ignored whatever the step. A patient who left full screen on K-4 gets it
  * back on the first tap after K-4.
  *
+ * DECIDED AFTER THE TAP HAS LANDED (review finding, 10 Oct 2026). The tap that
+ * matters most is K-3's Continue, whose click handler MOVES the ceremony to
+ * K-4. Decided on `pointerup`, the hook still saw K-3, asked, and the resize
+ * landed on a freshly mounted pad. So the hook listens for `click` — which
+ * follows the pointerup and runs before React's own handler for it — and
+ * defers the decision with a zero-delay timer, by which time React has
+ * committed the new step and `enabled` (synced in a layout effect, inside that
+ * commit) says K-4. `click` rather than a timer from `pointerup` because on
+ * touch the click can arrive as a separate input task, after such a timer.
+ *
+ * WHY A DEFERRED REQUEST IS STILL ALLOWED. The gesture grants "transient
+ * activation" (HTML Standard, "Tracking user activation": `pointerup` from a
+ * non-mouse pointer, `mousedown`, `touchend` or `keydown` are the
+ * activation-triggering events; the duration is the user agent's, "expected be
+ * at most a few seconds"), and full screen needs it to be live, not to be
+ * inside the event. Chromium — Chrome and Edge, the targets — keeps it for
+ * five seconds: `kActivationLifespan = base::Seconds(5)` in
+ * `third_party/blink/public/common/frame/user_activation_state.h`.
+ *
  * IT WRITES NOTHING (CLAUDE.md §7, zero footprint). No storage, no cookie, no
  * manifest, no service worker: the "armed" flag is a ref and dies with the
  * tab. The in-app reset (`useInactivityReset`) is a state change and keeps full
@@ -42,7 +61,7 @@
  * off; anything else, including unset, leaves it on.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 
 /**
  * THE FLAG, read at call time and statically — Next substitutes the member
@@ -98,9 +117,11 @@ export function useKioskFullScreen(enabled: boolean): void {
   /*
    * IN A REF so the listener below is attached once, and the signature step
    * flipping it does not detach and re-attach a window listener mid-ceremony.
+   * A LAYOUT effect so the ref is current within the commit itself, before the
+   * deferred decision below can read it.
    */
   const enabledRef = useRef(enabled);
-  useEffect(() => {
+  useLayoutEffect(() => {
     enabledRef.current = enabled;
   }, [enabled]);
 
@@ -113,17 +134,23 @@ export function useKioskFullScreen(enabled: boolean): void {
      * once, and nothing ever asks without a fresh tap behind it.
      */
     let armed = true;
+    let pending: ReturnType<typeof setTimeout> | null = null;
 
     // A refusal re-arms too: the next tap tries again, and only a tap does.
     const rearm = (): void => {
       armed = true;
     };
     const onGesture = (event: Event): void => {
-      if (!armed || !enabledRef.current || isFullScreen()) return;
+      if (!armed || pending !== null || isFullScreen()) return;
       const target = event.target;
       if (target instanceof Element && target.closest('canvas')) return;
-      armed = false;
-      requestFullScreen(rearm);
+      // Past the click's own handler and React's commit; checked again there.
+      pending = setTimeout(() => {
+        pending = null;
+        if (!armed || !enabledRef.current || isFullScreen()) return;
+        armed = false;
+        requestFullScreen(rearm);
+      }, 0);
     };
     const onChange = (): void => {
       // Whatever ended it — a swipe, back, the system — the next tap may ask again.
@@ -132,13 +159,15 @@ export function useKioskFullScreen(enabled: boolean): void {
 
     // Capture, so a control that stops propagation cannot hide the tap;
     // passive, because nothing here calls `preventDefault`.
-    window.addEventListener('pointerup', onGesture, { capture: true, passive: true });
+    window.addEventListener('click', onGesture, { capture: true, passive: true });
     document.addEventListener('fullscreenchange', onChange);
     document.addEventListener('webkitfullscreenchange', onChange);
     document.addEventListener('fullscreenerror', rearm);
     document.addEventListener('webkitfullscreenerror', rearm);
     return () => {
-      window.removeEventListener('pointerup', onGesture, { capture: true });
+      window.removeEventListener('click', onGesture, { capture: true });
+      // Unmounted before the decision: nothing is asked.
+      if (pending !== null) clearTimeout(pending);
       document.removeEventListener('fullscreenchange', onChange);
       document.removeEventListener('webkitfullscreenchange', onChange);
       document.removeEventListener('fullscreenerror', rearm);

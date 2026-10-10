@@ -521,8 +521,9 @@ kiosk looks like an app in Chrome or Edge on the Galaxy Tab, with nothing set
 up on the tablet.
 
 - **It needs one tap to start.** Browsers refuse full screen without a user
-  gesture, so it cannot happen on load. The first tap anywhere asks for it, on
-  `pointerup`, so the tap still does what it was for.
+  gesture, so it cannot happen on load. The first tap anywhere asks for it,
+  just after the tap's own `click` has done what it was for (Chrome and Edge
+  keep the gesture usable for five seconds).
 - **The patient can always leave full screen** with a system swipe or the back
   gesture. Browsers guarantee this, and no web page can prevent it. The next
   tap goes back into full screen. Nothing prompts, nags or loops: one tap, one
@@ -534,7 +535,9 @@ up on the tablet.
 - **Never from the signature step.** Entering full screen resizes the page, and
   the signature pad measures its points against its own size: a resize
   mid-stroke moves the pad under the finger. So `Ceremony` turns it off on K-4,
-  and a tap on a canvas is ignored on any step. A patient who left full screen
+  and a tap on a canvas is ignored on any step. The decision is taken after
+  the tap's click has committed, so K-3's Continue, the tap that opens K-4,
+  does not ask either. A patient who left full screen
   on K-4 gets it back on the first tap after K-4.
 - **The in-app reset keeps it.** "Return to the start when nobody is there" is
   a state change, so full screen survives it. A hard reload (the build floor,
