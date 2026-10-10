@@ -2955,8 +2955,23 @@ on the device, so it would reopen the zero-footprint decision.
 the kiosk page. A patient can still open a tab or type an address, and the
 kiosk's auto-reset does not run on a page that is not the kiosk.
 
-**Not decided:** full screen on first tap. It is not built. Carl chose pinning;
-full screen can be added later as a cosmetic layer.
+**Amended the same day: full screen is built, and pinning is optional.**
+Carl, on learning that pinning is done by hand on each tablet: *"in that case
+write code to make the app full screen. We cannot have dependency on the
+tablet"*. The kiosk now asks for full screen on the patient's first tap
+(branch `feat/kiosk-fullscreen`). Recorded with it, so nobody reads more into
+it than it gives:
+- **A tap is needed to start.** Browsers refuse full screen without a user
+  gesture, so it cannot happen when the page loads.
+- **The patient can always leave it.** A system swipe brings back Android's
+  bars, and no web page can prevent that. The next tap goes full screen again.
+- **No web page can turn on pinning.** Android lets only an installed app or
+  device management start a lock. Automatic lockdown therefore needs something
+  installed on the tablet, which would reopen the zero-footprint decision
+  (Carl, 3 Sep 2026). Not decided; Carl was told the options.
+
+Pinning stays documented as optional extra lockdown for a practice that wants
+it.
 
 **What would reopen it:** patients leaving the kiosk page inside the browser in
 real use, or a practice that needs the tablet locked to one page. The next step
