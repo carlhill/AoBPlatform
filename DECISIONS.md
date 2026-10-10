@@ -2930,3 +2930,24 @@ exposure, is a risk with nothing to show for it. Revisit after GA.
 **What would reopen it:** a Node 24 security end-of-life notice, or a
 dependency that needs 26.
 
+
+---
+
+## D-2026-10-10-12 - The tablet's "Rotate" button reads "Re-Pair Tablet"
+
+**Date:** 10 October 2026. **Decided by:** Carl, *"make the button label read
+'Re-Pair Tablet'"*, after asking what Rotate meant on `/practice/devices`.
+
+**Decision.** The control that gives a tablet a new pairing credential is
+labelled **Re-Pair Tablet**, and every staff-facing sentence that said "rotate"
+says "re-pair" (the code shown once, the code expired, the confirm text, the
+progress label, the revoked status). "Rotate" read as turning the screen, which
+the kiosk's portrait/landscape work made worse.
+
+**Unchanged:** the act itself (a new credential; the old one stops at once; the
+device keeps its record and history), the string keys and the
+`POST /devices/:id/rotate` route. Re-pairing still does not ask for a fresh
+second factor, because the tablet stays in use and only its key changes.
+
+**What would reopen it:** practices still confusing it with screen rotation,
+or a second credential act that needs its own name.
