@@ -33,14 +33,17 @@ change for another screen.** The same two shapes remain in `apps/core/src`:
 - ~~`auto-capture/auto-capture.service.ts` ~260: the default day is the UTC
   date.~~ **Fixed 10 Oct 2026.** All four pinned in
   `apps/core/test/practice-date-particulars.e2e-spec.ts`.
-- **Found 10 Oct 2026, not yet fixed:** `arrivals/arrivals.service.ts` ~847
-  (an arrival's D5 when the caller sends no `serviceDate`) and ~1974 (D5 on the
-  draft a practitioner move makes) both write D5 as `arrivedAt`'s UTC date: a
-  statutory date, not a day window. In both, `practice` is already read in the
-  same transaction; the fix is `practiceDayOf(arrivedAt, zone)`. ~2997 (the
-  coverage prefill's `createdAt` fallback) should move with them so the two
-  stay comparable. Needs its own failing arrivals e2e first. The reception
-  form sends `serviceDate` explicitly, so this mainly reaches API callers.
+- ~~`arrivals/arrivals.service.ts` ~847 (an arrival's D5 when the caller sends
+  no `serviceDate`) and ~1974 (D5 on the draft a practitioner move makes) both
+  write D5 as `arrivedAt`'s UTC date: a statutory date, not a day window.~~
+  **Fixed 10 Oct 2026**: both are `practiceDayOf(arrivedAt, zone)` with the zone
+  from `readPracticeTimeZone` in the same transaction; an explicit
+  `serviceDate` still wins. Pinned by the four arrival tests in
+  `practice-date-particulars.e2e-spec.ts`.
+- **Still open:** `arrivals/arrivals.service.ts` ~3005, the coverage prefill's
+  `agreement.createdAt` UTC-date fallback (used only for an agreement with no
+  D5), should move to the practice's day so it stays comparable with the D5
+  above. Not a statutory particular; left out of the D5 fix's brief.
 - `arrivals/arrivals.service.ts` ~1409: the front desk's day starts at the
   server's `setHours(0, 0, 0, 0)`.
 - `practitioner-queue/practitioner-queue.service.ts` ~686: the waiting list's
